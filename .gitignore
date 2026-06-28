@@ -1,0 +1,46 @@
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.mobileprovision
+*.keystore
+*.jks
+
+# Flutter and Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+build/
+coverage/
+
+# iOS and Xcode generated files
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/ephemeral/
+ios/Flutter/.last_build_id
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Supabase local state
+supabase/.branches/
+supabase/.temp/
+
+# Logs, private media, and local artifacts
+*.log
+tmp/
+temp/
+local-data/
+private-media/
+test-artifacts/
