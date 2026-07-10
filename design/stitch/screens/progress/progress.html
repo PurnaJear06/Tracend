@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en" style=""><head></head><body class="bg-canvas-dark text-on-surface-variant dark:text-outline-variant antialiased overflow-x-hidden pb-32"><svg aria-hidden="true" class="inline-defs-container" style="position:absolute;width:0;height:0;overflow:hidden"></svg>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>TRACEND | Progress</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Spline+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-container": "#e8e7ff",
+                        "on-background": "#171c24",
+                        "background": "#f9f9ff",
+                        "secondary-fixed": "#d7e4f5",
+                        "on-secondary-fixed": "#101c29",
+                        "secondary": "#535f6e",
+                        "on-secondary-container": "#586473",
+                        "surface-container-highest": "#dee2ee",
+                        "state-stable-dark": "#59D6C7",
+                        "on-secondary-fixed-variant": "#3c4856",
+                        "state-stable": "#00796B",
+                        "on-tertiary-fixed-variant": "#793100",
+                        "inverse-surface": "#2c3139",
+                        "state-attention-dark": "#FF887D",
+                        "surface-variant": "#dee2ee",
+                        "surface-container": "#eaeefa",
+                        "surface-container-high": "#e4e8f4",
+                        "on-primary-fixed-variant": "#202dc5",
+                        "tertiary-fixed": "#ffdbcb",
+                        "tertiary-container": "#b04a00",
+                        "secondary-container": "#d4e1f3",
+                        "on-error-container": "#93000a",
+                        "primary-fixed": "#e0e0ff",
+                        "tertiary-fixed-dim": "#ffb692",
+                        "inverse-primary": "#bec2ff",
+                        "surface-dim": "#d6dae5",
+                        "primary-fixed-dim": "#bec2ff",
+                        "on-surface": "#171c24",
+                        "surface-dark": "#121925",
+                        "error-container": "#ffdad6",
+                        "surface-bright": "#f9f9ff",
+                        "secondary-fixed-dim": "#bbc8d9",
+                        "canvas-dark": "#090D14",
+                        "on-primary": "#ffffff",
+                        "canvas-light": "#F3F6F8",
+                        "inverse-on-surface": "#edf1fc",
+                        "outline-variant": "#c6c5d7",
+                        "on-error": "#ffffff",
+                        "primary": "#2e3bcf",
+                        "primary-container": "#4a57e8",
+                        "tertiary": "#893800",
+                        "surface-light": "#FFFFFF",
+                        "surface-tint": "#3e4bdd",
+                        "action-primary-dark": "#9BA5FF",
+                        "outline": "#767686",
+                        "on-tertiary-container": "#ffe4d9",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "on-tertiary-fixed": "#341100",
+                        "state-attention": "#C43C31",
+                        "on-surface-variant": "#454655",
+                        "on-tertiary": "#ffffff",
+                        "error": "#ba1a1a",
+                        "surface-container-low": "#f0f3ff",
+                        "surface": "#f9f9ff",
+                        "on-primary-fixed": "#000569"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "lg": "16px",
+                        "xl": "24px",
+                        "xxxl": "48px",
+                        "gutter-compact": "16px",
+                        "md": "12px",
+                        "xs": "4px",
+                        "gutter": "20px",
+                        "base": "4px",
+                        "xxl": "32px",
+                        "sm": "8px"
+                    },
+                    "fontFamily": {
+                        "body-base": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "data-utility": ["IBM Plex Mono"],
+                        "section-title": ["Spline Sans"],
+                        "decision-headline": ["Spline Sans"],
+                        "screen-title": ["Spline Sans"],
+                        "body-compact": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-base": ["17px", {"lineHeight": "25px", "fontWeight": "400"}],
+                        "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "data-utility": ["14px", {"lineHeight": "20px", "fontWeight": "500"}],
+                        "section-title": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                        "decision-headline": ["32px", {"lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "screen-title": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "body-compact": ["15px", {"lineHeight": "22px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .line-chart-container { height: 180px; position: relative; }
+        .hairline-border { border: 1px solid rgba(118, 118, 134, 0.2); }
+        .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+    </style>
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky bg-canvas-dark/90 backdrop-blur-xl z-50 pt-12 pb-4 px-gutter">
+<div class="flex justify-center items-center max-w-3xl mx-auto w-full">
+<div class="flex flex-col items-center">
+<div class="flex items-center gap-xs">
+<h1 class="font-screen-title text-screen-title text-surface-light uppercase">Progress</h1>
+<div class="w-2 h-2 rounded-full bg-state-stable-dark shadow-[0_0_8px_rgba(89,214,199,0.6)]"></div>
+</div>
+<span class="font-data-utility text-[10px] text-outline/70 uppercase tracking-widest mt-1">Your current plan, measured over time.</span>
+</div>
+</div>
+</header>
+<main class="px-gutter max-w-2xl mx-auto space-y-xxl pt-lg">
+<!-- Header Section -->
+<!-- Time Range Picker -->
+<section class="flex justify-center pb-4" style="opacity: 1; transform: translateY(0px); transition: opacity 0.5s ease-out, transform 0.5s ease-out;">
+<div class="inline-flex bg-surface-dark hairline-border p-1 rounded-lg">
+<button class="px-5 py-1.5 font-data-utility text-label-caps rounded text-outline hover:text-surface-light transition-colors">4W</button>
+<button class="px-5 py-1.5 font-data-utility text-label-caps rounded bg-primary text-on-primary shadow-sm">12W</button>
+<button class="px-5 py-1.5 font-data-utility text-label-caps rounded text-outline hover:text-surface-light transition-colors">6M</button>
+</div>
+</section>
+<!-- Primary Card: Current Trajectory -->
+<section class="bg-surface-dark hairline-border p-xl rounded-xl relative overflow-hidden" style="opacity: 1; transform: translateY(0px); transition: opacity 0.5s ease-out, transform 0.5s ease-out;">
+<!-- Trajectory Lens Background Effect -->
+<div class="absolute top-0 right-0 p-4 opacity-20">
+<svg fill="none" height="120" viewbox="0 0 100 100" width="120">
+<path d="M10 80 Q 40 75, 50 50 T 90 20" stroke="url(#gradient)" stroke-width="1.5"></path>
+<circle cx="50" cy="50" fill="#9BA5FF" r="3"></circle>
+<defs>
+<lineargradient gradientunits="userSpaceOnUse" id="gradient" x1="0" x2="100" y1="80" y2="20">
+<stop stop-color="#2e3bcf"></stop>
+<stop offset="1" stop-color="#9BA5FF"></stop>
+</lineargradient>
+</defs>
+</svg>
+</div>
+<div class="space-y-md">
+<header class="space-y-xs">
+<span class="font-label-caps text-action-primary-dark uppercase">Current trajectory</span>
+<h3 class="font-decision-headline text-screen-title text-surface-light leading-tight">Moving in the right direction</h3>
+<p class="font-body-compact text-outline max-w-[85%]">Weight trend is down while training performance remains stable.</p>
+</header>
+<!-- Data Grid -->
+<div class="grid grid-cols-2 gap-sm pt-md">
+<div class="space-y-1">
+<p class="font-label-caps text-outline uppercase">Current Weight</p>
+<div class="flex items-baseline gap-1">
+<span class="font-data-utility text-screen-title text-surface-light">78.4</span>
+<span class="font-data-utility text-body-compact text-outline">kg</span>
+</div>
+</div>
+<div class="space-y-1">
+<p class="font-label-caps text-outline uppercase">12W Change</p>
+<div class="flex items-baseline gap-1 text-state-stable-dark">
+<span class="font-data-utility text-screen-title">-3.2</span>
+<span class="font-data-utility text-body-compact">kg</span>
+</div>
+</div>
+<div class="space-y-1">
+<p class="font-label-caps text-outline uppercase">Duration</p>
+<p class="font-data-utility text-section-title text-surface-light">12 weeks</p>
+</div>
+<div class="space-y-1">
+<p class="font-label-caps text-outline uppercase">Status</p>
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-state-stable-dark"></span>
+<p class="font-data-utility text-section-title text-state-stable-dark">On track</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Weight Trend Chart -->
+<section class="space-y-md" style="opacity: 1; transform: translateY(0px); transition: opacity 0.5s ease-out, transform 0.5s ease-out;">
+<h4 class="font-section-title text-surface-light">Weight History</h4>
+<div class="bg-surface-dark hairline-border p-lg rounded-xl">
+<div class="line-chart-container flex items-end justify-between gap-1">
+<!-- Fake Chart Visualization -->
+<svg class="absolute inset-0 w-full h-full" preserveaspectratio="none">
+<path d="M 0 100 Q 50 110, 100 90 T 200 120 T 300 80 T 400 95 T 500 70 T 600 85" fill="none" stroke="rgba(155, 165, 255, 0.15)" stroke-width="1"></path>
+<path d="M 0 100 C 150 110, 450 80, 600 70" fill="none" stroke="#9BA5FF" stroke-width="2.5"></path>
+</svg>
+<!-- Grid Labels -->
+<div class="absolute left-0 top-0 h-full flex flex-col justify-between py-2 text-[10px] font-data-utility text-outline pointer-events-none">
+<span class="">82kg</span>
+<span class="">80kg</span>
+<span class="">78kg</span>
+</div>
+</div>
+<div class="flex justify-between mt-4 px-2 font-data-utility text-[10px] text-outline uppercase">
+<span class="">Oct 12</span>
+<span class="">Nov 15</span>
+<span class="">Dec 20</span>
+<span class="">Today</span>
+</div>
+</div>
+</section>
+<!-- Evidence Cards Grid -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-md" style="opacity: 1; transform: translateY(0px); transition: opacity 0.5s ease-out, transform 0.5s ease-out;">
+<!-- Training -->
+<div class="bg-surface-dark hairline-border p-lg rounded-xl space-y-md">
+<div class="flex items-center justify-between">
+<span class="material-symbols-outlined text-action-primary-dark">fitness_center</span>
+<span class="font-label-caps text-state-stable-dark text-[10px]">STABLE</span>
+</div>
+<div class="space-y-xs">
+<h5 class="font-section-title text-surface-light text-body-compact font-bold uppercase tracking-tight">Strength maintained</h5>
+<p class="font-body-compact text-outline text-[13px] leading-relaxed">Main lifts remained stable across the last 4 weeks.</p>
+</div>
+</div>
+<!-- Nutrition -->
+<div class="bg-surface-dark hairline-border p-lg rounded-xl space-y-md">
+<div class="flex items-center justify-between">
+<span class="material-symbols-outlined text-action-primary-dark">restaurant</span>
+<span class="font-label-caps text-state-stable-dark text-[10px]">82% TARGET</span>
+</div>
+<div class="space-y-xs">
+<h5 class="font-section-title text-surface-light text-body-compact font-bold uppercase tracking-tight">Adherence High</h5>
+<p class="font-body-compact text-outline text-[13px] leading-relaxed">Protein was confirmed on 6 of the last 7 days.</p>
+</div>
+</div>
+<!-- Recovery -->
+<div class="bg-surface-dark hairline-border p-lg rounded-xl space-y-md">
+<div class="flex items-center justify-between">
+<span class="material-symbols-outlined text-state-attention-dark">nights_stay</span>
+<span class="font-label-caps text-state-attention-dark text-[10px]">ACTION REQ</span>
+</div>
+<div class="space-y-xs">
+<h5 class="font-section-title text-surface-light text-body-compact font-bold uppercase tracking-tight">Generally stable</h5>
+<p class="font-body-compact text-outline text-[13px] leading-relaxed">Sleep data is missing for 2 nights. Log consistency needed.</p>
+</div>
+</div>
+</section>
+<!-- Weekly Review Card -->
+<section class="bg-surface-dark border border-action-primary-dark/30 p-xl rounded-xl space-y-lg" style="opacity: 1; transform: translateY(0px); transition: opacity 0.5s ease-out, transform 0.5s ease-out;">
+<p class="font-body-base text-surface-light italic opacity-90 border-l-2 border-primary-container pl-4">
+                "Your plan is working. No structural change is recommended this week."
+            </p>
+<div class="space-y-sm">
+<div class="flex justify-between items-center py-2 border-b border-on-secondary-fixed-variant">
+<span class="font-body-compact text-outline">Weight trend</span>
+<span class="font-data-utility text-state-stable-dark">-0.3 kg/week</span>
+</div>
+<div class="flex justify-between items-center py-2 border-b border-on-secondary-fixed-variant">
+<span class="font-body-compact text-outline">Workouts</span>
+<span class="font-data-utility text-surface-light">4 of 4</span>
+</div>
+<div class="flex justify-between items-center py-2">
+<span class="font-body-compact text-outline">Hunger</span>
+<span class="font-data-utility text-surface-light">Moderate</span>
+</div>
+</div>
+<button class="w-full h-[52px] bg-primary text-on-primary font-section-title rounded-lg flex items-center justify-center gap-2 hover:bg-primary-container active:scale-95 transition-all duration-150">
+                Open weekly review
+                <span class="material-symbols-outlined text-sm">chevron_right</span>
+</button>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface-dark border-t border-on-secondary-fixed-variant flex justify-around items-center h-16 px-4">
+<div class="flex flex-col items-center justify-center text-on-secondary-container dark:text-outline hover:text-primary transition-colors cursor-pointer">
+<span class="material-symbols-outlined">today</span>
+<span class="font-label-caps text-label-caps">Today</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-secondary-container dark:text-outline hover:text-primary transition-colors cursor-pointer">
+<span class="material-symbols-outlined">fitness_center</span>
+<span class="font-label-caps text-label-caps">Train</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-secondary-container dark:text-outline hover:text-primary transition-colors cursor-pointer">
+<span class="material-symbols-outlined">psychology</span>
+<span class="font-label-caps text-label-caps">Coach</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-secondary-container dark:text-outline hover:text-primary transition-colors cursor-pointer">
+<span class="material-symbols-outlined">nutrition</span>
+<span class="font-label-caps text-label-caps">Nutrition</span>
+</div>
+<div class="flex flex-col items-center justify-center text-primary dark:text-action-primary-dark font-bold active:scale-110 duration-160 ease-in-out cursor-pointer">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">query_stats</span>
+<span class="font-label-caps text-label-caps">Progress</span>
+</div>
+</nav>
+<script>
+        // Micro-interaction for range picker
+        const buttons = document.querySelectorAll('.inline-flex button');
+        buttons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                buttons.forEach(b => {
+                    b.classList.remove('bg-primary', 'text-on-primary', 'shadow-sm');
+                    b.classList.add('text-outline');
+                });
+                btn.classList.remove('text-outline');
+                btn.classList.add('bg-primary', 'text-on-primary', 'shadow-sm');
+            });
+        });
+
+        // Simple entrance animation for cards
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach((entry, index) => {
+                if (entry.isIntersecting) {
+                    setTimeout(() => {
+                        entry.target.style.opacity = '1';
+                        entry.target.style.transform = 'translateY(0)';
+                    }, index * 100);
+                }
+            });
+        }, { threshold: 0.1 });
+
+        document.querySelectorAll('section').forEach(section => {
+            section.style.opacity = '0';
+            section.style.transform = 'translateY(10px)';
+            section.style.transition = 'opacity 0.5s ease-out, transform 0.5s ease-out';
+            observer.observe(section);
+        });
+    </script>
+</body></html>

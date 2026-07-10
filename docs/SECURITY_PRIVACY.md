@@ -51,7 +51,7 @@ Consent choices are separate and versioned for:
 - private-beta terms and privacy notice;
 - HealthKit read/sync by requested data type;
 - meal-photo storage and AI analysis;
-- progress-photo storage and AI analysis;
+- progress-photo storage and progress-photo AI analysis as separate choices;
 - notifications; and
 - optional future research or product-improvement use, which is off by default and outside MVP.
 
@@ -101,20 +101,36 @@ Requirements:
 
 - Meal images are used only to propose foods/portions and are deleted after confirmation plus the documented short correction window, unless the user explicitly saves the image.
 - Progress images are retained while the account and relevant consent remain active or until the user deletes a set.
+- Progress-photo viewing uses owner-authorized signed URLs that expire after 60
+  seconds. Set deletion removes Storage bytes before relational metadata; a
+  failed byte deletion leaves the set visible for safe retry.
 - Progress photos are included only in user-requested comparison jobs, never routine text coaching.
 - Face recognition, identity matching, sensitive-trait inference, and unrelated reuse are prohibited.
 
 ## 6. AI Provider Processing
 
 - AI requests originate only from Supabase Edge Functions; provider keys and Supabase secret/service-role keys never enter Flutter.
+- Flutter never presents a provider-key entry field or transmits a provider
+  credential supplied by a user. The owner configures provider credentials in
+  environment-specific Supabase secret management.
 - Send the minimum feature snapshot or selected image required for the task.
 - Remove direct identifiers, email, tokens, storage keys, and unrelated history.
 - Maintain a provider inventory covering purpose, data types, regions, retention, training-use controls, subprocessors, security posture, and deletion capabilities.
 - Configure available no-training and retention controls before production use.
 - Do not opt restricted user data into provider model improvement.
 - Do not use a new provider until privacy review and the evaluation requirements in [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md) pass.
+- Do not send restricted Tracend data through unpaid Gemini API service.
+  Current unpaid-service terms permit product-improvement use and human review
+  and instruct developers not to submit sensitive or personal information.
+  Live Gemini requires paid-service terms, documented provider controls,
+  explicit server-side enablement, and passed evaluation gates.
 - Provider failure or policy change must degrade safely without changing the approved plan.
 - Provider-side persistent conversation state is disabled unless documented, consented, deletable, and required.
+- DeepSeek hosted service is not approved for restricted Tracend data. Its
+  current official policy says the service is not intended for sensitive health
+  data, instructs users not to provide it, describes model-improvement use, and
+  states that personal data may be stored in China. A prepaid balance does not
+  change this gate.
 
 ## 7. Authentication and Authorization
 
@@ -148,6 +164,10 @@ Requirements:
 - Storage paths and policies are user/purpose bound.
 - Edge Functions validate the JWT and requested resource even when using secret/service-role access.
 - Queue messages carry opaque resource IDs and workers reauthorize ownership and consent at execution.
+- Weekly-review messages contain only schema version and an opaque job ID. The
+  worker rechecks active-account eligibility, reads structured user evidence
+  inside PostgreSQL, and never places notes, health values, prompts, or model
+  inputs in the queue.
 - Caches include user scope and never serve restricted shared-cache responses.
 - Automated tests attempt anonymous, horizontal, vertical, RPC, Storage, and secret-key privilege escalation for every resource family.
 
@@ -166,6 +186,14 @@ Mobile analytics are minimized and disabled for sensitive-screen content. Crash 
 
 Audit events record access and changes using opaque IDs and action codes, not copies of sensitive content.
 
+Phase 8 local reminders are scheduled by iOS and use only the generic title
+`Tracend reminder` and body `Open Tracend when convenient.` Lock-screen content
+never names health, nutrition, workouts, photos, measurements, or coaching
+decisions. The server stores toggles and coarse permission state, not delivery
+history or notification content. iOS stores only the two local boolean choices
+and repairs missing pending requests after reopen; no notification payload or
+delivery history is added to local preference storage.
+
 ## 11. Retention
 
 Initial private-beta defaults:
@@ -183,8 +211,22 @@ Initial private-beta defaults:
 - Pro Plan database: Supabase daily backups with the plan's current seven-day availability, plus an independent pre-release logical export where permitted;
 - Storage objects: separate encrypted inventory/export procedure because database backups contain metadata but not Storage bytes; and
 - provider content: shortest available approved retention, documented per provider.
+- Coach threads/messages: retained until the owner deletes the thread, deletes
+  the account, or the private beta shuts down; provider-side conversation state
+  remains disabled.
 
 Retention jobs are idempotent, observable, and tested. Changing a default requires updating this document, user notice where applicable, and implementation tests.
+
+Owner-supplied historical context used for an administrative import remains in
+ignored, permission-restricted `.tooling/private-imports/` files on the external
+SSD. Raw reports and import payloads are never committed or copied into handoff,
+progress, audit, or application logs.
+
+Meal-photo requests use private Storage bytes only after explicit photo consent.
+The provider receives a minimized image and fixed instruction with no identity,
+object key, or unrelated history. Visible text in an image is untrusted input.
+Analysis candidates are unconfirmed restricted data and follow meal-media
+retention even when the provider or validation fails.
 
 ## 12. User Rights and Controls
 
@@ -198,8 +240,20 @@ Users can view active profile, goals, plans, targets, logs, measurements, photos
 - The package contains user-readable JSON/CSV and media organized by purpose, with units, provenance, and timestamps.
 - It is encrypted, delivered through a short-lived authorization, and deleted within seven days.
 - Export jobs and downloads are audited without logging content.
+- The owner supplies an export-only password of at least 12 characters after
+  reauthentication. PBKDF2-HMAC-SHA256 derives an AES-256-GCM key; neither the
+  password nor key is persisted or queued.
+- A package permits three downloads through 60-second signed authorization.
+  Daily retention deletes it after the limit or seven days and retries failures.
 
 ### Deletion
+
+- Fresh password authentication and the exact phrase `DELETE` are required.
+- Meal images, progress photos, and export packages are removed before the Auth
+  user. Auth deletion cascades through user-owned PostgreSQL records; a
+  content-free completion receipt remains for 180 days.
+- Destructive verification uses synthetic accounts only. Failure never reports
+  completion to the app.
 
 - Account deletion requires explicit confirmation and revokes active sessions promptly.
 - New processing stops while deletion is pending.

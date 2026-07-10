@@ -1,0 +1,15 @@
+{
+  "id": "73a25ec4ef4145fa8dc5083312b38749",
+  "name": "projects/2662655096321681608/screens/73a25ec4ef4145fa8dc5083312b38749",
+  "title": "Plan Proposal - Technical operating System",
+  "flow": "authentication-and-onboarding",
+  "group": "plan",
+  "width": "780",
+  "height": "2988",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "plan-proposal.html",
+    "screenshot": "plan-proposal.png"
+  },
+  "importedAt": "2026-06-29"
+}

@@ -45,7 +45,9 @@ Reconciles training, nutrition, recovery, goals, and safety into one final decis
 
 ### 4.1 Account and consent
 
-1. User signs in with Apple.
+1. User signs in with Apple for an external private beta. During owner-only
+   development, a documented email/password Supabase Auth mode may be used
+   until Apple Developer Program capabilities are available.
 2. User confirms they are 18 or older.
 3. User reads and accepts the private-beta terms and privacy notice.
 4. User separately chooses whether to connect HealthKit and whether to upload meal or progress photos.
@@ -149,10 +151,18 @@ Rejected proposals do not alter the plan. Accepted proposals create a new versio
 
 ### 5.1 Authentication and tenancy
 
-- Use native Sign in with Apple through Supabase Auth for the private beta.
+- Use native Sign in with Apple through Supabase Auth for an external private
+  beta. Owner-only development may use the email/password mode documented in
+  ADR 0002; it is not an authentication bypass and does not change the
+  canonical `auth.users.id` tenancy boundary.
 - Every user-owned record must be scoped by authenticated user ID.
 - Every exposed user-owned table and private Storage bucket must have tested RLS based on the Supabase authenticated user.
 - Data API, RPC, and Edge Functions must never trust a client-supplied user ID for authorization.
+- Account provides profile and goal review, connection status, notification and
+  privacy controls, sanitized user-scoped AI usage, export, deletion, and sign
+  out.
+- The mobile app never accepts, stores, or displays an AI-provider API key.
+  Provider credentials are owner-managed server secrets.
 - Account export and deletion must be available from Settings.
 
 ### 5.2 HealthKit
@@ -192,6 +202,33 @@ The MVP may provide local or push reminders for scheduled workouts, check-ins, m
 ### 5.6 Feedback and auditability
 
 Users can rate a decision as useful, unclear, incorrect, or unsafe and add a note. Model runs, feature snapshots, proposals, approvals, rejections, corrections, exports, and deletions produce audit events without storing secrets or unnecessary raw prompt content.
+
+### 5.7 Production daily experience
+
+- Today presents one deterministic **Do this next** action assembled from the
+  approved workout, active meal schedule, check-in, HealthKit freshness, and
+  latest validated decision. It never substitutes fixtures for missing data.
+- Train exposes the complete active weekly split, prescription detail, recent
+  completed sessions, adherence, and comparable-set progression.
+- Coach supports owner-scoped saved conversations for training, nutrition,
+  recovery, progress, evidence, and app-usage questions. Only the latest 20
+  messages plus minimized structured evidence are sent to the provider.
+- Nutrition presents the next scheduled meal before secondary macro totals.
+  Planned food, AI candidates, and confirmed consumption remain distinct.
+- Coach conversations persist until thread deletion or account deletion.
+  Conversation replies cannot activate plans, targets, meals, or durable facts.
+
+### 5.8 AI budgets and routing
+
+- Live coaching uses stable `gemini-3.5-flash` only after paid-service privacy
+  terms and the complete evaluation gate pass.
+- The monthly owner warning is USD 3, the server-side hard stop is USD 5, and
+  conversational coaching is limited to 30 requests per owner/day.
+- Meal verification uses `gemini-3.5-flash` with low thinking. Lite models are
+  not production routes; cost is controlled through bounded context, output,
+  request budgets, and task-specific thinking instead of a quality downgrade.
+- Progress-photo interpretation remains separately consented and separately
+  evaluated. Manual use and the approved plan survive every provider failure.
 
 ## 6. Evidence-Gated Change Policy
 

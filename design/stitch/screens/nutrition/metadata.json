@@ -1,0 +1,14 @@
+{
+  "id": "51290016bf064b21961e0b0d874572df",
+  "name": "projects/2662655096321681608/screens/51290016bf064b21961e0b0d874572df",
+  "title": "Nutrition - Final 5-Tab Navigation",
+  "tab": "nutrition",
+  "width": "780",
+  "height": "2952",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "nutrition.html",
+    "screenshot": "nutrition.png"
+  },
+  "importedAt": "2026-06-28"
+}

@@ -47,8 +47,11 @@ HealthKit stays on the device. Flutter reads authorized types, normalizes requir
 
 - Flutter targeting iOS first.
 - `supabase_flutter` handles Supabase Auth sessions and client access.
-- Native Sign in with Apple exchanges the Apple identity token and nonce with Supabase Auth.
-- `HealthDataSource` wraps the Flutter HealthKit integration.
+- Native Sign in with Apple exchanges the Apple identity token and nonce with
+  Supabase Auth for an external private beta. Owner-only development may use
+  Supabase email/password through the same client auth boundary.
+- `HealthDataSource` wraps the pinned `health` Flutter plugin. The adapter is
+  read-only for MVP and exposes only normalized internal sample types.
 - The approved plan and in-progress workout are cached locally for degraded/offline operation.
 - Feature widgets use [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md), Dynamic Type, VoiceOver, Reduced Motion, safe areas, and state restoration.
 - The client may contain the Supabase project URL and publishable key. It must never contain secret/service-role keys or AI-provider keys.
@@ -56,11 +59,28 @@ HealthKit stays on the device. Flutter reads authorized types, normalizes requir
 ### 3.2 Supabase Auth
 
 - Supabase Auth is the identity and session authority.
-- Sign in with Apple is the only MVP login provider.
+- Sign in with Apple is the external private-beta login provider. Until Apple
+  Developer Program capabilities are available, owner-only builds may enable
+  the email/password development mode from ADR 0002. Anonymous auth, hard-coded
+  users, and client-side authentication bypasses are prohibited.
 - The native Apple flow uses nonce validation and captures the name only when Apple supplies it on first authorization.
 - Supabase access/refresh sessions are stored through platform-protected client storage; Tracend does not implement a parallel token issuer.
+- Phase 8 reminders use iOS `UserNotifications` through a narrow Flutter method
+  channel. Scheduling remains on-device; PostgreSQL stores only owner-scoped
+  reminder booleans, the coarse iOS authorization state, and append-only
+  consent evidence through a validated RPC. Native `UserDefaults` retains the
+  device's requested toggles; pending notification requests are delivery state,
+  not the preference source, and are repaired from those toggles after reopen.
 - `auth.users.id` is the canonical `user_id` for application-owned records.
 - Recent authentication is required before export, account deletion, or sensitive session changes.
+- Phase 8 export reauthenticates the owner, queues only an opaque export ID,
+  builds user-readable JSON/CSV plus purpose-organized private media, encrypts
+  the ZIP with AES-256-GCM from a non-persisted password-derived key, and stores
+  it in private `account-exports`. Signed download authorization lasts 60
+  seconds and stops after three uses or seven days.
+- Account deletion uses a separate recent-authenticated opaque job. Private
+  Storage bytes are removed before canonical Auth deletion cascades through
+  application data; only a content-free completion receipt remains for 180 days.
 
 ### 3.3 PostgreSQL and Data API
 
@@ -101,20 +121,41 @@ Functions are short-lived, idempotent, schema-versioned, and designed for cold s
 - Queue payloads contain opaque resource IDs, not raw photos, prompts, tokens, or health records.
 - Workers reauthorize resource ownership and consent at execution time.
 - Supabase Cron (`pg_cron`) schedules weekly reviews, retention cleanup, stale-job recovery, and cost/quality monitoring.
+- The existing daily retention worker also removes expired export packages;
+  failed Storage deletion retains the object reference for retry.
 - Concurrency, retry count, visibility timeout, dead-letter/archive behavior, and idempotency are defined per job type.
+
+The Phase 7 weekly-review worker is database-native: daily Cron deduplicates one
+job per active user and local review week, `pgmq` carries only the job ID and
+schema version, and a five-minute Cron consumer rechecks account eligibility
+before building the deterministic snapshot and review. Failures use bounded
+delayed retries and become terminal after three attempts. This path does not
+invoke a model or create a proposal.
 
 ### 3.7 AI provider
 
 - Edge Functions call providers through a small `CoachModelProvider` TypeScript interface.
-- OpenAI is the initial evaluated implementation; provider/model identifiers are environment configuration.
+- Gemini is the planned sole live provider for owner dogfooding, subject to the
+  same privacy review and text/vision evaluation gates. Provider/model
+  identifiers remain environment configuration; the mock provider stays the
+  default until those gates pass.
+- A server-only Gemini structured-output adapter may exist while disabled. It
+  fails closed unless deployment explicitly attests that paid-service data
+  terms are active; adapter presence is not provider activation.
 - Calls use structured output, compact feature snapshots, request-level timeouts, and per-user rate/cost gates.
 - Provider output never directly writes canonical user state. Validation and approval remain in deterministic code and PostgreSQL transactions.
+
+Production routing uses stable `gemini-3.5-flash` with task-level thinking:
+medium for normal Coach reasoning, high only for evaluated difficult review
+cases, and low for bounded meal-image extraction. Lite models are not valid
+production routes. The deterministic mock remains the rollback provider.
 
 ## 4. Supabase Boundary Rules
 
 | Operation | Allowed boundary |
 |---|---|
 | Read own profile/logs/approved plan | Data API with RLS |
+| Read own sanitized AI usage summary | User-scoped RPC or Edge Function aggregated from `model_runs` |
 | Draft check-in or in-progress workout | Data API/RPC with RLS, idempotency, and constraints |
 | HealthKit sync | Edge Function |
 | Activate or change plan/targets | Edge Function + transactional RPC |
@@ -173,7 +214,9 @@ The model receives prepared features and evidence identifiers, not unrestricted 
 
 ### Supabase Auth
 
-- Native Sign in with Apple through Supabase Auth.
+- Native Sign in with Apple through Supabase Auth for external beta builds, or
+  the explicitly configured owner-development email/password mode from ADR
+  0002.
 - Session refresh, sign-out, and supported device-session revocation.
 
 ### Versioned Edge Functions
@@ -186,12 +229,30 @@ workout-complete
 meal-analyze
 meal-confirm
 coach-decide
+coach-chat
+meal-analyze
 proposal-respond
 progress-analyze
 weekly-review
 privacy-export
 privacy-delete-account
 ```
+
+`get_my_training_hub(period)`, `get_my_nutrition_schedule(date)`, and
+`get_my_daily_brief(date)` are authenticated read-model RPCs. They derive
+identity from `auth.uid()`, use only active approved versions and confirmed
+execution, and return bounded structured data for the iPhone client.
+
+Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS.
+`coach-chat` loads at most 20 recent messages and compact deterministic context,
+invokes a no-tools structured-output provider, validates the complete answer
+and evidence, and persists both messages atomically. The daily Head Coach
+decision remains a separate immutable record pinned above conversation.
+
+Meal-image analysis uploads to private purpose-bound Storage, creates an
+unconfirmed draft, and invokes `meal-analyze`. Candidate food and portion data
+remain estimates until transactional confirmation snapshots the user's
+corrections into confirmed meal items.
 
 Function request/response schemas are versioned, shared where practical, and validated at runtime. Function names are stable contracts; breaking changes require a new schema/version and migration path.
 
@@ -210,6 +271,11 @@ RPC is used for narrow atomic operations such as activation of an approved plan 
 5. A transaction upserts daily summaries and records the sync run.
 6. Feature snapshots consume only successfully normalized records.
 
+The first successful owner-device sync reads a bounded 31-day window so recent
+project history can be restored; later syncs read seven days. Only normalized
+daily summaries cross the device boundary, and the server contract rejects a
+window longer than 31 days.
+
 An empty response never proves permission denial.
 
 ### Meal analysis
@@ -225,6 +291,12 @@ An empty response never proves permission denial.
 ### Progress photos
 
 Progress photos use separate consent, bucket, prefix, RLS policy, queue, retention, and signed-read path. Raw images never enter routine coaching prompts.
+
+The Phase 7 foundation hosts measurement and private-media metadata before any
+vision provider is enabled. Flutter may show capture guidance while transfer is
+unavailable, but real capture requires the private bucket policies plus an
+authorized upload/read/delete path. Deterministic progress summaries remain
+available when Storage, Queue, Cron, or AI is unavailable.
 
 ## 8. Environments and Deployment
 
@@ -257,6 +329,11 @@ Track without sensitive content:
 - decision/proposal/approval rates and feedback;
 - Queue/Cron lifecycle; and
 - retention, export, deletion, and security events.
+
+The Account usage view reads a sanitized, authenticated per-user aggregation.
+It does not expose provider credentials, prompts, provider request IDs, raw
+errors, or cross-user totals. Provider secrets are configured only through
+environment-specific Supabase secret management.
 
 When using Pro, enable the Supabase Spend Cap before inviting testers. Free requires quota monitoring and manual database/Storage backups instead. AI providers require project-level budgets, per-user quotas, anomaly alerts, and a server-side kill switch. See [COST_MODEL.md](./COST_MODEL.md).
 

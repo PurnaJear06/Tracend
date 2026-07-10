@@ -1,0 +1,15 @@
+{
+  "id": "1c8ecb21465242b8bbbd3f5f3b98a54f",
+  "name": "projects/2662655096321681608/screens/1c8ecb21465242b8bbbd3f5f3b98a54f",
+  "title": "Welcome - Network Error",
+  "flow": "authentication-and-onboarding",
+  "group": "authentication",
+  "width": "780",
+  "height": "1768",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "welcome-network-error.html",
+    "screenshot": "welcome-network-error.png"
+  },
+  "importedAt": "2026-06-29"
+}

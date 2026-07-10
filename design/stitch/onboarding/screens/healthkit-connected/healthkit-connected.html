@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Tracend - HealthKit Connected</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "background": "#f9f9ff",
+                      "surface-tint": "#3e4bdd",
+                      "inverse-surface": "#2c3139",
+                      "outline": "#767686",
+                      "state-attention-dark": "#FF887D",
+                      "tertiary": "#893800",
+                      "surface-dark": "#121925",
+                      "on-error-container": "#93000a",
+                      "inverse-primary": "#bec2ff",
+                      "on-tertiary": "#ffffff",
+                      "tertiary-fixed": "#ffdbcb",
+                      "state-stable": "#00796B",
+                      "on-secondary-fixed-variant": "#3c4856",
+                      "canvas-light": "#F3F6F8",
+                      "canvas-dark": "#090D14",
+                      "surface-light": "#FFFFFF",
+                      "state-attention": "#C43C31",
+                      "surface-variant": "#dee2ee",
+                      "surface-container-high": "#e4e8f4",
+                      "state-stable-dark": "#59D6C7",
+                      "on-tertiary-container": "#ffe4d9",
+                      "on-secondary-container": "#586473",
+                      "surface-container": "#eaeefa",
+                      "on-secondary": "#ffffff",
+                      "on-primary-container": "#e8e7ff",
+                      "on-background": "#171c24",
+                      "surface-container-lowest": "#ffffff",
+                      "inverse-on-surface": "#edf1fc",
+                      "secondary": "#535f6e",
+                      "action-primary-dark": "#9BA5FF",
+                      "on-secondary-fixed": "#101c29",
+                      "secondary-container": "#d4e1f3",
+                      "surface-dim": "#d6dae5",
+                      "tertiary-container": "#b04a00",
+                      "on-primary-fixed": "#000569",
+                      "outline-variant": "#c6c5d7",
+                      "primary-fixed": "#e0e0ff",
+                      "on-primary-fixed-variant": "#202dc5",
+                      "secondary-fixed-dim": "#bbc8d9",
+                      "primary-container": "#4a57e8",
+                      "error-container": "#ffdad6",
+                      "surface": "#f9f9ff",
+                      "on-surface-variant": "#454655",
+                      "surface-container-highest": "#dee2ee",
+                      "on-primary": "#ffffff",
+                      "surface-bright": "#f9f9ff",
+                      "on-tertiary-fixed-variant": "#793100",
+                      "on-tertiary-fixed": "#341100",
+                      "error": "#ba1a1a",
+                      "secondary-fixed": "#d7e4f5",
+                      "surface-container-low": "#f0f3ff",
+                      "tertiary-fixed-dim": "#ffb692",
+                      "on-error": "#ffffff",
+                      "primary-fixed-dim": "#bec2ff",
+                      "primary": "#2e3bcf",
+                      "on-surface": "#171c24"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "xl": "24px",
+                      "md": "12px",
+                      "xs": "4px",
+                      "base": "4px",
+                      "xxl": "32px",
+                      "lg": "16px",
+                      "gutter-compact": "16px",
+                      "gutter": "20px",
+                      "xxxl": "48px",
+                      "sm": "8px"
+              },
+              "fontFamily": {
+                      "section-title": [
+                              "Spline Sans"
+                      ],
+                      "decision-headline": [
+                              "Spline Sans"
+                      ],
+                      "screen-title": [
+                              "Spline Sans"
+                      ],
+                      "data-utility": [
+                              "IBM Plex Mono"
+                      ],
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "body-compact": [
+                              "Inter"
+                      ],
+                      "body-base": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "section-title": [
+                              "18px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "decision-headline": [
+                              "32px",
+                              {
+                                      "lineHeight": "36px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "screen-title": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "data-utility": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "label-caps": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-compact": [
+                              "15px",
+                              {
+                                      "lineHeight": "22px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-base": [
+                              "17px",
+                              {
+                                      "lineHeight": "25px",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+            }
+          }
+        }
+      </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-canvas-dark text-on-surface dark:text-inverse-on-surface antialiased min-h-screen flex flex-col items-center">
+<!-- Top Navigation (Onboarding - Task Focused, Shell suppressed, Canvas priority) -->
+<header class="w-full max-w-md mx-auto pt-safe pb-4 px-gutter flex items-center justify-between z-10 sticky top-0 bg-canvas-dark/90 backdrop-blur-md">
+<button class="p-2 -ml-2 text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">arrow_back</span>
+</button>
+<div class="flex items-center gap-2">
+<div class="h-1.5 w-1.5 rounded-full bg-outline-variant"></div>
+<div class="h-1.5 w-1.5 rounded-full bg-outline-variant"></div>
+<div class="h-1.5 w-6 rounded-full bg-primary"></div>
+<div class="h-1.5 w-1.5 rounded-full bg-outline-variant"></div>
+<div class="h-1.5 w-1.5 rounded-full bg-outline-variant"></div>
+<div class="h-1.5 w-1.5 rounded-full bg-outline-variant"></div>
+<div class="h-1.5 w-1.5 rounded-full bg-outline-variant"></div>
+<div class="h-1.5 w-1.5 rounded-full bg-outline-variant"></div>
+</div>
+<button class="p-2 -mr-2 opacity-0 pointer-events-none">
+<span class="material-symbols-outlined">close</span>
+</button>
+</header>
+<main class="flex-1 w-full max-w-md mx-auto px-gutter pb-xxxl flex flex-col justify-between">
+<div class="flex flex-col gap-xl">
+<!-- Header Section -->
+<section class="flex flex-col gap-sm pt-md">
+<h1 class="font-decision-headline text-decision-headline text-on-surface dark:text-inverse-on-surface">Use your health data</h1>
+<p class="font-body-base text-body-base text-on-surface-variant dark:text-secondary-fixed-dim">HealthKit is connected and syncing recovery signals.</p>
+</section>
+<!-- Sync Status Card (Surface Dark Level 1) -->
+<section class="bg-surface-dark rounded-xl border border-outline-variant/10 flex flex-col overflow-hidden">
+<div class="p-lg border-b border-outline-variant/10 flex items-center justify-between">
+<div class="flex items-center gap-md">
+<div class="w-10 h-10 rounded-full bg-surface-container-high/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-state-stable-dark" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</div>
+<div class="flex flex-col">
+<span class="font-section-title text-section-title text-on-surface dark:text-inverse-on-surface">Apple Health</span>
+<span class="font-label-caps text-label-caps text-state-stable-dark tracking-widest uppercase">Connected</span>
+</div>
+</div>
+</div>
+<!-- Telemetry Data List -->
+<div class="flex flex-col py-sm">
+<!-- Sleep -->
+<div class="px-lg py-sm flex items-center justify-between hover:bg-surface-variant/5 transition-colors">
+<span class="font-body-compact text-body-compact text-on-surface-variant dark:text-secondary-fixed-dim">Sleep</span>
+<div class="flex items-center gap-xs">
+<span class="font-data-utility text-data-utility text-state-stable-dark">Stable sync</span>
+<span class="material-symbols-outlined text-state-stable-dark text-[18px]">check_circle</span>
+</div>
+</div>
+<!-- Workouts -->
+<div class="px-lg py-sm flex items-center justify-between hover:bg-surface-variant/5 transition-colors">
+<span class="font-body-compact text-body-compact text-on-surface-variant dark:text-secondary-fixed-dim">Workouts</span>
+<div class="flex items-center gap-xs">
+<span class="font-data-utility text-data-utility text-state-stable-dark">Stable sync</span>
+<span class="material-symbols-outlined text-state-stable-dark text-[18px]">check_circle</span>
+</div>
+</div>
+<!-- Steps -->
+<div class="px-lg py-sm flex items-center justify-between hover:bg-surface-variant/5 transition-colors">
+<span class="font-body-compact text-body-compact text-on-surface-variant dark:text-secondary-fixed-dim">Steps</span>
+<div class="flex items-center gap-xs">
+<span class="font-data-utility text-data-utility text-state-stable-dark">Stable sync</span>
+<span class="material-symbols-outlined text-state-stable-dark text-[18px]">check_circle</span>
+</div>
+</div>
+<!-- Weight -->
+<div class="px-lg py-sm flex items-center justify-between hover:bg-surface-variant/5 transition-colors">
+<span class="font-body-compact text-body-compact text-on-surface-variant dark:text-secondary-fixed-dim">Weight</span>
+<div class="flex items-center gap-xs">
+<span class="font-data-utility text-data-utility text-state-stable-dark">Stable sync</span>
+<span class="material-symbols-outlined text-state-stable-dark text-[18px]">check_circle</span>
+</div>
+</div>
+<!-- Resting HR -->
+<div class="px-lg py-sm flex items-center justify-between hover:bg-surface-variant/5 transition-colors">
+<span class="font-body-compact text-body-compact text-on-surface-variant dark:text-secondary-fixed-dim">Resting HR</span>
+<div class="flex items-center gap-xs">
+<span class="font-data-utility text-data-utility text-state-stable-dark">Stable sync</span>
+<span class="material-symbols-outlined text-state-stable-dark text-[18px]">check_circle</span>
+</div>
+</div>
+<!-- HRV -->
+<div class="px-lg py-sm flex items-center justify-between hover:bg-surface-variant/5 transition-colors">
+<span class="font-body-compact text-body-compact text-on-surface-variant dark:text-secondary-fixed-dim">HRV</span>
+<div class="flex items-center gap-xs">
+<span class="font-data-utility text-data-utility text-state-stable-dark">Stable sync</span>
+<span class="material-symbols-outlined text-state-stable-dark text-[18px]">check_circle</span>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Sticky Bottom Action Area -->
+<div class="pt-xl pb-safe sticky bottom-0 bg-gradient-to-t from-canvas-dark via-canvas-dark to-transparent">
+<button class="w-full h-[52px] bg-action-primary-dark hover:bg-primary-fixed-dim text-on-primary-fixed font-body-base text-body-base font-semibold rounded-lg flex items-center justify-center transition-all duration-150 active:scale-95">
+                Continue
+            </button>
+</div>
+</main>
+</body></html>

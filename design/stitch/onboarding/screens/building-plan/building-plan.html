@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+<title>Tracend - Building your plan</title>
+<!-- Fonts: Spline Sans, Inter, IBM Plex Mono -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=Inter:wght@400;500;600&amp;family=Spline+Sans:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-primary-container": "#e8e7ff",
+                    "action-primary-dark": "#9BA5FF",
+                    "surface-light": "#FFFFFF",
+                    "secondary-fixed-dim": "#bbc8d9",
+                    "on-secondary-fixed": "#101c29",
+                    "tertiary-fixed-dim": "#ffb692",
+                    "on-surface": "#171c24",
+                    "surface-container-lowest": "#ffffff",
+                    "canvas-dark": "#090D14",
+                    "on-surface-variant": "#454655",
+                    "surface-container-low": "#f0f3ff",
+                    "on-error-container": "#93000a",
+                    "on-background": "#171c24",
+                    "tertiary": "#893800",
+                    "on-error": "#ffffff",
+                    "surface-variant": "#dee2ee",
+                    "state-stable-dark": "#59D6C7",
+                    "primary-fixed-dim": "#bec2ff",
+                    "on-secondary-container": "#586473",
+                    "on-primary": "#ffffff",
+                    "primary-fixed": "#e0e0ff",
+                    "state-attention": "#C43C31",
+                    "surface-tint": "#3e4bdd",
+                    "outline": "#767686",
+                    "on-tertiary-fixed-variant": "#793100",
+                    "error-container": "#ffdad6",
+                    "on-primary-fixed-variant": "#202dc5",
+                    "on-secondary-fixed-variant": "#3c4856",
+                    "primary-container": "#4a57e8",
+                    "inverse-surface": "#2c3139",
+                    "surface-container-highest": "#dee2ee",
+                    "on-tertiary-fixed": "#341100",
+                    "inverse-on-surface": "#edf1fc",
+                    "on-tertiary-container": "#ffe4d9",
+                    "inverse-primary": "#bec2ff",
+                    "on-tertiary": "#ffffff",
+                    "background": "#f9f9ff",
+                    "secondary": "#535f6e",
+                    "tertiary-container": "#b04a00",
+                    "surface-container-high": "#e4e8f4",
+                    "surface-bright": "#f9f9ff",
+                    "surface": "#f9f9ff",
+                    "error": "#ba1a1a",
+                    "on-primary-fixed": "#000569",
+                    "state-stable": "#00796B",
+                    "outline-variant": "#c6c5d7",
+                    "surface-dark": "#121925",
+                    "secondary-fixed": "#d7e4f5",
+                    "surface-dim": "#d6dae5",
+                    "secondary-container": "#d4e1f3",
+                    "tertiary-fixed": "#ffdbcb",
+                    "primary": "#2e3bcf",
+                    "state-attention-dark": "#FF887D",
+                    "surface-container": "#eaeefa",
+                    "on-secondary": "#ffffff",
+                    "canvas-light": "#F3F6F8"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "gutter-compact": "16px",
+                    "md": "12px",
+                    "xxl": "32px",
+                    "xs": "4px",
+                    "xl": "24px",
+                    "gutter": "20px",
+                    "base": "4px",
+                    "xxxl": "48px",
+                    "sm": "8px",
+                    "lg": "16px",
+                    "safe": "env(safe-area-inset-bottom)"
+            },
+            "fontFamily": {
+                    "label-caps": ["Inter", "sans-serif"],
+                    "data-utility": ["IBM Plex Mono", "monospace"],
+                    "screen-title": ["Spline Sans", "sans-serif"],
+                    "body-base": ["Inter", "sans-serif"],
+                    "section-title": ["Spline Sans", "sans-serif"],
+                    "decision-headline": ["Spline Sans", "sans-serif"],
+                    "body-compact": ["Inter", "sans-serif"]
+            },
+            "fontSize": {
+                    "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                    "data-utility": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                    "screen-title": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                    "body-base": ["17px", { "lineHeight": "25px", "fontWeight": "400" }],
+                    "section-title": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                    "decision-headline": ["32px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                    "body-compact": ["15px", { "lineHeight": "22px", "fontWeight": "400" }]
+            },
+            "animation": {
+                "slow-pulse": "slow-pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+            },
+            "keyframes": {
+                "slow-pulse": {
+                    "0%, 100%": { opacity: 1, transform: 'scale(1)' },
+                    "50%": { opacity: 0.3, transform: 'scale(1.5)' },
+                }
+            }
+          },
+        }
+      }
+    </script>
+<style>
+        /* Kinetic Precision specific styling */
+        .telemetry-grid {
+            background-image: 
+                linear-gradient(to right, rgba(118, 118, 134, 0.1) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(118, 118, 134, 0.1) 1px, transparent 1px);
+            background-size: 8px 8px;
+            background-position: center top;
+        }
+        
+        /* Thin 1px connection line for the steps */
+        .step-connector {
+            position: absolute;
+            left: 11px;
+            top: 24px;
+            bottom: 24px;
+            width: 1px;
+            background-color: #c6c5d7; /* outline-variant */
+            z-index: 0;
+        }
+
+        /* Material Icon default style */
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface antialiased h-screen w-screen flex flex-col font-body-base overflow-hidden">
+<!-- TopAppBar (from JSON) -->
+<header class="w-full top-0 sticky bg-background flex items-center justify-between px-gutter w-full h-16 border-b border-outline-variant flat no-shadows z-50">
+<!-- Leading Action -->
+<button class="w-11 h-11 flex items-center justify-start text-primary scale-95 active:scale-90 transition-transform duration-150 hover:opacity-80">
+<span class="material-symbols-outlined">close</span>
+</button>
+<!-- Headline -->
+<h1 class="font-screen-title text-screen-title font-bold text-on-surface">Step 8 of 8</h1>
+<!-- Trailing Action -->
+<button class="h-11 flex items-center justify-end text-primary scale-95 active:scale-90 transition-transform duration-150 hover:opacity-80 font-label-caps text-label-caps">
+            Help
+        </button>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col px-gutter pt-xxxl pb-safe overflow-y-auto relative w-full max-w-md mx-auto">
+<!-- Background Grid overlay for instrument feel -->
+<div class="absolute inset-0 telemetry-grid pointer-events-none opacity-50 z-0"></div>
+<!-- Decision Headline -->
+<div class="mb-xxl relative z-10">
+<h2 class="font-decision-headline text-decision-headline text-on-surface tracking-tight">Building your plan</h2>
+<p class="font-data-utility text-data-utility text-on-surface-variant mt-sm">Processing telemetry data.</p>
+</div>
+<!-- Technical Asynchronous State List -->
+<div class="relative z-10 flex-1 flex flex-col">
+<!-- Container for steps -->
+<div class="relative py-sm">
+<!-- Vertical Line -->
+<div class="step-connector"></div>
+<!-- Step 1: Completed -->
+<div class="flex items-start gap-md mb-xl relative z-10">
+<div class="w-6 h-6 rounded-full bg-background border border-state-stable flex items-center justify-center shrink-0 mt-[-2px]">
+<span class="material-symbols-outlined text-[14px] text-state-stable font-bold">check</span>
+</div>
+<div class="flex flex-col">
+<span class="font-data-utility text-data-utility text-on-surface">Reviewing your constraints</span>
+<span class="font-label-caps text-label-caps text-state-stable mt-xs">COMPLETED</span>
+</div>
+</div>
+<!-- Step 2: Active (Pulsing) -->
+<div class="flex items-start gap-md mb-xl relative z-10">
+<div class="w-6 h-6 bg-background flex items-center justify-center shrink-0 relative mt-[-2px]">
+<!-- Pulsing ring -->
+<div class="absolute inset-[-4px] rounded-full border border-primary animate-slow-pulse"></div>
+<!-- Solid inner dot -->
+<div class="w-2.5 h-2.5 bg-primary rounded-full"></div>
+</div>
+<div class="flex flex-col">
+<span class="font-data-utility text-data-utility text-primary">Structuring training</span>
+<span class="font-label-caps text-label-caps text-primary mt-xs animate-pulse">PROCESSING</span>
+</div>
+</div>
+<!-- Step 3: Pending -->
+<div class="flex items-start gap-md mb-xl relative z-10 opacity-50">
+<div class="w-6 h-6 bg-background rounded-full border border-outline-variant flex items-center justify-center shrink-0 mt-[-2px]">
+<div class="w-1.5 h-1.5 bg-outline-variant rounded-full"></div>
+</div>
+<div class="flex flex-col">
+<span class="font-data-utility text-data-utility text-on-surface-variant">Setting nutrition targets</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant mt-xs">PENDING</span>
+</div>
+</div>
+<!-- Step 4: Pending -->
+<div class="flex items-start gap-md relative z-10 opacity-50">
+<div class="w-6 h-6 bg-background rounded-full border border-outline-variant flex items-center justify-center shrink-0 mt-[-2px]">
+<div class="w-1.5 h-1.5 bg-outline-variant rounded-full"></div>
+</div>
+<div class="flex flex-col">
+<span class="font-data-utility text-data-utility text-on-surface-variant">Checking safety and assumptions</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant mt-xs">PENDING</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Primary Action / Footer Area -->
+<div class="mt-auto pt-xxxl pb-xl relative z-10 w-full flex flex-col items-center">
+<!-- Secondary/Outlined Button styling per Kinetic Precision (1px hairline) -->
+<button class="w-full h-[52px] border border-outline rounded-lg flex items-center justify-center font-label-caps text-label-caps text-primary hover:bg-surface-variant active:scale-[0.98] transition-all duration-150">
+                Leave and notify me
+            </button>
+<div class="mt-lg font-data-utility text-[10px] text-on-surface-variant opacity-60 tracking-widest uppercase">
+                TRACEND.ENGINE.V2.4
+            </div>
+</div>
+</main>
+<!-- Suppressed BottomNavBar based on semantic shell mandate (Transitional/Processing screen) -->
+</body></html>

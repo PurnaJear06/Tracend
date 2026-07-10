@@ -26,8 +26,13 @@ At the start of every task, read the relevant authoritative documents in this or
 10. [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md)
 11. [docs/IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md)
 12. [docs/COST_MODEL.md](docs/COST_MODEL.md)
+13. [docs/PROGRESS_CONTEXT.md](docs/PROGRESS_CONTEXT.md) for current
+    cross-chat handoff state only, then the relevant `docs/handoff/*.md`
+    file for the active workstream
 
 For product scope, PRD is authoritative. For technical boundaries, Architecture is authoritative. For persistent entities, Data Model is authoritative. For AI behavior and change eligibility, AI and Safety is authoritative. For collection, storage, sharing, retention, and deletion, Security and Privacy is authoritative. UX Flows owns routes and interaction states. Design System owns visual, component, motion, and accessibility behavior. Root `DESIGN.md` is a portable Stitch handoff derived from those authorities and never overrides them. Testing Strategy defines quality gates, Implementation Roadmap defines delivery order, and Cost Model defines budget assumptions without changing scope.
+`PROGRESS_CONTEXT.md` and `docs/handoff/*.md` are not authoritative; they are
+compact operational pointer files for coordinating multiple LLM chats.
 
 If documents conflict, stop implementation and report the exact conflict. Do not choose silently.
 
@@ -153,7 +158,12 @@ Safety-critical AI fixtures require a 100% pass rate. Do not weaken tests to mak
 
 ## 11. Commands
 
-No implementation commands exist yet. When project scaffolding is explicitly authorized, add the exact supported install, lint, test, build, migration, and local-development commands here in the same change. Never invent commands not backed by repository configuration.
+Phase 1 implementation is authorized. Exact supported local install, lint,
+test, migration, and development commands are maintained in
+[`DEVELOPMENT_GUIDE.md`](DEVELOPMENT_GUIDE.md). Project tooling and caches must
+remain under the repository's `.tooling/` directory on the external SSD.
+
+Never invent commands not backed by repository configuration.
 
 Before reporting implementation complete, run all commands relevant to the changed areas and report failures accurately.
 
@@ -171,9 +181,41 @@ Update authoritative documentation in the same change when behavior changes:
 - quality gates or test coverage → `docs/TESTING_STRATEGY.md`;
 - delivery sequencing → `docs/IMPLEMENTATION_ROADMAP.md`;
 - platform/AI budget assumptions or upgrade triggers → `docs/COST_MODEL.md`;
+- cross-chat dashboard, active pointers, and global current state → `docs/PROGRESS_CONTEXT.md`;
+- scoped current state, blockers, and next safe actions → relevant `docs/handoff/*.md`;
+- detailed dated implementation history → relevant `docs/worklog/YYYY-MM-DD-topic.md`;
+- expensive-to-reverse decisions and consequences → `docs/adr/NNNN-topic.md`;
 - durable repository workflow → `AGENTS.md`.
 
 Do not duplicate conflicting rules across files. Cross-link to the authority and keep shared terminology exact.
+
+## 12.1 Progress and Handoff Discipline
+
+Every agent must leave the repository easier for the next backend, frontend,
+design, or review chat to continue.
+
+Use the context layers this way:
+
+- Keep `docs/PROGRESS_CONTEXT.md` under 120 lines. It is a dashboard and pointer
+  index, not a history file.
+- Keep `docs/handoff/backend.md`, `docs/handoff/frontend.md`, and
+  `docs/handoff/design.md` focused on current state, blockers, and next safe
+  actions for that workstream.
+- Put detailed dated notes in `docs/worklog/` only when the history is useful
+  for debugging or review.
+- Put durable decisions in `docs/adr/` only when the choice is expensive to
+  reverse.
+- Never paste chat transcripts, raw logs, command spam, credentials, secrets,
+  private health data, prompts, or generated design dumps into progress files.
+
+At the end of material work, update in this order:
+
+1. authoritative docs if product, architecture, data, safety, privacy, UX,
+   design-system, testing, roadmap, or cost behavior changed;
+2. ADR if a durable decision was made;
+3. relevant handoff file;
+4. `docs/PROGRESS_CONTEXT.md`;
+5. worklog only if detailed history is needed.
 
 ## 13. Working Style
 

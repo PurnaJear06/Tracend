@@ -1,0 +1,15 @@
+{
+  "id": "8faa12bbd1d3415fa6cea4d8fb556570",
+  "name": "projects/2662655096321681608/screens/8faa12bbd1d3415fa6cea4d8fb556570",
+  "title": "Onboarding - Review Summary",
+  "flow": "authentication-and-onboarding",
+  "group": "onboarding",
+  "width": "780",
+  "height": "2626",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "review-summary.html",
+    "screenshot": "review-summary.png"
+  },
+  "importedAt": "2026-06-29"
+}

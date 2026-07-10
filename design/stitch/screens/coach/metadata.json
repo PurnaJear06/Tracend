@@ -1,0 +1,14 @@
+{
+  "id": "6bd674809ebb49a78cbd70921e6d77cc",
+  "name": "projects/2662655096321681608/screens/6bd674809ebb49a78cbd70921e6d77cc",
+  "title": "Coach Room - Focused Architectural Baseline",
+  "tab": "coach",
+  "width": "886",
+  "height": "2336",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "coach.html",
+    "screenshot": "coach.png"
+  },
+  "importedAt": "2026-06-28"
+}

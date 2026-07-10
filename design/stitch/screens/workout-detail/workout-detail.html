@@ -1,0 +1,535 @@
+<!DOCTYPE html><html lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Daily Workout Detail - Tracend</title>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;500;600&amp;family=IBM+Plex+Mono:wght@300;400;500&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+                  "surface-container-lowest": "#ffffff",
+                  "surface-container": "#eaeefa",
+                  "on-secondary": "#ffffff",
+                  "on-primary-fixed": "#000569",
+                  "secondary-fixed-dim": "#bbc8d9",
+                  "on-primary-container": "#e8e7ff",
+                  "inverse-surface": "#2c3139",
+                  "inverse-primary": "#bec2ff",
+                  "surface-dim": "#d6dae5",
+                  "surface-container-low": "#f0f3ff",
+                  "secondary-container": "#d4e1f3",
+                  "background": "#f9f9ff",
+                  "tertiary-container": "#b04a00",
+                  "on-error": "#ffffff",
+                  "canvas-light": "#F3F6F8",
+                  "action-primary-dark": "#9BA5FF",
+                  "state-attention-dark": "#FF887D",
+                  "tertiary-fixed": "#ffdbcb",
+                  "state-stable-dark": "#59D6C7",
+                  "surface-bright": "#f9f9ff",
+                  "primary-fixed-dim": "#bec2ff",
+                  "secondary-fixed": "#d7e4f5",
+                  "outline": "#767686",
+                  "outline-variant": "#c6c5d7",
+                  "canvas-dark": "#090D14",
+                  "state-stable": "#00796B",
+                  "surface-variant": "#dee2ee",
+                  "on-tertiary-fixed-variant": "#793100",
+                  "error": "#ba1a1a",
+                  "secondary": "#535f6e",
+                  "inverse-on-surface": "#edf1fc",
+                  "on-surface-variant": "#454655",
+                  "on-secondary-fixed": "#101c29",
+                  "surface-container-highest": "#dee2ee",
+                  "surface-dark": "#121925",
+                  "on-primary": "#ffffff",
+                  "on-tertiary-fixed": "#341100",
+                  "on-primary-fixed-variant": "#202dc5",
+                  "on-background": "#171c24",
+                  "on-error-container": "#93000a",
+                  "on-tertiary-container": "#ffe4d9",
+                  "primary": "#2e3bcf",
+                  "on-tertiary": "#ffffff",
+                  "primary-container": "#4a57e8",
+                  "on-secondary-container": "#586473",
+                  "surface-container-high": "#e4e8f4",
+                  "on-secondary-fixed-variant": "#3c4856",
+                  "state-attention": "#C43C31",
+                  "on-surface": "#171c24",
+                  "error-container": "#ffdad6",
+                  "surface-light": "#FFFFFF",
+                  "surface-tint": "#3e4bdd",
+                  "primary-fixed": "#e0e0ff",
+                  "tertiary-fixed-dim": "#ffb692",
+                  "tertiary": "#893800",
+                  "surface": "#f9f9ff"
+          },
+          "borderRadius": {
+                  "DEFAULT": "0.25rem",
+                  "lg": "0.5rem",
+                  "xl": "0.75rem",
+                  "full": "9999px",
+                  "2xl": "1rem",
+                  "3xl": "1.5rem"
+          },
+          "spacing": {
+                  "xxl": "32px",
+                  "sm": "8px",
+                  "xxxl": "48px",
+                  "lg": "16px",
+                  "xs": "4px",
+                  "md": "12px",
+                  "gutter": "20px",
+                  "base": "4px",
+                  "xl": "24px",
+                  "gutter-compact": "16px"
+          },
+          "fontFamily": {
+                  "decision-headline": [
+                          "Spline Sans"
+                  ],
+                  "label-caps": [
+                          "Inter"
+                  ],
+                  "data-utility": [
+                          "IBM Plex Mono"
+                  ],
+                  "body-compact": [
+                          "Inter"
+                  ],
+                  "body-base": [
+                          "Inter"
+                  ],
+                  "section-title": [
+                          "Spline Sans"
+                  ],
+                  "screen-title": [
+                          "Spline Sans"
+                  ]
+          },
+          "fontSize": {
+                  "decision-headline": [
+                          "42px",
+                          {
+                                  "lineHeight": "1.05",
+                                  "letterSpacing": "-0.03em",
+                                  "fontWeight": "600"
+                          }
+                  ],
+                  "label-caps": [
+                          "12px",
+                          {
+                                  "lineHeight": "16px",
+                                  "letterSpacing": "0.08em",
+                                  "fontWeight": "500"
+                          }
+                  ],
+                  "data-utility": [
+                          "13px",
+                          {
+                                  "lineHeight": "18px",
+                                  "fontWeight": "400"
+                          }
+                  ],
+                  "body-compact": [
+                          "14px",
+                          {
+                                  "lineHeight": "20px",
+                                  "fontWeight": "300"
+                          }
+                  ],
+                  "body-base": [
+                          "16px",
+                          {
+                                  "lineHeight": "24px",
+                                  "fontWeight": "300"
+                          }
+                  ],
+                  "section-title": [
+                          "18px",
+                          {
+                                  "lineHeight": "24px",
+                                  "fontWeight": "600"
+                          }
+                  ],
+                  "screen-title": [
+                          "20px",
+                          {
+                                  "lineHeight": "28px",
+                                  "fontWeight": "500"
+                          }
+                  ]
+          }
+  },
+      },
+    }
+  </script>
+<style>
+    body {
+      background-color: #090D14; /* Dark mode override */
+      color: #ffffff;
+      -webkit-font-smoothing: antialiased;
+      min-height: max(884px, 100dvh);
+      opacity: 0;
+      animation: fadeIn 0.4s ease-out forwards;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .hairline-border {
+        border: 1px solid rgba(255,255,255,0.08);
+    }
+    .hairline-border-b {
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .hairline-border-t {
+        border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .glass-panel {
+        background: rgba(18, 25, 37, 0.4);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 0.5px solid rgba(255, 255, 255, 0.08);
+    }
+    .premium-gradient {
+        background: linear-gradient(180deg, rgba(18, 25, 37, 0.8) 0%, rgba(9, 13, 20, 0.9) 100%);
+    }
+    .active-scale {
+        transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .active-scale:active {
+        transform: scale(0.95);
+    }
+    .pb-safe { padding-bottom: env(safe-area-inset-bottom, 32px); }
+    
+    /* Technical bar visualization */
+    .tech-bar-container {
+        width: 60px;
+        height: 4px;
+        background-color: rgba(255,255,255,0.05);
+        border-radius: 2px;
+        overflow: hidden;
+        position: relative;
+    }
+    .tech-bar-fill {
+        height: 100%;
+        background-color: #9BA5FF;
+        border-radius: 2px;
+        box-shadow: 0 0 8px rgba(155, 165, 255, 0.3);
+    }
+    /* Monochromatic variants for intensity */
+    .tech-bar-fill.intensity-low { background-color: #4A5568; box-shadow: none; }
+    .tech-bar-fill.intensity-med { background-color: #718096; box-shadow: none; }
+    .tech-bar-fill.intensity-high { background-color: #9BA5FF; box-shadow: 0 0 8px rgba(155, 165, 255, 0.4); }
+
+  </style>
+</head>
+<body class="bg-canvas-dark text-on-background pb-[100px] selection:bg-action-primary-dark/30 selection:text-action-primary-dark">
+<!-- iOS Status Bar Placeholder -->
+<div class="h-12 w-full flex justify-between items-center px-6 text-[15px] font-semibold z-50 sticky top-0 bg-[#090D14]/80 backdrop-blur-xl text-white">
+<span class="">9:41</span>
+<div class="flex gap-2 items-center">
+<span class="material-symbols-outlined text-[18px] font-light">signal_cellular_4_bar</span>
+<span class="material-symbols-outlined text-[18px] font-light">wifi</span>
+<span class="material-symbols-outlined text-[18px] font-light">battery_full</span>
+</div>
+</div>
+<!-- TopAppBar -->
+<header class="bg-transparent sticky full-width top-12 z-40 flex justify-between items-center px-gutter w-full h-16 transition-transform duration-150">
+<button aria-label="Back" class="active-scale w-[44px] h-[44px] flex items-center justify-center rounded-full glass-panel text-white">
+<span aria-hidden="true" class="material-symbols-outlined text-2xl font-light">arrow_back</span>
+</button>
+<div class="flex flex-col items-center justify-center absolute left-1/2 -translate-x-1/2">
+<span class="font-data-utility text-[11px] uppercase tracking-widest text-gray-500 font-medium flex items-center gap-1.5">Today <span class="w-1 h-1 rounded-full bg-action-primary-dark"></span> On plan</span>
+</div>
+<div class="w-[44px] h-[44px]"></div>
+</header>
+<main class="w-full flex flex-col pt-2 max-w-[600px] mx-auto px-gutter pb-xxxl space-y-xl">
+<!-- Title & Overview Section -->
+<section class="space-y-6">
+<div class="text-center flex flex-col items-center">
+<h2 class="font-decision-headline text-[38px] text-white tracking-tight mb-2">Push Day</h2>
+<p class="font-data-utility text-[13px] text-gray-400 font-light flex items-center gap-2">
+            Wed, 16 Jul <span class="text-gray-600">|</span> Hypertrophy Foundation
+        </p>
+</div>
+<div class="glass-panel rounded-2xl p-4 flex justify-between items-center hairline-border">
+<div class="flex flex-col items-center flex-1 border-r border-white/5">
+<span class="font-data-utility text-[18px] text-white mb-1">6</span>
+<span class="font-label-caps text-[10px] text-gray-500 tracking-wider">EXERCISES</span>
+</div>
+<div class="flex flex-col items-center flex-1 border-r border-white/5">
+<span class="font-data-utility text-[18px] text-white mb-1">17</span>
+<span class="font-label-caps text-[10px] text-gray-500 tracking-wider">SETS</span>
+</div>
+<div class="flex flex-col items-center flex-1">
+<span class="font-data-utility text-[18px] text-white mb-1">~55</span>
+<span class="font-label-caps text-[10px] text-gray-500 tracking-wider">MINUTES</span>
+</div>
+</div>
+<!-- Coach Reasoning Card -->
+<div class="glass-panel rounded-2xl p-5 hairline-border border-l-2 border-l-action-primary-dark">
+<div class="flex items-start gap-4">
+<span aria-hidden="true" class="material-symbols-outlined text-action-primary-dark flex-shrink-0 font-light mt-0.5">insights</span>
+<div>
+<p class="font-label-caps text-label-caps text-gray-500 tracking-[0.2em] uppercase mb-1">ADAPTATION</p>
+<p class="font-body-compact text-[14px] text-gray-300 font-light leading-relaxed mb-3">Recovery is steady. Planned volume remains unchanged for optimal hypertrophy stimulus.</p>
+<button class="font-data-utility text-[12px] text-action-primary-dark hover:text-white transition-colors flex items-center gap-1 uppercase tracking-wider">
+                        View evidence <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Continuous Prescription -->
+<section class="mt-8">
+<div class="flex items-center justify-between mb-4">
+<h3 class="font-label-caps text-label-caps text-gray-500 tracking-[0.2em] uppercase">PRESCRIPTION</h3>
+<button class="font-data-utility text-[12px] text-gray-400 hover:text-white flex items-center gap-1" onclick="document.getElementById('warmup-content').classList.toggle('hidden'); document.getElementById('warmup-icon').classList.toggle('rotate-180')">
+        Warm-up <span class="material-symbols-outlined text-[16px] transition-transform duration-200" id="warmup-icon">expand_more</span>
+</button>
+</div>
+<div class="hidden mb-6 pl-4 border-l border-white/10 space-y-3" id="warmup-content">
+<div class="flex items-center gap-3">
+<p class="font-data-utility text-[13px] text-gray-400">5:00</p>
+<p class="font-body-compact text-[14px] text-gray-300">General warm-up</p>
+</div>
+<div class="flex items-center gap-3">
+<p class="font-data-utility text-[13px] text-gray-400">---</p>
+<p class="font-body-compact text-[14px] text-gray-300">Shoulder activation</p>
+</div>
+<div class="flex items-center gap-3">
+<p class="font-data-utility text-[13px] text-gray-400">2 Sets</p>
+<p class="font-body-compact text-[14px] text-gray-300">Bench press ramp-up</p>
+</div>
+</div>
+<div class="hairline-border-t">
+<!-- Exercise 1 -->
+<div class="py-5 hairline-border-b hover:bg-white/5 transition-colors active:bg-white/10 group cursor-pointer">
+<div class="flex flex-col gap-3">
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="font-data-utility text-[14px] text-gray-500 mt-0.5">01</span>
+<p class="font-section-title text-[16px] text-white font-medium group-hover:text-action-primary-dark transition-colors">Barbell Bench Press</p>
+</div>
+<span class="font-data-utility text-[11px] text-action-primary-dark uppercase tracking-wider bg-action-primary-dark/10 px-2 py-1 rounded">2 RIR</span>
+</div>
+<div class="flex flex-wrap items-center gap-x-6 gap-y-3 pl-8">
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">SETS X REPS</span>
+<span class="font-data-utility text-[14px] text-gray-200 tracking-wide">4 × 8</span>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">TARGET LOAD</span>
+<div class="flex items-center gap-2 group/bar active-scale cursor-pointer">
+<span class="font-data-utility text-[14px] text-white tracking-wide">70<span class="text-gray-500 text-[11px] ml-0.5">kg</span></span>
+<div class="tech-bar-container ml-1"><div class="tech-bar-fill intensity-high" style="width: 85%"></div></div>
+</div>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">REST</span>
+<span class="font-data-utility text-[14px] text-gray-400 tracking-wide">2:00</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Exercise 2 -->
+<div class="py-5 hairline-border-b hover:bg-white/5 transition-colors active:bg-white/10 group cursor-pointer">
+<div class="flex flex-col gap-3">
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="font-data-utility text-[14px] text-gray-500 mt-0.5">02</span>
+<p class="font-section-title text-[16px] text-white font-medium group-hover:text-action-primary-dark transition-colors">Incline Dumbbell Press</p>
+</div>
+</div>
+<div class="flex flex-wrap items-center gap-x-6 gap-y-3 pl-8">
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">SETS X REPS</span>
+<span class="font-data-utility text-[14px] text-gray-200 tracking-wide">3 × 10</span>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">TARGET LOAD</span>
+<div class="flex items-center gap-2 group/bar active-scale cursor-pointer">
+<span class="font-data-utility text-[14px] text-white tracking-wide">24<span class="text-gray-500 text-[11px] ml-0.5">kg</span></span>
+<div class="tech-bar-container ml-1"><div class="tech-bar-fill intensity-med" style="width: 45%"></div></div>
+</div>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">REST</span>
+<span class="font-data-utility text-[14px] text-gray-400 tracking-wide">1:30</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Exercise 3 -->
+<div class="py-5 hairline-border-b hover:bg-white/5 transition-colors active:bg-white/10 group cursor-pointer">
+<div class="flex flex-col gap-3">
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="font-data-utility text-[14px] text-gray-500 mt-0.5">03</span>
+<p class="font-section-title text-[16px] text-white font-medium group-hover:text-action-primary-dark transition-colors">Seated Shoulder Press</p>
+</div>
+</div>
+<div class="flex flex-wrap items-center gap-x-6 gap-y-3 pl-8">
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">SETS X REPS</span>
+<span class="font-data-utility text-[14px] text-gray-200 tracking-wide">3 × 8</span>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">TARGET LOAD</span>
+<div class="flex items-center gap-2 group/bar active-scale cursor-pointer">
+<span class="font-data-utility text-[14px] text-white tracking-wide">35<span class="text-gray-500 text-[11px] ml-0.5">kg</span></span>
+<div class="tech-bar-container ml-1"><div class="tech-bar-fill intensity-med" style="width: 55%"></div></div>
+</div>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">REST</span>
+<span class="font-data-utility text-[14px] text-gray-400 tracking-wide">1:30</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Exercise 4 -->
+<div class="py-5 hairline-border-b hover:bg-white/5 transition-colors active:bg-white/10 group cursor-pointer">
+<div class="flex flex-col gap-3">
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="font-data-utility text-[14px] text-gray-500 mt-0.5">04</span>
+<p class="font-section-title text-[16px] text-white font-medium group-hover:text-action-primary-dark transition-colors">Cable Lateral Raise</p>
+</div>
+</div>
+<div class="flex flex-wrap items-center gap-x-6 gap-y-3 pl-8">
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">SETS X REPS</span>
+<span class="font-data-utility text-[14px] text-gray-200 tracking-wide">3 × 15</span>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">TARGET LOAD</span>
+<div class="flex items-center gap-2 group/bar active-scale cursor-pointer">
+<span class="font-data-utility text-[14px] text-white tracking-wide">8<span class="text-gray-500 text-[11px] ml-0.5">kg</span></span>
+<div class="tech-bar-container ml-1"><div class="tech-bar-fill intensity-low" style="width: 20%"></div></div>
+</div>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">REST</span>
+<span class="font-data-utility text-[14px] text-gray-400 tracking-wide">1:00</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Exercise 5 -->
+<div class="py-5 hairline-border-b hover:bg-white/5 transition-colors active:bg-white/10 group cursor-pointer">
+<div class="flex flex-col gap-3">
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="font-data-utility text-[14px] text-gray-500 mt-0.5">05</span>
+<p class="font-section-title text-[16px] text-white font-medium group-hover:text-action-primary-dark transition-colors">Cable Fly</p>
+</div>
+</div>
+<div class="flex flex-wrap items-center gap-x-6 gap-y-3 pl-8">
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">SETS X REPS</span>
+<span class="font-data-utility text-[14px] text-gray-200 tracking-wide">2 × 12</span>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">TARGET LOAD</span>
+<div class="flex items-center gap-2 group/bar active-scale cursor-pointer">
+<span class="font-data-utility text-[14px] text-white tracking-wide">18<span class="text-gray-500 text-[11px] ml-0.5">kg</span></span>
+<div class="tech-bar-container ml-1"><div class="tech-bar-fill intensity-low" style="width: 35%"></div></div>
+</div>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">REST</span>
+<span class="font-data-utility text-[14px] text-gray-400 tracking-wide">1:00</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Exercise 6 -->
+<div class="py-5 hover:bg-white/5 transition-colors active:bg-white/10 group cursor-pointer">
+<div class="flex flex-col gap-3">
+<div class="flex justify-between items-start">
+<div class="flex gap-3">
+<span class="font-data-utility text-[14px] text-gray-500 mt-0.5">06</span>
+<p class="font-section-title text-[16px] text-white font-medium group-hover:text-action-primary-dark transition-colors">Rope Triceps Pushdown</p>
+</div>
+</div>
+<div class="flex flex-wrap items-center gap-x-6 gap-y-3 pl-8">
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">SETS X REPS</span>
+<span class="font-data-utility text-[14px] text-gray-200 tracking-wide">2 × 12</span>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">TARGET LOAD</span>
+<div class="flex items-center gap-2 group/bar active-scale cursor-pointer">
+<span class="font-data-utility text-[14px] text-white tracking-wide">25<span class="text-gray-500 text-[11px] ml-0.5">kg</span></span>
+<div class="tech-bar-container ml-1"><div class="tech-bar-fill intensity-med" style="width: 45%"></div></div>
+</div>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-[9px] text-gray-500 tracking-wider">REST</span>
+<span class="font-data-utility text-[14px] text-gray-400 tracking-wide">1:00</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Sticky Action Area -->
+<div class="fixed bottom-0 left-0 w-full z-50 px-gutter pt-4 pb-safe bg-[#090D14]/90 backdrop-blur-xl hairline-border-t">
+<div class="max-w-[600px] mx-auto flex gap-3">
+<button class="active-scale flex-1 min-h-[56px] bg-action-primary-dark text-canvas-dark rounded-xl font-section-title text-[16px] font-semibold flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(155,165,255,0.2)]" onclick="document.getElementById('workout-mode-sheet').classList.remove('hidden')">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+            START WORKOUT
+        </button>
+<button class="active-scale w-[56px] h-[56px] bg-white/5 hairline-border text-white rounded-xl flex items-center justify-center hover:bg-white/10 transition-colors">
+<span class="material-symbols-outlined font-light">more_horiz</span>
+</button>
+</div>
+</div>
+<!-- Workout Mode Bottom Sheet -->
+<div class="fixed inset-0 z-[100] hidden" id="workout-mode-sheet">
+<!-- Backdrop -->
+<div class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onclick="document.getElementById('workout-mode-sheet').classList.add('hidden')"></div>
+<!-- Sheet Content -->
+<div class="absolute bottom-0 left-0 right-0 bg-[#0c1017] rounded-t-3xl border-t border-white/10 p-6 pb-safe transform transition-transform shadow-2xl max-h-[90vh] overflow-y-auto">
+<div class="w-12 h-1 bg-gray-700 rounded-full mx-auto mb-8"></div>
+<h3 class="font-screen-title text-[24px] text-white mb-6">Execution Mode</h3>
+<div class="space-y-4 mb-8">
+<!-- Option 1: Selected -->
+<button class="w-full text-left bg-action-primary-dark/5 border border-action-primary-dark/30 rounded-xl p-5 flex items-start gap-4 active-scale">
+<span class="material-symbols-outlined text-action-primary-dark text-[24px] mt-0.5" style="font-variation-settings: 'FILL' 1;">radio_button_checked</span>
+<div>
+<p class="font-section-title text-[16px] text-white flex items-center gap-2">
+                        Focus Mode
+                        <span class="text-[9px] bg-action-primary-dark text-canvas-dark px-1.5 py-0.5 rounded font-label-caps tracking-widest uppercase">Default</span>
+</p>
+<p class="font-body-compact text-[13px] text-gray-400 mt-2 font-light">Keep the plan available, record session time and log results afterward.</p>
+</div>
+</button>
+<!-- Option 2 -->
+<button class="w-full text-left bg-transparent border border-white/10 rounded-xl p-5 flex items-start gap-4 active-scale hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined text-gray-600 text-[24px] mt-0.5">radio_button_unchecked</span>
+<div>
+<p class="font-section-title text-[16px] text-white">Live Tracking</p>
+<p class="font-body-compact text-[13px] text-gray-400 mt-2 font-light">Record load, reps and RPE after every set.</p>
+</div>
+</button>
+</div>
+<div class="flex gap-4">
+<button class="flex-1 min-h-[52px] bg-transparent hairline-border text-white rounded-xl font-body-base font-medium flex items-center justify-center hover:bg-white/5 transition-colors" onclick="document.getElementById('workout-mode-sheet').classList.add('hidden')">
+                Cancel
+            </button>
+<button class="flex-1 min-h-[52px] bg-action-primary-dark text-canvas-dark rounded-xl font-section-title text-[15px] font-semibold flex items-center justify-center" onclick="document.getElementById('workout-mode-sheet').classList.add('hidden')">
+                CONTINUE
+            </button>
+</div>
+</div>
+</div>
+</body></html>

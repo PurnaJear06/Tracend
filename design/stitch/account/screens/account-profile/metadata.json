@@ -1,0 +1,15 @@
+{
+  "id": "ea3e2aced4ad474c8f042688218a8812",
+  "name": "projects/2662655096321681608/screens/ea3e2aced4ad474c8f042688218a8812",
+  "title": "Account & Profile - Kinetic Precision",
+  "flow": "account",
+  "group": "profile",
+  "width": "780",
+  "height": "2328",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "account-profile.html",
+    "screenshot": "account-profile.png"
+  },
+  "importedAt": "2026-06-29"
+}

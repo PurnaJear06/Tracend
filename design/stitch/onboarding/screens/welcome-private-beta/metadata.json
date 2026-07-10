@@ -1,0 +1,15 @@
+{
+  "id": "d270f26914c9402d9e19dd69fa0c9060",
+  "name": "projects/2662655096321681608/screens/d270f26914c9402d9e19dd69fa0c9060",
+  "title": "Welcome - Tracend Private Beta",
+  "flow": "authentication-and-onboarding",
+  "group": "authentication",
+  "width": "780",
+  "height": "1768",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "welcome-private-beta.html",
+    "screenshot": "welcome-private-beta.png"
+  },
+  "importedAt": "2026-06-29"
+}

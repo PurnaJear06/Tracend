@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>TRACEND - Network Error</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&amp;family=Inter:wght@400;600&amp;family=Spline+Sans:wght@600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-dark": "#121925",
+                        "on-tertiary-fixed": "#341100",
+                        "on-secondary-container": "#586473",
+                        "surface-container-high": "#e4e8f4",
+                        "on-error": "#ffffff",
+                        "primary-fixed-dim": "#bec2ff",
+                        "surface-variant": "#dee2ee",
+                        "primary-fixed": "#e0e0ff",
+                        "on-primary-fixed-variant": "#202dc5",
+                        "on-primary-container": "#e8e7ff",
+                        "action-primary-dark": "#9BA5FF",
+                        "on-secondary-fixed-variant": "#3c4856",
+                        "secondary-fixed": "#d7e4f5",
+                        "primary": "#2e3bcf",
+                        "surface-light": "#FFFFFF",
+                        "on-surface-variant": "#454655",
+                        "surface-container-low": "#f0f3ff",
+                        "primary-container": "#4a57e8",
+                        "outline": "#767686",
+                        "on-background": "#171c24",
+                        "surface-container": "#eaeefa",
+                        "tertiary-fixed": "#ffdbcb",
+                        "on-tertiary-fixed-variant": "#793100",
+                        "error": "#ba1a1a",
+                        "secondary-container": "#d4e1f3",
+                        "state-stable-dark": "#59D6C7",
+                        "inverse-primary": "#bec2ff",
+                        "state-attention-dark": "#FF887D",
+                        "on-error-container": "#93000a",
+                        "on-surface": "#171c24",
+                        "inverse-surface": "#2c3139",
+                        "secondary-fixed-dim": "#bbc8d9",
+                        "tertiary-container": "#b04a00",
+                        "on-secondary": "#ffffff",
+                        "on-tertiary-container": "#ffe4d9",
+                        "surface-dim": "#d6dae5",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed": "#000569",
+                        "tertiary-fixed-dim": "#ffb692",
+                        "secondary": "#535f6e",
+                        "surface-container-lowest": "#ffffff",
+                        "state-attention": "#C43C31",
+                        "error-container": "#ffdad6",
+                        "tertiary": "#893800",
+                        "surface-tint": "#3e4bdd",
+                        "surface": "#f9f9ff",
+                        "inverse-on-surface": "#edf1fc",
+                        "on-primary": "#ffffff",
+                        "state-stable": "#00796B",
+                        "background": "#f9f9ff",
+                        "outline-variant": "#c6c5d7",
+                        "surface-container-highest": "#dee2ee",
+                        "canvas-light": "#F3F6F8",
+                        "surface-bright": "#f9f9ff",
+                        "canvas-dark": "#090D14",
+                        "on-secondary-fixed": "#101c29"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "base": "4px",
+                        "gutter-compact": "16px",
+                        "gutter": "20px",
+                        "md": "12px",
+                        "lg": "16px",
+                        "xxl": "32px",
+                        "xl": "24px",
+                        "xs": "4px",
+                        "sm": "8px",
+                        "xxxl": "48px"
+                    },
+                    "fontFamily": {
+                        "body-compact": ["Inter"],
+                        "screen-title": ["Spline Sans"],
+                        "section-title": ["Spline Sans"],
+                        "body-base": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "decision-headline": ["Spline Sans"],
+                        "data-utility": ["IBM Plex Mono"]
+                    },
+                    "fontSize": {
+                        "body-compact": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+                        "screen-title": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "section-title": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "body-base": ["17px", { "lineHeight": "25px", "fontWeight": "400" }],
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "decision-headline": ["32px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "data-utility": ["14px", { "lineHeight": "20px", "fontWeight": "500" }]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .border-subtle {
+            border: 1px solid var(--tw-colors-outline-variant);
+        }
+        .glass-blur {
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface h-screen w-full flex flex-col overflow-hidden">
+<!-- TopAppBar from JSON -->
+<header class="w-full top-0 bg-background dark:bg-surface-dark flex items-center justify-between px-gutter h-16 shrink-0 z-50">
+<button aria-label="Close" class="hover:opacity-80 transition-opacity scale-95 active:scale-90 transition-transform duration-150 text-outline dark:text-outline-variant p-2 -ml-2">
+<span class="material-symbols-outlined">close</span>
+</button>
+<div class="font-screen-title text-screen-title tracking-tight text-on-surface dark:text-on-surface">
+            TRACEND
+        </div>
+<!-- Empty div for flex spacing balance -->
+<div class="w-10"></div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-y-auto px-gutter pb-xxxl flex flex-col justify-center items-center">
+<div class="w-full max-w-md mx-auto space-y-xl">
+<!-- Trajectory/Branding Element -->
+<div class="flex justify-center mb-xxl opacity-50">
+<svg fill="none" height="48" viewbox="0 0 48 48" width="48" xmlns="http://www.w3.org/2000/svg">
+<path d="M12 36L24 24L36 36" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
+<path d="M24 24L36 12" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
+<circle cx="12" cy="36" fill="currentColor" r="3"></circle>
+<circle cx="24" cy="24" fill="currentColor" r="3"></circle>
+<path d="M38 10L36 12L34 10" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
+</svg>
+</div>
+<!-- Decision Surface / Attention Card -->
+<div class="bg-surface-light rounded-lg border-subtle overflow-hidden relative">
+<!-- Attention Accent Line -->
+<div class="absolute top-0 left-0 w-full h-[2px] bg-[#FF887D]"></div>
+<div class="p-xl space-y-lg text-center mt-sm">
+<div class="w-12 h-12 mx-auto rounded-full bg-error-container text-error flex items-center justify-center mb-md">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">wifi_off</span>
+</div>
+<h1 class="font-decision-headline text-decision-headline text-on-surface">
+                        Connection interrupted
+                    </h1>
+<p class="font-body-base text-body-base text-on-surface-variant max-w-[280px] mx-auto">
+                        Review your network environment to continue.
+                    </p>
+<!-- Technical Readout -->
+<div class="bg-surface-container-low border border-outline-variant rounded p-md flex items-center justify-between mt-lg">
+<span class="font-label-caps text-label-caps text-outline uppercase">Error Code</span>
+<span class="font-data-utility text-data-utility text-on-surface">ERR_TIMEOUT_09</span>
+</div>
+</div>
+<!-- Actions -->
+<div class="px-xl pb-xl space-y-md flex flex-col mt-sm">
+<button class="w-full h-[52px] bg-primary text-on-primary rounded font-body-base text-body-base flex items-center justify-center hover:opacity-90 active:scale-95 transition-all duration-160">
+                        Retry Connection
+                    </button>
+<button class="w-full h-[52px] bg-transparent text-primary rounded font-body-base text-body-base flex items-center justify-center hover:bg-surface-container-low active:scale-95 transition-all duration-160">
+                        Contact Support
+                    </button>
+</div>
+</div>
+</div>
+</main>
+</body></html>

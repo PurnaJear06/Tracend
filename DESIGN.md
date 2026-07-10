@@ -83,9 +83,9 @@ Derive `borderSubtle`, `surfaceRaised`, `actionOnPrimary`, `stateDanger`, `focus
 
 | Role | Typeface | Treatment |
 |---|---|---|
-| Brand and decision display | Spline Sans | 600–700, short lines only |
+| Brand and decision display | San Francisco / iOS system | 600–700, short lines only |
 | Interface and body | San Francisco / iOS system | Dynamic Type, regular and semibold |
-| Data and utility | IBM Plex Mono | 500, tabular figures |
+| Data and utility | San Francisco / iOS system | 500, tabular figures |
 
 - Decision headline: 28–32pt, compact leading, maximum three lines.
 - Screen title: 24–28pt.
@@ -94,7 +94,7 @@ Derive `borderSubtle`, `surfaceRaised`, `actionOnPrimary`, `stateDanger`, `focus
 - Label and metadata: 13–15pt; never below 12pt.
 - Loads, reps, timers, macros, and changing data use tabular figures.
 - Wrap before truncating and support all accessibility text sizes.
-- Bundle licensed fonts locally; never use a production font CDN.
+- Use the iOS system font; never use a production font CDN.
 
 ## Layout and Shape
 
@@ -110,14 +110,15 @@ Hierarchy comes from spacing, type, contrast, and subtle borders. Use only canva
 
 ## Navigation
 
-Use a native-feeling iOS tab bar with four labeled destinations:
+Use a native-feeling iOS tab bar with five labeled destinations:
 
 1. **Today** — decision, check-in, schedule, pending proposal
 2. **Train** — active plan, workout execution, history
-3. **Nutrition** — targets, confirmed meals, meal capture
-4. **Progress** — measurements, reviews, trends, progress photos
+3. **Coach** — direct questions, evidence explanation, and proposal review entry points
+4. **Nutrition** — targets, confirmed meals, meal capture
+5. **Progress** — measurements, reviews, trends, progress photos
 
-Account and settings open from Today. Coaching is an explanation layer, not a fifth chat tab. Preserve native back behavior, swipe-back, selected-tab state, scroll position, drafts, and deep-link restoration.
+Account and settings open from Today. Coach is a real center tab, but it is one unified Tracend Coach workflow, not separate agent personas or autonomous chatbots. Preserve native back behavior, swipe-back, selected-tab state, scroll position, drafts, and deep-link restoration.
 
 ## Core Components
 
@@ -175,7 +176,7 @@ Single job: make the next coaching action obvious and trustworthy.
 │ Training perspective             ›  │
 │ Nutrition perspective            ›  │
 │                                     │
-│ Today   Train   Nutrition  Progress │
+│ Today  Train  Coach Nutrition Progress │
 └─────────────────────────────────────┘
 ```
 

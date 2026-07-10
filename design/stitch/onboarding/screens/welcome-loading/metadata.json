@@ -1,0 +1,15 @@
+{
+  "id": "70a3eac7203645ee8b27f9eafba63a7f",
+  "name": "projects/2662655096321681608/screens/70a3eac7203645ee8b27f9eafba63a7f",
+  "title": "Welcome - Loading State",
+  "flow": "authentication-and-onboarding",
+  "group": "authentication",
+  "width": "780",
+  "height": "1768",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "welcome-loading.html",
+    "screenshot": "welcome-loading.png"
+  },
+  "importedAt": "2026-06-29"
+}

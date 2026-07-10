@@ -1,0 +1,15 @@
+{
+  "id": "b84e6802bb104b4f8d7b4e4568c29c5e",
+  "name": "projects/2662655096321681608/screens/b84e6802bb104b4f8d7b4e4568c29c5e",
+  "title": "Ineligible State - Technical Refinement",
+  "flow": "authentication-and-onboarding",
+  "group": "eligibility",
+  "width": "780",
+  "height": "1768",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "ineligible.html",
+    "screenshot": "ineligible.png"
+  },
+  "importedAt": "2026-06-29"
+}

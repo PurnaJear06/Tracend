@@ -1,0 +1,170 @@
+{
+  "project": {
+    "title": "Tracend Design System",
+    "id": "2662655096321681608",
+    "importedAt": "2026-06-29"
+  },
+  "flow": "authentication-and-onboarding",
+  "screens": [
+    {
+      "folder": "welcome-loading",
+      "group": "authentication",
+      "title": "Welcome - Loading State",
+      "stitchId": "70a3eac7203645ee8b27f9eafba63a7f",
+      "width": "780",
+      "height": "1768",
+      "html": "screens/welcome-loading/welcome-loading.html",
+      "screenshot": "screens/welcome-loading/welcome-loading.png"
+    },
+    {
+      "folder": "welcome-private-beta",
+      "group": "authentication",
+      "title": "Welcome - Tracend Private Beta",
+      "stitchId": "d270f26914c9402d9e19dd69fa0c9060",
+      "width": "780",
+      "height": "1768",
+      "html": "screens/welcome-private-beta/welcome-private-beta.html",
+      "screenshot": "screens/welcome-private-beta/welcome-private-beta.png"
+    },
+    {
+      "folder": "welcome-network-error",
+      "group": "authentication",
+      "title": "Welcome - Network Error",
+      "stitchId": "1c8ecb21465242b8bbbd3f5f3b98a54f",
+      "width": "780",
+      "height": "1768",
+      "html": "screens/welcome-network-error/welcome-network-error.html",
+      "screenshot": "screens/welcome-network-error/welcome-network-error.png"
+    },
+    {
+      "folder": "preserve-what-works",
+      "group": "onboarding",
+      "title": "Onboarding - Preserve What Works",
+      "stitchId": "281d1a7ceed64f5a93705272f8e5cf36",
+      "width": "780",
+      "height": "3558",
+      "html": "screens/preserve-what-works/preserve-what-works.html",
+      "screenshot": "screens/preserve-what-works/preserve-what-works.png"
+    },
+    {
+      "folder": "welcome-restoring-session",
+      "group": "authentication",
+      "title": "Welcome - Restoring Session",
+      "stitchId": "38228a74f10c4d5c90b776c428947add",
+      "width": "780",
+      "height": "1768",
+      "html": "screens/welcome-restoring-session/welcome-restoring-session.html",
+      "screenshot": "screens/welcome-restoring-session/welcome-restoring-session.png"
+    },
+    {
+      "folder": "goal-selection",
+      "group": "onboarding",
+      "title": "Onboarding - Refined Goal Selection",
+      "stitchId": "43c5a23b78a74eb7a27038942af22718",
+      "width": "780",
+      "height": "2252",
+      "html": "screens/goal-selection/goal-selection.html",
+      "screenshot": "screens/goal-selection/goal-selection.png"
+    },
+    {
+      "folder": "path-selection",
+      "group": "onboarding",
+      "title": "Onboarding - Path Selection (Premium)",
+      "stitchId": "5eb1ebae73cf42998922074eb26ba971",
+      "width": "780",
+      "height": "1768",
+      "html": "screens/path-selection/path-selection.html",
+      "screenshot": "screens/path-selection/path-selection.png"
+    },
+    {
+      "folder": "ineligible",
+      "group": "eligibility",
+      "title": "Ineligible State - Technical Refinement",
+      "stitchId": "b84e6802bb104b4f8d7b4e4568c29c5e",
+      "width": "780",
+      "height": "1768",
+      "html": "screens/ineligible/ineligible.html",
+      "screenshot": "screens/ineligible/ineligible.png"
+    },
+    {
+      "folder": "eligibility-agreement",
+      "group": "eligibility",
+      "title": "Eligibility & Agreement - Technical Refinement",
+      "stitchId": "ccdc703c646b442ca561bab470aff7d2",
+      "width": "780",
+      "height": "1768",
+      "html": "screens/eligibility-agreement/eligibility-agreement.html",
+      "screenshot": "screens/eligibility-agreement/eligibility-agreement.png"
+    },
+    {
+      "folder": "healthkit-connected",
+      "group": "healthkit",
+      "title": "HealthKit - Connected State (Final)",
+      "stitchId": "f7b4879eb89a4347945a690c08f36ee8",
+      "width": "780",
+      "height": "1768",
+      "html": "screens/healthkit-connected/healthkit-connected.html",
+      "screenshot": "screens/healthkit-connected/healthkit-connected.png"
+    },
+    {
+      "folder": "healthkit-partial",
+      "group": "healthkit",
+      "title": "HealthKit - Partially Connected (Final)",
+      "stitchId": "0a23fef93e6e4b9a8e7e85c2e1c84539",
+      "width": "780",
+      "height": "1768",
+      "html": "screens/healthkit-partial/healthkit-partial.html",
+      "screenshot": "screens/healthkit-partial/healthkit-partial.png"
+    },
+    {
+      "folder": "review-summary",
+      "group": "onboarding",
+      "title": "Onboarding - Review Summary",
+      "stitchId": "8faa12bbd1d3415fa6cea4d8fb556570",
+      "width": "780",
+      "height": "2626",
+      "html": "screens/review-summary/review-summary.html",
+      "screenshot": "screens/review-summary/review-summary.png"
+    },
+    {
+      "folder": "building-plan",
+      "group": "plan",
+      "title": "Onboarding - Building Plan State",
+      "stitchId": "eaebf3c13cf64fc29970a91d8c484702",
+      "width": "780",
+      "height": "1768",
+      "html": "screens/building-plan/building-plan.html",
+      "screenshot": "screens/building-plan/building-plan.png"
+    },
+    {
+      "folder": "plan-proposal",
+      "group": "plan",
+      "title": "Plan Proposal - Technical operating System",
+      "stitchId": "73a25ec4ef4145fa8dc5083312b38749",
+      "width": "780",
+      "height": "2988",
+      "html": "screens/plan-proposal/plan-proposal.html",
+      "screenshot": "screens/plan-proposal/plan-proposal.png"
+    },
+    {
+      "folder": "healthkit-stale",
+      "group": "healthkit",
+      "title": "HealthKit - Stale Data (Final)",
+      "stitchId": "dbfa17d6fc1244aab2a6535b9b718413",
+      "width": "780",
+      "height": "1768",
+      "html": "screens/healthkit-stale/healthkit-stale.html",
+      "screenshot": "screens/healthkit-stale/healthkit-stale.png"
+    },
+    {
+      "folder": "healthkit-unavailable",
+      "group": "healthkit",
+      "title": "HealthKit - Unavailable State (Dark)",
+      "stitchId": "0dc06434001748729dcf062e309904ca",
+      "width": "780",
+      "height": "1768",
+      "html": "screens/healthkit-unavailable/healthkit-unavailable.html",
+      "screenshot": "screens/healthkit-unavailable/healthkit-unavailable.png"
+    }
+  ]
+}

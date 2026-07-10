@@ -1,0 +1,15 @@
+{
+  "id": "43c5a23b78a74eb7a27038942af22718",
+  "name": "projects/2662655096321681608/screens/43c5a23b78a74eb7a27038942af22718",
+  "title": "Onboarding - Refined Goal Selection",
+  "flow": "authentication-and-onboarding",
+  "group": "onboarding",
+  "width": "780",
+  "height": "2252",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "goal-selection.html",
+    "screenshot": "goal-selection.png"
+  },
+  "importedAt": "2026-06-29"
+}

@@ -1,0 +1,328 @@
+<!DOCTYPE html><html class="dark" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Tracend - Coach</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@400;500;600;700&amp;family=Inter:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "state-attention": "#C43C31",
+                        "primary-fixed-dim": "#bec2ff",
+                        "surface-dim": "#d6dae5",
+                        "on-secondary": "#ffffff",
+                        "state-stable-dark": "#59D6C7",
+                        "on-tertiary-fixed": "#341100",
+                        "on-error": "#ffffff",
+                        "secondary-fixed": "#d7e4f5",
+                        "primary": "#2e3bcf",
+                        "on-background": "#171c24",
+                        "inverse-on-surface": "#edf1fc",
+                        "on-tertiary-container": "#ffe4d9",
+                        "surface-container-low": "#f0f3ff",
+                        "surface-container-high": "#e4e8f4",
+                        "on-surface": "#171c24",
+                        "outline": "#767686",
+                        "error-container": "#ffdad6",
+                        "surface-container-lowest": "#ffffff",
+                        "state-attention-dark": "#FF887D",
+                        "canvas-dark": "#090D14",
+                        "secondary": "#535f6e",
+                        "state-stable": "#00796B",
+                        "on-surface-variant": "#454655",
+                        "inverse-primary": "#bec2ff",
+                        "on-secondary-fixed-variant": "#3c4856",
+                        "outline-variant": "#c6c5d7",
+                        "tertiary-fixed-dim": "#ffb692",
+                        "error": "#ba1a1a",
+                        "canvas-light": "#F3F6F8",
+                        "secondary-container": "#d4e1f3",
+                        "on-primary-container": "#e8e7ff",
+                        "primary-container": "#4a57e8",
+                        "action-primary-dark": "#9BA5FF",
+                        "surface-light": "#FFFFFF",
+                        "surface-tint": "#3e4bdd",
+                        "secondary-fixed-dim": "#bbc8d9",
+                        "surface-bright": "#f9f9ff",
+                        "on-primary-fixed": "#000569",
+                        "primary-fixed": "#e0e0ff",
+                        "inverse-surface": "#2c3139",
+                        "surface-dark": "#121925",
+                        "on-primary-fixed-variant": "#202dc5",
+                        "surface-variant": "#dee2ee",
+                        "surface": "#f9f9ff",
+                        "on-error-container": "#93000a",
+                        "tertiary-container": "#b04a00",
+                        "on-tertiary": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "surface-container": "#eaeefa",
+                        "on-secondary-fixed": "#101c29",
+                        "surface-container-highest": "#dee2ee",
+                        "tertiary-fixed": "#ffdbcb",
+                        "on-secondary-container": "#586473",
+                        "background": "#f9f9ff",
+                        "tertiary": "#893800",
+                        "on-tertiary-fixed-variant": "#793100"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xs": "4px",
+                        "base": "4px",
+                        "sm": "8px",
+                        "lg": "16px",
+                        "xxxl": "48px",
+                        "xxl": "32px",
+                        "md": "12px",
+                        "gutter-compact": "16px",
+                        "xl": "24px",
+                        "gutter": "20px"
+                    },
+                    "fontFamily": {
+                        "screen-title": ["Spline Sans"],
+                        "body-compact": ["Inter"],
+                        "body-base": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "section-title": ["Spline Sans"],
+                        "data-utility": ["IBM Plex Mono"],
+                        "decision-headline": ["Spline Sans"]
+                    },
+                    "fontSize": {
+                        "screen-title": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "body-compact": ["15px", {"lineHeight": "22px", "fontWeight": "400"}],
+                        "body-base": ["17px", {"lineHeight": "25px", "fontWeight": "400"}],
+                        "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "section-title": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                        "data-utility": ["14px", {"lineHeight": "20px", "fontWeight": "500"}],
+                        "decision-headline": ["32px", {"lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #090D14; /* canvas-dark */
+            color: #ffffff; /* on-secondary */
+        }
+        .hairline-border {
+            border: 1px solid rgba(198, 197, 215, 0.2); /* outline-variant */
+        }
+        .hairline-border-b {
+            border-bottom: 1px solid rgba(198, 197, 215, 0.2);
+        }
+        .hairline-border-t {
+            border-top: 1px solid rgba(198, 197, 215, 0.2);
+        }
+        /* Custom scrollbar for minimalist look */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(198, 197, 215, 0.2);
+            border-radius: 4px;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col font-body-base antialiased bg-canvas-dark text-on-secondary">
+<!-- Architectural Spaced Header -->
+<header class="w-full top-0 sticky bg-canvas-dark/90 backdrop-blur-xl z-50 pt-12 pb-4 px-gutter">
+<div class="flex justify-center items-center max-w-3xl mx-auto w-full">
+<div class="flex flex-col items-center">
+<div class="flex items-center gap-xs">
+<h1 class="font-screen-title text-screen-title text-on-secondary">Coach</h1>
+<div class="w-2 h-2 rounded-full bg-state-stable-dark shadow-[0_0_8px_rgba(89,214,199,0.6)]"></div>
+</div>
+<span class="font-data-utility text-[10px] text-on-surface-variant/70 uppercase tracking-widest mt-1">LEAN MUSCLE · PHASE 2</span>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 flex flex-col max-w-3xl mx-auto w-full px-gutter-compact md:px-gutter pt-lg pb-[160px] overflow-y-auto">
+<div class="mb-lg">
+<p class="font-body-compact text-body-compact text-on-surface-variant/80">Using your approved plan and latest confirmed data</p>
+</div>
+<!-- Interactive Decision Surface -->
+<div class="bg-[#121925] rounded-xl hairline-border p-0 mb-xl relative overflow-hidden shadow-lg">
+<div class="absolute left-0 top-0 bottom-0 w-[4px] bg-primary-fixed-dim"></div>
+<div class="p-lg pl-xl">
+<div class="flex justify-between items-start mb-md">
+<h3 class="font-section-title text-section-title text-on-secondary flex items-center gap-sm">
+<span class="material-symbols-outlined text-[18px] text-primary-fixed-dim" data-icon="bolt" data-weight="fill">bolt</span>
+                    Active Protocol
+                </h3>
+<span class="font-data-utility text-[12px] text-on-surface-variant/60 tracking-wider">08:42 AM</span>
+</div>
+<p class="font-body-base text-body-base text-on-secondary mb-lg">
+                Train Push Day as planned. Keep nutrition targets unchanged.
+            </p>
+<button class="w-full flex items-center justify-center gap-sm h-[44px] bg-inverse-surface/40 hover:bg-inverse-surface/70 rounded-lg text-primary-fixed-dim font-label-caps text-label-caps uppercase transition-all active:scale-[0.98] duration-150 hairline-border">
+<span class="material-symbols-outlined text-[18px]" data-icon="visibility">visibility</span>
+                View evidence
+            </button>
+</div>
+</div>
+<!-- Conversation Area (Editorial Layout) -->
+<div class="flex-1 flex flex-col gap-xl mb-xxl">
+<!-- User Message -->
+<div class="flex flex-col items-end w-full">
+<div class="max-w-[85%]">
+<p class="font-body-base text-body-base text-on-secondary/90 bg-inverse-surface/80 hairline-border rounded-xl p-md inline-block text-right shadow-sm">
+                        I'm feeling a bit fatigued today. Should I skip the workout?
+                    </p>
+<span class="block font-data-utility text-[11px] text-on-surface-variant/50 text-right mt-xs tracking-wider">08:45 AM</span>
+</div>
+</div>
+<!-- Coach Response -->
+<div class="flex flex-col items-start w-full">
+<div class="w-full max-w-[100%]">
+<!-- Direct Recommendation -->
+<div class="mb-lg pl-md border-l-[3px] border-primary-fixed-dim/40">
+<p class="font-body-base text-body-base text-on-secondary leading-relaxed">
+<strong class="font-semibold text-primary-fixed-dim block mb-xs text-[18px]">No, maintain the planned Push Day.</strong>
+                            While your subjective fatigue is noted, your readiness metrics (HRV and Sleep) remain within normal variance for this microcycle. Dropping volume now disrupts the progressive overload trajectory.
+                        </p>
+</div>
+<!-- Interactive Evidence Perspectives (Technical Accordions) -->
+<div class="flex flex-col gap-3">
+<!-- Evidence Used -->
+<details class="group hairline-border rounded-xl bg-surface-dark overflow-hidden transition-all duration-200">
+<summary class="flex justify-between items-center p-md cursor-pointer list-none hover:bg-inverse-surface/30 transition-colors">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary-fixed-dim text-[18px]" data-icon="monitoring">monitoring</span>
+<span class="font-label-caps text-label-caps uppercase text-on-secondary/90 tracking-widest">Evidence used</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant/60 group-open:rotate-180 transition-transform duration-200" data-icon="expand_more">expand_more</span>
+</summary>
+<div class="px-md pb-md pt-xs hairline-border-t bg-surface-dark/50">
+<ul class="flex flex-col gap-md mt-sm font-data-utility text-data-utility text-on-secondary/80">
+<li class="flex justify-between items-end border-b border-outline-variant/10 pb-xs">
+<span class="text-[12px] text-on-surface-variant/60 uppercase tracking-wider">HRV Baseline</span>
+<span class="text-state-stable-dark font-medium">64 ms (Stable)</span>
+</li>
+<li class="flex justify-between items-end border-b border-outline-variant/10 pb-xs">
+<span class="text-[12px] text-on-surface-variant/60 uppercase tracking-wider">Sleep Score</span>
+<span class="text-state-stable-dark font-medium">82 (Adequate)</span>
+</li>
+<li class="flex justify-between items-end border-b border-outline-variant/10 pb-xs">
+<span class="text-[12px] text-on-surface-variant/60 uppercase tracking-wider">RPE Trend</span>
+<span class="text-primary-fixed-dim font-medium">Expected</span>
+</li>
+</ul>
+</div>
+</details>
+<!-- Training Perspective -->
+<details class="group hairline-border rounded-xl bg-surface-dark overflow-hidden transition-all duration-200">
+<summary class="flex justify-between items-center p-md cursor-pointer list-none hover:bg-inverse-surface/30 transition-colors">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary-fixed-dim text-[18px]" data-icon="fitness_center">fitness_center</span>
+<span class="font-label-caps text-label-caps uppercase text-on-secondary/90 tracking-widest">Training perspective</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant/60 group-open:rotate-180 transition-transform duration-200" data-icon="expand_more">expand_more</span>
+</summary>
+<div class="px-md pb-md pt-xs hairline-border-t bg-surface-dark/50">
+<p class="mt-sm font-body-compact text-body-compact text-on-secondary/80 leading-relaxed border-l-2 border-primary-fixed-dim/50 pl-md">
+                                    We are in week 3 of the hypertrophy block. Mild fatigue is expected. Ensure you take full rest periods between sets (2-3 mins). If RPE exceeds 9 on primary lifts, reduce load by 5% but maintain set count.
+                                </p>
+</div>
+</details>
+<!-- Nutrition Perspective -->
+<details class="group hairline-border rounded-xl bg-surface-dark overflow-hidden transition-all duration-200">
+<summary class="flex justify-between items-center p-md cursor-pointer list-none hover:bg-inverse-surface/30 transition-colors">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary-fixed-dim text-[18px]" data-icon="restaurant">restaurant</span>
+<span class="font-label-caps text-label-caps uppercase text-on-secondary/90 tracking-widest">Nutrition perspective</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant/60 group-open:rotate-180 transition-transform duration-200" data-icon="expand_more">expand_more</span>
+</summary>
+<div class="px-md pb-md pt-xs hairline-border-t bg-surface-dark/50">
+<p class="mt-sm font-body-compact text-body-compact text-on-secondary/80 leading-relaxed border-l-2 border-primary-fixed-dim/50 pl-md">
+                                    Pre-workout carbohydrate timing is critical today. Ensure 40g of easily digestible carbs 45 mins before training to offset perceived exertion. Hydration protocol remains unchanged.
+                                </p>
+</div>
+</details>
+</div>
+</div>
+</div>
+</div>
+<!-- Suggestion Pills -->
+<div class="flex flex-wrap gap-2 mb-lg">
+<button class="px-md py-[8px] rounded-full hairline-border bg-surface-dark text-on-surface-variant/80 font-body-compact text-[13px] hover:bg-inverse-surface/60 hover:text-primary-fixed-dim transition-all duration-200">
+                Should I train today?
+            </button>
+<button class="px-md py-[8px] rounded-full hairline-border bg-surface-dark text-on-surface-variant/80 font-body-compact text-[13px] hover:bg-inverse-surface/60 hover:text-primary-fixed-dim transition-all duration-200">
+                What should I eat next?
+            </button>
+<button class="px-md py-[8px] rounded-full hairline-border bg-surface-dark text-on-surface-variant/80 font-body-compact text-[13px] hover:bg-inverse-surface/60 hover:text-primary-fixed-dim transition-all duration-200">
+                Why is my plan unchanged?
+            </button>
+</div>
+</main>
+<!-- Modernized Composer Area (Fixed Bottom, above NavBar) -->
+<div class="fixed bottom-[72px] left-0 w-full px-gutter-compact md:px-gutter pb-md pt-xl bg-gradient-to-t from-canvas-dark via-canvas-dark/95 to-transparent z-40 pointer-events-none">
+<div class="max-w-3xl mx-auto pointer-events-auto">
+<div class="flex items-center gap-sm bg-surface-dark/95 backdrop-blur-xl rounded-full hairline-border p-1.5 pl-lg pr-1.5 h-[56px] shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.5)]">
+<input class="flex-1 bg-transparent border-none focus:ring-0 text-on-secondary font-body-base placeholder-on-surface-variant/40 outline-none" placeholder="Ask about your plan, workout, nutrition..." type="text">
+<div class="flex items-center gap-1">
+<button class="flex items-center justify-center w-[36px] h-[36px] text-on-surface-variant/60 hover:text-primary-fixed-dim transition-colors rounded-full">
+<span class="material-symbols-outlined text-[20px]" data-icon="photo_camera">photo_camera</span>
+</button>
+<button class="flex items-center justify-center w-[36px] h-[36px] text-on-surface-variant/60 hover:text-primary-fixed-dim transition-colors rounded-full mr-1">
+<span class="material-symbols-outlined text-[20px]" data-icon="mic">mic</span>
+</button>
+<button class="flex items-center justify-center w-[44px] h-[44px] bg-primary-container text-on-primary-container rounded-full hover:bg-primary-container/90 transition-colors shadow-md">
+<span class="material-symbols-outlined text-[20px]" data-icon="send" data-weight="fill">send</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Global Navigation (5-tab, 1:1 final structure) -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center px-2 pb-6 pt-2 bg-surface-dark/95 border-t border-outline-variant/20 z-50 backdrop-blur-xl">
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 hover:text-on-surface-variant/90 transition-colors scale-95 duration-150 ease-in-out w-[20%] gap-1" href="#">
+<span class="material-symbols-outlined text-[24px]">analytics</span>
+<span class="font-label-caps text-[10px] uppercase tracking-wider">Today</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 hover:text-on-surface-variant/90 transition-colors scale-95 duration-150 ease-in-out w-[20%] gap-1" href="#">
+<span class="material-symbols-outlined text-[24px]">fitness_center</span>
+<span class="font-label-caps text-[10px] uppercase tracking-wider">Train</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary-fixed-dim font-medium scale-100 duration-150 ease-in-out w-[20%] gap-1" href="#">
+<div class="relative">
+<span class="material-symbols-outlined text-[24px]" data-weight="fill">psychology</span>
+<div class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-state-stable-dark border border-surface-dark shadow-[0_0_8px_rgba(89,214,199,0.5)]"></div>
+</div>
+<span class="font-label-caps text-[10px] uppercase tracking-wider">Coach</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 hover:text-on-surface-variant/90 transition-colors scale-95 duration-150 ease-in-out w-[20%] gap-1" href="#">
+<span class="material-symbols-outlined text-[24px]">restaurant</span>
+<span class="font-label-caps text-[10px] uppercase tracking-wider">Nutrition</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant/60 hover:text-on-surface-variant/90 transition-colors scale-95 duration-150 ease-in-out w-[20%] gap-1" href="#">
+<span class="material-symbols-outlined text-[24px]">monitoring</span>
+<span class="font-label-caps text-[10px] uppercase tracking-wider">Progress</span>
+</a>
+</nav>
+<!-- Fill missing font variation settings script -->
+<script>
+        document.querySelectorAll('span[data-weight="fill"]').forEach(el => {
+            el.style.fontVariationSettings = "'FILL' 1";
+        });
+    </script>
+</body></html>

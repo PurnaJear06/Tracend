@@ -219,7 +219,30 @@ Use:
 - a stronger evaluated model for onboarding, periodic review, or ambiguous conflicts; and
 - no model call when deterministic output is sufficient.
 
-Providers sit behind `CoachModelProvider` inside Supabase Edge Functions. OpenAI is the initial vertical-slice implementation; Claude and Gemini may be benchmarked. Provider and Supabase secret/service-role keys never enter Flutter. Every provider requires privacy review, schema validation, and task evaluation. Price alone cannot qualify a provider.
+Providers sit behind `CoachModelProvider` inside Supabase Edge Functions.
+Gemini is the sole planned live provider for owner dogfooding; the existing mock
+provider remains active until Gemini passes privacy review, schema validation,
+text coaching evaluations, and separate meal/progress vision evaluations.
+Provider and Supabase secret/service-role keys never enter Flutter. Price alone
+cannot qualify a model.
+
+Stable `gemini-3.5-flash` is the production quality baseline for Coach text
+and separately evaluated image interpretation. Normal chat uses medium
+thinking; bounded meal extraction uses low thinking; high thinking is reserved
+for named difficult evaluation classes. Lite models are rejected by production
+configuration. Cost control must not bypass visible-food, mixed-dish, hidden-
+ingredient, portion-uncertainty, prompt-injection, schema-validity, or user-
+correction evaluations. Routing changes require regression results.
+
+Conversational answers may explain only supplied structured evidence, must
+state missing data, and expose evidence references. The model receives at most
+20 recent messages and no tools. Deterministic pre-model rules refuse medical,
+emergency, pregnancy, eating-disorder, medication, and rehabilitation requests.
+
+The Gemini readiness adapter is disabled by default and requires an explicit
+paid-service data-terms gate before it can process restricted coaching context.
+Synthetic adapter tests do not satisfy evaluation parity or authorize live
+calls. Meal and progress vision remain separately gated.
 
 Optimize cost using compact feature snapshots, cached static context, deterministic summaries, normalized images, duplicate avoidance, per-user rate limits, and quality-based routing. Cost cannot override safety or the quality floor. Budget assumptions and hard controls are defined in [COST_MODEL.md](./COST_MODEL.md).
 

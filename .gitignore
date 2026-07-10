@@ -1,7 +1,9 @@
 # macOS and editors
 .DS_Store
+.codex/
 .idea/
 .vscode/
+*.iml
 *.swp
 *.swo
 
@@ -16,18 +18,20 @@
 *.jks
 
 # Flutter and Dart
-.dart_tool/
+.dart_tool
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
 .pub-cache/
-build/
+.tooling/
+node_modules/
+build
 coverage/
 
 # iOS and Xcode generated files
-ios/Pods/
-ios/.symlinks/
-ios/Flutter/ephemeral/
+ios/Pods
+ios/.symlinks
+ios/Flutter/ephemeral
 ios/Flutter/.last_build_id
 DerivedData/
 *.xcuserstate

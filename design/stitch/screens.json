@@ -1,0 +1,59 @@
+{
+  "project": {
+    "title": "Tracend Design System",
+    "id": "2662655096321681608",
+    "importedAt": "2026-06-28"
+  },
+  "navigation": "5-tab: Today | Train | Coach | Nutrition | Progress",
+  "screens": [
+    {
+      "folder": "today",
+      "tab": "today",
+      "title": "Tracend Today - Premium Precision Pro",
+      "stitchId": "df0bc413bf304107ac9f5914e86b66c7",
+      "html": "screens/today/today.html",
+      "screenshot": "screens/today/today.png"
+    },
+    {
+      "folder": "train",
+      "tab": "train",
+      "title": "Training Hub - Production Ready",
+      "stitchId": "3ad6247ae87545ed82a8a055c2e2e1bd",
+      "html": "screens/train/train.html",
+      "screenshot": "screens/train/train.png"
+    },
+    {
+      "folder": "workout-detail",
+      "tab": "train",
+      "title": "Daily Workout Detail - Premium Technical",
+      "stitchId": "5a110ba4505c40f490b8ad1871375b36",
+      "html": "screens/workout-detail/workout-detail.html",
+      "screenshot": "screens/workout-detail/workout-detail.png"
+    },
+    {
+      "folder": "coach",
+      "tab": "coach",
+      "title": "Coach Room - Focused Architectural Baseline",
+      "stitchId": "6bd674809ebb49a78cbd70921e6d77cc",
+      "html": "screens/coach/coach.html",
+      "screenshot": "screens/coach/coach.png"
+    },
+    {
+      "folder": "nutrition",
+      "tab": "nutrition",
+      "title": "Nutrition - Final 5-Tab Navigation",
+      "stitchId": "51290016bf064b21961e0b0d874572df",
+      "html": "screens/nutrition/nutrition.html",
+      "screenshot": "screens/nutrition/nutrition.png"
+    },
+    {
+      "folder": "progress",
+      "tab": "progress",
+      "title": "Progress - Tracend Operating System V2",
+      "stitchId": "b4e3c30d2c6a45e98e26c9c8de943669",
+      "html": "screens/progress/progress.html",
+      "screenshot": "screens/progress/progress.png"
+    }
+  ],
+  "missing": []
+}

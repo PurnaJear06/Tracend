@@ -1,0 +1,14 @@
+{
+  "id": "df0bc413bf304107ac9f5914e86b66c7",
+  "name": "projects/2662655096321681608/screens/df0bc413bf304107ac9f5914e86b66c7",
+  "title": "Tracend Today - Premium Precision Pro",
+  "tab": "today",
+  "width": "780",
+  "height": "4012",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "today.html",
+    "screenshot": "today.png"
+  },
+  "importedAt": "2026-06-28"
+}

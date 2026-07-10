@@ -1,0 +1,15 @@
+{
+  "id": "f7b4879eb89a4347945a690c08f36ee8",
+  "name": "projects/2662655096321681608/screens/f7b4879eb89a4347945a690c08f36ee8",
+  "title": "HealthKit - Connected State (Final)",
+  "flow": "authentication-and-onboarding",
+  "group": "healthkit",
+  "width": "780",
+  "height": "1768",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "healthkit-connected.html",
+    "screenshot": "healthkit-connected.png"
+  },
+  "importedAt": "2026-06-29"
+}

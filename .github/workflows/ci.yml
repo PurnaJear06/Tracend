@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  flutter:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.7
+          channel: stable
+          cache: false
+      - run: ./scripts/bootstrap-flutter.sh
+      - run: ./scripts/flutter.sh pub get
+      - run: ./scripts/flutter.sh format --set-exit-if-changed lib test
+      - run: ./scripts/flutter.sh analyze
+      - run: ./scripts/flutter.sh test
+      - run: ./scripts/flutter.sh build ios --release --no-codesign
+
+  edge-functions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.0
+      - run: deno task check
+
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.101.0
+      - run: supabase start
+      - run: supabase db reset
+      - run: >
+          docker run --rm
+          --network container:supabase_db_Tracend
+          --env PGPASSWORD=postgres
+          --volume "$PWD/supabase/tests/database:/tests:ro"
+          public.ecr.aws/supabase/pg_prove:3.36
+          pg_prove -h 127.0.0.1 -U postgres -d postgres /tests

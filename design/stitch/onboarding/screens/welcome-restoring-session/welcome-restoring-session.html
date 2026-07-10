@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>TRACEND - Restoring Session</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Spline+Sans:wght@500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-dark": "#121925",
+                      "on-tertiary-fixed": "#341100",
+                      "on-secondary-container": "#586473",
+                      "surface-container-high": "#e4e8f4",
+                      "on-error": "#ffffff",
+                      "primary-fixed-dim": "#bec2ff",
+                      "surface-variant": "#dee2ee",
+                      "primary-fixed": "#e0e0ff",
+                      "on-primary-fixed-variant": "#202dc5",
+                      "on-primary-container": "#e8e7ff",
+                      "action-primary-dark": "#9BA5FF",
+                      "on-secondary-fixed-variant": "#3c4856",
+                      "secondary-fixed": "#d7e4f5",
+                      "primary": "#2e3bcf",
+                      "surface-light": "#FFFFFF",
+                      "on-surface-variant": "#454655",
+                      "surface-container-low": "#f0f3ff",
+                      "primary-container": "#4a57e8",
+                      "outline": "#767686",
+                      "on-background": "#171c24",
+                      "surface-container": "#eaeefa",
+                      "tertiary-fixed": "#ffdbcb",
+                      "on-tertiary-fixed-variant": "#793100",
+                      "error": "#ba1a1a",
+                      "secondary-container": "#d4e1f3",
+                      "state-stable-dark": "#59D6C7",
+                      "inverse-primary": "#bec2ff",
+                      "state-attention-dark": "#FF887D",
+                      "on-error-container": "#93000a",
+                      "on-surface": "#171c24",
+                      "inverse-surface": "#2c3139",
+                      "secondary-fixed-dim": "#bbc8d9",
+                      "tertiary-container": "#b04a00",
+                      "on-secondary": "#ffffff",
+                      "on-tertiary-container": "#ffe4d9",
+                      "surface-dim": "#d6dae5",
+                      "on-tertiary": "#ffffff",
+                      "on-primary-fixed": "#000569",
+                      "tertiary-fixed-dim": "#ffb692",
+                      "secondary": "#535f6e",
+                      "surface-container-lowest": "#ffffff",
+                      "state-attention": "#C43C31",
+                      "error-container": "#ffdad6",
+                      "tertiary": "#893800",
+                      "surface-tint": "#3e4bdd",
+                      "surface": "#f9f9ff",
+                      "inverse-on-surface": "#edf1fc",
+                      "on-primary": "#ffffff",
+                      "state-stable": "#00796B",
+                      "background": "#f9f9ff",
+                      "outline-variant": "#c6c5d7",
+                      "surface-container-highest": "#dee2ee",
+                      "canvas-light": "#F3F6F8",
+                      "surface-bright": "#f9f9ff",
+                      "canvas-dark": "#090D14",
+                      "on-secondary-fixed": "#101c29"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "base": "4px",
+                      "gutter-compact": "16px",
+                      "gutter": "20px",
+                      "md": "12px",
+                      "lg": "16px",
+                      "xxl": "32px",
+                      "xl": "24px",
+                      "xs": "4px",
+                      "sm": "8px",
+                      "xxxl": "48px"
+              },
+              "fontFamily": {
+                      "body-compact": [
+                              "Inter"
+                      ],
+                      "screen-title": [
+                              "Spline Sans"
+                      ],
+                      "section-title": [
+                              "Spline Sans"
+                      ],
+                      "body-base": [
+                              "Inter"
+                      ],
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "decision-headline": [
+                              "Spline Sans"
+                      ],
+                      "data-utility": [
+                              "IBM Plex Mono"
+                      ]
+              },
+              "fontSize": {
+                      "body-compact": [
+                              "15px",
+                              {
+                                      "lineHeight": "22px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "screen-title": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "section-title": [
+                              "18px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-base": [
+                              "17px",
+                              {
+                                      "lineHeight": "25px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-caps": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "decision-headline": [
+                              "32px",
+                              {
+                                      "lineHeight": "36px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "data-utility": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "500"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+    </script>
+<style>
+        /* Kinetic Precision Utilities */
+        .hairline-border {
+            border: 1px solid theme('colors.outline-variant');
+        }
+        .hairline-border-b {
+            border-bottom: 1px solid theme('colors.outline-variant');
+        }
+        .kinetic-pulse {
+            animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(89, 214, 199, 0.4); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(89, 214, 199, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(89, 214, 199, 0); }
+        }
+        .shimmer-text {
+            background: linear-gradient(90deg, theme('colors.on-surface') 0%, theme('colors.outline') 50%, theme('colors.on-surface') 100%);
+            background-size: 200% auto;
+            color: transparent;
+            -webkit-background-clip: text;
+            background-clip: text;
+            animation: shimmer 2s linear infinite;
+        }
+        @keyframes shimmer {
+            to {
+                background-position: 200% center;
+            }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background h-screen flex flex-col overflow-hidden antialiased selection:bg-primary-container selection:text-on-primary-container">
+<!-- Main Canvas -->
+<main class="flex-1 flex flex-col justify-center items-center px-gutter md:px-xxxl relative">
+<!-- Abstract Trajectory Lens (Restoring State) -->
+<div class="absolute inset-0 pointer-events-none flex items-center justify-center opacity-10">
+<svg class="w-[300px] h-[300px] text-state-stable-dark" fill="none" viewbox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+<circle cx="50" cy="50" r="40" stroke="currentColor" stroke-dasharray="2 4" stroke-width="1"></circle>
+<path d="M 20 80 Q 50 80, 50 50 T 80 20" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"></path>
+<circle cx="80" cy="20" fill="currentColor" r="3"></circle>
+<circle cx="50" cy="50" fill="currentColor" r="2"></circle>
+</svg>
+</div>
+<div class="w-full max-w-md z-10 flex flex-col items-center text-center space-y-xxl">
+<!-- Branding & Status Indicator -->
+<div class="flex flex-col items-center space-y-lg">
+<div class="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center kinetic-pulse relative">
+<div class="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center border border-state-stable-dark/30">
+<span class="material-symbols-outlined text-state-stable-dark" style="font-variation-settings: 'FILL' 1;">sync</span>
+</div>
+</div>
+<div>
+<h1 class="font-screen-title text-screen-title text-on-surface tracking-tight">TRACEND</h1>
+</div>
+</div>
+<!-- Kinetic Precision Data Readout -->
+<div class="w-full hairline-border rounded-lg bg-surface flex flex-col p-lg space-y-md text-left">
+<div class="flex justify-between items-center hairline-border-b pb-sm border-outline-variant/50">
+<span class="font-label-caps text-label-caps text-outline uppercase">System Status</span>
+<span class="font-data-utility text-data-utility text-state-stable-dark flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-state-stable-dark"></span>
+                        SYS_ON
+                    </span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-outline uppercase">Environment</span>
+<span class="font-data-utility text-data-utility text-on-surface">SYNC_ACTIVE</span>
+</div>
+</div>
+<!-- Messaging -->
+<div class="space-y-sm">
+<h2 class="font-decision-headline text-decision-headline text-on-surface shimmer-text">Calibrate Your Trajectory.</h2>
+<p class="font-body-base text-body-base text-on-surface-variant">Restoring your training environment...</p>
+</div>
+<!-- Progress Bar (Indeterminate) -->
+<div class="w-full max-w-xs h-1 bg-surface-container-high rounded-full overflow-hidden mt-xl relative">
+<div class="absolute top-0 bottom-0 left-0 w-1/3 bg-state-stable-dark rounded-full animate-[progress_1.5s_ease-in-out_infinite]"></div>
+</div>
+<style>
+                @keyframes progress {
+                    0% { left: -33%; }
+                    100% { left: 100%; }
+                }
+            </style>
+</div>
+</main>
+<script>
+        // Simulated transition effect (Optional for actual implementation)
+        // Automatically redirects or changes state after a delay in a real app.
+    </script>
+</body></html>

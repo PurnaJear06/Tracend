@@ -1,0 +1,15 @@
+{
+  "id": "0a23fef93e6e4b9a8e7e85c2e1c84539",
+  "name": "projects/2662655096321681608/screens/0a23fef93e6e4b9a8e7e85c2e1c84539",
+  "title": "HealthKit - Partially Connected (Final)",
+  "flow": "authentication-and-onboarding",
+  "group": "healthkit",
+  "width": "780",
+  "height": "1768",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "healthkit-partial.html",
+    "screenshot": "healthkit-partial.png"
+  },
+  "importedAt": "2026-06-29"
+}

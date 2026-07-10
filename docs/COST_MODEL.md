@@ -75,6 +75,12 @@ For planning only, assume:
 - bounded retries and no duplicate analysis; and
 - normalized/compressed images at the lowest evaluated detail that preserves accuracy.
 
+Phase 7 initially generates weekly reviews deterministically inside PostgreSQL,
+so they incur no model-token cost. Queue/Cron work remains bounded to one
+deduplicated weekly job per active user plus at most three attempts. The
+stronger-model estimate below applies only if a later evaluated interpretation
+step is explicitly enabled.
+
 At the 2026-06-28 standard rates, GPT-5.4 mini is listed at $0.75 per million input tokens and $4.50 per million output tokens; GPT-5.4 is $2.50 input and $15 output per million tokens. A representative text-only month is inexpensive:
 
 | Workload per user/month | Illustrative tokens | Approximate cost |
@@ -83,7 +89,25 @@ At the 2026-06-28 standard rates, GPT-5.4 mini is listed at $0.75 per million in
 | 4 weekly reviews on stronger model | 8k input + 1.2k output each | about $0.15 |
 | onboarding, retries, occasional conflicts | variable | budget $0.10–$0.75 |
 
-Meal/progress vision cost depends on chosen model, image dimensions/detail, and tokenization. Until measured with real fixtures, use a conservative total AI budget of **$1–$5 per active user per month**. This is a planning envelope, not a promised bill.
+Gemini is the planned sole live provider for owner dogfooding. Meal/progress
+vision cost depends on the evaluated model, image dimensions/detail, and
+tokenization. Until measured with real fixtures, use a conservative total AI
+budget of **$1–$5 per active user per month**. This is a planning envelope, not
+a promised bill.
+
+The Gemini Free tier is suitable only for synthetic evaluation data in this
+project. Restricted coaching data requires a billing-enabled paid-service
+project because unpaid-service data terms do not satisfy Tracend's privacy
+requirements. Billing is a privacy gate as well as a cost decision; it does
+not by itself authorize live traffic.
+
+The production baseline is stable `gemini-3.5-flash`: USD 1.50 per million
+input tokens and USD 9.00 per million output tokens at the verified 2026-07-04
+paid standard rate. Coach uses medium thinking, meal extraction uses low, and
+high is reserved for named difficult review fixtures. A USD 3 per-owner monthly
+warning and USD 5 hard stop are enforced server-side, with 30 Coach requests
+per owner/day. Lite models are not production routes. Quality-adjusted rupee
+cost is controlled with bounded context/output and task-specific thinking.
 
 ## 5. Expected Monthly Scenarios
 
@@ -130,6 +154,8 @@ This fits under the current 1 GB Free Storage allowance but uses roughly half of
 - AI kill switch that preserves approved plans and manual logging.
 - `model_runs` records estimated and actual usage/cost without raw sensitive content.
 - Meal-image retention enforced so Storage does not grow indefinitely.
+- One open encrypted export per owner, three downloads, and seven-day retention;
+  the existing daily retention call performs cleanup without another schedule.
 
 ## 8. Upgrade Triggers
 

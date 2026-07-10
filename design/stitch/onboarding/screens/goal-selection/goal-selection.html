@@ -1,0 +1,298 @@
+<!DOCTYPE html><html lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport">
+<title>Tracend - Onboarding: Your Goal</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Spline+Sans:wght@500;600;700&amp;family=IBM+Plex+Mono:wght@500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container": "#eaeefa",
+                        "secondary-fixed-dim": "#bbc8d9",
+                        "inverse-on-surface": "#edf1fc",
+                        "primary-fixed-dim": "#bec2ff",
+                        "surface-light": "#FFFFFF",
+                        "surface-bright": "#f9f9ff",
+                        "surface-dark": "#121925",
+                        "on-tertiary-container": "#ffe4d9",
+                        "state-attention": "#C43C31",
+                        "on-surface": "#171c24",
+                        "outline": "#767686",
+                        "on-secondary": "#ffffff",
+                        "state-attention-dark": "#FF887D",
+                        "on-primary-container": "#e8e7ff",
+                        "background": "#f9f9ff",
+                        "state-stable-dark": "#59D6C7",
+                        "on-secondary-fixed-variant": "#3c4856",
+                        "primary-container": "#4a57e8",
+                        "tertiary-container": "#b04a00",
+                        "state-stable": "#00796B",
+                        "on-tertiary": "#ffffff",
+                        "surface-tint": "#3e4bdd",
+                        "surface-variant": "#dee2ee",
+                        "surface": "#f9f9ff",
+                        "surface-dim": "#d6dae5",
+                        "canvas-dark": "#090D14",
+                        "on-background": "#171c24",
+                        "action-primary-dark": "#9BA5FF",
+                        "tertiary": "#893800",
+                        "tertiary-fixed-dim": "#ffb692",
+                        "surface-container-highest": "#dee2ee",
+                        "on-primary-fixed-variant": "#202dc5",
+                        "on-primary": "#ffffff",
+                        "secondary-fixed": "#d7e4f5",
+                        "canvas-light": "#F3F6F8",
+                        "primary": "#2e3bcf",
+                        "on-tertiary-fixed": "#341100",
+                        "secondary-container": "#d4e1f3",
+                        "inverse-primary": "#bec2ff",
+                        "error-container": "#ffdad6",
+                        "on-error": "#ffffff",
+                        "outline-variant": "#c6c5d7",
+                        "on-secondary-fixed": "#101c29",
+                        "error": "#ba1a1a",
+                        "tertiary-fixed": "#ffdbcb",
+                        "surface-container-low": "#f0f3ff",
+                        "on-error-container": "#93000a",
+                        "on-secondary-container": "#586473",
+                        "primary-fixed": "#e0e0ff",
+                        "on-surface-variant": "#454655",
+                        "surface-container-high": "#e4e8f4",
+                        "secondary": "#535f6e",
+                        "on-primary-fixed": "#000569",
+                        "on-tertiary-fixed-variant": "#793100",
+                        "inverse-surface": "#2c3139",
+                        
+                        "text-primary-dark": "#F4F7FB",
+                        "border-subtle": "rgba(255,255,255,0.1)",
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "2xl": "18px",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xxl": "32px",
+                        "xl": "24px",
+                        "xs": "4px",
+                        "sm": "8px",
+                        "base": "4px",
+                        "md": "12px",
+                        "xxxl": "48px",
+                        "gutter-compact": "16px",
+                        "gutter": "20px",
+                        "lg": "16px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter", "sans-serif"],
+                        "screen-title": ["Spline Sans", "sans-serif"],
+                        "decision-headline": ["Spline Sans", "sans-serif"],
+                        "section-title": ["Spline Sans", "sans-serif"],
+                        "body-base": ["Inter", "sans-serif"],
+                        "data-utility": ["IBM Plex Mono", "monospace"],
+                        "body-compact": ["Inter", "sans-serif"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "screen-title": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "screen-title-mobile": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "decision-headline": ["32px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "section-title": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "body-base": ["17px", { "lineHeight": "25px", "fontWeight": "400" }],
+                        "data-utility": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                        "body-compact": ["15px", { "lineHeight": "22px", "fontWeight": "400" }]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: theme('colors.canvas-dark');
+            color: theme('colors.text-primary-dark');
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .hairline-border {
+            border: 1px solid theme('colors.border-subtle');
+        }
+        .glass-blur {
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        /* Custom scrollbar for text area if needed */
+        textarea::-webkit-scrollbar {
+            width: 8px;
+        }
+        textarea::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        textarea::-webkit-scrollbar-thumb {
+            background-color: theme('colors.border-subtle');
+            border-radius: 4px;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="flex flex-col min-h-[884px] bg-canvas-dark text-text-primary-dark font-body-base overflow-x-hidden selection:bg-action-primary-dark selection:text-canvas-dark">
+<!-- TopAppBar (From JSON) -->
+<header class="w-full top-0 sticky bg-canvas-dark/80 border-b border-border-subtle flex items-center z-50 glass-blur">
+  <div class="max-w-md mx-auto w-full flex items-center justify-between px-gutter py-md">
+    <button class="text-action-primary-dark font-data-utility text-[12px] uppercase tracking-[0.15em] hover:text-white transition-colors active:scale-95 flex items-center">
+      Cancel
+    </button>
+    <div class="flex flex-col items-center gap-2">
+      <div class="flex items-center gap-1.5">
+        <span class="font-data-utility text-[10px] text-action-primary-dark tabular-nums tracking-widest uppercase">Step 01</span>
+        <span class="text-outline/40 text-[10px] font-data-utility">/</span>
+        <span class="font-data-utility text-[10px] text-outline/60 tabular-nums tracking-widest uppercase">08</span>
+      </div>
+      <div class="flex gap-1">
+        <div class="w-5 h-0.5 rounded-full bg-action-primary-dark shadow-[0_0_8px_rgba(155,165,255,0.6)]"></div>
+        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+      </div>
+    </div>
+    <button class="w-[44px] flex justify-end items-center text-outline/60 hover:text-action-primary-dark transition-colors">
+      <span class="material-symbols-outlined text-[22px]">more_vert</span>
+    </button>
+  </div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow flex flex-col px-gutter pt-xl pb-[120px] max-w-md mx-auto w-full">
+<!-- Header Section -->
+<div class="mb-xxl animate-fade-in-up" style="animation-duration: 0.4s; animation-fill-mode: both;"><div class="flex items-center gap-2 mb-2">
+  <span class="w-1 h-4 bg-action-primary-dark rounded-full"></span>
+  <span class="font-data-utility text-[11px] uppercase tracking-[0.2em] text-action-primary-dark/80">Onboarding Flow</span>
+</div>
+<h2 class="font-decision-headline text-decision-headline font-bold text-text-primary-dark mb-2">Your goal</h2>
+<p class="font-body-base text-body-base text-outline/80 leading-relaxed">Select the primary objective for your current training phase.</p></div>
+<!-- Goal Selection Grid -->
+<div class="grid grid-cols-1 gap-md mb-xxxl"><!-- Option 1: Lose body fat -->
+<label class="relative group cursor-pointer animate-fade-in-up" style="animation-duration: 0.4s; animation-delay: 0.1s; animation-fill-mode: both;">
+<input checked="" class="peer sr-only" name="goal" type="radio" value="lose_fat">
+<div class="w-full bg-surface-dark rounded-2xl p-lg border-2 border-action-primary-dark transition-all duration-200 scale-100 peer-active:scale-[0.98]">
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-1">
+<span class="font-section-title text-section-title text-text-primary-dark">Lose body fat</span>
+<p class="text-[14px] text-outline leading-tight">Prioritize calorie deficit and fat oxidation while preserving lean mass.</p>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-action-primary-dark flex items-center justify-center bg-action-primary-dark shrink-0">
+<span class="material-symbols-outlined text-[16px] text-surface-dark" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</div>
+</div>
+</label>
+<!-- Option 2: Build muscle -->
+<label class="relative group cursor-pointer animate-fade-in-up" style="animation-duration: 0.4s; animation-delay: 0.15s; animation-fill-mode: both;">
+<input class="peer sr-only" name="goal" type="radio" value="build_muscle">
+<div class="w-full bg-surface-dark rounded-2xl p-lg hairline-border hover:bg-surface-dark/80 transition-all duration-200 scale-100 peer-active:scale-[0.98] peer-checked:border-action-primary-dark peer-checked:border-2 peer-checked:bg-surface-dark">
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-1">
+<span class="font-section-title text-section-title text-text-primary-dark">Build muscle</span>
+<p class="text-[14px] text-outline leading-tight">Optimize hypertrophy through progressive overload and positive nitrogen balance.</p>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-outline-variant flex items-center justify-center peer-checked:border-action-primary-dark peer-checked:bg-action-primary-dark shrink-0"></div>
+</div>
+</div>
+</label>
+<!-- Option 3: Improve strength -->
+<label class="relative group cursor-pointer animate-fade-in-up" style="animation-duration: 0.4s; animation-delay: 0.2s; animation-fill-mode: both;">
+<input class="peer sr-only" name="goal" type="radio" value="improve_strength">
+<div class="w-full bg-surface-dark rounded-2xl p-lg hairline-border hover:bg-surface-dark/80 transition-all duration-200 scale-100 peer-active:scale-[0.98] peer-checked:border-action-primary-dark peer-checked:border-2 peer-checked:bg-surface-dark">
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-1">
+<span class="font-section-title text-section-title text-text-primary-dark">Improve strength</span>
+<p class="text-[14px] text-outline leading-tight">Focus on neuromuscular efficiency and peak force production across compound lifts.</p>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-outline-variant flex items-center justify-center shrink-0"></div>
+</div>
+</div>
+</label>
+<!-- Option 4: Maintain -->
+<label class="relative group cursor-pointer animate-fade-in-up" style="animation-duration: 0.4s; animation-delay: 0.25s; animation-fill-mode: both;">
+<input class="peer sr-only" name="goal" type="radio" value="maintain">
+<div class="w-full bg-surface-dark rounded-2xl p-lg hairline-border hover:bg-surface-dark/80 transition-all duration-200 scale-100 peer-active:scale-[0.98] peer-checked:border-action-primary-dark peer-checked:border-2 peer-checked:bg-surface-dark">
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-1">
+<span class="font-section-title text-section-title text-text-primary-dark">Maintain and feel better</span>
+<p class="text-[14px] text-outline leading-tight">Stabilize metabolic rate and improve overall vitality and movement quality.</p>
+</div>
+<div class="w-6 h-6 rounded-full border-2 border-outline-variant flex items-center justify-center shrink-0"></div>
+</div>
+</div>
+</label></div>
+<!-- Follow-up Field -->
+<div class="animate-fade-in-up" style="animation-duration: 0.4s; animation-delay: 0.35s; animation-fill-mode: both;"><div class="flex justify-between items-end mb-sm">
+<label class="block font-body-compact text-body-compact text-outline" for="meaningful_progress">What would meaningful progress look like to you?</label>
+<span class="font-data-utility text-[10px] uppercase tracking-widest text-action-primary-dark/60">SUBJECTIVE_INPUT</span>
+</div>
+<div class="relative bg-surface-dark rounded-2xl hairline-border focus-within:border-action-primary-dark focus-within:ring-1 focus-within:ring-action-primary-dark transition-all overflow-hidden">
+<textarea class="w-full bg-transparent border-none text-text-primary-dark font-body-base text-body-base p-lg placeholder:text-outline-variant/50 focus:ring-0 resize-none" id="meaningful_progress" name="meaningful_progress" placeholder="e.g., Seeing more definition in my shoulders, fitting into my old jeans..." rows="3"></textarea>
+<div class="absolute bottom-2 right-4">
+<span class="font-data-utility text-[10px] text-outline/40">0 / 250</span>
+</div>
+</div></div>
+<div class="mt-xxl p-lg rounded-2xl bg-surface-dark/40 hairline-border flex gap-md items-start animate-fade-in-up" style="animation-duration: 0.4s; animation-delay: 0.4s; animation-fill-mode: both;">
+<span class="material-symbols-outlined text-action-primary-dark text-[20px]">info</span>
+<p class="text-[14px] text-outline leading-relaxed">
+<span class="font-data-utility text-action-primary-dark/80 uppercase text-[11px] block mb-1">Coach Note</span>
+        Your primary goal defines the starting metabolic baseline and volume distribution for Phase 1.
+    </p>
+</div></main>
+<!-- Bottom Action Area -->
+<div class="fixed bottom-0 left-0 w-full z-40 px-gutter pb-[calc(env(safe-area-inset-bottom)+20px)] pt-xl glass-blur bg-canvas-dark/80 border-t border-border-subtle animate-fade-in-up" style="animation-duration: 0.4s; animation-delay: 0.5s; animation-fill-mode: both;">
+<div class="max-w-md mx-auto w-full flex flex-col gap-md">
+<div class="flex flex-col gap-sm">
+<button class="w-full h-[52px] bg-action-primary-dark text-canvas-dark font-section-title text-section-title rounded-2xl flex items-center justify-center hover:bg-opacity-90 active:scale-[0.98] transition-all duration-150">
+                    Continue
+                </button>
+<button class="w-full h-[52px] bg-transparent hairline-border text-text-primary-dark font-section-title text-section-title rounded-2xl flex items-center justify-center hover:bg-surface-dark active:scale-[0.98] transition-all duration-150">
+                    Save and exit
+                </button>
+</div>
+<div class="flex justify-center items-center gap-1 mt-xs text-outline opacity-70">
+<span class="material-symbols-outlined text-[14px]">cloud_done</span>
+<span class="font-data-utility text-data-utility text-[12px]">Saved just now</span>
+</div>
+</div>
+</div>
+<!-- Inline Styles for simple animations -->
+<style>
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .animate-fade-in-up {
+            animation-name: fadeInUp;
+            animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+    </style>
+
+
+</body></html>

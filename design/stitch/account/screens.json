@@ -1,0 +1,26 @@
+{
+  "project": {
+    "title": "Tracend Design System",
+    "id": "2662655096321681608",
+    "importedAt": "2026-06-29"
+  },
+  "flow": "account",
+  "screens": [
+    {
+      "folder": "account-profile",
+      "group": "profile",
+      "title": "Account & Profile - Kinetic Precision",
+      "stitchId": "ea3e2aced4ad474c8f042688218a8812",
+      "width": "780",
+      "height": "2328",
+      "html": "screens/account-profile/account-profile.html",
+      "screenshot": "screens/account-profile/account-profile.png"
+    }
+  ],
+  "missing": [
+    {
+      "screen": "ai-usage",
+      "note": "Generation returned without creating a Stitch screen; use design/stitch/account/AI_USAGE_PROMPT.md for the next attempt."
+    }
+  ]
+}

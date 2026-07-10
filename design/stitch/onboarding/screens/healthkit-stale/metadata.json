@@ -1,0 +1,15 @@
+{
+  "id": "dbfa17d6fc1244aab2a6535b9b718413",
+  "name": "projects/2662655096321681608/screens/dbfa17d6fc1244aab2a6535b9b718413",
+  "title": "HealthKit - Stale Data (Final)",
+  "flow": "authentication-and-onboarding",
+  "group": "healthkit",
+  "width": "780",
+  "height": "1768",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "healthkit-stale.html",
+    "screenshot": "healthkit-stale.png"
+  },
+  "importedAt": "2026-06-29"
+}

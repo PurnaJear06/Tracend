@@ -1,0 +1,15 @@
+{
+  "id": "0dc06434001748729dcf062e309904ca",
+  "name": "projects/2662655096321681608/screens/0dc06434001748729dcf062e309904ca",
+  "title": "HealthKit - Unavailable State (Dark)",
+  "flow": "authentication-and-onboarding",
+  "group": "healthkit",
+  "width": "780",
+  "height": "1768",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "healthkit-unavailable.html",
+    "screenshot": "healthkit-unavailable.png"
+  },
+  "importedAt": "2026-06-29"
+}

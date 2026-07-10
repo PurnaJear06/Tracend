@@ -58,11 +58,13 @@ Semantic roles include `canvas`, `surface`, `surfaceRaised`, `textPrimary`, `tex
 
 | Role | Preferred face | Use |
 |---|---|---|
-| Brand/display | Spline Sans, 600–700 | Short titles and decision statements |
+| Brand/display | iOS system San Francisco, 600–700 | Short titles and decision statements |
 | Interface/body | iOS system San Francisco | Controls, forms, explanations, long text |
-| Data/utility | IBM Plex Mono, 500 | Loads, reps, macros, dates, confidence and sources |
+| Data/utility | iOS system San Francisco with tabular figures | Loads, reps, macros, dates, confidence and sources |
 
-Custom fonts require license verification and must be bundled locally; health or identity data must never be sent to a font CDN. System fallbacks must preserve layout. Every text style maps to Dynamic Type, wraps before truncating, and is tested at the largest accessibility sizes. Tabular figures are required for changing values and timers.
+No production custom font is required. Every text style maps to Dynamic Type,
+wraps before truncating, and is tested at the largest accessibility sizes.
+Tabular figures are required for changing values and timers.
 
 ### 3.3 Layout, spacing, and shape
 
@@ -75,20 +77,32 @@ Custom fonts require license verification and must be bundled locally; health or
 
 ### 3.4 Elevation and material
 
-Hierarchy comes primarily from spacing, contrast, and borders. Use only three elevation levels: canvas, raised card, and modal. Shadows are soft and low-opacity; dark mode uses tonal separation. Glassmorphism, glow, and floating pills are prohibited as default surface treatments.
+Hierarchy comes primarily from spacing, contrast, and borders. Use only three elevation levels: canvas, raised card, and modal. Shadows are soft and low-opacity; dark mode uses tonal separation. Glassmorphism and glow are prohibited as default content-surface treatments. The primary iPhone tab bar is the sole exception: it may use a restrained floating capsule material so navigation remains visually separate from scrolling content. Content cards remain solid and evidence-focused.
 
 ## 4. Navigation
 
-The primary iOS tab bar has four labeled destinations:
+The primary iOS tab bar has five labeled destinations:
 
 1. **Today** — decision, check-in, schedule, and pending action;
 2. **Train** — active plan, workout execution, and history;
-3. **Nutrition** — targets, confirmed meals, and meal capture;
-4. **Progress** — measurements, reviews, trends, and progress photos.
+3. **Coach** — direct user questions, current decision explanation, evidence, and proposal review entry points;
+4. **Nutrition** — targets, confirmed meals, and meal capture;
+5. **Progress** — measurements, reviews, trends, and progress photos.
 
-Profile, connections, privacy, export, and deletion live under the account control on Today. Coach is not a fifth destination: coaching is the explanation layer across Today and review flows.
+Profile, current goal, connections, sanitized AI usage, privacy, export, and
+deletion live under the account control on Today. Account is a native grouped
+detail screen, not a sixth tab. It may show AI service status and user-scoped
+usage but never an API-key field. Coach is a top-level destination, but it
+remains one controlled coaching workflow. Do not represent Training Coach,
+Nutrition Coach, and Head Coach as separate autonomous chatbots; show them only
+as expandable perspectives inside a unified Tracend Coach response.
 
 Native back behavior, swipe-back, tab-state preservation, deep links, and restoration after interruption are mandatory.
+
+On iPhone, the five destinations sit in one safe-area-aware floating capsule.
+Selection uses a compact tonal indicator, filled icon, label-weight change, and
+160–240ms interruptible motion. The bar never hides scroll content, preserves
+all tab state, and becomes a width-constrained regular layout on larger widths.
 
 ## 5. Core Components
 
@@ -123,6 +137,22 @@ Separates AI-observed foods from confirmed catalog items. Every candidate shows 
 ### `MetricTrend`
 
 Uses a line for time trend, a range band for uncertainty where applicable, explicit units, direct labels for small data sets, and a text summary for VoiceOver. Charts never use red versus green alone.
+Planned values, sample fixtures, and unrelated metrics never appear as an
+observed trend. Two real dated observations are the minimum rendering gate.
+
+### `UsageSummary`
+
+Shows a named time window, authenticated-user request count, token/image usage
+when meaningful, estimated cost, and service state. Values are labeled
+**Estimate**, never presented as billing authority, and never expose keys,
+prompts, request identifiers, or raw provider errors.
+
+### `CoachMessage` and `MealScheduleTimeline`
+
+Coach messages use a restrained familiar bubble shape, selectable text, and an
+expandable evidence drawer; the pinned daily decision remains a separate solid
+surface. Meal schedule rows use time, label, planned quantities, and explicit
+status. Neither component uses color as the only state signal.
 
 ## 6. Motion and Haptics
 

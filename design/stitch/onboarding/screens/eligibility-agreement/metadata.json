@@ -1,0 +1,15 @@
+{
+  "id": "ccdc703c646b442ca561bab470aff7d2",
+  "name": "projects/2662655096321681608/screens/ccdc703c646b442ca561bab470aff7d2",
+  "title": "Eligibility & Agreement - Technical Refinement",
+  "flow": "authentication-and-onboarding",
+  "group": "eligibility",
+  "width": "780",
+  "height": "1768",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "eligibility-agreement.html",
+    "screenshot": "eligibility-agreement.png"
+  },
+  "importedAt": "2026-06-29"
+}

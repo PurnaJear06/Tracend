@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Tracend - Plan Proposal</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface": "#f9f9ff",
+                        "surface-container-low": "#f0f3ff",
+                        "surface-tint": "#3e4bdd",
+                        "inverse-primary": "#bec2ff",
+                        "on-tertiary-container": "#ffe4d9",
+                        "on-secondary-container": "#586473",
+                        "surface-container-lowest": "#ffffff",
+                        "on-surface": "#171c24",
+                        "canvas-light": "#F3F6F8",
+                        "surface-variant": "#dee2ee",
+                        "on-secondary-fixed": "#101c29",
+                        "state-attention": "#C43C31",
+                        "state-stable-dark": "#59D6C7",
+                        "on-primary-fixed": "#000569",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#d4e1f3",
+                        "tertiary-fixed": "#ffdbcb",
+                        "on-tertiary-fixed-variant": "#793100",
+                        "primary-container": "#4a57e8",
+                        "surface-dim": "#d6dae5",
+                        "on-secondary-fixed-variant": "#3c4856",
+                        "on-error-container": "#93000a",
+                        "outline-variant": "#c6c5d7",
+                        "on-background": "#171c24",
+                        "primary": "#2e3bcf",
+                        "secondary": "#535f6e",
+                        "on-tertiary": "#ffffff",
+                        "inverse-surface": "#2c3139",
+                        "primary-fixed": "#e0e0ff",
+                        "inverse-on-surface": "#edf1fc",
+                        "background": "#f9f9ff",
+                        "tertiary-fixed-dim": "#ffb692",
+                        "secondary-fixed": "#d7e4f5",
+                        "surface-container": "#eaeefa",
+                        "on-secondary": "#ffffff",
+                        "tertiary-container": "#b04a00",
+                        "surface-light": "#FFFFFF",
+                        "error-container": "#ffdad6",
+                        "secondary-fixed-dim": "#bbc8d9",
+                        "on-tertiary-fixed": "#341100",
+                        "on-surface-variant": "#454655",
+                        "outline": "#767686",
+                        "on-primary-container": "#e8e7ff",
+                        "surface-container-high": "#e4e8f4",
+                        "action-primary-dark": "#9BA5FF",
+                        "surface-dark": "#121925",
+                        "surface-bright": "#f9f9ff",
+                        "state-stable": "#00796B",
+                        "error": "#ba1a1a",
+                        "primary-fixed-dim": "#bec2ff",
+                        "surface-container-highest": "#dee2ee",
+                        "state-attention-dark": "#FF887D",
+                        "on-error": "#ffffff",
+                        "canvas-dark": "#090D14",
+                        "tertiary": "#893800",
+                        "on-primary-fixed-variant": "#202dc5"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xxxl": "48px",
+                        "gutter": "20px",
+                        "xs": "4px",
+                        "md": "12px",
+                        "xxl": "32px",
+                        "xl": "24px",
+                        "lg": "16px",
+                        "sm": "8px",
+                        "gutter-compact": "16px",
+                        "base": "4px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "decision-headline": ["Spline Sans"],
+                        "section-title": ["Spline Sans"],
+                        "body-base": ["Inter"],
+                        "screen-title": ["Spline Sans"],
+                        "data-utility": ["IBM Plex Mono"],
+                        "body-compact": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "decision-headline": ["32px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "section-title": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "body-base": ["17px", { "lineHeight": "25px", "fontWeight": "400" }],
+                        "screen-title": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "data-utility": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                        "body-compact": ["15px", { "lineHeight": "22px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&family=Spline+Sans:wght@500;600;700&display=swap');
+        
+        .border-subtle { border: 1px solid theme('colors.outline'); }
+        .hairline-b { border-bottom: 1px solid theme('colors.outline'); }
+        
+        /* Custom Scrollbar for sleek look */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: theme('colors.surface-variant'); border-radius: 4px; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-canvas-dark text-inverse-on-surface font-body-base antialiased min-h-screen flex flex-col selection:bg-primary selection:text-on-primary">
+<!-- Shared TopAppBar Component -->
+<header class="w-full top-0 sticky z-40 bg-canvas-dark border-b border-outline flex justify-between items-center px-gutter py-md">
+<div class="flex items-center gap-sm">
+<button class="w-11 h-11 flex items-center justify-center rounded-full hover:bg-surface-dark transition-colors text-primary-fixed">
+<span class="material-symbols-outlined text-[24px]">arrow_back</span>
+</button>
+<h1 class="font-screen-title text-screen-title text-inverse-on-surface">Plan Proposal v2.4</h1>
+</div>
+<div class="font-data-utility text-data-utility text-secondary-fixed bg-surface-dark px-md py-sm rounded border border-outline">
+            NOT ACTIVE
+        </div>
+</header>
+<main class="flex-1 px-gutter py-xl pb-32 max-w-2xl mx-auto w-full space-y-lg">
+<!-- Header / Context -->
+<div class="mb-xxl">
+<h2 class="font-decision-headline text-decision-headline text-inverse-on-surface mb-sm tracking-tight">Review Your Protocol</h2>
+<p class="font-body-base text-body-base text-outline">Below is the synthesized plan based on your inputs and our baseline algorithms. Please review the adjustments before confirming.</p>
+</div>
+<!-- Section 1: Goal & Direction -->
+<section class="bg-surface-dark rounded-lg border-subtle p-lg flex flex-col gap-sm relative overflow-hidden">
+<div class="flex justify-between items-start mb-sm">
+<h3 class="font-label-caps text-label-caps text-outline uppercase">Goal &amp; Direction</h3>
+<span class="font-data-utility text-[12px] text-state-stable-dark bg-state-stable-dark/10 px-sm py-[2px] rounded border border-state-stable-dark/20">[KEPT]</span>
+</div>
+<div class="font-section-title text-section-title text-inverse-on-surface">Lean Muscle Hypertrophy</div>
+<p class="font-body-compact text-body-compact text-outline">Based on your selection.</p>
+</section>
+<!-- Section 2: Weekly Training Structure -->
+<section class="bg-surface-dark rounded-lg border-subtle p-lg flex flex-col gap-sm">
+<div class="flex justify-between items-start mb-sm">
+<h3 class="font-label-caps text-label-caps text-outline uppercase">Weekly Training Structure</h3>
+<span class="font-data-utility text-[12px] text-action-primary-dark bg-action-primary-dark/10 px-sm py-[2px] rounded border border-action-primary-dark/20">[ADJUSTED]</span>
+</div>
+<div class="font-section-title text-section-title text-inverse-on-surface">4 Sessions / Week</div>
+<p class="font-body-compact text-body-compact text-outline">Increased frequency to optimize muscle protein synthesis.</p>
+<div class="mt-md pt-md hairline-b flex justify-between items-center pb-sm border-t border-outline/50">
+<span class="font-body-compact text-body-compact text-outline">Workout Focus</span>
+<div class="flex items-center gap-sm">
+<span class="font-data-utility text-[12px] text-state-stable-dark">[KEPT]</span>
+<span class="font-data-utility text-data-utility text-inverse-on-surface">Push/Pull/Legs</span>
+</div>
+</div>
+<div class="flex justify-between items-center pt-xs">
+<span class="font-body-compact text-body-compact text-outline">Preserved Preference</span>
+<span class="font-data-utility text-data-utility text-inverse-on-surface">Morning Training</span>
+</div>
+</section>
+<!-- Section 3: Metabolic Targets -->
+<section class="bg-surface-dark rounded-lg border-subtle p-lg flex flex-col gap-sm">
+<div class="flex justify-between items-start mb-sm">
+<h3 class="font-label-caps text-label-caps text-outline uppercase">Metabolic Targets</h3>
+<span class="font-data-utility text-[12px] text-action-primary-dark bg-action-primary-dark/10 px-sm py-[2px] rounded border border-action-primary-dark/20">[ADJUSTED]</span>
+</div>
+<div class="flex items-baseline gap-sm mb-xs">
+<div class="font-decision-headline text-decision-headline text-inverse-on-surface">2,650</div>
+<div class="font-data-utility text-data-utility text-outline">kcal</div>
+</div>
+<p class="font-body-compact text-body-compact text-outline mb-md">250 kcal surplus added for hypertrophy support.</p>
+<div class="grid grid-cols-3 gap-xs">
+<div class="bg-canvas-dark p-sm rounded border border-outline/50 flex flex-col items-center">
+<span class="font-label-caps text-label-caps text-outline mb-xs">Protein</span>
+<span class="font-data-utility text-data-utility text-inverse-on-surface">180g</span>
+</div>
+<div class="bg-canvas-dark p-sm rounded border border-outline/50 flex flex-col items-center">
+<span class="font-label-caps text-label-caps text-outline mb-xs">Carbs</span>
+<span class="font-data-utility text-data-utility text-inverse-on-surface">320g</span>
+</div>
+<div class="bg-canvas-dark p-sm rounded border border-outline/50 flex flex-col items-center">
+<span class="font-label-caps text-label-caps text-outline mb-xs">Fats</span>
+<span class="font-data-utility text-data-utility text-inverse-on-surface">70g</span>
+</div>
+</div>
+</section>
+<!-- Section 4: Telemetry & Safety Constraints -->
+<section class="grid grid-cols-1 md:grid-cols-2 gap-lg">
+<!-- Assumptions -->
+<div class="bg-surface-dark rounded-lg border-subtle p-lg">
+<h3 class="font-label-caps text-label-caps text-outline uppercase mb-md">Important Assumptions</h3>
+<ul class="space-y-sm">
+<li class="flex items-start gap-sm">
+<span class="material-symbols-outlined text-[16px] text-state-stable-dark mt-[2px]">check_circle</span>
+<span class="font-body-compact text-body-compact text-inverse-on-surface">Full gym access</span>
+</li>
+<li class="flex items-start gap-sm">
+<span class="material-symbols-outlined text-[16px] text-state-stable-dark mt-[2px]">check_circle</span>
+<span class="font-body-compact text-body-compact text-inverse-on-surface">Consistent 7-8h sleep</span>
+</li>
+</ul>
+</div>
+<!-- Missing Info / Warnings -->
+<div class="bg-surface-dark rounded-lg border border-state-attention-dark/30 p-lg relative overflow-hidden">
+<div class="absolute top-0 right-0 w-16 h-16 bg-state-attention-dark/5 rounded-bl-full"></div>
+<h3 class="font-label-caps text-label-caps text-state-attention-dark uppercase mb-md flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]">warning</span>
+                    Safety Constraints
+                </h3>
+<div class="mb-sm">
+<div class="flex justify-between items-start mb-xs">
+<span class="font-body-compact text-body-compact text-outline">Missing Info</span>
+<span class="font-data-utility text-[12px] text-state-attention-dark bg-state-attention-dark/10 px-sm py-[2px] rounded border border-state-attention-dark/20">[UNKNOWN]</span>
+</div>
+<p class="font-body-compact text-body-compact text-inverse-on-surface">Recent injury history detail (L5-S1)</p>
+</div>
+<div class="pt-sm border-t border-outline/30 mt-sm">
+<span class="font-body-compact text-[13px] text-state-attention-dark block mb-xs">Boundary Applied:</span>
+<p class="font-body-compact text-body-compact text-inverse-on-surface">No heavy axial loading (squats/deadlifts) until clearance.</p>
+</div>
+</div>
+</section>
+<!-- Footer Meta -->
+<div class="text-center pt-lg border-t border-outline/30 mt-xxl">
+<p class="font-data-utility text-[12px] text-outline mb-xs">This plan starts only after approval.</p>
+<p class="font-data-utility text-[12px] text-outline opacity-60">Not medical advice. Consult a physician before starting any training program.</p>
+</div>
+</main>
+<!-- Bottom Action Bar (Sticky) -->
+<div class="fixed bottom-0 left-0 w-full bg-canvas-dark/90 backdrop-blur-md border-t border-outline p-gutter pb-safe z-50">
+<div class="max-w-2xl mx-auto flex flex-col gap-sm">
+<button class="w-full h-[52px] bg-action-primary-dark text-canvas-dark font-section-title text-section-title rounded flex items-center justify-center hover:opacity-90 transition-opacity active:scale-[0.98]">
+                Approve plan
+            </button>
+<div class="grid grid-cols-2 gap-sm">
+<button class="h-[44px] border border-outline text-inverse-on-surface font-body-base text-body-base rounded flex items-center justify-center hover:bg-surface-dark transition-colors">
+                    Edit answers
+                </button>
+<button class="h-[44px] border border-outline text-inverse-on-surface font-body-base text-body-base rounded flex items-center justify-center hover:bg-surface-dark transition-colors">
+                    Request revision
+                </button>
+</div>
+</div>
+</div>
+</body></html>

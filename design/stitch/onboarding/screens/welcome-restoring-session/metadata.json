@@ -1,0 +1,15 @@
+{
+  "id": "38228a74f10c4d5c90b776c428947add",
+  "name": "projects/2662655096321681608/screens/38228a74f10c4d5c90b776c428947add",
+  "title": "Welcome - Restoring Session",
+  "flow": "authentication-and-onboarding",
+  "group": "authentication",
+  "width": "780",
+  "height": "1768",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "welcome-restoring-session.html",
+    "screenshot": "welcome-restoring-session.png"
+  },
+  "importedAt": "2026-06-29"
+}

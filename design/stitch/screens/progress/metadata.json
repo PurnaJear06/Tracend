@@ -1,0 +1,14 @@
+{
+  "id": "b4e3c30d2c6a45e98e26c9c8de943669",
+  "name": "projects/2662655096321681608/screens/b4e3c30d2c6a45e98e26c9c8de943669",
+  "title": "Progress - Tracend Operating System V2",
+  "tab": "progress",
+  "width": "780",
+  "height": "3594",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "progress.html",
+    "screenshot": "progress.png"
+  },
+  "importedAt": "2026-06-28"
+}

@@ -1,0 +1,14 @@
+{
+  "id": "3ad6247ae87545ed82a8a055c2e2e1bd",
+  "name": "projects/2662655096321681608/screens/3ad6247ae87545ed82a8a055c2e2e1bd",
+  "title": "Training Hub - Production Ready",
+  "tab": "train",
+  "width": "780",
+  "height": "3912",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "train.html",
+    "screenshot": "train.png"
+  },
+  "importedAt": "2026-06-28"
+}

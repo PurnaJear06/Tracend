@@ -1,0 +1,14 @@
+{
+  "id": "5a110ba4505c40f490b8ad1871375b36",
+  "name": "projects/2662655096321681608/screens/5a110ba4505c40f490b8ad1871375b36",
+  "title": "Daily Workout Detail - Premium Technical",
+  "tab": "train",
+  "width": "780",
+  "height": "2784",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "workout-detail.html",
+    "screenshot": "workout-detail.png"
+  },
+  "importedAt": "2026-06-28"
+}

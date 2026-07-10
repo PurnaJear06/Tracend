@@ -1,0 +1,15 @@
+{
+  "id": "eaebf3c13cf64fc29970a91d8c484702",
+  "name": "projects/2662655096321681608/screens/eaebf3c13cf64fc29970a91d8c484702",
+  "title": "Onboarding - Building Plan State",
+  "flow": "authentication-and-onboarding",
+  "group": "plan",
+  "width": "780",
+  "height": "1768",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "building-plan.html",
+    "screenshot": "building-plan.png"
+  },
+  "importedAt": "2026-06-29"
+}

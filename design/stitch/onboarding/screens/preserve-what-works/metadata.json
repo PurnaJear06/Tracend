@@ -1,0 +1,15 @@
+{
+  "id": "281d1a7ceed64f5a93705272f8e5cf36",
+  "name": "projects/2662655096321681608/screens/281d1a7ceed64f5a93705272f8e5cf36",
+  "title": "Onboarding - Preserve What Works",
+  "flow": "authentication-and-onboarding",
+  "group": "onboarding",
+  "width": "780",
+  "height": "3558",
+  "deviceType": "MOBILE",
+  "files": {
+    "html": "preserve-what-works.html",
+    "screenshot": "preserve-what-works.png"
+  },
+  "importedAt": "2026-06-29"
+}
