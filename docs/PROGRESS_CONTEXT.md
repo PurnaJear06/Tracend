@@ -95,13 +95,13 @@ Phases 1–8 are hosted; approved owner-device QA is complete.
 - Phase 7 private media `20260702200000` and pose-guidance owner QA passed.
 - Weekly review `20260702223000` is hosted/parity verified; pgTAP 200/200, signed 19 MB app installed. Owner enqueue/worker smoke completed with zero failures.
 - Phase 8/rebuild is hosted through `20260704151000`. Owner context is imported; Gemini routes are `gemini-3.5-flash` only and still disabled by billing/privacy gates. Deno 32/32, pgTAP 287/287, Flutter 65/65, signed hosted app installed/launched July 4.
-- Local 2026-07-05 repair is ready but not hosted: `20260705100000` fixes placeholder meal schedule foods, Today Health evidence freshness, and Train rest-day fallback. Hosted dry-run lists only this migration. Local verification: Deno 32/32, pgTAP 290/290, Flutter format/analyze/test 65/65, unsigned iPhone build 19.3 MB.
+- Repair migration `20260705100000` is hosted and local/remote histories match. It fixes placeholder meal schedule foods, Today Health evidence freshness, and Train rest-day fallback. Flutter format/analyze/test 65/65 and strict signed-build verification pass; the repaired app is installed on the paired iPhone, awaiting one-time developer-profile trust and owner smoke checks.
 ## Global Open Decisions
 - Apple Developer Program enrollment, Sign in with Apple capability, and
   TestFlight environment names before any external beta.
 - Gemini remains mock pending paid privacy/evaluation gates; hosted DeepSeek and Flash-Lite are rejected for restricted-data production use.
 - Licensed food catalog source.
-- Explicit approval to deploy `20260705100000` to hosted Supabase and install the repaired hosted build.
+- Owner developer-profile trust and smoke checks for the repaired build: rest-day Train, exact Nutrition foods, and Today Health evidence refresh.
 ## Global Known Issues
 - Do not commit `.codex/config.toml`; it can contain local MCP/API keys.
 - CoreSimulator remains unsuitable for the external Developer path and is not

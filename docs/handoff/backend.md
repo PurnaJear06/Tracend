@@ -194,10 +194,10 @@ Gemini traffic remains off; no provider request was made. Current verification:
 Deno 32/32, pgTAP 287/287, hosted migration parity, and hosted app install/
 launch on the paired iPhone.
 
-Local repair migration `20260705100000_owner_schedule_and_daily_brief_repair`
-is reviewed locally but not hosted. It replaces placeholder active nutrition
+Repair migration `20260705100000_owner_schedule_and_daily_brief_repair` is
+hosted and local/remote histories match. It replaces placeholder active nutrition
 schedule foods with the owner-confirmed quantities, changes `get_my_daily_brief`
 to use the latest stored HealthKit summary from the previous 31 days, and keeps
-rest days unassigned instead of falling back to the first planned workout. Local
-dry-run to hosted lists only this migration. Verification: Deno 32/32, pgTAP
-290/290, Flutter analysis, 65/65 tests, and unsigned iPhone release build.
+rest days unassigned instead of falling back to the first planned workout.
+Verification: Deno 32/32, pgTAP 290/290, Flutter analysis, 65/65 tests, and a
+strictly verified signed iPhone release build.

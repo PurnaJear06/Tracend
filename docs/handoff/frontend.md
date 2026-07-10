@@ -251,10 +251,10 @@ This file is current-state handoff, not UX authority. UX behavior belongs in
 
 1. Prepare and download one owner export, then decrypt it on the external SSD
    using `docs/BETA_OPERATIONS.md`.
-2. Deploy `20260705100000_owner_schedule_and_daily_brief_repair.sql` only after
-   explicit hosted deployment approval, then install the signed hosted build on
-   the owner's iPhone and verify Sunday/rest day Train, exact Nutrition foods,
-   and Today Health evidence refresh.
+2. The hosted repair migration is deployed and the signed hosted build is
+   installed on the owner's iPhone. Trust the current developer profile in iOS,
+   then verify Sunday/rest day Train, exact Nutrition foods, and Today Health
+   evidence refresh.
 3. Do not device-test deletion with the owner account; hosted synthetic QA is
    the destructive gate.
 4. Keep live meal/progress AI, catalog choice, and Sign in with Apple deferred
