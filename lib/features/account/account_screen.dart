@@ -64,11 +64,12 @@ class _AccountScreenState extends State<AccountScreen> {
             TracendSpacing.xxl,
           ),
           children: [
-            const TracendCard(
+            TracendCard(
               child: _AccountRow(
                 icon: CupertinoIcons.person_fill,
                 title: 'Profile and goals',
                 detail: 'Lean muscle · Private beta',
+                onTap: _openProfileGoals,
               ),
             ),
             const SectionLabel('Connections'),
@@ -109,6 +110,7 @@ class _AccountScreenState extends State<AccountScreen> {
                         : warning
                         ? 'Approaching the \$5 monthly hard stop'
                         : '$serviceStatus · \$3 warning · \$5 hard stop',
+                    onTap: () => _openAiUsage(usage),
                   ),
                 );
               },
@@ -175,6 +177,48 @@ class _AccountScreenState extends State<AccountScreen> {
       builder: (_) => _PrivacyExportSheet(repository: widget.exports),
     );
   }
+
+  Future<void> _openProfileGoals() => Navigator.of(context).push<void>(
+    CupertinoPageRoute(
+      builder: (_) => _ProfileGoalsScreen(data: _loadProfileGoals()),
+    ),
+  );
+
+  Future<Map<String, dynamic>> _loadProfileGoals() async {
+    if (!widget.environment.hasSupabaseConfiguration) return const {};
+    final client = Supabase.instance.client;
+    final values = await Future.wait([
+      client
+          .from('user_profiles')
+          .select('experience_level,height_cm,training_days,session_minutes')
+          .maybeSingle(),
+      client
+          .from('user_goals')
+          .select('goal_type,priority,status,details,activated_at')
+          .eq('status', 'active')
+          .order('priority')
+          .limit(1)
+          .maybeSingle(),
+      client
+          .from('training_plan_versions')
+          .select('training_plans(title),version_number,status,approved_at')
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle(),
+    ]);
+    return {'profile': values[0], 'goal': values[1], 'plan': values[2]};
+  }
+
+  Future<void> _openAiUsage(Map<String, dynamic>? initial) =>
+      Navigator.of(context).push<void>(
+        CupertinoPageRoute(
+          builder: (_) => _AiUsageScreen(
+            usage: initial == null
+                ? widget.coach.loadUsage()
+                : Future.value(initial),
+          ),
+        ),
+      );
 
   Future<void> _openDeletion() async {
     final deleted = await showModalBottomSheet<bool>(
@@ -267,6 +311,285 @@ class _AccountScreenState extends State<AccountScreen> {
       });
     }
   }
+}
+
+class _ProfileGoalsScreen extends StatelessWidget {
+  const _ProfileGoalsScreen({required this.data});
+  final Future<Map<String, dynamic>> data;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Profile and goals')),
+    body: SafeArea(
+      top: false,
+      child: FutureBuilder<Map<String, dynamic>>(
+        future: data,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return const _AccountDetailMessage(
+              icon: CupertinoIcons.exclamationmark_triangle,
+              title: 'Profile could not load',
+              detail:
+                  'Your saved profile was not changed. Go back and try again.',
+            );
+          }
+          final value = snapshot.data ?? const {};
+          final profile = value['profile'] is Map
+              ? Map<String, dynamic>.from(value['profile'] as Map)
+              : const <String, dynamic>{};
+          final goal = value['goal'] is Map
+              ? Map<String, dynamic>.from(value['goal'] as Map)
+              : const <String, dynamic>{};
+          final plan = value['plan'] is Map
+              ? Map<String, dynamic>.from(value['plan'] as Map)
+              : const <String, dynamic>{};
+          final planName = plan['training_plans'] is Map
+              ? (plan['training_plans'] as Map)['title']?.toString()
+              : null;
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(
+              TracendSpacing.gutter,
+              TracendSpacing.md,
+              TracendSpacing.gutter,
+              TracendSpacing.xl,
+            ),
+            children: [
+              Text(
+                'Your coaching foundation',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+              const SizedBox(height: TracendSpacing.xs),
+              const Text(
+                'These confirmed facts shape your plan and every Coach context snapshot.',
+              ),
+              const SectionLabel('Goal'),
+              TracendCard(
+                raised: true,
+                child: _DetailRows(
+                  rows: {
+                    'Primary goal': _friendly(goal['goal_type']),
+                    'Status': _friendly(goal['status']),
+                    'Active since': _dateText(goal['activated_at']),
+                  },
+                ),
+              ),
+              const SectionLabel('Training profile'),
+              TracendCard(
+                child: _DetailRows(
+                  rows: {
+                    'Experience': _friendly(profile['experience_level']),
+                    'Height': profile['height_cm'] == null
+                        ? 'Not recorded'
+                        : '${profile['height_cm']} cm',
+                    'Training days': _trainingDays(profile['training_days']),
+                    'Session length': profile['session_minutes'] == null
+                        ? 'Not recorded'
+                        : '${profile['session_minutes']} min',
+                  },
+                ),
+              ),
+              const SectionLabel('Approved plan'),
+              TracendCard(
+                child: _DetailRows(
+                  rows: {
+                    'Plan': planName ?? 'No active plan',
+                    'Version': plan['version_number'] == null
+                        ? '—'
+                        : 'v${plan['version_number']}',
+                    'Approved': _dateText(plan['approved_at']),
+                  },
+                ),
+              ),
+              const SizedBox(height: TracendSpacing.sm),
+              const Text(
+                'Plan-changing edits remain approval-gated. Ask Coach for a proposal when you want to change your goal or ongoing plan.',
+              ),
+            ],
+          );
+        },
+      ),
+    ),
+  );
+}
+
+class _AiUsageScreen extends StatelessWidget {
+  const _AiUsageScreen({required this.usage});
+  final Future<Map<String, dynamic>> usage;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('AI usage')),
+    body: SafeArea(
+      top: false,
+      child: FutureBuilder<Map<String, dynamic>>(
+        future: usage,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return const _AccountDetailMessage(
+              icon: CupertinoIcons.exclamationmark_triangle,
+              title: 'Usage could not load',
+              detail:
+                  'This does not affect your approved plan or manual logging.',
+            );
+          }
+          final value = snapshot.data ?? const {};
+          final cost = (value['estimated_cost_usd'] as num?)?.toDouble() ?? 0;
+          final limit = (value['hard_stop_usd'] as num?)?.toDouble() ?? 2;
+          final today = (value['today_requests'] as num?)?.toInt() ?? 0;
+          final daily = (value['daily_limit'] as num?)?.toInt() ?? 10;
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(
+              TracendSpacing.gutter,
+              TracendSpacing.md,
+              TracendSpacing.gutter,
+              TracendSpacing.xl,
+            ),
+            children: [
+              Text(
+                'Qwen owner test',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+              const SizedBox(height: TracendSpacing.xs),
+              const Text(
+                'Sanitized usage from the server. Provider keys, prompts and private health values are never shown here.',
+              ),
+              const SizedBox(height: TracendSpacing.lg),
+              TracendCard(
+                raised: true,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '\$${cost.toStringAsFixed(4)}',
+                      style: Theme.of(context).textTheme.displaySmall,
+                    ),
+                    Text(
+                      'estimated this month · \$${limit.toStringAsFixed(0)} hard stop',
+                    ),
+                    const SizedBox(height: TracendSpacing.sm),
+                    LinearProgressIndicator(
+                      value: limit == 0 ? 0 : (cost / limit).clamp(0, 1),
+                    ),
+                  ],
+                ),
+              ),
+              const SectionLabel('Today'),
+              TracendCard(
+                child: _DetailRows(
+                  rows: {
+                    'Requests': '$today of $daily',
+                    'Successful this month': '${value['successful_runs'] ?? 0}',
+                    'Failed this month': '${value['failed_runs'] ?? 0}',
+                    'Service': value['blocked'] == true
+                        ? 'Paused at safety limit'
+                        : 'Available',
+                  },
+                ),
+              ),
+              const SizedBox(height: TracendSpacing.sm),
+              const Text(
+                'These are application estimates, not a provider invoice.',
+              ),
+            ],
+          );
+        },
+      ),
+    ),
+  );
+}
+
+class _DetailRows extends StatelessWidget {
+  const _DetailRows({required this.rows});
+  final Map<String, String> rows;
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      for (var i = 0; i < rows.length; i++) ...[
+        if (i > 0) const Divider(height: TracendSpacing.lg),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: Text(rows.keys.elementAt(i))),
+            const SizedBox(width: TracendSpacing.sm),
+            Flexible(
+              child: Text(
+                rows.values.elementAt(i),
+                textAlign: TextAlign.end,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+          ],
+        ),
+      ],
+    ],
+  );
+}
+
+class _AccountDetailMessage extends StatelessWidget {
+  const _AccountDetailMessage({
+    required this.icon,
+    required this.title,
+    required this.detail,
+  });
+  final IconData icon;
+  final String title, detail;
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(TracendSpacing.gutter),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 40),
+          const SizedBox(height: TracendSpacing.sm),
+          Text(title, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: TracendSpacing.xs),
+          Text(detail, textAlign: TextAlign.center),
+        ],
+      ),
+    ),
+  );
+}
+
+String _friendly(Object? value) => value == null
+    ? 'Not recorded'
+    : value
+          .toString()
+          .replaceAll('_', ' ')
+          .split(' ')
+          .map(
+            (word) => word.isEmpty
+                ? word
+                : '${word[0].toUpperCase()}${word.substring(1)}',
+          )
+          .join(' ');
+
+String _dateText(Object? value) {
+  if (value == null) return 'Not recorded';
+  final date = DateTime.tryParse(value.toString())?.toLocal();
+  return date == null
+      ? 'Not recorded'
+      : '${date.day}/${date.month}/${date.year}';
+}
+
+String _trainingDays(Object? value) {
+  if (value is! List || value.isEmpty) return 'Not recorded';
+  const days = {
+    1: 'Mon',
+    2: 'Tue',
+    3: 'Wed',
+    4: 'Thu',
+    5: 'Fri',
+    6: 'Sat',
+    7: 'Sun',
+  };
+  return value.map((item) => days[(item as num).toInt()] ?? '?').join(', ');
 }
 
 class _AccountDeletionSheet extends StatefulWidget {

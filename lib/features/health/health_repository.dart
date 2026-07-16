@@ -137,6 +137,7 @@ class SupabaseHealthRepository implements HealthRepository {
         'summaries': summaries
             .map((summary) => summary.toJson(result.requestedMetrics))
             .toList(),
+        'workouts': healthWorkoutReferences(result.samples),
       },
     );
     if (response.status < 200 || response.status >= 300) {

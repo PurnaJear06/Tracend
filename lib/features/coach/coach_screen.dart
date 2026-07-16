@@ -21,6 +21,7 @@ class _CoachScreenState extends State<CoachScreen> {
   final _composer = TextEditingController();
   final _scroll = ScrollController();
   late Future<CoachDecision?> _decision;
+  Future<List<CoachContextSource>>? _contextStatus;
   CoachChatRepository? get _chat => widget.repository is CoachChatRepository
       ? widget.repository as CoachChatRepository
       : null;
@@ -36,6 +37,10 @@ class _CoachScreenState extends State<CoachScreen> {
   void initState() {
     super.initState();
     _decision = widget.repository.loadLatest();
+    if (widget.repository is CoachContextRepository) {
+      _contextStatus = (widget.repository as CoachContextRepository)
+          .loadContextStatus();
+    }
     _restoreChat();
   }
 
@@ -163,7 +168,7 @@ class _CoachScreenState extends State<CoachScreen> {
         setState(() {
           _sending = false;
           _error =
-              'Coach is unavailable. Your approved plan and logs are unchanged.';
+              'Coach did not return a usable AI reply. No mock answer was shown; retry the question in a moment.';
         });
       }
     }
@@ -278,6 +283,17 @@ class _CoachScreenState extends State<CoachScreen> {
                     onGenerate: _generate,
                   ),
                 ),
+                if (_contextStatus != null) ...[
+                  const SizedBox(height: TracendSpacing.sm),
+                  FutureBuilder<List<CoachContextSource>>(
+                    future: _contextStatus,
+                    builder: (context, snapshot) => _CoachContextCard(
+                      sources: snapshot.data,
+                      loading:
+                          snapshot.connectionState == ConnectionState.waiting,
+                    ),
+                  ),
+                ],
                 if (_error != null) ...[
                   const SizedBox(height: TracendSpacing.sm),
                   TracendCard(
@@ -461,6 +477,15 @@ class _MessageBubble extends StatelessWidget {
                   height: 1.45,
                 ),
               ),
+              if (!user && message.modelProvider != null) ...[
+                const SizedBox(height: TracendSpacing.xs),
+                TracendPill(
+                  label: message.modelProvider == 'groq'
+                      ? 'Qwen AI response'
+                      : '${message.modelProvider} AI response',
+                  icon: CupertinoIcons.check_mark_circled,
+                ),
+              ],
               if (!user &&
                   (message.evidence.isNotEmpty ||
                       message.missingData.isNotEmpty)) ...[
@@ -468,7 +493,7 @@ class _MessageBubble extends StatelessWidget {
                 ExpansionTile(
                   tilePadding: EdgeInsets.zero,
                   childrenPadding: EdgeInsets.zero,
-                  title: const Text('Evidence and limits'),
+                  title: const Text('Evidence used and data gaps'),
                   children: [
                     for (final item in message.evidence)
                       ListTile(
@@ -488,16 +513,70 @@ class _MessageBubble extends StatelessWidget {
                 ),
               ],
               if (!user && message.suggestedFollowUps.isNotEmpty) ...[
-                const SizedBox(height: TracendSpacing.xs),
+                const SizedBox(height: TracendSpacing.sm),
+                Text(
+                  'Suggested next actions',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: TracendSpacing.xxs),
                 for (final prompt in message.suggestedFollowUps)
-                  Text(
-                    '• $prompt',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text('• $prompt'),
               ],
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CoachContextCard extends StatelessWidget {
+  const _CoachContextCard({required this.sources, required this.loading});
+  final List<CoachContextSource>? sources;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const TracendCard(child: LinearProgressIndicator(minHeight: 3));
+    }
+    final values = sources ?? const <CoachContextSource>[];
+    final available = values.where((source) => source.available).length;
+    final missing = values.where((source) => !source.available).toList();
+    return TracendCard(
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        title: const Text('Your coaching context'),
+        subtitle: Text(
+          '$available of ${values.length} sources available'
+          '${missing.isEmpty ? '' : ' · ${missing.length} needs data'}',
+        ),
+        children: [
+          for (final source in values)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              leading: Icon(
+                source.available
+                    ? CupertinoIcons.check_mark_circled_solid
+                    : CupertinoIcons.exclamationmark_circle,
+                color: source.available
+                    ? context.tracendColors.stateStable
+                    : context.tracendColors.stateAttention,
+              ),
+              title: Text(source.label),
+              subtitle: Text(
+                source.available
+                    ? [
+                        if (source.records > 0) '${source.records} records',
+                        if (source.latestDate != null)
+                          'latest ${source.latestDate}',
+                      ].join(' · ')
+                    : 'No confirmed records yet',
+              ),
+            ),
+        ],
       ),
     );
   }

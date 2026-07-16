@@ -1,152 +1,87 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 
+/// A compact signal rail. It communicates which current facts shaped an action;
+/// it is not a progress indicator and never repeats the action itself.
 class TrajectoryLens extends StatelessWidget {
   const TrajectoryLens({
     this.decision = 'Maintain approved plan',
     this.evidence = const ['Approved plan'],
     super.key,
   });
-
   final String decision;
   final List<String> evidence;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tracendColors;
+    final labels = evidence.take(3).toList();
     return Semantics(
-      label:
-          'Trajectory evidence: ${evidence.join(', ')}. Next move: $decision.',
+      label: 'Signals shaping this action: ${labels.join(', ')}. $decision',
       child: ExcludeSemantics(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final scaledLabelSize = MediaQuery.textScalerOf(context).scale(13);
-            final useCompactLayout =
-                constraints.maxWidth < 300 || scaledLabelSize > 17;
-            return Column(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: context.tracendColors.surfaceRaised,
+            borderRadius: BorderRadius.circular(TracendRadii.card),
+            border: Border.all(color: context.tracendColors.borderSubtle),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(TracendSpacing.sm),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (useCompactLayout)
-                  _CompactEvidence(colors: colors, evidence: evidence)
-                else
-                  Row(
-                    children: [
-                      for (var index = 0; index < evidence.length; index++) ...[
-                        Expanded(
-                          child: _point(
-                            context,
-                            evidence[index],
-                            index == 0
-                                ? colors.stateStable
-                                : colors.actionPrimary,
-                          ),
-                        ),
-                        if (index != evidence.length - 1)
-                          _line(
-                            index == 0
-                                ? colors.stateStable
-                                : colors.actionPrimary,
-                            colors.actionPrimary,
-                          ),
-                      ],
-                    ],
-                  ),
-                const SizedBox(height: TracendSpacing.sm),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    'NEXT MOVE · ${decision.toUpperCase()}',
-                    textAlign: TextAlign.end,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: colors.actionPrimary,
+                Row(
+                  children: [
+                    Icon(
+                      CupertinoIcons.waveform_path_ecg,
+                      size: 16,
+                      color: context.tracendColors.stateStable,
                     ),
-                  ),
+                    const SizedBox(width: TracendSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        'Signals shaping this · ${evidence.length}',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: TracendSpacing.xs),
+                Wrap(
+                  spacing: TracendSpacing.xs,
+                  runSpacing: TracendSpacing.xs,
+                  children: [
+                    for (final label in labels) _SignalChip(label: label),
+                    if (evidence.length > labels.length)
+                      _SignalChip(label: '+${evidence.length - labels.length}'),
+                  ],
                 ),
               ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _point(BuildContext context, String label, Color color) {
-    return Column(
-      children: [
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(color: context.tracendColors.surface, width: 3),
+            ),
           ),
-          child: const SizedBox.square(dimension: 14),
-        ),
-        const SizedBox(height: TracendSpacing.xs),
-        Text(label, style: Theme.of(context).textTheme.labelMedium),
-      ],
-    );
-  }
-
-  Widget _line(Color start, Color end) {
-    return SizedBox(
-      width: 12,
-      child: Container(
-        height: 3,
-        margin: const EdgeInsets.fromLTRB(4, 0, 4, 27),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(colors: [start, end]),
-          borderRadius: BorderRadius.circular(2),
         ),
       ),
     );
   }
 }
 
-class _CompactEvidence extends StatelessWidget {
-  const _CompactEvidence({required this.colors, required this.evidence});
-
-  final TracendColors colors;
-  final List<String> evidence;
-
+class _SignalChip extends StatelessWidget {
+  const _SignalChip({required this.label});
+  final String label;
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (var index = 0; index < evidence.length; index++) ...[
-          _row(
-            context,
-            evidence[index],
-            'Available',
-            index == 0 ? colors.stateStable : colors.actionPrimary,
-          ),
-          if (index != evidence.length - 1)
-            const SizedBox(height: TracendSpacing.xs),
-        ],
-      ],
-    );
-  }
-
-  Widget _row(BuildContext context, String label, String state, Color color) {
-    return Row(
-      children: [
-        DecoratedBox(
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          child: const SizedBox.square(dimension: 10),
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: context.tracendColors.actionPrimary.withValues(alpha: .10),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: context.tracendColors.actionPrimary,
         ),
-        const SizedBox(width: TracendSpacing.xs),
-        Expanded(
-          child: Text(label, style: Theme.of(context).textTheme.labelLarge),
-        ),
-        const SizedBox(width: TracendSpacing.sm),
-        Flexible(
-          child: Text(
-            state,
-            textAlign: TextAlign.end,
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(color: color),
-          ),
-        ),
-      ],
-    );
-  }
+      ),
+    ),
+  );
 }

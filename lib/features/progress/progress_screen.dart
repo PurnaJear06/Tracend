@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -7,6 +5,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/evidence_trend_chart.dart';
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({required this.repository, this.training, super.key});
@@ -29,6 +28,9 @@ class _ProgressScreenState extends State<ProgressScreen> {
   >
   _future;
   int _periodDays = 84;
+  String? _activeSet;
+  final Set<String> _capturedPoses = {};
+  bool _hasConsent = false;
   @override
   void initState() {
     super.initState();
@@ -98,57 +100,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
     WeeklyReviewJob? weeklyReviewJob,
     TrainingHubData? training,
   ) => [
-    TracendCard(
-      radius: TracendRadii.decision,
-      raised: true,
-      padding: const EdgeInsets.all(TracendSpacing.gutter),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TracendPill(
-            label: summary.hasTrend ? 'Trend available' : 'Gathering baseline',
-            icon: summary.hasTrend
-                ? CupertinoIcons.chart_bar_fill
-                : CupertinoIcons.plus_circle_fill,
-            color: summary.hasTrend
-                ? context.tracendColors.stateStable
-                : context.tracendColors.actionPrimary,
-          ),
-          const SizedBox(height: TracendSpacing.sm),
-          Text(
-            summary.hasTrend
-                ? 'Your measurements are ready to compare'
-                : 'Record two measurements to reveal a trend',
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-          const SizedBox(height: TracendSpacing.xs),
-          Text(
-            summary.hasTrend
-                ? 'Calculated from confirmed entries. No AI estimation is used.'
-                : 'Use the same morning protocol when practical. Manual and HealthKit values keep their source.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: TracendSpacing.lg),
-          Row(
-            children: [
-              Expanded(
-                child: _Metric(
-                  label: 'Current weight',
-                  value: _value(summary.currentWeightKg, 'kg'),
-                ),
-              ),
-              Expanded(
-                child: _Metric(
-                  label: 'Recorded change',
-                  value: _signed(summary.weightChangeKg, 'kg'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ),
-    const SectionLabel('Measurements'),
+    _ProgressSnapshot(measurements: measurements, fallback: summary),
+    const SectionLabel('Weight history'),
     if (measurements.isEmpty)
       const _EmptyMeasurements()
     else
@@ -166,7 +119,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     if (measurements.isNotEmpty) ...[
       const SizedBox(height: TracendSpacing.sm),
       ...measurements.reversed
-          .take(3)
+          .take(8)
           .map(
             (m) => Padding(
               padding: const EdgeInsets.only(bottom: TracendSpacing.xs),
@@ -212,7 +165,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
         TracendCard(
           child: Column(
             children: [
-              for (final item in training.progression.take(5))
+              for (final item in training.progression)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(item.exercise),
@@ -228,17 +181,32 @@ class _ProgressScreenState extends State<ProgressScreen> {
         ),
     ],
     const SectionLabel('Private progress photos'),
-    _ActionCard(
-      icon: CupertinoIcons.camera_viewfinder,
-      title: 'Create a standardized photo set',
-      detail: 'Front, side and back · private by default · separate consent',
-      action: 'Open capture guide',
-      onTap: () => showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        showDragHandle: true,
-        builder: (_) => _PhotoGuideSheet(onCapture: _captureSet),
-      ),
+    _PosePhotoRow(
+      pose: 'front',
+      label: 'Front photo',
+      guidance: 'Face the camera with full body visible',
+      isCaptured:
+          _activeSet != null && _capturedPoses.contains('front'),
+      onCamera: () => _capturePose('front', ImageSource.camera),
+      onGallery: () => _capturePose('front', ImageSource.gallery),
+    ),
+    _PosePhotoRow(
+      pose: 'side',
+      label: 'Side photo',
+      guidance: 'Turn 90 degrees, arm away from body',
+      isCaptured:
+          _activeSet != null && _capturedPoses.contains('side'),
+      onCamera: () => _capturePose('side', ImageSource.camera),
+      onGallery: () => _capturePose('side', ImageSource.gallery),
+    ),
+    _PosePhotoRow(
+      pose: 'back',
+      label: 'Back photo',
+      guidance: 'Face away from camera, natural stance',
+      isCaptured:
+          _activeSet != null && _capturedPoses.contains('back'),
+      onCamera: () => _capturePose('back', ImageSource.camera),
+      onGallery: () => _capturePose('back', ImageSource.gallery),
     ),
     if (photoSets.isNotEmpty)
       ...photoSets.map(
@@ -368,8 +336,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
     }
   }
 
-  Future<void> _captureSet() async {
-    Navigator.pop(context);
+  Future<void> _ensureConsent() async {
+    if (_hasConsent) return;
     final accepted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -392,102 +360,53 @@ class _ProgressScreenState extends State<ProgressScreen> {
     if (accepted != true || !mounted) return;
     try {
       await widget.repository.grantPhotoStorageConsent();
-      final setId = await widget.repository.beginPhotoSet();
-      final picker = ImagePicker();
-      for (final pose in const ['front', 'side', 'back']) {
-        final shouldOpenCamera = await _confirmPoseCapture(pose);
-        if (!shouldOpenCamera) throw StateError('Capture cancelled');
-        final photo = await picker.pickImage(
-          source: ImageSource.camera,
-          imageQuality: 88,
-          maxWidth: 1800,
-          requestFullMetadata: false,
-        );
-        if (photo == null) throw StateError('Capture cancelled');
-        await widget.repository.uploadPhoto(
-          setId: setId,
-          pose: pose,
-          bytes: await photo.readAsBytes(),
-          contentType: 'image/jpeg',
-        );
-      }
-      if (!mounted) return;
-      setState(_reload);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Private photo set saved')));
+      _hasConsent = true;
     } catch (_) {
       if (mounted) {
-        setState(_reload);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Photo set was not completed. Retry when ready.'),
-          ),
+          const SnackBar(content: Text('Could not save consent. Try again.')),
         );
       }
     }
   }
 
-  Future<bool> _confirmPoseCapture(String pose) async {
-    final details = switch (pose) {
-      'front' => (
-        step: '1 of 3',
-        title: 'Front photo',
-        guidance:
-            'Face the camera with your full body visible. Stand naturally with your arms relaxed.',
-      ),
-      'side' => (
-        step: '2 of 3',
-        title: 'Side photo',
-        guidance:
-            'Turn 90 degrees with your full body visible. Keep a natural, relaxed posture.',
-      ),
-      _ => (
-        step: '3 of 3',
-        title: 'Back photo',
-        guidance:
-            'Face away from the camera with your full body visible. Keep your arms relaxed.',
-      ),
-    };
-    return await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            icon: const Icon(CupertinoIcons.camera_viewfinder),
-            title: Text(details.title),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  details.step,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: context.tracendColors.actionPrimary,
-                  ),
-                ),
-                const SizedBox(height: TracendSpacing.xs),
-                Text(details.guidance),
-                const SizedBox(height: TracendSpacing.sm),
-                Text(
-                  'Use similar lighting, distance and clothing each time.',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel set'),
-              ),
-              FilledButton.icon(
-                onPressed: () => Navigator.pop(context, true),
-                icon: const Icon(CupertinoIcons.camera),
-                label: const Text('Open camera'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+  Future<void> _capturePose(String pose, ImageSource source) async {
+    await _ensureConsent();
+    if (!_hasConsent || !mounted) return;
+
+    try {
+      _activeSet ??= await widget.repository.beginPhotoSet();
+      final picker = ImagePicker();
+      final photo = await picker.pickImage(
+        source: source,
+        imageQuality: 88,
+        maxWidth: 1800,
+        requestFullMetadata: false,
+      );
+      if (photo == null) return;
+      await widget.repository.uploadPhoto(
+        setId: _activeSet!,
+        pose: pose,
+        bytes: await photo.readAsBytes(),
+        contentType: 'image/jpeg',
+      );
+      _capturedPoses.add(pose);
+      if (_capturedPoses.length == 3) {
+        _activeSet = null;
+        _capturedPoses.clear();
+      }
+    } catch (_) {
+      _activeSet = null;
+      _capturedPoses.clear();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo was not saved. Retry when ready.')),
+        );
+      }
+      rethrow;
+    } finally {
+      if (mounted) setState(_reload);
+    }
   }
 
   Future<void> _viewSet(ProgressPhotoSet set) async {
@@ -536,28 +455,64 @@ class _ProgressScreenState extends State<ProgressScreen> {
     if (mounted) setState(_reload);
   }
 
-  String _value(double? v, String unit) =>
-      v == null ? 'Not recorded' : '${v.toStringAsFixed(1)} $unit';
-  String _signed(double? v, String unit) => v == null
-      ? 'Not enough data'
-      : '${v > 0 ? '+' : ''}${v.toStringAsFixed(1)} $unit';
-
   String _weekLabel(DateTime week) =>
       'Week of ${week.day}/${week.month}/${week.year}';
 }
 
-class _Metric extends StatelessWidget {
-  const _Metric({required this.label, required this.value});
-  final String label, value;
+class _ProgressSnapshot extends StatelessWidget {
+  const _ProgressSnapshot({required this.measurements, required this.fallback});
+  final List<BodyMeasurement> measurements;
+  final ProgressSummary fallback;
+
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label, style: Theme.of(context).textTheme.labelMedium),
-      const SizedBox(height: 4),
-      Text(value, style: Theme.of(context).textTheme.titleLarge),
-    ],
-  );
+  Widget build(BuildContext context) {
+    final current = measurements.isEmpty
+        ? fallback.currentWeightKg
+        : measurements.last.weightKg;
+    final change = measurements.length >= 2
+        ? measurements.last.weightKg - measurements.first.weightKg
+        : fallback.weightChangeKg;
+    return TracendCard(
+      radius: TracendRadii.decision,
+      raised: true,
+      padding: const EdgeInsets.all(TracendSpacing.gutter),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TracendPill(
+            label: measurements.length >= 2
+                ? '${measurements.length} confirmed days'
+                : 'Gathering baseline',
+            icon: measurements.length >= 2
+                ? CupertinoIcons.chart_bar_fill
+                : CupertinoIcons.plus_circle_fill,
+            color: measurements.length >= 2
+                ? context.tracendColors.stateStable
+                : context.tracendColors.actionPrimary,
+          ),
+          const SizedBox(height: TracendSpacing.sm),
+          Text(
+            current == null
+                ? 'Add your first weigh-in'
+                : '${current.toStringAsFixed(1)} kg',
+            style: Theme.of(context).textTheme.displaySmall,
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          Text(
+            change == null
+                ? 'Use the same morning protocol when practical.'
+                : '${change > 0 ? '+' : ''}${change.toStringAsFixed(1)} kg across your confirmed timeline.',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+          const SizedBox(height: TracendSpacing.sm),
+          Text(
+            'Latest confirmed weigh-in · no AI estimate',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _EmptyMeasurements extends StatelessWidget {
@@ -586,51 +541,49 @@ class _TrendCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final first = measurements.first.weightKg,
         last = measurements.last.weightKg;
+    final change = last - first;
     return TracendCard(
       raised: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Weight history',
-            style: Theme.of(context).textTheme.titleMedium,
+            'Weight direction',
+            style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 4),
           Text(
-            '${measurements.length} confirmed ${measurements.length == 1 ? 'entry' : 'entries'} · kilograms',
+            '${measurements.length} actual weigh-ins · no smoothing',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          const SizedBox(height: 16),
-          Semantics(
-            label:
-                'Weight history from ${first.toStringAsFixed(1)} to ${last.toStringAsFixed(1)} kilograms across ${measurements.length} entries.',
-            child: ExcludeSemantics(
-              child: SizedBox(
-                height: 132,
-                width: double.infinity,
-                child: CustomPaint(
-                  painter: _TrendPainter(
-                    values: measurements.map((m) => m.weightKg).toList(),
-                    line: context.tracendColors.actionPrimary,
-                    grid: context.tracendColors.borderSubtle,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: TracendSpacing.sm),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                '${first.toStringAsFixed(1)} kg',
-                style: Theme.of(context).textTheme.labelMedium,
+              _TrendFact(
+                label: 'Started',
+                value: '${first.toStringAsFixed(1)} kg',
               ),
-              Text(
-                '${last.toStringAsFixed(1)} kg',
-                style: Theme.of(context).textTheme.labelMedium,
+              _TrendFact(label: 'Now', value: '${last.toStringAsFixed(1)} kg'),
+              _TrendFact(
+                label: 'Change',
+                value:
+                    '${change > 0 ? '+' : ''}${change.toStringAsFixed(1)} kg',
               ),
             ],
+          ),
+          const SizedBox(height: 16),
+          EvidenceTrendChart(
+            values: measurements
+                .map((item) => DatedTrendValue(item.date, item.weightKg))
+                .toList(),
+            unit: 'kg',
+            semanticLabel:
+                'Weight trend from ${first.toStringAsFixed(1)} to ${last.toStringAsFixed(1)} kilograms across ${measurements.length} confirmed days.',
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          Text(
+            'Each dot is an actual confirmed weigh-in. Tap a history row below to verify its date and source.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
@@ -638,54 +591,20 @@ class _TrendCard extends StatelessWidget {
   }
 }
 
-class _TrendPainter extends CustomPainter {
-  const _TrendPainter({
-    required this.values,
-    required this.line,
-    required this.grid,
-  });
-  final List<double> values;
-  final Color line, grid;
+class _TrendFact extends StatelessWidget {
+  const _TrendFact({required this.label, required this.value});
+  final String label, value;
   @override
-  void paint(Canvas c, Size s) {
-    final gp = Paint()
-      ..color = grid
-      ..strokeWidth = 1;
-    for (var i = 1; i < 4; i++) {
-      final y = s.height * i / 4;
-      c.drawLine(Offset(0, y), Offset(s.width, y), gp);
-    }
-    if (values.isEmpty) return;
-    final minV = values.reduce(math.min),
-        maxV = values.reduce(math.max),
-        range = math.max(maxV - minV, 1);
-    final path = Path();
-    for (var i = 0; i < values.length; i++) {
-      final x = values.length == 1
-          ? s.width / 2
-          : s.width * i / (values.length - 1);
-      final y = s.height - 12 - ((values[i] - minV) / range) * (s.height - 24);
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-      c.drawCircle(Offset(x, y), 4, Paint()..color = line);
-    }
-    c.drawPath(
-      path,
-      Paint()
-        ..color = line
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _TrendPainter old) =>
-      old.values != values || old.line != line || old.grid != grid;
+  Widget build(BuildContext context) => Expanded(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.labelMedium),
+        const SizedBox(height: TracendSpacing.xxs),
+        Text(value, style: Theme.of(context).textTheme.titleMedium),
+      ],
+    ),
+  );
 }
 
 class _MeasurementRow extends StatelessWidget {
@@ -936,81 +855,64 @@ class _PrivatePhotoViewer extends StatelessWidget {
   );
 }
 
-class _PhotoGuideSheet extends StatelessWidget {
-  const _PhotoGuideSheet({required this.onCapture});
-  final VoidCallback onCapture;
+class _PosePhotoRow extends StatelessWidget {
+  const _PosePhotoRow({
+    required this.pose,
+    required this.label,
+    required this.guidance,
+    required this.isCaptured,
+    required this.onCamera,
+    required this.onGallery,
+  });
+  final String pose;
+  final String label;
+  final String guidance;
+  final bool isCaptured;
+  final VoidCallback onCamera;
+  final VoidCallback onGallery;
+
   @override
-  Widget build(BuildContext context) => SafeArea(
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Standardized photo set',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Photos are restricted data. Storage consent and AI-analysis consent are separate. This foundation does not send photos to an AI provider.',
-            ),
-            const SizedBox(height: 20),
-            for (final item in const [
-              (
-                '1',
-                'Same timing',
-                'Use a repeatable time of day, ideally before training.',
-              ),
-              (
-                '2',
-                'Same environment',
-                'Match distance, camera height, lighting and clothing.',
-              ),
-              (
-                '3',
-                'Three poses',
-                'Capture front, side and back. Retake any unclear frame.',
-              ),
-              (
-                '4',
-                'Private review',
-                'Photos stay out of Today, notifications, analytics and general logs.',
-              ),
-            ])
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TracendPill(label: item.$1, compact: true),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.$2,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          Text(item.$3),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: onCapture,
-                child: const Text('Capture front, side and back'),
-              ),
-            ),
-          ],
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Row(
+      children: [
+        Icon(
+          isCaptured
+              ? CupertinoIcons.checkmark_circle_fill
+              : CupertinoIcons.circle,
+          color: isCaptured
+              ? context.tracendColors.stateStable
+              : context.tracendColors.textSecondary,
+          size: 20,
         ),
-      ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              Text(
+                guidance,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: onCamera,
+          child: const Icon(CupertinoIcons.camera, size: 24),
+        ),
+        const SizedBox(width: 4),
+        CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: onGallery,
+          child: const Icon(CupertinoIcons.photo, size: 24),
+        ),
+      ],
     ),
   );
 }

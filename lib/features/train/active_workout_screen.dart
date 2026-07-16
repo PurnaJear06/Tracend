@@ -21,12 +21,14 @@ class ActiveWorkoutScreen extends StatefulWidget {
 
 class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   late final List<List<_SetDraft>> _sets;
+  late final List<String> _exerciseStatuses;
+  late final List<bool> _painFlags;
   String? _sessionId;
   late String _idempotencyKey;
   int _revision = 0;
   bool _syncing = false;
   bool _offline = false;
-  final _startedAt = DateTime.now();
+  DateTime _startedAt = DateTime.now();
   Timer? _saveTimer;
 
   @override
@@ -36,6 +38,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       for (final e in widget.workout.exercises)
         [for (var i = 0; i < e.setCount; i++) _SetDraft()],
     ];
+    _exerciseStatuses = List.filled(widget.workout.exercises.length, 'unknown');
+    _painFlags = List.filled(widget.workout.exercises.length, false);
     _restoreAndStart();
   }
 
@@ -46,15 +50,27 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Future<void> _restoreAndStart() async {
-    final saved = await widget.repository.loadDraft();
-    if (saved != null) {
-      final d = decodeDraft(saved);
+    final server = await widget.repository.loadSession(widget.workout);
+    final saved = await widget.repository.loadDraft(widget.workout.id);
+    Map<String, dynamic>? d;
+    if (server != null && server['state'] == 'in_progress') {
+      d = server;
+    } else if (saved != null) {
+      d = decodeDraft(saved);
+    }
+    if (d != null) {
       _sessionId = d['session_id'] as String?;
-      _idempotencyKey = d['idempotency_key'] as String;
-      _revision = d['revision'] as int? ?? 0;
+      _idempotencyKey = d['idempotency_key'] as String? ?? newIdempotencyKey();
+      _revision = (d['revision'] as num?)?.toInt() ?? 0;
+      _startedAt =
+          DateTime.tryParse('${d['actual_started_at'] ?? ''}') ??
+          DateTime.now();
       final exercises = d['exercises'] as List? ?? [];
       for (var i = 0; i < exercises.length && i < _sets.length; i++) {
-        final rows = (exercises[i] as Map)['sets'] as List;
+        final exercise = Map<String, dynamic>.from(exercises[i] as Map);
+        _exerciseStatuses[i] = exercise['status'] as String? ?? 'unknown';
+        _painFlags[i] = exercise['pain_flag'] == true;
+        final rows = exercise['sets'] as List? ?? const [];
         for (var j = 0; j < rows.length && j < _sets[i].length; j++) {
           _sets[i][j] = _SetDraft.fromMap(
             Map<String, dynamic>.from(rows[j] as Map),
@@ -78,6 +94,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Map<String, dynamic> _draft() => {
+    'workout_id': widget.workout.id,
     'session_id': _sessionId,
     'idempotency_key': _idempotencyKey,
     'revision': _revision,
@@ -85,7 +102,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       for (var i = 0; i < _sets.length; i++)
         {
           'order': widget.workout.exercises[i].order,
-          'pain_flag': false,
+          'status': _exerciseStatuses[i],
+          'pain_flag': _painFlags[i],
+          'rest_seconds': widget.workout.exercises[i].restSeconds,
           'sets': [
             for (var j = 0; j < _sets[i].length; j++)
               {'number': j + 1, ..._sets[i][j].toMap()},
@@ -102,7 +121,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   Future<void> _save() async {
     final draft = _draft();
-    await widget.repository.saveDraft(jsonEncode(draft));
+    await widget.repository.saveDraft(widget.workout.id, jsonEncode(draft));
     final id = _sessionId;
     if (id == null || id.startsWith('pending-')) return;
     setState(() => _syncing = true);
@@ -216,16 +235,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               _ExerciseEditor(
                 exercise: widget.workout.exercises[i],
                 sets: _sets[i],
+                status: _exerciseStatuses[i],
+                painFlag: _painFlags[i],
+                onStatusChanged: (value) {
+                  _exerciseStatuses[i] = value;
+                  _changed();
+                },
+                onPainChanged: (value) {
+                  _painFlags[i] = value;
+                  _changed();
+                },
                 onChanged: _changed,
               ),
             ],
-            const SizedBox(height: TracendSpacing.md),
-            const ComingSoonButton(
-              label: 'Pain or discomfort',
-              detail:
-                  'Pain flagging is planned for the next workout-safety slice.',
-              icon: CupertinoIcons.waveform_path_ecg,
-            ),
             const SizedBox(height: TracendSpacing.lg),
             FilledButton(
               onPressed: _completed == 0 ? null : _complete,
@@ -242,10 +264,18 @@ class _ExerciseEditor extends StatelessWidget {
   const _ExerciseEditor({
     required this.exercise,
     required this.sets,
+    required this.status,
+    required this.painFlag,
+    required this.onStatusChanged,
+    required this.onPainChanged,
     required this.onChanged,
   });
   final PlannedExercise exercise;
   final List<_SetDraft> sets;
+  final String status;
+  final bool painFlag;
+  final ValueChanged<String> onStatusChanged;
+  final ValueChanged<bool> onPainChanged;
   final VoidCallback onChanged;
   @override
   Widget build(BuildContext context) => Column(
@@ -255,8 +285,26 @@ class _ExerciseEditor extends StatelessWidget {
         '${exercise.order.toString().padLeft(2, '0')} · ${exercise.name}',
       ),
       Text(
-        '${exercise.setCount} × ${exercise.repMin}–${exercise.repMax} · RPE ${exercise.targetRpe}',
+        '${exercise.setCount} × ${exercise.repMin}–${exercise.repMax} · RPE ${exercise.targetRpe} · Rest ${exercise.restSeconds}s',
         style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      const SizedBox(height: TracendSpacing.sm),
+      Wrap(
+        spacing: TracendSpacing.xs,
+        runSpacing: TracendSpacing.xs,
+        children: [
+          FilterChip(
+            label: const Text('Skipped intentionally'),
+            selected: status == 'skipped',
+            onSelected: (selected) =>
+                onStatusChanged(selected ? 'skipped' : 'unknown'),
+          ),
+          FilterChip(
+            label: const Text('Pain or discomfort'),
+            selected: painFlag,
+            onSelected: onPainChanged,
+          ),
+        ],
       ),
       const SizedBox(height: TracendSpacing.sm),
       TracendCard(
@@ -302,6 +350,19 @@ class _SetRow extends StatelessWidget {
         ),
       ),
       const SizedBox(width: 8),
+      SizedBox(
+        width: 64,
+        child: TextFormField(
+          initialValue: draft.rpe,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'RPE'),
+          onChanged: (v) {
+            draft.rpe = v;
+            onChanged();
+          },
+        ),
+      ),
+      const SizedBox(width: 8),
       Expanded(
         child: TextFormField(
           initialValue: draft.reps,
@@ -333,19 +394,26 @@ class _SetRow extends StatelessWidget {
 }
 
 class _SetDraft {
-  _SetDraft({this.load = '', this.reps = '', this.completed = false});
+  _SetDraft({
+    this.load = '',
+    this.reps = '',
+    this.rpe = '',
+    this.completed = false,
+  });
   String load;
   String reps;
+  String rpe;
   bool completed;
   Map<String, dynamic> toMap() => {
     'load_kg': load,
     'repetitions': reps,
-    'rpe': '',
+    'rpe': rpe,
     'completed': completed,
   };
   factory _SetDraft.fromMap(Map<String, dynamic> m) => _SetDraft(
     load: '${m['load_kg'] ?? ''}',
     reps: '${m['repetitions'] ?? ''}',
+    rpe: '${m['rpe'] ?? ''}',
     completed: m['completed'] == true,
   );
 }

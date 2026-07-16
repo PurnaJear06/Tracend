@@ -70,6 +70,35 @@ class CoachThread {
   final DateTime updatedAt;
 }
 
+class CoachContextSource {
+  const CoachContextSource({
+    required this.key,
+    required this.label,
+    required this.available,
+    required this.records,
+    this.latestDate,
+  });
+
+  factory CoachContextSource.fromJson(Map<String, dynamic> json) =>
+      CoachContextSource(
+        key: json['key'] as String,
+        label: json['label'] as String,
+        available: json['available'] as bool? ?? false,
+        records: (json['records'] as num?)?.toInt() ?? 0,
+        latestDate: json['latest_date'] as String?,
+      );
+
+  final String key;
+  final String label;
+  final bool available;
+  final int records;
+  final String? latestDate;
+}
+
+abstract interface class CoachContextRepository {
+  Future<List<CoachContextSource>> loadContextStatus();
+}
+
 class CoachMessage {
   const CoachMessage({
     required this.id,
@@ -80,6 +109,8 @@ class CoachMessage {
     this.missingData = const [],
     this.safetyState = 'allowed',
     this.suggestedFollowUps = const [],
+    this.modelProvider,
+    this.model,
   });
   final String id;
   final String role;
@@ -89,6 +120,8 @@ class CoachMessage {
   final List<String> missingData;
   final String safetyState;
   final List<String> suggestedFollowUps;
+  final String? modelProvider;
+  final String? model;
 }
 
 abstract interface class CoachChatRepository {
@@ -105,13 +138,28 @@ abstract interface class CoachRepository {
   Future<Map<String, dynamic>> loadUsage();
 }
 
-class SupabaseCoachRepository implements CoachRepository, CoachChatRepository {
+class SupabaseCoachRepository
+    implements CoachRepository, CoachChatRepository, CoachContextRepository {
   SupabaseCoachRepository(this._client, {DateTime Function()? now})
     : _now = now ?? DateTime.now;
 
   static const _uuid = Uuid();
   final SupabaseClient _client;
   final DateTime Function() _now;
+
+  @override
+  Future<List<CoachContextSource>> loadContextStatus() async {
+    final value = Map<String, dynamic>.from(
+      await _client.rpc('get_my_coach_context_status') as Map,
+    );
+    return (value['sources'] as List? ?? const [])
+        .map(
+          (source) => CoachContextSource.fromJson(
+            Map<String, dynamic>.from(source as Map),
+          ),
+        )
+        .toList();
+  }
 
   @override
   Future<List<CoachThread>> loadThreads() async {
@@ -194,6 +242,8 @@ class SupabaseCoachRepository implements CoachRepository, CoachChatRepository {
     suggestedFollowUps: List<String>.from(
       row['suggested_follow_ups'] as List? ?? const [],
     ),
+    modelProvider: row['model_provider'] as String?,
+    model: row['model'] as String?,
   );
 
   @override

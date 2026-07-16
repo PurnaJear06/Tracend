@@ -16,7 +16,7 @@ import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/today/check_in_sheet.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
-import 'package:tracend/shared/widgets/trajectory_lens.dart';
+import 'package:tracend/shared/widgets/evidence_trend_chart.dart';
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({
@@ -129,29 +129,15 @@ class _TodayScreenState extends State<TodayScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const TracendPill(
-                        label: 'Do this next',
-                        icon: CupertinoIcons.location_fill,
+                      _TodayHeroBackdrop(
+                        action: brief.nextAction,
+                        reason: brief.reason,
                       ),
-                      const SizedBox(height: TracendSpacing.lg),
-                      TrajectoryLens(
-                        decision: brief.nextAction,
-                        evidence: [
-                          if (brief.checkIn != null) 'Check-in',
-                          if (brief.health != null) 'Apple Health',
-                          if (brief.workout != null) 'Approved plan',
-                          if (brief.nextMeal != null) 'Meal schedule',
-                        ],
-                      ),
-                      const SizedBox(height: TracendSpacing.lg),
-                      Text(
-                        brief.nextAction,
-                        style: Theme.of(context).textTheme.displaySmall,
-                      ),
-                      const SizedBox(height: TracendSpacing.xs),
-                      Text(
-                        brief.reason,
-                        style: Theme.of(context).textTheme.bodyLarge,
+                      const SizedBox(height: TracendSpacing.md),
+                      _ReadinessStrip(
+                        brief: brief,
+                        onOpen: (title, detail) =>
+                            _showReadinessDetail(context, title, detail),
                       ),
                       const SizedBox(height: TracendSpacing.lg),
                       SizedBox(
@@ -274,12 +260,12 @@ class _TodayScreenState extends State<TodayScreen> {
             );
           },
         ),
-        const SectionLabel('Health context'),
+        const SectionLabel('Apple Health'),
         HealthStatusCard(
           repository: widget.health,
           onSynced: () => setState(_reloadBriefAndHealth),
         ),
-        const SectionLabel('Apple Health evidence'),
+        const SizedBox(height: TracendSpacing.sm),
         FutureBuilder<HealthHistory>(
           future: _healthHistory,
           builder: (context, snapshot) {
@@ -375,6 +361,197 @@ class _TodayScreenState extends State<TodayScreen> {
     return '${weekdays[value.weekday - 1]}, ${value.day} '
         '${months[value.month - 1]}';
   }
+
+  Future<void> _showReadinessDetail(
+    BuildContext context,
+    String title,
+    String detail,
+  ) => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    useSafeArea: true,
+    builder: (context) => Padding(
+      padding: const EdgeInsets.fromLTRB(
+        TracendSpacing.gutter,
+        TracendSpacing.sm,
+        TracendSpacing.gutter,
+        TracendSpacing.xl,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: TracendSpacing.xs),
+          Text(detail, style: Theme.of(context).textTheme.bodyLarge),
+        ],
+      ),
+    ),
+  );
+}
+
+class _TodayHeroBackdrop extends StatelessWidget {
+  const _TodayHeroBackdrop({required this.action, required this.reason});
+  final String action, reason;
+
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(TracendRadii.card),
+    child: DecoratedBox(
+      decoration: const BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage('assets/visuals/tracend-coaching-horizon-v1.jpg'),
+          fit: BoxFit.cover,
+        ),
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: .18),
+              Colors.black.withValues(alpha: .84),
+            ],
+          ),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 250),
+          child: Padding(
+            padding: const EdgeInsets.all(TracendSpacing.md),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const TracendPill(
+                  label: 'Your next move',
+                  icon: CupertinoIcons.location_fill,
+                  compact: true,
+                ),
+                const SizedBox(height: 92),
+                Text(
+                  action,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.headlineMedium?.copyWith(color: Colors.white),
+                ),
+                const SizedBox(height: TracendSpacing.xs),
+                Text(
+                  reason,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.white.withValues(alpha: .86),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _ReadinessStrip extends StatelessWidget {
+  const _ReadinessStrip({required this.brief, required this.onOpen});
+  final DailyBrief brief;
+  final void Function(String title, String detail) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      (
+        'Recovery',
+        brief.checkIn == null ? 'Check in' : 'Updated',
+        CupertinoIcons.heart_fill,
+        brief.checkIn == null
+            ? 'Tracend needs today’s energy, sleep, soreness and pain check-in before adapting your session.'
+            : 'Today’s user-confirmed recovery check-in is available to the coach.',
+      ),
+      (
+        'Training',
+        brief.workout == null ? 'Rest day' : 'Planned',
+        CupertinoIcons.bolt_fill,
+        brief.workout == null
+            ? 'Your approved plan has no workout assigned today.'
+            : '${brief.workout!['name']} comes from your active approved plan.',
+      ),
+      (
+        'Nutrition',
+        brief.nextMeal == null ? 'Up to date' : 'Next meal',
+        CupertinoIcons.leaf_arrow_circlepath,
+        brief.nextMeal == null
+            ? 'There is no remaining scheduled meal action right now.'
+            : '${brief.nextMeal!['label']} is next at ${brief.nextMeal!['local_time']}.',
+      ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Today’s readiness',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: TracendSpacing.xs),
+        Row(
+          children: [
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0) const SizedBox(width: TracendSpacing.xs),
+              Expanded(
+                child: _ReadinessTile(
+                  label: items[i].$1,
+                  value: items[i].$2,
+                  icon: items[i].$3,
+                  onTap: () => onOpen(items[i].$1, items[i].$4),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ReadinessTile extends StatelessWidget {
+  const _ReadinessTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.onTap,
+  });
+  final String label, value;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: context.tracendColors.surface,
+    borderRadius: BorderRadius.circular(TracendRadii.control),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(TracendRadii.control),
+      child: Padding(
+        padding: const EdgeInsets.all(TracendSpacing.xs),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 18, color: context.tracendColors.actionPrimary),
+            const SizedBox(height: TracendSpacing.sm),
+            Text(label, style: Theme.of(context).textTheme.labelMedium),
+            Text(
+              value,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: context.tracendColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _BriefEvidence extends StatelessWidget {
@@ -460,58 +637,80 @@ class _HealthEvidence extends StatelessWidget {
                 style: Theme.of(context).textTheme.labelLarge,
               ),
               const SizedBox(height: TracendSpacing.md),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final columns = constraints.maxWidth >= 560 ? 3 : 2;
-                  final cellWidth =
-                      (constraints.maxWidth -
-                          (TracendSpacing.sm * (columns - 1))) /
-                      columns;
-                  return Wrap(
-                    spacing: TracendSpacing.sm,
-                    runSpacing: TracendSpacing.sm,
-                    children: [
-                      _SignalMetric(
-                        width: cellWidth,
-                        label: 'Sleep',
-                        value: latest.sleepMinutes == null
-                            ? 'No data'
-                            : _duration(latest.sleepMinutes!),
-                      ),
-                      _SignalMetric(
-                        width: cellWidth,
-                        label: 'Steps',
-                        value: latest.steps?.toString() ?? 'No data',
-                      ),
-                      _SignalMetric(
-                        width: cellWidth,
-                        label: 'Active energy',
-                        value: latest.activeEnergyKcal == null
-                            ? 'No data'
-                            : '${latest.activeEnergyKcal!.round()} kcal',
-                      ),
-                      _SignalMetric(
-                        width: cellWidth,
-                        label: 'Resting HR',
-                        value: latest.restingHeartRateBpm == null
-                            ? 'No data'
-                            : '${latest.restingHeartRateBpm!.round()} bpm',
-                      ),
-                      _SignalMetric(
-                        width: cellWidth,
-                        label: 'HRV (SDNN)',
-                        value: latest.hrvSdnnMs == null
-                            ? 'No data'
-                            : '${latest.hrvSdnnMs!.round()} ms',
-                      ),
-                      _SignalMetric(
-                        width: cellWidth,
-                        label: 'Workouts',
-                        value: latest.workoutCount?.toString() ?? 'No data',
-                      ),
-                    ],
-                  );
-                },
+              Text(
+                'What matters today',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: TracendSpacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: _SignalMetric(
+                      label: 'Steps',
+                      value: latest.steps?.toString() ?? '—',
+                    ),
+                  ),
+                  const SizedBox(width: TracendSpacing.xs),
+                  Expanded(
+                    child: _SignalMetric(
+                      label: 'Sleep',
+                      value: latest.sleepMinutes == null
+                          ? '—'
+                          : _duration(latest.sleepMinutes!),
+                    ),
+                  ),
+                  const SizedBox(width: TracendSpacing.xs),
+                  Expanded(
+                    child: _SignalMetric(
+                      label: 'Training',
+                      value: latest.workoutMinutes == null
+                          ? '—'
+                          : '${latest.workoutMinutes}m',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: TracendSpacing.sm),
+              Text(
+                latest.sleepMinutes == null
+                    ? 'Activity is available. Recovery guidance relies more on your check-in because sleep was not found.'
+                    : 'Activity and sleep are available to your Coach for today’s recovery context.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              Material(
+                color: Colors.transparent,
+                child: ExpansionTile(
+                  key: const PageStorageKey('today-more-health'),
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: EdgeInsets.zero,
+                  title: const Text('More health details'),
+                  children: [
+                    _HealthDetail(
+                      label: 'Active energy',
+                      value: latest.activeEnergyKcal == null
+                          ? 'Not found'
+                          : '${latest.activeEnergyKcal!.round()} kcal',
+                    ),
+                    _HealthDetail(
+                      label: 'Resting heart rate',
+                      value: latest.restingHeartRateBpm == null
+                          ? 'Not found'
+                          : '${latest.restingHeartRateBpm!.round()} bpm',
+                    ),
+                    _HealthDetail(
+                      label: 'HRV (SDNN)',
+                      value: latest.hrvSdnnMs == null
+                          ? 'Not found'
+                          : '${latest.hrvSdnnMs!.round()} ms',
+                    ),
+                    _HealthDetail(
+                      label: 'Weight',
+                      value: latest.weightKg == null
+                          ? 'Not found'
+                          : '${latest.weightKg!.toStringAsFixed(1)} kg',
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -520,9 +719,9 @@ class _HealthEvidence extends StatelessWidget {
           const SizedBox(height: TracendSpacing.sm),
           _HealthTrend(
             title: 'Sleep duration',
-            values: sleep.map((day) => day.sleepMinutes! / 60).toList(),
-            start: sleep.first.date,
-            end: sleep.last.date,
+            points: sleep
+                .map((day) => DatedTrendValue(day.date, day.sleepMinutes! / 60))
+                .toList(),
             unit: 'hours',
           ),
         ],
@@ -530,9 +729,9 @@ class _HealthEvidence extends StatelessWidget {
           const SizedBox(height: TracendSpacing.sm),
           _HealthTrend(
             title: 'Daily steps',
-            values: steps.map((day) => day.steps!.toDouble()).toList(),
-            start: steps.first.date,
-            end: steps.last.date,
+            points: steps
+                .map((day) => DatedTrendValue(day.date, day.steps!.toDouble()))
+                .toList(),
             unit: 'steps',
           ),
         ],
@@ -555,34 +754,41 @@ class _HealthEvidence extends StatelessWidget {
 }
 
 class _SignalMetric extends StatelessWidget {
-  const _SignalMetric({
-    required this.label,
-    required this.value,
-    required this.width,
-  });
+  const _SignalMetric({required this.label, required this.value});
   final String label;
   final String value;
-  final double width;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: width,
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: context.tracendColors.surfaceRaised,
-        borderRadius: BorderRadius.circular(TracendRadii.control),
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: context.tracendColors.surfaceRaised,
+      borderRadius: BorderRadius.circular(TracendRadii.control),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(TracendSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.labelMedium),
+          const SizedBox(height: TracendSpacing.xxs),
+          Text(value, style: Theme.of(context).textTheme.titleMedium),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(TracendSpacing.sm),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: Theme.of(context).textTheme.labelMedium),
-            const SizedBox(height: TracendSpacing.xxs),
-            Text(value, style: Theme.of(context).textTheme.titleMedium),
-          ],
-        ),
-      ),
+    ),
+  );
+}
+
+class _HealthDetail extends StatelessWidget {
+  const _HealthDetail({required this.label, required this.value});
+  final String label, value;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: TracendSpacing.xs),
+    child: Row(
+      children: [
+        Expanded(child: Text(label)),
+        Text(value, style: Theme.of(context).textTheme.labelLarge),
+      ],
     ),
   );
 }
@@ -590,20 +796,19 @@ class _SignalMetric extends StatelessWidget {
 class _HealthTrend extends StatelessWidget {
   const _HealthTrend({
     required this.title,
-    required this.values,
-    required this.start,
-    required this.end,
+    required this.points,
     required this.unit,
   });
   final String title;
-  final List<double> values;
-  final DateTime start;
-  final DateTime end;
+  final List<DatedTrendValue> points;
   final String unit;
 
   @override
   Widget build(BuildContext context) {
-    final latest = values.last;
+    final latest = points.last.value;
+    final average =
+        points.fold<double>(0, (sum, item) => sum + item.value) / points.length;
+    final difference = latest - average;
     return TracendCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -611,20 +816,22 @@ class _HealthTrend extends StatelessWidget {
           Text(title, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: TracendSpacing.xxs),
           Text(
-            '${_format(latest)} $unit · ${values.length} recorded days',
+            '${_format(latest)} $unit today · ${difference >= 0 ? '+' : ''}${_format(difference)} vs average',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: TracendSpacing.sm),
-          MiniTrendChart(
-            values: values,
-            label:
-                '$title from ${_date(start)} to ${_date(end)}. Latest ${_format(latest)} $unit.',
-            height: 88,
+          EvidenceTrendChart(
+            values: points,
+            unit: unit,
+            average: average,
+            compact: true,
+            semanticLabel:
+                '$title from ${_date(points.first.date)} to ${_date(points.last.date)}. Latest ${_format(latest)} $unit. Average ${_format(average)}.',
           ),
           const SizedBox(height: TracendSpacing.xs),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [Text(_date(start)), Text(_date(end))],
+          Text(
+            'Dots are recorded days. Gaps follow the real calendar; the thin line marks your recorded average.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),

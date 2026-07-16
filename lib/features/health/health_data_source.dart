@@ -149,6 +149,7 @@ class HealthKitDataSource implements HealthDataSource {
     final numeric = value is NumericHealthValue
         ? value.numericValue.toDouble()
         : 0.0;
+    final workout = value is WorkoutHealthValue ? value : null;
     return RawHealthSample(
       metric: metric,
       value: numeric,
@@ -157,6 +158,8 @@ class HealthKitDataSource implements HealthDataSource {
       sampleId: point.uuid,
       sourceId: point.sourceId,
       sleepStage: sleepStage,
+      workoutActivityType: workout?.workoutActivityType.name,
+      workoutEnergyKcal: workout?.totalEnergyBurned?.toDouble(),
     );
   }
 }

@@ -16,6 +16,9 @@ class TrainScreen extends StatefulWidget {
 class _TrainScreenState extends State<TrainScreen> {
   late final WorkoutRepository _source;
   late Future<TrainingHubData> _hub;
+  List<WorkoutRepairCandidate> _repairCandidates = const [];
+  List<WorkoutReconciliation> _reconciliations = const [];
+  String? _reconciliationBusyId;
   int _weekday = DateTime.now().weekday;
 
   @override
@@ -25,21 +28,84 @@ class _TrainScreenState extends State<TrainScreen> {
     _hub = _load();
   }
 
-  Future<TrainingHubData> _load() {
+  Future<TrainingHubData> _load() async {
     final source = _source;
+    if (source is WorkoutRepairRepository) {
+      _repairCandidates = await (source as WorkoutRepairRepository)
+          .loadRepairCandidates();
+    }
+    if (source is WorkoutReconciliationRepository) {
+      _reconciliations = await (source as WorkoutReconciliationRepository)
+          .loadReconciliations();
+    }
     if (source is TrainingHubRepository) {
       return (source as TrainingHubRepository).loadTrainingHub();
     }
-    return source.loadTodayWorkout().then(
-      (workout) => TrainingHubData(
-        planTitle: 'Approved plan',
-        workouts: [workout],
-        recentSessions: const [],
-        completedSessions: 0,
-        plannedSessions: 0,
-        progression: const [],
+    final workout = await source.loadTodayWorkout();
+    return TrainingHubData(
+      planTitle: 'Approved plan',
+      workouts: [workout],
+      recentSessions: const [],
+      completedSessions: 0,
+      plannedSessions: 0,
+      progression: const [],
+    );
+  }
+
+  Future<void> _confirmRepair(WorkoutRepairCandidate candidate) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Correct this workout record?'),
+        content: Text(
+          'Tracend saved ${(candidate.recordedDurationSeconds / 60).round()} minutes, while Apple Health recorded ${(candidate.healthkitDurationSeconds / 60).round()} minutes. Confirming preserves every logged set, changes untouched exercises from skipped to unknown, and audits the correction.${candidate.blankDuplicateSessionId == null ? '' : ' The empty duplicate session will also be abandoned.'}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirm correction'),
+          ),
+        ],
       ),
     );
+    if (accepted != true || _source is! WorkoutRepairRepository) return;
+    await (_source as WorkoutRepairRepository).confirmRepair(candidate);
+    if (!mounted) return;
+    setState(() => _hub = _load());
+  }
+
+  Future<void> _respondToReconciliation(
+    WorkoutReconciliation item, {
+    required bool accept,
+  }) async {
+    setState(() => _reconciliationBusyId = item.id);
+    try {
+      await (_source as WorkoutReconciliationRepository)
+          .respondToReconciliation(item.id, accept: accept);
+      if (!mounted) return;
+      setState(() {
+        _reconciliations = _reconciliations
+            .where((candidate) => candidate.id != item.id)
+            .toList();
+        _reconciliationBusyId = null;
+        _hub = _load();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(accept ? 'Workout match confirmed' : 'Match dismissed'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _reconciliationBusyId = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save this match. Try again.')),
+      );
+    }
   }
 
   @override
@@ -87,6 +153,29 @@ class _TrainScreenState extends State<TrainScreen> {
             selected: _weekday,
             onSelected: (value) => setState(() => _weekday = value),
           ),
+          const SizedBox(height: TracendSpacing.md),
+          if (_repairCandidates.isNotEmpty) ...[
+            _WorkoutRepairCard(
+              candidate: _repairCandidates.first,
+              onConfirm: () => _confirmRepair(_repairCandidates.first),
+            ),
+            const SizedBox(height: TracendSpacing.md),
+          ],
+          if (_reconciliations.isNotEmpty) ...[
+            _ReconciliationCard(
+              item: _reconciliations.first,
+              busy: _reconciliationBusyId == _reconciliations.first.id,
+              onAccept: () => _respondToReconciliation(
+                _reconciliations.first,
+                accept: true,
+              ),
+              onReject: () => _respondToReconciliation(
+                _reconciliations.first,
+                accept: false,
+              ),
+            ),
+            const SizedBox(height: TracendSpacing.md),
+          ],
           if (workout == null)
             const TracendCard(
               child: Text(
@@ -96,9 +185,10 @@ class _TrainScreenState extends State<TrainScreen> {
           else ...[
             _WorkoutHero(workout: workout, source: _source),
             const SectionLabel('Prescription'),
-            for (final exercise in workout.exercises) ...[
-              _ExerciseRow(exercise: exercise),
-              const SizedBox(height: TracendSpacing.sm),
+            for (var index = 0; index < workout.exercises.length; index++) ...[
+              _ExerciseRow(exercise: workout.exercises[index]),
+              if (index < workout.exercises.length - 1)
+                const SizedBox(height: TracendSpacing.sm),
             ],
             if (workout.warmUp.isNotEmpty ||
                 workout.cooldownCardio.isNotEmpty) ...[
@@ -136,7 +226,7 @@ class _TrainScreenState extends State<TrainScreen> {
             TracendCard(
               child: Column(
                 children: [
-                  for (final item in hub.progression.take(5))
+                  for (final item in hub.progression)
                     _ProgressionRow(item: item),
                 ],
               ),
@@ -175,6 +265,107 @@ class _TrainScreenState extends State<TrainScreen> {
         ],
       );
     },
+  );
+}
+
+class _WorkoutRepairCard extends StatelessWidget {
+  const _WorkoutRepairCard({required this.candidate, required this.onConfirm});
+  final WorkoutRepairCandidate candidate;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) => TracendCard(
+    raised: true,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const StatusChip(
+          label: 'Workout record needs review',
+          icon: CupertinoIcons.exclamationmark_triangle,
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+        Text(
+          candidate.workoutName,
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: TracendSpacing.xs),
+        Text(
+          'Apple Health recorded ${(candidate.healthkitDurationSeconds / 60).round()} minutes. Tracend recorded ${(candidate.recordedDurationSeconds / 60).round()} minutes while you were entering sets.',
+        ),
+        const SizedBox(height: TracendSpacing.md),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: onConfirm,
+            child: const Text('Review and correct'),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ReconciliationCard extends StatelessWidget {
+  const _ReconciliationCard({
+    required this.item,
+    required this.onAccept,
+    required this.onReject,
+    required this.busy,
+  });
+  final WorkoutReconciliation item;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) => TracendCard(
+    raised: true,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        StatusChip(
+          label: item.status == 'conflict'
+              ? 'Apple Health conflict'
+              : 'Apple Health workout match',
+          icon: item.status == 'conflict'
+              ? CupertinoIcons.exclamationmark_triangle
+              : CupertinoIcons.link,
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+        Text(item.workoutName, style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: TracendSpacing.xs),
+        Text(
+          '${item.localDate.day}/${item.localDate.month} · ${item.activityType.replaceAll('_', ' ').toLowerCase()} · ${(item.healthDurationSeconds / 60).round()} min',
+        ),
+        const SizedBox(height: TracendSpacing.xs),
+        Text(
+          'Match confidence ${(item.confidence * 100).round()}%. Apple Health confirms the activity; Tracend remains the source for exercises and sets.',
+        ),
+        const SizedBox(height: TracendSpacing.md),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: busy ? null : onReject,
+                child: const Text('Not the same workout'),
+              ),
+            ),
+            const SizedBox(width: TracendSpacing.sm),
+            Expanded(
+              child: FilledButton(
+                onPressed: busy ? null : onAccept,
+                child: busy
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Confirm match'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
   );
 }
 

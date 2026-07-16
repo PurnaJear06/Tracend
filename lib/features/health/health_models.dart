@@ -86,6 +86,8 @@ class RawHealthSample {
     required this.sampleId,
     required this.sourceId,
     this.sleepStage,
+    this.workoutActivityType,
+    this.workoutEnergyKcal,
   });
 
   final HealthMetric metric;
@@ -95,7 +97,31 @@ class RawHealthSample {
   final String sampleId;
   final String sourceId;
   final SleepStage? sleepStage;
+  final String? workoutActivityType;
+  final double? workoutEnergyKcal;
 }
+
+List<Map<String, Object?>> healthWorkoutReferences(
+  List<RawHealthSample> samples,
+) => samples.where((sample) => sample.metric == HealthMetric.workouts).map((
+  sample,
+) {
+  final local = sample.start.toLocal();
+  return <String, Object?>{
+    'sample_id_hash': _hash(sample.sampleId),
+    'source_id_hash': _hash(sample.sourceId),
+    'activity_type': sample.workoutActivityType ?? 'OTHER',
+    'started_at': sample.start.toUtc().toIso8601String(),
+    'ended_at': sample.end.toUtc().toIso8601String(),
+    'duration_seconds': sample.end.difference(sample.start).inSeconds,
+    if (sample.workoutEnergyKcal != null)
+      'energy_kcal': DailyHealthSummary._rounded(sample.workoutEnergyKcal!),
+    'local_date':
+        '${local.year.toString().padLeft(4, '0')}-'
+        '${local.month.toString().padLeft(2, '0')}-'
+        '${local.day.toString().padLeft(2, '0')}',
+  };
+}).toList();
 
 class HealthReadResult {
   const HealthReadResult({

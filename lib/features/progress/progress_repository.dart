@@ -132,11 +132,18 @@ class SupabaseProgressRepository implements ProgressRepository {
     final rows = await _client
         .from('body_measurements')
         .select(
-          'measured_on,weight_kg,waist_cm,chest_cm,hip_cm,arm_cm,thigh_cm,source',
+          'measured_on,weight_kg,waist_cm,chest_cm,hip_cm,arm_cm,thigh_cm,source,created_at',
         )
         .isFilter('superseded_at', null)
-        .order('measured_on');
-    return rows
+        .order('measured_on')
+        .order('created_at');
+    final byDate = <String, Map<String, dynamic>>{};
+    for (final row in rows) {
+      final date = row['measured_on'] as String;
+      final existing = byDate[date];
+      if (existing == null || row['source'] == 'manual') byDate[date] = row;
+    }
+    final values = byDate.values
         .map(
           (row) => BodyMeasurement(
             date: DateTime.parse(row['measured_on'] as String),
@@ -150,6 +157,8 @@ class SupabaseProgressRepository implements ProgressRepository {
           ),
         )
         .toList();
+    values.sort((a, b) => a.date.compareTo(b.date));
+    return values;
   }
 
   @override

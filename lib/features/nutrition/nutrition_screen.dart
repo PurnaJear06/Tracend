@@ -18,7 +18,7 @@ class NutritionScreen extends StatefulWidget {
 }
 
 class _NutritionScreenState extends State<NutritionScreen> {
-  final _date = DateTime.now();
+  DateTime _date = DateTime.now();
   bool _loading = true;
   bool _working = false;
   String? _error;
@@ -67,6 +67,26 @@ class _NutritionScreenState extends State<NutritionScreen> {
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  Future<void> _changeDate(int days) async {
+    final today = DateTime.now();
+    final candidate = DateTime(_date.year, _date.month, _date.day + days);
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    if (candidate.isAfter(todayOnly)) return;
+    setState(() => _date = candidate);
+    await _refresh();
+  }
+
+  bool get _isToday {
+    final today = DateTime.now();
+    return _date.year == today.year &&
+        _date.month == today.month &&
+        _date.day == today.day;
+  }
+
+  String get _dateLabel => _isToday
+      ? 'Today'
+      : '${_date.day.toString().padLeft(2, '0')}/${_date.month.toString().padLeft(2, '0')}/${_date.year}';
 
   Future<void> _openManualMeal([ScheduledMeal? scheduled]) async {
     final input = await showModalBottomSheet<_ManualMealResult>(
@@ -117,11 +137,11 @@ class _NutritionScreenState extends State<NutritionScreen> {
     }
   }
 
-  Future<void> _captureMealPhoto() async {
+  Future<void> _selectMealPhoto(ImageSource source) async {
     final repository = widget.repository;
     if (repository is! MealPhotoRepository) return;
     final photo = await ImagePicker().pickImage(
-      source: ImageSource.camera,
+      source: source,
       imageQuality: 82,
       maxWidth: 1600,
       requestFullMetadata: false,
@@ -239,8 +259,32 @@ class _NutritionScreenState extends State<NutritionScreen> {
     final nextMeal = _schedule?.nextMeal;
     return TracendScrollView(
       title: 'Nutrition',
-      subtitle: 'Confirmed meals only',
+      subtitle: 'Confirmed meals only · $_dateLabel',
       children: [
+        Row(
+          children: [
+            IconButton.outlined(
+              key: const ValueKey('nutrition-previous-day'),
+              tooltip: 'Previous day',
+              onPressed: _loading ? null : () => _changeDate(-1),
+              icon: const Icon(CupertinoIcons.chevron_left),
+            ),
+            Expanded(
+              child: Text(
+                _isToday ? 'Today’s log' : 'Saved daily log · $_dateLabel',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            IconButton.outlined(
+              key: const ValueKey('nutrition-next-day'),
+              tooltip: 'Next day',
+              onPressed: _loading || _isToday ? null : () => _changeDate(1),
+              icon: const Icon(CupertinoIcons.chevron_right),
+            ),
+          ],
+        ),
+        const SizedBox(height: TracendSpacing.md),
         if (_loading) const LinearProgressIndicator(minHeight: 3),
         if (_error != null) ...[
           TracendCard(
@@ -316,7 +360,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
               ),
               Text(
                 targets == null
-                    ? '${summary?.confirmedMeals ?? 0} confirmed meals today'
+                    ? '${summary?.confirmedMeals ?? 0} confirmed meals on $_dateLabel'
                     : 'of ${_number(targets.calories)} kcal · ${summary?.confirmedMeals ?? 0} confirmed meals',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
@@ -391,7 +435,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
           onPressed: _working
               ? null
               : widget.repository is MealPhotoRepository
-              ? _captureMealPhoto
+              ? () => _selectMealPhoto(ImageSource.camera)
               : _reviewFixture,
           icon: const Icon(CupertinoIcons.camera_viewfinder),
           label: Text(
@@ -400,6 +444,16 @@ class _NutritionScreenState extends State<NutritionScreen> {
                 : 'Review sample analysis',
           ),
         ),
+        if (widget.repository is MealPhotoRepository) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          OutlinedButton.icon(
+            onPressed: _working
+                ? null
+                : () => _selectMealPhoto(ImageSource.gallery),
+            icon: const Icon(CupertinoIcons.photo_on_rectangle),
+            label: const Text('Choose from Photo Library'),
+          ),
+        ],
         const SizedBox(height: TracendSpacing.xs),
         Text(
           widget.repository is MealPhotoRepository
@@ -407,7 +461,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
               : 'Sample analysis is a local fixture. Nothing affects totals until you confirm it.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
-        const SectionLabel('Today’s timeline'),
+        SectionLabel(_isToday ? 'Today’s timeline' : '$_dateLabel timeline'),
         if (!_loading && _meals.isEmpty)
           const TracendCard(
             child: Text(

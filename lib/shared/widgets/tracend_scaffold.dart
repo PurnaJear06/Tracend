@@ -35,7 +35,7 @@ class TracendScrollView extends StatelessWidget {
                   gutter,
                   TracendSpacing.md,
                   gutter,
-                  132,
+                  176,
                 ),
                 sliver: SliverList.list(
                   children: [

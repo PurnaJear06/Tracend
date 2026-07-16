@@ -72,7 +72,17 @@ class _HealthStatusCardState extends State<HealthStatusCard> {
       HealthConnectionState.manualOnly ||
       HealthConnectionState.unavailable => context.tracendColors.textSecondary,
     };
+    final available = status.availableMetrics.toList()
+      ..sort((a, b) => a.index.compareTo(b.index));
+    final missing = HealthMetric.values
+        .where((metric) => !status.availableMetrics.contains(metric))
+        .toList();
+    final refreshed = const {
+      HealthConnectionState.connected,
+      HealthConnectionState.partial,
+    }.contains(status.state);
     return TracendCard(
+      raised: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -82,34 +92,62 @@ class _HealthStatusCardState extends State<HealthStatusCard> {
               const SizedBox(width: TracendSpacing.sm),
               Expanded(
                 child: Text(
-                  status.title,
+                  refreshed ? 'Health data refreshed' : status.title,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
               TracendPill(
-                label: _label(status.state),
+                label: refreshed
+                    ? '${available.length} of ${HealthMetric.values.length}'
+                    : _label(status.state),
                 color: color,
                 compact: true,
               ),
             ],
           ),
           const SizedBox(height: TracendSpacing.xs),
-          Text(status.detail, style: Theme.of(context).textTheme.bodyMedium),
+          Text(
+            refreshed
+                ? available.isEmpty
+                      ? 'No recent Apple Health values were found. Coaching continues with your manual entries.'
+                      : '${available.map((metric) => metric.label).join(', ')} ${available.length == 1 ? 'is' : 'are'} ready for coaching.'
+                : status.detail,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
           if (!widget.compact && status.availableMetrics.isNotEmpty) ...[
             const SizedBox(height: TracendSpacing.sm),
-            Text(
-              '${status.availableMetrics.length} data categories found in the last sync',
-              style: Theme.of(context).textTheme.labelLarge,
+            Wrap(
+              spacing: TracendSpacing.xs,
+              runSpacing: TracendSpacing.xs,
+              children: [
+                for (final metric in available)
+                  _AvailableSignal(metric: metric),
+              ],
             ),
-            const SizedBox(height: TracendSpacing.xs),
-            Text(
-              'Found: ${(status.availableMetrics.toList()..sort((a, b) => a.index.compareTo(b.index))).map((metric) => metric.label).join(', ')}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            if (status.availableMetrics.length < HealthMetric.values.length)
-              Text(
-                'No recent samples: ${HealthMetric.values.where((metric) => !status.availableMetrics.contains(metric)).map((metric) => metric.label).join(', ')}. This can mean no data was recorded, or read access is unavailable.',
-                style: Theme.of(context).textTheme.bodySmall,
+            if (missing.isNotEmpty)
+              Material(
+                color: Colors.transparent,
+                child: Theme(
+                  data: Theme.of(
+                    context,
+                  ).copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    key: const PageStorageKey('health-missing-signals'),
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    title: Text('${missing.length} signals not found'),
+                    subtitle: const Text('This does not block your coaching'),
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '${missing.map((metric) => metric.label).join(', ')} had no recent values. Apple Health may not contain them, or Tracend may not have read access.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
           ],
           if (!widget.compact &&
@@ -143,15 +181,15 @@ class _HealthStatusCardState extends State<HealthStatusCard> {
               label: Text(
                 status.state == HealthConnectionState.manualOnly
                     ? 'Connect Apple Health'
-                    : 'Refresh health summary',
+                    : 'Refresh Apple Health',
               ),
             ),
           ),
-          if (!widget.compact)
+          if (!widget.compact && status.lastSuccessfulSync != null)
             Padding(
               padding: const EdgeInsets.only(top: TracendSpacing.xs),
               child: Text(
-                'Optional. Tracend requests read access only and stores daily summaries, not raw samples.',
+                'Last refreshed ${_time(status.lastSuccessfulSync!.toLocal())} · read-only summaries',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
@@ -167,4 +205,28 @@ class _HealthStatusCardState extends State<HealthStatusCard> {
     HealthConnectionState.manualOnly => 'Manual',
     HealthConnectionState.unavailable => 'Unavailable',
   };
+
+  String _time(DateTime value) =>
+      '${value.day}/${value.month} · ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+}
+
+class _AvailableSignal extends StatelessWidget {
+  const _AvailableSignal({required this.metric});
+  final HealthMetric metric;
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: context.tracendColors.stateStable.withValues(alpha: .10),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Text(
+        metric.label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: context.tracendColors.stateStable,
+        ),
+      ),
+    ),
+  );
 }
