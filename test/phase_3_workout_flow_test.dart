@@ -14,8 +14,9 @@ class _MemoryWorkoutRepository implements WorkoutRepository {
   int syncCalls = 0;
   int completeCalls = 0;
   bool failSync = false;
+  Map<String, dynamic>? serverSession;
   @override
-  Future<void> clearDraft() async => saved = null;
+  Future<void> clearDraft(String workoutId) async => saved = null;
   @override
   Future<void> complete(
     String sessionId,
@@ -28,11 +29,14 @@ class _MemoryWorkoutRepository implements WorkoutRepository {
   }
 
   @override
-  Future<String?> loadDraft() async => saved;
+  Future<String?> loadDraft(String workoutId) async => saved;
+  @override
+  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout) async =>
+      serverSession;
   @override
   Future<PlannedWorkout> loadTodayWorkout() async => PlannedWorkout.fixture;
   @override
-  Future<void> saveDraft(String json) async => saved = json;
+  Future<void> saveDraft(String workoutId, String json) async => saved = json;
   @override
   Future<String> start(PlannedWorkout workout, String idempotencyKey) async =>
       'server-session';
@@ -111,6 +115,51 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(repository.saved, isNotNull);
     expect(find.text('Saved on device · sync pending'), findsOneWidget);
+  });
+
+  testWidgets('server session restores entered sets after reopening', (
+    tester,
+  ) async {
+    final repository = _MemoryWorkoutRepository()
+      ..serverSession = {
+        'session_id': 'server-session',
+        'state': 'in_progress',
+        'revision': 4,
+        'idempotency_key': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        'actual_started_at': DateTime.now()
+            .subtract(const Duration(minutes: 30))
+            .toIso8601String(),
+        'exercises': [
+          {
+            'order': 1,
+            'status': 'performed',
+            'pain_flag': false,
+            'sets': [
+              {
+                'number': 1,
+                'load_kg': 24,
+                'repetitions': 10,
+                'rpe': 8,
+                'completed': true,
+              },
+            ],
+          },
+        ],
+      };
+    await tester.pumpWidget(
+      _app(
+        ActiveWorkoutScreen(
+          workout: PlannedWorkout.fixture,
+          repository: repository,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1 sets complete'), findsOneWidget);
+    final fields = tester.widgetList<TextFormField>(find.byType(TextFormField));
+    expect(fields.elementAt(0).initialValue, '24');
+    expect(fields.elementAt(1).initialValue, '8');
+    expect(fields.elementAt(2).initialValue, '10');
   });
 
   testWidgets('Today opens the bounded daily check-in sheet', (tester) async {

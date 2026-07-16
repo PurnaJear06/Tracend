@@ -231,8 +231,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -900));
     await tester.pumpAndSettle();
-    expect(find.text('APPLE HEALTH EVIDENCE'), findsOneWidget);
     expect(find.text('Daily steps'), findsOneWidget);
+    expect(find.text('What matters today'), findsOneWidget);
     expect(find.textContaining('Sleep has no stored samples'), findsOneWidget);
   });
 }

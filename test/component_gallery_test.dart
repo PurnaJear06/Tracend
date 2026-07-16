@@ -78,8 +78,8 @@ void main() {
     );
     await tester.scrollUntilVisible(
       find.bySemanticsLabel(
-        'Trajectory evidence: Sleep stable, Training on plan, Nutrition on '
-        'target. Next move: Maintain plan.',
+        'Signals shaping this action: Sleep stable, Training on plan, Nutrition on '
+        'target. Maintain plan',
       ),
       250,
       scrollable: find.byType(Scrollable).first,
@@ -87,8 +87,8 @@ void main() {
 
     expect(
       find.bySemanticsLabel(
-        'Trajectory evidence: Sleep stable, Training on plan, Nutrition on '
-        'target. Next move: Maintain plan.',
+        'Signals shaping this action: Sleep stable, Training on plan, Nutrition on '
+        'target. Maintain plan',
       ),
       findsOneWidget,
     );

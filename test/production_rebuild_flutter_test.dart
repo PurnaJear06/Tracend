@@ -59,6 +59,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(
+      find.text('7 of 8 sources available · 1 needs data'),
+      findsOneWidget,
+    );
     await tester.enterText(find.byType(TextField), 'What should I do next?');
     await tester.tap(find.byTooltip('Send message'));
     await tester.pumpAndSettle();
@@ -73,7 +77,8 @@ void main() {
   });
 }
 
-class _ChatRepository implements CoachRepository, CoachChatRepository {
+class _ChatRepository
+    implements CoachRepository, CoachChatRepository, CoachContextRepository {
   bool sent = false;
   @override
   Future<CoachDecision?> loadLatest() async => null;
@@ -81,6 +86,59 @@ class _ChatRepository implements CoachRepository, CoachChatRepository {
   Future<CoachDecision> generate() => throw StateError('not needed');
   @override
   Future<Map<String, dynamic>> loadUsage() async => const {};
+  @override
+  Future<List<CoachContextSource>> loadContextStatus() async => const [
+    CoachContextSource(
+      key: 'approved_plan',
+      label: 'Approved training plan',
+      available: true,
+      records: 0,
+    ),
+    CoachContextSource(
+      key: 'goal_profile',
+      label: 'Goal and profile schedule',
+      available: true,
+      records: 0,
+    ),
+    CoachContextSource(
+      key: 'healthkit',
+      label: 'Apple Health summaries',
+      available: true,
+      records: 38,
+      latestDate: '2026-07-10',
+    ),
+    CoachContextSource(
+      key: 'check_in',
+      label: 'Recovery check-ins',
+      available: true,
+      records: 3,
+      latestDate: '2026-07-11',
+    ),
+    CoachContextSource(
+      key: 'nutrition',
+      label: 'Confirmed nutrition',
+      available: true,
+      records: 4,
+    ),
+    CoachContextSource(
+      key: 'workouts',
+      label: 'Completed Tracend workouts',
+      available: false,
+      records: 0,
+    ),
+    CoachContextSource(
+      key: 'measurements',
+      label: 'Body measurements',
+      available: true,
+      records: 7,
+    ),
+    CoachContextSource(
+      key: 'conversation',
+      label: 'Saved Coach conversation history',
+      available: true,
+      records: 4,
+    ),
+  ];
   @override
   Future<List<CoachThread>> loadThreads() async => const [];
   @override

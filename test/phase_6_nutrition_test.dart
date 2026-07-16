@@ -10,10 +10,31 @@ void main() {
   ) async {
     await tester.pumpWidget(_app(_NutritionRepository()));
     await tester.pumpAndSettle();
-    expect(find.text('Confirmed meals only'), findsOneWidget);
+    expect(find.textContaining('Confirmed meals only · Today'), findsOneWidget);
     expect(find.text('540 kcal'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('breakfast'),
+      180,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('breakfast'), findsOneWidget);
     expect(find.text('Enter manually'), findsOneWidget);
+  });
+
+  testWidgets('Nutrition can reopen persisted meals from a previous day', (
+    tester,
+  ) async {
+    final repository = _NutritionRepository();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('nutrition-previous-day')));
+    await tester.pumpAndSettle();
+    expect(repository.loadedDates.length, greaterThanOrEqualTo(2));
+    expect(
+      repository.loadedDates.last.day,
+      DateTime.now().subtract(const Duration(days: 1)).day,
+    );
+    expect(find.textContaining('Saved daily log'), findsOneWidget);
   });
 
   testWidgets('Manual meal validates fields before confirmation', (
@@ -74,9 +95,11 @@ void main() {
     final reviewButton = find.byKey(const ValueKey('review-meal-draft-1'));
     await tester.scrollUntilVisible(
       reviewButton,
-      240,
+      180,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(reviewButton);
+    await tester.pumpAndSettle();
     expect(find.text('Review & edit draft'), findsOneWidget);
     await tester.tap(reviewButton);
     await tester.pumpAndSettle();
@@ -145,6 +168,7 @@ class _NutritionRepository implements NutritionRepository {
   List<MealCandidate> confirmedCandidates = const [];
   String? confirmedMealId;
   String? deletedMealId;
+  final List<DateTime> loadedDates = [];
   @override
   Future<NutritionTargets?> loadTargets() async => const NutritionTargets(
     calories: 2200,
@@ -153,14 +177,17 @@ class _NutritionRepository implements NutritionRepository {
     fat: 70,
   );
   @override
-  Future<NutritionSummary> loadSummary(DateTime date) async =>
-      const NutritionSummary(
-        calories: 540,
-        protein: 35,
-        carbohydrate: 62,
-        fat: 18,
-        confirmedMeals: 1,
-      );
+  Future<NutritionSummary> loadSummary(DateTime date) async {
+    loadedDates.add(date);
+    return const NutritionSummary(
+      calories: 540,
+      protein: 35,
+      carbohydrate: 62,
+      fat: 18,
+      confirmedMeals: 1,
+    );
+  }
+
   @override
   Future<List<MealEntry>> loadMeals(DateTime date) async => [
     const MealEntry(

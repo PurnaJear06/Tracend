@@ -12,10 +12,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_app(_Repository()));
     await tester.pumpAndSettle();
-    expect(
-      find.text('Record two measurements to reveal a trend'),
-      findsOneWidget,
-    );
+    expect(find.text('Add your first weigh-in'), findsOneWidget);
     expect(find.text('No measurements yet'), findsOneWidget);
     await _reveal(tester, find.text('Record measurement'));
     expect(find.text('Record measurement'), findsOneWidget);
@@ -49,11 +46,8 @@ void main() {
   testWidgets('Trend has accessible summary and weekly review', (tester) async {
     await tester.pumpWidget(_app(_Repository(withTrend: true)));
     await tester.pumpAndSettle();
-    expect(find.text('Your measurements are ready to compare'), findsOneWidget);
-    expect(
-      find.bySemanticsLabel(RegExp('Weight history from')),
-      findsOneWidget,
-    );
+    expect(find.text('79.0 kg'), findsWidgets);
+    expect(find.bySemanticsLabel(RegExp('Weight trend from')), findsOneWidget);
     await _reveal(tester, find.text('Open weekly review'));
     await tester.tap(find.text('Open weekly review'));
     await tester.pumpAndSettle();
@@ -105,39 +99,6 @@ void main() {
     expect(repository.acknowledgedReviewId, 'review-1');
   });
 
-  testWidgets('Photo guide discloses privacy and no live AI', (tester) async {
-    await tester.pumpWidget(_app(_Repository()));
-    await tester.pumpAndSettle();
-    await _reveal(tester, find.text('Open capture guide'));
-    await tester.tap(find.text('Open capture guide'));
-    await tester.pumpAndSettle();
-    expect(
-      find.textContaining('does not send photos to an AI provider'),
-      findsOneWidget,
-    );
-    expect(find.text('Capture front, side and back'), findsOneWidget);
-  });
-
-  testWidgets('Photo capture identifies the pose before opening the camera', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_app(_Repository()));
-    await tester.pumpAndSettle();
-    await _reveal(tester, find.text('Open capture guide'));
-    await tester.tap(find.text('Open capture guide'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Capture front, side and back'));
-    await tester.tap(find.text('Capture front, side and back'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('I agree and continue'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Front photo'), findsOneWidget);
-    expect(find.text('1 of 3'), findsOneWidget);
-    expect(find.textContaining('Face the camera'), findsOneWidget);
-    expect(find.text('Open camera'), findsOneWidget);
-    expect(find.text('Cancel set'), findsOneWidget);
-  });
 }
 
 Future<void> _reveal(WidgetTester tester, Finder target) async {

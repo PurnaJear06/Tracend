@@ -44,15 +44,12 @@ void main() {
     await tester.tap(find.text('Nutrition').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('Confirmed meals only'), findsOneWidget);
+    expect(find.textContaining('Confirmed meals only · Today'), findsOneWidget);
     expect(find.byKey(const ValueKey('tab-nutrition')), findsOneWidget);
 
     await tester.tap(find.text('Progress').last);
     await tester.pumpAndSettle();
-    expect(
-      find.text('Record two measurements to reveal a trend'),
-      findsOneWidget,
-    );
+    expect(find.text('Add your first weigh-in'), findsOneWidget);
   });
 
   testWidgets('opens account as a detail route rather than a sixth tab', (
