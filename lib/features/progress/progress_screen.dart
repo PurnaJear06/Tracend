@@ -185,8 +185,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       pose: 'front',
       label: 'Front photo',
       guidance: 'Face the camera with full body visible',
-      isCaptured:
-          _activeSet != null && _capturedPoses.contains('front'),
+      isCaptured: _activeSet != null && _capturedPoses.contains('front'),
       onCamera: () => _capturePose('front', ImageSource.camera),
       onGallery: () => _capturePose('front', ImageSource.gallery),
     ),
@@ -194,8 +193,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       pose: 'side',
       label: 'Side photo',
       guidance: 'Turn 90 degrees, arm away from body',
-      isCaptured:
-          _activeSet != null && _capturedPoses.contains('side'),
+      isCaptured: _activeSet != null && _capturedPoses.contains('side'),
       onCamera: () => _capturePose('side', ImageSource.camera),
       onGallery: () => _capturePose('side', ImageSource.gallery),
     ),
@@ -203,8 +201,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       pose: 'back',
       label: 'Back photo',
       guidance: 'Face away from camera, natural stance',
-      isCaptured:
-          _activeSet != null && _capturedPoses.contains('back'),
+      isCaptured: _activeSet != null && _capturedPoses.contains('back'),
       onCamera: () => _capturePose('back', ImageSource.camera),
       onGallery: () => _capturePose('back', ImageSource.gallery),
     ),
@@ -400,7 +397,9 @@ class _ProgressScreenState extends State<ProgressScreen> {
       _capturedPoses.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Photo was not saved. Retry when ready.')),
+          const SnackBar(
+            content: Text('Photo was not saved. Retry when ready.'),
+          ),
         );
       }
       rethrow;
@@ -890,14 +889,8 @@ class _PosePhotoRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              Text(
-                guidance,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              Text(label, style: Theme.of(context).textTheme.titleMedium),
+              Text(guidance, style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
         ),

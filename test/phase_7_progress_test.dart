@@ -98,7 +98,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(repository.acknowledgedReviewId, 'review-1');
   });
-
 }
 
 Future<void> _reveal(WidgetTester tester, Finder target) async {
