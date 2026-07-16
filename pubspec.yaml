@@ -44,8 +44,8 @@ dependencies:
   uuid: 4.5.3
 
 dependency_overrides:
-  device_info_plus: ^13.2.0
-  device_info_plus_platform_interface: ^8.1.0
+  device_info_plus: '>=12.3.0 <12.4.0'
+  device_info_plus_platform_interface: ^7.0.0
 
 dev_dependencies:
   flutter_test:
