@@ -1,5 +1,11 @@
 # Tracend Implementation Roadmap
 
+## Personal Coaching System Sequence
+
+Deliver Workout Truth Repair, HealthKit reconciliation, Coach Context v2, Qwen
+weekly reasoning, approval-gated plan evolution, and owner-device dogfooding in
+that order. RAG remains deferred pending measured structured-retrieval failure.
+
 **Status:** Execution order for the private-beta MVP  
 **Constraint:** This roadmap does not expand [PRD.md](./PRD.md)  
 **Backend:** Supabase Auth, PostgreSQL, Storage, Edge Functions, Queues, and Cron

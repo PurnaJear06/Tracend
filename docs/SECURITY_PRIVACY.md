@@ -1,5 +1,11 @@
 # Tracend Security and Privacy Specification
 
+## Workout Reconciliation Minimization
+
+Workout-level HealthKit sync retains only type, time, duration, optional energy,
+and hashed source/sample references needed for reconciliation. It does not copy
+routes, heart-rate series, or unrelated raw samples.
+
 **Status:** Authoritative private-beta security and privacy requirements  
 **Data profile:** Health, fitness, nutrition, body measurements, and private photos
 
@@ -110,6 +116,9 @@ Requirements:
 ## 6. AI Provider Processing
 
 - AI requests originate only from Supabase Edge Functions; provider keys and Supabase secret/service-role keys never enter Flutter.
+- ADR 0006 permits Groq Qwen only for the owner’s disclosed, time-bounded Coach
+  and meal-photo test. It remains server-only, purpose-bound, kill-switchable,
+  and excluded from progress-photo processing pending separate evaluation.
 - Flutter never presents a provider-key entry field or transmits a provider
   credential supplied by a user. The owner configures provider credentials in
   environment-specific Supabase secret management.

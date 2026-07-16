@@ -1,5 +1,23 @@
 # Backend Handoff
 
+## Active Personal Coaching Work
+
+Hosted forward migrations `20260716120000` through `20260716122000` deploy Coach
+Context v4: query-aware context selection with 6 kinds (`daily_action`,
+`plan_change`, `explain_evidence`, `nutrition_focus`, `recovery`, `general`).
+`prepare_coach_chat_v3` now wraps `prepare_coach_chat_v4(..., 'general')` for
+backward compatibility. `coach-chat` classifies user questions with regex-based
+`classifyQuestion()` and compacts the JSON context with `compactContext()` before
+sending to Groq. Every context kind targets well under 8000 TPM. ADR 0007
+documents the decision; Deno provider tests pass 15/15 (7 classification + 8
+compaction); pgTAP covers RLS, kind fallback, idempotency, and size budgets
+across 37 test assertions.
+
+Forward migration `20260711220000_evidence_ui_truth_repair.sql` is hosted with
+local/remote parity. It returns one ranked unresolved reconciliation candidate
+per session, closes competitors on confirmation, and turns same-day manual
+measurements into audited amendments. PostgreSQL/RLS checks pass 313/313.
+
 **Scope:** Supabase, database, RLS, Edge Functions, CI, local tooling, and
 server-side integration boundaries.
 
@@ -7,6 +25,55 @@ This file is current-state handoff, not durable architecture. Keep detailed
 history in `docs/worklog/` and durable decisions in `docs/adr/`.
 
 ## Current State
+
+- **Coach Context v5 deployed:** migration `20260716130000_coach_context_v5.sql` replaces
+  `prepare_coach_chat_v4` in-place with enriched v5 context. New fields: `nutrition_adherence`
+  (days_with_confirmed_meals_7d, schedule_slot_compliance), extended `nutrition_compliance_7day`
+  (avg_daily_carbohydrate_g, avg_daily_fat_g, days_with_meals), `data_quality.last_photo_set`,
+  `photo_sets_completed`, `has_physique_analysis`, and `evidence_freshness.last_photo_set`.
+  `physique_analyses` table created with forced RLS (empty pending vision AI evaluation gate).
+  `classifyQuestion` extended: +4 keywords for physique/visual progress → `explain_evidence`,
+  +4 for adherence/compliance → `nutrition_focus`. `compactContext` has 12 new abbreviations
+  for v5 fields. Per-pose photo rows replace the monolithic capture flow in Flutter.
+  Schema version: 3.0. ADR 0008 records the decision. Deno 56/56, Flutter 68/68.
+- **Coach Context v4 deployed:** migrations `20260716120000_coach_context_v4.sql`,
+  `20260716121000_coach_context_v4_enrichment.sql`, and
+  `20260716122000_coach_context_v4_enrichment.sql` are hosted. `coach-chat` is
+  redeployed with `classifyQuestion()` and `compactContext()`. Each context kind
+  produces bounded, kind-specific data; the TS provider compacts keys, strips
+  nulls, and truncates rationales before the Groq call. `prepare_coach_chat_v3`
+  wraps v4 for backward compat. ADR 0007 records the decision. Deno 51/51. Owner
+  should send one chat message to confirm a real Groq 200 response.
+- **Current active change:** ADR 0006 server-only Groq Qwen owner-test routing is hosted for Coach/chat and JPEG/PNG meal-photo candidates. Migration `20260711100000_owner_groq_qwen_test_routing.sql` adds provider metadata and a USD 2/10 request guard while preserving schema/confirmation checks. Do not add a key to Flutter.
+- **Qwen repair deployed:** the first owner Coach request failed before billable
+  usage. All Qwen prompts now put instructions in the user message, as required
+  by current Groq Qwen guidance. `coach-decide`, `coach-chat`, and
+  `meal-analyze` were redeployed; owner must make one fresh Coach request to
+  confirm a persisted Groq run.
+- **Verified root cause:** direct server diagnostic proved the stored key/model
+  returns HTTP 200. The Coach adapter failed only because Qwen reasoning mode
+  produced unpermitted evidence under the strict validator. Non-thinking JSON
+  mode passed the same schema/policy validation and is now deployed for Coach
+  and chat. The diagnostic function and temporary secret were deleted.
+- **Chat failure behavior is fail-closed:** migration
+  `20260711113000_coach_chat_fail_closed.sql` and `coach-chat` v12 are hosted.
+  Qwen receives one schema-repair retry; a second failure is persisted as a
+  sanitized failed `coach_chat` run and returns 503. Do not reintroduce
+  `deterministic-chat-fallback-v1` for a live conversation.
+- **Coach context/voice repair deployed:** migration
+  `20260711150000_coach_longitudinal_context.sql` adds active goal/profile,
+  seven-day confirmed nutrition and normalized HealthKit history, recent
+  measurements/review, workouts, check-in, approved plan, and thread context.
+  Provider guidance now gives practical same-day recovery coaching for ordinary
+  illness reports while retaining diagnosis/treatment and durable-change
+  boundaries. The migration is hosted with local/remote parity and
+  `coach-chat` v13 is ACTIVE.
+- **Context coverage repair deployed:** migration
+  `20260711170000_coach_context_coverage.sql` adds a service-only v2 chat
+  preparation wrapper and owner-only context-status RPC. It treats recent
+  HealthKit history as available chat context instead of requiring an exact
+  same-day row, while retaining true gaps such as zero completed workouts.
+  Hosted migration parity passes and `coach-chat` v14 is ACTIVE.
 
 - Phase 1 backend foundation is complete and verified.
 - Supabase CLI, Deno, Docker CLI, Colima, and Lima are intended to run from

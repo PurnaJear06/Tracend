@@ -1,5 +1,13 @@
 # Tracend AI and Safety Specification
 
+## Coach Context v2 and Qwen Reasoning
+
+Stable evidence IDs identify structured facts and label freshness, missing
+evidence, logging coverage and conflicts. Ordinary chat uses non-reasoning
+structured output. Weekly review may use Qwen reasoning followed by validated
+formatting. Unsupported evidence rejects the output; unknown logging is not
+non-adherence; persistent plan and target changes remain approval-gated.
+
 **Status:** Authoritative AI behavior and safety contract  
 **Population:** Healthy adults aged 18+ in a private beta
 
@@ -77,6 +85,14 @@ Receives approved targets, confirmed meal totals, weight trend, adherence, hunge
 ### Head Coach
 
 Receives both coach sections plus shared policy and evidence. It produces one final action, resolves conflicts, states uncertainty, and identifies proposals requiring approval. It cannot broaden allowed actions.
+
+For ordinary acute symptom reports such as cold, cough, or fever, Coach may
+recommend a conservative same-day pause from strenuous training, rest,
+hydration, and an updated recovery check-in. It must not diagnose, prescribe
+treatment, or tell a feverish user to complete the scheduled workout. Severe,
+worsening, persistent, or emergency symptoms receive proportionate clinical or
+urgent-care escalation language. This daily guidance does not mutate the
+approved plan.
 
 ## 5. Structured Decision Contract
 
@@ -220,9 +236,10 @@ Use:
 - no model call when deterministic output is sufficient.
 
 Providers sit behind `CoachModelProvider` inside Supabase Edge Functions.
-Gemini is the sole planned live provider for owner dogfooding; the existing mock
-provider remains active until Gemini passes privacy review, schema validation,
-text coaching evaluations, and separate meal/progress vision evaluations.
+Gemini is the planned production baseline. Under ADR 0006, Groq Qwen is an
+owner-only, time-bounded test provider after schema validation and synthetic
+adapter evaluation; the mock remains the default and progress-photo vision stays
+separately disabled until its own evaluation gate passes.
 Provider and Supabase secret/service-role keys never enter Flutter. Price alone
 cannot qualify a model.
 
@@ -260,7 +277,7 @@ Optimize cost using compact feature snapshots, cached static context, determinis
 
 The invoking Supabase Edge Function validates schema, enums, ranges, evidence, policy permissions, catalog references, coach-domain authority, prohibited content, escalation consistency, proposal freshness, and the authenticated user's authority.
 
-Invalid output is never partially applied. The system may attempt one schema-repair retry and then an evaluated fallback. Otherwise it returns a safe unavailable state while preserving logging and the active plan.
+Invalid output is never partially applied. The system may attempt one schema-repair retry and then returns a safe unavailable state while preserving logging and the active plan. A live Coach chat must never present deterministic fallback text as a successful model answer; deterministic emergency and clinical-boundary refusals remain explicitly labeled safety responses.
 
 ## 13. Evaluation
 

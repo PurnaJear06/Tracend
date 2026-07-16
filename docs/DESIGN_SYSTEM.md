@@ -1,5 +1,21 @@
 # Tracend Design System
 
+## Train Spacing Rule
+
+Do not combine a trailing card spacer with the next section label's leading
+spacer. Use one 8-point inter-card gap and one 24-point section boundary, with
+minimum 44-point hit targets for interactive exercise rows.
+
+### Evidence visualization
+
+`ReadinessStrip` replaces the internal-sounding Signal Rail on Today. It uses
+three direct, tappable factors: Recovery, Training, and Nutrition. The shared
+`EvidenceTrendChart` uses linear segments, actual date spacing, visible numeric
+scale, current value and optional average line. Curved interpolation, unlabeled
+auto-scaling and spreadsheet-style equal metric grids are prohibited.
+Weight charts show confirmed raw weigh-ins by default; any later smoothing must
+be optional and visually distinct from the current measurement.
+
 **Status:** Authoritative MVP experience and visual direction  
 **Platform:** Flutter for iOS, private TestFlight beta  
 **Working brand:** Tracend, pending trademark and App Store name clearance
@@ -23,13 +39,18 @@ Tracend should feel like a precise coaching instrument that becomes calm when th
 
 The visual language combines the discipline of a training log, the accuracy of an instrument readout, and the physical momentum implied by the Tracend name.
 
-### Signature element: the Trajectory Lens
+### Signature element: the coaching horizon
 
-The Trajectory Lens is a narrow continuous path connecting recent evidence to the current coaching decision. It appears on Today, expands into decision evidence, and can continue into a proposed plan change.
+The coaching horizon is a restrained generated landscape behind Today's single
+next move. Its topographic path suggests progress without pretending to be a
+metric. Directly below it, the native Readiness Strip exposes three factual
+inputs that can be opened and verified.
 
-It is not a readiness score or decorative progress ring. Each marked point represents real evidence such as recovery, recent execution, nutrition adherence, or trend data. Tapping a point reveals its source, freshness, window, and influence. The final segment terminates at one labeled action: maintain, adjust today, gather data, or review proposal.
+The backdrop never contains text, scores, charts, or implied measurements. The
+native instruction and readiness factors remain authoritative and accessible.
 
-The lens is the one deliberate aesthetic risk. Other surfaces remain quiet so it retains meaning.
+The horizon is the one deliberate aesthetic risk. Other surfaces remain quiet
+so it retains meaning.
 
 ## 3. Brand Tokens
 
@@ -51,7 +72,8 @@ Semantic roles include `canvas`, `surface`, `surfaceRaised`, `textPrimary`, `tex
 
 - Body text must meet WCAG AA 4.5:1 contrast; large text and meaningful graphics must meet 3:1.
 - Stable, attention, danger, confidence, and selection always include text or iconography; color is never the only signal.
-- Gradients may appear only inside the Trajectory Lens and must encode direction or transition.
+- Gradients may appear inside the coaching horizon and data visuals when they
+  encode direction or improve native-text contrast.
 - Blur is reserved for modal separation and camera overlays, never ambient decoration.
 
 ### 3.2 Typography
@@ -106,9 +128,11 @@ all tab state, and becomes a width-constrained regular layout on larger widths.
 
 ## 5. Core Components
 
-### `TrajectoryLens`
+### `ReadinessStrip`
 
-Shows evidence groups, freshness, confidence, and final decision class. It expands by tap, supports VoiceOver as an ordered evidence summary, and has a static reduced-motion form.
+Shows Recovery, Training, and Nutrition as three tappable factors. Each opens a
+plain-language source explanation, supports Dynamic Type and VoiceOver, and
+never implies a composite readiness score.
 
 ### `DecisionSurface`
 

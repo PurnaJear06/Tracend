@@ -1,5 +1,28 @@
 # Frontend Handoff
 
+## Active Personal Coaching Work
+
+Train now has workout-scoped drafts, server resume, RPE/pain/explicit skip,
+honest unknown logging, functional detail rows, complete progression lists,
+audited repair review, and HealthKit reconciliation cards.
+Flutter analysis and 67/67 tests pass. The signed hosted 20.1 MB build is
+installed and launched on the owner's iPhone 12.
+
+The evidence UI repair replaces Today’s decorative stepper and equal metric grid
+with a compact Signal Rail and prioritized Apple Health surface. Progress and
+steps share a date-aware labeled chart; recent weight history shows eight days.
+Flutter analysis and 69/69 tests pass. The signed hosted 20.1 MB replacement is
+installed, launched, and passes strict signature verification on the owner's
+iPhone 12.
+
+Owner device feedback superseded the Signal Rail. Today now has a generated,
+optimized coaching-horizon asset and three tappable readiness factors with
+plain explanations. Progress derives headline and raw chart from one ordered
+effective timeline, clips painting, and reserves extra bottom-scroll clearance.
+Profile and goals and AI usage now open real stored-data detail routes. Flutter
+analysis is clean, 70/70 tests pass, and the signed hosted 20.7 MB build is
+installed/launched with strict signature verification.
+
 **Scope:** Flutter iOS shell, navigation, themes, component gallery, local
 client boundaries, and integration with Supabase client contracts.
 
@@ -13,6 +36,26 @@ This file is current-state handoff, not UX authority. UX behavior belongs in
 - The native target is iPhone-only. It uses programmatic `UIScene` setup,
   storyboard-free `UILaunchScreen`, and bundled iPhone icon PNGs so physical
   device compilation does not require CoreSimulator.
+- The generic Flutter launcher icon was replaced on 2026-07-11 with the
+  Tracend trajectory mark across the iPhone asset catalog. A signed hosted
+  build passed strict verification, installed, and launched on the owner iPhone.
+- Nutrition meal analysis now offers both **Analyze meal photo** (camera) and
+  **Choose from Photo Library**. Both normalize to the existing JPEG upload,
+  privacy/consent, candidate-edit, and confirmation path.
+- Nutrition now opens Today but can move backward and forward through persisted
+  daily logs (never beyond Today), making confirmed photo/manual meals visible
+  after midnight instead of appearing reset.
+- The Coach-context/Nutrition-history replacement signed build is installed and
+  launched on the owner iPhone; Flutter analysis and 66/66 tests pass.
+- Live Coach replies now visibly identify **Qwen AI response**. A malformed or
+  unavailable provider response is a retryable error, never generic fallback
+  prose shown as a successful Coach answer. The signed hosted build with this
+  behavior is installed and launched on the owner iPhone.
+- Coach now exposes deterministic source coverage and separates model evidence,
+  actual data gaps, and suggested next actions. This prevents generated bullets
+  from appearing to be evidence and makes missing workout execution explicit.
+- The context-coverage replacement signed build is installed and launched on
+  the owner iPhone; Flutter analysis and 66/66 tests pass.
 - `supabase_flutter` 2.15.0 is pinned. `AppEnvironment` accepts only
   `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`; the shell runs unconfigured
   and contains no secret/service-role or AI-provider key path.

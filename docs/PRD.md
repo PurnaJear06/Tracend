@@ -1,5 +1,17 @@
 # Tracend Product Requirements Document
 
+## Personal Coaching System Addendum
+
+Untouched exercises remain `unknown`, never inferred as skipped. The app resumes
+server-backed in-progress sessions, distinguishes prescribed, substituted and
+extra work, and keeps Apple Health workout matches separate from Tracend's
+set-level evidence. Duration conflicts require user confirmation.
+
+Today presents one action once, followed by three plain-language, tappable
+readiness factors: Recovery, Training, and Nutrition. Apple Health uses plain-language availability and progressive
+disclosure. Weight and activity trends use real dates, readable scales, direct
+current/average/change explanations, and audited same-day corrections.
+
 **Status:** Authoritative MVP requirements  
 **Product:** Tracend  
 **Release:** Private iOS TestFlight beta
@@ -90,6 +102,16 @@ Tracend preserves valid current practices where possible, identifies gaps or con
 4. Tracend returns Training Coach, Nutrition Coach, and Head Coach cards.
 5. Daily recommendations may adjust today's execution, but persistent target or plan changes enter a separate approval flow.
 
+Direct Coach questions use the active approved plan plus bounded longitudinal
+context: the active goal and profile schedule, recent check-ins, normalized
+HealthKit summaries, completed workouts, confirmed nutrition totals,
+measurements, the latest weekly/daily decisions, and the current thread. A
+symptom report may produce a conservative same-day rest or reduced-training
+instruction without diagnosing or silently changing the active plan.
+The Coach screen exposes a deterministic context-status summary with source
+availability, record counts, and latest dates so the user can distinguish
+missing app data from generic model wording.
+
 ### 4.5 Workout execution
 
 The active plan supplies ordered exercises, warm-up guidance, working sets, rep ranges, target load or effort, rest guidance, and substitutions.
@@ -113,6 +135,9 @@ The user may edit an in-progress session. Completed sessions are immutable throu
 4. Confirmed items are matched to the hybrid food catalog and macros are calculated from catalog values.
 5. Only confirmed items count toward daily nutrition totals.
 6. A confirmed home meal can be saved as a reusable personal food or recipe.
+
+Confirmed daily logs remain available by date after the coaching day changes;
+midnight changes the default day but never deletes or visually strands history.
 
 The product must communicate that hidden ingredients and portions cannot be determined reliably from an image alone.
 
@@ -213,6 +238,9 @@ Users can rate a decision as useful, unclear, incorrect, or unsafe and add a not
 - Coach supports owner-scoped saved conversations for training, nutrition,
   recovery, progress, evidence, and app-usage questions. Only the latest 20
   messages plus minimized structured evidence are sent to the provider.
+- A live Coach reply identifies its provider. If no schema-valid AI reply is
+  available after the bounded retry, the user sees an unavailable/retry state,
+  never generic text represented as an AI answer.
 - Nutrition presents the next scheduled meal before secondary macro totals.
   Planned food, AI candidates, and confirmed consumption remain distinct.
 - Coach conversations persist until thread deletion or account deletion.
@@ -229,6 +257,10 @@ Users can rate a decision as useful, unclear, incorrect, or unsafe and add a not
   request budgets, and task-specific thinking instead of a quality downgrade.
 - Progress-photo interpretation remains separately consented and separately
   evaluated. Manual use and the approved plan survive every provider failure.
+- During the owner-only test, server-side Groq `qwen/qwen3.6-27b` may replace
+  the live Coach and meal-candidate route under ADR 0006. It is capped at 10
+  total requests/day and USD 2 estimated monthly cost; it remains proposal-only
+  for persistent plan, target, and meal changes.
 
 ## 6. Evidence-Gated Change Policy
 

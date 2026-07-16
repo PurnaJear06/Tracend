@@ -1,5 +1,20 @@
 # Tracend UX Flows
 
+## Train Truth and Recovery
+
+Train uses the 4/8-point spacing rhythm and 44-point interactive rows. Active
+logging reports Saved, Syncing, Offline, or Needs attention; resumes entered
+sets after reopen; and requires explicit skip actions. Historical corrections
+and HealthKit conflicts use review cards with confirmation actions.
+
+Today's Action Stage contains one instruction, one reason, one CTA, and three
+tappable readiness factors named Recovery, Training, and Nutrition. Each opens
+a plain-language explanation of its state and source. Apple Health combines refresh,
+useful signals, coaching impact and trends in one section; technical gaps remain
+collapsed. Progress uses one date-ordered effective measurement timeline for
+its headline, raw chart, and recent history; smoothing is never shown as the
+current weight.
+
 **Status:** Authoritative MVP navigation, screen, and interaction behavior  
 **Platform:** iOS-first Flutter app  
 **Related authority:** [PRD.md](./PRD.md), [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md), [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md), and [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md)
@@ -122,8 +137,7 @@ Show goal, assumptions, weekly structure, exercise prescription, nutrition targe
 ┌─────────────────────────────────────┐
 │ Today                     Account   │
 │                                     │
-│ Evidence ── Trajectory ── Next move │
-│ Sleep    Training    Nutrition      │
+│ Recovery   Training   Nutrition     │
 │                         TRAIN: Push │
 │ Keep the planned session.           │
 │ [ Start workout ]    See evidence   │
@@ -152,12 +166,20 @@ A focused sheet collects sleep quality, energy, soreness, hunger, mood, pain, av
 
 ### Evidence detail
 
-Expanding the Trajectory Lens shows observation, influence, source, time window, freshness, completeness, and conflicts. Deterministic calculation and AI interpretation are labeled separately. Training and Nutrition remain perspectives in one controlled decision pipeline, not independent agents. The Coach tab provides direct user questions through the same workflow and never behaves like three separate autonomous chatbots.
+Opening a readiness factor shows observation, source, freshness, and any
+missing action in ordinary coaching language. Deterministic calculation and AI interpretation are labeled separately. Training and Nutrition remain perspectives in one controlled decision pipeline, not independent agents. The Coach tab provides direct user questions through the same workflow and never behaves like three separate autonomous chatbots. A live assistant message is labeled with its provider (for the owner test, **Qwen AI response**); a provider or validation failure never substitutes generic coaching text and instead shows a retryable unavailable state.
 
 Today uses a real timeline for check-in, workout, meal, and review actions. The
 primary decision always uses **Do this next** and remains actionable when AI is
-offline. Each Trajectory Lens point opens its source, date/freshness, and
-influence; a missing point becomes a recovery action.
+offline. Each readiness factor opens its source and freshness; a missing factor
+becomes a direct recovery action.
+
+Coach shows an expandable **Your coaching context** card before conversation.
+It lists approved plan, goal/profile, Apple Health, check-ins, confirmed
+nutrition, completed Tracend workouts, measurements, and conversation history
+with honest availability/count/latest-date metadata. Model-cited evidence and
+actual data gaps use **Evidence used and data gaps**; generated follow-up ideas
+use the separate **Suggested next actions** heading.
 
 ## 6. Workout Execution
 
@@ -179,6 +201,10 @@ The active schedule places **Next meal** first with local time, planned foods,
 quantities, status, and **Log meal**. A vertical day timeline distinguishes
 upcoming, due, logged, skipped, and optional items. Macro totals remain
 secondary and include confirmed consumption only.
+
+Nutrition opens on Today and provides previous/next-day controls. Previous
+dates visibly identify a saved daily log and reload confirmed totals and meals;
+the next-day control stops at Today. A day boundary never implies deletion.
 
 `Nutrition → Capture or enter manually → Analyze → Review candidates → Resolve catalog → Confirm meal → Totals`
 

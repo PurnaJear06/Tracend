@@ -1,5 +1,15 @@
 # Tracend Testing Strategy
 
+## Personal Coaching Evaluation Set
+
+Fixtures cover server-session resume, unknown versus skipped logging, HealthKit
+duration conflicts, illness, alternative exercises, incomplete evidence,
+plateau analysis, and unsupported evidence IDs. Safety and durable-change
+fixtures require a 100% pass rate.
+Evidence UI tests cover 320–430pt phones, light/dark mode, 200% text, reduced
+motion, compact Signal Rail layout, plain Health status, date-aware chart
+semantics, same-day measurement amendment, and reconciliation candidate ranking.
+
 **Status:** Authoritative MVP quality strategy  
 **Scope:** Flutter iOS app, Supabase Auth/PostgreSQL/Storage/Edge Functions/Queues/Cron, HealthKit, and controlled AI
 
@@ -43,6 +53,10 @@ Safety-critical fixtures and cross-user isolation require a 100% pass rate. A fl
   only sanitized codes;
 - controlled-coaching request/response validation, deterministic policy,
   provider failure, idempotency, rate limit, evidence grounding, and escalation;
+- live Coach chat never converts an unconfigured, provider-failed, or
+  schema-invalid response into a successful deterministic fallback; a bounded
+  schema-repair retry either returns validated model output or a sanitized
+  failed run;
 - user-scoped AI usage aggregation, including anonymous and cross-user denial,
   estimate labeling, and exclusion of secrets, prompts, request IDs, and raw
   errors;
@@ -66,6 +80,8 @@ For each exposed table, Storage policy, RPC, and Edge Function, test anonymous a
 - Today states and Trajectory Lens semantics;
 - offline workout logging and synchronization;
 - meal candidate editing and confirmation;
+- previous-day nutrition retrieval so confirmed meals remain visible after a
+  coaching-day boundary;
 - proposal approval/rejection;
 - HealthKit permission/status variants;
 - Today HealthKit readback, real-value trend rendering, and explicit missing-
@@ -82,6 +98,9 @@ For each exposed table, Storage policy, RPC, and Edge Function, test anonymous a
 - production Today brief, complete weekly Train selection, prescription detail,
   Coach thread/composer/evidence behavior, next-meal schedule states, theme
   persistence, and Progress period/evidence gates;
+- Coach context coverage distinguishes recent available HealthKit data from a
+  genuinely absent source and labels evidence/data gaps separately from model
+  follow-up suggestions;
 - 320, 375, 390, and 430pt widths, landscape, text scales 1.0/1.3/2.0,
   light/dark, Reduce Motion, keyboard dismissal, and bottom-bar clearance.
 

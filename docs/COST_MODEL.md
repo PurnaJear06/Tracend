@@ -1,5 +1,12 @@
 # Tracend Cost Model
 
+## Qwen Reasoning Routing
+
+Routine chat and daily formatting use non-reasoning Qwen. High reasoning is
+reserved for weekly review and plan analysis, then followed by a bounded
+structured formatting request. Existing owner USD request/month guards apply to
+the combined token usage of both calls.
+
 **Status:** Authoritative MVP budget assumptions  
 **Pricing snapshot:** 2026-06-28, USD before tax and currency conversion  
 **Review cadence:** Before paid upgrade, TestFlight expansion, provider/model change, or material usage change
@@ -108,6 +115,11 @@ high is reserved for named difficult review fixtures. A USD 3 per-owner monthly
 warning and USD 5 hard stop are enforced server-side, with 30 Coach requests
 per owner/day. Lite models are not production routes. Quality-adjusted rupee
 cost is controlled with bounded context/output and task-specific thinking.
+
+**Owner test exception (ADR 0006, 2026-07-11):** Groq Qwen
+`qwen/qwen3.6-27b` is used server-side for ten owner-test days only. Groq's
+free-plan quota is not a number of free days and can change; the app additionally
+enforces 10 total AI requests/day, a USD 1 warning, and a USD 2 hard stop.
 
 ## 5. Expected Monthly Scenarios
 

@@ -1,5 +1,21 @@
 # Tracend Progress Context
 
+**Active change:** Personal Coaching System foundations are hosted: Workout
+Truth Repair, bounded HealthKit workout reconciliation, Coach Context v2, and
+Qwen weekly reasoning. A signed hosted build is installed and launched; owner
+confirmation of the historical repair and several-day dogfooding remain.
+
+**Evidence UI repair:** reconciliation dedupe, same-day measurement correction,
+Today readiness, plain-language Apple Health, and date-aware steps/weight
+charts are hosted through `20260711220000`. The signed 20.1 MB replacement is
+installed and launched on the owner's iPhone; owner visual/data QA is next.
+
+**Owner visual follow-up:** the Signal Rail was removed after device review.
+Today now uses a generated coaching horizon plus tappable Recovery, Training,
+and Nutrition factors. Progress uses one raw confirmed timeline and clips chart
+painting; Profile and goals and AI usage are functional routes. Flutter 70/70
+passes and the signed 20.7 MB replacement is installed/launched.
+
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
 This file is operational only and never overrides `AGENTS.md` or authoritative
@@ -96,6 +112,39 @@ Phases 1–8 are hosted; approved owner-device QA is complete.
 - Weekly review `20260702223000` is hosted/parity verified; pgTAP 200/200, signed 19 MB app installed. Owner enqueue/worker smoke completed with zero failures.
 - Phase 8/rebuild is hosted through `20260704151000`. Owner context is imported; Gemini routes are `gemini-3.5-flash` only and still disabled by billing/privacy gates. Deno 32/32, pgTAP 287/287, Flutter 65/65, signed hosted app installed/launched July 4.
 - Repair migration `20260705100000` is hosted and local/remote histories match. It fixes placeholder meal schedule foods, Today Health evidence freshness, and Train rest-day fallback. Flutter format/analyze/test 65/65 and strict signed-build verification pass; the repaired app is installed on the paired iPhone, awaiting one-time developer-profile trust and owner smoke checks.
+- Groq Qwen owner-test routing is hosted under ADR 0006: Coach and JPEG/PNG meal candidates use server-only `qwen/qwen3.6-27b`, retain validation/confirmation gates, and have a USD 2/10-request guard.
+- Root cause verified with a temporary server-only diagnostic: Groq key/model is healthy; Qwen reasoning mode failed strict evidence validation. Verified non-thinking JSON mode is hosted for Coach/chat, and the diagnostic endpoint/secret were removed.
+- Chat transparency repair `20260711113000` is hosted: one schema-repair retry is allowed, but malformed/unavailable Qwen output now records a failed run and shows a retry state instead of `deterministic-chat-fallback-v1`. Live replies label **Qwen AI response**. Deno 36/36, Flutter 65/65, strict signed build, iPhone install, and launch pass. Fresh owner authenticated Coach/meal smoke remains.
+- Owner QA confirmed a real Qwen reply but exposed weak illness coaching and
+  hidden prior-day nutrition. The local repair adds goal/profile, HealthKit,
+  confirmed-nutrition, workout, measurement/review, check-in, plan, and thread
+  Coach context plus practical safe recovery wording and Nutrition day
+  navigation. Migration `20260711150000` is hosted with parity and `coach-chat`
+  v13 is ACTIVE; Flutter 66/66 and Deno 36/36 pass. The signed 20.1 MB hosted
+  build passed strict verification, installed, and launched on the owner iPhone.
+- Follow-up owner QA proved the v13 request was real Qwen (3,385 input units)
+  but exposed a context-coverage contradiction: 38 stored HealthKit days existed
+  while exact-same-day policy metadata said health was missing. A local v2
+  preparation/status repair plus cross-thread continuity and separated
+  evidence/follow-up UI is hosted through migration `20260711170000` and
+  `coach-chat` v14. Flutter 66/66 and Deno 36/36 pass; completed Tracend
+  workouts are genuinely zero. The signed 20.1 MB replacement passed strict
+  verification, installed, and launched on the owner iPhone.
+- Coach Context v5 deployed: migration `20260716130000` creates `physique_analyses`
+  table (forced RLS, empty pending vision AI eval gate), enriches `plan_change`
+  with `nutrition_adherence` (7-day meal days, schedule slot compliance),
+  `explain_evidence` with photo-set/baseline metadata, and `nutrition_focus`
+  with carb/fat averages and `days_with_meals`. Per-pose photo rows (front/side/
+  back) with Camera+Gallery buttons replace the monolithic capture flow in
+  Flutter. `classifyQuestion` gains +8 keywords (physique, adherence, etc.).
+  Token budget worst case ~4,180 — 48% under Groq cap. ADR 0008. Deno 56/56,
+  Flutter 68/68. Owner should send one test chat.
+- Coach Context v4 deployed: migrations `20260716120000`–`20260716122000` add
+  query-aware context selection (6 kinds), `classifyQuestion()` regex classifier,
+  and `compactContext()` JSON compression. Every context kind targets under 8000
+  TPM. `coach-chat` redeployed; `prepare_coach_chat_v3` wraps v4 for backward
+  compat. ADR 0007 records the decision. Deno 51/51 all pass. Owner should send
+  one chat message to confirm real Groq 200.
 ## Global Open Decisions
 - Apple Developer Program enrollment, Sign in with Apple capability, and
   TestFlight environment names before any external beta.

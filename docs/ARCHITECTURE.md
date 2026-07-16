@@ -1,5 +1,14 @@
 # Tracend Architecture
 
+## Personal Coaching State Engine
+
+Structured PostgreSQL facts remain the coaching memory. Workout truth and
+bounded HealthKit workout references are reconciled deterministically, then a
+versioned Coach Context v2 snapshot supplies evidence IDs, freshness, coverage
+and conflicts to Qwen. Model output cannot replace calculations or activate
+persistent changes. Vector retrieval remains outside MVP until its evaluation
+gate is met.
+
 **Status:** Authoritative MVP technical architecture  
 **Scope:** Private iOS TestFlight beta  
 **Backend decision:** Supabase-managed backend
@@ -15,6 +24,8 @@ The architecture must:
 - support HealthKit and private photos without client-side provider secrets;
 - use Supabase-native capabilities before adding separate infrastructure;
 - allow evaluated AI-provider replacement behind a narrow adapter; and
+- permit the narrowly documented ADR 0006 Groq Qwen owner test without any
+  client credential or direct provider access; and
 - defer vector RAG and autonomous agents until measured value exists.
 
 Product behavior is defined in [PRD.md](./PRD.md), security in [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md), UX in [UX_FLOWS.md](./UX_FLOWS.md), and budget assumptions in [COST_MODEL.md](./COST_MODEL.md).
@@ -150,6 +161,11 @@ medium for normal Coach reasoning, high only for evaluated difficult review
 cases, and low for bounded meal-image extraction. Lite models are not valid
 production routes. The deterministic mock remains the rollback provider.
 
+For the ADR 0006 owner Qwen test, a live chat may make one bounded
+schema-repair retry. If Qwen still fails transport or semantic validation, the
+Edge Function records a sanitized failed run and returns an unavailable result;
+it must not persist or present a deterministic fallback as a model response.
+
 ## 4. Supabase Boundary Rules
 
 | Operation | Allowed boundary |
@@ -244,10 +260,19 @@ identity from `auth.uid()`, use only active approved versions and confirmed
 execution, and return bounded structured data for the iPhone client.
 
 Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS.
-`coach-chat` loads at most 20 recent messages and compact deterministic context,
+`coach-chat` loads at most 20 recent messages from the current thread plus 20
+recent messages from other saved Coach threads and compact deterministic context,
+including the active goal/profile schedule, up to seven days of normalized
+HealthKit summaries and confirmed nutrition totals, recent completed workouts,
+measurements, the latest weekly/daily decisions, and the latest check-in,
 invokes a no-tools structured-output provider, validates the complete answer
 and evidence, and persists both messages atomically. The daily Head Coach
 decision remains a separate immutable record pinned above conversation.
+`prepare_coach_chat_v2` reconciles context coverage independently from the
+same-day daily-decision policy: a recent HealthKit summary is valid chat
+context even when the current calendar day has no complete HealthKit row.
+`get_my_coach_context_status()` exposes only owner-scoped source availability,
+counts, and latest dates; it returns no health values or provider secrets.
 
 Meal-image analysis uploads to private purpose-bound Storage, creates an
 unconfirmed draft, and invokes `meal-analyze`. Candidate food and portion data

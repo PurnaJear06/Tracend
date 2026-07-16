@@ -1,5 +1,17 @@
 # Tracend Data Model
 
+## Personal Coaching Entities
+
+Exercise status is `unknown`, `performed`, or explicitly `skipped`; performance
+kind is `prescribed`, `substituted`, or `extra`. Sessions retain actual time,
+logging completeness and correction state. `health_workout_references`,
+`workout_reconciliations`, and immutable `coach_context_snapshots` preserve
+bounded provenance, owner decisions, and versioned prepared facts.
+Only one effective manual body measurement remains current per user/date;
+re-entry creates an immutable amendment and supersedes the prior row. Workout
+reconciliation candidate retrieval ranks one best unresolved candidate per
+session, while confirmation closes competing suggestions transactionally.
+
 **Status:** Authoritative logical data model  
 **Store:** Supabase PostgreSQL  
 **Convention:** `snake_case`, UUID primary keys, UTC timestamps
