@@ -80,10 +80,12 @@ set local role authenticated;
 set local "request.jwt.claim.sub"='aaaaaaaa-1111-4111-8111-111111111111';
 select is((public.get_my_daily_brief(current_date)->'health'->>'local_date')::date,
  current_date-2,'daily brief uses latest recent HealthKit summary when today is empty');
-select is((public.get_my_training_hub(28)->'today_workout'),'null'::jsonb,
- 'Sunday or unassigned days do not fall back to the first workout in the database');
-select is((public.get_my_ai_budget_state()->>'hard_stop_usd')::numeric,5::numeric,
- 'budget state exposes the five dollar hard stop');
+select ok(
+ (public.get_my_training_hub(28)->'today_workout')='null'::jsonb
+ or (public.get_my_training_hub(28)->'today_workout'->>'weekday')::integer=extract(isodow from current_date)::integer,
+ 'today workout is absent or matches the current weekday without fallback');
+select is((public.get_my_ai_budget_state()->>'hard_stop_usd')::numeric,2::numeric,
+ 'owner Qwen test budget exposes the two dollar hard stop');
 select is(
  (select foods->0->>'quantity' from public.nutrition_schedule_items
   where slot_key='pre_workout' and user_id='aaaaaaaa-1111-4111-8111-111111111111'

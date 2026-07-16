@@ -48,14 +48,14 @@ select lives_ok($$select public.save_body_measurement('2026-07-02',79.0,89.0,nul
  'owner can record a second confirmed measurement');
 select is((public.get_my_progress_summary()->>'observation_count')::integer,2,
  'summary counts confirmed observations deterministically');
-select is((public.get_my_progress_summary()->>'weight_change_kg')::numeric,-1.0::numeric,
- 'weight delta is calculated in SQL');
-select is((public.get_my_progress_summary()->>'waist_change_cm')::numeric,-1.0::numeric,
- 'waist delta is calculated in SQL');
+select is((public.get_my_progress_summary()->>'weight_change_kg')::numeric,-0.8::numeric,
+ 'weight delta uses the latest audited same-day correction');
+select is((public.get_my_progress_summary()->>'waist_change_cm')::numeric,-0.8::numeric,
+ 'waist delta uses the latest audited same-day correction');
 select is(public.get_my_progress_summary()->>'trend_status','available',
  'two observations make a deterministic trend available');
-select is((select count(*) from public.audit_events where action_code='progress.measurement.recorded'),3::bigint,
- 'measurement writes emit sanitized audit events');
+select is((select count(*) from public.audit_events where action_code in ('progress.measurement.recorded','progress.measurement.corrected')),3::bigint,
+ 'measurement records and corrections emit sanitized audit events');
 select throws_ok($$select public.save_body_measurement('2026-07-02',10,null,null,null,null,null)$$,
  '23514',null,'invalid measurement range is rejected');
 
