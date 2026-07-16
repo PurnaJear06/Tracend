@@ -46,6 +46,18 @@ export type HealthSyncRequestV1 = {
   requested_types: HealthType[];
   returned_types: HealthType[];
   summaries: HealthSummaryV1[];
+  workouts: HealthWorkoutReferenceV1[];
+};
+
+export type HealthWorkoutReferenceV1 = {
+  sample_id_hash: string;
+  source_id_hash: string;
+  activity_type: string;
+  started_at: string;
+  ended_at: string;
+  duration_seconds: number;
+  energy_kcal?: number;
+  local_date: string;
 };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -59,6 +71,17 @@ const requestKeys = new Set([
   "requested_types",
   "returned_types",
   "summaries",
+  "workouts",
+]);
+const workoutKeys = new Set([
+  "sample_id_hash",
+  "source_id_hash",
+  "activity_type",
+  "started_at",
+  "ended_at",
+  "duration_seconds",
+  "energy_kcal",
+  "local_date",
 ]);
 const summaryKeys = new Set([
   "local_date",
@@ -135,8 +158,10 @@ export function parseHealthSyncRequest(value: unknown): HealthSyncRequestV1 {
     !datePattern.test(value.requested_end) ||
     !Array.isArray(value.requested_types) ||
     !Array.isArray(value.returned_types) ||
-    !Array.isArray(value.summaries) ||
-    value.summaries.length > 32 || !hasOnlyKeys(value, requestKeys)
+    !Array.isArray(value.summaries) || value.summaries.length > 32 ||
+    (value.workouts !== undefined &&
+      (!Array.isArray(value.workouts) || value.workouts.length > 100)) ||
+    !hasOnlyKeys(value, requestKeys)
   ) {
     throw new Error("invalid_health_sync_request");
   }
@@ -252,6 +277,24 @@ export function parseHealthSyncRequest(value: unknown): HealthSyncRequestV1 {
     return summary as HealthSummaryV1;
   });
 
+  const workouts = (value.workouts ?? []).map((workout) => {
+    if (
+      !isRecord(workout) || !hasOnlyKeys(workout, workoutKeys) ||
+      typeof workout.sample_id_hash !== "string" || !hashPattern.test(workout.sample_id_hash) ||
+      typeof workout.source_id_hash !== "string" || !hashPattern.test(workout.source_id_hash) ||
+      typeof workout.activity_type !== "string" || workout.activity_type.length < 1 ||
+      workout.activity_type.length > 80 ||
+      typeof workout.started_at !== "string" || Number.isNaN(Date.parse(workout.started_at)) ||
+      typeof workout.ended_at !== "string" || Number.isNaN(Date.parse(workout.ended_at)) ||
+      Date.parse(workout.ended_at) <= Date.parse(workout.started_at) ||
+      !isNumber(workout.duration_seconds, 1, 86400) ||
+      !Number.isInteger(workout.duration_seconds) ||
+      !validOptionalNumber(workout, "energy_kcal", 0, 30000) ||
+      typeof workout.local_date !== "string" || !datePattern.test(workout.local_date)
+    ) throw new Error("invalid_health_workout");
+    return workout as HealthWorkoutReferenceV1;
+  });
+
   const start = Date.parse(`${requestedStart}T00:00:00Z`);
   const end = Date.parse(`${requestedEnd}T00:00:00Z`);
   if (
@@ -264,5 +307,5 @@ export function parseHealthSyncRequest(value: unknown): HealthSyncRequestV1 {
     throw new Error("invalid_health_sync_window");
   }
 
-  return { ...value, summaries } as HealthSyncRequestV1;
+  return { ...value, summaries, workouts } as HealthSyncRequestV1;
 }

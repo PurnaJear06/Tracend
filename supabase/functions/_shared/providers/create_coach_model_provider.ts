@@ -1,5 +1,6 @@
 import type { CoachModelProvider } from "./coach_model_provider.ts";
 import { GeminiCoachModelProvider } from "./gemini_coach_model_provider.ts";
+import { GroqCoachModelProvider } from "./groq_coach_model_provider.ts";
 import { MockCoachModelProvider } from "./mock_coach_model_provider.ts";
 
 export type CoachProviderEnvironment = Readonly<{
@@ -30,9 +31,29 @@ export function createCoachModelProvider(
 ): CoachModelProvider {
   const provider = environment.get("COACH_MODEL_PROVIDER")?.trim() || "mock";
   if (provider === "mock") return new MockCoachModelProvider();
-  if (provider !== "gemini") throw new Error("coach_provider_configuration_invalid");
+  if (provider !== "gemini" && provider !== "groq") {
+    throw new Error("coach_provider_configuration_invalid");
+  }
   if (environment.get("COACH_AI_ENABLED") !== "true") {
     throw new Error("coach_provider_disabled");
+  }
+  if (provider === "groq") {
+    const model = required(environment, "GROQ_MODEL");
+    if (model !== "qwen/qwen3.6-27b") {
+      throw new Error("coach_provider_model_not_approved");
+    }
+    return new GroqCoachModelProvider({
+      apiKey: required(environment, "GROQ_API_KEY"),
+      model,
+      inputCostPerMillionUsd: nonnegativeNumber(
+        environment,
+        "GROQ_INPUT_COST_PER_MILLION_USD",
+      ),
+      outputCostPerMillionUsd: nonnegativeNumber(
+        environment,
+        "GROQ_OUTPUT_COST_PER_MILLION_USD",
+      ),
+    });
   }
   const model = required(environment, "GEMINI_MODEL");
   if (model !== "gemini-3.5-flash") {

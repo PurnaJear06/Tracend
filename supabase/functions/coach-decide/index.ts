@@ -101,9 +101,15 @@ Deno.serve(async (request) => {
       request_idempotency_key: input.idempotency_key,
       run_latency_ms: Math.round(performance.now() - started),
       error_code: "provider_or_validation_failed",
-      run_provider: Deno.env.get("COACH_MODEL_PROVIDER") === "gemini" ? "gemini" : "mock",
+      run_provider: Deno.env.get("COACH_MODEL_PROVIDER") === "gemini"
+        ? "gemini"
+        : Deno.env.get("COACH_MODEL_PROVIDER") === "groq"
+        ? "groq"
+        : "mock",
       run_model: Deno.env.get("COACH_MODEL_PROVIDER") === "gemini"
         ? (Deno.env.get("GEMINI_MODEL") || "unconfigured")
+        : Deno.env.get("COACH_MODEL_PROVIDER") === "groq"
+        ? (Deno.env.get("GROQ_MODEL") || "unconfigured")
         : "deterministic-mock-v1",
     });
     return reply(503, { error: "coaching_unavailable" });

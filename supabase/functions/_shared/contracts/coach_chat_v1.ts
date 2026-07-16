@@ -67,7 +67,7 @@ export function parseCoachChatAnswer(
       Object.keys(evidence).sort().join(",") !== "code,label,source" ||
       typeof evidence.code !== "string" || !permittedEvidence.includes(evidence.code) ||
       typeof evidence.label !== "string" || evidence.label.length > 240 ||
-      !["feature_snapshot", "policy_evaluation"].includes(String(evidence.source))
+      !["feature_snapshot", "policy_evaluation", "coach_context"].includes(String(evidence.source))
     ) throw new Error("invalid_chat_answer");
   }
   return answer as unknown as CoachChatAnswerV1;

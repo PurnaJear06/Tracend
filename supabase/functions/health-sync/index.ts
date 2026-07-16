@@ -39,7 +39,7 @@ Deno.serve(async (request) => {
   const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
-  const { data, error } = await serviceClient.rpc("persist_health_sync", {
+  const { data, error } = await serviceClient.rpc("persist_health_sync_v2", {
     target_user_id: userData.user.id,
     sync_idempotency_key: payload.idempotency_key,
     request_start: payload.requested_start,
@@ -47,6 +47,7 @@ Deno.serve(async (request) => {
     request_types: payload.requested_types,
     response_types: payload.returned_types,
     summary_payload: payload.summaries,
+    workout_payload: payload.workouts,
   });
   if (error || !data) {
     return response(422, { error: "health_sync_rejected" });

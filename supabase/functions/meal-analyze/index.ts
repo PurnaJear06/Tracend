@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.8";
 import { analyzeMealImage } from "../_shared/providers/gemini_meal_vision_provider.ts";
+import { analyzeGroqMealImage } from "../_shared/providers/groq_meal_vision_provider.ts";
 
 const headers = { "Content-Type": "application/json" };
 const reply = (status: number, body: Record<string, unknown>) =>
@@ -33,9 +34,11 @@ Deno.serve(async (request) => {
   ) {
     return reply(422, { error: "invalid_meal_request" });
   }
-  const { data: budget } = await userClient.rpc("get_my_ai_budget_state");
-  if (budget?.blocked === true) return reply(429, { error: "monthly_cost_limit" });
   const service = createClient(url, serviceKey, { auth: { persistSession: false } });
+  const { error: budgetError } = await service.rpc("assert_owner_ai_budget", {
+    target_user_id: userData.user.id,
+  });
+  if (budgetError) return reply(429, { error: "ai_usage_limit" });
   const { data: meal, error: mealError } = await service.from("meals")
     .select("id,status,source,media_objects!inner(object_key,content_type,byte_size)")
     .eq("id", body.meal_id).eq("user_id", userData.user.id).single();
@@ -48,10 +51,16 @@ Deno.serve(async (request) => {
   );
   if (downloadError || !image) return reply(503, { error: "meal_image_unavailable" });
   try {
-    const result = await analyzeMealImage(
-      new Uint8Array(await image.arrayBuffer()),
-      media.content_type as string,
-    );
+    const provider = Deno.env.get("MEAL_VISION_PROVIDER") === "groq" ? "groq" : "gemini";
+    const result = provider === "groq"
+      ? await analyzeGroqMealImage(
+        new Uint8Array(await image.arrayBuffer()),
+        media.content_type as string,
+      )
+      : await analyzeMealImage(
+        new Uint8Array(await image.arrayBuffer()),
+        media.content_type as string,
+      );
     const persistenceCandidates = result.candidates.map((
       { assumptions: _assumptions, question: _question, ...candidate },
     ) => candidate);
@@ -59,14 +68,14 @@ Deno.serve(async (request) => {
       target_user_id: userData.user.id,
       target_meal_id: body.meal_id,
       candidates: persistenceCandidates,
-      run_provider: "gemini",
+      run_provider: provider,
       run_model: result.model,
     });
     if (error) return reply(422, { error: "meal_analysis_rejected" });
     await service.rpc("record_ai_usage_event", {
       target_user_id: userData.user.id,
       run_purpose: "meal_vision",
-      run_provider: "gemini",
+      run_provider: provider,
       run_model: result.model,
       run_input_units: result.inputUnits,
       run_output_units: result.outputUnits,

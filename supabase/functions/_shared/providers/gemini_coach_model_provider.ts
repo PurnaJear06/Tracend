@@ -7,7 +7,7 @@ import type {
 
 type Fetcher = typeof fetch;
 
-const decisionSchema = {
+export const decisionSchema = {
   type: "object",
   additionalProperties: false,
   properties: {

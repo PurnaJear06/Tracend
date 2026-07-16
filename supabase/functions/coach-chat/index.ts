@@ -1,6 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.8";
 import { parseCoachChatRequest } from "../_shared/contracts/coach_chat_v1.ts";
-import { generateCoachChat } from "../_shared/providers/coach_chat_provider.ts";
+import {
+  classifyQuestion,
+  CoachChatUnavailableError,
+  generateCoachChat,
+} from "../_shared/providers/coach_chat_provider.ts";
 
 const headers = { "Content-Type": "application/json" };
 const reply = (status: number, body: Record<string, unknown>) =>
@@ -28,12 +32,18 @@ Deno.serve(async (request) => {
     return reply(422, { error: "invalid_chat_request" });
   }
   const service = createClient(url, serviceKey, { auth: { persistSession: false } });
-  const { data: prepared, error: prepareError } = await service.rpc("prepare_coach_chat", {
+  const { error: budgetError } = await service.rpc("assert_owner_ai_budget", {
+    target_user_id: userData.user.id,
+  });
+  if (budgetError) return reply(429, { error: "ai_usage_limit" });
+  const contextKind = classifyQuestion(input.question);
+  const { data: prepared, error: prepareError } = await service.rpc("prepare_coach_chat_v4", {
     target_user_id: userData.user.id,
     target_thread_id: input.thread_id,
     question: input.question,
     coaching_timezone: input.timezone,
     request_idempotency_key: input.idempotency_key,
+    context_kind: contextKind,
   });
   if (prepareError || !prepared) return reply(422, { error: "chat_unavailable" });
   if (prepared.replayed) {
@@ -67,11 +77,30 @@ Deno.serve(async (request) => {
     if (error || !persisted) return reply(422, { error: "chat_rejected" });
     return reply(200, {
       schema_version: "1.0",
-      message: { id: persisted.assistant_message_id, role: "assistant", ...generation.answer },
+      message: {
+        id: persisted.assistant_message_id,
+        role: "assistant",
+        model_provider: generation.provider,
+        model: generation.model,
+        ...generation.answer,
+      },
       budget_warning: prepared.budget_warning,
       replayed: false,
     });
-  } catch {
+  } catch (error) {
+    const unavailable = error instanceof CoachChatUnavailableError
+      ? error
+      : new CoachChatUnavailableError("mock", "unknown");
+    await service.rpc("persist_failed_coach_chat_run", {
+      target_user_id: userData.user.id,
+      snapshot_id: prepared.feature_snapshot_id,
+      policy_id: prepared.policy_evaluation_id,
+      request_idempotency_key: input.idempotency_key,
+      run_latency_ms: Math.round(performance.now() - started),
+      error_code: "provider_or_validation_failed",
+      run_provider: unavailable.provider,
+      run_model: unavailable.model,
+    });
     return reply(503, { error: "chat_unavailable" });
   }
 });

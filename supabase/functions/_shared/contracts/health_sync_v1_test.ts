@@ -29,6 +29,23 @@ Deno.test("health sync accepts canonical partial summaries", () => {
   assertEquals(parsed.summaries[0].steps, 6400);
 });
 
+Deno.test("health sync accepts bounded workout references", () => {
+  const parsed = parseHealthSyncRequest({
+    ...valid,
+    workouts: [{
+      sample_id_hash: "d".repeat(64),
+      source_id_hash: "e".repeat(64),
+      activity_type: "TRADITIONAL_STRENGTH_TRAINING",
+      started_at: "2026-07-01T04:00:00.000Z",
+      ended_at: "2026-07-01T05:25:00.000Z",
+      duration_seconds: 5100,
+      energy_kcal: 420,
+      local_date: "2026-07-01",
+    }],
+  });
+  assertEquals(parsed.workouts[0].duration_seconds, 5100);
+});
+
 Deno.test("health sync rejects out-of-range health values", () => {
   assertThrows(
     () =>
