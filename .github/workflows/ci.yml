@@ -43,6 +43,13 @@ jobs:
           version: 2.101.0
       - run: supabase start
       - run: supabase db reset
+      - name: Pull pg_prove image (with retry)
+        run: |
+          for i in 1 2 3 4 5; do
+            docker pull public.ecr.aws/supabase/pg_prove:3.36 && break
+            echo "Pull attempt $i failed, retrying in 15s..."
+            sleep 15
+          done
       - run: >
           docker run --rm
           --network container:supabase_db_Tracend
