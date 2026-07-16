@@ -205,6 +205,14 @@ class _ProgressScreenState extends State<ProgressScreen> {
       onCamera: () => _capturePose('back', ImageSource.camera),
       onGallery: () => _capturePose('back', ImageSource.gallery),
     ),
+    _PosePhotoRow(
+      pose: 'lower',
+      label: 'Lower body',
+      guidance: 'Full lower body from waist down',
+      isCaptured: _activeSet != null && _capturedPoses.contains('lower'),
+      onCamera: () => _capturePose('lower', ImageSource.camera),
+      onGallery: () => _capturePose('lower', ImageSource.gallery),
+    ),
     if (photoSets.isNotEmpty)
       ...photoSets.map(
         (set) => Padding(
@@ -388,7 +396,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
         contentType: 'image/jpeg',
       );
       _capturedPoses.add(pose);
-      if (_capturedPoses.length == 3) {
+      if (_capturedPoses.length == 4) {
         _activeSet = null;
         _capturedPoses.clear();
       }
