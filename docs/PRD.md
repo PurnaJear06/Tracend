@@ -2,25 +2,30 @@
 
 ## Personal Coaching System Addendum
 
-Untouched exercises remain `unknown`, never inferred as skipped. The app resumes
-server-backed in-progress sessions, distinguishes prescribed, substituted and
-extra work, and keeps Apple Health workout matches separate from Tracend's
-set-level evidence. Duration conflicts require user confirmation.
+Untouched exercises remain `unknown`, never inferred as skipped. The app resumes server-backed
+in-progress sessions, distinguishes prescribed, substituted and extra work, and keeps Apple Health
+workout matches separate from Tracend's set-level evidence. Duration conflicts require user
+confirmation.
 
-Today presents one action once, followed by three plain-language, tappable
-readiness factors: Recovery, Training, and Nutrition. Apple Health uses plain-language availability and progressive
+Today presents one action once, followed by three plain-language, tappable readiness factors:
+Recovery, Training, and Nutrition. Apple Health uses plain-language availability and progressive
 disclosure. Weight and activity trends use real dates, readable scales, direct
 current/average/change explanations, and audited same-day corrections.
 
-**Status:** Authoritative MVP requirements  
-**Product:** Tracend  
+**Status:** Authoritative MVP requirements\
+**Product:** Tracend\
 **Release:** Private iOS TestFlight beta
 
 ## 1. Product Goal
 
-Tracend gives a healthy adult a personalized training and nutrition plan, observes real execution and recovery, and produces clear daily and periodic coaching decisions. It behaves like a careful personal trainer: plans remain stable until evidence supports a change, and persistent changes require user approval.
+Tracend gives a healthy adult a personalized training and nutrition plan, observes real execution
+and recovery, and produces clear daily and periodic coaching decisions. It behaves like a careful
+personal trainer: plans remain stable until evidence supports a change, and persistent changes
+require user approval.
 
-The product intent and anti-goals are defined in [VISION.md](./VISION.md). AI decision constraints are defined in [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md). Screen behavior and visual rules are defined in [UX_FLOWS.md](./UX_FLOWS.md) and [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md).
+The product intent and anti-goals are defined in [VISION.md](./VISION.md). AI decision constraints
+are defined in [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md). Screen behavior and visual rules are
+defined in [UX_FLOWS.md](./UX_FLOWS.md) and [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md).
 
 ## 2. Supported Audience
 
@@ -33,7 +38,9 @@ The MVP supports:
 - metric units by default, with user-selectable imperial display; and
 - English-language coaching.
 
-The MVP excludes users who disclose pregnancy, an active eating disorder, a condition requiring medical nutrition, a serious or acute injury, or a need for clinical rehabilitation. The app must explain the boundary and direct the user to an appropriate qualified professional.
+The MVP excludes users who disclose pregnancy, an active eating disorder, a condition requiring
+medical nutrition, a serious or acute injury, or a need for clinical rehabilitation. The app must
+explain the boundary and direct the user to an appropriate qualified professional.
 
 ## 3. Product Roles
 
@@ -43,26 +50,31 @@ Owns the data, confirms observations, approves plans and changes, and performs w
 
 ### Training Coach
 
-Explains workout prescription, progression, recovery adjustments, exercise substitutions, and training priorities. It cannot change nutrition targets.
+Explains workout prescription, progression, recovery adjustments, exercise substitutions, and
+training priorities. It cannot change nutrition targets.
 
 ### Nutrition Coach
 
-Explains nutrition targets, adherence, meal patterns, and proposed nutrition adjustments. It cannot change training plans.
+Explains nutrition targets, adherence, meal patterns, and proposed nutrition adjustments. It cannot
+change training plans.
 
 ### Head Coach
 
-Reconciles training, nutrition, recovery, goals, and safety into one final decision. Training Coach, Nutrition Coach, and Head Coach are UI perspectives produced by the controlled workflow defined in [ARCHITECTURE.md](./ARCHITECTURE.md), not independent autonomous actors.
+Reconciles training, nutrition, recovery, goals, and safety into one final decision. Training Coach,
+Nutrition Coach, and Head Coach are UI perspectives produced by the controlled workflow defined in
+[ARCHITECTURE.md](./ARCHITECTURE.md), not independent autonomous actors.
 
 ## 4. Primary User Journeys
 
 ### 4.1 Account and consent
 
-1. User signs in with Apple for an external private beta. During owner-only
-   development, a documented email/password Supabase Auth mode may be used
-   until Apple Developer Program capabilities are available.
+1. User signs in with Apple for an external private beta. During owner-only development, a
+   documented email/password Supabase Auth mode may be used until Apple Developer Program
+   capabilities are available.
 2. User confirms they are 18 or older.
 3. User reads and accepts the private-beta terms and privacy notice.
-4. User separately chooses whether to connect HealthKit and whether to upload meal or progress photos.
+4. User separately chooses whether to connect HealthKit and whether to upload meal or progress
+   photos.
 5. The app remains usable with reduced capability when optional permissions are denied.
 
 ### 4.2 Beginner onboarding
@@ -79,7 +91,8 @@ The user provides:
 - optional recent HealthKit history; and
 - optional standardized physique photos.
 
-Tracend produces an assessment summary, a proposed training block, nutrition targets, assumptions, confidence, and missing information. Nothing becomes active until the user reviews and approves it.
+Tracend produces an assessment summary, a proposed training block, nutrition targets, assumptions,
+confidence, and missing information. Nothing becomes active until the user reviews and approves it.
 
 ### 4.3 Experienced-user onboarding
 
@@ -92,29 +105,31 @@ The experienced user provides the beginner information plus:
 - recent progress, plateaus, adherence, and concerns; and
 - optional historical files or HealthKit summaries supported by the MVP import flow.
 
-Tracend preserves valid current practices where possible, identifies gaps or conflicts, and proposes either continuation or a revised plan. The user approves the result.
+Tracend preserves valid current practices where possible, identifies gaps or conflicts, and proposes
+either continuation or a revised plan. The user approves the result.
 
 ### 4.4 Daily coaching loop
 
 1. The user sees today's scheduled workout and current nutrition targets.
-2. The user optionally completes a short check-in: sleep quality, energy, soreness, hunger, mood, pain, availability, and notes.
+2. The user optionally completes a short check-in: sleep quality, energy, soreness, hunger, mood,
+   pain, availability, and notes.
 3. The system combines the check-in with HealthKit summaries and recent execution.
 4. Tracend returns Training Coach, Nutrition Coach, and Head Coach cards.
-5. Daily recommendations may adjust today's execution, but persistent target or plan changes enter a separate approval flow.
+5. Daily recommendations may adjust today's execution, but persistent target or plan changes enter a
+   separate approval flow.
 
-Direct Coach questions use the active approved plan plus bounded longitudinal
-context: the active goal and profile schedule, recent check-ins, normalized
-HealthKit summaries, completed workouts, confirmed nutrition totals,
-measurements, the latest weekly/daily decisions, and the current thread. A
-symptom report may produce a conservative same-day rest or reduced-training
-instruction without diagnosing or silently changing the active plan.
-The Coach screen exposes a deterministic context-status summary with source
-availability, record counts, and latest dates so the user can distinguish
-missing app data from generic model wording.
+Direct Coach questions use the active approved plan plus bounded longitudinal context: the active
+goal and profile schedule, recent check-ins, normalized HealthKit summaries, completed workouts,
+confirmed nutrition totals, measurements, the latest weekly/daily decisions, and the current thread.
+A symptom report may produce a conservative same-day rest or reduced-training instruction without
+diagnosing or silently changing the active plan. The Coach screen exposes a deterministic
+context-status summary with source availability, record counts, and latest dates so the user can
+distinguish missing app data from generic model wording.
 
 ### 4.5 Workout execution
 
-The active plan supplies ordered exercises, warm-up guidance, working sets, rep ranges, target load or effort, rest guidance, and substitutions.
+The active plan supplies ordered exercises, warm-up guidance, working sets, rep ranges, target load
+or effort, rest guidance, and substitutions.
 
 For each exercise, the user can record:
 
@@ -125,25 +140,30 @@ For each exercise, the user can record:
 - substitution and reason; and
 - session-level duration, energy, and notes.
 
-The user may edit an in-progress session. Completed sessions are immutable through normal UI; corrections create audited amendments.
+The user may edit an in-progress session. Completed sessions are immutable through normal UI;
+corrections create audited amendments.
 
 ### 4.6 Meal photo and nutrition confirmation
 
 1. The user uploads or captures a meal photo.
 2. AI proposes visible foods, preparation assumptions, portion estimates, confidence, and questions.
 3. The user adds, removes, edits, or confirms foods and portions.
-4. Confirmed items are matched to the hybrid food catalog and macros are calculated from catalog values.
+4. Confirmed items are matched to the hybrid food catalog and macros are calculated from catalog
+   values.
 5. Only confirmed items count toward daily nutrition totals.
 6. A confirmed home meal can be saved as a reusable personal food or recipe.
 
-Confirmed daily logs remain available by date after the coaching day changes;
-midnight changes the default day but never deletes or visually strands history.
+Confirmed daily logs remain available by date after the coaching day changes; midnight changes the
+default day but never deletes or visually strands history.
 
-The product must communicate that hidden ingredients and portions cannot be determined reliably from an image alone.
+The product must communicate that hidden ingredients and portions cannot be determined reliably from
+an image alone.
 
 ### 4.7 Progress review
 
-The user records weight and optional waist, chest, hip, arm, and thigh measurements. A monthly flow guides consistent front, side, and back photos using comparable pose, distance, lighting, clothing, and timing.
+The user records weight and optional waist, chest, hip, arm, and thigh measurements. A monthly flow
+guides consistent front, side, and back photos using comparable pose, distance, lighting, clothing,
+and timing.
 
 Progress review combines:
 
@@ -155,7 +175,9 @@ Progress review combines:
 - standardized photo comparison; and
 - previous decisions and their outcomes.
 
-Photo analysis may describe visible development, balance, and approximate body-fat range with confidence. It must not claim precise composition, diagnose a condition, or infer sensitive traits unrelated to coaching.
+Photo analysis may describe visible development, balance, and approximate body-fat range with
+confidence. It must not claim precise composition, diagnose a condition, or infer sensitive traits
+unrelated to coaching.
 
 ### 4.8 Change approval
 
@@ -170,24 +192,24 @@ A persistent proposal must show:
 - whether the change affects training, nutrition, or both; and
 - accept, reject, or request-revision actions.
 
-Rejected proposals do not alter the plan. Accepted proposals create a new version while retaining the prior version and audit record.
+Rejected proposals do not alter the plan. Accepted proposals create a new version while retaining
+the prior version and audit record.
 
 ## 5. Functional Requirements
 
 ### 5.1 Authentication and tenancy
 
-- Use native Sign in with Apple through Supabase Auth for an external private
-  beta. Owner-only development may use the email/password mode documented in
-  ADR 0002; it is not an authentication bypass and does not change the
-  canonical `auth.users.id` tenancy boundary.
+- Use native Sign in with Apple through Supabase Auth for an external private beta. Owner-only
+  development may use the email/password mode documented in ADR 0002; it is not an authentication
+  bypass and does not change the canonical `auth.users.id` tenancy boundary.
 - Every user-owned record must be scoped by authenticated user ID.
-- Every exposed user-owned table and private Storage bucket must have tested RLS based on the Supabase authenticated user.
+- Every exposed user-owned table and private Storage bucket must have tested RLS based on the
+  Supabase authenticated user.
 - Data API, RPC, and Edge Functions must never trust a client-supplied user ID for authorization.
-- Account provides profile and goal review, connection status, notification and
-  privacy controls, sanitized user-scoped AI usage, export, deletion, and sign
-  out.
-- The mobile app never accepts, stores, or displays an AI-provider API key.
-  Provider credentials are owner-managed server secrets.
+- Account provides profile and goal review, connection status, notification and privacy controls,
+  sanitized user-scoped AI usage, export, deletion, and sign out.
+- The mobile app never accepts, stores, or displays an AI-provider API key. Provider credentials are
+  owner-managed server secrets.
 - Account export and deletion must be available from Settings.
 
 ### 5.2 HealthKit
@@ -202,14 +224,19 @@ Request only data needed for enabled features:
 - resting heart rate; and
 - heart-rate variability.
 
-Permissions must be requested by type with plain-language purpose descriptions. Sync stores normalized daily summaries and source references needed for idempotency, not an unnecessary copy of every raw sample. Denied, partial, stale, or unavailable data must be visible and must not prevent manual use.
+Permissions must be requested by type with plain-language purpose descriptions. Sync stores
+normalized daily summaries and source references needed for idempotency, not an unnecessary copy of
+every raw sample. Denied, partial, stale, or unavailable data must be visible and must not prevent
+manual use.
 
 ### 5.3 Plans and progression
 
 - Plans are versioned and have draft, proposed, active, superseded, or archived status.
-- Exactly one training-plan version and one nutrition-target version may be active per user at a time.
+- Exactly one training-plan version and one nutrition-target version may be active per user at a
+  time.
 - AI cannot activate a version directly.
-- Exercise substitutions must preserve the intended movement or muscle objective unless the change proposal explicitly changes it.
+- Exercise substitutions must preserve the intended movement or muscle objective unless the change
+  proposal explicitly changes it.
 - A single poor workout must not trigger structural reprogramming.
 
 ### 5.4 Coaching decisions
@@ -222,54 +249,60 @@ Permissions must be requested by type with plain-language purpose descriptions. 
 
 ### 5.5 Notifications
 
-The MVP may provide local or push reminders for scheduled workouts, check-ins, meal confirmation, weekly review, and pending proposals. Notifications must not reveal sensitive health or physique details on the lock screen.
+The MVP may provide local or push reminders for scheduled workouts, check-ins, meal confirmation,
+weekly review, and pending proposals. Notifications must not reveal sensitive health or physique
+details on the lock screen.
 
 ### 5.6 Feedback and auditability
 
-Users can rate a decision as useful, unclear, incorrect, or unsafe and add a note. Model runs, feature snapshots, proposals, approvals, rejections, corrections, exports, and deletions produce audit events without storing secrets or unnecessary raw prompt content.
+Users can rate a decision as useful, unclear, incorrect, or unsafe and add a note. Model runs,
+feature snapshots, proposals, approvals, rejections, corrections, exports, and deletions produce
+audit events without storing secrets or unnecessary raw prompt content.
 
 ### 5.7 Production daily experience
 
-- Today presents one deterministic **Do this next** action assembled from the
-  approved workout, active meal schedule, check-in, HealthKit freshness, and
-  latest validated decision. It never substitutes fixtures for missing data.
-- Train exposes the complete active weekly split, prescription detail, recent
-  completed sessions, adherence, and comparable-set progression.
-- Coach supports owner-scoped saved conversations for training, nutrition,
-  recovery, progress, evidence, and app-usage questions. Only the latest 20
-  messages plus minimized structured evidence are sent to the provider.
-- A live Coach reply identifies its provider. If no schema-valid AI reply is
-  available after the bounded retry, the user sees an unavailable/retry state,
-  never generic text represented as an AI answer.
-- Nutrition presents the next scheduled meal before secondary macro totals.
-  Planned food, AI candidates, and confirmed consumption remain distinct.
-- Coach conversations persist until thread deletion or account deletion.
-  Conversation replies cannot activate plans, targets, meals, or durable facts.
+- Today presents one deterministic **Do this next** action assembled from the approved workout,
+  active meal schedule, check-in, HealthKit freshness, and latest validated decision. It never
+  substitutes fixtures for missing data.
+- Train exposes the complete active weekly split, prescription detail, recent completed sessions,
+  adherence, and comparable-set progression.
+- Coach supports owner-scoped saved conversations for training, nutrition, recovery, progress,
+  evidence, and app-usage questions. Only the latest 20 messages plus minimized structured evidence
+  are sent to the provider.
+- A live Coach reply identifies its provider. If no schema-valid AI reply is available after the
+  bounded retry, the user sees an unavailable/retry state, never generic text represented as an AI
+  answer.
+- Nutrition presents the next scheduled meal before secondary macro totals. Planned food, AI
+  candidates, and confirmed consumption remain distinct.
+- Coach conversations persist until thread deletion or account deletion. Conversation replies cannot
+  activate plans, targets, meals, or durable facts.
 
 ### 5.8 AI budgets and routing
 
-- Live coaching uses stable `gemini-3.5-flash` only after paid-service privacy
-  terms and the complete evaluation gate pass.
-- The monthly owner warning is USD 3, the server-side hard stop is USD 5, and
-  conversational coaching is limited to 30 requests per owner/day.
-- Meal verification uses `gemini-3.5-flash` with low thinking. Lite models are
-  not production routes; cost is controlled through bounded context, output,
-  request budgets, and task-specific thinking instead of a quality downgrade.
-- Progress-photo interpretation remains separately consented and separately
-  evaluated. Manual use and the approved plan survive every provider failure.
-- During the owner-only test, server-side Groq `qwen/qwen3.6-27b` may replace
-  the live Coach and meal-candidate route under ADR 0006. It is capped at 10
-  total requests/day and USD 2 estimated monthly cost; it remains proposal-only
-  for persistent plan, target, and meal changes.
+- Live coaching uses stable `gemini-3.5-flash` only after paid-service privacy terms and the
+  complete evaluation gate pass.
+- The monthly owner warning is USD 3, the server-side hard stop is USD 5, and conversational
+  coaching is limited to 30 requests per owner/day.
+- Meal verification uses `gemini-3.5-flash` with low thinking. Lite models are not production
+  routes; cost is controlled through bounded context, output, request budgets, and task-specific
+  thinking instead of a quality downgrade.
+- Progress-photo interpretation remains separately consented and separately evaluated. Manual use
+  and the approved plan survive every provider failure.
+- During the owner-only test, server-side Groq `qwen/qwen3.6-27b` may replace the live Coach and
+  meal-candidate route under ADR 0006. It is capped at 10 total requests/day and USD 2 estimated
+  monthly cost; it remains proposal-only for persistent plan, target, and meal changes.
 
 ## 6. Evidence-Gated Change Policy
 
-Defaults are defined in [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md). Product behavior must follow these principles:
+Defaults are defined in [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md). Product behavior must follow these
+principles:
 
 - daily safety or recovery adjustments may affect only the current session/day;
-- structural training changes normally require repeated evidence across at least two affected sessions or two weeks of trend data;
+- structural training changes normally require repeated evidence across at least two affected
+  sessions or two weeks of trend data;
 - nutrition-target changes normally require at least 14 days of weight data and adequate adherence;
-- adherence below the configured sufficiency threshold must be addressed before concluding that the plan failed;
+- adherence below the configured sufficiency threshold must be addressed before concluding that the
+  plan failed;
 - acute pain or red-flag symptoms stop normal coaching and invoke safety guidance; and
 - uncertainty results in maintaining the plan or requesting information, not speculative change.
 

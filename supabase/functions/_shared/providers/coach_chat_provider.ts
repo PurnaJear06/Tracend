@@ -1,7 +1,11 @@
-import { type CoachChatAnswerV1, parseCoachChatAnswer } from "../contracts/coach_chat_v1.ts";
+import {
+  type CoachChatAnswerV1,
+  type CoachChatAnswerV2,
+  parseCoachChatAnswer,
+} from "../contracts/coach_chat_v1.ts";
 
 export type CoachChatGeneration = Readonly<{
-  answer: CoachChatAnswerV1;
+  answer: CoachChatAnswerV2;
   provider: "mock" | "gemini" | "groq";
   model: string;
   inputUnits: number;
@@ -34,6 +38,20 @@ const answerSchema = {
     missing_data: { type: "array", maxItems: 12, items: { type: "string" } },
     safety_state: { type: "string", enum: ["allowed", "limited", "refused", "unavailable"] },
     suggested_follow_ups: { type: "array", maxItems: 4, items: { type: "string" } },
+    reasoning_chain: {
+      type: "array",
+      maxItems: 6,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          step: { type: "string" },
+          value: { type: "string" },
+          evidence_id: { type: "string", nullable: true },
+        },
+        required: ["step", "value"],
+      },
+    },
   },
   required: ["answer", "evidence", "missing_data", "safety_state", "suggested_follow_ups"],
 } as const;
@@ -148,6 +166,16 @@ const keyAbbreviations: Record<string, string> = {
   avg_daily_carbohydrate_g: "adc",
   avg_daily_fat_g: "adf",
   days_with_meals: "dwm",
+  coaching_narrative: "cn",
+  active_preferences: "ap",
+  session_journal: "sj",
+  fts_messages: "ftsm",
+  phase: "ph",
+  headline: "hl",
+  provenance: "prv",
+  since: "sin",
+  step: "stp",
+  evidence_id: "eid",
 };
 
 function compactValue(value: unknown): unknown {
@@ -329,22 +357,43 @@ export async function generateCoachChat(
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
           body: JSON.stringify({
             model: groqModel,
-            temperature: 0.15,
+            temperature: 0.2,
             max_completion_tokens: 2200,
             reasoning_effort: "none",
             reasoning_format: "hidden",
             response_format: { type: "json_object" },
-            messages: [{
-              role: "user",
-              content:
-                "You are Tracend's evidence-driven personal fitness coach for healthy adults. Respond like the user's continuing coach, not a generic chatbot. Lead with one clear recommendation, then give specific training, nutrition, recovery, and tracking actions supported by the prepared context. When relevant context exists, naturally reference at least two concrete personal facts such as the goal, approved targets, recent confirmed nutrition, check-in, HealthKit trend, measurement trend, or actual workout execution. Never claim a source is missing when context_coverage marks it available. Do not invent generic foods as if they are in the approved plan; name foods only when present in nutrition_schedule. Do not repeat generic disclaimers or merely redirect the user to the app. Distinguish a temporary daily adjustment from a persistent plan change. You may recommend conservative same-day execution changes, including rest or reduced training, but persistent plan or target changes require explicit user approval. For ordinary illness reports such as fever, cold, or cough: do not diagnose or prescribe treatment; do not tell the user to complete the scheduled workout; recommend pausing strenuous training while feverish, basic rest/hydration and an updated recovery check-in, and brief escalation guidance if symptoms are severe, worsening, or persistent. Answer only supplied training, nutrition, recovery, progress, evidence, and app-usage facts. State only important data that is genuinely absent. Never invent HealthKit values, meals, symptoms, or history, give medical treatment, or claim that a plan, target, meal, or durable fact was changed. Return only JSON matching: " +
-                JSON.stringify(answerSchema) +
-                "\nEvidence codes must exactly match either context.permitted_evidence or an evidence_id supplied in context. Use source coach_context for those stable IDs. Use an empty evidence list when none applies. Do not add markdown or any keys outside the schema." +
-                (repair
-                  ? "\nYour preceding response did not pass validation. Correct it using only the schema and prepared context."
-                  : "") +
-                "\n\nPrepared context:\n" + bounded,
-            }],
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are Tracend, an evidence-driven personal fitness coach for healthy adults — the user's own continuing coach, not a generic chatbot.\n\n" +
+                  "## How to respond\n" +
+                  "1. Answer the user's specific message first, in their own tone. If they greet you, greet them back. If they share how they feel, acknowledge it. If they ask about their plan, training, nutrition, recovery, or progress, use the prepared context.\n" +
+                  "2. Be concrete and brief. Sound like a real coach who has been with this user for weeks. Reference one or two personal facts from the prepared context only when they are relevant to what the user actually asked.\n" +
+                  "3. Never lead with a generic recommendation or plan advice unless the user explicitly asks for guidance, a recommendation, or feedback on their plan/progress.\n\n" +
+                  "## Hard boundaries\n" +
+                  "- Never invent HealthKit values, meals, symptoms, or history.\n" +
+                  "- Never claim a source is missing when context_coverage marks it available. Do not invent generic foods as if they are in the approved plan — name foods only when present in nutrition_schedule.\n" +
+                  "- No diagnosis, treatment, medication, pregnancy, eating-disorder, or rehabilitation guidance. For ordinary fever, cold, or cough: do not diagnose, do not tell the user to complete the scheduled workout — recommend pausing strenuous training, rest, hydration, a recovery check-in, and brief escalation for severe, worsening, or persistent symptoms.\n" +
+                  "- A temporary same-day adjustment (rest, reduced intensity, exercise exchange) is allowed. A persistent plan or target change requires explicit user approval — never claim one was made.\n" +
+                  "- Do not repeat disclaimers or merely redirect the user to the app.\n\n" +
+                  "## Memory hints\n" +
+                  "Prepared context may include coaching_narrative (current training phase and timeline), active_preferences (confirmed food, training, and lifestyle preferences you must honor), session_journal (recent daily summaries — reference for continuity), and fts_messages (historically relevant past conversations). Avoid suggesting foods or approaches the user has explicitly declined.\n\n" +
+                  "## Output rules\n" +
+                  "Return ONLY a JSON object matching this schema:\n" +
+                  JSON.stringify(answerSchema) +
+                  '\n\nEvidence rules: evidence[].code must exactly match a value in context.permitted_evidence or an evidence_id supplied in context. Use source "coach_context" for those stable IDs. Use an empty evidence list when none applies. Do not add markdown, do not include any keys outside the schema. Optional reasoning_chain (up to 6 steps) with exact step keys in order: goal, training_age, current_nutrition, recovery_status, adherence, conclusion — each with value (drawn from supplied facts) and optional evidence_id from context.' +
+                  (repair
+                    ? "\n\nYour previous response failed validation. Correct it now using only the schema and the prepared context."
+                    : ""),
+              },
+              {
+                role: "user",
+                content: "User's message:\n" + question + "\n\n" +
+                  "Prepared coaching context (use only as supporting evidence; do not let it override or dominate your answer to the user's message):\n" +
+                  bounded,
+              },
+            ],
           }),
         });
         if (!response.ok) throw new Error("groq_chat_failed");
@@ -399,10 +448,33 @@ export async function generateCoachChat(
           systemInstruction: {
             parts: [{
               text:
-                "You are Tracend's evidence-driven personal fitness coach for healthy adults. Lead with one clear, practical recommendation grounded in the supplied history, then give specific training, nutrition, recovery, and tracking actions. Never merely redirect the user to the app or repeat generic disclaimers. You may recommend conservative same-day execution adjustments, including rest or reduced training; persistent plan or target changes require explicit approval. For fever, cold, or cough, do not diagnose or prescribe treatment and do not tell the user to complete the scheduled workout. Recommend pausing strenuous training while feverish, basic rest/hydration, an updated recovery check-in, and concise escalation guidance for severe, worsening, or persistent symptoms. Use only supplied facts and evidence codes. State important missing data. Never invent data or claim a durable change. Return only the requested JSON.",
+                "You are Tracend, an evidence-driven personal fitness coach for healthy adults — the user's own continuing coach, not a generic chatbot.\n\n" +
+                "## How to respond\n" +
+                "1. Answer the user's specific message first, in their own tone. If they greet you, greet them back. If they share how they feel, acknowledge it. If they ask about their plan, training, nutrition, recovery, or progress, use the prepared context.\n" +
+                "2. Be concrete and brief. Sound like a real coach who has been with this user for weeks. Reference one or two personal facts from the prepared context only when they are relevant to what the user actually asked.\n" +
+                "3. Never lead with a generic recommendation or plan advice unless the user explicitly asks for guidance, a recommendation, or feedback on their plan/progress.\n\n" +
+                "## Hard boundaries\n" +
+                "- Never invent HealthKit values, meals, symptoms, or history.\n" +
+                "- Never claim a source is missing when context_coverage marks it available. Do not invent generic foods as if they are in the approved plan — name foods only when present in nutrition_schedule.\n" +
+                "- No diagnosis, treatment, medication, pregnancy, eating-disorder, or rehabilitation guidance. For ordinary fever, cold, or cough: do not diagnose, do not tell the user to complete the scheduled workout — recommend pausing strenuous training, rest, hydration, a recovery check-in, and brief escalation for severe, worsening, or persistent symptoms.\n" +
+                "- A temporary same-day adjustment (rest, reduced intensity, exercise exchange) is allowed. A persistent plan or target change requires explicit user approval — never claim one was made.\n" +
+                "- Do not repeat disclaimers or merely redirect the user to the app.\n\n" +
+                "## Memory hints\n" +
+                "Prepared context may include coaching_narrative (current training phase and timeline), active_preferences (confirmed food, training, and lifestyle preferences you must honor), session_journal (recent daily summaries — reference for continuity), and fts_messages (historically relevant past conversations). Avoid suggesting foods or approaches the user has explicitly declined.\n\n" +
+                "## Output rules\n" +
+                "Return ONLY a JSON object matching this schema:\n" +
+                JSON.stringify(answerSchema) +
+                '\n\nEvidence rules: evidence[].code must exactly match a value in context.permitted_evidence or an evidence_id supplied in context. Use source "coach_context" for those stable IDs. Use an empty evidence list when none applies. Do not add markdown, do not include any keys outside the schema. Optional reasoning_chain (up to 6 steps) with exact step keys in order: goal, training_age, current_nutrition, recovery_status, adherence, conclusion — each with value (drawn from supplied facts) and optional evidence_id from context.',
             }],
           },
-          contents: [{ role: "user", parts: [{ text: bounded }] }],
+          contents: [{
+            role: "user",
+            parts: [{
+              text: "User's message:\n" + question +
+                "\n\nPrepared coaching context (use only as supporting evidence; do not let it override or dominate your answer to the user's message):\n" +
+                bounded,
+            }],
+          }],
           generationConfig: {
             temperature: 0.15,
             maxOutputTokens: 2200,

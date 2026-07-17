@@ -111,6 +111,7 @@ class CoachMessage {
     this.suggestedFollowUps = const [],
     this.modelProvider,
     this.model,
+    this.reasoningChain = const [],
   });
   final String id;
   final String role;
@@ -122,6 +123,7 @@ class CoachMessage {
   final List<String> suggestedFollowUps;
   final String? modelProvider;
   final String? model;
+  final List<Map<String, dynamic>> reasoningChain;
 }
 
 abstract interface class CoachChatRepository {
@@ -146,6 +148,7 @@ class SupabaseCoachRepository
   static const _uuid = Uuid();
   final SupabaseClient _client;
   final DateTime Function() _now;
+  Map<String, dynamic>? _lastResponse;
 
   @override
   Future<List<CoachContextSource>> loadContextStatus() async {
@@ -217,6 +220,7 @@ class SupabaseCoachRepository
       throw StateError('Coach chat is unavailable.');
     }
     final body = Map<String, dynamic>.from(response.data as Map);
+    _lastResponse = body;
     if (body['message'] is Map) {
       return _messageFromJson(
         Map<String, dynamic>.from(body['message'] as Map),
@@ -226,6 +230,23 @@ class SupabaseCoachRepository
     if (messages.isEmpty) throw const FormatException('Coach message missing.');
     return messages.last;
   }
+
+  Future<void> confirmPreference({
+    required String category,
+    required String key,
+    required String value,
+    required String provenance,
+  }) async {
+    await _client.rpc('persist_coach_preference', params: {
+      'target_user_id': _client.auth.currentUser?.id,
+      'category': category,
+      'pref_key': key,
+      'pref_value': value,
+      'provenance': provenance,
+    });
+  }
+
+  Future<Map<String, dynamic>?> loadLastRawResponse() async => _lastResponse;
 
   CoachMessage _messageFromJson(Map<String, dynamic> row) => CoachMessage(
     id: row['id'] as String? ?? _uuid.v4(),
@@ -244,6 +265,9 @@ class SupabaseCoachRepository
     ),
     modelProvider: row['model_provider'] as String?,
     model: row['model'] as String?,
+    reasoningChain: (row['reasoning_chain'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(),
   );
 
   @override

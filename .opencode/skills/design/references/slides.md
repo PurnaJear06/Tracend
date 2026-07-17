@@ -1,6 +1,7 @@
 # Slides Reference
 
-Strategic HTML presentation design with Chart.js data visualization, design tokens, responsive layouts, and copywriting formulas.
+Strategic HTML presentation design with Chart.js data visualization, design tokens, responsive
+layouts, and copywriting formulas.
 
 ## Usage
 
@@ -8,13 +9,13 @@ Activate the `design` skill and specify slides task, e.g. "create a pitch deck".
 
 ## Knowledge Base
 
-| Topic | File | Purpose |
-|-------|------|---------|
-| Creation Guide | `references/slides-create.md` | Step-by-step slide creation workflow |
-| Layout Patterns | `references/slides-layout-patterns.md` | Slide layout templates and grid systems |
-| HTML Template | `references/slides-html-template.md` | Base HTML structure for presentations |
-| Copywriting | `references/slides-copywriting-formulas.md` | AIDA, PAS, FAB for slide content |
-| Strategies | `references/slides-strategies.md` | Contextual strategies by presentation type |
+| Topic           | File                                        | Purpose                                    |
+| --------------- | ------------------------------------------- | ------------------------------------------ |
+| Creation Guide  | `references/slides-create.md`               | Step-by-step slide creation workflow       |
+| Layout Patterns | `references/slides-layout-patterns.md`      | Slide layout templates and grid systems    |
+| HTML Template   | `references/slides-html-template.md`        | Base HTML structure for presentations      |
+| Copywriting     | `references/slides-copywriting-formulas.md` | AIDA, PAS, FAB for slide content           |
+| Strategies      | `references/slides-strategies.md`           | Contextual strategies by presentation type |
 
 ## When to Use
 

@@ -4,9 +4,11 @@ ARIA patterns, keyboard navigation, screen reader support, and accessible compon
 
 ## Foundation: Radix UI Primitives
 
-shadcn/ui built on Radix UI primitives - unstyled, accessible components following WAI-ARIA design patterns.
+shadcn/ui built on Radix UI primitives - unstyled, accessible components following WAI-ARIA design
+patterns.
 
 Benefits:
+
 - Keyboard navigation built-in
 - Screen reader announcements
 - Focus management
@@ -18,13 +20,15 @@ Benefits:
 ### Focus Management
 
 **Focus visible states:**
+
 ```tsx
 <Button className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
   Accessible Button
-</Button>
+</Button>;
 ```
 
 **Skip to content:**
+
 ```tsx
 <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2">
   Skip to content
@@ -54,6 +58,7 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
 ```
 
 Features:
+
 - Focus trapped within dialog
 - Esc key closes
 - Tab cycles through focusable elements
@@ -75,6 +80,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 ```
 
 Keyboard shortcuts:
+
 - `Space/Enter`: Open menu
 - `Arrow Up/Down`: Navigate items
 - `Esc`: Close menu
@@ -97,6 +103,7 @@ import { Command } from "@/components/ui/command"
 ```
 
 Features:
+
 - Type to filter
 - Arrow keys to navigate
 - Enter to select
@@ -120,6 +127,7 @@ Use proper HTML elements:
 ### ARIA Labels
 
 **Label interactive elements:**
+
 ```tsx
 <Button aria-label="Close dialog">
   <X className="h-4 w-4" />
@@ -129,6 +137,7 @@ Use proper HTML elements:
 ```
 
 **Describe elements:**
+
 ```tsx
 <Button aria-describedby="delete-description">
   Delete Account
@@ -178,13 +187,14 @@ Announce dynamic content:
 ```
 
 Toast component includes live region:
+
 ```tsx
-const { toast } = useToast()
+const { toast } = useToast();
 
 toast({
   title: "Success",
-  description: "Profile updated"
-})
+  description: "Profile updated",
+});
 // Announced to screen readers automatically
 ```
 
@@ -193,6 +203,7 @@ toast({
 ### Labels and Descriptions
 
 **Always label inputs:**
+
 ```tsx
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -204,6 +215,7 @@ import { Input } from "@/components/ui/input"
 ```
 
 **Add descriptions:**
+
 ```tsx
 import { FormDescription, FormMessage } from "@/components/ui/form"
 
@@ -240,7 +252,7 @@ Announce errors to screen readers:
       <FormMessage id="email-error" />
     </FormItem>
   )}
-/>
+/>;
 ```
 
 ### Required Fields
@@ -268,7 +280,7 @@ Group related fields:
     <FormField name="email" />
     <FormField name="phone" />
   </div>
-</fieldset>
+</fieldset>;
 ```
 
 ## Component-Specific Patterns
@@ -361,10 +373,12 @@ import { Alert } from "@/components/ui/alert"
 Ensure sufficient contrast between text and background.
 
 **WCAG Requirements:**
+
 - **AA**: 4.5:1 for normal text, 3:1 for large text
 - **AAA**: 7:1 for normal text, 4.5:1 for large text
 
 **Check defaults:**
+
 ```tsx
 // Good: High contrast
 <p className="text-gray-900 dark:text-gray-100">Text</p>
@@ -374,11 +388,12 @@ Ensure sufficient contrast between text and background.
 ```
 
 **Muted text:**
+
 ```tsx
 // Use semantic muted foreground
 <p className="text-muted-foreground">
   Secondary text with accessible contrast
-</p>
+</p>;
 ```
 
 ## Focus Indicators
@@ -386,20 +401,26 @@ Ensure sufficient contrast between text and background.
 Always provide visible focus indicators:
 
 **Default focus ring:**
+
 ```tsx
 <Button className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
   Button
-</Button>
+</Button>;
 ```
 
 **Custom focus styles:**
+
 ```tsx
-<a href="#" className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:underline">
+<a
+  href="#"
+  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:underline"
+>
   Link
-</a>
+</a>;
 ```
 
 **Don't remove focus styles:**
+
 ```tsx
 // Avoid
 <button className="focus:outline-none">Bad</button>
@@ -423,10 +444,11 @@ Respect reduced motion preference:
 ```
 
 In components:
+
 ```tsx
 <div className="transition-all motion-reduce:transition-none">
   Respects user preference
-</div>
+</div>;
 ```
 
 ## Testing Checklist
@@ -449,6 +471,7 @@ In components:
 ## Tools
 
 **Testing tools:**
+
 - Lighthouse accessibility audit
 - axe DevTools browser extension
 - NVDA/JAWS screen readers
@@ -456,16 +479,17 @@ In components:
 - Color contrast checkers (Contrast Ratio, WebAIM)
 
 **Automated testing:**
+
 ```bash
 npm install -D @axe-core/react
 ```
 
 ```tsx
-import { useEffect } from 'react'
+import { useEffect } from "react";
 
-if (process.env.NODE_ENV === 'development') {
-  import('@axe-core/react').then((axe) => {
-    axe.default(React, ReactDOM, 1000)
-  })
+if (process.env.NODE_ENV === "development") {
+  import("@axe-core/react").then((axe) => {
+    axe.default(React, ReactDOM, 1000);
+  });
 }
 ```

@@ -20,8 +20,7 @@ const path = require("path");
 const RULES = {
   naming: {
     pattern: /^[a-z]+_[a-z0-9-]+_[a-z0-9-]+_\d{8}(_[a-z0-9-]+)?\.[a-z]+$/,
-    description:
-      "{type}_{campaign}_{description}_{timestamp}_{variant}.{ext}",
+    description: "{type}_{campaign}_{description}_{timestamp}_{variant}.{ext}",
     examples: [
       "banner_claude-launch_hero-image_20251209.png",
       "logo_brand-refresh_horizontal_20251209_dark.svg",
@@ -137,15 +136,19 @@ function validateFileSize(filepath, extension) {
 
   if (size > limits.max) {
     issues.push(
-      `File size (${formatBytes(size)}) exceeds maximum (${formatBytes(
-        limits.max
-      )})`
+      `File size (${formatBytes(size)}) exceeds maximum (${
+        formatBytes(
+          limits.max,
+        )
+      })`,
     );
   } else if (size > limits.recommended) {
     warnings.push(
-      `File size (${formatBytes(size)}) exceeds recommended (${formatBytes(
-        limits.recommended
-      )})`
+      `File size (${formatBytes(size)}) exceeds recommended (${
+        formatBytes(
+          limits.recommended,
+        )
+      })`,
     );
   }
 
@@ -175,8 +178,9 @@ function validateFormat(extension) {
   if (RULES.formats.image.includes(extension)) info.category = "image";
   else if (RULES.formats.vector.includes(extension)) info.category = "vector";
   else if (RULES.formats.video.includes(extension)) info.category = "video";
-  else if (RULES.formats.document.includes(extension))
+  else if (RULES.formats.document.includes(extension)) {
     info.category = "document";
+  }
 
   return { valid: true, issues, info };
 }
@@ -195,7 +199,7 @@ function checkManifest(filepath) {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
     const relativePath = path.relative(process.cwd(), filepath);
     const found = manifest.assets?.find(
-      (a) => a.path === relativePath || a.path === filepath
+      (a) => a.path === relativePath || a.path === filepath,
     );
 
     return {
@@ -287,7 +291,7 @@ function validateAsset(assetPath) {
   if (!manifestResult.registered) {
     results.warnings.push("Asset not registered in manifest.json");
     results.suggestions.push(
-      "Register asset in .assets/manifest.json for tracking"
+      "Register asset in .assets/manifest.json for tracking",
     );
   }
 
@@ -330,9 +334,7 @@ function formatOutput(results) {
 
   if (results.suggestions.length > 0) {
     lines.push("\nSUGGESTIONS:");
-    results.suggestions.forEach((suggestion) =>
-      lines.push(`  - ${suggestion}`)
-    );
+    results.suggestions.forEach((suggestion) => lines.push(`  - ${suggestion}`));
   }
 
   // File size info
@@ -357,18 +359,16 @@ function main() {
     console.error("Usage: node validate-asset.cjs <asset-path> [--json]");
     console.error("\nExamples:");
     console.error(
-      "  node validate-asset.cjs assets/banners/social-media/banner_launch_hero_20251209.png"
+      "  node validate-asset.cjs assets/banners/social-media/banner_launch_hero_20251209.png",
     );
     console.error(
-      "  node validate-asset.cjs assets/logos/icon-only/logo-icon.svg --json"
+      "  node validate-asset.cjs assets/logos/icon-only/logo-icon.svg --json",
     );
     process.exit(1);
   }
 
   // Resolve path
-  const resolvedPath = path.isAbsolute(assetPath)
-    ? assetPath
-    : path.join(process.cwd(), assetPath);
+  const resolvedPath = path.isAbsolute(assetPath) ? assetPath : path.join(process.cwd(), assetPath);
 
   // Validate
   const results = validateAsset(resolvedPath);

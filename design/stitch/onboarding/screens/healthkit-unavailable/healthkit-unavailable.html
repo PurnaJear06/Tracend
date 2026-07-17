@@ -1,225 +1,289 @@
 <!DOCTYPE html>
 
-<html class="dark" lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Tracend - HealthKit Unavailable</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Spline+Sans:wght@600&amp;family=IBM+Plex+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    "colors": {
-                        "surface-container-low": "#f0f3ff",
-                        "outline-variant": "#c6c5d7",
-                        "tertiary-fixed-dim": "#ffb692",
-                        "surface-container-lowest": "#ffffff",
-                        "surface-bright": "#f9f9ff",
-                        "on-tertiary": "#ffffff",
-                        "on-surface": "#171c24",
-                        "surface-container-highest": "#dee2ee",
-                        "error-container": "#ffdad6",
-                        "surface": "#f9f9ff",
-                        "action-primary-dark": "#9BA5FF",
-                        "tertiary-fixed": "#ffdbcb",
-                        "inverse-primary": "#bec2ff",
-                        "on-secondary-fixed": "#101c29",
-                        "surface-variant": "#dee2ee",
-                        "canvas-light": "#F3F6F8",
-                        "state-stable": "#00796B",
-                        "secondary-fixed": "#d7e4f5",
-                        "state-attention-dark": "#FF887D",
-                        "on-tertiary-fixed": "#341100",
-                        "surface-dim": "#d6dae5",
-                        "on-secondary": "#ffffff",
-                        "on-primary": "#ffffff",
-                        "on-error-container": "#93000a",
-                        "on-secondary-container": "#586473",
-                        "on-error": "#ffffff",
-                        "surface-light": "#FFFFFF",
-                        "canvas-dark": "#090D14",
-                        "on-primary-fixed-variant": "#202dc5",
-                        "on-background": "#171c24",
-                        "on-surface-variant": "#454655",
-                        "secondary-container": "#d4e1f3",
-                        "error": "#ba1a1a",
-                        "secondary-fixed-dim": "#bbc8d9",
-                        "primary": "#2e3bcf",
-                        "tertiary-container": "#b04a00",
-                        "on-primary-fixed": "#000569",
-                        "on-primary-container": "#e8e7ff",
-                        "inverse-surface": "#2c3139",
-                        "background": "#f9f9ff",
-                        "secondary": "#535f6e",
-                        "surface-tint": "#3e4bdd",
-                        "surface-container": "#eaeefa",
-                        "state-stable-dark": "#59D6C7",
-                        "primary-container": "#4a57e8",
-                        "on-tertiary-container": "#ffe4d9",
-                        "on-tertiary-fixed-variant": "#793100",
-                        "surface-dark": "#121925",
-                        "primary-fixed": "#e0e0ff",
-                        "tertiary": "#893800",
-                        "surface-container-high": "#e4e8f4",
-                        "outline": "#767686",
-                        "on-secondary-fixed-variant": "#3c4856",
-                        "inverse-on-surface": "#edf1fc",
-                        "state-attention": "#C43C31",
-                        "primary-fixed-dim": "#bec2ff"
-                    },
-                    "borderRadius": {
-                        "DEFAULT": "0.25rem",
-                        "lg": "0.5rem",
-                        "xl": "0.75rem",
-                        "full": "9999px"
-                    },
-                    "spacing": {
-                        "base": "4px",
-                        "gutter": "20px",
-                        "gutter-compact": "16px",
-                        "md": "12px",
-                        "xxxl": "48px",
-                        "xl": "24px",
-                        "xxl": "32px",
-                        "sm": "8px",
-                        "lg": "16px",
-                        "xs": "4px"
-                    },
-                    "fontFamily": {
-                        "body-base": ["Inter"],
-                        "section-title": ["Spline Sans"],
-                        "screen-title": ["Spline Sans"],
-                        "body-compact": ["Inter"],
-                        "data-utility": ["IBM Plex Mono"],
-                        "label-caps": ["Inter"],
-                        "decision-headline": ["Spline Sans"]
-                    },
-                    "fontSize": {
-                        "body-base": ["17px", { "lineHeight": "25px", "fontWeight": "400" }],
-                        "section-title": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
-                        "screen-title": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
-                        "body-compact": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
-                        "data-utility": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
-                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
-                        "decision-headline": ["32px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
-                    }
-                }
-            }
-        }
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Tracend - HealthKit Unavailable</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Spline+Sans:wght@600&amp;family=IBM+Plex+Mono:wght@500&amp;display=swap"
+      rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet" />
+    <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface-container-low": "#f0f3ff",
+            "outline-variant": "#c6c5d7",
+            "tertiary-fixed-dim": "#ffb692",
+            "surface-container-lowest": "#ffffff",
+            "surface-bright": "#f9f9ff",
+            "on-tertiary": "#ffffff",
+            "on-surface": "#171c24",
+            "surface-container-highest": "#dee2ee",
+            "error-container": "#ffdad6",
+            "surface": "#f9f9ff",
+            "action-primary-dark": "#9BA5FF",
+            "tertiary-fixed": "#ffdbcb",
+            "inverse-primary": "#bec2ff",
+            "on-secondary-fixed": "#101c29",
+            "surface-variant": "#dee2ee",
+            "canvas-light": "#F3F6F8",
+            "state-stable": "#00796B",
+            "secondary-fixed": "#d7e4f5",
+            "state-attention-dark": "#FF887D",
+            "on-tertiary-fixed": "#341100",
+            "surface-dim": "#d6dae5",
+            "on-secondary": "#ffffff",
+            "on-primary": "#ffffff",
+            "on-error-container": "#93000a",
+            "on-secondary-container": "#586473",
+            "on-error": "#ffffff",
+            "surface-light": "#FFFFFF",
+            "canvas-dark": "#090D14",
+            "on-primary-fixed-variant": "#202dc5",
+            "on-background": "#171c24",
+            "on-surface-variant": "#454655",
+            "secondary-container": "#d4e1f3",
+            "error": "#ba1a1a",
+            "secondary-fixed-dim": "#bbc8d9",
+            "primary": "#2e3bcf",
+            "tertiary-container": "#b04a00",
+            "on-primary-fixed": "#000569",
+            "on-primary-container": "#e8e7ff",
+            "inverse-surface": "#2c3139",
+            "background": "#f9f9ff",
+            "secondary": "#535f6e",
+            "surface-tint": "#3e4bdd",
+            "surface-container": "#eaeefa",
+            "state-stable-dark": "#59D6C7",
+            "primary-container": "#4a57e8",
+            "on-tertiary-container": "#ffe4d9",
+            "on-tertiary-fixed-variant": "#793100",
+            "surface-dark": "#121925",
+            "primary-fixed": "#e0e0ff",
+            "tertiary": "#893800",
+            "surface-container-high": "#e4e8f4",
+            "outline": "#767686",
+            "on-secondary-fixed-variant": "#3c4856",
+            "inverse-on-surface": "#edf1fc",
+            "state-attention": "#C43C31",
+            "primary-fixed-dim": "#bec2ff",
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px",
+          },
+          "spacing": {
+            "base": "4px",
+            "gutter": "20px",
+            "gutter-compact": "16px",
+            "md": "12px",
+            "xxxl": "48px",
+            "xl": "24px",
+            "xxl": "32px",
+            "sm": "8px",
+            "lg": "16px",
+            "xs": "4px",
+          },
+          "fontFamily": {
+            "body-base": ["Inter"],
+            "section-title": ["Spline Sans"],
+            "screen-title": ["Spline Sans"],
+            "body-compact": ["Inter"],
+            "data-utility": ["IBM Plex Mono"],
+            "label-caps": ["Inter"],
+            "decision-headline": ["Spline Sans"],
+          },
+          "fontSize": {
+            "body-base": ["17px", { "lineHeight": "25px", "fontWeight": "400" }],
+            "section-title": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "screen-title": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+            "body-compact": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+            "data-utility": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "label-caps": ["12px", {
+              "lineHeight": "16px",
+              "letterSpacing": "0.05em",
+              "fontWeight": "600",
+            }],
+            "decision-headline": ["32px", {
+              "lineHeight": "36px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600",
+            }],
+          },
+        },
+      },
+    };
     </script>
-<style>
-        body { background-color: #090D14; color: #FFFFFF; }
-        .hairline-border { border: 1px solid rgba(198, 197, 215, 0.15); }
-        .glass-header { background: rgba(9, 13, 20, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-        .progress-segment { height: 2px; flex: 1; background-color: rgba(198, 197, 215, 0.15); border-radius: 9999px; }
-        .progress-segment.active { background-color: #9BA5FF; }
-        .progress-segment.completed { background-color: #9BA5FF; opacity: 0.5; }
+    <style>
+    body {
+      background-color: #090D14;
+      color: #FFFFFF;
+    }
+    .hairline-border {
+      border: 1px solid rgba(198, 197, 215, 0.15);
+    }
+    .glass-header {
+      background: rgba(9, 13, 20, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    .progress-segment {
+      height: 2px;
+      flex: 1;
+      background-color: rgba(198, 197, 215, 0.15);
+      border-radius: 9999px;
+    }
+    .progress-segment.active {
+      background-color: #9BA5FF;
+    }
+    .progress-segment.completed {
+      background-color: #9BA5FF;
+      opacity: 0.5;
+    }
     </style>
-<style>
+    <style>
     body {
       min-height: max(884px, 100dvh);
     }
-  </style>
+    </style>
   </head>
-<body class="antialiased min-h-screen flex flex-col font-body-base">
-<!-- TopAppBar -->
-<header class="fixed top-0 w-full glass-header z-50 border-b border-outline-variant/15 flex flex-col justify-end px-gutter pb-sm" style="height: 104px; padding-top: 44px;">
-<div class="flex justify-between items-center w-full mb-lg">
-<button class="w-11 h-11 flex items-center justify-center text-outline-variant hover:text-white transition-colors active:scale-95 transition-transform duration-160">
-<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">chevron_left</span>
-</button>
-<div class="font-data-utility text-data-utility text-outline-variant">Step 3 of 8</div>
-<div class="w-11 h-11"></div> <!-- Spacer for balance -->
-</div>
-<div class="flex gap-xs w-full px-xs">
-<div class="progress-segment completed"></div>
-<div class="progress-segment completed"></div>
-<div class="progress-segment active"></div>
-<div class="progress-segment"></div>
-<div class="progress-segment"></div>
-<div class="progress-segment"></div>
-<div class="progress-segment"></div>
-<div class="progress-segment"></div>
-</div>
-</header>
-<!-- Main Content Canvas -->
-<main class="flex-1 px-gutter pt-[136px] pb-xxxl max-w-md mx-auto w-full">
-<!-- Header Section -->
-<div class="mb-xxl text-center">
-<span class="material-symbols-outlined text-state-attention-dark mb-lg" style="font-size: 48px; font-variation-settings: 'FILL' 0;">block</span>
-<h1 class="font-decision-headline text-decision-headline mb-md">HealthKit Unavailable</h1>
-<p class="font-body-base text-body-base text-outline-variant text-center max-w-[280px] mx-auto">
+  <body class="antialiased min-h-screen flex flex-col font-body-base">
+    <!-- TopAppBar -->
+    <header
+      class="fixed top-0 w-full glass-header z-50 border-b border-outline-variant/15 flex flex-col justify-end px-gutter pb-sm"
+      style="height: 104px; padding-top: 44px;">
+      <div class="flex justify-between items-center w-full mb-lg">
+        <button
+          class="w-11 h-11 flex items-center justify-center text-outline-variant hover:text-white transition-colors active:scale-95 transition-transform duration-160">
+          <span class="material-symbols-outlined"
+            style="font-variation-settings: 'FILL' 0;">chevron_left</span>
+        </button>
+        <div class="font-data-utility text-data-utility text-outline-variant">Step 3 of 8</div>
+        <div class="w-11 h-11"></div>
+        <!-- Spacer for balance -->
+      </div>
+      <div class="flex gap-xs w-full px-xs">
+        <div class="progress-segment completed"></div>
+        <div class="progress-segment completed"></div>
+        <div class="progress-segment active"></div>
+        <div class="progress-segment"></div>
+        <div class="progress-segment"></div>
+        <div class="progress-segment"></div>
+        <div class="progress-segment"></div>
+        <div class="progress-segment"></div>
+      </div>
+    </header>
+    <!-- Main Content Canvas -->
+    <main class="flex-1 px-gutter pt-[136px] pb-xxxl max-w-md mx-auto w-full">
+      <!-- Header Section -->
+      <div class="mb-xxl text-center">
+        <span class="material-symbols-outlined text-state-attention-dark mb-lg"
+          style="font-size: 48px; font-variation-settings: 'FILL' 0;">block</span>
+        <h1 class="font-decision-headline text-decision-headline mb-md">HealthKit Unavailable</h1>
+        <p
+          class="font-body-base text-body-base text-outline-variant text-center max-w-[280px] mx-auto">
                 Health data access is restricted on this device or permission was previously denied. You can still proceed by entering evidence manually.
             </p>
-</div>
-<!-- Blocked Categories List -->
-<div class="bg-surface-dark rounded-xl hairline-border p-md mb-xxxl flex flex-col gap-base">
-<!-- Category Item: Sleep -->
-<div class="flex items-center justify-between p-md rounded-lg bg-canvas-dark/50 hairline-border opacity-70">
-<div class="flex items-center gap-md">
-<span class="material-symbols-outlined text-outline-variant" style="font-variation-settings: 'FILL' 0;">bedtime</span>
-<span class="font-data-utility text-data-utility text-outline-variant">Sleep</span>
-</div>
-<div class="font-label-caps text-label-caps text-state-attention-dark bg-state-attention-dark/10 px-sm py-xs rounded">Restricted</div>
-</div>
-<!-- Category Item: Workouts -->
-<div class="flex items-center justify-between p-md rounded-lg bg-canvas-dark/50 hairline-border opacity-70">
-<div class="flex items-center gap-md">
-<span class="material-symbols-outlined text-outline-variant" style="font-variation-settings: 'FILL' 0;">fitness_center</span>
-<span class="font-data-utility text-data-utility text-outline-variant">Workouts</span>
-</div>
-<div class="font-label-caps text-label-caps text-state-attention-dark bg-state-attention-dark/10 px-sm py-xs rounded">Restricted</div>
-</div>
-<!-- Category Item: Steps -->
-<div class="flex items-center justify-between p-md rounded-lg bg-canvas-dark/50 hairline-border opacity-70">
-<div class="flex items-center gap-md">
-<span class="material-symbols-outlined text-outline-variant" style="font-variation-settings: 'FILL' 0;">directions_run</span>
-<span class="font-data-utility text-data-utility text-outline-variant">Steps</span>
-</div>
-<div class="font-label-caps text-label-caps text-outline-variant bg-outline-variant/10 px-sm py-xs rounded">N/A</div>
-</div>
-<!-- Category Item: Weight -->
-<div class="flex items-center justify-between p-md rounded-lg bg-canvas-dark/50 hairline-border opacity-70">
-<div class="flex items-center gap-md">
-<span class="material-symbols-outlined text-outline-variant" style="font-variation-settings: 'FILL' 0;">scale</span>
-<span class="font-data-utility text-data-utility text-outline-variant">Weight</span>
-</div>
-<div class="font-label-caps text-label-caps text-outline-variant bg-outline-variant/10 px-sm py-xs rounded">N/A</div>
-</div>
-<!-- Category Item: Resting HR -->
-<div class="flex items-center justify-between p-md rounded-lg bg-canvas-dark/50 hairline-border opacity-70">
-<div class="flex items-center gap-md">
-<span class="material-symbols-outlined text-outline-variant" style="font-variation-settings: 'FILL' 0;">favorite</span>
-<span class="font-data-utility text-data-utility text-outline-variant">Resting HR</span>
-</div>
-<div class="font-label-caps text-label-caps text-outline-variant bg-outline-variant/10 px-sm py-xs rounded">N/A</div>
-</div>
-<!-- Category Item: HRV -->
-<div class="flex items-center justify-between p-md rounded-lg bg-canvas-dark/50 hairline-border opacity-70">
-<div class="flex items-center gap-md">
-<span class="material-symbols-outlined text-outline-variant" style="font-variation-settings: 'FILL' 0;">monitor_heart</span>
-<span class="font-data-utility text-data-utility text-outline-variant">HRV</span>
-</div>
-<div class="font-label-caps text-label-caps text-outline-variant bg-outline-variant/10 px-sm py-xs rounded">N/A</div>
-</div>
-</div>
-</main>
-<!-- Bottom Actions -->
-<div class="fixed bottom-0 left-0 w-full glass-header px-gutter pb-8 pt-md border-t border-outline-variant/15 z-50">
-<div class="max-w-md mx-auto flex flex-col gap-md">
-<button class="w-full h-[52px] bg-action-primary-dark text-[#090D14] font-section-title text-section-title rounded-lg flex items-center justify-center active:scale-95 transition-transform duration-160">
+      </div>
+      <!-- Blocked Categories List -->
+      <div class="bg-surface-dark rounded-xl hairline-border p-md mb-xxxl flex flex-col gap-base">
+        <!-- Category Item: Sleep -->
+        <div
+          class="flex items-center justify-between p-md rounded-lg bg-canvas-dark/50 hairline-border opacity-70">
+          <div class="flex items-center gap-md">
+            <span class="material-symbols-outlined text-outline-variant"
+              style="font-variation-settings: 'FILL' 0;">bedtime</span>
+            <span class="font-data-utility text-data-utility text-outline-variant">Sleep</span>
+          </div>
+          <div
+            class="font-label-caps text-label-caps text-state-attention-dark bg-state-attention-dark/10 px-sm py-xs rounded">Restricted</div>
+        </div>
+        <!-- Category Item: Workouts -->
+        <div
+          class="flex items-center justify-between p-md rounded-lg bg-canvas-dark/50 hairline-border opacity-70">
+          <div class="flex items-center gap-md">
+            <span class="material-symbols-outlined text-outline-variant"
+              style="font-variation-settings: 'FILL' 0;">fitness_center</span>
+            <span class="font-data-utility text-data-utility text-outline-variant">Workouts</span>
+          </div>
+          <div
+            class="font-label-caps text-label-caps text-state-attention-dark bg-state-attention-dark/10 px-sm py-xs rounded">Restricted</div>
+        </div>
+        <!-- Category Item: Steps -->
+        <div
+          class="flex items-center justify-between p-md rounded-lg bg-canvas-dark/50 hairline-border opacity-70">
+          <div class="flex items-center gap-md">
+            <span class="material-symbols-outlined text-outline-variant"
+              style="font-variation-settings: 'FILL' 0;">directions_run</span>
+            <span class="font-data-utility text-data-utility text-outline-variant">Steps</span>
+          </div>
+          <div
+            class="font-label-caps text-label-caps text-outline-variant bg-outline-variant/10 px-sm py-xs rounded">N/A</div>
+        </div>
+        <!-- Category Item: Weight -->
+        <div
+          class="flex items-center justify-between p-md rounded-lg bg-canvas-dark/50 hairline-border opacity-70">
+          <div class="flex items-center gap-md">
+            <span class="material-symbols-outlined text-outline-variant"
+              style="font-variation-settings: 'FILL' 0;">scale</span>
+            <span class="font-data-utility text-data-utility text-outline-variant">Weight</span>
+          </div>
+          <div
+            class="font-label-caps text-label-caps text-outline-variant bg-outline-variant/10 px-sm py-xs rounded">N/A</div>
+        </div>
+        <!-- Category Item: Resting HR -->
+        <div
+          class="flex items-center justify-between p-md rounded-lg bg-canvas-dark/50 hairline-border opacity-70">
+          <div class="flex items-center gap-md">
+            <span class="material-symbols-outlined text-outline-variant"
+              style="font-variation-settings: 'FILL' 0;">favorite</span>
+            <span class="font-data-utility text-data-utility text-outline-variant">Resting HR</span>
+          </div>
+          <div
+            class="font-label-caps text-label-caps text-outline-variant bg-outline-variant/10 px-sm py-xs rounded">N/A</div>
+        </div>
+        <!-- Category Item: HRV -->
+        <div
+          class="flex items-center justify-between p-md rounded-lg bg-canvas-dark/50 hairline-border opacity-70">
+          <div class="flex items-center gap-md">
+            <span class="material-symbols-outlined text-outline-variant"
+              style="font-variation-settings: 'FILL' 0;">monitor_heart</span>
+            <span class="font-data-utility text-data-utility text-outline-variant">HRV</span>
+          </div>
+          <div
+            class="font-label-caps text-label-caps text-outline-variant bg-outline-variant/10 px-sm py-xs rounded">N/A</div>
+        </div>
+      </div>
+    </main>
+    <!-- Bottom Actions -->
+    <div
+      class="fixed bottom-0 left-0 w-full glass-header px-gutter pb-8 pt-md border-t border-outline-variant/15 z-50">
+      <div class="max-w-md mx-auto flex flex-col gap-md">
+        <button
+          class="w-full h-[52px] bg-action-primary-dark text-[#090D14] font-section-title text-section-title rounded-lg flex items-center justify-center active:scale-95 transition-transform duration-160">
                 Manual entry
             </button>
-<button class="w-full h-[52px] bg-transparent text-white font-section-title text-section-title rounded-lg hairline-border flex items-center justify-center active:scale-95 transition-transform duration-160 hover:bg-white/5">
+        <button
+          class="w-full h-[52px] bg-transparent text-white font-section-title text-section-title rounded-lg hairline-border flex items-center justify-center active:scale-95 transition-transform duration-160 hover:bg-white/5">
                 Continue anyway
             </button>
-<p class="font-label-caps text-label-caps text-outline-variant text-center mt-sm px-md opacity-70">
+        <p
+          class="font-label-caps text-label-caps text-outline-variant text-center mt-sm px-md opacity-70">
                 Health data is never sold, used for advertising, or written back without a documented feature.
             </p>
-</div>
-</div>
-</body></html>
+      </div>
+    </div>
+  </body>
+</html>

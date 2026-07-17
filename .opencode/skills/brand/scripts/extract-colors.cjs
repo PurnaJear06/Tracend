@@ -84,10 +84,10 @@ function hexToRgb(hex) {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   return result
     ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16),
-      }
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16),
+    }
     : null;
 }
 
@@ -119,7 +119,7 @@ function colorDistance(color1, color2) {
   return Math.sqrt(
     Math.pow(rgb1.r - rgb2.r, 2) +
       Math.pow(rgb1.g - rgb2.g, 2) +
-      Math.pow(rgb1.b - rgb2.b, 2)
+      Math.pow(rgb1.b - rgb2.b, 2),
   );
 }
 
@@ -235,11 +235,10 @@ function main() {
   const jsonOutput = args.includes("--json");
   const showPalette = args.includes("--palette");
   const brandFileIdx = args.indexOf("--brand-file");
-  const brandFile =
-    brandFileIdx !== -1 ? args[brandFileIdx + 1] : DEFAULT_GUIDELINES_PATH;
+  const brandFile = brandFileIdx !== -1 ? args[brandFileIdx + 1] : DEFAULT_GUIDELINES_PATH;
   const brandFileValue = brandFileIdx !== -1 ? args[brandFileIdx + 1] : null;
   const imagePath = args.find(
-    (a) => !a.startsWith("--") && a !== brandFileValue
+    (a) => !a.startsWith("--") && a !== brandFileValue,
   );
 
   // Load brand palette
@@ -269,9 +268,7 @@ function main() {
   }
 
   // Resolve image path
-  const resolvedPath = path.isAbsolute(imagePath)
-    ? imagePath
-    : path.join(process.cwd(), imagePath);
+  const resolvedPath = path.isAbsolute(imagePath) ? imagePath : path.join(process.cwd(), imagePath);
 
   if (!fs.existsSync(resolvedPath)) {
     console.error(`Image not found: ${resolvedPath}`);
@@ -297,8 +294,7 @@ function main() {
     ],
     complianceCheck: {
       threshold: 50,
-      description:
-        "Colors within distance 50 (RGB space) are considered brand-compliant",
+      description: "Colors within distance 50 (RGB space) are considered brand-compliant",
       brandColors: brandPalette.all,
     },
   };

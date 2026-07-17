@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/widgets/preference_prompt_chip.dart';
+import 'package:tracend/features/coach/widgets/reasoning_chain_card.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class CoachScreen extends StatefulWidget {
@@ -32,6 +34,7 @@ class _CoachScreenState extends State<CoachScreen> {
   bool _sending = false;
   bool _generating = false;
   String? _error;
+  Map<String, dynamic>? _preferencePrompt;
 
   @override
   void initState() {
@@ -151,14 +154,23 @@ class _CoachScreenState extends State<CoachScreen> {
       _messages = [..._messages, local];
       _sending = true;
       _error = null;
+      _preferencePrompt = null;
     });
     _scrollToEnd();
     try {
       final answer = await chat.sendMessage(threadId, question);
+      Map<String, dynamic>? prompt;
+      if (chat is SupabaseCoachRepository) {
+        final raw = await chat.loadLastRawResponse();
+        if (raw != null && raw['preference_prompt'] is Map) {
+          prompt = Map<String, dynamic>.from(raw['preference_prompt'] as Map);
+        }
+      }
       if (mounted) {
         await HapticFeedback.lightImpact();
         setState(() {
           _messages = [..._messages, answer];
+          _preferencePrompt = prompt;
           _sending = false;
         });
         _scrollToEnd();
@@ -307,6 +319,27 @@ class _CoachScreenState extends State<CoachScreen> {
                         Expanded(child: Text(_error!)),
                       ],
                     ),
+                  ),
+                ],
+                if (_preferencePrompt != null) ...[
+                  const SizedBox(height: TracendSpacing.sm),
+                  PreferencePromptChip(
+                    category: _preferencePrompt!['category'] as String? ?? 'food',
+                    prefKey: _preferencePrompt!['key'] as String? ?? '',
+                    value: _preferencePrompt!['value'] as String? ?? '',
+                    onConfirm: () {
+                      final chat = _chat;
+                      if (chat is SupabaseCoachRepository) {
+                        chat.confirmPreference(
+                          category: _preferencePrompt!['category'] as String? ?? 'food',
+                          key: _preferencePrompt!['key'] as String? ?? '',
+                          value: _preferencePrompt!['value'] as String? ?? '',
+                          provenance: _preferencePrompt!['provenance'] as String? ?? 'chat_statement',
+                        );
+                      }
+                      setState(() => _preferencePrompt = null);
+                    },
+                    onDismiss: () => setState(() => _preferencePrompt = null),
                   ),
                 ],
                 const SectionLabel('Conversation'),
@@ -477,6 +510,10 @@ class _MessageBubble extends StatelessWidget {
                   height: 1.45,
                 ),
               ),
+              if (!user && message.reasoningChain.isNotEmpty) ...[
+                const SizedBox(height: TracendSpacing.sm),
+                ReasoningChainCard(chain: message.reasoningChain),
+              ],
               if (!user && message.modelProvider != null) ...[
                 const SizedBox(height: TracendSpacing.xs),
                 TracendPill(

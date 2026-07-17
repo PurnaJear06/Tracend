@@ -19,11 +19,11 @@ Three-layer token system for scalable, themeable design systems.
 
 ## Why Three Layers?
 
-| Layer | Purpose | When to Change |
-|-------|---------|----------------|
+| Layer     | Purpose                     | When to Change        |
+| --------- | --------------------------- | --------------------- |
 | Primitive | Base values (colors, sizes) | Rarely - foundational |
-| Semantic | Meaning assignment | Theme switching |
-| Component | Component customization | Per-component needs |
+| Semantic  | Meaning assignment          | Theme switching       |
+| Component | Component customization     | Per-component needs   |
 
 ## Layer 1: Primitive Tokens
 
@@ -38,10 +38,10 @@ Raw design values without semantic meaning.
   --color-blue-600: #2563EB;
 
   /* Spacing (4px base) */
-  --space-1: 0.25rem;  /* 4px */
-  --space-2: 0.5rem;   /* 8px */
-  --space-4: 1rem;     /* 16px */
-  --space-6: 1.5rem;   /* 24px */
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.5rem; /* 8px */
+  --space-4: 1rem; /* 16px */
+  --space-6: 1.5rem; /* 24px */
 
   /* Typography */
   --font-size-sm: 0.875rem;
@@ -148,14 +148,14 @@ Examples:
 
 ## Categories
 
-| Category | Examples |
-|----------|----------|
-| color | primary, secondary, muted, destructive |
-| space | 1, 2, 4, 8, section, component |
-| font-size | xs, sm, base, lg, xl |
-| radius | sm, default, lg, full |
-| shadow | sm, default, lg |
-| duration | fast, normal, slow |
+| Category  | Examples                               |
+| --------- | -------------------------------------- |
+| color     | primary, secondary, muted, destructive |
+| space     | 1, 2, 4, 8, section, component         |
+| font-size | xs, sm, base, lg, xl                   |
+| radius    | sm, default, lg, full                  |
+| shadow    | sm, default, lg                        |
+| duration  | fast, normal, slow                     |
 
 ## File Organization
 
@@ -171,27 +171,37 @@ Or single file with layer comments:
 
 ```css
 /* === PRIMITIVES === */
-:root { ... }
+:root {
+  ...
+}
 
 /* === SEMANTIC === */
-:root { ... }
+:root {
+  ...
+}
 
 /* === COMPONENTS === */
-:root { ... }
+:root {
+  ...
+}
 
 /* === DARK MODE === */
-.dark { ... }
+.dark {
+  ...
+}
 ```
 
 ## Migration from Flat Tokens
 
 Before (flat):
+
 ```css
 --button-primary-bg: #2563EB;
 --button-secondary-bg: #F3F4F6;
 ```
 
 After (three-layer):
+
 ```css
 /* Primitive */
 --color-blue-600: #2563EB;
