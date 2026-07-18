@@ -191,6 +191,7 @@ response.
 | Read own profile/logs/approved plan     | Data API with RLS                                             |
 | Read own sanitized AI usage summary     | User-scoped RPC or Edge Function aggregated from `model_runs` |
 | Draft check-in or in-progress workout   | Data API/RPC with RLS, idempotency, and constraints           |
+| HealthKit quick-complete                  | Authenticated RPC with RLS + explicit user confirmation        |
 | HealthKit sync                          | Edge Function                                                 |
 | Activate or change plan/targets         | Edge Function + transactional RPC                             |
 | Confirm analyzed meal                   | Edge Function + transactional RPC                             |
@@ -321,6 +322,23 @@ be restored; later syncs read seven days. Only normalized daily summaries cross 
 and the server contract rejects a window longer than 31 days.
 
 An empty response never proves permission denial.
+
+### HealthKit auto-completion
+
+1. Mobile loads the training hub; the response includes a `healthkit_completion_candidate` field
+   when: (a) a planned workout is scheduled for today, (b) the day's `daily_health_summaries` record
+   has `workout_count > 0`, and (c) no completed session exists for the planned workout on that date.
+2. Train displays a prompt card with the HealthKit evidence and two buttons.
+3. **Yes, mark complete** calls the authenticated `healthkit_auto_complete_workout` RPC, which:
+   - authorizes user ownership of the planned workout in the active plan;
+   - guards idempotently against duplicate completion;
+   - creates a `workout_sessions` row with `state='completed'` and duration from HealthKit;
+   - writes an `audit_events` row with `action_code='workout.auto_completed'`.
+4. The hub reloads and the completed session counts toward adherence.
+5. **Log manually** opens the standard workout execution flow.
+
+HealthKit evidence provides the basis; only explicit user approval finalizes the completion.
+The prompt never appears when a session is already completed.
 
 ### Meal analysis
 

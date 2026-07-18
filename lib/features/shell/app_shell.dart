@@ -71,6 +71,7 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     final destinations = <Widget>[
       TodayScreen(
+        key: const ValueKey('tab_today'),
         environment: widget.environment,
         onSignOut: widget.onSignOut,
         workouts: _workouts,
@@ -78,10 +79,11 @@ class _AppShellState extends State<AppShell> {
         coach: _coach,
         brief: _brief,
       ),
-      TrainScreen(repository: _workouts),
-      CoachScreen(repository: _coach),
-      NutritionScreen(repository: _nutrition),
+      TrainScreen(key: const ValueKey('tab_train'), repository: _workouts),
+      CoachScreen(key: const ValueKey('tab_coach'), repository: _coach),
+      NutritionScreen(key: const ValueKey('tab_nutrition'), repository: _nutrition),
       ProgressScreen(
+        key: const ValueKey('tab_progress'),
         repository: _progress,
         training: _workouts is TrainingHubRepository
             ? _workouts as TrainingHubRepository

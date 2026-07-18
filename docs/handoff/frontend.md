@@ -55,6 +55,28 @@ visual system behavior belongs in `docs/DESIGN_SYSTEM.md`.
 - `supabase_flutter` 2.15.0 is pinned. `AppEnvironment` accepts only `SUPABASE_URL` and
   `SUPABASE_PUBLISHABLE_KEY`; the shell runs unconfigured and contains no secret/service-role or
   AI-provider key path.
+- TrainScreen hub now refreshes after workout completion via navigation result propagation
+  (ActiveWorkoutScreen → WorkoutDetailScreen → TrainScreen). Adherence count updates without
+  manual reload.
+- HealthKit quick-complete: when Apple Health detects a workout on a day with a scheduled workout
+  but no completed session, Train shows a prompt card for the selected weekday (today or any past
+  day). "Yes, mark complete" creates an audited completed session with HealthKit-backed duration.
+  "Log manually" opens the standard execution flow.
+- Training hub `get_my_training_hub` version 1.2 no longer returns a hub-level candidate. A separate
+  lightweight RPC `get_healthkit_completion_candidate(date)` is called per selected weekday.
+  `healthkit_auto_complete_workout` creates audited auto-completed sessions.
+  Migrations: `20260718100000_healthkit_auto_complete.sql` (original auto-complete),
+  `20260718110000_healthkit_candidate_per_date.sql` (per-date refactor),
+  `20260718150000_hub_completed_day_set.sql` (completion tracking + visual indicators).
+- Hub v1.3 adds `completed_day_set` field (array of distinct dates with completed sessions).
+  The weekday strip now shows green checkmark dots for completed days and gray dots for planned-only.
+  WorkoutHero displays "Completed" pill + "View workout" (outlined) for completed days vs "Start workout"
+  (filled) for uncompleted.
+- `loadSession` and `start` repository methods now accept optional `{DateTime? localDate}` parameter.
+  TrainScreen threads `_dateForWeekday(_weekday)` through `WorkoutDetailScreen` → `ActiveWorkoutScreen`
+  → repository calls. This fixes the bug where past days always loaded today's session.
+- `ActiveWorkoutScreen` detects auto-completed sessions (no exercise data) and shows planned exercises
+  read-only with an info banner: "Auto-completed from Apple Health — no individual sets logged."
 - Phase 4 pins `health` 13.3.1 behind `HealthDataSource`. The iOS target has HealthKit purpose
   strings and entitlement configuration for read-only steps, active energy, sleep, workouts, weight,
   resting heart rate, and HRV SDNN.

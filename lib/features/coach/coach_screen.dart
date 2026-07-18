@@ -157,6 +157,7 @@ class _CoachScreenState extends State<CoachScreen> {
       _preferencePrompt = null;
     });
     _scrollToEnd();
+    final started = DateTime.now();
     try {
       final answer = await chat.sendMessage(threadId, question);
       Map<String, dynamic>? prompt;
@@ -165,6 +166,11 @@ class _CoachScreenState extends State<CoachScreen> {
         if (raw != null && raw['preference_prompt'] is Map) {
           prompt = Map<String, dynamic>.from(raw['preference_prompt'] as Map);
         }
+      }
+      final elapsed = DateTime.now().difference(started);
+      if (chat is SupabaseCoachRepository &&
+          elapsed < const Duration(milliseconds: 1200)) {
+        await Future.delayed(const Duration(milliseconds: 1200) - elapsed);
       }
       if (mounted) {
         await HapticFeedback.lightImpact();
@@ -175,13 +181,28 @@ class _CoachScreenState extends State<CoachScreen> {
         });
         _scrollToEnd();
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
+        final msg = e is TimeoutException
+            ? 'Coach took too long to respond. Please try again.'
+            : e.toString().replaceFirst('Exception: ', '').replaceFirst('StateError: ', '');
+        final elapsed = DateTime.now().difference(started);
+        if (chat is SupabaseCoachRepository &&
+            elapsed < const Duration(milliseconds: 1200)) {
+          await Future.delayed(const Duration(milliseconds: 1200) - elapsed);
+          if (!mounted) return;
+        }
         setState(() {
           _sending = false;
-          _error =
-              'Coach did not return a usable AI reply. No mock answer was shown; retry the question in a moment.';
+          _error = msg;
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 6),
+          ),
+        );
       }
     }
   }

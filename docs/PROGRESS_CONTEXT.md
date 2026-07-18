@@ -88,3 +88,40 @@ live. Local pgTAP suite for the new functions is written but not yet executed lo
 - CoreSimulator not used; physical iPhone for builds.
 - Supabase CLI timeout on `db reset` is known, not a schema failure.
 - Colima must be running for local pgTAP execution.
+
+## HealthKit Quick-Complete (2026-07-18)
+
+**Bug fix:** TrainScreen hub now reloads after workout completion. Navigation chain
+(ActiveWorkoutScreen → WorkoutDetailScreen → TrainScreen) propagates a completion result
+via `push<bool>` / `pop(true)`, and `_WorkoutHero.onWorkoutChanged` refreshes the hub.
+
+**New feature:** When Apple Health detects a workout on a day with a scheduled Tracend workout
+but no completed session, Train shows a prompt card for the selected weekday (today or any past
+day). "Yes, mark complete" calls the new `healthkit_auto_complete_workout` RPC (creates completed
+session with duration from `daily_health_summaries`, writes `workout.auto_completed` audit event).
+"Log manually" opens the standard execution flow.
+
+**Per-date refactor (v1.2):** The candidate is no longer returned inside `get_my_training_hub`
+(which was hardcoded to `current_date`). Instead, a lightweight `get_healthkit_completion_candidate(date)`
+RPC is called per selected weekday via a `HealthkitCandidateRepository` interface. The train screen
+maintains `_healthkitCandidate` local state and fetches on weekday change.
+
+**Completion state + date threading (v1.3):** Hub adds `completed_day_set` for per-day completion
+tracking. Weekday strip shows green checkmark dots for completed days, gray dots for planned-only.
+WorkoutHero shows "Completed" pill + "View workout" for completed days. `loadSession`/`start` now
+accept optional `localDate` to fix the bug where past days loaded today's session. Date is threaded
+from train screen through `WorkoutDetailScreen` → `ActiveWorkoutScreen` → repository.
+`ActiveWorkoutScreen` detects auto-completed sessions (no exercise data) and shows plan exercises
+read-only with info banner.
+
+**Changed files:** `train_screen.dart`, `workout_detail_screen.dart`, `active_workout_screen.dart`,
+`workout_repository.dart`, `test/production_rebuild_flutter_test.dart`.
+
+**Migrations:** `20260718100000_healthkit_auto_complete.sql` (hub + auto-complete RPC),
+`20260718110000_healthkit_candidate_per_date.sql` (per-date refactor),
+`20260718150000_hub_completed_day_set.sql` (completion tracking v1.3). All deployed to hosted.
+
+**Docs updated:** PRD, UX_FLOWS, ARCHITECTURE, DATA_MODEL, SECURITY_PRIVACY,
+AI_SAFETY_SPEC, TESTING_STRATEGY, frontend handoff.
+
+**Tests:** Flutter 72/72 pass.

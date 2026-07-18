@@ -111,6 +111,21 @@ class ExerciseProgression {
   final int? bestRepetitions;
 }
 
+class HealthkitCompletionCandidate {
+  const HealthkitCompletionCandidate({
+    required this.plannedWorkoutId,
+    required this.plannedWorkoutName,
+    required this.workoutCount,
+    required this.workoutMinutes,
+    required this.localDate,
+  });
+  final String plannedWorkoutId;
+  final String plannedWorkoutName;
+  final int workoutCount;
+  final int workoutMinutes;
+  final DateTime localDate;
+}
+
 class TrainingHubData {
   const TrainingHubData({
     required this.planTitle,
@@ -119,6 +134,7 @@ class TrainingHubData {
     required this.completedSessions,
     required this.plannedSessions,
     required this.progression,
+    this.completedDays = const {},
   });
   final String planTitle;
   final List<PlannedWorkout> workouts;
@@ -126,6 +142,11 @@ class TrainingHubData {
   final int completedSessions;
   final int plannedSessions;
   final List<ExerciseProgression> progression;
+  final Set<DateTime> completedDays;
+
+  bool isDayCompleted(DateTime date) => completedDays.any(
+    (d) => d.year == date.year && d.month == date.month && d.day == date.day,
+  );
 
   PlannedWorkout? workoutForWeekday(int weekday) {
     for (final workout in workouts) {
@@ -195,13 +216,17 @@ abstract interface class WorkoutReconciliationRepository {
   Future<void> respondToReconciliation(String id, {required bool accept});
 }
 
+abstract interface class HealthkitCandidateRepository {
+  Future<HealthkitCompletionCandidate?> getHealthkitCandidate(DateTime date);
+}
+
 abstract interface class WorkoutRepository {
   Future<PlannedWorkout> loadTodayWorkout();
   Future<String?> loadDraft(String workoutId);
-  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout);
+  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout, {DateTime? localDate});
   Future<void> saveDraft(String workoutId, String json);
   Future<void> clearDraft(String workoutId);
-  Future<String> start(PlannedWorkout workout, String idempotencyKey);
+  Future<String> start(PlannedWorkout workout, String idempotencyKey, {DateTime? localDate});
   Future<void> sync(String sessionId, int revision, Map<String, dynamic> draft);
   Future<void> complete(
     String sessionId,
@@ -225,7 +250,8 @@ class SupabaseWorkoutRepository
         WorkoutRepository,
         TrainingHubRepository,
         WorkoutRepairRepository,
-        WorkoutReconciliationRepository {
+        WorkoutReconciliationRepository,
+        HealthkitCandidateRepository {
   SupabaseWorkoutRepository(this._client, this._preferences);
   final SupabaseClient _client;
   final SharedPreferencesAsync _preferences;
@@ -274,8 +300,22 @@ class SupabaseWorkoutRepository
           bestRepetitions: (row['best_repetitions'] as num?)?.toInt(),
         );
       }).toList(),
+      completedDays: (value['completed_day_set'] as List? ?? const [])
+          .map((d) => DateTime.parse(d as String))
+          .toSet(),
     );
   }
+
+  HealthkitCompletionCandidate _parseHealthkitCandidate(
+    Map<String, dynamic> row,
+  ) =>
+      HealthkitCompletionCandidate(
+        plannedWorkoutId: row['planned_workout_id'] as String,
+        plannedWorkoutName: row['planned_workout_name'] as String,
+        workoutCount: (row['workout_count'] as num).toInt(),
+        workoutMinutes: (row['workout_minutes'] as num).toInt(),
+        localDate: DateTime.parse(row['local_date'] as String),
+      );
 
   PlannedWorkout _workoutFromJson(Map<String, dynamic> row) => PlannedWorkout(
     id: row['id'] as String,
@@ -423,12 +463,13 @@ class SupabaseWorkoutRepository
   Future<String?> loadDraft(String workoutId) =>
       _preferences.getString(_draftKey(workoutId));
   @override
-  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout) async {
+  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout, {DateTime? localDate}) async {
+    final date = localDate ?? DateTime.now();
     final value = await _client.rpc(
       'get_my_workout_session',
       params: {
         'p_planned_workout_id': workout.id,
-        'p_local_date': DateTime.now().toIso8601String().substring(0, 10),
+        'p_local_date': date.toIso8601String().substring(0, 10),
       },
     );
     return value is Map ? Map<String, dynamic>.from(value) : null;
@@ -441,17 +482,19 @@ class SupabaseWorkoutRepository
   Future<void> clearDraft(String workoutId) =>
       _preferences.remove(_draftKey(workoutId));
   @override
-  Future<String> start(PlannedWorkout workout, String idempotencyKey) async =>
-      await _client.rpc(
-            'start_workout',
-            params: {
-              'p_planned_workout_id': workout.id,
-              'p_local_date': DateTime.now().toIso8601String().substring(0, 10),
-              'p_timezone': DateTime.now().timeZoneName,
-              'p_idempotency_key': idempotencyKey,
-            },
-          )
-          as String;
+  Future<String> start(PlannedWorkout workout, String idempotencyKey, {DateTime? localDate}) async {
+    final date = localDate ?? DateTime.now();
+    return await _client.rpc(
+          'start_workout',
+          params: {
+            'p_planned_workout_id': workout.id,
+            'p_local_date': date.toIso8601String().substring(0, 10),
+            'p_timezone': DateTime.now().timeZoneName,
+            'p_idempotency_key': idempotencyKey,
+          },
+        )
+        as String;
+  }
   @override
   Future<void> sync(
     String sessionId,
@@ -489,6 +532,31 @@ class SupabaseWorkoutRepository
     final workoutId = draft['workout_id'] as String?;
     if (workoutId != null) await clearDraft(workoutId);
   }
+
+  Future<void> autoCompleteFromHealthKit(
+    String plannedWorkoutId,
+    String localDate,
+  ) async {
+    await _client.rpc(
+      'healthkit_auto_complete_workout',
+      params: {
+        'p_planned_workout_id': plannedWorkoutId,
+        'p_local_date': localDate,
+      },
+    );
+  }
+
+  @override
+  Future<HealthkitCompletionCandidate?> getHealthkitCandidate(
+    DateTime date,
+  ) async {
+    final value = await _client.rpc(
+      'get_healthkit_completion_candidate',
+      params: {'p_local_date': date.toIso8601String().substring(0, 10)},
+    );
+    if (value == null || value is! Map || (value).isEmpty) return null;
+    return _parseHealthkitCandidate(Map<String, dynamic>.from(value));
+  }
 }
 
 class FixtureWorkoutRepository
@@ -509,14 +577,14 @@ class FixtureWorkoutRepository
   @override
   Future<String?> loadDraft(String workoutId) async => _draft;
   @override
-  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout) async =>
+  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout, {DateTime? localDate}) async =>
       null;
   @override
   Future<void> saveDraft(String workoutId, String json) async => _draft = json;
   @override
   Future<void> clearDraft(String workoutId) async => _draft = null;
   @override
-  Future<String> start(PlannedWorkout workout, String idempotencyKey) async =>
+  Future<String> start(PlannedWorkout workout, String idempotencyKey, {DateTime? localDate}) async =>
       'local-$idempotencyKey';
   @override
   Future<void> sync(

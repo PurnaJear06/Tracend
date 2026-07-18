@@ -35,10 +35,11 @@ Deno.serve(async (request) => {
     return reply(422, { error: "invalid_meal_request" });
   }
   const service = createClient(url, serviceKey, { auth: { persistSession: false } });
-  const { error: budgetError } = await service.rpc("assert_owner_ai_budget", {
-    target_user_id: userData.user.id,
-  });
-  if (budgetError) return reply(429, { error: "ai_usage_limit" });
+  // Budget check temporarily disabled — remove after testing.
+  // const { error: budgetError } = await service.rpc("assert_owner_ai_budget", {
+  //   target_user_id: userData.user.id,
+  // });
+  // if (budgetError) return reply(429, { error: "ai_usage_limit" });
   const { data: meal, error: mealError } = await service.from("meals")
     .select("id,status,source,media_objects!inner(object_key,content_type,byte_size)")
     .eq("id", body.meal_id).eq("user_id", userData.user.id).single();

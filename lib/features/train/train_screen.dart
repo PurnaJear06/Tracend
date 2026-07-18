@@ -20,12 +20,14 @@ class _TrainScreenState extends State<TrainScreen> {
   List<WorkoutReconciliation> _reconciliations = const [];
   String? _reconciliationBusyId;
   int _weekday = DateTime.now().weekday;
+  HealthkitCompletionCandidate? _healthkitCandidate;
 
   @override
   void initState() {
     super.initState();
     _source = widget.repository ?? FixtureWorkoutRepository();
     _hub = _load();
+    _fetchHealthkitCandidate();
   }
 
   Future<TrainingHubData> _load() async {
@@ -108,6 +110,54 @@ class _TrainScreenState extends State<TrainScreen> {
     }
   }
 
+  Future<void> _autoComplete(HealthkitCompletionCandidate candidate) async {
+    try {
+      await (_source as SupabaseWorkoutRepository).autoCompleteFromHealthKit(
+        candidate.plannedWorkoutId,
+        candidate.localDate.toIso8601String().substring(0, 10),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Workout marked complete from Apple Health')),
+      );
+      setState(() {
+        _hub = _load();
+        _healthkitCandidate = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not save completion. Try again.'),
+        ),
+      );
+    }
+  }
+
+  DateTime _dateForWeekday(int weekday) {
+    final today = DateTime.now();
+    final diff = (today.weekday - weekday + 7) % 7;
+    return DateTime(today.year, today.month, today.day - diff);
+  }
+
+  Future<void> _fetchHealthkitCandidate() async {
+    if (_source is! HealthkitCandidateRepository) return;
+    final date = _dateForWeekday(_weekday);
+    final candidate =
+        await (_source as HealthkitCandidateRepository).getHealthkitCandidate(date);
+    if (!mounted) return;
+    setState(() => _healthkitCandidate = candidate);
+  }
+
+  void _selectWeekday(int day) {
+    if (day == _weekday) return;
+    setState(() {
+      _weekday = day;
+      _healthkitCandidate = null;
+    });
+    _fetchHealthkitCandidate();
+  }
+
   @override
   Widget build(BuildContext context) => FutureBuilder<TrainingHubData>(
     future: _hub,
@@ -144,14 +194,18 @@ class _TrainScreenState extends State<TrainScreen> {
       }
       final hub = snapshot.data!;
       final workout = hub.workoutForWeekday(_weekday);
+      final sessionDate = _dateForWeekday(_weekday);
+      final isCompleted = hub.isDayCompleted(sessionDate);
       return TracendScrollView(
         title: 'Train',
         subtitle: hub.planTitle,
         children: [
           _WeekdayStrip(
             workouts: hub.workouts,
+            completedDays: hub.completedDays,
+            dateForWeekday: _dateForWeekday,
             selected: _weekday,
-            onSelected: (value) => setState(() => _weekday = value),
+            onSelected: _selectWeekday,
           ),
           const SizedBox(height: TracendSpacing.md),
           if (_repairCandidates.isNotEmpty) ...[
@@ -183,7 +237,41 @@ class _TrainScreenState extends State<TrainScreen> {
               ),
             )
           else ...[
-            _WorkoutHero(workout: workout, source: _source),
+            if (_healthkitCandidate != null)
+              _HealthkitCompleteCard(
+                candidate: _healthkitCandidate!,
+                onComplete: () =>
+                    _autoComplete(_healthkitCandidate!),
+                onManual: () => Navigator.of(context)
+                    .push<bool>(
+                      CupertinoPageRoute(
+                        builder: (_) => WorkoutDetailScreen(
+                          repository: _source,
+                          workout: workout,
+                          sessionDate: _healthkitCandidate!.localDate,
+                        ),
+                      ),
+                    )
+                    .then((completed) {
+                      if (completed == true) {
+      setState(() {
+        _hub = _load();
+        _healthkitCandidate = null;
+      });
+                      }
+                    }),
+              )
+            else
+              _WorkoutHero(
+                workout: workout,
+                source: _source,
+                sessionDate: sessionDate,
+                isCompleted: isCompleted,
+                onWorkoutChanged: () => setState(() {
+        _hub = _load();
+        _healthkitCandidate = null;
+      }),
+              ),
             const SectionLabel('Prescription'),
             for (var index = 0; index < workout.exercises.length; index++) ...[
               _ExerciseRow(exercise: workout.exercises[index]),
@@ -372,10 +460,14 @@ class _ReconciliationCard extends StatelessWidget {
 class _WeekdayStrip extends StatelessWidget {
   const _WeekdayStrip({
     required this.workouts,
+    required this.completedDays,
+    required this.dateForWeekday,
     required this.selected,
     required this.onSelected,
   });
   final List<PlannedWorkout> workouts;
+  final Set<DateTime> completedDays;
+  final DateTime Function(int weekday) dateForWeekday;
   final int selected;
   final ValueChanged<int> onSelected;
 
@@ -386,6 +478,7 @@ class _WeekdayStrip extends StatelessWidget {
         .map((item) => item.weekday)
         .whereType<int>()
         .toSet();
+    final stableColor = context.tracendColors.stateStable;
     return Material(
       color: Colors.transparent,
       child: SingleChildScrollView(
@@ -395,22 +488,31 @@ class _WeekdayStrip extends StatelessWidget {
             for (var day = 1; day <= 7; day++)
               Padding(
                 padding: const EdgeInsets.only(right: TracendSpacing.xs),
-                child: Semantics(
-                  selected: day == selected,
-                  button: true,
-                  label: 'Select weekday $day',
-                  child: ChoiceChip(
-                    label: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(labels[day - 1]),
-                        if (assigned.contains(day))
-                          const Icon(CupertinoIcons.circle_fill, size: 5),
-                      ],
-                    ),
-                    selected: day == selected,
-                    onSelected: (_) => onSelected(day),
+                child: ChoiceChip(
+                  label: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(labels[day - 1]),
+                      if (assigned.contains(day))
+                        Icon(
+                          completedDays.any((d) =>
+                              d.year == dateForWeekday(day).year &&
+                              d.month == dateForWeekday(day).month &&
+                              d.day == dateForWeekday(day).day)
+                              ? CupertinoIcons.check_mark_circled_solid
+                              : CupertinoIcons.circle_fill,
+                          size: 5,
+                          color: completedDays.any((d) =>
+                              d.year == dateForWeekday(day).year &&
+                              d.month == dateForWeekday(day).month &&
+                              d.day == dateForWeekday(day).day)
+                              ? stableColor
+                              : null,
+                        ),
+                    ],
                   ),
+                  selected: day == selected,
+                  onSelected: (_) => onSelected(day),
                 ),
               ),
           ],
@@ -421,21 +523,39 @@ class _WeekdayStrip extends StatelessWidget {
 }
 
 class _WorkoutHero extends StatelessWidget {
-  const _WorkoutHero({required this.workout, required this.source});
+  const _WorkoutHero({
+    required this.workout,
+    required this.source,
+    this.sessionDate,
+    this.isCompleted = false,
+    this.onWorkoutChanged,
+  });
   final PlannedWorkout workout;
   final WorkoutRepository source;
+  final DateTime? sessionDate;
+  final bool isCompleted;
+  final VoidCallback? onWorkoutChanged;
 
   @override
-  Widget build(BuildContext context) => TracendCard(
+  Widget build(BuildContext context) {
+    final stableColor = context.tracendColors.stateStable;
+    return TracendCard(
     radius: TracendRadii.decision,
     raised: true,
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const TracendPill(
-          label: 'Approved plan',
-          icon: CupertinoIcons.check_mark_circled_solid,
-        ),
+        if (isCompleted)
+          TracendPill(
+            label: 'Completed',
+            icon: CupertinoIcons.check_mark_circled_solid,
+            color: stableColor,
+          )
+        else
+          const TracendPill(
+            label: 'Approved plan',
+            icon: CupertinoIcons.check_mark_circled_solid,
+          ),
         const SizedBox(height: TracendSpacing.sm),
         Text(workout.name, style: Theme.of(context).textTheme.displaySmall),
         const SizedBox(height: TracendSpacing.xs),
@@ -457,19 +577,48 @@ class _WorkoutHero extends StatelessWidget {
         const SizedBox(height: TracendSpacing.lg),
         SizedBox(
           width: double.infinity,
-          child: FilledButton(
-            onPressed: () => Navigator.of(context).push<void>(
-              CupertinoPageRoute(
-                builder: (_) =>
-                    WorkoutDetailScreen(repository: source, workout: workout),
-              ),
-            ),
-            child: const Text('Start workout'),
-          ),
+          child: isCompleted
+              ? OutlinedButton(
+                  onPressed: () => Navigator.of(context)
+                      .push<bool>(
+                        CupertinoPageRoute(
+                          builder: (_) => WorkoutDetailScreen(
+                            repository: source,
+                            workout: workout,
+                            sessionDate: sessionDate,
+                          ),
+                        ),
+                      )
+                      .then((completed) {
+                        if (completed == true) {
+                          onWorkoutChanged?.call();
+                        }
+                      }),
+                  child: const Text('View workout'),
+                )
+              : FilledButton(
+                  onPressed: () => Navigator.of(context)
+                      .push<bool>(
+                        CupertinoPageRoute(
+                          builder: (_) => WorkoutDetailScreen(
+                            repository: source,
+                            workout: workout,
+                            sessionDate: sessionDate,
+                          ),
+                        ),
+                      )
+                      .then((completed) {
+                        if (completed == true) {
+                          onWorkoutChanged?.call();
+                        }
+                      }),
+                  child: const Text('Start workout'),
+                ),
         ),
       ],
     ),
   );
+  }
 }
 
 class _Fact extends StatelessWidget {
@@ -572,4 +721,80 @@ class _ProgressionRow extends StatelessWidget {
           : '${item.bestLoadKg} kg',
     ),
   );
+}
+
+class _HealthkitCompleteCard extends StatelessWidget {
+  const _HealthkitCompleteCard({
+    required this.candidate,
+    required this.onComplete,
+    required this.onManual,
+  });
+  final HealthkitCompletionCandidate candidate;
+  final VoidCallback onComplete;
+  final VoidCallback onManual;
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime.now();
+    final yesterday = today.subtract(const Duration(days: 1));
+    String dateLabel;
+    if (candidate.localDate.year == today.year &&
+        candidate.localDate.month == today.month &&
+        candidate.localDate.day == today.day) {
+      dateLabel = 'today';
+    } else if (candidate.localDate.year == yesterday.year &&
+        candidate.localDate.month == yesterday.month &&
+        candidate.localDate.day == yesterday.day) {
+      dateLabel = 'yesterday';
+    } else {
+      const months = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      ];
+      dateLabel =
+          'on ${months[candidate.localDate.month - 1]} ${candidate.localDate.day}';
+    }
+    return TracendCard(
+    radius: TracendRadii.decision,
+    raised: true,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const StatusChip(
+          label: 'Apple Health detected workout',
+          icon: CupertinoIcons.heart_fill,
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+        Text(
+          candidate.plannedWorkoutName,
+          style: Theme.of(context).textTheme.displaySmall,
+        ),
+        const SizedBox(height: TracendSpacing.xs),
+        Text(
+          'Apple Health recorded a ${candidate.workoutMinutes} min workout $dateLabel. '
+          'Did you complete ${candidate.plannedWorkoutName}?',
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+        const SizedBox(height: TracendSpacing.lg),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: onManual,
+                child: const Text('Log manually'),
+              ),
+            ),
+            const SizedBox(width: TracendSpacing.sm),
+            Expanded(
+              child: FilledButton(
+                onPressed: onComplete,
+                child: const Text('Yes, mark complete'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
 }

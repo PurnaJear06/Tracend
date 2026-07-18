@@ -11,10 +11,12 @@ class ActiveWorkoutScreen extends StatefulWidget {
   const ActiveWorkoutScreen({
     required this.workout,
     required this.repository,
+    this.sessionDate,
     super.key,
   });
   final PlannedWorkout workout;
   final WorkoutRepository repository;
+  final DateTime? sessionDate;
   @override
   State<ActiveWorkoutScreen> createState() => _ActiveWorkoutScreenState();
 }
@@ -28,6 +30,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   int _revision = 0;
   bool _syncing = false;
   bool _offline = false;
+  bool _isViewingCompleted = false;
   DateTime _startedAt = DateTime.now();
   Timer? _saveTimer;
 
@@ -50,7 +53,23 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Future<void> _restoreAndStart() async {
-    final server = await widget.repository.loadSession(widget.workout);
+    final server = await widget.repository.loadSession(
+      widget.workout,
+      localDate: widget.sessionDate,
+    );
+    if (server != null && server['state'] == 'completed') {
+      _sessionId = server['session_id'] as String;
+      _isViewingCompleted = true;
+      final exercises = server['exercises'] as List?;
+      if (exercises != null && exercises.isNotEmpty &&
+          exercises.first is Map) {
+        _hydrateSets(exercises);
+      } else {
+        _populateFromPlan();
+      }
+      if (mounted) setState(() {});
+      return;
+    }
     final saved = await widget.repository.loadDraft(widget.workout.id);
     Map<String, dynamic>? d;
     if (server != null && server['state'] == 'in_progress') {
@@ -65,18 +84,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _startedAt =
           DateTime.tryParse('${d['actual_started_at'] ?? ''}') ??
           DateTime.now();
-      final exercises = d['exercises'] as List? ?? [];
-      for (var i = 0; i < exercises.length && i < _sets.length; i++) {
-        final exercise = Map<String, dynamic>.from(exercises[i] as Map);
-        _exerciseStatuses[i] = exercise['status'] as String? ?? 'unknown';
-        _painFlags[i] = exercise['pain_flag'] == true;
-        final rows = exercise['sets'] as List? ?? const [];
-        for (var j = 0; j < rows.length && j < _sets[i].length; j++) {
-          _sets[i][j] = _SetDraft.fromMap(
-            Map<String, dynamic>.from(rows[j] as Map),
-          );
-        }
-      }
+      final exercises = d['exercises'] as List? ?? const [];
+      _hydrateSets(exercises);
     } else {
       _idempotencyKey = newIdempotencyKey();
     }
@@ -84,6 +93,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _sessionId ??= await widget.repository.start(
         widget.workout,
         _idempotencyKey,
+        localDate: widget.sessionDate,
       );
     } catch (_) {
       _offline = true;
@@ -91,6 +101,24 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
     await _save();
     if (mounted) setState(() {});
+  }
+
+  void _hydrateSets(List exercises) {
+    for (var i = 0; i < exercises.length && i < _sets.length; i++) {
+      final exercise = Map<String, dynamic>.from(exercises[i] as Map);
+      _exerciseStatuses[i] = exercise['status'] as String? ?? 'unknown';
+      _painFlags[i] = exercise['pain_flag'] == true;
+      final rows = exercise['sets'] as List? ?? const [];
+      for (var j = 0; j < rows.length && j < _sets[i].length; j++) {
+        _sets[i][j] = _SetDraft.fromMap(
+          Map<String, dynamic>.from(rows[j] as Map),
+        );
+      }
+    }
+  }
+
+  void _populateFromPlan() {
+    _idempotencyKey = newIdempotencyKey();
   }
 
   Map<String, dynamic> _draft() => {
@@ -136,6 +164,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Future<void> _complete() async {
+    if (_isViewingCompleted) {
+      Navigator.of(context).pop();
+      return;
+    }
     await _save();
     final id = _sessionId;
     if (id == null || id.startsWith('pending-')) {
@@ -150,7 +182,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         _draft(),
       );
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.of(context).pop(true);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Workout completed')));
@@ -188,6 +220,23 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             120,
           ),
           children: [
+            if (_isViewingCompleted)
+              TracendCard(
+                radius: TracendRadii.decision,
+                padding: const EdgeInsets.all(TracendSpacing.gutter),
+                raised: true,
+                child: Row(
+                  children: [
+                    Icon(CupertinoIcons.info_circle, color: colors.stateStable),
+                    const SizedBox(width: TracendSpacing.sm),
+                    const Expanded(
+                      child: Text(
+                        'Auto-completed from Apple Health — no individual sets logged. The planned exercises are shown for reference.',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             TracendCard(
               radius: TracendRadii.decision,
               padding: const EdgeInsets.all(TracendSpacing.gutter),
@@ -237,6 +286,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 sets: _sets[i],
                 status: _exerciseStatuses[i],
                 painFlag: _painFlags[i],
+                readOnly: _isViewingCompleted,
                 onStatusChanged: (value) {
                   _exerciseStatuses[i] = value;
                   _changed();
@@ -249,10 +299,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ),
             ],
             const SizedBox(height: TracendSpacing.lg),
-            FilledButton(
-              onPressed: _completed == 0 ? null : _complete,
-              child: const Text('Complete workout'),
-            ),
+            if (_isViewingCompleted)
+              FilledButton(
+                onPressed: _complete,
+                child: const Text('Done'),
+              )
+            else
+              FilledButton(
+                onPressed: _completed == 0 ? null : _complete,
+                child: const Text('Complete workout'),
+              ),
           ],
         ),
       ),
@@ -266,6 +322,7 @@ class _ExerciseEditor extends StatelessWidget {
     required this.sets,
     required this.status,
     required this.painFlag,
+    this.readOnly = false,
     required this.onStatusChanged,
     required this.onPainChanged,
     required this.onChanged,
@@ -274,6 +331,7 @@ class _ExerciseEditor extends StatelessWidget {
   final List<_SetDraft> sets;
   final String status;
   final bool painFlag;
+  final bool readOnly;
   final ValueChanged<String> onStatusChanged;
   final ValueChanged<bool> onPainChanged;
   final VoidCallback onChanged;
@@ -296,13 +354,15 @@ class _ExerciseEditor extends StatelessWidget {
           FilterChip(
             label: const Text('Skipped intentionally'),
             selected: status == 'skipped',
-            onSelected: (selected) =>
-                onStatusChanged(selected ? 'skipped' : 'unknown'),
+            onSelected: readOnly
+                ? null
+                : (selected) =>
+                    onStatusChanged(selected ? 'skipped' : 'unknown'),
           ),
           FilterChip(
             label: const Text('Pain or discomfort'),
             selected: painFlag,
-            onSelected: onPainChanged,
+            onSelected: readOnly ? null : onPainChanged,
           ),
         ],
       ),
@@ -312,7 +372,12 @@ class _ExerciseEditor extends StatelessWidget {
         child: Column(
           children: [
             for (var i = 0; i < sets.length; i++) ...[
-              _SetRow(number: i + 1, draft: sets[i], onChanged: onChanged),
+              _SetRow(
+                number: i + 1,
+                draft: sets[i],
+                readOnly: readOnly,
+                onChanged: onChanged,
+              ),
               if (i < sets.length - 1) const Divider(height: TracendSpacing.md),
             ],
           ],
@@ -326,10 +391,12 @@ class _SetRow extends StatelessWidget {
   const _SetRow({
     required this.number,
     required this.draft,
+    this.readOnly = false,
     required this.onChanged,
   });
   final int number;
   final _SetDraft draft;
+  final bool readOnly;
   final VoidCallback onChanged;
   @override
   Widget build(BuildContext context) => Row(
@@ -341,9 +408,10 @@ class _SetRow extends StatelessWidget {
       Expanded(
         child: TextFormField(
           initialValue: draft.load,
+          readOnly: readOnly,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(labelText: 'kg'),
-          onChanged: (v) {
+          onChanged: readOnly ? null : (v) {
             draft.load = v;
             onChanged();
           },
@@ -354,9 +422,10 @@ class _SetRow extends StatelessWidget {
         width: 64,
         child: TextFormField(
           initialValue: draft.rpe,
+          readOnly: readOnly,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(labelText: 'RPE'),
-          onChanged: (v) {
+          onChanged: readOnly ? null : (v) {
             draft.rpe = v;
             onChanged();
           },
@@ -366,9 +435,10 @@ class _SetRow extends StatelessWidget {
       Expanded(
         child: TextFormField(
           initialValue: draft.reps,
+          readOnly: readOnly,
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(labelText: 'reps'),
-          onChanged: (v) {
+          onChanged: readOnly ? null : (v) {
             draft.reps = v;
             onChanged();
           },
@@ -379,7 +449,7 @@ class _SetRow extends StatelessWidget {
         label: 'Complete set $number',
         button: true,
         child: IconButton.filledTonal(
-          onPressed: () {
+          onPressed: readOnly ? null : () {
             draft.completed = !draft.completed;
             onChanged();
           },

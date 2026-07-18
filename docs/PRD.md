@@ -143,6 +143,11 @@ For each exercise, the user can record:
 The user may edit an in-progress session. Completed sessions are immutable through normal UI;
 corrections create audited amendments.
 
+When Apple Health records a workout on a day the user has a scheduled Tracend workout but no
+completed session, Train offers a **mark complete from HealthKit** prompt. The user explicitly
+confirms; the auto-completed session records HealthKit evidence and an audit trail. HealthKit data
+never silently mutates adherence without user confirmation.
+
 ### 4.6 Meal photo and nutrition confirmation
 
 1. The user uploads or captures a meal photo.

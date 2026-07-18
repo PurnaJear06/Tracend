@@ -65,6 +65,13 @@ accepted as a permanent retry.
   cross-user denial;
 - Supabase Queue/Cron retry, deduplication, cancellation, authorization recheck, and terminal
   failure.
+- `healthkit_auto_complete_workout`: test authentication required, cross-user denial, duplicate
+  completion idempotency (replayed), missing-HealthKit-data guard, inactive-plan guard, and audit
+  event shape.
+- `get_healthkit_completion_candidate`: test authentication required, cross-user denial, returns
+  candidate when HealthKit workout exists for the date and no completed session exists, returns
+  null when no HealthKit data, returns null when session already completed for that date and
+  planned workout, returns null when no planned workout matches the date's weekday.
 - Weekly review tests additionally require opaque minimal payloads, immutable snapshot linkage,
   forced-RLS owner reads, deterministic evidence totals, zero generated proposals, acknowledgement
   ownership, and approved-plan availability while a job is delayed.
@@ -98,6 +105,12 @@ trusted server fixtures.
 - production Today brief, complete weekly Train selection, prescription detail, Coach
   thread/composer/evidence behavior, next-meal schedule states, theme persistence, and Progress
   period/evidence gates;
+- Train HealthKit auto-complete: prompt card appears when candidate data present, absent when null,
+  "Yes, mark complete" triggers completion and reloads hub, prompt persists when tapping a past
+  weekday with HealthKit data, candidate clears after auto-completion;
+- Train completion state: weekday strip shows green checkmark dot for completed days, gray dot for
+  planned but uncompleted days, workout hero displays "Completed" pill and "View workout" (outlined)
+  button when day is completed, "Approved plan" pill and "Start workout" (filled) button when not;
 - Coach context coverage distinguishes recent available HealthKit data from a genuinely absent
   source and labels evidence/data gaps separately from model follow-up suggestions;
 - 320, 375, 390, and 430pt widths, landscape, text scales 1.0/1.3/2.0, light/dark, Reduce Motion,

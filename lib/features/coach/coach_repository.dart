@@ -215,20 +215,27 @@ class SupabaseCoachRepository
         'timezone': account['timezone'] as String? ?? 'UTC',
         'idempotency_key': _uuid.v4(),
       },
-    );
+    ).timeout(const Duration(seconds: 30));
     if (response.status != 200 || response.data is! Map) {
-      throw StateError('Coach chat is unavailable.');
+      String detail = 'unavailable';
+      if (response.data is Map) {
+        final d = Map<String, dynamic>.from(response.data as Map);
+        final serverDetail = d['detail'] as String?;
+        if (serverDetail != null && serverDetail.isNotEmpty) {
+          detail = serverDetail;
+        } else {
+          detail = (d['error'] ?? d['message'] ?? detail) as String;
+        }
+      }
+      throw StateError('Coach chat is $detail.');
     }
     final body = Map<String, dynamic>.from(response.data as Map);
     _lastResponse = body;
-    if (body['message'] is Map) {
-      return _messageFromJson(
-        Map<String, dynamic>.from(body['message'] as Map),
-      );
+    final message = body['message'];
+    if (message is! Map) {
+      throw const FormatException('Coach response has no message body.');
     }
-    final messages = await loadMessages(threadId);
-    if (messages.isEmpty) throw const FormatException('Coach message missing.');
-    return messages.last;
+    return _messageFromJson(Map<String, dynamic>.from(message));
   }
 
   Future<void> confirmPreference({

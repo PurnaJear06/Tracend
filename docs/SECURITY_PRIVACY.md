@@ -85,6 +85,9 @@ Requirements:
 - Normalize and upload required summaries; do not copy every raw sample by default.
 - Preserve source and freshness needed to explain data quality and prevent duplicates.
 - Never write false or model-invented values to HealthKit.
+- HealthKit auto-completion is a user-initiated action: the app presents detected workout evidence,
+  the user explicitly confirms, and the completed session is written with an audit trail. No
+  background service-role or automated mutation occurs without the user's tap.
 - Never store personal health information in iCloud containers.
 - Never use HealthKit-derived data for advertising, marketing profiles, or sale.
 - A disconnected or partially authorized user can continue through manual logging.

@@ -52,6 +52,9 @@ The active training plan and nutrition targets always remain the last user-appro
 - schema, range, evidence, and reference validation;
 - plan and target activation; and
 - authorization, consent, audit, retention, and deletion.
+- HealthKit auto-completion: detecting a workout via HealthKit data, checking for an existing
+  completed session, offering a user-facing prompt, and creating a completed session on explicit
+  confirmation — all performed by deterministic RPC logic, not AI.
 
 ### AI may
 

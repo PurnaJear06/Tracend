@@ -388,6 +388,9 @@ Append-only actor, user scope, action code, opaque target, request correlation I
 sanitized metadata, and timestamp. Health values, notes, prompts, photo references, tokens, and
 secrets are prohibited in audit metadata.
 
+`workout.auto_completed` records that the user confirmed a HealthKit-detected workout as complete;
+metadata includes the planned workout ID, date, duration, and source label.
+
 ### `data_exports`
 
 Export scope, state, processing times, encrypted package reference, expiry, download count, and

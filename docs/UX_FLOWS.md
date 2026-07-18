@@ -41,6 +41,7 @@ Today
 Train
 ├── Active plan
 ├── Workout execution
+├── HealthKit quick-complete
 └── History and amendments
 
 Coach
@@ -204,10 +205,35 @@ ideas use the separate **Suggested next actions** heading.
 - Pain is reachable without an overflow menu.
 - Autosave locally and expose offline/sync state without interruption.
 - Later corrections to a completed session create audited amendments.
+- Completing a workout pops back to the Train tab and refreshes the approved plan, adherence count, and recent sessions without manual reload.
 
-## 7. Nutrition and Meal Confirmation
+## 7. HealthKit Quick-Complete
 
-The active schedule places **Next meal** first with local time, planned foods, quantities, status,
+When Apple Health records a workout on a day the user has a scheduled Tracend workout but no
+completed session, Train presents a prompt card instead of the normal **Start workout** button:
+
+- Status chip: **Apple Health detected workout** with `heart_fill` icon.
+- Workout name.
+- Explanation: *Apple Health recorded a [N] min workout [today / yesterday / on Mon D]. Did you complete [workout name]?*
+- Two inline buttons: **Yes, mark complete** (filled) completes the session with HealthKit-backed
+  duration, creates an audit event, and refreshes adherence. **Log manually** (outlined) opens the
+  standard workout execution flow.
+- After either action, the hub refreshes and the prompt is absent on subsequent loads (the
+  already-completed guard prevents duplicate prompts).
+
+The candidate is queried per selected weekday via the lightweight `get_healthkit_completion_candidate`
+RPC. Tapping any weekday in the strip (past or today) fetches the candidate for that date's most
+recent occurrence. Future weekdays are never queried.
+
+This is a deterministic check (HealthKit data exists, no completed session exists) combined with
+explicit user approval. The auto-completed session records `'Marked complete from Apple Health
+evidence'` in its notes and writes an `audit_events` row with `action_code='workout.auto_completed'`.
+
+The weekday strip shows a green checkmark circle for completed days and a gray dot for planned-only
+days. The workout hero card displays a "Completed" pill and "View workout" (outlined) button for
+days with a completed session.
+
+## 8. Nutrition and Meal Confirmation
 and **Log meal**. A vertical day timeline distinguishes upcoming, due, logged, skipped, and optional
 items. Macro totals remain secondary and include confirmed consumption only.
 
@@ -244,7 +270,7 @@ AI observation                 Confirmed meal
   explaining that the meal leaves daily totals.
 - Failure offers **Retry**, **Enter manually**, and **Delete photo**.
 
-## 8. Progress Review
+## 9. Progress Review
 
 ### Measurements
 
@@ -287,7 +313,7 @@ The user selects two standardized sets. Show photos privately, measurement/perfo
 confidence-qualified visual observations, and **AI visual estimate, not a body-composition
 measurement**. Facial recognition, medical inference, and unrelated trait inference are prohibited.
 
-## 9. Persistent Change Approval
+## 10. Persistent Change Approval
 
 `Decision indicates proposal → Proposal diff → Evidence → Accept / Reject / Request revision → Result`
 
@@ -298,7 +324,7 @@ measurement**. Facial recognition, medical inference, and unrelated trait infere
 - Request revision preserves the active plan.
 - Stale proposals cannot be accepted; explain what changed.
 
-## 10. Weekly Review
+## 11. Weekly Review
 
 Use an editorial sequence rather than a dashboard wall:
 
@@ -318,7 +344,7 @@ failed, and ready states remain explicit while the approved plan stays usable. A
 the week, deterministic/no-AI label, evidence counts, missing categories, unchanged plan/targets,
 next focus, and a **Mark reviewed** acknowledgement action.
 
-## 11. HealthKit and Permissions
+## 12. HealthKit and Permissions
 
 `Contextual prompt → Explain exact value/types → iOS permission sheet → Sync → Data status`
 
@@ -333,7 +359,7 @@ next focus, and a **Mark reviewed** acknowledgement action.
 - Revocation keeps manual features usable and explains iOS settings.
 - Sync shows date range and last success instead of an indefinite spinner.
 
-## 12. Privacy, Export, and Deletion
+## 13. Privacy, Export, and Deletion
 
 ### Account and AI usage
 
@@ -368,7 +394,7 @@ data, export, and deletion.
 - Withdrawing photo-AI consent stops new processing and applies
   [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md).
 
-## 13. Degraded and Edge States
+## 14. Degraded and Edge States
 
 | State             | Required behavior                                                             |
 | ----------------- | ----------------------------------------------------------------------------- |
@@ -386,7 +412,7 @@ An expired persisted owner session is refreshed before account restoration and b
 generation. If refresh is no longer valid, the app asks the owner to sign out and sign in again
 instead of presenting a generic queue failure.
 
-## 14. Screen Acceptance Checklist
+## 15. Screen Acceptance Checklist
 
 Every screen must:
 

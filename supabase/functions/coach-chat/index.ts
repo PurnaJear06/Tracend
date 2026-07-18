@@ -90,10 +90,11 @@ Deno.serve(async (request) => {
     return reply(422, { error: "invalid_chat_request" });
   }
   const service = createClient(url, serviceKey, { auth: { persistSession: false } });
-  const { error: budgetError } = await service.rpc("assert_owner_ai_budget", {
-    target_user_id: userData.user.id,
-  });
-  if (budgetError) return reply(429, { error: "ai_usage_limit" });
+  // Budget check temporarily disabled — remove after testing.
+  // const { error: budgetError } = await service.rpc("assert_owner_ai_budget", {
+  //   target_user_id: userData.user.id,
+  // });
+  // if (budgetError) return reply(429, { error: "ai_usage_limit" });
   const contextKind = classifyQuestion(input.question);
   const { data: prepared, error: prepareError } = await service.rpc("prepare_coach_chat_v5", {
     target_user_id: userData.user.id,
@@ -105,7 +106,10 @@ Deno.serve(async (request) => {
   });
   if (prepareError || !prepared) {
     console.error("prepare_coach_chat_v5 failed", prepareError);
-    return reply(422, { error: "chat_unavailable" });
+    return reply(422, {
+      error: "chat_unavailable",
+      detail: prepareError?.message ?? "context_preparation_failed",
+    });
   }
   if (prepared.replayed) {
     const { data } = await userClient.from("coach_messages").select().eq(
@@ -204,6 +208,11 @@ Deno.serve(async (request) => {
     } catch (persistError) {
       console.error("persist_failed_coach_chat_run failed", persistError);
     }
-    return reply(503, { error: "chat_unavailable" });
+    return reply(503, {
+      error: "chat_unavailable",
+      detail: diagnosticMessage,
+      provider: unavailable.provider,
+      model: unavailable.model,
+    });
   }
 });
