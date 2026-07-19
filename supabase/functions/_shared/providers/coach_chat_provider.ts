@@ -56,7 +56,7 @@ const answerSchema = {
   required: ["answer", "evidence", "missing_data", "safety_state", "suggested_follow_ups"],
 } as const;
 
-function deterministicBoundary(question: string): CoachChatAnswerV1 | null {
+export function deterministicBoundary(question: string): CoachChatAnswerV1 | null {
   const normalized = question.toLowerCase();
   const emergency = [
     "chest pain",
@@ -104,8 +104,10 @@ export class CoachChatUnavailableError extends Error {
     readonly provider: "mock" | "gemini" | "groq",
     readonly model: string,
     readonly failureReason: string = "unknown",
+    readonly retryAfterSeconds: number | null = null,
   ) {
-    super(`coach_chat_unavailable: ${failureReason}`);
+    const retrySuffix = retryAfterSeconds != null ? ` (retry in ${retryAfterSeconds}s)` : "";
+    super(`coach_chat_unavailable: ${failureReason}${retrySuffix}`);
   }
 }
 
@@ -200,7 +202,114 @@ function compactValue(value: unknown): unknown {
     }
     return Object.keys(result).length === 0 ? undefined : result;
   }
+  // Truncate long string values — they are the #1 cause of context bloat.
+  // Full message content, narrative summaries, and rationales can each be
+  // thousands of chars; the model only needs a short signal, not the full text.
+  if (typeof value === "string" && value.length > 500) {
+    return value.slice(0, 500) + "…";
+  }
   return value;
+}
+
+/** Deep-truncates every string in an object tree to maxLength chars.
+ *  Used as a progressive fallback when the context is still too large after
+ *  compacting and targeted trimming. */
+function deepTruncateStrings(obj: unknown, maxLength: number): unknown {
+  if (typeof obj === "string" && obj.length > maxLength) {
+    return obj.slice(0, maxLength) + "…";
+  }
+  if (Array.isArray(obj)) return obj.map((v) => deepTruncateStrings(v, maxLength));
+  if (obj && typeof obj === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      result[k] = deepTruncateStrings(v, maxLength);
+    }
+    return result;
+  }
+  return obj;
+}
+
+/**
+ * Ensures the serialised context fits within maxLength chars by progressively
+ * trimming the largest contributors.  Never throws — returns a safe fallback
+ * on any failure so the chat pipeline stays available even under budget pressure.
+ */
+function fitContextToLimit(bounded: string, maxLength: number, question: string): string {
+  if (bounded.length <= maxLength) return bounded;
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(bounded);
+  } catch {
+    console.warn(
+      `fitContextToLimit: bounded JSON parse failed (${bounded.length} chars), returning fallback`,
+    );
+    return JSON.stringify({ question, context: { warning: "context_parse_failed" } });
+  }
+
+  const ctx = (parsed.context ?? parsed) as Record<string, unknown> | undefined;
+  if (!ctx || typeof ctx !== "object") {
+    console.warn(
+      "fitContextToLimit: resolved context is not an object, returning fallback",
+    );
+    return JSON.stringify({ question, context: { warning: "context_invalid_structure" } });
+  }
+
+  // --- Tier 1: trim known high-volume free-text fields ---
+  const messageArrays = ["fts_messages", "ftsm", "recent_other_conversations"];
+  for (const key of messageArrays) {
+    const arr = (ctx as Record<string, unknown>)[key];
+    if (Array.isArray(arr)) {
+      (ctx as Record<string, unknown>)[key] = arr.map(
+        (msg: Record<string, unknown>) => ({
+          ...msg,
+          content: typeof msg.content === "string" ? msg.content.slice(0, 200) : msg.content,
+        }),
+      );
+    }
+  }
+
+  // Trim long narrative / journal summary strings.
+  const longTextKeys = ["summary", "headline", "proposed_training", "proposed_nutrition"];
+  for (const key of longTextKeys) {
+    const val = (ctx as Record<string, unknown>)[key];
+    if (typeof val === "string" && val.length > 300) {
+      (ctx as Record<string, unknown>)[key] = val.slice(0, 300) + "…";
+    }
+  }
+
+  // Re-wrap if we unwrapped the outer envelope.
+  if (parsed.context !== undefined) {
+    parsed.context = ctx;
+  } else {
+    parsed = ctx as Record<string, unknown>;
+  }
+  bounded = JSON.stringify(parsed);
+  if (bounded.length <= maxLength) return bounded;
+
+  // --- Tier 2: aggressive string truncation across the entire tree ---
+  if (parsed.context !== undefined) {
+    parsed.context = deepTruncateStrings(ctx, 150);
+  } else {
+    parsed = deepTruncateStrings(ctx, 150) as Record<string, unknown>;
+  }
+  bounded = JSON.stringify(parsed);
+  if (bounded.length <= maxLength) return bounded;
+
+  // --- Tier 3: last resort — hard truncate the raw JSON string ---
+  // This produces invalid JSON but keeps the pipeline alive.  The model
+  // receives a partial context; worst case it returns low-confidence output
+  // which is safer than refusing to answer entirely.
+  console.warn(
+    `fitContextToLimit: hard-truncating context from ${bounded.length} to ${maxLength} chars`,
+  );
+  const chopped = bounded.slice(0, maxLength);
+  try {
+    JSON.parse(chopped);
+  } catch {
+    return JSON.stringify({ question, context: { warning: "context_hard_truncated" } });
+  }
+  return chopped;
 }
 
 export function compactContext(context: Record<string, unknown>): Record<string, unknown> {
@@ -291,12 +400,15 @@ export async function generateCoachChat(
       "ai_disabled_or_unconfigured",
     );
   }
-  const ctx = groqEnabled ? compactContext(context as Record<string, unknown>) : context;
-  let bounded = JSON.stringify({ question, context: ctx });
-  if (bounded.length > 22000) throw new Error("chat_context_too_large");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 25_000);
   try {
+    const ctx = groqEnabled ? compactContext(context as Record<string, unknown>) : context;
+    let bounded = JSON.stringify({ question, context: ctx });
+    console.log(
+      `coach-chat context: original=${JSON.stringify(context).length} compacted=${bounded.length}`,
+    );
+    bounded = fitContextToLimit(bounded, 32_000, question);
     if (groqEnabled) {
       let reasoningInputUnits = 0;
       let reasoningOutputUnits = 0;
@@ -370,7 +482,7 @@ export async function generateCoachChat(
           body: JSON.stringify({
             model: groqModel,
             temperature: 0.2,
-            max_completion_tokens: 800,
+            max_completion_tokens: 2000,
             reasoning_effort: "none",
             reasoning_format: "hidden",
             response_format: { type: "json_object" },
@@ -476,7 +588,15 @@ export async function generateCoachChat(
         }),
       },
     );
-    if (!response.ok) throw new Error("gemini_chat_failed");
+    if (!response.ok) {
+      const geminiBody = await response.text().catch(() => "");
+      throw Object.assign(
+        new Error(
+          `gemini_chat_failed status=${response.status} body=${geminiBody.slice(0, 300)}`,
+        ),
+        { status: response.status, body: geminiBody },
+      );
+    }
     const payload = await response.json() as Record<string, unknown>;
     const candidates = payload.candidates;
     const parts = Array.isArray(candidates)
@@ -509,10 +629,24 @@ export async function generateCoachChat(
     };
   } catch (inner) {
     const cause = inner instanceof Error ? inner.message : String(inner);
+    let retryAfter: number | null = null;
+    if (inner instanceof Error && "status" in inner) {
+      const err = inner as Error & { status: number; body?: string };
+      if (err.status === 429) {
+        const body = err.body ?? cause;
+        const groqMatch = body.match(/try again in ([\d.]+)s/i);
+        if (groqMatch) {
+          retryAfter = Math.ceil(parseFloat(groqMatch[1]));
+        } else if (body.includes("RESOURCE_EXHAUSTED") || body.includes("429")) {
+          retryAfter = 60;
+        }
+      }
+    }
     throw new CoachChatUnavailableError(
       provider === "groq" ? "groq" : provider === "gemini" ? "gemini" : "mock",
       provider === "groq" ? groqModel || "unconfigured" : model || "unconfigured",
       cause,
+      retryAfter,
     );
   } finally {
     clearTimeout(timeout);

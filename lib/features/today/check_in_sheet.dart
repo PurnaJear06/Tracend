@@ -75,7 +75,8 @@ class _CheckInSheetState extends State<_CheckInSheet> {
           context,
         ).showSnackBar(const SnackBar(content: Text('Check-in saved')));
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(

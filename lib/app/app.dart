@@ -30,7 +30,8 @@ class _TracendAppState extends State<TracendApp> {
       );
       if (stored == null) return;
       await _controller.setMode(_modeFromName(stored), persist: false);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       // Preferences are unavailable in some widget-test hosts.
     }
   }
@@ -78,7 +79,8 @@ class TracendThemeController extends ChangeNotifier {
           'tracend_theme_mode',
           value.name,
         );
-      } catch (_) {
+      } catch (e) {
+        debugPrint('Non-critical error: $e');
         // The selected mode still applies for the current process.
       }
     }

@@ -271,7 +271,25 @@ the known fixture measurement is explicitly superseded. The iOS client now perfo
 31-day Apple Health backfill, then returns to seven-day overlap sync. pgTAP passes 264/264 and
 Flutter passes 56/56. DeepSeek was rejected for restricted data after official privacy review.
 
-## 10. Deferred Until Measured Need
+## 10. Stability Hardening (2026-07-19)
+
+A 7-phase cross-layer audit applied security, testing, operational, and code-quality hardening while
+keeping the full pre-deploy gate green:
+
+| Phase | Scope | Outcome |
+|-------|-------|---------|
+| 1 | Security guards | JWT enforcement, AI budget re-enabled, Dependabot, Gitleaks pre-commit, CI dep freshness |
+| 2 | Backend tests | 4 pgTAP files (74 assertions), 3 Deno test files (35 tests), 4 contract test additions |
+| 3 | Operational safeguards | Session pooler, `backup-db.sh`, `rollback-function.sh`, `health-check` Edge Function, structured `_shared/logger.ts` |
+| 4 | Code cleanup | `_shared/auth.ts` deduplicating 7 Edge Functions, `TracendLoadingIndicator` widget, 38 catch-block diagnostics, coach screen timer refactor |
+| 5 | Observability (Sentry) | Flutter `sentry_flutter` + `beforeSend` scrubber (19 sensitive fields redacted), Edge Function `_shared/sentry.ts`, DSN wired into coach-chat and meal-analyze |
+| 6 | Auth hardening | Password min 8 + upper/lower/digit, re-auth for password change, email confirmations, session timeouts deferred (Pro plan) |
+| 7 | Documentation sync | Updated testing strategy, progress context, AGENTS.md for backup/rollback/Sentry |
+
+All gates pass: Deno 92 tests, Flutter 85 tests, iOS build 25.1 MB, Edge Functions deployed with
+Sentry wiring.
+
+## 11. Deferred Until Measured Need
 
 ## 9.1 Production Rebuild
 
@@ -285,7 +303,7 @@ Do not add NestJS, Railway, a separate API server, pgvector, autonomous agents, 
 microservices, medical reports, Android, subscriptions, social features, or public-store
 infrastructure. [ARCHITECTURE.md](./ARCHITECTURE.md) controls adoption.
 
-## 11. Next Action
+## 12. Next Action
 
 1. Redownload the owner `.tracendexport` to the external SSD and validate its decryption using
    `BETA_OPERATIONS.md`; never test deletion on the owner.

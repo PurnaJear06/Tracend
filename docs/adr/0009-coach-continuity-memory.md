@@ -35,11 +35,9 @@ is relaxed.
   summarization is deferred to evaluation gate
 - tsvector remains within "no vector RAG" invariant (ARCHITECTURE.md §11)
 - Token budget net increase: ~100 input + ~100 output (well within 8K cap)
-- Provider prompts (Groq and Gemini) restructured to use multi-role messages
-  (`system` + `user`) per AI_SAFETY_SPEC §11 — user text is now the primary
-  content of the `user` turn and prepared context is delimited supporting
-  evidence, not bundled with system instructions. The prior single-turn
-  "Lead with one clear recommendation" instruction was removed because it
-  forced plan-style answers even for greetings. Temperature on the Groq path
-  is bumped from 0.15 to 0.2 for natural conversational tone; Gemini unchanged
-  pending regression evaluation.
+- Provider prompts (Groq and Gemini) restructured to use multi-role messages (`system` + `user`) per
+  AI_SAFETY_SPEC §11 — user text is now the primary content of the `user` turn and prepared context
+  is delimited supporting evidence, not bundled with system instructions. The prior single-turn
+  "Lead with one clear recommendation" instruction was removed because it forced plan-style answers
+  even for greetings. Temperature on the Groq path is bumped from 0.15 to 0.2 for natural
+  conversational tone; Gemini unchanged pending regression evaluation.

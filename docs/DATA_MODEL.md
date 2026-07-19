@@ -317,15 +317,15 @@ entry is ongoing (`until is null`). Forced RLS, read-only for authenticated.
 
 ### `user_preferences`
 
-Confirmed food, training, schedule, communication, notification, and lifestyle preferences. Each
-row stores `category`, `key`, `value`, `provenance` (onboarding, chat_statement, repeated_signal,
+Confirmed food, training, schedule, communication, notification, and lifestyle preferences. Each row
+stores `category`, `key`, `value`, `provenance` (onboarding, chat_statement, repeated_signal,
 manual), `confirmed_at`, and `superseded_at`. Only one active row per user+key. Model-inferred
 preferences cannot become confirmed automatically. Forced RLS, read-only for authenticated.
 
 ### `coach_session_summaries`
 
-Append-only deterministic daily journal entries. Each row contains `coaching_date`, `summary`
-(1-2 sentences), `thread_id`, and `key_snapshot_ids`. Capped at 30 recent entries per user; oldest
+Append-only deterministic daily journal entries. Each row contains `coaching_date`, `summary` (1-2
+sentences), `thread_id`, and `key_snapshot_ids`. Capped at 30 recent entries per user; oldest
 entries deleted on insertion. Forced RLS, read-only for authenticated.
 
 ### `feature_snapshots`

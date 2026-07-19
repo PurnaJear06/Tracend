@@ -205,7 +205,8 @@ ideas use the separate **Suggested next actions** heading.
 - Pain is reachable without an overflow menu.
 - Autosave locally and expose offline/sync state without interruption.
 - Later corrections to a completed session create audited amendments.
-- Completing a workout pops back to the Train tab and refreshes the approved plan, adherence count, and recent sessions without manual reload.
+- Completing a workout pops back to the Train tab and refreshes the approved plan, adherence count,
+  and recent sessions without manual reload.
 
 ## 7. HealthKit Quick-Complete
 
@@ -214,26 +215,30 @@ completed session, Train presents a prompt card instead of the normal **Start wo
 
 - Status chip: **Apple Health detected workout** with `heart_fill` icon.
 - Workout name.
-- Explanation: *Apple Health recorded a [N] min workout [today / yesterday / on Mon D]. Did you complete [workout name]?*
+- Explanation: _Apple Health recorded a [N] min workout [today / yesterday / on Mon D]. Did you
+  complete [workout name]?_
 - Two inline buttons: **Yes, mark complete** (filled) completes the session with HealthKit-backed
   duration, creates an audit event, and refreshes adherence. **Log manually** (outlined) opens the
   standard workout execution flow.
 - After either action, the hub refreshes and the prompt is absent on subsequent loads (the
   already-completed guard prevents duplicate prompts).
 
-The candidate is queried per selected weekday via the lightweight `get_healthkit_completion_candidate`
-RPC. Tapping any weekday in the strip (past or today) fetches the candidate for that date's most
-recent occurrence. Future weekdays are never queried.
+The candidate is queried per selected weekday via the lightweight
+`get_healthkit_completion_candidate` RPC. Tapping any weekday in the strip (past or today) fetches
+the candidate for that date's most recent occurrence. Future weekdays are never queried.
 
 This is a deterministic check (HealthKit data exists, no completed session exists) combined with
-explicit user approval. The auto-completed session records `'Marked complete from Apple Health
-evidence'` in its notes and writes an `audit_events` row with `action_code='workout.auto_completed'`.
+explicit user approval. The auto-completed session records
+`'Marked complete from Apple Health
+evidence'` in its notes and writes an `audit_events` row with
+`action_code='workout.auto_completed'`.
 
 The weekday strip shows a green checkmark circle for completed days and a gray dot for planned-only
 days. The workout hero card displays a "Completed" pill and "View workout" (outlined) button for
 days with a completed session.
 
 ## 8. Nutrition and Meal Confirmation
+
 and **Log meal**. A vertical day timeline distinguishes upcoming, due, logged, skipped, and optional
 items. Macro totals remain secondary and include confirmed consumption only.
 

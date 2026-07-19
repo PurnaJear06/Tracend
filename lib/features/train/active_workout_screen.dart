@@ -95,7 +95,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         _idempotencyKey,
         localDate: widget.sessionDate,
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       _offline = true;
       _sessionId ??= 'pending-$_idempotencyKey';
     }
@@ -156,7 +157,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     try {
       await widget.repository.sync(id, _revision, draft);
       _offline = false;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       _offline = true;
     } finally {
       if (mounted) setState(() => _syncing = false);
@@ -187,7 +189,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           context,
         ).showSnackBar(const SnackBar(content: Text('Workout completed')));
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

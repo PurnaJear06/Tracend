@@ -69,9 +69,9 @@ accepted as a permanent retry.
   completion idempotency (replayed), missing-HealthKit-data guard, inactive-plan guard, and audit
   event shape.
 - `get_healthkit_completion_candidate`: test authentication required, cross-user denial, returns
-  candidate when HealthKit workout exists for the date and no completed session exists, returns
-  null when no HealthKit data, returns null when session already completed for that date and
-  planned workout, returns null when no planned workout matches the date's weekday.
+  candidate when HealthKit workout exists for the date and no completed session exists, returns null
+  when no HealthKit data, returns null when session already completed for that date and planned
+  workout, returns null when no planned workout matches the date's weekday.
 - Weekly review tests additionally require opaque minimal payloads, immutable snapshot linkage,
   forced-RLS owner reads, deterministic evidence totals, zero generated proposals, acknowledgement
   ownership, and approved-plan availability while a job is delayed.
@@ -126,6 +126,42 @@ trusted server fixtures.
 6. Accept proposal and activate exactly one new version.
 7. Export and verify user ownership and contents.
 8. Delete account and verify propagation across storage layers.
+
+### Contract Tests (Cross-Layer)
+
+Contract tests verify that layers can successfully communicate with each other. Unlike unit tests
+(which mock dependencies), these validate real response shapes across boundaries.
+
+| Layer              | Location                                        | What It Tests                                        | Requires                                    |
+| ------------------ | ----------------------------------------------- | ---------------------------------------------------- | ------------------------------------------- |
+| **Deno → DB**      | `supabase/functions/_tests/db_contract_test.ts` | RPCs return valid shapes the Edge Functions expect   | Local Supabase running (`CONTRACT_URL` set) |
+| **Flutter → RPC**  | `test/contract/*_contract_test.dart`            | Flutter can parse real RPC response shapes           | JSON fixtures (no Supabase needed)          |
+| **Flutter → Edge** | `test/contract/*_contract_test.dart`            | Flutter can parse real Edge Function response shapes | JSON fixtures                               |
+
+**Fixture-based contract tests** (Flutter → RPC / Flutter → Edge) use versioned JSON snapshots under
+`test/contract/fixtures/` that represent the exact shape the server is expected to return. When the
+server response shape changes, the fixtures must be updated — and the act of updating them triggers
+a manual review of whether Flutter's parsing code also needs updating.
+
+**Live contract tests** (Deno → DB) connect to local Supabase when `CONTRACT_URL` is set (by
+`pre-deploy.sh` when local Supabase is running). These tests call real RPCs and verify the returned
+shape matches what Edge Functions expect. When local Supabase is not running, these tests are
+gracefully skipped.
+
+### Pre-Deploy Gate (CI Equivalent)
+
+Run `./scripts/pre-deploy.sh` before every production `db push`. It executes:
+
+1. Colima + Supabase start → db reset (all migrations applied cleanly)
+2. pgTAP database tests
+3. Deno format + lint + test (including DB contract tests when Supabase is up)
+4. Flutter static analysis
+5. Flutter unit/widget/contract tests
+6. Flutter iOS release build
+7. Production migration dry-run
+
+The gate fails on the first error. A passing gate means the change is safe to deploy. See also
+`.github/workflows/ci.yml` for the automated version.
 
 ## 3. AI Evaluation
 
@@ -225,7 +261,7 @@ measured vertical slice.
 
 ## 8. CI and TestFlight Gates
 
-CI eventually runs formatting, strict Dart/TypeScript analysis, unit and integration tests, Supabase
+CI runs formatting, strict Dart/TypeScript analysis, unit and integration tests, Supabase
 migration/RLS/grant validation, Edge Function schema tests, Flutter tests, AI evaluation smoke
 tests, secret scanning, and builds.
 
@@ -240,3 +276,63 @@ Before TestFlight expansion:
 - known limitations and rollback owner are recorded.
 
 Exact commands belong in `DEVELOPMENT_GUIDE.md` only after scaffolding exists.
+
+## 9. Operational Safeguards
+
+### 9.1 Database Backup
+
+`scripts/backup-db.sh` produces a `pg_dump` via the Supabase session pooler into
+`.tooling/backups/YYYY-MM-DD/` with a SHA-256 manifest. Run before every production migration.
+Supports `--schema-only` for lightweight schema backups and `--data-only` for data-only dumps.
+
+### 9.2 Edge Function Rollback
+
+`scripts/rollback-function.sh <name>` queries the function's deployment history via `git log`,
+checks out the prior committed version, and redeploys with `--use-api`. Used when a deployed
+Edge Function needs an immediate revert to the previous version.
+
+### 9.3 Health Check
+
+`supabase/functions/health-check/` — a no-auth GET endpoint that returns DB connectivity status
+and a version string. Used by external monitors; does not expose internal details.
+
+### 9.4 Structured Logging
+
+`supabase/functions/_shared/logger.ts` — JSON-structured logging with correlation ID propagation
+and `LOG_LEVEL` env-var control. Wired into `coach-chat` and `meal-analyze`. Sensitive fields
+(health values, meal content, photo URLs, prompt text) are excluded by design.
+
+## 10. Crash Reporting (Sentry)
+
+Sentry captures unhandled crashes and explicit error events in both Flutter and Edge Functions.
+The DSN is the only identifier reaching the client; the project lives at
+`sentry.io` under `purnajear/flutter`.
+
+| Layer | Mechanism | DSN Source |
+|-------|-----------|------------|
+| Flutter | `sentry_flutter` SDK — `SentryFlutter.init` with `runZonedGuarded` + `FlutterError.onError` bridge | `--dart-define SENTRY_DSN` (empty = disabled) |
+| Edge Functions | `_shared/sentry.ts` — HTTP `fetch` to Sentry store endpoint, fires silently | `Deno.env.get("SENTRY_DSN")` (Edge Function secret) |
+
+**beforeSend scrubber** (Flutter): redacts 19 sensitive keys — `weight_kg`, `sleep_minutes`,
+`resting_heart_rate_bpm`, `heart_rate`, `step_count`, `blood_pressure`, `meal_content`,
+`meal_description`, `food_items`, `ingredients`, `photo_url`, `signed_url`, `image_url`,
+`object_key`, `prompt`, `prompt_text`, `question`, `answer_text`, `answer_payload`.
+
+Edge Functions report exceptions from the main `coach-chat` and `meal-analyze` catch blocks
+with `userId`, `functionName`, and `correlationId` context. Failures are silent — a Sentry
+outage never affects the caller.
+
+## 11. Auth Hardening
+
+Production Supabase Auth settings applied 2026-07-19:
+
+| Setting | Value |
+|---------|-------|
+| Password minimum length | 8 |
+| Password character requirements | lowercase + uppercase + digit |
+| Re-authentication for password change | Required |
+| Email confirmation for new signups | Required |
+| Session inactivity timeout | Deferred (Pro plan) |
+| Session timebox | Deferred (Pro plan) |
+
+These do not affect existing sessions. New signups must meet the password requirements.

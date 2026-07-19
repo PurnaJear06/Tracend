@@ -633,7 +633,8 @@ class _AccountDeletionSheetState extends State<_AccountDeletionSheet> {
       if (mounted) {
         setState(() => _error = 'Your account password was not accepted.');
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(
           () => _error =
@@ -763,7 +764,8 @@ class _PrivacyExportSheetState extends State<_PrivacyExportSheet> {
       if (mounted) {
         setState(() => _error = 'Your account password was not accepted.');
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(
           () =>
@@ -795,7 +797,8 @@ class _PrivacyExportSheetState extends State<_PrivacyExportSheet> {
           ),
         );
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(
           () => _error = 'The secure download could not be opened. Try again.',
@@ -1000,7 +1003,8 @@ class _NotificationSheetState extends State<_NotificationSheet> {
             ? 'Notifications are disabled in iOS Settings.'
             : 'Notifications could not be updated. Try again.';
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       setState(() {
         _saving = false;
         _error = 'Notifications could not be updated. Try again.';

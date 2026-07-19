@@ -34,30 +34,26 @@ This file is current-state handoff, not durable architecture. Keep detailed hist
   adherence/compliance → `nutrition_focus`. `compactContext` has 12 new abbreviations for v5 fields.
   Per-pose photo rows replace the monolithic capture flow in Flutter. Schema version: 3.0. ADR 0008
   records the decision. Deno 56/56, Flutter 68/68.
-- **Coach Continuity Memory (v6 + v16 prompt):** three migrations through
-  `20260717110000` add `coach_narrative_entries`, `user_preferences`, and
-  `coach_session_summaries` (all forced RLS), tsvector FTS on `coach_messages`,
-  `prepare_coach_chat_v5` (wraps v4 with narrative, preferences, journal),
-  `persist_coach_narrative_entry`, `persist_coach_preference`,
-  `persist_coach_session_summary`, `search_coach_messages`. `coach-chat` v16 adds
-  preference detection, FTS retrieval of relevant past messages, deterministic
-  session summary creation, and `preference_prompt` in response. Provider contract
-  extended to `CoachChatAnswerV2` with optional `reasoning_chain`. All
-  service-only grants. ADR 0009. **Hosted: migrations through
-  `20260717110004_fix_coaching_date_ambiguous.sql` are live.** Four post-deploy
-  fix migrations exist — see `docs/worklog/2026-07-17-coach-continuity.md` for
-  the bug-and-fix sequence (v4→v5 recursion, schema_version constraint,
-  `jsonb_agg(... ORDER BY ...)` unsupported on hosted PG ⇒ subquery rewrite,
-  `coaching_date` PL/pgSQL variable ambiguity ⇒ table-qualified columns).
-  Prompt restructure in `coach_chat_provider.ts`: Groq and Gemini request bodies
-  now use multi-role `system` + `user` messages (system owns identity, schema,
-  evidence rules; user carries the user's raw message first, prepared context
-  second). The prior "Lead with one clear recommendation" instruction is removed
-  because it produced the same plan-style answer for every input including
+- **Coach Continuity Memory (v6 + v16 prompt):** three migrations through `20260717110000` add
+  `coach_narrative_entries`, `user_preferences`, and `coach_session_summaries` (all forced RLS),
+  tsvector FTS on `coach_messages`, `prepare_coach_chat_v5` (wraps v4 with narrative, preferences,
+  journal), `persist_coach_narrative_entry`, `persist_coach_preference`,
+  `persist_coach_session_summary`, `search_coach_messages`. `coach-chat` v16 adds preference
+  detection, FTS retrieval of relevant past messages, deterministic session summary creation, and
+  `preference_prompt` in response. Provider contract extended to `CoachChatAnswerV2` with optional
+  `reasoning_chain`. All service-only grants. ADR 0009. **Hosted: migrations through
+  `20260717110004_fix_coaching_date_ambiguous.sql` are live.** Four post-deploy fix migrations exist
+  — see `docs/worklog/2026-07-17-coach-continuity.md` for the bug-and-fix sequence (v4→v5 recursion,
+  schema_version constraint, `jsonb_agg(... ORDER BY ...)` unsupported on hosted PG ⇒ subquery
+  rewrite, `coaching_date` PL/pgSQL variable ambiguity ⇒ table-qualified columns). Prompt
+  restructure in `coach_chat_provider.ts`: Groq and Gemini request bodies now use multi-role
+  `system` + `user` messages (system owns identity, schema, evidence rules; user carries the user's
+  raw message first, prepared context second). The prior "Lead with one clear recommendation"
+  instruction is removed because it produced the same plan-style answer for every input including
   greetings. Diagnostic stubs added during debugging were removed; safe
-  `persist_failed_coach_chat_run` try/catch is retained. Pending: run pgTAP
-  locally (need Colima start), regression-eval the new prompt at scale, and
-  decide whether to bump Gemini temperature to match Groq.
+  `persist_failed_coach_chat_run` try/catch is retained. Pending: run pgTAP locally (need Colima
+  start), regression-eval the new prompt at scale, and decide whether to bump Gemini temperature to
+  match Groq.
 - **Coach Context v4 deployed:** migrations `20260716120000_coach_context_v4.sql`,
   `20260716121000_coach_context_v4_enrichment.sql`, and
   `20260716122000_coach_context_v4_enrichment.sql` are hosted. `coach-chat` is redeployed with

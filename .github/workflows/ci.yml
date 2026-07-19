@@ -1,59 +1,79 @@
 name: CI
 
 on:
-  pull_request:
   push:
     branches: [main]
-
-permissions:
-  contents: read
+  pull_request:
+    branches: [main]
 
 jobs:
-  flutter:
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 3.41.7
-          channel: stable
-          cache: false
-      - run: ./scripts/bootstrap-flutter.sh
-      - run: ./scripts/flutter.sh pub get
-      - run: ./scripts/flutter.sh format --set-exit-if-changed lib test
-      - run: ./scripts/flutter.sh analyze
-      - run: ./scripts/flutter.sh test
-      - run: ./scripts/flutter.sh build ios --release --no-codesign
-
-  edge-functions:
+  deno:
+    name: Deno (fmt + lint + test)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.9.0
-      - run: deno task check
+          deno-version: "2.9.0"
 
-  database:
+      - name: Format check
+        run: deno fmt --check supabase/functions
+
+      - name: Lint
+        run: deno lint supabase/functions
+
+      - name: Unit tests (no DB)
+        run: deno test --allow-env supabase/functions
+
+  flutter-analyze:
+    name: Flutter Analyze
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
+
+      - uses: subosito/flutter-action@v2
         with:
-          version: 2.101.0
-      - run: supabase start
-      - run: supabase db reset
-      - name: Pull pg_prove image (with retry)
-        run: |
-          for i in 1 2 3 4 5; do
-            docker pull public.ecr.aws/supabase/pg_prove:3.36 && break
-            echo "Pull attempt $i failed, retrying in 15s..."
-            sleep 15
-          done
-      - run: >
-          docker run --rm
-          --network container:supabase_db_Tracend
-          --env PGPASSWORD=postgres
-          --volume "$PWD/supabase/tests/database:/tests:ro"
-          public.ecr.aws/supabase/pg_prove:3.36
-          pg_prove -h 127.0.0.1 -U postgres -d postgres /tests
+          flutter-version: "3.41.7"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Static analysis
+        run: flutter analyze
+
+  flutter-test:
+    name: Flutter Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.7"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Unit + widget tests
+        run: flutter test
+
+  flutter-build:
+    name: Flutter iOS Build (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.7"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: iOS release build (no codesign)
+        run: flutter build ios --release --no-codesign

@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "sources": [
+    {
+      "source": "healthkit",
+      "available": true,
+      "latest_date": "2026-07-18",
+      "count": 7
+    },
+    {
+      "source": "nutrition",
+      "available": true,
+      "latest_date": "2026-07-18",
+      "count": 5
+    },
+    {
+      "source": "workout_history",
+      "available": true,
+      "latest_date": "2026-07-18",
+      "count": 15
+    },
+    {
+      "source": "measurements",
+      "available": true,
+      "latest_date": "2026-07-15",
+      "count": 3
+    },
+    {
+      "source": "sleep",
+      "available": false,
+      "latest_date": null,
+      "count": 0
+    }
+  ]
+}

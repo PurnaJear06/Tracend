@@ -35,6 +35,8 @@ class _CoachScreenState extends State<CoachScreen> {
   bool _generating = false;
   String? _error;
   Map<String, dynamic>? _preferencePrompt;
+  StreamSubscription<int>? _cooldownSubscription;
+  int? _cooldownRemaining;
 
   @override
   void initState() {
@@ -51,7 +53,24 @@ class _CoachScreenState extends State<CoachScreen> {
   void dispose() {
     _composer.dispose();
     _scroll.dispose();
+    _cooldownSubscription?.cancel();
     super.dispose();
+  }
+
+  void _startCooldown(int seconds) {
+    _cooldownSubscription?.cancel();
+    final stream = Stream.periodic(const Duration(seconds: 1), (tick) => seconds - tick - 1)
+        .take(seconds);
+    setState(() => _cooldownRemaining = seconds);
+    _cooldownSubscription = stream.listen(
+      (remaining) {
+        if (!mounted) return;
+        setState(() => _cooldownRemaining = remaining);
+      },
+      onDone: () {
+        if (mounted) setState(() => _cooldownRemaining = null);
+      },
+    );
   }
 
   Future<void> _restoreChat() async {
@@ -81,7 +100,8 @@ class _CoachScreenState extends State<CoachScreen> {
         _messages = messages;
         _loadingChat = false;
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(() {
           _loadingChat = false;
@@ -107,7 +127,8 @@ class _CoachScreenState extends State<CoachScreen> {
           _loadingChat = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(() {
           _loadingChat = false;
@@ -183,6 +204,13 @@ class _CoachScreenState extends State<CoachScreen> {
       }
     } catch (e) {
       if (mounted) {
+        int? retrySec;
+        if (e is CoachUnavailableException) {
+          retrySec = e.retryAfterSeconds;
+          if (retrySec != null && retrySec > 0) {
+            _startCooldown(retrySec);
+          }
+        }
         final msg = e is TimeoutException
             ? 'Coach took too long to respond. Please try again.'
             : e.toString().replaceFirst('Exception: ', '').replaceFirst('StateError: ', '');
@@ -226,7 +254,8 @@ class _CoachScreenState extends State<CoachScreen> {
     try {
       final value = await widget.repository.generate();
       if (mounted) setState(() => _decision = Future.value(value));
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(
           () => _error =
@@ -406,7 +435,8 @@ class _CoachScreenState extends State<CoachScreen> {
           ),
           _Composer(
             controller: _composer,
-            enabled: !_sending && _chat != null,
+            enabled: !_sending && _chat != null && _cooldownRemaining == null,
+            cooldownRemaining: _cooldownRemaining,
             onSend: _send,
           ),
         ],
@@ -645,12 +675,16 @@ class _Composer extends StatelessWidget {
     required this.controller,
     required this.enabled,
     required this.onSend,
+    this.cooldownRemaining,
   });
   final TextEditingController controller;
   final bool enabled;
   final VoidCallback onSend;
+  final int? cooldownRemaining;
   @override
-  Widget build(BuildContext context) => SafeArea(
+  Widget build(BuildContext context) {
+    final cooldownActive = (cooldownRemaining ?? 0) > 0;
+    return SafeArea(
     top: false,
     child: DecoratedBox(
       decoration: BoxDecoration(
@@ -676,10 +710,12 @@ class _Composer extends StatelessWidget {
                 minLines: 1,
                 maxLines: 5,
                 maxLength: 2000,
-                decoration: const InputDecoration(
-                  hintText: 'Ask your Coach',
+                decoration: InputDecoration(
+                  hintText: cooldownActive
+                      ? 'Limit reached — retry in ${cooldownRemaining}s'
+                      : 'Ask your Coach',
                   counterText: '',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                 ),
                 textInputAction: TextInputAction.newline,
               ),
@@ -695,4 +731,5 @@ class _Composer extends StatelessWidget {
       ),
     ),
   );
+  }
 }

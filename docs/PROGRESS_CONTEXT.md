@@ -1,37 +1,30 @@
 # Tracend Progress Context
 
-**Active change:** Coach Continuity Memory (ADR-0009) — five-layer structured memory stack
-hosted and deployed. Post-deploy fixes:
-(1) 20260717110001 fixed v4→v5 infinite recursion;
-(2) 20260717110002 expanded schema_version constraint for '4.0';
-(3) 20260717110003 replaced unsupported `jsonb_agg(... ORDER BY ...)` on hosted PG with
-subquery-based ordering for narrative, preferences, and journal aggregation in v5;
-(4) 20260717110004 fixed ambiguous `coaching_date` PL/pgSQL variable vs table column
-(table-qualified the references in the journal query).
-Prompt restructure (coach-chat v16) separates `system` (rules, schema, evidence) from
-`user` (the user's actual message) — previously the user's question was buried inside one
-giant user message alongside the JSON context, causing the model to ignore it and emit the
-same plan-related answer regardless of what was asked. Is now the primary content of the
-user message and the rule "Lead with one clear recommendation" was removed in favour of
-"Answer the user's specific message first."
-`coach-chat` v16 is ACTIVE. Owner should test one chat message (especially greetings and
-casual questions — these previously returned canned plan advice).
+**Active change:** Coach Continuity Memory (ADR-0009) — five-layer structured memory stack hosted
+and deployed. Post-deploy fixes: (1) 20260717110001 fixed v4→v5 infinite recursion; (2)
+20260717110002 expanded schema_version constraint for '4.0'; (3) 20260717110003 replaced unsupported
+`jsonb_agg(... ORDER BY ...)` on hosted PG with subquery-based ordering for narrative, preferences,
+and journal aggregation in v5; (4) 20260717110004 fixed ambiguous `coaching_date` PL/pgSQL variable
+vs table column (table-qualified the references in the journal query). Prompt restructure
+(coach-chat v16) separates `system` (rules, schema, evidence) from `user` (the user's actual
+message) — previously the user's question was buried inside one giant user message alongside the
+JSON context, causing the model to ignore it and emit the same plan-related answer regardless of
+what was asked. Is now the primary content of the user message and the rule "Lead with one clear
+recommendation" was removed in favour of "Answer the user's specific message first." `coach-chat`
+v16 is ACTIVE. Owner should test one chat message (especially greetings and casual questions — these
+previously returned canned plan advice).
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
 ## Required Agent Flow
 
-1. Read `AGENTS.md`.
-2. Read only the authoritative docs relevant to the task.
-3. Read this dashboard.
-4. Open the scoped handoff file for the active workstream.
-5. Inspect actual files before editing.
-6. After material work, update the scoped handoff file and this dashboard.
+1. Read `AGENTS.md` → this dashboard → relevant authority docs → scoped handoff.
+2. Inspect actual files before editing. After work, update handoff + this dashboard.
 
 ## Context Layers
 
-| Layer     | Path                       | Purpose                 | Read by Default |
-| --------- | -------------------------- | ----------------------- | --------------- |
+| Layer     | Path                       | Purpose                  | Read by Default |
+| --------- | -------------------------- | ------------------------ | --------------- |
 | Rules     | `AGENTS.md`                | Mandatory agent behavior | Yes             |
 | Authority | `docs/*.md` specs          | Product/architecture/etc | Relevant only   |
 | Dashboard | `docs/PROGRESS_CONTEXT.md` | Current phase, pointers  | Yes             |
@@ -41,23 +34,24 @@ casual questions — these previously returned canned plan advice).
 
 ## Current Phase
 
-Phases 1–8 are hosted; Coach Continuity Memory (v6 schema + v16 prompt) is hosted and
-live. Local pgTAP suite for the new functions is written but not yet executed locally
-(Colima required); hosted migrations through `20260717110004` pass.
+Phases 1–8 are hosted; Coach Continuity Memory (v6 schema + v16 prompt) is hosted and live.
+Stability infrastructure deployed 2026-07-19: pre-deploy gate (`scripts/pre-deploy.sh`), 13 Flutter
+contract tests, Deno→DB live contract tests, forward-compatible migration rules in `AGENTS.md` §11,
+CI workflow (`.github/workflows/ci.yml`).
 
 ## Active Workstreams
 
-| Workstream              | Status                              | Read Next              | Detail History                                |
-| ----------------------- | ----------------------------------- | ---------------------- | --------------------------------------------- |
-| Backend foundation      | **Complete — verified**             | `docs/handoff/backend.md` | worklogs                                     |
-| Frontend/UI             | **Complete — iPhone release build** | `docs/handoff/frontend.md` | worklogs                                    |
-| Coach Continuity Memory | **Local — all checks pass**         | `docs/handoff/backend.md` | `docs/worklog/2026-07-17-coach-continuity.md` |
-| Stitch/design           | **23 refs imported**                | `docs/handoff/design.md`  | `design/stitch/README.md`                    |
+| Workstream              | Status                               | Read Next                  | Detail History                                |
+| ----------------------- | ------------------------------------ | -------------------------- | --------------------------------------------- |
+| Backend foundation      | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
+| Frontend/UI             | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
+| Coach Continuity Memory | **Local — all checks pass**          | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
+| Stitch/design           | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
+| Stability infra         | **Complete — Phases 1–7**           | `AGENTS.md` §11            | N/A                                           |
 
 ## Global Current State
 
-- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); migrations through `20260716130200` matched
-  remote.
+- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 49 migrations, 11 are fix migrations.
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
 - Groq Qwen `qwen/qwen3.6-27b` is the owner-test Coach/chat provider (ADR 0006).
 - Gemini `gemini-3.5-flash` remains disabled pending paid-privacy/evaluation gates.
@@ -68,60 +62,60 @@ live. Local pgTAP suite for the new functions is written but not yet executed lo
 - Apple Developer Program enrollment and TestFlight environment names.
 - Licensed food catalog source.
 - Owner smoke: rest-day Train, exact Nutrition foods, Today Health evidence refresh.
-- pgTAP run + hosted migration deploy for Coach Continuity (20260717XXXXXX series).
+- Production migration deploy for `20260719090000_context_budget_guard.sql`.
 
-## Coach Continuity — What Changed (2026-07-17)
+## Coach Continuity (2026-07-17)
 
-**New tables:** `coach_narrative_entries`, `user_preferences`, `coach_session_summaries`
-**New FTS:** tsvector + GIN index on `coach_messages`
-**New functions:** `prepare_coach_chat_v5`, `persist_coach_narrative_entry`,
-`persist_coach_preference`, `persist_coach_session_summary`, `search_coach_messages`
-**Updated contracts:** `CoachChatAnswerV2` with optional `reasoning_chain`
-**New Flutter widgets:** `ReasoningChainCard`, `PreferencePromptChip`
-**Updated Edge Function:** `coach-chat` v15 with preference detection, FTS retrieval, session summary
-**Tests:** pgTAP 36 assertions (file only — not yet run); Deno 56/56; Flutter 68/68
-**Docs:** `docs/adr/0009-coach-continuity-memory.md`, `docs/proposals/coach-continuity.md`
+ADR-0009 five-layer structured memory: `coach_narrative_entries`, `user_preferences`,
+`coach_session_summaries`, FTS on `coach_messages`, `prepare_coach_chat_v5`,
+`search_coach_messages`, etc. `CoachChatAnswerV2` with optional `reasoning_chain`. `coach-chat` v16
+with preference detection, FTS retrieval, session summary. Tests: pgTAP 36 assertions, Deno 58/58.
+Post-deploy fixes: 4 migrations (v4→v5 recursion, schema_version constraint, jsonb_agg ordering,
+ambiguous coaching_date). Prompt restructure separates system/rules from user/message.
 
 ## Global Known Issues
 
 - Do not commit `.codex/config.toml`.
 - CoreSimulator not used; physical iPhone for builds.
 - Supabase CLI timeout on `db reset` is known, not a schema failure.
-- Colima must be running for local pgTAP execution.
+- Colima must be running for local pgTAP execution and Deno→DB contract tests.
+- Contract test fixtures must be updated when RPC or Edge Function response shapes change — the act
+  of updating them triggers a manual review of the shape change.
 
 ## HealthKit Quick-Complete (2026-07-18)
 
-**Bug fix:** TrainScreen hub now reloads after workout completion. Navigation chain
-(ActiveWorkoutScreen → WorkoutDetailScreen → TrainScreen) propagates a completion result
-via `push<bool>` / `pop(true)`, and `_WorkoutHero.onWorkoutChanged` refreshes the hub.
+TrainScreen hub reloads after workout completion via `push<bool>` / `pop(true)`. When Apple Health
+detects a workout on a day with a scheduled Tracend workout but no completed session, Train shows a
+prompt card. "Yes, mark complete" calls `healthkit_auto_complete_workout` RPC. Per-date refactor:
+lightweight `get_healthkit_completion_candidate(date)` RPC called per weekday. Completion state v1.3:
+weekday strip shows green checkmark for completed days. `loadSession`/`start` accept optional
+`localDate`. Auto-completed sessions show plan exercises read-only with info banner.
 
-**New feature:** When Apple Health detects a workout on a day with a scheduled Tracend workout
-but no completed session, Train shows a prompt card for the selected weekday (today or any past
-day). "Yes, mark complete" calls the new `healthkit_auto_complete_workout` RPC (creates completed
-session with duration from `daily_health_summaries`, writes `workout.auto_completed` audit event).
-"Log manually" opens the standard execution flow.
+**Migrations:** `20260718100000`, `20260718110000`, `20260718150000`. All deployed.
+**Tests:** Flutter 85/85 pass. Docs: PRD, UX_FLOWS, ARCHITECTURE, DATA_MODEL, SECURITY_PRIVACY,
+AI_SAFETY_SPEC, TESTING_STRATEGY, frontend handoff updated.
 
-**Per-date refactor (v1.2):** The candidate is no longer returned inside `get_my_training_hub`
-(which was hardcoded to `current_date`). Instead, a lightweight `get_healthkit_completion_candidate(date)`
-RPC is called per selected weekday via a `HealthkitCandidateRepository` interface. The train screen
-maintains `_healthkitCandidate` local state and fetches on weekday change.
+## Stability Infrastructure (2026-07-19)
 
-**Completion state + date threading (v1.3):** Hub adds `completed_day_set` for per-day completion
-tracking. Weekday strip shows green checkmark dots for completed days, gray dots for planned-only.
-WorkoutHero shows "Completed" pill + "View workout" for completed days. `loadSession`/`start` now
-accept optional `localDate` to fix the bug where past days loaded today's session. Date is threaded
-from train screen through `WorkoutDetailScreen` → `ActiveWorkoutScreen` → repository.
-`ActiveWorkoutScreen` detects auto-completed sessions (no exercise data) and shows plan exercises
-read-only with info banner.
+**Pre-deploy gate:** `scripts/pre-deploy.sh` runs deno fmt/lint/test, flutter analyze/test/build,
+pgTAP, and migration dry-run. Supports `--deno-only`, `--flutter-only`, `--db-only`.
 
-**Changed files:** `train_screen.dart`, `workout_detail_screen.dart`, `active_workout_screen.dart`,
-`workout_repository.dart`, `test/production_rebuild_flutter_test.dart`.
+**Contract tests:** Flutter `test/contract/` (13 snapshot-based), Deno→DB
+`_tests/db_contract_test.ts` (live, skipped when Supabase offline).
 
-**Migrations:** `20260718100000_healthkit_auto_complete.sql` (hub + auto-complete RPC),
-`20260718110000_healthkit_candidate_per_date.sql` (per-date refactor),
-`20260718150000_hub_completed_day_set.sql` (completion tracking v1.3). All deployed to hosted.
+**Crash reporting:** Sentry on Flutter (`sentry_flutter`, `--dart-define SENTRY_DSN`) and Edge
+Functions (`_shared/sentry.ts` wired into coach-chat, meal-analyze). `beforeSend` scrubber redacts
+19 sensitive keys. Empty DSN = disabled.
 
-**Docs updated:** PRD, UX_FLOWS, ARCHITECTURE, DATA_MODEL, SECURITY_PRIVACY,
-AI_SAFETY_SPEC, TESTING_STRATEGY, frontend handoff.
+**Backup:** `scripts/backup-db.sh` via session pooler → `.tooling/backups/YYYY-MM-DD/` + SHA-256
+manifest.
 
-**Tests:** Flutter 72/72 pass.
+**Rollback:** `scripts/rollback-function.sh <name>` redeploys prior git version with `--use-api`.
+
+**Auth hardening:** Password min 8 + upper/lower/digit, re-auth for password change, email
+confirmations on. Session timeouts deferred (Pro plan).
+
+**Forward-compatible migrations:** Two-step rule — add then deploy then remove. Never single-step
+rename/drop/type-change.
+
+**Test counts:** pgTAP 270 assertions, Deno 92, Flutter 85. All pass.

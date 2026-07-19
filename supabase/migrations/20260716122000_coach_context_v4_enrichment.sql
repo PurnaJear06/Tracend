@@ -1,3 +1,6 @@
+-- Supersedes 20260716121000_coach_context_v4_enrichment.sql for the same
+-- prepare_coach_chat_v4 function.  This migration contains the complete latest
+-- version of the function body.
 create or replace function public.prepare_coach_chat_v4(
   target_user_id uuid, target_thread_id uuid, question text,
   coaching_timezone text, request_idempotency_key uuid, context_kind text

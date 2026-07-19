@@ -297,17 +297,15 @@ override safety or the quality floor. Budget assumptions and hard controls are d
 - Direct identifiers, tokens, object keys, and unrelated history are excluded.
 - Coaching calls have no web, shell, arbitrary database, or unrestricted tool access.
 - The model may reference only supplied catalog identifiers.
-- Provider request bodies MUST use the multi-role message form: `system` carries
-  identity, boundaries, refusal behaviour, schema, and evidence rules; `user`
-  carries the user's raw message first (so greetings and questions receive a
-  conversational answer matching what was asked) and the prepared context second,
-  clearly labelled as supporting evidence. Bundling all instructions, schema, the
-  user's question, and the context into a single `user` turn is prohibited — it
-  caused the model to interpret the question as data and emit the same plan-style
-  answer for any input, including greetings. The instruction "Lead with one clear
-  recommendation" is prohibited in conversational chat prompts; recommendations
-  are appropriate only when the user asks for guidance. Same-day execution
-  adjustments remain permitted; persistent plan or target changes remain
+- Provider request bodies MUST use the multi-role message form: `system` carries identity,
+  boundaries, refusal behaviour, schema, and evidence rules; `user` carries the user's raw message
+  first (so greetings and questions receive a conversational answer matching what was asked) and the
+  prepared context second, clearly labelled as supporting evidence. Bundling all instructions,
+  schema, the user's question, and the context into a single `user` turn is prohibited — it caused
+  the model to interpret the question as data and emit the same plan-style answer for any input,
+  including greetings. The instruction "Lead with one clear recommendation" is prohibited in
+  conversational chat prompts; recommendations are appropriate only when the user asks for guidance.
+  Same-day execution adjustments remain permitted; persistent plan or target changes remain
   approval-gated.
 
 ## 12. Validation and Failure Handling

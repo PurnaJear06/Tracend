@@ -95,6 +95,15 @@ class CoachContextSource {
   final String? latestDate;
 }
 
+class CoachUnavailableException implements Exception {
+  const CoachUnavailableException(this.message, {this.retryAfterSeconds});
+  final String message;
+  final int? retryAfterSeconds;
+
+  @override
+  String toString() => message;
+}
+
 abstract interface class CoachContextRepository {
   Future<List<CoachContextSource>> loadContextStatus();
 }
@@ -218,6 +227,7 @@ class SupabaseCoachRepository
     ).timeout(const Duration(seconds: 30));
     if (response.status != 200 || response.data is! Map) {
       String detail = 'unavailable';
+      int? retryAfter;
       if (response.data is Map) {
         final d = Map<String, dynamic>.from(response.data as Map);
         final serverDetail = d['detail'] as String?;
@@ -226,8 +236,17 @@ class SupabaseCoachRepository
         } else {
           detail = (d['error'] ?? d['message'] ?? detail) as String;
         }
+        final rawRetry = d['retry_after_seconds'];
+        if (rawRetry is int) {
+          retryAfter = rawRetry;
+        } else if (rawRetry is num) {
+          retryAfter = rawRetry.ceil();
+        }
       }
-      throw StateError('Coach chat is $detail.');
+      throw CoachUnavailableException(
+        'Coach chat is $detail.',
+        retryAfterSeconds: retryAfter,
+      );
     }
     final body = Map<String, dynamic>.from(response.data as Map);
     _lastResponse = body;

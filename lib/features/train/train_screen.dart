@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class TrainScreen extends StatefulWidget {
@@ -19,8 +20,11 @@ class _TrainScreenState extends State<TrainScreen> {
   List<WorkoutRepairCandidate> _repairCandidates = const [];
   List<WorkoutReconciliation> _reconciliations = const [];
   String? _reconciliationBusyId;
+  final Set<String> _respondedReconciliationIds = {};
+  final Set<String> _respondedRepairSessionIds = {};
   int _weekday = DateTime.now().weekday;
   HealthkitCompletionCandidate? _healthkitCandidate;
+  int? _confirmedWorkoutWeekday;
 
   @override
   void initState() {
@@ -33,12 +37,26 @@ class _TrainScreenState extends State<TrainScreen> {
   Future<TrainingHubData> _load() async {
     final source = _source;
     if (source is WorkoutRepairRepository) {
-      _repairCandidates = await (source as WorkoutRepairRepository)
+      final candidates = await (source as WorkoutRepairRepository)
           .loadRepairCandidates();
+      _repairCandidates = candidates
+          .where((c) => !_respondedRepairSessionIds.contains(c.sessionId))
+          .toList();
     }
     if (source is WorkoutReconciliationRepository) {
-      _reconciliations = await (source as WorkoutReconciliationRepository)
+      final list = await (source as WorkoutReconciliationRepository)
           .loadReconciliations();
+      final filtered = list
+          .where((r) => !_respondedReconciliationIds.contains(r.id))
+          .toList();
+      if (list.isNotEmpty || filtered.isNotEmpty) {
+        debugPrint(
+          'train: loadReconciliations server=${list.length} '
+          'filtered=${filtered.length} '
+          'excluded_ids=${_respondedReconciliationIds.length}',
+        );
+      }
+      _reconciliations = filtered;
     }
     if (source is TrainingHubRepository) {
       return (source as TrainingHubRepository).loadTrainingHub();
@@ -77,31 +95,51 @@ class _TrainScreenState extends State<TrainScreen> {
     if (accepted != true || _source is! WorkoutRepairRepository) return;
     await (_source as WorkoutRepairRepository).confirmRepair(candidate);
     if (!mounted) return;
-    setState(() => _hub = _load());
+    setState(() {
+      _respondedRepairSessionIds.add(candidate.sessionId);
+      _repairCandidates = _repairCandidates
+          .where((c) => c.sessionId != candidate.sessionId)
+          .toList();
+      _hub = _load();
+    });
   }
 
   Future<void> _respondToReconciliation(
     WorkoutReconciliation item, {
     required bool accept,
   }) async {
+    debugPrint(
+      'train: respondToReconciliation id=${item.id} accept=$accept '
+      'responded_ids_before=${_respondedReconciliationIds.length}',
+    );
     setState(() => _reconciliationBusyId = item.id);
     try {
       await (_source as WorkoutReconciliationRepository)
           .respondToReconciliation(item.id, accept: accept);
+      debugPrint('train: respondToReconciliation RPC succeeded');
       if (!mounted) return;
+      final confirmedWeekday = item.localDate.weekday;
       setState(() {
+        _respondedReconciliationIds.add(item.id);
         _reconciliations = _reconciliations
             .where((candidate) => candidate.id != item.id)
             .toList();
         _reconciliationBusyId = null;
+        _confirmedWorkoutWeekday = confirmedWeekday;
         _hub = _load();
       });
+      debugPrint(
+        'train: respondToReconciliation complete '
+        'responded_ids_after=${_respondedReconciliationIds.length} '
+        'reconciliations=${_reconciliations.length}',
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(accept ? 'Workout match confirmed' : 'Match dismissed'),
         ),
       );
-    } catch (_) {
+    } catch (error) {
+      debugPrint('train: respondToReconciliation RPC failed: $error');
       if (!mounted) return;
       setState(() => _reconciliationBusyId = null);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -124,7 +162,8 @@ class _TrainScreenState extends State<TrainScreen> {
         _hub = _load();
         _healthkitCandidate = null;
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -142,10 +181,11 @@ class _TrainScreenState extends State<TrainScreen> {
 
   Future<void> _fetchHealthkitCandidate() async {
     if (_source is! HealthkitCandidateRepository) return;
-    final date = _dateForWeekday(_weekday);
+    final requestedWeekday = _weekday;
+    final date = _dateForWeekday(requestedWeekday);
     final candidate =
         await (_source as HealthkitCandidateRepository).getHealthkitCandidate(date);
-    if (!mounted) return;
+    if (!mounted || _weekday != requestedWeekday) return;
     setState(() => _healthkitCandidate = candidate);
   }
 
@@ -206,6 +246,7 @@ class _TrainScreenState extends State<TrainScreen> {
             dateForWeekday: _dateForWeekday,
             selected: _weekday,
             onSelected: _selectWeekday,
+            confirmedWeekday: _confirmedWorkoutWeekday,
           ),
           const SizedBox(height: TracendSpacing.md),
           if (_repairCandidates.isNotEmpty) ...[
@@ -219,6 +260,8 @@ class _TrainScreenState extends State<TrainScreen> {
             _ReconciliationCard(
               item: _reconciliations.first,
               busy: _reconciliationBusyId == _reconciliations.first.id,
+              isDifferentDay:
+                  _reconciliations.first.localDate.weekday != _weekday,
               onAccept: () => _respondToReconciliation(
                 _reconciliations.first,
                 accept: true,
@@ -399,11 +442,34 @@ class _ReconciliationCard extends StatelessWidget {
     required this.onAccept,
     required this.onReject,
     required this.busy,
+    required this.isDifferentDay,
   });
   final WorkoutReconciliation item;
   final VoidCallback onAccept;
   final VoidCallback onReject;
   final bool busy;
+  final bool isDifferentDay;
+
+  String _dateLabel(DateTime date) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final today = DateTime.now();
+    if (date.year == today.year &&
+        date.month == today.month &&
+        date.day == today.day) {
+      return 'Today';
+    }
+    final yesterday = today.subtract(const Duration(days: 1));
+    if (date.year == yesterday.year &&
+        date.month == yesterday.month &&
+        date.day == yesterday.day) {
+      return 'Yesterday';
+    }
+    return '${days[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
+  }
 
   @override
   Widget build(BuildContext context) => TracendCard(
@@ -423,12 +489,24 @@ class _ReconciliationCard extends StatelessWidget {
         Text(item.workoutName, style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: TracendSpacing.xs),
         Text(
-          '${item.localDate.day}/${item.localDate.month} · ${item.activityType.replaceAll('_', ' ').toLowerCase()} · ${(item.healthDurationSeconds / 60).round()} min',
+          '${_dateLabel(item.localDate)} · ${item.activityType.replaceAll('_', ' ').toLowerCase()} · ${(item.healthDurationSeconds / 60).round()} min',
         ),
         const SizedBox(height: TracendSpacing.xs),
         Text(
           'Match confidence ${(item.confidence * 100).round()}%. Apple Health confirms the activity; Tracend remains the source for exercises and sets.',
         ),
+        if (isDifferentDay)
+          Padding(
+            padding: const EdgeInsets.only(top: TracendSpacing.xs),
+            child: Text(
+              'This match is for ${_dateLabel(item.localDate)}. Switch to that day to see the workout.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.secondary,
+              ),
+            ),
+          ),
         const SizedBox(height: TracendSpacing.md),
         Row(
           children: [
@@ -443,10 +521,7 @@ class _ReconciliationCard extends StatelessWidget {
               child: FilledButton(
                 onPressed: busy ? null : onAccept,
                 child: busy
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const TracendLoadingIndicator(size: 18)
                     : const Text('Confirm match'),
               ),
             ),
@@ -464,12 +539,14 @@ class _WeekdayStrip extends StatelessWidget {
     required this.dateForWeekday,
     required this.selected,
     required this.onSelected,
+    this.confirmedWeekday,
   });
   final List<PlannedWorkout> workouts;
   final Set<DateTime> completedDays;
   final DateTime Function(int weekday) dateForWeekday;
   final int selected;
   final ValueChanged<int> onSelected;
+  final int? confirmedWeekday;
 
   @override
   Widget build(BuildContext context) {
@@ -493,7 +570,13 @@ class _WeekdayStrip extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(labels[day - 1]),
-                      if (assigned.contains(day))
+                      if (day == confirmedWeekday)
+                        Icon(
+                          CupertinoIcons.link,
+                          size: 8,
+                          color: context.tracendColors.actionPrimary,
+                        )
+                      else if (assigned.contains(day))
                         Icon(
                           completedDays.any((d) =>
                               d.year == dateForWeekday(day).year &&

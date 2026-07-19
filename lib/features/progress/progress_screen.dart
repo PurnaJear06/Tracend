@@ -292,7 +292,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
           content: Text('Your session expired. Sign out, then sign in again.'),
         ),
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -329,7 +330,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Measurement recorded')));
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -366,7 +368,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
     try {
       await widget.repository.grantPhotoStorageConsent();
       _hasConsent = true;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not save consent. Try again.')),
@@ -400,7 +403,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
         _activeSet = null;
         _capturedPoses.clear();
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       _activeSet = null;
       _capturedPoses.clear();
       if (mounted) {
@@ -426,7 +430,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
         showDragHandle: true,
         builder: (_) => _PrivatePhotoViewer(urls: urls),
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

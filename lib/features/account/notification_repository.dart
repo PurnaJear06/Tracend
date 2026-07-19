@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -95,7 +96,8 @@ class SupabaseNotificationRepository implements NotificationRepository {
         dailyCheckIn: saved.dailyCheckIn,
         weeklyReview: saved.weeklyReview,
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       return device;
     }
   }
@@ -113,7 +115,8 @@ class SupabaseNotificationRepository implements NotificationRepository {
     try {
       await _store.save(updated);
       return updated;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       await _device.configure(
         dailyCheckIn: previous.dailyCheckIn,
         weeklyReview: previous.weeklyReview,

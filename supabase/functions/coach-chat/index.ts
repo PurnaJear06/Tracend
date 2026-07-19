@@ -1,16 +1,14 @@
-import { createClient } from "npm:@supabase/supabase-js@2.49.8";
 import { parseCoachChatRequest } from "../_shared/contracts/coach_chat_v1.ts";
+import { createLogger, extractCorrelationId } from "../_shared/logger.ts";
 import {
   classifyQuestion,
   CoachChatUnavailableError,
   generateCoachChat,
 } from "../_shared/providers/coach_chat_provider.ts";
+import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
+import { captureException } from "../_shared/sentry.ts";
 
-const headers = { "Content-Type": "application/json" };
-const reply = (status: number, body: Record<string, unknown>) =>
-  new Response(JSON.stringify(body), { status, headers });
-
-function detectPreferenceStatement(question: string): string | null {
+export function detectPreferenceStatement(question: string): string | null {
   const q = question.toLowerCase();
   const patterns: [RegExp, string][] = [
     [
@@ -40,7 +38,10 @@ function detectPreferenceStatement(question: string): string | null {
   return null;
 }
 
-function buildSessionSummary(context: Record<string, unknown>, _coachingDate: string): string {
+export function buildSessionSummary(
+  context: Record<string, unknown>,
+  _coachingDate: string,
+): string {
   const activePlan = context.active_plan as Record<string, unknown> | undefined;
   const activeGoal = context.active_goal as Record<string, unknown> | undefined;
   const weight = (context.latest_measurement as Record<string, unknown> | undefined)
@@ -69,50 +70,51 @@ function buildSessionSummary(context: Record<string, unknown>, _coachingDate: st
 }
 
 Deno.serve(async (request) => {
+  const correlationId = extractCorrelationId(request);
+  const log = createLogger(correlationId);
+  const started = performance.now();
   if (request.method !== "POST") return reply(405, { error: "method_not_allowed" });
-  const url = Deno.env.get("SUPABASE_URL");
-  const key = Deno.env.get("SUPABASE_ANON_KEY");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const authorization = request.headers.get("Authorization");
-  if (!url || !key || !serviceKey || !authorization) {
-    return reply(401, { error: "authentication_required" });
+  let auth;
+  try {
+    auth = await requireAuth(request);
+  } catch (e) {
+    if (e instanceof AuthError) return reply(e.status, { error: e.message });
+    throw e;
   }
-  const userClient = createClient(url, key, {
-    global: { headers: { Authorization: authorization } },
-    auth: { persistSession: false },
-  });
-  const { data: userData, error: userError } = await userClient.auth.getUser();
-  if (userError || !userData.user) return reply(401, { error: "invalid_session" });
   let input;
   try {
     input = parseCoachChatRequest(await request.json());
   } catch {
+    log.warn("invalid_chat_request");
     return reply(422, { error: "invalid_chat_request" });
   }
-  const service = createClient(url, serviceKey, { auth: { persistSession: false } });
-  // Budget check temporarily disabled — remove after testing.
-  // const { error: budgetError } = await service.rpc("assert_owner_ai_budget", {
-  //   target_user_id: userData.user.id,
-  // });
-  // if (budgetError) return reply(429, { error: "ai_usage_limit" });
-  const contextKind = classifyQuestion(input.question);
-  const { data: prepared, error: prepareError } = await service.rpc("prepare_coach_chat_v5", {
-    target_user_id: userData.user.id,
-    target_thread_id: input.thread_id,
-    question: input.question,
-    coaching_timezone: input.timezone,
-    request_idempotency_key: input.idempotency_key,
-    context_kind: contextKind,
+  const { error: budgetError } = await auth.serviceClient.rpc("assert_owner_ai_budget", {
+    target_user_id: auth.userId,
   });
+  if (budgetError) return reply(429, { error: "ai_usage_limit" });
+  const contextKind = classifyQuestion(input.question);
+  const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
+    "prepare_coach_chat_v5",
+    {
+      target_user_id: auth.userId,
+      target_thread_id: input.thread_id,
+      question: input.question,
+      coaching_timezone: input.timezone,
+      request_idempotency_key: input.idempotency_key,
+      context_kind: contextKind,
+    },
+  );
   if (prepareError || !prepared) {
-    console.error("prepare_coach_chat_v5 failed", prepareError);
+    log.error("prepare_coach_chat_v5 failed", {
+      detail: prepareError?.message ?? "unknown",
+    });
     return reply(422, {
       error: "chat_unavailable",
       detail: prepareError?.message ?? "context_preparation_failed",
     });
   }
   if (prepared.replayed) {
-    const { data } = await userClient.from("coach_messages").select().eq(
+    const { data } = await auth.userClient.from("coach_messages").select().eq(
       "thread_id",
       input.thread_id,
     ).order("created_at");
@@ -123,32 +125,42 @@ Deno.serve(async (request) => {
   const coachingDate = (context.coaching_date as string) ??
     new Date().toISOString().slice(0, 10);
 
-  const { data: ftsMessages, error: ftsError } = await service.rpc("search_coach_messages", {
-    target_user_id: userData.user.id,
-    query_text: input.question,
-    max_results: 8,
-  });
+  const { data: ftsMessages, error: ftsError } = await auth.serviceClient.rpc(
+    "search_coach_messages",
+    {
+      target_user_id: auth.userId,
+      query_text: input.question,
+      max_results: 8,
+    },
+  );
   if (!ftsError && ftsMessages) {
-    context.fts_messages = ftsMessages;
+    // Trim full message content — the model only needs a relevance signal,
+    // not the entire conversation history.
+    context.fts_messages = (Array.isArray(ftsMessages) ? ftsMessages : [ftsMessages]).map(
+      (msg: Record<string, unknown>) => ({
+        ...msg,
+        content: typeof msg.content === "string" ? msg.content.slice(0, 150) : msg.content,
+      }),
+    );
   }
 
   const preferenceSignal = detectPreferenceStatement(input.question);
 
-  const started = performance.now();
+  const chatStart = performance.now();
   try {
     const generation = await generateCoachChat(
       input.question,
       context,
     );
-    const { data: persisted, error } = await service.rpc("persist_coach_chat_result", {
-      target_user_id: userData.user.id,
+    const { data: persisted, error } = await auth.serviceClient.rpc("persist_coach_chat_result", {
+      target_user_id: auth.userId,
       target_thread_id: input.thread_id,
       question: input.question,
       request_idempotency_key: input.idempotency_key,
       snapshot_id: prepared.feature_snapshot_id,
       policy_id: prepared.policy_evaluation_id,
       answer_payload: generation.answer,
-      run_latency_ms: Math.round(performance.now() - started),
+      run_latency_ms: Math.round(performance.now() - chatStart),
       run_provider: generation.provider,
       run_model: generation.model,
       run_input_units: generation.inputUnits,
@@ -162,8 +174,8 @@ Deno.serve(async (request) => {
     if (prepared.coach_context_snapshot_id) {
       sessionSnapshotIds.push(prepared.coach_context_snapshot_id as string);
     }
-    await service.rpc("persist_coach_session_summary", {
-      target_user_id: userData.user.id,
+    await auth.serviceClient.rpc("persist_coach_session_summary", {
+      target_user_id: auth.userId,
       coaching_date: coachingDate,
       summary_text: summaryText,
       thread_id_param: input.thread_id,
@@ -175,6 +187,7 @@ Deno.serve(async (request) => {
       message: {
         id: persisted.assistant_message_id,
         role: "assistant",
+        created_at: persisted.created_at ?? new Date().toISOString(),
         model_provider: generation.provider,
         model: generation.model,
         ...generation.answer,
@@ -185,34 +198,55 @@ Deno.serve(async (request) => {
     if (preferenceSignal) {
       responsePayload.preference_prompt = JSON.parse(preferenceSignal);
     }
+    log.info("coach_chat_complete", {
+      latency_ms: Math.round(performance.now() - started),
+      provider: generation.provider,
+      model: generation.model,
+      replayed: false,
+    });
     return reply(200, responsePayload);
   } catch (error) {
     const diagnosticMessage = error instanceof Error
       ? `${error.name}: ${error.message}`
       : `${error}`;
-    console.error("coach-chat failure", diagnosticMessage);
     const unavailable = error instanceof CoachChatUnavailableError
       ? error
       : new CoachChatUnavailableError("mock", "unknown");
+    captureException(error, {
+      userId: auth.userId,
+      functionName: "coach-chat",
+      correlationId,
+      contextKind,
+      coachingDate,
+    });
+    log.error("coach_chat_failure", {
+      detail: diagnosticMessage,
+      provider: unavailable.provider,
+      model: unavailable.model,
+      latency_ms: Math.round(performance.now() - started),
+    });
     try {
-      await service.rpc("persist_failed_coach_chat_run", {
-        target_user_id: userData.user.id,
+      await auth.serviceClient.rpc("persist_failed_coach_chat_run", {
+        target_user_id: auth.userId,
         snapshot_id: prepared.feature_snapshot_id,
         policy_id: prepared.policy_evaluation_id,
         request_idempotency_key: input.idempotency_key,
-        run_latency_ms: Math.round(performance.now() - started),
+        run_latency_ms: Math.round(performance.now() - chatStart),
         error_code: "provider_or_validation_failed",
         run_provider: unavailable.provider,
         run_model: unavailable.model,
       });
     } catch (persistError) {
-      console.error("persist_failed_coach_chat_run failed", persistError);
+      log.error("persist_failed_coach_chat_run failed", {
+        detail: persistError instanceof Error ? persistError.message : String(persistError),
+      });
     }
     return reply(503, {
       error: "chat_unavailable",
       detail: diagnosticMessage,
       provider: unavailable.provider,
       model: unavailable.model,
+      retry_after_seconds: unavailable.retryAfterSeconds,
     });
   }
 });

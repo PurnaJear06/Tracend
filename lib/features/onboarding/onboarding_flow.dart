@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
+import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class OnboardingFlow extends StatefulWidget {
@@ -103,7 +104,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         );
         if (restored > 0) _step = restored;
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       _error =
           'Your saved onboarding answers could not be restored. Retry before continuing.';
     } finally {
@@ -151,7 +153,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           _step = 5;
         });
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       setState(() {
         _error =
             'This section could not be saved. Check the connection and try again.';
@@ -205,7 +208,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               : 'Revision requested. Review your answers before generating again.';
         });
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       setState(() {
         _error =
             'The proposal response was not saved. It has not changed your active plan.';
@@ -294,10 +298,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                     FilledButton(
                       onPressed: _saving ? null : _continue,
                       child: _saving
-                          ? const SizedBox.square(
-                              dimension: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
+                          ? const TracendLoadingIndicator(size: 20)
                           : Text(_step == 4 ? 'Build proposal' : 'Continue'),
                     ),
                   ],

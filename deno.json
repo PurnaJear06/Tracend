@@ -12,6 +12,6 @@
     }
   },
   "tasks": {
-    "check": "deno fmt --check supabase/functions && deno lint supabase/functions && deno test supabase/functions"
+    "check": "deno fmt --check supabase/functions && deno lint supabase/functions && deno test --allow-env --allow-net supabase/functions"
   }
 }
