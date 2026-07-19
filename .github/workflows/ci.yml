@@ -25,7 +25,7 @@ jobs:
         run: deno lint supabase/functions
 
       - name: Unit tests (no DB)
-        run: deno test --allow-env supabase/functions
+        run: deno test --allow-env --allow-net supabase/functions
 
   flutter-analyze:
     name: Flutter Analyze
