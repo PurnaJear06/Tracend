@@ -2,7 +2,7 @@ name: tracend
 description: "Tracend — evidence-driven coaching for training and nutrition."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -38,13 +38,14 @@ dependencies:
   cupertino_icons: 1.0.8
   health: 13.3.1
   image_picker: 1.2.3
+  sentry_flutter: 9.0.0
   supabase_flutter: 2.15.0
   shared_preferences: 2.5.3
   url_launcher: 6.3.2
   uuid: 4.5.3
 
 dependency_overrides:
-  device_info_plus: '>=12.3.0 <12.4.0'
+  device_info_plus: ">=12.3.0 <12.4.0"
   device_info_plus_platform_interface: ^7.0.0
 
 dev_dependencies:

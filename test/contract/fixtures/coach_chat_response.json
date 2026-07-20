@@ -1,0 +1,41 @@
+{
+  "message": {
+    "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    "role": "assistant",
+    "content": "Your bench press is progressing well. You've added 5 kg over the last 4 sessions while maintaining RPE 8. Continue the current progression, but watch your left shoulder — the slight asymmetry in your last set suggests a need for more unilateral warm-up work.",
+    "created_at": "2026-07-19T08:30:00Z",
+    "evidence": [
+      {
+        "code": "bench_press_progression",
+        "label": "Bench Press: +5 kg over 4 sessions at RPE 8",
+        "source": "coach_context"
+      },
+      {
+        "code": "adherence_trend",
+        "label": "Training adherence: 75% over 4 weeks",
+        "source": "feature_snapshot"
+      }
+    ],
+    "missing_data": ["left_shoulder_mobility", "sleep_quality_jul_18"],
+    "safety_state": "allowed",
+    "suggested_follow_ups": [
+      "How do I add unilateral warm-up exercises?",
+      "What should my sleep look like for recovery?",
+      "Should I deload next week?"
+    ],
+    "model_provider": "groq",
+    "model": "qwen/qwen3.6-27b",
+    "reasoning_chain": [
+      {
+        "step": "Load analysis",
+        "value": "Bench press load increased from 90 kg to 95 kg over 4 sessions",
+        "evidence_id": "bench_press_progression"
+      },
+      {
+        "step": "Adherence check",
+        "value": "Training adherence is 75% — within acceptable range",
+        "evidence_id": "adherence_trend"
+      }
+    ]
+  }
+}

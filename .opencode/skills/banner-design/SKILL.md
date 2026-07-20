@@ -10,7 +10,9 @@ metadata:
 
 # Banner Design - Multi-Format Creative Banner System
 
-Design banners across social, ads, web, and print formats. Generates multiple art direction options per request with AI-powered visual elements. This skill handles banner design only. Does NOT handle video editing, full website design, or print production.
+Design banners across social, ads, web, and print formats. Generates multiple art direction options
+per request with AI-powered visual elements. This skill handles banner design only. Does NOT handle
+video editing, full website design, or print production.
 
 ## When to Activate
 
@@ -23,13 +25,15 @@ Design banners across social, ads, web, and print formats. Generates multiple ar
 
 ## Prerequisites
 
-**Python:** This skill uses Python scripts. On Windows, use `python` instead of `python3` (e.g., `python scripts/search.py` instead of `python3 scripts/search.py`).
+**Python:** This skill uses Python scripts. On Windows, use `python` instead of `python3` (e.g.,
+`python scripts/search.py` instead of `python3 scripts/search.py`).
 
 ## Workflow
 
 ### Step 1: Gather Requirements (AskUserQuestion)
 
 Collect via AskUserQuestion:
+
 1. **Purpose** — social cover, ad banner, website hero, print, or creative asset?
 2. **Platform/size** — which platform or custom dimensions?
 3. **Content** — headline, subtext, CTA, logo placement?
@@ -82,15 +86,15 @@ For each art direction option:
    ```
 
    **When to use which model:**
-   | Use Case | Model | Quality |
-   |----------|-------|---------|
-   | Backgrounds, gradients, patterns | Standard (Flash) | 2K, fast |
-   | Hero illustrations, product shots | Pro | 4K, detailed |
-   | Photorealistic scenes, complex art | Pro | 4K, best quality |
-   | Quick iterations, A/B variants | Standard (Flash) | 2K, fast |
+   | Use Case                           | Model            | Quality          |
+   | ---------------------------------- | ---------------- | ---------------- |
+   | Backgrounds, gradients, patterns   | Standard (Flash) | 2K, fast         |
+   | Hero illustrations, product shots  | Pro              | 4K, detailed     |
+   | Photorealistic scenes, complex art | Pro              | 4K, best quality |
+   | Quick iterations, A/B variants     | Standard (Flash) | 2K, fast         |
 
-   **Aspect ratios:** `1:1`, `16:9`, `9:16`, `3:4`, `4:3`, `2:3`, `3:2`
-   Match to platform - e.g., Twitter header = `3:1` (use `3:2` closest), Instagram story = `9:16`
+   **Aspect ratios:** `1:1`, `16:9`, `9:16`, `3:4`, `4:3`, `2:3`, `3:2` Match to platform - e.g.,
+   Twitter header = `3:1` (use `3:2` closest), Instagram story = `9:16`
 
    **Pro model prompt tips** (see `ai-artist` references/nano-banana-pro-examples.md):
    - Be descriptive: style, lighting, mood, composition, color palette
@@ -122,6 +126,7 @@ After designing HTML banners, export each to PNG using `chrome-devtools` skill:
    ```
 
 **Output path convention** (per `assets-organizing` skill):
+
 ```
 assets/banners/{campaign}/
 ├── minimalist-1500x500.png
@@ -138,6 +143,7 @@ assets/banners/{campaign}/
 ### Step 5: Present Options & Iterate
 
 Present all exported images side-by-side. For each option show:
+
 - Art direction style name
 - Exported PNG preview (use `ai-multimodal` skill to display if needed)
 - Key design rationale
@@ -147,34 +153,34 @@ Iterate based on user feedback until approved.
 
 ## Banner Size Quick Reference
 
-| Platform | Type | Size (px) | Aspect Ratio |
-|----------|------|-----------|--------------|
-| Facebook | Cover | 820 × 312 | ~2.6:1 |
-| Twitter/X | Header | 1500 × 500 | 3:1 |
-| LinkedIn | Personal | 1584 × 396 | 4:1 |
-| YouTube | Channel art | 2560 × 1440 | 16:9 |
-| Instagram | Story | 1080 × 1920 | 9:16 |
-| Instagram | Post | 1080 × 1080 | 1:1 |
-| Google Ads | Med Rectangle | 300 × 250 | 6:5 |
-| Google Ads | Leaderboard | 728 × 90 | 8:1 |
-| Website | Hero | 1920 × 600-1080 | ~3:1 |
+| Platform   | Type          | Size (px)       | Aspect Ratio |
+| ---------- | ------------- | --------------- | ------------ |
+| Facebook   | Cover         | 820 × 312       | ~2.6:1       |
+| Twitter/X  | Header        | 1500 × 500      | 3:1          |
+| LinkedIn   | Personal      | 1584 × 396      | 4:1          |
+| YouTube    | Channel art   | 2560 × 1440     | 16:9         |
+| Instagram  | Story         | 1080 × 1920     | 9:16         |
+| Instagram  | Post          | 1080 × 1080     | 1:1          |
+| Google Ads | Med Rectangle | 300 × 250       | 6:5          |
+| Google Ads | Leaderboard   | 728 × 90        | 8:1          |
+| Website    | Hero          | 1920 × 600-1080 | ~3:1         |
 
 Full reference: `references/banner-sizes-and-styles.md`
 
 ## Art Direction Styles (Top 10)
 
-| Style | Best For | Key Elements |
-|-------|----------|--------------|
-| Minimalist | SaaS, tech | White space, 1-2 colors, clean type |
-| Bold Typography | Announcements | Oversized type as hero element |
-| Gradient | Modern brands | Mesh gradients, chromatic blends |
-| Photo-Based | Lifestyle, e-com | Full-bleed photo + text overlay |
-| Geometric | Tech, fintech | Shapes, grids, abstract patterns |
-| Retro/Vintage | F&B, craft | Distressed textures, muted colors |
-| Glassmorphism | SaaS, apps | Frosted glass, blur, glow borders |
-| Neon/Cyberpunk | Gaming, events | Dark bg, glowing neon accents |
-| Editorial | Media, luxury | Grid layouts, pull quotes |
-| 3D/Sculptural | Product, tech | Rendered objects, depth, shadows |
+| Style           | Best For         | Key Elements                        |
+| --------------- | ---------------- | ----------------------------------- |
+| Minimalist      | SaaS, tech       | White space, 1-2 colors, clean type |
+| Bold Typography | Announcements    | Oversized type as hero element      |
+| Gradient        | Modern brands    | Mesh gradients, chromatic blends    |
+| Photo-Based     | Lifestyle, e-com | Full-bleed photo + text overlay     |
+| Geometric       | Tech, fintech    | Shapes, grids, abstract patterns    |
+| Retro/Vintage   | F&B, craft       | Distressed textures, muted colors   |
+| Glassmorphism   | SaaS, apps       | Frosted glass, blur, glow borders   |
+| Neon/Cyberpunk  | Gaming, events   | Dark bg, glowing neon accents       |
+| Editorial       | Media, luxury    | Grid layouts, pull quotes           |
+| 3D/Sculptural   | Product, tech    | Rendered objects, depth, shadows    |
 
 Full 22 styles: `references/banner-sizes-and-styles.md`
 

@@ -95,6 +95,15 @@ class CoachContextSource {
   final String? latestDate;
 }
 
+class CoachUnavailableException implements Exception {
+  const CoachUnavailableException(this.message, {this.retryAfterSeconds});
+  final String message;
+  final int? retryAfterSeconds;
+
+  @override
+  String toString() => message;
+}
+
 abstract interface class CoachContextRepository {
   Future<List<CoachContextSource>> loadContextStatus();
 }
@@ -111,6 +120,7 @@ class CoachMessage {
     this.suggestedFollowUps = const [],
     this.modelProvider,
     this.model,
+    this.reasoningChain = const [],
   });
   final String id;
   final String role;
@@ -122,6 +132,7 @@ class CoachMessage {
   final List<String> suggestedFollowUps;
   final String? modelProvider;
   final String? model;
+  final List<Map<String, dynamic>> reasoningChain;
 }
 
 abstract interface class CoachChatRepository {
@@ -146,6 +157,7 @@ class SupabaseCoachRepository
   static const _uuid = Uuid();
   final SupabaseClient _client;
   final DateTime Function() _now;
+  Map<String, dynamic>? _lastResponse;
 
   @override
   Future<List<CoachContextSource>> loadContextStatus() async {
@@ -212,20 +224,55 @@ class SupabaseCoachRepository
         'timezone': account['timezone'] as String? ?? 'UTC',
         'idempotency_key': _uuid.v4(),
       },
-    );
+    ).timeout(const Duration(seconds: 30));
     if (response.status != 200 || response.data is! Map) {
-      throw StateError('Coach chat is unavailable.');
-    }
-    final body = Map<String, dynamic>.from(response.data as Map);
-    if (body['message'] is Map) {
-      return _messageFromJson(
-        Map<String, dynamic>.from(body['message'] as Map),
+      String detail = 'unavailable';
+      int? retryAfter;
+      if (response.data is Map) {
+        final d = Map<String, dynamic>.from(response.data as Map);
+        final serverDetail = d['detail'] as String?;
+        if (serverDetail != null && serverDetail.isNotEmpty) {
+          detail = serverDetail;
+        } else {
+          detail = (d['error'] ?? d['message'] ?? detail) as String;
+        }
+        final rawRetry = d['retry_after_seconds'];
+        if (rawRetry is int) {
+          retryAfter = rawRetry;
+        } else if (rawRetry is num) {
+          retryAfter = rawRetry.ceil();
+        }
+      }
+      throw CoachUnavailableException(
+        'Coach chat is $detail.',
+        retryAfterSeconds: retryAfter,
       );
     }
-    final messages = await loadMessages(threadId);
-    if (messages.isEmpty) throw const FormatException('Coach message missing.');
-    return messages.last;
+    final body = Map<String, dynamic>.from(response.data as Map);
+    _lastResponse = body;
+    final message = body['message'];
+    if (message is! Map) {
+      throw const FormatException('Coach response has no message body.');
+    }
+    return _messageFromJson(Map<String, dynamic>.from(message));
   }
+
+  Future<void> confirmPreference({
+    required String category,
+    required String key,
+    required String value,
+    required String provenance,
+  }) async {
+    await _client.rpc('persist_coach_preference', params: {
+      'target_user_id': _client.auth.currentUser?.id,
+      'category': category,
+      'pref_key': key,
+      'pref_value': value,
+      'provenance': provenance,
+    });
+  }
+
+  Future<Map<String, dynamic>?> loadLastRawResponse() async => _lastResponse;
 
   CoachMessage _messageFromJson(Map<String, dynamic> row) => CoachMessage(
     id: row['id'] as String? ?? _uuid.v4(),
@@ -244,6 +291,9 @@ class SupabaseCoachRepository
     ),
     modelProvider: row['model_provider'] as String?,
     model: row['model'] as String?,
+    reasoningChain: (row['reasoning_chain'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(),
   );
 
   @override

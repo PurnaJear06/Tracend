@@ -1,244 +1,369 @@
 # Tracend Repository Instructions
 
-These instructions are mandatory for Codex and any coding agent operating in this repository. Codex loads this project-root `AGENTS.md` before working in the repository; more specific nested `AGENTS.md` or `AGENTS.override.md` files may add narrowly scoped instructions later.
+These instructions are mandatory for every coding agent working in this repository.
 
 ## 1. Project Identity
 
-**Product:** Tracend  
-**Positioning:** An evidence-driven AI personal trainer that turns health, training, nutrition, and progress data into clear coaching decisions.  
-**Tagline:** Your body. Your data. Your next move.
+**Product:** Tracend — An evidence-driven AI personal trainer that turns health, training,
+nutrition, and progress data into clear coaching decisions.
 
 Tracend is a working brand pending formal trademark and App Store name clearance.
 
-## 2. Read Before Acting
+## 2. Toolchain and Commands
 
-At the start of every task, read the relevant authoritative documents in this order:
+**Every tool runs through repository wrappers.** Never invoke `flutter`, `dart`, `deno`, `supabase`,
+`docker`, or `colima` directly. Always use the scripts under `./scripts/`.
 
-1. [docs/VISION.md](docs/VISION.md)
-2. [docs/PRD.md](docs/PRD.md)
-3. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-4. [docs/DATA_MODEL.md](docs/DATA_MODEL.md)
-5. [docs/AI_SAFETY_SPEC.md](docs/AI_SAFETY_SPEC.md)
-6. [docs/SECURITY_PRIVACY.md](docs/SECURITY_PRIVACY.md)
-7. [docs/UX_FLOWS.md](docs/UX_FLOWS.md)
-8. [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md)
-9. [DESIGN.md](DESIGN.md) when working with Stitch or another design-generation tool
-10. [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md)
-11. [docs/IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md)
-12. [docs/COST_MODEL.md](docs/COST_MODEL.md)
-13. [docs/PROGRESS_CONTEXT.md](docs/PROGRESS_CONTEXT.md) for current
-    cross-chat handoff state only, then the relevant `docs/handoff/*.md`
-    file for the active workstream
+**Pinned versions** are in `tool/versions.env`. Bootstrap before first use:
 
-For product scope, PRD is authoritative. For technical boundaries, Architecture is authoritative. For persistent entities, Data Model is authoritative. For AI behavior and change eligibility, AI and Safety is authoritative. For collection, storage, sharing, retention, and deletion, Security and Privacy is authoritative. UX Flows owns routes and interaction states. Design System owns visual, component, motion, and accessibility behavior. Root `DESIGN.md` is a portable Stitch handoff derived from those authorities and never overrides them. Testing Strategy defines quality gates, Implementation Roadmap defines delivery order, and Cost Model defines budget assumptions without changing scope.
-`PROGRESS_CONTEXT.md` and `docs/handoff/*.md` are not authoritative; they are
-compact operational pointer files for coordinating multiple LLM chats.
+```sh
+./scripts/bootstrap-flutter.sh          # Flutter 3.41.7 / Dart 3.11.5
+./scripts/bootstrap-tools.sh            # Supabase CLI 2.101.0, Deno 2.9.0
+./scripts/bootstrap-container-runtime.sh # Colima + Docker CLI
+```
 
-If documents conflict, stop implementation and report the exact conflict. Do not choose silently.
+**Project-linked Supabase project:** `qsfzzsjenopqqqhvpyaw` ("Tracend", Singapore).
+
+**Wrappers:**
+
+| Command              | Wrapper                       |
+| -------------------- | ----------------------------- |
+| `flutter ...`        | `./scripts/flutter.sh ...`    |
+| `dart ...`           | `./scripts/flutter.sh ...`    |
+| `dart format` (only) | `./scripts/flutter.sh format` |
+| `deno ...`           | `./scripts/deno.sh ...`       |
+| `supabase ...`       | `./scripts/supabase.sh ...`   |
+| `docker ...`         | `./scripts/docker.sh ...`     |
+
+**Canonical verification sequence** (matches CI):
+
+```sh
+# Full gate — one command, all layers. Run before every production deploy.
+./scripts/pre-deploy.sh
+
+# Option: skip database steps when Colima is unavailable
+./scripts/pre-deploy.sh --skip-colima --skip-reset
+
+# Single-layer variants:
+./scripts/pre-deploy.sh --deno-only       # Deno fmt + lint + test only
+./scripts/pre-deploy.sh --flutter-only     # Flutter analyze + test + build only
+./scripts/pre-deploy.sh --db-only          # pgTAP only (requires Colima)
+./scripts/pre-deploy.sh --help             # Full options
+
+# Individual commands (for focused iteration):
+./scripts/flutter.sh pub get
+./scripts/flutter.sh format --set-exit-if-changed lib test
+./scripts/flutter.sh analyze
+./scripts/flutter.sh test
+./scripts/flutter.sh test path/to/single_test.dart   # single test
+./scripts/flutter.sh build ios --release --no-codesign
+./scripts/deno.sh task check
+./scripts/deno.sh test supabase/functions/path/to_test.ts  # single test
+./scripts/container.sh start
+./scripts/supabase.sh start
+./scripts/supabase.sh db reset
+./scripts/test-db.sh
+./scripts/test-db.sh path/to/single_test.sql      # single pgTAP file
+./scripts/supabase.sh stop
+./scripts/container.sh stop
+```
+
+**Environment configuration** uses compile-time `--dart-define` values. Never commit `.env` files,
+credentials, or production URLs. The `.env.example` contains names only. The app shell runs
+unconfigured for UI development. Only `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` may reach
+Flutter. Secret/service-role and AI provider keys stay in Supabase Edge Function secrets.
+
+**No iOS simulator.** The development Mac runs `build ios --release --no-codesign` as the
+compilation gate. Runtime testing uses a physically connected iPhone after signing is configured.
+
+**Development-only component gallery** (no production route):
+
+```sh
+./scripts/flutter.sh run -t lib/component_gallery.dart
+```
+
+**Edge Function deployment** uses `--use-api` to avoid Docker bind-mount issues on the external SSD:
+
+```sh
+./scripts/supabase.sh functions deploy <name> --project-ref qsfzzsjenopqqqhvpyaw --use-api
+```
+
+**Migration deployment** requires dry-run first:
+
+```sh
+./scripts/supabase.sh db push --linked --dry-run
+./scripts/supabase.sh db push --linked
+```
+
+All tooling state, caches, and build output stay under `.tooling/` on the external SSD. Never place
+build output, `.dart_tool/`, or `build/` on internal storage.
 
 ## 3. Current Phase
 
-The repository is currently in documentation-first setup. Do not create application code, package manifests, infrastructure, generated projects, or dependencies until explicitly asked.
+Phases 1–8 are hosted and deployed. The Flutter iOS app is installed on the owner's iPhone. 46
+forward migrations are deployed to the hosted Supabase project. Six Edge Functions are active. Coach
+Continuity Memory (ADR-0009, five-layer structured memory) is live with `coach-chat` v16. Groq Qwen
+`qwen/qwen3.6-27b` is the active Coach/chat provider; Gemini `gemini-3.5-flash` remains disabled
+pending paid-privacy evaluation gates.
 
-When implementation begins, the intended stack is:
-
-- Flutter, iOS first;
-- Supabase Auth with native Sign in with Apple;
-- Supabase PostgreSQL with mandatory Row Level Security;
-- Supabase private Storage;
-- Supabase Edge Functions, Queues, and Cron for privileged/server-side work;
-- HealthKit through an internal adapter; and
-- a swappable AI provider behind `CoachModelProvider` inside Edge Functions.
-
-Do not substitute the stack or add infrastructure without documenting and receiving approval for the architectural change.
+**Before starting any task**, read `docs/PROGRESS_CONTEXT.md` for the live dashboard, then the
+relevant `docs/handoff/*.md` for the active workstream. For product scope, PRD is authoritative. For
+technical boundaries, Architecture. For entities, Data Model. For AI behavior, AI Safety Spec. For
+security/privacy, Security and Privacy.
 
 ## 4. Non-Negotiable Architecture Rules
 
 1. Deterministic code calculates trends, adherence, totals, baselines, and policy eligibility.
 2. Model output is interpretation and proposal, not authoritative calculation.
-3. Training Coach, Nutrition Coach, and Head Coach are typed perspectives in one controlled workflow for MVP.
+3. Training Coach, Nutrition Coach, and Head Coach are typed perspectives in one controlled workflow
+   for MVP.
 4. Model output never activates a plan, confirms a meal, or writes a durable user fact.
-5. Persistent changes require evidence, validation, explicit user approval, a new version, and an audit event.
+5. Persistent changes require evidence, validation, explicit user approval, a new version, and an
+   audit event.
 6. The active plan remains usable when AI, HealthKit, or media processing fails.
 7. User identity comes from authentication, never request ownership fields.
 8. AI provider keys remain server-side.
 9. Photos are private, purpose-bound, and accessed only through short-lived authorization.
 10. Missing or conflicting data lowers confidence; it is never silently invented.
 11. Every exposed user-owned table and Storage bucket has enabled, tested RLS.
-12. Supabase secret/service-role keys never enter Flutter; only the project URL and publishable key may ship in the app.
+12. Supabase secret/service-role keys never enter Flutter; only the project URL and publishable key
+    may ship in the app.
 
 ## 5. MVP Boundaries
 
 Build only features explicitly included in the PRD. The MVP excludes:
 
-- Android and Health Connect;
-- public App Store release;
-- minors, pregnancy, medical diets, eating disorders, and rehabilitation;
-- medical-report analysis;
-- exercise-video form correction;
-- subscriptions, payments, advertising, social features, and trainer marketplace;
-- autonomous multi-agent systems; and
-- vector RAG without the documented evaluation gate.
+- Android and Health Connect
+- public App Store release
+- minors, pregnancy, medical diets, eating disorders, rehabilitation
+- medical-report analysis, exercise-video form correction
+- subscriptions, payments, advertising, social features, trainer marketplace
+- autonomous multi-agent systems
+- vector RAG without the documented evaluation gate
 
-Do not add “future-proof” abstractions, a separate API server, microservices, caches, vector databases, agent frameworks, or unrelated SDKs without a current requirement. Prefer Supabase-native Auth, Data API/RPC, Edge Functions, Storage, Queues, and Cron with the smallest implementation satisfying documented behavior.
+Do not add future-proof abstractions, a separate API server, microservices, caches, vector
+databases, agent frameworks, or unrelated SDKs without a current requirement. Prefer Supabase-native
+Auth, Data API/RPC, Edge Functions, Storage, Queues, and Cron.
 
 ## 6. AI and Data Rules
 
-- Use versioned structured schemas for feature snapshots, policy results, and model outputs.
-- Treat user notes, imported text, and retrieved content as untrusted data.
+- Versioned structured schemas for feature snapshots, policy results, and model outputs.
+- User notes, imported text, and retrieved content are untrusted data.
 - Coaching models have no shell, web, arbitrary database, or unrestricted tool access.
-- Validate schema, semantics, evidence references, catalog references, policy permissions, and proposal freshness.
-- Reject the whole output if validation fails; never apply a partial response.
-- Keep raw sensitive content out of general logs and analytics.
-- Store structured user facts in PostgreSQL first.
-- Add embeddings only after all gates in Architecture pass and deletion propagation is tested.
-- Add separate agents only after a named evaluation failure is materially improved by the split.
+- Validate schema, semantics, evidence references, catalog references, policy permissions, and
+  proposal freshness. Reject the whole output on any validation failure.
+- Raw sensitive content stays out of general logs and analytics.
+- Structured user facts in PostgreSQL first. Embeddings only after Architecture gates pass and
+  deletion propagation is tested.
+- Coach-decide defaults to the deterministic mock. Live Gemini requires all named server-side
+  secrets (`COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`, `GEMINI_API_KEY`, etc.) reviewed and
+  configured together. The only approved production model is `gemini-3.5-flash` with medium thinking
+  for Coach and low thinking for meal vision.
+- Separate agents only after a named evaluation failure is materially improved by the split.
 
-## 7. Coding Standards
+## 7. Coding and Database Standards
 
-When code is authorized:
-
-- Enable strict TypeScript and Dart analysis.
-- Use the Supabase Flutter SDK for Auth/Data/Storage and TypeScript/Deno Edge Functions for privileged workflows.
-- Prefer explicit domain types over loose maps and strings.
-- Validate every external boundary: mobile input, HealthKit normalization, database writes, object metadata, and provider output.
+- Strict TypeScript (Deno) and Dart analysis. Explicit domain types over loose maps/strings.
+- Validate every external boundary: mobile input, HealthKit normalization, database writes, object
+  metadata, provider output.
 - Keep domain calculations pure, versioned, and unit-tested.
-- Make mutating endpoints idempotent where mobile retries are possible.
-- Use transactions for plan/target activation and proposal acceptance.
-- Use canonical units internally and convert only at API/UI boundaries.
-- Use UTC timestamps plus explicit IANA timezone and local date where coaching-day semantics matter.
+- Mutating endpoints idempotent where mobile retries are possible.
+- Transactions for plan/target activation and proposal acceptance.
+- Canonical units internally; convert only at API/UI boundaries.
+- UTC timestamps plus explicit IANA timezone and local date where coaching-day semantics matter.
 - Never hard-code provider model IDs in domain logic.
-- Never bypass RLS from Flutter or treat the publishable key as authorization by itself.
-- Keep secret/service-role access inside reviewed Edge Functions and migration/administration tooling.
-- Never log tokens, secrets, prompts, photos, health values, notes, signed URLs, or request/response bodies containing restricted data.
-- Prefer readable code and narrow interfaces over generic frameworks.
-- Do not leave placeholders, TODO behavior, dead code, or commented-out alternatives in completed work.
-
-## 8. Database Changes
-
-- Use forward-only reviewed migrations.
-- Do not edit an applied migration.
+- Never bypass RLS from Flutter or treat the publishable key as authorization.
+- Never log tokens, secrets, prompts, photos, health values, notes, signed URLs, or restricted
+  request/response bodies.
+- Prefer readable code and narrow interfaces. No placeholders, TODO behavior, dead code, or
+  commented-out alternatives in completed work.
+- Forward-only reviewed migrations. Never edit an applied migration.
 - Preserve immutable historical snapshots and version lineages.
-- Enforce one active training-plan version and nutrition-target set per user.
-- Include user ownership in constraints and authorization queries.
-- Enable RLS and explicit policies before exposing any user-owned table through the Data API.
-- Treat `auth.users.id` as the canonical user identity and use `auth.uid()` in policies.
-- Restrict grants on transactional/security-definer functions and test their authorization paths.
-- Add indexes justified by documented access paths.
-- Provide rollback or repair strategy for destructive data transformations.
-- Never run destructive production operations or drop user data without explicit approval and a verified backup/retention plan.
+- `auth.users.id` is canonical user identity; use `auth.uid()` in policies.
+- Indexes justified by documented access paths.
+- Never run destructive production operations without explicit approval and verified backup.
 
-## 9. Security and Secrets
+## 8. Secrets and Security
 
-- Use environment-specific secret management and `.env.example` files containing names only.
-- Never commit real credentials, tokens, Apple configuration secrets, provider keys, private URLs, or production data.
-- The Supabase publishable key may be committed only through approved environment configuration because RLS is the security boundary; secret/service-role keys remain secrets.
-- Do not expose storage object keys as authorization.
+- Environment-specific secret management. `.env.example` contains names only.
+- Never commit real credentials, tokens, Apple configuration secrets, provider keys, private URLs,
+  or production data.
+- Supabase publishable key may be committed through approved config (RLS is the boundary);
+  secret/service-role keys remain secrets.
 - Require recent authentication for export and deletion.
 - Review any new SDK for data collection, subprocessors, retention, and logging before adoption.
 - A new AI provider requires privacy review and evaluation parity before use with restricted data.
+- `meal-media-retention` validates a dedicated `RETENTION_WORKER_SECRET` (not JWT). Store the same
+  generated value in Edge Function secrets and Supabase Vault; Cron reads Vault. Never place it in
+  Flutter, shell history, logs, or committed files.
 
-## 10. Testing Requirements
+## 9. Documentation Synchronization
 
-Every behavior change must include proportional tests.
+When behavior changes, update the authority that owns it:
 
-Required categories:
+- product behavior/scope → `docs/PRD.md`
+- system boundaries, providers, data flow → `docs/ARCHITECTURE.md`
+- navigation, screens, interaction states → `docs/UX_FLOWS.md`
+- visual, component, motion, accessibility → `docs/DESIGN_SYSTEM.md`
+- entities, fields, ownership, lifecycle → `docs/DATA_MODEL.md`
+- model authority, policy, schema, evaluation → `docs/AI_SAFETY_SPEC.md`
+- collection, sharing, retention, deletion → `docs/SECURITY_PRIVACY.md`
+- quality gates, test coverage → `docs/TESTING_STRATEGY.md`
+- delivery sequencing → `docs/IMPLEMENTATION_ROADMAP.md`
+- budget assumptions, upgrade triggers → `docs/COST_MODEL.md`
 
-- unit tests for deterministic feature and policy logic;
-- schema and semantic-validation tests for AI output;
-- database constraint, transaction, and ownership tests;
-- Supabase Auth, Data API/RPC, Edge Function, RLS, validation, idempotency, and failure tests;
-- HealthKit fixtures for partial, duplicate, stale, denied/unknown, and unavailable data;
-- media tests for private access, type/size validation, signed URL expiry, and deletion;
-- AI evaluations for correct maintain/change decisions, evidence grounding, safety, and prompt injection;
-- privacy tests for export, deletion, retention, and log redaction; and
-- mobile flow tests for offline/degraded logging and approval.
+If documents conflict, stop and report the exact conflict. Do not choose silently.
 
-Safety-critical AI fixtures require a 100% pass rate. Do not weaken tests to make a provider or implementation pass.
+After material work, update in order: (1) authoritative docs that changed, (2) ADR if a durable
+decision was made, (3) relevant `docs/handoff/*.md`, (4) `docs/PROGRESS_CONTEXT.md`, (5)
+`docs/worklog/` only if detailed history is needed. Keep `docs/PROGRESS_CONTEXT.md` under 120 lines.
+Never paste chat transcripts, raw logs, secrets, or health data into progress files.
 
-## 11. Commands
+## 10. Completion Checklist
 
-Phase 1 implementation is authorized. Exact supported local install, lint,
-test, migration, and development commands are maintained in
-[`DEVELOPMENT_GUIDE.md`](DEVELOPMENT_GUIDE.md). Project tooling and caches must
-remain under the repository's `.tooling/` directory on the external SSD.
+Before claiming completion, verify:
 
-Never invent commands not backed by repository configuration.
+- behavior matches PRD and MVP boundary
+- deterministic logic and model responsibility remain separated
+- no model output mutates persistent state without approval
+- authorization and multi-user isolation enforced
+- sensitive data minimized, protected, absent from logs
+- failure modes preserve the approved plan and user logging
+- tests and AI evaluations pass for changed behavior
+- migrations and API contracts consistent
+- Supabase RLS and Storage access rules pass cross-user tests
+- authoritative docs updated
+- no secrets, placeholders, or unsupported features added
 
-Before reporting implementation complete, run all commands relevant to the changed areas and report failures accurately.
+## 11. Stability and Deployment
 
-## 12. Documentation Synchronization
+### Pre-Deploy Gate (Mandatory)
 
-Update authoritative documentation in the same change when behavior changes:
+Before every `supabase db push --linked` to production, run the full gate:
 
-- product behavior or scope → `docs/PRD.md`;
-- system boundaries, providers, or data flow → `docs/ARCHITECTURE.md`;
-- navigation, screen behavior, or interaction states → `docs/UX_FLOWS.md`;
-- visual tokens, components, motion, or accessibility → `docs/DESIGN_SYSTEM.md`;
-- entities, fields, ownership, or lifecycle → `docs/DATA_MODEL.md`;
-- model authority, policy, schema, or evaluation → `docs/AI_SAFETY_SPEC.md`;
-- collection, sharing, retention, deletion, or security → `docs/SECURITY_PRIVACY.md`;
-- quality gates or test coverage → `docs/TESTING_STRATEGY.md`;
-- delivery sequencing → `docs/IMPLEMENTATION_ROADMAP.md`;
-- platform/AI budget assumptions or upgrade triggers → `docs/COST_MODEL.md`;
-- cross-chat dashboard, active pointers, and global current state → `docs/PROGRESS_CONTEXT.md`;
-- scoped current state, blockers, and next safe actions → relevant `docs/handoff/*.md`;
-- detailed dated implementation history → relevant `docs/worklog/YYYY-MM-DD-topic.md`;
-- expensive-to-reverse decisions and consequences → `docs/adr/NNNN-topic.md`;
-- durable repository workflow → `AGENTS.md`.
+```sh
+./scripts/pre-deploy.sh
+```
 
-Do not duplicate conflicting rules across files. Cross-link to the authority and keep shared terminology exact.
+If any step fails, **do not deploy**. Fix the failure, then re-run the gate. The gate runs:
 
-## 12.1 Progress and Handoff Discipline
+1. Local Supabase start + db reset (all migrations applied cleanly)
+2. pgTAP database tests
+3. Deno format + lint + test
+4. Flutter static analysis
+5. Flutter unit/widget tests
+6. Flutter iOS release build
+7. Production migration dry-run
 
-Every agent must leave the repository easier for the next backend, frontend,
-design, or review chat to continue.
+### Forward-Compatible Migration Rules
 
-Use the context layers this way:
+**Every migration must be safe for the currently-deployed Flutter app and Edge Functions.**
 
-- Keep `docs/PROGRESS_CONTEXT.md` under 120 lines. It is a dashboard and pointer
-  index, not a history file.
-- Keep `docs/handoff/backend.md`, `docs/handoff/frontend.md`, and
-  `docs/handoff/design.md` focused on current state, blockers, and next safe
-  actions for that workstream.
-- Put detailed dated notes in `docs/worklog/` only when the history is useful
-  for debugging or review.
-- Put durable decisions in `docs/adr/` only when the choice is expensive to
-  reverse.
-- Never paste chat transcripts, raw logs, command spam, credentials, secrets,
-  private health data, prompts, or generated design dumps into progress files.
+Before writing a migration, answer these questions:
 
-At the end of material work, update in this order:
+1. Does it **rename**, **drop**, or **change the type** of any column/function/RPC return field that
+   is currently referenced by deployed Flutter or Edge Function code?
+2. Does it **remove** an RPC parameter or change an RPC return shape that Flutter parses?
 
-1. authoritative docs if product, architecture, data, safety, privacy, UX,
-   design-system, testing, roadmap, or cost behavior changed;
-2. ADR if a durable decision was made;
-3. relevant handoff file;
-4. `docs/PROGRESS_CONTEXT.md`;
-5. worklog only if detailed history is needed.
+If the answer to either question is **yes**, use the two-step pattern:
 
-## 13. Working Style
+**Step 1 (ADD):** Add the new column/function/field. Old code still works against the old column.
+**Deploy:** Deploy Flutter + Edge Function that consume the new column. **Step 2 (REMOVE):** In a
+follow-up migration (days later), drop the old column only after all deployed code has been updated.
 
-- Inspect existing code and docs before proposing changes.
-- State assumptions and unresolved decisions before implementation.
-- Keep changes narrow and avoid unrelated cleanup.
-- Preserve user work and unrelated modifications.
-- Ask before destructive actions, external publication, production deployment, data migration, or scope expansion.
-- Prefer small, reviewable commits when commits are requested.
-- Do not claim completion without verification evidence.
+**Never single-step a rename/drop/type-change.** The deployed Flutter app on the iPhone must
+continue to work after the migration is applied but before the new build is installed.
 
-## 14. Completion Checklist
+**RPC contract rule:** Every RPC consumed by Flutter (`get_my_training_hub`, `get_my_daily_brief`,
+etc.) must include an explicit `schema_version` field. Add new fields, never remove or rename
+existing fields in a deployed migration. Only remove fields in a cleanup migration after all Flutter
+builds consuming the old fields are updated.
 
-Before saying a task is complete, verify:
+### Contract Tests
 
-- behavior matches the PRD and MVP boundary;
-- deterministic logic and model responsibility remain separated;
-- no model output can mutate persistent state without approval;
-- authorization and multi-user isolation are enforced;
-- sensitive data is minimized, protected, and absent from logs;
-- failure modes preserve the approved plan and user logging;
-- tests and AI evaluations pass for changed behavior;
-- migrations and API contracts are consistent;
-- Supabase RLS policies and Storage access rules pass cross-user tests;
-- authoritative docs are updated; and
-- no secrets, placeholders, or unsupported features were added.
+Three layers verify that the full stack works together:
+
+| Layer              | Location                                        | What It Tests                                        | Requires                                 |
+| ------------------ | ----------------------------------------------- | ---------------------------------------------------- | ---------------------------------------- |
+| **Deno → DB**      | `supabase/functions/_tests/db_contract_test.ts` | RPCs return valid shapes the Edge Functions expect   | Local Supabase running                   |
+| **Flutter → RPC**  | `test/contract/*_contract_test.dart`            | Flutter can parse real RPC response shapes           | JSON fixtures (no Supabase needed in CI) |
+| **Flutter → Edge** | `test/contract/*_contract_test.dart`            | Flutter can parse real Edge Function response shapes | JSON fixtures                            |
+
+**When adding or changing an RPC or Edge Function response shape:**
+
+- Update the contract test fixture (which triggers a manual review of the shape change)
+- Update Flutter parsing code to match
+- Both must pass the gate before deployment
+
+**When a contract test fixture is updated, the review must verify:**
+
+- No field removed that deployed Flutter code depends on
+- New fields are additive only (or the old field is preserved until the follow-up migration)
+- `schema_version` is incremented
+
+### Context Budget
+
+Every addition to the Coach context pipeline must pass the budget contract test. See
+`docs/CONTEXT_BUDGET.md` for rules, budgets, and what to do when the contract test fails.
+
+### Deployment Order
+
+When a feature touches multiple layers, deploy in this order:
+
+1. Database migration (additive only — follow forward-compatible rules)
+2. Edge Functions (accept both old and new payload shapes)
+3. Flutter build + install to iPhone
+
+Verify each layer deploys successfully before moving to the next. If any layer fails, roll back by
+reverting the migration (using its rollback script) and re-deploying the old Edge Function version.
+
+### Database Backup
+
+Run before every production migration:
+
+```sh
+./scripts/backup-db.sh           # schema + data via session pooler
+./scripts/backup-db.sh --schema-only
+./scripts/backup-db.sh --data-only
+```
+
+Backups land in `.tooling/backups/YYYY-MM-DD/` with a SHA-256 manifest. Requires the Supabase
+session pooler (port 6543, enabled on the hosted project). Backups are read-only; never run
+destructive operations without a verified backup.
+
+### Edge Function Rollback
+
+```sh
+./scripts/rollback-function.sh <name>   # coach-chat, meal-analyze, etc.
+```
+
+Queries the function's git history, checks out the prior committed version, and redeploys with
+`--use-api`. Used when a deployed Edge Function needs an immediate revert.
+
+### Sentry Crash Reporting
+
+Sentry is active in both Flutter and Edge Functions:
+
+| Layer | DSN Source | Disabled When |
+|-------|-----------|---------------|
+| Flutter | `--dart-define SENTRY_DSN=...` | DSN empty or omitted |
+| Edge Functions | `Deno.env.get("SENTRY_DSN")` (hosted secret) | Secret absent |
+
+**Flutter build with Sentry:**
+
+```sh
+./scripts/flutter.sh build ios --release --no-codesign \
+  --dart-define SENTRY_DSN=https://6d3f662b0d2eda3941ad9b529c2d3446@o4511762519490560.ingest.us.sentry.io/4511762526830592 \
+  --dart-define SUPABASE_URL=... \
+  --dart-define SUPABASE_PUBLISHABLE_KEY=...
+```
+
+**Edge Function secret** (set once, survives deploys):
+
+```sh
+./scripts/supabase.sh secrets set SENTRY_DSN=https://6d3f662b0d2eda3941ad9b529c2d3446@o4511762519490560.ingest.us.sentry.io/4511762526830592
+```
+
+The `beforeSend` scrubber redacts HealthKit values, meal content, photo URLs, and prompt text
+before events leave the device. Sentry failures are silent — they never affect the app or the
+Edge Function caller.

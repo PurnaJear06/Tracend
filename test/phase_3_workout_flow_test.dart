@@ -31,14 +31,14 @@ class _MemoryWorkoutRepository implements WorkoutRepository {
   @override
   Future<String?> loadDraft(String workoutId) async => saved;
   @override
-  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout) async =>
+  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout, {DateTime? localDate}) async =>
       serverSession;
   @override
   Future<PlannedWorkout> loadTodayWorkout() async => PlannedWorkout.fixture;
   @override
   Future<void> saveDraft(String workoutId, String json) async => saved = json;
   @override
-  Future<String> start(PlannedWorkout workout, String idempotencyKey) async =>
+  Future<String> start(PlannedWorkout workout, String idempotencyKey, {DateTime? localDate}) async =>
       'server-session';
   @override
   Future<void> sync(

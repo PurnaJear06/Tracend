@@ -2,24 +2,28 @@
 
 ## Coach Context v2 and Qwen Reasoning
 
-Stable evidence IDs identify structured facts and label freshness, missing
-evidence, logging coverage and conflicts. Ordinary chat uses non-reasoning
-structured output. Weekly review may use Qwen reasoning followed by validated
-formatting. Unsupported evidence rejects the output; unknown logging is not
-non-adherence; persistent plan and target changes remain approval-gated.
+Stable evidence IDs identify structured facts and label freshness, missing evidence, logging
+coverage and conflicts. Ordinary chat uses non-reasoning structured output. Weekly review may use
+Qwen reasoning followed by validated formatting. Unsupported evidence rejects the output; unknown
+logging is not non-adherence; persistent plan and target changes remain approval-gated.
 
-**Status:** Authoritative AI behavior and safety contract  
+**Status:** Authoritative AI behavior and safety contract\
 **Population:** Healthy adults aged 18+ in a private beta
 
 ## 1. Purpose
 
-This document defines what Tracend's AI may decide, what deterministic software must decide, when coaching must stop, and how model quality is evaluated. Product behavior is defined in [PRD.md](./PRD.md); privacy requirements are defined in [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md).
+This document defines what Tracend's AI may decide, what deterministic software must decide, when
+coaching must stop, and how model quality is evaluated. Product behavior is defined in
+[PRD.md](./PRD.md); privacy requirements are defined in
+[SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md).
 
-Tracend provides fitness coaching support. It does not diagnose, treat, rehabilitate, prescribe medication, replace emergency services, or replace a qualified clinician.
+Tracend provides fitness coaching support. It does not diagnose, treat, rehabilitate, prescribe
+medication, replace emergency services, or replace a qualified clinician.
 
 ## 2. Controlled AI Workflow
 
-The MVP uses one controlled orchestration pipeline. Training Coach, Nutrition Coach, and Head Coach are typed sections of one validated decision—not autonomous agents.
+The MVP uses one controlled orchestration pipeline. Training Coach, Nutrition Coach, and Head Coach
+are typed sections of one validated decision—not autonomous agents.
 
 ```text
 Authorized data
@@ -48,6 +52,9 @@ The active training plan and nutrition targets always remain the last user-appro
 - schema, range, evidence, and reference validation;
 - plan and target activation; and
 - authorization, consent, audit, retention, and deletion.
+- HealthKit auto-completion: detecting a workout via HealthKit data, checking for an existing
+  completed session, offering a user-facing prompt, and creating a completed session on explicit
+  confirmation — all performed by deterministic RPC logic, not AI.
 
 ### AI may
 
@@ -65,7 +72,8 @@ The active training plan and nutrition targets always remain the last user-appro
 
 - activate or silently edit plans, targets, meals, goals, constraints, or memories;
 - diagnose conditions, interpret medical reports, or prescribe treatment;
-- recommend purging, dehydration, extreme restriction, dangerous rapid change, or training through acute pain;
+- recommend purging, dehydration, extreme restriction, dangerous rapid change, or training through
+  acute pain;
 - invent measurements, ingredients, HealthKit values, history, or preferences;
 - claim precise body-fat percentage from photos;
 - infer unrelated sensitive traits from photos;
@@ -76,23 +84,27 @@ The active training plan and nutrition targets always remain the last user-appro
 
 ### Training Coach
 
-Receives the approved plan, execution, progression, schedule, equipment, recovery, discomfort, and permitted actions. It may recommend today's prescription, approved substitution, recovery adjustment, technique priority, or training proposal. It cannot change nutrition targets.
+Receives the approved plan, execution, progression, schedule, equipment, recovery, discomfort, and
+permitted actions. It may recommend today's prescription, approved substitution, recovery
+adjustment, technique priority, or training proposal. It cannot change nutrition targets.
 
 ### Nutrition Coach
 
-Receives approved targets, confirmed meal totals, weight trend, adherence, hunger, preferences, constraints, training demand, and permitted actions. It may recommend today's nutrition priority or a permitted nutrition proposal. It cannot change training prescription.
+Receives approved targets, confirmed meal totals, weight trend, adherence, hunger, preferences,
+constraints, training demand, and permitted actions. It may recommend today's nutrition priority or
+a permitted nutrition proposal. It cannot change training prescription.
 
 ### Head Coach
 
-Receives both coach sections plus shared policy and evidence. It produces one final action, resolves conflicts, states uncertainty, and identifies proposals requiring approval. It cannot broaden allowed actions.
+Receives both coach sections plus shared policy and evidence. It produces one final action, resolves
+conflicts, states uncertainty, and identifies proposals requiring approval. It cannot broaden
+allowed actions.
 
-For ordinary acute symptom reports such as cold, cough, or fever, Coach may
-recommend a conservative same-day pause from strenuous training, rest,
-hydration, and an updated recovery check-in. It must not diagnose, prescribe
-treatment, or tell a feverish user to complete the scheduled workout. Severe,
-worsening, persistent, or emergency symptoms receive proportionate clinical or
-urgent-care escalation language. This daily guidance does not mutate the
-approved plan.
+For ordinary acute symptom reports such as cold, cough, or fever, Coach may recommend a conservative
+same-day pause from strenuous training, rest, hydration, and an updated recovery check-in. It must
+not diagnose, prescribe treatment, or tell a feverish user to complete the scheduled workout.
+Severe, worsening, persistent, or emergency symptoms receive proportionate clinical or urgent-care
+escalation language. This daily guidance does not mutate the approved plan.
 
 ## 5. Structured Decision Contract
 
@@ -136,8 +148,10 @@ Requirements:
 - Evidence codes must exist in the supplied snapshot or policy result.
 - User-visible text cannot introduce unsupported facts.
 - Same-day adjustments expire and never alter plan versions.
-- Persistent proposals include domain, current/proposed values, evidence, benefit, downside, confidence, and effective date.
-- Unknown fields, invalid ranges, cross-domain actions, policy conflicts, and invalid references are rejected.
+- Persistent proposals include domain, current/proposed values, evidence, benefit, downside,
+  confidence, and effective date.
+- Unknown fields, invalid ranges, cross-domain actions, policy conflicts, and invalid references are
+  rejected.
 
 ## 6. Data Sufficiency and Change Rules
 
@@ -152,9 +166,11 @@ These conservative defaults are versioned policy, never prompt-only instructions
 
 ### Same-day training adjustment
 
-May be allowed for a current recovery deviation, schedule limitation, or non-red-flag discomfort. It is limited to today's intensity, volume reduction, rest, or validated substitution.
+May be allowed for a current recovery deviation, schedule limitation, or non-red-flag discomfort. It
+is limited to today's intensity, volume reduction, rest, or validated substitution.
 
-Acute/severe pain, chest pain, fainting, severe shortness of breath, neurological symptoms, or another configured red flag invokes escalation rather than workout advice.
+Acute/severe pain, chest pain, fainting, severe shortness of breath, neurological symptoms, or
+another configured red flag invokes escalation rather than workout advice.
 
 ### Structural training change
 
@@ -177,11 +193,14 @@ Normally requires:
 - enough confirmed nutrition days to interpret adherence; and
 - no safety restriction.
 
-When adherence is insufficient, the coach addresses obstacles rather than claiming the target failed. Changes outside configured safe ranges are rejected.
+When adherence is insufficient, the coach addresses obstacles rather than claiming the target
+failed. Changes outside configured safe ranges are rejected.
 
 ### Initial plan
 
-Onboarding output identifies assumptions, missing information, confidence, and constraint uncertainty. It uses only compatible catalog exercises. Training and nutrition proposals require approval.
+Onboarding output identifies assumptions, missing information, confidence, and constraint
+uncertainty. It uses only compatible catalog exercises. Training and nutrition proposals require
+approval.
 
 ## 7. Eligibility and Escalation
 
@@ -195,17 +214,24 @@ The MVP does not support:
 - diagnosis or medical-report interpretation; or
 - emergency/crisis situations.
 
-An `escalate` response states that Tracend cannot safely advise, recommends stopping the relevant activity when appropriate, directs the user to emergency services or an appropriate clinician/dietitian/physiotherapist, avoids diagnosis, and never reassures the user that a red-flag symptom is harmless. Localized emergency wording is maintained outside model prompts.
+An `escalate` response states that Tracend cannot safely advise, recommends stopping the relevant
+activity when appropriate, directs the user to emergency services or an appropriate
+clinician/dietitian/physiotherapist, avoids diagnosis, and never reassures the user that a red-flag
+symptom is harmless. Localized emergency wording is maintained outside model prompts.
 
 ## 8. Meal Image Analysis
 
-Meal vision returns candidate foods, preparation assumptions, estimated portions, confidence, ambiguity, and clarification questions. It never supplies authoritative final macros.
+Meal vision returns candidate foods, preparation assumptions, estimated portions, confidence,
+ambiguity, and clarification questions. It never supplies authoritative final macros.
 
-The user edits and confirms candidates; catalog data calculates nutrients. Unconfirmed candidates never affect adherence or coaching. Mixed Indian/home dishes should request recipe or ingredient clarification rather than imply false precision.
+The user edits and confirms candidates; catalog data calculates nutrients. Unconfirmed candidates
+never affect adherence or coaching. Mixed Indian/home dishes should request recipe or ingredient
+clarification rather than imply false precision.
 
 ## 9. Physique Analysis
 
-Analysis requires separate consent and standardized front/side/back photo sets selected for comparison.
+Analysis requires separate consent and standardized front/side/back photo sets selected for
+comparison.
 
 Allowed:
 
@@ -235,33 +261,32 @@ Use:
 - a stronger evaluated model for onboarding, periodic review, or ambiguous conflicts; and
 - no model call when deterministic output is sufficient.
 
-Providers sit behind `CoachModelProvider` inside Supabase Edge Functions.
-Gemini is the planned production baseline. Under ADR 0006, Groq Qwen is an
-owner-only, time-bounded test provider after schema validation and synthetic
-adapter evaluation; the mock remains the default and progress-photo vision stays
-separately disabled until its own evaluation gate passes.
-Provider and Supabase secret/service-role keys never enter Flutter. Price alone
-cannot qualify a model.
+Providers sit behind `CoachModelProvider` inside Supabase Edge Functions. Gemini is the planned
+production baseline. Under ADR 0006, Groq Qwen is an owner-only, time-bounded test provider after
+schema validation and synthetic adapter evaluation; the mock remains the default and progress-photo
+vision stays separately disabled until its own evaluation gate passes. Provider and Supabase
+secret/service-role keys never enter Flutter. Price alone cannot qualify a model.
 
-Stable `gemini-3.5-flash` is the production quality baseline for Coach text
-and separately evaluated image interpretation. Normal chat uses medium
-thinking; bounded meal extraction uses low thinking; high thinking is reserved
-for named difficult evaluation classes. Lite models are rejected by production
-configuration. Cost control must not bypass visible-food, mixed-dish, hidden-
-ingredient, portion-uncertainty, prompt-injection, schema-validity, or user-
-correction evaluations. Routing changes require regression results.
+Stable `gemini-3.5-flash` is the production quality baseline for Coach text and separately evaluated
+image interpretation. Normal chat uses medium thinking; bounded meal extraction uses low thinking;
+high thinking is reserved for named difficult evaluation classes. Lite models are rejected by
+production configuration. Cost control must not bypass visible-food, mixed-dish, hidden- ingredient,
+portion-uncertainty, prompt-injection, schema-validity, or user- correction evaluations. Routing
+changes require regression results.
 
-Conversational answers may explain only supplied structured evidence, must
-state missing data, and expose evidence references. The model receives at most
-20 recent messages and no tools. Deterministic pre-model rules refuse medical,
-emergency, pregnancy, eating-disorder, medication, and rehabilitation requests.
+Conversational answers may explain only supplied structured evidence, must state missing data, and
+expose evidence references. The model receives at most 20 recent messages and no tools.
+Deterministic pre-model rules refuse medical, emergency, pregnancy, eating-disorder, medication, and
+rehabilitation requests.
 
-The Gemini readiness adapter is disabled by default and requires an explicit
-paid-service data-terms gate before it can process restricted coaching context.
-Synthetic adapter tests do not satisfy evaluation parity or authorize live
-calls. Meal and progress vision remain separately gated.
+The Gemini readiness adapter is disabled by default and requires an explicit paid-service data-terms
+gate before it can process restricted coaching context. Synthetic adapter tests do not satisfy
+evaluation parity or authorize live calls. Meal and progress vision remain separately gated.
 
-Optimize cost using compact feature snapshots, cached static context, deterministic summaries, normalized images, duplicate avoidance, per-user rate limits, and quality-based routing. Cost cannot override safety or the quality floor. Budget assumptions and hard controls are defined in [COST_MODEL.md](./COST_MODEL.md).
+Optimize cost using compact feature snapshots, cached static context, deterministic summaries,
+normalized images, duplicate avoidance, per-user rate limits, and quality-based routing. Cost cannot
+override safety or the quality floor. Budget assumptions and hard controls are defined in
+[COST_MODEL.md](./COST_MODEL.md).
 
 ## 11. Prompt and Context Rules
 
@@ -272,12 +297,27 @@ Optimize cost using compact feature snapshots, cached static context, determinis
 - Direct identifiers, tokens, object keys, and unrelated history are excluded.
 - Coaching calls have no web, shell, arbitrary database, or unrestricted tool access.
 - The model may reference only supplied catalog identifiers.
+- Provider request bodies MUST use the multi-role message form: `system` carries identity,
+  boundaries, refusal behaviour, schema, and evidence rules; `user` carries the user's raw message
+  first (so greetings and questions receive a conversational answer matching what was asked) and the
+  prepared context second, clearly labelled as supporting evidence. Bundling all instructions,
+  schema, the user's question, and the context into a single `user` turn is prohibited — it caused
+  the model to interpret the question as data and emit the same plan-style answer for any input,
+  including greetings. The instruction "Lead with one clear recommendation" is prohibited in
+  conversational chat prompts; recommendations are appropriate only when the user asks for guidance.
+  Same-day execution adjustments remain permitted; persistent plan or target changes remain
+  approval-gated.
 
 ## 12. Validation and Failure Handling
 
-The invoking Supabase Edge Function validates schema, enums, ranges, evidence, policy permissions, catalog references, coach-domain authority, prohibited content, escalation consistency, proposal freshness, and the authenticated user's authority.
+The invoking Supabase Edge Function validates schema, enums, ranges, evidence, policy permissions,
+catalog references, coach-domain authority, prohibited content, escalation consistency, proposal
+freshness, and the authenticated user's authority.
 
-Invalid output is never partially applied. The system may attempt one schema-repair retry and then returns a safe unavailable state while preserving logging and the active plan. A live Coach chat must never present deterministic fallback text as a successful model answer; deterministic emergency and clinical-boundary refusals remain explicitly labeled safety responses.
+Invalid output is never partially applied. The system may attempt one schema-repair retry and then
+returns a safe unavailable state while preserving logging and the active plan. A live Coach chat
+must never present deterministic fallback text as a successful model answer; deterministic emergency
+and clinical-boundary refusals remain explicitly labeled safety responses.
 
 ## 13. Evaluation
 
@@ -295,18 +335,25 @@ Maintain anonymized fixtures covering:
 - red flags and unsupported populations; and
 - provider outage, timeout, and invalid output.
 
-Score safety compliance, correct maintain/change action, evidence grounding, hallucination, repeatability, schema validity, clarity, meal candidate accuracy, latency, and cost.
+Score safety compliance, correct maintain/change action, evidence grounding, hallucination,
+repeatability, schema validity, clarity, meal candidate accuracy, latency, and cost.
 
-Safety-critical cases require a 100% pass rate. A cheaper model cannot ship below a quality threshold. Prompt, policy, schema, or model changes require regression evaluation.
+Safety-critical cases require a 100% pass rate. A cheaper model cannot ship below a quality
+threshold. Prompt, policy, schema, or model changes require regression evaluation.
 
 ## 14. Observability and Review
 
-Record provider/model/prompt/schema/policy versions, feature snapshot, latency, usage, estimated cost, validation, retries, decision class, proposal outcome, and feedback. Keep raw sensitive content out of general telemetry.
+Record provider/model/prompt/schema/policy versions, feature snapshot, latency, usage, estimated
+cost, validation, retries, decision class, proposal outcome, and feedback. Keep raw sensitive
+content out of general telemetry.
 
-Unsafe feedback, unusual proposal rates, repeated failures, safety regression, or increased cost without quality gain opens review. Changes remain versioned and tested.
+Unsafe feedback, unusual proposal rates, repeated failures, safety regression, or increased cost
+without quality gain opens review. Changes remain versioned and tested.
 
 ## 15. RAG and Multi-Agent Policy
 
-The MVP uses structured state and bounded summaries. Vector RAG is added only after the gates in [ARCHITECTURE.md](./ARCHITECTURE.md) pass. Retrieval cannot override confirmed facts or policy.
+The MVP uses structured state and bounded summaries. Vector RAG is added only after the gates in
+[ARCHITECTURE.md](./ARCHITECTURE.md) pass. Retrieval cannot override confirmed facts or policy.
 
-Separate model agents are added only if evaluation demonstrates a specific improvement over the controlled single call. Safety and mutation approval always remain external to models.
+Separate model agents are added only if evaluation demonstrates a specific improvement over the
+controlled single call. Safety and mutation approval always remain external to models.

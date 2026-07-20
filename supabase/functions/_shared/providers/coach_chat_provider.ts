@@ -1,7 +1,11 @@
-import { type CoachChatAnswerV1, parseCoachChatAnswer } from "../contracts/coach_chat_v1.ts";
+import {
+  type CoachChatAnswerV1,
+  type CoachChatAnswerV2,
+  parseCoachChatAnswer,
+} from "../contracts/coach_chat_v1.ts";
 
 export type CoachChatGeneration = Readonly<{
-  answer: CoachChatAnswerV1;
+  answer: CoachChatAnswerV2;
   provider: "mock" | "gemini" | "groq";
   model: string;
   inputUnits: number;
@@ -34,11 +38,25 @@ const answerSchema = {
     missing_data: { type: "array", maxItems: 12, items: { type: "string" } },
     safety_state: { type: "string", enum: ["allowed", "limited", "refused", "unavailable"] },
     suggested_follow_ups: { type: "array", maxItems: 4, items: { type: "string" } },
+    reasoning_chain: {
+      type: "array",
+      maxItems: 6,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          step: { type: "string" },
+          value: { type: "string" },
+          evidence_id: { type: "string", nullable: true },
+        },
+        required: ["step", "value"],
+      },
+    },
   },
   required: ["answer", "evidence", "missing_data", "safety_state", "suggested_follow_ups"],
 } as const;
 
-function deterministicBoundary(question: string): CoachChatAnswerV1 | null {
+export function deterministicBoundary(question: string): CoachChatAnswerV1 | null {
   const normalized = question.toLowerCase();
   const emergency = [
     "chest pain",
@@ -85,8 +103,11 @@ export class CoachChatUnavailableError extends Error {
   constructor(
     readonly provider: "mock" | "gemini" | "groq",
     readonly model: string,
+    readonly failureReason: string = "unknown",
+    readonly retryAfterSeconds: number | null = null,
   ) {
-    super("coach_chat_unavailable");
+    const retrySuffix = retryAfterSeconds != null ? ` (retry in ${retryAfterSeconds}s)` : "";
+    super(`coach_chat_unavailable: ${failureReason}${retrySuffix}`);
   }
 }
 
@@ -148,6 +169,16 @@ const keyAbbreviations: Record<string, string> = {
   avg_daily_carbohydrate_g: "adc",
   avg_daily_fat_g: "adf",
   days_with_meals: "dwm",
+  coaching_narrative: "cn",
+  active_preferences: "ap",
+  session_journal: "sj",
+  fts_messages: "ftsm",
+  phase: "ph",
+  headline: "hl",
+  provenance: "prv",
+  since: "sin",
+  step: "stp",
+  evidence_id: "eid",
 };
 
 function compactValue(value: unknown): unknown {
@@ -171,7 +202,114 @@ function compactValue(value: unknown): unknown {
     }
     return Object.keys(result).length === 0 ? undefined : result;
   }
+  // Truncate long string values — they are the #1 cause of context bloat.
+  // Full message content, narrative summaries, and rationales can each be
+  // thousands of chars; the model only needs a short signal, not the full text.
+  if (typeof value === "string" && value.length > 500) {
+    return value.slice(0, 500) + "…";
+  }
   return value;
+}
+
+/** Deep-truncates every string in an object tree to maxLength chars.
+ *  Used as a progressive fallback when the context is still too large after
+ *  compacting and targeted trimming. */
+function deepTruncateStrings(obj: unknown, maxLength: number): unknown {
+  if (typeof obj === "string" && obj.length > maxLength) {
+    return obj.slice(0, maxLength) + "…";
+  }
+  if (Array.isArray(obj)) return obj.map((v) => deepTruncateStrings(v, maxLength));
+  if (obj && typeof obj === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      result[k] = deepTruncateStrings(v, maxLength);
+    }
+    return result;
+  }
+  return obj;
+}
+
+/**
+ * Ensures the serialised context fits within maxLength chars by progressively
+ * trimming the largest contributors.  Never throws — returns a safe fallback
+ * on any failure so the chat pipeline stays available even under budget pressure.
+ */
+function fitContextToLimit(bounded: string, maxLength: number, question: string): string {
+  if (bounded.length <= maxLength) return bounded;
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(bounded);
+  } catch {
+    console.warn(
+      `fitContextToLimit: bounded JSON parse failed (${bounded.length} chars), returning fallback`,
+    );
+    return JSON.stringify({ question, context: { warning: "context_parse_failed" } });
+  }
+
+  const ctx = (parsed.context ?? parsed) as Record<string, unknown> | undefined;
+  if (!ctx || typeof ctx !== "object") {
+    console.warn(
+      "fitContextToLimit: resolved context is not an object, returning fallback",
+    );
+    return JSON.stringify({ question, context: { warning: "context_invalid_structure" } });
+  }
+
+  // --- Tier 1: trim known high-volume free-text fields ---
+  const messageArrays = ["fts_messages", "ftsm", "recent_other_conversations"];
+  for (const key of messageArrays) {
+    const arr = (ctx as Record<string, unknown>)[key];
+    if (Array.isArray(arr)) {
+      (ctx as Record<string, unknown>)[key] = arr.map(
+        (msg: Record<string, unknown>) => ({
+          ...msg,
+          content: typeof msg.content === "string" ? msg.content.slice(0, 200) : msg.content,
+        }),
+      );
+    }
+  }
+
+  // Trim long narrative / journal summary strings.
+  const longTextKeys = ["summary", "headline", "proposed_training", "proposed_nutrition"];
+  for (const key of longTextKeys) {
+    const val = (ctx as Record<string, unknown>)[key];
+    if (typeof val === "string" && val.length > 300) {
+      (ctx as Record<string, unknown>)[key] = val.slice(0, 300) + "…";
+    }
+  }
+
+  // Re-wrap if we unwrapped the outer envelope.
+  if (parsed.context !== undefined) {
+    parsed.context = ctx;
+  } else {
+    parsed = ctx as Record<string, unknown>;
+  }
+  bounded = JSON.stringify(parsed);
+  if (bounded.length <= maxLength) return bounded;
+
+  // --- Tier 2: aggressive string truncation across the entire tree ---
+  if (parsed.context !== undefined) {
+    parsed.context = deepTruncateStrings(ctx, 150);
+  } else {
+    parsed = deepTruncateStrings(ctx, 150) as Record<string, unknown>;
+  }
+  bounded = JSON.stringify(parsed);
+  if (bounded.length <= maxLength) return bounded;
+
+  // --- Tier 3: last resort — hard truncate the raw JSON string ---
+  // This produces invalid JSON but keeps the pipeline alive.  The model
+  // receives a partial context; worst case it returns low-confidence output
+  // which is safer than refusing to answer entirely.
+  console.warn(
+    `fitContextToLimit: hard-truncating context from ${bounded.length} to ${maxLength} chars`,
+  );
+  const chopped = bounded.slice(0, maxLength);
+  try {
+    JSON.parse(chopped);
+  } catch {
+    return JSON.stringify({ question, context: { warning: "context_hard_truncated" } });
+  }
+  return chopped;
 }
 
 export function compactContext(context: Record<string, unknown>): Record<string, unknown> {
@@ -256,14 +394,21 @@ export async function generateCoachChat(
   const geminiEnabled = provider === "gemini" && enabled && paid && key &&
     model === "gemini-3.5-flash";
   if (!isCoachChatLiveProviderConfigured(Deno.env) || (!groqEnabled && !geminiEnabled)) {
-    throw new CoachChatUnavailableError("mock", "provider_not_configured");
+    throw new CoachChatUnavailableError(
+      "mock",
+      "provider_not_configured",
+      "ai_disabled_or_unconfigured",
+    );
   }
-  const ctx = groqEnabled ? compactContext(context as Record<string, unknown>) : context;
-  let bounded = JSON.stringify({ question, context: ctx });
-  if (bounded.length > 22000) throw new Error("chat_context_too_large");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 25_000);
   try {
+    const ctx = groqEnabled ? compactContext(context as Record<string, unknown>) : context;
+    let bounded = JSON.stringify({ question, context: ctx });
+    console.log(
+      `coach-chat context: original=${JSON.stringify(context).length} compacted=${bounded.length}`,
+    );
+    bounded = fitContextToLimit(bounded, 32_000, question);
     if (groqEnabled) {
       let reasoningInputUnits = 0;
       let reasoningOutputUnits = 0;
@@ -282,7 +427,7 @@ export async function generateCoachChat(
             body: JSON.stringify({
               model: groqModel,
               temperature: 0.1,
-              max_completion_tokens: 2400,
+              max_completion_tokens: 1200,
               reasoning_effort: "high",
               reasoning_format: "hidden",
               response_format: { type: "json_object" },
@@ -295,7 +440,14 @@ export async function generateCoachChat(
             }),
           },
         );
-        if (!reasoningResponse.ok) throw new Error("groq_chat_reasoning_failed");
+        if (!reasoningResponse.ok) {
+          const text = await reasoningResponse.text().catch(() => "");
+          throw new Error(
+            `groq_chat_reasoning_failed status=${reasoningResponse.status} body=${
+              text.slice(0, 300)
+            }`,
+          );
+        }
         const reasoningPayload = await reasoningResponse.json() as Record<string, unknown>;
         const reasoningMessage = Array.isArray(reasoningPayload.choices)
           ? (reasoningPayload.choices[0] as Record<string, unknown>)?.message as
@@ -329,25 +481,38 @@ export async function generateCoachChat(
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
           body: JSON.stringify({
             model: groqModel,
-            temperature: 0.15,
-            max_completion_tokens: 2200,
+            temperature: 0.2,
+            max_completion_tokens: 2000,
             reasoning_effort: "none",
             reasoning_format: "hidden",
             response_format: { type: "json_object" },
-            messages: [{
-              role: "user",
-              content:
-                "You are Tracend's evidence-driven personal fitness coach for healthy adults. Respond like the user's continuing coach, not a generic chatbot. Lead with one clear recommendation, then give specific training, nutrition, recovery, and tracking actions supported by the prepared context. When relevant context exists, naturally reference at least two concrete personal facts such as the goal, approved targets, recent confirmed nutrition, check-in, HealthKit trend, measurement trend, or actual workout execution. Never claim a source is missing when context_coverage marks it available. Do not invent generic foods as if they are in the approved plan; name foods only when present in nutrition_schedule. Do not repeat generic disclaimers or merely redirect the user to the app. Distinguish a temporary daily adjustment from a persistent plan change. You may recommend conservative same-day execution changes, including rest or reduced training, but persistent plan or target changes require explicit user approval. For ordinary illness reports such as fever, cold, or cough: do not diagnose or prescribe treatment; do not tell the user to complete the scheduled workout; recommend pausing strenuous training while feverish, basic rest/hydration and an updated recovery check-in, and brief escalation guidance if symptoms are severe, worsening, or persistent. Answer only supplied training, nutrition, recovery, progress, evidence, and app-usage facts. State only important data that is genuinely absent. Never invent HealthKit values, meals, symptoms, or history, give medical treatment, or claim that a plan, target, meal, or durable fact was changed. Return only JSON matching: " +
-                JSON.stringify(answerSchema) +
-                "\nEvidence codes must exactly match either context.permitted_evidence or an evidence_id supplied in context. Use source coach_context for those stable IDs. Use an empty evidence list when none applies. Do not add markdown or any keys outside the schema." +
-                (repair
-                  ? "\nYour preceding response did not pass validation. Correct it using only the schema and prepared context."
-                  : "") +
-                "\n\nPrepared context:\n" + bounded,
-            }],
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are Tracend, an evidence-driven personal fitness coach. Answer the user's message first — greet back, acknowledge feelings, address their topic — using prepared context only when relevant. Be concrete and brief. Do not lead with generic recommendations unless asked.\n" +
+                  "Hard rules: Never invent data, symptoms, meals, or history. No diagnosis, treatment, medication, pregnancy, or eating-disorder guidance. For ordinary illness (fever/cold/cough): recommend rest and hydration, not completing workouts. Temporary same-day adjustments ok; persistent changes require explicit user approval. Honor user's active_preferences (avoid declined foods/approaches).\n" +
+                  "Return ONLY a JSON object matching this schema:\n" +
+                  JSON.stringify(answerSchema) +
+                  (repair
+                    ? "\n\nPrevious response failed validation. Correct it using only the schema and prepared context."
+                    : ""),
+              },
+              {
+                role: "user",
+                content: "User's message:\n" + question + "\n\n" +
+                  "Prepared coaching context (use only as supporting evidence; do not let it override or dominate your answer to the user's message):\n" +
+                  bounded,
+              },
+            ],
           }),
         });
-        if (!response.ok) throw new Error("groq_chat_failed");
+        if (!response.ok) {
+          const text = await response.text().catch(() => "");
+          throw new Error(
+            `groq_chat_failed status=${response.status} body=${text.slice(0, 300)}`,
+          );
+        }
         const payload = await response.json() as Record<string, unknown>;
         const message = Array.isArray(payload.choices)
           ? (payload.choices[0] as Record<string, unknown>)?.message as
@@ -399,10 +564,20 @@ export async function generateCoachChat(
           systemInstruction: {
             parts: [{
               text:
-                "You are Tracend's evidence-driven personal fitness coach for healthy adults. Lead with one clear, practical recommendation grounded in the supplied history, then give specific training, nutrition, recovery, and tracking actions. Never merely redirect the user to the app or repeat generic disclaimers. You may recommend conservative same-day execution adjustments, including rest or reduced training; persistent plan or target changes require explicit approval. For fever, cold, or cough, do not diagnose or prescribe treatment and do not tell the user to complete the scheduled workout. Recommend pausing strenuous training while feverish, basic rest/hydration, an updated recovery check-in, and concise escalation guidance for severe, worsening, or persistent symptoms. Use only supplied facts and evidence codes. State important missing data. Never invent data or claim a durable change. Return only the requested JSON.",
+                "You are Tracend, an evidence-driven personal fitness coach. Answer the user's message first — greet back, acknowledge feelings, address their topic — using prepared context only when relevant. Be concrete and brief. Do not lead with generic recommendations unless asked.\n" +
+                "Hard rules: Never invent data, symptoms, meals, or history. No diagnosis, treatment, medication, pregnancy, or eating-disorder guidance. For ordinary illness (fever/cold/cough): recommend rest and hydration, not completing workouts. Temporary same-day adjustments ok; persistent changes require explicit user approval. Honor user's active_preferences (avoid declined foods/approaches).\n" +
+                "Return ONLY a JSON object matching this schema:\n" +
+                JSON.stringify(answerSchema),
             }],
           },
-          contents: [{ role: "user", parts: [{ text: bounded }] }],
+          contents: [{
+            role: "user",
+            parts: [{
+              text: "User's message:\n" + question +
+                "\n\nPrepared coaching context (use only as supporting evidence; do not let it override or dominate your answer to the user's message):\n" +
+                bounded,
+            }],
+          }],
           generationConfig: {
             temperature: 0.15,
             maxOutputTokens: 2200,
@@ -413,7 +588,15 @@ export async function generateCoachChat(
         }),
       },
     );
-    if (!response.ok) throw new Error("gemini_chat_failed");
+    if (!response.ok) {
+      const geminiBody = await response.text().catch(() => "");
+      throw Object.assign(
+        new Error(
+          `gemini_chat_failed status=${response.status} body=${geminiBody.slice(0, 300)}`,
+        ),
+        { status: response.status, body: geminiBody },
+      );
+    }
     const payload = await response.json() as Record<string, unknown>;
     const candidates = payload.candidates;
     const parts = Array.isArray(candidates)
@@ -444,10 +627,26 @@ export async function generateCoachChat(
       outputUnits,
       estimatedCostUsd: (inputUnits * inputRate + outputUnits * outputRate) / 1_000_000,
     };
-  } catch {
+  } catch (inner) {
+    const cause = inner instanceof Error ? inner.message : String(inner);
+    let retryAfter: number | null = null;
+    if (inner instanceof Error && "status" in inner) {
+      const err = inner as Error & { status: number; body?: string };
+      if (err.status === 429) {
+        const body = err.body ?? cause;
+        const groqMatch = body.match(/try again in ([\d.]+)s/i);
+        if (groqMatch) {
+          retryAfter = Math.ceil(parseFloat(groqMatch[1]));
+        } else if (body.includes("RESOURCE_EXHAUSTED") || body.includes("429")) {
+          retryAfter = 60;
+        }
+      }
+    }
     throw new CoachChatUnavailableError(
       provider === "groq" ? "groq" : provider === "gemini" ? "gemini" : "mock",
       provider === "groq" ? groqModel || "unconfigured" : model || "unconfigured",
+      cause,
+      retryAfter,
     );
   } finally {
     clearTimeout(timeout);

@@ -1,279 +1,371 @@
-<!DOCTYPE html><html class="dark" lang="en" style=""><head>
-<meta charset="utf-8">
-<meta content="width=device-width, initial-scale=1.0" name="viewport">
-<title>Tracend - Preserve what works</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@400;600&amp;family=Inter:wght@400;600&amp;family=IBM+Plex+Mono:wght@500&amp;display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
-<script id="tailwind-config">
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    "colors": {
-                        "state-stable": "#00796B",
-                        "secondary-container": "#d4e1f3",
-                        "secondary-fixed-dim": "#bbc8d9",
-                        "surface-light": "#FFFFFF",
-                        "on-surface": "#171c24",
-                        "background": "#f9f9ff",
-                        "tertiary": "#893800",
-                        "error": "#ba1a1a",
-                        "primary": "#2e3bcf",
-                        "surface-bright": "#f9f9ff",
-                        "on-tertiary": "#ffffff",
-                        "on-secondary-fixed": "#101c29",
-                        "on-error": "#ffffff",
-                        "surface-container-lowest": "#ffffff",
-                        "surface-container-low": "#f0f3ff",
-                        "action-primary-dark": "#9BA5FF",
-                        "inverse-surface": "#2c3139",
-                        "on-background": "#171c24",
-                        "surface-container-high": "#e4e8f4",
-                        "surface-dim": "#d6dae5",
-                        "surface-dark": "#121925",
-                        "secondary": "#535f6e",
-                        "primary-fixed-dim": "#bec2ff",
-                        "on-secondary": "#ffffff",
-                        "on-secondary-fixed-variant": "#3c4856",
-                        "canvas-light": "#F3F6F8",
-                        "surface-tint": "#3e4bdd",
-                        "on-tertiary-container": "#ffe4d9",
-                        "surface-container": "#eaeefa",
-                        "inverse-primary": "#bec2ff",
-                        "on-primary-container": "#e8e7ff",
-                        "tertiary-container": "#b04a00",
-                        "outline": "#767686",
-                        "outline-variant": "#c6c5d7",
-                        "surface-variant": "#dee2ee",
-                        "state-attention-dark": "#FF887D",
-                        "on-primary-fixed": "#000569",
-                        "surface": "#f9f9ff",
-                        "on-primary-fixed-variant": "#202dc5",
-                        "inverse-on-surface": "#edf1fc",
-                        "tertiary-fixed": "#ffdbcb",
-                        "surface-container-highest": "#dee2ee",
-                        "on-primary": "#ffffff",
-                        "tertiary-fixed-dim": "#ffb692",
-                        "canvas-dark": "#090D14",
-                        "state-stable-dark": "#59D6C7",
-                        "state-attention": "#C43C31",
-                        "primary-fixed": "#e0e0ff",
-                        "primary-container": "#4a57e8",
-                        "on-secondary-container": "#586473",
-                        "error-container": "#ffdad6",
-                        "on-tertiary-fixed-variant": "#793100",
-                        "on-error-container": "#93000a",
-                        "secondary-fixed": "#d7e4f5",
-                        "on-surface-variant": "#454655",
-                        "on-tertiary-fixed": "#341100"
-                    },
-                    "borderRadius": {
-                        "DEFAULT": "0.25rem",
-                        "lg": "0.5rem",
-                        "xl": "0.75rem",
-                        "full": "9999px"
-                    },
-                    "spacing": {
-                        "sm": "8px",
-                        "xxl": "32px",
-                        "md": "12px",
-                        "lg": "16px",
-                        "xs": "4px",
-                        "gutter-compact": "16px",
-                        "gutter": "20px",
-                        "xxxl": "48px",
-                        "xl": "24px",
-                        "base": "4px"
-                    },
-                    "fontFamily": {
-                        "screen-title": ["Spline Sans"],
-                        "body-base": ["Inter"],
-                        "data-utility": ["IBM Plex Mono"],
-                        "decision-headline": ["Spline Sans"],
-                        "section-title": ["Spline Sans"],
-                        "body-compact": ["Inter"],
-                        "label-caps": ["Inter"]
-                    },
-                    "fontSize": {
-                        "screen-title": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
-                        "body-base": ["17px", { "lineHeight": "25px", "fontWeight": "400" }],
-                        "data-utility": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
-                        "decision-headline": ["32px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
-                        "section-title": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
-                        "body-compact": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
-                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }]
-                    }
-                }
-            }
-        }
+<!DOCTYPE html>
+<html class="dark" lang="en" style="">
+  <head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Tracend - Preserve what works</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@400;600&amp;family=Inter:wght@400;600&amp;family=IBM+Plex+Mono:wght@500&amp;display=swap"
+      rel="stylesheet">
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet">
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet">
+    <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "state-stable": "#00796B",
+            "secondary-container": "#d4e1f3",
+            "secondary-fixed-dim": "#bbc8d9",
+            "surface-light": "#FFFFFF",
+            "on-surface": "#171c24",
+            "background": "#f9f9ff",
+            "tertiary": "#893800",
+            "error": "#ba1a1a",
+            "primary": "#2e3bcf",
+            "surface-bright": "#f9f9ff",
+            "on-tertiary": "#ffffff",
+            "on-secondary-fixed": "#101c29",
+            "on-error": "#ffffff",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-low": "#f0f3ff",
+            "action-primary-dark": "#9BA5FF",
+            "inverse-surface": "#2c3139",
+            "on-background": "#171c24",
+            "surface-container-high": "#e4e8f4",
+            "surface-dim": "#d6dae5",
+            "surface-dark": "#121925",
+            "secondary": "#535f6e",
+            "primary-fixed-dim": "#bec2ff",
+            "on-secondary": "#ffffff",
+            "on-secondary-fixed-variant": "#3c4856",
+            "canvas-light": "#F3F6F8",
+            "surface-tint": "#3e4bdd",
+            "on-tertiary-container": "#ffe4d9",
+            "surface-container": "#eaeefa",
+            "inverse-primary": "#bec2ff",
+            "on-primary-container": "#e8e7ff",
+            "tertiary-container": "#b04a00",
+            "outline": "#767686",
+            "outline-variant": "#c6c5d7",
+            "surface-variant": "#dee2ee",
+            "state-attention-dark": "#FF887D",
+            "on-primary-fixed": "#000569",
+            "surface": "#f9f9ff",
+            "on-primary-fixed-variant": "#202dc5",
+            "inverse-on-surface": "#edf1fc",
+            "tertiary-fixed": "#ffdbcb",
+            "surface-container-highest": "#dee2ee",
+            "on-primary": "#ffffff",
+            "tertiary-fixed-dim": "#ffb692",
+            "canvas-dark": "#090D14",
+            "state-stable-dark": "#59D6C7",
+            "state-attention": "#C43C31",
+            "primary-fixed": "#e0e0ff",
+            "primary-container": "#4a57e8",
+            "on-secondary-container": "#586473",
+            "error-container": "#ffdad6",
+            "on-tertiary-fixed-variant": "#793100",
+            "on-error-container": "#93000a",
+            "secondary-fixed": "#d7e4f5",
+            "on-surface-variant": "#454655",
+            "on-tertiary-fixed": "#341100",
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px",
+          },
+          "spacing": {
+            "sm": "8px",
+            "xxl": "32px",
+            "md": "12px",
+            "lg": "16px",
+            "xs": "4px",
+            "gutter-compact": "16px",
+            "gutter": "20px",
+            "xxxl": "48px",
+            "xl": "24px",
+            "base": "4px",
+          },
+          "fontFamily": {
+            "screen-title": ["Spline Sans"],
+            "body-base": ["Inter"],
+            "data-utility": ["IBM Plex Mono"],
+            "decision-headline": ["Spline Sans"],
+            "section-title": ["Spline Sans"],
+            "body-compact": ["Inter"],
+            "label-caps": ["Inter"],
+          },
+          "fontSize": {
+            "screen-title": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+            "body-base": ["17px", { "lineHeight": "25px", "fontWeight": "400" }],
+            "data-utility": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "decision-headline": ["32px", {
+              "lineHeight": "36px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600",
+            }],
+            "section-title": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "body-compact": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+            "label-caps": ["12px", {
+              "lineHeight": "16px",
+              "letterSpacing": "0.05em",
+              "fontWeight": "600",
+            }],
+          },
+        },
+      },
+    };
     </script>
-<style>
-        body { background-color: theme('colors.canvas-dark'); color: theme('colors.inverse-on-surface'); }
-        .hairline-border { border: 1px solid theme('colors.outline-variant' / 30%); }
-        .focus-ring:focus-within { border-color: theme('colors.primary-fixed-dim'); box-shadow: 0 0 0 1px theme('colors.primary-fixed-dim'); outline: none; }
+    <style>
+    body {
+      background-color: theme('colors.canvas-dark');
+      color: theme('colors.inverse-on-surface');
+    }
+    .hairline-border {
+      border: 1px solid theme('colors.outline-variant' / 30%);
+    }
+    .focus-ring:focus-within {
+      border-color: theme('colors.primary-fixed-dim');
+      box-shadow: 0 0 0 1px theme('colors.primary-fixed-dim');
+      outline: none;
+    }
     </style>
-</head>
-<body class="antialiased min-h-screen flex flex-col pb-[120px] bg-canvas-dark text-inverse-on-surface font-body-base selection:bg-action-primary-dark selection:text-canvas-dark">
-<!-- TopAppBar -->
-<header class="w-full top-0 sticky bg-canvas-dark/80 border-b border-border-subtle flex items-center z-50 glass-blur">
-  <div class="max-w-md mx-auto w-full flex items-center justify-between px-gutter py-md">
-    <button class="text-action-primary-dark font-data-utility text-[12px] uppercase tracking-[0.15em] hover:text-white transition-colors active:scale-95 flex items-center">
+  </head>
+  <body
+    class="antialiased min-h-screen flex flex-col pb-[120px] bg-canvas-dark text-inverse-on-surface font-body-base selection:bg-action-primary-dark selection:text-canvas-dark">
+    <!-- TopAppBar -->
+    <header
+      class="w-full top-0 sticky bg-canvas-dark/80 border-b border-border-subtle flex items-center z-50 glass-blur">
+      <div class="max-w-md mx-auto w-full flex items-center justify-between px-gutter py-md">
+        <button
+          class="text-action-primary-dark font-data-utility text-[12px] uppercase tracking-[0.15em] hover:text-white transition-colors active:scale-95 flex items-center">
       Cancel
     </button>
-    <div class="flex flex-col items-center gap-2">
-      <div class="flex items-center gap-1.5">
-        <span class="font-data-utility text-[10px] text-action-primary-dark tabular-nums tracking-widest uppercase">Step 02</span>
-        <span class="text-outline/40 text-[10px] font-data-utility">/</span>
-        <span class="font-data-utility text-[10px] text-outline/60 tabular-nums tracking-widest uppercase">08</span>
+        <div class="flex flex-col items-center gap-2">
+          <div class="flex items-center gap-1.5">
+            <span
+              class="font-data-utility text-[10px] text-action-primary-dark tabular-nums tracking-widest uppercase">Step 02</span>
+            <span class="text-outline/40 text-[10px] font-data-utility">/</span>
+            <span
+              class="font-data-utility text-[10px] text-outline/60 tabular-nums tracking-widest uppercase">08</span>
+          </div>
+          <div class="flex gap-1">
+            <div
+              class="w-5 h-0.5 rounded-full bg-action-primary-dark shadow-[0_0_8px_rgba(155,165,255,0.6)]"></div>
+            <div
+              class="w-5 h-0.5 rounded-full bg-action-primary-dark shadow-[0_0_8px_rgba(155,165,255,0.6)]"></div>
+            <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+            <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+            <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+            <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+            <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+            <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
+          </div>
+        </div>
+        <button
+          class="w-[44px] flex justify-end items-center text-outline/60 hover:text-action-primary-dark transition-colors">
+          <span class="material-symbols-outlined text-[22px]">more_vert</span>
+        </button>
       </div>
-      <div class="flex gap-1">
-        <div class="w-5 h-0.5 rounded-full bg-action-primary-dark shadow-[0_0_8px_rgba(155,165,255,0.6)]"></div>
-        <div class="w-5 h-0.5 rounded-full bg-action-primary-dark shadow-[0_0_8px_rgba(155,165,255,0.6)]"></div>
-        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
-        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
-        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
-        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
-        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
-        <div class="w-5 h-0.5 rounded-full bg-outline-variant/20"></div>
-      </div>
-    </div>
-    <button class="w-[44px] flex justify-end items-center text-outline/60 hover:text-action-primary-dark transition-colors">
-      <span class="material-symbols-outlined text-[22px]">more_vert</span>
-    </button>
-  </div>
-</header>
-<!-- Main Content -->
-<main class="flex-grow flex flex-col px-gutter pt-xl pb-[120px] max-w-md mx-auto w-full">
-<!-- Header Section -->
-<section class="mb-xxl"><div class="flex items-center gap-2 mb-2">
-  <span class="w-1 h-4 bg-action-primary-dark rounded-full"></span>
-  <span class="font-data-utility text-[11px] uppercase tracking-[0.2em] text-action-primary-dark/80">Onboarding Flow</span>
-</div>
-<h2 class="font-decision-headline text-decision-headline font-bold text-inverse-on-surface mb-2">Preserve what works</h2>
-<p class="font-body-base text-body-base text-outline/80 leading-relaxed">Tell Tracend what you currently follow. It should not replace valid practices without evidence.</p></section>
-<!-- Form Sections -->
-<form class="space-y-xxl">
-<!-- Section 1: CURRENT TRAINING -->
-<section class="bg-surface-dark hairline-border rounded-[18px] p-lg space-y-xl">
-<h3 class="font-label-caps text-label-caps text-primary-fixed-dim uppercase tracking-wider">Current Training</h3>
-<div class="space-y-sm">
-<label class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">Training days per week</label>
-<div class="flex bg-canvas-dark rounded-lg p-1 hairline-border">
-<label class="flex-1 text-center py-2 rounded-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-highest transition-colors font-data-utility text-data-utility text-inverse-on-surface"><input class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="1">1</label>
-<label class="flex-1 text-center py-2 rounded-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-highest transition-colors font-data-utility text-data-utility text-inverse-on-surface"><input class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="2">2</label>
-<label class="flex-1 text-center py-2 rounded-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-highest transition-colors font-data-utility text-data-utility text-inverse-on-surface"><input class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="3">3</label>
-<label class="flex-1 text-center py-2 rounded-md cursor-pointer bg-action-primary-dark text-canvas-dark font-data-utility text-data-utility"><input checked="" class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="4">4</label>
-<label class="flex-1 text-center py-2 rounded-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-highest transition-colors font-data-utility text-data-utility text-inverse-on-surface"><input class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="5">5</label>
-<label class="flex-1 text-center py-2 rounded-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-highest transition-colors font-data-utility text-data-utility text-inverse-on-surface"><input class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="6">6</label>
-<label class="flex-1 text-center py-2 rounded-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-highest transition-colors font-data-utility text-data-utility text-inverse-on-surface"><input class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="7">7</label>
-</div>
-</div>
-<div class="space-y-sm">
-<label class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">Current split or routine</label>
-<div class="bg-canvas-dark rounded-lg hairline-border focus-ring overflow-hidden">
-<textarea class="w-full bg-transparent border-none text-inverse-on-surface font-body-base text-body-base p-md resize-none focus:ring-0 placeholder:text-surface-variant/50" placeholder="e.g., Upper/Lower, PPL..." rows="2"></textarea>
-</div>
-</div>
-<div class="space-y-sm">
-<label class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">Session duration</label>
-<div class="flex items-center bg-canvas-dark rounded-lg hairline-border focus-ring p-md">
-<input class="flex-1 bg-transparent border-none text-inverse-on-surface font-data-utility text-data-utility p-0 focus:ring-0 placeholder:text-surface-variant/50" placeholder="60" type="number">
-<span class="font-data-utility text-data-utility text-on-surface-variant dark:text-surface-variant ml-2">min</span>
-</div>
-</div>
-<div class="space-y-sm">
-<label class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">Recent main-lift performance</label>
-<div class="bg-canvas-dark rounded-lg hairline-border focus-ring overflow-hidden">
-<textarea class="w-full bg-transparent border-none text-inverse-on-surface font-data-utility text-data-utility p-md resize-none focus:ring-0 placeholder:text-surface-variant/50" placeholder="e.g., Squat 100kg x 5" rows="2"></textarea>
-</div>
-</div>
-</section>
-<!-- Section 2: CURRENT NUTRITION -->
-<section class="bg-surface-dark hairline-border rounded-[18px] p-lg space-y-xl">
-<h3 class="font-label-caps text-label-caps text-primary-fixed-dim uppercase tracking-wider">Current Nutrition</h3>
-<div class="space-y-sm">
-<div class="flex justify-between items-center">
-<label class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block">Current calorie target</label>
-<label class="flex items-center gap-2 cursor-pointer">
-<input class="form-checkbox text-primary-container rounded bg-canvas-dark border-outline-variant/30 focus:ring-primary-container focus:ring-offset-canvas-dark text-inverse-on-surface placeholder:text-surface-variant/50" type="checkbox">
-<span class="font-label-caps text-label-caps text-on-surface-variant dark:text-surface-variant text-inverse-on-surface">I don't know</span>
-</label>
-</div>
-<div class="flex items-center bg-canvas-dark rounded-lg hairline-border focus-ring p-md">
-<input class="flex-1 bg-transparent border-none text-inverse-on-surface font-data-utility text-data-utility p-0 focus:ring-0 placeholder:text-surface-variant/50" placeholder="2500" type="number">
-<span class="font-data-utility text-data-utility text-on-surface-variant dark:text-surface-variant ml-2">kcal</span>
-</div>
-</div>
-<div class="space-y-sm">
-<div class="flex justify-between items-center">
-<label class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block">Protein target</label>
-<label class="flex items-center gap-2 cursor-pointer">
-<input class="form-checkbox text-primary-container rounded bg-canvas-dark border-outline-variant/30 focus:ring-primary-container focus:ring-offset-canvas-dark text-inverse-on-surface placeholder:text-surface-variant/50" type="checkbox">
-<span class="font-label-caps text-label-caps text-on-surface-variant dark:text-surface-variant text-inverse-on-surface">I don't know</span>
-</label>
-</div>
-<div class="flex items-center bg-canvas-dark rounded-lg hairline-border focus-ring p-md">
-<input class="flex-1 bg-transparent border-none text-inverse-on-surface font-data-utility text-data-utility p-0 focus:ring-0 placeholder:text-surface-variant/50" placeholder="150" type="number">
-<span class="font-data-utility text-data-utility text-on-surface-variant dark:text-surface-variant ml-2">g</span>
-</div>
-</div>
-<div class="space-y-sm">
-<label class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">Dietary pattern</label>
-<div class="relative bg-canvas-dark rounded-lg hairline-border focus-ring">
-<select class="w-full bg-transparent border-none text-inverse-on-surface font-body-base text-body-base p-md appearance-none focus:ring-0">
-<option class="bg-surface-dark text-inverse-on-surface" value="omnivore">Omnivore</option>
-<option class="bg-surface-dark text-inverse-on-surface" value="vegan">Vegan</option>
-<option class="bg-surface-dark text-inverse-on-surface" value="vegetarian">Vegetarian</option>
-<option class="bg-surface-dark text-inverse-on-surface" value="keto">Keto</option>
-<option class="bg-surface-dark text-inverse-on-surface" value="other">Other</option>
-</select>
-<span class="material-symbols-outlined absolute right-md top-1/2 -translate-y-1/2 text-on-surface-variant dark:text-surface-variant pointer-events-none">arrow_drop_down</span>
-</div>
-</div>
-</section>
-<!-- Section 3: CURRENT CONTEXT -->
-<section class="bg-surface-dark hairline-border rounded-[18px] p-lg space-y-xl">
-<h3 class="font-label-caps text-label-caps text-primary-fixed-dim uppercase tracking-wider">Current Context</h3>
-<div class="space-y-sm">
-<label class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">What is working?</label>
-<div class="bg-canvas-dark rounded-lg hairline-border focus-ring overflow-hidden">
-<textarea class="w-full bg-transparent border-none text-inverse-on-surface font-body-base text-body-base p-md resize-none focus:ring-0 placeholder:text-surface-variant/50" rows="2"></textarea>
-</div>
-</div>
-<div class="space-y-sm">
-<label class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">What feels stalled?</label>
-<div class="bg-canvas-dark rounded-lg hairline-border focus-ring overflow-hidden">
-<textarea class="w-full bg-transparent border-none text-inverse-on-surface font-body-base text-body-base p-md resize-none focus:ring-0 placeholder:text-surface-variant/50" rows="2"></textarea>
-</div>
-</div>
-<div class="space-y-sm">
-<label class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">Any exercises or foods you avoid?</label>
-<div class="bg-canvas-dark rounded-lg hairline-border focus-ring overflow-hidden">
-<textarea class="w-full bg-transparent border-none text-inverse-on-surface font-body-base text-body-base p-md resize-none focus:ring-0 placeholder:text-surface-variant/50" rows="2"></textarea>
-</div>
-</div>
-</section>
-</form>
-</main>
-<!-- BottomNavBar -->
-<div class="fixed bottom-0 left-0 w-full z-40 px-gutter pb-[calc(env(safe-area-inset-bottom)+20px)] pt-xl glass-blur bg-canvas-dark/80 border-t border-border-subtle">
-<div class="max-w-md mx-auto w-full flex flex-col gap-md">
-<div class="flex flex-col gap-sm">
-<button class="w-full h-[52px] bg-action-primary-dark text-canvas-dark font-section-title text-section-title rounded-2xl flex items-center justify-center hover:bg-opacity-90 active:scale-[0.98] transition-all duration-150">
+    </header>
+    <!-- Main Content -->
+    <main class="flex-grow flex flex-col px-gutter pt-xl pb-[120px] max-w-md mx-auto w-full">
+      <!-- Header Section -->
+      <section class="mb-xxl">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="w-1 h-4 bg-action-primary-dark rounded-full"></span>
+          <span
+            class="font-data-utility text-[11px] uppercase tracking-[0.2em] text-action-primary-dark/80">Onboarding Flow</span>
+        </div>
+        <h2
+          class="font-decision-headline text-decision-headline font-bold text-inverse-on-surface mb-2">Preserve what works</h2>
+        <p
+          class="font-body-base text-body-base text-outline/80 leading-relaxed">Tell Tracend what you currently follow. It should not replace valid practices without evidence.</p>
+      </section>
+      <!-- Form Sections -->
+      <form class="space-y-xxl">
+        <!-- Section 1: CURRENT TRAINING -->
+        <section class="bg-surface-dark hairline-border rounded-[18px] p-lg space-y-xl">
+          <h3
+            class="font-label-caps text-label-caps text-primary-fixed-dim uppercase tracking-wider">Current Training</h3>
+          <div class="space-y-sm">
+            <label
+              class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">Training days per week</label>
+            <div class="flex bg-canvas-dark rounded-lg p-1 hairline-border">
+              <label
+                class="flex-1 text-center py-2 rounded-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-highest transition-colors font-data-utility text-data-utility text-inverse-on-surface"><input class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="1">1</label>
+              <label
+                class="flex-1 text-center py-2 rounded-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-highest transition-colors font-data-utility text-data-utility text-inverse-on-surface"><input class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="2">2</label>
+              <label
+                class="flex-1 text-center py-2 rounded-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-highest transition-colors font-data-utility text-data-utility text-inverse-on-surface"><input class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="3">3</label>
+              <label
+                class="flex-1 text-center py-2 rounded-md cursor-pointer bg-action-primary-dark text-canvas-dark font-data-utility text-data-utility"><input checked="" class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="4">4</label>
+              <label
+                class="flex-1 text-center py-2 rounded-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-highest transition-colors font-data-utility text-data-utility text-inverse-on-surface"><input class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="5">5</label>
+              <label
+                class="flex-1 text-center py-2 rounded-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-highest transition-colors font-data-utility text-data-utility text-inverse-on-surface"><input class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="6">6</label>
+              <label
+                class="flex-1 text-center py-2 rounded-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-highest transition-colors font-data-utility text-data-utility text-inverse-on-surface"><input class="sr-only text-inverse-on-surface placeholder:text-surface-variant/50" name="days" type="radio" value="7">7</label>
+            </div>
+          </div>
+          <div class="space-y-sm">
+            <label
+              class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">Current split or routine</label>
+            <div class="bg-canvas-dark rounded-lg hairline-border focus-ring overflow-hidden">
+              <textarea
+                class="w-full bg-transparent border-none text-inverse-on-surface font-body-base text-body-base p-md resize-none focus:ring-0 placeholder:text-surface-variant/50"
+                placeholder="e.g., Upper/Lower, PPL..." rows="2"></textarea>
+            </div>
+          </div>
+          <div class="space-y-sm">
+            <label
+              class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">Session duration</label>
+            <div
+              class="flex items-center bg-canvas-dark rounded-lg hairline-border focus-ring p-md">
+              <input
+                class="flex-1 bg-transparent border-none text-inverse-on-surface font-data-utility text-data-utility p-0 focus:ring-0 placeholder:text-surface-variant/50"
+                placeholder="60" type="number">
+              <span
+                class="font-data-utility text-data-utility text-on-surface-variant dark:text-surface-variant ml-2">min</span>
+            </div>
+          </div>
+          <div class="space-y-sm">
+            <label
+              class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">Recent main-lift performance</label>
+            <div class="bg-canvas-dark rounded-lg hairline-border focus-ring overflow-hidden">
+              <textarea
+                class="w-full bg-transparent border-none text-inverse-on-surface font-data-utility text-data-utility p-md resize-none focus:ring-0 placeholder:text-surface-variant/50"
+                placeholder="e.g., Squat 100kg x 5" rows="2"></textarea>
+            </div>
+          </div>
+        </section>
+        <!-- Section 2: CURRENT NUTRITION -->
+        <section class="bg-surface-dark hairline-border rounded-[18px] p-lg space-y-xl">
+          <h3
+            class="font-label-caps text-label-caps text-primary-fixed-dim uppercase tracking-wider">Current Nutrition</h3>
+          <div class="space-y-sm">
+            <div class="flex justify-between items-center">
+              <label
+                class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block">Current calorie target</label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  class="form-checkbox text-primary-container rounded bg-canvas-dark border-outline-variant/30 focus:ring-primary-container focus:ring-offset-canvas-dark text-inverse-on-surface placeholder:text-surface-variant/50"
+                  type="checkbox">
+                <span
+                  class="font-label-caps text-label-caps text-on-surface-variant dark:text-surface-variant text-inverse-on-surface">I don't know</span>
+              </label>
+            </div>
+            <div
+              class="flex items-center bg-canvas-dark rounded-lg hairline-border focus-ring p-md">
+              <input
+                class="flex-1 bg-transparent border-none text-inverse-on-surface font-data-utility text-data-utility p-0 focus:ring-0 placeholder:text-surface-variant/50"
+                placeholder="2500" type="number">
+              <span
+                class="font-data-utility text-data-utility text-on-surface-variant dark:text-surface-variant ml-2">kcal</span>
+            </div>
+          </div>
+          <div class="space-y-sm">
+            <div class="flex justify-between items-center">
+              <label
+                class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block">Protein target</label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  class="form-checkbox text-primary-container rounded bg-canvas-dark border-outline-variant/30 focus:ring-primary-container focus:ring-offset-canvas-dark text-inverse-on-surface placeholder:text-surface-variant/50"
+                  type="checkbox">
+                <span
+                  class="font-label-caps text-label-caps text-on-surface-variant dark:text-surface-variant text-inverse-on-surface">I don't know</span>
+              </label>
+            </div>
+            <div
+              class="flex items-center bg-canvas-dark rounded-lg hairline-border focus-ring p-md">
+              <input
+                class="flex-1 bg-transparent border-none text-inverse-on-surface font-data-utility text-data-utility p-0 focus:ring-0 placeholder:text-surface-variant/50"
+                placeholder="150" type="number">
+              <span
+                class="font-data-utility text-data-utility text-on-surface-variant dark:text-surface-variant ml-2">g</span>
+            </div>
+          </div>
+          <div class="space-y-sm">
+            <label
+              class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">Dietary pattern</label>
+            <div class="relative bg-canvas-dark rounded-lg hairline-border focus-ring">
+              <select
+                class="w-full bg-transparent border-none text-inverse-on-surface font-body-base text-body-base p-md appearance-none focus:ring-0">
+                <option class="bg-surface-dark text-inverse-on-surface"
+                  value="omnivore">Omnivore</option>
+                <option class="bg-surface-dark text-inverse-on-surface" value="vegan">Vegan</option>
+                <option class="bg-surface-dark text-inverse-on-surface"
+                  value="vegetarian">Vegetarian</option>
+                <option class="bg-surface-dark text-inverse-on-surface" value="keto">Keto</option>
+                <option class="bg-surface-dark text-inverse-on-surface" value="other">Other</option>
+              </select>
+              <span
+                class="material-symbols-outlined absolute right-md top-1/2 -translate-y-1/2 text-on-surface-variant dark:text-surface-variant pointer-events-none">arrow_drop_down</span>
+            </div>
+          </div>
+        </section>
+        <!-- Section 3: CURRENT CONTEXT -->
+        <section class="bg-surface-dark hairline-border rounded-[18px] p-lg space-y-xl">
+          <h3
+            class="font-label-caps text-label-caps text-primary-fixed-dim uppercase tracking-wider">Current Context</h3>
+          <div class="space-y-sm">
+            <label
+              class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">What is working?</label>
+            <div class="bg-canvas-dark rounded-lg hairline-border focus-ring overflow-hidden">
+              <textarea
+                class="w-full bg-transparent border-none text-inverse-on-surface font-body-base text-body-base p-md resize-none focus:ring-0 placeholder:text-surface-variant/50"
+                rows="2"></textarea>
+            </div>
+          </div>
+          <div class="space-y-sm">
+            <label
+              class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">What feels stalled?</label>
+            <div class="bg-canvas-dark rounded-lg hairline-border focus-ring overflow-hidden">
+              <textarea
+                class="w-full bg-transparent border-none text-inverse-on-surface font-body-base text-body-base p-md resize-none focus:ring-0 placeholder:text-surface-variant/50"
+                rows="2"></textarea>
+            </div>
+          </div>
+          <div class="space-y-sm">
+            <label
+              class="font-body-compact text-body-compact text-on-surface-variant dark:text-surface-variant block text-surface-variant">Any exercises or foods you avoid?</label>
+            <div class="bg-canvas-dark rounded-lg hairline-border focus-ring overflow-hidden">
+              <textarea
+                class="w-full bg-transparent border-none text-inverse-on-surface font-body-base text-body-base p-md resize-none focus:ring-0 placeholder:text-surface-variant/50"
+                rows="2"></textarea>
+            </div>
+          </div>
+        </section>
+      </form>
+    </main>
+    <!-- BottomNavBar -->
+    <div
+      class="fixed bottom-0 left-0 w-full z-40 px-gutter pb-[calc(env(safe-area-inset-bottom)+20px)] pt-xl glass-blur bg-canvas-dark/80 border-t border-border-subtle">
+      <div class="max-w-md mx-auto w-full flex flex-col gap-md">
+        <div class="flex flex-col gap-sm">
+          <button
+            class="w-full h-[52px] bg-action-primary-dark text-canvas-dark font-section-title text-section-title rounded-2xl flex items-center justify-center hover:bg-opacity-90 active:scale-[0.98] transition-all duration-150">
                     Continue
                 </button>
-<button class="w-full h-[52px] bg-transparent hairline-border text-inverse-on-surface font-section-title text-section-title rounded-2xl flex items-center justify-center hover:bg-surface-dark active:scale-[0.98] transition-all duration-150">
+          <button
+            class="w-full h-[52px] bg-transparent hairline-border text-inverse-on-surface font-section-title text-section-title rounded-2xl flex items-center justify-center hover:bg-surface-dark active:scale-[0.98] transition-all duration-150">
                     Save and exit
                 </button>
-</div>
-<div class="flex justify-center items-center gap-1 mt-xs text-outline opacity-70">
-<span class="material-symbols-outlined text-[14px]">cloud_done</span>
-<span class="font-data-utility text-data-utility text-[12px]">Saved just now</span>
-</div>
-</div>
-</div>
-
-
-</body></html>
+        </div>
+        <div class="flex justify-center items-center gap-1 mt-xs text-outline opacity-70">
+          <span class="material-symbols-outlined text-[14px]">cloud_done</span>
+          <span class="font-data-utility text-data-utility text-[12px]">Saved just now</span>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

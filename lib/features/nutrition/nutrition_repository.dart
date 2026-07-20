@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -258,7 +257,8 @@ class SupabaseNutritionRepository
         throw StateError('Meal analysis unavailable.');
       }
       return mealId;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       await _client.storage.from('meal-images').remove([path]);
       rethrow;
     }

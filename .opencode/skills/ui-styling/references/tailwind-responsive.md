@@ -4,7 +4,8 @@ Mobile-first breakpoints, responsive utilities, and adaptive layouts.
 
 ## Mobile-First Approach
 
-Tailwind uses mobile-first responsive design. Base styles apply to all screen sizes, then use breakpoint prefixes to override at larger sizes.
+Tailwind uses mobile-first responsive design. Base styles apply to all screen sizes, then use
+breakpoint prefixes to override at larger sizes.
 
 ```html
 <!-- Base: 1 column (mobile)
@@ -22,13 +23,13 @@ Tailwind uses mobile-first responsive design. Base styles apply to all screen si
 
 **Default breakpoints:**
 
-| Prefix | Min Width | CSS Media Query |
-|--------|-----------|-----------------|
-| `sm:` | 640px | `@media (min-width: 640px)` |
-| `md:` | 768px | `@media (min-width: 768px)` |
-| `lg:` | 1024px | `@media (min-width: 1024px)` |
-| `xl:` | 1280px | `@media (min-width: 1280px)` |
-| `2xl:` | 1536px | `@media (min-width: 1536px)` |
+| Prefix | Min Width | CSS Media Query              |
+| ------ | --------- | ---------------------------- |
+| `sm:`  | 640px     | `@media (min-width: 640px)`  |
+| `md:`  | 768px     | `@media (min-width: 768px)`  |
+| `lg:`  | 1024px    | `@media (min-width: 1024px)` |
+| `xl:`  | 1280px    | `@media (min-width: 1280px)` |
+| `2xl:` | 1536px    | `@media (min-width: 1536px)` |
 
 ## Responsive Patterns
 
@@ -242,8 +243,8 @@ Define custom breakpoints in theme:
 
 ```css
 @theme {
-  --breakpoint-3xl: 120rem;  /* 1920px */
-  --breakpoint-tablet: 48rem;  /* 768px */
+  --breakpoint-3xl: 120rem; /* 1920px */
+  --breakpoint-tablet: 48rem; /* 768px */
 }
 ```
 
@@ -278,9 +279,8 @@ Start with mobile styles, add complexity at larger breakpoints:
 ```html
 <!-- Good: Mobile first -->
 <div class="text-base md:text-lg lg:text-xl">
-
-<!-- Avoid: Desktop first -->
-<div class="text-xl lg:text-base">
+  <!-- Avoid: Desktop first -->
+  <div class="text-xl lg:text-base">
 ```
 
 ### 2. Consistent Breakpoint Usage
@@ -328,9 +328,9 @@ Use 2-3 breakpoints per element for maintainability:
 ```html
 <!-- Good: 2 breakpoints -->
 <div class="grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
-
-<!-- Avoid: Too many breakpoints -->
-<div class="grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+  <!-- Avoid: Too many breakpoints -->
+  <div
+    class="grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
 ```
 
 ## Common Responsive Utilities

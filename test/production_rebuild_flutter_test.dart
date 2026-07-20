@@ -75,6 +75,109 @@ void main() {
     expect(hub.completedSessions, 0);
     expect(hub.progression, isEmpty);
   });
+
+  testWidgets('Train shows HealthKit auto-complete prompt when candidate is present', (
+    tester,
+  ) async {
+    final repository = _HealthkitCandidateRepository();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.light,
+        home: TrainScreen(repository: repository),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pumpAndSettle();
+    expect(find.text('Apple Health detected workout'), findsOneWidget);
+    expect(find.text('Full body push'), findsOneWidget);
+    expect(find.textContaining('Apple Health recorded a 60 min workout'), findsOneWidget);
+    expect(find.text('Yes, mark complete'), findsOneWidget);
+    expect(find.text('Log manually'), findsOneWidget);
+  });
+
+  testWidgets('Train shows HealthKit prompt after tapping a past weekday', (
+    tester,
+  ) async {
+    final repository = _HealthkitCandidateRepository();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.light,
+        home: TrainScreen(repository: repository),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pumpAndSettle();
+    final chips = find.byType(ChoiceChip);
+    await tester.tap(chips.at(1));
+    await tester.pumpAndSettle();
+    await tester.pumpAndSettle();
+    expect(find.text('Apple Health detected workout'), findsOneWidget);
+    expect(find.text('Full body push'), findsOneWidget);
+    expect(find.text('Yes, mark complete'), findsOneWidget);
+  });
+
+  testWidgets('Train shows Start workout when no HealthKit candidate is present', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.light,
+        home: TrainScreen(repository: FixtureWorkoutRepository()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Start workout'), findsOneWidget);
+    expect(find.text('Apple Health detected workout'), findsNothing);
+  });
+
+  testWidgets('Train shows View workout when day is completed', (
+    tester,
+  ) async {
+    final repository = _CompletedDayRepository();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.light,
+        home: TrainScreen(repository: repository),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('View workout'), findsOneWidget);
+    expect(find.text('Start workout'), findsNothing);
+  });
+}
+
+class _CompletedDayRepository
+    implements WorkoutRepository, TrainingHubRepository, HealthkitCandidateRepository {
+  @override
+  Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
+      TrainingHubData(
+        planTitle: 'Approved training plan',
+        workouts: [PlannedWorkout.fixture],
+        recentSessions: [],
+        completedSessions: 1,
+        plannedSessions: 4,
+        progression: [],
+        completedDays: {DateTime.now()},
+      );
+  @override
+  Future<HealthkitCompletionCandidate?> getHealthkitCandidate(DateTime date) async => null;
+  @override
+  Future<PlannedWorkout> loadTodayWorkout() async => PlannedWorkout.fixture;
+  @override
+  Future<String?> loadDraft(String workoutId) async => null;
+  @override
+  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout, {DateTime? localDate}) async => null;
+  @override
+  Future<void> saveDraft(String workoutId, String json) async {}
+  @override
+  Future<void> clearDraft(String workoutId) async {}
+  @override
+  Future<String> start(PlannedWorkout workout, String idempotencyKey, {DateTime? localDate}) async => 'session-1';
+  @override
+  Future<void> sync(String sessionId, int revision, Map<String, dynamic> draft) async {}
+  @override
+  Future<void> complete(String sessionId, int revision, int durationSeconds, Map<String, dynamic> draft) async {}
 }
 
 class _ChatRepository
@@ -158,4 +261,58 @@ class _ChatRepository
 
   @override
   Future<void> deleteThread(String threadId) async {}
+}
+
+class _HealthkitCandidateRepository
+    implements WorkoutRepository, TrainingHubRepository, HealthkitCandidateRepository {
+  @override
+  Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
+      const TrainingHubData(
+        planTitle: 'Approved training plan',
+        workouts: [PlannedWorkout.fixture],
+        recentSessions: [],
+        completedSessions: 0,
+        plannedSessions: 4,
+        progression: [],
+      );
+  @override
+  Future<HealthkitCompletionCandidate?> getHealthkitCandidate(DateTime date) async =>
+      HealthkitCompletionCandidate(
+        plannedWorkoutId: PlannedWorkout.fixture.id,
+        plannedWorkoutName: 'Full body push',
+        workoutCount: 1,
+        workoutMinutes: 60,
+        localDate: date,
+      );
+  @override
+  Future<PlannedWorkout> loadTodayWorkout() async => PlannedWorkout.fixture;
+  @override
+  Future<String?> loadDraft(String workoutId) async => null;
+  @override
+  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout, {DateTime? localDate}) async =>
+      null;
+  @override
+  Future<void> saveDraft(String workoutId, String json) async {}
+  @override
+  Future<void> clearDraft(String workoutId) async {}
+  @override
+  Future<String> start(
+    PlannedWorkout workout,
+    String idempotencyKey, {
+    DateTime? localDate,
+  }) async =>
+      'session-1';
+  @override
+  Future<void> sync(
+    String sessionId,
+    int revision,
+    Map<String, dynamic> draft,
+  ) async {}
+  @override
+  Future<void> complete(
+    String sessionId,
+    int revision,
+    int durationSeconds,
+    Map<String, dynamic> draft,
+  ) async {}
 }

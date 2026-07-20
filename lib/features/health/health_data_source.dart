@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'package:tracend/features/health/health_models.dart';
 
@@ -68,7 +69,8 @@ class HealthKitDataSource implements HealthDataSource {
         _types,
         permissions: List.filled(_types.length, HealthDataAccess.READ),
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       return false;
     }
   }
@@ -104,7 +106,8 @@ class HealthKitDataSource implements HealthDataSource {
                   _toRaw(point, metric, sleepStage: _sleepStageByType[type]),
             ),
           );
-        } catch (_) {
+        } catch (e) {
+          debugPrint('Non-critical error: $e');
           // A missing type remains unknown/partial; it is never treated as proof
           // that the user denied access.
         }
@@ -122,7 +125,8 @@ class HealthKitDataSource implements HealthDataSource {
         returnedMetrics: returned,
         samples: samples,
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       return const HealthReadResult(
         requestedMetrics: requestedMetrics,
         returnedMetrics: {},

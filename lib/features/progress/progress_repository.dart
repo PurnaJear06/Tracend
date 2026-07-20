@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class BodyMeasurement {
@@ -272,7 +271,8 @@ class SupabaseProgressRepository implements ProgressRepository {
           'media_checksum': sha256.convert(bytes).toString(),
         },
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       await _client.storage.from('progress-photos').remove([key]);
       rethrow;
     }

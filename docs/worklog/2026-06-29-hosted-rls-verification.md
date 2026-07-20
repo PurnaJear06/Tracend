@@ -4,8 +4,8 @@
 
 - Ran the existing `user_accounts` pgTAP behavior suite against hosted project
   `qsfzzsjenopqqqhvpyaw` through the Supabase SQL Editor.
-- Collected all assertions into a transaction-local temporary result table so
-  the editor displayed every outcome.
+- Collected all assertions into a transaction-local temporary result table so the editor displayed
+  every outcome.
 - Result: **8/8 passed**.
 
 ## Verified Behavior
@@ -19,6 +19,6 @@
 7. A cross-user update changes no row.
 8. A user cannot insert an account for another identity.
 
-The script ran inside `BEGIN` / `ROLLBACK`; all synthetic Auth users, account
-rows, updates, and the temporary result table were removed automatically.
-A follow-up hosted query returned `synthetic_rows_remaining = 0`.
+The script ran inside `BEGIN` / `ROLLBACK`; all synthetic Auth users, account rows, updates, and the
+temporary result table were removed automatically. A follow-up hosted query returned
+`synthetic_rows_remaining = 0`.

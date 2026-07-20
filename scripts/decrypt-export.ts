@@ -38,11 +38,13 @@ const key = await crypto.subtle.deriveKey(
   ["decrypt"],
 );
 const encrypted = bytes.slice(newline + 1);
-const decrypted = new Uint8Array(await crypto.subtle.decrypt(
-  { name: "AES-GCM", iv: decodeBase64(header.iv) },
-  key,
-  encrypted.buffer.slice(encrypted.byteOffset, encrypted.byteOffset + encrypted.byteLength),
-));
+const decrypted = new Uint8Array(
+  await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: decodeBase64(header.iv) },
+    key,
+    encrypted.buffer.slice(encrypted.byteOffset, encrypted.byteOffset + encrypted.byteLength),
+  ),
+);
 const files = unzipSync(decrypted);
 for (const [relativePath, contents] of Object.entries(files)) {
   if (relativePath.includes("..") || relativePath.startsWith("/")) {

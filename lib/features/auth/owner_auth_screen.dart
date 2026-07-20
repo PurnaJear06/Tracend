@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
 
 class OwnerAuthScreen extends StatefulWidget {
   const OwnerAuthScreen({required this.onAuthenticated, super.key});
@@ -59,7 +60,8 @@ class _OwnerAuthScreenState extends State<OwnerAuthScreen> {
       widget.onAuthenticated();
     } on AuthException catch (error) {
       setState(() => _error = _safeAuthMessage(error));
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       setState(() {
         _error =
             'Sign-in could not be completed. Check the connection and try again.';
@@ -201,10 +203,7 @@ class _OwnerAuthScreenState extends State<OwnerAuthScreen> {
                     FilledButton(
                       onPressed: _submitting ? null : _submit,
                       child: _submitting
-                          ? const SizedBox.square(
-                              dimension: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
+                          ? const TracendLoadingIndicator(size: 20)
                           : Text(_createAccount ? 'Create account' : 'Sign in'),
                     ),
                     const SizedBox(height: TracendSpacing.md),

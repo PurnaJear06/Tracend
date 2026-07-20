@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
+import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class HealthStatusCard extends StatefulWidget {
@@ -48,7 +49,8 @@ class _HealthStatusCardState extends State<HealthStatusCard> {
         setState(() => _status = status);
         widget.onSynced?.call();
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(() {
           _error =
@@ -173,10 +175,7 @@ class _HealthStatusCardState extends State<HealthStatusCard> {
             child: OutlinedButton.icon(
               onPressed: _busy ? null : _connect,
               icon: _busy
-                  ? const SizedBox.square(
-                      dimension: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                  ? const TracendLoadingIndicator(size: 16)
                   : const Icon(CupertinoIcons.refresh, size: 18),
               label: Text(
                 status.state == HealthConnectionState.manualOnly

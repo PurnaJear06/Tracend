@@ -1,225 +1,298 @@
 <!DOCTYPE html>
 
-<html class="dark" lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
-<title>Sync delayed - Tracend</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    "colors": {
-                        "background": "#f9f9ff",
-                        "surface-tint": "#3e4bdd",
-                        "inverse-surface": "#2c3139",
-                        "outline": "#767686",
-                        "state-attention-dark": "#FF887D",
-                        "tertiary": "#893800",
-                        "surface-dark": "#121925",
-                        "on-error-container": "#93000a",
-                        "inverse-primary": "#bec2ff",
-                        "on-tertiary": "#ffffff",
-                        "tertiary-fixed": "#ffdbcb",
-                        "state-stable": "#00796B",
-                        "on-secondary-fixed-variant": "#3c4856",
-                        "canvas-light": "#F3F6F8",
-                        "canvas-dark": "#090D14",
-                        "surface-light": "#FFFFFF",
-                        "state-attention": "#C43C31",
-                        "surface-variant": "#dee2ee",
-                        "surface-container-high": "#e4e8f4",
-                        "state-stable-dark": "#59D6C7",
-                        "on-tertiary-container": "#ffe4d9",
-                        "on-secondary-container": "#586473",
-                        "surface-container": "#eaeefa",
-                        "on-secondary": "#ffffff",
-                        "on-primary-container": "#e8e7ff",
-                        "on-background": "#171c24",
-                        "surface-container-lowest": "#ffffff",
-                        "inverse-on-surface": "#edf1fc",
-                        "secondary": "#535f6e",
-                        "action-primary-dark": "#9BA5FF",
-                        "on-secondary-fixed": "#101c29",
-                        "secondary-container": "#d4e1f3",
-                        "surface-dim": "#d6dae5",
-                        "tertiary-container": "#b04a00",
-                        "on-primary-fixed": "#000569",
-                        "outline-variant": "#c6c5d7",
-                        "primary-fixed": "#e0e0ff",
-                        "on-primary-fixed-variant": "#202dc5",
-                        "secondary-fixed-dim": "#bbc8d9",
-                        "primary-container": "#4a57e8",
-                        "error-container": "#ffdad6",
-                        "surface": "#f9f9ff",
-                        "on-surface-variant": "#454655",
-                        "surface-container-highest": "#dee2ee",
-                        "on-primary": "#ffffff",
-                        "surface-bright": "#f9f9ff",
-                        "on-tertiary-fixed-variant": "#793100",
-                        "on-tertiary-fixed": "#341100",
-                        "error": "#ba1a1a",
-                        "secondary-fixed": "#d7e4f5",
-                        "surface-container-low": "#f0f3ff",
-                        "tertiary-fixed-dim": "#ffb692",
-                        "on-error": "#ffffff",
-                        "primary-fixed-dim": "#bec2ff",
-                        "primary": "#2e3bcf",
-                        "on-surface": "#171c24"
-                    },
-                    "borderRadius": {
-                        "DEFAULT": "0.25rem",
-                        "lg": "0.5rem",
-                        "xl": "0.75rem",
-                        "full": "9999px"
-                    },
-                    "spacing": {
-                        "xl": "24px",
-                        "md": "12px",
-                        "xs": "4px",
-                        "base": "4px",
-                        "xxl": "32px",
-                        "lg": "16px",
-                        "gutter-compact": "16px",
-                        "gutter": "20px",
-                        "xxxl": "48px",
-                        "sm": "8px"
-                    },
-                    "fontFamily": {
-                        "section-title": ["Spline Sans"],
-                        "decision-headline": ["Spline Sans"],
-                        "screen-title": ["Spline Sans"],
-                        "data-utility": ["IBM Plex Mono"],
-                        "label-caps": ["Inter"],
-                        "body-compact": ["Inter"],
-                        "body-base": ["Inter"]
-                    },
-                    "fontSize": {
-                        "section-title": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
-                        "decision-headline": ["32px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
-                        "screen-title": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
-                        "data-utility": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
-                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
-                        "body-compact": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
-                        "body-base": ["17px", { "lineHeight": "25px", "fontWeight": "400" }]
-                    }
-                }
-            }
-        }
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+      name="viewport" />
+    <title>Sync delayed - Tracend</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Spline+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=Inter:wght@400;500;600&amp;display=swap"
+      rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet" />
+    <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "background": "#f9f9ff",
+            "surface-tint": "#3e4bdd",
+            "inverse-surface": "#2c3139",
+            "outline": "#767686",
+            "state-attention-dark": "#FF887D",
+            "tertiary": "#893800",
+            "surface-dark": "#121925",
+            "on-error-container": "#93000a",
+            "inverse-primary": "#bec2ff",
+            "on-tertiary": "#ffffff",
+            "tertiary-fixed": "#ffdbcb",
+            "state-stable": "#00796B",
+            "on-secondary-fixed-variant": "#3c4856",
+            "canvas-light": "#F3F6F8",
+            "canvas-dark": "#090D14",
+            "surface-light": "#FFFFFF",
+            "state-attention": "#C43C31",
+            "surface-variant": "#dee2ee",
+            "surface-container-high": "#e4e8f4",
+            "state-stable-dark": "#59D6C7",
+            "on-tertiary-container": "#ffe4d9",
+            "on-secondary-container": "#586473",
+            "surface-container": "#eaeefa",
+            "on-secondary": "#ffffff",
+            "on-primary-container": "#e8e7ff",
+            "on-background": "#171c24",
+            "surface-container-lowest": "#ffffff",
+            "inverse-on-surface": "#edf1fc",
+            "secondary": "#535f6e",
+            "action-primary-dark": "#9BA5FF",
+            "on-secondary-fixed": "#101c29",
+            "secondary-container": "#d4e1f3",
+            "surface-dim": "#d6dae5",
+            "tertiary-container": "#b04a00",
+            "on-primary-fixed": "#000569",
+            "outline-variant": "#c6c5d7",
+            "primary-fixed": "#e0e0ff",
+            "on-primary-fixed-variant": "#202dc5",
+            "secondary-fixed-dim": "#bbc8d9",
+            "primary-container": "#4a57e8",
+            "error-container": "#ffdad6",
+            "surface": "#f9f9ff",
+            "on-surface-variant": "#454655",
+            "surface-container-highest": "#dee2ee",
+            "on-primary": "#ffffff",
+            "surface-bright": "#f9f9ff",
+            "on-tertiary-fixed-variant": "#793100",
+            "on-tertiary-fixed": "#341100",
+            "error": "#ba1a1a",
+            "secondary-fixed": "#d7e4f5",
+            "surface-container-low": "#f0f3ff",
+            "tertiary-fixed-dim": "#ffb692",
+            "on-error": "#ffffff",
+            "primary-fixed-dim": "#bec2ff",
+            "primary": "#2e3bcf",
+            "on-surface": "#171c24",
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px",
+          },
+          "spacing": {
+            "xl": "24px",
+            "md": "12px",
+            "xs": "4px",
+            "base": "4px",
+            "xxl": "32px",
+            "lg": "16px",
+            "gutter-compact": "16px",
+            "gutter": "20px",
+            "xxxl": "48px",
+            "sm": "8px",
+          },
+          "fontFamily": {
+            "section-title": ["Spline Sans"],
+            "decision-headline": ["Spline Sans"],
+            "screen-title": ["Spline Sans"],
+            "data-utility": ["IBM Plex Mono"],
+            "label-caps": ["Inter"],
+            "body-compact": ["Inter"],
+            "body-base": ["Inter"],
+          },
+          "fontSize": {
+            "section-title": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "decision-headline": ["32px", {
+              "lineHeight": "36px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600",
+            }],
+            "screen-title": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+            "data-utility": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "label-caps": ["12px", {
+              "lineHeight": "16px",
+              "letterSpacing": "0.05em",
+              "fontWeight": "600",
+            }],
+            "body-compact": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+            "body-base": ["17px", { "lineHeight": "25px", "fontWeight": "400" }],
+          },
+        },
+      },
+    };
     </script>
-<style>
-        body { background-color: #090D14; color: #FFFFFF; } /* Fallback before Tailwind loads */
-        .hairline-border { border: 1px solid rgba(255, 255, 255, 0.1); }
-        .hairline-border-b { border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
-        .hairline-border-t { border-top: 1px solid rgba(255, 255, 255, 0.1); }
-        .metric-row { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; }
-        .metric-label { display: flex; align-items: center; gap: 12px; }
-        .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background-color: #FF887D; animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 136, 125, 0.4); } 70% { box-shadow: 0 0 0 6px rgba(255, 136, 125, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 136, 125, 0); } }
+    <style>
+    body {
+      background-color: #090D14;
+      color: #FFFFFF;
+    } /* Fallback before Tailwind loads */
+    .hairline-border {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .hairline-border-b {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .hairline-border-t {
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 0;
+    }
+    .metric-label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #FF887D;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(255, 136, 125, 0.4);
+      }
+      70% {
+        box-shadow: 0 0 0 6px rgba(255, 136, 125, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(255, 136, 125, 0);
+      }
+    }
     </style>
-<style>
+    <style>
     body {
       min-height: max(884px, 100dvh);
     }
-  </style>
+    </style>
   </head>
-<body class="bg-canvas-dark text-on-primary antialiased min-h-screen flex flex-col pt-safe pb-safe selection:bg-action-primary-dark/30">
-<!-- TopAppBar JSON execution (Suppressing BottomNav for transactional screen) -->
-<header class="flex items-center justify-between px-gutter w-full h-16 bg-canvas-dark/80 backdrop-blur-xl border-b border-outline-variant/10 fixed top-0 z-50 pt-safe">
-<button class="flex items-center justify-center w-11 h-11 rounded-full text-primary dark:text-primary-fixed-dim hover:bg-surface-variant/10 active:scale-95 transition-transform duration-150">
-<span class="material-symbols-outlined" data-icon="arrow_back" data-weight="regular">arrow_back</span>
-</button>
-<h1 class="font-screen-title text-screen-title font-bold text-on-surface dark:text-on-surface">Tracend</h1>
-<div class="w-11 h-11 flex items-center justify-center">
-<span class="font-data-utility text-data-utility text-surface-dim">3/8</span>
-</div>
-</header>
-<!-- Main Content Canvas -->
-<main class="flex-1 px-gutter pt-24 pb-32 flex flex-col gap-xxl max-w-2xl mx-auto w-full">
-<!-- Decision Surface (Header & Rationale) -->
-<section class="flex flex-col gap-lg animate-fade-in-up">
-<div class="flex items-center gap-2">
-<div class="pulse-dot"></div>
-<span class="font-label-caps text-label-caps text-state-attention-dark uppercase tracking-widest">Stale Data</span>
-</div>
-<h2 class="font-decision-headline text-decision-headline text-on-primary">Sync delayed</h2>
-<p class="font-body-base text-body-base text-surface-dim opacity-80 leading-relaxed">
+  <body
+    class="bg-canvas-dark text-on-primary antialiased min-h-screen flex flex-col pt-safe pb-safe selection:bg-action-primary-dark/30">
+    <!-- TopAppBar JSON execution (Suppressing BottomNav for transactional screen) -->
+    <header
+      class="flex items-center justify-between px-gutter w-full h-16 bg-canvas-dark/80 backdrop-blur-xl border-b border-outline-variant/10 fixed top-0 z-50 pt-safe">
+      <button
+        class="flex items-center justify-center w-11 h-11 rounded-full text-primary dark:text-primary-fixed-dim hover:bg-surface-variant/10 active:scale-95 transition-transform duration-150">
+        <span class="material-symbols-outlined" data-icon="arrow_back"
+          data-weight="regular">arrow_back</span>
+      </button>
+      <h1
+        class="font-screen-title text-screen-title font-bold text-on-surface dark:text-on-surface">Tracend</h1>
+      <div class="w-11 h-11 flex items-center justify-center">
+        <span class="font-data-utility text-data-utility text-surface-dim">3/8</span>
+      </div>
+    </header>
+    <!-- Main Content Canvas -->
+    <main class="flex-1 px-gutter pt-24 pb-32 flex flex-col gap-xxl max-w-2xl mx-auto w-full">
+      <!-- Decision Surface (Header & Rationale) -->
+      <section class="flex flex-col gap-lg animate-fade-in-up">
+        <div class="flex items-center gap-2">
+          <div class="pulse-dot"></div>
+          <span
+            class="font-label-caps text-label-caps text-state-attention-dark uppercase tracking-widest">Stale Data</span>
+        </div>
+        <h2 class="font-decision-headline text-decision-headline text-on-primary">Sync delayed</h2>
+        <p class="font-body-base text-body-base text-surface-dim opacity-80 leading-relaxed">
                 Last sync was 48 hours ago. Open Apple Health to refresh your data. Tracend requires up-to-date telemetry to calibrate your next move.
             </p>
-</section>
-<!-- Technical List (Evidence Rows) -->
-<section class="bg-surface-dark rounded-xl hairline-border p-6 flex flex-col animate-fade-in-up" style="animation-delay: 0.1s;">
-<div class="flex justify-between items-end hairline-border-b pb-sm mb-sm">
-<span class="font-label-caps text-label-caps text-secondary-fixed-dim">Telemetry Stream</span>
-<span class="font-label-caps text-label-caps text-secondary-fixed-dim">Status</span>
-</div>
-<!-- Row 1: Sleep -->
-<div class="metric-row hairline-border-b">
-<div class="metric-label">
-<span class="material-symbols-outlined text-outline" data-icon="bed" data-weight="regular">bed</span>
-<span class="font-body-compact text-body-compact text-on-primary">Sleep Analysis</span>
-</div>
-<div class="font-data-utility text-data-utility text-state-attention-dark flex items-center gap-2">
+      </section>
+      <!-- Technical List (Evidence Rows) -->
+      <section
+        class="bg-surface-dark rounded-xl hairline-border p-6 flex flex-col animate-fade-in-up"
+        style="animation-delay: 0.1s;">
+        <div class="flex justify-between items-end hairline-border-b pb-sm mb-sm">
+          <span
+            class="font-label-caps text-label-caps text-secondary-fixed-dim">Telemetry Stream</span>
+          <span class="font-label-caps text-label-caps text-secondary-fixed-dim">Status</span>
+        </div>
+        <!-- Row 1: Sleep -->
+        <div class="metric-row hairline-border-b">
+          <div class="metric-label">
+            <span class="material-symbols-outlined text-outline" data-icon="bed"
+              data-weight="regular">bed</span>
+            <span class="font-body-compact text-body-compact text-on-primary">Sleep Analysis</span>
+          </div>
+          <div
+            class="font-data-utility text-data-utility text-state-attention-dark flex items-center gap-2">
                     48h Stale <span class="material-symbols-outlined text-[16px]" data-icon="warning" data-weight="regular">warning</span>
-</div>
-</div>
-<!-- Row 2: Heart Rate -->
-<div class="metric-row hairline-border-b">
-<div class="metric-label">
-<span class="material-symbols-outlined text-outline" data-icon="monitor_heart" data-weight="regular">monitor_heart</span>
-<span class="font-body-compact text-body-compact text-on-primary">Heart Rate (HRV)</span>
-</div>
-<div class="font-data-utility text-data-utility text-state-attention-dark flex items-center gap-2">
+          </div>
+        </div>
+        <!-- Row 2: Heart Rate -->
+        <div class="metric-row hairline-border-b">
+          <div class="metric-label">
+            <span class="material-symbols-outlined text-outline" data-icon="monitor_heart"
+              data-weight="regular">monitor_heart</span>
+            <span
+              class="font-body-compact text-body-compact text-on-primary">Heart Rate (HRV)</span>
+          </div>
+          <div
+            class="font-data-utility text-data-utility text-state-attention-dark flex items-center gap-2">
                     48h Stale <span class="material-symbols-outlined text-[16px]" data-icon="warning" data-weight="regular">warning</span>
-</div>
-</div>
-<!-- Row 3: Workouts -->
-<div class="metric-row hairline-border-b">
-<div class="metric-label">
-<span class="material-symbols-outlined text-outline" data-icon="exercise" data-weight="regular">exercise</span>
-<span class="font-body-compact text-body-compact text-on-primary">Workouts</span>
-</div>
-<div class="font-data-utility text-data-utility text-state-attention-dark flex items-center gap-2">
+          </div>
+        </div>
+        <!-- Row 3: Workouts -->
+        <div class="metric-row hairline-border-b">
+          <div class="metric-label">
+            <span class="material-symbols-outlined text-outline" data-icon="exercise"
+              data-weight="regular">exercise</span>
+            <span class="font-body-compact text-body-compact text-on-primary">Workouts</span>
+          </div>
+          <div
+            class="font-data-utility text-data-utility text-state-attention-dark flex items-center gap-2">
                     48h Stale <span class="material-symbols-outlined text-[16px]" data-icon="warning" data-weight="regular">warning</span>
-</div>
-</div>
-<!-- Row 4: Nutrition -->
-<div class="metric-row">
-<div class="metric-label">
-<span class="material-symbols-outlined text-outline" data-icon="restaurant" data-weight="regular">restaurant</span>
-<span class="font-body-compact text-body-compact text-on-primary">Nutrition</span>
-</div>
-<div class="font-data-utility text-data-utility text-state-attention-dark flex items-center gap-2">
+          </div>
+        </div>
+        <!-- Row 4: Nutrition -->
+        <div class="metric-row">
+          <div class="metric-label">
+            <span class="material-symbols-outlined text-outline" data-icon="restaurant"
+              data-weight="regular">restaurant</span>
+            <span class="font-body-compact text-body-compact text-on-primary">Nutrition</span>
+          </div>
+          <div
+            class="font-data-utility text-data-utility text-state-attention-dark flex items-center gap-2">
                     48h Stale <span class="material-symbols-outlined text-[16px]" data-icon="warning" data-weight="regular">warning</span>
-</div>
-</div>
-</section>
-</main>
-<!-- Fixed Action Area (Bottom) -->
-<footer class="fixed bottom-0 w-full px-gutter pb-safe pt-lg bg-canvas-dark/95 backdrop-blur-md hairline-border-t z-40 max-w-2xl left-1/2 -translate-x-1/2 flex flex-col gap-md pb-8">
-<button class="w-full h-[52px] bg-action-primary-dark text-on-primary-fixed-variant font-label-caps text-label-caps rounded-lg flex items-center justify-center gap-2 active:scale-[0.98] transition-transform duration-160">
+          </div>
+        </div>
+      </section>
+    </main>
+    <!-- Fixed Action Area (Bottom) -->
+    <footer
+      class="fixed bottom-0 w-full px-gutter pb-safe pt-lg bg-canvas-dark/95 backdrop-blur-md hairline-border-t z-40 max-w-2xl left-1/2 -translate-x-1/2 flex flex-col gap-md pb-8">
+      <button
+        class="w-full h-[52px] bg-action-primary-dark text-on-primary-fixed-variant font-label-caps text-label-caps rounded-lg flex items-center justify-center gap-2 active:scale-[0.98] transition-transform duration-160">
 <span class="material-symbols-outlined text-[18px]" data-icon="sync" data-weight="regular">sync</span>
             RETRY SYNC
         </button>
-<button class="w-full h-[52px] hairline-border text-on-primary font-label-caps text-label-caps rounded-lg flex items-center justify-center active:scale-[0.98] transition-transform duration-160 hover:bg-surface-dark">
+      <button
+        class="w-full h-[52px] hairline-border text-on-primary font-label-caps text-label-caps rounded-lg flex items-center justify-center active:scale-[0.98] transition-transform duration-160 hover:bg-surface-dark">
             MANUAL ENTRY
         </button>
-</footer>
-<style>
-        .animate-fade-in-up {
-            animation: fadeInUp 0.4s ease-out forwards;
-            opacity: 0;
-            transform: translateY(10px);
-        }
-        @keyframes fadeInUp {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
+    </footer>
+    <style>
+    .animate-fade-in-up {
+      animation: fadeInUp 0.4s ease-out forwards;
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    @keyframes fadeInUp {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
     </style>
-</body></html>
+  </body>
+</html>

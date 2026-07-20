@@ -1,27 +1,17 @@
-import { createClient } from "npm:@supabase/supabase-js@2.49.8";
 import { parseCoachDecision, type PolicyOutcome } from "../_shared/contracts/coach_decision_v1.ts";
 import { parseCoachRequest } from "../_shared/contracts/coach_request_v1.ts";
 import { createCoachModelProvider } from "../_shared/providers/create_coach_model_provider.ts";
-
-const headers = { "Content-Type": "application/json" };
-const reply = (status: number, body: Record<string, unknown>) =>
-  new Response(JSON.stringify(body), { status, headers });
+import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 
 Deno.serve(async (request) => {
   if (request.method !== "POST") return reply(405, { error: "method_not_allowed" });
-  const url = Deno.env.get("SUPABASE_URL");
-  const key = Deno.env.get("SUPABASE_ANON_KEY");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const authorization = request.headers.get("Authorization");
-  if (!url || !key || !serviceKey || !authorization) {
-    return reply(401, { error: "authentication_required" });
+  let auth;
+  try {
+    auth = await requireAuth(request);
+  } catch (e) {
+    if (e instanceof AuthError) return reply(e.status, { error: e.message });
+    throw e;
   }
-  const userClient = createClient(url, key, {
-    global: { headers: { Authorization: authorization } },
-    auth: { persistSession: false },
-  });
-  const { data: userData, error: userError } = await userClient.auth.getUser();
-  if (userError || !userData.user) return reply(401, { error: "invalid_session" });
 
   let input;
   try {
@@ -29,11 +19,10 @@ Deno.serve(async (request) => {
   } catch {
     return reply(422, { error: "invalid_coach_request" });
   }
-  const service = createClient(url, serviceKey, { auth: { persistSession: false } });
-  const { data: prepared, error: prepareError } = await service.rpc(
+  const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
     "prepare_daily_coaching",
     {
-      target_user_id: userData.user.id,
+      target_user_id: auth.userId,
       coaching_date: input.local_date,
       coaching_timezone: input.timezone,
       request_idempotency_key: input.idempotency_key,
@@ -41,7 +30,7 @@ Deno.serve(async (request) => {
   );
   if (prepareError || !prepared) return reply(422, { error: "coaching_unavailable" });
   if (prepared.replayed && prepared.model_run_id) {
-    const { data } = await userClient.from("coach_decisions").select()
+    const { data } = await auth.userClient.from("coach_decisions").select()
       .eq("model_run_id", prepared.model_run_id).maybeSingle();
     return data
       ? reply(200, { schema_version: "1.0", decision: data, replayed: true })
@@ -52,10 +41,12 @@ Deno.serve(async (request) => {
   try {
     const outcome = prepared.policy_outcome as PolicyOutcome;
     const evidence = prepared.permitted_evidence as string[];
-    const { data: snapshot, error: snapshotError } = await service.from("feature_snapshots")
+    const { data: snapshot, error: snapshotError } = await auth.serviceClient.from(
+      "feature_snapshots",
+    )
       .select("features")
       .eq("id", prepared.feature_snapshot_id)
-      .eq("user_id", userData.user.id)
+      .eq("user_id", auth.userId)
       .single();
     if (snapshotError || !snapshot || typeof snapshot.features !== "object") {
       throw new Error("feature_context_unavailable");
@@ -71,10 +62,10 @@ Deno.serve(async (request) => {
     });
     const decision = parseCoachDecision(generated.decision, evidence, outcome);
     const persistedPayload = { ...decision, local_date: input.local_date };
-    const { data: persisted, error } = await service.rpc(
+    const { data: persisted, error } = await auth.serviceClient.rpc(
       "persist_daily_coaching_result_v2",
       {
-        target_user_id: userData.user.id,
+        target_user_id: auth.userId,
         snapshot_id: prepared.feature_snapshot_id,
         policy_id: prepared.policy_evaluation_id,
         request_idempotency_key: input.idempotency_key,
@@ -94,8 +85,8 @@ Deno.serve(async (request) => {
       replayed: false,
     });
   } catch {
-    await service.rpc("persist_failed_coaching_run_v2", {
-      target_user_id: userData.user.id,
+    await auth.serviceClient.rpc("persist_failed_coaching_run_v2", {
+      target_user_id: auth.userId,
       snapshot_id: prepared.feature_snapshot_id,
       policy_id: prepared.policy_evaluation_id,
       request_idempotency_key: input.idempotency_key,

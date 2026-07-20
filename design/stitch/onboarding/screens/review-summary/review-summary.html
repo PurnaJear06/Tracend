@@ -1,274 +1,337 @@
 <!DOCTYPE html>
 
-<html class="dark" lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Tracend - Review Starting Point</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com" rel="preconnect"/>
-<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&amp;family=Inter:wght@400;600&amp;family=Spline+Sans:wght@600&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    "colors": {
-                        "on-primary-container": "#e8e7ff",
-                        "action-primary-dark": "#9BA5FF",
-                        "surface-light": "#FFFFFF",
-                        "secondary-fixed-dim": "#bbc8d9",
-                        "on-secondary-fixed": "#101c29",
-                        "tertiary-fixed-dim": "#ffb692",
-                        "on-surface": "#171c24",
-                        "surface-container-lowest": "#ffffff",
-                        "canvas-dark": "#090D14",
-                        "on-surface-variant": "#454655",
-                        "surface-container-low": "#f0f3ff",
-                        "on-error-container": "#93000a",
-                        "on-background": "#171c24",
-                        "tertiary": "#893800",
-                        "on-error": "#ffffff",
-                        "surface-variant": "#dee2ee",
-                        "state-stable-dark": "#59D6C7",
-                        "primary-fixed-dim": "#bec2ff",
-                        "on-secondary-container": "#586473",
-                        "on-primary": "#ffffff",
-                        "primary-fixed": "#e0e0ff",
-                        "state-attention": "#C43C31",
-                        "surface-tint": "#3e4bdd",
-                        "outline": "#767686",
-                        "on-tertiary-fixed-variant": "#793100",
-                        "error-container": "#ffdad6",
-                        "on-primary-fixed-variant": "#202dc5",
-                        "on-secondary-fixed-variant": "#3c4856",
-                        "primary-container": "#4a57e8",
-                        "inverse-surface": "#2c3139",
-                        "surface-container-highest": "#dee2ee",
-                        "on-tertiary-fixed": "#341100",
-                        "inverse-on-surface": "#edf1fc",
-                        "on-tertiary-container": "#ffe4d9",
-                        "inverse-primary": "#bec2ff",
-                        "on-tertiary": "#ffffff",
-                        "background": "#f9f9ff",
-                        "secondary": "#535f6e",
-                        "tertiary-container": "#b04a00",
-                        "surface-container-high": "#e4e8f4",
-                        "surface-bright": "#f9f9ff",
-                        "surface": "#f9f9ff",
-                        "error": "#ba1a1a",
-                        "on-primary-fixed": "#000569",
-                        "state-stable": "#00796B",
-                        "outline-variant": "#c6c5d7",
-                        "surface-dark": "#121925",
-                        "secondary-fixed": "#d7e4f5",
-                        "surface-dim": "#d6dae5",
-                        "secondary-container": "#d4e1f3",
-                        "tertiary-fixed": "#ffdbcb",
-                        "primary": "#2e3bcf",
-                        "state-attention-dark": "#FF887D",
-                        "surface-container": "#eaeefa",
-                        "on-secondary": "#ffffff",
-                        "canvas-light": "#F3F6F8"
-                    },
-                    "borderRadius": {
-                        "DEFAULT": "0.25rem",
-                        "lg": "0.5rem",
-                        "xl": "0.75rem",
-                        "full": "9999px"
-                    },
-                    "spacing": {
-                        "gutter-compact": "16px",
-                        "md": "12px",
-                        "xxl": "32px",
-                        "xs": "4px",
-                        "xl": "24px",
-                        "gutter": "20px",
-                        "base": "4px",
-                        "xxxl": "48px",
-                        "sm": "8px",
-                        "lg": "16px"
-                    },
-                    "fontFamily": {
-                        "label-caps": ["Inter"],
-                        "data-utility": ["IBM Plex Mono"],
-                        "screen-title": ["Spline Sans"],
-                        "body-base": ["Inter"],
-                        "section-title": ["Spline Sans"],
-                        "decision-headline": ["Spline Sans"],
-                        "body-compact": ["Inter"]
-                    },
-                    "fontSize": {
-                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
-                        "data-utility": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
-                        "screen-title": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
-                        "body-base": ["17px", { "lineHeight": "25px", "fontWeight": "400" }],
-                        "section-title": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
-                        "decision-headline": ["32px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
-                        "body-compact": ["15px", { "lineHeight": "22px", "fontWeight": "400" }]
-                    }
-                }
-            }
-        }
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Tracend - Review Starting Point</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&amp;family=Inter:wght@400;600&amp;family=Spline+Sans:wght@600&amp;display=swap"
+      rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet" />
+    <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-primary-container": "#e8e7ff",
+            "action-primary-dark": "#9BA5FF",
+            "surface-light": "#FFFFFF",
+            "secondary-fixed-dim": "#bbc8d9",
+            "on-secondary-fixed": "#101c29",
+            "tertiary-fixed-dim": "#ffb692",
+            "on-surface": "#171c24",
+            "surface-container-lowest": "#ffffff",
+            "canvas-dark": "#090D14",
+            "on-surface-variant": "#454655",
+            "surface-container-low": "#f0f3ff",
+            "on-error-container": "#93000a",
+            "on-background": "#171c24",
+            "tertiary": "#893800",
+            "on-error": "#ffffff",
+            "surface-variant": "#dee2ee",
+            "state-stable-dark": "#59D6C7",
+            "primary-fixed-dim": "#bec2ff",
+            "on-secondary-container": "#586473",
+            "on-primary": "#ffffff",
+            "primary-fixed": "#e0e0ff",
+            "state-attention": "#C43C31",
+            "surface-tint": "#3e4bdd",
+            "outline": "#767686",
+            "on-tertiary-fixed-variant": "#793100",
+            "error-container": "#ffdad6",
+            "on-primary-fixed-variant": "#202dc5",
+            "on-secondary-fixed-variant": "#3c4856",
+            "primary-container": "#4a57e8",
+            "inverse-surface": "#2c3139",
+            "surface-container-highest": "#dee2ee",
+            "on-tertiary-fixed": "#341100",
+            "inverse-on-surface": "#edf1fc",
+            "on-tertiary-container": "#ffe4d9",
+            "inverse-primary": "#bec2ff",
+            "on-tertiary": "#ffffff",
+            "background": "#f9f9ff",
+            "secondary": "#535f6e",
+            "tertiary-container": "#b04a00",
+            "surface-container-high": "#e4e8f4",
+            "surface-bright": "#f9f9ff",
+            "surface": "#f9f9ff",
+            "error": "#ba1a1a",
+            "on-primary-fixed": "#000569",
+            "state-stable": "#00796B",
+            "outline-variant": "#c6c5d7",
+            "surface-dark": "#121925",
+            "secondary-fixed": "#d7e4f5",
+            "surface-dim": "#d6dae5",
+            "secondary-container": "#d4e1f3",
+            "tertiary-fixed": "#ffdbcb",
+            "primary": "#2e3bcf",
+            "state-attention-dark": "#FF887D",
+            "surface-container": "#eaeefa",
+            "on-secondary": "#ffffff",
+            "canvas-light": "#F3F6F8",
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px",
+          },
+          "spacing": {
+            "gutter-compact": "16px",
+            "md": "12px",
+            "xxl": "32px",
+            "xs": "4px",
+            "xl": "24px",
+            "gutter": "20px",
+            "base": "4px",
+            "xxxl": "48px",
+            "sm": "8px",
+            "lg": "16px",
+          },
+          "fontFamily": {
+            "label-caps": ["Inter"],
+            "data-utility": ["IBM Plex Mono"],
+            "screen-title": ["Spline Sans"],
+            "body-base": ["Inter"],
+            "section-title": ["Spline Sans"],
+            "decision-headline": ["Spline Sans"],
+            "body-compact": ["Inter"],
+          },
+          "fontSize": {
+            "label-caps": ["12px", {
+              "lineHeight": "16px",
+              "letterSpacing": "0.05em",
+              "fontWeight": "600",
+            }],
+            "data-utility": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "screen-title": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+            "body-base": ["17px", { "lineHeight": "25px", "fontWeight": "400" }],
+            "section-title": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "decision-headline": ["32px", {
+              "lineHeight": "36px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600",
+            }],
+            "body-compact": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+          },
+        },
+      },
+    };
     </script>
-<style>
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        .border-subtle {
-            border: 1px solid theme('colors.outline-variant');
-        }
-        .dark .border-subtle {
-            border: 1px solid theme('colors.on-surface-variant');
-        }
+    <style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .border-subtle {
+      border: 1px solid theme('colors.outline-variant');
+    }
+    .dark .border-subtle {
+      border: 1px solid theme('colors.on-surface-variant');
+    }
     </style>
-<style>
+    <style>
     body {
       min-height: max(884px, 100dvh);
     }
-  </style>
+    </style>
   </head>
-<body class="bg-background dark:bg-canvas-dark text-on-surface dark:text-on-primary-container font-body-base antialiased pb-32">
-<!-- TopAppBar -->
-<header class="bg-background dark:bg-canvas-dark w-full top-0 sticky border-b border-outline-variant dark:border-on-surface-variant z-40">
-<div class="flex items-center justify-between px-gutter w-full h-16">
-<button class="flex items-center justify-center p-sm hover:opacity-80 transition-opacity scale-95 active:scale-90 duration-150">
-<span class="material-symbols-outlined text-on-surface-variant dark:text-secondary-fixed-dim" data-icon="close">close</span>
-</button>
-<div class="flex-1 flex justify-center">
-<span class="font-screen-title text-screen-title font-bold text-on-surface dark:text-on-primary-container">Step 8 of 8</span>
-</div>
-<button class="flex items-center justify-center p-sm hover:opacity-80 transition-opacity scale-95 active:scale-90 duration-150">
-<span class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim">Help</span>
-</button>
-</div>
-</header>
-<main class="max-w-3xl mx-auto px-gutter pt-xl pb-xxxl">
-<div class="mb-xl">
-<h1 class="font-decision-headline text-decision-headline mb-sm text-on-surface dark:text-on-primary-container">Review your starting point</h1>
-<p class="font-body-base text-body-base text-on-surface-variant dark:text-secondary-fixed-dim">Verify your calibration data before initializing the protocol.</p>
-</div>
-<div class="grid grid-cols-1 md:grid-cols-2 gap-md">
-<!-- Goal Card -->
-<div class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors">
-<div class="flex justify-between items-start mb-sm">
-<span class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">Goal</span>
-<button class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
-<span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
-</button>
-</div>
-<div class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
+  <body
+    class="bg-background dark:bg-canvas-dark text-on-surface dark:text-on-primary-container font-body-base antialiased pb-32">
+    <!-- TopAppBar -->
+    <header
+      class="bg-background dark:bg-canvas-dark w-full top-0 sticky border-b border-outline-variant dark:border-on-surface-variant z-40">
+      <div class="flex items-center justify-between px-gutter w-full h-16">
+        <button
+          class="flex items-center justify-center p-sm hover:opacity-80 transition-opacity scale-95 active:scale-90 duration-150">
+          <span
+            class="material-symbols-outlined text-on-surface-variant dark:text-secondary-fixed-dim"
+            data-icon="close">close</span>
+        </button>
+        <div class="flex-1 flex justify-center">
+          <span
+            class="font-screen-title text-screen-title font-bold text-on-surface dark:text-on-primary-container">Step 8 of 8</span>
+        </div>
+        <button
+          class="flex items-center justify-center p-sm hover:opacity-80 transition-opacity scale-95 active:scale-90 duration-150">
+          <span
+            class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim">Help</span>
+        </button>
+      </div>
+    </header>
+    <main class="max-w-3xl mx-auto px-gutter pt-xl pb-xxxl">
+      <div class="mb-xl">
+        <h1
+          class="font-decision-headline text-decision-headline mb-sm text-on-surface dark:text-on-primary-container">Review your starting point</h1>
+        <p
+          class="font-body-base text-body-base text-on-surface-variant dark:text-secondary-fixed-dim">Verify your calibration data before initializing the protocol.</p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+        <!-- Goal Card -->
+        <div
+          class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors">
+          <div class="flex justify-between items-start mb-sm">
+            <span
+              class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">Goal</span>
+            <button
+              class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
+              <span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
+            </button>
+          </div>
+          <div
+            class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
                     Lean Muscle Hypertrophy
                 </div>
-</div>
-<!-- Training Availability Card -->
-<div class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors">
-<div class="flex justify-between items-start mb-sm">
-<span class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">Training availability</span>
-<button class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
-<span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
-</button>
-</div>
-<div class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
+        </div>
+        <!-- Training Availability Card -->
+        <div
+          class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors">
+          <div class="flex justify-between items-start mb-sm">
+            <span
+              class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">Training availability</span>
+            <button
+              class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
+              <span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
+            </button>
+          </div>
+          <div
+            class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
                     4 days / week (60m)
                 </div>
-</div>
-<!-- Equipment Card -->
-<div class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors">
-<div class="flex justify-between items-start mb-sm">
-<span class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">Equipment</span>
-<button class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
-<span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
-</button>
-</div>
-<div class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
+        </div>
+        <!-- Equipment Card -->
+        <div
+          class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors">
+          <div class="flex justify-between items-start mb-sm">
+            <span
+              class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">Equipment</span>
+            <button
+              class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
+              <span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
+            </button>
+          </div>
+          <div
+            class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
                     Full Commercial Gym
                 </div>
-</div>
-<!-- Experience Card -->
-<div class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors">
-<div class="flex justify-between items-start mb-sm">
-<span class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">Experience</span>
-<button class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
-<span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
-</button>
-</div>
-<div class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
+        </div>
+        <!-- Experience Card -->
+        <div
+          class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors">
+          <div class="flex justify-between items-start mb-sm">
+            <span
+              class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">Experience</span>
+            <button
+              class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
+              <span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
+            </button>
+          </div>
+          <div
+            class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
                     Intermediate (2-4 yrs)
                 </div>
-</div>
-<!-- Nutrition Card - WARNING STATE -->
-<div class="bg-surface-light dark:bg-surface-dark border border-state-attention-dark rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors">
-<div class="flex justify-between items-start mb-sm">
-<div class="flex items-center gap-2">
-<span class="font-label-caps text-label-caps text-state-attention-dark uppercase tracking-wider">Nutrition preferences</span>
-<span class="material-symbols-outlined text-state-attention-dark text-[16px]" data-icon="warning">warning</span>
-</div>
-<button class="text-state-attention-dark hover:opacity-80 transition-opacity">
-<span class="material-symbols-outlined text-[20px]" data-icon="add">add</span>
-</button>
-</div>
-<div class="font-data-utility text-data-utility text-state-attention-dark">
+        </div>
+        <!-- Nutrition Card - WARNING STATE -->
+        <div
+          class="bg-surface-light dark:bg-surface-dark border border-state-attention-dark rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors">
+          <div class="flex justify-between items-start mb-sm">
+            <div class="flex items-center gap-2">
+              <span
+                class="font-label-caps text-label-caps text-state-attention-dark uppercase tracking-wider">Nutrition preferences</span>
+              <span class="material-symbols-outlined text-state-attention-dark text-[16px]"
+                data-icon="warning">warning</span>
+            </div>
+            <button class="text-state-attention-dark hover:opacity-80 transition-opacity">
+              <span class="material-symbols-outlined text-[20px]" data-icon="add">add</span>
+            </button>
+          </div>
+          <div class="font-data-utility text-data-utility text-state-attention-dark">
                     Required for macro targeting
                 </div>
-</div>
-<!-- Body baseline Card -->
-<div class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors">
-<div class="flex justify-between items-start mb-sm">
-<span class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">Body baseline</span>
-<button class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
-<span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
-</button>
-</div>
-<div class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
+        </div>
+        <!-- Body baseline Card -->
+        <div
+          class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors">
+          <div class="flex justify-between items-start mb-sm">
+            <span
+              class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">Body baseline</span>
+            <button
+              class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
+              <span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
+            </button>
+          </div>
+          <div
+            class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
                     78kg / 180cm / ~15% BF
                 </div>
-</div>
-<!-- Constraints Card -->
-<div class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors md:col-span-2">
-<div class="flex justify-between items-start mb-sm">
-<span class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">Constraints &amp; Injuries</span>
-<button class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
-<span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
-</button>
-</div>
-<div class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
+        </div>
+        <!-- Constraints Card -->
+        <div
+          class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors md:col-span-2">
+          <div class="flex justify-between items-start mb-sm">
+            <span
+              class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">Constraints &amp; Injuries</span>
+            <button
+              class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
+              <span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
+            </button>
+          </div>
+          <div
+            class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
                     Previous L5-S1 microdiscectomy. Avoid heavy axial loading (barbell squats, deadlifts).
                 </div>
-</div>
-<!-- HealthKit Card -->
-<div class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors md:col-span-2">
-<div class="flex justify-between items-start mb-sm">
-<div class="flex items-center gap-xs">
-<span class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">HealthKit Integration</span>
-<span class="material-symbols-outlined text-state-stable-dark text-[16px]" data-icon="check_circle">check_circle</span>
-</div>
-<button class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
-<span class="material-symbols-outlined text-[20px]" data-icon="settings">settings</span>
-</button>
-</div>
-<div class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
+        </div>
+        <!-- HealthKit Card -->
+        <div
+          class="bg-surface-light dark:bg-surface-dark border-subtle rounded-lg p-lg flex flex-col justify-between hover:bg-surface-container dark:hover:bg-inverse-surface transition-colors md:col-span-2">
+          <div class="flex justify-between items-start mb-sm">
+            <div class="flex items-center gap-xs">
+              <span
+                class="font-label-caps text-label-caps text-on-surface-variant dark:text-secondary-fixed-dim uppercase tracking-wider">HealthKit Integration</span>
+              <span class="material-symbols-outlined text-state-stable-dark text-[16px]"
+                data-icon="check_circle">check_circle</span>
+            </div>
+            <button
+              class="text-primary dark:text-action-primary-dark hover:opacity-80 transition-opacity">
+              <span class="material-symbols-outlined text-[20px]"
+                data-icon="settings">settings</span>
+            </button>
+          </div>
+          <div
+            class="font-data-utility text-data-utility text-on-surface dark:text-on-primary-container">
                     Active (Sleep, Steps, HRV, Active Energy)
                 </div>
-</div>
-</div>
-<div class="mt-lg text-center">
-<p class="font-body-compact text-body-compact text-on-surface-variant dark:text-secondary-fixed-dim">Nothing becomes active until you approve the proposal.</p>
-</div>
-</main>
-<!-- BottomNavBar -->
-<div class="fixed bottom-0 w-full z-50 p-lg bg-surface-container dark:bg-surface-dark border-t border-outline-variant dark:border-on-surface-variant pb-safe">
-<div class="flex gap-md max-w-3xl mx-auto">
-<button class="flex-1 border border-outline dark:border-outline-variant text-on-surface dark:text-on-primary-container h-[52px] rounded-lg flex items-center justify-center font-label-caps text-label-caps hover:brightness-110 transition-all active:scale-[0.98] duration-160 gap-sm">
+        </div>
+      </div>
+      <div class="mt-lg text-center">
+        <p
+          class="font-body-compact text-body-compact text-on-surface-variant dark:text-secondary-fixed-dim">Nothing becomes active until you approve the proposal.</p>
+      </div>
+    </main>
+    <!-- BottomNavBar -->
+    <div
+      class="fixed bottom-0 w-full z-50 p-lg bg-surface-container dark:bg-surface-dark border-t border-outline-variant dark:border-on-surface-variant pb-safe">
+      <div class="flex gap-md max-w-3xl mx-auto">
+        <button
+          class="flex-1 border border-outline dark:border-outline-variant text-on-surface dark:text-on-primary-container h-[52px] rounded-lg flex items-center justify-center font-label-caps text-label-caps hover:brightness-110 transition-all active:scale-[0.98] duration-160 gap-sm">
 <span class="material-symbols-outlined" data-icon="close">close</span>
                 Save and exit
             </button>
-<button class="flex-1 bg-primary dark:bg-primary-container text-on-primary dark:text-on-primary-container h-[52px] rounded-lg flex items-center justify-center font-label-caps text-label-caps hover:brightness-110 transition-all active:scale-[0.98] duration-160 gap-sm">
+        <button
+          class="flex-1 bg-primary dark:bg-primary-container text-on-primary dark:text-on-primary-container h-[52px] rounded-lg flex items-center justify-center font-label-caps text-label-caps hover:brightness-110 transition-all active:scale-[0.98] duration-160 gap-sm">
                 Build my plan
                  <span class="material-symbols-outlined" data-icon="bolt">bolt</span>
-</button>
-</div>
-</div>
-</body></html>
+        </button>
+      </div>
+    </div>
+  </body>
+</html>

@@ -6,9 +6,15 @@ import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class WorkoutDetailScreen extends StatelessWidget {
-  const WorkoutDetailScreen({this.repository, this.workout, super.key});
+  const WorkoutDetailScreen({
+    this.repository,
+    this.workout,
+    this.sessionDate,
+    super.key,
+  });
   final WorkoutRepository? repository;
   final PlannedWorkout? workout;
+  final DateTime? sessionDate;
 
   @override
   Widget build(BuildContext context) {
@@ -111,14 +117,23 @@ class WorkoutDetailScreen extends StatelessWidget {
             const SizedBox(height: TracendSpacing.lg),
             FilledButton.icon(
               onPressed: () {
-                Navigator.of(context).push<void>(
-                  CupertinoPageRoute(
-                    builder: (_) => ActiveWorkoutScreen(
-                      workout: currentWorkout,
-                      repository: repository ?? FixtureWorkoutRepository(),
-                    ),
-                  ),
-                );
+                final navigator = Navigator.of(context);
+                navigator
+                    .push<bool>(
+                      CupertinoPageRoute(
+                        builder: (_) => ActiveWorkoutScreen(
+                          workout: currentWorkout,
+                          repository:
+                              repository ?? FixtureWorkoutRepository(),
+                          sessionDate: sessionDate,
+                        ),
+                      ),
+                    )
+                    .then((completed) {
+                      if (completed == true) {
+                        navigator.pop(true);
+                      }
+                    });
               },
               icon: const Icon(CupertinoIcons.play_fill, size: 18),
               label: const Text('Begin first exercise'),

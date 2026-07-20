@@ -1,12 +1,6 @@
-import { createClient } from "npm:@supabase/supabase-js@2.49.8";
+import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 
-const jsonHeaders = { "Content-Type": "application/json" };
-
-function response(status: number, body: Readonly<Record<string, unknown>>) {
-  return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
-}
-
-function stableJson(value: unknown): string {
+export function stableJson(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map(stableJson).join(",")}]`;
   }
@@ -20,7 +14,7 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-async function sha256(value: unknown): Promise<string> {
+export async function sha256(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(stableJson(value));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest))
@@ -30,39 +24,25 @@ async function sha256(value: unknown): Promise<string> {
 
 Deno.serve(async (request) => {
   if (request.method !== "POST") {
-    return response(405, { error: "method_not_allowed" });
+    return reply(405, { error: "method_not_allowed" });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const publishableKey = Deno.env.get("SUPABASE_ANON_KEY");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const authorization = request.headers.get("Authorization");
-
-  if (!supabaseUrl || !publishableKey || !serviceRoleKey || !authorization) {
-    return response(401, { error: "authentication_required" });
+  let auth;
+  try {
+    auth = await requireAuth(request);
+  } catch (e) {
+    if (e instanceof AuthError) return reply(e.status, { error: e.message });
+    throw e;
   }
 
-  const userClient = createClient(supabaseUrl, publishableKey, {
-    global: { headers: { Authorization: authorization } },
-    auth: { persistSession: false },
-  });
-  const { data: userData, error: userError } = await userClient.auth.getUser();
-  if (userError || !userData.user) {
-    return response(401, { error: "invalid_session" });
-  }
-
-  const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  });
-  const userId = userData.user.id;
-  const { data: draft, error: draftError } = await serviceClient
+  const { data: draft, error: draftError } = await auth.serviceClient
     .from("onboarding_drafts")
     .select("path,payload")
-    .eq("user_id", userId)
+    .eq("user_id", auth.userId)
     .single();
 
   if (draftError || !draft?.path || !draft.payload) {
-    return response(422, { error: "onboarding_draft_incomplete" });
+    return reply(422, { error: "onboarding_draft_incomplete" });
   }
 
   const payload = draft.payload as Record<string, unknown>;
@@ -82,10 +62,10 @@ Deno.serve(async (request) => {
     deterministic_inputs: { sessions_per_week: sessionsPerWeek, weight_kg: weightKg },
   };
 
-  const { data: proposalId, error: proposalError } = await serviceClient.rpc(
+  const { data: proposalId, error: proposalError } = await auth.serviceClient.rpc(
     "persist_mock_onboarding_proposal",
     {
-      target_user_id: userId,
+      target_user_id: auth.userId,
       snapshot_hash: await sha256(snapshot),
       snapshot_features: snapshot,
       training_payload: {
@@ -117,8 +97,8 @@ Deno.serve(async (request) => {
   );
 
   if (proposalError || typeof proposalId !== "string") {
-    return response(422, { error: "proposal_generation_failed" });
+    return reply(422, { error: "proposal_generation_failed" });
   }
 
-  return response(200, { schema_version: "1.0", proposal_id: proposalId });
+  return reply(200, { schema_version: "1.0", proposal_id: proposalId });
 });

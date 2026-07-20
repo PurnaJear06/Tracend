@@ -1,0 +1,55 @@
+name: Pre-Deploy Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.7"
+          cache: true
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: "2.101.0"
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: "2.9.0"
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Flutter analyze
+        run: flutter analyze
+
+      - name: Flutter test
+        run: flutter test
+
+      - name: Deno format check
+        run: deno fmt --check supabase/functions
+
+      - name: Deno lint
+        run: deno lint supabase/functions
+
+      - name: Deno test
+        run: deno task check
+        working-directory: supabase/functions
+
+      - name: Flutter dep freshness
+        run: flutter pub outdated --no-transitive || true
+
+      - name: Deno dep freshness
+        run: deno outdated supabase/functions/ || true

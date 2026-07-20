@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
+import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class NutritionScreen extends StatefulWidget {
@@ -57,7 +58,8 @@ class _NutritionScreenState extends State<NutritionScreen> {
         _meals = values[2] as List<MealEntry>;
         _schedule = values[3] as NutritionSchedule;
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(
           () => _error = 'Nutrition data is unavailable. Pull to retry.',
@@ -125,7 +127,8 @@ class _NutritionScreenState extends State<NutritionScreen> {
         mealType: 'lunch',
       );
       await _openCandidateReview(mealId);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(
           () => _error =
@@ -158,7 +161,8 @@ class _NutritionScreenState extends State<NutritionScreen> {
         bytes: await photo.readAsBytes(),
       );
       await _openCandidateReview(mealId);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(
           () => _error =
@@ -187,7 +191,8 @@ class _NutritionScreenState extends State<NutritionScreen> {
       );
       if (selected == null || selected.isEmpty) return;
       await _run(() => widget.repository.confirmCandidates(mealId, selected));
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(
           () => _error =
@@ -211,7 +216,8 @@ class _NutritionScreenState extends State<NutritionScreen> {
     try {
       await action();
       await _refresh();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(() => _error = failureMessage);
       }
@@ -423,10 +429,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
         FilledButton.icon(
           onPressed: _working ? null : _openManualMeal,
           icon: _working
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const TracendLoadingIndicator(size: 18)
               : const Icon(CupertinoIcons.pencil),
           label: const Text('Enter manually'),
         ),

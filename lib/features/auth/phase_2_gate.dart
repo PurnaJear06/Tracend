@@ -63,7 +63,8 @@ class _Phase2GateState extends State<Phase2Gate> {
           _onboardingComplete = complete;
         });
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       setState(() {
         _error =
             'The account state could not be loaded. Check the connection and retry.';
@@ -76,7 +77,8 @@ class _Phase2GateState extends State<Phase2Gate> {
   Future<void> _signOut() async {
     try {
       await Supabase.instance.client.auth.signOut();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
       await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
     }
     await _refresh();
