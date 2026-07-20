@@ -35,9 +35,8 @@ previously returned canned plan advice).
 ## Current Phase
 
 Phases 1–8 are hosted; Coach Continuity Memory (v6 schema + v16 prompt) is hosted and live.
-Stability infrastructure deployed 2026-07-19: pre-deploy gate (`scripts/pre-deploy.sh`), 13 Flutter
-contract tests, Deno→DB live contract tests, forward-compatible migration rules in `AGENTS.md` §11,
-CI workflow (`.github/workflows/ci.yml`).
+Stability infrastructure deployed 2026-07-19, context budget guard + health-check deployed
+2026-07-20. Pre-deploy gate, contract tests, Sentry, backups, auth hardening all live.
 
 ## Active Workstreams
 
@@ -45,13 +44,13 @@ CI workflow (`.github/workflows/ci.yml`).
 | ----------------------- | ------------------------------------ | -------------------------- | --------------------------------------------- |
 | Backend foundation      | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
 | Frontend/UI             | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
-| Coach Continuity Memory | **Local — all checks pass**          | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
+| Coach Continuity Memory | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
 | Stitch/design           | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
-| Stability infra         | **Complete — Phases 1–7**           | `AGENTS.md` §11            | N/A                                           |
+| Stability infra         | **Complete — deployed**             | `AGENTS.md` §11            | N/A                                           |
 
 ## Global Current State
 
-- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 49 migrations, 11 are fix migrations.
+- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 50 migrations, 11 are fix migrations.
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
 - Groq Qwen `qwen/qwen3.6-27b` is the owner-test Coach/chat provider (ADR 0006).
 - Gemini `gemini-3.5-flash` remains disabled pending paid-privacy/evaluation gates.
@@ -62,7 +61,7 @@ CI workflow (`.github/workflows/ci.yml`).
 - Apple Developer Program enrollment and TestFlight environment names.
 - Licensed food catalog source.
 - Owner smoke: rest-day Train, exact Nutrition foods, Today Health evidence refresh.
-- Production migration deploy for `20260719090000_context_budget_guard.sql`.
+- Production migration deploy for `20260719090000_context_budget_guard.sql`. ✅ Deployed 2026-07-20.
 
 ## Coach Continuity (2026-07-17)
 
