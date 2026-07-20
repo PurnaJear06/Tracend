@@ -110,8 +110,8 @@ build output, `.dart_tool/`, or `build/` on internal storage.
 `docs/handoff/*.md`. These rotate as work progresses; do not trust cached counts.
 
 **Stable facts** (not kept in PROGRESS_CONTEXT):
-- Groq Qwen `qwen/qwen3.6-27b` is the active Coach/chat provider (ADR 0006).
-- Gemini `gemini-3.5-flash` is disabled pending paid-privacy evaluation gates.
+- Gemini `gemini-3.5-flash` is the active Coach/chat provider.
+- Groq Qwen `qwen/qwen3.6-27b` was the prior owner-test provider; superseded pending evaluation.
 - Flutter iOS app installed on owner's iPhone 12. No Android, no simulator.
 - All 9 Edge Functions are active: coach-chat, coach-decide, health-check, health-sync,
   meal-analyze, meal-media-retention, onboarding-propose-plan, privacy-delete-account,

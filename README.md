@@ -17,7 +17,7 @@
   <img src="https://img.shields.io/badge/Dart-3.11.5-0175C2?logo=dart&logoColor=white" alt="Dart"/>
   <img src="https://img.shields.io/badge/Deno-2.9.0-70FFAF?logo=deno&logoColor=black" alt="Deno"/>
   <img src="https://img.shields.io/badge/Supabase-hosted-3FCF8E?logo=supabase&logoColor=black" alt="Supabase"/>
-  <img src="https://img.shields.io/badge/AI-Groq%20Qwen%2027B-FF7F50?logo=groq&logoColor=white" alt="AI Model"/>
+  <img src="https://img.shields.io/badge/AI-Gemini%203.5%20Flash-4285F4?logo=google&logoColor=white" alt="AI Model"/>
   <img src="https://img.shields.io/badge/Sentry-monitored-36207D?logo=sentry&logoColor=white" alt="Sentry"/>
 </p>
 
@@ -74,14 +74,15 @@ amendments, never silent overwrites.
 
 | Layer | Technology | Purpose |
 |:------|:-----------|:--------|
-| **Coach chat** | Groq Qwen `qwen/qwen3.6-27b` | Evidence-backed coaching responses with reasoning chains |
-| **Meal vision** | Groq Qwen (vision) | Macro estimation and food identification from photos |
+| **Coach chat** | Gemini `gemini-3.5-flash` | Evidence-backed coaching responses with reasoning chains (medium thinking) |
+| **Meal vision** | Gemini `gemini-3.5-flash` | Macro estimation and food identification from photos (low thinking) |
 | **Context assembly** | PostgreSQL + PL/pgSQL | Five-layer structured memory assembled before model inference |
 | **Output validation** | Deterministic policy engine | Schema, semantics, evidence citations, and policy permissions — reject on ANY failure |
 | **Safety** | `beforeSend` scrubber | Redacts sensitive data before crash reporting reaches Sentry |
 
-> The active model is an **owner-test** provider (ADR 0006), not a production-quality or privacy
-> certification. Production deployment is gated on paid-privacy evaluation. See
+> The active model `gemini-3.5-flash` runs with medium thinking for Coach and low thinking for
+> meal vision. Groq Qwen `qwen/qwen3.6-27b` was the prior owner-test provider (ADR 0006);
+> superseded pending evaluation. Production use requires paid-privacy gate. See
 > [`docs/AI_SAFETY_SPEC.md`](docs/AI_SAFETY_SPEC.md).
 
 ## Architecture
@@ -96,13 +97,13 @@ flowchart LR
     DB["PostgreSQL + RLS"]
     EF["9 Edge Functions (Deno)"]
   end
-  subgraph AI["Groq Cloud"]
-    Qwen["Qwen 27B<br/>chat + vision"]
+  subgraph AI["Gemini"]
+    FL["gemini-3.5-flash<br/>chat + vision"]
   end
   UI <-->|RLS / RPC| DB
   UI <-->|Edge Functions| EF
   HK -->|health-sync| EF
-  EF <-->|API| Qwen
+  EF <-->|API| FL
   EF <--> DB
 ```
 
@@ -156,7 +157,7 @@ cd Tracend
 
 **Backend** — Supabase · PostgreSQL + RLS · 9 Deno Edge Functions · Session pooler · Storage
 
-**AI** — Groq Qwen 3.6 27B (chat + vision) · Five-layer continuity memory · Deterministic output
+**AI** — Gemini 3.5 Flash (chat + vision) · Five-layer continuity memory · Deterministic output
 validation · All model keys server-side only
 
 **Infra** — GitHub Actions CI · Pre-deploy gate · Automated database backups · Edge Function
