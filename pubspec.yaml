@@ -38,7 +38,7 @@ dependencies:
   cupertino_icons: 1.0.8
   health: 13.3.1
   image_picker: 1.2.3
-  sentry_flutter: 9.0.0
+  sentry_flutter: 9.24.0
   supabase_flutter: 2.15.0
   shared_preferences: 2.5.3
   url_launcher: 6.3.2
