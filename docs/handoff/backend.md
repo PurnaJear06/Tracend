@@ -103,7 +103,7 @@ This file is current-state handoff, not durable architecture. Keep detailed hist
   provider or client secret.
 - ADR 0002 authorizes Supabase email/password only for owner development while preserving
   `auth.users.id`, RLS, and the later Sign in with Apple route.
-- `DEVELOPMENT_GUIDE.md` is the command source for verified local workflows.
+- `AGENTS.md` is the command source for verified local workflows.
 
 ## Current Verification State
 

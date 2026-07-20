@@ -1,35 +1,62 @@
 # Tracend
 
-Tracend is an evidence-driven AI personal trainer that turns health, training, nutrition, and
-progress data into clear coaching decisions.
+[![CI](https://github.com/PurnaJear06/Tracend/actions/workflows/ci.yml/badge.svg)](https://github.com/PurnaJear06/Tracend/actions/workflows/ci.yml)
+[![Pre-Deploy Gate](https://github.com/PurnaJear06/Tracend/actions/workflows/pre-deploy.yml/badge.svg)](https://github.com/PurnaJear06/Tracend/actions/workflows/pre-deploy.yml)
 
-The repository currently contains the Phase 1 Supabase foundation and Flutter iOS UI shell. Product
-and implementation boundaries are defined in [`AGENTS.md`](AGENTS.md) and the authoritative files
-under [`docs/`](docs/).
+An evidence-driven AI personal trainer that turns health, training, nutrition, and progress data
+into clear coaching decisions.
 
-## Flutter development
+Tracend is a working brand pending formal trademark and App Store name clearance.
 
-Flutter 3.41.7 and Dart 3.11.5 are required. Bootstrap the pinned SDK, then use the repository
-wrapper so the SDK, pub, CocoaPods, Dart home, and build state remain under `.tooling/` on the
-external SSD:
+## Architecture
+
+```
+┌──────────────┐     ┌─────────────────────────────────┐     ┌──────────────┐
+│  Flutter iOS │────▶│  Supabase (Singapore)            │────▶│  AI Provider │
+│  iPhone app  │     │  ├─ PostgreSQL + RLS             │     │  (Groq Qwen) │
+│              │◀────│  └─ 9 Edge Functions (Deno)      │◀────│              │
+└──────────────┘     └─────────────────────────────────┘     └──────────────┘
+```
+
+- **Flutter iOS**: Five-tab UI (Today · Train · Coach · Nutrition · Progress) with Apple HealthKit
+  integration.
+- **Supabase**: PostgreSQL with row-level security, 9 Deno Edge Functions for AI coaching, health
+  sync, meal analysis, onboarding, privacy, and media retention.
+- **AI**: Groq Qwen `qwen/qwen3.6-27b` for Coach/chat and meal vision. All AI keys stay
+  server-side. Model output never mutates persistent state without user approval.
+
+## Quick Start
 
 ```sh
+# Bootstrap toolchain (one-time)
 ./scripts/bootstrap-flutter.sh
-./scripts/flutter.sh pub get
+./scripts/bootstrap-tools.sh
+
+# Verify everything passes
 ./scripts/flutter.sh analyze
 ./scripts/flutter.sh test
-./scripts/flutter.sh build ios --release --no-codesign
+./scripts/deno.sh task check
 ```
 
-Tracend uses an iPhone-only native target. Local runtime testing uses a physically connected iPhone
-after Apple signing is configured; simulator runs are not part of the repository workflow.
+See [AGENTS.md](AGENTS.md) for the full toolchain reference and architecture rules.
 
-The development-only component gallery runs with:
+## Documentation
 
-```sh
-./scripts/flutter.sh run -t lib/component_gallery.dart
-```
+| Doc                                  | Purpose                               |
+| ------------------------------------ | ------------------------------------- |
+| [AGENTS.md](AGENTS.md)               | Agent instructions + toolchain        |
+| [docs/PRD.md](docs/PRD.md)           | Product scope and requirements        |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design and data flow   |
+| [docs/UX_FLOWS.md](docs/UX_FLOWS.md) | Navigation and interaction states     |
+| [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) | Visual system and components  |
+| [docs/DATA_MODEL.md](docs/DATA_MODEL.md) | Entities, fields, and lifecycle   |
+| [docs/AI_SAFETY_SPEC.md](docs/AI_SAFETY_SPEC.md) | AI model policies and guards  |
+| [docs/PROGRESS_CONTEXT.md](docs/PROGRESS_CONTEXT.md) | Live dashboard and status  |
 
-The UI shell runs without backend configuration. Supply only a Supabase URL and publishable key
-through compile-time environment values when needed. See
-[`DEVELOPMENT_GUIDE.md`](DEVELOPMENT_GUIDE.md) for verified commands.
+## Stack
+
+- **Client**: Flutter 3.41.7 / Dart 3.11.5 (iOS only)
+- **Backend**: Supabase (PostgreSQL, Auth, Storage, Edge Functions)
+- **AI**: Groq Qwen via Edge Functions
+- **Crash reporting**: Sentry
+- **CI/CD**: GitHub Actions

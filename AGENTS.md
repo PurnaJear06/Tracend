@@ -73,8 +73,14 @@ credentials, or production URLs. The `.env.example` contains names only. The app
 unconfigured for UI development. Only `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` may reach
 Flutter. Secret/service-role and AI provider keys stay in Supabase Edge Function secrets.
 
+**CI uses vanilla commands, not wrappers.** The `.github/workflows/ci.yml` invokes `flutter` and
+`deno` directly because setup actions place them on PATH. Do not convert CI steps to wrapper scripts.
+
 **No iOS simulator.** The development Mac runs `build ios --release --no-codesign` as the
 compilation gate. Runtime testing uses a physically connected iPhone after signing is configured.
+
+**Colima DNS.** Fresh Colima VMs sometimes fail DNS resolution (host name lookup errors during
+`pg_dump` in `backup-db.sh`). Restarting Colima or waiting a few minutes typically resolves it.
 
 **Development-only component gallery** (no production route):
 
@@ -98,18 +104,32 @@ compilation gate. Runtime testing uses a physically connected iPhone after signi
 All tooling state, caches, and build output stay under `.tooling/` on the external SSD. Never place
 build output, `.dart_tool/`, or `build/` on internal storage.
 
-## 3. Current Phase
+## 3. Context and Docs
 
-Phases 1–8 are hosted and deployed. The Flutter iOS app is installed on the owner's iPhone. 46
-forward migrations are deployed to the hosted Supabase project. Six Edge Functions are active. Coach
-Continuity Memory (ADR-0009, five-layer structured memory) is live with `coach-chat` v16. Groq Qwen
-`qwen/qwen3.6-27b` is the active Coach/chat provider; Gemini `gemini-3.5-flash` remains disabled
-pending paid-privacy evaluation gates.
+**Before any task**, read `docs/PROGRESS_CONTEXT.md` (live dashboard), then the relevant
+`docs/handoff/*.md`. These rotate as work progresses; do not trust cached counts.
 
-**Before starting any task**, read `docs/PROGRESS_CONTEXT.md` for the live dashboard, then the
-relevant `docs/handoff/*.md` for the active workstream. For product scope, PRD is authoritative. For
-technical boundaries, Architecture. For entities, Data Model. For AI behavior, AI Safety Spec. For
-security/privacy, Security and Privacy.
+**Stable facts** (not kept in PROGRESS_CONTEXT):
+- Groq Qwen `qwen/qwen3.6-27b` is the active Coach/chat provider (ADR 0006).
+- Gemini `gemini-3.5-flash` is disabled pending paid-privacy evaluation gates.
+- Flutter iOS app installed on owner's iPhone 12. No Android, no simulator.
+- All 9 Edge Functions are active: coach-chat, coach-decide, health-check, health-sync,
+  meal-analyze, meal-media-retention, onboarding-propose-plan, privacy-delete-account,
+  privacy-export.
+
+**Authority docs** (when behavior changes, update the one that owns it):
+- Product scope → `docs/PRD.md`
+- Architecture/data-flow → `docs/ARCHITECTURE.md`
+- UX/navigation → `docs/UX_FLOWS.md`
+- Visual/component → `docs/DESIGN_SYSTEM.md`
+- Entities/fields/lifecycle → `docs/DATA_MODEL.md`
+- AI/model authority → `docs/AI_SAFETY_SPEC.md`
+- Security/privacy → `docs/SECURITY_PRIVACY.md`
+- Test coverage → `docs/TESTING_STRATEGY.md`
+- Delivery → `docs/IMPLEMENTATION_ROADMAP.md`
+- Budget → `docs/COST_MODEL.md`
+
+If authority docs conflict, stop and report the exact conflict — do not choose silently.
 
 ## 4. Non-Negotiable Architecture Rules
 
@@ -175,8 +195,7 @@ Auth, Data API/RPC, Edge Functions, Storage, Queues, and Cron.
 - Never bypass RLS from Flutter or treat the publishable key as authorization.
 - Never log tokens, secrets, prompts, photos, health values, notes, signed URLs, or restricted
   request/response bodies.
-- Prefer readable code and narrow interfaces. No placeholders, TODO behavior, dead code, or
-  commented-out alternatives in completed work.
+- No placeholders, TODO behavior, dead code, or commented-out alternatives in completed work.
 - Forward-only reviewed migrations. Never edit an applied migration.
 - Preserve immutable historical snapshots and version lineages.
 - `auth.users.id` is canonical user identity; use `auth.uid()` in policies.
@@ -199,20 +218,7 @@ Auth, Data API/RPC, Edge Functions, Storage, Queues, and Cron.
 
 ## 9. Documentation Synchronization
 
-When behavior changes, update the authority that owns it:
-
-- product behavior/scope → `docs/PRD.md`
-- system boundaries, providers, data flow → `docs/ARCHITECTURE.md`
-- navigation, screens, interaction states → `docs/UX_FLOWS.md`
-- visual, component, motion, accessibility → `docs/DESIGN_SYSTEM.md`
-- entities, fields, ownership, lifecycle → `docs/DATA_MODEL.md`
-- model authority, policy, schema, evaluation → `docs/AI_SAFETY_SPEC.md`
-- collection, sharing, retention, deletion → `docs/SECURITY_PRIVACY.md`
-- quality gates, test coverage → `docs/TESTING_STRATEGY.md`
-- delivery sequencing → `docs/IMPLEMENTATION_ROADMAP.md`
-- budget assumptions, upgrade triggers → `docs/COST_MODEL.md`
-
-If documents conflict, stop and report the exact conflict. Do not choose silently.
+When behavior changes, update the authority that owns it (see §3 for the doc map).
 
 After material work, update in order: (1) authoritative docs that changed, (2) ADR if a durable
 decision was made, (3) relevant `docs/handoff/*.md`, (4) `docs/PROGRESS_CONTEXT.md`, (5)

@@ -275,7 +275,7 @@ Before TestFlight expansion:
 - crash, latency, cost, and proposal-rate telemetry is reviewed; and
 - known limitations and rollback owner are recorded.
 
-Exact commands belong in `DEVELOPMENT_GUIDE.md` only after scaffolding exists.
+Exact commands belong in `AGENTS.md` only after scaffolding exists.
 
 ## 9. Operational Safeguards
 

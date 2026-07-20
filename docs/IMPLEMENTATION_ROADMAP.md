@@ -41,7 +41,7 @@ Deliver:
 - semantic themes, typography, icons, navigation shell, and component gallery;
 - CI for formatting, analysis, tests, migration lint, RLS tests, Edge Functions, and Flutter build;
   and
-- `DEVELOPMENT_GUIDE.md` containing only verified commands.
+- `AGENTS.md` containing verified commands and architecture rules.
 
 Exit gate: a clean checkout starts the local Supabase stack and Flutter app; no secret/service-role
 key appears in the client; design/accessibility smoke tests pass.
