@@ -20,7 +20,7 @@ jobs:
           cache: true
 
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
           version: "2.101.0"
 
