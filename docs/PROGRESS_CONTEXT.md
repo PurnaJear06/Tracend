@@ -1,18 +1,11 @@
 # Tracend Progress Context
 
-**Active change:** Coach Continuity Memory (ADR-0009) — five-layer structured memory stack hosted
-and deployed. Post-deploy fixes: (1) 20260717110001 fixed v4→v5 infinite recursion; (2)
-20260717110002 expanded schema_version constraint for '4.0'; (3) 20260717110003 replaced unsupported
-`jsonb_agg(... ORDER BY ...)` on hosted PG with subquery-based ordering for narrative, preferences,
-and journal aggregation in v5; (4) 20260717110004 fixed ambiguous `coaching_date` PL/pgSQL variable
-vs table column (table-qualified the references in the journal query). Prompt restructure
-(coach-chat v16) separates `system` (rules, schema, evidence) from `user` (the user's actual
-message) — previously the user's question was buried inside one giant user message alongside the
-JSON context, causing the model to ignore it and emit the same plan-related answer regardless of
-what was asked. Is now the primary content of the user message and the rule "Lead with one clear
-recommendation" was removed in favour of "Answer the user's specific message first." `coach-chat`
-v16 is ACTIVE. Owner should test one chat message (especially greetings and casual questions — these
-previously returned canned plan advice).
+**Active change:** Feature Engine Phase 1 — database foundation deployed to hosted Supabase. 3
+migrations add `user_baselines`, `metric_baseline_history`, and 6 scoring SQL functions (Winsorized
+EWMA baselines, recovery score, sleep quality, ACWR/monotony, weight trend, change eligibility
+gates). `prepare_daily_coaching` enriched with computed baselines, scores, and eligibility JSONB.
+Nightly `recompute_stale_metrics` cron active. 22 pgTAP tests pass. Gemini `gemini-3.5-flash` is the
+active Coach/chat provider (superseding Groq Qwen). ADR 0006 updated.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -42,18 +35,18 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 
 | Workstream              | Status                              | Read Next                  | Detail History                                |
 | ----------------------- | ----------------------------------- | -------------------------- | --------------------------------------------- |
-| Backend foundation      | **Complete — verified**             | `docs/handoff/backend.md`  | worklogs                                      |
-| Frontend/UI             | **Complete — iPhone release build** | `docs/handoff/frontend.md` | worklogs                                      |
-| Coach Continuity Memory | **Deployed**                        | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
-| Stitch/design           | **23 refs imported**                | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
-| Stability infra         | **Complete — deployed**             | `AGENTS.md` §11            | N/A                                           |
+| Feature Engine Phase 1    | **Deployed — verified**              | `docs/handoff/backend.md`  | `docs/adr/0010-deterministic-feature-engine.md` |
+| Backend foundation        | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
+| Frontend/UI               | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
+| Coach Continuity Memory   | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
+| Stitch/design             | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
+| Stability infra           | **Complete — deployed**              | `AGENTS.md` §11            | N/A                                           |
 
 ## Global Current State
 
-- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 50 migrations, 11 are fix migrations.
+- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 57 migrations, 15 are fix migrations.
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
-- Groq Qwen `qwen/qwen3.6-27b` is the owner-test Coach/chat provider (ADR 0006).
-- Gemini `gemini-3.5-flash` remains disabled pending paid-privacy/evaluation gates.
+- Gemini `gemini-3.5-flash` is the active Coach/chat provider (ADR 0006, updated 2026-07-24).
 - Sign in with Apple deferred; owner email/password mode active (ADR 0002).
 
 ## Global Open Decisions
@@ -117,4 +110,4 @@ confirmations on. Session timeouts deferred (Pro plan).
 **Forward-compatible migrations:** Two-step rule — add then deploy then remove. Never single-step
 rename/drop/type-change.
 
-**Test counts:** pgTAP 270 assertions, Deno 92, Flutter 85. All pass.
+**Test counts:** pgTAP 292 assertions (270 + 22 feature engine), Deno 92, Flutter 89. All pass.

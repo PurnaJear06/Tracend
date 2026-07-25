@@ -263,3 +263,50 @@ quantities, changes `get_my_daily_brief` to use the latest stored HealthKit summ
 previous 31 days, and keeps rest days unassigned instead of falling back to the first planned
 workout. Verification: Deno 32/32, pgTAP 290/290, Flutter analysis, 65/65 tests, and a strictly
 verified signed iPhone release build.
+
+## Feature Engine Phase 1 (2026-07-24)
+
+Three additive migrations (`20260724000000`–`20260724000002`) deploy the deterministic feature engine
+database layer. All are hosted with local/remote parity.
+
+**New tables (both forced RLS):**
+- `user_baselines` — per-user, per-metric Winsorized EWMA baselines (hrv_sdnn_ms, resting_hr_bpm,
+  sleep_minutes, weight_kg). UNIQUE (user_id, metric_name).
+- `metric_baseline_history` — immutable per-observation audit trail with Winsorization flags and
+  lambda_used.
+
+**6 SQL functions:**
+- `compute_winsorized_ewma` — core EWMA with Winsor outlier clamping, anti-anchoring. IMMUTABLE.
+- `compute_user_baselines` — pulls daily_health_summaries, computes EWMA per metric, upserts
+  baselines + inserts history.
+- `compute_daily_metrics` — orchestrator: runs all scorers, returns full metrics JSONB.
+- `compute_recovery_score` — z-score composite (HRV 0.55, RHR -0.20, sleep 0.15, resp 0.05, strain
+  0.05) → logistic(0-100). Bands: Red 0-34, Yellow 34-67, Green 67-100.
+- `compute_sleep_quality` — duration 0.50 + efficiency 0.20 + restorative 0.20 + consistency 0.10.
+- `evaluate_change_eligibility` — training + nutrition change gates per AI_SAFETY_SPEC §6.
+
+**Enriched `prepare_daily_coaching`:**
+Features JSONB now includes `baselines` (EWMA, spread, confidence per metric), `scores` (recovery,
+sleep_quality, ACWR, monotony, weight_trend, macro_adherence), and `eligibility` (training_change,
+nutrition_change gates).
+
+**Constraint updates:**
+- `feature_snapshots.schema_version`: IN ('1.0', '2.0')
+- `policy_evaluations.policy_version`: IN ('daily-v1', 'eligibility-v1')
+- RPC version bumps: `get_my_training_hub` 1.4, `get_my_daily_brief` 1.1
+
+**Nightly cron:** `recompute_stale_metrics` at 06:00 UTC. Idempotent.
+
+**Provider update:** Gemini `gemini-3.5-flash` with medium thinking is the active Coach/chat
+provider. Groq Qwen is superseded pending evaluation. DeepSeek provider module prepared but not
+activated (no production model approved).
+
+**Verification:** pgTAP 22/22 (feature_engine_baseline_test.sql), Flutter 89/89, Deno provider tests
+pass, iOS release build 25.4MB, all 57 migrations match local/remote. Contract fixture
+`training_hub_v1_4.json` created. ADR 0010 records the decision.
+
+**HealthKit fixes (iOS 26.5):** `hasPermissions()` guard removed from `read()` (false negative on
+iOS 26.5). `connectAndSync()` validates `isConfigured()` before `requestReadAccess()`, distinguishes
+configure vs authorization failures. `_loadTimezone()` uses `maybeSingle()` with UTC fallback. 3-retry
+with exponential backoff for Edge Function calls. Initial backfill reduced from 31 to 7 days.
+`HealthAccessError` enum and `helpText` for structured error reporting.

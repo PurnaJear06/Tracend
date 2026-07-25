@@ -42,6 +42,16 @@ accepted as a permanent retry.
 - state reducers, formatters, and token mapping; and
 - redaction and retention-date logic.
 
+### Feature Engine
+
+- **pgTAP (22 tests):** EWMA computation with normal and outlier data, cold-start NULL return,
+  recovery score at known inputs, ACWR ratio, change eligibility gate outcomes, cross-user RLS on
+  `user_baselines` and `metric_baseline_history`. File: `feature_engine_baseline_test.sql`.
+- **Contract fixture:** `training_hub_v1_4.json` validates Flutter can parse enriched RPC shape with
+  baselines, scores, and eligibility fields.
+- **Flutter unit tests (3):** healthSyncStart backfill window (7-day initial, 6-day subsequent),
+  deriveHealthConnectionState bands, canonical normalization preservation.
+
 ### Integration
 
 - PostgreSQL constraints, RLS policies, grants, transactions, idempotency, and version activation;
