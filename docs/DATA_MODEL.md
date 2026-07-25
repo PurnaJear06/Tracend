@@ -519,8 +519,75 @@ All PostgreSQL functions, deterministic, service-only SECURITY DEFINER.
 Called by: `prepare_daily_coaching`, `prepare_coach_chat_v5`, health-sync post-sync trigger, nightly
 `recompute_stale_metrics` cron (06:00 UTC).
 
+### `daily_computed_metrics`
+
+One row per user per date. Persisted scoring output from `compute_daily_metrics`. Upserted on each compute run.
+
+| Field                        | Type    | Description                                      |
+| ---------------------------- | ------- | ------------------------------------------------ |
+| id                           | uuid PK |                                                  |
+| user_id                      | uuid FK | auth.users.id                                    |
+| local_date                   | date    | Coaching day                                     |
+| recovery_score               | integer | 0–100                                           |
+| sleep_quality_score          | integer | 0–100                                           |
+| sleep_debt_minutes           | integer | Nullable; positive = under target                |
+| daily_strain                 | numeric | sRPE total                                       |
+| acwr                         | numeric | Acute:chronic ratio, nullable                    |
+| training_monotony            | numeric | 7-day avg / stddev, nullable                     |
+| weight_trend_7d_kg_per_day   | numeric | Nullable; OLS slope                              |
+| weight_trend_28d_kg_per_day  | numeric | Nullable; OLS slope                              |
+| macro_adherence_pct          | numeric | Nullable; 14-day avg capped at 200%              |
+| data_confidence              | text    | cold_start, low, medium, high                    |
+| scores_jsonb                 | jsonb   | Full recovery/sleep/strain/adherence breakdown   |
+| baseline_snapshot_jsonb      | jsonb   | Baselines at compute time                        |
+| eligibility_jsonb            | jsonb   | Change eligibility result                        |
+| computed_at                  | timestamptz |                                               |
+| schema_version               | text    | '2.0'                                            |
+
+UNIQUE (user_id, local_date). Forced RLS, read-only for authenticated.
+
+### Algorithm Reference
+
+Full formula definitions with literature citations in [ALGORITHMS.md](./ALGORITHMS.md).
+
+### Baseline Metrics (5 total)
+
+hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm.
+
+### Recovery Score Weights
+
+| Component    | Weight | Direction                     |
+| ------------ | ------ | ----------------------------- |
+| HRV (SDNN)   | 0.55   | Higher = better               |
+| RHR          | 0.20   | Lower = better                |
+| Sleep        | 0.15   | Higher = better               |
+| Resp Rate    | 0.05   | Lower = better (optional)     |
+| Prev Strain  | 0.05   | Lower 7-day avg = better      |
+
+### Sleep Quality Weights
+
+| Component    | Weight |
+| ------------ | ------ |
+| Duration     | 0.50   |
+| Efficiency   | 0.20   |
+| Restorative  | 0.20   |
+| Consistency  | 0.10   |
+
+### Confidence Tiers
+
+- <3 observations → cold_start
+- 3–6 observations → low
+- 7–13 observations → medium
+- ≥14 observations → high
+
+### Schema Additions
+
+- `daily_health_summaries.respiratory_rate_bpm` (numeric, 0–100)
+- `daily_health_summaries.present_types` now includes `resp_rate`
+
 ### Constraint Additions
 
 - `feature_snapshots.schema_version` IN ('1.0', '2.0')
 - `policy_evaluations.policy_version` IN ('daily-v1', 'eligibility-v1')
+- `daily_computed_metrics.schema_version` = '2.0'
 - RPC schema_version: `get_my_training_hub` 1.4, `get_my_daily_brief` 1.1

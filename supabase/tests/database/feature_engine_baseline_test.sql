@@ -136,8 +136,8 @@ select ok(
 select is(
   (select count(*) from public.user_baselines
    where user_id='aaaaaaaa-1111-4111-8111-111111111111')::integer,
-  4,
-  'all four metrics have baselines'
+  5,
+  'all five metrics have baselines (inc. resp_rate_bpm)'
 );
 
 select lives_ok(
