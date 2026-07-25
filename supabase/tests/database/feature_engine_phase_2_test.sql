@@ -63,7 +63,11 @@ values
   ('aaaaaaaa-1111-4111-8111-111111111111', current_date-20, 'Asia/Kolkata',
    array['weight'],'[]'::jsonb,repeat('6',64),'partial',now(),now(), 78.0),
   ('aaaaaaaa-1111-4111-8111-111111111111', current_date-15, 'Asia/Kolkata',
-   array['weight'],'[]'::jsonb,repeat('7',64),'partial',now(),now(), 77.5);
+   array['weight'],'[]'::jsonb,repeat('7',64),'partial',now(),now(), 77.5),
+  ('aaaaaaaa-1111-4111-8111-111111111111', current_date-2, 'Asia/Kolkata',
+   array['weight'],'[]'::jsonb,repeat('a',64),'partial',now(),now(), 77.8),
+  ('aaaaaaaa-1111-4111-8111-111111111111', current_date-1, 'Asia/Kolkata',
+   array['weight'],'[]'::jsonb,repeat('b',64),'partial',now(),now(), 77.3);
 
 set local role service_role;
 
@@ -183,11 +187,24 @@ select ok(
   '17: resp_rate_bpm has valid n_observations'
 );
 
+-- Add an extreme HRV outlier to test was_outlier_rejected
+insert into public.daily_health_summaries(
+  user_id,local_date,timezone,present_types,source_refs,source_checksum,
+  completeness,observed_through,last_synced_at,
+  hrv_value_ms,hrv_metric,hrv_unit,resting_heart_rate_bpm,sleep_minutes)
+values
+  ('aaaaaaaa-1111-4111-8111-111111111111', current_date-9, 'Asia/Kolkata',
+   array['hrv_sdnn','resting_heart_rate','sleep'],'[]'::jsonb,repeat('9',64),
+   'partial',now(),now(), 200.0,'sdnn','ms', 56.0, 400);
+
+select public.compute_user_baselines(
+  'aaaaaaaa-1111-4111-8111-111111111111', current_date);
+
 select ok(
   exists(select 1 from public.metric_baseline_history
    where user_id='aaaaaaaa-1111-4111-8111-111111111111'
      and metric_name='hrv_sdnn_ms' and was_outlier_rejected = true),
-  '18: history records was_outlier_rejected TRUE (if outlier present)'
+  '18: history records was_outlier_rejected TRUE for hard outlier'
 );
 
 select ok(
@@ -356,23 +373,29 @@ select is(
 
 -- Insert workout sessions for ACWR tests
 insert into public.planned_workouts(
-  id,user_id,plan_version_id,name,workout_order,preferred_weekday,objective)
+  id,user_id,plan_version_id,name,workout_order,preferred_weekday,objective,
+  estimated_minutes,warm_up_guidance,cool_down_guidance)
 values
   ('aaaaaaaa-b111-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-4111-4111-8111-111111111111','Test WOD 1',1,1,'Strength');
+   'aaaaaaaa-4111-4111-8111-111111111111','Test WOD 1',1,1,'Strength',
+   60,'Warm up','Cool down');
 
 insert into public.workout_sessions(
-  id,user_id,planned_workout_id,state,local_date,session_effort,duration_seconds,
-  logging_completeness)
+  id,user_id,plan_version_id,planned_workout_id,state,local_date,timezone,
+  idempotency_key,session_effort,duration_seconds,logging_completeness,completed_at)
 values
   ('aaaaaaaa-c111-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-b111-4111-8111-111111111111','completed',current_date,7.0,3600,1.0),
+   'aaaaaaaa-4111-4111-8111-111111111111','aaaaaaaa-b111-4111-8111-111111111111',
+   'completed',current_date,'Asia/Kolkata',gen_random_uuid(),7.0,3600,1.0,now()),
   ('aaaaaaaa-c222-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-b111-4111-8111-111111111111','completed',current_date-1,6.0,3000,1.0),
+   'aaaaaaaa-4111-4111-8111-111111111111','aaaaaaaa-b111-4111-8111-111111111111',
+   'completed',current_date-1,'Asia/Kolkata',gen_random_uuid(),6.0,3000,1.0,now()),
   ('aaaaaaaa-c333-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-b111-4111-8111-111111111111','completed',current_date-7,7.0,3600,1.0),
+   'aaaaaaaa-4111-4111-8111-111111111111','aaaaaaaa-b111-4111-8111-111111111111',
+   'completed',current_date-7,'Asia/Kolkata',gen_random_uuid(),7.0,3600,1.0,now()),
   ('aaaaaaaa-c444-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-b111-4111-8111-111111111111','completed',current_date-14,8.0,3600,1.0);
+   'aaaaaaaa-4111-4111-8111-111111111111','aaaaaaaa-b111-4111-8111-111111111111',
+   'completed',current_date-14,'Asia/Kolkata',gen_random_uuid(),8.0,3600,1.0,now());
 
 select ok(
   (public.compute_daily_metrics(
@@ -421,16 +444,6 @@ select ok(
   '45: weight_trend_28d computed with >= 3 weight observations'
 );
 
--- Add more weight data for trend tests
-insert into public.daily_health_summaries(
-  user_id,local_date,timezone,present_types,source_refs,source_checksum,
-  completeness,observed_through,last_synced_at,weight_kg)
-values
-  ('aaaaaaaa-1111-4111-8111-111111111111', current_date-1, 'Asia/Kolkata',
-   array['weight'],'[]'::jsonb,repeat('a',64),'partial',now(),now(), 77.3),
-  ('aaaaaaaa-1111-4111-8111-111111111111', current_date-2, 'Asia/Kolkata',
-   array['weight'],'[]'::jsonb,repeat('b',64),'partial',now(),now(), 77.8);
-
 select ok(
   true,
   '46: weight trend recomputes with updated data'
@@ -454,40 +467,40 @@ select ok(
 
 -- Insert meals for adherence tests
 insert into public.meals(
-  id,user_id,local_date,status,meal_type)
+  id,user_id,local_date,timezone,meal_type,source,status,idempotency_key,confirmed_at)
 values
   ('aaaaaaaa-d111-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   current_date,'confirmed','lunch'),
+   current_date,'Asia/Kolkata','lunch','manual','confirmed',gen_random_uuid(),now()),
   ('aaaaaaaa-d222-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   current_date-1,'confirmed','lunch'),
+   current_date-1,'Asia/Kolkata','lunch','manual','confirmed',gen_random_uuid(),now()),
   ('aaaaaaaa-d333-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   current_date-2,'confirmed','lunch'),
+   current_date-2,'Asia/Kolkata','lunch','manual','confirmed',gen_random_uuid(),now()),
   ('aaaaaaaa-d444-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   current_date-3,'confirmed','lunch'),
+   current_date-3,'Asia/Kolkata','lunch','manual','confirmed',gen_random_uuid(),now()),
   ('aaaaaaaa-d555-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   current_date-4,'confirmed','lunch'),
+   current_date-4,'Asia/Kolkata','lunch','manual','confirmed',gen_random_uuid(),now()),
   ('aaaaaaaa-d666-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   current_date-5,'confirmed','lunch'),
+   current_date-5,'Asia/Kolkata','lunch','manual','confirmed',gen_random_uuid(),now()),
   ('aaaaaaaa-d777-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   current_date-6,'confirmed','lunch');
+   current_date-6,'Asia/Kolkata','lunch','manual','confirmed',gen_random_uuid(),now());
 
 insert into public.meal_items(
-  id,user_id,meal_id,calories,protein_g,carbohydrate_g,fat_g,confirmed_at)
+  id,user_id,meal_id,name_snapshot,serving_label,calories,protein_g,carbohydrate_g,fat_g,confirmed_at)
 values
   ('aaaaaaaa-e111-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-d111-4111-8111-111111111111',2400,170,280,70,now()),
+   'aaaaaaaa-d111-4111-8111-111111111111','Test Meal','1 serving',2400,170,280,70,now()),
   ('aaaaaaaa-e222-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-d222-4111-8111-111111111111',2400,170,280,70,now()),
+   'aaaaaaaa-d222-4111-8111-111111111111','Test Meal','1 serving',2400,170,280,70,now()),
   ('aaaaaaaa-e333-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-d333-4111-8111-111111111111',2400,170,280,70,now()),
+   'aaaaaaaa-d333-4111-8111-111111111111','Test Meal','1 serving',2400,170,280,70,now()),
   ('aaaaaaaa-e444-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-d444-4111-8111-111111111111',2400,170,280,70,now()),
+   'aaaaaaaa-d444-4111-8111-111111111111','Test Meal','1 serving',2400,170,280,70,now()),
   ('aaaaaaaa-e555-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-d555-4111-8111-111111111111',2400,170,280,70,now()),
+   'aaaaaaaa-d555-4111-8111-111111111111','Test Meal','1 serving',2400,170,280,70,now()),
   ('aaaaaaaa-e666-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-d666-4111-8111-111111111111',2400,170,280,70,now()),
+   'aaaaaaaa-d666-4111-8111-111111111111','Test Meal','1 serving',2400,170,280,70,now()),
   ('aaaaaaaa-e777-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-d777-4111-8111-111111111111',2400,170,280,70,now());
+   'aaaaaaaa-d777-4111-8111-111111111111','Test Meal','1 serving',2400,170,280,70,now());
 
 select ok(
   (public.compute_daily_metrics(
@@ -546,13 +559,15 @@ select lives_ok(
 
 -- Insert borderline training sessions for eligibility edge cases
 insert into public.workout_sessions(
-  id,user_id,planned_workout_id,state,local_date,session_effort,duration_seconds,
-  logging_completeness)
+  id,user_id,plan_version_id,planned_workout_id,state,local_date,timezone,
+  idempotency_key,session_effort,duration_seconds,logging_completeness,completed_at)
 values
   ('aaaaaaaa-c555-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-b111-4111-8111-111111111111','completed',current_date-2,5.0,2400,0.5),
+   'aaaaaaaa-4111-4111-8111-111111111111','aaaaaaaa-b111-4111-8111-111111111111',
+   'completed',current_date-2,'Asia/Kolkata',gen_random_uuid(),5.0,2400,0.5,now()),
   ('aaaaaaaa-c666-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
-   'aaaaaaaa-b111-4111-8111-111111111111','completed',current_date-3,5.0,2400,0.8);
+   'aaaaaaaa-4111-4111-8111-111111111111','aaaaaaaa-b111-4111-8111-111111111111',
+   'completed',current_date-3,'Asia/Kolkata',gen_random_uuid(),5.0,2400,0.8,now());
 
 select lives_ok(
   'select public.evaluate_change_eligibility(
@@ -604,21 +619,21 @@ set local "request.jwt.claim.sub"='bbbbbbbb-2222-4222-8222-222222222222';
 
 select is(
   (select count(*) from public.user_baselines
-   where user_id='bbbbbbbb-2222-4222-8222-222222222222')::integer,
+   where user_id='aaaaaaaa-1111-4111-8111-111111111111')::integer,
   0,
   '63: user B cannot see user A baselines'
 );
 
 select is(
   (select count(*) from public.metric_baseline_history
-   where user_id='bbbbbbbb-2222-4222-8222-222222222222')::integer,
+   where user_id='aaaaaaaa-1111-4111-8111-111111111111')::integer,
   0,
   '64: user B cannot see user A baseline history'
 );
 
 select is(
   (select count(*) from public.daily_computed_metrics
-   where user_id='bbbbbbbb-2222-4222-8222-222222222222')::integer,
+   where user_id='aaaaaaaa-1111-4111-8111-111111111111')::integer,
   0,
   '65: user B cannot see user A daily_computed_metrics'
 );
