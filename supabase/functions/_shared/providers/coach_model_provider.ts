@@ -13,7 +13,7 @@ export type CoachModelRequest = Readonly<{
 
 export type CoachModelGeneration = Readonly<{
   decision: CoachDecisionV1;
-  provider: "mock" | "gemini" | "groq";
+  provider: "mock" | "gemini" | "groq" | "deepseek";
   model: string;
   inputUnits: number;
   outputUnits: number;

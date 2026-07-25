@@ -46,7 +46,7 @@ select is((select json->>'object_path' from draft),
   '11111111-1111-7777-8777-111111111111/meal/photo_001.jpg',
   'object_path is echoed back');
 
-select lives_ok$$select public.create_meal_photo_draft(
+select lives_ok($$select public.create_meal_photo_draft(
   current_date, 'Asia/Kolkata', 'breakfast',
   '11111117-1111-7777-8777-111111111111',
   '11111111-1111-7777-8777-111111111111/meal/photo_001.jpg',
@@ -58,7 +58,7 @@ select is((select count(*) from public.meals
   where user_id = '11111111-1111-7777-8777-111111111111'), 1::bigint,
   'idempotent key does not duplicate meal');
 
-select throws_ok$$select public.create_meal_photo_draft(
+select throws_ok($$select public.create_meal_photo_draft(
   current_date, 'Asia/Kolkata', 'invalid_kind',
   '21111117-1111-7777-8777-111111111111',
   '11111111-1111-7777-8777-111111111111/meal/photo_002.jpg',
@@ -66,7 +66,7 @@ select throws_ok$$select public.create_meal_photo_draft(
   'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 )$$, '22023', null, 'invalid meal kind is rejected');
 
-select throws_ok$$select public.create_meal_photo_draft(
+select throws_ok($$select public.create_meal_photo_draft(
   current_date, 'Asia/Kolkata', 'lunch',
   '31111117-1111-7777-8777-111111111111',
   '22222222-2222-7777-8777-222222222222/meal/other.jpg',
@@ -74,7 +74,7 @@ select throws_ok$$select public.create_meal_photo_draft(
   'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
 )$$, '22023', null, 'object path not owned by user is rejected');
 
-select throws_ok$$select public.create_meal_photo_draft(
+select throws_ok($$select public.create_meal_photo_draft(
   current_date, 'Asia/Kolkata', 'lunch',
   '41111117-1111-7777-8777-111111111111',
   '11111111-1111-7777-8777-111111111111/meal/photo_003.bmp',
@@ -82,7 +82,7 @@ select throws_ok$$select public.create_meal_photo_draft(
   'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
 )$$, '22023', null, 'unsupported content type is rejected');
 
-select throws_ok$$select public.create_meal_photo_draft(
+select throws_ok($$select public.create_meal_photo_draft(
   current_date, 'Asia/Kolkata', 'lunch',
   '51111117-1111-7777-8777-111111111111',
   '11111111-1111-7777-8777-111111111111/meal/photo_004.jpg',
@@ -111,7 +111,7 @@ select throws_ok(format($$select public.confirm_analyzed_meal(
 select throws_ok(format($$select public.confirm_analyzed_meal(
   %L, '[{"id":"00000000-0000-0000-0000-000000000000","name":"","serving_label":"1"}]'::jsonb)$$,
   (select json->>'meal_id' from draft)),
-  '23514', null,
+  '22023', null,
   'empty candidate name is rejected');
 
 reset role;
@@ -132,8 +132,8 @@ values(
 set local role authenticated;
 set local "request.jwt.claim.sub" = '11111111-1111-7777-8777-111111111111';
 
-select lives_ok$$select public.save_scheduled_manual_meal(
-  current_date, 'Asia/Kolkata', 'pre_workout',
+select lives_ok($$select public.save_scheduled_manual_meal(
+  current_date, 'Asia/Kolkata', 'snack',
   '61111117-1111-7777-8777-111111111111',
   '[{"name":"Banana","serving_label":"1 medium","calories":105,"protein_g":1,"carbohydrate_g":27,"fat_g":0}]'::jsonb,
   '11111111-9111-7777-8777-111111111111', '')$$,

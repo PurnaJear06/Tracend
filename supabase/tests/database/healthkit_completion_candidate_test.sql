@@ -22,7 +22,7 @@ insert into public.planned_workouts(
 select '11111111-1111-5555-8555-111111111111',
   '11111111-4111-5555-8555-111111111111', day, 'Workout ' || day,
   'Objective', day, 60, 'Warm up', 'Cool down'
-from generate_series(0, 6) day;
+from generate_series(1, 7) day on conflict (plan_version_id, workout_order) do nothing;
 
 reset role;
 
@@ -68,7 +68,7 @@ create temporary table _auto as
 select public.healthkit_auto_complete_workout(
   (select id from public.planned_workouts
    where user_id = '11111111-1111-5555-8555-111111111111'
-   and preferred_weekday = extract(dow from current_date)::int
+   and preferred_weekday = extract(isodow from current_date)::integer
    order by workout_order limit 1),
   current_date) json;
 

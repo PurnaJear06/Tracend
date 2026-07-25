@@ -6,7 +6,7 @@ import {
 
 export type CoachChatGeneration = Readonly<{
   answer: CoachChatAnswerV2;
-  provider: "mock" | "gemini" | "groq";
+  provider: "mock" | "gemini" | "groq" | "deepseek";
   model: string;
   inputUnits: number;
   outputUnits: number;
@@ -101,7 +101,7 @@ export function deterministicBoundary(question: string): CoachChatAnswerV1 | nul
 
 export class CoachChatUnavailableError extends Error {
   constructor(
-    readonly provider: "mock" | "gemini" | "groq",
+    readonly provider: "mock" | "gemini" | "groq" | "deepseek",
     readonly model: string,
     readonly failureReason: string = "unknown",
     readonly retryAfterSeconds: number | null = null,
@@ -324,6 +324,386 @@ export function compactContext(context: Record<string, unknown>): Record<string,
   return result;
 }
 
+export function selectRelevantContext(
+  ctx: Record<string, unknown>,
+  kind: string,
+): Record<string, unknown> {
+  const out = { ...ctx };
+  if (kind === "recovery") {
+    delete out["nutrition_targets"];
+    delete out["nutrition_schedule"];
+    delete out["today_confirmed_meals"];
+    delete out["today_meal_schedule"];
+  }
+  if (kind === "nutrition_focus") {
+    delete out["session_trends"];
+    delete out["last_3_sessions_summary"];
+    delete out["latest_healthkit"];
+    delete out["today_healthkit"];
+    delete out["seven_day_healthkit_trend"];
+    delete out["training_week_structure"];
+    delete out["schedule_slot_compliance"];
+    delete out["eight_week_measurement_delta"];
+  }
+  if (kind === "daily_action") {
+    delete out["meal_compliance"];
+    delete out["eight_week_measurement_delta"];
+    delete out["seven_day_healthkit_trend"];
+  }
+  if (kind === "explain_evidence") {
+    delete out["today_confirmed_meals"];
+    delete out["today_meal_schedule"];
+    delete out["training_week_structure"];
+  }
+  return out;
+}
+
+const kindMaxBudget: Record<string, number> = {
+  recovery: 64_000,
+  nutrition_focus: 64_000,
+  daily_action: 48_000,
+  explain_evidence: 64_000,
+  plan_change: 128_000,
+  general: 48_000,
+};
+
+function str(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  return String(v);
+}
+
+function obj(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {};
+}
+
+function arr(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
+}
+
+export function formatContextAsMarkdown(
+  ctx: Record<string, unknown>,
+  maxLength: number = 28_000,
+): string {
+  const out: string[] = [];
+  let used = 0;
+
+  const push = (s: string): boolean => {
+    if (used + s.length > maxLength) return false;
+    out.push(s);
+    used += s.length;
+    return true;
+  };
+
+  // 1. Active Training Plan
+  const plan = obj(ctx.active_plan);
+  if (Object.keys(plan).length) {
+    let s = "## Active Training Plan\n";
+    if (plan.title) s += `**${str(plan.title)}**`;
+    if (plan.version_number != null) s += ` (v${str(plan.version_number)})`;
+    if (plan.sessions_per_week != null) s += `, ${str(plan.sessions_per_week)} sessions/week`;
+    s += "\n";
+    if (plan.rationale) s += `${str(plan.rationale)}\n`;
+    push(s);
+  }
+
+  // 2. Goal
+  const goal = obj(ctx.active_goal);
+  if (Object.keys(goal).length) {
+    let s = "## Goal\n";
+    const type = str(goal.type ?? goal.target_label ?? "Active Goal");
+    s += `**${type}**`;
+    if (goal.target_value != null) s += ` — target: ${str(goal.target_value)}`;
+    if (goal.deadline) s += `, deadline: ${str(goal.deadline)}`;
+    s += "\n";
+    push(s);
+  }
+
+  // 3. Coaching Narrative
+  const narrative = obj(ctx.coaching_narrative);
+  if (Object.keys(narrative).length) {
+    const active = obj(narrative.active);
+    if (Object.keys(active).length) {
+      let s = "## Coaching Narrative\n";
+      s += `**${str(active.phase)}**: ${str(active.headline)}`;
+      if (active.since) s += ` (since ${str(active.since)})`;
+      s += "\n";
+      push(s);
+    }
+  }
+
+  // 4. Today's Check-In
+  const checkIn = obj(ctx.latest_check_in) || obj(ctx.latest_check_in_detail);
+  if (Object.keys(checkIn).length) {
+    let s = "## Today's Check-In\n";
+    const fields = [
+      "local_date",
+      "sleep_quality",
+      "energy",
+      "soreness",
+      "hunger",
+      "mood",
+      "pain_severity",
+      "available_to_train",
+      "notes",
+    ];
+    for (const f of fields) {
+      const v = checkIn[f];
+      if (v != null) s += `- ${f.replace(/_/g, " ")}: ${str(v)}\n`;
+    }
+    push(s);
+  }
+
+  // 5. Recent Training
+  const sessions = arr(
+    ctx.session_trends ?? ctx.last_3_sessions_summary ?? ctx.focused_execution ??
+      ctx.recent_execution ?? ctx.brief_sessions,
+  );
+  if (sessions.length) {
+    let s = "## Recent Training\n";
+    s += "| Date | Workout | Duration | Effort |\n";
+    s += "|------|---------|----------|--------|\n";
+    for (const ses of sessions.slice(0, 6)) {
+      const o = obj(ses);
+      s += `| ${str(o.local_date ?? o.d)} | ${str(o.prescribed_workout ?? o.workout ?? o.n)} | ${
+        str(o.duration_seconds ?? o.dur)
+      }s | ${str(o.effort ?? o.session_effort ?? o.eff)} |\n`;
+    }
+    push(s);
+  }
+
+  // 6. Health Metrics
+  const health = obj(ctx.latest_healthkit ?? ctx.today_healthkit);
+  const measurement = obj(ctx.latest_measurement);
+  const weight = obj(ctx.latest_weight);
+  const delta = obj(ctx.eight_week_measurement_delta);
+  const trend = obj(ctx.seven_day_healthkit_trend);
+  if (
+    Object.keys(health).length || Object.keys(measurement).length || Object.keys(weight).length ||
+    Object.keys(delta).length || Object.keys(trend).length
+  ) {
+    let s = "## Health Metrics\n";
+    if (Object.keys(health).length) {
+      const hkFields = [
+        "resting_heart_rate_bpm",
+        "hrv_sdnn_ms",
+        "sleep_duration_hours",
+        "sleep_minutes",
+        "steps_count",
+        "completeness",
+      ];
+      for (const f of hkFields) {
+        const v = health[f];
+        if (v != null) s += `- ${f.replace(/_/g, " ")}: ${str(v)}\n`;
+      }
+    }
+    const meas = weight.weight_kg ?? measurement.weight_kg;
+    if (meas != null) s += `- weight: ${str(meas)} kg\n`;
+    if (measurement.body_fat_pct != null) s += `- body fat: ${str(measurement.body_fat_pct)}%\n`;
+    if (weight.body_fat_pct != null) s += `- body fat: ${str(weight.body_fat_pct)}%\n`;
+    const early = obj(delta.earliest);
+    const late = obj(delta.latest);
+    if (early.weight_kg != null && late.weight_kg != null) {
+      s += `- 8-week change: ${str(early.weight_kg)} → ${str(late.weight_kg)} kg\n`;
+    }
+    if (trend.avg_resting_hr != null) s += `- avg RHR (7d): ${str(trend.avg_resting_hr)}\n`;
+    if (trend.avg_hrv_sdnn != null) s += `- avg HRV (7d): ${str(trend.avg_hrv_sdnn)}\n`;
+    if (trend.avg_sleep_minutes != null) {
+      s += `- avg sleep (7d): ${str(trend.avg_sleep_minutes)} min\n`;
+    }
+    push(s);
+  }
+
+  // 7. Brief health (general kind fallback)
+  const briefHealth = arr(ctx.brief_health);
+  if (briefHealth.length) {
+    const latest = obj(briefHealth[0]);
+    if (latest.sleep_minutes != null || latest.resting_heart_rate_bpm != null) {
+      let s = "## Health\n";
+      if (latest.sleep_minutes != null) s += `- sleep: ${str(latest.sleep_minutes)} min\n`;
+      if (latest.resting_heart_rate_bpm != null) {
+        s += `- RHR: ${str(latest.resting_heart_rate_bpm)}\n`;
+      }
+      push(s);
+    }
+  }
+
+  // 8. Nutrition Targets & Schedule
+  const nutTargets = obj(ctx.nutrition_targets);
+  const nutSchedule = arr(ctx.nutrition_schedule);
+  if (Object.keys(nutTargets).length || nutSchedule.length) {
+    let s = "## Nutrition\n";
+    if (nutTargets.calories != null) {
+      s += `Targets: ${str(nutTargets.calories)} kcal`;
+      if (nutTargets.protein_g != null) s += `, ${str(nutTargets.protein_g)}g P`;
+      if (nutTargets.carbohydrate_g != null) s += `, ${str(nutTargets.carbohydrate_g)}g C`;
+      if (nutTargets.fat_g != null) s += `, ${str(nutTargets.fat_g)}g F`;
+      s += "\n";
+    }
+    if (nutSchedule.length) {
+      s += "Schedule: ";
+      const slots = nutSchedule.map((sl) => {
+        const sObj = obj(sl);
+        const label = str(sObj.label ?? sObj.slot_key);
+        const time = str(sObj.local_time);
+        return `${label} (${time})`;
+      });
+      s += slots.join(", ") + "\n";
+    }
+    push(s);
+  }
+
+  // 9. Today's Meals (nutrition_focus kind)
+  const meals = arr(ctx.today_confirmed_meals ?? ctx.today_meal_schedule);
+  if (meals.length) {
+    let s = "## Today's Meals\n";
+    for (const meal of meals.slice(0, 3)) {
+      const m = obj(meal);
+      const foods = arr(m.foods);
+      if (foods.length) {
+        const items = foods.map((f) => {
+          const fObj = obj(f);
+          return str(fObj.food_name ?? fObj.food ?? fObj.f ?? fObj.name);
+        }).join(", ");
+        s += `- ${items}\n`;
+      }
+    }
+    push(s);
+  }
+
+  // 10. Nutrition Compliance
+  const compliance = obj(ctx.nutrition_compliance_7day);
+  if (Object.keys(compliance).length) {
+    let s = "## 7-Day Nutrition Compliance\n";
+    if (compliance.avg_daily_calories != null) {
+      s += `- avg calories: ${str(compliance.avg_daily_calories)}\n`;
+    }
+    if (compliance.avg_daily_protein_g != null) {
+      s += `- avg protein: ${str(compliance.avg_daily_protein_g)}g\n`;
+    }
+    if (compliance.avg_daily_carbohydrate_g != null) {
+      s += `- avg carbs: ${str(compliance.avg_daily_carbohydrate_g)}g\n`;
+    }
+    if (compliance.avg_daily_fat_g != null) s += `- avg fat: ${str(compliance.avg_daily_fat_g)}g\n`;
+    if (compliance.days_with_meals != null) {
+      s += `- days tracked: ${str(compliance.days_with_meals)}/7\n`;
+    }
+    push(s);
+  }
+
+  // 11. Training Week Structure (recovery kind)
+  const tws = arr(ctx.training_week_structure);
+  if (tws.length) {
+    let s = "## Training Week Structure\n";
+    for (const day of tws.slice(0, 7)) {
+      const d = obj(day);
+      s += `- ${str(d.preferred_weekday)} (week ${str(d.target_week)}): ${
+        str(d.prescribed_workout ?? d.workout_name)
+      }\n`;
+    }
+    push(s);
+  }
+
+  // 12. Session Journal (past coaching memory)
+  const journal = arr(ctx.session_journal);
+  if (journal.length) {
+    let s = "## Session History\n";
+    for (const entry of journal.slice(0, 5)) {
+      const e = obj(entry);
+      s += `- ${str(e.coaching_date)}: ${str(e.summary)}\n`;
+    }
+    push(s);
+  }
+
+  // 13. Recent Conversation
+  const msgs = arr(ctx.recent_messages ?? ctx.recent_other_conversations);
+  if (msgs.length) {
+    let s = "## Recent Conversation\n";
+    for (const msg of msgs.slice(0, 6)) {
+      const m = obj(msg);
+      const role = str(m.role).toUpperCase();
+      const content = typeof m.content === "string" ? m.content : "";
+      if (content) s += `**${role}:** ${content.slice(0, 300)}${content.length > 300 ? "…" : ""}\n`;
+    }
+    push(s);
+  }
+
+  // 14. Preferences
+  const prefs = arr(ctx.active_preferences);
+  if (prefs.length) {
+    let s = "## Preferences\n";
+    for (const pref of prefs.slice(0, 10)) {
+      const p = obj(pref);
+      s += `- ${str(p.category)}: ${str(p.key)} = ${str(p.value)} (${str(p.provenance)})\n`;
+    }
+    push(s);
+  }
+
+  // 15. Latest Decision
+  const decision = obj(ctx.latest_decision);
+  if (Object.keys(decision).length && decision.final_decision) {
+    let s = "## Latest Decision\n";
+    s += `**${str(decision.final_decision)}**`;
+    if (decision.confidence != null) s += ` (confidence: ${str(decision.confidence)})`;
+    if (decision.reason) s += `\n${str(decision.reason)}`;
+    s += "\n";
+    push(s);
+  }
+
+  // 16. Data Quality
+  const quality = obj(ctx.data_quality);
+  const coverage = obj(ctx.context_coverage);
+  if (Object.keys(quality).length || Object.keys(coverage).length) {
+    let s = "## Data Quality\n";
+    if (quality.training_logging_coverage != null) {
+      s += `- training coverage: ${str(quality.training_logging_coverage)}\n`;
+    }
+    if (quality.last_health_sync) s += `- last health sync: ${str(quality.last_health_sync)}\n`;
+    if (quality.last_confirmed_meal) s += `- last meal: ${str(quality.last_confirmed_meal)}\n`;
+    if (quality.conflict_count != null) s += `- conflicts: ${str(quality.conflict_count)}\n`;
+    if (Object.keys(coverage).length) {
+      const parts: string[] = [];
+      for (const [k, v] of Object.entries(coverage)) {
+        if (v) parts.push(k.replace(/_/g, " "));
+      }
+      if (parts.length) s += `- available: ${parts.join(", ")}\n`;
+    }
+    push(s);
+  }
+
+  // 17. Plan Proposals (plan_change kind)
+  const proposals = arr(ctx.plan_proposals);
+  if (proposals.length) {
+    let s = "## Plan Proposals\n";
+    for (const prop of proposals.slice(0, 3)) {
+      const p = obj(prop);
+      s += `- ${str(p.status)}: ${str(p.proposed_training ?? p.headline).slice(0, 200)}\n`;
+    }
+    push(s);
+  }
+
+  // 18. Nutrition Adherence
+  const adherence = obj(ctx.nutrition_adherence);
+  if (Object.keys(adherence).length) {
+    let s = "## Nutrition Adherence\n";
+    if (adherence.days_with_confirmed_meals_7d != null) {
+      s += `- meal days: ${str(adherence.days_with_confirmed_meals_7d)}/7\n`;
+    }
+    if (adherence.confirmed_meal_count_7d != null) {
+      s += `- meals confirmed: ${str(adherence.confirmed_meal_count_7d)}\n`;
+    }
+    push(s);
+  }
+
+  // 19. Permitted Evidence
+  const evidence = arr(ctx.permitted_evidence);
+  if (evidence.length) {
+    push(`## Evidence Permitted\n${evidence.map((e) => `- ${str(e)}`).join("\n")}\n`);
+  }
+
+  return out.join("\n");
+}
+
 export function classifyQuestion(question: string): string {
   const q = question.toLowerCase();
   if (
@@ -356,6 +736,10 @@ export function isCoachChatLiveProviderConfigured(
     return enabled && Boolean(environment.get("GROQ_API_KEY")) &&
       environment.get("GROQ_MODEL") === "qwen/qwen3.6-27b";
   }
+  if (provider === "deepseek") {
+    return enabled && Boolean(environment.get("DEEPSEEK_API_KEY")) &&
+      environment.get("DEEPSEEK_MODEL") === "deepseek-v4-flash";
+  }
   return provider === "gemini" && enabled &&
     environment.get("GEMINI_PAID_DATA_TERMS_ACCEPTED") === "true" &&
     Boolean(environment.get("GEMINI_API_KEY")) &&
@@ -365,6 +749,7 @@ export function isCoachChatLiveProviderConfigured(
 export async function generateCoachChat(
   question: string,
   context: Record<string, unknown>,
+  contextKind: string = "general",
   fetcher: typeof fetch = fetch,
 ): Promise<CoachChatGeneration> {
   const boundary = deterministicBoundary(question);
@@ -391,9 +776,16 @@ export async function generateCoachChat(
   const groqKey = Deno.env.get("GROQ_API_KEY") ?? "";
   const groqModel = Deno.env.get("GROQ_MODEL") ?? "";
   const groqEnabled = provider === "groq" && enabled && groqKey && groqModel === "qwen/qwen3.6-27b";
+  const deepseekKey = Deno.env.get("DEEPSEEK_API_KEY") ?? "";
+  const deepseekModel = Deno.env.get("DEEPSEEK_MODEL") ?? "";
+  const deepseekEnabled = provider === "deepseek" && enabled && deepseekKey &&
+    deepseekModel === "deepseek-v4-flash";
   const geminiEnabled = provider === "gemini" && enabled && paid && key &&
     model === "gemini-3.5-flash";
-  if (!isCoachChatLiveProviderConfigured(Deno.env) || (!groqEnabled && !geminiEnabled)) {
+  if (
+    !isCoachChatLiveProviderConfigured(Deno.env) ||
+    (!groqEnabled && !deepseekEnabled && !geminiEnabled)
+  ) {
     throw new CoachChatUnavailableError(
       "mock",
       "provider_not_configured",
@@ -403,13 +795,138 @@ export async function generateCoachChat(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 25_000);
   try {
-    const ctx = groqEnabled ? compactContext(context as Record<string, unknown>) : context;
-    let bounded = JSON.stringify({ question, context: ctx });
-    console.log(
-      `coach-chat context: original=${JSON.stringify(context).length} compacted=${bounded.length}`,
-    );
-    bounded = fitContextToLimit(bounded, 32_000, question);
+    const ctx = context as Record<string, unknown>;
+    if (deepseekEnabled) {
+      const kindBudget = kindMaxBudget[contextKind] ?? 64_000;
+      const focused = selectRelevantContext(ctx, contextKind);
+      const contextMarkdownDs = formatContextAsMarkdown(focused, kindBudget);
+      const dsUserMessage = question + "\n\n---\n\n<coaching_context>\n" +
+        contextMarkdownDs + "\n</coaching_context>";
+      console.log(
+        `coach-chat deepseek: kind=${contextKind} budget=${kindBudget} original=${
+          JSON.stringify(ctx).length
+        } filtered=${contextMarkdownDs.length}`,
+      );
+      const bounded = dsUserMessage.length > kindBudget
+        ? dsUserMessage.slice(0, kindBudget)
+        : dsUserMessage;
+      const useThinking = contextKind === "plan_change";
+      const request = async (repair: boolean) => {
+        const response = await fetcher("https://api.deepseek.com/v1/chat/completions", {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${deepseekKey}`,
+          },
+          body: JSON.stringify({
+            model: deepseekModel,
+            ...(useThinking ? {} : { temperature: 0.2 }),
+            max_tokens: 2000,
+            response_format: { type: "json_object" },
+            ...(useThinking
+              ? { reasoning_effort: "high", thinking: { type: "enabled" } }
+              : { thinking: { type: "disabled" } }),
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are Tracend, an experienced personal fitness coach who has been working with this athlete through their journey. You know their training history, preferences, setbacks, and wins. Your coaching balances evidence with empathy — you use data to inform, never to judge.\n" +
+                  "\n" +
+                  "# Coaching approach\n" +
+                  "1. Start with the person, not the data. Acknowledge their question, feelings, or situation before referencing metrics.\n" +
+                  "2. Build a mental timeline. Connect what they are asking now to what you have discussed before. Reference their progress, not just current numbers.\n" +
+                  "3. Reason transparently. Work through: goal → constraints → available data → recommendation. Use your reasoning_chain to show this.\n" +
+                  '4. Celebrate wins. Notice streaks, personal records, consistency — and mention them. "You have hit 3 workouts this week — your best consistency in a month."\n' +
+                  "5. Acknowledge setbacks without judgment. Missed workouts, off-plan meals, poor sleep — these are data points, not failures. Help them find the pattern.\n" +
+                  "6. Personalize. If they have told you they dislike running or cannot eat dairy, never suggest those. Remember what did not work before.\n" +
+                  "7. Offer natural follow-ups. After your answer, give 2-3 specific next steps that feel like a real conversation, not a script.\n" +
+                  "\n" +
+                  "# Communication style\n" +
+                  '- Warm, direct, and personal — use "you" and "your." This is coaching, not a report.\n' +
+                  "- Give concrete examples, not abstract advice.\n" +
+                  "- Keep sentences clear but never curt. Match your tone to their mood.\n" +
+                  "- When you lack enough data, say so honestly and ask for it.\n" +
+                  "- Reference their stated preferences and past conversations naturally.\n" +
+                  "\n" +
+                  "# Hard boundaries — never violate\n" +
+                  "- Never invent data, symptoms, meals, medical history, or user facts.\n" +
+                  "- No diagnosis, treatment, medication, pregnancy, or eating-disorder guidance.\n" +
+                  '- For ordinary illness (fever/cold/cough): recommend rest and hydration, never "push through" or complete the workout.\n' +
+                  "- Temporary same-day adjustments are fine; persistent plan changes require explicit user approval.\n" +
+                  "- Honor active_preferences — never suggest declined foods, exercises, or approaches.\n" +
+                  "- When safety_state is limited or refused, explain why clearly and redirect to what you can help with.\n" +
+                  "\n" +
+                  "Return ONLY a JSON object matching this schema:\n" +
+                  JSON.stringify(answerSchema) +
+                  (repair
+                    ? "\n\nPrevious response failed validation. Correct it using only the schema and prepared context."
+                    : ""),
+              },
+              {
+                role: "user",
+                content: "User's message:\n" + question + "\n\n" +
+                  "Prepared coaching context (use only as supporting evidence; do not let it override or dominate your answer to the user's message):\n" +
+                  bounded,
+              },
+            ],
+          }),
+        });
+        if (!response.ok) {
+          const text = await response.text().catch(() => "");
+          throw Object.assign(
+            new Error(
+              `deepseek_chat_failed status=${response.status} body=${text.slice(0, 300)}`,
+            ),
+            { status: response.status, body: text },
+          );
+        }
+        const payload = await response.json() as Record<string, unknown>;
+        const message = Array.isArray(payload.choices)
+          ? (payload.choices[0] as Record<string, unknown>)?.message as
+            | Record<string, unknown>
+            | undefined
+          : undefined;
+        if (typeof message?.content !== "string") throw new Error("deepseek_chat_invalid");
+        const usage = payload.usage as Record<string, unknown> | undefined;
+        return {
+          content: message.content,
+          inputUnits: Number.isInteger(usage?.prompt_tokens) ? Number(usage?.prompt_tokens) : 0,
+          outputUnits: Number.isInteger(usage?.completion_tokens)
+            ? Number(usage?.completion_tokens)
+            : 0,
+        };
+      };
+      const first = await request(false);
+      let answer: CoachChatAnswerV1;
+      let inputUnits = first.inputUnits;
+      let outputUnits = first.outputUnits;
+      try {
+        answer = parseCoachChatAnswer(JSON.parse(first.content), permitted);
+      } catch {
+        const repaired = await request(true);
+        inputUnits += repaired.inputUnits;
+        outputUnits += repaired.outputUnits;
+        answer = parseCoachChatAnswer(JSON.parse(repaired.content), permitted);
+      }
+      const inputRateDs = Number(Deno.env.get("DEEPSEEK_INPUT_COST_PER_MILLION_USD") ?? "0.14");
+      const outputRateDs = Number(Deno.env.get("DEEPSEEK_OUTPUT_COST_PER_MILLION_USD") ?? "0.28");
+      return {
+        answer,
+        provider: "deepseek",
+        model: deepseekModel,
+        inputUnits,
+        outputUnits,
+        estimatedCostUsd: (inputUnits * inputRateDs + outputUnits * outputRateDs) / 1_000_000,
+      };
+    }
     if (groqEnabled) {
+      const compacted = compactContext(ctx);
+      let bounded = JSON.stringify({ question, context: compacted });
+      console.log(
+        `coach-chat context: original=${JSON.stringify(ctx).length} compacted=${bounded.length}`,
+      );
+      bounded = fitContextToLimit(bounded, 4_000, question);
       let reasoningInputUnits = 0;
       let reasoningOutputUnits = 0;
       const planningQuestion = /weekly|new plan|change (my )?plan|plateau|progression|next block/i
@@ -442,10 +959,13 @@ export async function generateCoachChat(
         );
         if (!reasoningResponse.ok) {
           const text = await reasoningResponse.text().catch(() => "");
-          throw new Error(
-            `groq_chat_reasoning_failed status=${reasoningResponse.status} body=${
-              text.slice(0, 300)
-            }`,
+          throw Object.assign(
+            new Error(
+              `groq_chat_reasoning_failed status=${reasoningResponse.status} body=${
+                text.slice(0, 300)
+              }`,
+            ),
+            { status: reasoningResponse.status, body: text },
           );
         }
         const reasoningPayload = await reasoningResponse.json() as Record<string, unknown>;
@@ -490,8 +1010,32 @@ export async function generateCoachChat(
               {
                 role: "system",
                 content:
-                  "You are Tracend, an evidence-driven personal fitness coach. Answer the user's message first — greet back, acknowledge feelings, address their topic — using prepared context only when relevant. Be concrete and brief. Do not lead with generic recommendations unless asked.\n" +
-                  "Hard rules: Never invent data, symptoms, meals, or history. No diagnosis, treatment, medication, pregnancy, or eating-disorder guidance. For ordinary illness (fever/cold/cough): recommend rest and hydration, not completing workouts. Temporary same-day adjustments ok; persistent changes require explicit user approval. Honor user's active_preferences (avoid declined foods/approaches).\n" +
+                  "You are Tracend, an experienced personal fitness coach who has been working with this athlete through their journey. You know their training history, preferences, setbacks, and wins. Your coaching balances evidence with empathy — you use data to inform, never to judge.\n" +
+                  "\n" +
+                  "# Coaching approach\n" +
+                  "1. Start with the person, not the data. Acknowledge their question, feelings, or situation before referencing metrics.\n" +
+                  "2. Build a mental timeline. Connect what they are asking now to what you have discussed before. Reference their progress, not just current numbers.\n" +
+                  "3. Reason transparently. Work through: goal → constraints → available data → recommendation. Use your reasoning_chain to show this.\n" +
+                  '4. Celebrate wins. Notice streaks, personal records, consistency — and mention them. "You have hit 3 workouts this week — your best consistency in a month."\n' +
+                  "5. Acknowledge setbacks without judgment. Missed workouts, off-plan meals, poor sleep — these are data points, not failures. Help them find the pattern.\n" +
+                  "6. Personalize. If they have told you they dislike running or cannot eat dairy, never suggest those. Remember what did not work before.\n" +
+                  "7. Offer natural follow-ups. After your answer, give 2-3 specific next steps that feel like a real conversation, not a script.\n" +
+                  "\n" +
+                  "# Communication style\n" +
+                  '- Warm, direct, and personal — use "you" and "your." This is coaching, not a report.\n' +
+                  "- Give concrete examples, not abstract advice.\n" +
+                  "- Keep sentences clear but never curt. Match your tone to their mood.\n" +
+                  "- When you lack enough data, say so honestly and ask for it.\n" +
+                  "- Reference their stated preferences and past conversations naturally.\n" +
+                  "\n" +
+                  "# Hard boundaries — never violate\n" +
+                  "- Never invent data, symptoms, meals, medical history, or user facts.\n" +
+                  "- No diagnosis, treatment, medication, pregnancy, or eating-disorder guidance.\n" +
+                  '- For ordinary illness (fever/cold/cough): recommend rest and hydration, never "push through" or complete the workout.\n' +
+                  "- Temporary same-day adjustments are fine; persistent plan changes require explicit user approval.\n" +
+                  "- Honor active_preferences — never suggest declined foods, exercises, or approaches.\n" +
+                  "- When safety_state is limited or refused, explain why clearly and redirect to what you can help with.\n" +
+                  "\n" +
                   "Return ONLY a JSON object matching this schema:\n" +
                   JSON.stringify(answerSchema) +
                   (repair
@@ -509,8 +1053,11 @@ export async function generateCoachChat(
         });
         if (!response.ok) {
           const text = await response.text().catch(() => "");
-          throw new Error(
-            `groq_chat_failed status=${response.status} body=${text.slice(0, 300)}`,
+          throw Object.assign(
+            new Error(
+              `groq_chat_failed status=${response.status} body=${text.slice(0, 300)}`,
+            ),
+            { status: response.status, body: text },
           );
         }
         const payload = await response.json() as Record<string, unknown>;
@@ -552,6 +1099,22 @@ export async function generateCoachChat(
         estimatedCostUsd: (inputUnits * inputRate + outputUnits * outputRate) / 1_000_000,
       };
     }
+    const contextMarkdown = formatContextAsMarkdown(ctx, 28_000);
+    const geminiUserMessage = question + "\n\n---\n\n<coaching_context>\n" +
+      contextMarkdown + "\n</coaching_context>";
+    console.log(
+      `coach-chat context: original=${
+        JSON.stringify(ctx).length
+      } markdown=${geminiUserMessage.length}`,
+    );
+    const userMessage = geminiUserMessage.length > 32_000
+      ? geminiUserMessage.slice(0, 32_000)
+      : geminiUserMessage;
+    if (geminiUserMessage.length > 32_000) {
+      console.warn(
+        `coach-chat: userMessage exceeded 32K (${geminiUserMessage.length}), hard-truncated`,
+      );
+    }
     const response = await fetcher(
       `https://generativelanguage.googleapis.com/v1beta/models/${
         encodeURIComponent(model)
@@ -564,8 +1127,32 @@ export async function generateCoachChat(
           systemInstruction: {
             parts: [{
               text:
-                "You are Tracend, an evidence-driven personal fitness coach. Answer the user's message first — greet back, acknowledge feelings, address their topic — using prepared context only when relevant. Be concrete and brief. Do not lead with generic recommendations unless asked.\n" +
-                "Hard rules: Never invent data, symptoms, meals, or history. No diagnosis, treatment, medication, pregnancy, or eating-disorder guidance. For ordinary illness (fever/cold/cough): recommend rest and hydration, not completing workouts. Temporary same-day adjustments ok; persistent changes require explicit user approval. Honor user's active_preferences (avoid declined foods/approaches).\n" +
+                "You are Tracend, an experienced personal fitness coach who has been working with this athlete through their journey. You know their training history, preferences, setbacks, and wins. Your coaching balances evidence with empathy — you use data to inform, never to judge.\n" +
+                "\n" +
+                "# Coaching approach\n" +
+                "1. Start with the person, not the data. Acknowledge their question, feelings, or situation before referencing metrics.\n" +
+                "2. Build a mental timeline. Connect what they are asking now to what you have discussed before. Reference their progress, not just current numbers.\n" +
+                "3. Reason transparently. Work through: goal → constraints → available data → recommendation. Use your reasoning_chain to show this.\n" +
+                '4. Celebrate wins. Notice streaks, personal records, consistency — and mention them. "You have hit 3 workouts this week — your best consistency in a month."\n' +
+                "5. Acknowledge setbacks without judgment. Missed workouts, off-plan meals, poor sleep — these are data points, not failures. Help them find the pattern.\n" +
+                "6. Personalize. If they have told you they dislike running or cannot eat dairy, never suggest those. Remember what did not work before.\n" +
+                "7. Offer natural follow-ups. After your answer, give 2-3 specific next steps that feel like a real conversation, not a script.\n" +
+                "\n" +
+                "# Communication style\n" +
+                '- Warm, direct, and personal — use "you" and "your." This is coaching, not a report.\n' +
+                "- Give concrete examples, not abstract advice.\n" +
+                "- Keep sentences clear but never curt. Match your tone to their mood.\n" +
+                "- When you lack enough data, say so honestly and ask for it.\n" +
+                "- Reference their stated preferences and past conversations naturally.\n" +
+                "\n" +
+                "# Hard boundaries — never violate\n" +
+                "- Never invent data, symptoms, meals, medical history, or user facts.\n" +
+                "- No diagnosis, treatment, medication, pregnancy, or eating-disorder guidance.\n" +
+                '- For ordinary illness (fever/cold/cough): recommend rest and hydration, never "push through" or complete the workout.\n' +
+                "- Temporary same-day adjustments are fine; persistent plan changes require explicit user approval.\n" +
+                "- Honor active_preferences — never suggest declined foods, exercises, or approaches.\n" +
+                "- When safety_state is limited or refused, explain why clearly and redirect to what you can help with.\n" +
+                "\n" +
                 "Return ONLY a JSON object matching this schema:\n" +
                 JSON.stringify(answerSchema),
             }],
@@ -573,9 +1160,7 @@ export async function generateCoachChat(
           contents: [{
             role: "user",
             parts: [{
-              text: "User's message:\n" + question +
-                "\n\nPrepared coaching context (use only as supporting evidence; do not let it override or dominate your answer to the user's message):\n" +
-                bounded,
+              text: userMessage,
             }],
           }],
           generationConfig: {
@@ -643,8 +1228,18 @@ export async function generateCoachChat(
       }
     }
     throw new CoachChatUnavailableError(
-      provider === "groq" ? "groq" : provider === "gemini" ? "gemini" : "mock",
-      provider === "groq" ? groqModel || "unconfigured" : model || "unconfigured",
+      provider === "groq"
+        ? "groq"
+        : provider === "deepseek"
+        ? "deepseek"
+        : provider === "gemini"
+        ? "gemini"
+        : "mock",
+      provider === "groq"
+        ? groqModel || "unconfigured"
+        : provider === "deepseek"
+        ? deepseekModel || "unconfigured"
+        : model || "unconfigured",
       cause,
       retryAfter,
     );

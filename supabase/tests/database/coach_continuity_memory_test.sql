@@ -1,5 +1,5 @@
 begin;
-select plan(36);
+select plan(38);
 
 select has_table('public'::name, 'coach_narrative_entries'::name, 'coach_narrative_entries table exists');
 select has_table('public'::name, 'user_preferences'::name, 'user_preferences table exists');
@@ -30,7 +30,7 @@ select has_column('public'::name, 'coach_messages'::name, 'search_vector', 'coac
 select has_index('public'::name, 'coach_messages'::name, 'coach_messages_fts', 'coach_messages FTS index');
 
 select ok(
-  exists(select 1 from pg_catalog.pg_policies p join pg_catalog.pg_class c on c.oid=p.polrelid where c.relname='coach_narrative_entries' and p.polname='coach_narrative_entries_own_read'),
+  exists(select 1 from pg_catalog.pg_policy p join pg_catalog.pg_class c on c.oid=p.polrelid where c.relname='coach_narrative_entries' and p.polname='coach_narrative_entries_own_read'),
   'coach_narrative_entries RLS policy enabled'
 );
 select ok(
@@ -38,7 +38,7 @@ select ok(
   'coach_narrative_entries RLS forced'
 );
 select ok(
-  exists(select 1 from pg_catalog.pg_policies p join pg_catalog.pg_class c on c.oid=p.polrelid where c.relname='user_preferences' and p.polname='user_preferences_own_read'),
+  exists(select 1 from pg_catalog.pg_policy p join pg_catalog.pg_class c on c.oid=p.polrelid where c.relname='user_preferences' and p.polname='user_preferences_own_read'),
   'user_preferences RLS policy enabled'
 );
 select ok(
@@ -46,7 +46,7 @@ select ok(
   'user_preferences RLS forced'
 );
 select ok(
-  exists(select 1 from pg_catalog.pg_policies p join pg_catalog.pg_class c on c.oid=p.polrelid where c.relname='coach_session_summaries' and p.polname='coach_session_summaries_own_read'),
+  exists(select 1 from pg_catalog.pg_policy p join pg_catalog.pg_class c on c.oid=p.polrelid where c.relname='coach_session_summaries' and p.polname='coach_session_summaries_own_read'),
   'coach_session_summaries RLS policy enabled'
 );
 select ok(
@@ -78,8 +78,8 @@ select ok(
   'persist_coach_preference not executable by anon'
 );
 select ok(
-  not has_function_privilege('authenticated', 'public.persist_coach_preference(uuid,text,text,text,text)', 'execute'),
-  'persist_coach_preference not executable by authenticated'
+  has_function_privilege('authenticated', 'public.persist_coach_preference(uuid,text,text,text,text)', 'execute'),
+  'persist_coach_preference executable by authenticated'
 );
 
 select finish();

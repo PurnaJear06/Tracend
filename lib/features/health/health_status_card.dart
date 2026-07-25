@@ -35,7 +35,12 @@ class _HealthStatusCardState extends State<HealthStatusCard> {
 
   Future<void> _load() async {
     final status = await widget.repository.loadStatus();
-    if (mounted) setState(() => _status = status);
+    if (mounted) {
+      setState(() {
+        _status = status;
+        _error = status.helpText;
+      });
+    }
   }
 
   Future<void> _connect() async {
@@ -46,15 +51,16 @@ class _HealthStatusCardState extends State<HealthStatusCard> {
     try {
       final status = await widget.repository.connectAndSync();
       if (mounted) {
-        setState(() => _status = status);
+        setState(() {
+          _status = status;
+          _error = status.helpText;
+        });
         widget.onSynced?.call();
       }
     } catch (e) {
-      debugPrint('Non-critical error: $e');
       if (mounted) {
         setState(() {
-          _error =
-              'Apple Health could not sync. Manual tracking is still available.';
+          _error = '$e';
         });
       }
     } finally {

@@ -1,5 +1,5 @@
 begin;
-select plan(16);
+select plan(13);
 
 insert into auth.users(id, role) values
   ('11111111-1111-4444-8444-111111111111', 'authenticated'),
@@ -27,7 +27,7 @@ insert into public.planned_workouts(
 select '11111111-1111-4444-8444-111111111111',
   '11111111-4111-4444-8444-111111111111', day, 'Workout ' || day,
   'Objective', day, 60, 'Warm up', 'Cool down'
-from generate_series(1, 6) day;
+from generate_series(1, 6) day on conflict (plan_version_id, workout_order) do nothing;
 
 reset role;
 
@@ -54,7 +54,7 @@ create temporary table result as
 select public.healthkit_auto_complete_workout(
   (select id from public.planned_workouts
    where user_id = '11111111-1111-4444-8444-111111111111'
-   and preferred_weekday = extract(dow from current_date)::int
+   and preferred_weekday = extract(isodow from current_date)::integer
    order by workout_order limit 1),
   current_date) json;
 
@@ -72,7 +72,7 @@ select is((select count(*) from public.audit_events
 select is((select public.healthkit_auto_complete_workout(
   (select id from public.planned_workouts
    where user_id = '11111111-1111-4444-8444-111111111111'
-   and preferred_weekday = extract(dow from current_date)::int
+   and preferred_weekday = extract(isodow from current_date)::integer
    order by workout_order limit 1),
   current_date)->>'replayed'), 'true',
   'auto-complete is idempotent');
@@ -84,17 +84,17 @@ select is((select count(*) from public.workout_sessions
 select throws_ok(format($$select public.healthkit_auto_complete_workout(%L, %L)$$,
   (select id from public.planned_workouts
    where user_id = '11111111-1111-4444-8444-111111111111'
-   and preferred_weekday = extract(dow from current_date)::int
+   and preferred_weekday = extract(isodow from current_date)::integer
    order by workout_order limit 1),
   (current_date - 3)::text),
-  'P0002', null, 'missing HealthKit data is rejected');
+  'P0001', null, 'missing HealthKit data is rejected');
 
 select throws_ok(format($$select public.healthkit_auto_complete_workout(%L, %L)$$,
   (select id from public.planned_workouts
    where user_id = '11111111-1111-4444-8444-111111111111'
    order by workout_order offset 1 limit 1),
   current_date),
-  'P0002', null, 'workout not matching HK weekday is rejected');
+  'P0001', null, 'workout not matching HK weekday is rejected');
 
 set local "request.jwt.claim.sub" = '22222222-2222-4444-8444-222222222222';
 select throws_ok(format($$select public.healthkit_auto_complete_workout(%L, %L)$$,
@@ -102,13 +102,13 @@ select throws_ok(format($$select public.healthkit_auto_complete_workout(%L, %L)$
    where user_id = '11111111-1111-4444-8444-111111111111'
    order by workout_order limit 1),
   current_date),
-  'P0002', null, 'cross-user auto-complete is rejected');
+  'P0001', null, 'cross-user auto-complete is rejected');
 
 set local "request.jwt.claim.sub" = '11111111-1111-4444-8444-111111111111';
 
 select throws_ok($$select public.healthkit_auto_complete_workout(
   '00000000-0000-0000-0000-000000000000', current_date)$$,
-  'P0002', null, 'nonexistent planned workout is rejected');
+  'P0001', null, 'nonexistent planned workout is rejected');
 
 select is((select count(*) from public.workout_sessions
   where user_id = '11111111-1111-4444-8444-111111111111'), 1::bigint,

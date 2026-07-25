@@ -288,51 +288,51 @@ Supports `--schema-only` for lightweight schema backups and `--data-only` for da
 ### 9.2 Edge Function Rollback
 
 `scripts/rollback-function.sh <name>` queries the function's deployment history via `git log`,
-checks out the prior committed version, and redeploys with `--use-api`. Used when a deployed
-Edge Function needs an immediate revert to the previous version.
+checks out the prior committed version, and redeploys with `--use-api`. Used when a deployed Edge
+Function needs an immediate revert to the previous version.
 
 ### 9.3 Health Check
 
-`supabase/functions/health-check/` — a no-auth GET endpoint that returns DB connectivity status
-and a version string. Used by external monitors; does not expose internal details.
+`supabase/functions/health-check/` — a no-auth GET endpoint that returns DB connectivity status and
+a version string. Used by external monitors; does not expose internal details.
 
 ### 9.4 Structured Logging
 
-`supabase/functions/_shared/logger.ts` — JSON-structured logging with correlation ID propagation
-and `LOG_LEVEL` env-var control. Wired into `coach-chat` and `meal-analyze`. Sensitive fields
-(health values, meal content, photo URLs, prompt text) are excluded by design.
+`supabase/functions/_shared/logger.ts` — JSON-structured logging with correlation ID propagation and
+`LOG_LEVEL` env-var control. Wired into `coach-chat` and `meal-analyze`. Sensitive fields (health
+values, meal content, photo URLs, prompt text) are excluded by design.
 
 ## 10. Crash Reporting (Sentry)
 
-Sentry captures unhandled crashes and explicit error events in both Flutter and Edge Functions.
-The DSN is the only identifier reaching the client; the project lives at
-`sentry.io` under `purnajear/flutter`.
+Sentry captures unhandled crashes and explicit error events in both Flutter and Edge Functions. The
+DSN is the only identifier reaching the client; the project lives at `sentry.io` under
+`purnajear/flutter`.
 
-| Layer | Mechanism | DSN Source |
-|-------|-----------|------------|
-| Flutter | `sentry_flutter` SDK — `SentryFlutter.init` with `runZonedGuarded` + `FlutterError.onError` bridge | `--dart-define SENTRY_DSN` (empty = disabled) |
-| Edge Functions | `_shared/sentry.ts` — HTTP `fetch` to Sentry store endpoint, fires silently | `Deno.env.get("SENTRY_DSN")` (Edge Function secret) |
+| Layer          | Mechanism                                                                                          | DSN Source                                          |
+| -------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Flutter        | `sentry_flutter` SDK — `SentryFlutter.init` with `runZonedGuarded` + `FlutterError.onError` bridge | `--dart-define SENTRY_DSN` (empty = disabled)       |
+| Edge Functions | `_shared/sentry.ts` — HTTP `fetch` to Sentry store endpoint, fires silently                        | `Deno.env.get("SENTRY_DSN")` (Edge Function secret) |
 
 **beforeSend scrubber** (Flutter): redacts 19 sensitive keys — `weight_kg`, `sleep_minutes`,
 `resting_heart_rate_bpm`, `heart_rate`, `step_count`, `blood_pressure`, `meal_content`,
 `meal_description`, `food_items`, `ingredients`, `photo_url`, `signed_url`, `image_url`,
 `object_key`, `prompt`, `prompt_text`, `question`, `answer_text`, `answer_payload`.
 
-Edge Functions report exceptions from the main `coach-chat` and `meal-analyze` catch blocks
-with `userId`, `functionName`, and `correlationId` context. Failures are silent — a Sentry
-outage never affects the caller.
+Edge Functions report exceptions from the main `coach-chat` and `meal-analyze` catch blocks with
+`userId`, `functionName`, and `correlationId` context. Failures are silent — a Sentry outage never
+affects the caller.
 
 ## 11. Auth Hardening
 
 Production Supabase Auth settings applied 2026-07-19:
 
-| Setting | Value |
-|---------|-------|
-| Password minimum length | 8 |
-| Password character requirements | lowercase + uppercase + digit |
-| Re-authentication for password change | Required |
-| Email confirmation for new signups | Required |
-| Session inactivity timeout | Deferred (Pro plan) |
-| Session timebox | Deferred (Pro plan) |
+| Setting                               | Value                         |
+| ------------------------------------- | ----------------------------- |
+| Password minimum length               | 8                             |
+| Password character requirements       | lowercase + uppercase + digit |
+| Re-authentication for password change | Required                      |
+| Email confirmation for new signups    | Required                      |
+| Session inactivity timeout            | Deferred (Pro plan)           |
+| Session timebox                       | Deferred (Pro plan)           |
 
 These do not affect existing sessions. New signups must meet the password requirements.

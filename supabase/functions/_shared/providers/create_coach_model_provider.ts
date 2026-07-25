@@ -1,4 +1,5 @@
 import type { CoachModelProvider } from "./coach_model_provider.ts";
+import { DeepseekCoachModelProvider } from "./deepseek_coach_model_provider.ts";
 import { GeminiCoachModelProvider } from "./gemini_coach_model_provider.ts";
 import { GroqCoachModelProvider } from "./groq_coach_model_provider.ts";
 import { MockCoachModelProvider } from "./mock_coach_model_provider.ts";
@@ -31,7 +32,7 @@ export function createCoachModelProvider(
 ): CoachModelProvider {
   const provider = environment.get("COACH_MODEL_PROVIDER")?.trim() || "mock";
   if (provider === "mock") return new MockCoachModelProvider();
-  if (provider !== "gemini" && provider !== "groq") {
+  if (provider !== "gemini" && provider !== "groq" && provider !== "deepseek") {
     throw new Error("coach_provider_configuration_invalid");
   }
   if (environment.get("COACH_AI_ENABLED") !== "true") {
@@ -52,6 +53,24 @@ export function createCoachModelProvider(
       outputCostPerMillionUsd: nonnegativeNumber(
         environment,
         "GROQ_OUTPUT_COST_PER_MILLION_USD",
+      ),
+    });
+  }
+  if (provider === "deepseek") {
+    const model = required(environment, "DEEPSEEK_MODEL");
+    if (model !== "deepseek-v4-flash") {
+      throw new Error("coach_provider_model_not_approved");
+    }
+    return new DeepseekCoachModelProvider({
+      apiKey: required(environment, "DEEPSEEK_API_KEY"),
+      model,
+      inputCostPerMillionUsd: nonnegativeNumber(
+        environment,
+        "DEEPSEEK_INPUT_COST_PER_MILLION_USD",
+      ),
+      outputCostPerMillionUsd: nonnegativeNumber(
+        environment,
+        "DEEPSEEK_OUTPUT_COST_PER_MILLION_USD",
       ),
     });
   }

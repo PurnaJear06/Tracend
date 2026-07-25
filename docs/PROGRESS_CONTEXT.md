@@ -40,12 +40,12 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 
 ## Active Workstreams
 
-| Workstream              | Status                               | Read Next                  | Detail History                                |
-| ----------------------- | ------------------------------------ | -------------------------- | --------------------------------------------- |
-| Backend foundation      | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
-| Frontend/UI             | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
-| Coach Continuity Memory | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
-| Stitch/design           | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
+| Workstream              | Status                              | Read Next                  | Detail History                                |
+| ----------------------- | ----------------------------------- | -------------------------- | --------------------------------------------- |
+| Backend foundation      | **Complete — verified**             | `docs/handoff/backend.md`  | worklogs                                      |
+| Frontend/UI             | **Complete — iPhone release build** | `docs/handoff/frontend.md` | worklogs                                      |
+| Coach Continuity Memory | **Deployed**                        | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
+| Stitch/design           | **23 refs imported**                | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
 | Stability infra         | **Complete — deployed**             | `AGENTS.md` §11            | N/A                                           |
 
 ## Global Current State
@@ -86,13 +86,13 @@ ambiguous coaching_date). Prompt restructure separates system/rules from user/me
 TrainScreen hub reloads after workout completion via `push<bool>` / `pop(true)`. When Apple Health
 detects a workout on a day with a scheduled Tracend workout but no completed session, Train shows a
 prompt card. "Yes, mark complete" calls `healthkit_auto_complete_workout` RPC. Per-date refactor:
-lightweight `get_healthkit_completion_candidate(date)` RPC called per weekday. Completion state v1.3:
-weekday strip shows green checkmark for completed days. `loadSession`/`start` accept optional
+lightweight `get_healthkit_completion_candidate(date)` RPC called per weekday. Completion state
+v1.3: weekday strip shows green checkmark for completed days. `loadSession`/`start` accept optional
 `localDate`. Auto-completed sessions show plan exercises read-only with info banner.
 
-**Migrations:** `20260718100000`, `20260718110000`, `20260718150000`. All deployed.
-**Tests:** Flutter 85/85 pass. Docs: PRD, UX_FLOWS, ARCHITECTURE, DATA_MODEL, SECURITY_PRIVACY,
-AI_SAFETY_SPEC, TESTING_STRATEGY, frontend handoff updated.
+**Migrations:** `20260718100000`, `20260718110000`, `20260718150000`. All deployed. **Tests:**
+Flutter 85/85 pass. Docs: PRD, UX_FLOWS, ARCHITECTURE, DATA_MODEL, SECURITY_PRIVACY, AI_SAFETY_SPEC,
+TESTING_STRATEGY, frontend handoff updated.
 
 ## Stability Infrastructure (2026-07-19)
 

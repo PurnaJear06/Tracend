@@ -135,9 +135,18 @@ per-owner monthly warning and USD 5 hard stop are enforced server-side, with 30 
 owner/day. Lite models are not production routes. Quality-adjusted rupee cost is controlled with
 bounded context/output and task-specific thinking.
 
-**Owner test exception (ADR 0006, 2026-07-11):** Groq Qwen `qwen/qwen3.6-27b` is used server-side
-for ten owner-test days only. Groq's free-plan quota is not a number of free days and can change;
-the app additionally enforces 10 total AI requests/day, a USD 1 warning, and a USD 2 hard stop.
+**Owner test exception (ADR 0006, 2026-07-11, extended 2026-07-22):** Groq Qwen `qwen/qwen3.6-27b`
+is used server-side for owner dogfooding through beta. Groq's free-plan quota is not a number of
+free days and can change; the app additionally enforces 30 total AI requests/day, a USD 1 warning,
+and a USD 2 hard stop.
+
+**Low-cost alternative (2026-07-22):** DeepSeek V4 Flash (`deepseek-v4-flash`) is available via
+`COACH_MODEL_PROVIDER=deepseek`. Pricing at the 2026-07-22 standard rate: USD 0.14 per million input
+tokens (USD 0.0028 cache hit) and USD 0.28 per million output tokens. A typical coach-chat request
+(~5K input + 500 output tokens) costs approximately USD 0.00084. At 30 requests/day this is roughly
+USD 0.75/month. A USD 2 top-up from the DeepSeek console covers approximately 2.5 months of owner
+usage. DeepSeek V4 Flash supports thinking mode, JSON structured output, and a 1M-token context
+window. API is OpenAI-compatible at `https://api.deepseek.com/v1/chat/completions`.
 
 ## 5. Expected Monthly Scenarios
 

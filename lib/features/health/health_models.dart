@@ -129,12 +129,21 @@ class HealthReadResult {
     required this.returnedMetrics,
     required this.samples,
     this.unavailable = false,
+    this.accessError,
   });
 
   final Set<HealthMetric> requestedMetrics;
   final Set<HealthMetric> returnedMetrics;
   final List<RawHealthSample> samples;
   final bool unavailable;
+  final HealthAccessError? accessError;
+}
+
+enum HealthAccessError {
+  platformNotSupported,
+  authorizationDenied,
+  configurationFailed,
+  readFailed,
 }
 
 class DailyHealthSummary {
@@ -222,11 +231,13 @@ class HealthSyncStatus {
     required this.state,
     this.lastSuccessfulSync,
     this.availableMetrics = const {},
+    this.accessError,
   });
 
   final HealthConnectionState state;
   final DateTime? lastSuccessfulSync;
   final Set<HealthMetric> availableMetrics;
+  final HealthAccessError? accessError;
 
   String get title => switch (state) {
     HealthConnectionState.connected => 'HealthKit connected',
@@ -247,6 +258,18 @@ class HealthSyncStatus {
       'The app remains fully usable without Apple Health data.',
     HealthConnectionState.unavailable =>
       'This device cannot provide Apple Health data. Continue manually.',
+  };
+
+  String? get helpText => switch (accessError) {
+    HealthAccessError.authorizationDenied =>
+      'Apple Health access was not granted. Go to Settings > Privacy & Security > Health > Tracend to enable.',
+    HealthAccessError.configurationFailed =>
+      'HealthKit could not be initialized. Try restarting the app.',
+    HealthAccessError.readFailed =>
+      'Apple Health data could not be read. The device may be locked or HealthKit may be unavailable.',
+    HealthAccessError.platformNotSupported =>
+      'Apple Health is only available on iPhone.',
+    _ => null,
   };
 }
 
