@@ -154,6 +154,24 @@ void main() {
       if (computed['today_strain'] != null) {
         expect(computed['today_strain'], isA<num>());
       }
+      if (computed['recovery_score'] != null) {
+        expect(computed['recovery_score'], isA<num>());
+        expect(computed['recovery_score'], greaterThanOrEqualTo(0));
+        expect(computed['recovery_score'], lessThanOrEqualTo(100));
+      }
+      if (computed['recovery_breakdown'] != null) {
+        final breakdown = Map<String, dynamic>.from(
+            computed['recovery_breakdown'] as Map);
+        expect(breakdown['hrv_z'], isA<num>());
+        expect(breakdown['resp_rate_z'], isA<num>());
+        expect(breakdown['prev_strain_z'], isA<num>());
+      }
+      if (computed['sleep_quality'] != null) {
+        expect(computed['sleep_quality'], isA<num>());
+      }
+      if (computed['sleep_debt_minutes'] != null) {
+        expect(computed['sleep_debt_minutes'], isA<num>());
+      }
     });
 
     test('v1.4 retains all v1.3 fields', () {

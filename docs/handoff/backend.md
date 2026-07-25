@@ -264,7 +264,42 @@ previous 31 days, and keeps rest days unassigned instead of falling back to the 
 workout. Verification: Deno 32/32, pgTAP 290/290, Flutter analysis, 65/65 tests, and a strictly
 verified signed iPhone release build.
 
-## Feature Engine Phase 1 (2026-07-24)
+## Feature Engine Phase 2 (2026-07-25 — code complete, pending deploy)
+
+One additive migration (`20260725000000`) on branch `feature/feature-engine-phase-2`.
+
+**Algorithm fixes (6 discrepancies from Phase 1):**
+- RHR weight: 0.25 → 0.20 (matches spec)
+- Resp rate: added as 5th baseline metric and 0.05-weight composite component (optional, lower = better)
+- Prev strain: now computes 7-day average daily strain (was always 0)
+- Sleep quality: replaced asymmetric z-score formula with 4-component weighted model (duration 0.50 + efficiency 0.20 + restorative 0.20 + consistency 0.10)
+- Sleep debt: `sleep_debt_minutes = 480 - avg_7d_sleep`
+- Confidence tiers: 3-6 → low, 7-13 → medium, 14+ → high (was 4-13 → medium)
+
+**New table (forced RLS):**
+- `daily_computed_metrics` — persisted scoring output, one row per user per local_date. Upserted by
+  `compute_daily_metrics`. Columns: recovery_score, sleep_quality_score, sleep_debt_minutes,
+  daily_strain, acwr, training_monotony, weight trends, macro_adherence_pct, data_confidence,
+  scores_jsonb, baseline_snapshot_jsonb, eligibility_jsonb, schema_version '2.0'.
+
+**Schema changes:**
+- `daily_health_summaries.respiratory_rate_bpm` (numeric, 0-100)
+- `daily_health_summaries.present_types` now includes `resp_rate`
+- `user_baselines.metric_name` and `metric_baseline_history.metric_name` now include `resp_rate_bpm`
+
+**Return shape additions (additive only, backward compatible):**
+- `compute_daily_metrics.scores`: new fields `resp_rate_z` (in recovery_breakdown), `sleep_breakdown`
+  (duration/efficiency/restorative/consistency), `sleep_debt_minutes`
+
+**`recompute_stale_metrics`** now targets gaps in `daily_computed_metrics` instead of
+`feature_snapshots`. Idempotent.
+
+**New docs:** `docs/ALGORITHMS.md` — published formula reference with literature citations (Plews &
+Buchheit 2017, Hunter 1986, Ohayon 2017, Gabbett 2016, Foster 1998).
+
+**Verification:** pgTAP 72/72 (feature_engine_phase_2_test.sql), Flutter 104/104 (15 new contract
+tests), Deno 94/94, iOS release build passes. Dry-run confirms migration compiles against hosted
+target.
 
 Three additive migrations (`20260724000000`–`20260724000002`) deploy the deterministic feature engine
 database layer. All are hosted with local/remote parity.

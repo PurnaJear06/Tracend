@@ -1,0 +1,63 @@
+{
+  "id": "dcm-0001",
+  "user_id": "aaaaaaaa-1111-4111-8111-111111111111",
+  "local_date": "2026-07-25",
+  "recovery_score": 72,
+  "sleep_quality_score": 85,
+  "sleep_debt_minutes": -65,
+  "daily_strain": 42.0,
+  "acwr": 1.15,
+  "training_monotony": 1.8,
+  "weight_trend_7d_kg_per_day": -0.0714,
+  "weight_trend_28d_kg_per_day": -0.0357,
+  "macro_adherence_pct": 95,
+  "data_confidence": "medium",
+  "scores_jsonb": {
+    "recovery": 72,
+    "recovery_breakdown": {
+      "hrv_z": 0.517,
+      "rhr_z": 0.455,
+      "sleep_z": 0.798,
+      "resp_rate_z": 0.500,
+      "prev_strain_z": 0.300
+    },
+    "sleep_quality": 85,
+    "sleep_breakdown": {
+      "duration_score": 86.4,
+      "efficiency_score": 92.8,
+      "restorative_score": 43.4,
+      "consistency_score": 95.6
+    },
+    "sleep_debt_minutes": -65,
+    "daily_strain": 42.0,
+    "acwr": 1.15,
+    "training_monotony": 1.8,
+    "weight_trend_7d_kg_per_day": -0.0714,
+    "weight_trend_28d_kg_per_day": -0.0357,
+    "weight_trend_r2_28d": 0.85,
+    "macro_adherence_pct": 95
+  },
+  "baseline_snapshot_jsonb": {
+    "hrv_sdnn_ms": { "ewma": 49.45, "spread": 3.0, "n_obs": 6, "confidence": "low" },
+    "resting_hr_bpm": { "ewma": 55.5, "spread": 1.1, "n_obs": 6, "confidence": "low" },
+    "sleep_minutes": { "ewma": 406.7, "spread": 10.4, "n_obs": 6, "confidence": "low" },
+    "weight_kg": { "ewma": 77.5, "spread": 0.4, "n_obs": 5, "confidence": "low" },
+    "resp_rate_bpm": { "ewma": 14.3, "spread": 0.6, "n_obs": 4, "confidence": "low" }
+  },
+  "eligibility_jsonb": {
+    "eligibility_version": "eligibility-v1",
+    "training_change": {
+      "eligible": false,
+      "reason": "insufficient_evidence",
+      "detail": "1 comparable session(s), 33% adherence. Need 2+ sessions or 80%+ adherence."
+    },
+    "nutrition_change": {
+      "eligible": false,
+      "reason": "insufficient_evidence",
+      "detail": "5 weight days (need 14). 95% adherence (need 80%). trend r2=0.85 (need >=0.3)."
+    },
+    "general": "maintain_only"
+  },
+  "computed_at": "2026-07-25T06:00:00+05:30",
+  "schema_version": "2.0"
+}
