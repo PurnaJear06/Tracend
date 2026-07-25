@@ -39,50 +39,58 @@ stay stable until evidence supports a change, and every persistent change requir
 ## Features
 
 ### 🏠 Today
-Daily readiness dashboard with three tappable factors: **Recovery**, **Training**, and **Nutrition**.
-Apple Health surfaces sleep, activity, and vitals with plain-language explanations and progressive
-disclosure — no wall of numbers.
+
+Daily readiness dashboard with three tappable factors: **Recovery**, **Training**, and
+**Nutrition**. Apple Health surfaces sleep, activity, and vitals with plain-language explanations
+and progressive disclosure — no wall of numbers.
 
 ### 🏋️ Train
+
 Personalized workout plans with set-level session tracking. Log reps, RPE, and pain. Resume
-in-progress sessions after a restart. Apple HealthKit auto-detects completed workouts and
-reconciles them with your scheduled plan.
+in-progress sessions after a restart. Apple HealthKit auto-detects completed workouts and reconciles
+them with your scheduled plan.
 
 ### 🤖 Coach
+
 AI coaching chat that remembers your history across sessions. **Five-layer continuity memory**:
-narrative entries, user preferences, session summaries, message search, and context assembly.
-Every recommendation cites its evidence source. Reasoning chains shown inline.
+narrative entries, user preferences, session summaries, message search, and context assembly. Every
+recommendation cites its evidence source. Reasoning chains shown inline.
 
 ### 🥗 Nutrition
+
 Log meals by text or **photo**. AI vision identifies food and estimates macros. Per-meal-slot
-schedule compliance tracking with 7-day adherence visibility. Persisted daily logs navigate
-backward and forward — confirmed meals stay visible after midnight.
+schedule compliance tracking with 7-day adherence visibility. Persisted daily logs navigate backward
+and forward — confirmed meals stay visible after midnight.
 
 ### 📈 Progress
+
 Weight trends, measurement history, and body metrics on a single date-ordered effective timeline.
 Raw chart with no smoothing masquerading as current data. Same-day corrections become audited
 amendments, never silent overwrites.
 
 ### 🔒 Privacy-first AI
+
 - All AI provider keys stay **server-side** in Supabase Edge Functions
-- Model output **never** activates a plan, confirms a meal, or writes durable state without explicit approval
+- Model output **never** activates a plan, confirms a meal, or writes durable state without explicit
+  approval
 - Photos are private, purpose-bound, and accessed only through short-lived authorization
 - Every user-owned table has **enabled, tested row-level security (RLS)**
-- `beforeSend` scrubber redacts health values, meal content, and photo URLs before ANY crash report leaves the device
+- `beforeSend` scrubber redacts health values, meal content, and photo URLs before ANY crash report
+  leaves the device
 
 ## AI Stack
 
-| Layer | Technology | Purpose |
-|:------|:-----------|:--------|
-| **Coach chat** | Gemini `gemini-3.5-flash` | Evidence-backed coaching responses with reasoning chains (medium thinking) |
-| **Meal vision** | Gemini `gemini-3.5-flash` | Macro estimation and food identification from photos (low thinking) |
-| **Context assembly** | PostgreSQL + PL/pgSQL | Five-layer structured memory assembled before model inference |
+| Layer                 | Technology                  | Purpose                                                                               |
+| :-------------------- | :-------------------------- | :------------------------------------------------------------------------------------ |
+| **Coach chat**        | Gemini `gemini-3.5-flash`   | Evidence-backed coaching responses with reasoning chains (medium thinking)            |
+| **Meal vision**       | Gemini `gemini-3.5-flash`   | Macro estimation and food identification from photos (low thinking)                   |
+| **Context assembly**  | PostgreSQL + PL/pgSQL       | Five-layer structured memory assembled before model inference                         |
 | **Output validation** | Deterministic policy engine | Schema, semantics, evidence citations, and policy permissions — reject on ANY failure |
-| **Safety** | `beforeSend` scrubber | Redacts sensitive data before crash reporting reaches Sentry |
+| **Safety**            | `beforeSend` scrubber       | Redacts sensitive data before crash reporting reaches Sentry                          |
 
-> The active model `gemini-3.5-flash` runs with medium thinking for Coach and low thinking for
-> meal vision. Groq Qwen `qwen/qwen3.6-27b` was the prior owner-test provider (ADR 0006);
-> superseded pending evaluation. Production use requires paid-privacy gate. See
+> The active model `gemini-3.5-flash` runs with medium thinking for Coach and low thinking for meal
+> vision. Groq Qwen `qwen/qwen3.6-27b` was the prior owner-test provider (ADR 0006); superseded
+> pending evaluation. Production use requires paid-privacy gate. See
 > [`docs/AI_SAFETY_SPEC.md`](docs/AI_SAFETY_SPEC.md).
 
 ## Architecture
@@ -131,25 +139,25 @@ cd Tracend
 ```
 
 > All tooling state stays under `.tooling/` on the external SSD. Never invoke `flutter`, `deno`,
-> `supabase`, or `docker` directly — use the `./scripts/` wrappers. See
-> [`AGENTS.md`](AGENTS.md) for the full toolchain reference.
+> `supabase`, or `docker` directly — use the `./scripts/` wrappers. See [`AGENTS.md`](AGENTS.md) for
+> the full toolchain reference.
 
 ## Documentation
 
-| Document | Purpose |
-|:---------|:--------|
-| [`AGENTS.md`](AGENTS.md) | Agent instructions, toolchain reference, architecture rules |
-| [`docs/PRD.md`](docs/PRD.md) | Product scope, audience, feature requirements |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design, data flow, component boundaries |
-| [`docs/UX_FLOWS.md`](docs/UX_FLOWS.md) | Screen navigation, interaction states, journeys |
-| [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md) | Visual tokens, component specs, theming rules |
-| [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) | Entity definitions, field schemas, lifecycle rules |
-| [`docs/AI_SAFETY_SPEC.md`](docs/AI_SAFETY_SPEC.md) | Model authority, output validation, safety constraints |
-| [`docs/SECURITY_PRIVACY.md`](docs/SECURITY_PRIVACY.md) | Data collection, retention, deletion, access control |
-| [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md) | Test layers, coverage expectations, quality gates |
-| [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) | Phase sequencing, milestones, delivery plan |
-| [`docs/CONTEXT_BUDGET.md`](docs/CONTEXT_BUDGET.md) | AI context budget rules and contract testing |
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records |
+| Document                                                           | Purpose                                                     |
+| :----------------------------------------------------------------- | :---------------------------------------------------------- |
+| [`AGENTS.md`](AGENTS.md)                                           | Agent instructions, toolchain reference, architecture rules |
+| [`docs/PRD.md`](docs/PRD.md)                                       | Product scope, audience, feature requirements               |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)                     | System design, data flow, component boundaries              |
+| [`docs/UX_FLOWS.md`](docs/UX_FLOWS.md)                             | Screen navigation, interaction states, journeys             |
+| [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md)                   | Visual tokens, component specs, theming rules               |
+| [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md)                         | Entity definitions, field schemas, lifecycle rules          |
+| [`docs/AI_SAFETY_SPEC.md`](docs/AI_SAFETY_SPEC.md)                 | Model authority, output validation, safety constraints      |
+| [`docs/SECURITY_PRIVACY.md`](docs/SECURITY_PRIVACY.md)             | Data collection, retention, deletion, access control        |
+| [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md)             | Test layers, coverage expectations, quality gates           |
+| [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) | Phase sequencing, milestones, delivery plan                 |
+| [`docs/CONTEXT_BUDGET.md`](docs/CONTEXT_BUDGET.md)                 | AI context budget rules and contract testing                |
+| [`docs/adr/`](docs/adr/)                                           | Architecture Decision Records                               |
 
 ## Stack
 

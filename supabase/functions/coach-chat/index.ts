@@ -41,6 +41,8 @@ export function detectPreferenceStatement(question: string): string | null {
 export function buildSessionSummary(
   context: Record<string, unknown>,
   _coachingDate: string,
+  question?: string,
+  answerText?: string,
 ): string {
   const activePlan = context.active_plan as Record<string, unknown> | undefined;
   const activeGoal = context.active_goal as Record<string, unknown> | undefined;
@@ -60,13 +62,25 @@ export function buildSessionSummary(
     ? context.confirmed_nutrition_history
     : [];
   const mealDays = meals.length;
-  const weightStr = weight != null ? `Weight ${weight}kg. ` : "";
-  const sessionsStr = completed > 0 ? `${completed}/${sessions.length} workouts done, ` : "";
-  const sleepStr = sleep != null ? `Sleep ${sleep}min` : "";
-  const rhrStr = rhr != null ? `, RHR ${rhr}` : "";
-  const mealStr = mealDays > 0 ? ` Nutrition ${mealDays} days.` : "";
-  return `${goalLabel} phase: ${phase}. ${weightStr}${sessionsStr}${sleepStr}${rhrStr}.${mealStr}`
-    .slice(0, 400);
+
+  const parts: string[] = [];
+  parts.push(`${goalLabel} phase: ${phase}.`);
+  if (weight != null) parts.push(`Weight ${weight}kg.`);
+  if (completed > 0) parts.push(`${completed}/${sessions.length} workouts done.`);
+  if (sleep != null) parts.push(`Sleep ${sleep}min.`);
+  if (rhr != null) parts.push(`RHR ${rhr}.`);
+  if (mealDays > 0) parts.push(`Nutrition ${mealDays} days.`);
+
+  if (question) {
+    const topic = question.length > 100 ? question.slice(0, 97) + "..." : question;
+    parts.push(`Asked about: "${topic}".`);
+  }
+  if (answerText) {
+    const excerpt = answerText.length > 150 ? answerText.slice(0, 147) + "..." : answerText;
+    parts.push(`Coach: ${excerpt}`);
+  }
+
+  return parts.join(" ").slice(0, 400);
 }
 
 Deno.serve(async (request) => {
@@ -151,7 +165,15 @@ Deno.serve(async (request) => {
     const generation = await generateCoachChat(
       input.question,
       context,
+      contextKind,
     );
+    log.info("persist_coach_chat_result", {
+      snapshot_id: (prepared.feature_snapshot_id as string) ?? "null",
+      policy_id: (prepared.policy_evaluation_id as string) ?? "null",
+      provider: generation.provider,
+      inputUnits: String(generation.inputUnits),
+      outputUnits: String(generation.outputUnits),
+    });
     const { data: persisted, error } = await auth.serviceClient.rpc("persist_coach_chat_result", {
       target_user_id: auth.userId,
       target_thread_id: input.thread_id,
@@ -167,9 +189,33 @@ Deno.serve(async (request) => {
       run_output_units: generation.outputUnits,
       run_estimated_cost_usd: generation.estimatedCostUsd,
     });
-    if (error || !persisted) return reply(422, { error: "chat_rejected" });
+    if (error || !persisted) {
+      log.error("persist_coach_chat_result failed", {
+        errorMessage: error?.message ?? "null persisted",
+        errorCode: error?.code ?? "none",
+        errorDetails: error?.details ?? "none",
+        provider: generation.provider,
+        hasAnswer: typeof generation.answer?.answer === "string",
+        answerLen: typeof generation.answer?.answer === "string"
+          ? String(generation.answer.answer).length
+          : "n/a",
+        safetyState: generation.answer?.safety_state ?? "n/a",
+        inputUnits: String(generation.inputUnits),
+        outputUnits: String(generation.outputUnits),
+      });
+      return reply(422, {
+        error: "chat_rejected",
+        detail: error?.message ?? "persisted_result_null",
+        code: error?.code ?? "unknown",
+      });
+    }
 
-    const summaryText = buildSessionSummary(context, coachingDate);
+    const summaryText = buildSessionSummary(
+      context,
+      coachingDate,
+      input.question,
+      generation.answer?.answer as string | undefined,
+    );
     const sessionSnapshotIds: string[] = [];
     if (prepared.coach_context_snapshot_id) {
       sessionSnapshotIds.push(prepared.coach_context_snapshot_id as string);

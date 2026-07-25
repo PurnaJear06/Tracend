@@ -74,7 +74,8 @@ unconfigured for UI development. Only `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_K
 Flutter. Secret/service-role and AI provider keys stay in Supabase Edge Function secrets.
 
 **CI uses vanilla commands, not wrappers.** The `.github/workflows/ci.yml` invokes `flutter` and
-`deno` directly because setup actions place them on PATH. Do not convert CI steps to wrapper scripts.
+`deno` directly because setup actions place them on PATH. Do not convert CI steps to wrapper
+scripts.
 
 **No iOS simulator.** The development Mac runs `build ios --release --no-codesign` as the
 compilation gate. Runtime testing uses a physically connected iPhone after signing is configured.
@@ -110,6 +111,7 @@ build output, `.dart_tool/`, or `build/` on internal storage.
 `docs/handoff/*.md`. These rotate as work progresses; do not trust cached counts.
 
 **Stable facts** (not kept in PROGRESS_CONTEXT):
+
 - Gemini `gemini-3.5-flash` is the active Coach/chat provider.
 - Groq Qwen `qwen/qwen3.6-27b` was the prior owner-test provider; superseded pending evaluation.
 - Flutter iOS app installed on owner's iPhone 12. No Android, no simulator.
@@ -118,6 +120,7 @@ build output, `.dart_tool/`, or `build/` on internal storage.
   privacy-export.
 
 **Authority docs** (when behavior changes, update the one that owns it):
+
 - Product scope → `docs/PRD.md`
 - Architecture/data-flow → `docs/ARCHITECTURE.md`
 - UX/navigation → `docs/UX_FLOWS.md`
@@ -350,10 +353,10 @@ Queries the function's git history, checks out the prior committed version, and 
 
 Sentry is active in both Flutter and Edge Functions:
 
-| Layer | DSN Source | Disabled When |
-|-------|-----------|---------------|
-| Flutter | `--dart-define SENTRY_DSN=...` | DSN empty or omitted |
-| Edge Functions | `Deno.env.get("SENTRY_DSN")` (hosted secret) | Secret absent |
+| Layer          | DSN Source                                   | Disabled When        |
+| -------------- | -------------------------------------------- | -------------------- |
+| Flutter        | `--dart-define SENTRY_DSN=...`               | DSN empty or omitted |
+| Edge Functions | `Deno.env.get("SENTRY_DSN")` (hosted secret) | Secret absent        |
 
 **Flutter build with Sentry:**
 
@@ -370,6 +373,6 @@ Sentry is active in both Flutter and Edge Functions:
 ./scripts/supabase.sh secrets set SENTRY_DSN=https://6d3f662b0d2eda3941ad9b529c2d3446@o4511762519490560.ingest.us.sentry.io/4511762526830592
 ```
 
-The `beforeSend` scrubber redacts HealthKit values, meal content, photo URLs, and prompt text
-before events leave the device. Sentry failures are silent — they never affect the app or the
-Edge Function caller.
+The `beforeSend` scrubber redacts HealthKit values, meal content, photo URLs, and prompt text before
+events leave the device. Sentry failures are silent — they never affect the app or the Edge Function
+caller.

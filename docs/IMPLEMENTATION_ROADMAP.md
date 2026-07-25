@@ -276,15 +276,15 @@ Flutter passes 56/56. DeepSeek was rejected for restricted data after official p
 A 7-phase cross-layer audit applied security, testing, operational, and code-quality hardening while
 keeping the full pre-deploy gate green:
 
-| Phase | Scope | Outcome |
-|-------|-------|---------|
-| 1 | Security guards | JWT enforcement, AI budget re-enabled, Dependabot, Gitleaks pre-commit, CI dep freshness |
-| 2 | Backend tests | 4 pgTAP files (74 assertions), 3 Deno test files (35 tests), 4 contract test additions |
-| 3 | Operational safeguards | Session pooler, `backup-db.sh`, `rollback-function.sh`, `health-check` Edge Function, structured `_shared/logger.ts` |
-| 4 | Code cleanup | `_shared/auth.ts` deduplicating 7 Edge Functions, `TracendLoadingIndicator` widget, 38 catch-block diagnostics, coach screen timer refactor |
-| 5 | Observability (Sentry) | Flutter `sentry_flutter` + `beforeSend` scrubber (19 sensitive fields redacted), Edge Function `_shared/sentry.ts`, DSN wired into coach-chat and meal-analyze |
-| 6 | Auth hardening | Password min 8 + upper/lower/digit, re-auth for password change, email confirmations, session timeouts deferred (Pro plan) |
-| 7 | Documentation sync | Updated testing strategy, progress context, AGENTS.md for backup/rollback/Sentry |
+| Phase | Scope                  | Outcome                                                                                                                                                        |
+| ----- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Security guards        | JWT enforcement, AI budget re-enabled, Dependabot, Gitleaks pre-commit, CI dep freshness                                                                       |
+| 2     | Backend tests          | 4 pgTAP files (74 assertions), 3 Deno test files (35 tests), 4 contract test additions                                                                         |
+| 3     | Operational safeguards | Session pooler, `backup-db.sh`, `rollback-function.sh`, `health-check` Edge Function, structured `_shared/logger.ts`                                           |
+| 4     | Code cleanup           | `_shared/auth.ts` deduplicating 7 Edge Functions, `TracendLoadingIndicator` widget, 38 catch-block diagnostics, coach screen timer refactor                    |
+| 5     | Observability (Sentry) | Flutter `sentry_flutter` + `beforeSend` scrubber (19 sensitive fields redacted), Edge Function `_shared/sentry.ts`, DSN wired into coach-chat and meal-analyze |
+| 6     | Auth hardening         | Password min 8 + upper/lower/digit, re-auth for password change, email confirmations, session timeouts deferred (Pro plan)                                     |
+| 7     | Documentation sync     | Updated testing strategy, progress context, AGENTS.md for backup/rollback/Sentry                                                                               |
 
 All gates pass: Deno 92 tests, Flutter 85 tests, iOS build 25.1 MB, Edge Functions deployed with
 Sentry wiring.

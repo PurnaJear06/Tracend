@@ -1,6 +1,7 @@
 import {
   classifyQuestion,
   compactContext,
+  formatContextAsMarkdown,
   generateCoachChat,
   isCoachChatLiveProviderConfigured,
 } from "./coach_chat_provider.ts";
@@ -494,7 +495,12 @@ Deno.test("generateCoachChat handles massive context without throwing non-CoachC
       );
     };
 
-    await generateCoachChat("Hello", massiveContext, mockFetcher as unknown as typeof fetch);
+    await generateCoachChat(
+      "Hello",
+      massiveContext,
+      "general",
+      mockFetcher as unknown as typeof fetch,
+    );
 
     if (!fetcherCalled) {
       throw new Error("Fetcher was never called — error occurred before API call");
@@ -657,5 +663,24 @@ Deno.test("CONTEXT BUDGET CONTRACT: all context kinds stay within compacted 32K 
           `approaching 40,000 char DB guard threshold.`,
       );
     }
+  }
+});
+
+Deno.test("CONTEXT BUDGET CONTRACT: markdown formatter stays within 28K ceiling", () => {
+  const ctx = buildMassiveContext();
+  const markdown = formatContextAsMarkdown(ctx, 28_000);
+  if (markdown.length > 28_000) {
+    throw new Error(
+      `CONTEXT BUDGET VIOLATION: markdown context is ${markdown.length} chars, ` +
+        `exceeds 28,000 char formatter ceiling.`,
+    );
+  }
+  const userMessage = "Hello" + "\n\n---\n\n<coaching_context>\n" + markdown +
+    "\n</coaching_context>";
+  if (userMessage.length > 32_000) {
+    throw new Error(
+      `CONTEXT BUDGET VIOLATION: full userMessage is ${userMessage.length} chars, ` +
+        `exceeds 32,000 char hard ceiling.`,
+    );
   }
 });

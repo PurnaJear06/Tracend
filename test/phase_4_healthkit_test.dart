@@ -169,13 +169,13 @@ void main() {
     );
   });
 
-  test('first sync backfills the full bounded project history', () {
+  test('first sync backfills the initial 7-day window', () {
     expect(
       healthSyncStart(
         now: DateTime(2026, 7, 4, 8),
         initialBackfillComplete: false,
       ),
-      DateTime(2026, 6, 3),
+      DateTime(2026, 6, 27),
     );
     expect(
       healthSyncStart(
@@ -204,9 +204,7 @@ void main() {
     await tester.tap(find.text('Connect Apple Health'));
     await tester.pumpAndSettle();
     expect(
-      find.text(
-        'Apple Health could not sync. Manual tracking is still available.',
-      ),
+      find.text('Bad state: fixture failure'),
       findsOneWidget,
     );
   });

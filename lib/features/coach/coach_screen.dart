@@ -419,7 +419,10 @@ class _CoachScreenState extends State<CoachScreen> {
                   ),
                 ] else
                   for (final message in _messages) ...[
-                    _MessageBubble(message: message),
+                    _MessageBubble(
+                      message: message,
+                      onSendFollowUp: (prompt) => _send(prompt),
+                    ),
                     const SizedBox(height: TracendSpacing.sm),
                   ],
                 if (_sending)
@@ -528,8 +531,9 @@ class _PinnedDecision extends StatelessWidget {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
+  const _MessageBubble({required this.message, this.onSendFollowUp});
   final CoachMessage message;
+  final void Function(String prompt)? onSendFollowUp;
   @override
   Widget build(BuildContext context) {
     final user = message.role == 'user';
@@ -607,8 +611,17 @@ class _MessageBubble extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: TracendSpacing.xxs),
-                for (final prompt in message.suggestedFollowUps)
-                  Text('• $prompt'),
+                Wrap(
+                  spacing: TracendSpacing.xs,
+                  runSpacing: TracendSpacing.xs,
+                  children: [
+                    for (final prompt in message.suggestedFollowUps)
+                      ActionChip(
+                        label: Text(prompt),
+                        onPressed: () => onSendFollowUp?.call(prompt),
+                      ),
+                  ],
+                ),
               ],
             ],
           ),
