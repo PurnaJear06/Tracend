@@ -4,13 +4,13 @@ set -euo pipefail
 echo "=== Pre-push gate ==="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$SCRIPT_DIR/.."
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FAIL=0
 
 # 1. Deno format check
 echo ""
 echo "--- Deno format check ---"
-if deno fmt --check supabase/functions 2>/dev/null; then
+if "$ROOT/scripts/deno.sh" fmt --check supabase/functions 2>/dev/null; then
   echo "PASS: deno fmt"
 else
   echo "FAIL: deno fmt --check found formatting issues. Run: ./scripts/deno.sh task format"
@@ -20,32 +20,28 @@ fi
 # 2. Deno lint
 echo ""
 echo "--- Deno lint ---"
-if deno lint supabase/functions 2>/dev/null; then
+if "$ROOT/scripts/deno.sh" lint supabase/functions 2>/dev/null; then
   echo "PASS: deno lint"
 else
   echo "FAIL: deno lint found issues."
   FAIL=1
 fi
 
-# 3. Flutter analyze (skip if no Flutter SDK available)
+# 3. Flutter analyze
 echo ""
 echo "--- Flutter analyze ---"
-if command -v flutter &>/dev/null; then
-  if flutter analyze 2>/dev/null; then
-    echo "PASS: flutter analyze"
-  else
-    echo "FAIL: flutter analyze found issues."
-    FAIL=1
-  fi
+if "$ROOT/scripts/flutter.sh" analyze 2>/dev/null; then
+  echo "PASS: flutter analyze"
 else
-  echo "SKIP: flutter not found on PATH. Run: ./scripts/flutter.sh analyze"
+  echo "FAIL: flutter analyze found issues."
+  FAIL=1
 fi
 
 # 4. Migration timestamp uniqueness check
 echo ""
 echo "--- Migration collision check ---"
 if [ -d "$ROOT/supabase/migrations" ]; then
-  DUPES=$(ls "$ROOT/supabase/migrations"/*.sql 2>/dev/null | sed 's|.*/||' | grep -oP '^\d+' | sort | uniq -d)
+  DUPES=$(ls "$ROOT/supabase/migrations"/*.sql 2>/dev/null | sed 's|.*/||' | grep -Eo '^[0-9]+' | sort | uniq -d)
   if [ -n "$DUPES" ]; then
     echo "FAIL: Duplicate migration timestamps: $DUPES"
     echo "Resolve by re-timestamping one of the conflicting migrations."
