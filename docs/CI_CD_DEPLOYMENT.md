@@ -215,6 +215,17 @@ Enforced by CI, documented for developers:
 7. **Every migration must be backward-compatible.** Deployed app must still work.
 8. **Data migrations go in separate files AFTER the schema migration.**
 
+### 9.1 Deployment Order
+
+When a feature touches multiple layers, deploy in this order:
+
+1. **Database migration** (additive only — follow forward-compatible rules)
+2. **Edge Functions** (accept both old and new payload shapes)
+3. **Flutter build + install to iPhone** (once the new backend is live)
+
+Verify each layer deploys successfully before moving to the next. If any layer fails, roll back the
+migration and re-deploy the old Edge Function version.
+
 ## 10. Agent Deployment Rule (AGENTS.md §12)
 
 After implementation, agents are prohibited from running deployment commands directly. Normal

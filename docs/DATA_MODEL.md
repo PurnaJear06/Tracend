@@ -27,6 +27,13 @@ transactionally.
 - Canonical units are kilograms, centimeters, kilocalories, grams, minutes, beats per minute, and
   milliseconds.
 - Structured PostgreSQL fields are the MVP memory system. Vector embeddings are deferred.
+- **Forward-only migrations. Never edit an applied migration.**
+- **Every migration must be additive.** Rename, drop, or change column type requires the two-step
+  pattern: (1) add new column + deploy code that reads it; (2) later migration drops old column.
+  New migrations must be safe for the currently-deployed Flutter app and Edge Functions.
+- Every RPC consumed by Flutter (`get_my_training_hub`, `get_my_daily_brief`, etc.) must include an
+  explicit `schema_version` field. Add fields, never remove or rename existing ones in a deployed
+  migration. Only remove fields in a cleanup migration after all consuming builds are updated.
 
 System behavior is defined in [ARCHITECTURE.md](./ARCHITECTURE.md); data classification and
 retention are defined in [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md).

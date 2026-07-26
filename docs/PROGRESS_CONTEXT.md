@@ -41,8 +41,8 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Frontend/UI               | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
 | Coach Continuity Memory   | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
 | Stitch/design             | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
-| Stability infra           | **Complete — deployed**              | `AGENTS.md` §11            | N/A                                           |
-| CI/CD automation          | **Complete — implemented**            | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` §12                               |
+| Stability infra           | **Complete — deployed**              | `AGENTS.md` (commands)     | N/A                                           |
+| CI/CD automation          | **Complete — deployed**              | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` (deployment)                      |
 
 ## Global Current State
 

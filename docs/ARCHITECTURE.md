@@ -163,26 +163,19 @@ invoke a model or create a proposal.
 ### 3.7 AI provider
 
 - Edge Functions call providers through a small `CoachModelProvider` TypeScript interface.
-- Gemini is the planned sole live provider for owner dogfooding, subject to the same privacy review
-  and text/vision evaluation gates. Provider/model identifiers remain environment configuration; the
-  mock provider stays the default until those gates pass.
-- A server-only Gemini structured-output adapter may exist while disabled. It fails closed unless
-  deployment explicitly attests that paid-service data terms are active; adapter presence is not
-  provider activation.
+- DeepSeek V4 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
+- Provider/model identifiers remain environment configuration; the mock provider stays the default
+  until live-model gates pass. Coach-decide specifically defaults to the deterministic mock and
+  requires all server-side secrets (`COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`, provider API keys)
+  configured together as an all-or-nothing gate.
 - Calls use structured output, compact feature snapshots, request-level timeouts, and per-user
   rate/cost gates.
 - Provider output never directly writes canonical user state. Validation and approval remain in
   deterministic code and PostgreSQL transactions.
 
-Production routing uses stable `gemini-3.5-flash` with task-level thinking: medium for normal Coach
-reasoning, high only for evaluated difficult review cases, and low for bounded meal-image
-extraction. Lite models are not valid production routes. The deterministic mock remains the rollback
-provider.
-
-For the ADR 0006 owner Qwen test, a live chat may make one bounded schema-repair retry. If Qwen
-still fails transport or semantic validation, the Edge Function records a sanitized failed run and
-returns an unavailable result; it must not persist or present a deterministic fallback as a model
-response.
+Prior providers: Gemini `gemini-3.5-flash` (superseded) and Groq Qwen `qwen/qwen3.6-27b`
+(superseded pending evaluation). The deterministic mock remains the fallback if live models are
+unavailable.
 
 ## 4. Supabase Boundary Rules
 
@@ -259,20 +252,15 @@ history.
 ### Versioned Edge Functions
 
 ```text
-onboarding-assess
-onboarding-propose-plan
-health-sync
-workout-complete
-meal-analyze
-meal-confirm
-coach-decide
 coach-chat
+coach-decide
+health-check
+health-sync
 meal-analyze
-proposal-respond
-progress-analyze
-weekly-review
-privacy-export
+meal-media-retention
+onboarding-propose-plan
 privacy-delete-account
+privacy-export
 ```
 
 `get_my_training_hub(period)`, `get_my_nutrition_schedule(date)`, and `get_my_daily_brief(date)` are
@@ -367,9 +355,9 @@ summaries remain available when Storage, Queue, Cron, or AI is unavailable.
 - **local:** Supabase CLI + Docker-compatible runtime, local Edge Functions, mocked AI/HealthKit
   fixtures, and Flutter simulator/device configuration. The local Supabase stack must not be exposed
   publicly.
-- **private-beta:** one hosted Supabase project in the nearest suitable region, separate project
-  secrets, private buckets, quota alerts/manual backups on Free, Spend Cap on Pro, and a TestFlight
-  build.
+- **private-beta:** one hosted Supabase project (`qsfzzsjenopqqqhvpyaw`, Singapore,
+  `ap-southeast-1`), separate project secrets, private buckets, quota alerts/manual backups on Free,
+  Spend Cap on Pro, and a TestFlight build.
 - **staging:** defer a second paid hosted project until beta complexity needs it; use local
   development and isolated synthetic fixtures first.
 

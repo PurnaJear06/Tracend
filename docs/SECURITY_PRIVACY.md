@@ -153,15 +153,14 @@ Requirements:
   [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md) pass.
 - Do not send restricted Tracend data through unpaid Gemini API service. Current unpaid-service
   terms permit product-improvement use and human review and instruct developers not to submit
-  sensitive or personal information. Live Gemini requires paid-service terms, documented provider
-  controls, explicit server-side enablement, and passed evaluation gates.
+  sensitive or personal information.
 - Provider failure or policy change must degrade safely without changing the approved plan.
 - Provider-side persistent conversation state is disabled unless documented, consented, deletable,
   and required.
-- DeepSeek hosted service is not approved for restricted Tracend data. Its current official policy
-  says the service is not intended for sensitive health data, instructs users not to provide it,
-  describes model-improvement use, and states that personal data may be stored in China. A prepaid
-  balance does not change this gate.
+- DeepSeek V4 Flash is the current active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`),
+  subject to the provider controls documented in [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md). Prior
+  providers (Gemini `gemini-3.5-flash`, Groq Qwen) were superseded pending evaluation. New
+  providers require privacy review and evaluation parity before use with restricted data.
 
 ## 7. Authentication and Authorization
 
@@ -184,6 +183,9 @@ Requirements:
 - Use generic not-found/forbidden behavior that does not reveal another user's resource existence.
 - Rate-limit authentication, Edge Functions, media operations, AI jobs, export, and deletion.
 - Require recent authentication for export, account deletion, or sensitive session changes.
+- `meal-media-retention` validates a dedicated `RETENTION_WORKER_SECRET` (not JWT). Store the same
+  generated value in Edge Function secrets and Supabase Vault; Cron reads Vault. Never place it in
+  Flutter, shell history, logs, or committed files.
 
 ## 8. Encryption and Secret Management
 

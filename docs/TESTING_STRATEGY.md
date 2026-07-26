@@ -151,7 +151,11 @@ Contract tests verify that layers can successfully communicate with each other. 
 **Fixture-based contract tests** (Flutter → RPC / Flutter → Edge) use versioned JSON snapshots under
 `test/contract/fixtures/` that represent the exact shape the server is expected to return. When the
 server response shape changes, the fixtures must be updated — and the act of updating them triggers
-a manual review of whether Flutter's parsing code also needs updating.
+a manual review. The review must verify:
+
+1. No field removed that deployed Flutter code depends on
+2. New fields are additive only (or the old field is preserved until a follow-up migration)
+3. `schema_version` is incremented
 
 **Live contract tests** (Deno → DB) connect to local Supabase when `CONTRACT_URL` is set (by
 `pre-deploy.sh` when local Supabase is running). These tests call real RPCs and verify the returned
@@ -196,7 +200,8 @@ Score schema validity, policy compliance, grounding, decision class, hallucinati
 clarity, meal accuracy, latency, and estimated cost. Model, prompt, schema, retrieval, or
 orchestration changes require regression comparison to the baseline.
 
-`gemini-3.5-flash` is the only production route for Coach and separately gated meal/progress vision.
+DeepSeek V4 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
+Lite models are not production routes.
 Meal evaluation covers mixed dishes, oil/sauces, hidden ingredients, portion uncertainty, prompt
 injection, candidate edit rate, latency, and cost. Safety-critical and schema fixtures require 100%;
 routing remains disabled when the gate fails.
