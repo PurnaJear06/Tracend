@@ -1,9 +1,8 @@
 # Tracend Progress Context
 
 **Active change:** CI/CD automation deployed — three pipelines (ci, deploy, hotfix) + pre-push hook.
-Agent deployment rule active. Feature Engine Phase 4 — Flutter UI on branch
-`feature/feature-engine-phase-4`. Phase 4 plan pending;
-design tools (Impeccable + Taste-Skill) installed. Phase 3 deployed to production and merged.
+Agent deployment rule active. Feature Engine Phase 4 — Flutter UI complete. Phase 3 deployed to
+production and merged. 155 Flutter tests pass, 0 analysis issues.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -36,7 +35,7 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Feature Engine Phase 1    | **Deployed — verified**              | `docs/handoff/backend.md`  | `docs/adr/0010-deterministic-feature-engine.md` |
 | Feature Engine Phase 2    | **Complete — merged & verified**      | `docs/handoff/backend.md`  | `docs/ALGORITHMS.md`, `.opencode/plans/phase-2-feature-engine-algorithms.md` |
 | Feature Engine Phase 3    | **Deployed — merged**                | `docs/handoff/backend.md`  | `.opencode/plans/phase-3-coach-integration.md`                                |
-| Feature Engine Phase 4    | **Branch created — tools installed**  | `docs/handoff/frontend.md` | `docs/handoff/design.md`                                                       |
+| Feature Engine Phase 4    | **Complete — widgets built + Today integrated** | `docs/handoff/frontend.md` | `.opencode/plans/phase-4-flutter-computed-metrics.md`
 | Backend foundation        | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
 | Frontend/UI               | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
 | Coach Continuity Memory   | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
@@ -112,7 +111,38 @@ confirmations on. Session timeouts deferred (Pro plan).
 **Forward-compatible migrations:** Two-step rule — add then deploy then remove. Never single-step
 rename/drop/type-change.
 
-**Test counts:** pgTAP 362 assertions (270 + 72 Phase 2 + 20 Phase 3), Deno 94, Flutter 104. All pass.
+**Test counts:** pgTAP 362 assertions (270 + 72 Phase 2 + 20 Phase 3), Deno 94, Flutter 155 (104 + 51 Phase 4). All pass.
+
+## Phase 4 Pipeline Fix (2026-07-26)
+
+- `get_my_daily_brief` now reads computed metrics from `daily_computed_metrics` (was: `feature_snapshots`)
+- `healthkit_auto_complete_workout` sets `session_effort = 5` so auto-completed sessions contribute to strain/ACWR
+- Migration: `20260726160000_fix_computed_pipeline.sql` (ready to deploy)
+- No Flutter or Edge Function changes needed — response shape unchanged
+
+## Phase 4 — Flutter Computed Metrics UI (2026-07-26)
+
+**6 widgets built, all screen-integrated, 155 tests pass, zero analysis issues.**
+
+### Widgets delivered
+| Widget | Location | Screen |
+|--------|----------|--------|
+| `RecoveryRing` (240° arc gauge) | `lib/features/today/recovery_ring.dart` | Today |
+| `SleepArchitectureCard` (quality + sub-scores) | `lib/features/today/sleep_architecture_card.dart` | Today |
+| `_ReadinessStrip` redesign (scored tiles) | `lib/features/today/today_screen.dart` | Today |
+| `TrainingLoadGauge` (4-zone ACWR bar) | `lib/features/train/training_load_gauge.dart` | Train |
+| `WeightTrendIndicator` (7d/28d trend) | `lib/features/progress/weight_trend_indicator.dart` | Progress |
+| `MetricSparkline` (inline sparkline) | `lib/shared/widgets/metric_sparkline.dart` | Shared |
+
+### Data plumbing
+- `ComputedMetrics` model with `fromJson()` — parses `computed.scores.*`, `computed.baselines.*`, `computed.data_confidence`
+- `DailyBrief` model updated with `computed` field
+- Contract test updated for `computed` parsing
+- Train/Progress screens now accept `DailyBriefRepository` and load brief in parallel
+
+### Build
+- iOS release builds clean (25.4MB), installed on owner's iPhone 12 with live Supabase backend
+- **Build command:** `./scripts/flutter.sh build ios --release --dart-define SUPABASE_URL=https://... --dart-define SUPABASE_PUBLISHABLE_KEY=...`
 
 ## Design Tools (2026-07-26)
 

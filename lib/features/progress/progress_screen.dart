@@ -6,11 +6,14 @@ import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 import 'package:tracend/shared/widgets/evidence_trend_chart.dart';
+import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/progress/weight_trend_indicator.dart';
 
 class ProgressScreen extends StatefulWidget {
-  const ProgressScreen({required this.repository, this.training, super.key});
+  const ProgressScreen({required this.repository, this.training, this.brief, super.key});
   final ProgressRepository repository;
   final TrainingHubRepository? training;
+  final DailyBriefRepository? brief;
   @override
   State<ProgressScreen> createState() => _ProgressScreenState();
 }
@@ -31,10 +34,12 @@ class _ProgressScreenState extends State<ProgressScreen> {
   String? _activeSet;
   final Set<String> _capturedPoses = {};
   bool _hasConsent = false;
+  late final Future<DailyBrief> _brief;
   @override
   void initState() {
     super.initState();
     _reload();
+    _brief = (widget.brief ?? const FixtureDailyBriefRepository()).load(DateTime.now());
   }
 
   void _reload() {
@@ -106,6 +111,15 @@ class _ProgressScreenState extends State<ProgressScreen> {
       const _EmptyMeasurements()
     else
       _TrendCard(measurements: measurements),
+    FutureBuilder<DailyBrief>(
+      future: _brief,
+      builder: (context, snapshot) {
+        if (snapshot.hasData && snapshot.data?.computed != null) {
+          return WeightTrendIndicator(computed: snapshot.data!.computed!);
+        }
+        return const SizedBox.shrink();
+      },
+    ),
     const SizedBox(height: TracendSpacing.sm),
     SizedBox(
       width: double.infinity,

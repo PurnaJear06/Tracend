@@ -263,15 +263,15 @@ visual system behavior belongs in `docs/DESIGN_SYSTEM.md`.
 
 ## Next Safe Actions
 
-1. Plan Phase 4 (Flutter computed metrics widgets) using Impeccable + Taste-Skill design tools
-   installed 2026-07-26: RecoveryRing, SleepArchitectureCard, TrainingLoadGauge, Weight Trend Line,
-   MetricSparkline. Use `/impeccable craft` with `stitch-design-taste` skill for widget design.
-2. Prepare and download one owner export, then decrypt it on the external SSD using
+1. Merge `feature/feature-engine-phase-4` → `feature/feature-engine` → `main`. All 155 Flutter tests
+   pass, analysis is clean, and iOS release builds.
+2. Phase 5 — Design system alignment: import Spline Sans + IBM Plex Mono fonts, TrajectoryLens
+   animated Bezier redesign, full screen layout reflow (Today, Train, Nutrition, Progress, Coach),
+   new components (EvidenceAccordion, CoachInsightCard, DatePillStrip, TargetsGrid, WorkoutModeSheet),
+   My AI Usage screen, Welcome screens.
+3. Prepare and download one owner export, then decrypt it on the external SSD using
    `docs/BETA_OPERATIONS.md`.
-3. Do not device-test deletion with the owner account; hosted synthetic QA is the destructive gate.
-4. Keep live meal/progress AI, catalog choice, and Sign in with Apple deferred pending their
-   explicit decisions. Direct paid Gemini remains the reviewed provider path; do not substitute
-   GLM/OpenRouter without a provider review.
+4. Do not device-test deletion with the owner account; hosted synthetic QA is the destructive gate.
 
 ## Do Not Do
 

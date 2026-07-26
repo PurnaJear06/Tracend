@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tracend/features/today/computed_metrics.dart';
 
 String _readFixture(String name) {
   final file = File('test/contract/fixtures/$name');
@@ -110,6 +111,21 @@ void main() {
         expect(sq, greaterThanOrEqualTo(0));
         expect(sq, lessThanOrEqualTo(100));
       }
+    });
+
+    test('computed maps into ComputedMetrics model', () {
+      final json = _loadFixtureJson(fixture);
+      final computedRaw = Map<String, dynamic>.from(json['computed'] as Map);
+      final m = ComputedMetrics.fromJson(computedRaw);
+
+      expect(m.dataConfidence, 'medium');
+      expect(m.scores.recovery, 72);
+      expect(m.scores.sleepQuality, 85);
+      expect(m.scores.acwr, 1.15);
+      expect(m.scores.recoveryBreakdown, isA<RecoveryBreakdown>());
+      expect(m.scores.sleepBreakdown, isA<SleepBreakdown>());
+      expect(m.baselines.hrv, isA<BaselineMetric>());
+      expect(m.baselines.restingHr, isA<BaselineMetric>());
     });
 
     test('check_in fields parseable', () {
