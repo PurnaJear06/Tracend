@@ -1,9 +1,8 @@
 # Tracend Progress Context
 
-**Active change:** Feature Engine Phase 3 — Coach Integration (computed scores → AI) on branch
-`feature/feature-engine-phase-3` (off `feature/feature-engine`). **Complete — local gates pass.**
-1 migration (14 evidence codes + `prepare_coach_chat_v6`), 6 Edge Function files changed,
-3 contract fixtures updated, 20 pgTAP tests pass. Ready for production deploy.
+**Active change:** Feature Engine Phase 4 — Flutter UI (computed metrics widgets) on branch
+`feature/feature-engine-phase-4` (off `feature/feature-engine`). Phase 4 plan pending;
+design tools (Impeccable + Taste-Skill) installed. Phase 3 deployed to production and merged.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -35,7 +34,8 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | ----------------------- | ----------------------------------- | -------------------------- | --------------------------------------------- |
 | Feature Engine Phase 1    | **Deployed — verified**              | `docs/handoff/backend.md`  | `docs/adr/0010-deterministic-feature-engine.md` |
 | Feature Engine Phase 2    | **Complete — merged & verified**      | `docs/handoff/backend.md`  | `docs/ALGORITHMS.md`, `.opencode/plans/phase-2-feature-engine-algorithms.md` |
-| Feature Engine Phase 3    | **Complete — ready to deploy**        | `docs/handoff/backend.md`  | `.opencode/plans/phase-3-coach-integration.md`                                |
+| Feature Engine Phase 3    | **Deployed — merged**                | `docs/handoff/backend.md`  | `.opencode/plans/phase-3-coach-integration.md`                                |
+| Feature Engine Phase 4    | **Branch created — tools installed**  | `docs/handoff/frontend.md` | `docs/handoff/design.md`                                                       |
 | Backend foundation        | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
 | Frontend/UI               | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
 | Coach Continuity Memory   | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
@@ -111,3 +111,12 @@ confirmations on. Session timeouts deferred (Pro plan).
 rename/drop/type-change.
 
 **Test counts:** pgTAP 362 assertions (270 + 72 Phase 2 + 20 Phase 3), Deno 94, Flutter 104. All pass.
+
+## Design Tools (2026-07-26)
+
+- **Impeccable** (`npx impeccable install`): 23-command design skill + 60-rule CLI detector installed at
+  `.opencode/skills/impeccable/`. Run `/impeccable init` to generate DESIGN.md context, then use
+  `/impeccable critique`, `/impeccable audit`, `/impeccable bolder` for Flutter UI quality.
+- **Taste-Skill** (`npx skills add`): 3 anti-slop skills installed at `.agents/skills/`:
+  `stitch-design-taste` (Stitch rules → code bridge), `redesign-existing-projects` (audit + fix
+  workflow), `design-taste-frontend` (default v2 with VARIANCE/MOTION/DENSITY dials).
