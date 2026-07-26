@@ -20,7 +20,7 @@ class TrainScreen extends StatefulWidget {
 class _TrainScreenState extends State<TrainScreen> {
   late final WorkoutRepository _source;
   late Future<TrainingHubData> _hub;
-  late final Future<DailyBrief> _brief;
+  late Future<DailyBrief> _brief;
   List<WorkoutRepairCandidate> _repairCandidates = const [];
   List<WorkoutReconciliation> _reconciliations = const [];
   String? _reconciliationBusyId;
@@ -35,7 +35,8 @@ class _TrainScreenState extends State<TrainScreen> {
     super.initState();
     _source = widget.repository ?? FixtureWorkoutRepository();
     _hub = _load();
-    _brief = (widget.brief ?? const FixtureDailyBriefRepository()).load(DateTime.now());
+    _brief = (widget.brief ?? const FixtureDailyBriefRepository())
+        .load(_dateForWeekday(_weekday));
     _fetchHealthkitCandidate();
   }
 
@@ -199,6 +200,8 @@ class _TrainScreenState extends State<TrainScreen> {
     setState(() {
       _weekday = day;
       _healthkitCandidate = null;
+      _brief = (widget.brief ?? const FixtureDailyBriefRepository())
+          .load(_dateForWeekday(day));
     });
     _fetchHealthkitCandidate();
   }
