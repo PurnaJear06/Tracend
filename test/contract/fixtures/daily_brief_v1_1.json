@@ -121,7 +121,7 @@
     "reason": "Recovery scores within baseline; no safety signals detected.",
     "confidence": 0.85,
     "created_at": "2026-07-25T06:00:00+05:30",
-    "evidence": ["APPROVED_PLAN_ACTIVE", "HEALTH_CONTEXT_AVAILABLE", "RECOVERY_WITHIN_BASELINE"],
+    "evidence": ["APPROVED_PLAN_ACTIVE", "HEALTH_CONTEXT_AVAILABLE", "RECOVERY_WITHIN_BASELINE", "SLEEP_QUALITY_GOOD", "TRAINING_LOAD_OPTIMAL", "WEIGHT_STABLE", "NUTRITION_ON_TRACK"],
     "missing_data": []
   }
 }

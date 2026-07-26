@@ -131,6 +131,20 @@ export class GroqCoachModelProvider implements CoachModelProvider {
             role: "user",
             content:
               "You are Tracend's controlled fitness coaching interpreter. Follow deterministic policy exactly. Use only supplied evidence codes. Never diagnose, invent data, create persistent changes, or broaden permitted actions. Return only valid JSON matching this schema: " +
+              "\n\nEvidence code reference: " +
+              "RECOVERY_WITHIN_BASELINE = recovery score ≥ 50, " +
+              "RECOVERY_BELOW_BASELINE = recovery score < 40, " +
+              "SLEEP_QUALITY_GOOD = sleep quality score ≥ 50, " +
+              "SLEEP_QUALITY_POOR = sleep quality score < 50, " +
+              "TRAINING_LOAD_OPTIMAL = ACWR 0.8–1.3, " +
+              "TRAINING_LOAD_ELEVATED = ACWR > 1.5, " +
+              "WEIGHT_TRENDING_DOWN = 7-day slope < -0.1 kg/day, " +
+              "WEIGHT_TRENDING_UP = 7-day slope > +0.1 kg/day, " +
+              "WEIGHT_STABLE = 7-day slope between ±0.1 kg/day, " +
+              "NUTRITION_ON_TRACK = adherence ≥ 80%, " +
+              "NUTRITION_BEHIND = adherence < 50%, " +
+              "DATA_CONFIDENCE_HIGH = 14+ evidence points, " +
+              "DATA_CONFIDENCE_LOW = < 7 evidence points. " +
               JSON.stringify(decisionSchema) +
               "\n\nPrepared evidence context:\n" + context,
           }],

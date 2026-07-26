@@ -179,6 +179,7 @@ const keyAbbreviations: Record<string, string> = {
   since: "sin",
   step: "stp",
   evidence_id: "eid",
+  computed_metrics: "cm",
 };
 
 function compactValue(value: unknown): unknown {
@@ -699,6 +700,42 @@ export function formatContextAsMarkdown(
   const evidence = arr(ctx.permitted_evidence);
   if (evidence.length) {
     push(`## Evidence Permitted\n${evidence.map((e) => `- ${str(e)}`).join("\n")}\n`);
+  }
+
+  // 20. Computed Metrics (feature engine scores)
+  const computed = obj(ctx.computed_metrics);
+  if (Object.keys(computed).length && !computed.unavailable) {
+    let s = "## Computed Scores\n";
+    const rec = obj(computed.recovery);
+    if (Object.keys(rec).length) s += `- recovery: ${str(rec.score)}/100\n`;
+    const slp = obj(computed.sleep);
+    if (Object.keys(slp).length) {
+      s += `- sleep quality: ${str(slp.quality)}/100`;
+      if (slp.debt_minutes != null) s += `, debt: ${str(slp.debt_minutes)} min`;
+      s += "\n";
+    }
+    const tl = obj(computed.training_load);
+    if (Object.keys(tl).length) {
+      s += `- training load: ACWR ${str(tl.acwr)}`;
+      if (tl.monotony != null) s += `, monotony ${str(tl.monotony)}`;
+      s += `\n`;
+    }
+    const wt = obj(computed.weight);
+    if (Object.keys(wt).length) {
+      s += `- weight trend: 7d ${str(wt.trend_7d_kg_per_day)} kg/day`;
+      if (wt.trend_28d_kg_per_day != null) {
+        s += `, 28d ${str(wt.trend_28d_kg_per_day)} kg/day`;
+      }
+      s += "\n";
+    }
+    const nut = obj(computed.nutrition);
+    if (Object.keys(nut).length) {
+      s += `- nutrition adherence: ${str(nut.adherence_pct)}%\n`;
+    }
+    if (computed.data_confidence) {
+      s += `- data confidence: ${str(computed.data_confidence)}\n`;
+    }
+    push(s);
   }
 
   return out.join("\n");

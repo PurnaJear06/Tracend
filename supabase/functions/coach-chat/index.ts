@@ -108,7 +108,7 @@ Deno.serve(async (request) => {
   if (budgetError) return reply(429, { error: "ai_usage_limit" });
   const contextKind = classifyQuestion(input.question);
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
-    "prepare_coach_chat_v5",
+    "prepare_coach_chat_v6",
     {
       target_user_id: auth.userId,
       target_thread_id: input.thread_id,
@@ -119,7 +119,7 @@ Deno.serve(async (request) => {
     },
   );
   if (prepareError || !prepared) {
-    log.error("prepare_coach_chat_v5 failed", {
+    log.error("prepare_coach_chat_v6 failed", {
       detail: prepareError?.message ?? "unknown",
     });
     return reply(422, {
