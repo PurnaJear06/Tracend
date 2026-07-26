@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, feature/**]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   deno:
     name: Deno (fmt + lint + test)
@@ -17,6 +21,15 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: "2.9.0"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/deno
+            supabase/functions/_shared/.deno-cache
+          key: deno-${{ runner.os }}-${{ hashFiles('supabase/functions/_shared/deps.ts', 'supabase/functions/**/deno.json') }}
+          restore-keys: |
+            deno-${{ runner.os }}-
 
       - name: Format check
         run: deno fmt --check supabase/functions
@@ -37,6 +50,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.41.7"
+          cache: true
 
       - name: Install dependencies
         run: flutter pub get
@@ -54,6 +68,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.41.7"
+          cache: true
 
       - name: Install dependencies
         run: flutter pub get
@@ -71,9 +86,27 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.41.7"
+          cache: true
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: iOS release build (no codesign)
         run: flutter build ios --release --no-codesign
+
+  migration-check:
+    name: Migration Collision Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for duplicate migration timestamps
+        run: |
+          DUPES=$(ls supabase/migrations/*.sql 2>/dev/null | sed 's|.*/||' | grep -oP '^\d+' | sort | uniq -d)
+          if [ -n "$DUPES" ]; then
+            echo "::error::Duplicate migration timestamps found: $DUPES"
+            echo "Run: ls supabase/migrations/ | sort"
+            exit 1
+          fi
+          echo "No duplicate migration timestamps found."

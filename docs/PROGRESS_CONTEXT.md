@@ -1,7 +1,8 @@
 # Tracend Progress Context
 
-**Active change:** Feature Engine Phase 4 — Flutter UI (computed metrics widgets) on branch
-`feature/feature-engine-phase-4` (off `feature/feature-engine`). Phase 4 plan pending;
+**Active change:** CI/CD automation deployed — three pipelines (ci, deploy, hotfix) + pre-push hook.
+Agent deployment rule active. Feature Engine Phase 4 — Flutter UI on branch
+`feature/feature-engine-phase-4`. Phase 4 plan pending;
 design tools (Impeccable + Taste-Skill) installed. Phase 3 deployed to production and merged.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
@@ -41,12 +42,13 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Coach Continuity Memory   | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
 | Stitch/design             | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
 | Stability infra           | **Complete — deployed**              | `AGENTS.md` §11            | N/A                                           |
+| CI/CD automation          | **Complete — implemented**            | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` §12                               |
 
 ## Global Current State
 
 - Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 57 migrations, 15 are fix migrations.
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
-- Gemini `gemini-3.5-flash` is the active Coach/chat provider (ADR 0006, updated 2026-07-24).
+- DeepSeek V4 Flash is the active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`).
 - Sign in with Apple deferred; owner email/password mode active (ADR 0002).
 
 ## Global Open Decisions

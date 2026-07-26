@@ -112,8 +112,8 @@ build output, `.dart_tool/`, or `build/` on internal storage.
 
 **Stable facts** (not kept in PROGRESS_CONTEXT):
 
-- Gemini `gemini-3.5-flash` is the active Coach/chat provider.
-- Groq Qwen `qwen/qwen3.6-27b` was the prior owner-test provider; superseded pending evaluation.
+- DeepSeek V4 Flash is the current active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`).
+- Gemini `gemini-3.5-flash` and Groq Qwen `qwen/qwen3.6-27b` were prior providers; superseded pending evaluation.
 - Flutter iOS app installed on owner's iPhone 12. No Android, no simulator.
 - All 9 Edge Functions are active: coach-chat, coach-decide, health-check, health-sync,
   meal-analyze, meal-media-retention, onboarding-propose-plan, privacy-delete-account,
@@ -376,3 +376,33 @@ Sentry is active in both Flutter and Edge Functions:
 The `beforeSend` scrubber redacts HealthKit values, meal content, photo URLs, and prompt text before
 events leave the device. Sentry failures are silent — they never affect the app or the Edge Function
 caller.
+
+## 12. Agent Deployment Rule
+
+**Agents MUST NOT run `supabase db push`, `supabase functions deploy`, or any other deployment
+command.** Normal deployment is fully automated via GitHub Actions on merge to `main`:
+
+- Every push and PR triggers `ci.yml` — fast checks with caching, parallel jobs, and migration
+  collision detection.
+- Every merge to `main` triggers `deploy.yml` — sequential verified deploy with concurrency lock,
+  backup, dry-run, migration push, function deploy (parallel matrix), smoke test, and git tag.
+- Emergency hotfix is available via `hotfix.yml` (manual `workflow_dispatch`).
+
+The deploy pipeline uses the `production-deploy` concurrency group (`cancel-in-progress: false`)
+to ensure only one deploy runs at a time, preventing race conditions.
+
+Manual CLI deployment is only permitted when:
+
+1. GitHub Actions is down or unreachable, OR
+2. The user explicitly requests a CLI deployment.
+
+In both cases, agent must:
+
+- Verify `./scripts/pre-deploy.sh` passes (or `./scripts/pre-deploy.sh --skip-colima --skip-reset`)
+- Run `supabase db push --linked --dry-run` first
+- Run `./scripts/backup-db.sh` before pushing
+- Report each step as it completes
+
+Never skip the dry-run or backup, even in CLI mode.
+
+See `docs/CI_CD_DEPLOYMENT.md` for the full pipeline design and visual reference.
