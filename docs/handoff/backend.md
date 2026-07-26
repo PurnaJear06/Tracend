@@ -345,3 +345,33 @@ iOS 26.5). `connectAndSync()` validates `isConfigured()` before `requestReadAcce
 configure vs authorization failures. `_loadTimezone()` uses `maybeSingle()` with UTC fallback. 3-retry
 with exponential backoff for Edge Function calls. Initial backfill reduced from 31 to 7 days.
 `HealthAccessError` enum and `helpText` for structured error reporting.
+
+## Feature Engine Phase 3 — Coach Integration (2026-07-25)
+
+**Branch:** `feature/feature-engine-phase-3`. **Status:** Complete — local gates pass, ready to deploy.
+
+**Migration:** `20260726000000_feature_engine_coach_integration.sql`
+- `prepare_daily_coaching` replaced: evidence codes now computed from feature engine scores (14 codes:
+  `RECOVERY_WITHIN_BASELINE`, `RECOVERY_BELOW_BASELINE`, `SLEEP_QUALITY_GOOD`, `SLEEP_QUALITY_POOR`,
+  `TRAINING_LOAD_OPTIMAL`, `TRAINING_LOAD_ELEVATED`, `WEIGHT_TRENDING_DOWN`, `WEIGHT_TRENDING_UP`,
+  `WEIGHT_STABLE`, `NUTRITION_ON_TRACK`, `NUTRITION_BEHIND`, `DATA_CONFIDENCE_HIGH`,
+  `DATA_CONFIDENCE_LOW`, plus existing `APPROVED_PLAN_ACTIVE`, `HEALTH_CONTEXT_AVAILABLE`,
+  `CHECK_IN_SAFETY_ESCALATION`, `CHECK_IN_RECOVERY_MIXED`).
+- Policy outcome unchanged (pain-based + check-in presence remains the safety gate).
+- `prepare_coach_chat_v6`: wraps v5, reads `daily_computed_metrics`, adds `computed_metrics` section
+  (recovery, sleep, training_load, weight, nutrition, data_confidence).
+
+**Edge Function changes (6 files):**
+- `coach-chat/index.ts`: v5→v6 RPC call (1 line).
+- `coach_chat_provider.ts`: Section 20 in `formatContextAsMarkdown` (computed scores markdown), `cm`
+  abbreviation in `compactContext`.
+- `mock_coach_model_provider.ts`: Multi-branch evidence logic (recovery below baseline → GATHER_DATA,
+  load elevated → ADJUST_TODAY, low confidence → GATHER_DATA, fallback → PROCEED_AS_PLANNED).
+- `gemini_coach_model_provider.ts`, `deepseek_coach_model_provider.ts`,
+  `groq_coach_model_provider.ts`: System instructions appended with full evidence code reference table.
+
+**Tests:** 20 pgTAP assertions in `feature_engine_phase_3_coach_test.sql` — all pass.
+**Contract fixtures:** `daily_brief_v1_1.json` updated with enriched evidence codes,
+`coach_chat_context_v5_0.json` created with `computed_metrics` section.
+
+**Deployment order:** backup → migration dry-run → db push → coach-decide deploy → coach-chat deploy → smoke test.

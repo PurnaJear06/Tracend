@@ -1,0 +1,90 @@
+{
+  "schema_version": "5.0",
+  "coaching_date": "2026-07-25",
+  "active_plan": {
+    "title": "Push/Pull/Legs Split",
+    "version_number": 1,
+    "sessions_per_week": 6,
+    "rationale": "Progressive overload with hypertrophy focus"
+  },
+  "active_goal": {
+    "type": "Weight Loss",
+    "target_value": 75,
+    "deadline": "2026-09-01"
+  },
+  "coaching_narrative": {
+    "active": {
+      "phase": "Building consistency",
+      "headline": "Three weeks of regular training established",
+      "since": "2026-07-04"
+    }
+  },
+  "latest_check_in": {
+    "local_date": "2026-07-25",
+    "sleep_quality": 3,
+    "energy": 4,
+    "soreness": 2,
+    "hunger": 3,
+    "mood": 4,
+    "pain_severity": 0,
+    "available_to_train": true
+  },
+  "latest_healthkit": {
+    "resting_heart_rate_bpm": 55,
+    "hrv_sdnn_ms": 51.0,
+    "sleep_minutes": 415,
+    "completeness": "partial"
+  },
+  "latest_weight": {
+    "weight_kg": 77.0
+  },
+  "nutrition_targets": {
+    "calories": 2400,
+    "protein_g": 170,
+    "carbohydrate_g": 280,
+    "fat_g": 70
+  },
+  "nutrition_adherence": {
+    "days_with_confirmed_meals_7d": 5,
+    "confirmed_meal_count_7d": 15
+  },
+  "permitted_evidence": [
+    "APPROVED_PLAN_ACTIVE",
+    "HEALTH_CONTEXT_AVAILABLE",
+    "RECOVERY_WITHIN_BASELINE",
+    "SLEEP_QUALITY_GOOD",
+    "TRAINING_LOAD_OPTIMAL",
+    "WEIGHT_STABLE",
+    "NUTRITION_ON_TRACK"
+  ],
+  "computed_metrics": {
+    "recovery": {
+      "score": 72,
+      "breakdown": {
+        "hrv_z": 0.517,
+        "rhr_z": 0.455,
+        "sleep_z": 0.798,
+        "resp_rate_z": 0.500,
+        "prev_strain_z": 0.300
+      }
+    },
+    "sleep": {
+      "quality": 85,
+      "debt_minutes": -65
+    },
+    "training_load": {
+      "acwr": 1.15,
+      "monotony": 1.8,
+      "strain": 42.0
+    },
+    "weight": {
+      "trend_7d_kg_per_day": -0.0714,
+      "trend_28d_kg_per_day": -0.0357
+    },
+    "nutrition": {
+      "adherence_pct": 95
+    },
+    "data_confidence": "medium",
+    "computed_at": "2026-07-25T13:50:15+00:00"
+  }
+}

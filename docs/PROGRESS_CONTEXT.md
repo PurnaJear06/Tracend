@@ -1,11 +1,9 @@
 # Tracend Progress Context
 
-**Active change:** Feature Engine Phase 2 — algorithm audit & verification on branch
-`feature/feature-engine-phase-2` (off `feature/feature-engine`). Migration + tests + docs written,
-waiting to deploy. 1 migration with algorithm fixes (RHR weight 0.25→0.20, resp_rate_bpm baseline,
-prev strain actual 7d avg, sleep quality 4-component weighted formula, sleep debt,
-daily_computed_metrics persistence table). 72 pgTAP tests (up from 22). ALGORITHMS.md published.
-Flutter contract fixtures extended (training_hub_v1_4, daily_brief_v1_1, daily_computed_metrics).
+**Active change:** Feature Engine Phase 3 — Coach Integration (computed scores → AI) on branch
+`feature/feature-engine-phase-3` (off `feature/feature-engine`). **Complete — local gates pass.**
+1 migration (14 evidence codes + `prepare_coach_chat_v6`), 6 Edge Function files changed,
+3 contract fixtures updated, 20 pgTAP tests pass. Ready for production deploy.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -36,7 +34,8 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Workstream              | Status                              | Read Next                  | Detail History                                |
 | ----------------------- | ----------------------------------- | -------------------------- | --------------------------------------------- |
 | Feature Engine Phase 1    | **Deployed — verified**              | `docs/handoff/backend.md`  | `docs/adr/0010-deterministic-feature-engine.md` |
-| Feature Engine Phase 2    | **Code complete — pending deploy**   | `docs/handoff/backend.md`  | `docs/ALGORITHMS.md`, `.opencode/plans/phase-2-feature-engine-algorithms.md` |
+| Feature Engine Phase 2    | **Complete — merged & verified**      | `docs/handoff/backend.md`  | `docs/ALGORITHMS.md`, `.opencode/plans/phase-2-feature-engine-algorithms.md` |
+| Feature Engine Phase 3    | **Complete — ready to deploy**        | `docs/handoff/backend.md`  | `.opencode/plans/phase-3-coach-integration.md`                                |
 | Backend foundation        | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
 | Frontend/UI               | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
 | Coach Continuity Memory   | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
@@ -111,4 +110,4 @@ confirmations on. Session timeouts deferred (Pro plan).
 **Forward-compatible migrations:** Two-step rule — add then deploy then remove. Never single-step
 rename/drop/type-change.
 
-**Test counts:** pgTAP 342 assertions (270 + 72 feature engine), Deno 94, Flutter 104. All pass.
+**Test counts:** pgTAP 362 assertions (270 + 72 Phase 2 + 20 Phase 3), Deno 94, Flutter 104. All pass.
