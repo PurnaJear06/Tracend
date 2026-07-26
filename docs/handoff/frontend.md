@@ -147,7 +147,7 @@ visual system behavior belongs in `docs/DESIGN_SYSTEM.md`.
 
 - `./scripts/flutter.sh format --set-exit-if-changed lib test` — pass
 - `./scripts/flutter.sh analyze` — pass, no issues
-- `./scripts/flutter.sh test` — pass, 33 tests
+- `./scripts/flutter.sh test` — pass, 155 tests (104 + 51 Phase 4)
 - `./scripts/flutter.sh build ios --release --no-codesign` — pass, HealthKit linked, 18.3 MB
   physical-device app
 - `./scripts/flutter.sh build ios --config-only --no-codesign` — pass
@@ -263,33 +263,29 @@ visual system behavior belongs in `docs/DESIGN_SYSTEM.md`.
 
 ## Next Safe Actions
 
-- The installed hosted readback correction now turns stored Apple Health summaries into dated Today
-  metrics plus real sleep/step trends, explains partial as sample availability rather than
-  permission truth, and removes the fabricated Train performance curve and fictional week/schedule
-  copy. Flutter analysis and 57/57 tests pass. Hosted build, automatic signing, strict code-sign
-  verification, and iPhone installation pass; CLI launch was blocked only by the locked device.
-- Hosted inspection found seven stored summary days through 2026-07-02: step, energy, workout,
-  resting-HR, and HRV categories exist, while no sleep or HealthKit weight samples are stored. The
-  latest server sync is still the earlier seven-day run, so the 31-day refresh has not reached the
-  backend.
-- The complete current source was freshly rebuilt on 2026-07-04: format, analysis, 65/65 tests,
-  unsigned device build, hosted-config signing, strict code-sign verification, iPhone installation,
-  and a subsequent unlocked CLI launch all pass.
-- Local repair on 2026-07-05 fixes three owner-reported regressions before hosted deployment: Train
-  no longer falls back to the first workout on unassigned/rest days, Today refreshes the daily brief
-  after Apple Health sync and check-in saves, and stored HealthKit evidence reads the latest 31-day
-  summary window instead of only same-day rows. Flutter format, analysis, 65/65 tests, and unsigned
-  iPhone release build pass.
-
-1. Prepare and download one owner export, then decrypt it on the external SSD using
+1. **Merge `feature/feature-engine-phase-4` → `feature/feature-engine`.** CI/CD (deploy.yml) triggers on merge:
+   backup → dry-run → migrate (2 pending migrations: `20260726160000`, `20260726170000`) → deploy 9 Edge Functions → smoke test → tag.
+2. Phase 5 — Design system alignment: import Spline Sans + IBM Plex Mono fonts, TrajectoryLens
+   animated Bezier redesign, full screen layout reflow (Today, Train, Nutrition, Progress, Coach),
+   new components (EvidenceAccordion, CoachInsightCard, DatePillStrip, TargetsGrid, WorkoutModeSheet),
+   My AI Usage screen, Welcome screens.
+3. Prepare and download one owner export, then decrypt it on the external SSD using
    `docs/BETA_OPERATIONS.md`.
-2. The hosted repair migration is deployed and the signed hosted build is installed on the owner's
-   iPhone. Trust the current developer profile in iOS, then verify Sunday/rest day Train, exact
-   Nutrition foods, and Today Health evidence refresh.
-3. Do not device-test deletion with the owner account; hosted synthetic QA is the destructive gate.
-4. Keep live meal/progress AI, catalog choice, and Sign in with Apple deferred pending their
-   explicit decisions. Direct paid Gemini remains the reviewed provider path; do not substitute
-   GLM/OpenRouter without a provider review.
+4. Do not device-test deletion with the owner account; hosted synthetic QA is the destructive gate.
+5. **Known issue — July 22 strain 403:** Fix by adding max-duration cap (180 min) in
+   `active_workout_screen.dart:183` and correcting the July 22 session in the DB. Tracked in
+   `PROGRESS_CONTEXT.md`. Not blocking Phase 5.
+
+## Phase 4 — Computed Metrics UI + Backend Pipeline (2026-07-26)
+
+**Complete.** 6 widgets (RecoveryRing, SleepArchitectureCard, ReadinessStrip redesign,
+TrainingLoadGauge, WeightTrendIndicator, MetricSparkline) integrated into Today/Train/Progress.
+2 backend migrations deployed: session_effort backfill + recompute (v1), compute-on-the-fly
+architecture fix (v2 — Noop pattern). `get_my_daily_brief` now always calls `compute_daily_metrics`
+fresh; `get_my_training_hub` reads from `daily_computed_metrics`. Train screen reloads brief per
+selected weekday so strain shows per-day. 155 Flutter tests pass, 0 analysis issues. iOS release
+build (25.4MB) installed on Purna's iPhone 12 with live Supabase backend. Full details in
+`docs/PROGRESS_CONTEXT.md`.
 
 ## Do Not Do
 

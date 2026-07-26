@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'computed_metrics.dart';
+
 class DailyBrief {
   const DailyBrief({
     required this.localDate,
@@ -8,6 +10,7 @@ class DailyBrief {
     this.checkIn,
     this.health,
     this.nutrition,
+    this.computed,
     this.decision,
   });
   final String localDate;
@@ -16,6 +19,7 @@ class DailyBrief {
   final Map<String, dynamic>? checkIn;
   final Map<String, dynamic>? health;
   final Map<String, dynamic>? nutrition;
+  final ComputedMetrics? computed;
   final Map<String, dynamic>? decision;
 
   String get nextAction {
@@ -65,6 +69,10 @@ class SupabaseDailyBriefRepository implements DailyBriefRepository {
     );
     Map<String, dynamic>? object(String key) =>
         value[key] is Map ? Map<String, dynamic>.from(value[key] as Map) : null;
+    final computedRaw = value['computed'];
+    final computed = computedRaw is Map
+        ? ComputedMetrics.fromJson(Map<String, dynamic>.from(computedRaw))
+        : null;
     return DailyBrief(
       localDate: value['local_date'] as String,
       workout: object('today_workout'),
@@ -72,6 +80,7 @@ class SupabaseDailyBriefRepository implements DailyBriefRepository {
       checkIn: object('check_in'),
       health: object('health'),
       nutrition: object('nutrition'),
+      computed: computed,
       decision: object('latest_decision'),
     );
   }

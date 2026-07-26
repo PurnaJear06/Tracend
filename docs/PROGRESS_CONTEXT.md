@@ -1,9 +1,8 @@
 # Tracend Progress Context
 
-**Active change:** Feature Engine Phase 3 — Coach Integration (computed scores → AI) on branch
-`feature/feature-engine-phase-3` (off `feature/feature-engine`). **Complete — local gates pass.**
-1 migration (14 evidence codes + `prepare_coach_chat_v6`), 6 Edge Function files changed,
-3 contract fixtures updated, 20 pgTAP tests pass. Ready for production deploy.
+**Active change:** CI/CD automation deployed — three pipelines (ci, deploy, hotfix) + pre-push hook.
+Agent deployment rule active. Feature Engine Phase 4 — Flutter UI complete. Phase 3 deployed to
+production and merged. 155 Flutter tests pass, 0 analysis issues.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -35,18 +34,20 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | ----------------------- | ----------------------------------- | -------------------------- | --------------------------------------------- |
 | Feature Engine Phase 1    | **Deployed — verified**              | `docs/handoff/backend.md`  | `docs/adr/0010-deterministic-feature-engine.md` |
 | Feature Engine Phase 2    | **Complete — merged & verified**      | `docs/handoff/backend.md`  | `docs/ALGORITHMS.md`, `.opencode/plans/phase-2-feature-engine-algorithms.md` |
-| Feature Engine Phase 3    | **Complete — ready to deploy**        | `docs/handoff/backend.md`  | `.opencode/plans/phase-3-coach-integration.md`                                |
+| Feature Engine Phase 3    | **Deployed — merged**                | `docs/handoff/backend.md`  | `.opencode/plans/phase-3-coach-integration.md`                                |
+| Feature Engine Phase 4    | **Complete — widgets built + Today integrated** | `docs/handoff/frontend.md` | `.opencode/plans/phase-4-flutter-computed-metrics.md`
 | Backend foundation        | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
 | Frontend/UI               | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
 | Coach Continuity Memory   | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
 | Stitch/design             | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
-| Stability infra           | **Complete — deployed**              | `AGENTS.md` §11            | N/A                                           |
+| Stability infra           | **Complete — deployed**              | `AGENTS.md` (commands)     | N/A                                           |
+| CI/CD automation          | **Complete — deployed**              | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` (deployment)                      |
 
 ## Global Current State
 
 - Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 57 migrations, 15 are fix migrations.
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
-- Gemini `gemini-3.5-flash` is the active Coach/chat provider (ADR 0006, updated 2026-07-24).
+- DeepSeek V4 Flash is the active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`).
 - Sign in with Apple deferred; owner email/password mode active (ADR 0002).
 
 ## Global Open Decisions
@@ -73,6 +74,14 @@ ambiguous coaching_date). Prompt restructure separates system/rules from user/me
 - Colima must be running for local pgTAP execution and Deno→DB contract tests.
 - Contract test fixtures must be updated when RPC or Edge Function response shapes change — the act
   of updating them triggers a manual review of the shape change.
+- **Phase 4 — July 22 strain 403 outlier:** One workout session on Wednesday July 22 2026 has
+  `duration_seconds = 30238` (503 min = 8.4 hrs) at `session_effort = 8`, producing strain ≈403.
+  Root cause: user forgot to tap "Complete" after finishing the workout; the app's wall-clock timer
+  (`DateTime.now().difference(_startedAt)`) kept running until they returned 8.4 hours later. This
+  is not a code bug — it's user behavior. The inflated duration skews ACWR calculations for dates
+  within 28 days of July 22. Planned fix: add a max-duration cap (e.g. 180 min) in
+  `active_workout_screen.dart` when completing a workout; correct the July 22 session duration
+  retroactively. Tracked as open, not blocking Phase 5.
 
 ## HealthKit Quick-Complete (2026-07-18)
 
@@ -110,4 +119,81 @@ confirmations on. Session timeouts deferred (Pro plan).
 **Forward-compatible migrations:** Two-step rule — add then deploy then remove. Never single-step
 rename/drop/type-change.
 
-**Test counts:** pgTAP 362 assertions (270 + 72 Phase 2 + 20 Phase 3), Deno 94, Flutter 104. All pass.
+**Test counts:** pgTAP 362 assertions (270 + 72 Phase 2 + 20 Phase 3), Deno 94 (77 pass, 4 pre-existing failures from unconfigured serve() + no local DB), Flutter 155 (104 + 51 Phase 4). All Flutter pass.
+
+## Phase 4 — Flutter Computed Metrics UI + Backend Pipeline (2026-07-26)
+
+**Status: Complete. 6 widgets built, 3 screen integrations, 2 pipeline migrations deployed, 155 tests pass, app installed on Purna's iPhone 12.**
+
+### Widgets delivered
+
+| Widget | File | Screen | What it shows |
+|--------|------|--------|---------------|
+| `RecoveryRing` | `lib/features/today/recovery_ring.dart` | Today | 240° arc gauge (0-100 recovery score) with HRV/RHR/sleep/respiratory/strain Z-score driver breakdown |
+| `SleepArchitectureCard` | `lib/features/today/sleep_architecture_card.dart` | Today | Sleep quality (0-100) + duration/efficiency/restorative/consistency sub-scores + HRV/RHR baselines |
+| `_ReadinessStrip` redesign | `lib/features/today/today_screen.dart` | Today | Three scored tiles: Recovery, Load (ACWR), Nutrition (macro adherence %) — each with color-coded detail + tap-to-explain |
+| `TrainingLoadGauge` | `lib/features/train/training_load_gauge.dart` | Train | 4-zone ACWR bar (undertraining/optimal/elevated/high-risk) + monotony indicator + daily strain pill |
+| `WeightTrendIndicator` | `lib/features/progress/weight_trend_indicator.dart` | Progress | 7d / 28d trend rates (kg/day) + R² confidence + optional MetricSparkline |
+| `MetricSparkline` | `lib/shared/widgets/metric_sparkline.dart` | Shared | Inline smooth-curved sparkline for any numeric series (used by WeightTrendIndicator) |
+
+### Data model + plumbing
+
+- `ComputedMetrics` (`lib/features/today/computed_metrics.dart`): `fromJson()` parses `computed.scores.*` (recovery, sleep_quality, acwr, daily_strain, training_monotony, weight_trend_7d_kg_per_day, weight_trend_28d_kg_per_day, macro_adherence_pct, recovery_breakdown, sleep_breakdown, sleep_debt_minutes), `computed.baselines.*` (5 metrics: hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm each with ewma/spread/n_obs/confidence), `computed.data_confidence` (high/medium/low/cold_start)
+- `DailyBrief` model updated with nullable `computed` field; existing consumers unaffected
+- `app_shell.dart` passes `DailyBriefRepository` to Train and Progress screens
+- Contract test `test/contract/daily_brief_contract_test.dart` updated with `computed` model parsing assertion
+- All widgets auto-hide when `computed == null`; ReadinessStrip tiles show `--` with contextual fallback text
+
+### Screen integration
+
+| Screen | Integration | Date binding |
+|--------|-------------|--------------|
+| Today | RecoveryRing + SleepArchitectureCard rendered below header; ReadinessStrip redesigned with scored tiles | Always today (via `DateTime.now()`) |
+| Train | TrainingLoadGauge rendered inline below weekday strip; gauge reloads per selected weekday via `_selectWeekday` → `_brief.load(_dateForWeekday(day))` | Per selected weekday date |
+| Progress | WeightTrendIndicator rendered in body section | Always today |
+
+### Backend pipeline — two migrations (both deployed to production)
+
+**v1: `20260726160000_fix_computed_pipeline.sql`** (backfill + structural fixes)
+- Backfill: `UPDATE workout_sessions SET session_effort = 5 WHERE session_effort IS NULL AND state = 'completed'` — all 13 existing sessions got effort values
+- Recompute: one-time loop recomputed `daily_computed_metrics` for all dates in last 28 days with workout_sessions
+- `healthkit_auto_complete_workout`: added `session_effort = 5` for all future auto-completed sessions (was NULL, making them invisible to ACWR/strain calculations)
+- `recompute_stale_metrics`: now processes `current_date` AND `current_date - 1` (was: only yesterday)
+- `get_my_daily_brief`: switched source from `feature_snapshots` (point-in-time coaching snapshot) to `daily_computed_metrics` (cron-refreshed)
+
+**v2: `20260726170000_fix_computed_on_the_fly.sql`** (compute-on-the-fly — Noop pattern)
+- Architecture fix: `get_my_daily_brief` now **always calls `compute_daily_metrics` fresh** (VOLATILE plpgsql) instead of reading any cache. This eliminates the fundamental gap where cache rows may not exist for the requested date. Pattern inspired by Noop's pure-computation-from-raw-data approach.
+- `compute_daily_metrics` still upserts to `daily_computed_metrics` as a side effect for other consumers (`prepare_coach_chat_v6`, `recompute_stale_metrics`)
+- Coach accuracy unaffected: `prepare_daily_coaching` already calls `compute_daily_metrics` directly
+- `get_my_training_hub`: switched `latest_computed` CTE from `feature_snapshots` to `daily_computed_metrics` (was the only RPC still reading the stale coaching snapshot)
+- Graceful failure: if `compute_daily_metrics` throws, `v_metrics := null` → `computed` field null → all widgets auto-hide
+
+### ACWR / Strain / Monotony — what the numbers mean
+
+- **Strain** = `sum(effort × duration_seconds / 600)` for completed sessions on a given day. 1 hour moderate (effort=5) ≈ strain 30. Higher = harder day.
+- **ACWR** (Acute:Chronic Workload Ratio) = average daily strain over last 7 days (acute) divided by average over last 28 days (chronic). 0.8–1.3 = optimal training zone. 1.3–1.5 = slightly elevated. >1.5 = sharp increase, injury risk signal.
+- **Monotony** = mean daily strain / stddev of daily strain over 7 days. <1.5 = varied training (good). >2.0 = repetitive, same intensity every day (injury risk).
+- **Recovery** (0-100) = weighted Z-score composite from HRV, resting HR, sleep minutes, respiratory rate, and prior strain. Higher = more recovered.
+- **Sleep Quality** (0-100) = weighted model: 50% duration + 20% efficiency + 20% restorative (deep+REM %) + 10% consistency.
+
+### Build & install
+
+- iOS release build: 25.4MB, arm64, signed with development team CGLRSQ8G95
+- Build command: `./scripts/flutter.sh build ios --release --dart-define SUPABASE_URL=https://qsfzzsjenopqqqhvpyaw.supabase.co --dart-define SUPABASE_PUBLISHABLE_KEY=sb_publishable_...`
+- Installed on Purna's iPhone 12 via `xcrun devicectl device install app`
+
+### Tests
+
+- Flutter: 155/155 (104 original + 51 Phase 4)
+- New test files: `computed_metrics_test.dart` (12), `recovery_ring_test.dart` (10), `sleep_architecture_card_test.dart` (11), `training_load_gauge_test.dart` (10), `weight_trend_and_sparkline_test.dart` (7)
+- Contract test: `daily_brief_contract_test.dart` updated with `computed` model parsing
+- Flutter analyze: 0 issues
+
+## Design Tools (2026-07-26)
+
+- **Impeccable** (`npx impeccable install`): 23-command design skill + 60-rule CLI detector installed at
+  `.opencode/skills/impeccable/`. Run `/impeccable init` to generate DESIGN.md context, then use
+  `/impeccable critique`, `/impeccable audit`, `/impeccable bolder` for Flutter UI quality.
+- **Taste-Skill** (`npx skills add`): 3 anti-slop skills installed at `.agents/skills/`:
+  `stitch-design-taste` (Stitch rules → code bridge), `redesign-existing-projects` (audit + fix
+  workflow), `design-taste-frontend` (default v2 with VARIANCE/MOTION/DENSITY dials).

@@ -17,6 +17,9 @@ import 'package:tracend/features/today/check_in_sheet.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 import 'package:tracend/shared/widgets/evidence_trend_chart.dart';
+import 'package:tracend/features/today/computed_metrics.dart';
+import 'package:tracend/features/today/recovery_ring.dart';
+import 'package:tracend/features/today/sleep_architecture_card.dart';
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({
@@ -133,6 +136,12 @@ class _TodayScreenState extends State<TodayScreen> {
                         action: brief.nextAction,
                         reason: brief.reason,
                       ),
+                      if (brief.computed != null) ...[
+                        const SizedBox(height: TracendSpacing.md),
+                        Center(
+                          child: RecoveryRing(computed: brief.computed!),
+                        ),
+                      ],
                       const SizedBox(height: TracendSpacing.md),
                       _ReadinessStrip(
                         brief: brief,
@@ -256,6 +265,10 @@ class _TodayScreenState extends State<TodayScreen> {
                     ],
                   ),
                 ),
+                if (brief.computed != null) ...[
+                  const SizedBox(height: TracendSpacing.lg),
+                  SleepArchitectureCard(computed: brief.computed!),
+                ],
               ],
             );
           },
@@ -458,32 +471,8 @@ class _ReadinessStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = [
-      (
-        'Recovery',
-        brief.checkIn == null ? 'Check in' : 'Updated',
-        CupertinoIcons.heart_fill,
-        brief.checkIn == null
-            ? 'Tracend needs today’s energy, sleep, soreness and pain check-in before adapting your session.'
-            : 'Today’s user-confirmed recovery check-in is available to the coach.',
-      ),
-      (
-        'Training',
-        brief.workout == null ? 'Rest day' : 'Planned',
-        CupertinoIcons.bolt_fill,
-        brief.workout == null
-            ? 'Your approved plan has no workout assigned today.'
-            : '${brief.workout!['name']} comes from your active approved plan.',
-      ),
-      (
-        'Nutrition',
-        brief.nextMeal == null ? 'Up to date' : 'Next meal',
-        CupertinoIcons.leaf_arrow_circlepath,
-        brief.nextMeal == null
-            ? 'There is no remaining scheduled meal action right now.'
-            : '${brief.nextMeal!['label']} is next at ${brief.nextMeal!['local_time']}.',
-      ),
-    ];
+    final computed = brief.computed;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -494,33 +483,159 @@ class _ReadinessStrip extends StatelessWidget {
         const SizedBox(height: TracendSpacing.xs),
         Row(
           children: [
-            for (var i = 0; i < items.length; i++) ...[
-              if (i > 0) const SizedBox(width: TracendSpacing.xs),
-              Expanded(
-                child: _ReadinessTile(
-                  label: items[i].$1,
-                  value: items[i].$2,
-                  icon: items[i].$3,
-                  onTap: () => onOpen(items[i].$1, items[i].$4),
-                ),
-              ),
-            ],
+            _buildRecoveryTile(context, computed),
+            const SizedBox(width: TracendSpacing.xs),
+            _buildTrainingTile(context, computed),
+            const SizedBox(width: TracendSpacing.xs),
+            _buildNutritionTile(context, computed),
           ],
         ),
       ],
     );
   }
+
+  Widget _buildRecoveryTile(BuildContext context, ComputedMetrics? computed) {
+    final colors = context.tracendColors;
+    final score = computed?.scores.recovery;
+
+    final value = score != null ? '$score' : '--';
+    final Color color;
+    final String detail;
+
+    if (score != null) {
+      if (score >= 65) {
+        detail = 'Good';
+        color = colors.stateStable;
+      } else if (score >= 50) {
+        detail = 'Moderate';
+        color = const Color(0xFFE2A45C);
+      } else {
+        detail = 'Low';
+        color = colors.stateAttention;
+      }
+    } else {
+      detail = brief.checkIn == null ? 'Check in' : 'Updated';
+      color = brief.checkIn == null ? colors.stateAttention : colors.actionPrimary;
+    }
+
+    return Expanded(
+      child: _ScoredTile(
+        label: 'Recovery',
+        value: value,
+        detail: detail,
+        icon: CupertinoIcons.heart_fill,
+        color: color,
+        onTap: () => onOpen(
+          'Recovery',
+          score != null
+              ? 'Recovery score derived from HRV, resting HR, sleep, respiratory rate, and prior strain. Score: $score/100.'
+              : brief.checkIn == null
+              ? 'Tracend needs today\u2019s energy, sleep, soreness and pain check-in before adapting your session.'
+              : 'Today\u2019s user-confirmed recovery check-in is available to the coach.',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrainingTile(BuildContext context, ComputedMetrics? computed) {
+    final colors = context.tracendColors;
+    final acwr = computed?.scores.acwr;
+
+    final value = acwr != null ? acwr.toStringAsFixed(2) : '--';
+    final Color color;
+    final String detail;
+
+    if (acwr != null) {
+      if (acwr >= 0.8 && acwr <= 1.3) {
+        detail = 'Optimal';
+        color = colors.stateStable;
+      } else if (acwr < 0.8) {
+        detail = 'Low load';
+        color = const Color(0xFFE2A45C);
+      } else {
+        detail = 'High load';
+        color = colors.stateAttention;
+      }
+    } else {
+      detail = brief.workout == null ? 'Rest day' : 'Planned';
+      color = brief.workout == null ? colors.textSecondary : colors.actionPrimary;
+    }
+
+    return Expanded(
+      child: _ScoredTile(
+        label: 'Load',
+        value: value,
+        detail: detail,
+        icon: CupertinoIcons.bolt_fill,
+        color: color,
+        onTap: () => onOpen(
+          'Training Load',
+          acwr != null
+              ? 'Acute:Chronic Workload Ratio (ACWR). ${acwr.toStringAsFixed(2)} \u2014 0.8\u20131.3 is the optimal training zone.'
+              : brief.workout == null
+              ? 'Your approved plan has no workout assigned today.'
+              : '${brief.workout!['name']} comes from your active approved plan.',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNutritionTile(BuildContext context, ComputedMetrics? computed) {
+    final colors = context.tracendColors;
+    final adherence = computed?.scores.macroAdherencePct;
+
+    final value = adherence != null ? '$adherence%' : '--';
+    final Color color;
+    final String detail;
+
+    if (adherence != null) {
+      if (adherence >= 90) {
+        detail = 'On track';
+        color = colors.stateStable;
+      } else if (adherence >= 70) {
+        detail = 'Partial';
+        color = const Color(0xFFE2A45C);
+      } else {
+        detail = 'Off track';
+        color = colors.stateAttention;
+      }
+    } else {
+      detail = brief.nextMeal == null ? 'Up to date' : 'Next meal';
+      color = brief.nextMeal == null ? colors.textSecondary : const Color(0xFFE2A45C);
+    }
+
+    return Expanded(
+      child: _ScoredTile(
+        label: 'Nutrition',
+        value: value,
+        detail: detail,
+        icon: CupertinoIcons.leaf_arrow_circlepath,
+        color: color,
+        onTap: () => onOpen(
+          'Nutrition',
+          adherence != null
+              ? 'Macro adherence: $adherence%. Protein, carbs, and fat within targets over the last 7 days.'
+              : brief.nextMeal == null
+              ? 'There is no remaining scheduled meal action right now.'
+              : '${brief.nextMeal!['label']} is next at ${brief.nextMeal!['local_time']}.',
+        ),
+      ),
+    );
+  }
 }
 
-class _ReadinessTile extends StatelessWidget {
-  const _ReadinessTile({
+class _ScoredTile extends StatelessWidget {
+  const _ScoredTile({
     required this.label,
     required this.value,
+    required this.detail,
     required this.icon,
+    required this.color,
     required this.onTap,
   });
-  final String label, value;
+  final String label, value, detail;
   final IconData icon;
+  final Color color;
   final VoidCallback onTap;
 
   @override
@@ -536,15 +651,23 @@ class _ReadinessTile extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 18, color: context.tracendColors.actionPrimary),
+            Icon(icon, size: 18, color: color),
             const SizedBox(height: TracendSpacing.sm),
             Text(label, style: Theme.of(context).textTheme.labelMedium),
             Text(
               value,
-              maxLines: 2,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: color,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            const SizedBox(height: TracendSpacing.xxs),
+            Text(
+              detail,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: context.tracendColors.textPrimary,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: context.tracendColors.textSecondary,
               ),
             ),
           ],

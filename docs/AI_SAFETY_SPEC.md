@@ -261,27 +261,29 @@ Use:
 - a stronger evaluated model for onboarding, periodic review, or ambiguous conflicts; and
 - no model call when deterministic output is sufficient.
 
-Providers sit behind `CoachModelProvider` inside Supabase Edge Functions. Gemini is the planned
-production baseline. Under ADR 0006, Groq Qwen is an owner-only, time-bounded test provider after
-schema validation and synthetic adapter evaluation; the mock remains the default and progress-photo
-vision stays separately disabled until its own evaluation gate passes. Provider and Supabase
-secret/service-role keys never enter Flutter. Price alone cannot qualify a model.
+Providers sit behind `CoachModelProvider` inside Supabase Edge Functions. DeepSeek V4 Flash
+(`COACH_MODEL_PROVIDER=deepseek`) is the current active production provider for Coach text and chat.
+Under ADR 0006, Groq Qwen was an owner-only, time-bounded test provider and has been superseded. The
+mock remains the default and progress-photo vision stays separately disabled until its own evaluation
+gate passes. Provider and Supabase secret/service-role keys never enter Flutter. Price alone cannot
+qualify a model.
 
-Stable `gemini-3.5-flash` is the production quality baseline for Coach text and separately evaluated
-image interpretation. Normal chat uses medium thinking; bounded meal extraction uses low thinking;
-high thinking is reserved for named difficult evaluation classes. Lite models are rejected by
-production configuration. Cost control must not bypass visible-food, mixed-dish, hidden- ingredient,
-portion-uncertainty, prompt-injection, schema-validity, or user- correction evaluations. Routing
-changes require regression results.
+Live model activation requires all server-side secrets (`COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`,
+provider API keys) configured together as an all-or-nothing gate. Coach-decide specifically defaults
+to the deterministic mock; changing it to a live model requires the full secret configuration.
+Prior providers: Gemini `gemini-3.5-flash` and Groq Qwen `qwen/qwen3.6-27b` (both superseded
+pending evaluation). Lite models are rejected by production configuration. Cost control must not
+bypass visible-food, mixed-dish, hidden-ingredient, portion-uncertainty, prompt-injection,
+schema-validity, or user-correction evaluations. Routing changes require regression results.
 
 Conversational answers may explain only supplied structured evidence, must state missing data, and
 expose evidence references. The model receives at most 20 recent messages and no tools.
 Deterministic pre-model rules refuse medical, emergency, pregnancy, eating-disorder, medication, and
 rehabilitation requests.
 
-The Gemini readiness adapter is disabled by default and requires an explicit paid-service data-terms
-gate before it can process restricted coaching context. Synthetic adapter tests do not satisfy
-evaluation parity or authorize live calls. Meal and progress vision remain separately gated.
+Model adapters for prior providers remain disabled by default and require an explicit paid-service
+data-terms gate before they can process restricted coaching context. Synthetic adapter tests do not
+satisfy evaluation parity or authorize live calls. Meal and progress vision remain separately gated.
 
 Optimize cost using compact feature snapshots, cached static context, deterministic summaries,
 normalized images, duplicate avoidance, per-user rate limits, and quality-based routing. Cost cannot

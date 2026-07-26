@@ -5,10 +5,13 @@ import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/train/training_load_gauge.dart';
 
 class TrainScreen extends StatefulWidget {
-  const TrainScreen({this.repository, super.key});
+  const TrainScreen({this.repository, this.brief, super.key});
   final WorkoutRepository? repository;
+  final DailyBriefRepository? brief;
 
   @override
   State<TrainScreen> createState() => _TrainScreenState();
@@ -17,6 +20,7 @@ class TrainScreen extends StatefulWidget {
 class _TrainScreenState extends State<TrainScreen> {
   late final WorkoutRepository _source;
   late Future<TrainingHubData> _hub;
+  late Future<DailyBrief> _brief;
   List<WorkoutRepairCandidate> _repairCandidates = const [];
   List<WorkoutReconciliation> _reconciliations = const [];
   String? _reconciliationBusyId;
@@ -31,6 +35,8 @@ class _TrainScreenState extends State<TrainScreen> {
     super.initState();
     _source = widget.repository ?? FixtureWorkoutRepository();
     _hub = _load();
+    _brief = (widget.brief ?? const FixtureDailyBriefRepository())
+        .load(_dateForWeekday(_weekday));
     _fetchHealthkitCandidate();
   }
 
@@ -194,6 +200,8 @@ class _TrainScreenState extends State<TrainScreen> {
     setState(() {
       _weekday = day;
       _healthkitCandidate = null;
+      _brief = (widget.brief ?? const FixtureDailyBriefRepository())
+          .load(_dateForWeekday(day));
     });
     _fetchHealthkitCandidate();
   }
@@ -248,8 +256,22 @@ class _TrainScreenState extends State<TrainScreen> {
             onSelected: _selectWeekday,
             confirmedWeekday: _confirmedWorkoutWeekday,
           ),
-          const SizedBox(height: TracendSpacing.md),
-          if (_repairCandidates.isNotEmpty) ...[
+        const SizedBox(height: TracendSpacing.md),
+        FutureBuilder<DailyBrief>(
+          future: _brief,
+          builder: (context, snapshot) {
+            if (snapshot.hasData && snapshot.data?.computed != null) {
+              return Column(
+                children: [
+                  TrainingLoadGauge(computed: snapshot.data!.computed!),
+                  const SizedBox(height: TracendSpacing.md),
+                ],
+              );
+            }
+            return const SizedBox.shrink();
+          },
+        ),
+        if (_repairCandidates.isNotEmpty) ...[
             _WorkoutRepairCard(
               candidate: _repairCandidates.first,
               onConfirm: () => _confirmRepair(_repairCandidates.first),
