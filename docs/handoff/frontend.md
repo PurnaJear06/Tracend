@@ -263,18 +263,13 @@ visual system behavior belongs in `docs/DESIGN_SYSTEM.md`.
 
 ## Next Safe Actions
 
-1. **Merge `feature/feature-engine-phase-4` → `feature/feature-engine`.** CI/CD (deploy.yml) triggers on merge:
-   backup → dry-run → migrate (2 pending migrations: `20260726160000`, `20260726170000`) → deploy 9 Edge Functions → smoke test → tag.
-2. Phase 5 — Design system alignment: import Spline Sans + IBM Plex Mono fonts, TrajectoryLens
-   animated Bezier redesign, full screen layout reflow (Today, Train, Nutrition, Progress, Coach),
-   new components (EvidenceAccordion, CoachInsightCard, DatePillStrip, TargetsGrid, WorkoutModeSheet),
-   My AI Usage screen, Welcome screens.
-3. Prepare and download one owner export, then decrypt it on the external SSD using
+1. **Merge `feature/feature-engine-phase-5` → `feature/feature-engine`.** CI/CD (deploy.yml) triggers on merge:
+   backup → dry-run → migrate (1 pending migration: `20260822120000_session_duration_cap.sql`) → deploy 9 Edge Functions → smoke test → tag.
+2. Prepare and download one owner export, then decrypt it on the external SSD using
    `docs/BETA_OPERATIONS.md`.
-4. Do not device-test deletion with the owner account; hosted synthetic QA is the destructive gate.
-5. **Known issue — July 22 strain 403:** Fix by adding max-duration cap (180 min) in
-   `active_workout_screen.dart:183` and correcting the July 22 session in the DB. Tracked in
-   `PROGRESS_CONTEXT.md`. Not blocking Phase 5.
+3. Do not device-test deletion with the owner account; hosted synthetic QA is the destructive gate.
+4. ~~Known issue — July 22 strain 403~~ **Fixed** (2026-08-22): client clamp + server clamp +
+   metrics exclusion. See "Session Duration Cap" section below.
 
 ## Phase 4 — Computed Metrics UI + Backend Pipeline (2026-07-26)
 
@@ -286,6 +281,32 @@ fresh; `get_my_training_hub` reads from `daily_computed_metrics`. Train screen r
 selected weekday so strain shows per-day. 155 Flutter tests pass, 0 analysis issues. iOS release
 build (25.4MB) installed on Purna's iPhone 12 with live Supabase backend. Full details in
 `docs/PROGRESS_CONTEXT.md`.
+
+## Phase 5 — Design System Alignment (2026-08-22) — REVERTED
+
+The uncommitted Phase 5 "Liquid Glass" UI work was **reverted in full** after an independent
+audit (`docs/reviews/2026-08-18-qwen3-8-max-phase-5-ui-audit.md`) found it unsalvageable:
+fabricated metrics displayed as real data, DESIGN_SYSTEM.md violations (glassmorphism as
+default surface), 7 failing tests, orphaned widgets, no-op controls, ~30 BackdropFilter
+performance landmines, and a non-additive migration. The two Phase 5 plan documents in
+`.opencode/plans/` are historical artifacts, not instructions.
+
+**Salvaged:** the 180-minute session duration cap (July-22 strain-403 fix), reworked additively.
+
+## Session Duration Cap (2026-08-22)
+
+**Client** (`active_workout_screen.dart`): `_maxSessionSeconds = 10800`, 15-second elapsed
+timer, warning card when expired, duration clamped to 10800 on complete. Restart-safe
+(elapsed computed from `_startedAt`). Widget test in `phase_3_workout_flow_test.dart`.
+
+**Server** (`20260822120000_session_duration_cap.sql`, additive):
+- `complete_workout` clamps `duration_seconds` via `LEAST(..., 10800)` — never hard-errors.
+- `compute_daily_metrics` excludes `duration_seconds > 10800` rows from daily strain,
+  7-day/28-day strain windows, and ACWR/monotony. This neutralizes the historical July-22
+  row (30238s) without rewriting data.
+- No constraint changes; existing CHECK `<= 86400` stays. A DB-level 10800 CHECK is deferred
+  to a future two-step migration after the capped client build is installed.
+- `health_sync_v1.ts` stays at 86400 (HealthKit workouts may legitimately exceed 3h).
 
 ## Do Not Do
 

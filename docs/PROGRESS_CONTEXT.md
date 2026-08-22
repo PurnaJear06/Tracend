@@ -1,8 +1,9 @@
 # Tracend Progress Context
 
-**Active change:** CI/CD automation deployed — three pipelines (ci, deploy, hotfix) + pre-push hook.
-Agent deployment rule active. Feature Engine Phase 4 — Flutter UI complete. Phase 3 deployed to
-production and merged. 155 Flutter tests pass, 0 analysis issues.
+**Active change:** Phase 5 "Liquid Glass" UI reverted (audit: `docs/reviews/2026-08-18-qwen3-8-max-phase-5-ui-audit.md`).
+Session duration cap (180 min) implemented additively — client clamp + server clamp + metrics
+exclusion. 1 pending migration: `20260822120000_session_duration_cap.sql`. Feature Engine Phase 4
+remains the last shipped UI milestone. 155+ Flutter tests pass, 0 analysis issues.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -45,7 +46,7 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 
 ## Global Current State
 
-- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 57 migrations, 15 are fix migrations.
+- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 61 migrations (1 pending: session duration cap).
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
 - DeepSeek V4 Flash is the active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`).
 - Sign in with Apple deferred; owner email/password mode active (ADR 0002).
@@ -74,14 +75,12 @@ ambiguous coaching_date). Prompt restructure separates system/rules from user/me
 - Colima must be running for local pgTAP execution and Deno→DB contract tests.
 - Contract test fixtures must be updated when RPC or Edge Function response shapes change — the act
   of updating them triggers a manual review of the shape change.
-- **Phase 4 — July 22 strain 403 outlier:** One workout session on Wednesday July 22 2026 has
-  `duration_seconds = 30238` (503 min = 8.4 hrs) at `session_effort = 8`, producing strain ≈403.
-  Root cause: user forgot to tap "Complete" after finishing the workout; the app's wall-clock timer
-  (`DateTime.now().difference(_startedAt)`) kept running until they returned 8.4 hours later. This
-  is not a code bug — it's user behavior. The inflated duration skews ACWR calculations for dates
-  within 28 days of July 22. Planned fix: add a max-duration cap (e.g. 180 min) in
-  `active_workout_screen.dart` when completing a workout; correct the July 22 session duration
-  retroactively. Tracked as open, not blocking Phase 5.
+- **Phase 4 — July 22 strain 403 outlier:** ~~Open~~ **Fixed 2026-08-22.** The July 22 session
+  (`duration_seconds = 30238`, strain ≈403) is now excluded from strain/ACWR windows by
+  `compute_daily_metrics` (`duration_seconds <= 10800` filter). New completions are clamped
+  client-side (`active_workout_screen.dart`) and server-side (`complete_workout` RPC) to 10800s.
+  Raw historical value left untouched (no data rewrite). Migration:
+  `20260822120000_session_duration_cap.sql` (additive, pending deploy).
 
 ## HealthKit Quick-Complete (2026-07-18)
 
