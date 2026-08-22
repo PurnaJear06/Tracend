@@ -22,6 +22,8 @@ class ActiveWorkoutScreen extends StatefulWidget {
 }
 
 class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
+  static const _maxSessionSeconds = 10800;
+
   late final List<List<_SetDraft>> _sets;
   late final List<String> _exerciseStatuses;
   late final List<bool> _painFlags;
@@ -31,8 +33,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   bool _syncing = false;
   bool _offline = false;
   bool _isViewingCompleted = false;
+  bool _sessionExpired = false;
   DateTime _startedAt = DateTime.now();
+  int _elapsedSeconds = 0;
   Timer? _saveTimer;
+  Timer? _elapsedTimer;
 
   @override
   void initState() {
@@ -49,6 +54,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void dispose() {
     _saveTimer?.cancel();
+    _elapsedTimer?.cancel();
     super.dispose();
   }
 
@@ -61,8 +67,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _sessionId = server['session_id'] as String;
       _isViewingCompleted = true;
       final exercises = server['exercises'] as List?;
-      if (exercises != null && exercises.isNotEmpty &&
-          exercises.first is Map) {
+      if (exercises != null && exercises.isNotEmpty && exercises.first is Map) {
         _hydrateSets(exercises);
       } else {
         _populateFromPlan();
@@ -101,7 +106,33 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _sessionId ??= 'pending-$_idempotencyKey';
     }
     await _save();
+    _elapsedTimer?.cancel();
+    _elapsedTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _tickElapsed(),
+    );
     if (mounted) setState(() {});
+  }
+
+  void _tickElapsed() {
+    if (!mounted) return;
+    final elapsed = DateTime.now().difference(_startedAt).inSeconds;
+    final expired = elapsed >= _maxSessionSeconds;
+    _elapsedSeconds = elapsed;
+    if (expired && !_sessionExpired) {
+      _sessionExpired = true;
+      if (mounted) setState(() {});
+    }
+  }
+
+  String _elapsedText() {
+    final mins = _elapsedSeconds ~/ 60;
+    final hrs = mins ~/ 60;
+    final rem = mins % 60;
+    final capped = _sessionExpired ? ' (capped at 3h)' : '';
+    return hrs > 0
+        ? 'Elapsed ${hrs}h ${rem}m$capped'
+        : 'Elapsed ${rem}m$capped';
   }
 
   void _hydrateSets(List exercises) {
@@ -177,12 +208,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       return;
     }
     try {
-      await widget.repository.complete(
-        id,
-        _revision,
-        DateTime.now().difference(_startedAt).inSeconds,
-        _draft(),
-      );
+      final rawSeconds = DateTime.now().difference(_startedAt).inSeconds;
+      final cappedSeconds = rawSeconds > _maxSessionSeconds
+          ? _maxSessionSeconds
+          : rawSeconds;
+      await widget.repository.complete(id, _revision, cappedSeconds, _draft());
       if (mounted) {
         Navigator.of(context).pop(true);
         ScaffoldMessenger.of(
@@ -280,9 +310,40 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                     '$_completed of $_totalSets working sets',
                     style: Theme.of(context).textTheme.labelMedium,
                   ),
+                  if (!_isViewingCompleted) ...[
+                    const SizedBox(height: TracendSpacing.sm),
+                    Text(
+                      _elapsedText(),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: _sessionExpired
+                            ? colors.stateDanger
+                            : colors.stateStable,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
+            if (_sessionExpired && !_isViewingCompleted)
+              TracendCard(
+                radius: TracendRadii.decision,
+                padding: const EdgeInsets.all(TracendSpacing.gutter),
+                raised: true,
+                child: Row(
+                  children: [
+                    Icon(
+                      CupertinoIcons.exclamationmark_triangle_fill,
+                      color: colors.stateDanger,
+                    ),
+                    const SizedBox(width: TracendSpacing.sm),
+                    const Expanded(
+                      child: Text(
+                        'Session exceeded 3-hour limit. Duration capped at 180 minutes. Complete the workout to save your sets.',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             for (var i = 0; i < widget.workout.exercises.length; i++) ...[
               _ExerciseEditor(
                 exercise: widget.workout.exercises[i],
@@ -303,10 +364,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ],
             const SizedBox(height: TracendSpacing.lg),
             if (_isViewingCompleted)
-              FilledButton(
-                onPressed: _complete,
-                child: const Text('Done'),
-              )
+              FilledButton(onPressed: _complete, child: const Text('Done'))
             else
               FilledButton(
                 onPressed: _completed == 0 ? null : _complete,
@@ -360,7 +418,7 @@ class _ExerciseEditor extends StatelessWidget {
             onSelected: readOnly
                 ? null
                 : (selected) =>
-                    onStatusChanged(selected ? 'skipped' : 'unknown'),
+                      onStatusChanged(selected ? 'skipped' : 'unknown'),
           ),
           FilterChip(
             label: const Text('Pain or discomfort'),
@@ -414,10 +472,12 @@ class _SetRow extends StatelessWidget {
           readOnly: readOnly,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(labelText: 'kg'),
-          onChanged: readOnly ? null : (v) {
-            draft.load = v;
-            onChanged();
-          },
+          onChanged: readOnly
+              ? null
+              : (v) {
+                  draft.load = v;
+                  onChanged();
+                },
         ),
       ),
       const SizedBox(width: 8),
@@ -428,10 +488,12 @@ class _SetRow extends StatelessWidget {
           readOnly: readOnly,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(labelText: 'RPE'),
-          onChanged: readOnly ? null : (v) {
-            draft.rpe = v;
-            onChanged();
-          },
+          onChanged: readOnly
+              ? null
+              : (v) {
+                  draft.rpe = v;
+                  onChanged();
+                },
         ),
       ),
       const SizedBox(width: 8),
@@ -441,10 +503,12 @@ class _SetRow extends StatelessWidget {
           readOnly: readOnly,
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(labelText: 'reps'),
-          onChanged: readOnly ? null : (v) {
-            draft.reps = v;
-            onChanged();
-          },
+          onChanged: readOnly
+              ? null
+              : (v) {
+                  draft.reps = v;
+                  onChanged();
+                },
         ),
       ),
       const SizedBox(width: 8),
@@ -452,10 +516,12 @@ class _SetRow extends StatelessWidget {
         label: 'Complete set $number',
         button: true,
         child: IconButton.filledTonal(
-          onPressed: readOnly ? null : () {
-            draft.completed = !draft.completed;
-            onChanged();
-          },
+          onPressed: readOnly
+              ? null
+              : () {
+                  draft.completed = !draft.completed;
+                  onChanged();
+                },
           icon: Icon(
             draft.completed ? CupertinoIcons.check_mark : CupertinoIcons.circle,
           ),
