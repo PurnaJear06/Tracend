@@ -293,6 +293,23 @@ performance landmines, and a non-additive migration. The two Phase 5 plan docume
 
 **Salvaged:** the 180-minute session duration cap (July-22 strain-403 fix), reworked additively.
 
+## Phase 5 v2 — "Precision Pro" (2026-08-22) — IN PROGRESS
+
+Chunked rebuild on `feature/feature-engine-phase-5-v2`; master plan + progress tracker:
+`.opencode/plans/phase-5-v2-precision-pro.md`. Owner rulings: Stitch dark direction, all 5 tabs,
+every implemented feature surfaced and working, real RPC data only.
+
+**Chunk 0 complete (`c55d281`):** DESIGN_SYSTEM.md amended (§3.1 dark Stitch palette, §3.2
+Spline Sans + IBM Plex Mono, §3.3 shape lock 12/24/28, §3.4 premium-gradient cards +
+chrome-only glass budget, §10 anti-patterns); dark tokens updated (light theme unchanged);
+genuine fonts committed (byte-size + SHA + usWeightClass verified; OFL via LicenseRegistry);
+new shared widgets `TracendGlass` (chrome-only, opaque fallback), `PremiumGradientCard`
+(zero blur), `MicroMotion` (Reduce Motion gated via `MediaQuery.disableAnimationsOf` —
+pinned SDK has no `accessibilityFeaturesOf`). 175 tests pass. Review: PASS with findings
+(`docs/reviews/2026-08-22-phase-5-v2-chunk-0-precision-pro-foundation.md`).
+
+Next: Chunk 1 — Today screen (hero, TrajectoryLens rewrite, readouts).
+
 ## Session Duration Cap (2026-08-22)
 
 **Client** (`active_workout_screen.dart`): `_maxSessionSeconds = 10800`, 15-second elapsed

@@ -1,13 +1,30 @@
 # Phase 5 v2 — "Precision Pro" Production UI — Master Plan
 
 **Created:** 2026-08-22 (rewritten same day after master-plan cross-check)
-**Status:** Chunk 0 pending
+**Status:** Chunk 0 complete — awaiting owner go for Chunk 1
 **Branch:** `feature/feature-engine-phase-5-v2` (from `93fa49e`) → merge into `feature/feature-engine`
 **Backup:** tag `backup/pre-phase-5-v2` (local; push blocked by deploy-guard — user pushes or approves)
 **Supersedes:** the 2026-08-18 Phase 5 attempt (reverted) and the earlier draft of this file
 **Parent plan:** `.opencode/plans/feature-engine-and-ui-alignment.md` (2026-07-22) — this plan
 executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is now covered.
 **DB changes:** NONE. Pure UI phase. All data already exists in RPCs/models (verified below).
+
+## Progress Tracker
+
+| Chunk | Scope | Status | Commit | Gate | Review |
+| ----- | ----- | ------ | ------ | ---- | ------ |
+| 0 | Docs + tokens + fonts + glass/motion widgets | ✅ Done 2026-08-22 | `c55d281` | analyze ✓ · format ✓ · 175 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-0-precision-pro-foundation.md` |
+| 1 | Today screen (hero + readouts + TrajectoryLens) | ⬜ Pending | — | — | — |
+| 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ⬜ Pending | — | — | — |
+| 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ⬜ Pending | — | — | — |
+| 4 | AI Usage + Shell + Account cleanup | ⬜ Pending | — | — | — |
+| 5 | Motion + A11y + copy audit + final gate + merge | ⬜ Pending | — | — | — |
+
+Carry-forward notes from reviews:
+- Chunk 0 review: assert light-theme `accentAmber`/`accentNow` contrast when those tokens are
+  first wired (Chunks 1–3).
+- Flutter 3.41.7 has no `MediaQuery.accessibilityFeaturesOf` — Reduce Motion gating uses
+  `MediaQuery.disableAnimationsOf` everywhere (plan §2.7/§3.4 wording superseded by this).
 
 ---
 
@@ -132,8 +149,8 @@ the Phase-4 baseline; Stitch is dark-first.
 - `HealthStatusCard` → today_screen.dart:275 + account_screen.dart:80
 - `ReasoningChainCard` → coach_screen.dart:580 · `PreferencePromptChip` → coach widgets
 - Shell: `_FloatingTabBar` (app_shell.dart:117) — 5 tabs, BackdropFilter σ18, uses
-  `MediaQuery.disableAnimationsOf` (Android-mapped; must switch to
-  `MediaQuery.accessibilityFeaturesOf(context).reduceMotion` for iOS correctness)
+  `MediaQuery.disableAnimationsOf` — already the correct Reduce Motion API for the pinned
+  Flutter 3.41.7 SDK (no change needed; earlier plan drafts wrongly called for a switch)
 
 ### 2.5 Orphans & dead affordances (wire or delete — audit)
 - WIRE: `TrajectoryLens` (shared/widgets/trajectory_lens.dart, 87 lines, chip-rail stub —
@@ -166,8 +183,9 @@ the Phase-4 baseline; Stitch is dark-first.
   frame content beneath changes.
 - Never nest independent BackdropFilters → `BackdropGroup` if grouping. Never animate sigma.
   Wrap static glass in `RepaintBoundary`.
-- Reduce Motion: `MediaQuery.accessibilityFeaturesOf(context).reduceMotion` (iOS-correct).
-  `MediaQueryData.disableAnimations` maps Android only.
+- Reduce Motion: gate on `MediaQuery.disableAnimationsOf(context)` — the pinned Flutter
+  3.41.7 SDK has no `MediaQuery.accessibilityFeaturesOf`; iOS Reduce Motion surfaces through
+  `disableAnimations`.
 - Reduce Transparency: NO Flutter API (issue #190318 open) → app-level flag + opaque fallback.
 - Sanctioned glass sites (max 2 visible at once): floating tab bar (exists), top app bar,
   confidence pill. Content cards and charts NEVER blur — they use `PremiumGradientCard`.
@@ -263,7 +281,7 @@ Also: `TracendRadii.card` 20 → 24 (shape lock). Add `TracendFonts` constants c
   surface. Assert no BackdropFilter in its subtree (test).
 - `micro_motion.dart` — `MicroMotion`: spring entrance (stiffness 100, damping 20),
   scroll-stagger helper (per-index delay ≤60ms), single pulse-loop helper. ALL gated on
-  `MediaQuery.accessibilityFeaturesOf(context).reduceMotion`. Exits 15–30% faster than
+  `MediaQuery.disableAnimationsOf(context)` (pinned SDK API). Exits 15–30% faster than
   entries. Nothing animates idle.
 
 ### 3.5 Tests FIRST (write from code as it lands, per anti-failure rule 6)
@@ -430,8 +448,8 @@ Per-widget state tables + frontend_smoke_test at 320/375pt + a11y scaling 1.3/la
 - KEEP 5 TABS (DESIGN_SYSTEM.md §4 mandates 5; Stitch's 4-tab mock rejected)
 - Restyle capsule with `TracendGlass` (replaces inline BackdropFilter at
   app_shell.dart:166); tab motion via TracendMotion tokens
-- FIX: `MediaQuery.disableAnimationsOf` → `accessibilityFeaturesOf(context).reduceMotion`
-  (app_shell.dart:156) — iOS-correct API
+- Reduce Motion API: shell already uses `MediaQuery.disableAnimationsOf` (app_shell.dart:156)
+  — correct for the pinned SDK; keep as-is when restyling the capsule
 
 ### 7.3 Account
 - "Privacy and AI processing" row → wire to real destination or delete

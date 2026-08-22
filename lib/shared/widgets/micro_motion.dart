@@ -4,9 +4,10 @@ import 'package:flutter/physics.dart';
 /// Motion helpers for the "Precision Pro" system (DESIGN_SYSTEM.md §6).
 ///
 /// All motion is motivated (entrance, feedback, state change), gated on
-/// Reduce Motion (`MediaQuery.disableAnimationsOf` — iOS Reduce Motion maps
-/// to this flag in the engine), and nothing animates idle except the single
-/// sanctioned pulse ([MicroMotionPulse], used by the NOW dot only).
+/// Reduce Motion via `MediaQuery.disableAnimationsOf` (the Reduce Motion
+/// API available in the pinned Flutter SDK), and nothing animates idle
+/// except the single sanctioned pulse ([MicroMotionPulse], used by the NOW
+/// dot only).
 abstract final class MicroMotion {
   static const springStiffness = 100.0;
   static const springDamping = 20.0;

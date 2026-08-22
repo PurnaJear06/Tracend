@@ -1,10 +1,12 @@
 # Tracend Progress Context
 
 **Active change:** Phase 5 v2 "Precision Pro" production UI — chunked execution on
-`feature/feature-engine-phase-5-v2`, plan: `.opencode/plans/phase-5-v2-precision-pro.md`.
-Chunk 0 (authority docs + tokens + fonts + glass/motion widgets) in progress. Session duration
-cap (180 min) deployed 2026-08-22 (`20260822120000_session_duration_cap.sql`). Feature Engine
-Phase 4 remains the last shipped UI milestone. 156 Flutter tests pass, 0 analysis issues.
+`feature/feature-engine-phase-5-v2`, plan: `.opencode/plans/phase-5-v2-precision-pro.md`
+(progress tracker at top of plan). Chunk 0 complete (`c55d281`: authority docs, Stitch dark
+tokens, Spline Sans + IBM Plex Mono, TracendGlass/PremiumGradientCard/MicroMotion). Session
+duration cap (180 min) deployed 2026-08-22 (`20260822120000_session_duration_cap.sql`).
+Feature Engine Phase 4 remains the last shipped UI milestone. 175 Flutter tests pass,
+0 analysis issues.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
