@@ -5,11 +5,19 @@ abstract final class TracendTheme {
   static ThemeData get light => _build(Brightness.light, TracendColors.light);
   static ThemeData get dark => _build(Brightness.dark, TracendColors.dark);
 
+  static TextStyle dataUtility(TracendColors colors) => TextStyle(
+    fontFamily: TracendFonts.monoFamily,
+    color: colors.textSecondary,
+    fontSize: 13,
+    height: 18 / 13,
+    fontWeight: FontWeight.w400,
+    fontFeatures: const [FontFeature.tabularFigures()],
+  );
+
   static ThemeData _build(Brightness brightness, TracendColors colors) {
     final base = ThemeData(
       brightness: brightness,
       useMaterial3: true,
-      fontFamily: '.SF Pro Text',
       scaffoldBackgroundColor: colors.canvas,
       colorScheme: ColorScheme(
         brightness: brightness,
@@ -29,6 +37,7 @@ abstract final class TracendTheme {
 
     final textTheme = base.textTheme.copyWith(
       displaySmall: TextStyle(
+        fontFamily: TracendFonts.displayFamily,
         color: colors.textPrimary,
         fontSize: 32,
         height: 1.08,
@@ -36,6 +45,7 @@ abstract final class TracendTheme {
         letterSpacing: -0.8,
       ),
       headlineMedium: TextStyle(
+        fontFamily: TracendFonts.displayFamily,
         color: colors.textPrimary,
         fontSize: 26,
         height: 1.15,
@@ -43,12 +53,14 @@ abstract final class TracendTheme {
         letterSpacing: -0.5,
       ),
       titleLarge: TextStyle(
+        fontFamily: TracendFonts.displayFamily,
         color: colors.textPrimary,
         fontSize: 20,
         height: 1.25,
         fontWeight: FontWeight.w700,
       ),
       titleMedium: TextStyle(
+        fontFamily: TracendFonts.displayFamily,
         color: colors.textPrimary,
         fontSize: 17,
         height: 1.35,

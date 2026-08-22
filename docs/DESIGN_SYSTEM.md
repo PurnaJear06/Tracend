@@ -62,17 +62,24 @@ Implementation uses semantic tokens. Raw color values must not appear in feature
 
 | Token name        | Light reference | Dark reference | Purpose                     |
 | ----------------- | --------------: | -------------: | --------------------------- |
-| Polar canvas      |       `#F3F6F8` |      `#090D14` | App background              |
-| Lifted surface    |       `#FFFFFF` |      `#121925` | Cards and sheets            |
+| Polar canvas      |       `#F3F6F8` |      `#080B10` | App background              |
+| Lifted surface    |       `#FFFFFF` |      `#111827` | Cards and sheets            |
 | Carbon ink        |       `#10151D` |      `#F4F7FB` | Primary text and icons      |
-| Slate signal      |       `#556170` |      `#AAB5C5` | Secondary text              |
-| Trajectory indigo |       `#4A57E8` |      `#9BA5FF` | Brand action and selection  |
-| Recovery teal     |       `#00796B` |      `#59D6C7` | Stable/recovered state      |
+| Slate signal      |       `#556170` |      `#8894A8` | Secondary text              |
+| Trajectory indigo |       `#4A57E8` |      `#8A94F5` | Brand action and selection  |
+| Recovery teal     |       `#00796B` |      `#45C4B5` | Stable/recovered state      |
 | Effort coral      |       `#C43C31` |      `#FF887D` | Warning, pain, or attention |
 
+Dark references follow the approved "Precision Pro" Stitch direction
+(`design/stitch/screens/`); light theme keeps the Phase-4 baseline. Additional dark-only
+tokens: `borderHairline` `#2D3748` (decorative 0.5–1px borders, never the sole affordance
+signal), `accentAmber` `#E2A45C` (nutrition domain accent), `accentNow` `#BCE85D` (NOW
+indicator dot only). `borderSubtle` stays `#293446` in dark — the Stitch `#1F2937` measures
+≈1.2:1 against canvas and is rejected as invisible.
+
 Semantic roles include `canvas`, `surface`, `surfaceRaised`, `textPrimary`, `textSecondary`,
-`borderSubtle`, `actionPrimary`, `actionOnPrimary`, `stateStable`, `stateAttention`, `stateDanger`,
-`focusRing`, and `scrim`.
+`borderSubtle`, `borderHairline`, `actionPrimary`, `actionOnPrimary`, `accentAmber`,
+`accentNow`, `stateStable`, `stateAttention`, `stateDanger`, `focusRing`, and `scrim`.
 
 - Body text must meet WCAG AA 4.5:1 contrast; large text and meaningful graphics must meet 3:1.
 - Stable, attention, danger, confidence, and selection always include text or iconography; color is
@@ -85,21 +92,30 @@ Semantic roles include `canvas`, `surface`, `surfaceRaised`, `textPrimary`, `tex
 
 | Role           | Preferred face                                | Use                                                |
 | -------------- | --------------------------------------------- | -------------------------------------------------- |
-| Brand/display  | iOS system San Francisco, 600–700             | Short titles and decision statements               |
-| Interface/body | iOS system San Francisco                      | Controls, forms, explanations, long text           |
-| Data/utility   | iOS system San Francisco with tabular figures | Loads, reps, macros, dates, confidence and sources |
+| Brand/display  | Spline Sans, 500–700                          | Screen titles, section titles, decision headlines  |
+| Interface/body | iOS system San Francisco                      | Controls, forms, explanations, long text, labels   |
+| Data/utility   | IBM Plex Mono with tabular figures            | Loads, reps, macros, dates, confidence and sources |
 
-No production custom font is required. Every text style maps to Dynamic Type, wraps before
-truncating, and is tested at the largest accessibility sizes. Tabular figures are required for
-changing values and timers.
+Custom fonts (Phase 5 v2, "Precision Pro"): Spline Sans (SIL OFL 1.1, SorkinType) is used
+for display/headline roles only; IBM Plex Mono (SIL OFL 1.1 with Reserved Font Name "Plex",
+IBM) is used for data values only. Body text and labels remain iOS system San Francisco.
+Both OFL license texts ship in `assets/fonts/` and are registered via `LicenseRegistry`.
+
+Stitch type-scale mapping: screen-title 24/32 w600 · section-title 18/24 w600 ·
+decision-headline 42, line-height 1.05, letter-spacing −0.03em, w600 · body-base 17/25 w300 ·
+body-compact 14/20 w300 · data-utility 13/18 w400 (mono) · label-caps 11/16, letter-spacing
+0.08em, w500.
+
+Every text style maps to Dynamic Type, wraps before truncating, and is tested at the largest
+accessibility sizes. Tabular figures are required for changing values and timers.
 
 ### 3.3 Layout, spacing, and shape
 
 - Base spacing unit: 4pt; normal rhythm: 8, 12, 16, 24, 32, and 48pt.
 - Phone gutter: 20pt; compact phone: 16pt; tablet content is width-constrained.
 - Minimum touch target: 44×44pt with at least 8pt between adjacent targets.
-- Corner radii: 12pt controls, 18pt cards, 26pt primary decision surfaces; capsules only for compact
-  status.
+- Corner radii (shape lock): 12pt controls, 24pt cards, 28pt primary decision surfaces;
+  capsules (full radius) only for compact status pills and chips. No mixing outside this rule.
 - Use one primary action per screen. Bottom actions include safe-area padding and never cover
   content.
 - Avoid nested scrolling, edge controls that conflict with system gestures, and dense edge-to-edge
@@ -109,9 +125,20 @@ changing values and timers.
 
 Hierarchy comes primarily from spacing, contrast, and borders. Use only three elevation levels:
 canvas, raised card, and modal. Shadows are soft and low-opacity; dark mode uses tonal separation.
-Glassmorphism and glow are prohibited as default content-surface treatments. The primary iPhone tab
-bar is the sole exception: it may use a restrained floating capsule material so navigation remains
-visually separate from scrolling content. Content cards remain solid and evidence-focused.
+
+Material treatments (Phase 5 v2, "Precision Pro"):
+
+- **Premium gradient cards** — evidence/content cards use a solid tonal gradient fill
+  (surface → canvas direction, hairline border, 24pt radius) with optional paint-only corner
+  glow. Zero blur. This is the default content-surface treatment.
+- **Restrained glass** — permitted ONLY on chrome: the floating tab capsule, the top app bar,
+  and the confidence pill. Maximum 2 visible `BackdropFilter` sites app-wide; group with
+  `BackdropGroup` if adjacent; never animate blur sigma; wrap static glass in
+  `RepaintBoundary`. An app-level reduce-transparency flag (no Flutter API exists) switches
+  glass to an opaque `surfaceRaised` fallback.
+- Content cards, charts, and data visuals NEVER use `BackdropFilter`.
+- Glassmorphism and glow remain prohibited as ambient decoration; the sanctioned glass sites
+  above are the complete list.
 
 ## 4. Navigation
 
@@ -258,7 +285,13 @@ Do not use:
 - black-and-neon gym styling, chrome textures, flames, or aggressive bodybuilding motifs;
 - generic activity rings, meaningless readiness scores, or dashboard walls;
 - animated AI sparkles, robot imagery, or chat bubbles as the primary coaching interface;
-- frosted-glass cards across every screen;
+- frosted-glass cards across every screen, or any glass/blur on content cards, charts, or
+  data visuals (glass is chrome-only per §3.4);
+- fabricated metrics, fake-precise numbers, or values that do not trace to a
+  repository/model/RPC field;
+- dead affordances — no-op chevrons, buttons, or rows that neither navigate nor act; wire it
+  or delete it;
+- hardcoded confidence strings or model-version labels not sourced from `CoachDecision`;
 - emoji as icons, mixed icon families, or unlabeled icon-only navigation;
 - confetti for health behavior, manipulative streaks, or red failure states for missed workouts; or
 - motion that delays input, hides loading, or cannot be disabled.

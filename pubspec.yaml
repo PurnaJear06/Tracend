@@ -72,6 +72,28 @@ flutter:
 
   assets:
     - assets/visuals/tracend-coaching-horizon-v1.jpg
+    - assets/fonts/OFL-SplineSans.txt
+    - assets/fonts/OFL-IBMPlex.txt
+
+  fonts:
+    - family: Spline Sans
+      fonts:
+        - asset: assets/fonts/SplineSans-Light.ttf
+          weight: 300
+        - asset: assets/fonts/SplineSans-Regular.ttf
+        - asset: assets/fonts/SplineSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/SplineSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/SplineSans-Bold.ttf
+          weight: 700
+    - family: IBM Plex Mono
+      fonts:
+        - asset: assets/fonts/IBMPlexMono-Regular.ttf
+        - asset: assets/fonts/IBMPlexMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/IBMPlexMono-SemiBold.ttf
+          weight: 600
 
   # To add assets to your application, add an assets section, like this:
   # assets:

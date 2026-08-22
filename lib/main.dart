@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -53,6 +55,15 @@ SentryEvent? _sentryBeforeSend(SentryEvent event, Hint hint) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  LicenseRegistry.addLicense(() async* {
+    final splineSans = await rootBundle.loadString(
+      'assets/fonts/OFL-SplineSans.txt',
+    );
+    yield LicenseEntryWithLineBreaks(const ['Spline Sans'], splineSans);
+    final ibmPlex = await rootBundle.loadString('assets/fonts/OFL-IBMPlex.txt');
+    yield LicenseEntryWithLineBreaks(const ['IBM Plex Mono'], ibmPlex);
+  });
 
   const environment = AppEnvironment.fromCompileTime();
 

@@ -1,9 +1,10 @@
 # Tracend Progress Context
 
-**Active change:** Phase 5 "Liquid Glass" UI reverted (audit: `docs/reviews/2026-08-18-qwen3-8-max-phase-5-ui-audit.md`).
-Session duration cap (180 min) implemented additively — client clamp + server clamp + metrics
-exclusion. 1 pending migration: `20260822120000_session_duration_cap.sql`. Feature Engine Phase 4
-remains the last shipped UI milestone. 155+ Flutter tests pass, 0 analysis issues.
+**Active change:** Phase 5 v2 "Precision Pro" production UI — chunked execution on
+`feature/feature-engine-phase-5-v2`, plan: `.opencode/plans/phase-5-v2-precision-pro.md`.
+Chunk 0 (authority docs + tokens + fonts + glass/motion widgets) in progress. Session duration
+cap (180 min) deployed 2026-08-22 (`20260822120000_session_duration_cap.sql`). Feature Engine
+Phase 4 remains the last shipped UI milestone. 156 Flutter tests pass, 0 analysis issues.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -37,6 +38,7 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Feature Engine Phase 2    | **Complete — merged & verified**      | `docs/handoff/backend.md`  | `docs/ALGORITHMS.md`, `.opencode/plans/phase-2-feature-engine-algorithms.md` |
 | Feature Engine Phase 3    | **Deployed — merged**                | `docs/handoff/backend.md`  | `.opencode/plans/phase-3-coach-integration.md`                                |
 | Feature Engine Phase 4    | **Complete — widgets built + Today integrated** | `docs/handoff/frontend.md` | `.opencode/plans/phase-4-flutter-computed-metrics.md`
+| Phase 5 v2 "Precision Pro" UI | **In progress — Chunk 0**          | `docs/handoff/design.md`   | `.opencode/plans/phase-5-v2-precision-pro.md`   |
 | Backend foundation        | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
 | Frontend/UI               | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
 | Coach Continuity Memory   | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
@@ -46,7 +48,8 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 
 ## Global Current State
 
-- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 61 migrations (1 pending: session duration cap).
+- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 61 migrations (all deployed; session
+  duration cap deployed 2026-08-22).
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
 - DeepSeek V4 Flash is the active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`).
 - Sign in with Apple deferred; owner email/password mode active (ADR 0002).

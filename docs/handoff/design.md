@@ -9,6 +9,12 @@ belongs in `DESIGN.md`.
 
 ## Current State
 
+- **Active change: Phase 5 v2 "Precision Pro" production UI** — chunked execution on
+  `feature/feature-engine-phase-5-v2`, master plan `.opencode/plans/phase-5-v2-precision-pro.md`.
+  Owner rulings: Stitch dark direction approved; `DESIGN_SYSTEM.md` amended in the same change
+  as code (§3.1 dark hexes, §3.2 Spline Sans + IBM Plex Mono, §3.3 shape lock 12/24/28,
+  §3.4 premium-gradient cards + chrome-only glass, §10 anti-patterns); all 5 tabs in scope;
+  every implemented feature surfaced and working; AI Usage from real RPC fields only.
 - Canonical five-tab navigation: **Today · Train · Coach · Nutrition · Progress**. This is
   authoritative and confirmed across `DESIGN_SYSTEM.md`, `UX_FLOWS.md`, and `PROGRESS_CONTEXT.md`.
 - Stitch project **2662655096321681608** ("Tracend Design System") is the source.
