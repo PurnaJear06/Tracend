@@ -33,20 +33,26 @@ ComputedMetrics _emptyMetrics() => const ComputedMetrics(
 void main() {
   group('TrainingLoadGauge', () {
     testWidgets('shows ACWR value and Elevated zone', (tester) async {
-      await tester.pumpWidget(_wrap(TrainingLoadGauge(computed: _fullMetrics())));
+      await tester.pumpWidget(
+        _wrap(TrainingLoadGauge(computed: _fullMetrics())),
+      );
 
       expect(find.textContaining('ACWR 1.15'), findsOneWidget);
       expect(find.text('Elevated'), findsOneWidget);
     });
 
     testWidgets('shows strain badge', (tester) async {
-      await tester.pumpWidget(_wrap(TrainingLoadGauge(computed: _fullMetrics())));
+      await tester.pumpWidget(
+        _wrap(TrainingLoadGauge(computed: _fullMetrics())),
+      );
 
       expect(find.textContaining('Strain 42.0'), findsOneWidget);
     });
 
     testWidgets('shows monotony with Balanced label', (tester) async {
-      await tester.pumpWidget(_wrap(TrainingLoadGauge(computed: _fullMetrics())));
+      await tester.pumpWidget(
+        _wrap(TrainingLoadGauge(computed: _fullMetrics())),
+      );
 
       expect(find.textContaining('Monotony: 1.8'), findsOneWidget);
       expect(find.textContaining('Balanced'), findsOneWidget);
@@ -54,10 +60,7 @@ void main() {
 
     testWidgets('shows High monotony warning', (tester) async {
       final m = ComputedMetrics(
-        scores: const ComputedScores(
-          acwr: 0.9,
-          trainingMonotony: 2.5,
-        ),
+        scores: const ComputedScores(acwr: 0.9, trainingMonotony: 2.5),
         baselines: const ComputedBaselines(),
         dataConfidence: 'medium',
       );
@@ -69,9 +72,7 @@ void main() {
 
     testWidgets('shows Elevated risk zone for high ACWR', (tester) async {
       final m = ComputedMetrics(
-        scores: const ComputedScores(
-          acwr: 1.4,
-        ),
+        scores: const ComputedScores(acwr: 1.4),
         baselines: const ComputedBaselines(),
         dataConfidence: 'medium',
       );
@@ -82,9 +83,7 @@ void main() {
 
     testWidgets('shows Undertraining zone for low ACWR', (tester) async {
       final m = ComputedMetrics(
-        scores: const ComputedScores(
-          acwr: 0.5,
-        ),
+        scores: const ComputedScores(acwr: 0.5),
         baselines: const ComputedBaselines(),
         dataConfidence: 'medium',
       );
@@ -95,9 +94,7 @@ void main() {
 
     testWidgets('shows High risk zone for very high ACWR', (tester) async {
       final m = ComputedMetrics(
-        scores: const ComputedScores(
-          acwr: 1.8,
-        ),
+        scores: const ComputedScores(acwr: 1.8),
         baselines: const ComputedBaselines(),
         dataConfidence: 'medium',
       );
@@ -107,19 +104,25 @@ void main() {
     });
 
     testWidgets('shows No data when ACWR is null', (tester) async {
-      await tester.pumpWidget(_wrap(TrainingLoadGauge(computed: _emptyMetrics())));
+      await tester.pumpWidget(
+        _wrap(TrainingLoadGauge(computed: _emptyMetrics())),
+      );
 
       expect(find.text('No data'), findsOneWidget);
     });
 
     testWidgets('hides monotony when null', (tester) async {
-      await tester.pumpWidget(_wrap(TrainingLoadGauge(computed: _emptyMetrics())));
+      await tester.pumpWidget(
+        _wrap(TrainingLoadGauge(computed: _emptyMetrics())),
+      );
 
       expect(find.textContaining('Monotony'), findsNothing);
     });
 
     testWidgets('hides strain badge when null', (tester) async {
-      await tester.pumpWidget(_wrap(TrainingLoadGauge(computed: _emptyMetrics())));
+      await tester.pumpWidget(
+        _wrap(TrainingLoadGauge(computed: _emptyMetrics())),
+      );
 
       expect(find.textContaining('Strain'), findsNothing);
     });

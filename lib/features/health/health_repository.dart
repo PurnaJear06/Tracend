@@ -158,10 +158,7 @@ class SupabaseHealthRepository implements HealthRepository {
     final result = await _source.read(start, now);
     if (result.unavailable) {
       if (result.accessError != null) {
-        await _preferences.setString(
-          _accessErrorKey,
-          result.accessError!.name,
-        );
+        await _preferences.setString(_accessErrorKey, result.accessError!.name);
       }
       return HealthSyncStatus(
         state: HealthConnectionState.unavailable,
@@ -202,9 +199,7 @@ class SupabaseHealthRepository implements HealthRepository {
     Exception? lastException;
     for (var attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) {
-        await Future<void>.delayed(
-          Duration(seconds: attempt * attempt),
-        );
+        await Future<void>.delayed(Duration(seconds: attempt * attempt));
       }
       try {
         final response = await _client.functions.invoke(

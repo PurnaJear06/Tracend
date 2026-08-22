@@ -60,7 +60,11 @@ class _GaugeHeader extends StatelessWidget {
             color: colors.stateStable.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(TracendRadii.control),
           ),
-          child: const Icon(Icons.speed_rounded, size: 20, color: Color(0xFF59D6C7)),
+          child: const Icon(
+            Icons.speed_rounded,
+            size: 20,
+            color: Color(0xFF59D6C7),
+          ),
         ),
         const SizedBox(width: TracendSpacing.sm),
         Column(
@@ -79,7 +83,9 @@ class _GaugeHeader extends StatelessWidget {
                 Text(
                   displayAcwr != null ? 'ACWR $displayAcwr' : 'No data',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: acwr != null ? colors.textPrimary : colors.textSecondary,
+                    color: acwr != null
+                        ? colors.textPrimary
+                        : colors.textSecondary,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
@@ -132,8 +138,7 @@ class _AcwrBar extends StatelessWidget {
     final barW = _barWidth(context);
     final a = acwr;
     final indicatorLeft = a != null
-        ? (a.clamp(0, _maxDisplay) / _maxDisplay * barW)
-            .clamp(2.0, barW - 2.0)
+        ? (a.clamp(0, _maxDisplay) / _maxDisplay * barW).clamp(2.0, barW - 2.0)
         : null;
     return Column(
       children: [
@@ -148,7 +153,9 @@ class _AcwrBar extends StatelessWidget {
                     for (final zone in _zones)
                       Expanded(
                         flex: ((zone.end - zone.start) * 100).round(),
-                        child: Container(color: zone.color.withValues(alpha: 0.35)),
+                        child: Container(
+                          color: zone.color.withValues(alpha: 0.35),
+                        ),
                       ),
                   ],
                 ),
@@ -190,7 +197,8 @@ class _AcwrBar extends StatelessWidget {
 
   double _barWidth(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    return (size.width - TracendSpacing.md * 2 - TracendSpacing.gutter * 2).clamp(0, 400);
+    return (size.width - TracendSpacing.md * 2 - TracendSpacing.gutter * 2)
+        .clamp(0, 400);
   }
 }
 
@@ -221,24 +229,21 @@ class _ZoneLabel extends StatelessWidget {
         Container(
           width: 8,
           height: 8,
-          decoration: BoxDecoration(
-            color: zone.color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: zone.color, shape: BoxShape.circle),
         ),
         const SizedBox(width: TracendSpacing.xs),
         Text(
           zone.label,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: zone.color,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.labelLarge?.copyWith(color: zone.color),
         ),
         const Spacer(),
         Text(
           '${zone.start.toStringAsFixed(1)}\u2013${zone.end.toStringAsFixed(1)}',
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: colors.textSecondary,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: colors.textSecondary),
         ),
       ],
     );
@@ -258,23 +263,25 @@ class _MonotonyRow extends StatelessWidget {
     return Row(
       children: [
         Icon(
-          isHigh ? Icons.warning_amber_rounded : Icons.check_circle_outline_rounded,
+          isHigh
+              ? Icons.warning_amber_rounded
+              : Icons.check_circle_outline_rounded,
           size: 16,
           color: isHigh ? colors.stateAttention : colors.stateStable,
         ),
         const SizedBox(width: TracendSpacing.xs),
         Text(
           'Monotony: ${monotony.toStringAsFixed(1)}',
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: colors.textPrimary,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: colors.textPrimary),
         ),
         const SizedBox(width: TracendSpacing.xs),
         Text(
           isHigh ? '(High \u2014 vary intensity)' : '(Balanced)',
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: colors.textSecondary,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: colors.textSecondary),
         ),
       ],
     );

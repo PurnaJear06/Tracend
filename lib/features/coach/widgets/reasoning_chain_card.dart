@@ -38,7 +38,9 @@ class _ReasoningChainCardState extends State<ReasoningChainCard> {
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: TracendPill(
               label: _expanded ? 'Hide reasoning' : 'Show reasoning',
-              icon: _expanded ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down,
+              icon: _expanded
+                  ? CupertinoIcons.chevron_up
+                  : CupertinoIcons.chevron_down,
               color: colors.textSecondary,
               compact: true,
             ),
@@ -48,7 +50,9 @@ class _ReasoningChainCardState extends State<ReasoningChainCard> {
           const SizedBox(height: TracendSpacing.xs),
           Container(
             decoration: BoxDecoration(
-              border: Border.all(color: colors.borderSubtle.withValues(alpha: 0.6)),
+              border: Border.all(
+                color: colors.borderSubtle.withValues(alpha: 0.6),
+              ),
               borderRadius: BorderRadius.circular(TracendRadii.control),
             ),
             child: Column(
@@ -66,7 +70,8 @@ class _ReasoningChainCardState extends State<ReasoningChainCard> {
                     step: widget.chain[i]['step'] as String? ?? 'step',
                     value: widget.chain[i]['value'] as String? ?? '',
                     evidenceId: widget.chain[i]['evidence_id'] as String?,
-                    icon: _stepIcons[widget.chain[i]['step']] ??
+                    icon:
+                        _stepIcons[widget.chain[i]['step']] ??
                         CupertinoIcons.circle,
                   ),
                 ],
@@ -116,10 +121,7 @@ class _ReasoningStep extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
+                Text(value, style: Theme.of(context).textTheme.bodyMedium),
                 if (evidenceId != null)
                   Text(
                     evidenceId!,

@@ -40,8 +40,9 @@ void main() {
       final json = _loadFixtureJson(fixture);
       final computed = Map<String, dynamic>.from(json['computed'] as Map);
       final scores = Map<String, dynamic>.from(computed['scores'] as Map);
-      final breakdown =
-          Map<String, dynamic>.from(scores['recovery_breakdown'] as Map);
+      final breakdown = Map<String, dynamic>.from(
+        scores['recovery_breakdown'] as Map,
+      );
 
       expect(breakdown['hrv_z'], isA<num>());
       expect(breakdown['rhr_z'], isA<num>());
@@ -54,8 +55,9 @@ void main() {
       final json = _loadFixtureJson(fixture);
       final computed = Map<String, dynamic>.from(json['computed'] as Map);
       final scores = Map<String, dynamic>.from(computed['scores'] as Map);
-      final sleepBreakdown =
-          Map<String, dynamic>.from(scores['sleep_breakdown'] as Map);
+      final sleepBreakdown = Map<String, dynamic>.from(
+        scores['sleep_breakdown'] as Map,
+      );
 
       expect(sleepBreakdown['duration_score'], isA<num>());
       expect(sleepBreakdown['efficiency_score'], isA<num>());
@@ -74,12 +76,12 @@ void main() {
     test('computed.baselines includes resp_rate_bpm metric', () {
       final json = _loadFixtureJson(fixture);
       final computed = Map<String, dynamic>.from(json['computed'] as Map);
-      final baselines =
-          Map<String, dynamic>.from(computed['baselines'] as Map);
+      final baselines = Map<String, dynamic>.from(computed['baselines'] as Map);
 
       expect(baselines['resp_rate_bpm'], isA<Map>());
-      final respRate =
-          Map<String, dynamic>.from(baselines['resp_rate_bpm'] as Map);
+      final respRate = Map<String, dynamic>.from(
+        baselines['resp_rate_bpm'] as Map,
+      );
       expect(respRate['ewma'], isA<num>());
       expect(respRate['confidence'], isA<String>());
     });
@@ -153,8 +155,10 @@ void main() {
       expect(json['id'], isA<String>());
       expect(json['user_id'], isA<String>());
       expect(json['local_date'], isA<String>());
-      expect(() => DateTime.parse(json['local_date'] as String),
-          returnsNormally);
+      expect(
+        () => DateTime.parse(json['local_date'] as String),
+        returnsNormally,
+      );
       expect(json['recovery_score'], isA<num>());
       expect(json['data_confidence'], isA<String>());
       expect(json['scores_jsonb'], isA<Map>());
@@ -180,22 +184,30 @@ void main() {
 
     test('eligibility_jsonb has valid shape', () {
       final json = _loadFixtureJson(fixture);
-      final eligibility =
-          Map<String, dynamic>.from(json['eligibility_jsonb'] as Map);
+      final eligibility = Map<String, dynamic>.from(
+        json['eligibility_jsonb'] as Map,
+      );
 
       expect(eligibility['eligibility_version'], 'eligibility-v1');
       expect(
-          Map<String, dynamic>.from(eligibility['training_change'] as Map)['eligible'],
-          isA<bool>());
+        Map<String, dynamic>.from(
+          eligibility['training_change'] as Map,
+        )['eligible'],
+        isA<bool>(),
+      );
       expect(
-          Map<String, dynamic>.from(eligibility['nutrition_change'] as Map)['eligible'],
-          isA<bool>());
+        Map<String, dynamic>.from(
+          eligibility['nutrition_change'] as Map,
+        )['eligible'],
+        isA<bool>(),
+      );
     });
 
     test('baseline_snapshot_jsonb includes five metrics', () {
       final json = _loadFixtureJson(fixture);
-      final baselines =
-          Map<String, dynamic>.from(json['baseline_snapshot_jsonb'] as Map);
+      final baselines = Map<String, dynamic>.from(
+        json['baseline_snapshot_jsonb'] as Map,
+      );
 
       expect(baselines.length, 5);
       expect(baselines['hrv_sdnn_ms'], isA<Map>());
@@ -207,8 +219,7 @@ void main() {
 
     test('scores_jsonb includes new Phase 2 fields', () {
       final json = _loadFixtureJson(fixture);
-      final scores =
-          Map<String, dynamic>.from(json['scores_jsonb'] as Map);
+      final scores = Map<String, dynamic>.from(json['scores_jsonb'] as Map);
 
       expect(scores['recovery'], isA<num>());
       expect(scores['recovery_breakdown'], isA<Map>());

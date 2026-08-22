@@ -35,8 +35,9 @@ class _TrainScreenState extends State<TrainScreen> {
     super.initState();
     _source = widget.repository ?? FixtureWorkoutRepository();
     _hub = _load();
-    _brief = (widget.brief ?? const FixtureDailyBriefRepository())
-        .load(_dateForWeekday(_weekday));
+    _brief = (widget.brief ?? const FixtureDailyBriefRepository()).load(
+      _dateForWeekday(_weekday),
+    );
     _fetchHealthkitCandidate();
   }
 
@@ -162,7 +163,9 @@ class _TrainScreenState extends State<TrainScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Workout marked complete from Apple Health')),
+        const SnackBar(
+          content: Text('Workout marked complete from Apple Health'),
+        ),
       );
       setState(() {
         _hub = _load();
@@ -172,9 +175,7 @@ class _TrainScreenState extends State<TrainScreen> {
       debugPrint('Non-critical error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not save completion. Try again.'),
-        ),
+        const SnackBar(content: Text('Could not save completion. Try again.')),
       );
     }
   }
@@ -189,8 +190,8 @@ class _TrainScreenState extends State<TrainScreen> {
     if (_source is! HealthkitCandidateRepository) return;
     final requestedWeekday = _weekday;
     final date = _dateForWeekday(requestedWeekday);
-    final candidate =
-        await (_source as HealthkitCandidateRepository).getHealthkitCandidate(date);
+    final candidate = await (_source as HealthkitCandidateRepository)
+        .getHealthkitCandidate(date);
     if (!mounted || _weekday != requestedWeekday) return;
     setState(() => _healthkitCandidate = candidate);
   }
@@ -200,8 +201,9 @@ class _TrainScreenState extends State<TrainScreen> {
     setState(() {
       _weekday = day;
       _healthkitCandidate = null;
-      _brief = (widget.brief ?? const FixtureDailyBriefRepository())
-          .load(_dateForWeekday(day));
+      _brief = (widget.brief ?? const FixtureDailyBriefRepository()).load(
+        _dateForWeekday(day),
+      );
     });
     _fetchHealthkitCandidate();
   }
@@ -256,22 +258,22 @@ class _TrainScreenState extends State<TrainScreen> {
             onSelected: _selectWeekday,
             confirmedWeekday: _confirmedWorkoutWeekday,
           ),
-        const SizedBox(height: TracendSpacing.md),
-        FutureBuilder<DailyBrief>(
-          future: _brief,
-          builder: (context, snapshot) {
-            if (snapshot.hasData && snapshot.data?.computed != null) {
-              return Column(
-                children: [
-                  TrainingLoadGauge(computed: snapshot.data!.computed!),
-                  const SizedBox(height: TracendSpacing.md),
-                ],
-              );
-            }
-            return const SizedBox.shrink();
-          },
-        ),
-        if (_repairCandidates.isNotEmpty) ...[
+          const SizedBox(height: TracendSpacing.md),
+          FutureBuilder<DailyBrief>(
+            future: _brief,
+            builder: (context, snapshot) {
+              if (snapshot.hasData && snapshot.data?.computed != null) {
+                return Column(
+                  children: [
+                    TrainingLoadGauge(computed: snapshot.data!.computed!),
+                    const SizedBox(height: TracendSpacing.md),
+                  ],
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+          if (_repairCandidates.isNotEmpty) ...[
             _WorkoutRepairCard(
               candidate: _repairCandidates.first,
               onConfirm: () => _confirmRepair(_repairCandidates.first),
@@ -305,8 +307,7 @@ class _TrainScreenState extends State<TrainScreen> {
             if (_healthkitCandidate != null)
               _HealthkitCompleteCard(
                 candidate: _healthkitCandidate!,
-                onComplete: () =>
-                    _autoComplete(_healthkitCandidate!),
+                onComplete: () => _autoComplete(_healthkitCandidate!),
                 onManual: () => Navigator.of(context)
                     .push<bool>(
                       CupertinoPageRoute(
@@ -319,10 +320,10 @@ class _TrainScreenState extends State<TrainScreen> {
                     )
                     .then((completed) {
                       if (completed == true) {
-      setState(() {
-        _hub = _load();
-        _healthkitCandidate = null;
-      });
+                        setState(() {
+                          _hub = _load();
+                          _healthkitCandidate = null;
+                        });
                       }
                     }),
               )
@@ -333,9 +334,9 @@ class _TrainScreenState extends State<TrainScreen> {
                 sessionDate: sessionDate,
                 isCompleted: isCompleted,
                 onWorkoutChanged: () => setState(() {
-        _hub = _load();
-        _healthkitCandidate = null;
-      }),
+                  _hub = _load();
+                  _healthkitCandidate = null;
+                }),
               ),
             const SectionLabel('Prescription'),
             for (var index = 0; index < workout.exercises.length; index++) ...[
@@ -474,8 +475,18 @@ class _ReconciliationCard extends StatelessWidget {
 
   String _dateLabel(DateTime date) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final today = DateTime.now();
@@ -523,9 +534,7 @@ class _ReconciliationCard extends StatelessWidget {
             child: Text(
               'This match is for ${_dateLabel(item.localDate)}. Switch to that day to see the workout.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(
-                  context,
-                ).colorScheme.secondary,
+                color: Theme.of(context).colorScheme.secondary,
               ),
             ),
           ),
@@ -600,17 +609,22 @@ class _WeekdayStrip extends StatelessWidget {
                         )
                       else if (assigned.contains(day))
                         Icon(
-                          completedDays.any((d) =>
-                              d.year == dateForWeekday(day).year &&
-                              d.month == dateForWeekday(day).month &&
-                              d.day == dateForWeekday(day).day)
+                          completedDays.any(
+                                (d) =>
+                                    d.year == dateForWeekday(day).year &&
+                                    d.month == dateForWeekday(day).month &&
+                                    d.day == dateForWeekday(day).day,
+                              )
                               ? CupertinoIcons.check_mark_circled_solid
                               : CupertinoIcons.circle_fill,
                           size: 5,
-                          color: completedDays.any((d) =>
-                              d.year == dateForWeekday(day).year &&
-                              d.month == dateForWeekday(day).month &&
-                              d.day == dateForWeekday(day).day)
+                          color:
+                              completedDays.any(
+                                (d) =>
+                                    d.year == dateForWeekday(day).year &&
+                                    d.month == dateForWeekday(day).month &&
+                                    d.day == dateForWeekday(day).day,
+                              )
                               ? stableColor
                               : null,
                         ),
@@ -645,84 +659,87 @@ class _WorkoutHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final stableColor = context.tracendColors.stateStable;
     return TracendCard(
-    radius: TracendRadii.decision,
-    raised: true,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (isCompleted)
-          TracendPill(
-            label: 'Completed',
-            icon: CupertinoIcons.check_mark_circled_solid,
-            color: stableColor,
-          )
-        else
-          const TracendPill(
-            label: 'Approved plan',
-            icon: CupertinoIcons.check_mark_circled_solid,
-          ),
-        const SizedBox(height: TracendSpacing.sm),
-        Text(workout.name, style: Theme.of(context).textTheme.displaySmall),
-        const SizedBox(height: TracendSpacing.xs),
-        Text(workout.objective, style: Theme.of(context).textTheme.bodyLarge),
-        const SizedBox(height: TracendSpacing.md),
-        Wrap(
-          spacing: TracendSpacing.lg,
-          runSpacing: TracendSpacing.sm,
-          children: [
-            _Fact(label: 'Duration', value: '${workout.estimatedMinutes} min'),
-            _Fact(label: 'Exercises', value: '${workout.exercises.length}'),
-            _Fact(
-              label: 'Working sets',
-              value:
-                  '${workout.exercises.fold<int>(0, (sum, item) => sum + item.setCount)}',
+      radius: TracendRadii.decision,
+      raised: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isCompleted)
+            TracendPill(
+              label: 'Completed',
+              icon: CupertinoIcons.check_mark_circled_solid,
+              color: stableColor,
+            )
+          else
+            const TracendPill(
+              label: 'Approved plan',
+              icon: CupertinoIcons.check_mark_circled_solid,
             ),
-          ],
-        ),
-        const SizedBox(height: TracendSpacing.lg),
-        SizedBox(
-          width: double.infinity,
-          child: isCompleted
-              ? OutlinedButton(
-                  onPressed: () => Navigator.of(context)
-                      .push<bool>(
-                        CupertinoPageRoute(
-                          builder: (_) => WorkoutDetailScreen(
-                            repository: source,
-                            workout: workout,
-                            sessionDate: sessionDate,
+          const SizedBox(height: TracendSpacing.sm),
+          Text(workout.name, style: Theme.of(context).textTheme.displaySmall),
+          const SizedBox(height: TracendSpacing.xs),
+          Text(workout.objective, style: Theme.of(context).textTheme.bodyLarge),
+          const SizedBox(height: TracendSpacing.md),
+          Wrap(
+            spacing: TracendSpacing.lg,
+            runSpacing: TracendSpacing.sm,
+            children: [
+              _Fact(
+                label: 'Duration',
+                value: '${workout.estimatedMinutes} min',
+              ),
+              _Fact(label: 'Exercises', value: '${workout.exercises.length}'),
+              _Fact(
+                label: 'Working sets',
+                value:
+                    '${workout.exercises.fold<int>(0, (sum, item) => sum + item.setCount)}',
+              ),
+            ],
+          ),
+          const SizedBox(height: TracendSpacing.lg),
+          SizedBox(
+            width: double.infinity,
+            child: isCompleted
+                ? OutlinedButton(
+                    onPressed: () => Navigator.of(context)
+                        .push<bool>(
+                          CupertinoPageRoute(
+                            builder: (_) => WorkoutDetailScreen(
+                              repository: source,
+                              workout: workout,
+                              sessionDate: sessionDate,
+                            ),
                           ),
-                        ),
-                      )
-                      .then((completed) {
-                        if (completed == true) {
-                          onWorkoutChanged?.call();
-                        }
-                      }),
-                  child: const Text('View workout'),
-                )
-              : FilledButton(
-                  onPressed: () => Navigator.of(context)
-                      .push<bool>(
-                        CupertinoPageRoute(
-                          builder: (_) => WorkoutDetailScreen(
-                            repository: source,
-                            workout: workout,
-                            sessionDate: sessionDate,
+                        )
+                        .then((completed) {
+                          if (completed == true) {
+                            onWorkoutChanged?.call();
+                          }
+                        }),
+                    child: const Text('View workout'),
+                  )
+                : FilledButton(
+                    onPressed: () => Navigator.of(context)
+                        .push<bool>(
+                          CupertinoPageRoute(
+                            builder: (_) => WorkoutDetailScreen(
+                              repository: source,
+                              workout: workout,
+                              sessionDate: sessionDate,
+                            ),
                           ),
-                        ),
-                      )
-                      .then((completed) {
-                        if (completed == true) {
-                          onWorkoutChanged?.call();
-                        }
-                      }),
-                  child: const Text('Start workout'),
-                ),
-        ),
-      ],
-    ),
-  );
+                        )
+                        .then((completed) {
+                          if (completed == true) {
+                            onWorkoutChanged?.call();
+                          }
+                        }),
+                    child: const Text('Start workout'),
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -853,53 +870,63 @@ class _HealthkitCompleteCard extends StatelessWidget {
       dateLabel = 'yesterday';
     } else {
       const months = [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
       ];
       dateLabel =
           'on ${months[candidate.localDate.month - 1]} ${candidate.localDate.day}';
     }
     return TracendCard(
-    radius: TracendRadii.decision,
-    raised: true,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const StatusChip(
-          label: 'Apple Health detected workout',
-          icon: CupertinoIcons.heart_fill,
-        ),
-        const SizedBox(height: TracendSpacing.sm),
-        Text(
-          candidate.plannedWorkoutName,
-          style: Theme.of(context).textTheme.displaySmall,
-        ),
-        const SizedBox(height: TracendSpacing.xs),
-        Text(
-          'Apple Health recorded a ${candidate.workoutMinutes} min workout $dateLabel. '
-          'Did you complete ${candidate.plannedWorkoutName}?',
-          style: Theme.of(context).textTheme.bodyLarge,
-        ),
-        const SizedBox(height: TracendSpacing.lg),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: onManual,
-                child: const Text('Log manually'),
+      radius: TracendRadii.decision,
+      raised: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const StatusChip(
+            label: 'Apple Health detected workout',
+            icon: CupertinoIcons.heart_fill,
+          ),
+          const SizedBox(height: TracendSpacing.sm),
+          Text(
+            candidate.plannedWorkoutName,
+            style: Theme.of(context).textTheme.displaySmall,
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          Text(
+            'Apple Health recorded a ${candidate.workoutMinutes} min workout $dateLabel. '
+            'Did you complete ${candidate.plannedWorkoutName}?',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+          const SizedBox(height: TracendSpacing.lg),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onManual,
+                  child: const Text('Log manually'),
+                ),
               ),
-            ),
-            const SizedBox(width: TracendSpacing.sm),
-            Expanded(
-              child: FilledButton(
-                onPressed: onComplete,
-                child: const Text('Yes, mark complete'),
+              const SizedBox(width: TracendSpacing.sm),
+              Expanded(
+                child: FilledButton(
+                  onPressed: onComplete,
+                  child: const Text('Yes, mark complete'),
+                ),
               ),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
-}
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }

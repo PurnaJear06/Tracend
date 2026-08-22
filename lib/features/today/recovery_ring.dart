@@ -37,7 +37,8 @@ class RecoveryRing extends StatelessWidget {
                 bgArcColor: colors.borderSubtle,
                 stableColor: colors.stateStable,
                 attentionColor: colors.stateAttention,
-                lowConfidence: confidence == 'cold_start' || confidence == 'low',
+                lowConfidence:
+                    confidence == 'cold_start' || confidence == 'low',
               ),
               child: Center(
                 child: Column(
@@ -54,18 +55,22 @@ class RecoveryRing extends StatelessWidget {
                     Text(
                       hasData ? _scoreLabel(score) : 'No data',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: hasData ? _labelColor(colors, score) : colors.textSecondary,
+                        color: hasData
+                            ? _labelColor(colors, score)
+                            : colors.textSecondary,
                       ),
                     ),
-                    if (hasData && (confidence == 'cold_start' || confidence == 'low'))
+                    if (hasData &&
+                        (confidence == 'cold_start' || confidence == 'low'))
                       Padding(
                         padding: const EdgeInsets.only(top: TracendSpacing.xxs),
                         child: Text(
                           'Building baseline',
-                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: colors.textSecondary,
-                            fontSize: 10,
-                          ),
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: colors.textSecondary,
+                                fontSize: 10,
+                              ),
                         ),
                       ),
                   ],
@@ -145,11 +150,7 @@ class _RecoveryArcPainter extends CustomPainter {
     final gradient = SweepGradient(
       startAngle: _kArcStart,
       endAngle: _kArcStart + _kArcSweep,
-      colors: [
-        attentionColor,
-        const Color(0xFFE2A45C),
-        stableColor,
-      ],
+      colors: [attentionColor, const Color(0xFFE2A45C), stableColor],
     );
 
     final arcPaint = Paint()
@@ -173,11 +174,7 @@ class _RecoveryArcPainter extends CustomPainter {
       value / 100,
     );
 
-    canvas.drawCircle(
-      Offset(dotX, dotY),
-      5.5,
-      Paint()..color = dotColor,
-    );
+    canvas.drawCircle(Offset(dotX, dotY), 5.5, Paint()..color = dotColor);
 
     canvas.drawCircle(
       Offset(dotX, dotY),
@@ -228,9 +225,9 @@ class _DriverBreakdown extends StatelessWidget {
       children: [
         Text(
           'Recovery drivers',
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: colors.textSecondary,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: colors.textSecondary),
         ),
         const SizedBox(height: TracendSpacing.xs),
         Row(

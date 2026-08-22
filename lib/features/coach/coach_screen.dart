@@ -59,8 +59,10 @@ class _CoachScreenState extends State<CoachScreen> {
 
   void _startCooldown(int seconds) {
     _cooldownSubscription?.cancel();
-    final stream = Stream.periodic(const Duration(seconds: 1), (tick) => seconds - tick - 1)
-        .take(seconds);
+    final stream = Stream.periodic(
+      const Duration(seconds: 1),
+      (tick) => seconds - tick - 1,
+    ).take(seconds);
     setState(() => _cooldownRemaining = seconds);
     _cooldownSubscription = stream.listen(
       (remaining) {
@@ -213,7 +215,10 @@ class _CoachScreenState extends State<CoachScreen> {
         }
         final msg = e is TimeoutException
             ? 'Coach took too long to respond. Please try again.'
-            : e.toString().replaceFirst('Exception: ', '').replaceFirst('StateError: ', '');
+            : e
+                  .toString()
+                  .replaceFirst('Exception: ', '')
+                  .replaceFirst('StateError: ', '');
         final elapsed = DateTime.now().difference(started);
         if (chat is SupabaseCoachRepository &&
             elapsed < const Duration(milliseconds: 1200)) {
@@ -374,17 +379,22 @@ class _CoachScreenState extends State<CoachScreen> {
                 if (_preferencePrompt != null) ...[
                   const SizedBox(height: TracendSpacing.sm),
                   PreferencePromptChip(
-                    category: _preferencePrompt!['category'] as String? ?? 'food',
+                    category:
+                        _preferencePrompt!['category'] as String? ?? 'food',
                     prefKey: _preferencePrompt!['key'] as String? ?? '',
                     value: _preferencePrompt!['value'] as String? ?? '',
                     onConfirm: () {
                       final chat = _chat;
                       if (chat is SupabaseCoachRepository) {
                         chat.confirmPreference(
-                          category: _preferencePrompt!['category'] as String? ?? 'food',
+                          category:
+                              _preferencePrompt!['category'] as String? ??
+                              'food',
                           key: _preferencePrompt!['key'] as String? ?? '',
                           value: _preferencePrompt!['value'] as String? ?? '',
-                          provenance: _preferencePrompt!['provenance'] as String? ?? 'chat_statement',
+                          provenance:
+                              _preferencePrompt!['provenance'] as String? ??
+                              'chat_statement',
                         );
                       }
                       setState(() => _preferencePrompt = null);
@@ -698,51 +708,51 @@ class _Composer extends StatelessWidget {
   Widget build(BuildContext context) {
     final cooldownActive = (cooldownRemaining ?? 0) > 0;
     return SafeArea(
-    top: false,
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: context.tracendColors.canvas,
-        border: Border(
-          top: BorderSide(color: context.tracendColors.borderSubtle),
+      top: false,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: context.tracendColors.canvas,
+          border: Border(
+            top: BorderSide(color: context.tracendColors.borderSubtle),
+          ),
         ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          TracendSpacing.gutter,
-          TracendSpacing.sm,
-          TracendSpacing.gutter,
-          TracendSpacing.sm,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: controller,
-                enabled: enabled,
-                minLines: 1,
-                maxLines: 5,
-                maxLength: 2000,
-                decoration: InputDecoration(
-                  hintText: cooldownActive
-                      ? 'Limit reached — retry in ${cooldownRemaining}s'
-                      : 'Ask your Coach',
-                  counterText: '',
-                  border: const OutlineInputBorder(),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            TracendSpacing.gutter,
+            TracendSpacing.sm,
+            TracendSpacing.gutter,
+            TracendSpacing.sm,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  enabled: enabled,
+                  minLines: 1,
+                  maxLines: 5,
+                  maxLength: 2000,
+                  decoration: InputDecoration(
+                    hintText: cooldownActive
+                        ? 'Limit reached — retry in ${cooldownRemaining}s'
+                        : 'Ask your Coach',
+                    counterText: '',
+                    border: const OutlineInputBorder(),
+                  ),
+                  textInputAction: TextInputAction.newline,
                 ),
-                textInputAction: TextInputAction.newline,
               ),
-            ),
-            const SizedBox(width: TracendSpacing.xs),
-            IconButton.filled(
-              tooltip: 'Send message',
-              onPressed: enabled ? onSend : null,
-              icon: const Icon(CupertinoIcons.arrow_up),
-            ),
-          ],
+              const SizedBox(width: TracendSpacing.xs),
+              IconButton.filled(
+                tooltip: 'Send message',
+                onPressed: enabled ? onSend : null,
+                icon: const Icon(CupertinoIcons.arrow_up),
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
   }
 }

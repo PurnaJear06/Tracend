@@ -21,10 +21,7 @@ ComputedMetrics _metrics({
   String dataConfidence = 'medium',
 }) {
   return ComputedMetrics(
-    scores: ComputedScores(
-      recovery: recovery,
-      recoveryBreakdown: breakdown,
-    ),
+    scores: ComputedScores(recovery: recovery, recoveryBreakdown: breakdown),
     baselines: const ComputedBaselines(),
     dataConfidence: dataConfidence,
   );
@@ -75,9 +72,7 @@ void main() {
     });
 
     testWidgets('shows No data when score is null', (tester) async {
-      await tester.pumpWidget(
-        _wrap(RecoveryRing(computed: _metrics())),
-      );
+      await tester.pumpWidget(_wrap(RecoveryRing(computed: _metrics())));
 
       expect(find.text('--'), findsOneWidget);
       expect(find.text('No data'), findsOneWidget);
@@ -85,9 +80,11 @@ void main() {
 
     testWidgets('shows Building baseline on cold start', (tester) async {
       await tester.pumpWidget(
-        _wrap(RecoveryRing(
-          computed: _metrics(recovery: 72, dataConfidence: 'cold_start'),
-        )),
+        _wrap(
+          RecoveryRing(
+            computed: _metrics(recovery: 72, dataConfidence: 'cold_start'),
+          ),
+        ),
       );
 
       expect(find.text('Building baseline'), findsOneWidget);
@@ -95,9 +92,9 @@ void main() {
 
     testWidgets('shows Building baseline on low confidence', (tester) async {
       await tester.pumpWidget(
-        _wrap(RecoveryRing(
-          computed: _metrics(recovery: 72, dataConfidence: 'low'),
-        )),
+        _wrap(
+          RecoveryRing(computed: _metrics(recovery: 72, dataConfidence: 'low')),
+        ),
       );
 
       expect(find.text('Building baseline'), findsOneWidget);
@@ -136,6 +133,5 @@ void main() {
 
       expect(find.text('Recovery drivers'), findsNothing);
     });
-
   });
 }

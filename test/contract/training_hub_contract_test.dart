@@ -88,7 +88,10 @@ void main() {
         expect(row['name'], isA<String>());
         expect(row['local_date'], isA<String>());
         // local_date must be parseable as DateTime
-        expect(() => DateTime.parse(row['local_date'] as String), returnsNormally);
+        expect(
+          () => DateTime.parse(row['local_date'] as String),
+          returnsNormally,
+        );
       }
     });
 
@@ -161,7 +164,8 @@ void main() {
       }
       if (computed['recovery_breakdown'] != null) {
         final breakdown = Map<String, dynamic>.from(
-            computed['recovery_breakdown'] as Map);
+          computed['recovery_breakdown'] as Map,
+        );
         expect(breakdown['hrv_z'], isA<num>());
         expect(breakdown['resp_rate_z'], isA<num>());
         expect(breakdown['prev_strain_z'], isA<num>());

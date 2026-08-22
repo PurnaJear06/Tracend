@@ -17,11 +17,7 @@ Widget _wrap(Widget child) {
 
 void main() {
   group('WeightTrendIndicator', () {
-    ComputedMetrics metrics({
-      double? trend7,
-      double? trend28,
-      double? r2,
-    }) {
+    ComputedMetrics metrics({double? trend7, double? trend28, double? r2}) {
       return ComputedMetrics(
         scores: ComputedScores(
           weightTrend7d: trend7,
@@ -67,28 +63,30 @@ void main() {
 
   group('MetricSparkline', () {
     testWidgets('renders sparkline with multiple values', (tester) async {
-      await tester.pumpWidget(_wrap(
-        MetricSparkline(
-          values: [1.0, 2.0, 1.5, 3.0, 2.5],
-          label: 'test sparkline',
+      await tester.pumpWidget(
+        _wrap(
+          MetricSparkline(
+            values: [1.0, 2.0, 1.5, 3.0, 2.5],
+            label: 'test sparkline',
+          ),
         ),
-      ));
+      );
 
       expect(find.byType(MetricSparkline), findsOneWidget);
     });
 
     testWidgets('shows dash for single value', (tester) async {
-      await tester.pumpWidget(_wrap(
-        MetricSparkline(values: [1.0], label: 'single value'),
-      ));
+      await tester.pumpWidget(
+        _wrap(MetricSparkline(values: [1.0], label: 'single value')),
+      );
 
       expect(find.text('\u2014'), findsOneWidget);
     });
 
     testWidgets('renders empty gracefully', (tester) async {
-      await tester.pumpWidget(_wrap(
-        MetricSparkline(values: [], label: 'empty'),
-      ));
+      await tester.pumpWidget(
+        _wrap(MetricSparkline(values: [], label: 'empty')),
+      );
 
       expect(find.byType(MetricSparkline), findsOneWidget);
     });

@@ -30,7 +30,11 @@ class WeightTrendIndicator extends StatelessWidget {
                   color: const Color(0xFFE2A45C).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(TracendRadii.control),
                 ),
-                child: const Icon(Icons.trending_down_rounded, size: 20, color: Color(0xFFE2A45C)),
+                child: const Icon(
+                  Icons.trending_down_rounded,
+                  size: 20,
+                  color: Color(0xFFE2A45C),
+                ),
               ),
               const SizedBox(width: TracendSpacing.sm),
               Column(
@@ -45,11 +49,11 @@ class WeightTrendIndicator extends StatelessWidget {
                   ),
                   const SizedBox(height: TracendSpacing.xxs),
                   Text(
-                    trend7 != null
-                        ? '${_format(trend7)} kg/day'
-                        : 'No data',
+                    trend7 != null ? '${_format(trend7)} kg/day' : 'No data',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: trend7 != null ? colors.textPrimary : colors.textSecondary,
+                      color: trend7 != null
+                          ? colors.textPrimary
+                          : colors.textSecondary,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
@@ -61,18 +65,10 @@ class WeightTrendIndicator extends StatelessWidget {
             const SizedBox(height: TracendSpacing.md),
             Row(
               children: [
-                _TrendChip(
-                  label: '7-day',
-                  value: trend7,
-                  r2: null,
-                ),
+                _TrendChip(label: '7-day', value: trend7, r2: null),
                 const SizedBox(width: TracendSpacing.sm),
                 if (trend28 != null)
-                  _TrendChip(
-                    label: '28-day',
-                    value: trend28,
-                    r2: r2,
-                  ),
+                  _TrendChip(label: '28-day', value: trend28, r2: r2),
               ],
             ),
           ],
@@ -117,9 +113,9 @@ class _TrendChip extends StatelessWidget {
           children: [
             Text(
               label,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: colors.textSecondary,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(color: colors.textSecondary),
             ),
             const SizedBox(height: TracendSpacing.xxs),
             Row(

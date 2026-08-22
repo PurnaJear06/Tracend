@@ -65,8 +65,12 @@ class SleepBreakdown {
       consistencyScore == other.consistencyScore;
 
   @override
-  int get hashCode =>
-      Object.hash(durationScore, efficiencyScore, restorativeScore, consistencyScore);
+  int get hashCode => Object.hash(
+    durationScore,
+    efficiencyScore,
+    restorativeScore,
+    consistencyScore,
+  );
 }
 
 class BaselineMetric {
@@ -216,9 +220,9 @@ class ComputedMetrics {
   }
 
   const ComputedMetrics._empty()
-      : scores = const ComputedScores(),
-        baselines = const ComputedBaselines(),
-        dataConfidence = 'cold_start';
+    : scores = const ComputedScores(),
+      baselines = const ComputedBaselines(),
+      dataConfidence = 'cold_start';
 
   final ComputedScores scores;
   final ComputedBaselines baselines;

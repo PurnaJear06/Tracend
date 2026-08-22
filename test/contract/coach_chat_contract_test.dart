@@ -26,47 +26,54 @@ void main() {
       expect(json['message'], isA<Map>());
     });
 
-    test('message shape matches SupabaseCoachRepository._messageFromJson parsing', () {
-      final json = _loadFixtureJson(fixture);
-      final message = Map<String, dynamic>.from(json['message'] as Map);
+    test(
+      'message shape matches SupabaseCoachRepository._messageFromJson parsing',
+      () {
+        final json = _loadFixtureJson(fixture);
+        final message = Map<String, dynamic>.from(json['message'] as Map);
 
-      // Exact field checks matching _messageFromJson in coach_repository.dart
-      expect(message['id'], isA<String>());
-      expect(message['role'], isA<String>());
-      expect(message['content'] ?? message['answer'], isA<String>());
-      expect(message['created_at'], isA<String>());
+        // Exact field checks matching _messageFromJson in coach_repository.dart
+        expect(message['id'], isA<String>());
+        expect(message['role'], isA<String>());
+        expect(message['content'] ?? message['answer'], isA<String>());
+        expect(message['created_at'], isA<String>());
 
-      // Evidence
-      expect(message['evidence'], isA<List>());
-      for (final item in (message['evidence'] as List).cast<Map<String, dynamic>>()) {
-        expect(item['code'], isA<String>());
-        expect(item['label'], isA<String>());
-        expect(item['source'], isA<String>());
-        expect(
-          ['feature_snapshot', 'policy_evaluation', 'coach_context'],
-          contains(item['source'] as String),
-        );
-      }
+        // Evidence
+        expect(message['evidence'], isA<List>());
+        for (final item
+            in (message['evidence'] as List).cast<Map<String, dynamic>>()) {
+          expect(item['code'], isA<String>());
+          expect(item['label'], isA<String>());
+          expect(item['source'], isA<String>());
+          expect([
+            'feature_snapshot',
+            'policy_evaluation',
+            'coach_context',
+          ], contains(item['source'] as String));
+        }
 
-      // Missing data
-      expect(message['missing_data'], isA<List>());
-      for (final item in (message['missing_data'] as List)) {
-        expect(item, isA<String>());
-      }
+        // Missing data
+        expect(message['missing_data'], isA<List>());
+        for (final item in (message['missing_data'] as List)) {
+          expect(item, isA<String>());
+        }
 
-      // Safety
-      expect(message['safety_state'], isA<String>());
-      expect(
-        ['allowed', 'limited', 'refused', 'unavailable'],
-        contains(message['safety_state'] as String),
-      );
+        // Safety
+        expect(message['safety_state'], isA<String>());
+        expect([
+          'allowed',
+          'limited',
+          'refused',
+          'unavailable',
+        ], contains(message['safety_state'] as String));
 
-      // Follow-ups
-      expect(message['suggested_follow_ups'], isA<List>());
-      for (final item in (message['suggested_follow_ups'] as List)) {
-        expect(item, isA<String>());
-      }
-    });
+        // Follow-ups
+        expect(message['suggested_follow_ups'], isA<List>());
+        for (final item in (message['suggested_follow_ups'] as List)) {
+          expect(item, isA<String>());
+        }
+      },
+    );
 
     test('message includes provider metadata when present', () {
       final json = _loadFixtureJson(fixture);
@@ -85,7 +92,8 @@ void main() {
       final json = _loadFixtureJson(fixture);
       final message = Map<String, dynamic>.from(json['message'] as Map);
 
-      if (message.containsKey('reasoning_chain') && message['reasoning_chain'] != null) {
+      if (message.containsKey('reasoning_chain') &&
+          message['reasoning_chain'] != null) {
         final chain = message['reasoning_chain'] as List;
         for (final item in chain.cast<Map<String, dynamic>>()) {
           expect(item['step'], isA<String>());

@@ -10,7 +10,12 @@ import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/progress/weight_trend_indicator.dart';
 
 class ProgressScreen extends StatefulWidget {
-  const ProgressScreen({required this.repository, this.training, this.brief, super.key});
+  const ProgressScreen({
+    required this.repository,
+    this.training,
+    this.brief,
+    super.key,
+  });
   final ProgressRepository repository;
   final TrainingHubRepository? training;
   final DailyBriefRepository? brief;
@@ -39,7 +44,9 @@ class _ProgressScreenState extends State<ProgressScreen> {
   void initState() {
     super.initState();
     _reload();
-    _brief = (widget.brief ?? const FixtureDailyBriefRepository()).load(DateTime.now());
+    _brief = (widget.brief ?? const FixtureDailyBriefRepository()).load(
+      DateTime.now(),
+    );
   }
 
   void _reload() {

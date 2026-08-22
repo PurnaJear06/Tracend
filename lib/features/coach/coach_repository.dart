@@ -215,16 +215,18 @@ class SupabaseCoachRepository
         .from('user_accounts')
         .select('timezone')
         .single();
-    final response = await _client.functions.invoke(
-      'coach-chat',
-      body: {
-        'schema_version': '1.0',
-        'thread_id': threadId,
-        'question': question.trim(),
-        'timezone': account['timezone'] as String? ?? 'UTC',
-        'idempotency_key': _uuid.v4(),
-      },
-    ).timeout(const Duration(seconds: 30));
+    final response = await _client.functions
+        .invoke(
+          'coach-chat',
+          body: {
+            'schema_version': '1.0',
+            'thread_id': threadId,
+            'question': question.trim(),
+            'timezone': account['timezone'] as String? ?? 'UTC',
+            'idempotency_key': _uuid.v4(),
+          },
+        )
+        .timeout(const Duration(seconds: 30));
     if (response.status != 200 || response.data is! Map) {
       String detail = 'unavailable';
       int? retryAfter;
@@ -263,13 +265,16 @@ class SupabaseCoachRepository
     required String value,
     required String provenance,
   }) async {
-    await _client.rpc('persist_coach_preference', params: {
-      'target_user_id': _client.auth.currentUser?.id,
-      'category': category,
-      'pref_key': key,
-      'pref_value': value,
-      'provenance': provenance,
-    });
+    await _client.rpc(
+      'persist_coach_preference',
+      params: {
+        'target_user_id': _client.auth.currentUser?.id,
+        'category': category,
+        'pref_key': key,
+        'pref_value': value,
+        'provenance': provenance,
+      },
+    );
   }
 
   Future<Map<String, dynamic>?> loadLastRawResponse() async => _lastResponse;

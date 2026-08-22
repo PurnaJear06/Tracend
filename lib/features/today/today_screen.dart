@@ -138,9 +138,7 @@ class _TodayScreenState extends State<TodayScreen> {
                       ),
                       if (brief.computed != null) ...[
                         const SizedBox(height: TracendSpacing.md),
-                        Center(
-                          child: RecoveryRing(computed: brief.computed!),
-                        ),
+                        Center(child: RecoveryRing(computed: brief.computed!)),
                       ],
                       const SizedBox(height: TracendSpacing.md),
                       _ReadinessStrip(
@@ -515,7 +513,9 @@ class _ReadinessStrip extends StatelessWidget {
       }
     } else {
       detail = brief.checkIn == null ? 'Check in' : 'Updated';
-      color = brief.checkIn == null ? colors.stateAttention : colors.actionPrimary;
+      color = brief.checkIn == null
+          ? colors.stateAttention
+          : colors.actionPrimary;
     }
 
     return Expanded(
@@ -558,7 +558,9 @@ class _ReadinessStrip extends StatelessWidget {
       }
     } else {
       detail = brief.workout == null ? 'Rest day' : 'Planned';
-      color = brief.workout == null ? colors.textSecondary : colors.actionPrimary;
+      color = brief.workout == null
+          ? colors.textSecondary
+          : colors.actionPrimary;
     }
 
     return Expanded(
@@ -601,7 +603,9 @@ class _ReadinessStrip extends StatelessWidget {
       }
     } else {
       detail = brief.nextMeal == null ? 'Up to date' : 'Next meal';
-      color = brief.nextMeal == null ? colors.textSecondary : const Color(0xFFE2A45C);
+      color = brief.nextMeal == null
+          ? colors.textSecondary
+          : const Color(0xFFE2A45C);
     }
 
     return Expanded(

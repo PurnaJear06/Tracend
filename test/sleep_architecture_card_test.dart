@@ -10,7 +10,9 @@ Widget _wrap(Widget child) {
       brightness: Brightness.dark,
       extensions: const [TracendColors.dark],
     ),
-    home: Scaffold(body: SingleChildScrollView(child: Center(child: child))),
+    home: Scaffold(
+      body: SingleChildScrollView(child: Center(child: child)),
+    ),
   );
 }
 
@@ -27,7 +29,12 @@ ComputedMetrics _fullMetrics() => ComputedMetrics(
   ),
   baselines: const ComputedBaselines(
     hrv: BaselineMetric(ewma: 49.45, spread: 3.0, nObs: 6, confidence: 'low'),
-    restingHr: BaselineMetric(ewma: 55.5, spread: 1.1, nObs: 6, confidence: 'low'),
+    restingHr: BaselineMetric(
+      ewma: 55.5,
+      spread: 1.1,
+      nObs: 6,
+      confidence: 'low',
+    ),
   ),
   dataConfidence: 'medium',
 );
@@ -41,7 +48,9 @@ ComputedMetrics _emptyMetrics() => const ComputedMetrics(
 void main() {
   group('SleepArchitectureCard', () {
     testWidgets('shows sleep quality and label', (tester) async {
-      await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: _fullMetrics())));
+      await tester.pumpWidget(
+        _wrap(SleepArchitectureCard(computed: _fullMetrics())),
+      );
 
       expect(find.text('SLEEP ARCHITECTURE'), findsOneWidget);
       expect(find.text('85 / 100'), findsOneWidget);
@@ -49,7 +58,9 @@ void main() {
     });
 
     testWidgets('shows sub-scores with numeric values', (tester) async {
-      await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: _fullMetrics())));
+      await tester.pumpWidget(
+        _wrap(SleepArchitectureCard(computed: _fullMetrics())),
+      );
 
       expect(find.text('Duration'), findsOneWidget);
       expect(find.text('Efficiency'), findsOneWidget);
@@ -62,7 +73,9 @@ void main() {
     });
 
     testWidgets('shows sleep debt badge', (tester) async {
-      await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: _fullMetrics())));
+      await tester.pumpWidget(
+        _wrap(SleepArchitectureCard(computed: _fullMetrics())),
+      );
 
       expect(find.textContaining('Sleep debt'), findsOneWidget);
       expect(find.textContaining('1h 5m'), findsOneWidget);
@@ -70,10 +83,7 @@ void main() {
 
     testWidgets('shows sleep surplus badge', (tester) async {
       final m = ComputedMetrics(
-        scores: const ComputedScores(
-          sleepQuality: 80,
-          sleepDebtMinutes: 30,
-        ),
+        scores: const ComputedScores(sleepQuality: 80, sleepDebtMinutes: 30),
         baselines: const ComputedBaselines(),
         dataConfidence: 'medium',
       );
@@ -83,7 +93,9 @@ void main() {
     });
 
     testWidgets('shows HRV and RHR baselines', (tester) async {
-      await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: _fullMetrics())));
+      await tester.pumpWidget(
+        _wrap(SleepArchitectureCard(computed: _fullMetrics())),
+      );
 
       expect(find.text('HRV BASELINE'), findsOneWidget);
       expect(find.text('49.5'), findsOneWidget);
@@ -92,20 +104,26 @@ void main() {
     });
 
     testWidgets('shows No data when sleep quality is null', (tester) async {
-      await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: _emptyMetrics())));
+      await tester.pumpWidget(
+        _wrap(SleepArchitectureCard(computed: _emptyMetrics())),
+      );
 
       expect(find.text('No data'), findsOneWidget);
     });
 
     testWidgets('hides sub-scores when breakdown is null', (tester) async {
-      await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: _emptyMetrics())));
+      await tester.pumpWidget(
+        _wrap(SleepArchitectureCard(computed: _emptyMetrics())),
+      );
 
       expect(find.text('Duration'), findsNothing);
       expect(find.text('Efficiency'), findsNothing);
     });
 
     testWidgets('hides debt badge when debt is null', (tester) async {
-      await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: _emptyMetrics())));
+      await tester.pumpWidget(
+        _wrap(SleepArchitectureCard(computed: _emptyMetrics())),
+      );
 
       expect(find.textContaining('Sleep debt'), findsNothing);
     });

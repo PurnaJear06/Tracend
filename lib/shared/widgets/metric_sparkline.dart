@@ -2,11 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 
 class MetricSparkline extends StatelessWidget {
-  const MetricSparkline({
-    required this.values,
-    required this.label,
-    super.key,
-  });
+  const MetricSparkline({required this.values, required this.label, super.key});
 
   final List<double> values;
   final String label;
@@ -89,5 +85,6 @@ class _SparklinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SparklinePainter oldDelegate) => values != oldDelegate.values;
+  bool shouldRepaint(covariant _SparklinePainter oldDelegate) =>
+      values != oldDelegate.values;
 }

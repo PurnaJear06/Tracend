@@ -203,10 +203,7 @@ void main() {
     expect(find.text('Connect Apple Health'), findsOneWidget);
     await tester.tap(find.text('Connect Apple Health'));
     await tester.pumpAndSettle();
-    expect(
-      find.text('Bad state: fixture failure'),
-      findsOneWidget,
-    );
+    expect(find.text('Bad state: fixture failure'), findsOneWidget);
   });
 
   testWidgets('Today renders stored health evidence and honest missing sleep', (

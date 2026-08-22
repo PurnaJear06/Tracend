@@ -21,10 +21,7 @@ class SleepArchitectureCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SleepHeader(
-            quality: scores.sleepQuality,
-            hasData: hasData,
-          ),
+          _SleepHeader(quality: scores.sleepQuality, hasData: hasData),
           if (scores.sleepBreakdown != null) ...[
             const SizedBox(height: TracendSpacing.md),
             _SleepSubScores(breakdown: scores.sleepBreakdown!),
@@ -84,7 +81,9 @@ class _SleepHeader extends StatelessWidget {
             Text(
               hasData ? '$quality / 100' : 'No data',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: hasData ? _qualityColor(colors, quality!) : colors.textSecondary,
+                color: hasData
+                    ? _qualityColor(colors, quality!)
+                    : colors.textSecondary,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
@@ -134,8 +133,7 @@ class _SleepSubScores extends StatelessWidget {
       children: [
         for (final item in items) ...[
           _SubScoreRow(label: item.$1, score: item.$2),
-          if (item != items.last)
-            SizedBox(height: TracendSpacing.sm),
+          if (item != items.last) SizedBox(height: TracendSpacing.sm),
         ],
       ],
     );
@@ -164,9 +162,9 @@ class _SubScoreRow extends StatelessWidget {
           width: 72,
           child: Text(
             label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: colors.textSecondary,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(color: colors.textSecondary),
           ),
         ),
         const SizedBox(width: TracendSpacing.xs),
@@ -227,7 +225,9 @@ class _SleepDebt extends StatelessWidget {
     final label = hasDebt
         ? 'Sleep debt: ${hours}h ${mins}m'
         : 'Sleep surplus: ${hours}h ${mins}m';
-    final icon = hasDebt ? Icons.trending_down_rounded : Icons.trending_up_rounded;
+    final icon = hasDebt
+        ? Icons.trending_down_rounded
+        : Icons.trending_up_rounded;
     final color = hasDebt ? colors.stateAttention : colors.stateStable;
 
     return Material(
@@ -245,9 +245,9 @@ class _SleepDebt extends StatelessWidget {
             const SizedBox(width: TracendSpacing.xxs),
             Text(
               label,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: color,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(color: color),
             ),
           ],
         ),
@@ -267,11 +267,15 @@ class _BaselineFooter extends StatelessWidget {
     return Row(
       children: [
         if (hrv != null) ...[
-          Expanded(child: _BaselineMetric(label: 'HRV BASELINE', metric: hrv!)),
+          Expanded(
+            child: _BaselineMetric(label: 'HRV BASELINE', metric: hrv!),
+          ),
           const SizedBox(width: TracendSpacing.sm),
         ],
         if (restingHr != null)
-          Expanded(child: _BaselineMetric(label: 'RESTING HR', metric: restingHr!)),
+          Expanded(
+            child: _BaselineMetric(label: 'RESTING HR', metric: restingHr!),
+          ),
       ],
     );
   }
@@ -286,7 +290,8 @@ class _BaselineMetric extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    final isLow = metric.confidence == 'low' || metric.confidence == 'cold_start';
+    final isLow =
+        metric.confidence == 'low' || metric.confidence == 'cold_start';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

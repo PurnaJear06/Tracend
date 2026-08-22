@@ -56,26 +56,29 @@ Future<void> main() async {
 
   const environment = AppEnvironment.fromCompileTime();
 
-  await runZonedGuarded(() async {
-    await SentryFlutter.init(
-      (options) {
-        options.dsn = environment.sentryDsn;
-        options.tracesSampleRate = 0.1;
-        options.attachStacktrace = true;
-        options.beforeSend = _sentryBeforeSend;
-      },
-      appRunner: () async {
-        if (environment.hasSupabaseConfiguration) {
-          await Supabase.initialize(
-            url: environment.supabaseUrl,
-            publishableKey: environment.supabasePublishableKey,
-          );
-        }
+  await runZonedGuarded(
+    () async {
+      await SentryFlutter.init(
+        (options) {
+          options.dsn = environment.sentryDsn;
+          options.tracesSampleRate = 0.1;
+          options.attachStacktrace = true;
+          options.beforeSend = _sentryBeforeSend;
+        },
+        appRunner: () async {
+          if (environment.hasSupabaseConfiguration) {
+            await Supabase.initialize(
+              url: environment.supabaseUrl,
+              publishableKey: environment.supabasePublishableKey,
+            );
+          }
 
-        runApp(const TracendApp(environment: environment));
-      },
-    );
-  }, (exception, stackTrace) async {
-    await Sentry.captureException(exception, stackTrace: stackTrace);
-  });
+          runApp(const TracendApp(environment: environment));
+        },
+      );
+    },
+    (exception, stackTrace) async {
+      await Sentry.captureException(exception, stackTrace: stackTrace);
+    },
+  );
 }
