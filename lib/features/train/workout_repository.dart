@@ -92,10 +92,15 @@ class TrainingSessionSummary {
     required this.name,
     required this.date,
     this.durationSeconds,
+    this.workoutId,
   });
   final String name;
   final DateTime date;
   final int? durationSeconds;
+
+  /// Planned workout id from the hub (`recent_sessions[].workout_id`).
+  /// Null on older payloads; the session row is then display-only.
+  final String? workoutId;
 }
 
 class ExerciseProgression {
@@ -294,6 +299,7 @@ class SupabaseWorkoutRepository
           name: row['name'] as String,
           date: DateTime.parse(row['local_date'] as String),
           durationSeconds: (row['duration_seconds'] as num?)?.toInt(),
+          workoutId: row['workout_id'] as String?,
         );
       }).toList(),
       completedSessions: (adherence['completed_sessions'] as num? ?? 0).toInt(),

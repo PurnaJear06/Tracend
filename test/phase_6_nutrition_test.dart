@@ -11,7 +11,8 @@ void main() {
     await tester.pumpWidget(_app(_NutritionRepository()));
     await tester.pumpAndSettle();
     expect(find.textContaining('Confirmed meals only · Today'), findsOneWidget);
-    expect(find.text('540 kcal'), findsOneWidget);
+    expect(find.text('540'), findsOneWidget);
+    expect(find.textContaining('/ 2200 kcal'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('breakfast'),
       180,
@@ -27,14 +28,22 @@ void main() {
     final repository = _NutritionRepository();
     await tester.pumpWidget(_app(repository));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('nutrition-previous-day')));
+    final yesterday = DateTime.now().subtract(const Duration(days: 1));
+    final key = ValueKey(
+      'date-pill-${yesterday.year.toString().padLeft(4, '0')}-'
+      '${yesterday.month.toString().padLeft(2, '0')}-'
+      '${yesterday.day.toString().padLeft(2, '0')}',
+    );
+    if (find.byKey(key).evaluate().isEmpty) {
+      await tester.tap(find.byKey(const ValueKey('date-strip-previous')));
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.byKey(key));
     await tester.pumpAndSettle();
     expect(repository.loadedDates.length, greaterThanOrEqualTo(2));
-    expect(
-      repository.loadedDates.last.day,
-      DateTime.now().subtract(const Duration(days: 1)).day,
-    );
-    expect(find.textContaining('Saved daily log'), findsOneWidget);
+    expect(repository.loadedDates.last.day, yesterday.day);
+    expect(find.textContaining('Confirmed meals only ·'), findsOneWidget);
+    expect(find.textContaining('· Today'), findsNothing);
   });
 
   testWidgets('Manual meal validates fields before confirmation', (
@@ -57,8 +66,7 @@ void main() {
     final repository = _NutritionRepository();
     await tester.pumpWidget(_app(repository));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Review sample analysis'));
-    await tester.pumpAndSettle();
+    await _tapReviewSampleAnalysis(tester);
     expect(find.text('Rice bowl'), findsOneWidget);
     expect(find.text('Confirm selected foods'), findsOneWidget);
     expect(repository.confirmed, isFalse);
@@ -74,8 +82,7 @@ void main() {
     final repository = _NutritionRepository();
     await tester.pumpWidget(_app(repository));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Review sample analysis'));
-    await tester.pumpAndSettle();
+    await _tapReviewSampleAnalysis(tester);
     await tester.tap(find.text('Edit estimate'));
     await tester.pumpAndSettle();
     final foodName = find.widgetWithText(TextFormField, 'Food name');
@@ -115,8 +122,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_app(_NutritionRepository()));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Review sample analysis'));
-    await tester.pumpAndSettle();
+    await _tapReviewSampleAnalysis(tester);
     await tester.tap(find.text('Edit estimate'));
     await tester.pumpAndSettle();
     final foodName = find.widgetWithText(TextFormField, 'Food name');
@@ -159,6 +165,19 @@ Widget _app(NutritionRepository repository) => MaterialApp(
   theme: TracendTheme.light,
   home: Scaffold(body: NutritionScreen(repository: repository)),
 );
+
+Future<void> _tapReviewSampleAnalysis(WidgetTester tester) async {
+  final button = find.text('Review sample analysis');
+  await tester.scrollUntilVisible(
+    button,
+    240,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.ensureVisible(button);
+  await tester.pumpAndSettle();
+  await tester.tap(button);
+  await tester.pumpAndSettle();
+}
 
 class _NutritionRepository implements NutritionRepository {
   _NutritionRepository({this.includeDraft = false});

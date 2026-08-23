@@ -1,7 +1,7 @@
 # Phase 5 v2 — "Precision Pro" Production UI — Master Plan
 
 **Created:** 2026-08-22 (rewritten same day after master-plan cross-check)
-**Status:** Chunk 1 complete — awaiting `/review`, then Chunk 2
+**Status:** Chunk 2 complete — pending review (Train + Nutrition)
 **Branch:** `feature/feature-engine-phase-5-v2` (from `93fa49e`) → merge into `feature/feature-engine`
 **Backup:** tag `backup/pre-phase-5-v2` (local; push blocked by deploy-guard — user pushes or approves)
 **Supersedes:** the 2026-08-18 Phase 5 attempt (reverted) and the earlier draft of this file
@@ -14,8 +14,8 @@ executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is 
 | Chunk | Scope | Status | Commit | Gate | Review |
 | ----- | ----- | ------ | ------ | ---- | ------ |
 | 0 | Docs + tokens + fonts + glass/motion widgets | ✅ Done 2026-08-22 | `c55d281` | analyze ✓ · format ✓ · 175 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-0-precision-pro-foundation.md` |
-| 1 | Today screen (hero + readouts + TrajectoryLens) | ✅ Done 2026-08-22 | `1bcc0d8` | analyze ✓ · format ✓ · 200 tests ✓ | pending |
-| 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ⬜ Pending | — | — | — |
+| 1 | Today screen (hero + readouts + TrajectoryLens) | ✅ Done 2026-08-22 | `1bcc0d8` + `578f065` | analyze ✓ · format ✓ · 200 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-1-today-screen.md` (all fixed in `578f065`) |
+| 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ✅ Done 2026-08-23 | pending commit | analyze ✓ · format ✓ · 213 tests ✓ | pending `/review` |
 | 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ⬜ Pending | — | — | — |
 | 4 | AI Usage + Shell + Account cleanup | ⬜ Pending | — | — | — |
 | 5 | Motion + A11y + copy audit + final gate + merge | ⬜ Pending | — | — | — |
@@ -25,6 +25,20 @@ Carry-forward notes from reviews:
   first wired (Chunks 1–3).
 - Flutter 3.41.7 has no `MediaQuery.accessibilityFeaturesOf` — Reduce Motion gating uses
   `MediaQuery.disableAnimationsOf` everywhere (plan §2.7/§3.4 wording superseded by this).
+- Chunk 2 decisions (2026-08-23):
+  - `IntensityBar` recorded-RPE marker binds to per-set `rpe` from `get_my_workout_session`
+    (averaged per exercise order), NOT the hardcoded `session_effort = 8` written on save.
+    Marker only renders for completed days with logged set RPE.
+  - `TrainingSessionSummary` gained nullable `workoutId` (hub `recent_sessions[].workout_id`,
+    schema v1.4). Recent-session rows with a resolvable workout open `WorkoutDetailScreen`;
+    rows without one are display-only (no dead chevron).
+  - `_ProgressionRow` converted to display-only facts (no chevron/tap) — progression values
+    are not navigation. Documented in `prescription_cards.dart`.
+  - `DatePillStrip` replaces the old `_WeekdayStrip` (Train) and the chevron date nav
+    (Nutrition). Chevrons render only when their callback is provided.
+  - Nutrition `CoachInsightCard` = `NutritionInsightCard` binding
+    `CoachDecision.nutritionAction`/`nutritionSummary`/`confidence`; hidden when no decision.
+  - Train hero coach-insight line binds `CoachDecision.trainingSummary`; hidden when null.
 
 ---
 

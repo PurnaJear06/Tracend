@@ -147,7 +147,7 @@ visual system behavior belongs in `docs/DESIGN_SYSTEM.md`.
 
 - `./scripts/flutter.sh format --set-exit-if-changed lib test` — pass
 - `./scripts/flutter.sh analyze` — pass, no issues
-- `./scripts/flutter.sh test` — pass, 155 tests (104 + 51 Phase 4)
+- `./scripts/flutter.sh test` — pass, 213 tests (Phase 5 v2 Chunk 2)
 - `./scripts/flutter.sh build ios --release --no-codesign` — pass, HealthKit linked, 18.3 MB
   physical-device app
 - `./scripts/flutter.sh build ios --config-only --no-codesign` — pass
@@ -321,7 +321,21 @@ coaching-horizon backdrop + asset (DESIGN_SYSTEM §2 now documents the trajector
 signature element). 200 tests pass. Review: PASS with findings
 (`docs/reviews/2026-08-22-phase-5-v2-chunk-1-today-screen.md`).
 
-Next: Chunk 2 — Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid, CoachInsightCard).
+**Chunk 2 complete (2026-08-23, pending review):** Train + Nutrition rebuilt to Stitch.
+New shared widgets: `IntensityBar` (per-exercise planned `target_rpe` bars + recorded-RPE
+marker from logged set RPE via `get_my_workout_session`, never the hardcoded
+`session_effort = 8`; honest cold start), `DatePillStrip` (week pill navigation with real
+chevron offset state, normalized-date set lookup, chevrons render only when wired),
+`TargetsGrid` (real `NutritionTargets`/`NutritionSummary`, solid cells, mono values,
+remaining protein). `NutritionInsightCard` binds `CoachDecision.nutritionAction/Summary/
+confidence` (hidden when no decision). Train hero binds `trainingSummary` coach insight.
+`TrainingSessionSummary` gained nullable `workoutId` (hub v1.4) so recent-session rows open
+`WorkoutDetailScreen`; unresolvable rows are display-only. `_ProgressionRow` converted to
+display-only facts. `TrainingLoadGauge` restyled into `PremiumGradientCard` with token zone
+colors. Train/Nutrition sub-widgets extracted to `lib/features/{train,nutrition}/widgets/`.
+213 tests pass, 0 analysis issues.
+
+Next: Chunk 3 — Progress + Coach (weight regression overlay, EvidenceAccordion).
 
 ## Session Duration Cap (2026-08-22)
 

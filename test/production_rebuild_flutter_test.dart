@@ -21,6 +21,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Approved training plan'), findsOneWidget);
     expect(find.textContaining('RPE 8'), findsWidgets);
+    await tester.scrollUntilVisible(
+      find.text('PRESCRIPTION'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining('rest'), findsWidgets);
     await tester.scrollUntilVisible(
       find.textContaining('Planned values are never charted'),
@@ -111,8 +116,17 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.pumpAndSettle();
-    final chips = find.byType(ChoiceChip);
-    await tester.tap(chips.at(1));
+    final yesterday = DateTime.now().subtract(const Duration(days: 1));
+    final key = ValueKey(
+      'date-pill-${yesterday.year.toString().padLeft(4, '0')}-'
+      '${yesterday.month.toString().padLeft(2, '0')}-'
+      '${yesterday.day.toString().padLeft(2, '0')}',
+    );
+    if (find.byKey(key).evaluate().isEmpty) {
+      await tester.tap(find.byKey(const ValueKey('date-strip-previous')));
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.byKey(key));
     await tester.pumpAndSettle();
     await tester.pumpAndSettle();
     expect(find.text('Apple Health detected workout'), findsOneWidget);
