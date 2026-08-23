@@ -67,6 +67,12 @@ class _AppShellState extends State<AppShell> {
         : const FixtureDailyBriefRepository();
   }
 
+  void _selectTab(int index) {
+    if (index == _selectedIndex) return;
+    HapticFeedback.selectionClick();
+    setState(() => _selectedIndex = index);
+  }
+
   @override
   Widget build(BuildContext context) {
     final destinations = <Widget>[
@@ -78,6 +84,9 @@ class _AppShellState extends State<AppShell> {
         health: _health,
         coach: _coach,
         brief: _brief,
+        nutrition: _nutrition,
+        onOpenProgress: () => _selectTab(4),
+        onOpenNutrition: () => _selectTab(3),
       ),
       TrainScreen(
         key: const ValueKey('tab_train'),
@@ -104,11 +113,7 @@ class _AppShellState extends State<AppShell> {
       body: IndexedStack(index: _selectedIndex, children: destinations),
       bottomNavigationBar: _FloatingTabBar(
         selectedIndex: _selectedIndex,
-        onSelected: (index) {
-          if (index == _selectedIndex) return;
-          HapticFeedback.selectionClick();
-          setState(() => _selectedIndex = index);
-        },
+        onSelected: _selectTab,
       ),
     );
   }

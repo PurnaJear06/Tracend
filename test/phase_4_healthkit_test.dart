@@ -224,7 +224,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, -900));
+    await tester.scrollUntilVisible(
+      find.text('Daily steps'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+      maxScrolls: 100,
+    );
     await tester.pumpAndSettle();
     expect(find.text('Daily steps'), findsOneWidget);
     expect(find.text('What matters today'), findsOneWidget);

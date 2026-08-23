@@ -11,15 +11,22 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_status_card.dart';
+import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/today/check_in_sheet.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
-import 'package:tracend/shared/widgets/tracend_scaffold.dart';
-import 'package:tracend/shared/widgets/evidence_trend_chart.dart';
-import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/recovery_ring.dart';
 import 'package:tracend/features/today/sleep_architecture_card.dart';
+import 'package:tracend/features/today/widgets/check_in_prompt_bar.dart';
+import 'package:tracend/features/today/widgets/coach_perspective_card.dart';
+import 'package:tracend/features/today/widgets/health_evidence_section.dart';
+import 'package:tracend/features/today/widgets/metabolic_target_card.dart';
+import 'package:tracend/features/today/widgets/precision_divider.dart';
+import 'package:tracend/features/today/widgets/readiness_strip.dart';
+import 'package:tracend/features/today/widgets/session_plan_card.dart';
+import 'package:tracend/features/today/widgets/today_hero.dart';
+import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({
@@ -29,6 +36,9 @@ class TodayScreen extends StatefulWidget {
     this.health = const ManualHealthRepository(),
     this.coach = const FixtureCoachRepository(),
     this.brief = const FixtureDailyBriefRepository(),
+    this.nutrition = const FixtureNutritionRepository(),
+    this.onOpenProgress,
+    this.onOpenNutrition,
     super.key,
   });
 
@@ -38,6 +48,13 @@ class TodayScreen extends StatefulWidget {
   final HealthRepository health;
   final CoachRepository coach;
   final DailyBriefRepository brief;
+  final NutritionRepository nutrition;
+
+  /// Shell wiring: switch to the Progress tab ("View analytics").
+  final VoidCallback? onOpenProgress;
+
+  /// Shell wiring: switch to the Nutrition tab ("LOG").
+  final VoidCallback? onOpenNutrition;
 
   @override
   State<TodayScreen> createState() => _TodayScreenState();
@@ -46,11 +63,13 @@ class TodayScreen extends StatefulWidget {
 class _TodayScreenState extends State<TodayScreen> {
   late Future<HealthHistory> _healthHistory;
   late Future<DailyBrief> _brief;
+  late Future<NutritionTargets?> _targets;
 
   @override
   void initState() {
     super.initState();
     _reloadHealth();
+    _targets = widget.nutrition.loadTargets();
     _brief = widget.brief.load(DateTime.now());
   }
 
@@ -60,7 +79,22 @@ class _TodayScreenState extends State<TodayScreen> {
 
   void _reloadBriefAndHealth() {
     _reloadHealth();
-    _brief = widget.brief.load(DateTime.now());
+    setState(() => _brief = widget.brief.load(DateTime.now()));
+  }
+
+  Future<void> _openCheckIn() async {
+    await showCheckInSheet(context, widget.environment);
+    if (mounted) {
+      setState(() => _brief = widget.brief.load(DateTime.now()));
+    }
+  }
+
+  void _openWorkout() {
+    Navigator.of(context).push<void>(
+      CupertinoPageRoute(
+        builder: (_) => WorkoutDetailScreen(repository: widget.workouts),
+      ),
+    );
   }
 
   @override
@@ -122,159 +156,23 @@ class _TodayScreenState extends State<TodayScreen> {
                 ),
               );
             }
-            final hasWorkout = brief.workout != null;
-            return Column(
-              children: [
-                TracendCard(
-                  radius: TracendRadii.decision,
-                  padding: const EdgeInsets.all(TracendSpacing.gutter),
-                  raised: true,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _TodayHeroBackdrop(
-                        action: brief.nextAction,
-                        reason: brief.reason,
-                      ),
-                      if (brief.computed != null) ...[
-                        const SizedBox(height: TracendSpacing.md),
-                        Center(child: RecoveryRing(computed: brief.computed!)),
-                      ],
-                      const SizedBox(height: TracendSpacing.md),
-                      _ReadinessStrip(
-                        brief: brief,
-                        onOpen: (title, detail) =>
-                            _showReadinessDetail(context, title, detail),
-                      ),
-                      const SizedBox(height: TracendSpacing.lg),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          icon: Icon(
-                            brief.checkIn == null
-                                ? CupertinoIcons.slider_horizontal_3
-                                : CupertinoIcons.play_fill,
-                            size: 18,
-                          ),
-                          label: Text(
-                            brief.checkIn == null
-                                ? 'Add check-in'
-                                : hasWorkout
-                                ? 'Open workout'
-                                : 'No workout today',
-                          ),
-                          onPressed: brief.checkIn == null
-                              ? () async {
-                                  await showCheckInSheet(
-                                    context,
-                                    widget.environment,
-                                  );
-                                  if (mounted) {
-                                    setState(
-                                      () => _brief = widget.brief.load(
-                                        DateTime.now(),
-                                      ),
-                                    );
-                                  }
-                                }
-                              : hasWorkout
-                              ? () => Navigator.of(context).push<void>(
-                                  CupertinoPageRoute(
-                                    builder: (_) => WorkoutDetailScreen(
-                                      repository: widget.workouts,
-                                    ),
-                                  ),
-                                )
-                              : null,
-                        ),
-                      ),
-                      const SizedBox(height: TracendSpacing.xs),
-                      Material(
-                        color: Colors.transparent,
-                        child: ExpansionTile(
-                          key: const PageStorageKey('today-evidence'),
-                          tilePadding: EdgeInsets.zero,
-                          childrenPadding: EdgeInsets.zero,
-                          title: const Text('See evidence'),
-                          children: [
-                            _BriefEvidence(
-                              label: 'Check-in',
-                              available: brief.checkIn != null,
-                              detail: brief.checkIn == null
-                                  ? 'Add today’s recovery input'
-                                  : 'Current user-confirmed input',
-                            ),
-                            _BriefEvidence(
-                              label: 'Apple Health',
-                              available: brief.health != null,
-                              detail: brief.health == null
-                                  ? 'No fresh summary for today'
-                                  : 'Dated normalized summary',
-                            ),
-                            _BriefEvidence(
-                              label: 'Training plan',
-                              available: brief.workout != null,
-                              detail:
-                                  brief.workout?['name'] as String? ??
-                                  'No workout assigned today',
-                            ),
-                            _BriefEvidence(
-                              label: 'Meal schedule',
-                              available: brief.nextMeal != null,
-                              detail:
-                                  brief.nextMeal?['label'] as String? ??
-                                  'No remaining meal',
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SectionLabel('Today’s timeline'),
-                TracendCard(
-                  child: Column(
-                    children: [
-                      _TimelineRow(
-                        icon: CupertinoIcons.slider_horizontal_3,
-                        title: 'Check-in',
-                        detail: brief.checkIn == null
-                            ? 'Needed · about 1 min'
-                            : 'Completed',
-                      ),
-                      const Divider(height: TracendSpacing.lg),
-                      _TimelineRow(
-                        icon: CupertinoIcons.bolt_fill,
-                        title:
-                            brief.workout?['name'] as String? ?? 'Recovery day',
-                        detail: brief.workout == null
-                            ? 'No planned workout'
-                            : 'Approved training plan',
-                      ),
-                      if (brief.nextMeal != null) ...[
-                        const Divider(height: TracendSpacing.lg),
-                        _TimelineRow(
-                          icon: CupertinoIcons.clock_fill,
-                          title: brief.nextMeal!['label'] as String,
-                          detail:
-                              '${brief.nextMeal!['local_time']} · ${brief.nextMeal!['status']}',
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (brief.computed != null) ...[
-                  const SizedBox(height: TracendSpacing.lg),
-                  SleepArchitectureCard(computed: brief.computed!),
-                ],
-              ],
+            return _BriefContent(
+              brief: brief,
+              targets: _targets,
+              coach: widget.coach,
+              onStartSession: brief.workout != null ? _openWorkout : null,
+              onViewAnalytics: widget.onOpenProgress,
+              onOpenNutrition: widget.onOpenNutrition,
+              onOpenWorkout: _openWorkout,
+              onCheckIn: _openCheckIn,
+              onReadinessDetail: _showReadinessDetail,
             );
           },
         ),
         const SectionLabel('Apple Health'),
         HealthStatusCard(
           repository: widget.health,
-          onSynced: () => setState(_reloadBriefAndHealth),
+          onSynced: _reloadBriefAndHealth,
         ),
         const SizedBox(height: TracendSpacing.sm),
         FutureBuilder<HealthHistory>(
@@ -298,55 +196,7 @@ class _TodayScreenState extends State<TodayScreen> {
                 ),
               );
             }
-            return _HealthEvidence(history: snapshot.data!);
-          },
-        ),
-        const SectionLabel('Daily check-in'),
-        TracendCard(
-          child: Material(
-            color: Colors.transparent,
-            child: ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Add today’s check-in'),
-              subtitle: const Text(
-                'Sleep, energy, soreness, hunger, mood and pain · 1 min',
-              ),
-              trailing: const Icon(CupertinoIcons.chevron_right, size: 18),
-              onTap: () async {
-                await showCheckInSheet(context, widget.environment);
-                if (context.mounted) {
-                  setState(() => _brief = widget.brief.load(DateTime.now()));
-                }
-              },
-            ),
-          ),
-        ),
-        const SectionLabel('Latest coaching decision'),
-        FutureBuilder<CoachDecision?>(
-          future: widget.coach.loadLatest(),
-          builder: (context, snapshot) {
-            final decision = snapshot.data;
-            if (decision == null) {
-              return const TracendCard(
-                child: Text(
-                  'Open Coach to generate an evidence-backed daily decision.',
-                ),
-              );
-            }
-            return TracendCard(
-              raised: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    decision.finalDecision,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: TracendSpacing.xs),
-                  Text(decision.reason),
-                ],
-              ),
-            );
+            return HealthEvidenceSection(history: snapshot.data!);
           },
         ),
       ],
@@ -401,284 +251,144 @@ class _TodayScreenState extends State<TodayScreen> {
   );
 }
 
-class _TodayHeroBackdrop extends StatelessWidget {
-  const _TodayHeroBackdrop({required this.action, required this.reason});
-  final String action, reason;
+/// The loaded-brief composition (plan §4.3 layout): hero → recovery ring →
+/// readiness strip → evidence → precision readouts → coach perspective.
+class _BriefContent extends StatelessWidget {
+  const _BriefContent({
+    required this.brief,
+    required this.targets,
+    required this.coach,
+    required this.onStartSession,
+    required this.onViewAnalytics,
+    required this.onOpenNutrition,
+    required this.onOpenWorkout,
+    required this.onCheckIn,
+    required this.onReadinessDetail,
+  });
 
-  @override
-  Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(TracendRadii.card),
-    child: DecoratedBox(
-      decoration: const BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage('assets/visuals/tracend-coaching-horizon-v1.jpg'),
-          fit: BoxFit.cover,
-        ),
-      ),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withValues(alpha: .18),
-              Colors.black.withValues(alpha: .84),
-            ],
-          ),
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 250),
-          child: Padding(
-            padding: const EdgeInsets.all(TracendSpacing.md),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const TracendPill(
-                  label: 'Your next move',
-                  icon: CupertinoIcons.location_fill,
-                  compact: true,
-                ),
-                const SizedBox(height: 92),
-                Text(
-                  action,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.headlineMedium?.copyWith(color: Colors.white),
-                ),
-                const SizedBox(height: TracendSpacing.xs),
-                Text(
-                  reason,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.white.withValues(alpha: .86),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-class _ReadinessStrip extends StatelessWidget {
-  const _ReadinessStrip({required this.brief, required this.onOpen});
   final DailyBrief brief;
-  final void Function(String title, String detail) onOpen;
+  final Future<NutritionTargets?> targets;
+  final CoachRepository coach;
+  final VoidCallback? onStartSession;
+  final VoidCallback? onViewAnalytics;
+  final VoidCallback? onOpenNutrition;
+  final VoidCallback onOpenWorkout;
+  final VoidCallback onCheckIn;
+  final void Function(BuildContext context, String title, String detail)
+  onReadinessDetail;
 
   @override
   Widget build(BuildContext context) {
-    final computed = brief.computed;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Today’s readiness',
-          style: Theme.of(context).textTheme.titleMedium,
+        TodayHero(
+          brief: brief,
+          onStartSession: onStartSession,
+          onViewAnalytics: onViewAnalytics,
         ),
-        const SizedBox(height: TracendSpacing.xs),
-        Row(
-          children: [
-            _buildRecoveryTile(context, computed),
-            const SizedBox(width: TracendSpacing.xs),
-            _buildTrainingTile(context, computed),
-            const SizedBox(width: TracendSpacing.xs),
-            _buildNutritionTile(context, computed),
-          ],
+        if (brief.computed != null) ...[
+          const SizedBox(height: TracendSpacing.lg),
+          Center(child: RecoveryRing(computed: brief.computed!)),
+        ],
+        const SizedBox(height: TracendSpacing.lg),
+        ReadinessStrip(
+          brief: brief,
+          onOpen: (title, detail) => onReadinessDetail(context, title, detail),
         ),
+        const SizedBox(height: TracendSpacing.sm),
+        Material(
+          color: Colors.transparent,
+          child: ExpansionTile(
+            key: const PageStorageKey('today-evidence'),
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            title: const Text('See evidence'),
+            children: [
+              _BriefEvidence(
+                label: 'Check-in',
+                available: brief.checkIn != null,
+                detail: brief.checkIn == null
+                    ? 'Add today’s recovery input'
+                    : 'Current user-confirmed input',
+              ),
+              _BriefEvidence(
+                label: 'Apple Health',
+                available: brief.health != null,
+                detail: brief.health == null
+                    ? 'No fresh summary for today'
+                    : 'Dated normalized summary',
+              ),
+              _BriefEvidence(
+                label: 'Training plan',
+                available: brief.workout != null,
+                detail:
+                    brief.workout?['name'] as String? ??
+                    'No workout assigned today',
+              ),
+              _BriefEvidence(
+                label: 'Meal schedule',
+                available: brief.nextMeal != null,
+                detail:
+                    brief.nextMeal?['label'] as String? ?? 'No remaining meal',
+              ),
+            ],
+          ),
+        ),
+        const PrecisionDivider(),
+        if (brief.computed != null) ...[
+          SleepArchitectureCard(computed: brief.computed!),
+          const SizedBox(height: TracendSpacing.sm),
+        ],
+        SessionPlanCard(workout: brief.workout, onOpen: onOpenWorkout),
+        const SizedBox(height: TracendSpacing.sm),
+        FutureBuilder<NutritionTargets?>(
+          future: targets,
+          builder: (context, snapshot) => MetabolicTargetCard(
+            consumed: brief.nutrition,
+            targets: snapshot.data,
+            onLog: onOpenNutrition,
+          ),
+        ),
+        const SizedBox(height: TracendSpacing.lg),
+        _CoachPerspectiveSection(coach: coach),
+        if (brief.checkIn == null) ...[
+          const SizedBox(height: TracendSpacing.lg),
+          CheckInPromptBar(onCheckIn: onCheckIn),
+        ] else ...[
+          const SizedBox(height: TracendSpacing.lg),
+          CheckInPromptBar(onCheckIn: onCheckIn, completed: true),
+        ],
       ],
-    );
-  }
-
-  Widget _buildRecoveryTile(BuildContext context, ComputedMetrics? computed) {
-    final colors = context.tracendColors;
-    final score = computed?.scores.recovery;
-
-    final value = score != null ? '$score' : '--';
-    final Color color;
-    final String detail;
-
-    if (score != null) {
-      if (score >= 65) {
-        detail = 'Good';
-        color = colors.stateStable;
-      } else if (score >= 50) {
-        detail = 'Moderate';
-        color = const Color(0xFFE2A45C);
-      } else {
-        detail = 'Low';
-        color = colors.stateAttention;
-      }
-    } else {
-      detail = brief.checkIn == null ? 'Check in' : 'Updated';
-      color = brief.checkIn == null
-          ? colors.stateAttention
-          : colors.actionPrimary;
-    }
-
-    return Expanded(
-      child: _ScoredTile(
-        label: 'Recovery',
-        value: value,
-        detail: detail,
-        icon: CupertinoIcons.heart_fill,
-        color: color,
-        onTap: () => onOpen(
-          'Recovery',
-          score != null
-              ? 'Recovery score derived from HRV, resting HR, sleep, respiratory rate, and prior strain. Score: $score/100.'
-              : brief.checkIn == null
-              ? 'Tracend needs today\u2019s energy, sleep, soreness and pain check-in before adapting your session.'
-              : 'Today\u2019s user-confirmed recovery check-in is available to the coach.',
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTrainingTile(BuildContext context, ComputedMetrics? computed) {
-    final colors = context.tracendColors;
-    final acwr = computed?.scores.acwr;
-
-    final value = acwr != null ? acwr.toStringAsFixed(2) : '--';
-    final Color color;
-    final String detail;
-
-    if (acwr != null) {
-      if (acwr >= 0.8 && acwr <= 1.3) {
-        detail = 'Optimal';
-        color = colors.stateStable;
-      } else if (acwr < 0.8) {
-        detail = 'Low load';
-        color = const Color(0xFFE2A45C);
-      } else {
-        detail = 'High load';
-        color = colors.stateAttention;
-      }
-    } else {
-      detail = brief.workout == null ? 'Rest day' : 'Planned';
-      color = brief.workout == null
-          ? colors.textSecondary
-          : colors.actionPrimary;
-    }
-
-    return Expanded(
-      child: _ScoredTile(
-        label: 'Load',
-        value: value,
-        detail: detail,
-        icon: CupertinoIcons.bolt_fill,
-        color: color,
-        onTap: () => onOpen(
-          'Training Load',
-          acwr != null
-              ? 'Acute:Chronic Workload Ratio (ACWR). ${acwr.toStringAsFixed(2)} \u2014 0.8\u20131.3 is the optimal training zone.'
-              : brief.workout == null
-              ? 'Your approved plan has no workout assigned today.'
-              : '${brief.workout!['name']} comes from your active approved plan.',
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNutritionTile(BuildContext context, ComputedMetrics? computed) {
-    final colors = context.tracendColors;
-    final adherence = computed?.scores.macroAdherencePct;
-
-    final value = adherence != null ? '$adherence%' : '--';
-    final Color color;
-    final String detail;
-
-    if (adherence != null) {
-      if (adherence >= 90) {
-        detail = 'On track';
-        color = colors.stateStable;
-      } else if (adherence >= 70) {
-        detail = 'Partial';
-        color = const Color(0xFFE2A45C);
-      } else {
-        detail = 'Off track';
-        color = colors.stateAttention;
-      }
-    } else {
-      detail = brief.nextMeal == null ? 'Up to date' : 'Next meal';
-      color = brief.nextMeal == null
-          ? colors.textSecondary
-          : const Color(0xFFE2A45C);
-    }
-
-    return Expanded(
-      child: _ScoredTile(
-        label: 'Nutrition',
-        value: value,
-        detail: detail,
-        icon: CupertinoIcons.leaf_arrow_circlepath,
-        color: color,
-        onTap: () => onOpen(
-          'Nutrition',
-          adherence != null
-              ? 'Macro adherence: $adherence%. Protein, carbs, and fat within targets over the last 7 days.'
-              : brief.nextMeal == null
-              ? 'There is no remaining scheduled meal action right now.'
-              : '${brief.nextMeal!['label']} is next at ${brief.nextMeal!['local_time']}.',
-        ),
-      ),
     );
   }
 }
 
-class _ScoredTile extends StatelessWidget {
-  const _ScoredTile({
-    required this.label,
-    required this.value,
-    required this.detail,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-  final String label, value, detail;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
+/// Coach perspective: loads the latest [CoachDecision] (carries the real
+/// training/nutrition summaries + confidence) to drive the T-Coach/N-Coach
+/// toggle. Falls back to an honest prompt when no decision exists.
+class _CoachPerspectiveSection extends StatelessWidget {
+  const _CoachPerspectiveSection({required this.coach});
+
+  final CoachRepository coach;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: context.tracendColors.surface,
-    borderRadius: BorderRadius.circular(TracendRadii.control),
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(TracendRadii.control),
-      child: Padding(
-        padding: const EdgeInsets.all(TracendSpacing.xs),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(height: TracendSpacing.sm),
-            Text(label, style: Theme.of(context).textTheme.labelMedium),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: color,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
+  Widget build(BuildContext context) {
+    return FutureBuilder<CoachDecision?>(
+      future: coach.loadLatest(),
+      builder: (context, snapshot) {
+        final decision = snapshot.data;
+        if (decision == null) {
+          return const TracendCard(
+            child: Text(
+              'Open Coach to generate an evidence-backed daily decision.',
             ),
-            const SizedBox(height: TracendSpacing.xxs),
-            Text(
-              detail,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: context.tracendColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
+          );
+        }
+        return CoachPerspectiveCard(decision: decision);
+      },
+    );
+  }
 }
 
 class _BriefEvidence extends StatelessWidget {
@@ -704,268 +414,4 @@ class _BriefEvidence extends StatelessWidget {
     title: Text(label),
     subtitle: Text(detail),
   );
-}
-
-class _TimelineRow extends StatelessWidget {
-  const _TimelineRow({
-    required this.icon,
-    required this.title,
-    required this.detail,
-  });
-  final IconData icon;
-  final String title;
-  final String detail;
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Icon(icon, color: context.tracendColors.actionPrimary),
-      const SizedBox(width: TracendSpacing.sm),
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            Text(detail, style: Theme.of(context).textTheme.bodyMedium),
-          ],
-        ),
-      ),
-    ],
-  );
-}
-
-class _HealthEvidence extends StatelessWidget {
-  const _HealthEvidence({required this.history});
-
-  final HealthHistory history;
-
-  @override
-  Widget build(BuildContext context) {
-    final latest = history.latest;
-    if (latest == null) {
-      return const TracendCard(
-        child: Text(
-          'No Apple Health summaries are stored yet. Refresh after granting access, or continue with the daily check-in.',
-        ),
-      );
-    }
-    final sleep = history.days
-        .where((day) => day.sleepMinutes != null)
-        .toList();
-    final steps = history.days.where((day) => day.steps != null).toList();
-    return Column(
-      children: [
-        TracendCard(
-          raised: true,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Latest stored day · ${_shortDate(latest.date)}',
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-              const SizedBox(height: TracendSpacing.md),
-              Text(
-                'What matters today',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: TracendSpacing.sm),
-              Row(
-                children: [
-                  Expanded(
-                    child: _SignalMetric(
-                      label: 'Steps',
-                      value: latest.steps?.toString() ?? '—',
-                    ),
-                  ),
-                  const SizedBox(width: TracendSpacing.xs),
-                  Expanded(
-                    child: _SignalMetric(
-                      label: 'Sleep',
-                      value: latest.sleepMinutes == null
-                          ? '—'
-                          : _duration(latest.sleepMinutes!),
-                    ),
-                  ),
-                  const SizedBox(width: TracendSpacing.xs),
-                  Expanded(
-                    child: _SignalMetric(
-                      label: 'Training',
-                      value: latest.workoutMinutes == null
-                          ? '—'
-                          : '${latest.workoutMinutes}m',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: TracendSpacing.sm),
-              Text(
-                latest.sleepMinutes == null
-                    ? 'Activity is available. Recovery guidance relies more on your check-in because sleep was not found.'
-                    : 'Activity and sleep are available to your Coach for today’s recovery context.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              Material(
-                color: Colors.transparent,
-                child: ExpansionTile(
-                  key: const PageStorageKey('today-more-health'),
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: EdgeInsets.zero,
-                  title: const Text('More health details'),
-                  children: [
-                    _HealthDetail(
-                      label: 'Active energy',
-                      value: latest.activeEnergyKcal == null
-                          ? 'Not found'
-                          : '${latest.activeEnergyKcal!.round()} kcal',
-                    ),
-                    _HealthDetail(
-                      label: 'Resting heart rate',
-                      value: latest.restingHeartRateBpm == null
-                          ? 'Not found'
-                          : '${latest.restingHeartRateBpm!.round()} bpm',
-                    ),
-                    _HealthDetail(
-                      label: 'HRV (SDNN)',
-                      value: latest.hrvSdnnMs == null
-                          ? 'Not found'
-                          : '${latest.hrvSdnnMs!.round()} ms',
-                    ),
-                    _HealthDetail(
-                      label: 'Weight',
-                      value: latest.weightKg == null
-                          ? 'Not found'
-                          : '${latest.weightKg!.toStringAsFixed(1)} kg',
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (sleep.length >= 2) ...[
-          const SizedBox(height: TracendSpacing.sm),
-          _HealthTrend(
-            title: 'Sleep duration',
-            points: sleep
-                .map((day) => DatedTrendValue(day.date, day.sleepMinutes! / 60))
-                .toList(),
-            unit: 'hours',
-          ),
-        ],
-        if (steps.length >= 2) ...[
-          const SizedBox(height: TracendSpacing.sm),
-          _HealthTrend(
-            title: 'Daily steps',
-            points: steps
-                .map((day) => DatedTrendValue(day.date, day.steps!.toDouble()))
-                .toList(),
-            unit: 'steps',
-          ),
-        ],
-        if (sleep.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: TracendSpacing.sm),
-            child: TracendCard(
-              child: Text(
-                'Sleep has no stored samples. Confirm Apple Health contains sleep records and that Tracend has Sleep read access; an empty query cannot tell us which one is missing.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  static String _duration(int minutes) => '${minutes ~/ 60}h ${minutes % 60}m';
-  static String _shortDate(DateTime date) => '${date.day}/${date.month}';
-}
-
-class _SignalMetric extends StatelessWidget {
-  const _SignalMetric({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: context.tracendColors.surfaceRaised,
-      borderRadius: BorderRadius.circular(TracendRadii.control),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.all(TracendSpacing.sm),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.labelMedium),
-          const SizedBox(height: TracendSpacing.xxs),
-          Text(value, style: Theme.of(context).textTheme.titleMedium),
-        ],
-      ),
-    ),
-  );
-}
-
-class _HealthDetail extends StatelessWidget {
-  const _HealthDetail({required this.label, required this.value});
-  final String label, value;
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: TracendSpacing.xs),
-    child: Row(
-      children: [
-        Expanded(child: Text(label)),
-        Text(value, style: Theme.of(context).textTheme.labelLarge),
-      ],
-    ),
-  );
-}
-
-class _HealthTrend extends StatelessWidget {
-  const _HealthTrend({
-    required this.title,
-    required this.points,
-    required this.unit,
-  });
-  final String title;
-  final List<DatedTrendValue> points;
-  final String unit;
-
-  @override
-  Widget build(BuildContext context) {
-    final latest = points.last.value;
-    final average =
-        points.fold<double>(0, (sum, item) => sum + item.value) / points.length;
-    final difference = latest - average;
-    return TracendCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: TracendSpacing.xxs),
-          Text(
-            '${_format(latest)} $unit today · ${difference >= 0 ? '+' : ''}${_format(difference)} vs average',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: TracendSpacing.sm),
-          EvidenceTrendChart(
-            values: points,
-            unit: unit,
-            average: average,
-            compact: true,
-            semanticLabel:
-                '$title from ${_date(points.first.date)} to ${_date(points.last.date)}. Latest ${_format(latest)} $unit. Average ${_format(average)}.',
-          ),
-          const SizedBox(height: TracendSpacing.xs),
-          Text(
-            'Dots are recorded days. Gaps follow the real calendar; the thin line marks your recorded average.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _format(double value) =>
-      value >= 100 ? value.round().toString() : value.toStringAsFixed(1);
-  String _date(DateTime date) => '${date.day}/${date.month}';
 }

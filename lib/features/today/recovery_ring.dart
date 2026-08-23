@@ -36,6 +36,7 @@ class RecoveryRing extends StatelessWidget {
                 hasData: hasData,
                 bgArcColor: colors.borderSubtle,
                 stableColor: colors.stateStable,
+                amberColor: colors.accentAmber,
                 attentionColor: colors.stateAttention,
                 lowConfidence:
                     confidence == 'cold_start' || confidence == 'low',
@@ -102,7 +103,7 @@ class RecoveryRing extends StatelessWidget {
 
   Color _labelColor(TracendColors colors, int score) {
     if (score >= 65) return colors.stateStable;
-    if (score >= 50) return const Color(0xFFE2A45C);
+    if (score >= 50) return colors.accentAmber;
     return colors.stateAttention;
   }
 }
@@ -113,6 +114,7 @@ class _RecoveryArcPainter extends CustomPainter {
     required this.hasData,
     required this.bgArcColor,
     required this.stableColor,
+    required this.amberColor,
     required this.attentionColor,
     required this.lowConfidence,
   });
@@ -121,6 +123,7 @@ class _RecoveryArcPainter extends CustomPainter {
   final bool hasData;
   final Color bgArcColor;
   final Color stableColor;
+  final Color amberColor;
   final Color attentionColor;
   final bool lowConfidence;
 
@@ -150,7 +153,7 @@ class _RecoveryArcPainter extends CustomPainter {
     final gradient = SweepGradient(
       startAngle: _kArcStart,
       endAngle: _kArcStart + _kArcSweep,
-      colors: [attentionColor, const Color(0xFFE2A45C), stableColor],
+      colors: [attentionColor, amberColor, stableColor],
     );
 
     final arcPaint = Paint()
@@ -215,8 +218,8 @@ class _DriverBreakdown extends StatelessWidget {
     final drivers = [
       ('HRV', breakdown.hrvZ, colors.actionPrimary),
       ('RHR', breakdown.rhrZ, colors.stateStable),
-      ('Sleep', breakdown.sleepZ, Colors.deepPurple.shade200),
-      ('Resp', breakdown.respRateZ, const Color(0xFFE2A45C)),
+      ('Sleep', breakdown.sleepZ, colors.actionPrimary.withValues(alpha: 0.55)),
+      ('Resp', breakdown.respRateZ, colors.accentAmber),
       ('Strain', breakdown.prevStrainZ, colors.stateAttention),
     ];
 

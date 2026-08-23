@@ -46,6 +46,12 @@ void main() {
     expect(light.stateStable, const Color(0xFF00796B));
   });
 
+  test('light accent tokens meet the 3:1 graphics threshold on canvas', () {
+    const light = TracendColors.light;
+    expect(_contrast(light.accentAmber, light.canvas), greaterThanOrEqualTo(3));
+    expect(_contrast(light.accentNow, light.canvas), greaterThanOrEqualTo(3));
+  });
+
   test('dark theme uses the Precision Pro Stitch palette', () {
     const dark = TracendColors.dark;
     expect(dark.canvas, const Color(0xFF080B10));

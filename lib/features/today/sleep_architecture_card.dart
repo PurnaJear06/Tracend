@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 import 'computed_metrics.dart';
 
 class SleepArchitectureCard extends StatelessWidget {
@@ -15,9 +15,9 @@ class SleepArchitectureCard extends StatelessWidget {
     final baselines = computed.baselines;
     final hasData = scores.sleepQuality != null;
 
-    return TracendCard(
-      raised: true,
-      padding: const EdgeInsets.all(TracendSpacing.md),
+    return PremiumGradientCard(
+      glow: hasData,
+      glowColor: colors.actionPrimary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -57,7 +57,7 @@ class _SleepHeader extends StatelessWidget {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: const Color(0xFF7C8AFF).withValues(alpha: 0.12),
+            color: colors.actionPrimary.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(TracendRadii.control),
           ),
           child: Icon(
@@ -103,7 +103,7 @@ class _SleepHeader extends StatelessWidget {
 
   Color _qualityColor(TracendColors colors, int q) {
     if (q >= 80) return colors.stateStable;
-    if (q >= 60) return const Color(0xFFE2A45C);
+    if (q >= 60) return colors.accentAmber;
     return colors.stateAttention;
   }
 
@@ -153,7 +153,7 @@ class _SubScoreRow extends StatelessWidget {
     final barColor = pct >= 0.8
         ? colors.stateStable
         : pct >= 0.6
-        ? const Color(0xFFE2A45C)
+        ? colors.accentAmber
         : colors.stateAttention;
 
     return Row(

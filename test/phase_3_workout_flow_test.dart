@@ -234,17 +234,14 @@ void main() {
     );
     await tester.pumpWidget(_app(const TodayScreen(environment: environment)));
     await tester.scrollUntilVisible(
-      find.text('Add today’s check-in'),
+      find.text('Morning status recorded'),
       300,
       scrollable: find.byType(Scrollable).first,
+      maxScrolls: 100,
     );
-    final tile = tester.widget<ListTile>(
-      find.ancestor(
-        of: find.text('Add today’s check-in'),
-        matching: find.byType(ListTile),
-      ),
-    );
-    tile.onTap!();
+    await tester.ensureVisible(find.text('Morning status recorded'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Morning status recorded'));
     await tester.pumpAndSettle();
     expect(find.text('Daily check-in'), findsOneWidget);
     expect(find.text('Sleep quality'), findsOneWidget);
