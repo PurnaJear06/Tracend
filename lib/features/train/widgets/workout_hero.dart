@@ -8,7 +8,7 @@ import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 /// Train hero (Stitch `train.html`): approved workout headline, real
 /// exercise/set/duration facts folded from the plan, coach insight line from
-/// the daily brief decision, and the start/view action.
+/// the latest `CoachDecision` (`loadLatest`), and the start/view action.
 ///
 /// State table:
 /// - full: name + objective + facts + primary action

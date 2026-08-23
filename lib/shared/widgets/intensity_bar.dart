@@ -97,8 +97,10 @@ class IntensityBar extends StatelessWidget {
           Row(
             children: [
               _LegendDot(color: colors.actionPrimary, label: 'Planned RPE'),
-              const SizedBox(width: TracendSpacing.sm),
-              _LegendDot(color: colors.stateStable, label: 'Recorded'),
+              if (entries.any((entry) => entry.recordedRpe != null)) ...[
+                const SizedBox(width: TracendSpacing.sm),
+                _LegendDot(color: colors.stateStable, label: 'Recorded'),
+              ],
             ],
           ),
         ],

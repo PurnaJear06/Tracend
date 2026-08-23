@@ -28,6 +28,7 @@ class TargetsGrid extends StatelessWidget {
     final targets = this.targets;
 
     if (targets == null) {
+      final summary = this.summary;
       return PremiumGradientCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -35,7 +36,9 @@ class TargetsGrid extends StatelessWidget {
             _TargetsTag(),
             const SizedBox(height: TracendSpacing.sm),
             Text(
-              '${_round(summary?.calories)} kcal logged',
+              summary == null
+                  ? 'No confirmed meals yet'
+                  : '${summary.calories.round()} kcal logged',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontFamily: TracendFonts.monoFamily,
                 fontFeatures: const [FontFeature.tabularFigures()],

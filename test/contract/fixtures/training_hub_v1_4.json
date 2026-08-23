@@ -61,14 +61,22 @@
   ],
   "recent_sessions": [
     {
+      "id": "session-1",
+      "workout_id": "550e8400-e29b-41d4-a716-446655440001",
       "name": "Push Day",
       "local_date": "2026-07-18",
-      "duration_seconds": 3300
+      "duration_seconds": 3300,
+      "effort": 8,
+      "energy": 3
     },
     {
+      "id": "session-2",
+      "workout_id": "550e8400-e29b-41d4-a716-446655440002",
       "name": "Pull Day",
       "local_date": "2026-07-16",
-      "duration_seconds": 2900
+      "duration_seconds": 2900,
+      "effort": 8,
+      "energy": 3
     }
   ],
   "adherence": {
@@ -90,7 +98,9 @@
       "best_repetitions": 8
     }
   ],
-  "completed_day_set": ["2026-07-18"],
+  "completed_day_set": [
+    "2026-07-18"
+  ],
   "computed": {
     "acwr": 1.15,
     "training_monotony": 1.8,
@@ -100,8 +110,8 @@
       "hrv_z": 0.517,
       "rhr_z": 0.455,
       "sleep_z": 0.798,
-      "resp_rate_z": 0.500,
-      "prev_strain_z": 0.300
+      "resp_rate_z": 0.5,
+      "prev_strain_z": 0.3
     },
     "sleep_quality": 85,
     "sleep_debt_minutes": -65

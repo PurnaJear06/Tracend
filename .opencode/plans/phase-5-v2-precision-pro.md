@@ -15,7 +15,7 @@ executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is 
 | ----- | ----- | ------ | ------ | ---- | ------ |
 | 0 | Docs + tokens + fonts + glass/motion widgets | ✅ Done 2026-08-22 | `c55d281` | analyze ✓ · format ✓ · 175 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-0-precision-pro-foundation.md` |
 | 1 | Today screen (hero + readouts + TrajectoryLens) | ✅ Done 2026-08-22 | `1bcc0d8` + `578f065` | analyze ✓ · format ✓ · 200 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-1-today-screen.md` (all fixed in `578f065`) |
-| 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ✅ Done 2026-08-23 | `d1db7b1` | analyze ✓ · format ✓ · 213 tests ✓ | pending `/review` |
+| 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ✅ Done 2026-08-23 | `d1db7b1` | analyze ✓ · format ✓ · 213 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-23-phase-5-v2-chunk-2-train-nutrition.md` (all fixed in follow-up) |
 | 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ⬜ Pending | — | — | — |
 | 4 | AI Usage + Shell + Account cleanup | ⬜ Pending | — | — | — |
 | 5 | Motion + A11y + copy audit + final gate + merge | ⬜ Pending | — | — | — |
@@ -39,6 +39,14 @@ Carry-forward notes from reviews:
   - Nutrition `CoachInsightCard` = `NutritionInsightCard` binding
     `CoachDecision.nutritionAction`/`nutritionSummary`/`confidence`; hidden when no decision.
   - Train hero coach-insight line binds `CoachDecision.trainingSummary`; hidden when null.
+- Chunk 2 review follow-ups (2026-08-24): coach repo injected into Train/Nutrition at the
+  shell (finding 1); `_ScheduledMealRow`/`_MealCard` extracted to
+  `lib/features/nutrition/widgets/meal_cards.dart` (nutrition_screen 589 → 453 lines,
+  finding 2); four screen-level tests added (finding 3); v1.4 contract fixture gained
+  `workout_id`/`effort`/`energy` + assertion (finding 4); IntensityBar "Recorded" legend
+  only when a marker exists (finding 5); TargetsGrid null-summary shows "No confirmed meals
+  yet" (finding 6); WorkoutHero doc comment corrected (finding 7). Finding 8 (date-scoped
+  `loadLatest`) deferred to a later chunk per review.
 
 ---
 

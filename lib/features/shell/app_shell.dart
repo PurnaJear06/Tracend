@@ -92,11 +92,13 @@ class _AppShellState extends State<AppShell> {
         key: const ValueKey('tab_train'),
         repository: _workouts,
         brief: _brief,
+        coach: _coach,
       ),
       CoachScreen(key: const ValueKey('tab_coach'), repository: _coach),
       NutritionScreen(
         key: const ValueKey('tab_nutrition'),
         repository: _nutrition,
+        coach: _coach,
       ),
       ProgressScreen(
         key: const ValueKey('tab_progress'),

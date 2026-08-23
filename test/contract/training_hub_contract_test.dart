@@ -190,6 +190,20 @@ void main() {
       }
     });
 
+    test('recent_sessions carry workout_id for detail wiring', () {
+      final json = _loadFixtureJson(fixture);
+      final sessions = (json['recent_sessions'] as List).toMapList();
+      expect(sessions, isNotEmpty);
+      for (final row in sessions) {
+        expect(row['name'], isA<String>());
+        expect(row['local_date'], isA<String>());
+        // Matches TrainingSessionSummary parsing (nullable on older payloads)
+        if (row.containsKey('workout_id')) {
+          expect(row['workout_id'], isA<String>());
+        }
+      }
+    });
+
     test('completed_day_set contains parseable date strings', () {
       final json = _loadFixtureJson(fixture);
       final completedDays = json['completed_day_set'] as List;
