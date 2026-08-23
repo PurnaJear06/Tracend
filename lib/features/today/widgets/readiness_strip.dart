@@ -296,7 +296,8 @@ class _ReadinessTile extends StatelessWidget {
 }
 
 /// Compact z-score chip. Positive z (above baseline) reads stable; negative
-/// reads attention. `raw` renders the value as-is (strain is not a z-score).
+/// reads attention. `raw` renders a magnitude as-is in a neutral accent —
+/// strain is not a signed z-score, so color must not imply good/bad.
 class _ZChip extends StatelessWidget {
   const _ZChip({required this.label, required this.z, this.raw = false});
 
@@ -307,8 +308,12 @@ class _ZChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    final positive = raw ? true : z >= 0;
-    final accent = positive ? colors.stateStable : colors.stateAttention;
+    final Color accent;
+    if (raw) {
+      accent = colors.textSecondary;
+    } else {
+      accent = z >= 0 ? colors.stateStable : colors.stateAttention;
+    }
     final text = raw
         ? z.toStringAsFixed(1)
         : '${z >= 0 ? '+' : ''}${z.toStringAsFixed(1)}';

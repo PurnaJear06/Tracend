@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
@@ -58,13 +59,18 @@ class _CoachPerspectiveCardState extends State<CoachPerspectiveCard> {
                   context,
                 ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w300),
               ),
+              const SizedBox(height: TracendSpacing.xs),
+              Text(
+                decision.reason,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
               const SizedBox(height: TracendSpacing.sm),
               Divider(height: 1, color: colors.borderSubtle),
               const SizedBox(height: TracendSpacing.sm),
               Row(
                 children: [
                   Icon(
-                    Icons.memory_outlined,
+                    CupertinoIcons.sparkles,
                     size: 14,
                     color: colors.textSecondary,
                   ),

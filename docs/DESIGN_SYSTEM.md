@@ -43,16 +43,18 @@ science-fiction control panel.
 The visual language combines the discipline of a training log, the accuracy of an instrument
 readout, and the physical momentum implied by the Tracend name.
 
-### Signature element: the coaching horizon
+### Signature element: the trajectory lens
 
-The coaching horizon is a restrained generated landscape behind Today's single next move. Its
-topographic path suggests progress without pretending to be a metric. Directly below it, the native
-Readiness Strip exposes three factual inputs that can be opened and verified.
+The trajectory lens is a luminous bezier curve on Today's hero that plots the real computed
+signals (Sleep → Train → Fuel → Now) with a draw-on reveal and a pulsing NOW marker. It
+communicates momentum without pretending to be a metric — every point binds to a
+`ComputedScores` field, and when fewer than two scores exist it degrades to an honest
+signal chip rail rather than drawing a fabricated curve.
 
-The backdrop never contains text, scores, charts, or implied measurements. The native instruction
-and readiness factors remain authoritative and accessible.
+The lens never contains text scores, charts, or implied measurements beyond its labeled
+points. The native instruction and readiness factors remain authoritative and accessible.
 
-The horizon is the one deliberate aesthetic risk. Other surfaces remain quiet so it retains meaning.
+The lens is the one deliberate aesthetic risk. Other surfaces remain quiet so it retains meaning.
 
 ## 3. Brand Tokens
 
@@ -84,7 +86,7 @@ Semantic roles include `canvas`, `surface`, `surfaceRaised`, `textPrimary`, `tex
 - Body text must meet WCAG AA 4.5:1 contrast; large text and meaningful graphics must meet 3:1.
 - Stable, attention, danger, confidence, and selection always include text or iconography; color is
   never the only signal.
-- Gradients may appear inside the coaching horizon and data visuals when they encode direction or
+- Gradients may appear inside the trajectory lens and data visuals when they encode direction or
   improve native-text contrast.
 - Blur is reserved for modal separation and camera overlays, never ambient decoration.
 

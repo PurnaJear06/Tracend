@@ -3,10 +3,11 @@
 **Active change:** Phase 5 v2 "Precision Pro" production UI — chunked execution on
 `feature/feature-engine-phase-5-v2`, plan: `.opencode/plans/phase-5-v2-precision-pro.md`
 (progress tracker at top of plan). Chunk 0 complete (`c55d281`: authority docs, Stitch dark
-tokens, Spline Sans + IBM Plex Mono, TracendGlass/PremiumGradientCard/MicroMotion). Session
-duration cap (180 min) deployed 2026-08-22 (`20260822120000_session_duration_cap.sql`).
-Feature Engine Phase 4 remains the last shipped UI milestone. 175 Flutter tests pass,
-0 analysis issues.
+tokens, Spline Sans + IBM Plex Mono, TracendGlass/PremiumGradientCard/MicroMotion). Chunk 1
+complete (`1bcc0d8`: Today screen rebuild — TrajectoryLens bezier, hero, readiness strip,
+readout cards, coach perspective, check-in bar; 8 widgets extracted). Session duration cap
+(180 min) deployed 2026-08-22 (`20260822120000_session_duration_cap.sql`). Feature Engine
+Phase 4 remains the last shipped UI milestone. 200 Flutter tests pass, 0 analysis issues.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -40,7 +41,7 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Feature Engine Phase 2    | **Complete — merged & verified**      | `docs/handoff/backend.md`  | `docs/ALGORITHMS.md`, `.opencode/plans/phase-2-feature-engine-algorithms.md` |
 | Feature Engine Phase 3    | **Deployed — merged**                | `docs/handoff/backend.md`  | `.opencode/plans/phase-3-coach-integration.md`                                |
 | Feature Engine Phase 4    | **Complete — widgets built + Today integrated** | `docs/handoff/frontend.md` | `.opencode/plans/phase-4-flutter-computed-metrics.md`
-| Phase 5 v2 "Precision Pro" UI | **In progress — Chunk 0**          | `docs/handoff/design.md`   | `.opencode/plans/phase-5-v2-precision-pro.md`   |
+| Phase 5 v2 "Precision Pro" UI | **In progress — Chunk 1 done** | `docs/handoff/design.md`   | `.opencode/plans/phase-5-v2-precision-pro.md`   |
 | Backend foundation        | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
 | Frontend/UI               | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
 | Coach Continuity Memory   | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |

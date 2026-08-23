@@ -14,7 +14,7 @@ executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is 
 | Chunk | Scope | Status | Commit | Gate | Review |
 | ----- | ----- | ------ | ------ | ---- | ------ |
 | 0 | Docs + tokens + fonts + glass/motion widgets | ✅ Done 2026-08-22 | `c55d281` | analyze ✓ · format ✓ · 175 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-0-precision-pro-foundation.md` |
-| 1 | Today screen (hero + readouts + TrajectoryLens) | ✅ Done 2026-08-22 | (pending commit) | analyze ✓ · format ✓ · 200 tests ✓ | pending |
+| 1 | Today screen (hero + readouts + TrajectoryLens) | ✅ Done 2026-08-22 | `1bcc0d8` | analyze ✓ · format ✓ · 200 tests ✓ | pending |
 | 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ⬜ Pending | — | — | — |
 | 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ⬜ Pending | — | — | — |
 | 4 | AI Usage + Shell + Account cleanup | ⬜ Pending | — | — | — |

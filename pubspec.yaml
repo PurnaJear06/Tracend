@@ -71,7 +71,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/visuals/tracend-coaching-horizon-v1.jpg
     - assets/fonts/OFL-SplineSans.txt
     - assets/fonts/OFL-IBMPlex.txt
 

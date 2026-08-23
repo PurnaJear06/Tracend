@@ -124,7 +124,7 @@ class _TrajectoryLensState extends State<TrajectoryLens>
                     Text(
                       point.label,
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontSize: 9,
+                        fontSize: 11,
                         letterSpacing: 1.6,
                         color: point == widget.points.last
                             ? colors.accentNow
@@ -305,10 +305,19 @@ class _TrajectoryPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _TrajectoryPainter oldDelegate) =>
       oldDelegate.progress != progress ||
-      oldDelegate.units != units ||
+      !_sameUnits(oldDelegate.units, units) ||
       oldDelegate.line != line ||
       oldDelegate.grid != grid ||
       oldDelegate.dot != dot;
+
+  static bool _sameUnits(List<Offset> a, List<Offset> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 }
 
 /// Cold-start / low-data fallback: the original signal chip rail. Kept so the

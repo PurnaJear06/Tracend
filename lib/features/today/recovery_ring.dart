@@ -38,6 +38,7 @@ class RecoveryRing extends StatelessWidget {
                 stableColor: colors.stateStable,
                 amberColor: colors.accentAmber,
                 attentionColor: colors.stateAttention,
+                markerColor: colors.textPrimary,
                 lowConfidence:
                     confidence == 'cold_start' || confidence == 'low',
               ),
@@ -116,6 +117,7 @@ class _RecoveryArcPainter extends CustomPainter {
     required this.stableColor,
     required this.amberColor,
     required this.attentionColor,
+    required this.markerColor,
     required this.lowConfidence,
   });
 
@@ -125,6 +127,7 @@ class _RecoveryArcPainter extends CustomPainter {
   final Color stableColor;
   final Color amberColor;
   final Color attentionColor;
+  final Color markerColor;
   final bool lowConfidence;
 
   @override
@@ -188,11 +191,7 @@ class _RecoveryArcPainter extends CustomPainter {
     );
 
     if (lowConfidence) {
-      canvas.drawCircle(
-        Offset(dotX, dotY),
-        2.5,
-        Paint()..color = const Color(0xFFFFFFFF),
-      );
+      canvas.drawCircle(Offset(dotX, dotY), 2.5, Paint()..color = markerColor);
     }
   }
 

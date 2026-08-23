@@ -308,7 +308,20 @@ new shared widgets `TracendGlass` (chrome-only, opaque fallback), `PremiumGradie
 pinned SDK has no `accessibilityFeaturesOf`). 175 tests pass. Review: PASS with findings
 (`docs/reviews/2026-08-22-phase-5-v2-chunk-0-precision-pro-foundation.md`).
 
-Next: Chunk 1 — Today screen (hero, TrajectoryLens rewrite, readouts).
+**Chunk 1 complete (`1bcc0d8`):** Today screen rebuilt to Stitch. `TrajectoryLens` rewritten
+as a bezier `CustomPainter` with `PathMetric` draw-on + pulsing NOW dot; NOW resolves only to
+real computed fields (`recovery ?? last real point`), chip-rail fallback when <2 scores
+(noop rule: never invent a value). Hero (confidence pill in `TracendGlass`, 42pt decision
+headline, Start session disabled-not-no-op, View analytics hidden when unwired), restyled
+`ReadinessStrip` (mono values, real z-chips), new readouts `SessionPlanCard`,
+`MetabolicTargetCard`, `CoachPerspectiveCard` (real T/N toggle), `CheckInPromptBar`,
+`PrecisionDivider`. 8 widgets extracted to `lib/features/today/widgets/` (screen 417 lines).
+Wired `app_shell` tab callbacks (View analytics → Progress, LOG → Nutrition). Removed the
+coaching-horizon backdrop + asset (DESIGN_SYSTEM §2 now documents the trajectory lens as the
+signature element). 200 tests pass. Review: PASS with findings
+(`docs/reviews/2026-08-22-phase-5-v2-chunk-1-today-screen.md`).
+
+Next: Chunk 2 — Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid, CoachInsightCard).
 
 ## Session Duration Cap (2026-08-22)
 

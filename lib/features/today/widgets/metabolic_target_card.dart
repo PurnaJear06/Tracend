@@ -239,7 +239,7 @@ class _LogButton extends StatelessWidget {
         onTap: onLog,
         borderRadius: BorderRadius.circular(999),
         child: Container(
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 32),
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           padding: const EdgeInsets.symmetric(horizontal: TracendSpacing.sm),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.05),

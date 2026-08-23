@@ -352,13 +352,11 @@ class _BriefContent extends StatelessWidget {
         ),
         const SizedBox(height: TracendSpacing.lg),
         _CoachPerspectiveSection(coach: coach),
-        if (brief.checkIn == null) ...[
-          const SizedBox(height: TracendSpacing.lg),
-          CheckInPromptBar(onCheckIn: onCheckIn),
-        ] else ...[
-          const SizedBox(height: TracendSpacing.lg),
-          CheckInPromptBar(onCheckIn: onCheckIn, completed: true),
-        ],
+        const SizedBox(height: TracendSpacing.lg),
+        CheckInPromptBar(
+          onCheckIn: onCheckIn,
+          completed: brief.checkIn != null,
+        ),
       ],
     );
   }
