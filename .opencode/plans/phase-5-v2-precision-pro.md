@@ -15,7 +15,7 @@ executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is 
 | ----- | ----- | ------ | ------ | ---- | ------ |
 | 0 | Docs + tokens + fonts + glass/motion widgets | ✅ Done 2026-08-22 | `c55d281` | analyze ✓ · format ✓ · 175 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-0-precision-pro-foundation.md` |
 | 1 | Today screen (hero + readouts + TrajectoryLens) | ✅ Done 2026-08-22 | `1bcc0d8` + `578f065` | analyze ✓ · format ✓ · 200 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-1-today-screen.md` (all fixed in `578f065`) |
-| 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ✅ Done 2026-08-23 | pending commit | analyze ✓ · format ✓ · 213 tests ✓ | pending `/review` |
+| 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ✅ Done 2026-08-23 | `d1db7b1` | analyze ✓ · format ✓ · 213 tests ✓ | pending `/review` |
 | 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ⬜ Pending | — | — | — |
 | 4 | AI Usage + Shell + Account cleanup | ⬜ Pending | — | — | — |
 | 5 | Motion + A11y + copy audit + final gate + merge | ⬜ Pending | — | — | — |
