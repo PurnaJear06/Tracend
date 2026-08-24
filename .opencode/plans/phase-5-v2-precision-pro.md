@@ -1,7 +1,7 @@
 # Phase 5 v2 — "Precision Pro" Production UI — Master Plan
 
 **Created:** 2026-08-22 (rewritten same day after master-plan cross-check)
-**Status:** Chunk 4 in progress (AI Usage + Shell + Account)
+**Status:** Chunk 4 complete — review pending (AI Usage + Shell + Account)
 **Branch:** `feature/feature-engine-phase-5-v2` (from `93fa49e`) → merge into `feature/feature-engine`
 **Backup:** tag `backup/pre-phase-5-v2` (local; push blocked by deploy-guard — user pushes or approves)
 **Supersedes:** the 2026-08-18 Phase 5 attempt (reverted) and the earlier draft of this file
@@ -17,7 +17,7 @@ executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is 
 | 1 | Today screen (hero + readouts + TrajectoryLens) | ✅ Done 2026-08-22 | `1bcc0d8` + `578f065` | analyze ✓ · format ✓ · 200 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-1-today-screen.md` (all fixed in `578f065`) |
 | 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ✅ Done 2026-08-23 | `d1db7b1` + `0e82689` | analyze ✓ · format ✓ · 213 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-23-phase-5-v2-chunk-2-train-nutrition.md` (all fixed in `0e82689`) |
 | 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ✅ Done 2026-08-24 | `672f28f` + `288d14a` | analyze ✓ · format ✓ · 262 tests ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-3-progress-coach.md` (all fixed in `288d14a`) |
-| 4 | AI Usage + Shell + Account cleanup | 🔄 In progress | — | — | — |
+| 4 | AI Usage + Shell + Account cleanup | ✅ Done 2026-08-24 | `82bf748` | analyze ✓ · format ✓ · 273 tests ✓ · ios build ✓ | pending |
 | 5 | Motion + A11y + copy audit + final gate + merge | ⬜ Pending | — | — | — |
 
 Carry-forward notes from reviews:
@@ -84,6 +84,30 @@ Carry-forward notes from reviews:
   loading state asserted via a never-completing repository; (8) design-handoff markdown
   indent fixed; (9) frontend-handoff build line refreshed to 25.2 MB; (10) chat-bubble 18pt
   radius documented as a shape-lock exception in DESIGN_SYSTEM.md §3.3. 262 tests pass.
+- Chunk 4 implementation notes (2026-08-24, `82bf748`):
+  - `AiUsageScreen` (`lib/features/account/widgets/ai_usage_screen.dart`) binds only the
+    merged `loadUsage()` fields; thresholds/limits render from RPC values; hero cost card
+    is a `PremiumGradientCard` with glow; service pill = blocked (danger) / warning
+    (attention) / available (stable) / hidden when budget fields absent; Refresh usage
+    refetches; error state carries a working retry. No token counts, breakdown rows, or
+    period toggle (not in any RPC).
+  - `ConsentLedgerScreen` (`lib/features/account/widgets/consent_ledger_screen.dart`) is a
+    StatefulWidget whose loader runs in `initState` (FutureBuilder subscribes before the
+    future settles — a future created in the route builder leaks its error to the test
+    zone). All five canonical purposes render; missing ones say "No record yet".
+  - Account restyle: `PremiumGradientCard` profile hero, `AccountRow` icon-container rows
+    (chevron only when tappable), tabular-figure detail values; account_screen.dart
+    1075 → 379 lines via `widgets/{account_widgets,profile_goals_screen,ai_usage_screen,
+    consent_ledger_screen,account_sheets,notification_sheet,coach_threads_sheet}.dart`.
+  - Unconfigured environment: AI row = "AI service not configured" +
+    "Approved plans and manual logging remain available" (UX_FLOWS §13); profile row
+    detail is honest static copy (the old hardcoded "Lean muscle · private beta" was
+    fabricated).
+  - Shell capsule: inline `BackdropFilter` → `TracendGlass` inside a shadow-only
+    `DecoratedBox`; `app_shell_test.dart` asserts exactly 2 `TracendGlass`/
+    `BackdropFilter` widgets app-wide (confidence pill + capsule).
+  - Deleted `ComingSoonButton`, `MiniTrendChart`, `_MiniTrendPainter` (zero usages).
+  - 273 tests pass (11 new: 6 AI usage, 4 consent, 1 shell glass).
 
 ---
 
