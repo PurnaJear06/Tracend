@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/today/recovery_ring.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/widgets/check_in_prompt_bar.dart';
 import 'package:tracend/features/today/widgets/coach_perspective_card.dart';
@@ -392,6 +394,64 @@ void main() {
       // coach perspective, check-in bar
       expect(find.byType(MicroMotionEntrance), findsNWidgets(9));
     });
+
+    testWidgets('keeps the brief mounted across a check-in reload', (
+      tester,
+    ) async {
+      // Regression: swapping the brief future used to reset the FutureBuilder
+      // to waiting, unmounting _BriefContent — replaying all nine stagger
+      // entrances and re-creating the count-up statically. The retained
+      // previous brief must stay mounted so score changes animate.
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            brightness: Brightness.dark,
+            extensions: const [TracendColors.dark],
+          ),
+          home: Scaffold(
+            body: TodayScreen(
+              environment: const AppEnvironment(
+                name: 'test',
+                supabaseUrl: '',
+                supabasePublishableKey: '',
+              ),
+              brief: _ReloadBriefRepository(),
+            ),
+          ),
+        ),
+      );
+      // Bounded pumps: NOW-dot pulse is an intentional infinite loop.
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('40'), findsWidgets);
+      final ringBefore = tester.element(find.byType(RecoveryRing));
+
+      await tester.scrollUntilVisible(
+        find.text('Morning status recorded'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+        maxScrolls: 100,
+      );
+      await tester.ensureVisible(find.text('Morning status recorded'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('Morning status recorded'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Save check-in'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Save check-in'));
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(find.text('Save check-in'));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final ringAfter = tester.element(find.byType(RecoveryRing));
+      expect(identical(ringBefore, ringAfter), isTrue);
+
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('72'), findsWidgets);
+    });
   });
 }
 
@@ -402,6 +462,20 @@ class _ComputedBriefRepository implements DailyBriefRepository {
     checkIn: const {'energy': 3},
     computed: _computed(recovery: 72, sleepQuality: 80),
   );
+}
+
+class _ReloadBriefRepository implements DailyBriefRepository {
+  int loads = 0;
+
+  @override
+  Future<DailyBrief> load(DateTime date) async {
+    loads++;
+    return _brief(
+      workout: const {'name': 'Push day'},
+      checkIn: const {'energy': 3},
+      computed: _computed(recovery: loads == 1 ? 40 : 72, sleepQuality: 80),
+    );
+  }
 }
 
 void _noop() {}

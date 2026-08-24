@@ -80,13 +80,17 @@ class _TodayScreenState extends State<TodayScreen> {
 
   void _reloadBriefAndHealth() {
     _reloadHealth();
-    setState(() => _brief = widget.brief.load(DateTime.now()));
+    setState(() {
+      _brief = widget.brief.load(DateTime.now());
+    });
   }
 
   Future<void> _openCheckIn() async {
     await showCheckInSheet(context, widget.environment);
     if (mounted) {
-      setState(() => _brief = widget.brief.load(DateTime.now()));
+      setState(() {
+        _brief = widget.brief.load(DateTime.now());
+      });
     }
   }
 
@@ -132,41 +136,45 @@ class _TodayScreenState extends State<TodayScreen> {
         FutureBuilder<DailyBrief>(
           future: _brief,
           builder: (context, snapshot) {
+            // FutureBuilder retains the previous data when the future is
+            // swapped (check-in / health sync reloads). Prefer it over the
+            // waiting state so _BriefContent stays mounted: stagger
+            // entrances don't replay and score count-ups animate on change.
+            final brief = snapshot.data;
+            if (brief != null) {
+              return _BriefContent(
+                brief: brief,
+                targets: _targets,
+                coach: widget.coach,
+                onStartSession: brief.workout != null ? _openWorkout : null,
+                onViewAnalytics: widget.onOpenProgress,
+                onOpenNutrition: widget.onOpenNutrition,
+                onOpenWorkout: _openWorkout,
+                onCheckIn: _openCheckIn,
+                onReadinessDetail: _showReadinessDetail,
+              );
+            }
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const TracendCard(
                 radius: TracendRadii.decision,
                 child: LinearProgressIndicator(),
               );
             }
-            final brief = snapshot.data;
-            if (brief == null) {
-              return TracendCard(
-                radius: TracendRadii.decision,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Use your approved plan.',
-                      style: Theme.of(context).textTheme.displaySmall,
-                    ),
-                    const SizedBox(height: TracendSpacing.xs),
-                    const Text(
-                      'The daily brief is unavailable. Workout and meal logging remain available.',
-                    ),
-                  ],
-                ),
-              );
-            }
-            return _BriefContent(
-              brief: brief,
-              targets: _targets,
-              coach: widget.coach,
-              onStartSession: brief.workout != null ? _openWorkout : null,
-              onViewAnalytics: widget.onOpenProgress,
-              onOpenNutrition: widget.onOpenNutrition,
-              onOpenWorkout: _openWorkout,
-              onCheckIn: _openCheckIn,
-              onReadinessDetail: _showReadinessDetail,
+            return TracendCard(
+              radius: TracendRadii.decision,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Use your approved plan.',
+                    style: Theme.of(context).textTheme.displaySmall,
+                  ),
+                  const SizedBox(height: TracendSpacing.xs),
+                  const Text(
+                    'The daily brief is unavailable. Workout and meal logging remain available.',
+                  ),
+                ],
+              ),
             );
           },
         ),

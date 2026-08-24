@@ -440,8 +440,22 @@ largest iOS scale) asserting no overflow — it surfaced and fixed two real over
 AI-cliché, and no fabricated numbers; every interpolated string traces to a repository
 field. 284 tests pass, 0 analysis issues.
 
-Next: Chunk 5 final gate (deno + iOS build), independent `/review`, then merge to
-`feature/feature-engine` (owner action).
+Review: PASS WITH FINDINGS
+(`docs/reviews/2026-08-24-phase-5-v2-chunk-5-motion-a11y-copy.md`). All findings fixed
+2026-08-24: (1, minor) the Today brief FutureBuilder now prefers retained snapshot data
+over the waiting state, so `_BriefContent` stays mounted across check-in/sync reloads —
+stagger entrances no longer replay and `MicroMotionCountUp` actually fires on score
+changes (regression test asserts RecoveryRing element identity across a real check-in
+reload); the test also surfaced and fixed two latent `setState(() => _brief = future)`
+arrow bugs in today_screen.dart (callback returned a Future — same pattern fixed in
+Chunk 4); (2) light textSecondary-on-canvas contrast assert added; (3) dynamic_type_test
+gained a computed-brief Today test at 320pt × 2.0 covering the ring, driver bars, sleep
+card, and lens (reduceMotion stops the pulse so pumpAndSettle completes); (4) `_DriverBar`
+doc comment documents that the semantics label reports the true z-score while the bar fill
+clamps to ±2. 287 tests pass, 0 analysis issues.
+
+Next: iOS release build re-verified, then merge to `feature/feature-engine` (owner
+action) — Phase 5 v2 implementation is complete.
 
 ## Session Duration Cap (2026-08-22)
 

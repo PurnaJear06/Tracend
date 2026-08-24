@@ -150,6 +150,21 @@ Carry-forward notes from reviews:
   - Copy audit: no filler, no AI-cliché, no fabricated numbers found; all
     interpolated strings trace to repository fields.
   - 284 tests pass (was 274).
+- Chunk 5 review follow-ups (2026-08-24): PASS WITH FINDINGS
+  (`docs/reviews/2026-08-24-phase-5-v2-chunk-5-motion-a11y-copy.md`), all
+  findings resolved — (1, minor) the brief FutureBuilder now prefers retained
+  data over the waiting state, so `_BriefContent` stays mounted across
+  check-in/sync reloads: stagger entrances no longer replay and the count-up
+  actually fires on score changes (regression test asserts RecoveryRing
+  element identity across a real check-in reload); this also surfaced and
+  fixed two latent `setState(() => _brief = future)` arrow bugs in
+  today_screen.dart (callback returned a Future — same pattern fixed in
+  Chunk 4); (2) light textSecondary-on-canvas contrast assert added;
+  (3) dynamic_type_test gained a computed-brief Today test at 320pt × 2.0
+  (ring, driver bars, sleep card, lens now covered; reduceMotion stops the
+  pulse so pumpAndSettle completes); (4) `_DriverBar` doc comment documents
+  that the semantics label reports the true z-score while the bar fill clamps
+  to ±2. 287 tests pass.
 
 ---
 

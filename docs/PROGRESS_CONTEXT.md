@@ -31,9 +31,13 @@ delete error path). Chunk 5 (Motion + A11y + copy audit) implemented 2026-08-24:
 sections, driver-bar semantics labels, extended contrast asserts, padded chip tap targets,
 tab-label scale clamp, and a Dynamic Type regression test (1.3×/2.0× at 320pt, all five
 tabs, no overflow) that fixed two real overflows. Copy audit found no filler, cliché, or
-fabricated numbers. Session duration cap (180 min) deployed
+fabricated numbers. Reviewed PASS w/ findings, all follow-ups fixed 2026-08-24 (brief
+FutureBuilder retains the previous brief across reloads so entrances don't replay and the
+count-up fires; two latent setState-returns-Future bugs fixed in today_screen.dart; light
+secondary-on-canvas contrast assert added; computed-brief Dynamic Type coverage added;
+driver-bar raw-vs-clamped z-score documented). Session duration cap (180 min) deployed
 2026-08-22 (`20260822120000_session_duration_cap.sql`). Feature Engine Phase 4 remains the
-last shipped UI milestone. 284 Flutter tests pass, 0 analysis issues.
+last shipped UI milestone. 287 Flutter tests pass, 0 analysis issues.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 

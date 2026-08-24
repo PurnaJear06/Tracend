@@ -257,6 +257,9 @@ class _DriverBreakdown extends StatelessWidget {
   }
 }
 
+/// One recovery-driver bar. The visual fill clamps the z-score to ±2 for
+/// layout, but the semantics label reports the true (unclamped) z-score —
+/// the announced value is the data, never the display clamp.
 class _DriverBar extends StatelessWidget {
   const _DriverBar({
     required this.label,

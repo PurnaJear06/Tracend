@@ -12,10 +12,12 @@ belongs in `DESIGN.md`.
 - **Active change: Phase 5 v2 "Precision Pro" production UI** — chunked execution on
   `feature/feature-engine-phase-5-v2`, master plan `.opencode/plans/phase-5-v2-precision-pro.md`.
   Chunks 0–4 complete and reviewed (foundation, Today, Train + Nutrition, Progress + Coach,
-  AI Usage + Shell + Account); Chunk 5 (Motion + A11y + copy audit) implemented 2026-08-24 —
-  count-up score, staggered Today entrances, driver-bar semantics, extended contrast asserts,
-  padded chip tap targets, tab-label scale clamp, Dynamic Type 1.3×/2.0× no-overflow tests,
-  and a clean copy audit; final gate + independent review + merge remain.
+  AI Usage + Shell + Account); Chunk 5 (Motion + A11y + copy audit) complete and reviewed
+  2026-08-24 — count-up score, staggered Today entrances, driver-bar semantics, extended
+  contrast asserts, padded chip tap targets, tab-label scale clamp, Dynamic Type
+  1.3×/2.0× no-overflow tests, clean copy audit; review follow-ups fixed (brief retained
+  across reloads so entrances don't replay and count-up fires). Merge to
+  `feature/feature-engine` is the remaining owner action.
   Owner rulings: Stitch dark direction approved; `DESIGN_SYSTEM.md` amended in the same change
   as code (§3.1 dark hexes, §3.2 Spline Sans + IBM Plex Mono, §3.3 shape lock 12/24/28,
   §3.4 premium-gradient cards + chrome-only glass, §10 anti-patterns); all 5 tabs in scope;
@@ -65,9 +67,8 @@ belongs in `DESIGN.md`.
 2. Complete the Progress reference with Body Measurements and the private Progress Photos entry
    without exposing photo thumbnails on the overview.
 3. Fix the workout-detail exercise list to show real planned exercises.
-4. Flutter implementation is underway via Phase 5 v2 (Chunks 0–4 done and reviewed; Chunk 5 —
-   Motion + A11y + copy audit — implemented 2026-08-24; final gate + independent review +
-   merge remain). Design work should
+4. Flutter implementation is underway via Phase 5 v2 (Chunks 0–5 done and reviewed;
+   merge to `feature/feature-engine` is the remaining owner action). Design work should
    support the master plan
    (`.opencode/plans/phase-5-v2-precision-pro.md`), not restart a shell scaffold.
 5. Do not commit local MCP config or API keys.

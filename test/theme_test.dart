@@ -28,6 +28,14 @@ void main() {
     );
   });
 
+  test('light secondary text meets AA on canvas', () {
+    const light = TracendColors.light;
+    expect(
+      _contrast(light.textSecondary, light.canvas),
+      greaterThanOrEqualTo(4.5),
+    );
+  });
+
   test('dark graphics tokens meet the 3:1 graphics threshold on canvas', () {
     final dark = TracendColors.dark;
     expect(_contrast(dark.actionPrimary, dark.canvas), greaterThanOrEqualTo(3));
