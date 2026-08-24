@@ -33,15 +33,17 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
-  testWidgets('shows the latest record per purpose', (tester) async {
+  testWidgets('shows the latest record per purpose regardless of order', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _wrap(
         ConsentLedgerScreen(
           load: () async => [
-            _record('progress_photo_ai', 'withdrawn', DateTime(2026, 8, 20)),
+            _record('progress_photo_ai', 'granted', DateTime(2026, 8, 1)),
             _record('terms', 'granted', DateTime(2026, 7, 1)),
             _record('privacy', 'granted', DateTime(2026, 7, 1)),
-            _record('progress_photo_ai', 'granted', DateTime(2026, 8, 1)),
+            _record('progress_photo_ai', 'withdrawn', DateTime(2026, 8, 20)),
           ],
         ),
       ),
@@ -56,7 +58,10 @@ void main() {
 
     expect(find.text('Granted'), findsNWidgets(2));
     expect(find.text('Withdrawn'), findsOneWidget);
-    expect(find.textContaining('Withdrawn · 20/8/2026 · v1'), findsOneWidget);
+    expect(
+      find.textContaining('Withdrawn · 20/8/2026 · v1 · iOS app'),
+      findsOneWidget,
+    );
     expect(find.text('No record yet'), findsNWidgets(2));
   });
 

@@ -400,13 +400,25 @@ progress_photo_storage, progress_photo_ai, notifications) via direct select unde
 RLS. Account restyled (PremiumGradientCard profile hero, icon-container rows, mono tabular
 detail values) and extracted to `lib/features/account/widgets/` (`account_widgets`,
 `profile_goals_screen`, `ai_usage_screen`, `consent_ledger_screen`, `account_sheets`,
-`notification_sheet`, `coach_threads_sheet`); account_screen.dart 1075 → 379 lines.
+`notification_sheet`, `coach_threads_sheet`); account_screen.dart 1075 → 388 lines.
 Unconfigured environments show "AI service not configured" per UX_FLOWS §13. Shell tab
 capsule inline `BackdropFilter` replaced by `TracendGlass` (glass budget unchanged: 2
 visible sites, asserted in `app_shell_test.dart`). Dead `ComingSoonButton`,
 `MiniTrendChart`, `_MiniTrendPainter` deleted from `tracend_scaffold.dart`. Coach-thread
-rows documented as display-only with the trailing delete as the action. 273 tests pass, 0
-analysis issues.
+rows documented as display-only with the trailing delete as the action.
+
+Review: PASS WITH FINDINGS
+(`docs/reviews/2026-08-24-phase-5-v2-chunk-4-ai-usage-shell-account.md`). All findings
+fixed 2026-08-24: (1) Account AI row distinguishes RPC failure from loading — usage
+future moved to `initState` (no rebuild re-fire) and the error branch shows
+"AI usage unavailable · Open details to retry"; (2) consent ledger picks the latest
+record per purpose by `created_at` regardless of input order; (3) consent rows render
+the record source; (4) threshold copy uses fractional-safe `usdText` formatting;
+(5) thread delete gained an error path; (6) doc line counts corrected. Deferred:
+`get_my_ai_usage`/`get_my_ai_budget_state` lack `schema_version` (needs an additive DB
+migration — out of this UI-only phase). Accepted: fixture-mode AI usage detail shows
+"$0.0000 · Estimates only" without repeating the not-configured framing (honest,
+test-asserted). 274 tests pass, 0 analysis issues.
 
 Next: Chunk 5 — Motion + A11y + copy audit + final gate + merge.
 

@@ -1,7 +1,7 @@
 # Phase 5 v2 — "Precision Pro" Production UI — Master Plan
 
 **Created:** 2026-08-22 (rewritten same day after master-plan cross-check)
-**Status:** Chunk 4 complete — review pending (AI Usage + Shell + Account)
+**Status:** Chunk 4 complete — reviewed, follow-ups fixed (AI Usage + Shell + Account)
 **Branch:** `feature/feature-engine-phase-5-v2` (from `93fa49e`) → merge into `feature/feature-engine`
 **Backup:** tag `backup/pre-phase-5-v2` (local; push blocked by deploy-guard — user pushes or approves)
 **Supersedes:** the 2026-08-18 Phase 5 attempt (reverted) and the earlier draft of this file
@@ -97,7 +97,7 @@ Carry-forward notes from reviews:
     zone). All five canonical purposes render; missing ones say "No record yet".
   - Account restyle: `PremiumGradientCard` profile hero, `AccountRow` icon-container rows
     (chevron only when tappable), tabular-figure detail values; account_screen.dart
-    1075 → 379 lines via `widgets/{account_widgets,profile_goals_screen,ai_usage_screen,
+    1075 → 388 lines via `widgets/{account_widgets,profile_goals_screen,ai_usage_screen,
     consent_ledger_screen,account_sheets,notification_sheet,coach_threads_sheet}.dart`.
   - Unconfigured environment: AI row = "AI service not configured" +
     "Approved plans and manual logging remain available" (UX_FLOWS §13); profile row
@@ -108,6 +108,18 @@ Carry-forward notes from reviews:
     `BackdropFilter` widgets app-wide (confidence pill + capsule).
   - Deleted `ComingSoonButton`, `MiniTrendChart`, `_MiniTrendPainter` (zero usages).
   - 273 tests pass (11 new: 6 AI usage, 4 consent, 1 shell glass).
+- Chunk 4 review follow-ups (2026-08-24): PASS WITH FINDINGS
+  (`docs/reviews/2026-08-24-phase-5-v2-chunk-4-ai-usage-shell-account.md`), all findings
+  resolved — (1, minor) Account AI row now distinguishes RPC failure from loading: usage
+  future moved to `initState` (also fixes rebuild re-fire) and the error branch shows
+  "AI usage unavailable · Open details to retry" (test added); (2) consent ledger picks
+  latest per purpose by `created_at` regardless of input order (test reordered to prove
+  it); (3) consent rows render the record `source`; (4) threshold copy uses
+  fractional-safe `usdText`; (5) thread delete gained an error path; (6) doc line counts
+  corrected. Deferred: `get_my_ai_usage`/`get_my_ai_budget_state` lack `schema_version`
+  (AGENTS.md RPC rule) — needs an additive migration, out of this UI-only phase.
+  Accepted: fixture-mode AI usage detail shows "$0.0000 · Estimates only" without
+  repeating the not-configured framing (honest, test-asserted). 274 tests pass.
 
 ---
 

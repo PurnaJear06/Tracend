@@ -91,10 +91,8 @@ class _AiUsageScreenState extends State<AiUsageScreen> {
       if (dailyLimit != null) 'Requests today': '$today of $dailyLimit',
       'Successful this month': '$successful',
       'Failed this month': '$failed',
-      if (warningAt != null)
-        'Warning threshold': '\$${warningAt.toStringAsFixed(0)}',
-      if (hardStop != null)
-        'Monthly hard stop': '\$${hardStop.toStringAsFixed(0)}',
+      if (warningAt != null) 'Warning threshold': usdText(warningAt),
+      if (hardStop != null) 'Monthly hard stop': usdText(hardStop),
       'Service': blocked
           ? 'Paused at safety limit'
           : hasBudget
@@ -150,7 +148,7 @@ class _AiUsageScreenState extends State<AiUsageScreen> {
               const SizedBox(height: TracendSpacing.xxs),
               Text(
                 hasBudget
-                    ? 'estimated this month · of \$${hardStop.toStringAsFixed(0)} hard stop'
+                    ? 'estimated this month · of ${usdText(hardStop)} hard stop'
                     : 'estimated this month',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),

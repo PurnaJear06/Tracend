@@ -184,3 +184,9 @@ String trainingDaysText(Object? value) {
   };
   return value.map((item) => days[(item as num).toInt()] ?? '?').join(', ');
 }
+
+/// `$3` for whole-dollar values, `$2.50` for fractional ones — server
+/// thresholds are RPC-bound and may change, so never round blindly.
+String usdText(num value) => value == value.roundToDouble()
+    ? '\$${value.toStringAsFixed(0)}'
+    : '\$${value.toStringAsFixed(2)}';

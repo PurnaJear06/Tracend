@@ -44,7 +44,13 @@ class ConsentLedgerScreen extends StatefulWidget {
 }
 
 class _ConsentLedgerScreenState extends State<ConsentLedgerScreen> {
-  late final Future<List<ConsentRecord>> _records = widget.load();
+  late final Future<List<ConsentRecord>> _records;
+
+  @override
+  void initState() {
+    super.initState();
+    _records = widget.load();
+  }
 
   static const _purposeLabels = <String, String>{
     'terms': 'Terms of use',
@@ -91,7 +97,13 @@ class _ConsentLedgerScreenState extends State<ConsentLedgerScreen> {
   Widget _buildLedger(BuildContext context, List<ConsentRecord> records) {
     final latest = <String, ConsentRecord>{};
     for (final record in records) {
-      latest.putIfAbsent(record.consentType, () => record);
+      final existing = latest[record.consentType];
+      final at = record.createdAt;
+      final existingAt = existing?.createdAt;
+      if (existing == null ||
+          (at != null && (existingAt == null || at.isAfter(existingAt)))) {
+        latest[record.consentType] = record;
+      }
     }
     final purposes = [
       ..._purposeLabels.keys,
@@ -179,7 +191,8 @@ class _ConsentRow extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 '${granted ? 'Granted' : 'Withdrawn'} · '
-                '${dateText(current.createdAt)} · ${current.noticeVersion}',
+                '${dateText(current.createdAt)} · ${current.noticeVersion} · '
+                '${_sourceText(current.source)}',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ],
@@ -197,4 +210,10 @@ class _ConsentRow extends StatelessWidget {
       ],
     );
   }
+
+  String _sourceText(String source) => switch (source) {
+    'ios_app' => 'iOS app',
+    'owner_development' => 'owner development',
+    _ => friendlyEnum(source),
+  };
 }

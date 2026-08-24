@@ -46,11 +46,13 @@ class AccountScreen extends StatefulWidget {
 
 class _AccountScreenState extends State<AccountScreen> {
   late Future<NotificationPreferences> _notifications;
+  late Future<Map<String, dynamic>> _aiUsage;
 
   @override
   void initState() {
     super.initState();
     _notifications = widget.notifications.load();
+    _aiUsage = widget.coach.loadUsage();
   }
 
   @override
@@ -97,8 +99,18 @@ class _AccountScreenState extends State<AccountScreen> {
             ),
             const SectionLabel('AI service'),
             FutureBuilder<Map<String, dynamic>>(
-              future: widget.coach.loadUsage(),
+              future: _aiUsage,
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return TracendCard(
+                    child: AccountRow(
+                      icon: CupertinoIcons.waveform_path,
+                      title: 'AI usage unavailable',
+                      detail: 'Open details to retry',
+                      onTap: () => _openAiUsage(null),
+                    ),
+                  );
+                }
                 final usage = snapshot.data;
                 return TracendCard(
                   child: AccountRow(
@@ -186,11 +198,11 @@ class _AccountScreenState extends State<AccountScreen> {
     }
     final hardStop = (usage['hard_stop_usd'] as num?)?.toDouble();
     if (usage['warning'] == true && hardStop != null) {
-      return 'Approaching the \$${hardStop.toStringAsFixed(0)} monthly hard stop';
+      return 'Approaching the ${usdText(hardStop)} monthly hard stop';
     }
     final warningAt = (usage['warning_threshold_usd'] as num?)?.toDouble();
     if (warningAt != null && hardStop != null) {
-      return 'Warning at \$${warningAt.toStringAsFixed(0)} · hard stop \$${hardStop.toStringAsFixed(0)}';
+      return 'Warning at ${usdText(warningAt)} · hard stop ${usdText(hardStop)}';
     }
     return 'Operational estimates · tap for detail';
   }

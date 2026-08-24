@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/account/account_screen.dart';
+import 'package:tracend/features/coach/coach_repository.dart';
 
 void main() {
   testWidgets('Profile, AI usage, and consent destinations open', (
@@ -48,4 +49,36 @@ void main() {
     expect(find.text('Consent ledger'), findsOneWidget);
     expect(find.text('No consent records yet'), findsOneWidget);
   });
+
+  testWidgets('AI usage row shows an honest error state when the RPC fails', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.dark,
+        home: AccountScreen(
+          environment: const AppEnvironment(
+            name: 'test',
+            supabaseUrl: 'https://example.supabase.co',
+            supabasePublishableKey: 'test-key',
+          ),
+          coach: _FailingCoachRepository(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('AI usage unavailable'), 250);
+    expect(find.text('AI usage unavailable'), findsOneWidget);
+    expect(find.text('Open details to retry'), findsOneWidget);
+  });
+}
+
+class _FailingCoachRepository implements CoachRepository {
+  @override
+  Future<CoachDecision?> loadLatest() async => null;
+  @override
+  Future<CoachDecision> generate() => throw StateError('not needed');
+  @override
+  Future<Map<String, dynamic>> loadUsage() async => throw StateError('offline');
 }

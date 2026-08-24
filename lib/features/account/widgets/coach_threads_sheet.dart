@@ -35,7 +35,15 @@ class _CoachThreadsSheetState extends State<CoachThreadsSheet> {
   }
 
   Future<void> _delete(CoachThread thread) async {
-    await widget.chat.deleteThread(thread.id);
+    try {
+      await widget.chat.deleteThread(thread.id);
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      if (mounted) {
+        setState(() => _error = 'The conversation could not be deleted.');
+      }
+      return;
+    }
     if (!mounted) return;
     setState(
       () => _threads = _threads?.where((item) => item.id != thread.id).toList(),
