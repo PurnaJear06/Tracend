@@ -12,7 +12,8 @@ belongs in `DESIGN.md`.
 - **Active change: Phase 5 v2 "Precision Pro" production UI** — chunked execution on
   `feature/feature-engine-phase-5-v2`, master plan `.opencode/plans/phase-5-v2-precision-pro.md`.
   Chunks 0–2 complete and reviewed (foundation, Today, Train + Nutrition); Chunk 3
-  (Progress + Coach) is the next scope.
+  (Progress + Coach) complete 2026-08-24 with gate passed — review pending; Chunk 4
+  (AI Usage + Shell + Account) is the next scope.
   Owner rulings: Stitch dark direction approved; `DESIGN_SYSTEM.md` amended in the same change
   as code (§3.1 dark hexes, §3.2 Spline Sans + IBM Plex Mono, §3.3 shape lock 12/24/28,
   §3.4 premium-gradient cards + chrome-only glass, §10 anti-patterns); all 5 tabs in scope;
@@ -61,9 +62,10 @@ belongs in `DESIGN.md`.
 3. Complete the Progress reference with Body Measurements and the private Progress Photos entry
    without exposing photo thumbnails on the overview.
 4. Fix the workout-detail exercise list to show real planned exercises.
-5. Flutter implementation is underway via Phase 5 v2 (Chunks 0–2 done; Chunk 3 — Progress +
-   Coach — is the next scope). Design work should support the master plan
-   (`.opencode/plans/phase-5-v2-precision-pro.md`), not restart a shell scaffold.
+5. Flutter implementation is underway via Phase 5 v2 (Chunks 0–3 done; Chunk 3 review
+   pending; Chunk 4 — AI Usage + Shell + Account — is the next scope). Design work should
+   support the master plan
+    (`.opencode/plans/phase-5-v2-precision-pro.md`), not restart a shell scaffold.
 6. Do not commit local MCP config or API keys.
 7. Update this file and `PROGRESS_CONTEXT.md` after material design changes.
 

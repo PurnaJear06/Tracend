@@ -1,12 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
-import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/metric_sparkline.dart';
+import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 
+/// 7-day / 28-day weight trend rates from the deterministic feature engine.
+///
+/// Binding contract (ALGORITHMS.md §5):
+/// - rates = `ComputedMetrics.scores.weightTrend7d/28d` (OLS slope, kg/day)
+/// - R² = `ComputedMetrics.scores.weightTrendR2` — the 28-day window ONLY
+/// - sparkline = actual confirmed weigh-ins passed by the caller; never
+///   synthesized. Hidden when fewer than two real values exist.
 class WeightTrendIndicator extends StatelessWidget {
-  const WeightTrendIndicator({required this.computed, super.key});
+  const WeightTrendIndicator({
+    required this.computed,
+    this.sparklineValues,
+    super.key,
+  });
 
   final ComputedMetrics computed;
+  final List<double>? sparklineValues;
 
   @override
   Widget build(BuildContext context) {
@@ -14,10 +27,11 @@ class WeightTrendIndicator extends StatelessWidget {
     final trend7 = computed.scores.weightTrend7d;
     final trend28 = computed.scores.weightTrend28d;
     final r2 = computed.scores.weightTrendR2;
+    final sparkline = sparklineValues != null && sparklineValues!.length >= 2
+        ? sparklineValues!
+        : null;
 
-    return TracendCard(
-      raised: true,
-      padding: const EdgeInsets.all(TracendSpacing.md),
+    return PremiumGradientCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -27,38 +41,47 @@ class WeightTrendIndicator extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE2A45C).withValues(alpha: 0.12),
+                  color: colors.accentAmber.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(TracendRadii.control),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.trending_down_rounded,
                   size: 20,
-                  color: Color(0xFFE2A45C),
+                  color: colors.accentAmber,
                 ),
               ),
               const SizedBox(width: TracendSpacing.sm),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'WEIGHT TREND',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: const Color(0xFFE2A45C),
-                      letterSpacing: 1.2,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'WEIGHT TREND',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: colors.accentAmber,
+                        letterSpacing: 1.2,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: TracendSpacing.xxs),
-                  Text(
-                    trend7 != null ? '${_format(trend7)} kg/day' : 'No data',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: trend7 != null
-                          ? colors.textPrimary
-                          : colors.textSecondary,
-                      fontFeatures: const [FontFeature.tabularFigures()],
+                    const SizedBox(height: TracendSpacing.xxs),
+                    Text(
+                      trend7 != null ? '${_format(trend7)} kg/day' : 'No data',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: trend7 != null
+                                ? colors.textPrimary
+                                : colors.textSecondary,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              if (sparkline != null)
+                MetricSparkline(
+                  values: sparkline,
+                  label:
+                      'Weight across your last ${sparkline.length} confirmed weigh-ins',
+                ),
             ],
           ),
           if (trend7 != null || trend28 != null) ...[
@@ -118,27 +141,21 @@ class _TrendChip extends StatelessWidget {
               ).textTheme.labelMedium?.copyWith(color: colors.textSecondary),
             ),
             const SizedBox(height: TracendSpacing.xxs),
-            Row(
-              children: [
-                Text(
-                  '$arrow ${trendValue.toStringAsFixed(2)} kg/day',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: color,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-                if (r2 != null) ...[
-                  const SizedBox(width: TracendSpacing.xxs),
-                  Text(
-                    'R\u00B2 ${r2?.toStringAsFixed(2) ?? '--'}',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: colors.textSecondary,
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-              ],
+            Text(
+              '$arrow ${trendValue.toStringAsFixed(2)} kg/day',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: color,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
             ),
+            if (r2 != null)
+              Text(
+                'R\u00B2 ${r2?.toStringAsFixed(2) ?? '--'}',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: colors.textSecondary,
+                  fontSize: 10,
+                ),
+              ),
           ],
         ),
       ),

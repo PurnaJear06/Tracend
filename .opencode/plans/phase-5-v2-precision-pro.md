@@ -1,7 +1,7 @@
 # Phase 5 v2 — "Precision Pro" Production UI — Master Plan
 
 **Created:** 2026-08-22 (rewritten same day after master-plan cross-check)
-**Status:** Chunk 2 complete — reviewed, follow-ups fixed (Train + Nutrition)
+**Status:** Chunk 3 complete — gate passed, review pending (Progress + Coach)
 **Branch:** `feature/feature-engine-phase-5-v2` (from `93fa49e`) → merge into `feature/feature-engine`
 **Backup:** tag `backup/pre-phase-5-v2` (local; push blocked by deploy-guard — user pushes or approves)
 **Supersedes:** the 2026-08-18 Phase 5 attempt (reverted) and the earlier draft of this file
@@ -16,7 +16,7 @@ executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is 
 | 0 | Docs + tokens + fonts + glass/motion widgets | ✅ Done 2026-08-22 | `c55d281` | analyze ✓ · format ✓ · 175 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-0-precision-pro-foundation.md` |
 | 1 | Today screen (hero + readouts + TrajectoryLens) | ✅ Done 2026-08-22 | `1bcc0d8` + `578f065` | analyze ✓ · format ✓ · 200 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-1-today-screen.md` (all fixed in `578f065`) |
 | 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ✅ Done 2026-08-23 | `d1db7b1` + `0e82689` | analyze ✓ · format ✓ · 213 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-23-phase-5-v2-chunk-2-train-nutrition.md` (all fixed in `0e82689`) |
-| 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ⬜ Pending | — | — | — |
+| 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ✅ Done 2026-08-24 | pending | analyze ✓ · format ✓ · 261 tests ✓ | pending |
 | 4 | AI Usage + Shell + Account cleanup | ⬜ Pending | — | — | — |
 | 5 | Motion + A11y + copy audit + final gate + merge | ⬜ Pending | — | — | — |
 
@@ -47,6 +47,31 @@ Carry-forward notes from reviews:
   only when a marker exists (finding 5); TargetsGrid null-summary shows "No confirmed meals
   yet" (finding 6); WorkoutHero doc comment corrected (finding 7). Finding 8 (date-scoped
   `loadLatest`) deferred to a later chunk per review.
+- Chunk 3 decisions (2026-08-24):
+  - Regression overlays derive deterministically from confirmed weigh-ins: each line passes
+    through its window centroid (OLS property) and is clipped to its 7d/28d window and the
+    chart range — no invented intercept, no extrapolation. Slopes come from
+    `ComputedMetrics.weightTrend7d/28d`; R2 exists only for the 28d window (`weightTrendR2`),
+    threshold 0.3 per ALGORITHMS.md §7; missing R2 → low confidence; the 7d line is never
+    R2-gated.
+  - `EvidenceAccordion` (`lib/shared/widgets/evidence_accordion.dart`) animates height BEFORE
+    unmounting collapsed content, chevron rotates on the same controller, Reduce
+    Motion → instant jump; header is a 44pt semantics button announcing expanded state.
+    Replaces both raw `ExpansionTile` sites in Coach.
+  - `ExpandableText` truncates at 6 lines with a real Show more/Show less control that renders
+    only when the text actually overflows (no dead control on short reasons).
+  - Progress measurement history rows are tappable → `MeasurementDetailSheet` (date, source,
+    weight, optional tape values; read-only), making the "Tap a history row" copy a real
+    affordance. Strength-progression rows stay display-only with an honest caption.
+  - `MetricSparkline` wired into `WeightTrendIndicator` from real confirmed weigh-in
+    values (its production home).
+  - Coach screen rebuilt from extracted widgets (`coach_decision_card`, `coach_context_card`,
+    `coach_message_bubble`, `coach_composer`); progress screen rebuilt from
+    `widgets/{measurement_widgets,weight_trend_card,training_evidence_widgets,photo_widgets,weekly_review_widgets}.dart`.
+    Both screens stay under the 500-line review budget.
+  - Widget tests that drive a chat send must mock `SystemChannels.platform` —
+    `HapticFeedback.lightImpact()` never completes on the unmocked test channel and stalls
+    `_send` before the reply mounts.
 
 ---
 

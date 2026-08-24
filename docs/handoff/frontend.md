@@ -147,7 +147,7 @@ visual system behavior belongs in `docs/DESIGN_SYSTEM.md`.
 
 - `./scripts/flutter.sh format --set-exit-if-changed lib test` — pass
 - `./scripts/flutter.sh analyze` — pass, no issues
-- `./scripts/flutter.sh test` — pass, 223 tests (Phase 5 v2 Chunk 2 + review follow-ups)
+- `./scripts/flutter.sh test` — pass, 261 tests (Phase 5 v2 Chunk 3)
 - `./scripts/flutter.sh build ios --release --no-codesign` — pass, HealthKit linked, 18.3 MB
   physical-device app
 - `./scripts/flutter.sh build ios --config-only --no-codesign` — pass
@@ -348,7 +348,30 @@ null-summary shows "No confirmed meals yet"; (7) WorkoutHero doc comment correct
 Finding 8 (date-scoped `loadLatest`) deferred to a later chunk. 223 tests pass, 0 analysis
 issues.
 
-Next: Chunk 3 — Progress + Coach (weight regression overlay, EvidenceAccordion).
+**Chunk 3 complete (2026-08-24):** Progress + Coach rebuilt to Stitch. New shared widgets:
+`EvidenceAccordion` (`lib/shared/widgets/evidence_accordion.dart`) — animates content height
+BEFORE unmounting collapsed content, chevron rotates on the same controller, Reduce Motion
+jumps instantly, header is a 44pt semantics button announcing expanded state; replaces both
+raw `ExpansionTile` sites in Coach. `ExpandableText` — 6-line truncation with a Show
+more/Show less control that renders only when the text actually overflows.
+`EvidenceTrendChart` gained deterministic 7d/28d regression overlays from
+`ComputedMetrics.weightTrend7d/28d`: each line is anchored to the window centroid of the real
+confirmed weigh-ins and clipped to its window + chart range (no invented intercept, no
+extrapolation); legend distinguishes measured dots from computed lines; R2 (28d only,
+threshold 0.3 per ALGORITHMS.md §7; missing R2 = low confidence) renders the 28d line
+dashed + "low confidence"; the 7d line is never R2-gated. `WeightTrendIndicator` restyled
+into `PremiumGradientCard` with the `accentAmber` token and `MetricSparkline` wired from real
+confirmed weigh-in values. Progress measurement history rows are tappable →
+`MeasurementDetailSheet` (date, source, weight, optional tape values; read-only); strength
+progression rows stay display-only with an honest caption. Coach screen rebuilt from extracted
+widgets (`coach_decision_card`, `coach_context_card`, `coach_message_bubble`,
+`coach_composer`); Progress screen rebuilt from
+`widgets/{measurement_widgets,weight_trend_card,training_evidence_widgets,photo_widgets,weekly_review_widgets}.dart`;
+both screens stay under the 500-line review budget. Widget tests that drive a chat send mock
+`SystemChannels.platform` because `HapticFeedback.lightImpact()` never completes on the
+unmocked test channel. 261 tests pass, 0 analysis issues. Review pending.
+
+Next: Chunk 3 review, then Chunk 4 — AI Usage + Shell + Account cleanup.
 
 ## Session Duration Cap (2026-08-22)
 

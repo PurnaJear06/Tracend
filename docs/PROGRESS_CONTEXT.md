@@ -10,9 +10,13 @@ readout cards, coach perspective, check-in bar; 8 widgets extracted). Chunk 2 co
 NutritionInsightCard; Train/Nutrition screens rebuilt, sub-widgets extracted) — reviewed
 PASS w/ findings, all follow-ups fixed 2026-08-24 (coach repo injected at shell, meal
 widgets extracted, 4 screen-level tests, v1.4 fixture `workout_id`, legend/null-summary
-nits). Session duration cap (180 min) deployed 2026-08-22
+nits). Chunk 3 complete 2026-08-24 (Progress + Coach — deterministic 7d/28d weight
+regression overlays on `EvidenceTrendChart`, `EvidenceAccordion` + `ExpandableText` shared
+widgets, tappable measurement history with read-only detail sheet, `MetricSparkline` wired
+into `WeightTrendIndicator`, Coach/Progress screens rebuilt from extracted widgets) — gate
+passed, review pending. Session duration cap (180 min) deployed 2026-08-22
 (`20260822120000_session_duration_cap.sql`). Feature Engine Phase 4 remains the last
-shipped UI milestone. 223 Flutter tests pass, 0 analysis issues.
+shipped UI milestone. 261 Flutter tests pass, 0 analysis issues.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -46,7 +50,7 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Feature Engine Phase 2    | **Complete — merged & verified**      | `docs/handoff/backend.md`  | `docs/ALGORITHMS.md`, `.opencode/plans/phase-2-feature-engine-algorithms.md` |
 | Feature Engine Phase 3    | **Deployed — merged**                | `docs/handoff/backend.md`  | `.opencode/plans/phase-3-coach-integration.md`                                |
 | Feature Engine Phase 4    | **Complete — widgets built + Today integrated** | `docs/handoff/frontend.md` | `.opencode/plans/phase-4-flutter-computed-metrics.md`
-| Phase 5 v2 "Precision Pro" UI | **In progress — Chunk 2 reviewed, follow-ups fixed** | `docs/handoff/design.md`   | `.opencode/plans/phase-5-v2-precision-pro.md`   |
+| Phase 5 v2 "Precision Pro" UI | **In progress — Chunk 3 complete, review pending** | `docs/handoff/design.md`   | `.opencode/plans/phase-5-v2-precision-pro.md`   |
 | Backend foundation        | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
 | Frontend/UI               | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
 | Coach Continuity Memory   | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
