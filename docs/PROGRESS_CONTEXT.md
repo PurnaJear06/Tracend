@@ -10,11 +10,11 @@ readout cards, coach perspective, check-in bar; 8 widgets extracted). Chunk 2 co
 NutritionInsightCard; Train/Nutrition screens rebuilt, sub-widgets extracted) — reviewed
 PASS w/ findings, all follow-ups fixed 2026-08-24 (coach repo injected at shell, meal
 widgets extracted, 4 screen-level tests, v1.4 fixture `workout_id`, legend/null-summary
-nits). Chunk 3 complete 2026-08-24 (Progress + Coach — deterministic 7d/28d weight
-regression overlays on `EvidenceTrendChart`, `EvidenceAccordion` + `ExpandableText` shared
-widgets, tappable measurement history with read-only detail sheet, `MetricSparkline` wired
-into `WeightTrendIndicator`, Coach/Progress screens rebuilt from extracted widgets) — gate
-passed, review pending. Session duration cap (180 min) deployed 2026-08-22
+nits). Chunk 3 complete 2026-08-24 (`672f28f`: Progress + Coach — deterministic 7d/28d
+weight regression overlays on `EvidenceTrendChart`, `EvidenceAccordion` + `ExpandableText`
+shared widgets, tappable measurement history with read-only detail sheet, `MetricSparkline`
+wired into `WeightTrendIndicator`, Coach/Progress screens rebuilt from extracted widgets) —
+review pending. Session duration cap (180 min) deployed 2026-08-22
 (`20260822120000_session_duration_cap.sql`). Feature Engine Phase 4 remains the last
 shipped UI milestone. 261 Flutter tests pass, 0 analysis issues.
 

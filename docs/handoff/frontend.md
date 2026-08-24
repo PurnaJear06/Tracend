@@ -348,7 +348,7 @@ null-summary shows "No confirmed meals yet"; (7) WorkoutHero doc comment correct
 Finding 8 (date-scoped `loadLatest`) deferred to a later chunk. 223 tests pass, 0 analysis
 issues.
 
-**Chunk 3 complete (2026-08-24):** Progress + Coach rebuilt to Stitch. New shared widgets:
+**Chunk 3 complete (2026-08-24, `672f28f`):** Progress + Coach rebuilt to Stitch. New shared widgets:
 `EvidenceAccordion` (`lib/shared/widgets/evidence_accordion.dart`) — animates content height
 BEFORE unmounting collapsed content, chevron rotates on the same controller, Reduce Motion
 jumps instantly, header is a 44pt semantics button announcing expanded state; replaces both
@@ -369,7 +369,8 @@ widgets (`coach_decision_card`, `coach_context_card`, `coach_message_bubble`,
 `widgets/{measurement_widgets,weight_trend_card,training_evidence_widgets,photo_widgets,weekly_review_widgets}.dart`;
 both screens stay under the 500-line review budget. Widget tests that drive a chat send mock
 `SystemChannels.platform` because `HapticFeedback.lightImpact()` never completes on the
-unmocked test channel. 261 tests pass, 0 analysis issues. Review pending.
+unmocked test channel. 261 tests pass, 0 analysis issues, unsigned iOS release build
+passes (25.2 MB). Review pending.
 
 Next: Chunk 3 review, then Chunk 4 — AI Usage + Shell + Account cleanup.
 
