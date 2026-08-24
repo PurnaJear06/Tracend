@@ -91,7 +91,7 @@ ambiguous coaching_date). Prompt restructure separates system/rules from user/me
   `compute_daily_metrics` (`duration_seconds <= 10800` filter). New completions are clamped
   client-side (`active_workout_screen.dart`) and server-side (`complete_workout` RPC) to 10800s.
   Raw historical value left untouched (no data rewrite). Migration:
-  `20260822120000_session_duration_cap.sql` (additive, pending deploy).
+  `20260822120000_session_duration_cap.sql` (additive, deployed 2026-08-22).
 
 ## HealthKit Quick-Complete (2026-07-18)
 
