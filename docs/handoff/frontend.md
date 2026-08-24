@@ -348,7 +348,7 @@ null-summary shows "No confirmed meals yet"; (7) WorkoutHero doc comment correct
 Finding 8 (date-scoped `loadLatest`) deferred to a later chunk. 223 tests pass, 0 analysis
 issues.
 
-**Chunk 3 complete (2026-08-24, `672f28f`):** Progress + Coach rebuilt to Stitch. New shared widgets:
+**Chunk 3 complete (2026-08-24, `672f28f` + `288d14a`):** Progress + Coach rebuilt to Stitch. New shared widgets:
 `EvidenceAccordion` (`lib/shared/widgets/evidence_accordion.dart`) — animates content height
 BEFORE unmounting collapsed content, chevron rotates on the same controller, Reduce Motion
 jumps instantly, header is a 44pt semantics button announcing expanded state; replaces both
