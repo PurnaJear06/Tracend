@@ -68,17 +68,32 @@ void main() {
     expect(find.textContaining('source: manual'), findsOneWidget);
   });
 
-  testWidgets('body measurement, photo, and weekly review remain reachable', (
+  testWidgets('measurement entry and weekly review open; photos visible', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(_app(_Repository(withTrend: true)));
     await tester.pumpAndSettle();
+
     await _reveal(tester, find.text('Record measurement'));
-    expect(find.text('Record measurement'), findsOneWidget);
+    await tester.tap(find.text('Record measurement'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save measurement'), findsOneWidget);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+
+    await _reveal(tester, find.text('Open weekly review'));
+    await tester.tap(find.text('Open weekly review'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mark reviewed'), findsOneWidget);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+
     await _reveal(tester, find.text('Front photo'));
     expect(find.text('Front photo'), findsOneWidget);
-    await _reveal(tester, find.text('Open weekly review'));
-    expect(find.text('Open weekly review'), findsOneWidget);
   });
 
   testWidgets('training evidence shows display-only progression', (

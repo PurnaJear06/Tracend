@@ -1,7 +1,7 @@
 # Phase 5 v2 — "Precision Pro" Production UI — Master Plan
 
 **Created:** 2026-08-22 (rewritten same day after master-plan cross-check)
-**Status:** Chunk 3 complete — gate passed, review pending (Progress + Coach)
+**Status:** Chunk 3 complete — reviewed, follow-ups fixed (Progress + Coach)
 **Branch:** `feature/feature-engine-phase-5-v2` (from `93fa49e`) → merge into `feature/feature-engine`
 **Backup:** tag `backup/pre-phase-5-v2` (local; push blocked by deploy-guard — user pushes or approves)
 **Supersedes:** the 2026-08-18 Phase 5 attempt (reverted) and the earlier draft of this file
@@ -16,7 +16,7 @@ executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is 
 | 0 | Docs + tokens + fonts + glass/motion widgets | ✅ Done 2026-08-22 | `c55d281` | analyze ✓ · format ✓ · 175 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-0-precision-pro-foundation.md` |
 | 1 | Today screen (hero + readouts + TrajectoryLens) | ✅ Done 2026-08-22 | `1bcc0d8` + `578f065` | analyze ✓ · format ✓ · 200 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-1-today-screen.md` (all fixed in `578f065`) |
 | 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ✅ Done 2026-08-23 | `d1db7b1` + `0e82689` | analyze ✓ · format ✓ · 213 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-23-phase-5-v2-chunk-2-train-nutrition.md` (all fixed in `0e82689`) |
-| 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ✅ Done 2026-08-24 | `672f28f` | analyze ✓ · format ✓ · 261 tests ✓ · ios build ✓ | pending |
+| 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ✅ Done 2026-08-24 | `672f28f` + follow-ups | analyze ✓ · format ✓ · 262 tests ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-3-progress-coach.md` |
 | 4 | AI Usage + Shell + Account cleanup | ⬜ Pending | — | — | — |
 | 5 | Motion + A11y + copy audit + final gate + merge | ⬜ Pending | — | — | — |
 
@@ -72,6 +72,18 @@ Carry-forward notes from reviews:
   - Widget tests that drive a chat send must mock `SystemChannels.platform` —
     `HapticFeedback.lightImpact()` never completes on the unmocked test channel and stalls
     `_send` before the reply mounts.
+- Chunk 3 review follow-ups (2026-08-24): all 10 findings fixed —
+  (1+2) `deriveTrendOverlay`/`WeightTrendCard` binding contracts now disclose that overlay
+  windows end at the latest confirmed weigh-in (may trail the brief target date) and that the
+  centroid anchor uses displayed body-measurement dots only (server fit may merge HealthKit
+  summary weights); (3) DESIGN_SYSTEM.md Evidence-visualization amended to permit labeled,
+  R²-gated regression overlays (raw dots never smoothed; reconciles PRD §4.7);
+  (4) `EvidenceAccordion` semantics label now includes the subtitle; (5) `ExpandableText`
+  caches and disposes its overflow-probe `TextPainter`; (6) progress reachability test now
+  taps Record measurement → entry sheet and Open weekly review → review sheet; (7) coach
+  loading state asserted via a never-completing repository; (8) design-handoff markdown
+  indent fixed; (9) frontend-handoff build line refreshed to 25.2 MB; (10) chat-bubble 18pt
+  radius documented as a shape-lock exception in DESIGN_SYSTEM.md §3.3. 262 tests pass.
 
 ---
 

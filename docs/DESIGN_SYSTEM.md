@@ -12,8 +12,12 @@ exercise rows.
 factors: Recovery, Training, and Nutrition. The shared `EvidenceTrendChart` uses linear segments,
 actual date spacing, visible numeric scale, current value and optional average line. Curved
 interpolation, unlabeled auto-scaling and spreadsheet-style equal metric grids are prohibited.
-Weight charts show confirmed raw weigh-ins by default; any later smoothing must be optional and
-visually distinct from the current measurement.
+Weight charts show confirmed raw weigh-ins as dots; the raw dots are never smoothed. Computed
+trend overlays are permitted only as labeled regression line segments derived from the server
+OLS slopes (`ALGORITHMS.md` §5): they must be anchored to real measurements (no invented
+intercept, no extrapolation), distinguished from the dots by a legend ("Measured" vs computed
+lines), and render low-confidence fits (28-day R² < 0.3 or missing R²) dashed and labeled
+"low confidence". The 7-day line carries no R² and is never confidence-gated.
 
 **Status:** Authoritative MVP experience and visual direction\
 **Platform:** Flutter for iOS, private TestFlight beta\
@@ -118,6 +122,8 @@ accessibility sizes. Tabular figures are required for changing values and timers
 - Minimum touch target: 44×44pt with at least 8pt between adjacent targets.
 - Corner radii (shape lock): 12pt controls, 24pt cards, 28pt primary decision surfaces;
   capsules (full radius) only for compact status pills and chips. No mixing outside this rule.
+  Documented exception: Coach chat bubbles use an asymmetric 18pt bubble (4pt on the tail
+  corner) — a restrained, familiar conversational shape, not a card or control.
 - Use one primary action per screen. Bottom actions include safe-area padding and never cover
   content.
 - Avoid nested scrolling, edge controls that conflict with system gestures, and dense edge-to-edge

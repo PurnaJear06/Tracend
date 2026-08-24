@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -134,7 +136,13 @@ void main() {
     expect(find.text('Generate today’s decision'), findsOneWidget);
   });
 
-  testWidgets('loading and error states remain safe', (tester) async {
+  testWidgets('decision loading shows a progress card', (tester) async {
+    await tester.pumpWidget(_app(_LoadingRepository()));
+    await tester.pump();
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('generation failure shows the safe fallback', (tester) async {
     await tester.pumpWidget(_app(_FailureRepository()));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Generate today’s decision'));
@@ -178,6 +186,16 @@ class _FailureRepository implements CoachRepository {
   Future<CoachDecision?> loadLatest() async => null;
   @override
   Future<CoachDecision> generate() => throw StateError('offline');
+  @override
+  Future<Map<String, dynamic>> loadUsage() async => const {};
+}
+
+class _LoadingRepository implements CoachRepository {
+  const _LoadingRepository();
+  @override
+  Future<CoachDecision?> loadLatest() => Completer<CoachDecision?>().future;
+  @override
+  Future<CoachDecision> generate() => throw StateError('not needed');
   @override
   Future<Map<String, dynamic>> loadUsage() async => const {};
 }

@@ -49,6 +49,18 @@ const lowConfidenceR2Threshold = 0.3;
 /// beyond the window. Returns null when the window holds no measurement
 /// evidence to anchor to.
 ///
+/// Disclosed anchoring nuances (deliberate, no fabrication):
+/// - The window ends at the LATEST CHART MEASUREMENT, not the brief's
+///   `target_date`. When the most recent weigh-in predates the target date,
+///   the drawn segment covers `[lastWeighIn−(windowDays−1), lastWeighIn]`
+///   while the slope value describes `[target−(windowDays−1), target]`
+///   (`ALGORITHMS.md` §5). The segment is shifted earlier, never invented.
+/// - The centroid uses the displayed `body_measurements` dots only. The
+///   server fit may additionally merge HealthKit weights from
+///   `daily_health_summaries` for dates without a manual measurement, so the
+///   drawn line can carry a small parallel offset from the exact server fit
+///   while keeping the correct slope and real-data anchor.
+///
 /// [lowConfidence] is decided by the caller from the verified algorithm
 /// semantics: only the 28-day window has an R² to gate on.
 TrendOverlay? deriveTrendOverlay(

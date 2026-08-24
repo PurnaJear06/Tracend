@@ -147,9 +147,9 @@ visual system behavior belongs in `docs/DESIGN_SYSTEM.md`.
 
 - `./scripts/flutter.sh format --set-exit-if-changed lib test` — pass
 - `./scripts/flutter.sh analyze` — pass, no issues
-- `./scripts/flutter.sh test` — pass, 261 tests (Phase 5 v2 Chunk 3)
-- `./scripts/flutter.sh build ios --release --no-codesign` — pass, HealthKit linked, 18.3 MB
-  physical-device app
+- `./scripts/flutter.sh test` — pass, 262 tests (Phase 5 v2 Chunk 3 + review follow-ups)
+- `./scripts/flutter.sh build ios --release --no-codesign` — pass, HealthKit linked, 25.2 MB
+  unsigned physical-device app (Phase 5 v2 Chunk 3)
 - `./scripts/flutter.sh build ios --config-only --no-codesign` — pass
 - UI fidelity pass verification on 2026-07-01: format, analyze, tests, iOS config-only device build,
   signed hosted release build, and iPhone install all pass; no simulator was used.
@@ -369,10 +369,24 @@ widgets (`coach_decision_card`, `coach_context_card`, `coach_message_bubble`,
 `widgets/{measurement_widgets,weight_trend_card,training_evidence_widgets,photo_widgets,weekly_review_widgets}.dart`;
 both screens stay under the 500-line review budget. Widget tests that drive a chat send mock
 `SystemChannels.platform` because `HapticFeedback.lightImpact()` never completes on the
-unmocked test channel. 261 tests pass, 0 analysis issues, unsigned iOS release build
-passes (25.2 MB). Review pending.
+unmocked test channel. 262 tests pass, 0 analysis issues, unsigned iOS release build
+passes (25.2 MB).
 
-Next: Chunk 3 review, then Chunk 4 — AI Usage + Shell + Account cleanup.
+Review: PASS WITH FINDINGS
+(`docs/reviews/2026-08-24-phase-5-v2-chunk-3-progress-coach.md`). All 10 findings fixed
+2026-08-24: (1+2) `deriveTrendOverlay`/`WeightTrendCard` binding contracts now disclose the
+overlay window ending at the latest confirmed weigh-in (may trail the brief target date) and
+the centroid anchor using displayed body-measurement dots only (server fit may merge
+HealthKit summary weights); (3) DESIGN_SYSTEM.md Evidence-visualization amended to permit
+labeled R²-gated regression overlays (raw dots never smoothed; reconciles PRD §4.7);
+(4) `EvidenceAccordion` semantics label includes the subtitle; (5) `ExpandableText` caches
+and disposes its overflow-probe `TextPainter`; (6) progress reachability test taps Record
+measurement → entry sheet and Open weekly review → review sheet; (7) coach loading state
+asserted via a never-completing repository; (8) design-handoff markdown indent fixed;
+(9) frontend-handoff build line refreshed to 25.2 MB; (10) chat-bubble 18pt radius
+documented as a shape-lock exception in DESIGN_SYSTEM.md §3.3.
+
+Next: Chunk 4 — AI Usage + Shell + Account cleanup.
 
 ## Session Duration Cap (2026-08-22)
 

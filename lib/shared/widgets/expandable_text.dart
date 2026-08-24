@@ -26,19 +26,26 @@ class ExpandableText extends StatefulWidget {
 
 class _ExpandableTextState extends State<ExpandableText> {
   bool _expanded = false;
+  final TextPainter _painter = TextPainter();
+
+  @override
+  void dispose() {
+    _painter.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final style = widget.style ?? Theme.of(context).textTheme.bodyLarge;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final painter = TextPainter(
-          text: TextSpan(text: widget.text, style: style),
-          maxLines: widget.maxLines,
-          textDirection: Directionality.of(context),
-          textScaler: MediaQuery.textScalerOf(context),
-        )..layout(maxWidth: constraints.maxWidth);
-        final overflows = painter.didExceedMaxLines;
+        _painter
+          ..text = TextSpan(text: widget.text, style: style)
+          ..maxLines = widget.maxLines
+          ..textDirection = Directionality.of(context)
+          ..textScaler = MediaQuery.textScalerOf(context)
+          ..layout(maxWidth: constraints.maxWidth);
+        final overflows = _painter.didExceedMaxLines;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

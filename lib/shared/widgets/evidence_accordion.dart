@@ -14,7 +14,8 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 /// - When `MediaQuery.disableAnimationsOf(context)` is true (Reduce Motion on
 ///   the pinned Flutter SDK), expand/collapse is instant: the controller jumps
 ///   to its end value and collapsed content is unmounted immediately.
-/// - The header is an accessible button that announces its expanded state.
+/// - The header is an accessible button that announces the title, subtitle,
+///   and expanded state.
 class EvidenceAccordion extends StatefulWidget {
   const EvidenceAccordion({
     required this.title,
@@ -100,7 +101,9 @@ class _EvidenceAccordionState extends State<EvidenceAccordion>
         Semantics(
           button: true,
           expanded: _expanded,
-          label: widget.title,
+          label: widget.subtitle == null
+              ? widget.title
+              : '${widget.title}. ${widget.subtitle}',
           container: true,
           child: InkWell(
             onTap: _toggle,

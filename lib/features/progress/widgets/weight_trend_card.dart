@@ -14,6 +14,10 @@ import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 ///   kg/day, ALGORITHMS.md §5), anchored to real measurements by
 ///   [deriveTrendOverlay] — never invented intercepts, never extrapolated
 /// - R² = `weightTrendR2` (28-day window only) gates only the 28-day line
+/// - overlay windows end at the latest confirmed weigh-in, which may trail
+///   the server's brief target date; the centroid anchor uses the displayed
+///   body-measurement dots, while the server fit may also merge HealthKit
+///   summary weights (see [deriveTrendOverlay] for both disclosures)
 class WeightTrendCard extends StatelessWidget {
   const WeightTrendCard({required this.measurements, this.computed, super.key});
 
