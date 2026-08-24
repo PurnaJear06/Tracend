@@ -426,6 +426,7 @@ class _CoachScreenState extends State<CoachScreen> {
                       ])
                         ActionChip(
                           label: Text(prompt),
+                          materialTapTargetSize: MaterialTapTargetSize.padded,
                           onPressed: () => _send(prompt),
                         ),
                     ],

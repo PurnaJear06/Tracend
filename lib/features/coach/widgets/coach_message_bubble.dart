@@ -120,6 +120,7 @@ class CoachMessageBubble extends StatelessWidget {
                     for (final prompt in message.suggestedFollowUps)
                       ActionChip(
                         label: Text(prompt),
+                        materialTapTargetSize: MaterialTapTargetSize.padded,
                         onPressed: () => onSendFollowUp?.call(prompt),
                       ),
                   ],

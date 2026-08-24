@@ -133,5 +133,20 @@ void main() {
 
       expect(find.text('Recovery drivers'), findsNothing);
     });
+
+    testWidgets('score counts up when the value changes', (tester) async {
+      await tester.pumpWidget(
+        _wrap(RecoveryRing(computed: _metrics(recovery: 40))),
+      );
+      expect(find.text('40'), findsOneWidget);
+
+      await tester.pumpWidget(
+        _wrap(RecoveryRing(computed: _metrics(recovery: 72))),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.hasRunningAnimations, isTrue);
+      await tester.pumpAndSettle();
+      expect(find.text('72'), findsOneWidget);
+    });
   });
 }

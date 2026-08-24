@@ -34,6 +34,11 @@ void main() {
     expect(_contrast(dark.stateStable, dark.canvas), greaterThanOrEqualTo(3));
     expect(_contrast(dark.accentAmber, dark.canvas), greaterThanOrEqualTo(3));
     expect(_contrast(dark.accentNow, dark.canvas), greaterThanOrEqualTo(3));
+    expect(
+      _contrast(dark.stateAttention, dark.canvas),
+      greaterThanOrEqualTo(3),
+    );
+    expect(_contrast(dark.stateDanger, dark.canvas), greaterThanOrEqualTo(3));
   });
 
   test('light theme keeps the Phase-4 baseline palette', () {
@@ -50,6 +55,38 @@ void main() {
     const light = TracendColors.light;
     expect(_contrast(light.accentAmber, light.canvas), greaterThanOrEqualTo(3));
     expect(_contrast(light.accentNow, light.canvas), greaterThanOrEqualTo(3));
+  });
+
+  test('light graphics tokens meet the 3:1 graphics threshold on canvas', () {
+    const light = TracendColors.light;
+    expect(
+      _contrast(light.actionPrimary, light.canvas),
+      greaterThanOrEqualTo(3),
+    );
+    expect(_contrast(light.stateStable, light.canvas), greaterThanOrEqualTo(3));
+    expect(
+      _contrast(light.stateAttention, light.canvas),
+      greaterThanOrEqualTo(3),
+    );
+    expect(_contrast(light.stateDanger, light.canvas), greaterThanOrEqualTo(3));
+  });
+
+  test('primary text meets AA on canvas in both themes', () {
+    for (final colors in [TracendColors.light, TracendColors.dark]) {
+      expect(
+        _contrast(colors.textPrimary, colors.canvas),
+        greaterThanOrEqualTo(4.5),
+      );
+    }
+  });
+
+  test('button label meets AA on the primary action fill in both themes', () {
+    for (final colors in [TracendColors.light, TracendColors.dark]) {
+      expect(
+        _contrast(colors.actionOnPrimary, colors.actionPrimary),
+        greaterThanOrEqualTo(4.5),
+      );
+    }
   });
 
   test('dark theme uses the Precision Pro Stitch palette', () {

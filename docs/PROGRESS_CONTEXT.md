@@ -26,9 +26,14 @@ uses `TracendGlass` (glass budget stays 2 visible sites); dead `ComingSoonButton
 `MiniTrendChart` deleted) — reviewed PASS w/ findings, all follow-ups fixed 2026-08-24
 (usage future moved to initState with honest row error state, order-independent consent
 latest-per-purpose, consent source rendered, fractional-safe threshold formatting, thread
-delete error path). Session duration cap (180 min) deployed
+delete error path). Chunk 5 (Motion + A11y + copy audit) implemented 2026-08-24:
+`MicroMotionCountUp` on the recovery score, staggered entrances across all nine Today brief
+sections, driver-bar semantics labels, extended contrast asserts, padded chip tap targets,
+tab-label scale clamp, and a Dynamic Type regression test (1.3×/2.0× at 320pt, all five
+tabs, no overflow) that fixed two real overflows. Copy audit found no filler, cliché, or
+fabricated numbers. Session duration cap (180 min) deployed
 2026-08-22 (`20260822120000_session_duration_cap.sql`). Feature Engine Phase 4 remains the
-last shipped UI milestone. 274 Flutter tests pass, 0 analysis issues.
+last shipped UI milestone. 284 Flutter tests pass, 0 analysis issues.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 

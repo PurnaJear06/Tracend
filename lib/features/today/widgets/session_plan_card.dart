@@ -131,12 +131,14 @@ class _CardTag extends StatelessWidget {
     children: [
       Icon(CupertinoIcons.flag_fill, size: 13, color: color),
       const SizedBox(width: TracendSpacing.xxs),
-      Text(
-        label,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          fontSize: 10,
-          letterSpacing: 1.4,
-          color: color,
+      Flexible(
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            fontSize: 10,
+            letterSpacing: 1.4,
+            color: color,
+          ),
         ),
       ),
     ],

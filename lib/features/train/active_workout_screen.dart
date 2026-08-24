@@ -415,6 +415,7 @@ class _ExerciseEditor extends StatelessWidget {
           FilterChip(
             label: const Text('Skipped intentionally'),
             selected: status == 'skipped',
+            materialTapTargetSize: MaterialTapTargetSize.padded,
             onSelected: readOnly
                 ? null
                 : (selected) =>
@@ -423,6 +424,7 @@ class _ExerciseEditor extends StatelessWidget {
           FilterChip(
             label: const Text('Pain or discomfort'),
             selected: painFlag,
+            materialTapTargetSize: MaterialTapTargetSize.padded,
             onSelected: readOnly ? null : onPainChanged,
           ),
         ],

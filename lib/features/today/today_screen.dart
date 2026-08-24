@@ -26,6 +26,7 @@ import 'package:tracend/features/today/widgets/precision_divider.dart';
 import 'package:tracend/features/today/widgets/readiness_strip.dart';
 import 'package:tracend/features/today/widgets/session_plan_card.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
+import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class TodayScreen extends StatefulWidget {
@@ -282,80 +283,108 @@ class _BriefContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TodayHero(
-          brief: brief,
-          onStartSession: onStartSession,
-          onViewAnalytics: onViewAnalytics,
+        MicroMotionEntrance(
+          child: TodayHero(
+            brief: brief,
+            onStartSession: onStartSession,
+            onViewAnalytics: onViewAnalytics,
+          ),
         ),
         if (brief.computed != null) ...[
           const SizedBox(height: TracendSpacing.lg),
-          Center(child: RecoveryRing(computed: brief.computed!)),
+          MicroMotionEntrance(
+            delay: MicroMotion.stagger(1),
+            child: Center(child: RecoveryRing(computed: brief.computed!)),
+          ),
         ],
         const SizedBox(height: TracendSpacing.lg),
-        ReadinessStrip(
-          brief: brief,
-          onOpen: (title, detail) => onReadinessDetail(context, title, detail),
+        MicroMotionEntrance(
+          delay: MicroMotion.stagger(2),
+          child: ReadinessStrip(
+            brief: brief,
+            onOpen: (title, detail) =>
+                onReadinessDetail(context, title, detail),
+          ),
         ),
         const SizedBox(height: TracendSpacing.sm),
-        Material(
-          color: Colors.transparent,
-          child: ExpansionTile(
-            key: const PageStorageKey('today-evidence'),
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: EdgeInsets.zero,
-            title: const Text('See evidence'),
-            children: [
-              _BriefEvidence(
-                label: 'Check-in',
-                available: brief.checkIn != null,
-                detail: brief.checkIn == null
-                    ? 'Add today’s recovery input'
-                    : 'Current user-confirmed input',
-              ),
-              _BriefEvidence(
-                label: 'Apple Health',
-                available: brief.health != null,
-                detail: brief.health == null
-                    ? 'No fresh summary for today'
-                    : 'Dated normalized summary',
-              ),
-              _BriefEvidence(
-                label: 'Training plan',
-                available: brief.workout != null,
-                detail:
-                    brief.workout?['name'] as String? ??
-                    'No workout assigned today',
-              ),
-              _BriefEvidence(
-                label: 'Meal schedule',
-                available: brief.nextMeal != null,
-                detail:
-                    brief.nextMeal?['label'] as String? ?? 'No remaining meal',
-              ),
-            ],
+        MicroMotionEntrance(
+          delay: MicroMotion.stagger(3),
+          child: Material(
+            color: Colors.transparent,
+            child: ExpansionTile(
+              key: const PageStorageKey('today-evidence'),
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              title: const Text('See evidence'),
+              children: [
+                _BriefEvidence(
+                  label: 'Check-in',
+                  available: brief.checkIn != null,
+                  detail: brief.checkIn == null
+                      ? 'Add today’s recovery input'
+                      : 'Current user-confirmed input',
+                ),
+                _BriefEvidence(
+                  label: 'Apple Health',
+                  available: brief.health != null,
+                  detail: brief.health == null
+                      ? 'No fresh summary for today'
+                      : 'Dated normalized summary',
+                ),
+                _BriefEvidence(
+                  label: 'Training plan',
+                  available: brief.workout != null,
+                  detail:
+                      brief.workout?['name'] as String? ??
+                      'No workout assigned today',
+                ),
+                _BriefEvidence(
+                  label: 'Meal schedule',
+                  available: brief.nextMeal != null,
+                  detail:
+                      brief.nextMeal?['label'] as String? ??
+                      'No remaining meal',
+                ),
+              ],
+            ),
           ),
         ),
         const PrecisionDivider(),
         if (brief.computed != null) ...[
-          SleepArchitectureCard(computed: brief.computed!),
+          MicroMotionEntrance(
+            delay: MicroMotion.stagger(4),
+            child: SleepArchitectureCard(computed: brief.computed!),
+          ),
           const SizedBox(height: TracendSpacing.sm),
         ],
-        SessionPlanCard(workout: brief.workout, onOpen: onOpenWorkout),
+        MicroMotionEntrance(
+          delay: MicroMotion.stagger(5),
+          child: SessionPlanCard(workout: brief.workout, onOpen: onOpenWorkout),
+        ),
         const SizedBox(height: TracendSpacing.sm),
-        FutureBuilder<NutritionTargets?>(
-          future: targets,
-          builder: (context, snapshot) => MetabolicTargetCard(
-            consumed: brief.nutrition,
-            targets: snapshot.data,
-            onLog: onOpenNutrition,
+        MicroMotionEntrance(
+          delay: MicroMotion.stagger(6),
+          child: FutureBuilder<NutritionTargets?>(
+            future: targets,
+            builder: (context, snapshot) => MetabolicTargetCard(
+              consumed: brief.nutrition,
+              targets: snapshot.data,
+              onLog: onOpenNutrition,
+            ),
           ),
         ),
         const SizedBox(height: TracendSpacing.lg),
-        _CoachPerspectiveSection(coach: coach),
+        MicroMotionEntrance(
+          delay: MicroMotion.stagger(7),
+          child: _CoachPerspectiveSection(coach: coach),
+        ),
         const SizedBox(height: TracendSpacing.lg),
-        CheckInPromptBar(
-          onCheckIn: onCheckIn,
-          completed: brief.checkIn != null,
+        MicroMotionEntrance(
+          delay: MicroMotion.stagger(8),
+          child: CheckInPromptBar(
+            onCheckIn: onCheckIn,
+            completed: brief.checkIn != null,
+          ),
         ),
       ],
     );

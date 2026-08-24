@@ -252,6 +252,17 @@ Motion explains hierarchy and causality. It does not decorate idle screens.
 - Haptics are limited to set completion, successful confirmation, accepted proposal, and
   safety-critical warning.
 
+Implemented motion (all gated on `MediaQuery.disableAnimationsOf`, all motivated):
+
+- Card entrances on Today stagger 60ms per index (`MicroMotion.stagger`, capped at 8 indices) via
+  `MicroMotionEntrance` (spring rise + fade, once on mount).
+- Trajectory lens path draws over 1.5s; the NOW dot carries the single sanctioned idle loop
+  (`MicroMotionPulse`, gentle opacity pulse). Nothing else animates idle.
+- Score values count up/down on change only (`MicroMotionCountUp`, 600ms ease-out); first render is
+  static. Tabular figures keep digits from jittering during the transition.
+- Tab capsule selection morphs in 160ms; tab labels clamp to 1.3× text scale (iOS tab bars keep
+  labels near-fixed under Dynamic Type) so they never overflow the 70pt bar.
+
 ## 7. States and Feedback
 
 Every data-driven component defines loading, ready, empty, partial, stale, offline, failed, and
@@ -273,6 +284,19 @@ permission-denied states.
   supported.
 - Progress photos never receive automated appearance labels in general navigation.
 - Landscape, small phones, large phones, and iPad-compatible layouts remain operable.
+
+Audited implementation (Chunk 5):
+
+- Every data viz exposes a semantics label: recovery ring and driver bars (z-score per driver),
+  sparklines, trend charts (measured vs computed distinguished), trajectory lens, intensity bar,
+  targets grid, measurement deltas. Color is never the only signal — values and band names render
+  as text beside every graphic.
+- Touch targets are ≥44pt: IconButtons default to 48pt, date pills and week chevrons enforce 44pt,
+  the tab capsule is 70pt tall, and all chips use padded tap targets (48pt).
+- Dynamic Type is regression-tested at 1.3× and the largest iOS scale (~2.0×) at 320pt across all
+  five tabs; layouts wrap before truncating (no overflow asserted).
+- Contrast is asserted in tests: body text ≥4.5:1 on surface and canvas, graphics/state tokens
+  ≥3:1 on canvas, button labels ≥4.5:1 on the primary action fill — in both themes.
 
 ## 9. Writing Style
 

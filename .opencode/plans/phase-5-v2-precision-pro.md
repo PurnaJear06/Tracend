@@ -120,6 +120,36 @@ Carry-forward notes from reviews:
   (AGENTS.md RPC rule) — needs an additive migration, out of this UI-only phase.
   Accepted: fixture-mode AI usage detail shows "$0.0000 · Estimates only" without
   repeating the not-configured framing (honest, test-asserted). 274 tests pass.
+- Chunk 5 pre-check (2026-08-24, working tree clean at `53a26ef`): most §8.1/§8.2
+  already shipped in Chunks 0–4 — TrajectoryLens 1.5s path draw + NOW-dot
+  `MicroMotionPulse` (only idle loop), shell tab morph, `MicroMotion.stagger`/
+  `exitDuration` helpers, semantics on rings/sparklines/trend charts/intensity bar/
+  targets grid, contrast asserts in `theme_test.dart`, textScale-2 smoke tests.
+  Remaining scope: (1) count-up on score changes (RecoveryRing score is static text);
+  (2) stagger entrances on Today cards (`MicroMotionEntrance` only used in
+  `today_hero`); (3) a11y audit — touch targets, Dynamic Type 1.3/largest coverage,
+  bubble semantics verify; (4) copy self-audit; (5) final gate + review. Merge/push
+  stays owner action (risk register row 6).
+- Chunk 5 implementation notes (2026-08-24):
+  - Motion: `MicroMotionCountUp` added to `micro_motion.dart` (animates only on
+    value change, 600ms ease-out, reduceMotion-static) and wired into the
+    RecoveryRing score. All nine Today brief sections wrapped in
+    `MicroMotionEntrance` with fixed stagger slots 0–8; the redundant inner
+    entrance around TrajectoryLens removed (hero-level stagger subsumes it).
+  - A11y: `_DriverBar` gained a semantics label ("HRV driver, z-score 0.5",
+    excludeSemantics); contrast asserts extended in `theme_test.dart`
+    (stateAttention/stateDanger/actionOnPrimary/textPrimary-on-canvas/light
+    graphics); all 5 chips use padded tap targets (48pt); tab labels clamp to
+    1.3× scale (iOS tab-bar convention, protects the 70pt capsule); `_CardTag`
+    label wraps instead of overflowing. Bubble semantics ("Coach said"/"You
+    said") verified present. Notification sheet times verified against the
+    native scheduler (hour 19 daily; hour 18 weekday 1 = Sunday).
+  - Dynamic Type: new `test/dynamic_type_test.dart` — all five tabs at 320pt,
+    scales 1.3 and 2.0 (largest iOS), no-overflow asserted. Fixed two real
+    overflows found (session_plan_card `_CardTag`, app_shell tab label).
+  - Copy audit: no filler, no AI-cliché, no fabricated numbers found; all
+    interpolated strings trace to repository fields.
+  - 284 tests pass (was 274).
 
 ---
 
@@ -598,7 +628,7 @@ Re-read every visible string: no AI-cliché copy, no fake-precise numbers, no fi
 ./scripts/flutter.sh test
 ./scripts/deno.sh fmt --check supabase/functions
 ./scripts/deno.sh lint supabase/functions
-./scripts/deno.sh test supabase/functions
+./scripts/deno.sh test --allow-env --allow-net supabase/functions
 ./scripts/flutter.sh build ios --release --no-codesign
 ```
 - iPhone manual pass: dark+light, reduce motion, reduce transparency fallback, Dynamic

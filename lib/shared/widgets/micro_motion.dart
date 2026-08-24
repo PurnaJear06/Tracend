@@ -89,6 +89,35 @@ class _MicroMotionEntranceState extends State<MicroMotionEntrance>
   }
 }
 
+/// Animated integer transition for score changes (count-up/count-down).
+/// The first build renders the value statically; animation runs only when
+/// [value] changes afterwards. Reduce Motion always renders statically.
+class MicroMotionCountUp extends StatelessWidget {
+  const MicroMotionCountUp({
+    super.key,
+    required this.value,
+    required this.builder,
+    this.duration = const Duration(milliseconds: 600),
+  });
+
+  final int value;
+  final Widget Function(BuildContext context, int value) builder;
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return builder(context, value);
+    }
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: value.toDouble(), end: value.toDouble()),
+      duration: duration,
+      curve: Curves.easeOutCubic,
+      builder: (context, animated, _) => builder(context, animated.round()),
+    );
+  }
+}
+
 /// The single sanctioned idle loop: a gentle opacity pulse (NOW dot).
 /// Reduce Motion renders the child statically (no controller is created).
 class MicroMotionPulse extends StatefulWidget {

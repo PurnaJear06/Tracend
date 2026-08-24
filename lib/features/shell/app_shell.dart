@@ -266,6 +266,11 @@ class _TabItem extends StatelessWidget {
                   item.label,
                   maxLines: 1,
                   overflow: TextOverflow.fade,
+                  // iOS tab bars keep labels near-fixed under Dynamic Type;
+                  // clamp so the label never overflows the 70pt capsule.
+                  textScaler: MediaQuery.textScalerOf(
+                    context,
+                  ).clamp(maxScaleFactor: 1.3),
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     fontSize: 11,
                     height: 1,

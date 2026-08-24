@@ -62,4 +62,40 @@ void main() {
       lessThan(entry.inMilliseconds),
     );
   });
+
+  Widget countUp(int value) => host(
+    MicroMotionCountUp(
+      value: value,
+      builder: (context, value) => Text('$value'),
+    ),
+  );
+
+  testWidgets('count-up renders the first value statically', (tester) async {
+    await tester.pumpWidget(countUp(42));
+    expect(tester.hasRunningAnimations, isFalse);
+    expect(find.text('42'), findsOneWidget);
+  });
+
+  testWidgets('count-up animates when the value changes', (tester) async {
+    await tester.pumpWidget(countUp(10));
+    await tester.pumpWidget(countUp(90));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pumpAndSettle();
+    expect(find.text('90'), findsOneWidget);
+  });
+
+  testWidgets('count-up renders statically under Reduce Motion', (
+    tester,
+  ) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+
+    await tester.pumpWidget(countUp(10));
+    await tester.pumpWidget(countUp(90));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.hasRunningAnimations, isFalse);
+    expect(find.text('90'), findsOneWidget);
+  });
 }

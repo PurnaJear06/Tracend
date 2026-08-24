@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/widgets/check_in_prompt_bar.dart';
 import 'package:tracend/features/today/widgets/coach_perspective_card.dart';
 import 'package:tracend/features/today/widgets/metabolic_target_card.dart';
@@ -12,6 +14,7 @@ import 'package:tracend/features/today/widgets/precision_divider.dart';
 import 'package:tracend/features/today/widgets/readiness_strip.dart';
 import 'package:tracend/features/today/widgets/session_plan_card.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
+import 'package:tracend/shared/widgets/micro_motion.dart';
 
 Widget _wrap(Widget child) {
   return MaterialApp(
@@ -358,6 +361,47 @@ void main() {
 
     expect(find.text('PRECISION READOUTS'), findsOneWidget);
   });
+
+  group('TodayScreen stagger entrances', () {
+    testWidgets('wraps each loaded brief section in a staggered entrance', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            brightness: Brightness.dark,
+            extensions: const [TracendColors.dark],
+          ),
+          home: TodayScreen(
+            environment: const AppEnvironment(
+              name: 'test',
+              supabaseUrl: '',
+              supabasePublishableKey: '',
+            ),
+            brief: _ComputedBriefRepository(),
+          ),
+        ),
+      );
+      // Bounded pump: the NOW-dot pulse is an intentional infinite loop and
+      // the staggered entrances carry per-index delays. The brief resolves
+      // during the first pump, so a second pump fires the entrance timers.
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 1));
+
+      // hero, recovery ring, readiness, evidence, sleep, session, metabolic,
+      // coach perspective, check-in bar
+      expect(find.byType(MicroMotionEntrance), findsNWidgets(9));
+    });
+  });
+}
+
+class _ComputedBriefRepository implements DailyBriefRepository {
+  @override
+  Future<DailyBrief> load(DateTime date) async => _brief(
+    workout: const {'name': 'Push day'},
+    checkIn: const {'energy': 3},
+    computed: _computed(recovery: 72, sleepQuality: 80),
+  );
 }
 
 void _noop() {}

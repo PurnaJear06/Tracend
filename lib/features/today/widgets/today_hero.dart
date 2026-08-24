@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
-import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/tracend_glass.dart';
 import 'package:tracend/shared/widgets/trajectory_lens.dart';
 
@@ -126,12 +125,10 @@ class TodayHero extends StatelessWidget {
           ),
         ),
         const SizedBox(height: TracendSpacing.lg),
-        MicroMotionEntrance(
-          child: TrajectoryLens(
-            points: points,
-            decision: brief.nextAction,
-            evidence: _evidenceLabels(brief),
-          ),
+        TrajectoryLens(
+          points: points,
+          decision: brief.nextAction,
+          evidence: _evidenceLabels(brief),
         ),
         const SizedBox(height: TracendSpacing.lg),
         Row(

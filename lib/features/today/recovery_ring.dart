@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'computed_metrics.dart';
 
 const _kArcStart = 5 * pi / 6;
@@ -20,6 +21,11 @@ class RecoveryRing extends StatelessWidget {
     final breakdown = computed.scores.recoveryBreakdown;
     final hasData = score != null;
     final confidence = computed.dataConfidence;
+    final scoreStyle = Theme.of(context).textTheme.displaySmall?.copyWith(
+      color: colors.textPrimary,
+      fontSize: _scoreFontSize(size),
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -46,14 +52,14 @@ class RecoveryRing extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      hasData ? '$score' : '--',
-                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                        color: colors.textPrimary,
-                        fontSize: _scoreFontSize(size),
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
+                    if (hasData)
+                      MicroMotionCountUp(
+                        value: score,
+                        builder: (context, value) =>
+                            Text('$value', style: scoreStyle),
+                      )
+                    else
+                      Text('--', style: scoreStyle),
                     Text(
                       hasData ? _scoreLabel(score) : 'No data',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -268,46 +274,50 @@ class _DriverBar extends StatelessWidget {
     final clamped = zScore.clamp(-2.0, 2.0);
     final filled = (clamped + 2.0) / 4.0;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          height: 32,
-          child: Stack(
-            alignment: Alignment.bottomCenter,
-            children: [
-              Container(
-                width: 4,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: colors.borderSubtle.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
+    return Semantics(
+      label: '$label driver, z-score ${zScore.toStringAsFixed(1)}',
+      excludeSemantics: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 32,
+            child: Stack(
+              alignment: Alignment.bottomCenter,
+              children: [
+                Container(
+                  width: 4,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: colors.borderSubtle.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              ),
-              AnimatedContainer(
-                duration: TracendMotion.standard,
-                curve: TracendMotion.curve,
-                width: 4,
-                height: 32 * filled,
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(2),
+                AnimatedContainer(
+                  duration: TracendMotion.standard,
+                  curve: TracendMotion.curve,
+                  width: 4,
+                  height: 32 * filled,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: TracendSpacing.xxs),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            fontSize: 9,
-            color: colors.textSecondary,
+          const SizedBox(height: TracendSpacing.xxs),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              fontSize: 9,
+              color: colors.textSecondary,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -420,7 +420,28 @@ migration — out of this UI-only phase). Accepted: fixture-mode AI usage detail
 "$0.0000 · Estimates only" without repeating the not-configured framing (honest,
 test-asserted). 274 tests pass, 0 analysis issues.
 
-Next: Chunk 5 — Motion + A11y + copy audit + final gate + merge.
+**Chunk 5 implemented (2026-08-24):** Motion + A11y + copy audit. Motion:
+`MicroMotionCountUp` added to `lib/shared/widgets/micro_motion.dart` (animates only on
+value change, 600ms ease-out, static under Reduce Motion) and wired into the RecoveryRing
+score; all nine Today brief sections wrapped in `MicroMotionEntrance` with fixed stagger
+slots 0–8 (`MicroMotion.stagger`, 60ms/index capped at 8); the redundant inner entrance
+around `TrajectoryLens` removed (hero-level stagger subsumes it). A11y: `_DriverBar`
+gained a semantics label ("HRV driver, z-score 0.5", `excludeSemantics`); contrast asserts
+extended in `theme_test.dart` (stateAttention/stateDanger ≥3:1 on canvas both themes,
+actionOnPrimary ≥4.5:1 on the action fill, textPrimary ≥4.5:1 on canvas, light graphics
+tokens ≥3:1); all five chips (2 ActionChip, 2 FilterChip, 1 ChoiceChip) use padded tap
+targets (48pt); tab labels clamp to 1.3× text scale (iOS tab-bar convention) protecting the
+70pt capsule; `_CardTag` label wraps instead of overflowing. Bubble semantics ("Coach
+said"/"You said") verified present. Notification-sheet reminder times verified against the
+native scheduler (`SceneDelegate.swift`: hour 19 daily; hour 18 weekday 1 = Sunday). New
+`test/dynamic_type_test.dart` pumps all five tabs at 320pt and text scales 1.3×/2.0× (the
+largest iOS scale) asserting no overflow — it surfaced and fixed two real overflows
+(session_plan_card `_CardTag`, app_shell tab label). Copy self-audit found no filler, no
+AI-cliché, and no fabricated numbers; every interpolated string traces to a repository
+field. 284 tests pass, 0 analysis issues.
+
+Next: Chunk 5 final gate (deno + iOS build), independent `/review`, then merge to
+`feature/feature-engine` (owner action).
 
 ## Session Duration Cap (2026-08-22)
 

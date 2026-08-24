@@ -237,6 +237,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
             ChoiceChip(
               label: Text(option.label),
               selected: _periodDays == option.days,
+              materialTapTargetSize: MaterialTapTargetSize.padded,
               onSelected: (_) => setState(() {
                 _periodDays = option.days;
                 _reload();
