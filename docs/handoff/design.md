@@ -11,9 +11,9 @@ belongs in `DESIGN.md`.
 
 - **Active change: Phase 5 v2 "Precision Pro" production UI** — chunked execution on
   `feature/feature-engine-phase-5-v2`, master plan `.opencode/plans/phase-5-v2-precision-pro.md`.
-  Chunks 0–3 complete and reviewed (foundation, Today, Train + Nutrition, Progress + Coach);
-  Chunk 4 (AI Usage + Shell + Account) complete 2026-08-24, review pending;
-  Chunk 5 (Motion + A11y + copy audit + final gate + merge) is the next scope.
+  Chunks 0–4 complete and reviewed (foundation, Today, Train + Nutrition, Progress + Coach,
+  AI Usage + Shell + Account); Chunk 5 (Motion + A11y + copy audit + final gate + merge)
+  is the next scope.
   Owner rulings: Stitch dark direction approved; `DESIGN_SYSTEM.md` amended in the same change
   as code (§3.1 dark hexes, §3.2 Spline Sans + IBM Plex Mono, §3.3 shape lock 12/24/28,
   §3.4 premium-gradient cards + chrome-only glass, §10 anti-patterns); all 5 tabs in scope;
