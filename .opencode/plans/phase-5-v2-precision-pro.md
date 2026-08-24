@@ -1,7 +1,7 @@
 # Phase 5 v2 — "Precision Pro" Production UI — Master Plan
 
 **Created:** 2026-08-22 (rewritten same day after master-plan cross-check)
-**Status:** Chunk 3 complete — reviewed, follow-ups fixed (Progress + Coach)
+**Status:** Chunk 4 in progress (AI Usage + Shell + Account)
 **Branch:** `feature/feature-engine-phase-5-v2` (from `93fa49e`) → merge into `feature/feature-engine`
 **Backup:** tag `backup/pre-phase-5-v2` (local; push blocked by deploy-guard — user pushes or approves)
 **Supersedes:** the 2026-08-18 Phase 5 attempt (reverted) and the earlier draft of this file
@@ -17,7 +17,7 @@ executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is 
 | 1 | Today screen (hero + readouts + TrajectoryLens) | ✅ Done 2026-08-22 | `1bcc0d8` + `578f065` | analyze ✓ · format ✓ · 200 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-22-phase-5-v2-chunk-1-today-screen.md` (all fixed in `578f065`) |
 | 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ✅ Done 2026-08-23 | `d1db7b1` + `0e82689` | analyze ✓ · format ✓ · 213 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-23-phase-5-v2-chunk-2-train-nutrition.md` (all fixed in `0e82689`) |
 | 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ✅ Done 2026-08-24 | `672f28f` + `288d14a` | analyze ✓ · format ✓ · 262 tests ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-3-progress-coach.md` (all fixed in `288d14a`) |
-| 4 | AI Usage + Shell + Account cleanup | ⬜ Pending | — | — | — |
+| 4 | AI Usage + Shell + Account cleanup | 🔄 In progress | — | — | — |
 | 5 | Motion + A11y + copy audit + final gate + merge | ⬜ Pending | — | — | — |
 
 Carry-forward notes from reviews:
@@ -490,6 +490,21 @@ Per-widget state tables + frontend_smoke_test at 320/375pt + a11y scaling 1.3/la
 
 ## 7. Chunk 4 — AI Usage + Shell + Account
 
+**Chunk 4 decisions (2026-08-24, owner-confirmed):**
+- "Privacy and AI processing" row → NEW read-only **consent ledger** screen: latest
+  state per purpose from `consent_records` (terms, privacy, progress_photo_storage,
+  progress_photo_ai, notifications), following the `_loadProfileGoals` direct-select
+  pattern (RLS `consent_records_select_own` already grants owner reads).
+- Account scope = **full Precision Pro restyle** (not cleanup-only): rows/cards restyled
+  with `PremiumGradientCard`, mono values, section labels — matching Chunks 1–3.
+- `session-ses_fcef.md` (untracked session artifact) → leave as-is; not deleted, not
+  gitignored.
+- Threads row in delete sheet → documented as display-only; the trailing delete button
+  is the action (no dead chevron).
+- Extraction targets (`lib/features/account/widgets/`): AI usage screen, consent ledger
+  screen, profile-goals screen, deletion/export/notification sheets — account_screen.dart
+  1075 → <500 lines.
+
 ### 7.1 My AI Usage screen (rebuilt from `_AiUsageScreen`, account_screen.dart:418)
 - REAL fields only: `successful_runs`, `failed_runs`, `estimated_cost_usd` (from
   `get_my_ai_usage`) + `today_requests`, `daily_limit` (30), `warning_threshold_usd` (3),
@@ -497,8 +512,11 @@ Per-widget state tables + frontend_smoke_test at 320/375pt + a11y scaling 1.3/la
 - Cost labeled "operational estimate" (per AI_USAGE_PROMPT.md)
 - OMITTED (do not exist in any RPC): token counts, per-feature breakdown rows
 - Period: RPC is current_month only → single period display, NO dead toggle
-- Budget text reconciled with server values ($3/$5 production thresholds — fixes any
-  $1/$2 copy mismatch)
+- Budget text binds the RPC values at render time. Note: the plan originally assumed
+  $3/$5/30-per-day production thresholds, but the latest deployed migration
+  (`20260711100000_owner_groq_qwen_test_routing.sql`) overrides `get_my_ai_budget_state`
+  to $1 warning / $2 hard stop / 10 daily. The UI hardcodes neither — thresholds,
+  limits, and warning copy all render from the RPC response (owner decision 2026-08-24).
 - States: loading / empty / stale / unavailable; "Refresh usage" → real refetch
   (re-assign future)
 - Never display API keys, prompts, raw errors, cross-user totals

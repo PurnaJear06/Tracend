@@ -381,7 +381,10 @@ authorization remains active, Tracend recreates it from the local choice.
 **AI usage** shows only the authenticated user's sanitized current-period request count, token or
 image usage where meaningful, estimated cost, and service availability. It never reveals API keys,
 prompts, provider request identifiers, raw errors, or another user's aggregate. Values are
-operational estimates, not invoices or subscription quotas.
+operational estimates, not invoices or subscription quotas. Budget thresholds (warning, hard stop,
+daily limit) render from the server budget state rather than hardcoded copy, and Refresh usage
+refetches the live summary. When budget fields are unavailable the screen degrades to run counts
+and estimates without threshold claims.
 
 Provider setup is not a mobile flow. If the owner has not configured a server-side provider secret,
 Account shows **AI service not configured** and explains that approved plans and manual logging
@@ -389,6 +392,11 @@ remain available.
 
 Privacy screens show consent by purpose, provider disclosure, photo retention controls, connected
 data, export, and deletion.
+
+**Privacy and AI processing** opens a read-only consent ledger: the latest append-only
+`consent_records` entry per purpose (terms, privacy, progress photo storage, progress photo AI,
+notifications) with its grant/withdrawal state, date, and notice version. Purposes without a record
+say so. The ledger never edits records; withdrawal happens through the flow that owns each purpose.
 
 - Export and deletion require recent authentication.
 - Export asks for the account password and a separate 12-character export password, explains media

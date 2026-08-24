@@ -11,9 +11,9 @@ belongs in `DESIGN.md`.
 
 - **Active change: Phase 5 v2 "Precision Pro" production UI** — chunked execution on
   `feature/feature-engine-phase-5-v2`, master plan `.opencode/plans/phase-5-v2-precision-pro.md`.
-  Chunks 0–2 complete and reviewed (foundation, Today, Train + Nutrition); Chunk 3
-  (Progress + Coach) complete and reviewed 2026-08-24 (PASS w/ findings, all fixed);
-  Chunk 4 (AI Usage + Shell + Account) is the next scope.
+  Chunks 0–3 complete and reviewed (foundation, Today, Train + Nutrition, Progress + Coach);
+  Chunk 4 (AI Usage + Shell + Account) complete 2026-08-24, review pending;
+  Chunk 5 (Motion + A11y + copy audit + final gate + merge) is the next scope.
   Owner rulings: Stitch dark direction approved; `DESIGN_SYSTEM.md` amended in the same change
   as code (§3.1 dark hexes, §3.2 Spline Sans + IBM Plex Mono, §3.3 shape lock 12/24/28,
   §3.4 premium-gradient cards + chrome-only glass, §10 anti-patterns); all 5 tabs in scope;
@@ -42,9 +42,11 @@ belongs in `DESIGN.md`.
 
 ## Open Items
 
-- The Account/Profile **My AI usage** row needs its detail reference. Two Stitch generation requests
-  did not create a screen; the reviewed retry prompt is stored at
-  `design/stitch/account/AI_USAGE_PROMPT.md`.
+- The Account/Profile **My AI usage** detail was implemented directly in Flutter
+  (`lib/features/account/widgets/ai_usage_screen.dart`) from the reviewed prompt
+  (`design/stitch/account/AI_USAGE_PROMPT.md`) and the real RPC fields, per the owner ruling
+  that AI Usage shows only real RPC data. No Stitch reference was generated; the prompt file
+  remains the design intent record.
 - Provider API-key entry is intentionally absent from mobile designs. Provider credentials remain
   environment-specific Supabase secrets as required by `ARCHITECTURE.md` and `SECURITY_PRIVACY.md`.
 - The imported Progress reference includes trajectory, evidence, and weekly review, but omits the
@@ -56,18 +58,17 @@ belongs in `DESIGN.md`.
 
 ## Next Safe Actions
 
-1. Generate and import the My AI Usage detail using `design/stitch/account/AI_USAGE_PROMPT.md`.
-2. Review all imported onboarding references against `UX_FLOWS.md`; generated screens may be
+1. Review all imported onboarding references against `UX_FLOWS.md`; generated screens may be
    visually useful while still missing required states or copy.
-3. Complete the Progress reference with Body Measurements and the private Progress Photos entry
+2. Complete the Progress reference with Body Measurements and the private Progress Photos entry
    without exposing photo thumbnails on the overview.
-4. Fix the workout-detail exercise list to show real planned exercises.
-5. Flutter implementation is underway via Phase 5 v2 (Chunks 0–3 done and reviewed;
-   Chunk 4 — AI Usage + Shell + Account — is the next scope). Design work should
+3. Fix the workout-detail exercise list to show real planned exercises.
+4. Flutter implementation is underway via Phase 5 v2 (Chunks 0–4 done; Chunk 5 — Motion +
+   A11y + copy audit + final gate + merge — is the next scope). Design work should
    support the master plan
    (`.opencode/plans/phase-5-v2-precision-pro.md`), not restart a shell scaffold.
-6. Do not commit local MCP config or API keys.
-7. Update this file and `PROGRESS_CONTEXT.md` after material design changes.
+5. Do not commit local MCP config or API keys.
+6. Update this file and `PROGRESS_CONTEXT.md` after material design changes.
 
 ## Do Not Do
 

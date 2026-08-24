@@ -386,7 +386,29 @@ asserted via a never-completing repository; (8) design-handoff markdown indent f
 (9) frontend-handoff build line refreshed to 25.2 MB; (10) chat-bubble 18pt radius
 documented as a shape-lock exception in DESIGN_SYSTEM.md §3.3.
 
-Next: Chunk 4 — AI Usage + Shell + Account cleanup.
+**Chunk 4 complete (2026-08-24):** AI Usage + Shell + Account. `My AI usage` rebuilt as
+`lib/features/account/widgets/ai_usage_screen.dart`: every value binds the merged
+`get_my_ai_usage` + `get_my_ai_budget_state` response (`successful_runs`, `failed_runs`,
+`estimated_cost_usd`, `today_requests`, `daily_limit`, `warning_threshold_usd`,
+`hard_stop_usd`, `warning`, `blocked`); thresholds render from RPC values, never hardcoded;
+cost labeled operational estimate; loading/empty/unavailable states with real retry and
+Refresh usage refetch; fixture path (no budget fields) degrades to run counts + estimates
+without threshold claims. New read-only consent ledger
+(`lib/features/account/widgets/consent_ledger_screen.dart`) wired from the Privacy row:
+latest append-only `consent_records` entry per purpose (terms, privacy,
+progress_photo_storage, progress_photo_ai, notifications) via direct select under existing
+RLS. Account restyled (PremiumGradientCard profile hero, icon-container rows, mono tabular
+detail values) and extracted to `lib/features/account/widgets/` (`account_widgets`,
+`profile_goals_screen`, `ai_usage_screen`, `consent_ledger_screen`, `account_sheets`,
+`notification_sheet`, `coach_threads_sheet`); account_screen.dart 1075 → 379 lines.
+Unconfigured environments show "AI service not configured" per UX_FLOWS §13. Shell tab
+capsule inline `BackdropFilter` replaced by `TracendGlass` (glass budget unchanged: 2
+visible sites, asserted in `app_shell_test.dart`). Dead `ComingSoonButton`,
+`MiniTrendChart`, `_MiniTrendPainter` deleted from `tracend_scaffold.dart`. Coach-thread
+rows documented as display-only with the trailing delete as the action. 273 tests pass, 0
+analysis issues.
+
+Next: Chunk 5 — Motion + A11y + copy audit + final gate + merge.
 
 ## Session Duration Cap (2026-08-22)
 

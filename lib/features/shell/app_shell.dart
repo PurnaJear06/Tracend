@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +16,7 @@ import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/widgets/tracend_glass.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({required this.environment, this.onSignOut, super.key});
@@ -160,7 +159,6 @@ class _FloatingTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tracendColors;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final bottom = MediaQuery.paddingOf(context).bottom;
     return Padding(
@@ -169,40 +167,32 @@ class _FloatingTabBar extends StatelessWidget {
         heightFactor: 1,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 620),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(TracendRadii.navigation),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: colors.surface.withValues(alpha: 0.90),
-                  borderRadius: BorderRadius.circular(TracendRadii.navigation),
-                  border: Border.all(
-                    color: colors.borderSubtle.withValues(alpha: 0.90),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.12),
-                      blurRadius: 28,
-                      offset: const Offset(0, 12),
-                    ),
-                  ],
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(TracendRadii.navigation),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 28,
+                  offset: const Offset(0, 12),
                 ),
-                child: SizedBox(
-                  height: 70,
-                  child: Row(
-                    children: [
-                      for (var index = 0; index < _items.length; index++)
-                        Expanded(
-                          child: _TabItem(
-                            item: _items[index],
-                            selected: selectedIndex == index,
-                            reduceMotion: reduceMotion,
-                            onTap: () => onSelected(index),
-                          ),
+              ],
+            ),
+            child: TracendGlass(
+              child: SizedBox(
+                height: 70,
+                child: Row(
+                  children: [
+                    for (var index = 0; index < _items.length; index++)
+                      Expanded(
+                        child: _TabItem(
+                          item: _items[index],
+                          selected: selectedIndex == index,
+                          reduceMotion: reduceMotion,
+                          onTap: () => onSelected(index),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               ),
             ),

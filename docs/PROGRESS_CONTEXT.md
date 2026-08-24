@@ -17,9 +17,15 @@ wired into `WeightTrendIndicator`, Coach/Progress screens rebuilt from extracted
 reviewed PASS w/ findings, all follow-ups fixed 2026-08-24 (overlay anchoring disclosed in
 binding contracts, DESIGN_SYSTEM evidence-visualization amended for labeled R²-gated
 overlays, accordion subtitle semantics, TextPainter disposal, reachability/loading tests
-strengthened). Session duration cap (180 min) deployed 2026-08-22
-(`20260822120000_session_duration_cap.sql`). Feature Engine Phase 4 remains the last
-shipped UI milestone. 262 Flutter tests pass, 0 analysis issues.
+strengthened). Chunk 4 complete 2026-08-24 (AI Usage + Shell + Account — `My AI usage`
+screen rebuilt on real `get_my_ai_usage`/`get_my_ai_budget_state` fields with
+RPC-bound thresholds, operational-estimate labeling, loading/empty/unavailable states and
+real refresh; read-only consent ledger wired from the Privacy row over `consent_records`;
+Account restyled and extracted to `features/account/widgets/` (379 lines); tab capsule now
+uses `TracendGlass` (glass budget stays 2 visible sites); dead `ComingSoonButton` /
+`MiniTrendChart` deleted) — review pending. Session duration cap (180 min) deployed
+2026-08-22 (`20260822120000_session_duration_cap.sql`). Feature Engine Phase 4 remains the
+last shipped UI milestone. 273 Flutter tests pass, 0 analysis issues.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -53,7 +59,7 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Feature Engine Phase 2    | **Complete — merged & verified**      | `docs/handoff/backend.md`  | `docs/ALGORITHMS.md`, `.opencode/plans/phase-2-feature-engine-algorithms.md` |
 | Feature Engine Phase 3    | **Deployed — merged**                | `docs/handoff/backend.md`  | `.opencode/plans/phase-3-coach-integration.md`                                |
 | Feature Engine Phase 4    | **Complete — widgets built + Today integrated** | `docs/handoff/frontend.md` | `.opencode/plans/phase-4-flutter-computed-metrics.md`
-| Phase 5 v2 "Precision Pro" UI | **In progress — Chunk 3 reviewed, follow-ups fixed** | `docs/handoff/design.md`   | `.opencode/plans/phase-5-v2-precision-pro.md`   |
+| Phase 5 v2 "Precision Pro" UI | **In progress — Chunk 4 complete, review pending** | `docs/handoff/design.md`   | `.opencode/plans/phase-5-v2-precision-pro.md`   |
 | Backend foundation        | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
 | Frontend/UI               | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
 | Coach Continuity Memory   | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
