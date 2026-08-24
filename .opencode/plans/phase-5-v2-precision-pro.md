@@ -18,7 +18,7 @@ executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is 
 | 2 | Train + Nutrition (IntensityBar, DatePillStrip, TargetsGrid) | ✅ Done 2026-08-23 | `d1db7b1` + `0e82689` | analyze ✓ · format ✓ · 213 tests ✓ | PASS w/ findings — `docs/reviews/2026-08-23-phase-5-v2-chunk-2-train-nutrition.md` (all fixed in `0e82689`) |
 | 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ✅ Done 2026-08-24 | `672f28f` + `288d14a` | analyze ✓ · format ✓ · 262 tests ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-3-progress-coach.md` (all fixed in `288d14a`) |
 | 4 | AI Usage + Shell + Account cleanup | ✅ Done 2026-08-24 | `82bf748` + `2afe1c8` | analyze ✓ · format ✓ · 274 tests ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-4-ai-usage-shell-account.md` (all fixed in `2afe1c8`) |
-| 5 | Motion + A11y + copy audit + final gate + merge | ⬜ Pending | — | — | — |
+| 5 | Motion + A11y + copy audit + final gate + merge | ✅ Done 2026-08-24 | `c90bf9e` + `a5ccd4f` | analyze ✓ · format ✓ · 287 tests ✓ · deno 94 ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-5-motion-a11y-copy.md` (all fixed in `a5ccd4f`) |
 
 Carry-forward notes from reviews:
 - Chunk 0 review: assert light-theme `accentAmber`/`accentNow` contrast when those tokens are
