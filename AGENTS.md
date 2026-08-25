@@ -24,12 +24,22 @@ Key commands:
 ./scripts/flutter.sh test                           # all tests
 ./scripts/flutter.sh test path/to/single_test.dart  # single test
 ./scripts/flutter.sh build ios --release --no-codesign
+./scripts/install-device.sh                          # signed release + install on paired iPhone
 ./scripts/deno.sh fmt --check supabase/functions
 ./scripts/deno.sh lint supabase/functions
 ./scripts/deno.sh test supabase/functions
 ./scripts/pre-deploy.sh                             # full gate (local)
 ./scripts/pre-deploy.sh --skip-colima --skip-reset   # skip DB if Colima unavailable
 ```
+
+**Device install config lives in the gitignored `.env`** (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
+optional `SENTRY_DSN`; see `.env.example`). `scripts/install-device.sh` sources it, builds the signed
+release, and installs on the paired iPhone. **Never ask the user for these keys — read `.env`.**
+If the publishable key is missing or rejected (401 "Invalid API key"), refresh it from the
+authenticated CLI and pipe it into `.env` at runtime, e.g.
+`./scripts/supabase.sh projects api-keys list --project-ref qsfzzsjenopqqqhvpyaw` then extract the
+`sb_publishable_…` value with `grep -oE` into `.env`. Note: the environment redacts literal secret
+values typed into tool calls, so write the key via shell variable/pipe — never via Write/Edit.
 
 **CI uses vanilla commands** (`flutter`, `deno` directly). The setup actions place them on PATH.
 Do not convert CI workflow steps to wrapper scripts.
