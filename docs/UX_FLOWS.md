@@ -6,12 +6,14 @@ Train uses the 4/8-point spacing rhythm and 44-point interactive rows. Active lo
 Syncing, Offline, or Needs attention; resumes entered sets after reopen; and requires explicit skip
 actions. Historical corrections and HealthKit conflicts use review cards with confirmation actions.
 
-Today's Action Stage contains one instruction, one reason, one CTA, and three tappable readiness
-factors named Recovery, Training, and Nutrition. Each opens a plain-language explanation of its
-state and source. Apple Health combines refresh, useful signals, coaching impact and trends in one
-section; technical gaps remain collapsed. Progress uses one date-ordered effective measurement
-timeline for its headline, raw chart, and recent history; smoothing is never shown as the current
-weight.
+Today's Action Stage contains one instruction, one reason, and one CTA, followed by the
+readiness readouts (Chunk 6): a full-width recovery score with its five drivers (HRV, RHR,
+sleep, respiratory rate, prior strain), a real 7-day health trend from Apple Health, and
+training load (ACWR) folded into the session plan card. Evidence sources and freshness stay
+reachable in the Apple Health section below. Apple Health combines refresh, useful signals,
+coaching impact and trends in one section; technical gaps remain collapsed. Progress uses
+one date-ordered effective measurement timeline for its headline, raw chart, and recent
+history; smoothing is never shown as the current weight.
 
 **Status:** Authoritative MVP navigation, screen, and interaction behavior\
 **Platform:** iOS-first Flutter app\
@@ -142,10 +144,12 @@ missing information, and safety boundaries. Actions are **Approve plan**, **Edit
 ┌─────────────────────────────────────┐
 │ Today                     Account   │
 │                                     │
-│ Recovery   Training   Nutrition     │
-│                         TRAIN: Push │
-│ Keep the planned session.           │
-│ [ Start workout ]    See evidence   │
+│ RECOVERY              [Good]        │
+│ 72 / 100 · five driver rows         │
+│ 7-DAY TREND        HRV · ms         │
+│ ~~~~ real recorded days ~~~~        │
+│ TRAIN: Push · LOAD 1.05 Optimal     │
+│ [ Start workout ]  [ View analytics ]│
 │                                     │
 │ Check-in needed · 1 min             │
 │ Training perspective         ›      │
@@ -174,17 +178,21 @@ updates Today and recomputes only when necessary.
 
 ### Evidence detail
 
-Opening a readiness factor shows observation, source, freshness, and any missing action in ordinary
-coaching language. Deterministic calculation and AI interpretation are labeled separately. Training
-and Nutrition remain perspectives in one controlled decision pipeline, not independent agents. The
-Coach tab provides direct user questions through the same workflow and never behaves like three
-separate autonomous chatbots. A live assistant message is labeled with its provider (for the owner
-test, **Qwen AI response**); a provider or validation failure never substitutes generic coaching
-text and instead shows a retryable unavailable state.
+Readiness evidence is shown inline, not hidden behind a tap: the recovery readout lists
+each driver's true z-score next to its bar, the 7-day trend plots only recorded days with
+its date range and recorded-day count, and the session plan card states the real ACWR and
+zone. Source, freshness, and missing-signal detail live in the Apple Health section
+below, in ordinary coaching language. Deterministic calculation and AI interpretation are
+labeled separately. Training and Nutrition remain perspectives in one controlled decision
+pipeline, not independent agents. The Coach tab provides direct user questions through the
+same workflow and never behaves like three separate autonomous chatbots. A live assistant
+message is labeled with its provider (for the owner test, **Qwen AI response**); a
+provider or validation failure never substitutes generic coaching text and instead shows a
+retryable unavailable state.
 
-Today uses a real timeline for check-in, workout, meal, and review actions. The primary decision
-always uses **Do this next** and remains actionable when AI is offline. Each readiness factor opens
-its source and freshness; a missing factor becomes a direct recovery action.
+Today uses a real timeline for check-in, workout, meal, and review actions. The primary
+decision always uses **Do this next** and remains actionable when AI is offline. A missing
+readiness signal becomes a direct recovery action (sync Apple Health or add a check-in).
 
 Coach shows an expandable **Your coaching context** card before conversation. It lists approved
 plan, goal/profile, Apple Health, check-ins, confirmed nutrition, completed Tracend workouts,

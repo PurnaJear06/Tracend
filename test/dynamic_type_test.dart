@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/app.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/health/health_models.dart';
+import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
@@ -44,10 +46,10 @@ void main() {
   }
 
   // The default fixture brief carries no `computed`, so the shell test above
-  // never lays out the recovery ring, sleep card, driver bars, or trajectory
-  // lens. Pump Today directly with a computed brief to cover those data-viz
-  // layouts at the largest scale. Bounded pump: the NOW-dot pulse is an
-  // intentional infinite loop.
+  // never lays out the recovery readout, driver rows, sleep card, or 7-day
+  // trend. Pump Today directly with a computed brief and a 7-day health
+  // history to cover those data-viz layouts at the largest scale. Bounded
+  // pump: the NOW-dot pulse is an intentional infinite loop.
   testWidgets(
     'Today computed data-viz renders without overflow at 320pt × 2.0',
     (tester) async {
@@ -67,6 +69,7 @@ void main() {
           home: TodayScreen(
             environment: _environment,
             brief: _ComputedBriefRepository(),
+            health: _FixtureHealthRepository(),
           ),
         ),
       );
@@ -108,6 +111,30 @@ class _ComputedBriefRepository implements DailyBriefRepository {
       dataConfidence: 'medium',
     ),
   );
+}
+
+/// 7-day HRV history so the trend curve (not just its cold-start state) is
+/// laid out under Dynamic Type.
+class _FixtureHealthRepository implements HealthRepository {
+  @override
+  Future<HealthSyncStatus> connectAndSync() => loadStatus();
+
+  @override
+  Future<HealthSyncStatus> loadStatus() async =>
+      const HealthSyncStatus(state: HealthConnectionState.manualOnly);
+
+  @override
+  Future<HealthHistory> loadHistory() async => HealthHistory([
+    for (var i = 6; i >= 0; i--)
+      HealthDay(
+        date: DateTime(2026, 8, 24).subtract(Duration(days: i)),
+        presentMetrics: const {HealthMetric.hrvSdnn},
+        hrvSdnnMs: 42.0 + (6 - i) * 2,
+      ),
+  ]);
+
+  @override
+  Future<HealthSyncStatus> sync() => loadStatus();
 }
 
 void _expectNoLayoutException(WidgetTester tester, String tab) {

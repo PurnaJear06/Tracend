@@ -11,13 +11,17 @@ belongs in `DESIGN.md`.
 
 - **Active change: Phase 5 v2 "Precision Pro" production UI** — chunked execution on
   `feature/feature-engine-phase-5-v2`, master plan `.opencode/plans/phase-5-v2-precision-pro.md`.
-  Chunks 0–4 complete and reviewed (foundation, Today, Train + Nutrition, Progress + Coach,
-  AI Usage + Shell + Account); Chunk 5 (Motion + A11y + copy audit) complete and reviewed
-  2026-08-24 — count-up score, staggered Today entrances, driver-bar semantics, extended
-  contrast asserts, padded chip tap targets, tab-label scale clamp, Dynamic Type
-  1.3×/2.0× no-overflow tests, clean copy audit; review follow-ups fixed (brief retained
-  across reloads so entrances don't replay and count-up fires). Merge to
-  `feature/feature-engine` is the remaining owner action.
+  Chunks 0–5 complete and reviewed (foundation, Today, Train + Nutrition, Progress + Coach,
+  AI Usage + Shell + Account, Motion + A11y + copy audit). Chunk 6 (Today redesign)
+  owner-approved 2026-08-25 after device QA and implemented: centered recovery ring,
+  three-tile readiness strip, today-only trajectory lens, and the top-level "See evidence"
+  accordion replaced by a full-width `RecoveryReadoutCard` (tabular score + band chip +
+  five z-score driver rows) and a real `TrajectoryTrend` 7-day chart from
+  `daily_health_summaries` (HRV → sleep → resting HR, ≥4 recorded days, gaps never
+  interpolated); ACWR folded into `SessionPlanCard` as a display-only load row.
+  DESIGN_SYSTEM.md §evidence-visualization/§2 signature element/§5 components/§6 motion/§8
+  semantics, UX_FLOWS §5, PRD, and TESTING_STRATEGY amended in the same change. Merge to
+  `feature/feature-engine` remains the owner action.
   Owner rulings: Stitch dark direction approved; `DESIGN_SYSTEM.md` amended in the same change
   as code (§3.1 dark hexes, §3.2 Spline Sans + IBM Plex Mono, §3.3 shape lock 12/24/28,
   §3.4 premium-gradient cards + chrome-only glass, §10 anti-patterns); all 5 tabs in scope;

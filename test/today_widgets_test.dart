@@ -7,13 +7,12 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
-import 'package:tracend/features/today/recovery_ring.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/widgets/check_in_prompt_bar.dart';
 import 'package:tracend/features/today/widgets/coach_perspective_card.dart';
 import 'package:tracend/features/today/widgets/metabolic_target_card.dart';
 import 'package:tracend/features/today/widgets/precision_divider.dart';
-import 'package:tracend/features/today/widgets/readiness_strip.dart';
+import 'package:tracend/features/today/widgets/recovery_readout_card.dart';
 import 'package:tracend/features/today/widgets/session_plan_card.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
@@ -69,27 +68,6 @@ ComputedMetrics _computed({
 );
 
 void main() {
-  group('trajectoryPoints', () {
-    test('maps real scores and resolves NOW from recovery', () {
-      final points = trajectoryPoints(
-        _computed(recovery: 72, sleepQuality: 80, macroAdherencePct: 91),
-      );
-      expect(points.map((p) => p.label), ['SLEEP', 'TRAIN', 'FUEL', 'NOW']);
-      expect(points.last.value, 72);
-    });
-
-    test('NOW falls back to the last real point when recovery is null', () {
-      final points = trajectoryPoints(_computed(sleepQuality: 80));
-      expect(points.map((p) => p.label), ['SLEEP', 'NOW']);
-      expect(points.last.value, 80);
-    });
-
-    test('returns no points (chip-rail fallback) when nothing exists', () {
-      expect(trajectoryPoints(_computed()), isEmpty);
-      expect(trajectoryPoints(null), isEmpty);
-    });
-  });
-
   group('TodayHero', () {
     testWidgets('shows decision headline, reason, and confidence pill', (
       tester,
@@ -105,8 +83,7 @@ void main() {
           ),
         ),
       );
-      // Bounded pump: the NOW-dot pulse is an intentional infinite loop.
-      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
 
       expect(find.text('Complete Push day.'), findsOneWidget);
       expect(find.text('Medium confidence'), findsOneWidget);
@@ -153,45 +130,6 @@ void main() {
     });
   });
 
-  group('ReadinessStrip', () {
-    testWidgets('full state shows real scores and bands', (tester) async {
-      await tester.pumpWidget(
-        _wrap(
-          ReadinessStrip(
-            brief: _brief(
-              computed: _computed(
-                recovery: 72,
-                acwr: 1.05,
-                macroAdherencePct: 91,
-              ),
-            ),
-            onOpen: (_, _) {},
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('72'), findsOneWidget);
-      expect(find.text('Good'), findsOneWidget);
-      expect(find.text('1.05'), findsOneWidget);
-      expect(find.text('Optimal'), findsOneWidget);
-      expect(find.text('91%'), findsOneWidget);
-      expect(find.text('On track'), findsOneWidget);
-    });
-
-    testWidgets('cold start shows -- and honest fallbacks', (tester) async {
-      await tester.pumpWidget(
-        _wrap(ReadinessStrip(brief: _brief(), onOpen: (_, _) {})),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('--'), findsNWidgets(3));
-      expect(find.text('Check in'), findsOneWidget);
-      expect(find.text('Rest day'), findsOneWidget);
-      expect(find.text('Up to date'), findsOneWidget);
-    });
-  });
-
   group('SessionPlanCard', () {
     testWidgets('full state shows name, counts, and objective', (tester) async {
       await tester.pumpWidget(
@@ -227,6 +165,54 @@ void main() {
 
       expect(find.text('No session planned'), findsOneWidget);
       expect(find.text('2 MVMT'), findsNothing);
+    });
+
+    testWidgets('shows the real ACWR load row when present', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          const SessionPlanCard(
+            workout: {'name': 'Push day'},
+            acwr: 1.05,
+            onOpen: _noop,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('LOAD'), findsOneWidget);
+      expect(find.text('1.05'), findsOneWidget);
+      expect(find.text('Optimal'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Training load, ACWR 1.05, Optimal'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('hides the load row when ACWR is null', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          const SessionPlanCard(workout: {'name': 'Push day'}, onOpen: _noop),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('LOAD'), findsNothing);
+    });
+
+    testWidgets('flags high load above the optimal zone', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          const SessionPlanCard(
+            workout: {'name': 'Push day'},
+            acwr: 1.42,
+            onOpen: _noop,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('1.42'), findsOneWidget);
+      expect(find.text('High load'), findsOneWidget);
     });
   });
 
@@ -390,16 +376,16 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pump(const Duration(seconds: 1));
 
-      // hero, recovery ring, readiness, evidence, sleep, session, metabolic,
+      // hero, recovery readout, 7-day trend, sleep, session, metabolic,
       // coach perspective, check-in bar
-      expect(find.byType(MicroMotionEntrance), findsNWidgets(9));
+      expect(find.byType(MicroMotionEntrance), findsNWidgets(8));
     });
 
     testWidgets('keeps the brief mounted across a check-in reload', (
       tester,
     ) async {
       // Regression: swapping the brief future used to reset the FutureBuilder
-      // to waiting, unmounting _BriefContent — replaying all nine stagger
+      // to waiting, unmounting _BriefContent — replaying all eight stagger
       // entrances and re-creating the count-up statically. The retained
       // previous brief must stay mounted so score changes animate.
       SharedPreferences.setMockInitialValues({});
@@ -425,7 +411,7 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pump(const Duration(seconds: 1));
       expect(find.text('40'), findsWidgets);
-      final ringBefore = tester.element(find.byType(RecoveryRing));
+      final readoutBefore = tester.element(find.byType(RecoveryReadoutCard));
 
       await tester.scrollUntilVisible(
         find.text('Morning status recorded'),
@@ -446,8 +432,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pump(const Duration(milliseconds: 100));
 
-      final ringAfter = tester.element(find.byType(RecoveryRing));
-      expect(identical(ringBefore, ringAfter), isTrue);
+      final readoutAfter = tester.element(find.byType(RecoveryReadoutCard));
+      expect(identical(readoutBefore, readoutAfter), isTrue);
 
       await tester.pump(const Duration(seconds: 1));
       expect(find.text('72'), findsWidgets);

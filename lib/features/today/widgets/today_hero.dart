@@ -1,46 +1,12 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/shared/widgets/tracend_glass.dart';
-import 'package:tracend/shared/widgets/trajectory_lens.dart';
-
-/// Maps real `ComputedScores` fields to trajectory points (plan §4.1 binding
-/// contract). Every value traces to a computed field — nothing is invented.
-///
-/// NOW is the terminal marker and always carries a real value: `recovery`
-/// when present, otherwise the last real signal. When no signal exists there
-/// is no NOW point and the lens falls back to its chip rail rather than
-/// drawing a fabricated curve (missing data lowers confidence, never faked).
-List<TrajectoryPoint> trajectoryPoints(ComputedMetrics? computed) {
-  final scores = computed?.scores;
-  if (scores == null) return const [];
-
-  final points = <TrajectoryPoint>[];
-  final sleep = scores.sleepQuality;
-  if (sleep != null) {
-    points.add(TrajectoryPoint(label: 'SLEEP', value: sleep.toDouble()));
-  }
-  final recovery = scores.recovery;
-  if (recovery != null) {
-    points.add(TrajectoryPoint(label: 'TRAIN', value: recovery.toDouble()));
-  }
-  final fuel = scores.macroAdherencePct;
-  if (fuel != null) {
-    points.add(TrajectoryPoint(label: 'FUEL', value: fuel.toDouble()));
-  }
-
-  final now =
-      recovery?.toDouble() ?? (points.isEmpty ? null : points.last.value);
-  if (now != null) {
-    points.add(TrajectoryPoint(label: 'NOW', value: now));
-  }
-  return points;
-}
 
 /// Stitch `today.html` hero: confidence pill + sync time, decision headline,
-/// reason, trajectory lens, and the two primary actions.
+/// reason, and the two primary actions. The 7-day trend lives below in
+/// `TrajectoryTrend` (Chunk 6) — the hero stays a decision surface.
 class TodayHero extends StatelessWidget {
   const TodayHero({
     required this.brief,
@@ -63,7 +29,6 @@ class TodayHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     final computed = brief.computed;
-    final points = trajectoryPoints(computed);
     final syncedAt = _syncLabel(brief);
 
     return Column(
@@ -125,12 +90,6 @@ class TodayHero extends StatelessWidget {
           ),
         ),
         const SizedBox(height: TracendSpacing.lg),
-        TrajectoryLens(
-          points: points,
-          decision: brief.nextAction,
-          evidence: _evidenceLabels(brief),
-        ),
-        const SizedBox(height: TracendSpacing.lg),
         Row(
           children: [
             Expanded(
@@ -173,24 +132,6 @@ class TodayHero extends StatelessWidget {
     final hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12;
     final minute = value.minute.toString().padLeft(2, '0');
     return '$hour12:$minute $suffix';
-  }
-
-  /// Chip-rail fallback content: the real evidence behind the decision, or a
-  /// single honest placeholder when the brief carries none.
-  List<String> _evidenceLabels(DailyBrief brief) {
-    final evidence = brief.decision?['evidence'];
-    if (evidence is List && evidence.isNotEmpty) {
-      return evidence
-          .map((item) {
-            if (item is Map && item['label'] is String) {
-              return item['label'] as String;
-            }
-            return item.toString();
-          })
-          .take(3)
-          .toList();
-    }
-    return const ['Approved plan'];
   }
 }
 

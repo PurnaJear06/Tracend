@@ -8,10 +8,18 @@ exercise rows.
 
 ### Evidence visualization
 
-`ReadinessStrip` replaces the internal-sounding Signal Rail on Today. It uses three direct, tappable
-factors: Recovery, Training, and Nutrition. The shared `EvidenceTrendChart` uses linear segments,
-actual date spacing, visible numeric scale, current value and optional average line. Curved
-interpolation, unlabeled auto-scaling and spreadsheet-style equal metric grids are prohibited.
+Today leads with two evidence surfaces (Chunk 6): the full-width `RecoveryReadoutCard`
+(tabular recovery score, band chip, and five driver rows with z-score bars — fill clamps
+z to ±2 for layout while labels and semantics report the true z) and `TrajectoryTrend`, a
+real 7-day line chart from `daily_health_summaries` (HRV → sleep → resting HR priority,
+≥4 recorded days required, window anchored to the latest stored day, gaps left visible,
+never interpolated). They replace the earlier centered recovery ring, three-tile
+readiness strip, and today-only trajectory lens. The shared `EvidenceTrendChart` uses
+linear segments, actual date spacing, visible numeric scale, current value and optional
+average line; within it, curved interpolation, unlabeled auto-scaling, and
+spreadsheet-style equal metric grids are prohibited. (`TrajectoryTrend` is the one
+sanctioned bezier surface — it smooths only between real recorded days, never across
+missing ones.)
 Weight charts show confirmed raw weigh-ins as dots; the raw dots are never smoothed. Computed
 trend overlays are permitted only as labeled regression line segments derived from the server
 OLS slopes (`ALGORITHMS.md` §5): they must be anchored to real measurements (no invented
@@ -47,18 +55,22 @@ science-fiction control panel.
 The visual language combines the discipline of a training log, the accuracy of an instrument
 readout, and the physical momentum implied by the Tracend name.
 
-### Signature element: the trajectory lens
+### Signature element: the 7-day trend
 
-The trajectory lens is a luminous bezier curve on Today's hero that plots the real computed
-signals (Sleep → Train → Fuel → Now) with a draw-on reveal and a pulsing NOW marker. It
-communicates momentum without pretending to be a metric — every point binds to a
-`ComputedScores` field, and when fewer than two scores exist it degrades to an honest
-signal chip rail rather than drawing a fabricated curve.
+The signature data moment on Today is `TrajectoryTrend` (Chunk 6): a luminous bezier
+through the last seven stored days of one real HealthKit metric (HRV preferred, then
+sleep duration, then resting heart rate), with an area fill, real point dots, restrained
+min/max/date labels, a draw-on reveal, and a pulsing marker on the latest recorded day.
+It plots only recorded days — gaps stay visible, missing days are never interpolated —
+and when fewer than four recorded days exist it degrades to an honest "Building baseline"
+card rather than drawing a fabricated curve.
 
-The lens never contains text scores, charts, or implied measurements beyond its labeled
-points. The native instruction and readiness factors remain authoritative and accessible.
+The trend never shows invented metrics or smoothed-away gaps. The recovery readout and
+readiness factors remain authoritative and accessible.
 
-The lens is the one deliberate aesthetic risk. Other surfaces remain quiet so it retains meaning.
+The trend is the one deliberate aesthetic risk. Other surfaces remain quiet so it retains
+meaning. (It supersedes the earlier hero "trajectory lens", which plotted only today's
+computed signals.)
 
 ## 3. Brand Tokens
 
@@ -90,7 +102,7 @@ Semantic roles include `canvas`, `surface`, `surfaceRaised`, `textPrimary`, `tex
 - Body text must meet WCAG AA 4.5:1 contrast; large text and meaningful graphics must meet 3:1.
 - Stable, attention, danger, confidence, and selection always include text or iconography; color is
   never the only signal.
-- Gradients may appear inside the trajectory lens and data visuals when they encode direction or
+- Gradients may appear inside the 7-day trend and data visuals when they encode direction or
   improve native-text contrast.
 - Blur is reserved for modal separation and camera overlays, never ambient decoration.
 
@@ -176,11 +188,26 @@ layout on larger widths.
 
 ## 5. Core Components
 
-### `ReadinessStrip`
+### `RecoveryReadoutCard`
 
-Shows Recovery, Training, and Nutrition as three tappable factors. Each opens a plain-language
-source explanation, supports Dynamic Type and VoiceOver, and never implies a composite readiness
-score.
+Full-width recovery readout on Today (Chunk 6): tabular score with `/ 100`, a band chip
+(Excellent/Good/Moderate/Low/Poor), and five driver rows (HRV, RHR, Sleep, Resp, Strain)
+with horizontal z-score bars and signed z values. Bar fill clamps z to ±2 for layout;
+labels and semantics always report the true z-score. Cold start shows `--` with honest
+next-step copy; low confidence adds "Building baseline". Replaces the earlier centered
+recovery ring and the recovery tile of the readiness strip. Training load (ACWR) is not
+part of this card — it renders as a display-only row inside `SessionPlanCard`.
+
+### `TrajectoryTrend`
+
+Real 7-day health trend on Today (Chunk 6): plots recorded days from
+`daily_health_summaries` for one metric (priority HRV → sleep → resting HR; first with
+≥4 recorded days in the window wins). Window = the 7 days ending at the latest stored
+day. Bezier curve with area fill, real point dots, restrained min/max/date labels,
+draw-on reveal, and the single sanctioned idle pulse on the latest recorded day. Missing
+days stay visible as gaps and are never interpolated; fewer than four recorded days
+renders the "Building baseline" cold-start card. Direction deltas (vs first recorded
+day) are reported neutrally — up/down is fact, not good/bad.
 
 ### `DecisionSurface`
 
@@ -256,8 +283,8 @@ Implemented motion (all gated on `MediaQuery.disableAnimationsOf`, all motivated
 
 - Card entrances on Today stagger 60ms per index (`MicroMotion.stagger`, capped at 8 indices) via
   `MicroMotionEntrance` (spring rise + fade, once on mount).
-- Trajectory lens path draws over 1.5s; the NOW dot carries the single sanctioned idle loop
-  (`MicroMotionPulse`, gentle opacity pulse). Nothing else animates idle.
+- The 7-day trend path draws over 1.5s; the latest-day dot carries the single sanctioned idle
+  loop (`MicroMotionPulse`, gentle opacity pulse). Nothing else animates idle.
 - Score values count up/down on change only (`MicroMotionCountUp`, 600ms ease-out); first render is
   static. Tabular figures keep digits from jittering during the transition.
 - Tab capsule selection morphs in 160ms; tab labels clamp to 1.3× text scale (iOS tab bars keep
@@ -277,7 +304,7 @@ permission-denied states.
 
 ## 8. Accessibility Baseline
 
-- VoiceOver order matches visual order; custom charts and the lens expose concise summaries.
+- VoiceOver order matches visual order; custom charts and the 7-day trend expose concise summaries.
 - All controls have labels, hints where useful, and selected/disabled/expanded traits.
 - Dynamic Type works through accessibility sizes without losing actions or values.
 - Bold Text, Button Shapes, Increase Contrast, Differentiate Without Color, and Reduce Motion are
@@ -287,8 +314,9 @@ permission-denied states.
 
 Audited implementation (Chunk 5):
 
-- Every data viz exposes a semantics label: recovery ring and driver bars (z-score per driver),
-  sparklines, trend charts (measured vs computed distinguished), trajectory lens, intensity bar,
+- Every data viz exposes a semantics label: recovery readout and driver rows (true z-score per
+  driver), sparklines, trend charts (measured vs computed distinguished), 7-day trend (metric,
+  date range, first/last values, recorded-day count), intensity bar,
   targets grid, measurement deltas. Color is never the only signal — values and band names render
   as text beside every graphic.
 - Touch targets are ≥44pt: IconButtons default to 48pt, date pills and week chevrons enforce 44pt,

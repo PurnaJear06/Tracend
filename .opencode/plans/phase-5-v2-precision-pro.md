@@ -1,7 +1,8 @@
 # Phase 5 v2 — "Precision Pro" Production UI — Master Plan
 
 **Created:** 2026-08-22 (rewritten same day after master-plan cross-check)
-**Status:** Chunk 4 complete — reviewed, follow-ups fixed (AI Usage + Shell + Account)
+**Status:** Chunks 0–5 complete and reviewed. Chunk 6 (Today redesign) owner-approved
+2026-08-25 — in progress.
 **Branch:** `feature/feature-engine-phase-5-v2` (from `93fa49e`) → merge into `feature/feature-engine`
 **Backup:** tag `backup/pre-phase-5-v2` (local; push blocked by deploy-guard — user pushes or approves)
 **Supersedes:** the 2026-08-18 Phase 5 attempt (reverted) and the earlier draft of this file
@@ -19,6 +20,7 @@ executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is 
 | 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ✅ Done 2026-08-24 | `672f28f` + `288d14a` | analyze ✓ · format ✓ · 262 tests ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-3-progress-coach.md` (all fixed in `288d14a`) |
 | 4 | AI Usage + Shell + Account cleanup | ✅ Done 2026-08-24 | `82bf748` + `2afe1c8` | analyze ✓ · format ✓ · 274 tests ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-4-ai-usage-shell-account.md` (all fixed in `2afe1c8`) |
 | 5 | Motion + A11y + copy audit + final gate + merge | ✅ Done 2026-08-24 | `c90bf9e` + `a5ccd4f` | analyze ✓ · format ✓ · 287 tests ✓ · deno 94 ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-5-motion-a11y-copy.md` (all fixed in `a5ccd4f`) |
+| 6 | Today redesign: RecoveryReadoutCard + TrajectoryTrend, drop ring/strip/lens/evidence accordion | 🔨 In progress (owner-approved 2026-08-25) | — | — | — |
 
 Carry-forward notes from reviews:
 - Chunk 0 review: assert light-theme `accentAmber`/`accentNow` contrast when those tokens are
@@ -653,7 +655,75 @@ Re-read every visible string: no AI-cliché copy, no fake-precise numbers, no fi
 
 ---
 
-## 9. Explicitly OUT of v2
+## 9. Chunk 6 — Today redesign (owner-approved 2026-08-25)
+
+Owner feedback after device QA of Chunks 0–5: the recovery ring is too small and redundant
+with the readiness strip, the three readiness tiles are cramped/uneven, and the trajectory
+"lens" shows only today's signals — the user wants a real 7-day trend graph. Approved as a
+bold redesign, not a light fix.
+
+### 9.1 Composition (top to bottom, stagger slots 0–7)
+
+| Slot | Element | Source |
+|---|---|---|
+| 0 | Hero: confidence pill + sync, headline, reason, buttons | unchanged (`TodayHero`, lens removed) |
+| 1 | **RecoveryReadoutCard (NEW)** — full-width readout replacing RecoveryRing + ReadinessStrip | `computed.scores.recovery` + `recoveryBreakdown` z-scores |
+| 2 | **TrajectoryTrend (NEW)** — real 7-day trend line | `HealthHistory` (last 7 stored days) |
+| 3 | SleepArchitectureCard | unchanged |
+| 4 | SessionPlanCard + folded ACWR/load row | `brief.workout` + `computed.scores.acwr` |
+| 5 | MetabolicTargetCard | unchanged |
+| 6 | Coach perspective section | unchanged |
+| 7 | CheckInPromptBar | unchanged |
+
+Removed: `RecoveryRing`, `ReadinessStrip`, top-level `_BriefEvidence` "See evidence"
+accordion (evidence stays reachable in the bottom Apple Health section:
+`HealthStatusCard` + `HealthEvidenceSection`), `TrajectoryLens` + `trajectoryPoints`.
+
+### 9.2 RecoveryReadoutCard (`lib/features/today/widgets/recovery_readout_card.dart`)
+- Full-width `PremiumGradientCard`. Header: `RECOVERY` tag + band chip.
+- Big tabular recovery number with `/ 100` (count-up on change, per Chunk 5 motion).
+- Five driver rows (HRV, RHR, Sleep, Resp, Strain) with z-score bars: fill =
+  `(z.clamp(-2, 2) + 2) / 4` (same mapping the ring used); semantics label reports the
+  true z-score.
+- Cold start / null: honest "Building baseline" state — no fabricated drivers.
+
+### 9.3 TrajectoryTrend (`lib/shared/widgets/trajectory_trend.dart`)
+- Replaces `TrajectoryLens` (file deleted). Data: `HealthHistory`, window = last 7 stored
+  days anchored to the latest stored day (avoids misleading sparse windows); header shows
+  the real date range.
+- Metric priority: HRV (`hrvSdnnMs`) → sleep (`sleepMinutes`) → resting HR
+  (`restingHeartRateBpm`); first metric with ≥4 non-null points wins.
+- Smooth bezier curve + area fill + real point dots + restrained min/max/date labels;
+  draw-on reveal (reduceMotion → static); NOW pulse on latest point (the sanctioned idle
+  loop moves here).
+- <4 points → designed "building baseline" cold-start state. Never fabricate or
+  interpolate missing days.
+
+### 9.4 SessionPlanCard
+- New optional `acwr` param; display-only Load/ACWR row when present, hidden when null.
+
+### 9.5 Deletions & test updates
+- Delete `lib/features/today/recovery_ring.dart`,
+  `lib/features/today/widgets/readiness_strip.dart`,
+  `lib/shared/widgets/trajectory_lens.dart` and their tests.
+- New tests: `test/recovery_readout_card_test.dart`,
+  `test/widgets/trajectory_trend_test.dart` (≥4 points draws curve; <4 cold start;
+  metric priority; reduceMotion).
+- Update `test/today_widgets_test.dart` (stagger 0–7, no ring/strip/lens),
+  `test/evidence_ui_components_test.dart` (compact-fit uses TrajectoryTrend),
+  `test/dynamic_type_test.dart` (readout + trend coverage at 1.3×/2.0×).
+- Gallery: replace TrajectoryLens specimen with TrajectoryTrend specimen.
+
+### 9.6 Docs (same change)
+- `docs/DESIGN_SYSTEM.md` (evidence visualization, component inventory, motion, semantics)
+- `docs/handoff/design.md`, `docs/handoff/frontend.md`, `docs/PROGRESS_CONTEXT.md`
+
+### 9.7 Gate → commit → `/review` → device reinstall
+Full Chunk-5 gate (format/analyze/test/ios build) + `scripts/install-device.sh`.
+
+---
+
+## 10. Explicitly OUT of v2
 - Welcome/onboarding screens (post-MVP — needs Apple Sign-in; 16 Stitch refs preserved)
 - WorkoutModeSheet (would fabricate data — no real session-tracking backend yet)
 - WeeklyScheduleStrip, SessionMap (master plan P3 — deferred, no current requirement)
@@ -661,7 +731,7 @@ Re-read every visible string: no AI-cliché copy, no fake-precise numbers, no fi
 - MetricRow production wiring (gallery specimen only)
 - Light-theme Stitch restyle (light stays Phase-4 baseline; Stitch is dark-first)
 
-## 10. Anti-failure rules (from 2026-08-18 audit — the ones that bit Phase 5 v1)
+## 11. Anti-failure rules (from 2026-08-18 audit — the ones that bit Phase 5 v1)
 1. Authority docs amended FIRST in Chunk 0, never after, never silently overridden
 2. Every number on screen traces to a repository/model field — binding tables are contract
 3. State table per widget BEFORE code (full / cold_start / null / low-confidence)
@@ -673,7 +743,7 @@ Re-read every visible string: no AI-cliché copy, no fake-precise numbers, no fi
 9. Fonts verified on intake (size + SHA + weight class) — never trust a download blindly
 10. Skills govern taste; if plan and skill conflict, surface the conflict, don't choose silently
 
-## 11. Risk Register
+## 12. Risk Register
 | Risk | Mitigation |
 |---|---|
 | Font download unavailable/corrupted | §2.6 verification table; abort chunk on mismatch |

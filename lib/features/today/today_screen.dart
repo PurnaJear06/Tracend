@@ -16,18 +16,19 @@ import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/features/today/check_in_sheet.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
-import 'package:tracend/features/today/recovery_ring.dart';
 import 'package:tracend/features/today/sleep_architecture_card.dart';
 import 'package:tracend/features/today/widgets/check_in_prompt_bar.dart';
 import 'package:tracend/features/today/widgets/coach_perspective_card.dart';
 import 'package:tracend/features/today/widgets/health_evidence_section.dart';
 import 'package:tracend/features/today/widgets/metabolic_target_card.dart';
 import 'package:tracend/features/today/widgets/precision_divider.dart';
-import 'package:tracend/features/today/widgets/readiness_strip.dart';
+import 'package:tracend/features/today/widgets/recovery_readout_card.dart';
 import 'package:tracend/features/today/widgets/session_plan_card.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
+import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/trajectory_trend.dart';
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({
@@ -146,12 +147,12 @@ class _TodayScreenState extends State<TodayScreen> {
                 brief: brief,
                 targets: _targets,
                 coach: widget.coach,
+                healthHistory: _healthHistory,
                 onStartSession: brief.workout != null ? _openWorkout : null,
                 onViewAnalytics: widget.onOpenProgress,
                 onOpenNutrition: widget.onOpenNutrition,
                 onOpenWorkout: _openWorkout,
                 onCheckIn: _openCheckIn,
-                onReadinessDetail: _showReadinessDetail,
               );
             }
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -231,60 +232,33 @@ class _TodayScreenState extends State<TodayScreen> {
     return '${weekdays[value.weekday - 1]}, ${value.day} '
         '${months[value.month - 1]}';
   }
-
-  Future<void> _showReadinessDetail(
-    BuildContext context,
-    String title,
-    String detail,
-  ) => showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    useSafeArea: true,
-    builder: (context) => Padding(
-      padding: const EdgeInsets.fromLTRB(
-        TracendSpacing.gutter,
-        TracendSpacing.sm,
-        TracendSpacing.gutter,
-        TracendSpacing.xl,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: TracendSpacing.xs),
-          Text(detail, style: Theme.of(context).textTheme.bodyLarge),
-        ],
-      ),
-    ),
-  );
 }
 
-/// The loaded-brief composition (plan §4.3 layout): hero → recovery ring →
-/// readiness strip → evidence → precision readouts → coach perspective.
+/// The loaded-brief composition (Chunk 6 layout): hero → recovery readout →
+/// 7-day trend → precision readouts → coach perspective → check-in. Evidence
+/// stays reachable in the Apple Health section below.
 class _BriefContent extends StatelessWidget {
   const _BriefContent({
     required this.brief,
     required this.targets,
     required this.coach,
+    required this.healthHistory,
     required this.onStartSession,
     required this.onViewAnalytics,
     required this.onOpenNutrition,
     required this.onOpenWorkout,
     required this.onCheckIn,
-    required this.onReadinessDetail,
   });
 
   final DailyBrief brief;
   final Future<NutritionTargets?> targets;
   final CoachRepository coach;
+  final Future<HealthHistory> healthHistory;
   final VoidCallback? onStartSession;
   final VoidCallback? onViewAnalytics;
   final VoidCallback? onOpenNutrition;
   final VoidCallback onOpenWorkout;
   final VoidCallback onCheckIn;
-  final void Function(BuildContext context, String title, String detail)
-  onReadinessDetail;
 
   @override
   Widget build(BuildContext context) {
@@ -302,76 +276,62 @@ class _BriefContent extends StatelessWidget {
           const SizedBox(height: TracendSpacing.lg),
           MicroMotionEntrance(
             delay: MicroMotion.stagger(1),
-            child: Center(child: RecoveryRing(computed: brief.computed!)),
+            child: RecoveryReadoutCard(computed: brief.computed!),
           ),
         ],
         const SizedBox(height: TracendSpacing.lg),
         MicroMotionEntrance(
           delay: MicroMotion.stagger(2),
-          child: ReadinessStrip(
-            brief: brief,
-            onOpen: (title, detail) =>
-                onReadinessDetail(context, title, detail),
-          ),
-        ),
-        const SizedBox(height: TracendSpacing.sm),
-        MicroMotionEntrance(
-          delay: MicroMotion.stagger(3),
-          child: Material(
-            color: Colors.transparent,
-            child: ExpansionTile(
-              key: const PageStorageKey('today-evidence'),
-              tilePadding: EdgeInsets.zero,
-              childrenPadding: EdgeInsets.zero,
-              title: const Text('See evidence'),
-              children: [
-                _BriefEvidence(
-                  label: 'Check-in',
-                  available: brief.checkIn != null,
-                  detail: brief.checkIn == null
-                      ? 'Add today’s recovery input'
-                      : 'Current user-confirmed input',
+          child: FutureBuilder<HealthHistory>(
+            future: healthHistory,
+            builder: (context, snapshot) {
+              final history = snapshot.data;
+              if (history != null) return TrajectoryTrend(history: history);
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const PremiumGradientCard(
+                  child: SizedBox(
+                    height: 140,
+                    child: Center(child: LinearProgressIndicator()),
+                  ),
+                );
+              }
+              return PremiumGradientCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Health trend unavailable',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: TracendSpacing.xxs),
+                    const Text(
+                      'Refresh the Apple Health summary below to retry.',
+                    ),
+                  ],
                 ),
-                _BriefEvidence(
-                  label: 'Apple Health',
-                  available: brief.health != null,
-                  detail: brief.health == null
-                      ? 'No fresh summary for today'
-                      : 'Dated normalized summary',
-                ),
-                _BriefEvidence(
-                  label: 'Training plan',
-                  available: brief.workout != null,
-                  detail:
-                      brief.workout?['name'] as String? ??
-                      'No workout assigned today',
-                ),
-                _BriefEvidence(
-                  label: 'Meal schedule',
-                  available: brief.nextMeal != null,
-                  detail:
-                      brief.nextMeal?['label'] as String? ??
-                      'No remaining meal',
-                ),
-              ],
-            ),
+              );
+            },
           ),
         ),
         const PrecisionDivider(),
         if (brief.computed != null) ...[
           MicroMotionEntrance(
-            delay: MicroMotion.stagger(4),
+            delay: MicroMotion.stagger(3),
             child: SleepArchitectureCard(computed: brief.computed!),
           ),
           const SizedBox(height: TracendSpacing.sm),
         ],
         MicroMotionEntrance(
-          delay: MicroMotion.stagger(5),
-          child: SessionPlanCard(workout: brief.workout, onOpen: onOpenWorkout),
+          delay: MicroMotion.stagger(4),
+          child: SessionPlanCard(
+            workout: brief.workout,
+            acwr: brief.computed?.scores.acwr,
+            onOpen: onOpenWorkout,
+          ),
         ),
         const SizedBox(height: TracendSpacing.sm),
         MicroMotionEntrance(
-          delay: MicroMotion.stagger(6),
+          delay: MicroMotion.stagger(5),
           child: FutureBuilder<NutritionTargets?>(
             future: targets,
             builder: (context, snapshot) => MetabolicTargetCard(
@@ -383,12 +343,12 @@ class _BriefContent extends StatelessWidget {
         ),
         const SizedBox(height: TracendSpacing.lg),
         MicroMotionEntrance(
-          delay: MicroMotion.stagger(7),
+          delay: MicroMotion.stagger(6),
           child: _CoachPerspectiveSection(coach: coach),
         ),
         const SizedBox(height: TracendSpacing.lg),
         MicroMotionEntrance(
-          delay: MicroMotion.stagger(8),
+          delay: MicroMotion.stagger(7),
           child: CheckInPromptBar(
             onCheckIn: onCheckIn,
             completed: brief.checkIn != null,
@@ -424,29 +384,4 @@ class _CoachPerspectiveSection extends StatelessWidget {
       },
     );
   }
-}
-
-class _BriefEvidence extends StatelessWidget {
-  const _BriefEvidence({
-    required this.label,
-    required this.available,
-    required this.detail,
-  });
-  final String label;
-  final bool available;
-  final String detail;
-  @override
-  Widget build(BuildContext context) => ListTile(
-    contentPadding: EdgeInsets.zero,
-    leading: Icon(
-      available
-          ? CupertinoIcons.check_mark_circled_solid
-          : CupertinoIcons.exclamationmark_circle,
-      color: available
-          ? context.tracendColors.stateStable
-          : context.tracendColors.stateAttention,
-    ),
-    title: Text(label),
-    subtitle: Text(detail),
-  );
 }

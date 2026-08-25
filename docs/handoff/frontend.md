@@ -454,8 +454,43 @@ card, and lens (reduceMotion stops the pulse so pumpAndSettle completes); (4) `_
 doc comment documents that the semantics label reports the true z-score while the bar fill
 clamps to ±2. 287 tests pass, 0 analysis issues.
 
-Next: iOS release build re-verified, then merge to `feature/feature-engine` (owner
-action) — Phase 5 v2 implementation is complete.
+**Chunk 6 implemented (2026-08-25): Today redesign.** Owner feedback after device QA of
+Chunks 0–5: the centered recovery ring was too small and redundant with the readiness
+strip, the three readiness tiles were cramped, and the trajectory lens showed only today's
+signals. Approved as a bold redesign. Changes:
+- `RecoveryReadoutCard` (`lib/features/today/widgets/recovery_readout_card.dart`, new):
+  full-width `PremiumGradientCard` — tabular score with `/ 100`, band chip
+  (Excellent/Good/Moderate/Low/Poor), five horizontal z-score driver rows with signed z
+  values and a baseline notch at z=0. Bar fill clamps z to ±2; labels/semantics report
+  the true z. Count-up on score change. Cold start: `--` + honest copy; low confidence:
+  "Building baseline".
+- `TrajectoryTrend` (`lib/shared/widgets/trajectory_trend.dart`, new): real 7-day chart
+  from `HealthHistory` (`daily_health_summaries`). `trendSeriesFor()` picks the metric
+  (HRV → sleep → resting HR priority; first with ≥4 recorded days wins) inside the 7-day
+  window anchored to the latest stored day. Bezier + area fill + real point dots +
+  min/max/date labels + 1.5s draw-on + the single sanctioned pulse on the latest recorded
+  day. Missing days stay visible as gaps — never interpolated. <4 days → "Building
+  baseline" cold-start card. Direction delta vs first recorded day is neutral (up/down is
+  fact, not good/bad).
+- Deleted: `recovery_ring.dart`, `readiness_strip.dart`, `trajectory_lens.dart` (+ tests),
+  `trajectoryPoints()`, the top-level "See evidence" accordion (`_BriefEvidence`), and the
+  readiness detail sheet. Evidence stays reachable in the Apple Health section
+  (`HealthStatusCard` + `HealthEvidenceSection`).
+- `SessionPlanCard` gained an optional `acwr` param → display-only load row
+  (`LOAD · 1.05 · Optimal`, 0.8–1.3 zone), hidden when null.
+- `today_screen.dart` stagger slots re-indexed 0–7 (hero, readout, trend, sleep, session,
+  metabolic, coach, check-in); trend waiting/error states are honest cards.
+- Tests: new `recovery_readout_card_test.dart` (13) and `trajectory_trend_test.dart`
+  (series selection unit tests incl. window anchoring + gap honesty, widget states,
+  reduce-motion, semantics); today_widgets/evidence compact/dynamic type/component gallery
+  updated (dynamic type now exercises the real curve via a 7-day fixture health repo).
+  294 tests pass, 0 analysis issues.
+- Docs amended same-change: DESIGN_SYSTEM (evidence visualization, signature element,
+  component inventory, motion, semantics), UX_FLOWS §5 (wireframe + evidence detail),
+  PRD readiness sentence, TESTING_STRATEGY.
+
+Next: Chunk 6 review + device reinstall, then merge to `feature/feature-engine` (owner
+action).
 
 ## Session Duration Cap (2026-08-22)
 

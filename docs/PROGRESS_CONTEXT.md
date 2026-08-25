@@ -35,9 +35,18 @@ fabricated numbers. Reviewed PASS w/ findings, all follow-ups fixed 2026-08-24 (
 FutureBuilder retains the previous brief across reloads so entrances don't replay and the
 count-up fires; two latent setState-returns-Future bugs fixed in today_screen.dart; light
 secondary-on-canvas contrast assert added; computed-brief Dynamic Type coverage added;
-driver-bar raw-vs-clamped z-score documented). Session duration cap (180 min) deployed
-2026-08-22 (`20260822120000_session_duration_cap.sql`). Feature Engine Phase 4 remains the
-last shipped UI milestone. 287 Flutter tests pass, 0 analysis issues.
+driver-bar raw-vs-clamped z-score documented). Chunk 6 (Today redesign, owner-approved
+2026-08-25 after device QA): centered `RecoveryRing` + three-tile `ReadinessStrip` +
+today-only `TrajectoryLens` + top-level "See evidence" accordion replaced by a full-width
+`RecoveryReadoutCard` (tabular score, band chip, five z-score driver rows) and a real
+`TrajectoryTrend` 7-day chart from `daily_health_summaries` (HRV → sleep → resting HR
+priority, ≥4 recorded days, window anchored to the latest stored day, gaps never
+interpolated, "Building baseline" cold start); ACWR folded into `SessionPlanCard` as a
+display-only load row; stagger slots re-indexed 0–7; evidence stays reachable in the
+Apple Health section. DESIGN_SYSTEM/UX_FLOWS/PRD amended in the same change. Session
+duration cap (180 min) deployed 2026-08-22 (`20260822120000_session_duration_cap.sql`).
+Feature Engine Phase 4 remains the last shipped UI milestone. 294 Flutter tests pass, 0
+analysis issues.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 

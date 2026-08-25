@@ -97,7 +97,7 @@ trusted server fixtures.
 
 - onboarding autosave and both branches;
 - Account profile, connection, AI service, usage, export, deletion, and sign-out states;
-- Today states and Trajectory Lens semantics;
+- Today states, recovery readout, and 7-day trend semantics;
 - offline workout logging and synchronization;
 - meal candidate editing and confirmation;
 - previous-day nutrition retrieval so confirmed meals remain visible after a coaching-day boundary;

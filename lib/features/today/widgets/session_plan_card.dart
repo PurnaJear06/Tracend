@@ -5,20 +5,27 @@ import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 
 /// Session Plan readout (Stitch `today.html` training module). Binds to the
 /// brief's `today_workout` map — name, objective, movement/set counts folded
-/// from the real `exercises` array (same pattern as train_screen.dart).
+/// from the real `exercises` array (same pattern as train_screen.dart) — plus
+/// an optional display-only load row carrying the real ACWR from
+/// `ComputedScores.acwr` (Chunk 6; hidden when null, never fabricated).
 ///
 /// State table:
 /// - full: name + objective + `N MVMT · M SETS · ~X MIN`, chevron opens detail
+/// - acwr present: load row `LOAD · 1.05 · Optimal` (0.8–1.3 optimal zone)
 /// - null workout: "No session planned" (honest, no fabricated counts)
 class SessionPlanCard extends StatelessWidget {
   const SessionPlanCard({
     required this.workout,
     required this.onOpen,
+    this.acwr,
     super.key,
   });
 
   final Map<String, dynamic>? workout;
   final VoidCallback onOpen;
+
+  /// Acute:Chronic Workload Ratio from computed scores. Null hides the row.
+  final double? acwr;
 
   @override
   Widget build(BuildContext context) {
@@ -112,6 +119,10 @@ class SessionPlanCard extends StatelessWidget {
                   ],
                 ],
               ),
+              if (acwr != null) ...[
+                const SizedBox(height: TracendSpacing.sm),
+                _LoadRow(acwr: acwr!),
+              ],
             ],
           ),
         ),
@@ -171,4 +182,69 @@ class _Dot extends StatelessWidget {
       color: context.tracendColors.borderHairline,
     ),
   );
+}
+
+/// Display-only training load row: real ACWR value + zone. Zone thresholds
+/// match the sports-science convention used elsewhere in the app:
+/// 0.8–1.3 optimal, below = low load, above = high load.
+class _LoadRow extends StatelessWidget {
+  const _LoadRow({required this.acwr});
+
+  final double acwr;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    final (zone, color) = acwr >= 0.8 && acwr <= 1.3
+        ? ('Optimal', colors.stateStable)
+        : acwr < 0.8
+        ? ('Low load', colors.accentAmber)
+        : ('High load', colors.stateAttention);
+
+    return Semantics(
+      label: 'Training load, ACWR ${acwr.toStringAsFixed(2)}, $zone',
+      excludeSemantics: true,
+      // container: the row sits inside the card's InkWell semantic boundary;
+      // without an explicit container the label would merge into the button
+      // node and VoiceOver would not read the row as its own element.
+      container: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: TracendSpacing.sm,
+          vertical: TracendSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color: colors.surface.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(TracendRadii.control),
+        ),
+        child: Row(
+          children: [
+            Text(
+              'LOAD',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                fontSize: 10,
+                letterSpacing: 1.2,
+                color: colors.textSecondary,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              acwr.toStringAsFixed(2),
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                fontFamily: TracendFonts.monoFamily,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            const SizedBox(width: TracendSpacing.xs),
+            Text(
+              zone,
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(fontSize: 11, color: color),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

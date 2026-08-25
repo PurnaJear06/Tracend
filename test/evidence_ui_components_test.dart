@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
+import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_status_card.dart';
-import 'package:tracend/shared/widgets/trajectory_lens.dart';
+import 'package:tracend/shared/widgets/trajectory_trend.dart';
 
 void main() {
-  testWidgets('signal rail fits compact phones', (tester) async {
+  testWidgets('7-day trend fits compact phones', (tester) async {
     tester.view.physicalSize = const Size(240, 500);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -14,13 +15,22 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: TracendTheme.light,
-        home: const Scaffold(
-          body: TrajectoryLens(
-            evidence: ['Recovery check-in', 'Approved plan'],
+        home: Scaffold(
+          body: TrajectoryTrend(
+            history: HealthHistory([
+              for (var i = 6; i >= 0; i--)
+                HealthDay(
+                  date: DateTime(2026, 8, 24).subtract(Duration(days: i)),
+                  presentMetrics: const {HealthMetric.hrvSdnn},
+                  hrvSdnnMs: 42.0 + (6 - i) * 2,
+                ),
+            ]),
           ),
         ),
       ),
     );
+    // Bounded pump: the NOW-dot pulse is an intentional infinite loop.
+    await tester.pump(const Duration(seconds: 2));
     expect(tester.takeException(), isNull);
   });
 
