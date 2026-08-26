@@ -67,6 +67,11 @@ export class DeepseekCoachModelProvider implements CoachModelProvider {
             temperature: 0.1,
             max_tokens: 1800,
             response_format: { type: "json_object" },
+            // DeepSeek V4 thinking mode is ON by default (high effort) and
+            // ignores temperature; the working coach-chat call disables it.
+            // Live decision requests without this flag failed at the API
+            // level after ~17s (deepseek_request_failed).
+            thinking: { type: "disabled" },
             messages: [{
               role: "user",
               content:
@@ -91,7 +96,13 @@ export class DeepseekCoachModelProvider implements CoachModelProvider {
           }),
         },
       );
-      if (!response.ok) throw new Error("deepseek_request_failed");
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        console.error(
+          `deepseek decision request failed: status=${response.status} body=${body.slice(0, 300)}`,
+        );
+        throw new Error(`deepseek_request_failed_status_${response.status}`);
+      }
       const payload = await response.json() as Record<string, unknown>;
       const message = Array.isArray(payload.choices)
         ? (payload.choices[0] as Record<string, unknown>)?.message as
