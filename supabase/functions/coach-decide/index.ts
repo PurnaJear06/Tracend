@@ -1,7 +1,43 @@
 import { parseCoachDecision, type PolicyOutcome } from "../_shared/contracts/coach_decision_v1.ts";
 import { parseCoachRequest } from "../_shared/contracts/coach_request_v1.ts";
+import type { CoachModelGeneration } from "../_shared/providers/coach_model_provider.ts";
 import { createCoachModelProvider } from "../_shared/providers/create_coach_model_provider.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
+
+const SAFE_REASON = /^[a-z][a-z0-9_]{0,60}$/;
+const SAFE_EVIDENCE_CODE = /^[A-Z][A-Z_]{0,39}$/;
+
+// Maps a generation/validation failure to a sanitized, persistable token.
+// Only fixed snake_case tokens (contract + provider errors) pass through;
+// anything else collapses to `provider_or_validation_failed`, so no model
+// output or user content ever reaches telemetry.
+function failureReason(
+  error: unknown,
+  generated: CoachModelGeneration | undefined,
+  permitted: readonly string[],
+): string {
+  if (!(error instanceof Error)) return "provider_or_validation_failed";
+  if (error.name === "AbortError") return "deepseek_timeout";
+  if (error instanceof SyntaxError) return "deepseek_json_parse_failed";
+  if (!SAFE_REASON.test(error.message)) return "provider_or_validation_failed";
+  if (error.message === "unpermitted_decision_evidence" && generated) {
+    const items = (generated.decision as { evidence?: unknown }).evidence;
+    if (Array.isArray(items)) {
+      for (const item of items) {
+        const code = typeof item === "object" && item !== null
+          ? (item as { code?: unknown }).code
+          : undefined;
+        if (
+          typeof code === "string" && SAFE_EVIDENCE_CODE.test(code) &&
+          !permitted.includes(code)
+        ) {
+          return `unpermitted_evidence_${code.toLowerCase()}`;
+        }
+      }
+    }
+  }
+  return error.message;
+}
 
 Deno.serve(async (request) => {
   if (request.method !== "POST") return reply(405, { error: "method_not_allowed" });
@@ -38,6 +74,7 @@ Deno.serve(async (request) => {
   }
 
   const started = performance.now();
+  let generated: CoachModelGeneration | undefined;
   try {
     const outcome = prepared.policy_outcome as PolicyOutcome;
     const evidence = prepared.permitted_evidence as string[];
@@ -51,7 +88,7 @@ Deno.serve(async (request) => {
     if (snapshotError || !snapshot || typeof snapshot.features !== "object") {
       throw new Error("feature_context_unavailable");
     }
-    const generated = await createCoachModelProvider().generateDecision({
+    generated = await createCoachModelProvider().generateDecision({
       decisionKind: "daily",
       featureSnapshotId: prepared.feature_snapshot_id,
       policyEvaluationId: prepared.policy_evaluation_id,
@@ -78,20 +115,38 @@ Deno.serve(async (request) => {
         run_estimated_cost_usd: generated.estimatedCostUsd,
       },
     );
-    if (error || !persisted) return reply(422, { error: "decision_rejected" });
+    if (error || !persisted) {
+      await auth.serviceClient.rpc("persist_failed_coaching_run_v2", {
+        target_user_id: auth.userId,
+        snapshot_id: prepared.feature_snapshot_id,
+        policy_id: prepared.policy_evaluation_id,
+        request_idempotency_key: input.idempotency_key,
+        run_latency_ms: Math.round(performance.now() - started),
+        error_code: "decision_rejected",
+        run_provider: generated.provider,
+        run_model: generated.model,
+      });
+      return reply(422, { error: "decision_rejected" });
+    }
     return reply(200, {
       schema_version: "1.0",
       decision: { ...decision, id: persisted.decision_id, local_date: input.local_date },
       replayed: false,
     });
-  } catch {
+  } catch (error) {
+    const reason = failureReason(
+      error,
+      generated,
+      (prepared.permitted_evidence as string[] | undefined) ?? [],
+    );
+    console.error(`coach-decide failed: ${reason}`);
     await auth.serviceClient.rpc("persist_failed_coaching_run_v2", {
       target_user_id: auth.userId,
       snapshot_id: prepared.feature_snapshot_id,
       policy_id: prepared.policy_evaluation_id,
       request_idempotency_key: input.idempotency_key,
       run_latency_ms: Math.round(performance.now() - started),
-      error_code: "provider_or_validation_failed",
+      error_code: reason,
       run_provider: Deno.env.get("COACH_MODEL_PROVIDER") === "gemini"
         ? "gemini"
         : Deno.env.get("COACH_MODEL_PROVIDER") === "groq"
