@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 
@@ -145,11 +146,7 @@ class _CardTag extends StatelessWidget {
       Flexible(
         child: Text(
           label,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            fontSize: 10,
-            letterSpacing: 1.4,
-            color: color,
-          ),
+          style: TracendTheme.labelCaps(context, color: color),
         ),
       ),
     ],
@@ -221,9 +218,8 @@ class _LoadRow extends StatelessWidget {
           children: [
             Text(
               'LOAD',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                fontSize: 10,
-                letterSpacing: 1.2,
+              style: TracendTheme.labelCaps(
+                context,
                 color: colors.textSecondary,
               ),
             ),

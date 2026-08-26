@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
@@ -75,13 +76,17 @@ class _CoachPerspectiveCardState extends State<CoachPerspectiveCard> {
                     color: colors.textSecondary,
                   ),
                   const SizedBox(width: TracendSpacing.xxs),
-                  Text(
-                    'Confidence: ${decision.confidence}',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontFamily: TracendFonts.monoFamily,
-                      fontSize: 10,
-                      letterSpacing: 0.8,
-                      color: colors.textSecondary,
+                  Flexible(
+                    child: Text(
+                      'Confidence: ${decision.confidence} · ${_ageLabel(decision)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontFamily: TracendFonts.monoFamily,
+                        fontSize: 11,
+                        letterSpacing: 0.2,
+                        color: colors.textSecondary,
+                      ),
                     ),
                   ),
                 ],
@@ -91,6 +96,35 @@ class _CoachPerspectiveCardState extends State<CoachPerspectiveCard> {
         ),
       ],
     );
+  }
+
+  /// Honest age of the decision: 'today' when the decision's local date is
+  /// today, otherwise the calendar date it was made. A stale decision must
+  /// not masquerade as today's coaching.
+  String _ageLabel(CoachDecision decision) {
+    final now = DateTime.now();
+    final todayKey =
+        '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+    if (decision.localDate == todayKey) return 'today';
+    final date = DateTime.tryParse(decision.localDate);
+    if (date == null) return 'from ${decision.localDate}';
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return 'from ${date.day} ${months[date.month - 1]}';
   }
 }
 
@@ -156,9 +190,8 @@ class _ToggleOption extends StatelessWidget {
         child: Center(
           child: Text(
             label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              fontSize: 10,
-              letterSpacing: 1.4,
+            style: TracendTheme.labelCaps(
+              context,
               color: selected ? colors.textPrimary : colors.textSecondary,
             ),
           ),

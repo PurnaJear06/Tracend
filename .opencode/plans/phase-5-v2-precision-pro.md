@@ -1,14 +1,17 @@
 # Phase 5 v2 — "Precision Pro" Production UI — Master Plan
 
 **Created:** 2026-08-22 (rewritten same day after master-plan cross-check)
-**Status:** Chunks 0–5 complete and reviewed. Chunk 6 (Today redesign) owner-approved
-2026-08-25 — in progress.
+**Status:** Chunks 0–6 complete (Chunk 6 owner-approved after device QA 2026-08-25).
+Chunk 7 (recovery honesty) complete 2026-08-26 incl. device-QA visual pass and noop
+rigor fixes; pending merge.
 **Branch:** `feature/feature-engine-phase-5-v2` (from `93fa49e`) → merge into `feature/feature-engine`
 **Backup:** tag `backup/pre-phase-5-v2` (local; push blocked by deploy-guard — user pushes or approves)
 **Supersedes:** the 2026-08-18 Phase 5 attempt (reverted) and the earlier draft of this file
 **Parent plan:** `.opencode/plans/feature-engine-and-ui-alignment.md` (2026-07-22) — this plan
 executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is now covered.
-**DB changes:** NONE. Pure UI phase. All data already exists in RPCs/models (verified below).
+**DB changes:** Chunks 0–6 none (pure UI). Chunk 7 adds one additive migration
+(`20260825120000_recovery_honesty.sql` — create-or-replace of `compute_daily_metrics` +
+`get_my_daily_brief` schema_version 1.2; no schema or column changes).
 
 ## Progress Tracker
 
@@ -20,7 +23,8 @@ executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is 
 | 3 | Progress + Coach (regression overlay, EvidenceAccordion) | ✅ Done 2026-08-24 | `672f28f` + `288d14a` | analyze ✓ · format ✓ · 262 tests ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-3-progress-coach.md` (all fixed in `288d14a`) |
 | 4 | AI Usage + Shell + Account cleanup | ✅ Done 2026-08-24 | `82bf748` + `2afe1c8` | analyze ✓ · format ✓ · 274 tests ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-4-ai-usage-shell-account.md` (all fixed in `2afe1c8`) |
 | 5 | Motion + A11y + copy audit + final gate + merge | ✅ Done 2026-08-24 | `c90bf9e` + `a5ccd4f` | analyze ✓ · format ✓ · 287 tests ✓ · deno 94 ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-5-motion-a11y-copy.md` (all fixed in `a5ccd4f`) |
-| 6 | Today redesign: RecoveryReadoutCard + TrajectoryTrend, drop ring/strip/lens/evidence accordion | 🔨 In progress (owner-approved 2026-08-25) | — | — | — |
+| 6 | Today redesign: RecoveryReadoutCard + TrajectoryTrend, drop ring/strip/lens/evidence accordion | ✅ Done 2026-08-25 (owner-approved after device QA) | `d892217` | analyze ✓ · format ✓ · 294 tests ✓ | Owner device QA (no formal review doc) |
+| 7 | Recovery honesty: no fabricated recovery, missing_components, sync chip, Health controls profile-only; device-QA visual pass (32pt headline token, labelCaps, TextButton analytics); noop rigor fixes (duration_score tonight, prev_strain spread gate) | ✅ Done 2026-08-26 (pending merge) | — | analyze ✓ · format ✓ · 318 tests ✓ · pgTAP 33/33 + 72/72 ✓ · deno fmt/lint ✓ | pending |
 
 Carry-forward notes from reviews:
 - Chunk 0 review: assert light-theme `accentAmber`/`accentNow` contrast when those tokens are

@@ -185,7 +185,7 @@ void main() {
       expect(
         find.text(
           'A 7-day trend appears once at least four days of health data '
-          'exist. Sync Apple Health below to start.',
+          'exist. Sync Apple Health to start.',
         ),
         findsOneWidget,
       );

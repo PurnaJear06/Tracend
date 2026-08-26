@@ -24,6 +24,42 @@ This file is current-state handoff, not durable architecture. Keep detailed hist
 
 ## Current State
 
+- **Recovery honesty (Chunk 7, 2026-08-25; extended 2026-08-26):** migration
+  `20260825120000_recovery_honesty.sql` (additive create-or-replace, no schema changes)
+  fixes `compute_daily_metrics` after production showed recovery 58 on days with no
+  usable data: a component joins the composite only with BOTH a value today AND a
+  baseline with `spread > 0`; unusable components land in
+  `recovery_breakdown.missing_components`; `recovery` is NULL when nothing is usable;
+  the +0.2 optimism offset is removed (baseline → exactly 50); `data_confidence` counts
+  the four HealthKit components (prev_strain missing alone never lowers confidence); all
+  five z-score keys stay non-null for shipped clients. Also fixes the pre-existing
+  `duration_score` baseline bug (since `20260725000000`): it reused the shared `baseline`
+  record, which on resp-present days held the respiratory-rate baseline; it now selects
+  the sleep baseline explicitly. `get_my_daily_brief`
+  schema_version bumped to 1.2. Deploys via CI on merge to main.
+  **2026-08-26 noop StrandAnalytics rigor cross-check** (read-only comparison of
+  `github.com/ryanbr/noop` RecoveryScorer/Baselines/StrainScorer + test discipline)
+  confirmed the weights/sigmoid/baseline design converges with noop, and found two more
+  fabrication leaks, both fixed in the same undeployed migration:
+  (1) `duration_score` now compares **tonight's** sleep minutes against the personal
+  baseline (480-min target fallback) — the old `480/baseline` form ignored tonight's
+  sleep entirely (4 h night = 9 h night; any baseline ≤ 480 pinned at 100 forever);
+  (2) `prev_strain` only joins the composite when the 28-day strain spread > 0 — a
+  single strain day (stddev NULL) or identical days (stddev 0) previously entered at
+  z = 0 with full weight. pgTAP:
+  `supabase/tests/database/recovery_honesty_test.sql` now 33 assertions incl. the
+  owner's exact production day (strain-only fixture: old formula → 69, honest → 62),
+  the single-strain-day case, and the short-night duration case.
+  **Deferred noop-inspired follow-ups (not blocking):** ACWR reports 1.0 with < 7 days
+  of strain history (ALGORITHMS.md says null — doc/code mismatch, needs its own test
+  updates); sleep efficiency assumes 100% when awake minutes are missing and
+  restorative scores 0 when stages are missing (both should drop + renormalize);
+  baseline spread/Winsor bounds are static over full history (noop tracks spread with a
+  21-day EWMA); no baseline staleness tracking; no per-metric physiological sanity
+  gates at fold time; six   vacuous `ok(true)` assertions in
+  `feature_engine_phase_2_test.sql`; no independent reference implementation of the
+  pure math (highest-leverage next rigor investment); cold-start edge: the first-ever
+  logged sleep night scores duration 100 (baseline folds to tonight itself).
 - **Coach Context v5 deployed:** migration `20260716130000_coach_context_v5.sql` replaces
   `prepare_coach_chat_v4` in-place with enriched v5 context. New fields: `nutrition_adherence`
   (days_with_confirmed_meals_7d, schedule_slot_compliance), extended `nutrition_compliance_7day`

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/app/environment.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
@@ -86,7 +87,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Complete Push day.'), findsOneWidget);
-      expect(find.text('Medium confidence'), findsOneWidget);
+      expect(find.text('MEDIUM CONFIDENCE'), findsOneWidget);
       expect(find.text('Start session'), findsOneWidget);
     });
 
@@ -100,7 +101,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Building baseline'), findsOneWidget);
+      expect(find.text('BUILDING BASELINE'), findsOneWidget);
     });
 
     testWidgets('disables Start session when no workout is planned', (
@@ -127,6 +128,47 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('View analytics'), findsNothing);
+    });
+
+    testWidgets('headline uses the 32pt displaySmall decision token', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: TodayHero(
+                brief: _brief(
+                  workout: const {'name': 'Push day'},
+                  checkIn: const {'energy': 3},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final headline = tester.widget<Text>(find.text('Complete Push day.'));
+      expect(headline.style?.fontSize, 32);
+      expect(headline.style?.letterSpacing, -0.8);
+      expect(headline.style?.fontWeight, FontWeight.w700);
+    });
+
+    testWidgets('View analytics is a secondary text affordance', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(TodayHero(brief: _brief(), onViewAnalytics: () {})),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(TextButton, 'View analytics'), findsOneWidget);
+      expect(
+        find.widgetWithText(OutlinedButton, 'View analytics'),
+        findsNothing,
+      );
     });
   });
 
@@ -303,7 +345,36 @@ void main() {
 
       expect(find.text('Push day is on.'), findsOneWidget);
       expect(find.text('Complete the scheduled session.'), findsOneWidget);
-      expect(find.text('Confidence: high'), findsOneWidget);
+      expect(find.text('Confidence: high · from 23 Aug'), findsOneWidget);
+    });
+
+    testWidgets('decision made today is labelled today, not dated', (
+      tester,
+    ) async {
+      final now = DateTime.now();
+      final todayKey =
+          '${now.year.toString().padLeft(4, '0')}-'
+          '${now.month.toString().padLeft(2, '0')}-'
+          '${now.day.toString().padLeft(2, '0')}';
+      final fresh = CoachDecision(
+        id: 'd2',
+        localDate: todayKey,
+        trainingAction: 'PROCEED_AS_PLANNED',
+        trainingSummary: 'Complete the scheduled session.',
+        nutritionAction: 'MAINTAIN_TARGETS',
+        nutritionSummary: 'Keep approved nutrition targets.',
+        finalDecision: 'Push day is on.',
+        reason: 'Recovery is steady.',
+        confidence: 'medium',
+        evidence: const [],
+        missingData: const [],
+        riskFlags: const [],
+        createdAt: now,
+      );
+      await tester.pumpWidget(_wrap(CoachPerspectiveCard(decision: fresh)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Confidence: medium · today'), findsOneWidget);
     });
 
     testWidgets('N-Coach toggle switches to nutrition summary', (tester) async {

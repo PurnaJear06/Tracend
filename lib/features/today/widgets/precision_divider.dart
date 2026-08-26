@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 
 /// Stylized section divider (Stitch `today.html`): hairline rules fading out
@@ -34,9 +35,8 @@ class PrecisionDivider extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontSize: 10,
-                  letterSpacing: 1.6,
+                style: TracendTheme.labelCaps(
+                  context,
                   color: colors.textSecondary,
                 ),
               ),

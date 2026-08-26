@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 
@@ -61,9 +62,8 @@ class CheckInPromptBar extends StatelessWidget {
               ),
               Text(
                 completed ? 'EDIT' : 'CHECK-IN',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontSize: 10,
-                  letterSpacing: 1.4,
+                style: TracendTheme.labelCaps(
+                  context,
                   color: colors.actionPrimary,
                 ),
               ),

@@ -120,9 +120,14 @@ IBM) is used for data values only. Body text and labels remain iOS system San Fr
 Both OFL license texts ship in `assets/fonts/` and are registered via `LicenseRegistry`.
 
 Stitch type-scale mapping: screen-title 24/32 w600 · section-title 18/24 w600 ·
-decision-headline 42, line-height 1.05, letter-spacing −0.03em, w600 · body-base 17/25 w300 ·
+decision-headline = theme `displaySmall` token (32/1.08, letter-spacing −0.8, w700) — the
+original Stitch 42pt headline rendered oversized and stretched on device (owner QA
+2026-08-25) and was replaced by the token · body-base 17/25 w300 ·
 body-compact 14/20 w300 · data-utility 13/18 w400 (mono) · label-caps 11/16, letter-spacing
-0.08em, w500.
+0.08em, w500 — every caps label on Today renders through `TracendTheme.labelCaps` so caps
+labels never drift below 11pt or wider than 0.08em tracking (wider tracking read as
+stretched type); Train/Nutrition caps labels adopt the helper when their screens are next
+touched.
 
 Every text style maps to Dynamic Type, wraps before truncating, and is tested at the largest
 accessibility sizes. Tabular figures are required for changing values and timers.
@@ -194,7 +199,9 @@ Full-width recovery readout on Today (Chunk 6): tabular score with `/ 100`, a ba
 (Excellent/Good/Moderate/Low/Poor), and five driver rows (HRV, RHR, Sleep, Resp, Strain)
 with horizontal z-score bars and signed z values. Bar fill clamps z to ±2 for layout;
 labels and semantics always report the true z-score. Cold start shows `--` with honest
-next-step copy; low confidence adds "Building baseline". Replaces the earlier centered
+next-step copy; low confidence adds "Building baseline". Unusable drivers (no value today
+or no usable baseline) render a No data row instead of a zero bar (Chunk 7), and a fully
+unusable recovery shows `--` rather than a fabricated score. Replaces the earlier centered
 recovery ring and the recovery tile of the readiness strip. Training load (ACWR) is not
 part of this card — it renders as a display-only row inside `SessionPlanCard`.
 

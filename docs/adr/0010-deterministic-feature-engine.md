@@ -44,7 +44,9 @@ Enriched `prepare_daily_coaching` features JSONB with `baselines`, `scores`, and
 
 2. **Logistic transform for recovery:** Maps unbounded z-composite to 0-100 band. Constants (k=1.6,
    offset=-0.2) anchor population mean z=0 to ~58% — slightly above mid-range since users are
-   training, not rehab.
+   training, not rehab. *Superseded 2026-08-25 (recovery honesty): the offset is removed and
+   z=0 maps to exactly 50 — the offset fabricated ~58 on days with no usable data. See
+   `supabase/migrations/20260825120000_recovery_honesty.sql`.*
 
 3. **HRV via SDNN:** HealthKit provides SDNN, not RMSSD. Correlated but not identical. Documented
    limitation; switch to RMSSD if HealthKit adds support.

@@ -8,10 +8,13 @@
 ### Formula
 
 ```text
-recovery_score = round(100 / (1 + exp(-1.6 * (composite_z + 0.2))))
+recovery_score = round(100 / (1 + exp(-1.6 * composite_z)))
 ```
 
-Logistic transform with steepness `k = 1.6` and offset `-0.2` (slight pessimism at baseline).
+Logistic transform with steepness `k = 1.6` and no offset — a composite of exactly 0
+(every usable observation at its baseline) maps to 50. The previous `+0.2` optimism
+offset was removed 2026-08-25 (recovery honesty): it fabricated ~58 on days with no
+usable data.
 
 ### Z-Composite
 
@@ -25,24 +28,44 @@ composite_z = (0.55 * hrv_z + 0.20 * rhr_z + 0.15 * sleep_z + 0.05 * resp_rate_z
 | RHR          | 0.20   | Lower = better      | z-score negated                            |
 | Sleep        | 0.15   | Higher = better     | Quantity only in composite                 |
 | Resp Rate    | 0.05   | Lower = better      | z-score negated; optional                  |
-| Prev Strain  | 0.05   | Lower recent = better | 7-day avg subtracted from composite       |
+| Prev Strain  | 0.05   | Lower recent = better | 7-day avg subtracted; needs 28-day spread > 0 |
 
 Each z-score: `z = (observation - ewma_baseline) / spread`. Sign inverted for RHR and resp rate
-components. Missing components are excluded and `weight_total` is recalculated from included
-weights only. At least one component required; empty returns score ~58 (population anchor).
+components. A component is usable only when it has BOTH a value today AND a baseline with
+`spread > 0`; a present value without a usable baseline (cold start) previously masqueraded as
+"exactly at baseline" (z = 0) with full weight. For prev_strain, "usable" means the 7-day
+strain average is > 0 AND the 28-day window of daily strains has `stddev > 0`: a single strain
+day (stddev undefined) or identical days (stddev 0) cannot produce a z-score, so prev_strain is
+reported missing instead of joining at z = 0. Unusable components are excluded,
+`weight_total` is recalculated from included weights only, and the component key is listed in
+`recovery_breakdown.missing_components`. All five z-score keys stay present and non-null
+(0 when unusable) so shipped clients keep parsing the shape they know. When no component is
+usable, `recovery_score` is NULL — never a fabricated number.
 
 ### Recovery Score Bands
 
-| Band    | Cutoff       | z-composite equivalent | Interpretation        |
-| ------- | ------------ | ---------------------- | --------------------- |
-| Red     | recovery < 34 | z < -1.5              | Recovered poorly      |
-| Yellow  | 34 ≤ r < 67  | -1.5 ≤ z < 0.5       | Balanced load         |
-| Green   | r ≥ 67       | z ≥ 0.5               | Ready for best effort |
+| Band      | Cutoff       | z-composite equivalent | Interpretation        |
+| --------- | ------------ | ---------------------- | --------------------- |
+| Excellent | r ≥ 80       | z ≥ 0.87               | Ready for best effort |
+| Good      | 65 ≤ r < 80  | 0.39 ≤ z < 0.87       | Ready to train        |
+| Moderate  | 50 ≤ r < 65  | 0 ≤ z < 0.39          | Balanced load         |
+| Low       | 35 ≤ r < 50  | -0.39 ≤ z < 0         | Recovering poorly     |
+| Poor      | r < 35       | z < -0.39              | Recovered poorly      |
 
-### Population Anchor
+Rendered by the recovery readout band chip (`RecoveryReadoutCard`); the previous
+Red/Yellow/Green three-band table was never used by any code path.
 
-When z_composite = 0 (all observations at baseline): `round(100 / (1 + exp(-1.6 * 0.2)))` ≈ 58.
+### Baseline Anchor
+
+When z_composite = 0 (all usable observations at baseline): exactly 50.
 When z_composite = +3: ~99 (ceiling). When z_composite = -3: ~1 (floor).
+
+### Data Confidence
+
+`data_confidence` counts the four HealthKit components (HRV, resting HR, sleep,
+respiratory rate): none missing → `high`, one or two → `medium`, three or more or no
+stored summary for the day → `low`. Prior strain is reported missing but does not lower
+confidence by itself (rest days are normal).
 
 ### SDNN vs RMSSD Caveat
 
@@ -126,12 +149,16 @@ Result clipped to [0, 100].
 
 | Component        | Weight | Formula                                        | Range    |
 | ---------------- | ------ | ---------------------------------------------- | -------- |
-| Duration Score   | 0.50   | clip(target_480min / baseline_ewma * 100, 0, 100) | 0–100  |
+| Duration Score   | 0.50   | clip(sleep_minutes / baseline_ewma * 100, 0, 100) | 0–100  |
 | Efficiency Score | 0.20   | (sleep_minutes - awake_minutes) / sleep_minutes * 100 | 0–100 |
 | Restorative Score| 0.20   | (deep_minutes + rem_minutes) / sleep_minutes * 100 | 0–100 |
 | Consistency Score| 0.10   | 100 - (stddev_7d / mean_7d * 50), floored at 0 | 0–100   |
 
-Duration score uses a reference target of 480 minutes (8 hours). Oversleeping (>100) is clipped.
+Duration score compares tonight's sleep duration against the personal EWMA baseline, falling
+back to the 480-minute (8-hour) reference target when no usable baseline exists. Oversleeping
+(>100) is clipped. The previous `480 / baseline_ewma` form ignored tonight's sleep entirely —
+a 4-hour night scored identically to a 9-hour night, and any baseline ≤ 480 was pinned at 100
+forever; changed 2026-08-26 after the noop StrandAnalytics rigor cross-check.
 No sleep data today → sleep_quality null.
 
 ### Sleep Debt
@@ -269,10 +296,10 @@ general = change_review_allowed  if training_eligible OR nutrition_eligible
 | -------------------- | ---------------------- | ------------ |
 | Baselines function   | `engine_version`       | `baseline-v1`|
 | Daily metrics        | `feature_engine_version` | `daily-v2`  |
-| Daily scoring JSON   | `schema_version`       | `2.0`        |
+| Daily scoring JSON   | `schema_version`       | `2.1`        |
 | Eligibility          | `policy_version`       | `eligibility-v1` |
 | Training hub RPC     | `schema_version`       | `1.4`        |
-| Daily brief RPC      | `schema_version`       | `1.1`        |
+| Daily brief RPC      | `schema_version`       | `1.2`        |
 
 ### Rules
 

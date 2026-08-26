@@ -144,6 +144,73 @@ void main() {
         expect(checkIn['available_to_train'], isA<bool>());
       }
     });
+
+    test('v1.1 payload without missing_components parses as none missing', () {
+      final json = _loadFixtureJson(fixture);
+      final computedRaw = Map<String, dynamic>.from(json['computed'] as Map);
+      final m = ComputedMetrics.fromJson(computedRaw);
+
+      expect(m.scores.recoveryBreakdown?.missingComponents, isEmpty);
+    });
+  });
+
+  group('Daily Brief contract — get_my_daily_brief v1.2', () {
+    const fixture = 'daily_brief_v1_2.json';
+
+    test('fixture is valid JSON and top-level shape', () {
+      final json = _loadFixtureJson(fixture);
+
+      expect(json['schema_version'], '1.2');
+      expect(json['local_date'], isA<String>());
+      expect(json['computed'], isA<Map>());
+    });
+
+    test('recovery_breakdown includes missing_components list of strings', () {
+      final json = _loadFixtureJson(fixture);
+      final computed = Map<String, dynamic>.from(json['computed'] as Map);
+      final scores = Map<String, dynamic>.from(computed['scores'] as Map);
+      final breakdown = Map<String, dynamic>.from(
+        scores['recovery_breakdown'] as Map,
+      );
+
+      expect(breakdown['missing_components'], isA<List>());
+      final missing = (breakdown['missing_components'] as List)
+          .map((item) => item.toString())
+          .toList();
+      expect(missing, contains('sleep_minutes'));
+      expect(missing, contains('resp_rate'));
+      expect(missing, isNot(contains('hrv_sdnn')));
+    });
+
+    test('missing components map into the RecoveryBreakdown model', () {
+      final json = _loadFixtureJson(fixture);
+      final computedRaw = Map<String, dynamic>.from(json['computed'] as Map);
+      final m = ComputedMetrics.fromJson(computedRaw);
+
+      final breakdown = m.scores.recoveryBreakdown;
+      expect(breakdown, isNotNull);
+      expect(breakdown!.missingComponents, ['sleep_minutes', 'resp_rate']);
+      expect(m.dataConfidence, 'medium');
+    });
+
+    test('z-score keys remain present and numeric for old clients', () {
+      final json = _loadFixtureJson(fixture);
+      final computed = Map<String, dynamic>.from(json['computed'] as Map);
+      final scores = Map<String, dynamic>.from(computed['scores'] as Map);
+      final breakdown = Map<String, dynamic>.from(
+        scores['recovery_breakdown'] as Map,
+      );
+
+      for (final key in const [
+        'hrv_z',
+        'rhr_z',
+        'sleep_z',
+        'resp_rate_z',
+        'prev_strain_z',
+      ]) {
+        expect(breakdown[key], isA<num>(), reason: '$key must stay numeric');
+      }
+    });
   });
 
   group('Daily Computed Metrics contract', () {
@@ -164,7 +231,7 @@ void main() {
       expect(json['scores_jsonb'], isA<Map>());
       expect(json['baseline_snapshot_jsonb'], isA<Map>());
       expect(json['eligibility_jsonb'], isA<Map>());
-      expect(json['schema_version'], '2.0');
+      expect(json['schema_version'], '2.1');
     });
 
     test('recovery_score in valid range', () {
@@ -226,6 +293,16 @@ void main() {
       expect(scores['sleep_quality'], isA<num>());
       expect(scores['sleep_breakdown'], isA<Map>());
       expect(scores['sleep_debt_minutes'], isA<num>());
+    });
+
+    test('recovery_breakdown carries missing_components (schema 2.1)', () {
+      final json = _loadFixtureJson(fixture);
+      final scores = Map<String, dynamic>.from(json['scores_jsonb'] as Map);
+      final breakdown = Map<String, dynamic>.from(
+        scores['recovery_breakdown'] as Map,
+      );
+
+      expect(breakdown['missing_components'], isA<List>());
     });
   });
 }

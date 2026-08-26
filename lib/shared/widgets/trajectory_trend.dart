@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
@@ -305,6 +306,7 @@ class _TrendPlot extends StatelessWidget {
           series: series,
           line: colors.actionPrimary,
           grid: colors.borderSubtle,
+          dotRing: colors.canvas,
           progress: 1,
         ),
       );
@@ -316,6 +318,7 @@ class _TrendPlot extends StatelessWidget {
           series: series,
           line: colors.actionPrimary,
           grid: colors.borderSubtle,
+          dotRing: colors.canvas,
           progress: Curves.easeOutCubic.transform(controller.value),
         ),
       ),
@@ -328,12 +331,14 @@ class _TrendPainter extends CustomPainter {
     required this.series,
     required this.line,
     required this.grid,
+    required this.dotRing,
     required this.progress,
   });
 
   final TrendSeries series;
   final Color line;
   final Color grid;
+  final Color dotRing;
   final double progress;
 
   static const _xInset = 16.0;
@@ -407,7 +412,10 @@ class _TrendPainter extends CustomPainter {
     for (var i = 0; i < points.length - 1; i++) {
       final threshold = (points[i].dx - _xInset) / (size.width - 2 * _xInset);
       if (progress < threshold) continue;
-      canvas.drawCircle(points[i], 2.5, Paint()..color = line);
+      // Ringed dot: the fill matches the line, the ring lifts it off the
+      // curve so a recorded day stays visible even on a flat series.
+      canvas.drawCircle(points[i], 4, Paint()..color = dotRing);
+      canvas.drawCircle(points[i], 2.8, Paint()..color = line);
     }
   }
 
@@ -416,7 +424,8 @@ class _TrendPainter extends CustomPainter {
       oldDelegate.progress != progress ||
       oldDelegate.series != series ||
       oldDelegate.line != line ||
-      oldDelegate.grid != grid;
+      oldDelegate.grid != grid ||
+      oldDelegate.dotRing != dotRing;
 }
 
 /// Maps a recorded point to pixels: x by day offset inside the 7-day window
@@ -492,11 +501,7 @@ class _TrendTag extends StatelessWidget {
         Flexible(
           child: Text(
             label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              fontSize: 10,
-              letterSpacing: 1.4,
-              color: color,
-            ),
+            style: TracendTheme.labelCaps(context, color: color),
           ),
         ),
       ],
@@ -599,7 +604,7 @@ class _TrendColdStart extends StatelessWidget {
             const SizedBox(height: TracendSpacing.xxs),
             Text(
               'A 7-day trend appears once at least four days of health data '
-              'exist. Sync Apple Health below to start.',
+              'exist. Sync Apple Health to start.',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),

@@ -6,12 +6,15 @@ Train uses the 4/8-point spacing rhythm and 44-point interactive rows. Active lo
 Syncing, Offline, or Needs attention; resumes entered sets after reopen; and requires explicit skip
 actions. Historical corrections and HealthKit conflicts use review cards with confirmation actions.
 
-Today's Action Stage contains one instruction, one reason, and one CTA, followed by the
-readiness readouts (Chunk 6): a full-width recovery score with its five drivers (HRV, RHR,
-sleep, respiratory rate, prior strain), a real 7-day health trend from Apple Health, and
-training load (ACWR) folded into the session plan card. Evidence sources and freshness stay
-reachable in the Apple Health section below. Apple Health combines refresh, useful signals,
-coaching impact and trends in one section; technical gaps remain collapsed. Progress uses
+Today's Action Stage contains one instruction, one reason, and one CTA with a sync chip
+that refreshes Apple Health (when connected), the daily brief, and today's coaching
+decision together, followed by the readiness readouts (Chunk 6): a full-width recovery
+score with its five drivers (HRV, RHR, sleep, respiratory rate, prior strain), a real
+7-day health trend from Apple Health, and training load (ACWR) folded into the session
+plan card. Evidence is shown inline in these readouts (Chunk 7): drivers list their true
+z-scores, missing signals say No data, and a recovery score appears only when at least
+one component is usable. Apple Health connect/refresh controls and the sync status card
+live in the profile only — Today never prompts for Health access. Progress uses
 one date-ordered effective measurement timeline for its headline, raw chart, and recent
 history; smoothing is never shown as the current weight.
 
@@ -179,10 +182,11 @@ updates Today and recomputes only when necessary.
 ### Evidence detail
 
 Readiness evidence is shown inline, not hidden behind a tap: the recovery readout lists
-each driver's true z-score next to its bar, the 7-day trend plots only recorded days with
-its date range and recorded-day count, and the session plan card states the real ACWR and
-zone. Source, freshness, and missing-signal detail live in the Apple Health section
-below, in ordinary coaching language. Deterministic calculation and AI interpretation are
+each driver's true z-score next to its bar and shows No data for unusable components,
+the 7-day trend plots only recorded days with its date range and recorded-day count, and
+the session plan card states the real ACWR and zone. Sync source and freshness live in
+the profile's Apple Health status card and beside the hero sync chip (last health sync
+time), in ordinary coaching language. Deterministic calculation and AI interpretation are
 labeled separately. Training and Nutrition remain perspectives in one controlled decision
 pipeline, not independent agents. The Coach tab provides direct user questions through the
 same workflow and never behaves like three separate autonomous chatbots. A live assistant
@@ -366,9 +370,10 @@ next focus, and a **Mark reviewed** acknowledgement action.
 - Distinguish connected, partial, stale, unavailable, and manual-only.
 - A partial label counts data categories with samples in the sync window; it does not claim that an
   empty category proves permission denial. Show found and missing categories in plain language.
-- Today reads stored daily summaries back into dated sleep, steps, energy, workout,
-  resting-heart-rate, and HRV evidence. Draw a trend only when at least two real dated values exist;
-  otherwise show the missing-data action.
+- Today's health evidence is inline: the recovery readout's five driver rows and the
+  7-day trend. The trend draws only when at least four real recorded days exist inside
+  its window; otherwise it shows the missing-data action ("Building baseline"). Apple
+  Health connect/refresh controls and the sync status card live in the profile only.
 - Revocation keeps manual features usable and explains iOS settings.
 - Sync shows date range and last success instead of an indefinite spinner.
 

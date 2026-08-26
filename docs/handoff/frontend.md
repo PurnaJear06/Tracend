@@ -492,6 +492,65 @@ signals. Approved as a bold redesign. Changes:
 Next: Chunk 6 review + device reinstall, then merge to `feature/feature-engine` (owner
 action).
 
+**Chunk 7 implemented (2026-08-25): Recovery honesty + Today sync chip.** Production
+observation 2026-08-25: days with no usable health data still scored recovery 58 (every
+z-score defaulted to 0 with full weight plus a +0.2 optimism offset). Chunk 7 makes the
+pipeline honest end-to-end.
+
+Server (`20260825120000_recovery_honesty.sql`, additive create-or-replace):
+- A component joins the composite only with BOTH a value today AND a baseline with
+  `spread > 0`; otherwise it lands in `recovery_breakdown.missing_components`.
+- `recovery` is NULL when nothing is usable — never a fabricated number. The +0.2
+  optimism offset is removed; baseline maps to exactly 50.
+- `data_confidence` counts the four HealthKit components (HRV, resting HR, sleep,
+  respiratory rate); prev_strain missing alone never lowers confidence.
+- All five z-score keys stay present and non-null (0 when unusable) for shipped clients.
+- `get_my_daily_brief` schema_version bumped to 1.2 (additive `recovery_breakdown`).
+- pgTAP: `supabase/tests/database/recovery_honesty_test.sql`.
+
+Client:
+- `ComputedMetrics` parses `recovery_breakdown` incl. `missing_components`;
+  `RecoveryReadoutCard` renders No data rows for unusable components (never a fake
+  +0.0) and an honest empty state when recovery is NULL.
+- Apple Health section removed from Today: deleted `health_evidence_section.dart`
+  (supersedes Chunk 6's "evidence stays reachable in the Apple Health section").
+  Connect/refresh/status live in the profile only (`HealthStatusCard` in
+  `account_screen.dart`); Today never prompts for Health access.
+- Hero sync chip (`today_hero.dart`): a real button that syncs Apple Health (when
+  connected), the daily brief, and today's coaching decision; spinner while running;
+  timestamp is the last health sync. Plain bordered capsule — the two-site glass budget
+  (confidence pill + tab capsule) is preserved.
+- Tests: new `test/today_sync_test.dart` (chip runs the pipeline, hero sync refreshes
+  health/brief/decision, partial failure reported honestly, unconnected health skipped
+  without prompting, 30-minute auto-sync throttle); contract fixtures for brief v1.2 +
+  `recovery_breakdown`; phase_4 asserts Today exposes no Apple Health controls.
+  314 tests pass, 0 analysis issues.
+- Docs amended same-change: ALGORITHMS §1 (formula, bands, confidence), UX_FLOWS
+  (inline evidence, profile-only Health controls).
+- Review follow-ups (2026-08-26, `docs/reviews/2026-08-26-phase-5-v2-chunk-7-recovery-honesty.md`,
+  PASS WITH FINDINGS — all fixed pre-commit): migration also fixes the pre-existing
+  `duration_score` wrong-baseline bug (dedicated sleep-baseline select + pgTAP case,
+  plan 21→24) and drops the dead `computed_at` declaration; sync snackbar no longer
+  overstates success (`unavailable` health reads count as failures; never-connected
+  Apple Health reports "not connected" instead of "up to date"); sync chip hit area
+  padded to the 44pt minimum; ALGORITHMS §8 version table bumped 2.1/1.2; UX_FLOWS §12
+  HealthKit bullet rewritten for the new surface split; DESIGN_SYSTEM inventory gained
+  the No-data driver state; stale fixture-mode doc comment corrected.
+- Device-QA visual pass (2026-08-26, owner: hero block too big, type looked stretched):
+  hero headline now uses the theme `displaySmall` token unchanged (32pt) instead of the
+  42pt/-1.26 override — DESIGN.md's decision-headline range is 28–32pt and the 42pt
+  sentence-length headline was the oversized block; "View analytics" demoted from an
+  equal second OutlinedButton to a compact TextButton affordance (one primary action per
+  screen, per DESIGN_SYSTEM §Decision Surface), stacking full-width at accessibility
+  text sizes (scaler-threshold idiom from `MetricStrip`); new `TracendTheme.labelCaps`
+  helper renders every caps label on Today at the documented 11/16 · 0.08em · w500 spec
+  (was 9–10pt with 1.2–1.6pt tracking across hero pill, check-in bar CHECK-IN/EDIT,
+  precision divider, card tags, LOG/LOAD, T/N coach toggle, sleep architecture) — the
+  wide-tracked sub-11pt labels were the "stretched" type. Tests: hero headline token
+  assertion, TextButton-not-OutlinedButton assertion, `labelCaps` spec test, plus the two
+  missing sync-message assertions (unavailable health read → failure snackbar;
+  never-connected → "not connected" snackbar). 318 tests pass, 0 analysis issues.
+
 ## Session Duration Cap (2026-08-22)
 
 **Client** (`active_workout_screen.dart`): `_maxSessionSeconds = 10800`, 15-second elapsed

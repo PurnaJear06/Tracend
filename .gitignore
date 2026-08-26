@@ -6,6 +6,7 @@
 *.iml
 *.swp
 *.swo
+__pycache__/
 
 # Secrets and local environment
 .env

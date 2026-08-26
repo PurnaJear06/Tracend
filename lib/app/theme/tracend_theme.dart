@@ -14,6 +14,19 @@ abstract final class TracendTheme {
     fontFeatures: const [FontFeature.tabularFigures()],
   );
 
+  /// Label-caps per DESIGN_SYSTEM §3.2: 11/16, letter-spacing 0.08em, w500.
+  /// The single style for uppercase section tags and card identifiers —
+  /// caps labels never render smaller than 11pt or wider than 0.08em
+  /// tracking (owner QA: wider tracking read as stretched type).
+  static TextStyle labelCaps(BuildContext context, {Color? color}) =>
+      Theme.of(context).textTheme.labelMedium!.copyWith(
+        fontSize: 11,
+        height: 16 / 11,
+        letterSpacing: 0.9,
+        fontWeight: FontWeight.w500,
+        color: color,
+      );
+
   static ThemeData _build(Brightness brightness, TracendColors colors) {
     final base = ThemeData(
       brightness: brightness,

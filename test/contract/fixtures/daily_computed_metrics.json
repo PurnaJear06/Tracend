@@ -2,8 +2,8 @@
   "id": "dcm-0001",
   "user_id": "aaaaaaaa-1111-4111-8111-111111111111",
   "local_date": "2026-07-25",
-  "recovery_score": 72,
-  "sleep_quality_score": 85,
+  "recovery_score": 69,
+  "sleep_quality_score": 80,
   "sleep_debt_minutes": -65,
   "daily_strain": 42.0,
   "acwr": 1.15,
@@ -11,17 +11,18 @@
   "weight_trend_7d_kg_per_day": -0.0714,
   "weight_trend_28d_kg_per_day": -0.0357,
   "macro_adherence_pct": 95,
-  "data_confidence": "medium",
+  "data_confidence": "high",
   "scores_jsonb": {
-    "recovery": 72,
+    "recovery": 69,
     "recovery_breakdown": {
       "hrv_z": 0.517,
       "rhr_z": 0.455,
       "sleep_z": 0.798,
       "resp_rate_z": 0.500,
-      "prev_strain_z": 0.300
+      "prev_strain_z": 0.300,
+      "missing_components": []
     },
-    "sleep_quality": 85,
+    "sleep_quality": 80,
     "sleep_breakdown": {
       "duration_score": 86.4,
       "efficiency_score": 92.8,
@@ -59,5 +60,5 @@
     "general": "maintain_only"
   },
   "computed_at": "2026-07-25T06:00:00+05:30",
-  "schema_version": "2.0"
+  "schema_version": "2.1"
 }

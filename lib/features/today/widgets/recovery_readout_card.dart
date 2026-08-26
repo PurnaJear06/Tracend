@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
@@ -14,6 +15,8 @@ import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 /// - full: score + band chip + driver rows (bar fill clamps z to ±2,
 ///   semantics announce the true z-score)
 /// - score null: '--' + honest empty copy; driver rows only with a breakdown
+/// - driver missing: row reports 'No data' — a missing component is never
+///   rendered as an at-baseline '+0.0'
 /// - cold_start / low confidence: 'Building baseline' caption under the score
 class RecoveryReadoutCard extends StatelessWidget {
   const RecoveryReadoutCard({required this.computed, super.key});
@@ -77,7 +80,7 @@ class RecoveryReadoutCard extends StatelessWidget {
           const SizedBox(height: TracendSpacing.xxs),
           Text(
             score == null
-                ? 'Sync Apple Health and check in to build your recovery baseline.'
+                ? 'Not enough data for a recovery score. Sync Apple Health and check in to build your baseline.'
                 : lowConfidence
                 ? 'Building baseline'
                 : 'Derived from HRV, resting HR, sleep, respiratory rate, and prior strain.',
@@ -131,14 +134,7 @@ class _CardTag extends StatelessWidget {
       children: [
         Icon(CupertinoIcons.heart_fill, size: 13, color: color),
         const SizedBox(width: TracendSpacing.xxs),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            fontSize: 10,
-            letterSpacing: 1.4,
-            color: color,
-          ),
-        ),
+        Text(label, style: TracendTheme.labelCaps(context, color: color)),
       ],
     );
   }
@@ -178,12 +174,18 @@ class _DriverRows extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
+    final missing = breakdown.missingComponents.toSet();
     final drivers = [
-      ('HRV', breakdown.hrvZ, colors.actionPrimary),
-      ('RHR', breakdown.rhrZ, colors.stateStable),
-      ('Sleep', breakdown.sleepZ, colors.actionPrimary.withValues(alpha: 0.55)),
-      ('Resp', breakdown.respRateZ, colors.accentAmber),
-      ('Strain', breakdown.prevStrainZ, colors.stateAttention),
+      ('HRV', 'hrv_sdnn', breakdown.hrvZ, colors.actionPrimary),
+      ('RHR', 'resting_hr', breakdown.rhrZ, colors.stateStable),
+      (
+        'Sleep',
+        'sleep_minutes',
+        breakdown.sleepZ,
+        colors.actionPrimary.withValues(alpha: 0.55),
+      ),
+      ('Resp', 'resp_rate', breakdown.respRateZ, colors.accentAmber),
+      ('Strain', 'prev_strain', breakdown.prevStrainZ, colors.stateAttention),
     ];
 
     return Column(
@@ -200,8 +202,9 @@ class _DriverRows extends StatelessWidget {
           if (i > 0) const SizedBox(height: TracendSpacing.xs + 2),
           _DriverRow(
             label: drivers[i].$1,
-            zScore: drivers[i].$2,
-            color: drivers[i].$3,
+            zScore: drivers[i].$3,
+            color: drivers[i].$4,
+            missing: missing.contains(drivers[i].$2),
           ),
         ],
       ],
@@ -214,25 +217,35 @@ class _DriverRows extends StatelessWidget {
 /// the trailing value report the true (unclamped) z-score — the announced
 /// value is the data, never the display clamp. The hairline notch marks the
 /// baseline (z = 0).
+///
+/// When [missing] is true the component did not contribute to the score
+/// (value or baseline unavailable). The row reports 'No data' instead of an
+/// at-baseline '+0.0', which would falsely imply a measured, neutral reading.
 class _DriverRow extends StatelessWidget {
   const _DriverRow({
     required this.label,
     required this.zScore,
     required this.color,
+    this.missing = false,
   });
 
   final String label;
   final double zScore;
   final Color color;
+  final bool missing;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     final filled = (zScore.clamp(-2.0, 2.0) + 2.0) / 4.0;
-    final zText = '${zScore >= 0 ? '+' : ''}${zScore.toStringAsFixed(1)}';
+    final zText = missing
+        ? 'No data'
+        : '${zScore >= 0 ? '+' : ''}${zScore.toStringAsFixed(1)}';
 
     return Semantics(
-      label: '$label driver, z-score $zText',
+      label: missing
+          ? '$label driver, no data'
+          : '$label driver, z-score $zText',
       excludeSemantics: true,
       child: Row(
         children: [
@@ -243,7 +256,7 @@ class _DriverRow extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                fontSize: 10,
+                fontSize: 11,
                 letterSpacing: 0.6,
                 color: colors.textSecondary,
               ),
@@ -260,26 +273,28 @@ class _DriverRow extends StatelessWidget {
                     Container(
                       color: colors.borderSubtle.withValues(alpha: 0.35),
                     ),
-                    Positioned.fill(
-                      child: Align(
+                    if (!missing) ...[
+                      Positioned.fill(
+                        child: Align(
+                          child: Container(
+                            width: 1,
+                            color: colors.borderHairline,
+                          ),
+                        ),
+                      ),
+                      AnimatedFractionallySizedBox(
+                        duration: TracendMotion.standard,
+                        curve: TracendMotion.curve,
+                        widthFactor: filled,
+                        alignment: Alignment.centerLeft,
                         child: Container(
-                          width: 1,
-                          color: colors.borderHairline,
+                          decoration: BoxDecoration(
+                            color: color,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
                         ),
                       ),
-                    ),
-                    AnimatedFractionallySizedBox(
-                      duration: TracendMotion.standard,
-                      curve: TracendMotion.curve,
-                      widthFactor: filled,
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: color,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -287,14 +302,18 @@ class _DriverRow extends StatelessWidget {
           ),
           const SizedBox(width: TracendSpacing.xs),
           SizedBox(
-            width: 44,
+            width: 52,
             child: Text(
               zText,
               textAlign: TextAlign.right,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 fontFamily: TracendFonts.monoFamily,
                 fontSize: 11,
-                color: zScore >= 0 ? colors.stateStable : colors.stateAttention,
+                color: missing
+                    ? colors.textSecondary
+                    : zScore >= 0
+                    ? colors.stateStable
+                    : colors.stateAttention,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),

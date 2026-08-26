@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
@@ -214,11 +215,7 @@ class _MetabolicTag extends StatelessWidget {
             'METABOLIC TARGET',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              fontSize: 10,
-              letterSpacing: 1.4,
-              color: colors.accentAmber,
-            ),
+            style: TracendTheme.labelCaps(context, color: colors.accentAmber),
           ),
         ),
       ],
@@ -249,11 +246,7 @@ class _LogButton extends StatelessWidget {
           alignment: Alignment.center,
           child: Text(
             'LOG',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              fontSize: 10,
-              letterSpacing: 1.2,
-              color: colors.textSecondary,
-            ),
+            style: TracendTheme.labelCaps(context, color: colors.textSecondary),
           ),
         ),
       ),

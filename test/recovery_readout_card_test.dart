@@ -99,7 +99,8 @@ void main() {
       expect(find.text('--'), findsOneWidget);
       expect(
         find.text(
-          'Sync Apple Health and check in to build your recovery baseline.',
+          'Not enough data for a recovery score. Sync Apple Health and check '
+          'in to build your baseline.',
         ),
         findsOneWidget,
       );
@@ -179,6 +180,63 @@ void main() {
         find.bySemanticsLabel('Strain driver, z-score -0.3'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('missing components show No data, never a fake +0.0', (
+      tester,
+    ) async {
+      const partial = RecoveryBreakdown(
+        hrvZ: 0.3,
+        rhrZ: 1.0,
+        sleepZ: 0,
+        respRateZ: 0,
+        prevStrainZ: -0.5,
+        missingComponents: ['sleep_minutes', 'resp_rate'],
+      );
+      await tester.pumpWidget(
+        _wrap(
+          RecoveryReadoutCard(
+            computed: _metrics(recovery: 68, breakdown: partial),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('No data'), findsNWidgets(2));
+      expect(find.text('+0.3'), findsOneWidget);
+      expect(find.text('+1.0'), findsOneWidget);
+      expect(find.text('-0.5'), findsOneWidget);
+      expect(find.text('+0.0'), findsNothing);
+      expect(find.bySemanticsLabel('Sleep driver, no data'), findsOneWidget);
+      expect(find.bySemanticsLabel('Resp driver, no data'), findsOneWidget);
+      expect(find.bySemanticsLabel('HRV driver, z-score +0.3'), findsOneWidget);
+    });
+
+    testWidgets('all components missing renders five No data rows', (
+      tester,
+    ) async {
+      const empty = RecoveryBreakdown(
+        hrvZ: 0,
+        rhrZ: 0,
+        sleepZ: 0,
+        respRateZ: 0,
+        prevStrainZ: 0,
+        missingComponents: [
+          'hrv_sdnn',
+          'resting_hr',
+          'sleep_minutes',
+          'resp_rate',
+          'prev_strain',
+        ],
+      );
+      await tester.pumpWidget(
+        _wrap(RecoveryReadoutCard(computed: _metrics(breakdown: empty))),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('--'), findsOneWidget);
+      expect(find.text('No data'), findsNWidgets(5));
+      expect(find.text('+0.0'), findsNothing);
     });
 
     testWidgets('score announces itself out of 100', (tester) async {

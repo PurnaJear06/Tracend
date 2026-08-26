@@ -596,5 +596,5 @@ hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm.
 
 - `feature_snapshots.schema_version` IN ('1.0', '2.0')
 - `policy_evaluations.policy_version` IN ('daily-v1', 'eligibility-v1')
-- `daily_computed_metrics.schema_version` = '2.0'
-- RPC schema_version: `get_my_training_hub` 1.4, `get_my_daily_brief` 1.1
+- `daily_computed_metrics.schema_version` = '2.1'
+- RPC schema_version: `get_my_training_hub` 1.4, `get_my_daily_brief` 1.2

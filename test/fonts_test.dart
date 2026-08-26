@@ -34,4 +34,25 @@ void main() {
     expect(style.fontSize, 13);
     expect(style.fontFeatures, contains(const FontFeature.tabularFigures()));
   });
+
+  testWidgets('labelCaps matches DESIGN_SYSTEM §3.2: 11/16, 0.08em, w500', (
+    tester,
+  ) async {
+    late TextStyle style;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.dark,
+        home: Builder(
+          builder: (context) {
+            style = TracendTheme.labelCaps(context);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    expect(style.fontSize, 11);
+    expect(style.letterSpacing, 0.9);
+    expect(style.fontWeight, FontWeight.w500);
+    expect(style.height, closeTo(16 / 11, 0.001));
+  });
 }

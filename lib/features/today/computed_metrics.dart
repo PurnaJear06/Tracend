@@ -5,12 +5,18 @@ class RecoveryBreakdown {
     required this.sleepZ,
     required this.respRateZ,
     required this.prevStrainZ,
+    this.missingComponents = const [],
   });
   final double hrvZ;
   final double rhrZ;
   final double sleepZ;
   final double respRateZ;
   final double prevStrainZ;
+
+  /// Component keys that did not contribute to the recovery score because
+  /// the value or its baseline was unavailable ('hrv_sdnn', 'resting_hr',
+  /// 'sleep_minutes', 'resp_rate', 'prev_strain'). Absent on older payloads.
+  final List<String> missingComponents;
 
   factory RecoveryBreakdown.fromJson(Map<String, dynamic> json) {
     return RecoveryBreakdown(
@@ -19,6 +25,9 @@ class RecoveryBreakdown {
       sleepZ: (json['sleep_z'] as num).toDouble(),
       respRateZ: (json['resp_rate_z'] as num).toDouble(),
       prevStrainZ: (json['prev_strain_z'] as num).toDouble(),
+      missingComponents: (json['missing_components'] as List? ?? const [])
+          .map((item) => item.toString())
+          .toList(),
     );
   }
 
@@ -29,10 +38,26 @@ class RecoveryBreakdown {
       rhrZ == other.rhrZ &&
       sleepZ == other.sleepZ &&
       respRateZ == other.respRateZ &&
-      prevStrainZ == other.prevStrainZ;
+      prevStrainZ == other.prevStrainZ &&
+      _listEquals(missingComponents, other.missingComponents);
+
+  static bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   @override
-  int get hashCode => Object.hash(hrvZ, rhrZ, sleepZ, respRateZ, prevStrainZ);
+  int get hashCode => Object.hash(
+    hrvZ,
+    rhrZ,
+    sleepZ,
+    respRateZ,
+    prevStrainZ,
+    Object.hashAll(missingComponents),
+  );
 }
 
 class SleepBreakdown {

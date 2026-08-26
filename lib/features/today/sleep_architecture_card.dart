@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 import 'computed_metrics.dart';
@@ -72,9 +73,9 @@ class _SleepHeader extends StatelessWidget {
           children: [
             Text(
               'SLEEP ARCHITECTURE',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              style: TracendTheme.labelCaps(
+                context,
                 color: colors.actionPrimary,
-                letterSpacing: 1.2,
               ),
             ),
             const SizedBox(height: TracendSpacing.xxs),
@@ -297,11 +298,7 @@ class _BaselineMetric extends StatelessWidget {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: colors.textSecondary,
-            fontSize: 9,
-            letterSpacing: 1,
-          ),
+          style: TracendTheme.labelCaps(context, color: colors.textSecondary),
         ),
         const SizedBox(height: TracendSpacing.xxs),
         Row(
@@ -319,7 +316,7 @@ class _BaselineMetric extends StatelessWidget {
                 '· ${metric.nObs}d',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   color: colors.textSecondary,
-                  fontSize: 9,
+                  fontSize: 11,
                 ),
               ),
             ],

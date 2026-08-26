@@ -206,7 +206,7 @@ void main() {
     expect(find.text('Bad state: fixture failure'), findsOneWidget);
   });
 
-  testWidgets('Today renders stored health evidence and honest missing sleep', (
+  testWidgets('Today keeps Apple Health controls in the profile only', (
     tester,
   ) async {
     const environment = AppEnvironment(
@@ -225,15 +225,18 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-      find.text('Daily steps'),
+      find.text('Morning status recorded'),
       400,
       scrollable: find.byType(Scrollable).first,
       maxScrolls: 100,
     );
     await tester.pumpAndSettle();
-    expect(find.text('Daily steps'), findsOneWidget);
-    expect(find.text('What matters today'), findsOneWidget);
-    expect(find.textContaining('Sleep has no stored samples'), findsOneWidget);
+    // Chunk 7: the Apple Health section (status card + evidence) moved to the
+    // profile; Today keeps the sync button in the hero instead.
+    expect(find.text('What matters today'), findsNothing);
+    expect(find.text('Daily steps'), findsNothing);
+    expect(find.text('Connect Apple Health'), findsNothing);
+    expect(find.text('Refresh Apple Health'), findsNothing);
   });
 }
 

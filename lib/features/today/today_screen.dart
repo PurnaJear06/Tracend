@@ -10,7 +10,6 @@ import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_models.dart';
-import 'package:tracend/features/health/health_status_card.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
@@ -19,7 +18,6 @@ import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/sleep_architecture_card.dart';
 import 'package:tracend/features/today/widgets/check_in_prompt_bar.dart';
 import 'package:tracend/features/today/widgets/coach_perspective_card.dart';
-import 'package:tracend/features/today/widgets/health_evidence_section.dart';
 import 'package:tracend/features/today/widgets/metabolic_target_card.dart';
 import 'package:tracend/features/today/widgets/precision_divider.dart';
 import 'package:tracend/features/today/widgets/recovery_readout_card.dart';
@@ -66,6 +64,12 @@ class _TodayScreenState extends State<TodayScreen> {
   late Future<HealthHistory> _healthHistory;
   late Future<DailyBrief> _brief;
   late Future<NutritionTargets?> _targets;
+  late Future<CoachDecision?> _latestDecision;
+  bool _syncing = false;
+
+  /// Auto health sync runs at most once per 30 minutes and never triggers a
+  /// permission prompt: it fires only when a previous sync already succeeded.
+  static const _autoSyncInterval = Duration(minutes: 30);
 
   @override
   void initState() {
@@ -73,6 +77,8 @@ class _TodayScreenState extends State<TodayScreen> {
     _reloadHealth();
     _targets = widget.nutrition.loadTargets();
     _brief = widget.brief.load(DateTime.now());
+    _latestDecision = widget.coach.loadLatest();
+    _autoSyncHealthIfNeeded();
   }
 
   void _reloadHealth() {
@@ -85,6 +91,84 @@ class _TodayScreenState extends State<TodayScreen> {
       _brief = widget.brief.load(DateTime.now());
     });
   }
+
+  Future<void> _autoSyncHealthIfNeeded() async {
+    if (!widget.environment.hasSupabaseConfiguration) return;
+    try {
+      final status = await widget.health.loadStatus();
+      final last = status.lastSuccessfulSync;
+      if (last == null) return; // never connected -> manual via profile only
+      if (DateTime.now().difference(last) < _autoSyncInterval) return;
+      await widget.health.sync();
+      if (mounted) _reloadBriefAndHealth();
+    } catch (_) {
+      // Silent: the hero sync button stays available for an explicit retry.
+    }
+  }
+
+  /// Sync everything: Apple Health (when connected), the daily brief, and
+  /// today's coaching decision. Each stage fails independently and the result
+  /// message reports exactly what could not be refreshed — a HealthKit read
+  /// that returns `unavailable` counts as a failure, and a never-connected
+  /// Apple Health is reported as skipped, never as "up to date".
+  Future<void> _syncEverything() async {
+    if (_syncing) return;
+    setState(() => _syncing = true);
+    final failures = <String>[];
+    var healthSkipped = false;
+    try {
+      try {
+        final status = await widget.health.loadStatus();
+        if (status.lastSuccessfulSync != null) {
+          final synced = await widget.health.sync();
+          if (synced.state == HealthConnectionState.unavailable) {
+            failures.add('Apple Health');
+          }
+        } else {
+          healthSkipped = true;
+        }
+      } catch (_) {
+        failures.add('Apple Health');
+      }
+      if (!mounted) return;
+      _reloadBriefAndHealth();
+      if (widget.environment.hasSupabaseConfiguration) {
+        try {
+          final latest = await widget.coach.loadLatest();
+          final today = _dateKey(DateTime.now());
+          if (latest == null || latest.localDate != today) {
+            await widget.coach.generate();
+          }
+          if (!mounted) return;
+          setState(() {
+            _latestDecision = widget.coach.loadLatest();
+          });
+        } catch (_) {
+          failures.add('coach decision');
+        }
+      }
+      if (!mounted) return;
+      final String message;
+      if (failures.isNotEmpty) {
+        message = 'Synced, but unavailable: ${failures.join(', ')}.';
+      } else if (healthSkipped) {
+        message =
+            'Synced. Apple Health is not connected — set it up in your profile.';
+      } else {
+        message = 'Everything is up to date.';
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  String _dateKey(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
 
   Future<void> _openCheckIn() async {
     await showCheckInSheet(context, widget.environment);
@@ -146,8 +230,10 @@ class _TodayScreenState extends State<TodayScreen> {
               return _BriefContent(
                 brief: brief,
                 targets: _targets,
-                coach: widget.coach,
+                latestDecision: _latestDecision,
                 healthHistory: _healthHistory,
+                syncing: _syncing,
+                onSync: _syncEverything,
                 onStartSession: brief.workout != null ? _openWorkout : null,
                 onViewAnalytics: widget.onOpenProgress,
                 onOpenNutrition: widget.onOpenNutrition,
@@ -179,36 +265,6 @@ class _TodayScreenState extends State<TodayScreen> {
             );
           },
         ),
-        const SectionLabel('Apple Health'),
-        HealthStatusCard(
-          repository: widget.health,
-          onSynced: _reloadBriefAndHealth,
-        ),
-        const SizedBox(height: TracendSpacing.sm),
-        FutureBuilder<HealthHistory>(
-          future: _healthHistory,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const TracendCard(child: LinearProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return TracendCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Health history could not load',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: TracendSpacing.xs),
-                    const Text('Refresh the summary or try again.'),
-                  ],
-                ),
-              );
-            }
-            return HealthEvidenceSection(history: snapshot.data!);
-          },
-        ),
       ],
     );
   }
@@ -235,14 +291,17 @@ class _TodayScreenState extends State<TodayScreen> {
 }
 
 /// The loaded-brief composition (Chunk 6 layout): hero → recovery readout →
-/// 7-day trend → precision readouts → coach perspective → check-in. Evidence
-/// stays reachable in the Apple Health section below.
+/// 7-day trend → precision readouts → coach perspective → check-in. Apple
+/// Health controls live in the profile (Chunk 7); the hero sync button
+/// refreshes health, brief, and decision together.
 class _BriefContent extends StatelessWidget {
   const _BriefContent({
     required this.brief,
     required this.targets,
-    required this.coach,
+    required this.latestDecision,
     required this.healthHistory,
+    required this.syncing,
+    required this.onSync,
     required this.onStartSession,
     required this.onViewAnalytics,
     required this.onOpenNutrition,
@@ -252,8 +311,10 @@ class _BriefContent extends StatelessWidget {
 
   final DailyBrief brief;
   final Future<NutritionTargets?> targets;
-  final CoachRepository coach;
+  final Future<CoachDecision?> latestDecision;
   final Future<HealthHistory> healthHistory;
+  final bool syncing;
+  final VoidCallback onSync;
   final VoidCallback? onStartSession;
   final VoidCallback? onViewAnalytics;
   final VoidCallback? onOpenNutrition;
@@ -270,6 +331,8 @@ class _BriefContent extends StatelessWidget {
             brief: brief,
             onStartSession: onStartSession,
             onViewAnalytics: onViewAnalytics,
+            onSync: onSync,
+            syncing: syncing,
           ),
         ),
         if (brief.computed != null) ...[
@@ -304,9 +367,7 @@ class _BriefContent extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: TracendSpacing.xxs),
-                    const Text(
-                      'Refresh the Apple Health summary below to retry.',
-                    ),
+                    const Text('Tap Sync to refresh the Apple Health summary.'),
                   ],
                 ),
               );
@@ -344,7 +405,7 @@ class _BriefContent extends StatelessWidget {
         const SizedBox(height: TracendSpacing.lg),
         MicroMotionEntrance(
           delay: MicroMotion.stagger(6),
-          child: _CoachPerspectiveSection(coach: coach),
+          child: _CoachPerspectiveSection(latestDecision: latestDecision),
         ),
         const SizedBox(height: TracendSpacing.lg),
         MicroMotionEntrance(
@@ -359,24 +420,26 @@ class _BriefContent extends StatelessWidget {
   }
 }
 
-/// Coach perspective: loads the latest [CoachDecision] (carries the real
+/// Coach perspective: renders the latest [CoachDecision] (carries the real
 /// training/nutrition summaries + confidence) to drive the T-Coach/N-Coach
-/// toggle. Falls back to an honest prompt when no decision exists.
+/// toggle. The future is owned by the screen state so the sync-everything
+/// pipeline can refresh it after generating a new decision. Falls back to an
+/// honest prompt when no decision exists.
 class _CoachPerspectiveSection extends StatelessWidget {
-  const _CoachPerspectiveSection({required this.coach});
+  const _CoachPerspectiveSection({required this.latestDecision});
 
-  final CoachRepository coach;
+  final Future<CoachDecision?> latestDecision;
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<CoachDecision?>(
-      future: coach.loadLatest(),
+      future: latestDecision,
       builder: (context, snapshot) {
         final decision = snapshot.data;
         if (decision == null) {
           return const TracendCard(
             child: Text(
-              'Open Coach to generate an evidence-backed daily decision.',
+              'Open Coach or tap Sync to generate an evidence-backed daily decision.',
             ),
           );
         }

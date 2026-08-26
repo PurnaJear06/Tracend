@@ -45,8 +45,31 @@ interpolated, "Building baseline" cold start); ACWR folded into `SessionPlanCard
 display-only load row; stagger slots re-indexed 0–7; evidence stays reachable in the
 Apple Health section. DESIGN_SYSTEM/UX_FLOWS/PRD amended in the same change. Session
 duration cap (180 min) deployed 2026-08-22 (`20260822120000_session_duration_cap.sql`).
-Feature Engine Phase 4 remains the last shipped UI milestone. 294 Flutter tests pass, 0
-analysis issues.
+Feature Engine Phase 4 remains the last shipped UI milestone. Chunk 7 (Recovery honesty,
+2026-08-25) in progress: production showed recovery 58 on days with no usable data, so
+`20260825120000_recovery_honesty.sql` (additive create-or-replace) makes
+`compute_daily_metrics` honest — components join the composite only with a value today
+AND a usable baseline (spread > 0), unusable ones land in
+`recovery_breakdown.missing_components`, recovery is NULL when nothing is usable, the
++0.2 optimism offset is gone (baseline → 50), and `data_confidence` counts the four
+HealthKit components; `get_my_daily_brief` schema_version 1.2. On the client:
+`RecoveryReadoutCard` renders No data rows (never a fake +0.0), the Apple Health section
+left Today (controls profile-only), and the hero sync chip syncs health + brief +
+decision together. ALGORITHMS §1 and UX_FLOWS amended same-change. Reviewed PASS WITH
+FINDINGS (`docs/reviews/2026-08-26-phase-5-v2-chunk-7-recovery-honesty.md`), all
+follow-ups fixed pre-commit. 2026-08-26: device-QA visual pass (hero headline now the
+32pt `displaySmall` token instead of 42pt, "View analytics" demoted to a TextButton
+affordance that stacks at accessibility sizes, all Today caps labels unified on the new
+`TracendTheme.labelCaps` 11/16 · 0.08em helper — the wide-tracked sub-11pt labels read
+as stretched) plus a noop StrandAnalytics backend rigor cross-check that fixed two more
+fabrication leaks in the undeployed migration: `duration_score` now scores tonight's
+sleep against the personal baseline (old `480/baseline` form ignored tonight entirely),
+and `prev_strain` needs a 28-day spread > 0 to join the composite. pgTAP
+recovery_honesty now 33/33 incl. a synthetic reproduction of the owner's exact
+production day (old formula → 69, honest → 62). 318 Flutter tests pass, 0 analysis
+issues. Remaining noop-inspired follow-ups (ACWR <7-day gate, sleep sub-component
+imputation, rolling baseline spread, staleness, reference implementation) are tracked
+in `docs/handoff/backend.md`.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -80,7 +103,7 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Feature Engine Phase 2    | **Complete — merged & verified**      | `docs/handoff/backend.md`  | `docs/ALGORITHMS.md`, `.opencode/plans/phase-2-feature-engine-algorithms.md` |
 | Feature Engine Phase 3    | **Deployed — merged**                | `docs/handoff/backend.md`  | `.opencode/plans/phase-3-coach-integration.md`                                |
 | Feature Engine Phase 4    | **Complete — widgets built + Today integrated** | `docs/handoff/frontend.md` | `.opencode/plans/phase-4-flutter-computed-metrics.md`
-| Phase 5 v2 "Precision Pro" UI | **In progress — Chunk 4 reviewed, follow-ups fixed** | `docs/handoff/design.md`   | `.opencode/plans/phase-5-v2-precision-pro.md`   |
+| Phase 5 v2 "Precision Pro" UI | **In progress — Chunk 7 (recovery honesty) pending review** | `docs/handoff/design.md`   | `.opencode/plans/phase-5-v2-precision-pro.md`   |
 | Backend foundation        | **Complete — verified**              | `docs/handoff/backend.md`  | worklogs                                      |
 | Frontend/UI               | **Complete — iPhone release build**  | `docs/handoff/frontend.md` | worklogs                                      |
 | Coach Continuity Memory   | **Deployed**                         | `docs/handoff/backend.md`  | `docs/worklog/2026-07-17-coach-continuity.md` |
@@ -90,8 +113,8 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 
 ## Global Current State
 
-- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 61 migrations (all deployed; session
-  duration cap deployed 2026-08-22).
+- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 62 migrations (61 deployed;
+  `20260825120000_recovery_honesty.sql` deploys via CI on next merge to main).
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
 - DeepSeek V4 Flash is the active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`).
 - Sign in with Apple deferred; owner email/password mode active (ADR 0002).
