@@ -69,7 +69,14 @@ recovery_honesty now 33/33 incl. a synthetic reproduction of the owner's exact
 production day (old formula → 69, honest → 62). 318 Flutter tests pass, 0 analysis
 issues. Remaining noop-inspired follow-ups (ACWR <7-day gate, sleep sub-component
 imputation, rolling baseline spread, staleness, reference implementation) are tracked
-in `docs/handoff/backend.md`.
+in `docs/handoff/backend.md`. 2026-08-26 post-deploy: production backup analysis showed
+zero successful `daily_coaching` runs ever — `persist_daily_coaching_result_v2` rejected
+every live decision because its per-outcome evidence whitelist (2-4 codes) was narrower
+than the 17 codes `prepare_daily_coaching` permits and the DeepSeek prompt teaches.
+`20260826120000_sync_persist_evidence_whitelist.sql` widens the persist whitelist to the
+full 17-code set (fabricated codes still rejected), and `coach-decide` now records a
+failed run with `error_code='decision_rejected'` when persistence rejects, so rejections
+are diagnosable in AI usage. pgTAP `persist_evidence_whitelist_test.sql` 11 assertions.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 

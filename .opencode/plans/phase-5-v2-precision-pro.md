@@ -3,7 +3,8 @@
 **Created:** 2026-08-22 (rewritten same day after master-plan cross-check)
 **Status:** Chunks 0–6 complete (Chunk 6 owner-approved after device QA 2026-08-25).
 Chunk 7 (recovery honesty) complete 2026-08-26 incl. device-QA visual pass and noop
-rigor fixes; pending merge.
+rigor fixes; merged and deployed via `feature/feature-engine`. Post-deploy hotfix
+2026-08-26: persist evidence-whitelist sync (see tracker row 7.1).
 **Branch:** `feature/feature-engine-phase-5-v2` (from `93fa49e`) → merge into `feature/feature-engine`
 **Backup:** tag `backup/pre-phase-5-v2` (local; push blocked by deploy-guard — user pushes or approves)
 **Supersedes:** the 2026-08-18 Phase 5 attempt (reverted) and the earlier draft of this file
@@ -11,7 +12,9 @@ rigor fixes; pending merge.
 executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is now covered.
 **DB changes:** Chunks 0–6 none (pure UI). Chunk 7 adds one additive migration
 (`20260825120000_recovery_honesty.sql` — create-or-replace of `compute_daily_metrics` +
-`get_my_daily_brief` schema_version 1.2; no schema or column changes).
+`get_my_daily_brief` schema_version 1.2; no schema or column changes). Post-deploy hotfix
+7.1 adds `20260826120000_sync_persist_evidence_whitelist.sql` (create-or-replace of
+`persist_daily_coaching_result_v2`; no schema or column changes).
 
 ## Progress Tracker
 
@@ -24,7 +27,8 @@ executes its Phase 4/5 UI scope. Every component in that plan's P0–P2 list is 
 | 4 | AI Usage + Shell + Account cleanup | ✅ Done 2026-08-24 | `82bf748` + `2afe1c8` | analyze ✓ · format ✓ · 274 tests ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-4-ai-usage-shell-account.md` (all fixed in `2afe1c8`) |
 | 5 | Motion + A11y + copy audit + final gate + merge | ✅ Done 2026-08-24 | `c90bf9e` + `a5ccd4f` | analyze ✓ · format ✓ · 287 tests ✓ · deno 94 ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-24-phase-5-v2-chunk-5-motion-a11y-copy.md` (all fixed in `a5ccd4f`) |
 | 6 | Today redesign: RecoveryReadoutCard + TrajectoryTrend, drop ring/strip/lens/evidence accordion | ✅ Done 2026-08-25 (owner-approved after device QA) | `d892217` | analyze ✓ · format ✓ · 294 tests ✓ | Owner device QA (no formal review doc) |
-| 7 | Recovery honesty: no fabricated recovery, missing_components, sync chip, Health controls profile-only; device-QA visual pass (32pt headline token, labelCaps, TextButton analytics); noop rigor fixes (duration_score tonight, prev_strain spread gate) | ✅ Done 2026-08-26 (pending merge) | `a4eccc4` | analyze ✓ · format ✓ · 318 tests ✓ · pgTAP 33/33 + 72/72 ✓ · deno fmt/lint ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-26-phase-5-v2-chunk-7-recovery-honesty-v2.md` (all fixed pre-commit) |
+| 7 | Recovery honesty: no fabricated recovery, missing_components, sync chip, Health controls profile-only; device-QA visual pass (32pt headline token, labelCaps, TextButton analytics); noop rigor fixes (duration_score tonight, prev_strain spread gate) | ✅ Done 2026-08-26 (merged + deployed) | `a4eccc4` | analyze ✓ · format ✓ · 318 tests ✓ · pgTAP 33/33 + 72/72 ✓ · deno fmt/lint ✓ · ios build ✓ | PASS w/ findings — `docs/reviews/2026-08-26-phase-5-v2-chunk-7-recovery-honesty-v2.md` (all fixed pre-commit) |
+| 7.1 | Post-deploy hotfix: sync `persist_daily_coaching_result_v2` evidence whitelist to the full 17-code set `prepare_daily_coaching` permits (was 2–4 per outcome → every live DeepSeek daily decision rejected 'unsupported evidence'); add `decision_rejected` failure telemetry in `coach-decide` | ✅ Done 2026-08-26 (pending deploy) | (this change) | analyze ✓ · format ✓ · tests ✓ · pgTAP 11/11 ✓ · deno fmt/lint ✓ · ios build ✓ | Self-review (hotfix) — root cause from production backup analysis |
 
 Carry-forward notes from reviews:
 - Chunk 0 review: assert light-theme `accentAmber`/`accentNow` contrast when those tokens are

@@ -24,6 +24,22 @@ This file is current-state handoff, not durable architecture. Keep detailed hist
 
 ## Current State
 
+- **Persist evidence-whitelist sync (2026-08-26):** production backup analysis showed zero
+  successful `daily_coaching` runs ever — every live decision was rejected at persistence.
+  Root cause: `prepare_daily_coaching` permits up to 17 computed-score evidence codes and the
+  DeepSeek prompt teaches all 17, but `persist_daily_coaching_result_v2` validated cited
+  evidence against a narrow per-outcome whitelist (2-4 codes). Any decision citing a
+  permitted-but-unlisted code (e.g. `DATA_CONFIDENCE_LOW`, `TRAINING_LOAD_OPTIMAL`,
+  `WEIGHT_STABLE`) raised 'unsupported evidence' (22023) → 422 `decision_rejected`, and that
+  path left no telemetry. Fix: migration
+  `20260826120000_sync_persist_evidence_whitelist.sql` (additive create-or-replace) accepts the
+  full 17-code set for every outcome and still rejects fabricated codes; `coach-decide` now
+  records a failed `daily_coaching` run with `error_code='decision_rejected'` via
+  `persist_failed_coaching_run_v2` when persistence rejects, so rejections are diagnosable in
+  AI usage. pgTAP: `supabase/tests/database/persist_evidence_whitelist_test.sql` (11
+  assertions: all-17-codes persist under maintain_only, fabricated code rejected,
+  computed-score codes persist under escalate and request_data). Deploys via CI on push to
+  `feature/feature-engine` or merge to main.
 - **Recovery honesty (Chunk 7, 2026-08-25; extended 2026-08-26):** migration
   `20260825120000_recovery_honesty.sql` (additive create-or-replace, no schema changes)
   fixes `compute_daily_metrics` after production showed recovery 58 on days with no
