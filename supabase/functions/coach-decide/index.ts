@@ -78,7 +78,19 @@ Deno.serve(async (request) => {
         run_estimated_cost_usd: generated.estimatedCostUsd,
       },
     );
-    if (error || !persisted) return reply(422, { error: "decision_rejected" });
+    if (error || !persisted) {
+      await auth.serviceClient.rpc("persist_failed_coaching_run_v2", {
+        target_user_id: auth.userId,
+        snapshot_id: prepared.feature_snapshot_id,
+        policy_id: prepared.policy_evaluation_id,
+        request_idempotency_key: input.idempotency_key,
+        run_latency_ms: Math.round(performance.now() - started),
+        error_code: "decision_rejected",
+        run_provider: generated.provider,
+        run_model: generated.model,
+      });
+      return reply(422, { error: "decision_rejected" });
+    }
     return reply(200, {
       schema_version: "1.0",
       decision: { ...decision, id: persisted.decision_id, local_date: input.local_date },
