@@ -9,8 +9,11 @@ class TracendColors extends ThemeExtension<TracendColors> {
     required this.textPrimary,
     required this.textSecondary,
     required this.borderSubtle,
+    required this.borderHairline,
     required this.actionPrimary,
     required this.actionOnPrimary,
+    required this.accentAmber,
+    required this.accentNow,
     required this.stateStable,
     required this.stateAttention,
     required this.stateDanger,
@@ -25,8 +28,11 @@ class TracendColors extends ThemeExtension<TracendColors> {
     textPrimary: Color(0xFF10151D),
     textSecondary: Color(0xFF556170),
     borderSubtle: Color(0xFFDCE2E8),
+    borderHairline: Color(0xFFE8EDF1),
     actionPrimary: Color(0xFF4A57E8),
     actionOnPrimary: Color(0xFFFFFFFF),
+    accentAmber: Color(0xFFB0742C),
+    accentNow: Color(0xFF5F7A12),
     stateStable: Color(0xFF00796B),
     stateAttention: Color(0xFFC43C31),
     stateDanger: Color(0xFFA92F28),
@@ -35,19 +41,22 @@ class TracendColors extends ThemeExtension<TracendColors> {
   );
 
   static const dark = TracendColors(
-    canvas: Color(0xFF090D14),
-    surface: Color(0xFF121925),
-    surfaceRaised: Color(0xFF182130),
+    canvas: Color(0xFF080B10),
+    surface: Color(0xFF111827),
+    surfaceRaised: Color(0xFF1A222F),
     textPrimary: Color(0xFFF4F7FB),
-    textSecondary: Color(0xFFAAB5C5),
+    textSecondary: Color(0xFF8894A8),
     borderSubtle: Color(0xFF293446),
-    actionPrimary: Color(0xFF9BA5FF),
+    borderHairline: Color(0xFF2D3748),
+    actionPrimary: Color(0xFF8A94F5),
     actionOnPrimary: Color(0xFF10151D),
-    stateStable: Color(0xFF59D6C7),
+    accentAmber: Color(0xFFE2A45C),
+    accentNow: Color(0xFFBCE85D),
+    stateStable: Color(0xFF45C4B5),
     stateAttention: Color(0xFFFF887D),
     stateDanger: Color(0xFFFF887D),
-    focusRing: Color(0xFF9BA5FF),
-    scrim: Color(0xB3090D14),
+    focusRing: Color(0xFF8A94F5),
+    scrim: Color(0xB3080B10),
   );
 
   final Color canvas;
@@ -56,8 +65,11 @@ class TracendColors extends ThemeExtension<TracendColors> {
   final Color textPrimary;
   final Color textSecondary;
   final Color borderSubtle;
+  final Color borderHairline;
   final Color actionPrimary;
   final Color actionOnPrimary;
+  final Color accentAmber;
+  final Color accentNow;
   final Color stateStable;
   final Color stateAttention;
   final Color stateDanger;
@@ -72,8 +84,11 @@ class TracendColors extends ThemeExtension<TracendColors> {
     Color? textPrimary,
     Color? textSecondary,
     Color? borderSubtle,
+    Color? borderHairline,
     Color? actionPrimary,
     Color? actionOnPrimary,
+    Color? accentAmber,
+    Color? accentNow,
     Color? stateStable,
     Color? stateAttention,
     Color? stateDanger,
@@ -87,8 +102,11 @@ class TracendColors extends ThemeExtension<TracendColors> {
       textPrimary: textPrimary ?? this.textPrimary,
       textSecondary: textSecondary ?? this.textSecondary,
       borderSubtle: borderSubtle ?? this.borderSubtle,
+      borderHairline: borderHairline ?? this.borderHairline,
       actionPrimary: actionPrimary ?? this.actionPrimary,
       actionOnPrimary: actionOnPrimary ?? this.actionOnPrimary,
+      accentAmber: accentAmber ?? this.accentAmber,
+      accentNow: accentNow ?? this.accentNow,
       stateStable: stateStable ?? this.stateStable,
       stateAttention: stateAttention ?? this.stateAttention,
       stateDanger: stateDanger ?? this.stateDanger,
@@ -107,8 +125,11 @@ class TracendColors extends ThemeExtension<TracendColors> {
       textPrimary: Color.lerp(textPrimary, other.textPrimary, t)!,
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
       borderSubtle: Color.lerp(borderSubtle, other.borderSubtle, t)!,
+      borderHairline: Color.lerp(borderHairline, other.borderHairline, t)!,
       actionPrimary: Color.lerp(actionPrimary, other.actionPrimary, t)!,
       actionOnPrimary: Color.lerp(actionOnPrimary, other.actionOnPrimary, t)!,
+      accentAmber: Color.lerp(accentAmber, other.accentAmber, t)!,
+      accentNow: Color.lerp(accentNow, other.accentNow, t)!,
       stateStable: Color.lerp(stateStable, other.stateStable, t)!,
       stateAttention: Color.lerp(stateAttention, other.stateAttention, t)!,
       stateDanger: Color.lerp(stateDanger, other.stateDanger, t)!,
@@ -135,9 +156,14 @@ abstract final class TracendSpacing {
 
 abstract final class TracendRadii {
   static const control = 12.0;
-  static const card = 20.0;
+  static const card = 24.0;
   static const decision = 28.0;
   static const navigation = 28.0;
+}
+
+abstract final class TracendFonts {
+  static const displayFamily = 'Spline Sans';
+  static const monoFamily = 'IBM Plex Mono';
 }
 
 abstract final class TracendMotion {

@@ -2,8 +2,19 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
-import 'package:tracend/shared/widgets/trajectory_lens.dart';
+import 'package:tracend/shared/widgets/trajectory_trend.dart';
+
+/// Fixture 7-day HRV history for the trend specimen (dev-only sample data).
+final HealthHistory _galleryHistory = HealthHistory([
+  for (var i = 6; i >= 0; i--)
+    HealthDay(
+      date: DateTime(2026, 8, 24).subtract(Duration(days: i)),
+      presentMetrics: const {HealthMetric.hrvSdnn},
+      hrvSdnnMs: [42, 45, 44, 48, 47, 51, 53][6 - i].toDouble(),
+    ),
+]);
 
 class ComponentGalleryApp extends StatelessWidget {
   const ComponentGalleryApp({this.themeMode = ThemeMode.system, super.key});
@@ -41,16 +52,7 @@ class ComponentGalleryScreen extends StatelessWidget {
           const SectionLabel('Actions'),
           const _ActionSpecimen(),
           const SectionLabel('Evidence'),
-          const TracendCard(
-            child: TrajectoryLens(
-              evidence: [
-                'Sleep stable',
-                'Training on plan',
-                'Nutrition on target',
-              ],
-              decision: 'Maintain plan',
-            ),
-          ),
+          TrajectoryTrend(history: _galleryHistory),
           const SizedBox(height: TracendSpacing.sm),
           const StatusChip(
             label: 'Confirmed data · current',

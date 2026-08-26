@@ -96,11 +96,15 @@ Deno.serve(async (request) => {
         ? "gemini"
         : Deno.env.get("COACH_MODEL_PROVIDER") === "groq"
         ? "groq"
+        : Deno.env.get("COACH_MODEL_PROVIDER") === "deepseek"
+        ? "deepseek"
         : "mock",
       run_model: Deno.env.get("COACH_MODEL_PROVIDER") === "gemini"
         ? (Deno.env.get("GEMINI_MODEL") || "unconfigured")
         : Deno.env.get("COACH_MODEL_PROVIDER") === "groq"
         ? (Deno.env.get("GROQ_MODEL") || "unconfigured")
+        : Deno.env.get("COACH_MODEL_PROVIDER") === "deepseek"
+        ? (Deno.env.get("DEEPSEEK_MODEL") || "unconfigured")
         : "deterministic-mock-v1",
     });
     return reply(503, { error: "coaching_unavailable" });

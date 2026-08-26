@@ -29,7 +29,11 @@ class PreferencePromptChip extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(CupertinoIcons.bookmark, size: 16, color: colors.stateStable),
+              Icon(
+                CupertinoIcons.bookmark,
+                size: 16,
+                color: colors.stateStable,
+              ),
               const SizedBox(width: TracendSpacing.xs),
               Expanded(
                 child: Text(
@@ -42,19 +46,16 @@ class PreferencePromptChip extends StatelessWidget {
           const SizedBox(height: TracendSpacing.xxs),
           Text(
             '"$value"',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontStyle: FontStyle.italic,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic),
           ),
           const SizedBox(height: TracendSpacing.xs),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               if (onDismiss != null)
-                TextButton(
-                  onPressed: onDismiss,
-                  child: const Text('Dismiss'),
-                ),
+                TextButton(onPressed: onDismiss, child: const Text('Dismiss')),
               const SizedBox(width: TracendSpacing.xs),
               FilledButton.tonalIcon(
                 onPressed: onConfirm,

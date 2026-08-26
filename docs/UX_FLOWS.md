@@ -6,12 +6,17 @@ Train uses the 4/8-point spacing rhythm and 44-point interactive rows. Active lo
 Syncing, Offline, or Needs attention; resumes entered sets after reopen; and requires explicit skip
 actions. Historical corrections and HealthKit conflicts use review cards with confirmation actions.
 
-Today's Action Stage contains one instruction, one reason, one CTA, and three tappable readiness
-factors named Recovery, Training, and Nutrition. Each opens a plain-language explanation of its
-state and source. Apple Health combines refresh, useful signals, coaching impact and trends in one
-section; technical gaps remain collapsed. Progress uses one date-ordered effective measurement
-timeline for its headline, raw chart, and recent history; smoothing is never shown as the current
-weight.
+Today's Action Stage contains one instruction, one reason, and one CTA with a sync chip
+that refreshes Apple Health (when connected), the daily brief, and today's coaching
+decision together, followed by the readiness readouts (Chunk 6): a full-width recovery
+score with its five drivers (HRV, RHR, sleep, respiratory rate, prior strain), a real
+7-day health trend from Apple Health, and training load (ACWR) folded into the session
+plan card. Evidence is shown inline in these readouts (Chunk 7): drivers list their true
+z-scores, missing signals say No data, and a recovery score appears only when at least
+one component is usable. Apple Health connect/refresh controls and the sync status card
+live in the profile only — Today never prompts for Health access. Progress uses
+one date-ordered effective measurement timeline for its headline, raw chart, and recent
+history; smoothing is never shown as the current weight.
 
 **Status:** Authoritative MVP navigation, screen, and interaction behavior\
 **Platform:** iOS-first Flutter app\
@@ -142,10 +147,12 @@ missing information, and safety boundaries. Actions are **Approve plan**, **Edit
 ┌─────────────────────────────────────┐
 │ Today                     Account   │
 │                                     │
-│ Recovery   Training   Nutrition     │
-│                         TRAIN: Push │
-│ Keep the planned session.           │
-│ [ Start workout ]    See evidence   │
+│ RECOVERY              [Good]        │
+│ 72 / 100 · five driver rows         │
+│ 7-DAY TREND        HRV · ms         │
+│ ~~~~ real recorded days ~~~~        │
+│ TRAIN: Push · LOAD 1.05 Optimal     │
+│ [ Start workout ]  [ View analytics ]│
 │                                     │
 │ Check-in needed · 1 min             │
 │ Training perspective         ›      │
@@ -174,17 +181,22 @@ updates Today and recomputes only when necessary.
 
 ### Evidence detail
 
-Opening a readiness factor shows observation, source, freshness, and any missing action in ordinary
-coaching language. Deterministic calculation and AI interpretation are labeled separately. Training
-and Nutrition remain perspectives in one controlled decision pipeline, not independent agents. The
-Coach tab provides direct user questions through the same workflow and never behaves like three
-separate autonomous chatbots. A live assistant message is labeled with its provider (for the owner
-test, **Qwen AI response**); a provider or validation failure never substitutes generic coaching
-text and instead shows a retryable unavailable state.
+Readiness evidence is shown inline, not hidden behind a tap: the recovery readout lists
+each driver's true z-score next to its bar and shows No data for unusable components,
+the 7-day trend plots only recorded days with its date range and recorded-day count, and
+the session plan card states the real ACWR and zone. Sync source and freshness live in
+the profile's Apple Health status card and beside the hero sync chip (last health sync
+time), in ordinary coaching language. Deterministic calculation and AI interpretation are
+labeled separately. Training and Nutrition remain perspectives in one controlled decision
+pipeline, not independent agents. The Coach tab provides direct user questions through the
+same workflow and never behaves like three separate autonomous chatbots. A live assistant
+message is labeled with its provider (for the owner test, **Qwen AI response**); a
+provider or validation failure never substitutes generic coaching text and instead shows a
+retryable unavailable state.
 
-Today uses a real timeline for check-in, workout, meal, and review actions. The primary decision
-always uses **Do this next** and remains actionable when AI is offline. Each readiness factor opens
-its source and freshness; a missing factor becomes a direct recovery action.
+Today uses a real timeline for check-in, workout, meal, and review actions. The primary
+decision always uses **Do this next** and remains actionable when AI is offline. A missing
+readiness signal becomes a direct recovery action (sync Apple Health or add a check-in).
 
 Coach shows an expandable **Your coaching context** card before conversation. It lists approved
 plan, goal/profile, Apple Health, check-ins, confirmed nutrition, completed Tracend workouts,
@@ -358,9 +370,10 @@ next focus, and a **Mark reviewed** acknowledgement action.
 - Distinguish connected, partial, stale, unavailable, and manual-only.
 - A partial label counts data categories with samples in the sync window; it does not claim that an
   empty category proves permission denial. Show found and missing categories in plain language.
-- Today reads stored daily summaries back into dated sleep, steps, energy, workout,
-  resting-heart-rate, and HRV evidence. Draw a trend only when at least two real dated values exist;
-  otherwise show the missing-data action.
+- Today's health evidence is inline: the recovery readout's five driver rows and the
+  7-day trend. The trend draws only when at least four real recorded days exist inside
+  its window; otherwise it shows the missing-data action ("Building baseline"). Apple
+  Health connect/refresh controls and the sync status card live in the profile only.
 - Revocation keeps manual features usable and explains iOS settings.
 - Sync shows date range and last success instead of an indefinite spinner.
 
@@ -381,7 +394,10 @@ authorization remains active, Tracend recreates it from the local choice.
 **AI usage** shows only the authenticated user's sanitized current-period request count, token or
 image usage where meaningful, estimated cost, and service availability. It never reveals API keys,
 prompts, provider request identifiers, raw errors, or another user's aggregate. Values are
-operational estimates, not invoices or subscription quotas.
+operational estimates, not invoices or subscription quotas. Budget thresholds (warning, hard stop,
+daily limit) render from the server budget state rather than hardcoded copy, and Refresh usage
+refetches the live summary. When budget fields are unavailable the screen degrades to run counts
+and estimates without threshold claims.
 
 Provider setup is not a mobile flow. If the owner has not configured a server-side provider secret,
 Account shows **AI service not configured** and explains that approved plans and manual logging
@@ -389,6 +405,11 @@ remain available.
 
 Privacy screens show consent by purpose, provider disclosure, photo retention controls, connected
 data, export, and deletion.
+
+**Privacy and AI processing** opens a read-only consent ledger: the latest append-only
+`consent_records` entry per purpose (terms, privacy, progress photo storage, progress photo AI,
+notifications) with its grant/withdrawal state, date, and notice version. Purposes without a record
+say so. The ledger never edits records; withdrawal happens through the flow that owns each purpose.
 
 - Export and deletion require recent authentication.
 - Export asks for the account password and a separate 12-character export password, explains media

@@ -1,0 +1,189 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main, feature/feature-engine]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Verify (tests + migration check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: "2.9.0"
+
+      - name: Deno format + lint + test
+        run: |
+          deno fmt --check supabase/functions
+          deno lint supabase/functions
+          deno test --allow-env --allow-net supabase/functions
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.7"
+          cache: true
+
+      - name: Flutter analyze + test
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Migration collision check
+        run: |
+          DUPES=$(ls supabase/migrations/*.sql 2>/dev/null | sed 's|.*/||' | grep -oP '^\d+' | sort | uniq -d)
+          if [ -n "$DUPES" ]; then
+            echo "::error::Duplicate migration timestamps found: $DUPES"
+            exit 1
+          fi
+          echo "No duplicate migration timestamps found."
+
+  dry-run:
+    name: Migration Dry-Run
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: "2.101.0"
+
+      - name: Dry-run migration
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          supabase link --project-ref qsfzzsjenopqqqhvpyaw
+          supabase db push --linked --dry-run
+
+  backup:
+    name: Database Backup
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: "2.101.0"
+
+      - name: Dump production schema + data
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          supabase link --project-ref qsfzzsjenopqqqhvpyaw
+          TIMESTAMP=$(date -u +%Y-%m-%dT%H%M%S)
+          supabase db dump --linked --data-only > "backup-${TIMESTAMP}.sql" || true
+          supabase db dump --linked > "backup-${TIMESTAMP}-schema.sql" || true
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-backup
+          path: backup-*.sql
+          retention-days: 14
+
+  deploy-migrations:
+    name: Deploy Migrations
+    needs: [dry-run, backup]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: "2.101.0"
+
+      - name: Push migrations to production
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          supabase link --project-ref qsfzzsjenopqqqhvpyaw
+          supabase db push --linked
+
+  deploy-functions:
+    name: Deploy Edge Functions
+    needs: deploy-migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        function:
+          - coach-chat
+          - coach-decide
+          - health-check
+          - health-sync
+          - meal-analyze
+          - meal-media-retention
+          - onboarding-propose-plan
+          - privacy-delete-account
+          - privacy-export
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: "2.101.0"
+
+      - name: Deploy ${{ matrix.function }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase link --project-ref qsfzzsjenopqqqhvpyaw
+          supabase functions deploy ${{ matrix.function }} --project-ref qsfzzsjenopqqqhvpyaw --use-api
+
+  smoke-test:
+    name: Smoke Test
+    needs: deploy-functions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Health check
+        run: |
+          for i in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://qsfzzsjenopqqqhvpyaw.supabase.co/functions/v1/health-check)
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed (200)."
+              exit 0
+            fi
+            echo "Attempt $i: got $STATUS, retrying..."
+            sleep 10
+          done
+          echo "::error::Health check failed after 3 attempts."
+          exit 1
+
+  tag-release:
+    name: Tag Release
+    needs: smoke-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create release tag
+        run: |
+          TAG="v$(date -u +%Y.%m.%d-%H%M)"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Release tagged: $TAG"

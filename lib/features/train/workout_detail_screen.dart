@@ -123,8 +123,7 @@ class WorkoutDetailScreen extends StatelessWidget {
                       CupertinoPageRoute(
                         builder: (_) => ActiveWorkoutScreen(
                           workout: currentWorkout,
-                          repository:
-                              repository ?? FixtureWorkoutRepository(),
+                          repository: repository ?? FixtureWorkoutRepository(),
                           sessionDate: sessionDate,
                         ),
                       ),

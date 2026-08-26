@@ -4,6 +4,7 @@ This file has been consolidated into [AGENTS.md](AGENTS.md). All toolchain comma
 instructions, and development workflows are maintained there as the single source of truth.
 
 See [AGENTS.md](AGENTS.md) for:
+
 - Toolchain setup and bootstrap
 - Wrapper script conventions
 - Full verification sequence (`pre-deploy.sh`)

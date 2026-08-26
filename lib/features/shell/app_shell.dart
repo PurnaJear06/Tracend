@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +16,7 @@ import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/widgets/tracend_glass.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({required this.environment, this.onSignOut, super.key});
@@ -67,6 +66,12 @@ class _AppShellState extends State<AppShell> {
         : const FixtureDailyBriefRepository();
   }
 
+  void _selectTab(int index) {
+    if (index == _selectedIndex) return;
+    HapticFeedback.selectionClick();
+    setState(() => _selectedIndex = index);
+  }
+
   @override
   Widget build(BuildContext context) {
     final destinations = <Widget>[
@@ -78,16 +83,29 @@ class _AppShellState extends State<AppShell> {
         health: _health,
         coach: _coach,
         brief: _brief,
+        nutrition: _nutrition,
+        onOpenProgress: () => _selectTab(4),
+        onOpenNutrition: () => _selectTab(3),
       ),
-      TrainScreen(key: const ValueKey('tab_train'), repository: _workouts),
+      TrainScreen(
+        key: const ValueKey('tab_train'),
+        repository: _workouts,
+        brief: _brief,
+        coach: _coach,
+      ),
       CoachScreen(key: const ValueKey('tab_coach'), repository: _coach),
-      NutritionScreen(key: const ValueKey('tab_nutrition'), repository: _nutrition),
+      NutritionScreen(
+        key: const ValueKey('tab_nutrition'),
+        repository: _nutrition,
+        coach: _coach,
+      ),
       ProgressScreen(
         key: const ValueKey('tab_progress'),
         repository: _progress,
         training: _workouts is TrainingHubRepository
             ? _workouts as TrainingHubRepository
             : null,
+        brief: _brief,
       ),
     ];
 
@@ -96,11 +114,7 @@ class _AppShellState extends State<AppShell> {
       body: IndexedStack(index: _selectedIndex, children: destinations),
       bottomNavigationBar: _FloatingTabBar(
         selectedIndex: _selectedIndex,
-        onSelected: (index) {
-          if (index == _selectedIndex) return;
-          HapticFeedback.selectionClick();
-          setState(() => _selectedIndex = index);
-        },
+        onSelected: _selectTab,
       ),
     );
   }
@@ -145,7 +159,6 @@ class _FloatingTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tracendColors;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final bottom = MediaQuery.paddingOf(context).bottom;
     return Padding(
@@ -154,40 +167,32 @@ class _FloatingTabBar extends StatelessWidget {
         heightFactor: 1,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 620),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(TracendRadii.navigation),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: colors.surface.withValues(alpha: 0.90),
-                  borderRadius: BorderRadius.circular(TracendRadii.navigation),
-                  border: Border.all(
-                    color: colors.borderSubtle.withValues(alpha: 0.90),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.12),
-                      blurRadius: 28,
-                      offset: const Offset(0, 12),
-                    ),
-                  ],
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(TracendRadii.navigation),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 28,
+                  offset: const Offset(0, 12),
                 ),
-                child: SizedBox(
-                  height: 70,
-                  child: Row(
-                    children: [
-                      for (var index = 0; index < _items.length; index++)
-                        Expanded(
-                          child: _TabItem(
-                            item: _items[index],
-                            selected: selectedIndex == index,
-                            reduceMotion: reduceMotion,
-                            onTap: () => onSelected(index),
-                          ),
+              ],
+            ),
+            child: TracendGlass(
+              child: SizedBox(
+                height: 70,
+                child: Row(
+                  children: [
+                    for (var index = 0; index < _items.length; index++)
+                      Expanded(
+                        child: _TabItem(
+                          item: _items[index],
+                          selected: selectedIndex == index,
+                          reduceMotion: reduceMotion,
+                          onTap: () => onSelected(index),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -261,6 +266,11 @@ class _TabItem extends StatelessWidget {
                   item.label,
                   maxLines: 1,
                   overflow: TextOverflow.fade,
+                  // iOS tab bars keep labels near-fixed under Dynamic Type;
+                  // clamp so the label never overflows the 70pt capsule.
+                  textScaler: MediaQuery.textScalerOf(
+                    context,
+                  ).clamp(maxScaleFactor: 1.3),
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     fontSize: 11,
                     height: 1,

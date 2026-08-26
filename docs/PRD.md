@@ -7,10 +7,11 @@ in-progress sessions, distinguishes prescribed, substituted and extra work, and 
 workout matches separate from Tracend's set-level evidence. Duration conflicts require user
 confirmation.
 
-Today presents one action once, followed by three plain-language, tappable readiness factors:
-Recovery, Training, and Nutrition. Apple Health uses plain-language availability and progressive
-disclosure. Weight and activity trends use real dates, readable scales, direct
-current/average/change explanations, and audited same-day corrections.
+Today presents one action once, followed by plain-language readiness readouts: a full-width
+recovery score with its five drivers, a real 7-day health trend, and training load plus
+nutrition adherence in their own readout cards. Apple Health uses plain-language
+availability and progressive disclosure. Weight and activity trends use real dates, readable
+scales, direct current/average/change explanations, and audited same-day corrections.
 
 **Status:** Authoritative MVP requirements\
 **Product:** Tracend\

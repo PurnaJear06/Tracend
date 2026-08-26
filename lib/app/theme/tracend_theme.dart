@@ -5,11 +5,32 @@ abstract final class TracendTheme {
   static ThemeData get light => _build(Brightness.light, TracendColors.light);
   static ThemeData get dark => _build(Brightness.dark, TracendColors.dark);
 
+  static TextStyle dataUtility(TracendColors colors) => TextStyle(
+    fontFamily: TracendFonts.monoFamily,
+    color: colors.textSecondary,
+    fontSize: 13,
+    height: 18 / 13,
+    fontWeight: FontWeight.w400,
+    fontFeatures: const [FontFeature.tabularFigures()],
+  );
+
+  /// Label-caps per DESIGN_SYSTEM §3.2: 11/16, letter-spacing 0.08em, w500.
+  /// The single style for uppercase section tags and card identifiers —
+  /// caps labels never render smaller than 11pt or wider than 0.08em
+  /// tracking (owner QA: wider tracking read as stretched type).
+  static TextStyle labelCaps(BuildContext context, {Color? color}) =>
+      Theme.of(context).textTheme.labelMedium!.copyWith(
+        fontSize: 11,
+        height: 16 / 11,
+        letterSpacing: 0.9,
+        fontWeight: FontWeight.w500,
+        color: color,
+      );
+
   static ThemeData _build(Brightness brightness, TracendColors colors) {
     final base = ThemeData(
       brightness: brightness,
       useMaterial3: true,
-      fontFamily: '.SF Pro Text',
       scaffoldBackgroundColor: colors.canvas,
       colorScheme: ColorScheme(
         brightness: brightness,
@@ -29,6 +50,7 @@ abstract final class TracendTheme {
 
     final textTheme = base.textTheme.copyWith(
       displaySmall: TextStyle(
+        fontFamily: TracendFonts.displayFamily,
         color: colors.textPrimary,
         fontSize: 32,
         height: 1.08,
@@ -36,6 +58,7 @@ abstract final class TracendTheme {
         letterSpacing: -0.8,
       ),
       headlineMedium: TextStyle(
+        fontFamily: TracendFonts.displayFamily,
         color: colors.textPrimary,
         fontSize: 26,
         height: 1.15,
@@ -43,12 +66,14 @@ abstract final class TracendTheme {
         letterSpacing: -0.5,
       ),
       titleLarge: TextStyle(
+        fontFamily: TracendFonts.displayFamily,
         color: colors.textPrimary,
         fontSize: 20,
         height: 1.25,
         fontWeight: FontWeight.w700,
       ),
       titleMedium: TextStyle(
+        fontFamily: TracendFonts.displayFamily,
         color: colors.textPrimary,
         fontSize: 17,
         height: 1.35,

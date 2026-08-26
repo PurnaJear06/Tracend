@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -54,28 +56,40 @@ SentryEvent? _sentryBeforeSend(SentryEvent event, Hint hint) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  LicenseRegistry.addLicense(() async* {
+    final splineSans = await rootBundle.loadString(
+      'assets/fonts/OFL-SplineSans.txt',
+    );
+    yield LicenseEntryWithLineBreaks(const ['Spline Sans'], splineSans);
+    final ibmPlex = await rootBundle.loadString('assets/fonts/OFL-IBMPlex.txt');
+    yield LicenseEntryWithLineBreaks(const ['IBM Plex Mono'], ibmPlex);
+  });
+
   const environment = AppEnvironment.fromCompileTime();
 
-  await runZonedGuarded(() async {
-    await SentryFlutter.init(
-      (options) {
-        options.dsn = environment.sentryDsn;
-        options.tracesSampleRate = 0.1;
-        options.attachStacktrace = true;
-        options.beforeSend = _sentryBeforeSend;
-      },
-      appRunner: () async {
-        if (environment.hasSupabaseConfiguration) {
-          await Supabase.initialize(
-            url: environment.supabaseUrl,
-            publishableKey: environment.supabasePublishableKey,
-          );
-        }
+  await runZonedGuarded(
+    () async {
+      await SentryFlutter.init(
+        (options) {
+          options.dsn = environment.sentryDsn;
+          options.tracesSampleRate = 0.1;
+          options.attachStacktrace = true;
+          options.beforeSend = _sentryBeforeSend;
+        },
+        appRunner: () async {
+          if (environment.hasSupabaseConfiguration) {
+            await Supabase.initialize(
+              url: environment.supabaseUrl,
+              publishableKey: environment.supabasePublishableKey,
+            );
+          }
 
-        runApp(const TracendApp(environment: environment));
-      },
-    );
-  }, (exception, stackTrace) async {
-    await Sentry.captureException(exception, stackTrace: stackTrace);
-  });
+          runApp(const TracendApp(environment: environment));
+        },
+      );
+    },
+    (exception, stackTrace) async {
+      await Sentry.captureException(exception, stackTrace: stackTrace);
+    },
+  );
 }

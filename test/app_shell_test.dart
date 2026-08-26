@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/app.dart';
 import 'package:tracend/app/environment.dart';
+import 'package:tracend/shared/widgets/tracend_glass.dart';
 
 const _environment = AppEnvironment(
   name: 'test',
@@ -68,4 +69,20 @@ void main() {
 
     expect(find.text('PRIVACY AND DATA'), findsOneWidget);
   });
+
+  testWidgets(
+    'tab capsule uses TracendGlass within the two-site glass budget',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(const TracendApp(environment: _environment));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TracendGlass), findsNWidgets(2));
+      expect(find.byType(BackdropFilter), findsNWidgets(2));
+    },
+  );
 }

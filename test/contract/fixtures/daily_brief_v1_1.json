@@ -1,0 +1,127 @@
+{
+  "schema_version": "1.1",
+  "local_date": "2026-07-25",
+  "today_workout": {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "name": "Push Day",
+    "objective": "Build upper body pressing strength and hypertrophy",
+    "weekday": 6,
+    "estimated_minutes": 60,
+    "warm_up": "Band pull-aparts, shoulder dislocates, light dumbbell presses",
+    "cooldown_cardio": "10 min incline walk",
+    "exercises": [
+      {
+        "order": 1,
+        "name": "Barbell Bench Press",
+        "set_count": 4,
+        "rep_min": 6,
+        "rep_max": 8,
+        "target_rpe": 8,
+        "rest_seconds": 120,
+        "notes": "Focus on controlled eccentric"
+      }
+    ]
+  },
+  "next_meal": {
+    "id": "meal-lunch-001",
+    "order": 2,
+    "status": "due",
+    "meal_type": "lunch",
+    "name": "Grilled Chicken Bowl",
+    "target_calories": 600,
+    "target_protein_g": 50,
+    "target_carbohydrate_g": 60,
+    "target_fat_g": 20
+  },
+  "check_in": {
+    "sleep_quality": 3,
+    "energy": 4,
+    "soreness": 2,
+    "hunger": 3,
+    "mood": 4,
+    "pain_severity": 0,
+    "available_to_train": true,
+    "local_date": "2026-07-25"
+  },
+  "health": {
+    "local_date": "2026-07-25",
+    "last_synced_at": "2026-07-25T06:00:00+05:30",
+    "present_types": ["hrv_sdnn", "resting_heart_rate", "sleep", "weight"],
+    "completeness": "partial"
+  },
+  "nutrition": {
+    "daily_calories_remaining": 1800,
+    "daily_protein_remaining": 120,
+    "meals_today": 1,
+    "meals_plan": 4
+  },
+  "computed": {
+    "baselines": {
+      "hrv_sdnn_ms": {
+        "ewma": 49.45,
+        "spread": 3.0,
+        "n_obs": 6,
+        "confidence": "low"
+      },
+      "resting_hr_bpm": {
+        "ewma": 55.5,
+        "spread": 1.1,
+        "n_obs": 6,
+        "confidence": "low"
+      },
+      "sleep_minutes": {
+        "ewma": 406.7,
+        "spread": 10.4,
+        "n_obs": 6,
+        "confidence": "low"
+      },
+      "weight_kg": {
+        "ewma": 77.5,
+        "spread": 0.4,
+        "n_obs": 5,
+        "confidence": "low"
+      },
+      "resp_rate_bpm": {
+        "ewma": 14.3,
+        "spread": 0.6,
+        "n_obs": 4,
+        "confidence": "low"
+      }
+    },
+    "scores": {
+      "recovery": 72,
+      "recovery_breakdown": {
+        "hrv_z": 0.517,
+        "rhr_z": 0.455,
+        "sleep_z": 0.798,
+        "resp_rate_z": 0.500,
+        "prev_strain_z": 0.300
+      },
+      "sleep_quality": 85,
+      "sleep_breakdown": {
+        "duration_score": 86.4,
+        "efficiency_score": 92.8,
+        "restorative_score": 43.4,
+        "consistency_score": 95.6
+      },
+      "sleep_debt_minutes": -65,
+      "daily_strain": 42.0,
+      "acwr": 1.15,
+      "training_monotony": 1.8,
+      "weight_trend_7d_kg_per_day": -0.0714,
+      "weight_trend_28d_kg_per_day": -0.0357,
+      "weight_trend_r2_28d": 0.85,
+      "macro_adherence_pct": 95
+    },
+    "data_confidence": "medium"
+  },
+  "latest_decision": {
+    "id": "dec-001",
+    "final_decision": "proceed_as_planned",
+    "reason": "Recovery scores within baseline; no safety signals detected.",
+    "confidence": 0.85,
+    "created_at": "2026-07-25T06:00:00+05:30",
+    "evidence": ["APPROVED_PLAN_ACTIVE", "HEALTH_CONTEXT_AVAILABLE", "RECOVERY_WITHIN_BASELINE", "SLEEP_QUALITY_GOOD", "TRAINING_LOAD_OPTIMAL", "WEIGHT_STABLE", "NUTRITION_ON_TRACK"],
+    "missing_data": []
+  }
+}

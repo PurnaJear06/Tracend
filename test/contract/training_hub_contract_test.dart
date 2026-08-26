@@ -88,7 +88,10 @@ void main() {
         expect(row['name'], isA<String>());
         expect(row['local_date'], isA<String>());
         // local_date must be parseable as DateTime
-        expect(() => DateTime.parse(row['local_date'] as String), returnsNormally);
+        expect(
+          () => DateTime.parse(row['local_date'] as String),
+          returnsNormally,
+        );
       }
     });
 
@@ -117,6 +120,93 @@ void main() {
       final json = _loadFixtureJson(fixture);
       final completedDays = json['completed_day_set'] as List;
 
+      for (final day in completedDays) {
+        expect(day, isA<String>());
+        expect(() => DateTime.parse(day as String), returnsNormally);
+      }
+    });
+  });
+
+  group('Training Hub contract — get_my_training_hub v1.4', () {
+    const fixture = 'training_hub_v1_4.json';
+
+    test('fixture is valid JSON and top-level shape', () {
+      final json = _loadFixtureJson(fixture);
+
+      expect(json['schema_version'], '1.4');
+      expect(json['active_plan'], isA<Map>());
+      expect(json['workouts'], isA<List>());
+      expect(json['recent_sessions'], isA<List>());
+      expect(json['adherence'], isA<Map>());
+      expect(json['progression'], isA<List>());
+      expect(json['completed_day_set'], isA<List>());
+    });
+
+    test('computed metrics field is present and parseable', () {
+      final json = _loadFixtureJson(fixture);
+
+      final computed = Map<String, dynamic>.from(json['computed'] as Map);
+      expect(computed, isNotNull);
+
+      if (computed['acwr'] != null) {
+        expect(computed['acwr'], isA<num>());
+      }
+      if (computed['training_monotony'] != null) {
+        expect(computed['training_monotony'], isA<num>());
+      }
+      if (computed['today_strain'] != null) {
+        expect(computed['today_strain'], isA<num>());
+      }
+      if (computed['recovery_score'] != null) {
+        expect(computed['recovery_score'], isA<num>());
+        expect(computed['recovery_score'], greaterThanOrEqualTo(0));
+        expect(computed['recovery_score'], lessThanOrEqualTo(100));
+      }
+      if (computed['recovery_breakdown'] != null) {
+        final breakdown = Map<String, dynamic>.from(
+          computed['recovery_breakdown'] as Map,
+        );
+        expect(breakdown['hrv_z'], isA<num>());
+        expect(breakdown['resp_rate_z'], isA<num>());
+        expect(breakdown['prev_strain_z'], isA<num>());
+      }
+      if (computed['sleep_quality'] != null) {
+        expect(computed['sleep_quality'], isA<num>());
+      }
+      if (computed['sleep_debt_minutes'] != null) {
+        expect(computed['sleep_debt_minutes'], isA<num>());
+      }
+    });
+
+    test('v1.4 retains all v1.3 fields', () {
+      final json = _loadFixtureJson(fixture);
+      final workouts = (json['workouts'] as List).toMapList();
+      expect(workouts, isNotEmpty);
+      for (final row in workouts) {
+        expect(row['id'], isA<String>());
+        expect(row['name'], isA<String>());
+        expect(row['objective'], isA<String>());
+        expect(row['exercises'], isA<List>());
+      }
+    });
+
+    test('recent_sessions carry workout_id for detail wiring', () {
+      final json = _loadFixtureJson(fixture);
+      final sessions = (json['recent_sessions'] as List).toMapList();
+      expect(sessions, isNotEmpty);
+      for (final row in sessions) {
+        expect(row['name'], isA<String>());
+        expect(row['local_date'], isA<String>());
+        // Matches TrainingSessionSummary parsing (nullable on older payloads)
+        if (row.containsKey('workout_id')) {
+          expect(row['workout_id'], isA<String>());
+        }
+      }
+    });
+
+    test('completed_day_set contains parseable date strings', () {
+      final json = _loadFixtureJson(fixture);
+      final completedDays = json['completed_day_set'] as List;
       for (final day in completedDays) {
         expect(day, isA<String>());
         expect(() => DateTime.parse(day as String), returnsNormally);

@@ -24,6 +24,42 @@ This file is current-state handoff, not durable architecture. Keep detailed hist
 
 ## Current State
 
+- **Recovery honesty (Chunk 7, 2026-08-25; extended 2026-08-26):** migration
+  `20260825120000_recovery_honesty.sql` (additive create-or-replace, no schema changes)
+  fixes `compute_daily_metrics` after production showed recovery 58 on days with no
+  usable data: a component joins the composite only with BOTH a value today AND a
+  baseline with `spread > 0`; unusable components land in
+  `recovery_breakdown.missing_components`; `recovery` is NULL when nothing is usable;
+  the +0.2 optimism offset is removed (baseline → exactly 50); `data_confidence` counts
+  the four HealthKit components (prev_strain missing alone never lowers confidence); all
+  five z-score keys stay non-null for shipped clients. Also fixes the pre-existing
+  `duration_score` baseline bug (since `20260725000000`): it reused the shared `baseline`
+  record, which on resp-present days held the respiratory-rate baseline; it now selects
+  the sleep baseline explicitly. `get_my_daily_brief`
+  schema_version bumped to 1.2. Deploys via CI on merge to main.
+  **2026-08-26 noop StrandAnalytics rigor cross-check** (read-only comparison of
+  `github.com/ryanbr/noop` RecoveryScorer/Baselines/StrainScorer + test discipline)
+  confirmed the weights/sigmoid/baseline design converges with noop, and found two more
+  fabrication leaks, both fixed in the same undeployed migration:
+  (1) `duration_score` now compares **tonight's** sleep minutes against the personal
+  baseline (480-min target fallback) — the old `480/baseline` form ignored tonight's
+  sleep entirely (4 h night = 9 h night; any baseline ≤ 480 pinned at 100 forever);
+  (2) `prev_strain` only joins the composite when the 28-day strain spread > 0 — a
+  single strain day (stddev NULL) or identical days (stddev 0) previously entered at
+  z = 0 with full weight. pgTAP:
+  `supabase/tests/database/recovery_honesty_test.sql` now 33 assertions incl. the
+  owner's exact production day (strain-only fixture: old formula → 69, honest → 62),
+  the single-strain-day case, and the short-night duration case.
+  **Deferred noop-inspired follow-ups (not blocking):** ACWR reports 1.0 with < 7 days
+  of strain history (ALGORITHMS.md says null — doc/code mismatch, needs its own test
+  updates); sleep efficiency assumes 100% when awake minutes are missing and
+  restorative scores 0 when stages are missing (both should drop + renormalize);
+  baseline spread/Winsor bounds are static over full history (noop tracks spread with a
+  21-day EWMA); no baseline staleness tracking; no per-metric physiological sanity
+  gates at fold time; six   vacuous `ok(true)` assertions in
+  `feature_engine_phase_2_test.sql`; no independent reference implementation of the
+  pure math (highest-leverage next rigor investment); cold-start edge: the first-ever
+  logged sleep night scores duration 100 (baseline folds to tonight itself).
 - **Coach Context v5 deployed:** migration `20260716130000_coach_context_v5.sql` replaces
   `prepare_coach_chat_v4` in-place with enriched v5 context. New fields: `nutrition_adherence`
   (days_with_confirmed_meals_7d, schedule_slot_compliance), extended `nutrition_compliance_7day`
@@ -263,3 +299,115 @@ quantities, changes `get_my_daily_brief` to use the latest stored HealthKit summ
 previous 31 days, and keeps rest days unassigned instead of falling back to the first planned
 workout. Verification: Deno 32/32, pgTAP 290/290, Flutter analysis, 65/65 tests, and a strictly
 verified signed iPhone release build.
+
+## Feature Engine Phase 2 (2026-07-25 — code complete, pending deploy)
+
+One additive migration (`20260725000000`) on branch `feature/feature-engine-phase-2`.
+
+**Algorithm fixes (6 discrepancies from Phase 1):**
+- RHR weight: 0.25 → 0.20 (matches spec)
+- Resp rate: added as 5th baseline metric and 0.05-weight composite component (optional, lower = better)
+- Prev strain: now computes 7-day average daily strain (was always 0)
+- Sleep quality: replaced asymmetric z-score formula with 4-component weighted model (duration 0.50 + efficiency 0.20 + restorative 0.20 + consistency 0.10)
+- Sleep debt: `sleep_debt_minutes = 480 - avg_7d_sleep`
+- Confidence tiers: 3-6 → low, 7-13 → medium, 14+ → high (was 4-13 → medium)
+
+**New table (forced RLS):**
+- `daily_computed_metrics` — persisted scoring output, one row per user per local_date. Upserted by
+  `compute_daily_metrics`. Columns: recovery_score, sleep_quality_score, sleep_debt_minutes,
+  daily_strain, acwr, training_monotony, weight trends, macro_adherence_pct, data_confidence,
+  scores_jsonb, baseline_snapshot_jsonb, eligibility_jsonb, schema_version '2.0'.
+
+**Schema changes:**
+- `daily_health_summaries.respiratory_rate_bpm` (numeric, 0-100)
+- `daily_health_summaries.present_types` now includes `resp_rate`
+- `user_baselines.metric_name` and `metric_baseline_history.metric_name` now include `resp_rate_bpm`
+
+**Return shape additions (additive only, backward compatible):**
+- `compute_daily_metrics.scores`: new fields `resp_rate_z` (in recovery_breakdown), `sleep_breakdown`
+  (duration/efficiency/restorative/consistency), `sleep_debt_minutes`
+
+**`recompute_stale_metrics`** now targets gaps in `daily_computed_metrics` instead of
+`feature_snapshots`. Idempotent.
+
+**New docs:** `docs/ALGORITHMS.md` — published formula reference with literature citations (Plews &
+Buchheit 2017, Hunter 1986, Ohayon 2017, Gabbett 2016, Foster 1998).
+
+**Verification:** pgTAP 72/72 (feature_engine_phase_2_test.sql), Flutter 104/104 (15 new contract
+tests), Deno 94/94, iOS release build passes. Dry-run confirms migration compiles against hosted
+target.
+
+Three additive migrations (`20260724000000`–`20260724000002`) deploy the deterministic feature engine
+database layer. All are hosted with local/remote parity.
+
+**New tables (both forced RLS):**
+- `user_baselines` — per-user, per-metric Winsorized EWMA baselines (hrv_sdnn_ms, resting_hr_bpm,
+  sleep_minutes, weight_kg). UNIQUE (user_id, metric_name).
+- `metric_baseline_history` — immutable per-observation audit trail with Winsorization flags and
+  lambda_used.
+
+**6 SQL functions:**
+- `compute_winsorized_ewma` — core EWMA with Winsor outlier clamping, anti-anchoring. IMMUTABLE.
+- `compute_user_baselines` — pulls daily_health_summaries, computes EWMA per metric, upserts
+  baselines + inserts history.
+- `compute_daily_metrics` — orchestrator: runs all scorers, returns full metrics JSONB.
+- `compute_recovery_score` — z-score composite (HRV 0.55, RHR -0.20, sleep 0.15, resp 0.05, strain
+  0.05) → logistic(0-100). Bands: Red 0-34, Yellow 34-67, Green 67-100.
+- `compute_sleep_quality` — duration 0.50 + efficiency 0.20 + restorative 0.20 + consistency 0.10.
+- `evaluate_change_eligibility` — training + nutrition change gates per AI_SAFETY_SPEC §6.
+
+**Enriched `prepare_daily_coaching`:**
+Features JSONB now includes `baselines` (EWMA, spread, confidence per metric), `scores` (recovery,
+sleep_quality, ACWR, monotony, weight_trend, macro_adherence), and `eligibility` (training_change,
+nutrition_change gates).
+
+**Constraint updates:**
+- `feature_snapshots.schema_version`: IN ('1.0', '2.0')
+- `policy_evaluations.policy_version`: IN ('daily-v1', 'eligibility-v1')
+- RPC version bumps: `get_my_training_hub` 1.4, `get_my_daily_brief` 1.1
+
+**Nightly cron:** `recompute_stale_metrics` at 06:00 UTC. Idempotent.
+
+**Provider update:** Gemini `gemini-3.5-flash` with medium thinking is the active Coach/chat
+provider. Groq Qwen is superseded pending evaluation. DeepSeek provider module prepared but not
+activated (no production model approved).
+
+**Verification:** pgTAP 22/22 (feature_engine_baseline_test.sql), Flutter 89/89, Deno provider tests
+pass, iOS release build 25.4MB, all 57 migrations match local/remote. Contract fixture
+`training_hub_v1_4.json` created. ADR 0010 records the decision.
+
+**HealthKit fixes (iOS 26.5):** `hasPermissions()` guard removed from `read()` (false negative on
+iOS 26.5). `connectAndSync()` validates `isConfigured()` before `requestReadAccess()`, distinguishes
+configure vs authorization failures. `_loadTimezone()` uses `maybeSingle()` with UTC fallback. 3-retry
+with exponential backoff for Edge Function calls. Initial backfill reduced from 31 to 7 days.
+`HealthAccessError` enum and `helpText` for structured error reporting.
+
+## Feature Engine Phase 3 — Coach Integration (2026-07-25)
+
+**Branch:** `feature/feature-engine-phase-3`. **Status:** Complete — local gates pass, ready to deploy.
+
+**Migration:** `20260726000000_feature_engine_coach_integration.sql`
+- `prepare_daily_coaching` replaced: evidence codes now computed from feature engine scores (14 codes:
+  `RECOVERY_WITHIN_BASELINE`, `RECOVERY_BELOW_BASELINE`, `SLEEP_QUALITY_GOOD`, `SLEEP_QUALITY_POOR`,
+  `TRAINING_LOAD_OPTIMAL`, `TRAINING_LOAD_ELEVATED`, `WEIGHT_TRENDING_DOWN`, `WEIGHT_TRENDING_UP`,
+  `WEIGHT_STABLE`, `NUTRITION_ON_TRACK`, `NUTRITION_BEHIND`, `DATA_CONFIDENCE_HIGH`,
+  `DATA_CONFIDENCE_LOW`, plus existing `APPROVED_PLAN_ACTIVE`, `HEALTH_CONTEXT_AVAILABLE`,
+  `CHECK_IN_SAFETY_ESCALATION`, `CHECK_IN_RECOVERY_MIXED`).
+- Policy outcome unchanged (pain-based + check-in presence remains the safety gate).
+- `prepare_coach_chat_v6`: wraps v5, reads `daily_computed_metrics`, adds `computed_metrics` section
+  (recovery, sleep, training_load, weight, nutrition, data_confidence).
+
+**Edge Function changes (6 files):**
+- `coach-chat/index.ts`: v5→v6 RPC call (1 line).
+- `coach_chat_provider.ts`: Section 20 in `formatContextAsMarkdown` (computed scores markdown), `cm`
+  abbreviation in `compactContext`.
+- `mock_coach_model_provider.ts`: Multi-branch evidence logic (recovery below baseline → GATHER_DATA,
+  load elevated → ADJUST_TODAY, low confidence → GATHER_DATA, fallback → PROCEED_AS_PLANNED).
+- `gemini_coach_model_provider.ts`, `deepseek_coach_model_provider.ts`,
+  `groq_coach_model_provider.ts`: System instructions appended with full evidence code reference table.
+
+**Tests:** 20 pgTAP assertions in `feature_engine_phase_3_coach_test.sql` — all pass.
+**Contract fixtures:** `daily_brief_v1_1.json` updated with enriched evidence codes,
+`coach_chat_context_v5_0.json` created with `computed_metrics` section.
+
+**Deployment order:** backup → migration dry-run → db push → coach-decide deploy → coach-chat deploy → smoke test.

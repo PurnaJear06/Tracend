@@ -118,26 +118,26 @@ representative text-only month is inexpensive:
 | 4 weekly reviews on stronger model        | 8k input + 1.2k output each |        about $0.15 |
 | onboarding, retries, occasional conflicts |                    variable | budget $0.10–$0.75 |
 
-Gemini is the planned sole live provider for owner dogfooding. Meal/progress vision cost depends on
-the evaluated model, image dimensions/detail, and tokenization. Until measured with real fixtures,
-use a conservative total AI budget of **$1–$5 per active user per month**. This is a planning
-envelope, not a promised bill.
+DeepSeek V4 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
 
-The Gemini Free tier is suitable only for synthetic evaluation data in this project. Restricted
-coaching data requires a billing-enabled paid-service project because unpaid-service data terms do
-not satisfy Tracend's privacy requirements. Billing is a privacy gate as well as a cost decision; it
-does not by itself authorize live traffic.
+The Gemini Free tier is suitable only for synthetic evaluation data. Gemini paid-service routing
+requires billing-enabled project and data-terms review before it can process restricted data.
+Prior Gemini baseline: `gemini-3.5-flash` at USD 1.50/1M input and USD 9.00/1M output tokens
+(2026-07-04 paid standard rate). Coach used medium thinking, meal extraction used low, high was
+reserved for named difficult review fixtures. A USD 3 per-owner monthly warning and USD 5 hard stop
+were enforced server-side, with 30 Coach requests per owner/day. Lite models were not production
+routes.
 
-The production baseline is stable `gemini-3.5-flash`: USD 1.50 per million input tokens and USD 9.00
-per million output tokens at the verified 2026-07-04 paid standard rate. Coach uses medium thinking,
-meal extraction uses low, and high is reserved for named difficult review fixtures. A USD 3
-per-owner monthly warning and USD 5 hard stop are enforced server-side, with 30 Coach requests per
-owner/day. Lite models are not production routes. Quality-adjusted rupee cost is controlled with
-bounded context/output and task-specific thinking.
+**Prior owner test (ADR 0006, 2026-07-11, superseded 2026-07-26):** Groq Qwen `qwen/qwen3.6-27b`
+was used server-side for owner dogfooding through beta. Now superseded pending evaluation.
 
-**Owner test exception (ADR 0006, 2026-07-11):** Groq Qwen `qwen/qwen3.6-27b` is used server-side
-for ten owner-test days only. Groq's free-plan quota is not a number of free days and can change;
-the app additionally enforces 10 total AI requests/day, a USD 1 warning, and a USD 2 hard stop.
+**Active production provider (2026-07-26):** DeepSeek V4 Flash (`deepseek-v4-flash`) via
+`COACH_MODEL_PROVIDER=deepseek`. Pricing at the 2026-07-22 standard rate: USD 0.14 per million input
+tokens (USD 0.0028 cache hit) and USD 0.28 per million output tokens. A typical coach-chat request
+(~5K input + 500 output tokens) costs approximately USD 0.00084. At 30 requests/day this is roughly
+USD 0.75/month. A USD 2 top-up from the DeepSeek console covers approximately 2.5 months of owner
+usage. DeepSeek V4 Flash supports thinking mode, JSON structured output, and a 1M-token context
+window. API is OpenAI-compatible at `https://api.deepseek.com/v1/chat/completions`.
 
 ## 5. Expected Monthly Scenarios
 

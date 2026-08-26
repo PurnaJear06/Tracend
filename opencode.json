@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Swap in your strongest coding model once confirmed (run `opencode models`).
+  // e.g. "model": "deepseek/deepseek-chat",
+  "small_model": "nara/qwen-3.8-max-free",
+  "agent": {
+    "build": {
+      "permission": {
+        "bash": {
+          "*": "allow",
+          // AGENTS.md: agents MUST NOT deploy. Enforced mechanically.
+          "*db push*": "deny",
+          "*functions deploy*": "deny",
+          "git push*": "deny"
+        }
+      }
+    }
+  }
+}

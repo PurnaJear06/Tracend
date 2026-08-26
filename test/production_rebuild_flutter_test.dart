@@ -21,6 +21,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Approved training plan'), findsOneWidget);
     expect(find.textContaining('RPE 8'), findsWidgets);
+    await tester.scrollUntilVisible(
+      find.text('PRESCRIPTION'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining('rest'), findsWidgets);
     await tester.scrollUntilVisible(
       find.textContaining('Planned values are never charted'),
@@ -76,24 +81,28 @@ void main() {
     expect(hub.progression, isEmpty);
   });
 
-  testWidgets('Train shows HealthKit auto-complete prompt when candidate is present', (
-    tester,
-  ) async {
-    final repository = _HealthkitCandidateRepository();
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: TracendTheme.light,
-        home: TrainScreen(repository: repository),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.pumpAndSettle();
-    expect(find.text('Apple Health detected workout'), findsOneWidget);
-    expect(find.text('Full body push'), findsOneWidget);
-    expect(find.textContaining('Apple Health recorded a 60 min workout'), findsOneWidget);
-    expect(find.text('Yes, mark complete'), findsOneWidget);
-    expect(find.text('Log manually'), findsOneWidget);
-  });
+  testWidgets(
+    'Train shows HealthKit auto-complete prompt when candidate is present',
+    (tester) async {
+      final repository = _HealthkitCandidateRepository();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.light,
+          home: TrainScreen(repository: repository),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
+      expect(find.text('Apple Health detected workout'), findsOneWidget);
+      expect(find.text('Full body push'), findsOneWidget);
+      expect(
+        find.textContaining('Apple Health recorded a 60 min workout'),
+        findsOneWidget,
+      );
+      expect(find.text('Yes, mark complete'), findsOneWidget);
+      expect(find.text('Log manually'), findsOneWidget);
+    },
+  );
 
   testWidgets('Train shows HealthKit prompt after tapping a past weekday', (
     tester,
@@ -107,8 +116,17 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.pumpAndSettle();
-    final chips = find.byType(ChoiceChip);
-    await tester.tap(chips.at(1));
+    final yesterday = DateTime.now().subtract(const Duration(days: 1));
+    final key = ValueKey(
+      'date-pill-${yesterday.year.toString().padLeft(4, '0')}-'
+      '${yesterday.month.toString().padLeft(2, '0')}-'
+      '${yesterday.day.toString().padLeft(2, '0')}',
+    );
+    if (find.byKey(key).evaluate().isEmpty) {
+      await tester.tap(find.byKey(const ValueKey('date-strip-previous')));
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.byKey(key));
     await tester.pumpAndSettle();
     await tester.pumpAndSettle();
     expect(find.text('Apple Health detected workout'), findsOneWidget);
@@ -116,23 +134,22 @@ void main() {
     expect(find.text('Yes, mark complete'), findsOneWidget);
   });
 
-  testWidgets('Train shows Start workout when no HealthKit candidate is present', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: TracendTheme.light,
-        home: TrainScreen(repository: FixtureWorkoutRepository()),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Start workout'), findsOneWidget);
-    expect(find.text('Apple Health detected workout'), findsNothing);
-  });
+  testWidgets(
+    'Train shows Start workout when no HealthKit candidate is present',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.light,
+          home: TrainScreen(repository: FixtureWorkoutRepository()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Start workout'), findsOneWidget);
+      expect(find.text('Apple Health detected workout'), findsNothing);
+    },
+  );
 
-  testWidgets('Train shows View workout when day is completed', (
-    tester,
-  ) async {
+  testWidgets('Train shows View workout when day is completed', (tester) async {
     final repository = _CompletedDayRepository();
     await tester.pumpWidget(
       MaterialApp(
@@ -148,7 +165,10 @@ void main() {
 }
 
 class _CompletedDayRepository
-    implements WorkoutRepository, TrainingHubRepository, HealthkitCandidateRepository {
+    implements
+        WorkoutRepository,
+        TrainingHubRepository,
+        HealthkitCandidateRepository {
   @override
   Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
       TrainingHubData(
@@ -161,23 +181,41 @@ class _CompletedDayRepository
         completedDays: {DateTime.now()},
       );
   @override
-  Future<HealthkitCompletionCandidate?> getHealthkitCandidate(DateTime date) async => null;
+  Future<HealthkitCompletionCandidate?> getHealthkitCandidate(
+    DateTime date,
+  ) async => null;
   @override
   Future<PlannedWorkout> loadTodayWorkout() async => PlannedWorkout.fixture;
   @override
   Future<String?> loadDraft(String workoutId) async => null;
   @override
-  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout, {DateTime? localDate}) async => null;
+  Future<Map<String, dynamic>?> loadSession(
+    PlannedWorkout workout, {
+    DateTime? localDate,
+  }) async => null;
   @override
   Future<void> saveDraft(String workoutId, String json) async {}
   @override
   Future<void> clearDraft(String workoutId) async {}
   @override
-  Future<String> start(PlannedWorkout workout, String idempotencyKey, {DateTime? localDate}) async => 'session-1';
+  Future<String> start(
+    PlannedWorkout workout,
+    String idempotencyKey, {
+    DateTime? localDate,
+  }) async => 'session-1';
   @override
-  Future<void> sync(String sessionId, int revision, Map<String, dynamic> draft) async {}
+  Future<void> sync(
+    String sessionId,
+    int revision,
+    Map<String, dynamic> draft,
+  ) async {}
   @override
-  Future<void> complete(String sessionId, int revision, int durationSeconds, Map<String, dynamic> draft) async {}
+  Future<void> complete(
+    String sessionId,
+    int revision,
+    int durationSeconds,
+    Map<String, dynamic> draft,
+  ) async {}
 }
 
 class _ChatRepository
@@ -264,7 +302,10 @@ class _ChatRepository
 }
 
 class _HealthkitCandidateRepository
-    implements WorkoutRepository, TrainingHubRepository, HealthkitCandidateRepository {
+    implements
+        WorkoutRepository,
+        TrainingHubRepository,
+        HealthkitCandidateRepository {
   @override
   Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
       const TrainingHubData(
@@ -276,21 +317,24 @@ class _HealthkitCandidateRepository
         progression: [],
       );
   @override
-  Future<HealthkitCompletionCandidate?> getHealthkitCandidate(DateTime date) async =>
-      HealthkitCompletionCandidate(
-        plannedWorkoutId: PlannedWorkout.fixture.id,
-        plannedWorkoutName: 'Full body push',
-        workoutCount: 1,
-        workoutMinutes: 60,
-        localDate: date,
-      );
+  Future<HealthkitCompletionCandidate?> getHealthkitCandidate(
+    DateTime date,
+  ) async => HealthkitCompletionCandidate(
+    plannedWorkoutId: PlannedWorkout.fixture.id,
+    plannedWorkoutName: 'Full body push',
+    workoutCount: 1,
+    workoutMinutes: 60,
+    localDate: date,
+  );
   @override
   Future<PlannedWorkout> loadTodayWorkout() async => PlannedWorkout.fixture;
   @override
   Future<String?> loadDraft(String workoutId) async => null;
   @override
-  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout, {DateTime? localDate}) async =>
-      null;
+  Future<Map<String, dynamic>?> loadSession(
+    PlannedWorkout workout, {
+    DateTime? localDate,
+  }) async => null;
   @override
   Future<void> saveDraft(String workoutId, String json) async {}
   @override
@@ -300,8 +344,7 @@ class _HealthkitCandidateRepository
     PlannedWorkout workout,
     String idempotencyKey, {
     DateTime? localDate,
-  }) async =>
-      'session-1';
+  }) async => 'session-1';
   @override
   Future<void> sync(
     String sessionId,

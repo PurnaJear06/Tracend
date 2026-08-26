@@ -65,6 +65,12 @@ class HealthKitDataSource implements HealthDataSource {
     if (!Platform.isIOS) return false;
     try {
       await _configure();
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      _lastConfigureError = e.toString();
+      return false;
+    }
+    try {
       return await _health.requestAuthorization(
         _types,
         permissions: List.filled(_types.length, HealthDataAccess.READ),
@@ -75,18 +81,42 @@ class HealthKitDataSource implements HealthDataSource {
     }
   }
 
+  String? _lastConfigureError;
+
+  Future<bool> isConfigured() async {
+    try {
+      await _configure();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String? get lastConfigureError => _lastConfigureError;
+
   @override
   Future<HealthReadResult> read(DateTime start, DateTime end) async {
     if (!Platform.isIOS) {
-      return const HealthReadResult(
+      return HealthReadResult(
         requestedMetrics: requestedMetrics,
         returnedMetrics: {},
         samples: [],
         unavailable: true,
+        accessError: HealthAccessError.platformNotSupported,
       );
     }
     try {
       await _configure();
+    } catch (_) {
+      return HealthReadResult(
+        requestedMetrics: requestedMetrics,
+        returnedMetrics: {},
+        samples: [],
+        unavailable: true,
+        accessError: HealthAccessError.configurationFailed,
+      );
+    }
+    try {
       final samples = <RawHealthSample>[];
       final returned = <HealthMetric>{};
       var successfulQueries = 0;
@@ -108,16 +138,15 @@ class HealthKitDataSource implements HealthDataSource {
           );
         } catch (e) {
           debugPrint('Non-critical error: $e');
-          // A missing type remains unknown/partial; it is never treated as proof
-          // that the user denied access.
         }
       }
       if (successfulQueries == 0) {
-        return const HealthReadResult(
+        return HealthReadResult(
           requestedMetrics: requestedMetrics,
           returnedMetrics: {},
           samples: [],
           unavailable: true,
+          accessError: HealthAccessError.readFailed,
         );
       }
       return HealthReadResult(
@@ -127,11 +156,12 @@ class HealthKitDataSource implements HealthDataSource {
       );
     } catch (e) {
       debugPrint('Non-critical error: $e');
-      return const HealthReadResult(
+      return HealthReadResult(
         requestedMetrics: requestedMetrics,
         returnedMetrics: {},
         samples: [],
         unavailable: true,
+        accessError: HealthAccessError.readFailed,
       );
     }
   }

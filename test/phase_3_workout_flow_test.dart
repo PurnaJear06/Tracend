@@ -13,6 +13,7 @@ class _MemoryWorkoutRepository implements WorkoutRepository {
   String? saved;
   int syncCalls = 0;
   int completeCalls = 0;
+  int? lastDurationSeconds;
   bool failSync = false;
   Map<String, dynamic>? serverSession;
   @override
@@ -25,21 +26,27 @@ class _MemoryWorkoutRepository implements WorkoutRepository {
     Map<String, dynamic> draft,
   ) async {
     completeCalls++;
+    lastDurationSeconds = durationSeconds;
     saved = null;
   }
 
   @override
   Future<String?> loadDraft(String workoutId) async => saved;
   @override
-  Future<Map<String, dynamic>?> loadSession(PlannedWorkout workout, {DateTime? localDate}) async =>
-      serverSession;
+  Future<Map<String, dynamic>?> loadSession(
+    PlannedWorkout workout, {
+    DateTime? localDate,
+  }) async => serverSession;
   @override
   Future<PlannedWorkout> loadTodayWorkout() async => PlannedWorkout.fixture;
   @override
   Future<void> saveDraft(String workoutId, String json) async => saved = json;
   @override
-  Future<String> start(PlannedWorkout workout, String idempotencyKey, {DateTime? localDate}) async =>
-      'server-session';
+  Future<String> start(
+    PlannedWorkout workout,
+    String idempotencyKey, {
+    DateTime? localDate,
+  }) async => 'server-session';
   @override
   Future<void> sync(
     String sessionId,
@@ -162,6 +169,62 @@ void main() {
     expect(fields.elementAt(2).initialValue, '10');
   });
 
+  testWidgets(
+    'sessions older than three hours warn and clamp completion to 180 minutes',
+    (tester) async {
+      final repository = _MemoryWorkoutRepository()
+        ..serverSession = {
+          'session_id': 'server-session',
+          'state': 'in_progress',
+          'revision': 2,
+          'idempotency_key': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          'actual_started_at': DateTime.now()
+              .subtract(const Duration(hours: 4))
+              .toIso8601String(),
+          'exercises': [
+            {
+              'order': 1,
+              'status': 'performed',
+              'pain_flag': false,
+              'sets': [
+                {
+                  'number': 1,
+                  'load_kg': 24,
+                  'repetitions': 10,
+                  'rpe': 8,
+                  'completed': true,
+                },
+              ],
+            },
+          ],
+        };
+      await tester.pumpWidget(
+        _app(
+          ActiveWorkoutScreen(
+            workout: PlannedWorkout.fixture,
+            repository: repository,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 15));
+      await tester.pump();
+      expect(
+        find.textContaining('Session exceeded 3-hour limit'),
+        findsOneWidget,
+      );
+      await tester.scrollUntilVisible(
+        find.text('Complete workout'),
+        500,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Complete workout'));
+      await tester.pumpAndSettle();
+      expect(repository.completeCalls, 1);
+      expect(repository.lastDurationSeconds, 10800);
+    },
+  );
+
   testWidgets('Today opens the bounded daily check-in sheet', (tester) async {
     const environment = AppEnvironment(
       supabaseUrl: '',
@@ -171,17 +234,14 @@ void main() {
     );
     await tester.pumpWidget(_app(const TodayScreen(environment: environment)));
     await tester.scrollUntilVisible(
-      find.text('Add today’s check-in'),
+      find.text('Morning status recorded'),
       300,
       scrollable: find.byType(Scrollable).first,
+      maxScrolls: 100,
     );
-    final tile = tester.widget<ListTile>(
-      find.ancestor(
-        of: find.text('Add today’s check-in'),
-        matching: find.byType(ListTile),
-      ),
-    );
-    tile.onTap!();
+    await tester.ensureVisible(find.text('Morning status recorded'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Morning status recorded'));
     await tester.pumpAndSettle();
     expect(find.text('Daily check-in'), findsOneWidget);
     expect(find.text('Sleep quality'), findsOneWidget);

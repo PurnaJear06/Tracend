@@ -5,8 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/widgets/coach_composer.dart';
+import 'package:tracend/features/coach/widgets/coach_context_card.dart';
+import 'package:tracend/features/coach/widgets/coach_decision_card.dart';
+import 'package:tracend/features/coach/widgets/coach_message_bubble.dart';
 import 'package:tracend/features/coach/widgets/preference_prompt_chip.dart';
-import 'package:tracend/features/coach/widgets/reasoning_chain_card.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class CoachScreen extends StatefulWidget {
@@ -59,8 +62,10 @@ class _CoachScreenState extends State<CoachScreen> {
 
   void _startCooldown(int seconds) {
     _cooldownSubscription?.cancel();
-    final stream = Stream.periodic(const Duration(seconds: 1), (tick) => seconds - tick - 1)
-        .take(seconds);
+    final stream = Stream.periodic(
+      const Duration(seconds: 1),
+      (tick) => seconds - tick - 1,
+    ).take(seconds);
     setState(() => _cooldownRemaining = seconds);
     _cooldownSubscription = stream.listen(
       (remaining) {
@@ -213,7 +218,10 @@ class _CoachScreenState extends State<CoachScreen> {
         }
         final msg = e is TimeoutException
             ? 'Coach took too long to respond. Please try again.'
-            : e.toString().replaceFirst('Exception: ', '').replaceFirst('StateError: ', '');
+            : e
+                  .toString()
+                  .replaceFirst('Exception: ', '')
+                  .replaceFirst('StateError: ', '');
         final elapsed = DateTime.now().difference(started);
         if (chat is SupabaseCoachRepository &&
             elapsed < const Duration(milliseconds: 1200)) {
@@ -337,7 +345,7 @@ class _CoachScreenState extends State<CoachScreen> {
               children: [
                 FutureBuilder<CoachDecision?>(
                   future: _decision,
-                  builder: (context, snapshot) => _PinnedDecision(
+                  builder: (context, snapshot) => CoachDecisionCard(
                     decision: snapshot.data,
                     loading:
                         snapshot.connectionState == ConnectionState.waiting,
@@ -349,7 +357,7 @@ class _CoachScreenState extends State<CoachScreen> {
                   const SizedBox(height: TracendSpacing.sm),
                   FutureBuilder<List<CoachContextSource>>(
                     future: _contextStatus,
-                    builder: (context, snapshot) => _CoachContextCard(
+                    builder: (context, snapshot) => CoachContextCard(
                       sources: snapshot.data,
                       loading:
                           snapshot.connectionState == ConnectionState.waiting,
@@ -374,17 +382,22 @@ class _CoachScreenState extends State<CoachScreen> {
                 if (_preferencePrompt != null) ...[
                   const SizedBox(height: TracendSpacing.sm),
                   PreferencePromptChip(
-                    category: _preferencePrompt!['category'] as String? ?? 'food',
+                    category:
+                        _preferencePrompt!['category'] as String? ?? 'food',
                     prefKey: _preferencePrompt!['key'] as String? ?? '',
                     value: _preferencePrompt!['value'] as String? ?? '',
                     onConfirm: () {
                       final chat = _chat;
                       if (chat is SupabaseCoachRepository) {
                         chat.confirmPreference(
-                          category: _preferencePrompt!['category'] as String? ?? 'food',
+                          category:
+                              _preferencePrompt!['category'] as String? ??
+                              'food',
                           key: _preferencePrompt!['key'] as String? ?? '',
                           value: _preferencePrompt!['value'] as String? ?? '',
-                          provenance: _preferencePrompt!['provenance'] as String? ?? 'chat_statement',
+                          provenance:
+                              _preferencePrompt!['provenance'] as String? ??
+                              'chat_statement',
                         );
                       }
                       setState(() => _preferencePrompt = null);
@@ -413,13 +426,17 @@ class _CoachScreenState extends State<CoachScreen> {
                       ])
                         ActionChip(
                           label: Text(prompt),
+                          materialTapTargetSize: MaterialTapTargetSize.padded,
                           onPressed: () => _send(prompt),
                         ),
                     ],
                   ),
                 ] else
                   for (final message in _messages) ...[
-                    _MessageBubble(message: message),
+                    CoachMessageBubble(
+                      message: message,
+                      onSendFollowUp: (prompt) => _send(prompt),
+                    ),
                     const SizedBox(height: TracendSpacing.sm),
                   ],
                 if (_sending)
@@ -433,7 +450,7 @@ class _CoachScreenState extends State<CoachScreen> {
               ],
             ),
           ),
-          _Composer(
+          CoachComposer(
             controller: _composer,
             enabled: !_sending && _chat != null && _cooldownRemaining == null,
             cooldownRemaining: _cooldownRemaining,
@@ -443,293 +460,4 @@ class _CoachScreenState extends State<CoachScreen> {
       ),
     ),
   );
-}
-
-class _PinnedDecision extends StatelessWidget {
-  const _PinnedDecision({
-    required this.decision,
-    required this.loading,
-    required this.generating,
-    required this.onGenerate,
-  });
-  final CoachDecision? decision;
-  final bool loading;
-  final bool generating;
-  final VoidCallback onGenerate;
-  @override
-  Widget build(BuildContext context) {
-    if (loading) return const TracendCard(child: LinearProgressIndicator());
-    if (decision == null) {
-      return TracendCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'No daily decision yet',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: TracendSpacing.xs),
-            const Text(
-              'Generate one from your approved plan and latest confirmed evidence.',
-            ),
-            const SizedBox(height: TracendSpacing.sm),
-            FilledButton(
-              onPressed: generating ? null : onGenerate,
-              child: const Text('Generate today’s decision'),
-            ),
-          ],
-        ),
-      );
-    }
-    return TracendCard(
-      raised: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                CupertinoIcons.pin_fill,
-                color: context.tracendColors.actionPrimary,
-              ),
-              const SizedBox(width: TracendSpacing.xs),
-              Expanded(
-                child: Text(
-                  'Head Coach · ${decision!.confidence} confidence',
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: TracendSpacing.sm),
-          Text(
-            decision!.finalDecision,
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: TracendSpacing.xs),
-          Text(decision!.reason),
-          if (decision!.evidence.isNotEmpty) ...[
-            const SizedBox(height: TracendSpacing.sm),
-            for (final item in decision!.evidence)
-              Text(
-                item['label'] as String,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-          ],
-          const SizedBox(height: TracendSpacing.sm),
-          OutlinedButton(
-            onPressed: generating ? null : onGenerate,
-            child: const Text('Refresh decision'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
-  final CoachMessage message;
-  @override
-  Widget build(BuildContext context) {
-    final user = message.role == 'user';
-    final colors = context.tracendColors;
-    return Align(
-      alignment: user ? Alignment.centerRight : Alignment.centerLeft,
-      child: Semantics(
-        label: user ? 'You said' : 'Coach said',
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 620),
-          padding: const EdgeInsets.all(TracendSpacing.md),
-          decoration: BoxDecoration(
-            color: user ? colors.actionPrimary : colors.surface,
-            border: user ? null : Border.all(color: colors.borderSubtle),
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(18),
-              topRight: const Radius.circular(18),
-              bottomLeft: Radius.circular(user ? 18 : 4),
-              bottomRight: Radius.circular(user ? 4 : 18),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SelectableText(
-                message.content,
-                style: TextStyle(
-                  color: user ? colors.actionOnPrimary : colors.textPrimary,
-                  height: 1.45,
-                ),
-              ),
-              if (!user && message.reasoningChain.isNotEmpty) ...[
-                const SizedBox(height: TracendSpacing.sm),
-                ReasoningChainCard(chain: message.reasoningChain),
-              ],
-              if (!user && message.modelProvider != null) ...[
-                const SizedBox(height: TracendSpacing.xs),
-                TracendPill(
-                  label: message.modelProvider == 'groq'
-                      ? 'Qwen AI response'
-                      : '${message.modelProvider} AI response',
-                  icon: CupertinoIcons.check_mark_circled,
-                ),
-              ],
-              if (!user &&
-                  (message.evidence.isNotEmpty ||
-                      message.missingData.isNotEmpty)) ...[
-                const SizedBox(height: TracendSpacing.xs),
-                ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: EdgeInsets.zero,
-                  title: const Text('Evidence used and data gaps'),
-                  children: [
-                    for (final item in message.evidence)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        title: Text(item['label'] as String),
-                        subtitle: Text(item['source'] as String),
-                      ),
-                    if (message.missingData.isNotEmpty)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Missing: ${message.missingData.join(', ')}',
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-              if (!user && message.suggestedFollowUps.isNotEmpty) ...[
-                const SizedBox(height: TracendSpacing.sm),
-                Text(
-                  'Suggested next actions',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: TracendSpacing.xxs),
-                for (final prompt in message.suggestedFollowUps)
-                  Text('• $prompt'),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CoachContextCard extends StatelessWidget {
-  const _CoachContextCard({required this.sources, required this.loading});
-  final List<CoachContextSource>? sources;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    if (loading) {
-      return const TracendCard(child: LinearProgressIndicator(minHeight: 3));
-    }
-    final values = sources ?? const <CoachContextSource>[];
-    final available = values.where((source) => source.available).length;
-    final missing = values.where((source) => !source.available).toList();
-    return TracendCard(
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: EdgeInsets.zero,
-        title: const Text('Your coaching context'),
-        subtitle: Text(
-          '$available of ${values.length} sources available'
-          '${missing.isEmpty ? '' : ' · ${missing.length} needs data'}',
-        ),
-        children: [
-          for (final source in values)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              leading: Icon(
-                source.available
-                    ? CupertinoIcons.check_mark_circled_solid
-                    : CupertinoIcons.exclamationmark_circle,
-                color: source.available
-                    ? context.tracendColors.stateStable
-                    : context.tracendColors.stateAttention,
-              ),
-              title: Text(source.label),
-              subtitle: Text(
-                source.available
-                    ? [
-                        if (source.records > 0) '${source.records} records',
-                        if (source.latestDate != null)
-                          'latest ${source.latestDate}',
-                      ].join(' · ')
-                    : 'No confirmed records yet',
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Composer extends StatelessWidget {
-  const _Composer({
-    required this.controller,
-    required this.enabled,
-    required this.onSend,
-    this.cooldownRemaining,
-  });
-  final TextEditingController controller;
-  final bool enabled;
-  final VoidCallback onSend;
-  final int? cooldownRemaining;
-  @override
-  Widget build(BuildContext context) {
-    final cooldownActive = (cooldownRemaining ?? 0) > 0;
-    return SafeArea(
-    top: false,
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: context.tracendColors.canvas,
-        border: Border(
-          top: BorderSide(color: context.tracendColors.borderSubtle),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          TracendSpacing.gutter,
-          TracendSpacing.sm,
-          TracendSpacing.gutter,
-          TracendSpacing.sm,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: controller,
-                enabled: enabled,
-                minLines: 1,
-                maxLines: 5,
-                maxLength: 2000,
-                decoration: InputDecoration(
-                  hintText: cooldownActive
-                      ? 'Limit reached — retry in ${cooldownRemaining}s'
-                      : 'Ask your Coach',
-                  counterText: '',
-                  border: const OutlineInputBorder(),
-                ),
-                textInputAction: TextInputAction.newline,
-              ),
-            ),
-            const SizedBox(width: TracendSpacing.xs),
-            IconButton.filled(
-              tooltip: 'Send message',
-              onPressed: enabled ? onSend : null,
-              icon: const Icon(CupertinoIcons.arrow_up),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-  }
 }

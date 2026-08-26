@@ -27,6 +27,13 @@ transactionally.
 - Canonical units are kilograms, centimeters, kilocalories, grams, minutes, beats per minute, and
   milliseconds.
 - Structured PostgreSQL fields are the MVP memory system. Vector embeddings are deferred.
+- **Forward-only migrations. Never edit an applied migration.**
+- **Every migration must be additive.** Rename, drop, or change column type requires the two-step
+  pattern: (1) add new column + deploy code that reads it; (2) later migration drops old column.
+  New migrations must be safe for the currently-deployed Flutter app and Edge Functions.
+- Every RPC consumed by Flutter (`get_my_training_hub`, `get_my_daily_brief`, etc.) must include an
+  explicit `schema_version` field. Add fields, never remove or rename existing ones in a deployed
+  migration. Only remove fields in a cleanup migration after all consuming builds are updated.
 
 System behavior is defined in [ARCHITECTURE.md](./ARCHITECTURE.md); data classification and
 retention are defined in [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md).
@@ -332,7 +339,8 @@ entries deleted on insertion. Forced RLS, read-only for authenticated.
 
 Immutable, schema-versioned coaching input containing user, trigger, date window, feature-engine
 version, active plan/target references, computed features, coverage, freshness, conflicts,
-missing-data flags, and data hash.
+missing-data flags, and data hash. Schema v2.0 adds `baselines`, `scores` (recovery, sleep_quality,
+ACWR, monotony, weight_trend, macro_adherence), and `eligibility` gates to the features JSONB.
 
 ### `policy_evaluations`
 
@@ -451,3 +459,142 @@ state, embedding provider/model/version, content hash, and vector.
 
 Confirmed structured facts remain canonical. Retrieved text cannot override current goals,
 constraints, plans, or safety policy. Source deletion removes its embeddings.
+
+## 13. Feature Engine
+
+### `user_baselines`
+
+One row per user per metric. Winsorized EWMA baselines computed from `daily_health_summaries` by
+`compute_user_baselines`. Row per (user_id, metric_name). Upserted on each recompute.
+
+| Field          | Type    | Description                                       |
+| -------------- | ------- | ------------------------------------------------- |
+| id             | uuid PK |                                                   |
+| user_id        | uuid FK | auth.users.id                                     |
+| metric_name    | text    | hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg |
+| baseline_value | numeric | Current EWMA                                      |
+| spread         | numeric | MAD spread for z-score denominator                |
+| confidence     | text    | cold_start, low, medium, high                     |
+| n_observations | integer | Count of valid observations processed             |
+| last_observation_date | date | Most recent daily_health_summary date used        |
+| created_at     | timestamptz |                                                |
+| updated_at     | timestamptz |                                                |
+
+UNIQUE (user_id, metric_name). UNIQUE (id, user_id). Forced RLS, read-only for authenticated.
+
+### `metric_baseline_history`
+
+Immutable per-observation audit trail. Append-only via `compute_user_baselines` RPC. One row per raw
+observation processed. Linked list via `prior_baseline_id`.
+
+| Field               | Type    | Description                                |
+| ------------------- | ------- | ------------------------------------------ |
+| id                  | uuid PK |                                            |
+| user_id             | uuid FK | auth.users.id                              |
+| metric_name         | text    |                                            |
+| observation_date    | date    | Source daily_health_summaries date         |
+| raw_value           | numeric | Pre-processing value                       |
+| z_score             | numeric | Post-Winsor z-score                        |
+| ewma_after          | numeric | EWMA after this observation                |
+| was_winsorized      | boolean | Clamped to ±3×spread boundary              |
+| was_outlier_rejected | boolean | Excluded as >5×spread hard outlier         |
+| lambda_used         | numeric | anti-anchoring λ (3-day → 14-day half-life)|
+| prior_baseline_id   | uuid FK | Self-referential linked list               |
+| created_at          | timestamptz |                                         |
+
+Forced RLS, read-only for authenticated.
+
+### Scoring Functions
+
+All PostgreSQL functions, deterministic, service-only SECURITY DEFINER.
+
+| Function                      | Signature                                    | Returns |
+| ----------------------------- | -------------------------------------------- | ------- |
+| `compute_winsorized_ewma`     | (values numeric[], n_obs int)                | numeric |
+| `compute_user_baselines`      | (user_id uuid, date date)                    | void    |
+| `compute_daily_metrics`       | (user_id uuid, date date, tz text)           | jsonb   |
+| `compute_recovery_score`      | internal to compute_daily_metrics            | numeric |
+| `compute_sleep_quality`       | internal to compute_daily_metrics            | numeric |
+| `evaluate_change_eligibility` | (user_id uuid, snapshot_id uuid, version text) | jsonb |
+
+### Orchestrator
+
+`compute_daily_metrics` calls all scorers, returns JSONB with keys: `recovery_score`,
+`recovery_breakdown`, `sleep_quality_score`, `acwr`, `training_monotony`, `weight_trend_7d`,
+`weight_trend_28d`, `macro_adherence_pct`, `data_confidence`, `eligibility`.
+
+Called by: `prepare_daily_coaching`, `prepare_coach_chat_v5`, health-sync post-sync trigger, nightly
+`recompute_stale_metrics` cron (06:00 UTC).
+
+### `daily_computed_metrics`
+
+One row per user per date. Persisted scoring output from `compute_daily_metrics`. Upserted on each compute run.
+
+| Field                        | Type    | Description                                      |
+| ---------------------------- | ------- | ------------------------------------------------ |
+| id                           | uuid PK |                                                  |
+| user_id                      | uuid FK | auth.users.id                                    |
+| local_date                   | date    | Coaching day                                     |
+| recovery_score               | integer | 0–100                                           |
+| sleep_quality_score          | integer | 0–100                                           |
+| sleep_debt_minutes           | integer | Nullable; positive = under target                |
+| daily_strain                 | numeric | sRPE total                                       |
+| acwr                         | numeric | Acute:chronic ratio, nullable                    |
+| training_monotony            | numeric | 7-day avg / stddev, nullable                     |
+| weight_trend_7d_kg_per_day   | numeric | Nullable; OLS slope                              |
+| weight_trend_28d_kg_per_day  | numeric | Nullable; OLS slope                              |
+| macro_adherence_pct          | numeric | Nullable; 14-day avg capped at 200%              |
+| data_confidence              | text    | cold_start, low, medium, high                    |
+| scores_jsonb                 | jsonb   | Full recovery/sleep/strain/adherence breakdown   |
+| baseline_snapshot_jsonb      | jsonb   | Baselines at compute time                        |
+| eligibility_jsonb            | jsonb   | Change eligibility result                        |
+| computed_at                  | timestamptz |                                               |
+| schema_version               | text    | '2.0'                                            |
+
+UNIQUE (user_id, local_date). Forced RLS, read-only for authenticated.
+
+### Algorithm Reference
+
+Full formula definitions with literature citations in [ALGORITHMS.md](./ALGORITHMS.md).
+
+### Baseline Metrics (5 total)
+
+hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm.
+
+### Recovery Score Weights
+
+| Component    | Weight | Direction                     |
+| ------------ | ------ | ----------------------------- |
+| HRV (SDNN)   | 0.55   | Higher = better               |
+| RHR          | 0.20   | Lower = better                |
+| Sleep        | 0.15   | Higher = better               |
+| Resp Rate    | 0.05   | Lower = better (optional)     |
+| Prev Strain  | 0.05   | Lower 7-day avg = better      |
+
+### Sleep Quality Weights
+
+| Component    | Weight |
+| ------------ | ------ |
+| Duration     | 0.50   |
+| Efficiency   | 0.20   |
+| Restorative  | 0.20   |
+| Consistency  | 0.10   |
+
+### Confidence Tiers
+
+- <3 observations → cold_start
+- 3–6 observations → low
+- 7–13 observations → medium
+- ≥14 observations → high
+
+### Schema Additions
+
+- `daily_health_summaries.respiratory_rate_bpm` (numeric, 0–100)
+- `daily_health_summaries.present_types` now includes `resp_rate`
+
+### Constraint Additions
+
+- `feature_snapshots.schema_version` IN ('1.0', '2.0')
+- `policy_evaluations.policy_version` IN ('daily-v1', 'eligibility-v1')
+- `daily_computed_metrics.schema_version` = '2.1'
+- RPC schema_version: `get_my_training_hub` 1.4, `get_my_daily_brief` 1.2

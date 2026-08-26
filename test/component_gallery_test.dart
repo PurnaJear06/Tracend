@@ -68,27 +68,21 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('trajectory lens exposes an ordered evidence summary', (
-    tester,
-  ) async {
+  testWidgets('7-day trend exposes an ordered trend summary', (tester) async {
     final semantics = tester.ensureSemantics();
 
     await tester.pumpWidget(
       const ComponentGalleryApp(themeMode: ThemeMode.light),
     );
     await tester.scrollUntilVisible(
-      find.bySemanticsLabel(
-        'Signals shaping this action: Sleep stable, Training on plan, Nutrition on '
-        'target. Maintain plan',
-      ),
+      find.bySemanticsLabel(RegExp('7-day HRV trend, 18–24 Aug')),
       250,
       scrollable: find.byType(Scrollable).first,
     );
 
     expect(
       find.bySemanticsLabel(
-        'Signals shaping this action: Sleep stable, Training on plan, Nutrition on '
-        'target. Maintain plan',
+        '7-day HRV trend, 18–24 Aug: 42 ms to 53 ms, 7 of 7 days recorded.',
       ),
       findsOneWidget,
     );

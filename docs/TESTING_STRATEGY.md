@@ -42,6 +42,16 @@ accepted as a permanent retry.
 - state reducers, formatters, and token mapping; and
 - redaction and retention-date logic.
 
+### Feature Engine
+
+- **pgTAP (22 tests):** EWMA computation with normal and outlier data, cold-start NULL return,
+  recovery score at known inputs, ACWR ratio, change eligibility gate outcomes, cross-user RLS on
+  `user_baselines` and `metric_baseline_history`. File: `feature_engine_baseline_test.sql`.
+- **Contract fixture:** `training_hub_v1_4.json` validates Flutter can parse enriched RPC shape with
+  baselines, scores, and eligibility fields.
+- **Flutter unit tests (3):** healthSyncStart backfill window (7-day initial, 6-day subsequent),
+  deriveHealthConnectionState bands, canonical normalization preservation.
+
 ### Integration
 
 - PostgreSQL constraints, RLS policies, grants, transactions, idempotency, and version activation;
@@ -87,7 +97,7 @@ trusted server fixtures.
 
 - onboarding autosave and both branches;
 - Account profile, connection, AI service, usage, export, deletion, and sign-out states;
-- Today states and Trajectory Lens semantics;
+- Today states, recovery readout, and 7-day trend semantics;
 - offline workout logging and synchronization;
 - meal candidate editing and confirmation;
 - previous-day nutrition retrieval so confirmed meals remain visible after a coaching-day boundary;
@@ -141,7 +151,11 @@ Contract tests verify that layers can successfully communicate with each other. 
 **Fixture-based contract tests** (Flutter → RPC / Flutter → Edge) use versioned JSON snapshots under
 `test/contract/fixtures/` that represent the exact shape the server is expected to return. When the
 server response shape changes, the fixtures must be updated — and the act of updating them triggers
-a manual review of whether Flutter's parsing code also needs updating.
+a manual review. The review must verify:
+
+1. No field removed that deployed Flutter code depends on
+2. New fields are additive only (or the old field is preserved until a follow-up migration)
+3. `schema_version` is incremented
 
 **Live contract tests** (Deno → DB) connect to local Supabase when `CONTRACT_URL` is set (by
 `pre-deploy.sh` when local Supabase is running). These tests call real RPCs and verify the returned
@@ -186,7 +200,8 @@ Score schema validity, policy compliance, grounding, decision class, hallucinati
 clarity, meal accuracy, latency, and estimated cost. Model, prompt, schema, retrieval, or
 orchestration changes require regression comparison to the baseline.
 
-`gemini-3.5-flash` is the only production route for Coach and separately gated meal/progress vision.
+DeepSeek V4 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
+Lite models are not production routes.
 Meal evaluation covers mixed dishes, oil/sauces, hidden ingredients, portion uncertainty, prompt
 injection, candidate edit rate, latency, and cost. Safety-critical and schema fixtures require 100%;
 routing remains disabled when the gate fails.
@@ -288,51 +303,51 @@ Supports `--schema-only` for lightweight schema backups and `--data-only` for da
 ### 9.2 Edge Function Rollback
 
 `scripts/rollback-function.sh <name>` queries the function's deployment history via `git log`,
-checks out the prior committed version, and redeploys with `--use-api`. Used when a deployed
-Edge Function needs an immediate revert to the previous version.
+checks out the prior committed version, and redeploys with `--use-api`. Used when a deployed Edge
+Function needs an immediate revert to the previous version.
 
 ### 9.3 Health Check
 
-`supabase/functions/health-check/` — a no-auth GET endpoint that returns DB connectivity status
-and a version string. Used by external monitors; does not expose internal details.
+`supabase/functions/health-check/` — a no-auth GET endpoint that returns DB connectivity status and
+a version string. Used by external monitors; does not expose internal details.
 
 ### 9.4 Structured Logging
 
-`supabase/functions/_shared/logger.ts` — JSON-structured logging with correlation ID propagation
-and `LOG_LEVEL` env-var control. Wired into `coach-chat` and `meal-analyze`. Sensitive fields
-(health values, meal content, photo URLs, prompt text) are excluded by design.
+`supabase/functions/_shared/logger.ts` — JSON-structured logging with correlation ID propagation and
+`LOG_LEVEL` env-var control. Wired into `coach-chat` and `meal-analyze`. Sensitive fields (health
+values, meal content, photo URLs, prompt text) are excluded by design.
 
 ## 10. Crash Reporting (Sentry)
 
-Sentry captures unhandled crashes and explicit error events in both Flutter and Edge Functions.
-The DSN is the only identifier reaching the client; the project lives at
-`sentry.io` under `purnajear/flutter`.
+Sentry captures unhandled crashes and explicit error events in both Flutter and Edge Functions. The
+DSN is the only identifier reaching the client; the project lives at `sentry.io` under
+`purnajear/flutter`.
 
-| Layer | Mechanism | DSN Source |
-|-------|-----------|------------|
-| Flutter | `sentry_flutter` SDK — `SentryFlutter.init` with `runZonedGuarded` + `FlutterError.onError` bridge | `--dart-define SENTRY_DSN` (empty = disabled) |
-| Edge Functions | `_shared/sentry.ts` — HTTP `fetch` to Sentry store endpoint, fires silently | `Deno.env.get("SENTRY_DSN")` (Edge Function secret) |
+| Layer          | Mechanism                                                                                          | DSN Source                                          |
+| -------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Flutter        | `sentry_flutter` SDK — `SentryFlutter.init` with `runZonedGuarded` + `FlutterError.onError` bridge | `--dart-define SENTRY_DSN` (empty = disabled)       |
+| Edge Functions | `_shared/sentry.ts` — HTTP `fetch` to Sentry store endpoint, fires silently                        | `Deno.env.get("SENTRY_DSN")` (Edge Function secret) |
 
 **beforeSend scrubber** (Flutter): redacts 19 sensitive keys — `weight_kg`, `sleep_minutes`,
 `resting_heart_rate_bpm`, `heart_rate`, `step_count`, `blood_pressure`, `meal_content`,
 `meal_description`, `food_items`, `ingredients`, `photo_url`, `signed_url`, `image_url`,
 `object_key`, `prompt`, `prompt_text`, `question`, `answer_text`, `answer_payload`.
 
-Edge Functions report exceptions from the main `coach-chat` and `meal-analyze` catch blocks
-with `userId`, `functionName`, and `correlationId` context. Failures are silent — a Sentry
-outage never affects the caller.
+Edge Functions report exceptions from the main `coach-chat` and `meal-analyze` catch blocks with
+`userId`, `functionName`, and `correlationId` context. Failures are silent — a Sentry outage never
+affects the caller.
 
 ## 11. Auth Hardening
 
 Production Supabase Auth settings applied 2026-07-19:
 
-| Setting | Value |
-|---------|-------|
-| Password minimum length | 8 |
-| Password character requirements | lowercase + uppercase + digit |
-| Re-authentication for password change | Required |
-| Email confirmation for new signups | Required |
-| Session inactivity timeout | Deferred (Pro plan) |
-| Session timebox | Deferred (Pro plan) |
+| Setting                               | Value                         |
+| ------------------------------------- | ----------------------------- |
+| Password minimum length               | 8                             |
+| Password character requirements       | lowercase + uppercase + digit |
+| Re-authentication for password change | Required                      |
+| Email confirmation for new signups    | Required                      |
+| Session inactivity timeout            | Deferred (Pro plan)           |
+| Session timebox                       | Deferred (Pro plan)           |
 
 These do not affect existing sessions. New signups must meet the password requirements.

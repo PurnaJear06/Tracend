@@ -1,0 +1,119 @@
+{
+  "schema_version": "1.4",
+  "active_plan": {
+    "title": "Upper/Lower Split",
+    "start_date": "2026-01-05",
+    "cycle_weeks": 4
+  },
+  "workouts": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "name": "Push Day",
+      "objective": "Build upper body pressing strength and hypertrophy",
+      "weekday": 1,
+      "estimated_minutes": 60,
+      "warm_up": "Band pull-aparts, shoulder dislocates, light dumbbell presses",
+      "cooldown_cardio": "10 min incline walk",
+      "exercises": [
+        {
+          "order": 1,
+          "name": "Barbell Bench Press",
+          "set_count": 4,
+          "rep_min": 6,
+          "rep_max": 8,
+          "target_rpe": 8,
+          "rest_seconds": 120,
+          "notes": "Focus on controlled eccentric"
+        },
+        {
+          "order": 2,
+          "name": "Dumbbell Shoulder Press",
+          "set_count": 3,
+          "rep_min": 8,
+          "rep_max": 12,
+          "target_rpe": 7,
+          "rest_seconds": 90,
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440002",
+      "name": "Pull Day",
+      "objective": "Target back thickness and biceps",
+      "weekday": 3,
+      "estimated_minutes": 55,
+      "warm_up": "",
+      "cooldown_cardio": "",
+      "exercises": [
+        {
+          "order": 1,
+          "name": "Barbell Row",
+          "set_count": 4,
+          "rep_min": 6,
+          "rep_max": 10,
+          "target_rpe": 8,
+          "rest_seconds": 120,
+          "notes": ""
+        }
+      ]
+    }
+  ],
+  "recent_sessions": [
+    {
+      "id": "session-1",
+      "workout_id": "550e8400-e29b-41d4-a716-446655440001",
+      "name": "Push Day",
+      "local_date": "2026-07-18",
+      "duration_seconds": 3300,
+      "effort": 8,
+      "energy": 3
+    },
+    {
+      "id": "session-2",
+      "workout_id": "550e8400-e29b-41d4-a716-446655440002",
+      "name": "Pull Day",
+      "local_date": "2026-07-16",
+      "duration_seconds": 2900,
+      "effort": 8,
+      "energy": 3
+    }
+  ],
+  "adherence": {
+    "completed_sessions": 15,
+    "planned_sessions": 20,
+    "adherence_pct": 75.0
+  },
+  "progression": [
+    {
+      "exercise": "Barbell Bench Press",
+      "sessions": 8,
+      "best_load_kg": 95.0,
+      "best_repetitions": 6
+    },
+    {
+      "exercise": "Barbell Row",
+      "sessions": 7,
+      "best_load_kg": 80.0,
+      "best_repetitions": 8
+    }
+  ],
+  "completed_day_set": [
+    "2026-07-18"
+  ],
+  "computed": {
+    "acwr": 1.15,
+    "training_monotony": 1.8,
+    "today_strain": 5.6,
+    "recovery_score": 72,
+    "recovery_breakdown": {
+      "hrv_z": 0.517,
+      "rhr_z": 0.455,
+      "sleep_z": 0.798,
+      "resp_rate_z": 0.5,
+      "prev_strain_z": 0.3
+    },
+    "sleep_quality": 85,
+    "sleep_debt_minutes": -65
+  }
+}
