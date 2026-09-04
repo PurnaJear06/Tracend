@@ -1,0 +1,16 @@
+{
+  "name": "campaign-01/progress",
+  "title": "Tracend Progress — Proof, Not Promises",
+  "tab": "progress",
+  "campaign": "App Store Screens — Hero Device Layout v2",
+  "deviceType": "MOBILE",
+  "width": "1320",
+  "height": "2868",
+  "source": "Open Design project tracend-app-store",
+  "files": {
+    "html": "poster.html",
+    "screenshot": "progress.png",
+    "readme": "progress-660w.png"
+  },
+  "exportedAt": "2026-09-05"
+}

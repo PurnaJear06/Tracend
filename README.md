@@ -11,13 +11,13 @@
 
 <p align="center">
   <a href="https://github.com/PurnaJear06/Tracend/actions/workflows/ci.yml"><img src="https://github.com/PurnaJear06/Tracend/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
-  <a href="https://github.com/PurnaJear06/Tracend/actions/workflows/pre-deploy.yml"><img src="https://github.com/PurnaJear06/Tracend/actions/workflows/pre-deploy.yml/badge.svg" alt="Pre-Deploy Gate"/></a>
+  <a href="https://github.com/PurnaJear06/Tracend/actions/workflows/deploy.yml"><img src="https://github.com/PurnaJear06/Tracend/actions/workflows/deploy.yml/badge.svg" alt="Deploy"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"/></a>
   <br/>
   <img src="https://img.shields.io/badge/Flutter-3.41.7-02569B?logo=flutter&logoColor=white" alt="Flutter"/>
   <img src="https://img.shields.io/badge/Dart-3.11.5-0175C2?logo=dart&logoColor=white" alt="Dart"/>
   <img src="https://img.shields.io/badge/Deno-2.9.0-70FFAF?logo=deno&logoColor=black" alt="Deno"/>
   <img src="https://img.shields.io/badge/Supabase-hosted-3FCF8E?logo=supabase&logoColor=black" alt="Supabase"/>
-  <img src="https://img.shields.io/badge/AI-Gemini%203.5%20Flash-4285F4?logo=google&logoColor=white" alt="AI Model"/>
   <img src="https://img.shields.io/badge/Sentry-monitored-36207D?logo=sentry&logoColor=white" alt="Sentry"/>
 </p>
 
@@ -27,70 +27,104 @@
   <a href="#architecture">Architecture</a> &middot;
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#documentation">Docs</a> &middot;
-  <a href="#stack">Stack</a>
+  <a href="#stack">Stack</a> &middot;
+  <a href="#license">License</a>
+</p>
+
+<p align="center">
+  Private beta &middot; iOS 17+ &middot; Apple HealthKit &middot; every model decision requires your approval
 </p>
 
 ---
 
-Tracend gives a healthy adult a personalized training and nutrition plan, observes real execution
-and recovery, and produces clear daily coaching decisions — like a careful personal trainer. Plans
-stay stable until evidence supports a change, and every persistent change requires your approval.
+<img align="left" width="340" src="design/store/screens/today/today-660w.png" alt="Tracend Today — daily readiness, explained by your data" />
+
+Tracend gives a healthy adult a personalized training and nutrition plan, observes real
+execution and recovery, and produces clear daily coaching decisions — like a careful
+personal trainer. Plans stay stable until evidence supports a change, and every persistent
+change requires your approval.
+
+The **Today** dashboard turns sleep, activity, and vitals from Apple Health into three
+tappable factors — **Recovery**, **Training**, and **Nutrition** — explained in plain
+language with progressive disclosure, instead of a wall of numbers.
+
+Four rules hold the whole system together:
+
+- **Deterministic code does the math.** Trends, adherence, and baselines are calculated —
+  never generated. The model interprets; it never computes.
+- **Model output never acts on its own.** No plan activation, no confirmed meal, no durable
+  user fact without your explicit approval.
+- **Persistent change follows an audit trail.** Evidence → validation → approval → new
+  version → audit event.
+- **The plan survives failure.** When AI, HealthKit, or media processing is down, your
+  active plan keeps working.
+
+<br clear="all"/>
+
+---
 
 ## Features
 
-### 🏠 Today
+<img align="left" width="340" src="design/store/screens/train/train-660w.png" alt="Tracend Train — personalized workout plans" />
 
-Daily readiness dashboard with three tappable factors: **Recovery**, **Training**, and
-**Nutrition**. Apple Health surfaces sleep, activity, and vitals with plain-language explanations
-and progressive disclosure — no wall of numbers.
+### 🏋️ Train — every set counts
 
-### 🏋️ Train
+A plan built around your actual capacity, adjusted by evidence — not vibes.
 
-Personalized workout plans with set-level session tracking. Log reps, RPE, and pain. Resume
-in-progress sessions after a restart. Apple HealthKit auto-detects completed workouts and reconciles
-them with your scheduled plan.
+- Set-level session tracking: reps, RPE, and pain per set
+- In-progress sessions survive an app restart and resume where you left off
+- HealthKit auto-detects completed workouts and reconciles them with your scheduled plan
 
-### 🤖 Coach
+<br clear="all"/>
 
-AI coaching chat that remembers your history across sessions. **Five-layer continuity memory**:
-narrative entries, user preferences, session summaries, message search, and context assembly. Every
-recommendation cites its evidence source. Reasoning chains shown inline.
+<img align="right" width="340" src="design/store/screens/coach/coach-660w.png" alt="Tracend Coach — AI coaching chat" />
 
-### 🥗 Nutrition
+### 🤖 Coach — every signal connected
 
-Log meals by text or **photo**. AI vision identifies food and estimates macros. Per-meal-slot
-schedule compliance tracking with 7-day adherence visibility. Persisted daily logs navigate backward
-and forward — confirmed meals stay visible after midnight.
+Coaching chat that remembers your history across sessions.
 
-### 📈 Progress
+- Five-layer continuity memory: narrative entries, user preferences, session summaries,
+  message search, and context assembly
+- Every recommendation cites its evidence source — reasoning chains shown inline, never
+  hidden
 
-Weight trends, measurement history, and body metrics on a single date-ordered effective timeline.
-Raw chart with no smoothing masquerading as current data. Same-day corrections become audited
-amendments, never silent overwrites.
+<br clear="all"/>
 
-### 🔒 Privacy-first AI
+<img align="left" width="340" src="design/store/screens/nutrition/nutrition-660w.png" alt="Tracend Nutrition — meal logging by text or photo" />
 
-- All AI provider keys stay **server-side** in Supabase Edge Functions
-- Model output **never** activates a plan, confirms a meal, or writes durable state without explicit
-  approval
-- Photos are private, purpose-bound, and accessed only through short-lived authorization
-- Every user-owned table has **enabled, tested row-level security (RLS)**
-- `beforeSend` scrubber redacts health values, meal content, and photo URLs before ANY crash report
-  leaves the device
+### 🥗 Nutrition — confirm before it counts
+
+Log meals by text or photo. Vision identifies the food and estimates macros — you confirm
+before anything is persisted.
+
+- Per-meal-slot schedule compliance with 7-day adherence visibility
+- Confirmed meals stay visible after midnight; corrections become audited amendments
+
+<br clear="all"/>
+
+<img align="right" width="340" src="design/store/screens/progress/progress-660w.png" alt="Tracend Progress — weight and measurement trends" />
+
+### 📈 Progress — proof, not promises
+
+Raw charts with no smoothing masquerading as current data.
+
+- Weight, measurements, and body metrics on a single date-ordered effective timeline
+- Same-day corrections become audited amendments — never silent overwrites
+
+<br clear="all"/>
 
 ## AI Stack
 
-| Layer                 | Technology                  | Purpose                                                                               |
-| :-------------------- | :-------------------------- | :------------------------------------------------------------------------------------ |
-| **Coach chat**        | Gemini `gemini-3.5-flash`   | Evidence-backed coaching responses with reasoning chains (medium thinking)            |
-| **Meal vision**       | Gemini `gemini-3.5-flash`   | Macro estimation and food identification from photos (low thinking)                   |
-| **Context assembly**  | PostgreSQL + PL/pgSQL       | Five-layer structured memory assembled before model inference                         |
-| **Output validation** | Deterministic policy engine | Schema, semantics, evidence citations, and policy permissions — reject on ANY failure |
-| **Safety**            | `beforeSend` scrubber       | Redacts sensitive data before crash reporting reaches Sentry                          |
+| Layer                 | Technology                     | Purpose                                                                                 |
+| :-------------------- | :----------------------------- | :-------------------------------------------------------------------------------------- |
+| **Coach chat**        | AI, routed server-side         | Evidence-backed coaching responses with reasoning chains                                |
+| **Meal vision**       | AI vision, routed server-side  | Macro estimation and food identification from photos                                      |
+| **Context assembly**  | PostgreSQL + PL/pgSQL          | Five-layer structured memory assembled before inference                                  |
+| **Output validation** | Deterministic policy engine    | Schema, semantics, evidence citations, and policy permissions — reject on ANY failure     |
+| **Safety**            | `beforeSend` scrubber          | Redacts sensitive data before crash reporting reaches Sentry                              |
 
-> The active model `gemini-3.5-flash` runs with medium thinking for Coach and low thinking for meal
-> vision. Groq Qwen `qwen/qwen3.6-27b` was the prior owner-test provider (ADR 0006); superseded
-> pending evaluation. Production use requires paid-privacy gate. See
+> Providers are routed and configured server-side — the app never names, embeds, or depends
+> on a specific one. The single source of truth for model boundaries and provider rules is
 > [`docs/AI_SAFETY_SPEC.md`](docs/AI_SAFETY_SPEC.md).
 
 ## Architecture
@@ -105,8 +139,8 @@ flowchart LR
     DB["PostgreSQL + RLS"]
     EF["9 Edge Functions (Deno)"]
   end
-  subgraph AI["Gemini"]
-    FL["gemini-3.5-flash<br/>chat + vision"]
+  subgraph AI["AI provider (server-side)"]
+    FL["Chat + vision"]
   end
   UI <-->|RLS / RPC| DB
   UI <-->|Edge Functions| EF
@@ -138,9 +172,9 @@ cd Tracend
 ./scripts/pre-deploy.sh
 ```
 
-> All tooling state stays under `.tooling/` on the external SSD. Never invoke `flutter`, `deno`,
-> `supabase`, or `docker` directly — use the `./scripts/` wrappers. See [`AGENTS.md`](AGENTS.md) for
-> the full toolchain reference.
+> All tooling state stays under `.tooling/` on the external SSD. Never invoke `flutter`,
+> `deno`, `supabase`, or `docker` directly — use the `./scripts/` wrappers. See [`AGENTS.md`](AGENTS.md)
+> for the full toolchain reference.
 
 ## Documentation
 
@@ -152,7 +186,7 @@ cd Tracend
 | [`docs/UX_FLOWS.md`](docs/UX_FLOWS.md)                             | Screen navigation, interaction states, journeys             |
 | [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md)                   | Visual tokens, component specs, theming rules               |
 | [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md)                         | Entity definitions, field schemas, lifecycle rules          |
-| [`docs/AI_SAFETY_SPEC.md`](docs/AI_SAFETY_SPEC.md)                 | Model authority, output validation, safety constraints      |
+| [`docs/AI_SAFETY_SPEC.md`](docs/AI_SAFETY_SPEC.md)                 | Model boundaries, provider rules, output validation         |
 | [`docs/SECURITY_PRIVACY.md`](docs/SECURITY_PRIVACY.md)             | Data collection, retention, deletion, access control        |
 | [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md)             | Test layers, coverage expectations, quality gates           |
 | [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) | Phase sequencing, milestones, delivery plan                 |
@@ -165,11 +199,15 @@ cd Tracend
 
 **Backend** — Supabase · PostgreSQL + RLS · 9 Deno Edge Functions · Session pooler · Storage
 
-**AI** — Gemini 3.5 Flash (chat + vision) · Five-layer continuity memory · Deterministic output
+**AI** — Server-side provider routing · Five-layer continuity memory · Deterministic output
 validation · All model keys server-side only
 
-**Infra** — GitHub Actions CI · Pre-deploy gate · Automated database backups · Edge Function
-rollback scripts · Colima container runtime · Gitleaks pre-commit · Dependabot
+**Infra** — GitHub Actions CI · Automated deploy pipeline · Pre-deploy gate · Automated
+database backups · Edge Function rollback scripts · Gitleaks pre-commit · Dependabot
+
+## License
+
+Released under the [MIT License](LICENSE).
 
 ---
 
