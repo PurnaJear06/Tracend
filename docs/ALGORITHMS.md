@@ -197,11 +197,21 @@ or when denominator is zero.
 
 ### ACWR Bands
 
-| Zone         | ACWR   | Signal                   |
-| ------------ | ------ | ------------------------ |
-| Low risk     | < 1.0  | Undertraining possible   |
-| Sweet spot   | 1.0–1.5| Optimal stimulus         |
-| Danger zone  | > 1.5  | Elevated injury risk     |
+Unified app-wide convention (owner-approved 2026-09-04; previously this table and the two
+Train/Today UIs carried three different banding schemes):
+
+| Band       | ACWR      | Signal                                       |
+| ---------- | --------- | -------------------------------------------- |
+| Low load   | < 0.8     | Lighter than the athlete's normal training   |
+| Optimal    | 0.8–1.3   | Matches the normal — productive range        |
+| High load  | > 1.3     | Heavier than normal — scale back above 1.5   |
+
+Above 1.5 escalates the UI copy ("much heavier — scale back to protect progress"), never a
+fourth band label. Every UI reading an ACWR (Train's week rail, Today's session plan) uses
+`LoadBand.forAcwr`'s mapping verbatim. Thin-history caveat: ACWR from fewer than ~4 weeks of
+sessions is noise (finding #6, docs/reviews/2026-09-02-post-deploy-verification-and-findings.md);
+Train's week rail gates any ratio verdict on ≥4 sessions in the 28-day payload and renders
+"Building baseline" below that floor.
 
 ### Training Monotony
 

@@ -11,15 +11,16 @@ exercise rows.
 Today leads with two evidence surfaces (Chunk 6): the full-width `RecoveryReadoutCard`
 (tabular recovery score, band chip, and five driver rows with z-score bars — fill clamps
 z to ±2 for layout while labels and semantics report the true z) and `TrajectoryTrend`, a
-real 7-day line chart from `daily_health_summaries` (HRV → sleep → resting HR priority,
+real 7-day column chart from `daily_health_summaries` (HRV → sleep → resting HR priority,
 ≥4 recorded days required, window anchored to the latest stored day, gaps left visible,
 never interpolated). They replace the earlier centered recovery ring, three-tile
 readiness strip, and today-only trajectory lens. The shared `EvidenceTrendChart` uses
 linear segments, actual date spacing, visible numeric scale, current value and optional
 average line; within it, curved interpolation, unlabeled auto-scaling, and
-spreadsheet-style equal metric grids are prohibited. (`TrajectoryTrend` is the one
-sanctioned bezier surface — it smooths only between real recorded days, never across
-missing ones.)
+spreadsheet-style equal metric grids are prohibited. (`TrajectoryTrend` renders as day
+columns — one slot per calendar day in the 7-day window; a recorded day grows a rounded
+column toward its value, an unrecorded day leaves a dim socket on the baseline. Column
+heights are never interpolated across missing days.)
 Weight charts show confirmed raw weigh-ins as dots; the raw dots are never smoothed. Computed
 trend overlays are permitted only as labeled regression line segments derived from the server
 OLS slopes (`ALGORITHMS.md` §5): they must be anchored to real measurements (no invented
@@ -57,13 +58,15 @@ readout, and the physical momentum implied by the Tracend name.
 
 ### Signature element: the 7-day trend
 
-The signature data moment on Today is `TrajectoryTrend` (Chunk 6): a luminous bezier
-through the last seven stored days of one real HealthKit metric (HRV preferred, then
-sleep duration, then resting heart rate), with an area fill, real point dots, restrained
-min/max/date labels, a draw-on reveal, and a pulsing marker on the latest recorded day.
-It plots only recorded days — gaps stay visible, missing days are never interpolated —
-and when fewer than four recorded days exist it degrades to an honest "Building baseline"
-card rather than drawing a fabricated curve.
+The signature data moment on Today is `TrajectoryTrend` (Chunk 6, redesigned as day
+columns 2026-09-03): magnitude columns for the last seven stored days of one real
+HealthKit metric (HRV preferred, then sleep duration, then resting heart rate), growing
+from a bottom rail toward their values with hairline range rails at the series' own
+min/max, a day-tick row with month rollover, a calibration strip (range · recorded-day
+count · as-of stamp), a grow-on reveal, and a pulsing marker on the latest recorded day.
+It plots only recorded days — unrecorded days leave a dim baseline socket, missing days
+are never interpolated — and when fewer than four recorded days exist it degrades to an
+honest "Building baseline" card rather than drawing a fabricated curve.
 
 The trend never shows invented metrics or smoothed-away gaps. The recovery readout and
 readiness factors remain authoritative and accessible.
@@ -124,10 +127,11 @@ decision-headline = theme `displaySmall` token (32/1.08, letter-spacing −0.8, 
 original Stitch 42pt headline rendered oversized and stretched on device (owner QA
 2026-08-25) and was replaced by the token · body-base 17/25 w300 ·
 body-compact 14/20 w300 · data-utility 13/18 w400 (mono) · label-caps 11/16, letter-spacing
-0.08em, w500 — every caps label on Today renders through `TracendTheme.labelCaps` so caps
+0.08em, w500 — every caps label renders through `TracendTheme.labelCaps` so caps
 labels never drift below 11pt or wider than 0.08em tracking (wider tracking read as
-stretched type); Train/Nutrition caps labels adopt the helper when their screens are next
-touched.
+stretched type). The Train tab's hand-rolled caps tags and the shared `SectionLabel`
+migrated to the helper in the 2026-09-04 Train redesign; no screen hand-rolls caps
+tracking anymore.
 
 Every text style maps to Dynamic Type, wraps before truncating, and is tested at the largest
 accessibility sizes. Tabular figures are required for changing values and timers.
@@ -183,6 +187,18 @@ but it remains one controlled coaching workflow. Do not represent Training Coach
 and Head Coach as separate autonomous chatbots; show them only as expandable perspectives inside a
 unified Tracend Coach response.
 
+Account visual grammar (redesigned 2026-09-03 from `design/stitch/account/` "Account & Profile —
+Kinetic Precision"): an identity block opens the screen (display-headline name from the signed-in
+email local-part, compact `Private beta` pill, current-goal line that renders only when the active
+goal RPC returns one, and an `Edit` affordance opening Profile and goals); below it, grouped
+hairline cards under label-caps section headers (PLAN AND PROFILE, CONNECTIONS, AI SERVICE,
+PRIVACY AND DATA) whose rows use the `AccountRow` grammar — Spline Sans title + secondary detail
+line + 15pt chevron, no icon tiles. Rows are edge-to-edge inside the card with hairline dividers
+between them; the sign-out control sits separated at the foot. Icon tiles and rounded-square icon
+chips are retired from this flow; the quiet settings surface keeps the 7-day trend the app's one
+aesthetic risk. Sub-screens (Profile and goals, AI usage, Consent ledger) share the same
+`AccountSectionLabel` caps grammar so the account flow reads as one system.
+
 Native back behavior, swipe-back, tab-state preservation, deep links, and restoration after
 interruption are mandatory.
 
@@ -207,21 +223,49 @@ part of this card — it renders as a display-only row inside `SessionPlanCard`.
 
 ### `TrajectoryTrend`
 
-Real 7-day health trend on Today (Chunk 6): plots recorded days from
-`daily_health_summaries` for one metric (priority HRV → sleep → resting HR; first with
-≥4 recorded days in the window wins). Window = the 7 days ending at the latest stored
-day. Bezier curve with area fill, real point dots, restrained min/max/date labels,
-draw-on reveal, and the single sanctioned idle pulse on the latest recorded day. Missing
-days stay visible as gaps and are never interpolated; fewer than four recorded days
-renders the "Building baseline" cold-start card. Direction deltas (vs first recorded
-day) are reported neutrally — up/down is fact, not good/bad.
+Real 7-day health trend on Today (Chunk 6, redesigned as day columns 2026-09-03): plots
+recorded days from `daily_health_summaries` for one metric (priority HRV → sleep →
+resting HR; first with ≥4 recorded days in the window wins). Window = the 7 days ending
+at the latest stored day. One slot per calendar day: a recorded day grows a rounded
+column toward its value (the latest recorded day carries the accent-NOW color); an
+unrecorded day leaves a dim socket on the baseline. Hairline rails bound the series' own
+min/max, a day-tick row shows every slot with month rollover, and a calibration strip
+reports the range, the recorded-day count, and the as-of stamp (latest recorded day —
+this dates the headline value, which shows the latest recorded day, not today).
+Grow-on reveal and the single sanctioned idle pulse on the latest recorded day. Missing
+days stay visible as empty slots and are never interpolated; fewer than four recorded
+days renders the "Building baseline" cold-start card. Direction deltas (vs first
+recorded day) are reported neutrally — up/down is fact, not good/bad. The card's corner
+glow is tinted recovery teal (its tag color) so the trend and the recovery readout read
+as siblings, not rivals for the same indigo.
+
+### `WeekRailCard`
+
+Train's fused week instrument (2026-09-04 Train redesign): the date strip and the training-load
+readout merged into one card — day slots select the day, and the chart below speaks
+`TrajectoryTrend`'s exact grammar so Train and Today read as one app. One slot per calendar day of
+the selected week: a session day grows an indigo 9pt pill column sized by real training minutes
+(summed `recent_sessions[].duration_seconds / 60`; the latest session day carries the accent-NOW
+color and a still halo — Today keeps the single pulsing loop); a session-less day leaves a dim
+socket; a planned-but-untrained day carries a small amber dot lifted off the baseline. Hairline
+rails, month-rollover day ticks, and the calibration strip (minutes range · N of 7 days · as-of
+stamp) date the week. The verdict is one plain sentence with a band chip under the unified
+app-wide ACWR convention (owner-approved 2026-09-04): Low load < 0.8 amber · Optimal 0.8–1.3
+teal · High load > 1.3 coral — above 1.5 escalates the copy ("much heavier — scale back"),
+never a fourth label. Honesty gates: fewer than four sessions in the 28-day payload renders the
+"Building baseline" state and never a ratio verdict (thin-history ACWR is noise, finding #6 in
+docs/reviews/2026-09-02-post-deploy-verification-and-findings.md); a session without a duration
+stays present as an enlarged baseline socket and never invents height; the chart speaks training
+minutes, never "strain". The mix advice translates monotony (≤2.0 "Good mix of hard and easy
+days" / >2.0 "Days are too similar — vary intensity"), and the raw ratio and day load live in
+one quiet mono strip — the single sanctioned jargon site on Train. Rows stack (MetricStrip
+idiom) under large Dynamic Type; the mix-advice line always stacks above the stats row —
+the side-by-side variant bled off the card at phone widths (owner QA 2026-09-04).
 
 ### `DecisionSurface`
 
 Contains one direct headline, one reason, timestamp, confidence wording, primary action, and **See
-evidence**. It never hides a pending persistent change inside normal advice.
-
-### `CoachPerspectiveCard`
+evidence**. It never hides a pending persistent change inside normal advice.### `CoachPerspectiveCard`
 
 Training and nutrition perspectives are collapsed summaries below the final decision. Opening a card
 reveals evidence and limits, not simulated chat personas.
@@ -259,6 +303,16 @@ Shows a named time window, authenticated-user request count, token/image usage w
 estimated cost, and service state. Values are labeled **Estimate**, never presented as billing
 authority, and never expose keys, prompts, request identifiers, or raw provider errors.
 
+### `AccountRow` and the account identity block
+
+The Account flow's row grammar (redesigned 2026-09-03): edge-to-edge rows inside a grouped card —
+title (Spline Sans 17pt w600) with a secondary detail line (system 15pt), 15pt chevron only when
+the row navigates (no dead affordances), hairline dividers between rows, 44pt minimum row height.
+No icon tiles; state meaning lives in the detail copy and status pills, never in icon color alone.
+The identity block at the top of Account renders the signed-in name (email local-part,
+`Tracend member` fallback), a compact `Private beta` pill, and the current goal line only when the
+active-goal RPC confirms one — the goal line never renders a fabricated value.
+
 ### `CoachMessage` and `MealScheduleTimeline`
 
 Coach messages use a restrained familiar bubble shape, selectable text, and an expandable evidence
@@ -289,9 +343,12 @@ Motion explains hierarchy and causality. It does not decorate idle screens.
 Implemented motion (all gated on `MediaQuery.disableAnimationsOf`, all motivated):
 
 - Card entrances on Today stagger 60ms per index (`MicroMotion.stagger`, capped at 8 indices) via
-  `MicroMotionEntrance` (spring rise + fade, once on mount).
+  `MicroMotionEntrance` (spring rise + fade, once on mount). Train adopted the same entrance
+  stagger in its 2026-09-04 redesign.
 - The 7-day trend path draws over 1.5s; the latest-day dot carries the single sanctioned idle
-  loop (`MicroMotionPulse`, gentle opacity pulse). Nothing else animates idle.
+  loop (`MicroMotionPulse`, gentle opacity pulse). Nothing else animates idle. Train's week-rail
+  columns reuse the 1.5s grow-on reveal with the same 0.1×day stagger; its halo stays still and
+  pulses nothing.
 - Score values count up/down on change only (`MicroMotionCountUp`, 600ms ease-out); first render is
   static. Tabular figures keep digits from jittering during the transition.
 - Tab capsule selection morphs in 160ms; tab labels clamp to 1.3× text scale (iOS tab bars keep

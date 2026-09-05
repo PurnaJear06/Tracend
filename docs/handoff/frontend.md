@@ -551,6 +551,120 @@ Client:
   missing sync-message assertions (unavailable health read → failure snackbar;
   never-connected → "not connected" snackbar). 318 tests pass, 0 analysis issues.
 
+## TrajectoryTrend redesign — day columns (2026-09-03)
+
+Owner rejected the Chunk-6 bezier trend after device QA ("did not like that graph, it
+kills other parts"): chosen direction **B (day columns)** from a rendered three-direction
+mockup (instrument trace / quiet trace / day columns, real HRV data, both themes, edge
+states). Scope: `trajectory_trend.dart` only — the graph itself; no other screen parts
+were touched.
+
+**Visual** (`lib/shared/widgets/trajectory_trend.dart`, rewritten painter): the bezier
+`_TrendPainter` (area fill, point dots, full-height grid columns, floating corner
+min/max) is replaced by a day-column painter — one slot per calendar day in the 7-day
+window, a recorded day grows a 9pt rounded column from the bottom rail toward its value
+(latest recorded day in `accentNow`, others `actionPrimary @85%`), unrecorded days leave
+a 1.5pt dim socket on the baseline. Hairline rails at the series' own min/max (not a
+full grid) bound the columns. New `_DayTicks` row (every slot labeled, month shown on
+first/last/rollover, unrecorded days dim) and `_CalibrationStrip` ("54–155 ms · 6 of 7
+days" / "as of 1 Sep · Apple Health") — the as-of stamp dates the headline value, which
+shows the latest recorded day, not today. The delta moved into a tonal pill beside the
+value. Card glow tinted `stateStable` teal so the trend and recovery cards read as
+siblings instead of fighting over indigo. Plot height 140 → 150. Same motion grammar:
+grow-on reveal per column (easeOutCubic, staggered by day), the single sanctioned idle
+pulse (NOW dot) on the latest recorded day, Reduce Motion fully static.
+
+Semantics label extended: range + dated latest ("7-day HRV trend, 18–24 Aug: 42–53 ms,
+53 ms latest on 24 Aug, 7 of 7 days recorded"). Cold-start, ≥4-day gate, neutral deltas,
+gap honesty (never interpolate) unchanged. Docs updated: DESIGN_SYSTEM.md (evidence
+visualization section, §2 signature element, §5 component spec).
+
+Tests: trend suite expectations updated for ticks/strip/semantics; new flat-series
+("no change · 7 days") and sparse-window ("4 of 7 days") state tests; gallery semantics
+test updated; canvas-size regression test unchanged. 321 tests pass, 0 analysis issues.
+
+## Account flow redesign — Stitch account reference (2026-09-03)
+
+Owner rejected the pre-Chunk-6 Account layout ("looking outdated and not at all
+appealing"): rebuilt from the never-implemented Stitch reference
+`design/stitch/account/` ("Account & Profile — Kinetic Precision"). Scope: the Account
+flow only (`account_screen.dart`, `account_widgets.dart`, sub-screen headers); every
+destination, callback, repository, honesty rule, and test-visible string preserved.
+
+**Account home** (`account_screen.dart`): identity block opens the screen —
+display-headline name from the signed-in email local-part (fallback "Tracend member"),
+compact `Private beta` pill, current-goal line that renders only when the active
+`user_goals` RPC returns one (never fabricated), `Edit` affordance opening Profile and
+goals. Sections become label-caps headers (PLAN AND PROFILE, CONNECTIONS, AI SERVICE,
+PRIVACY AND DATA) over grouped hairline cards; `AccountRow` drops icon tiles and the
+rounded-square icon chip for the Stitch row grammar — Spline Sans title + secondary
+detail line + 15pt chevron, edge-to-edge rows with 0.5pt hairline dividers, 44pt row
+heights. Apple Health stays a full card (sync feedback is its only home). Coach
+conversations row carries the server-credentials footnote. Sign-out stays separated at
+the foot.
+
+**Sub-screens** (`account_widgets.dart`, `profile_goals_screen.dart`,
+`ai_usage_screen.dart`): `SectionLabel` (auto-uppercasing generic) replaced by
+`AccountSectionLabel` rendering through `TracendTheme.labelCaps` (§3.2 caps lock —
+11pt, 0.08em max tracking) so the account flow's caps labels never drift; callers pass
+uppercase text explicitly. `AccountRow`'s `detailColor` param removed (unused).
+`DetailRows`, `AccountDetailMessage`, and the formatters are unchanged.
+
+Docs updated: DESIGN_SYSTEM.md (§4 Navigation account paragraph + §5 `AccountRow`
+component spec). 321 tests pass, 0 analysis issues; impeccable detector: 0 findings.
+Installed on device for owner QA.
+
+## Train tab redesign — week rail + merged lists (2026-09-04)
+
+Owner rejected the Train page wholesale ("training load widget is confusing… review that
+full train page it is full mess and not matching vibe of today"): full-page redesign run
+through the impeccable skill (PRODUCT.md gate, concept-seed roll assigned the fused
+week-rail structure), drafted as four HTML iterations (private tmp artifact, disposed)
+until approved ("i liked it"), then implemented. Scope: the Train tab's presentation
+widgets + the shared `SectionLabel` restyle + test updates + docs; every flow (week clamp
+−3..0, repair/reconciliation/HealthKit, recorded-RPE caching, navigation) preserved.
+
+**Week rail** (`week_rail_card.dart`, new ~1030 lines): date strip and training load
+fused into one instrument — day slots (38×44, date-pill keys preserved) select the day,
+and the 7-day training-minutes chart below speaks `TrajectoryTrend`'s exact grammar
+(indigo 9pt columns @0.85, lime terminal + still halo, hairline rails, 1.5pt sockets,
+month-rollover ticks, calibration strip, 1500ms easeOutCubic grow with 0.1×day stagger,
+Reduce Motion static, no idle pulse on Train). Verdict = one plain sentence + band chip
+under the unified 3-band ACWR convention (owner-approved: Low load <0.8 amber · Optimal
+0.8–1.3 teal · High load >1.3 coral; >1.5 escalates copy only). Honesty gates: ≥4-session
+floor for any ratio verdict ("Building baseline" below — thin-history ACWR is noise,
+finding #6); null-duration sessions render an enlarged baseline socket, never invented
+height; planned-but-untrained days draw amber miss dots. Mix advice translates monotony;
+`Ratio X.XX · Day load X.X` is the single sanctioned jargon site. Slot glyphs carry
+`ExcludeSemantics` — the Semantics label ("Wednesday 19, selected, completed") is the
+VoiceOver contract.
+
+**Merged lists** (`exercise_list_card.dart`, new): PrescriptionCard + IntensityBar
+merged — one row per movement (order, name, `4 × 8–10`, `RPE 8`, teal `logged 8.5` when
+recorded, `150s rest`) with the 8pt effort bar inline (indigo planned fill, teal
+recorded marker); warm-up/cooldown fold below. ExecutionCard merges adherence +
+progression into one card ("Sessions completed this cycle · N of M" + inline 88×5
+progress; honest empty copy for progression). `lib/shared/widgets/intensity_bar.dart`
+deleted (orphaned; its 'logged'/'RPE N' assertions live on in the TrainScreen tests).
+
+**Page grammar** (`train_screen.dart`): SectionLabel caps + MicroMotionEntrance stagger
+0–4 (alert cards render without entrance); error state TracendCard → PremiumGradientCard.
+`tracend_scaffold.dart` SectionLabel restyled through `TracendTheme.labelCaps`
+(owner-approved one-line change, all tabs inherit); `workout_hero.dart` COACH INSIGHT +
+fact labels migrated to the helper. Deleted `training_load_gauge_test.dart` (10 tests
+pinned retired strings).
+
+Tests: new `week_rail_card_test.dart` (35 tests — band mapping, verdict gates, painter
+counts via `paintsExactlyCountTimes`, calibration strip, mix advice, slot semantics);
+`dynamic_type_test.dart` Train-with-computed variant (caught two real 320pt × 2.0
+overflows — rail tag and load strip stack via the MetricStrip idiom); chunk2 +
+production_rebuild updated for lazy-built rows below the fold (scroll + settle).
+**Owner QA hotfix (same day):** the load strip's advice + stats side-by-side row bled
+off the card at phone width (390pt — the 800pt test surface masked it); the strip now
+always stacks advice above stats, with a 390pt phone-width regression test pinning it.
+344 tests pass, 0 analysis issues. Docs: DESIGN_SYSTEM §3.2/§5/§6, ALGORITHMS ACWR band
+table unified, UX_FLOWS Train paragraph.
+
 ## Session Duration Cap (2026-08-22)
 
 **Client** (`active_workout_screen.dart`): `_maxSessionSeconds = 10800`, 15-second elapsed

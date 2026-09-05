@@ -6,6 +6,17 @@ Train uses the 4/8-point spacing rhythm and 44-point interactive rows. Active lo
 Syncing, Offline, or Needs attention; resumes entered sets after reopen; and requires explicit skip
 actions. Historical corrections and HealthKit conflicts use review cards with confirmation actions.
 
+The Train tab (2026-09-04 redesign) opens with the week rail — one fused card where the day slots
+select the day and the 7-day training-minutes chart below speaks the same visual grammar as Today's
+trend (indigo day columns, accent-NOW latest session day, dim sockets, amber dots for planned-but-
+untrained days). Its verdict is one plain sentence with a band chip (Low load / Optimal / High load);
+the raw ratio and day load sit in one quiet mono strip — the only place jargon lives on Train.
+Honesty gates: fewer than four sessions renders "Building baseline" and never a ratio verdict;
+sessions without a duration stay present without inventing magnitude. Below the rail: the workout
+hero (facts + coach insight + Start/View), today's exercises as one merged list (prescription stats
+and the planned/recorded effort bar per row — the same movement no longer appears twice), one
+execution card (adherence count + progression rows or its honest empty copy), and recent sessions.
+
 Today's Action Stage contains one instruction, one reason, and one CTA with a sync chip
 that refreshes Apple Health (when connected), the daily brief, and today's coaching
 decision together, followed by the readiness readouts (Chunk 6): a full-width recovery

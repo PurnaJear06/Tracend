@@ -11,7 +11,6 @@ import 'package:tracend/features/train/widgets/prescription_cards.dart';
 import 'package:tracend/features/train/widgets/workout_hero.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/widgets/date_pill_strip.dart';
-import 'package:tracend/shared/widgets/intensity_bar.dart';
 import 'package:tracend/shared/widgets/targets_grid.dart';
 
 Widget _wrap(Widget child) {
@@ -120,66 +119,10 @@ void main() {
     });
   });
 
-  group('IntensityBar', () {
-    testWidgets('shows honest cold start when there are no entries', (
-      tester,
-    ) async {
-      await tester.pumpWidget(_wrap(const IntensityBar(entries: [])));
-      expect(find.text('Log a session to see intensity'), findsOneWidget);
-      expect(find.text('Planned RPE'), findsNothing);
-    });
-
-    testWidgets('renders planned RPE bars for every entry', (tester) async {
-      await tester.pumpWidget(
-        _wrap(
-          const IntensityBar(
-            entries: [
-              IntensityBarEntry(name: 'Squat', targetRpe: 8),
-              IntensityBarEntry(name: 'Press', targetRpe: 7.5),
-            ],
-          ),
-        ),
-      );
-      expect(find.text('Squat'), findsOneWidget);
-      expect(find.text('Press'), findsOneWidget);
-      expect(find.textContaining('RPE 8'), findsOneWidget);
-      expect(find.textContaining('RPE 7.5'), findsOneWidget);
-    });
-
-    testWidgets('shows recorded RPE marker text when present', (tester) async {
-      await tester.pumpWidget(
-        _wrap(
-          const IntensityBar(
-            entries: [
-              IntensityBarEntry(name: 'Squat', targetRpe: 8, recordedRpe: 9.0),
-            ],
-          ),
-        ),
-      );
-      expect(find.textContaining('logged 9.0'), findsOneWidget);
-    });
-
-    testWidgets('shows strain context line only when provided', (tester) async {
-      await tester.pumpWidget(
-        _wrap(
-          const IntensityBar(
-            entries: [IntensityBarEntry(name: 'Squat', targetRpe: 8)],
-            dailyStrain: 42.3,
-          ),
-        ),
-      );
-      expect(find.textContaining('STRAIN 42.3'), findsOneWidget);
-
-      await tester.pumpWidget(
-        _wrap(
-          const IntensityBar(
-            entries: [IntensityBarEntry(name: 'Squat', targetRpe: 8)],
-          ),
-        ),
-      );
-      expect(find.textContaining('STRAIN'), findsNothing);
-    });
-  });
+  // IntensityBar group removed (2026-09-04 Train redesign): the widget is
+  // retired — prescription stats and the planned/recorded effort bar are
+  // merged into ExerciseListCard rows. The 'logged RPE' and 'RPE N'
+  // assertions live on in the TrainScreen recorded-RPE tests below.
 
   group('TargetsGrid', () {
     testWidgets('shows consumed vs target with remaining protein', (
@@ -270,6 +213,19 @@ void main() {
   });
 
   group('TrainScreen recorded RPE', () {
+    Future<void> scrollToExercises(WidgetTester tester) async {
+      // 2026-09-04 Train redesign: the merged exercise list sits below the
+      // week rail and hero, and SliverList builds lazily — scroll until the
+      // unique RPE 9 row is built (rows above it follow), then settle the
+      // entrance staggers of sections mounted mid-scroll.
+      await tester.scrollUntilVisible(
+        find.textContaining('RPE 9'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+    }
+
     testWidgets(
       'completed day shows averaged logged RPE, filtering out-of-range values',
       (tester) async {
@@ -285,6 +241,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('Completed'), findsOneWidget);
+        await scrollToExercises(tester);
         expect(find.textContaining('logged 8.5'), findsOneWidget);
         expect(find.textContaining('logged 7.0'), findsOneWidget);
       },
@@ -304,7 +261,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.textContaining('logged'), findsNothing);
+      await scrollToExercises(tester);
+      // 'logged 8.5'-style stat chips never appear on an incomplete day.
+      // (Looser matchers false-hit the Execution card's empty-state copy
+      // about "comparable logged sets".)
+      expect(find.textContaining(RegExp('logged [0-9]')), findsNothing);
       expect(find.textContaining('RPE 8'), findsWidgets);
     });
   });

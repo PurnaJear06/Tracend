@@ -18,7 +18,15 @@ belongs in `DESIGN.md`.
   accordion replaced by a full-width `RecoveryReadoutCard` (tabular score + band chip +
   five z-score driver rows) and a real `TrajectoryTrend` 7-day chart from
   `daily_health_summaries` (HRV → sleep → resting HR, ≥4 recorded days, gaps never
-  interpolated); ACWR folded into `SessionPlanCard` as a display-only load row.
+  interpolated) — redesigned 2026-09-03 as day columns (one slot per calendar day, dim
+  sockets for unrecorded days, rails at the series' min/max, day ticks, calibration
+  strip with as-of stamp; teal card glow); ACWR folded into `SessionPlanCard` as a
+  display-only load row. The Account flow was redesigned 2026-09-03 from the Stitch
+  account reference (`design/stitch/account/`, previously imported but never
+  implemented): identity block (email local-part name, Private beta pill, goal line
+  only when the active-goal RPC confirms one), label-caps sections, grouped hairline
+  `AccountRow` cards without icon tiles, sign-out separated at the foot; sub-screens
+  share the `AccountSectionLabel` caps grammar.
   DESIGN_SYSTEM.md §evidence-visualization/§2 signature element/§5 components/§6 motion/§8
   semantics, UX_FLOWS §5, PRD, and TESTING_STRATEGY amended in the same change. Merge to
   `feature/feature-engine` remains the owner action.
@@ -26,6 +34,19 @@ belongs in `DESIGN.md`.
   as code (§3.1 dark hexes, §3.2 Spline Sans + IBM Plex Mono, §3.3 shape lock 12/24/28,
   §3.4 premium-gradient cards + chrome-only glass, §10 anti-patterns); all 5 tabs in scope;
   every implemented feature surfaced and working; AI Usage from real RPC fields only.
+- **Change 2026-09-04: Train tab redesign** (owner-approved after four HTML draft
+  iterations): the date strip and training-load gauge fused into one `WeekRailCard`
+  (day slots select; 7-day training-minutes chart in `TrajectoryTrend`'s exact column
+  grammar; plain-sentence verdict + 3-band chip under the unified ACWR convention —
+  Low load <0.8 / Optimal 0.8–1.3 / High load >1.3, copy-only escalation above 1.5;
+  ≥4-session honesty gate below which no ratio verdict renders); prescription and
+  intensity merged into one `ExerciseListCard` (one row per movement, inline effort
+  bar); adherence + progression merged into one `ExecutionCard`; `IntensityBar` and
+  the old load gauge retired; shared `SectionLabel` restyled through
+  `TracendTheme.labelCaps` (every tab inherits); Train adopts Today's entrance
+  stagger. DESIGN_SYSTEM §3.2/§5/§6, ALGORITHMS (ACWR bands unified — resolves the
+  documented doc/code mismatch), UX_FLOWS Train paragraph amended in the same
+  change.
 - Canonical five-tab navigation: **Today · Train · Coach · Nutrition · Progress**. This is
   authoritative and confirmed across `DESIGN_SYSTEM.md`, `UX_FLOWS.md`, and `PROGRESS_CONTEXT.md`.
 - Stitch project **2662655096321681608** ("Tracend Design System") is the source.
