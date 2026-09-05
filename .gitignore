@@ -49,6 +49,7 @@ temp/
 local-data/
 private-media/
 test-artifacts/
+session-*.md
 
 # Harness-specific skill symlinks (not for our harness)
 .claude/
