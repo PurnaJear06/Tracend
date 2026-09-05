@@ -173,7 +173,7 @@ class _AiUsageScreenState extends State<AiUsageScreen> {
             ],
           ),
         ),
-        const SectionLabel('This month'),
+        const AccountSectionLabel('THIS MONTH'),
         TracendCard(child: DetailRows(rows: rows)),
         const SizedBox(height: TracendSpacing.sm),
         const Text(

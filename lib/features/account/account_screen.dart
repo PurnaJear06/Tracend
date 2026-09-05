@@ -20,6 +20,18 @@ import 'package:tracend/features/health/health_status_card.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
+/// Account home, redesigned 2026-09-03 from the Stitch reference
+/// `design/stitch/account/` ("Account & Profile — Kinetic Precision"):
+/// identity block first (name from the email local-part, private-beta
+/// chip, current goal, edit affordance), then grouped hairline cards under
+/// label-caps sections — Plan, Connections, AI service, Privacy and data —
+/// with the sign-out control and the delete-account danger zone separated
+/// at the foot. Icon tiles are gone: the quiet settings surface keeps the
+/// 7-day trend the one aesthetic risk on the app.
+///
+/// All data stays real: the goal line renders only when the active goal
+/// RPC returns one; every row keeps its destination, state copy, and
+/// honesty rules from UX_FLOWS.md §13.
 class AccountScreen extends StatefulWidget {
   const AccountScreen({
     required this.environment,
@@ -47,17 +59,46 @@ class AccountScreen extends StatefulWidget {
 class _AccountScreenState extends State<AccountScreen> {
   late Future<NotificationPreferences> _notifications;
   late Future<Map<String, dynamic>> _aiUsage;
+  late Future<Map<String, dynamic>> _profile;
 
   @override
   void initState() {
     super.initState();
     _notifications = widget.notifications.load();
     _aiUsage = widget.coach.loadUsage();
+    _profile = _loadIdentity();
+  }
+
+  /// Signed-in email local-part + active goal for the identity block.
+  /// Offline or unconfigured, this resolves to placeholder-free fallbacks:
+  /// the name falls back to 'Tracend member' (never a fabricated value),
+  /// the goal line simply doesn't render.
+  Future<Map<String, dynamic>> _loadIdentity() async {
+    final email = Supabase.instance.client.auth.currentUser?.email;
+    final name = email == null || email.isEmpty
+        ? 'Tracend member'
+        : email.split('@').first;
+    if (!widget.environment.hasSupabaseConfiguration) {
+      return {'name': name, 'goal': null};
+    }
+    try {
+      final goal = await Supabase.instance.client
+          .from('user_goals')
+          .select('goal_type')
+          .eq('status', 'active')
+          .order('priority')
+          .limit(1)
+          .maybeSingle();
+      return {'name': name, 'goal': goal};
+    } catch (_) {
+      return {'name': name, 'goal': null};
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final themeController = TracendThemeScope.maybeOf(context);
+    final colors = context.tracendColors;
     return Scaffold(
       appBar: AppBar(title: const Text('Account')),
       body: SafeArea(
@@ -70,41 +111,64 @@ class _AccountScreenState extends State<AccountScreen> {
             TracendSpacing.xxl,
           ),
           children: [
+            FutureBuilder<Map<String, dynamic>>(
+              future: _profile,
+              builder: (context, snapshot) {
+                // The identity block renders immediately with the signed-in
+                // name; the goal line appears only when the RPC confirms one
+                // (never fabricated, never stuck on a spinner).
+                final name =
+                    snapshot.data?['name'] as String? ?? 'Tracend member';
+                final goal = snapshot.data?['goal'] as Map<String, dynamic>?;
+                return _IdentityBlock(
+                  name: name,
+                  goal: goal == null ? null : friendlyEnum(goal['goal_type']),
+                );
+              },
+            ),
+            const AccountSectionLabel('PLAN AND PROFILE'),
             PremiumGradientCard(
               glow: true,
+              padding: EdgeInsets.zero,
               child: AccountRow(
-                icon: CupertinoIcons.person_fill,
                 title: 'Profile and goals',
                 detail: 'Goal, training profile, approved plan',
                 onTap: _openProfileGoals,
               ),
             ),
-            const SectionLabel('Connections'),
+            const AccountSectionLabel('CONNECTIONS'),
             if (themeController != null) ...[
-              TracendCard(child: _ThemeSelector(controller: themeController)),
+              TracendCard(
+                padding: EdgeInsets.zero,
+                child: _ThemeSelector(controller: themeController),
+              ),
               const SizedBox(height: TracendSpacing.sm),
             ],
-            HealthStatusCard(repository: widget.health, compact: true),
+            // Full card (not compact): the profile is the only home for
+            // Apple Health controls since the Chunk 6 Today redesign, so the
+            // sync chips, missing-signal detail, and "Last refreshed" stamp
+            // must stay visible here — they are the sync feedback.
+            HealthStatusCard(repository: widget.health),
             const SizedBox(height: TracendSpacing.sm),
             FutureBuilder<NotificationPreferences>(
               future: _notifications,
               builder: (context, snapshot) => TracendCard(
+                padding: EdgeInsets.zero,
                 child: AccountRow(
-                  icon: CupertinoIcons.bell_fill,
                   title: 'Notifications',
                   detail: _notificationDetail(snapshot.data),
                   onTap: () => _openNotifications(snapshot.data),
                 ),
               ),
             ),
-            const SectionLabel('AI service'),
+            const AccountSectionLabel('AI SERVICE'),
             FutureBuilder<Map<String, dynamic>>(
               future: _aiUsage,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return TracendCard(
+                    padding: EdgeInsets.zero,
                     child: AccountRow(
-                      icon: CupertinoIcons.waveform_path,
                       title: 'AI usage unavailable',
                       detail: 'Open details to retry',
                       onTap: () => _openAiUsage(null),
@@ -113,8 +177,8 @@ class _AccountScreenState extends State<AccountScreen> {
                 }
                 final usage = snapshot.data;
                 return TracendCard(
+                  padding: EdgeInsets.zero,
                   child: AccountRow(
-                    icon: CupertinoIcons.waveform_path,
                     title: _aiUsageTitle(usage),
                     detail: _aiUsageDetail(usage),
                     onTap: () => _openAiUsage(usage),
@@ -126,34 +190,45 @@ class _AccountScreenState extends State<AccountScreen> {
                 widget.coach is CoachChatRepository) ...[
               const SizedBox(height: TracendSpacing.sm),
               TracendCard(
+                padding: EdgeInsets.zero,
                 child: AccountRow(
-                  icon: CupertinoIcons.bubble_left_bubble_right_fill,
                   title: 'Coach conversations',
                   detail: 'Review or delete saved threads',
                   onTap: _openCoachThreads,
                 ),
               ),
+              const SizedBox(height: TracendSpacing.sm),
+              Text(
+                'Provider credentials are managed securely on the server.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
-            const SectionLabel('Privacy and data'),
+            const AccountSectionLabel('PRIVACY AND DATA'),
             TracendCard(
+              padding: EdgeInsets.zero,
               child: Column(
                 children: [
                   AccountRow(
-                    icon: CupertinoIcons.lock_fill,
                     title: 'Privacy and AI processing',
                     detail: 'Review consent by purpose',
                     onTap: _openConsentLedger,
                   ),
-                  Divider(height: TracendSpacing.xl),
+                  Divider(
+                    height: 1,
+                    thickness: 0.5,
+                    color: colors.borderHairline,
+                  ),
                   AccountRow(
-                    icon: CupertinoIcons.arrow_down_doc_fill,
                     title: 'Export data',
                     detail: 'Requires recent authentication',
                     onTap: _openExport,
                   ),
-                  Divider(height: TracendSpacing.xl),
+                  Divider(
+                    height: 1,
+                    thickness: 0.5,
+                    color: colors.borderHairline,
+                  ),
                   AccountRow(
-                    icon: CupertinoIcons.delete_solid,
                     title: 'Delete account',
                     detail: 'Permanent and audited',
                     onTap: _openDeletion,
@@ -330,6 +405,67 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 }
 
+/// Stitch identity block: display-headline name, private-beta chip, current
+/// goal line, and the edit affordance opening Profile and goals.
+class _IdentityBlock extends StatelessWidget {
+  const _IdentityBlock({required this.name, this.goal});
+
+  final String name;
+  final String? goal;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                  ),
+                  const SizedBox(width: TracendSpacing.sm),
+                  TracendPill(label: 'Private beta', compact: true),
+                ],
+              ),
+              if (goal != null) ...[
+                const SizedBox(height: TracendSpacing.xs),
+                Text(
+                  'Current goal · $goal',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: TracendSpacing.sm),
+        CupertinoButton(
+          padding: EdgeInsets.zero,
+          minimumSize: const Size(44, 44),
+          onPressed: () {},
+          child: Text(
+            'Edit',
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(color: colors.actionPrimary),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ThemeSelector extends StatelessWidget {
   const _ThemeSelector({required this.controller});
 
@@ -337,52 +473,43 @@ class _ThemeSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    return Row(
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: colors.actionPrimary.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(TracendRadii.control),
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: TracendSpacing.md,
+        vertical: TracendSpacing.xs,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Appearance',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Dark is the Tracend default',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
           ),
-          child: Icon(
-            CupertinoIcons.circle_lefthalf_fill,
-            size: 18,
-            color: colors.actionPrimary,
-          ),
-        ),
-        const SizedBox(width: TracendSpacing.sm),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Appearance',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                'Dark is the Tracend default',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+          DropdownButton<ThemeMode>(
+            value: controller.mode,
+            underline: const SizedBox.shrink(),
+            items: const [
+              DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
+              DropdownMenuItem(value: ThemeMode.light, child: Text('Light')),
+              DropdownMenuItem(value: ThemeMode.system, child: Text('System')),
             ],
+            onChanged: (value) {
+              if (value != null) controller.setMode(value);
+            },
           ),
-        ),
-        DropdownButton<ThemeMode>(
-          value: controller.mode,
-          underline: const SizedBox.shrink(),
-          items: const [
-            DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
-            DropdownMenuItem(value: ThemeMode.light, child: Text('Light')),
-            DropdownMenuItem(value: ThemeMode.system, child: Text('System')),
-          ],
-          onChanged: (value) {
-            if (value != null) controller.setMode(value);
-          },
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
@@ -93,17 +95,19 @@ TrendSeries? trendSeriesFor(HealthHistory history) {
   return null;
 }
 
-/// Real 7-day health trend (Chunk 6). Replaces the today-only
-/// `TrajectoryLens`: plots recorded days from `daily_health_summaries` as a
-/// bezier with area fill, real point dots, restrained min/max/date labels, a
-/// draw-on reveal, and the NOW pulse on the latest recorded day (the single
+/// Real 7-day health trend (Chunk 6, redesigned 2026-09-03 as day columns):
+/// plots recorded days from `daily_health_summaries` as magnitude columns on
+/// a 7-slot window — one slot per calendar day, gaps left empty — with range
+/// rails at the series' own min/max, a day-tick row with month rollover, a
+/// calibration strip (range · recorded count · as-of stamp), a grow-on
+/// reveal, and the NOW halo on the latest recorded day (the single
 /// sanctioned idle loop).
 class TrajectoryTrend extends StatefulWidget {
-  const TrajectoryTrend({required this.history, this.height = 140, super.key});
+  const TrajectoryTrend({required this.history, this.height = 150, super.key});
 
   final HealthHistory history;
 
-  /// Plot area height (labels sit outside it).
+  /// Plot area height (day ticks and the calibration strip sit outside it).
   final double height;
 
   @override
@@ -163,12 +167,17 @@ class _TrajectoryTrendState extends State<TrajectoryTrend>
     final range = _rangeLabel(series.windowStart, series.windowEnd);
     final semantics =
         '7-day $label trend, $range: '
-        '${_formatValue(series.metric, first)} to '
-        '${_formatValue(series.metric, last)}, '
+        '${_rangeText(series)}, '
+        '${_formatValue(series.metric, last)} latest on '
+        '${_dayLabel(series.points.last.date)}, '
         '${series.points.length} of 7 days recorded.';
 
     return PremiumGradientCard(
       glow: true,
+      // Teal (the card's own tag color), not the default indigo: the
+      // recovery readout above already carries the indigo glow, and two
+      // same-glow evidence cards fought for the same visual voice.
+      glowColor: colors.stateStable,
       child: Semantics(
         label: semantics,
         child: ExcludeSemantics(
@@ -196,8 +205,7 @@ class _TrajectoryTrendState extends State<TrajectoryTrend>
               ),
               const SizedBox(height: TracendSpacing.sm),
               Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
                     _formatValue(series.metric, last),
@@ -210,10 +218,25 @@ class _TrajectoryTrendState extends State<TrajectoryTrend>
                   ),
                   const SizedBox(width: TracendSpacing.xs),
                   Flexible(
-                    child: _TrendDelta(
-                      metric: series.metric,
-                      first: first,
-                      last: last,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: colors.borderSubtle.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 3,
+                          ),
+                          child: _TrendDelta(
+                            metric: series.metric,
+                            first: first,
+                            last: last,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -225,24 +248,27 @@ class _TrajectoryTrendState extends State<TrajectoryTrend>
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final size = Size(constraints.maxWidth, widget.height);
-                    final nowOffset = _pixelFor(
-                      series,
-                      series.points.last,
-                      size,
+                    final lastDay = series.points.last.date
+                        .difference(series.windowStart)
+                        .inDays;
+                    final nowOffset = Offset(
+                      _xInsetFor(size) +
+                          (lastDay / 6) * (size.width - 2 * _xInsetFor(size)),
+                      _yFor(series, series.points.last.value, size),
                     );
                     return Stack(
                       children: [
-                        _TrendPlot(series: series, controller: _controller),
-                        Positioned(
-                          left: 0,
-                          top: 0,
-                          child: _AxisLabel(text: _formatAxis(_maxOf(series))),
+                        // Positioned.fill gives the childless CustomPaint
+                        // tight constraints; under loose constraints it would
+                        // size itself to Size.zero and paint nothing.
+                        Positioned.fill(
+                          child: _TrendPlot(
+                            series: series,
+                            controller: _controller,
+                          ),
                         ),
-                        Positioned(
-                          left: 0,
-                          bottom: 0,
-                          child: _AxisLabel(text: _formatAxis(_minOf(series))),
-                        ),
+                        // The NOW halo sits on the latest recorded day's
+                        // column top, lifted off the plot edge.
                         Positioned(
                           left: nowOffset.dx - 5,
                           top: nowOffset.dy - 5,
@@ -274,14 +300,13 @@ class _TrajectoryTrendState extends State<TrajectoryTrend>
                   },
                 ),
               ),
-              const SizedBox(height: TracendSpacing.xxs),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _AxisLabel(text: _dayLabel(series.windowStart)),
-                  _AxisLabel(text: _dayLabel(series.windowEnd)),
-                ],
+              _DayTicks(
+                windowStart: series.windowStart,
+                windowEnd: series.windowEnd,
+                recordedDays: {for (final point in series.points) point.date},
               ),
+              const SizedBox(height: TracendSpacing.xxs),
+              _CalibrationStrip(series: series),
             ],
           ),
         ),
@@ -302,11 +327,13 @@ class _TrendPlot extends StatelessWidget {
     final controller = this.controller;
     if (controller == null) {
       return CustomPaint(
+        key: const ValueKey('trend-plot'),
         painter: _TrendPainter(
           series: series,
-          line: colors.actionPrimary,
-          grid: colors.borderSubtle,
-          dotRing: colors.canvas,
+          column: colors.actionPrimary,
+          terminal: colors.accentNow,
+          rail: colors.borderSubtle,
+          socket: colors.borderSubtle,
           progress: 1,
         ),
       );
@@ -314,11 +341,13 @@ class _TrendPlot extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) => CustomPaint(
+        key: const ValueKey('trend-plot'),
         painter: _TrendPainter(
           series: series,
-          line: colors.actionPrimary,
-          grid: colors.borderSubtle,
-          dotRing: colors.canvas,
+          column: colors.actionPrimary,
+          terminal: colors.accentNow,
+          rail: colors.borderSubtle,
+          socket: colors.borderSubtle,
           progress: Curves.easeOutCubic.transform(controller.value),
         ),
       ),
@@ -326,96 +355,96 @@ class _TrendPlot extends StatelessWidget {
   }
 }
 
+/// Day-column painter: one slot per calendar day in the 7-day window.
+/// Recorded days grow from the bottom rail toward their value; unrecorded
+/// days leave a dim socket on the baseline (gaps stay visible, never
+/// interpolated). Hairline rails at the series' padded min and max bound the
+/// columns so the plot reads as an instrument, not a spreadsheet grid.
 class _TrendPainter extends CustomPainter {
   _TrendPainter({
     required this.series,
-    required this.line,
-    required this.grid,
-    required this.dotRing,
+    required this.column,
+    required this.terminal,
+    required this.rail,
+    required this.socket,
     required this.progress,
   });
 
   final TrendSeries series;
-  final Color line;
-  final Color grid;
-  final Color dotRing;
+  final Color column;
+  final Color terminal;
+  final Color rail;
+  final Color socket;
   final double progress;
 
   static const _xInset = 16.0;
-  static const _topInset = 12.0;
-  static const _bottomInset = 10.0;
+  static const _columnWidth = 9.0;
+  static const _minColumnHeight = 4.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (size.isEmpty || series.points.length < 2) return;
+    if (size.isEmpty || series.points.isEmpty) return;
 
-    final points = [
-      for (final point in series.points) _pixelFor(series, point, size),
-    ];
-
-    final gridPaint = Paint()
-      ..color = grid.withValues(alpha: 0.35)
+    // Range rails at the series' own extremes (padded): the top rail marks
+    // the highest recorded value, the bottom rail the floor the columns
+    // grow from.
+    final topRailY = _yFor(series, _maxOf(series), size);
+    final bottomRailY = size.height;
+    final railPaint = Paint()
+      ..color = rail.withValues(alpha: 0.3)
       ..strokeWidth = 0.5;
-    for (final point in points) {
-      canvas.drawLine(
-        Offset(point.dx, _topInset - 4),
-        Offset(point.dx, size.height - _bottomInset + 4),
-        gridPaint,
-      );
-    }
-
-    final path = Path()..moveTo(points.first.dx, points.first.dy);
-    for (var i = 1; i < points.length; i++) {
-      final previous = points[i - 1];
-      final current = points[i];
-      final controlDx = (current.dx - previous.dx) / 2;
-      path.cubicTo(
-        previous.dx + controlDx,
-        previous.dy,
-        current.dx - controlDx,
-        current.dy,
-        current.dx,
-        current.dy,
-      );
-    }
-
-    final fill = Path()
-      ..addPath(path, Offset.zero)
-      ..lineTo(points.last.dx, size.height)
-      ..lineTo(points.first.dx, size.height)
-      ..close();
-    canvas.drawPath(
-      fill,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            line.withValues(alpha: 0.16 * progress),
-            line.withValues(alpha: 0),
-          ],
-        ).createShader(Offset.zero & size),
+    canvas.drawLine(
+      Offset(_xInset, topRailY),
+      Offset(size.width - _xInset, topRailY),
+      railPaint,
+    );
+    canvas.drawLine(
+      Offset(_xInset, bottomRailY),
+      Offset(size.width - _xInset, bottomRailY),
+      railPaint,
     );
 
-    final metric = path.computeMetrics().single;
-    final revealed = metric.extractPath(0, metric.length * progress);
-    canvas.drawPath(
-      revealed,
-      Paint()
-        ..color = line
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
+    // Day sockets for every unrecorded day in the window — the honest
+    // marker that no data exists there.
+    final socketPaint = Paint()..color = socket.withValues(alpha: 0.55);
+    for (var day = 0; day <= 6; day++) {
+      if (_valueOnDay(series, day) != null) continue;
+      final x = _xInset + (day / 6) * (size.width - 2 * _xInset);
+      canvas.drawCircle(Offset(x, size.height), 1.5, socketPaint);
+    }
 
-    for (var i = 0; i < points.length - 1; i++) {
-      final threshold = (points[i].dx - _xInset) / (size.width - 2 * _xInset);
-      if (progress < threshold) continue;
-      // Ringed dot: the fill matches the line, the ring lifts it off the
-      // curve so a recorded day stays visible even on a flat series.
-      canvas.drawCircle(points[i], 4, Paint()..color = dotRing);
-      canvas.drawCircle(points[i], 2.8, Paint()..color = line);
+    for (final point in series.points) {
+      final day = point.date.difference(series.windowStart).inDays;
+      final x = _xInset + (day / 6) * (size.width - 2 * _xInset);
+      final topY = _yFor(series, point.value, size);
+      final isLast = point == series.points.last;
+      final fullHeight = size.height - topY;
+      // Grow-on reveal: a west-to-east wave — each column starts rising
+      // 0.1 after the previous and every column, including the last,
+      // completes exactly as progress reaches 1.
+      final height = math.max(
+        _minColumnHeight,
+        fullHeight *
+            Curves.easeOutCubic.transform(
+              ((progress - 0.1 * day) / 0.4).clamp(0.0, 1.0),
+            ),
+      );
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          x - _columnWidth / 2,
+          size.height - height,
+          _columnWidth,
+          height,
+        ),
+        const Radius.circular(_columnWidth / 2),
+      );
+      canvas.drawRRect(
+        rect,
+        Paint()
+          ..color = isLast
+              ? terminal.withValues(alpha: 0.9 * progress)
+              : column.withValues(alpha: 0.85 * progress),
+      );
     }
   }
 
@@ -423,36 +452,49 @@ class _TrendPainter extends CustomPainter {
   bool shouldRepaint(covariant _TrendPainter oldDelegate) =>
       oldDelegate.progress != progress ||
       oldDelegate.series != series ||
-      oldDelegate.line != line ||
-      oldDelegate.grid != grid ||
-      oldDelegate.dotRing != dotRing;
+      oldDelegate.column != column ||
+      oldDelegate.terminal != terminal ||
+      oldDelegate.rail != rail ||
+      oldDelegate.socket != socket;
 }
 
-/// Maps a recorded point to pixels: x by day offset inside the 7-day window
-/// (gaps stay visible), y by value inside the series min/max with padding.
-Offset _pixelFor(TrendSeries series, TrendPoint point, Size size) {
-  const xInset = 16.0;
+/// Y pixel for a column of [value]: values map into the padded range
+/// between the top inset and the baseline, so the tallest column clears
+/// the plot edge and a series-min column still keeps a visible stub.
+double _yFor(TrendSeries series, double value, Size size) {
   const topInset = 12.0;
-  const bottomInset = 10.0;
-
-  final dayOffset = point.date.difference(series.windowStart).inDays;
-  final x = xInset + (dayOffset / 6) * (size.width - 2 * xInset);
-
   final min = _minOf(series);
   final max = _maxOf(series);
   final span = max - min;
-  final normalized = span == 0 ? 0.5 : (point.value - min) / span;
-  final y =
-      (size.height - bottomInset) -
-      normalized * (size.height - topInset - bottomInset);
-  return Offset(x, y);
+  final normalized = span == 0 ? 0.5 : (value - min) / span;
+  return size.height - normalized * (size.height - topInset);
 }
+
+double? _valueOnDay(TrendSeries series, int dayOffset) {
+  for (final point in series.points) {
+    if (point.date.difference(series.windowStart).inDays == dayOffset) {
+      return point.value;
+    }
+  }
+  return null;
+}
+
+double _xInsetFor(Size size) => 16.0;
 
 double _minOf(TrendSeries series) =>
     series.points.map((point) => point.value).reduce((a, b) => a < b ? a : b);
 
 double _maxOf(TrendSeries series) =>
     series.points.map((point) => point.value).reduce((a, b) => a > b ? a : b);
+
+/// Human range text for the calibration strip and semantics label:
+/// "54–155 ms" (or "1h 12m–1h 44m" style for sleep).
+String _rangeText(TrendSeries series) {
+  final min = _formatAxis(_minOf(series));
+  final max = _formatAxis(_maxOf(series));
+  final unit = trendMetricUnit(series.metric);
+  return '$min–$max $unit';
+}
 
 String _formatValue(TrendMetric metric, double value) => switch (metric) {
   TrendMetric.hrv => '${value.round()} ms',
@@ -565,20 +607,129 @@ class _TrendDelta extends StatelessWidget {
   String _signed(int value) => '${value >= 0 ? '+' : ''}$value';
 }
 
-class _AxisLabel extends StatelessWidget {
-  const _AxisLabel({required this.text});
-  final String text;
+/// One tick per calendar day in the 7-day window. The first and last day
+/// carry the month on rollover ("27 Aug", "1 Sep"); middle days show the
+/// bare number; unrecorded days render dim so gaps stay legible.
+class _DayTicks extends StatelessWidget {
+  const _DayTicks({
+    required this.windowStart,
+    required this.windowEnd,
+    required this.recordedDays,
+  });
+
+  final DateTime windowStart;
+  final DateTime windowEnd;
+  final Set<DateTime> recordedDays;
 
   @override
-  Widget build(BuildContext context) => Text(
-    text,
-    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+  Widget build(BuildContext context) {
+    final color = context.tracendColors.textSecondary;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        const inset = 16.0;
+        final dayTextStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
+          fontFamily: TracendFonts.monoFamily,
+          fontSize: 9,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        );
+        return SizedBox(
+          height: 14,
+          width: double.infinity,
+          child: Stack(
+            children: [
+              for (var day = 0; day <= 6; day++)
+                Positioned(
+                  left: inset + (day / 6) * (width - 2 * inset),
+                  top: 4,
+                  child: Transform.translate(
+                    offset: Offset(-_tickAnchor(day) * _tickWidth(day), 0),
+                    child: Text(
+                      _tickText(day),
+                      style: dayTextStyle?.copyWith(
+                        color: _isRecorded(day)
+                            ? color
+                            : color.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  static const _first = 0, _last = 6;
+
+  /// Anchor: first day's label grows right from its tick, the last day's
+  /// grows left, middle days center.
+  double _tickAnchor(int day) => day == _first
+      ? 0.0
+      : day == _last
+      ? 1.0
+      : 0.5;
+
+  double _tickWidth(int day) => day == _first || day == _last ? 30 : 10;
+
+  bool _isRecorded(int day) => recordedDays.contains(_dateFor(day));
+
+  DateTime _dateFor(int day) =>
+      DateTime(windowStart.year, windowStart.month, windowStart.day + day);
+
+  String _tickText(int day) {
+    final date = _dateFor(day);
+    final nextMonthRollover =
+        day == _first || (day != 0 && date.day == 1) || day == _last;
+    return nextMonthRollover
+        ? '${date.day} ${_months[date.month - 1]}'
+        : '${date.day}';
+  }
+}
+
+/// Calibration strip under the day ticks: the series' own range, the
+/// recorded-day count, and the as-of stamp (latest recorded day) — the
+/// trust readout that dates the headline value.
+class _CalibrationStrip extends StatelessWidget {
+  const _CalibrationStrip({required this.series});
+
+  final TrendSeries series;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = context.tracendColors.textSecondary;
+    final style = Theme.of(context).textTheme.labelMedium?.copyWith(
       fontFamily: TracendFonts.monoFamily,
       fontSize: 9,
-      color: context.tracendColors.textSecondary,
+      color: color,
       fontFeatures: const [FontFeature.tabularFigures()],
-    ),
-  );
+    );
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Flexible(
+          child: Text(
+            '${_rangeText(series)} · '
+            '${series.points.length} of 7 days',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+        const SizedBox(width: TracendSpacing.xs),
+        Flexible(
+          child: Text(
+            'as of ${_dayLabel(series.points.last.date)} · Apple Health',
+            textAlign: TextAlign.right,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Honest cold-start surface: no curve is drawn until at least four recorded

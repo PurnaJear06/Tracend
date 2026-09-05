@@ -1,26 +1,27 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 
-/// One navigation or status row inside an Account card.
+/// One navigation or status row inside a grouped Account card.
+///
+/// Stitch account reference grammar: hairline-separated full-width rows —
+/// title (Spline Sans 17pt) with a secondary detail line, no icon tiles;
+/// the quiet settings surface lets Today's trend stay the aesthetic risk.
 ///
 /// The chevron renders only when [onTap] is provided — rows without a
 /// destination are display-only facts (no dead affordances).
 class AccountRow extends StatelessWidget {
   const AccountRow({
-    required this.icon,
     required this.title,
     required this.detail,
     this.onTap,
-    this.detailColor,
     super.key,
   });
 
-  final IconData icon;
   final String title;
   final String detail;
   final VoidCallback? onTap;
-  final Color? detailColor;
 
   @override
   Widget build(BuildContext context) {
@@ -31,49 +32,66 @@ class AccountRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(TracendRadii.control),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: colors.actionPrimary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(TracendRadii.control),
-                ),
-                child: Icon(icon, size: 18, color: colors.actionPrimary),
-              ),
-              const SizedBox(width: TracendSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 2),
-                    Text(
-                      detail,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: detailColor ?? colors.textSecondary,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: TracendSpacing.md,
+            vertical: TracendSpacing.sm,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 44),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Text(
+                        detail,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              if (onTap != null) ...[
-                const SizedBox(width: TracendSpacing.xs),
-                Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 16,
-                  color: colors.textSecondary,
-                ),
+                if (onTap != null) ...[
+                  const SizedBox(width: TracendSpacing.xs),
+                  Icon(
+                    CupertinoIcons.chevron_right,
+                    size: 15,
+                    color: colors.textSecondary,
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Label-caps section heading for the account flow (DESIGN_SYSTEM §3.2):
+/// every caps label renders through `TracendTheme.labelCaps` so tracking
+/// never drifts past 0.08em.
+class AccountSectionLabel extends StatelessWidget {
+  const AccountSectionLabel(this.label, {super.key});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(
+      top: TracendSpacing.lg,
+      bottom: TracendSpacing.sm,
+    ),
+    child: Text(label, style: TracendTheme.labelCaps(context)),
+  );
 }
 
 /// Label/value rows for read-only detail cards. Values use tabular figures
