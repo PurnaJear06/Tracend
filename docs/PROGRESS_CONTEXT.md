@@ -87,6 +87,23 @@ finally attainable once all four signals have usable baselines), and
 `SleepArchitectureCard` restyled to the sibling card grammar (`widgets/` move, band chip,
 mono score + count-up, reflowing sub-score rows, no duplicated baseline footer, full
 Semantics). 352 Flutter tests pass, 0 analyze issues, Deno contract tests +3.
+2026-09-06 (branch `feature/review-optimizations`, review-ladder Passes 0+1): secret scanning
+live at all three layers (gitleaks 8.30.1: pre-push step 5, CI pinned-binary job with sha256
+verify, pre-commit rev bump; `.gitleaks.toml` allowlists the public supabase-demo anon JWT,
+Podfile.lock checksums, and the contract-test fixture UUID); PRD §5.8 now states the DeepSeek
+reality with ADR 0011 recording the activation; the check-in replay queue makes the offline
+promise true (`CheckInQueue`: envelope persisted pre-RPC, replayed on Today launch with the
+answer day's date, idempotent server-side, cleared on delivery, silent retry otherwise;
+legacy envelopes without dates discarded); future-date guard migration `20260906140000`
+stops `compute_daily_metrics` from folding baselines or persisting rows for
+`target_date > current_date + 1` (Train weekday strip future pages get a read-only brief —
+recovery null, z-keys 0, all components missing, `data_confidence` low) and deletes the
+future-dated prod rows once. pgTAP `future_date_guard_test.sql` 10 assertions. 362 Flutter
+tests pass, 0 analyze. Known: 6 pre-existing pgTAP failures on `main` (A/B-verified
+independent of this branch — phase_4 resp-range order-of-rejection from PR #18, plan-count
+off-by-one, coach_context_v5:269 syntax error, healthkit auto-complete/candidate fixtures,
+workout_persistence pgTAP is() cast) — CI/deploy never run pgTAP (Colima-gated), so they
+slipped; fix list tracked in the plan's follow-ups.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -127,7 +144,7 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Stitch/design             | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
 | Stability infra           | **Complete — deployed**              | `AGENTS.md` (commands)     | N/A                                           |
 | CI/CD automation          | **Complete — deployed**              | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` (deployment)                      |
-| Post-review optimizations | **In progress — Passes 0–1 on `feature/review-optimizations`** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
+| Post-review optimizations | **In progress — Passes 0–1 done on `feature/review-optimizations`; Passes 2–5 queued** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
 
 ## Global Current State
 

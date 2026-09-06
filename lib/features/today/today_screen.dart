@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
@@ -13,6 +14,7 @@ import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/today/check_in_sheet.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/widgets/check_in_prompt_bar.dart';
@@ -37,6 +39,8 @@ class TodayScreen extends StatefulWidget {
     this.coach = const FixtureCoachRepository(),
     this.brief = const FixtureDailyBriefRepository(),
     this.nutrition = const FixtureNutritionRepository(),
+    this.queueFactory,
+    this.checkInSender,
     this.onOpenProgress,
     this.onOpenNutrition,
     super.key,
@@ -49,6 +53,14 @@ class TodayScreen extends StatefulWidget {
   final CoachRepository coach;
   final DailyBriefRepository brief;
   final NutritionRepository nutrition;
+
+  /// Builds the pending-check-in replay queue. Defaults to the real
+  /// SharedPreferences-backed queue; tests inject a fake.
+  final CheckInQueue? Function()? queueFactory;
+
+  /// Performs the `save_daily_check_in` RPC during replay. Defaults to the
+  /// real Supabase client; tests inject a recording fake.
+  final CheckInSend? checkInSender;
 
   /// Shell wiring: switch to the Progress tab ("View analytics").
   final VoidCallback? onOpenProgress;
@@ -79,6 +91,57 @@ class _TodayScreenState extends State<TodayScreen> {
     _brief = widget.brief.load(DateTime.now());
     _latestDecision = widget.coach.loadLatest();
     _autoSyncHealthIfNeeded();
+    _replayPendingCheckIn();
+  }
+
+  /// Deliver any check-in queued while offline: the sheet persists the
+  /// envelope before its RPC, and this replays it with the same idempotency
+  /// key (the server deduplicates). The stored answer day's date is sent as
+  /// recorded — a check-in belongs to the day it was answered, never
+  /// re-dated to today. Silent by design: on failure the envelope stays
+  /// stored and the next launch retries; on success the brief reloads
+  /// because the check-in now colors today's coaching context.
+  Future<void> _replayPendingCheckIn() async {
+    if (!widget.environment.hasSupabaseConfiguration) return;
+    try {
+      final queue = await _resolveQueue();
+      if (queue == null) return;
+      final outcome = await queue.replay(_replaySender);
+      if (outcome == CheckInReplayOutcome.delivered && mounted) {
+        setState(() {
+          _brief = widget.brief.load(DateTime.now());
+        });
+      }
+    } on Exception {
+      // Keep the envelope; retried on next launch.
+    }
+  }
+
+  Future<bool> _replaySender(
+    String localDate,
+    String timezone,
+    String idempotencyKey,
+    Map<String, dynamic> payload,
+  ) async {
+    if (widget.checkInSender != null) {
+      return widget.checkInSender!(localDate, timezone, idempotencyKey, payload);
+    }
+    await Supabase.instance.client.rpc(
+      'save_daily_check_in',
+      params: {
+        'local_date': localDate,
+        'timezone': timezone,
+        'idempotency_key': idempotencyKey,
+        'payload': payload,
+      },
+    );
+    return true;
+  }
+
+  Future<CheckInQueue?> _resolveQueue() async {
+    if (widget.queueFactory != null) return widget.queueFactory!();
+    final preferences = await SharedPreferences.getInstance();
+    return CheckInQueue(preferences);
   }
 
   void _reloadHealth() {

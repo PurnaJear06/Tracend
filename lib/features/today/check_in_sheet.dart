@@ -1,11 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/features/today/check_in_queue.dart';
 
 Future<void> showCheckInSheet(
   BuildContext context,
@@ -36,7 +34,6 @@ class _CheckInSheetState extends State<_CheckInSheet> {
   final _note = TextEditingController();
   bool _available = true;
   bool _saving = false;
-  static const _key = 'daily_check_in_pending';
   @override
   void dispose() {
     _note.dispose();
@@ -45,30 +42,36 @@ class _CheckInSheetState extends State<_CheckInSheet> {
 
   Future<void> _save() async {
     setState(() => _saving = true);
+    final now = DateTime.now();
+    final localDate = now.toIso8601String().substring(0, 10);
+    final timezone = now.timeZoneName;
     final payload = {
       ..._values,
       'available_to_train': _available,
       'note': _note.text.trim(),
     };
-    final envelope = {
-      'idempotency_key': newIdempotencyKey(),
-      'payload': payload,
-    };
+    // The envelope is queued before the RPC so the check-in survives a lost
+    // connection; Today retries it on the next launch via CheckInQueue.
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(_key, jsonEncode(envelope));
+    final queue = CheckInQueue(preferences);
+    final idempotencyKey = await queue.enqueue(
+      payload: payload,
+      localDate: localDate,
+      timezone: timezone,
+    );
     try {
       if (widget.environment.hasSupabaseConfiguration) {
         await Supabase.instance.client.rpc(
           'save_daily_check_in',
           params: {
-            'local_date': DateTime.now().toIso8601String().substring(0, 10),
-            'timezone': DateTime.now().timeZoneName,
-            'idempotency_key': envelope['idempotency_key'],
+            'local_date': localDate,
+            'timezone': timezone,
+            'idempotency_key': idempotencyKey,
             'payload': payload,
           },
         );
       }
-      await preferences.remove(_key);
+      await queue.clear();
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(
