@@ -70,6 +70,26 @@ void main() {
     expect(summaries.single.presentMetrics, {HealthMetric.steps});
   });
 
+  test(
+    'respiratory rate averages valid samples and rejects out-of-range ones',
+    () {
+      final summaries = normalizeHealthSamples(
+        samples: [
+          _sample(HealthMetric.respRate, 14.2, day, id: 'resp-a'),
+          _sample(HealthMetric.respRate, 15.8, day, id: 'resp-b'),
+          _sample(HealthMetric.respRate, 140, day, id: 'resp-invalid'),
+        ],
+        requestedMetrics: HealthMetric.values.toSet(),
+        timezone: 'Asia/Kolkata',
+      );
+
+      expect(summaries.single.respRateBpm, 15);
+      expect(summaries.single.presentMetrics, contains(HealthMetric.respRate));
+      final json = summaries.single.toJson(HealthMetric.values.toSet());
+      expect(json['respiratory_rate_bpm'], 15);
+    },
+  );
+
   test('normalizes supported sleep stages without double-counting total', () {
     final summaries = normalizeHealthSamples(
       samples: [
@@ -115,6 +135,144 @@ void main() {
     expect(summaries.single.sleepDeepMinutes, 120);
     expect(summaries.single.sleepRemMinutes, 60);
   });
+
+  test('a night crossing midnight lands whole on the morning it ends', () {
+    final summaries = normalizeHealthSamples(
+      samples: [
+        // Watch-style 23:00 -> 07:00 night delivered as 30-minute segments.
+        for (var i = 0; i < 16; i++)
+          _sample(
+            HealthMetric.sleep,
+            0,
+            DateTime(2026, 6, 30, 23).add(Duration(minutes: 30 * i)),
+            end: DateTime(2026, 6, 30, 23).add(Duration(minutes: 30 * (i + 1))),
+            id: 'seg-$i',
+            sleepStage: i < 4
+                ? SleepStage.deep
+                : (i < 12 ? SleepStage.light : SleepStage.rem),
+          ),
+      ],
+      requestedMetrics: HealthMetric.values.toSet(),
+      timezone: 'Asia/Kolkata',
+    );
+
+    expect(summaries, hasLength(1));
+    expect(summaries.single.localDate, DateTime(2026, 7, 1));
+    expect(summaries.single.sleepMinutes, 480);
+    expect(summaries.single.sleepDeepMinutes, 120);
+    expect(summaries.single.sleepLightMinutes, 240);
+    expect(summaries.single.sleepRemMinutes, 120);
+  });
+
+  test('consecutive nights attribute to their own mornings', () {
+    final summaries = normalizeHealthSamples(
+      samples: [
+        // Night 1: Jun 29 23:30 -> Jun 30 06:30.
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 6, 29, 23, 30),
+          end: DateTime(2026, 6, 30, 6, 30),
+          id: 'night-1',
+          sleepStage: SleepStage.asleep,
+        ),
+        // Night 2: Jun 30 23:30 -> Jul 1 06:30.
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 6, 30, 23, 30),
+          end: DateTime(2026, 7, 1, 6, 30),
+          id: 'night-2',
+          sleepStage: SleepStage.asleep,
+        ),
+      ],
+      requestedMetrics: HealthMetric.values.toSet(),
+      timezone: 'Asia/Kolkata',
+    );
+
+    expect(summaries, hasLength(2));
+    expect(summaries.first.localDate, DateTime(2026, 6, 30));
+    expect(summaries.first.sleepMinutes, 420);
+    expect(summaries.last.localDate, DateTime(2026, 7, 1));
+    expect(summaries.last.sleepMinutes, 420);
+  });
+
+  test('an evening nap separated from the night is its own session', () {
+    final summaries = normalizeHealthSamples(
+      samples: [
+        // Nap 19:00 -> 20:00, then a > 60 min gap before the night.
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 6, 30, 19),
+          end: DateTime(2026, 6, 30, 20),
+          id: 'nap',
+          sleepStage: SleepStage.light,
+        ),
+        // Night 23:30 -> 06:30 (ends Jul 1).
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 6, 30, 23, 30),
+          end: DateTime(2026, 7, 1, 6, 30),
+          id: 'night',
+          sleepStage: SleepStage.asleep,
+        ),
+      ],
+      requestedMetrics: HealthMetric.values.toSet(),
+      timezone: 'Asia/Kolkata',
+    );
+
+    expect(summaries, hasLength(2));
+    expect(
+      summaries.first.localDate,
+      DateTime(2026, 6, 30),
+      reason: 'the nap ends the evening it starts',
+    );
+    expect(summaries.first.sleepMinutes, 60);
+    expect(
+      summaries.last.localDate,
+      DateTime(2026, 7, 1),
+      reason: 'the night ends the next morning',
+    );
+    expect(summaries.last.sleepMinutes, 420);
+  });
+
+  test(
+    'non-sleep metrics keep their start day alongside re-attributed sleep',
+    () {
+      final summaries = normalizeHealthSamples(
+        samples: [
+          _sample(
+            HealthMetric.sleep,
+            0,
+            DateTime(2026, 6, 30, 23),
+            end: DateTime(2026, 7, 1, 7),
+            id: 'night',
+            sleepStage: SleepStage.asleep,
+          ),
+          // Steps recorded during the evening still belong to Jun 30.
+          _sample(
+            HealthMetric.steps,
+            3000,
+            DateTime(2026, 6, 30, 20),
+            id: 'steps',
+          ),
+        ],
+        requestedMetrics: HealthMetric.values.toSet(),
+        timezone: 'Asia/Kolkata',
+      );
+
+      expect(summaries, hasLength(2));
+      final byDate = {
+        for (final summary in summaries) summary.localDate: summary,
+      };
+      expect(byDate[DateTime(2026, 6, 30)]!.steps, 3000);
+      expect(byDate[DateTime(2026, 6, 30)]!.sleepMinutes, isNull);
+      expect(byDate[DateTime(2026, 7, 1)]!.sleepMinutes, 480);
+      expect(byDate[DateTime(2026, 7, 1)]!.steps, isNull);
+    },
+  );
 
   test('checksum is stable when HealthKit sample order changes', () {
     final samples = [
@@ -169,20 +327,20 @@ void main() {
     );
   });
 
-  test('first sync backfills the initial 7-day window', () {
+  test('first sync backfills the initial 9-day window', () {
     expect(
       healthSyncStart(
         now: DateTime(2026, 7, 4, 8),
         initialBackfillComplete: false,
       ),
-      DateTime(2026, 6, 27),
+      DateTime(2026, 6, 26),
     );
     expect(
       healthSyncStart(
         now: DateTime(2026, 7, 4, 8),
         initialBackfillComplete: true,
       ),
-      DateTime(2026, 6, 28),
+      DateTime(2026, 6, 27),
     );
   });
 

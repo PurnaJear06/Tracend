@@ -77,6 +77,16 @@ than the 17 codes `prepare_daily_coaching` permits and the DeepSeek prompt teach
 full 17-code set (fabricated codes still rejected), and `coach-decide` now records a
 failed run with `error_code='decision_rejected'` when persistence rejects, so rejections
 are diagnosable in AI usage. pgTAP `persist_evidence_whitelist_test.sql` 11 assertions.
+2026-09-06 (branch `feature/precision-pro-ui-redesigns`, commits `e939cb6`/`993142a`/`fdbc023`):
+Today recovery fixes from the production sleep/resp diagnosis — sleep sessions attribute
+to the morning they end (watch 30-min segments group ≤60 min gaps; window widened to
+today−7/−8 so the fetch captures the full night; recent days self-heal on next sync),
+respiratory rate collected end-to-end (read type + Edge contract + migration
+`20260906120000` widening the persist/constraint whitelists; `data_confidence='high'`
+finally attainable once all four signals have usable baselines), and
+`SleepArchitectureCard` restyled to the sibling card grammar (`widgets/` move, band chip,
+mono score + count-up, reflowing sub-score rows, no duplicated baseline footer, full
+Semantics). 352 Flutter tests pass, 0 analyze issues, Deno contract tests +3.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -204,7 +214,7 @@ rename/drop/type-change.
 | Widget | File | Screen | What it shows |
 |--------|------|--------|---------------|
 | `RecoveryRing` | `lib/features/today/recovery_ring.dart` | Today | 240° arc gauge (0-100 recovery score) with HRV/RHR/sleep/respiratory/strain Z-score driver breakdown |
-| `SleepArchitectureCard` | `lib/features/today/sleep_architecture_card.dart` | Today | Sleep quality (0-100) + duration/efficiency/restorative/consistency sub-scores + HRV/RHR baselines |
+| `SleepArchitectureCard` | `lib/features/today/widgets/sleep_architecture_card.dart` | Today | Sleep quality (0-100) + duration/efficiency/restorative/consistency sub-scores + debt/surplus pill (restyled to sibling card grammar 2026-09-06; baselines live in RecoveryReadoutCard) |
 | `_ReadinessStrip` redesign | `lib/features/today/today_screen.dart` | Today | Three scored tiles: Recovery, Load (ACWR), Nutrition (macro adherence %) — each with color-coded detail + tap-to-explain |
 | `TrainingLoadGauge` | `lib/features/train/training_load_gauge.dart` | Train | 4-zone ACWR bar (undertraining/optimal/elevated/high-risk) + monotony indicator + daily strain pill |
 | `WeightTrendIndicator` | `lib/features/progress/weight_trend_indicator.dart` | Progress | 7d / 28d trend rates (kg/day) + R² confidence + optional MetricSparkline |

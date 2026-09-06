@@ -3,14 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
-import 'package:tracend/features/train/training_load_gauge.dart';
 import 'package:tracend/features/train/widgets/action_cards.dart';
-import 'package:tracend/features/train/widgets/prescription_cards.dart';
+import 'package:tracend/features/train/widgets/exercise_list_card.dart';
+import 'package:tracend/features/train/widgets/prescription_cards.dart'
+    show RecentSessionsCard;
+import 'package:tracend/features/train/widgets/week_rail_card.dart';
 import 'package:tracend/features/train/widgets/workout_hero.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
-import 'package:tracend/shared/widgets/date_pill_strip.dart';
-import 'package:tracend/shared/widgets/intensity_bar.dart';
+import 'package:tracend/shared/widgets/micro_motion.dart';
+import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class TrainScreen extends StatefulWidget {
@@ -306,7 +308,7 @@ class _TrainScreenState extends State<TrainScreen> {
           title: 'Train',
           subtitle: 'Approved plan unavailable',
           children: [
-            TracendCard(
+            PremiumGradientCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -332,43 +334,39 @@ class _TrainScreenState extends State<TrainScreen> {
         title: 'Train',
         subtitle: hub.planTitle,
         children: [
-          DatePillStrip(
-            selectedDate: sessionDate,
-            onSelectedDate: _selectDate,
-            daysWithData: hub.completedDays,
-            plannedDates: {
-              for (final item in hub.workouts)
-                if (item.weekday != null) _dateForWeekday(item.weekday!),
-            },
-            markedDate: _confirmedWorkoutWeekday == null
-                ? null
-                : _dateForWeekday(_confirmedWorkoutWeekday!),
-            onPreviousWeek: _weekOffset > _minWeekOffset
-                ? () => _shiftWeek(-1)
-                : null,
-            onNextWeek: _weekOffset < 0 ? () => _shiftWeek(1) : null,
+          // Week rail (2026-09-04 redesign): date strip and training load
+          // fused into one instrument; the brief enriches the verdict.
+          MicroMotionEntrance(
+            delay: MicroMotion.stagger(0),
+            child: FutureBuilder<DailyBrief>(
+              future: _brief,
+              builder: (context, snapshot) => WeekRailCard(
+                selectedDate: sessionDate,
+                onSelectedDate: _selectDate,
+                sessions: hub.recentSessions,
+                completedDays: hub.completedDays,
+                plannedDates: {
+                  for (final item in hub.workouts)
+                    if (item.weekday != null) _dateForWeekday(item.weekday!),
+                },
+                markedDate: _confirmedWorkoutWeekday == null
+                    ? null
+                    : _dateForWeekday(_confirmedWorkoutWeekday!),
+                onPreviousWeek: _weekOffset > _minWeekOffset
+                    ? () => _shiftWeek(-1)
+                    : null,
+                onNextWeek: _weekOffset < 0 ? () => _shiftWeek(1) : null,
+                computed: snapshot.data?.computed,
+              ),
+            ),
           ),
           const SizedBox(height: TracendSpacing.md),
-          FutureBuilder<DailyBrief>(
-            future: _brief,
-            builder: (context, snapshot) {
-              if (snapshot.hasData && snapshot.data?.computed != null) {
-                return Column(
-                  children: [
-                    TrainingLoadGauge(computed: snapshot.data!.computed!),
-                    const SizedBox(height: TracendSpacing.md),
-                  ],
-                );
-              }
-              return const SizedBox.shrink();
-            },
-          ),
           if (_repairCandidates.isNotEmpty) ...[
             WorkoutRepairCard(
               candidate: _repairCandidates.first,
               onConfirm: () => _confirmRepair(_repairCandidates.first),
             ),
-            const SizedBox(height: TracendSpacing.md),
+            const SizedBox(height: TracendSpacing.sm),
           ],
           if (_reconciliations.isNotEmpty) ...[
             ReconciliationCard(
@@ -385,10 +383,13 @@ class _TrainScreenState extends State<TrainScreen> {
                 accept: false,
               ),
             ),
-            const SizedBox(height: TracendSpacing.md),
+            const SizedBox(height: TracendSpacing.sm),
           ],
           if (workout == null)
-            const RestDayCard()
+            MicroMotionEntrance(
+              delay: MicroMotion.stagger(1),
+              child: const RestDayCard(),
+            )
           else ...[
             if (_healthkitCandidate != null)
               HealthkitCompleteCard(
@@ -414,82 +415,76 @@ class _TrainScreenState extends State<TrainScreen> {
                     }),
               )
             else
-              FutureBuilder<CoachDecision?>(
-                future: _decision,
-                builder: (context, snapshot) => WorkoutHero(
-                  workout: workout,
-                  source: _source,
-                  sessionDate: sessionDate,
-                  isCompleted: isCompleted,
-                  coachInsight: snapshot.data?.trainingSummary,
-                  onWorkoutChanged: () => setState(() {
-                    _hub = _load();
-                    _healthkitCandidate = null;
-                  }),
+              MicroMotionEntrance(
+                delay: MicroMotion.stagger(1),
+                child: FutureBuilder<CoachDecision?>(
+                  future: _decision,
+                  builder: (context, snapshot) => WorkoutHero(
+                    workout: workout,
+                    source: _source,
+                    sessionDate: sessionDate,
+                    isCompleted: isCompleted,
+                    coachInsight: snapshot.data?.trainingSummary,
+                    onWorkoutChanged: () => setState(() {
+                      _hub = _load();
+                      _healthkitCandidate = null;
+                    }),
+                  ),
                 ),
               ),
-            const SizedBox(height: TracendSpacing.sm),
-            FutureBuilder<DailyBrief>(
-              future: _brief,
-              builder: (context, snapshot) {
-                final strain = snapshot.data?.computed?.scores.dailyStrain;
-                if (!isCompleted) {
-                  return IntensityBar(
-                    entries: [
-                      for (final exercise in workout.exercises)
-                        IntensityBarEntry(
-                          name: exercise.name,
-                          targetRpe: exercise.targetRpe,
-                        ),
-                    ],
-                    dailyStrain: strain,
-                  );
-                }
-                return FutureBuilder<Map<int, double>>(
-                  future: _recordedRpeFor(workout, sessionDate),
-                  builder: (context, rpeSnapshot) {
-                    final recorded = rpeSnapshot.data ?? const {};
-                    return IntensityBar(
+            const SectionLabel('Today’s exercises'),
+            MicroMotionEntrance(
+              delay: MicroMotion.stagger(2),
+              child: isCompleted
+                  ? FutureBuilder<Map<int, double>>(
+                      future: _recordedRpeFor(workout, sessionDate),
+                      builder: (context, rpeSnapshot) => ExerciseListCard(
+                        entries: [
+                          for (final exercise in workout.exercises)
+                            ExerciseListEntry(
+                              exercise: exercise,
+                              recordedRpe:
+                                  (rpeSnapshot.data ??
+                                  const {})[exercise.order],
+                            ),
+                        ],
+                        warmUp: workout.warmUp,
+                        cooldownCardio: workout.cooldownCardio,
+                      ),
+                    )
+                  : ExerciseListCard(
                       entries: [
                         for (final exercise in workout.exercises)
-                          IntensityBarEntry(
-                            name: exercise.name,
-                            targetRpe: exercise.targetRpe,
-                            recordedRpe: recorded[exercise.order],
-                          ),
+                          ExerciseListEntry(exercise: exercise),
                       ],
-                      dailyStrain: strain,
-                    );
-                  },
-                );
-              },
+                      warmUp: workout.warmUp,
+                      cooldownCardio: workout.cooldownCardio,
+                    ),
             ),
-            const SectionLabel('Prescription'),
-            PrescriptionCard(workout: workout),
-            if (workout.warmUp.isNotEmpty ||
-                workout.cooldownCardio.isNotEmpty) ...[
-              const SizedBox(height: TracendSpacing.sm),
-              WarmUpCard(workout: workout),
-            ],
           ],
-          const SectionLabel('Execution evidence'),
-          AdherenceCard(
-            completedSessions: hub.completedSessions,
-            plannedSessions: hub.plannedSessions,
+          const SectionLabel('Execution'),
+          MicroMotionEntrance(
+            delay: MicroMotion.stagger(3),
+            child: ExecutionCard(
+              completedSessions: hub.completedSessions,
+              plannedSessions: hub.plannedSessions,
+              progression: hub.progression,
+            ),
           ),
-          const SizedBox(height: TracendSpacing.sm),
-          ProgressionCard(progression: hub.progression),
           if (hub.recentSessions.isNotEmpty) ...[
             const SectionLabel('Recent sessions'),
-            RecentSessionsCard(
-              sessions: hub.recentSessions.take(6).toList(),
-              workoutForId: (id) {
-                for (final candidate in hub.workouts) {
-                  if (candidate.id == id) return candidate;
-                }
-                return null;
-              },
-              repository: _source,
+            MicroMotionEntrance(
+              delay: MicroMotion.stagger(4),
+              child: RecentSessionsCard(
+                sessions: hub.recentSessions.take(6).toList(),
+                workoutForId: (id) {
+                  for (final candidate in hub.workouts) {
+                    if (candidate.id == id) return candidate;
+                  }
+                  return null;
+                },
+                repository: _source,
+              ),
             ),
           ],
         ],

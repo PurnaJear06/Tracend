@@ -159,7 +159,7 @@ void main() {
       (53, null, null),
     ]);
 
-    testWidgets('draws a 7-day HRV trend with real labels', (tester) async {
+    testWidgets('draws a 7-day HRV trend with day columns', (tester) async {
       await tester.pumpWidget(_wrap(TrajectoryTrend(history: fullHistory)));
       // Bounded pumps: the NOW-dot pulse is an intentional infinite loop.
       await tester.pump(const Duration(seconds: 2));
@@ -168,9 +168,36 @@ void main() {
       expect(find.text('HRV · ms'), findsOneWidget);
       expect(find.text('53 ms'), findsOneWidget);
       expect(find.text('+11 ms vs first day'), findsOneWidget);
+      // Day ticks: month on first/last and rollover, bare number between.
       expect(find.text('18 Aug'), findsOneWidget);
+      expect(find.text('19'), findsOneWidget);
       expect(find.text('24 Aug'), findsOneWidget);
+      // Calibration strip: range, recorded count, as-of stamp.
+      expect(find.text('42–53 ms · 7 of 7 days'), findsOneWidget);
+      expect(find.text('as of 24 Aug · Apple Health'), findsOneWidget);
       expect(find.byType(CustomPaint), findsWidgets);
+    });
+
+    testWidgets('lays the plot canvas out at full size', (tester) async {
+      // Regression: the childless CustomPaint inside a loose Stack sized
+      // itself to Size.zero, the painter bailed on `size.isEmpty`, and the
+      // chart rendered only the header value and the NOW pulse dot. Existence
+      // checks (find.byType) cannot catch that — assert the painted size.
+      await tester.pumpWidget(_wrap(TrajectoryTrend(history: fullHistory)));
+      // Bounded pumps: the NOW-dot pulse is an intentional infinite loop.
+      await tester.pump(const Duration(seconds: 2));
+
+      final plot = tester.getSize(find.byKey(const ValueKey('trend-plot')));
+      expect(
+        plot.width,
+        greaterThan(300),
+        reason: 'plot canvas must span the card width',
+      );
+      expect(
+        plot.height,
+        greaterThan(100),
+        reason: 'plot canvas must span the 150pt plot height',
+      );
     });
 
     testWidgets('shows the cold-start state with fewer than four days', (
@@ -222,9 +249,45 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
 
       expect(
-        find.bySemanticsLabel(RegExp('7-day HRV trend, 18–24 Aug')),
+        find.bySemanticsLabel(
+          RegExp(
+            '7-day HRV trend, 18–24 Aug: 42–53 ms, '
+            '53 ms latest on 24 Aug, 7 of 7 days recorded',
+          ),
+        ),
         findsOneWidget,
       );
+    });
+
+    testWidgets('reports no change on a flat series', (tester) async {
+      final flat = _history([
+        (58, null, null),
+        (58, null, null),
+        (58, null, null),
+        (58, null, null),
+      ]);
+      await tester.pumpWidget(_wrap(TrajectoryTrend(history: flat)));
+      await tester.pump(const Duration(seconds: 2));
+
+      expect(find.text('no change · 7 days'), findsOneWidget);
+      expect(find.text('58–58 ms · 4 of 7 days'), findsOneWidget);
+    });
+
+    testWidgets('marks sparse gaps in the day ticks and strip', (tester) async {
+      final sparse = _history([
+        (42, null, null),
+        (45, null, null),
+        (null, null, null),
+        (48, null, null),
+        (null, null, null),
+        (null, null, null),
+        (53, null, null),
+      ]);
+      await tester.pumpWidget(_wrap(TrajectoryTrend(history: sparse)));
+      await tester.pump(const Duration(seconds: 2));
+
+      expect(find.text('42–53 ms · 4 of 7 days'), findsOneWidget);
+      expect(find.text('as of 24 Aug · Apple Health'), findsOneWidget);
     });
   });
 }

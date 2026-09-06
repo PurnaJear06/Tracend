@@ -91,6 +91,80 @@ Deno.test("health sync rejects inconsistent completeness", () => {
   );
 });
 
+Deno.test("health sync accepts respiratory rate summaries", () => {
+  const parsed = parseHealthSyncRequest({
+    ...valid,
+    requested_types: ["steps", "sleep", "resp_rate"],
+    returned_types: ["steps", "resp_rate"],
+    summaries: [{
+      ...valid.summaries[0],
+      respiratory_rate_bpm: 14.2,
+      present_types: ["steps", "resp_rate"],
+      source_refs: [
+        valid.summaries[0].source_refs[0],
+        {
+          type: "resp_rate",
+          source_id_hash: "a".repeat(64),
+          sample_id_hash: "d".repeat(64),
+        },
+      ],
+      completeness: "partial",
+    }],
+  });
+  assertEquals(parsed.summaries[0].respiratory_rate_bpm, 14.2);
+});
+
+Deno.test("health sync rejects out-of-range respiratory rate", () => {
+  assertThrows(
+    () =>
+      parseHealthSyncRequest({
+        ...valid,
+        requested_types: ["steps", "resp_rate"],
+        returned_types: ["steps", "resp_rate"],
+        summaries: [{
+          ...valid.summaries[0],
+          respiratory_rate_bpm: 140,
+          present_types: ["steps", "resp_rate"],
+          source_refs: [
+            valid.summaries[0].source_refs[0],
+            {
+              type: "resp_rate",
+              source_id_hash: "a".repeat(64),
+              sample_id_hash: "d".repeat(64),
+            },
+          ],
+        }],
+      }),
+    Error,
+    "invalid_health_summary",
+  );
+});
+
+Deno.test("health sync rejects resp_rate presence without a value", () => {
+  assertThrows(
+    () =>
+      parseHealthSyncRequest({
+        ...valid,
+        requested_types: ["steps", "resp_rate"],
+        returned_types: ["steps", "resp_rate"],
+        summaries: [{
+          ...valid.summaries[0],
+          present_types: ["steps", "resp_rate"],
+          source_refs: [
+            valid.summaries[0].source_refs[0],
+            {
+              type: "resp_rate",
+              source_id_hash: "a".repeat(64),
+              sample_id_hash: "d".repeat(64),
+            },
+          ],
+        }],
+      }),
+    Error,
+    "invalid_health_summary",
+  );
+});
+
 Deno.test("health sync rejects missing source provenance", () => {
   assertThrows(
     () =>

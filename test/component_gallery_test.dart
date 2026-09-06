@@ -82,7 +82,8 @@ void main() {
 
     expect(
       find.bySemanticsLabel(
-        '7-day HRV trend, 18–24 Aug: 42 ms to 53 ms, 7 of 7 days recorded.',
+        '7-day HRV trend, 18–24 Aug: 42–53 ms, '
+        '53 ms latest on 24 Aug, 7 of 7 days recorded.',
       ),
       findsOneWidget,
     );

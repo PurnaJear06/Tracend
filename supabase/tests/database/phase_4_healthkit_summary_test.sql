@@ -1,5 +1,5 @@
 begin;
-select plan(20);
+select plan(24);
 
 insert into auth.users(id, role) values
   ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'authenticated'),
@@ -170,12 +170,82 @@ select throws_ok($$
   )
 $$, '23514', null, 'HRV without an explicit unit is rejected');
 
+select lives_ok($$
+  select public.persist_health_sync(
+    'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    'e8000000-0000-4000-8000-000000000008',
+    '2026-06-30', '2026-07-01',
+    array['steps','sleep','resp_rate'], array['steps','resp_rate'],
+    '[{
+      "local_date":"2026-07-01",
+      "timezone":"Asia/Kolkata",
+      "steps":6400,
+      "respiratory_rate_bpm":14.2,
+      "present_types":["steps","resp_rate"],
+      "source_refs":[{
+        "type":"steps",
+        "source_id_hash":"1111111111111111111111111111111111111111111111111111111111111111",
+        "sample_id_hash":"2222222222222222222222222222222222222222222222222222222222222222"
+      },{
+        "type":"resp_rate",
+        "source_id_hash":"1111111111111111111111111111111111111111111111111111111111111111",
+        "sample_id_hash":"9999999999999999999999999999999999999999999999999999999999999999"
+      }],
+      "source_checksum":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "completeness":"partial",
+      "observed_through":"2026-07-01T08:00:00Z"
+    }]'::jsonb
+  )
+$$, 'service boundary persists a respiratory rate summary');
+select is(
+  (select respiratory_rate_bpm from public.daily_health_summaries
+   where local_date = '2026-07-01'),
+  14.2::numeric,
+  'respiratory rate is stored on the daily summary'
+);
+select is(
+  (select present_types::text[] from public.daily_health_summaries
+   where local_date = '2026-07-01' order by local_date desc limit 1),
+  array['steps','resp_rate']::text[],
+  'present_types gains resp_rate'
+);
+select is((select count(*) from public.daily_health_summaries), 1::bigint,
+  'respiratory sync upserts the existing date row rather than adding one');
+select throws_ok($$
+  select public.persist_health_sync(
+    'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    'e9000000-0000-4000-8000-000000000009',
+    '2026-07-01', '2026-07-01',
+    array['steps','resp_rate'], array['steps','resp_rate'],
+    '[{
+      "local_date":"2026-07-01",
+      "timezone":"Asia/Kolkata",
+      "steps":6400,
+      "respiratory_rate_bpm":140,
+      "present_types":["steps","resp_rate"],
+      "source_refs":[{
+        "type":"steps",
+        "source_id_hash":"1111111111111111111111111111111111111111111111111111111111111",
+        "sample_id_hash":"2222222222222222222222222222222222222222222222222222222222222222"
+      },{
+        "type":"resp_rate",
+        "source_id_hash":"1111111111111111111111111111111111111111111111111111111111111111",
+        "sample_id_hash":"9999999999999999999999999999999999999999999999999999999999999999"
+      }],
+      "source_checksum":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "completeness":"partial",
+      "observed_through":"2026-07-01T08:00:00Z"
+    }]'::jsonb
+  )
+$$, '23514', null, 'out-of-range respiratory rate is rejected');
+
+
 set local role authenticated;
 set local "request.jwt.claim.sub" = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 select is((select count(*) from public.daily_health_summaries), 1::bigint,
   'owner can read own health summary');
-select is((select count(*) from public.health_sync_runs), 1::bigint,
-  'owner can read own sync run');
+select is((select count(*) from public.health_sync_runs), 2::bigint,
+  'owner can read own sync runs');
 
 set local "request.jwt.claim.sub" = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 select is((select count(*) from public.daily_health_summaries), 0::bigint,

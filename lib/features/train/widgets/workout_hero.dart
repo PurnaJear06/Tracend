@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
@@ -135,12 +136,10 @@ class WorkoutHero extends StatelessWidget {
                     children: [
                       Text(
                         'COACH INSIGHT',
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              fontSize: 10,
-                              letterSpacing: 1.4,
-                              color: colors.actionPrimary,
-                            ),
+                        style: TracendTheme.labelCaps(
+                          context,
+                          color: colors.actionPrimary,
+                        ),
                       ),
                       const SizedBox(height: TracendSpacing.xxs),
                       Text(
@@ -179,19 +178,11 @@ class _Fact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tracendColors;
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              fontSize: 9,
-              letterSpacing: 1.2,
-              color: colors.textSecondary,
-            ),
-          ),
+          Text(label, style: TracendTheme.labelCaps(context)),
           const SizedBox(height: TracendSpacing.xxs),
           Text(
             value,

@@ -6,6 +6,7 @@ export const healthTypes = [
   "weight",
   "resting_heart_rate",
   "hrv_sdnn",
+  "resp_rate",
 ] as const;
 
 export type HealthType = typeof healthTypes[number];
@@ -27,6 +28,7 @@ export type HealthSummaryV1 = {
   hrv_value_ms?: number;
   hrv_metric?: "sdnn";
   hrv_unit?: "ms";
+  respiratory_rate_bpm?: number;
   present_types: HealthType[];
   source_refs: Array<{
     type: HealthType;
@@ -100,6 +102,7 @@ const summaryKeys = new Set([
   "hrv_value_ms",
   "hrv_metric",
   "hrv_unit",
+  "respiratory_rate_bpm",
   "present_types",
   "source_refs",
   "source_checksum",
@@ -232,6 +235,7 @@ export function parseHealthSyncRequest(value: unknown): HealthSyncRequestV1 {
       !validOptionalNumber(summary, "weight_kg", 20, 500) ||
       !validOptionalNumber(summary, "resting_heart_rate_bpm", 20, 250) ||
       !validOptionalNumber(summary, "hrv_value_ms", 0, 1000) ||
+      !validOptionalNumber(summary, "respiratory_rate_bpm", 0, 100) ||
       (new Set([
         summary.hrv_value_ms !== undefined,
         summary.hrv_metric !== undefined,
@@ -263,6 +267,7 @@ export function parseHealthSyncRequest(value: unknown): HealthSyncRequestV1 {
       ["weight", "weight_kg"],
       ["resting_heart_rate", "resting_heart_rate_bpm"],
       ["hrv_sdnn", "hrv_value_ms"],
+      ["resp_rate", "respiratory_rate_bpm"],
     ];
     if (
       metricPresence.some(([type, key]) =>

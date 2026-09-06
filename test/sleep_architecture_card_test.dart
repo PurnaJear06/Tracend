@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
-import 'package:tracend/features/today/sleep_architecture_card.dart';
+import 'package:tracend/features/today/widgets/sleep_architecture_card.dart';
 
 Widget _wrap(Widget child) {
   return MaterialApp(
@@ -27,15 +27,7 @@ ComputedMetrics _fullMetrics() => ComputedMetrics(
     ),
     sleepDebtMinutes: -65,
   ),
-  baselines: const ComputedBaselines(
-    hrv: BaselineMetric(ewma: 49.45, spread: 3.0, nObs: 6, confidence: 'low'),
-    restingHr: BaselineMetric(
-      ewma: 55.5,
-      spread: 1.1,
-      nObs: 6,
-      confidence: 'low',
-    ),
-  ),
+  baselines: const ComputedBaselines(),
   dataConfidence: 'medium',
 );
 
@@ -51,6 +43,7 @@ void main() {
       await tester.pumpWidget(
         _wrap(SleepArchitectureCard(computed: _fullMetrics())),
       );
+      await tester.pumpAndSettle();
 
       expect(find.text('SLEEP ARCHITECTURE'), findsOneWidget);
       expect(find.text('85 / 100'), findsOneWidget);
@@ -61,6 +54,7 @@ void main() {
       await tester.pumpWidget(
         _wrap(SleepArchitectureCard(computed: _fullMetrics())),
       );
+      await tester.pumpAndSettle();
 
       expect(find.text('Duration'), findsOneWidget);
       expect(find.text('Efficiency'), findsOneWidget);
@@ -76,6 +70,7 @@ void main() {
       await tester.pumpWidget(
         _wrap(SleepArchitectureCard(computed: _fullMetrics())),
       );
+      await tester.pumpAndSettle();
 
       expect(find.textContaining('Sleep debt'), findsOneWidget);
       expect(find.textContaining('1h 5m'), findsOneWidget);
@@ -88,25 +83,28 @@ void main() {
         dataConfidence: 'medium',
       );
       await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: m)));
+      await tester.pumpAndSettle();
 
       expect(find.textContaining('Sleep surplus'), findsOneWidget);
     });
 
-    testWidgets('shows HRV and RHR baselines', (tester) async {
+    testWidgets('does not repeat baselines from the recovery readout', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _wrap(SleepArchitectureCard(computed: _fullMetrics())),
       );
+      await tester.pumpAndSettle();
 
-      expect(find.text('HRV BASELINE'), findsOneWidget);
-      expect(find.text('49.5'), findsOneWidget);
-      expect(find.text('RESTING HR'), findsOneWidget);
-      expect(find.text('55.5'), findsOneWidget);
+      expect(find.text('HRV BASELINE'), findsNothing);
+      expect(find.text('RESTING HR'), findsNothing);
     });
 
     testWidgets('shows No data when sleep quality is null', (tester) async {
       await tester.pumpWidget(
         _wrap(SleepArchitectureCard(computed: _emptyMetrics())),
       );
+      await tester.pumpAndSettle();
 
       expect(find.text('No data'), findsOneWidget);
     });
@@ -115,6 +113,7 @@ void main() {
       await tester.pumpWidget(
         _wrap(SleepArchitectureCard(computed: _emptyMetrics())),
       );
+      await tester.pumpAndSettle();
 
       expect(find.text('Duration'), findsNothing);
       expect(find.text('Efficiency'), findsNothing);
@@ -124,6 +123,7 @@ void main() {
       await tester.pumpWidget(
         _wrap(SleepArchitectureCard(computed: _emptyMetrics())),
       );
+      await tester.pumpAndSettle();
 
       expect(find.textContaining('Sleep debt'), findsNothing);
     });
@@ -135,6 +135,7 @@ void main() {
         dataConfidence: 'medium',
       );
       await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: m)));
+      await tester.pumpAndSettle();
 
       expect(find.text('Adequate'), findsOneWidget);
     });
@@ -146,6 +147,7 @@ void main() {
         dataConfidence: 'medium',
       );
       await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: m)));
+      await tester.pumpAndSettle();
 
       expect(find.text('Light'), findsOneWidget);
     });
@@ -157,8 +159,52 @@ void main() {
         dataConfidence: 'medium',
       );
       await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: m)));
+      await tester.pumpAndSettle();
 
       expect(find.text('Disrupted'), findsOneWidget);
+    });
+
+    testWidgets('announces Building baseline when confidence is low', (
+      tester,
+    ) async {
+      final m = ComputedMetrics(
+        scores: const ComputedScores(sleepQuality: 72),
+        baselines: const ComputedBaselines(),
+        dataConfidence: 'low',
+      );
+      await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: m)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Building baseline'), findsOneWidget);
+    });
+
+    testWidgets('score and rows expose semantics labels', (tester) async {
+      await tester.pumpWidget(
+        _wrap(SleepArchitectureCard(computed: _fullMetrics())),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.bySemanticsLabel('Sleep quality 85 out of 100'),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel('Duration 86 of 100'), findsOneWidget);
+      expect(find.bySemanticsLabel('Efficiency 93 of 100'), findsOneWidget);
+      expect(find.bySemanticsLabel('Sleep debt: 1h 5m'), findsOneWidget);
+    });
+
+    testWidgets('announces unavailable when sleep quality is null', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(SleepArchitectureCard(computed: _emptyMetrics())),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.bySemanticsLabel('Sleep quality unavailable'),
+        findsOneWidget,
+      );
     });
   });
 }

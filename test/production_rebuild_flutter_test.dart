@@ -20,18 +20,28 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Approved training plan'), findsOneWidget);
-    expect(find.textContaining('RPE 8'), findsWidgets);
+    // 2026-09-04 Train redesign: 'PRESCRIPTION' became "Today's exercises"
+    // (SectionLabel uppercases — curly apostrophe included), and the
+    // exercise rows now sit below the week rail and hero, so scroll down.
+    // Scrolls to the unique RPE 9 row — RPE 8 appears three times, and
+    // scrollUntilVisible needs a single candidate.
     await tester.scrollUntilVisible(
-      find.text('PRESCRIPTION'),
+      find.textContaining('RPE 9'),
       300,
       scrollable: find.byType(Scrollable).first,
     );
+    expect(find.textContaining('RPE 8'), findsWidgets);
+    expect(find.text('TODAY’S EXERCISES'), findsOneWidget);
     expect(find.textContaining('rest'), findsWidgets);
     await tester.scrollUntilVisible(
       find.textContaining('Planned values are never charted'),
       300,
       scrollable: find.byType(Scrollable).first,
     );
+    // Settle the entrance staggers of sections that mounted during the
+    // scroll — SliverList builds lazily, so their Future.delayed timers
+    // start mid-scroll and must fire before the test ends.
+    await tester.pumpAndSettle();
     expect(
       find.textContaining('Planned values are never charted'),
       findsOneWidget,

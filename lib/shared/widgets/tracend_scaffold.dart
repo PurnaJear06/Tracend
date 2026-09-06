@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 
 class TracendScrollView extends StatelessWidget {
@@ -190,10 +191,10 @@ class SectionLabel extends StatelessWidget {
         top: TracendSpacing.lg,
         bottom: TracendSpacing.sm,
       ),
-      child: Text(
-        label.toUpperCase(),
-        style: Theme.of(context).textTheme.labelMedium,
-      ),
+      // labelCaps restyle (owner-approved 2026-09-04, DESIGN_SYSTEM §3.2:
+      // "every caps label renders through TracendTheme.labelCaps") — text
+      // content unchanged, style-only, so all tabs inherit the standard.
+      child: Text(label.toUpperCase(), style: TracendTheme.labelCaps(context)),
     );
   }
 }

@@ -60,7 +60,7 @@ class ProfileGoalsScreen extends StatelessWidget {
               const Text(
                 'These confirmed facts shape your plan and every Coach context snapshot.',
               ),
-              const SectionLabel('Goal'),
+              const AccountSectionLabel('GOAL'),
               PremiumGradientCard(
                 glow: true,
                 child: DetailRows(
@@ -71,7 +71,7 @@ class ProfileGoalsScreen extends StatelessWidget {
                   },
                 ),
               ),
-              const SectionLabel('Training profile'),
+              const AccountSectionLabel('TRAINING PROFILE'),
               TracendCard(
                 child: DetailRows(
                   rows: {
@@ -86,7 +86,7 @@ class ProfileGoalsScreen extends StatelessWidget {
                   },
                 ),
               ),
-              const SectionLabel('Approved plan'),
+              const AccountSectionLabel('APPROVED PLAN'),
               TracendCard(
                 child: DetailRows(
                   rows: {
