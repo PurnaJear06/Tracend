@@ -53,6 +53,23 @@ else
   echo "SKIP: No migrations directory found"
 fi
 
+# 5. Secret scan (full history; the repo is small). CI runs the same scan with
+# the pinned gitleaks binary, so a locally missing binary warns instead of
+# blocking the push.
+echo ""
+echo "--- Secret scan ---"
+if command -v gitleaks >/dev/null 2>&1; then
+  if gitleaks git --verbose "$ROOT"; then
+    echo "PASS: gitleaks found no secrets"
+  else
+    echo "FAIL: gitleaks reported findings. Rotate any exposed secret, then push."
+    FAIL=1
+  fi
+else
+  echo "WARN: gitleaks is not installed — skipping local scan. Install with: brew install gitleaks"
+  echo "      (CI secret-scan job enforces this on push/PR regardless.)"
+fi
+
 echo ""
 if [ "$FAIL" -eq 0 ]; then
   echo "=== Gate passed ==="

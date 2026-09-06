@@ -1,0 +1,19 @@
+# Gitleaks configuration — default rules + a precise allowlist.
+# [extend] useDefault keeps ALL built-in detection rules; only the entries
+# below are exempted, so anything new still fails the gate.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Verified non-secrets: the public Supabase local-dev demo anon JWT, CocoaPods checksums in the lockfile, and the fixed idempotency-key fixture UUID in contract tests."
+
+# The Supabase CLI local-dev anon key ("iss":"supabase-demo", role anon) —
+# public by design and hardcoded across every local Supabase stack. Production
+# keys are sb_publishable_… / service JWTs and never match this payload.
+regexes = [
+  '''eyJpc3MiOiJzdXBhYmFzZS1kZW1v''',
+  '''7e7d8f27-6d93-4ef7-a331-e0332b16850d''',
+]
+
+# Podfile.lock carries machine-generated CocoaPods sha256 integrity checksums.
+paths = ['''(^|/)Podfile\.lock$''']

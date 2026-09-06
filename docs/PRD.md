@@ -285,18 +285,20 @@ audit events without storing secrets or unnecessary raw prompt content.
 
 ### 5.8 AI budgets and routing
 
-- Live coaching uses stable `gemini-3.5-flash` only after paid-service privacy terms and the
-  complete evaluation gate pass.
+- Live coaching uses DeepSeek V4 Flash (`COACH_MODEL_PROVIDER=deepseek`), active since 2026-07-26
+  under ADR 0011. Activation required the full all-or-nothing server-side secret gate
+  (`COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`, provider API keys) per
+  [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md) §10.
 - The monthly owner warning is USD 3, the server-side hard stop is USD 5, and conversational
   coaching is limited to 30 requests per owner/day.
-- Meal verification uses `gemini-3.5-flash` with low thinking. Lite models are not production
-  routes; cost is controlled through bounded context, output, request budgets, and task-specific
-  thinking instead of a quality downgrade.
+- Meal verification and photo interpretation use evaluated providers with bounded context,
+  output, request budgets, and task-specific thinking. Lite models are not production routes.
+- Prior providers are superseded pending re-evaluation: Gemini `gemini-3.5-flash` (ADR 0005 —
+  gated alternative requiring paid-service privacy terms) and server-side Groq Qwen
+  `qwen/qwen3.6-27b` (ADR 0006 — owner-only test route, 2026-07-11 through 2026-07-26).
+  Current cost facts live in [COST_MODEL.md](./COST_MODEL.md).
 - Progress-photo interpretation remains separately consented and separately evaluated. Manual use
   and the approved plan survive every provider failure.
-- During the owner-only test, server-side Groq `qwen/qwen3.6-27b` may replace the live Coach and
-  meal-candidate route under ADR 0006. It is capped at 10 total requests/day and USD 2 estimated
-  monthly cost; it remains proposal-only for persistent plan, target, and meal changes.
 
 ## 6. Evidence-Gated Change Policy
 

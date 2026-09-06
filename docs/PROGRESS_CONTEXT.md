@@ -127,13 +127,16 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Stitch/design             | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
 | Stability infra           | **Complete — deployed**              | `AGENTS.md` (commands)     | N/A                                           |
 | CI/CD automation          | **Complete — deployed**              | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` (deployment)                      |
+| Post-review optimizations | **In progress — Passes 0–1 on `feature/review-optimizations`** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
 
 ## Global Current State
 
 - Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 62 migrations (61 deployed;
   `20260825120000_recovery_honesty.sql` deploys via CI on next merge to main).
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
-- DeepSeek V4 Flash is the active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`).
+- DeepSeek V4 Flash is the active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`) —
+  the activation record is ADR 0011; the full optimization ladder spawned by the 2026-09-04
+  project review lives in `docs/plans/2026-09-04-optimization-plan.md`.
 - Sign in with Apple deferred; owner email/password mode active (ADR 0002).
 
 ## Global Open Decisions
