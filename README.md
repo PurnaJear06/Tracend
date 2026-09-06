@@ -85,13 +85,32 @@ This is the part that makes Tracend different from every other AI fitness app. T
 
 ```mermaid
 flowchart LR
-  HK["Apple HealthKit"] --> FEAT["Deterministic feature engine<br/>trends, adherence, baselines"]
-  FEAT --> CTX["Context assembly<br/>five-layer memory in PostgreSQL"]
-  CTX --> AI["Model layer<br/>interprets, proposes"]
-  AI --> VAL["Output validation<br/>schema, semantics, evidence, policy"]
-  VAL --> APR["Your approval<br/>required for every persistent change"]
-  APR --> DB[("PostgreSQL<br/>RLS + audit events")]
-  HK --> DB
+  subgraph Client["Flutter iOS"]
+    UI["5 tabs<br/>Today · Train · Coach<br/>Nutrition · Progress"]
+    HK["Apple HealthKit"]
+    APR["Your approval<br/>required for every<br/>persistent change"]
+  end
+  subgraph Supabase["Supabase (Singapore)"]
+    EF["9 Edge Functions (Deno)"]
+    FEAT["Deterministic engine<br/>trends · adherence · baselines"]
+    CTX["Context assembly<br/>five-layer memory"]
+    VAL["Output validation<br/>schema · semantics · evidence"]
+    DB[("PostgreSQL<br/>RLS + audit events")]
+  end
+  subgraph AI["AI provider (server-side)"]
+    FL["Chat + vision<br/>interprets · proposes"]
+  end
+  UI <-->|RLS / RPC| DB
+  HK -->|health-sync| EF
+  EF --> FEAT
+  FEAT --> CTX
+  CTX -->|prompt| FL
+  FL -->|proposal| VAL
+  VAL -.->|reject any failure| FL
+  VAL -->|validated change| APR
+  APR -->|approved| DB
+  classDef gate fill:#4A57E8,stroke:#4A57E8,color:#ffffff
+  class APR gate
 ```
 
 ## Architecture
