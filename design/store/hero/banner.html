@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Tracend devices banner</title>
+<style>
+  :root{--bg:#F3F6F8;--indigo:#4A57E8}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{background:var(--bg);display:flex;align-items:center;justify-content:center}
+  .stage{position:relative;width:2000px;height:1000px;overflow:hidden;background:var(--bg);isolation:isolate}
+  .stage:before{content:"";position:absolute;inset:-10% -8% -6%;z-index:0;background:conic-gradient(from 200deg at 50% 0,transparent 24%,#fff 35%,oklch(94% .05 258/.65) 47%,transparent 59%);filter:blur(16px)}
+  .trail{position:absolute;z-index:0;width:760px;height:22px;border-radius:50%;background:var(--indigo);opacity:.5;filter:blur(13px)}
+  .trail.t1{right:-140px;top:130px;transform:rotate(-7deg)}
+  .trail.t2{width:430px;left:-130px;top:660px;height:13px;opacity:.25;transform:rotate(6deg)}
+  .dev{position:absolute;transform-origin:50% 100%;box-shadow:0 50px 90px rgba(16,21,29,.30),0 0 34px rgba(74,87,232,.32)}
+  .dev img{display:block;width:100%}
+  .coach     {left:77px;   bottom:150px; width:370px; z-index:1; transform:rotate(-4deg)}
+  .train     {left:412px;  bottom:95px;  width:405px; z-index:2; transform:rotate(-2deg)}
+  .today     {left:782px;  bottom:40px;  width:436px; z-index:3}
+  .nutrition {left:1183px; bottom:95px;  width:405px; z-index:2; transform:rotate(2deg)}
+  .progress  {left:1553px; bottom:150px; width:370px; z-index:1; transform:rotate(4deg)}
+</style></head>
+<body>
+<main class="stage">
+  <div class="trail t1"></div><div class="trail t2"></div>
+  <div class="dev coach"><img src="device-coach.png" alt="Tracend Coach"></div>
+  <div class="dev train"><img src="device-train.png" alt="Tracend Train"></div>
+  <div class="dev today"><img src="device-today.png" alt="Tracend Today"></div>
+  <div class="dev nutrition"><img src="device-nutrition.png" alt="Tracend Nutrition"></div>
+  <div class="dev progress"><img src="device-progress.png" alt="Tracend Progress"></div>
+</main>
+</body></html>

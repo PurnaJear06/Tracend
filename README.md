@@ -7,7 +7,7 @@
 <h3 align="center">Tracend</h3>
 
 <p align="center">
-  <strong>Evidence-driven AI personal trainer</strong><br/>
+  <strong>The evidence-driven AI personal trainer.</strong><br/>
   <sub>Your body. Your data. Your next move.</sub>
 </p>
 
@@ -23,12 +23,12 @@
 <!-- NAV -->
 
 <p align="center">
-  <a href="#features">Features</a> &middot;
-  <a href="#ai-stack">AI</a> &middot;
-  <a href="#architecture">Architecture</a> &middot;
-  <a href="#quick-start">Quick&nbsp;Start</a> &middot;
-  <a href="#documentation">Docs</a> &middot;
-  <a href="#license">License</a>
+  <a href="#features"><strong>Features</strong></a> &middot;
+  <a href="#how-it-works"><strong>How it works</strong></a> &middot;
+  <a href="#architecture"><strong>Architecture</strong></a> &middot;
+  <a href="#quick-start"><strong>Quick Start</strong></a> &middot;
+  <a href="#documentation"><strong>Docs</strong></a> &middot;
+  <a href="#license"><strong>License</strong></a>
 </p>
 
 <p align="center"><sub>Private beta &middot; Apple HealthKit &middot; every model decision requires your approval</sub></p>
@@ -36,94 +36,69 @@
 ---
 
 <p align="center">
-  <img src="https://cdn.jsdelivr.net/gh/PurnaJear06/Tracend@e3fe125/design/store/screens/today/today-660w.webp" width="320" title="Tracend — Your plan, explained by your data" alt="Tracend Today poster — a phone showing the daily readiness dashboard with Recovery, Training and Nutrition factors"/>
+  <img src="https://cdn.jsdelivr.net/gh/PurnaJear06/Tracend@main/design/store/hero/banner-1400w.webp" alt="Tracend on iPhone: Today dashboard, Coach chat, Train session, Nutrition plan, Progress charts - five screens of the app" />
 </p>
 
-Tracend gives a healthy adult a personalized training and nutrition plan, observes real
-execution and recovery, and produces clear daily coaching decisions — like a careful
-personal trainer. Plans stay stable until evidence supports a change, and every persistent
-change requires your approval.
+## Why Tracend
 
-Four rules hold the system together:
+Most fitness apps give you a spreadsheet. Most AI apps give you a chatbot guessing at your body. Tracend is neither.
 
-- **Deterministic code does the math.** Trends, adherence, and baselines are calculated — never generated. The model interprets; it never computes.
-- **Model output never acts on its own.** No plan activation, no confirmed meal, no durable user fact without explicit approval.
-- **Persistent change follows an audit trail.** Evidence → validation → approval → new version → audit event.
+**Tracend is an evidence-driven AI personal trainer.** It builds a personalized training and nutrition plan around your actual capacity, observes real execution and recovery through Apple Health, and produces clear daily coaching decisions with the reasoning shown inline. Plans stay stable until evidence supports a change, and every persistent change requires your approval.
+
+- **Calculated, never generated.** Trends, adherence, and baselines are computed by deterministic code. The model interprets; it never does the math.
+- **Nothing acts on its own.** No plan activation, no confirmed meal, no durable user fact without your explicit approval.
+- **Everything is auditable.** Evidence, validation, approval, new version, audit event. Every persistent change follows this chain.
 - **The plan survives failure.** When AI, HealthKit, or media processing is down, your active plan keeps working.
+
+> [!NOTE]
+> Private beta on a single paired iPhone. Apple HealthKit is the source of truth for all health data. The full model boundary and provider rules live in [`docs/AI_SAFETY_SPEC.md`](docs/AI_SAFETY_SPEC.md).
 
 ## Features
 
-<p align="center">
-  <a href="https://cdn.jsdelivr.net/gh/PurnaJear06/Tracend@main/design/store/screens/train/train.png"><img src="https://cdn.jsdelivr.net/gh/PurnaJear06/Tracend@e3fe125/design/store/screens/train/train-660w.webp" width="120" title="Train" alt="Train poster"/></a><a href="https://cdn.jsdelivr.net/gh/PurnaJear06/Tracend@main/design/store/screens/coach/coach.png"><img src="https://cdn.jsdelivr.net/gh/PurnaJear06/Tracend@e3fe125/design/store/screens/coach/coach-660w.webp" width="120" title="Coach" alt="Coach poster"/></a><a href="https://cdn.jsdelivr.net/gh/PurnaJear06/Tracend@main/design/store/screens/nutrition/nutrition.png"><img src="https://cdn.jsdelivr.net/gh/PurnaJear06/Tracend@e3fe125/design/store/screens/nutrition/nutrition-660w.webp" width="120" title="Nutrition" alt="Nutrition poster"/></a><a href="https://cdn.jsdelivr.net/gh/PurnaJear06/Tracend@main/design/store/screens/progress/progress.png"><img src="https://cdn.jsdelivr.net/gh/PurnaJear06/Tracend@e3fe125/design/store/screens/progress/progress-660w.webp" width="120" title="Progress" alt="Progress poster"/></a>
-</p>
+### Today
 
-### Today — your plan, explained by your data
+Sleep, activity, and vitals from Apple Health become three tappable factors: **Recovery**, **Training**, and **Nutrition**. Plain-language explanations, progressive disclosure, no wall of numbers. A daily readiness score derived from HRV, resting heart rate, sleep, respiratory rate, and prior strain, with each driver shown as its own metric.
 
-- Sleep, activity, and vitals from Apple Health become three tappable factors: **Recovery**, **Training**, **Nutrition**
-- Plain-language explanations with progressive disclosure — no wall of numbers
+### Train
 
-### Train — every set counts
+Set-level session tracking: reps, RPE, and pain per set. In-progress sessions survive an app restart and resume where you left off. HealthKit auto-detects completed workouts and reconciles them with your scheduled plan.
 
-- Set-level session tracking: reps, RPE, and pain per set
-- In-progress sessions survive an app restart and resume where you left off
-- HealthKit auto-detects completed workouts and reconciles them with your scheduled plan
+### Coach
 
-### Coach — every signal connected
+Coaching chat that remembers your history across sessions. Five-layer continuity memory: narrative entries, user preferences, session summaries, message search, and context assembly. Every recommendation cites its evidence source, with reasoning chains shown inline.
 
-- Five-layer continuity memory: narrative entries, user preferences, session summaries, message search, context assembly
-- Every recommendation cites its evidence source — reasoning chains shown inline, never hidden
+### Nutrition
 
-### Nutrition — confirm before it counts
+Log meals by text or photo. Vision identifies the food and estimates macros. You confirm before anything is persisted. Per-meal-slot schedule compliance with 7-day adherence visibility. Confirmed meals stay visible after midnight; corrections become audited amendments.
 
-- Log meals by text or photo; vision identifies food and estimates macros — you confirm before anything is persisted
-- Per-meal-slot schedule compliance with 7-day adherence visibility
-- Confirmed meals stay visible after midnight; corrections become audited amendments
+### Progress
 
-### Progress — proof, not promises
+Weight, measurements, and body metrics on a single date-ordered effective timeline. Raw charts, no smoothing masquerading as current data. Same-day corrections are audited amendments, never silent overwrites.
 
-- Weight, measurements, and body metrics on a single date-ordered effective timeline
-- Raw charts, no smoothing masquerading as current data; same-day corrections are audited amendments, never silent overwrites
+## How it works
 
-## AI Stack
+### The AI never touches the numbers
 
-| Layer                 | Technology                    | Purpose                                                                              |
-| :-------------------- | :---------------------------- | :----------------------------------------------------------------------------------- |
-| **Coach chat**        | AI, routed server-side        | Evidence-backed coaching responses with reasoning chains                             |
-| **Meal vision**       | AI vision, routed server-side | Macro estimation and food identification from photos                                  |
-| **Context assembly**  | PostgreSQL + PL/pgSQL          | Five-layer structured memory assembled before inference                               |
-| **Output validation** | Deterministic policy engine    | Schema, semantics, evidence citations, policy permissions — reject on ANY failure     |
-| **Safety**            | `beforeSend` scrubber         | Redacts health values, meal content, and photo URLs before crash reports leave the device |
+This is the part that makes Tracend different from every other AI fitness app. The AI never touches the numbers. Deterministic code calculates every trend, adherence measure, and baseline from your Apple Health data. The model layer interprets results and proposes actions. Output passes schema, semantics, evidence-citation, and policy-permission checks, and is rejected on any failure. Nothing is activated, confirmed, or persisted without your explicit approval.
 
-> [!NOTE]
-> Providers are routed and configured server-side — the app never names, embeds, or depends
-> on a specific one. The single source of truth for model boundaries and provider rules is
-> [`docs/AI_SAFETY_SPEC.md`](docs/AI_SAFETY_SPEC.md).
-
-## Architecture
+**Deterministic math. Interpretive model. Audited persistence.**
 
 ```mermaid
 flowchart LR
-  subgraph Client["Flutter iOS"]
-    UI["5 tabs<br/>Today · Train · Coach<br/>Nutrition · Progress"]
-    HK["Apple HealthKit"]
-  end
-  subgraph Supabase["Supabase (Singapore)"]
-    DB["PostgreSQL + RLS"]
-    EF["9 Edge Functions (Deno)"]
-  end
-  subgraph AI["AI provider (server-side)"]
-    FL["Chat + vision"]
-  end
-  UI <-->|RLS / RPC| DB
-  UI <-->|Edge Functions| EF
-  HK -->|health-sync| EF
-  EF <-->|API| FL
-  EF <--> DB
+  HK["Apple HealthKit"] --> FEAT["Deterministic feature engine<br/>trends, adherence, baselines"]
+  FEAT --> CTX["Context assembly<br/>five-layer memory in PostgreSQL"]
+  CTX --> AI["Model layer<br/>interprets, proposes"]
+  AI --> VAL["Output validation<br/>schema, semantics, evidence, policy"]
+  VAL --> APR["Your approval<br/>required for every persistent change"]
+  APR --> DB[("PostgreSQL<br/>RLS + audit events")]
+  HK --> DB
 ```
 
-**9 Edge Functions:** `coach-chat` · `coach-decide` · `health-check` · `health-sync` ·
-`meal-analyze` · `meal-media-retention` · `onboarding-propose-plan` · `privacy-delete-account` ·
-`privacy-export`
+## Architecture
+
+Flutter iOS client. Supabase backend: PostgreSQL with row-level security, 9 Deno Edge Functions, Storage, and automated backups. AI providers are routed server-side only, so the app never names, embeds, or depends on a specific one. The single source of truth for model boundaries and provider rules is [`docs/AI_SAFETY_SPEC.md`](docs/AI_SAFETY_SPEC.md).
+
+**9 Edge Functions:** `coach-chat` · `coach-decide` · `health-check` · `health-sync` · `meal-analyze` · `meal-media-retention` · `onboarding-propose-plan` · `privacy-delete-account` · `privacy-export`
 
 ## Quick Start
 
@@ -140,14 +115,14 @@ cd Tracend
 ./scripts/flutter.sh test            # Flutter unit + widget tests
 ./scripts/deno.sh task check         # Deno fmt + lint + test
 
-# 3. Full pre-deploy gate (all layers — matches CI)
+# 3. Full pre-deploy gate (all layers - matches CI)
 ./scripts/pre-deploy.sh
 ```
 
 > [!NOTE]
 > All tooling state stays under `.tooling/`. Never invoke `flutter`, `deno`, `supabase`, or
-> `docker` directly — use the `./scripts/` wrappers. See [`AGENTS.md`](AGENTS.md) for the
-> full toolchain reference.
+> `docker` directly: use the `./scripts/` wrappers. See [`AGENTS.md`](AGENTS.md)
+> for the full toolchain reference.
 
 ## Documentation
 
@@ -165,16 +140,6 @@ cd Tracend
 | [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) | Phase sequencing, milestones, delivery plan                 |
 | [`docs/CONTEXT_BUDGET.md`](docs/CONTEXT_BUDGET.md)                 | AI context budget rules and contract testing                |
 | [`docs/adr/`](docs/adr/)                                           | Architecture Decision Records                               |
-
-## Stack
-
-**Client** — Flutter 3.41.7 · Dart 3.11.5 · iOS 17+ · HealthKit · Sentry crash reporting
-
-**Backend** — Supabase · PostgreSQL + RLS · 9 Deno Edge Functions · Session pooler · Storage
-
-**AI** — Server-side provider routing · Five-layer continuity memory · Deterministic output validation · All model keys server-side only
-
-**Infra** — GitHub Actions CI · Automated deploy pipeline · Pre-deploy gate · Automated database backups · Edge Function rollback scripts · Gitleaks pre-commit · Dependabot
 
 ## License
 
