@@ -665,6 +665,45 @@ always stacks advice above stats, with a 390pt phone-width regression test pinni
 344 tests pass, 0 analysis issues. Docs: DESIGN_SYSTEM §3.2/§5/§6, ALGORITHMS ACWR band
 table unified, UX_FLOWS Train paragraph.
 
+## Today recovery fixes — sleep attribution + resp collection + sleep card (2026-09-06)
+
+Three owner-approved fixes on `feature/precision-pro-ui-redesigns`, born from the
+production diagnosis of missing sleep/resp data on Today:
+
+- **Sleep day-attribution** (`health_models.dart` `normalizeHealthSamples`): sleep
+  samples now group into sessions (consecutive samples ≤ 60 min apart form one) and a
+  session attributes to the local day it ENDS — a 23:00→07:00 night lands whole on the
+  morning's row instead of splitting across midnight (start-day bucketing put the bulk
+  on the evening row, leaving the morning brief with fragments). Other metrics keep
+  start-day. `localDate` derives from the attributed bucket date, not
+  `points.first.start`. `healthSyncStart` widened to today−7 regular / today−8
+  backfill (9 dates max, still under the 32-summary cap) because HealthKit queries
+  match by start instant — the extra day captures a full night whose start falls the
+  evening before the window's first date. Recent days self-heal on the next sync via
+  the existing `(user_id, local_date, source_scope)` full-replace upsert. Four new
+  midnight-crossing/nap/attribution tests; no existing test pinned the old split.
+- **Respiratory rate** (`health_models.dart` + `health_data_source.dart` +
+  `health_sync_v1.ts` + migration `20260906120000_resp_rate_sync.sql`): the composite
+  reserved a 0.05 weight and `data_confidence='high'` required resp, but nothing
+  collected it — no read type, no contract field, and the write path rejected it at
+  three whitelists. Now: `HealthMetric.respRate` + `RESPIRATORY_RATE` (plugin 13.3.1
+  supports it), day-average aggregation like RHR/HRV, 0–100 validation matching the DB
+  check, Edge type + `respiratory_rate_bpm` key + presence row, RPC + constraint
+  widened additively (7-type requests from deployed builds stay valid). Watch must
+  record respiratory rate (sleep tracking on) for the value to appear.
+- **SleepArchitectureCard restyle** (moved to `features/today/widgets/`): sibling
+  grammar — `_CardTag` + `_BandChip` band pill, 36pt mono tabular score with
+  count-up, "Building baseline" cold-start caption (previously ignored
+  `dataConfidence`), reflowing sub-score rows (no fixed 72pt/36pt columns) with the
+  `AnimatedFractionallySizedBox` idiom, debt/surplus pill, dropped the HRV/RESTING HR
+  baseline footer (recovery readout carries those), full Semantics coverage where the
+  card previously had none. Test file updated: baseline-footer tests inverted, 2 new
+  semantics/cold-start tests. 352 tests pass, 0 analysis issues.
+
+Post-deploy owner check (dashboard SQL editor): `present_types` gains `resp_rate` after
+a watch-sleep night; recent `sleep_minutes` land whole on morning rows within one
+sync.
+
 ## Session Duration Cap (2026-08-22)
 
 **Client** (`active_workout_screen.dart`): `_maxSessionSeconds = 10800`, 15-second elapsed

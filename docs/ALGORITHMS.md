@@ -27,7 +27,7 @@ composite_z = (0.55 * hrv_z + 0.20 * rhr_z + 0.15 * sleep_z + 0.05 * resp_rate_z
 | HRV (SDNN)   | 0.55   | Higher = better     | Dominant signal per Plews & Buchheit 2017   |
 | RHR          | 0.20   | Lower = better      | z-score negated                            |
 | Sleep        | 0.15   | Higher = better     | Quantity only in composite                 |
-| Resp Rate    | 0.05   | Lower = better      | z-score negated; optional                  |
+| Resp Rate    | 0.05   | Lower = better      | z-score negated; collected via HealthKit since 2026-09-06 (previously dead code) |
 | Prev Strain  | 0.05   | Lower recent = better | 7-day avg subtracted; needs 28-day spread > 0 |
 
 Each z-score: `z = (observation - ewma_baseline) / spread`. Sign inverted for RHR and resp rate

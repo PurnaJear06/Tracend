@@ -194,8 +194,10 @@ updates Today and recomputes only when necessary.
 
 Readiness evidence is shown inline, not hidden behind a tap: the recovery readout lists
 each driver's true z-score next to its bar and shows No data for unusable components,
-the 7-day trend plots only recorded days with its date range and recorded-day count, and
-the session plan card states the real ACWR and zone. Sync source and freshness live in
+the sleep architecture card carries the quality score with its four sub-scores
+(Duration, Efficiency, Restorative, Consistency) and the debt/surplus pill, the 7-day
+trend plots only recorded days with its date range and recorded-day count, and the
+session plan card states the real ACWR and zone. Sync source and freshness live in
 the profile's Apple Health status card and beside the hero sync chip (last health sync
 time), in ordinary coaching language. Deterministic calculation and AI interpretation are
 labeled separately. Training and Nutrition remain perspectives in one controlled decision

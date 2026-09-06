@@ -568,7 +568,7 @@ hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm.
 | HRV (SDNN)   | 0.55   | Higher = better               |
 | RHR          | 0.20   | Lower = better                |
 | Sleep        | 0.15   | Higher = better               |
-| Resp Rate    | 0.05   | Lower = better (optional)     |
+| Resp Rate    | 0.05   | Lower = better (collected since 2026-09-06) |
 | Prev Strain  | 0.05   | Lower 7-day avg = better      |
 
 ### Sleep Quality Weights
@@ -591,6 +591,20 @@ hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm.
 
 - `daily_health_summaries.respiratory_rate_bpm` (numeric, 0–100)
 - `daily_health_summaries.present_types` now includes `resp_rate`
+- `persist_health_sync` accepts `resp_rate` requests and persists `respiratory_rate_bpm`
+  (migration `20260906120000`); Edge contract `health_sync_v1` carries the type and key
+
+### Health Sync Semantics
+
+- Requested type codes: steps, active_energy, sleep, workouts, weight,
+  resting_heart_rate, hrv_sdnn, resp_rate.
+- Sleep attribution: consecutive sleep samples ≤ 60 min apart form one session, and the
+  session is attributed to the local day it ENDS (a 23:00→07:00 night lands whole on the
+  morning's row). All other metrics attribute by sample start day. Attribution is
+  client-side (`normalizeHealthSamples`); the Edge function performs no bucketing.
+- Sync window: today−7 for regular syncs (8 dates), today−8 for the initial backfill
+  (9 dates) — wide enough that the fetch captures a full night whose start falls the
+  evening before the window's first date (HealthKit queries match by start instant).
 
 ### Constraint Additions
 

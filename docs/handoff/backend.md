@@ -24,6 +24,20 @@ This file is current-state handoff, not durable architecture. Keep detailed hist
 
 ## Current State
 
+- **Resp-rate sync write path (2026-09-06, migration `20260906120000_resp_rate_sync.sql`):**
+  the DB read side (0.05 weight, negated z, `resp_rate_bpm` baseline, four-component
+  `data_confidence='high'`) existed since Phase 2, but nothing could WRITE respiratory
+  rate: `persist_health_sync` rejected `resp_rate` requests, its INSERT/ON CONFLICT
+  ignored `respiratory_rate_bpm`, the `health_sync_runs` constraint blocked the type,
+  and the Edge contract 422'd any summary carrying the field. The migration widens all
+  three (additive — 7-type requests from deployed app builds stay valid) and mirrors
+  the Edge `health_sync_v1` contract (`resp_rate` type, `respiratory_rate_bpm` key with
+  0–100 bounds, presence-consistency row). Client collection: `RESPIRATORY_RATE` read
+  type, day-average aggregation, 0–100 validation. pgTAP `phase_4_healthkit_summary_test`
+  24/24 (resp persist + upsert + range rejection); Deno contract tests 3 new cases.
+  Deploy order already safe: CI migrates before deploying functions. Post-deploy:
+  `DATA_CONFIDENCE_HIGH` can finally fire once HRV/RHR/sleep/resp all have values and
+  usable baselines — the watch must record respiratory rate overnight for that.
 - **Persist evidence-whitelist sync (2026-08-26):** production backup analysis showed zero
   successful `daily_coaching` runs ever — every live decision was rejected at persistence.
   Root cause: `prepare_daily_coaching` permits up to 17 computed-score evidence codes and the

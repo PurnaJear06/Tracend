@@ -221,6 +221,20 @@ unusable recovery shows `--` rather than a fabricated score. Replaces the earlie
 recovery ring and the recovery tile of the readiness strip. Training load (ACWR) is not
 part of this card — it renders as a display-only row inside `SessionPlanCard`.
 
+### `SleepArchitectureCard`
+
+Full-width sleep quality readout on Today (restyled 2026-09-06 to the shared card
+grammar): card tag (bedtime icon + labelCaps) with a band chip (Restorative ≥80 /
+Adequate ≥60 / Light ≥40 / Disrupted), tabular mono score with count-up (36pt —
+deliberately secondary to the recovery readout's 44pt), and four reflowing sub-score
+rows (Duration, Efficiency, Restorative, Consistency) — label and rounded value on one
+line, 0–100 bar beneath, no fixed-width columns, so accessibility text scales reflow
+rather than crowd. Cold start or low confidence adds "Building baseline" under the
+score; a null quality renders "No data" with honest copy. Sleep debt/surplus renders as
+a semantic pill. Baseline values are NOT repeated here — the recovery readout's driver
+rows carry them, and the card keeps one source of truth per screen. Every data element
+exposes a Semantics label (score, each sub-score, debt) per §8.
+
 ### `TrajectoryTrend`
 
 Real 7-day health trend on Today (Chunk 6, redesigned as day columns 2026-09-03): plots
