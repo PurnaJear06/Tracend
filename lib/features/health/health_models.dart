@@ -303,14 +303,45 @@ List<DailyHealthSummary> normalizeHealthSamples({
       );
     }
   }
-  final byDate = <String, List<RawHealthSample>>{};
+  final byDate = <DateTime, List<RawHealthSample>>{};
+  void addSample(DateTime day, RawHealthSample sample) {
+    byDate.putIfAbsent(day, () => []).add(sample);
+  }
+
+  // Sleep samples are grouped into sessions: consecutive samples less than
+  // an hour apart form one session, and the whole session is attributed to
+  // the local day it ends. A normal 23:00 -> 07:00 night therefore lands
+  // whole on the morning's row instead of splitting across midnight.
+  final sleepSamples =
+      unique.values
+          .where((sample) => sample.metric == HealthMetric.sleep)
+          .toList()
+        ..sort((left, right) => left.start.compareTo(right.start));
+  if (sleepSamples.isNotEmpty) {
+    var sessionStart = 0;
+    var sessionEnd = sleepSamples.first.end;
+    for (var i = 1; i <= sleepSamples.length; i++) {
+      if (i < sleepSamples.length &&
+          sleepSamples[i].start.difference(sessionEnd) <=
+              const Duration(hours: 1)) {
+        final end = sleepSamples[i].end;
+        if (end.isAfter(sessionEnd)) sessionEnd = end;
+        continue;
+      }
+      final day = _localDay(sessionEnd);
+      for (var j = sessionStart; j < i; j++) {
+        addSample(day, sleepSamples[j]);
+      }
+      sessionStart = i;
+      if (i < sleepSamples.length) sessionEnd = sleepSamples[i].end;
+    }
+  }
+
+  // Every other metric keeps its start-day bucket.
   for (final sample in unique.values) {
-    final local = sample.start.toLocal();
-    final key =
-        '${local.year.toString().padLeft(4, '0')}-'
-        '${local.month.toString().padLeft(2, '0')}-'
-        '${local.day.toString().padLeft(2, '0')}';
-    byDate.putIfAbsent(key, () => []).add(sample);
+    if (sample.metric != HealthMetric.sleep) {
+      addSample(_localDay(sample.start), sample);
+    }
   }
 
   final summaries = <DailyHealthSummary>[];
@@ -338,14 +369,13 @@ List<DailyHealthSummary> normalizeHealthSamples({
     final observedThrough = points
         .map((point) => point.end)
         .reduce((left, right) => left.isAfter(right) ? left : right);
-    final localDate = points.first.start.toLocal();
     final workouts = points
         .where((point) => point.metric == HealthMetric.workouts)
         .toList();
 
     summaries.add(
       DailyHealthSummary(
-        localDate: DateTime(localDate.year, localDate.month, localDate.day),
+        localDate: entry.key,
         timezone: timezone,
         presentMetrics: present,
         sourceReferences: references,
@@ -434,6 +464,12 @@ double? _average(List<RawHealthSample> samples, HealthMetric metric) {
 }
 
 String _hash(String value) => sha256.convert(utf8.encode(value)).toString();
+
+/// Local calendar day of [moment], with the time-of-day zeroed.
+DateTime _localDay(DateTime moment) {
+  final local = moment.toLocal();
+  return DateTime(local.year, local.month, local.day);
+}
 
 bool _isValidSample(RawHealthSample sample) {
   if (!sample.value.isFinite || sample.end.isBefore(sample.start)) return false;

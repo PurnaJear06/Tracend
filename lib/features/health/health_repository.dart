@@ -265,8 +265,13 @@ DateTime healthSyncStart({
   required DateTime now,
   required bool initialBackfillComplete,
 }) {
+  // The window covers today and the seven calendar days before it, so the
+  // fetch (which matches samples by start instant) also captures a night
+  // that began the evening before the window's first date and ended that
+  // morning. HealthKit attribute queries cap at 31 days; summaries cap at 32
+  // rows, and 9 dates never approach either.
   final localDay = DateTime(now.year, now.month, now.day);
-  return localDay.subtract(Duration(days: initialBackfillComplete ? 6 : 7));
+  return localDay.subtract(Duration(days: initialBackfillComplete ? 7 : 8));
 }
 
 class ManualHealthRepository implements HealthRepository {
