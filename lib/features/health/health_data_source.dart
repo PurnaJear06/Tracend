@@ -23,6 +23,7 @@ class HealthKitDataSource implements HealthDataSource {
     HealthMetric.weight,
     HealthMetric.restingHeartRate,
     HealthMetric.hrvSdnn,
+    HealthMetric.respRate,
   };
 
   static const _types = <HealthDataType>[
@@ -37,6 +38,7 @@ class HealthKitDataSource implements HealthDataSource {
     HealthDataType.WEIGHT,
     HealthDataType.RESTING_HEART_RATE,
     HealthDataType.HEART_RATE_VARIABILITY_SDNN,
+    HealthDataType.RESPIRATORY_RATE,
   ];
 
   static const _metricByType = <HealthDataType, HealthMetric>{
@@ -51,6 +53,7 @@ class HealthKitDataSource implements HealthDataSource {
     HealthDataType.WEIGHT: HealthMetric.weight,
     HealthDataType.RESTING_HEART_RATE: HealthMetric.restingHeartRate,
     HealthDataType.HEART_RATE_VARIABILITY_SDNN: HealthMetric.hrvSdnn,
+    HealthDataType.RESPIRATORY_RATE: HealthMetric.respRate,
   };
 
   Future<void> _configure() async {

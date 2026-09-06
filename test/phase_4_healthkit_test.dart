@@ -70,6 +70,26 @@ void main() {
     expect(summaries.single.presentMetrics, {HealthMetric.steps});
   });
 
+  test(
+    'respiratory rate averages valid samples and rejects out-of-range ones',
+    () {
+      final summaries = normalizeHealthSamples(
+        samples: [
+          _sample(HealthMetric.respRate, 14.2, day, id: 'resp-a'),
+          _sample(HealthMetric.respRate, 15.8, day, id: 'resp-b'),
+          _sample(HealthMetric.respRate, 140, day, id: 'resp-invalid'),
+        ],
+        requestedMetrics: HealthMetric.values.toSet(),
+        timezone: 'Asia/Kolkata',
+      );
+
+      expect(summaries.single.respRateBpm, 15);
+      expect(summaries.single.presentMetrics, contains(HealthMetric.respRate));
+      final json = summaries.single.toJson(HealthMetric.values.toSet());
+      expect(json['respiratory_rate_bpm'], 15);
+    },
+  );
+
   test('normalizes supported sleep stages without double-counting total', () {
     final summaries = normalizeHealthSamples(
       samples: [

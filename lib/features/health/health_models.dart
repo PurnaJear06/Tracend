@@ -9,7 +9,8 @@ enum HealthMetric {
   workouts('workouts'),
   weight('weight'),
   restingHeartRate('resting_heart_rate'),
-  hrvSdnn('hrv_sdnn');
+  hrvSdnn('hrv_sdnn'),
+  respRate('resp_rate');
 
   const HealthMetric(this.code);
   final String code;
@@ -22,6 +23,7 @@ enum HealthMetric {
     HealthMetric.weight => 'Weight',
     HealthMetric.restingHeartRate => 'Resting heart rate',
     HealthMetric.hrvSdnn => 'HRV',
+    HealthMetric.respRate => 'Respiratory rate',
   };
 }
 
@@ -166,6 +168,7 @@ class DailyHealthSummary {
     this.weightKg,
     this.restingHeartRateBpm,
     this.hrvSdnnMs,
+    this.respRateBpm,
   });
 
   final DateTime localDate;
@@ -186,6 +189,7 @@ class DailyHealthSummary {
   final double? weightKg;
   final double? restingHeartRateBpm;
   final double? hrvSdnnMs;
+  final double? respRateBpm;
 
   String get dateKey =>
       '${localDate.year.toString().padLeft(4, '0')}-'
@@ -213,6 +217,7 @@ class DailyHealthSummary {
       'hrv_metric': 'sdnn',
       'hrv_unit': 'ms',
     },
+    if (respRateBpm != null) 'respiratory_rate_bpm': _rounded(respRateBpm!),
     'present_types': presentMetrics.map((metric) => metric.code).toList()
       ..sort(),
     'source_refs': sourceReferences,
@@ -399,6 +404,7 @@ List<DailyHealthSummary> normalizeHealthSamples({
         weightKg: _latest(points, HealthMetric.weight),
         restingHeartRateBpm: _average(points, HealthMetric.restingHeartRate),
         hrvSdnnMs: _average(points, HealthMetric.hrvSdnn),
+        respRateBpm: _average(points, HealthMetric.respRate),
       ),
     );
   }
@@ -482,5 +488,6 @@ bool _isValidSample(RawHealthSample sample) {
     HealthMetric.weight => sample.value >= 20 && sample.value <= 500,
     HealthMetric.restingHeartRate => sample.value >= 20 && sample.value <= 250,
     HealthMetric.hrvSdnn => sample.value >= 0 && sample.value <= 1000,
+    HealthMetric.respRate => sample.value >= 0 && sample.value <= 100,
   };
 }
