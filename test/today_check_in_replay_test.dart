@@ -25,7 +25,9 @@ void main() {
     'note': 'Sore legs',
   };
 
-  testWidgets('TodayScreen replays a pending check-in on launch', (tester) async {
+  testWidgets('TodayScreen replays a pending check-in on launch', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
     await CheckInQueue(preferences).enqueue(
@@ -43,9 +45,7 @@ void main() {
             supabaseUrl: 'https://example.supabase.co',
             supabasePublishableKey: 'sb_publishable_test',
           ),
-          brief: _CountingBriefRepository(
-            onLoad: () => briefLoads++,
-          ),
+          brief: _CountingBriefRepository(onLoad: () => briefLoads++),
           queueFactory: () => CheckInQueue(preferences),
           checkInSender: (localDate, timezone, key, payload) async {
             sentDates.add(localDate);
@@ -69,7 +69,9 @@ void main() {
     expect(briefLoads, 2);
   });
 
-  testWidgets('failed replay retains the envelope for the next launch', (tester) async {
+  testWidgets('failed replay retains the envelope for the next launch', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
     await CheckInQueue(preferences).enqueue(
@@ -141,9 +143,7 @@ class _CountingBriefRepository implements DailyBriefRepository {
   @override
   Future<DailyBrief> load(DateTime date) async {
     onLoad();
-    return DailyBrief(
-      localDate: date.toIso8601String().substring(0, 10),
-    );
+    return DailyBrief(localDate: date.toIso8601String().substring(0, 10));
   }
 }
 

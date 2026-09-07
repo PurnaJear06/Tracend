@@ -312,22 +312,23 @@ select ok(
 select ok(
   (public.compute_daily_metrics(
     'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata'
-  )->'scores'->'sleep_breakdown'->>'duration_score') is not null,
-  '32: sleep breakdown includes duration_score'
+  )->'scores'->>'sleep_breakdown') is null,
+  '32: today row has no awake/deep/rem -> breakdown object absent (honest)'
+);
+
+select ok(
+  public.compute_daily_metrics(
+    'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata'
+  )->'scores'->'sleep_breakdown_missing' @>
+    '["efficiency","restorative"]'::jsonb,
+  '33: missing awake+stages reported in sleep_breakdown_missing'
 );
 
 select ok(
   (public.compute_daily_metrics(
     'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata'
-  )->'scores'->'sleep_breakdown'->>'efficiency_score') is not null,
-  '33: sleep breakdown includes efficiency_score'
-);
-
-select ok(
-  (public.compute_daily_metrics(
-    'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata'
-  )->'scores'->'sleep_breakdown'->>'restorative_score') is not null,
-  '34: sleep breakdown includes restorative_score'
+  )->'scores'->>'sleep_quality') is not null,
+  '34: renormalized duration+consistency composite still scores sleep_quality'
 );
 
 select ok(
@@ -397,18 +398,20 @@ values
    'aaaaaaaa-4111-4111-8111-111111111111','aaaaaaaa-b111-4111-8111-111111111111',
    'completed',current_date-14,'Asia/Kolkata',gen_random_uuid(),8.0,3600,1.0,now());
 
-select ok(
-  (public.compute_daily_metrics(
+select is(
+  public.compute_daily_metrics(
     'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata'
-  )->'scores'->>'acwr') is not null,
-  '40: ACWR is computed when workout data exists'
+  )->'scores'->>'acwr',
+  null,
+  '40: 4 strain days (< 14 chronic) -> ACWR null, never 1.0 from thin history'
 );
 
-select ok(
-  (public.compute_daily_metrics(
+select is(
+  public.compute_daily_metrics(
     'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata'
-  )->'scores'->>'training_monotony') is not null,
-  '41: Monotony is computed when workout data exists'
+  )->'scores'->>'training_monotony',
+  null,
+  '41: only 2 acute strain days (< 4) -> monotony null'
 );
 
 select cmp_ok(

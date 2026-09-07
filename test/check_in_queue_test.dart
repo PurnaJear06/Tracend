@@ -12,53 +12,63 @@ void main() {
     return CheckInQueue(preferences);
   }
 
-  test('enqueue persists the envelope with the answer day, not today', () async {
-    SharedPreferences.setMockInitialValues({});
-    final queue = await buildQueue();
-    final key = await queue.enqueue(
-      payload: const {
-        'sleep_quality': 4,
-        'energy': 3,
-        'soreness': 2,
-        'hunger': 3,
-        'mood': 4,
-        'pain_severity': 0,
-        'available_to_train': true,
-        'note': 'Felt strong',
-      },
-      localDate: '2026-09-05',
-      timezone: 'Asia/Kolkata',
-    );
-    final stored = (await SharedPreferences.getInstance())
-        .getString('daily_check_in_pending');
-    expect(stored, isNotNull);
-    final envelope = jsonDecode(stored!) as Map<String, dynamic>;
-    expect(envelope['idempotency_key'], key);
-    expect(envelope['local_date'], '2026-09-05');
-    expect(envelope['timezone'], 'Asia/Kolkata');
-    expect((envelope['payload'] as Map)['sleep_quality'], 4);
-  });
+  test(
+    'enqueue persists the envelope with the answer day, not today',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      final key = await queue.enqueue(
+        payload: const {
+          'sleep_quality': 4,
+          'energy': 3,
+          'soreness': 2,
+          'hunger': 3,
+          'mood': 4,
+          'pain_severity': 0,
+          'available_to_train': true,
+          'note': 'Felt strong',
+        },
+        localDate: '2026-09-05',
+        timezone: 'Asia/Kolkata',
+      );
+      final stored = (await SharedPreferences.getInstance()).getString(
+        'daily_check_in_pending',
+      );
+      expect(stored, isNotNull);
+      final envelope = jsonDecode(stored!) as Map<String, dynamic>;
+      expect(envelope['idempotency_key'], key);
+      expect(envelope['local_date'], '2026-09-05');
+      expect(envelope['timezone'], 'Asia/Kolkata');
+      expect((envelope['payload'] as Map)['sleep_quality'], 4);
+    },
+  );
 
-  test('replay delivers the stored envelope as recorded and clears it', () async {
-    SharedPreferences.setMockInitialValues({});
-    final queue = await buildQueue();
-    await queue.enqueue(
-      payload: const {
-        'sleep_quality': 3,
-        'energy': 3,
-        'soreness': 3,
-        'hunger': 3,
-        'mood': 3,
-        'pain_severity': 0,
-        'available_to_train': true,
-        'note': '',
-      },
-      localDate: '2026-09-05',
-      timezone: 'GMT+5:30',
-    );
-    final sent = <Map<String, dynamic>>[];
-    final outcome = await queue.replay(
-      (localDate, timezone, idempotencyKey, payload) async {
+  test(
+    'replay delivers the stored envelope as recorded and clears it',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final queue = await buildQueue();
+      await queue.enqueue(
+        payload: const {
+          'sleep_quality': 3,
+          'energy': 3,
+          'soreness': 3,
+          'hunger': 3,
+          'mood': 3,
+          'pain_severity': 0,
+          'available_to_train': true,
+          'note': '',
+        },
+        localDate: '2026-09-05',
+        timezone: 'GMT+5:30',
+      );
+      final sent = <Map<String, dynamic>>[];
+      final outcome = await queue.replay((
+        localDate,
+        timezone,
+        idempotencyKey,
+        payload,
+      ) async {
         sent.add({
           'local_date': localDate,
           'timezone': timezone,
@@ -66,20 +76,20 @@ void main() {
           'payload': payload,
         });
         return true;
-      },
-    );
-    expect(outcome, CheckInReplayOutcome.delivered);
-    expect(sent, hasLength(1));
-    // The answer day's date is sent as recorded, never re-dated to today.
-    expect(sent.single['local_date'], '2026-09-05');
-    expect(sent.single['timezone'], 'GMT+5:30');
-    expect(
-      (await SharedPreferences.getInstance()).getString(
-        'daily_check_in_pending',
-      ),
-      isNull,
-    );
-  });
+      });
+      expect(outcome, CheckInReplayOutcome.delivered);
+      expect(sent, hasLength(1));
+      // The answer day's date is sent as recorded, never re-dated to today.
+      expect(sent.single['local_date'], '2026-09-05');
+      expect(sent.single['timezone'], 'GMT+5:30');
+      expect(
+        (await SharedPreferences.getInstance()).getString(
+          'daily_check_in_pending',
+        ),
+        isNull,
+      );
+    },
+  );
 
   test('replay retains the envelope when delivery fails', () async {
     SharedPreferences.setMockInitialValues({});
@@ -99,7 +109,12 @@ void main() {
       timezone: 'Asia/Kolkata',
     );
     var attempts = 0;
-    final outcome = await queue.replay((localDate, timezone, key, payload) async {
+    final outcome = await queue.replay((
+      localDate,
+      timezone,
+      key,
+      payload,
+    ) async {
       attempts++;
       return false;
     });

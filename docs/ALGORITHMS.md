@@ -30,7 +30,13 @@ composite_z = (0.55 * hrv_z + 0.20 * rhr_z + 0.15 * sleep_z + 0.05 * resp_rate_z
 | Resp Rate    | 0.05   | Lower = better      | z-score negated; collected via HealthKit since 2026-09-06 (previously dead code) |
 | Prev Strain  | 0.05   | Lower recent = better | 7-day avg subtracted; needs 28-day spread > 0 |
 
-Each z-score: `z = (observation - ewma_baseline) / spread`. Sign inverted for RHR and resp rate
+Each z-score: `z = (observation - ewma_baseline) / spread`. HRV is scored in the natural-log
+domain (2026-09-07, math honesty): the fold stores `ln(hrv_ms)`, today's value enters as
+`ln(hrv_ms_today)`, and the spread is on the ln scale. Raw-ms z over-weights HRV's long upper tail
+(a 100→110ms night moved the score more than 40→44ms despite being the same proportional change);
+the ln form gives proportional changes equal weight — two users whose histories differ only by a
+constant factor (device or physiology scale) receive identical z-scores. Other metrics stay raw.
+Sign inverted for RHR and resp rate
 components. A component is usable only when it has BOTH a value today AND a baseline with
 `spread > 0`; a present value without a usable baseline (cold start) previously masqueraded as
 "exactly at baseline" (z = 0) with full weight. For prev_strain, "usable" means the 7-day
@@ -114,6 +120,26 @@ spread = 0          → All values identical → return last value
 The `1.4826` constant makes MAD consistent with standard deviation for normally-distributed data
 (Hunter 1986).
 
+### Fold Domains and Plausibility Bands (2026-09-07)
+
+Each observation must pass a plausibility band before entering the fold — out-of-band values are
+**rejected** (counted in neither `n_observations` nor the baseline), never clamped into it. A
+today-value outside its band is reported missing rather than z-scored.
+
+| Metric            | Band           | Fold domain |
+| ----------------- | -------------- | ----------- |
+| HRV (SDNN)        | 5–250 ms       | ln(ms)      |
+| Resting HR        | 30–120 bpm     | raw         |
+| Sleep duration    | 1–960 min      | raw (a 0-minute night is absence, not zero sleep) |
+| Weight            | 30–300 kg      | raw         |
+| Respiratory rate  | 8–25 bpm       | raw         |
+
+HRV folds in ln(ms) per §1; `metric_baseline_history.raw_value` keeps the raw observation in ms
+for the audit trail (only `hrv_sdnn_ms` differs from its raw fold). Stored `user_baselines` rows
+for HRV were converted once (20260907120000): `baseline_value = ln(ms)`,
+`spread = spread_ms / ewma_ms` (first-order delta conversion — both SET expressions read the
+pre-update row).
+
 ### Confidence Tiers
 
 ```text
@@ -154,6 +180,31 @@ Result clipped to [0, 100].
 | Restorative Score| 0.20   | (deep_minutes + rem_minutes) / sleep_minutes * 100 | 0–100 |
 | Consistency Score| 0.10   | 100 - (stddev_7d / mean_7d * 50), floored at 0 | 0–100   |
 
+### Sub-Score Honesty (2026-09-07)
+
+A sub-score whose input is missing scores NULL — never a fabricated 0 (which the weighted sum
+would read as a terrible night) or a coalesced 100. Missing awake minutes → efficiency NULL;
+missing deep OR REM stages → restorative NULL; fewer than 2 nights of stage/awake history →
+consistency NULL. Each NULL sub-score drops out and the composite **renormalizes over the
+remaining weights** (the same pattern as the recovery composite):
+
+```text
+sleep_quality = sum(weight_i * score_i for non-null i) / sum(weight_i for non-null i)
+```
+
+The full `sleep_breakdown` object is emitted **only when all four sub-scores are computable** —
+the shipped Dart parser requires every key when the object exists. A new additive scores key,
+`sleep_breakdown_missing`, names the dropped sub-scores (`["efficiency","restorative"]`) for
+consumers that want to explain the gap. Deployed clients render the card without sub-scores
+(an already-tolerated state) rather than crashing on null keys.
+
+### Cold-Start Duration Floor (2026-09-07)
+
+Duration score uses the personal sleep EWMA only when the sleep baseline has **≥ 7 nights**;
+below that the 480-minute population floor is the need. The EWMA cold-starts at the first
+observed night, so before this floor a first-ever 420-minute night anchored the baseline to
+itself and scored exactly 100.
+
 Duration score compares tonight's sleep duration against the personal EWMA baseline, falling
 back to the 480-minute (8-hour) reference target when no usable baseline exists. Oversleeping
 (>100) is clipped. The previous `480 / baseline_ewma` form ignored tonight's sleep entirely —
@@ -189,11 +240,15 @@ Session effort = 0–10 RPE. Strain normalised per 10-minute block.
 ### Acute:Chronic Workload Ratio (ACWR)
 
 ```text
-ACWR = avg_strain_7d / avg_strain_28d
+ACWR = avg_strain_7d / avg_strain_28d   (over calendar windows, rest days = strain 0)
 ```
 
-Computed from daily strain sums grouped by local_date. Null when fewer than 7 days of strain data
-or when denominator is zero.
+Computed over zero-filled 28-day **calendar** windows (every date in `target_date - 27 ..
+target_date`, rest days carrying strain 0 — that is what a workload ratio means) rather than
+averaging only over logged-session days. ACWR is **null until ≥ 14 strain days** exist in the
+chronic window (noop minChronic parity, 2026-09-07); the previous `avg28 != 0` guard let a single
+logged session produce ACWR = 1.0 — the "average training day" asserted from one data point.
+Denominator zero also nulls.
 
 ### ACWR Bands
 
@@ -216,10 +271,13 @@ Train's week rail gates any ratio verdict on ≥4 sessions in the 28-day payload
 ### Training Monotony
 
 ```text
-monotony = avg_strain_7d / stddev_strain_7d
+monotony = avg_strain_7d / stddev_strain_7d   (zero-filled acute week, rest days = 0)
 ```
 
-Higher = more repetitive loading pattern. Null when stddev is zero (all sessions identical).
+Higher = more repetitive loading pattern. Null unless **≥ 4 strain days** in the acute week AND
+stddev > 0 (2026-09-07). The zero-filled calendar week fixes the production symptom of monotony
+5.57 reported on a window of identical loads: rest days are now real variance, and only a week
+where every acute day carries the same strain (all trained identically, no rest) stays null.
 Monotony is the inverse of the coefficient of variation.
 
 ### Literature
@@ -304,12 +362,12 @@ general = change_review_allowed  if training_eligible OR nutrition_eligible
 
 | Component            | Version Field          | Current      |
 | -------------------- | ---------------------- | ------------ |
-| Baselines function   | `engine_version`       | `baseline-v1`|
+| Baselines function   | `engine_version`       | `baseline-v2`|
 | Daily metrics        | `feature_engine_version` | `daily-v2`  |
-| Daily scoring JSON   | `schema_version`       | `2.1`        |
+| Daily scoring JSON   | `schema_version`       | `2.2`        |
 | Eligibility          | `policy_version`       | `eligibility-v1` |
 | Training hub RPC     | `schema_version`       | `1.4`        |
-| Daily brief RPC      | `schema_version`       | `1.2`        |
+| Daily brief RPC      | `schema_version`       | `1.3`        |
 
 ### Rules
 

@@ -124,7 +124,12 @@ class _TodayScreenState extends State<TodayScreen> {
     Map<String, dynamic> payload,
   ) async {
     if (widget.checkInSender != null) {
-      return widget.checkInSender!(localDate, timezone, idempotencyKey, payload);
+      return widget.checkInSender!(
+        localDate,
+        timezone,
+        idempotencyKey,
+        payload,
+      );
     }
     await Supabase.instance.client.rpc(
       'save_daily_check_in',

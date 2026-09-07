@@ -104,6 +104,28 @@ independent of this branch — phase_4 resp-range order-of-rejection from PR #18
 off-by-one, coach_context_v5:269 syntax error, healthkit auto-complete/candidate fixtures,
 workout_persistence pgTAP is() cast) — CI/deploy never run pgTAP (Colima-gated), so they
 slipped; fix list tracked in the plan's follow-ups.
+2026-09-07 (Pass 2 — math honesty, migration `20260907120000`): HRV folds and z-scores in
+ln(ms) — scale-invariant (an x3-scaled history yields the identical z; one-time UPDATE
+converts stored baselines via first-order delta, history `raw_value` keeps ms); ACWR moves
+to zero-filled 28-day calendar windows and is null until ≥14 strain days (was: single
+session → 1.0); monotony over the zero-filled acute week, null unless ≥4 strain days and
+stddev > 0 (fixes the production monotony-5.57-on-identical-loads symptom); sleep
+sub-scores stop coalescing missing awake/stages to 0 — each missing sub scores null and
+drops out, the composite renormalizes, `sleep_breakdown` is emitted only when all four
+subs exist (shipped Dart parser requires every key), and a new additive
+`scores.sleep_breakdown_missing` names what dropped; duration_score uses the personal sleep
+EWMA only at ≥7 nights (480-min population floor below — the cold-start EWMA scored the
+first night 100 against itself); plausibility bands at fold and today-value (HRV 5–250ms,
+RHR 30–120, sleep 1–960 — a 0-minute night is absence — weight 30–300kg, resp 8–25bpm):
+out-of-band values are rejected, never clamped. Versions: scoring 2.2, brief RPC 1.3,
+engine `baseline-v2`. pgTAP `math_honesty_test.sql` 26/26 (every pin hand-computed then
+live-verified: z=1.241 on the 55-vs-~50ms day, ACWR 1.95/monotony 2.27 zero-filled pins,
+duration floor 85.6 vs personal 92.7); phase_2 tests 32–34/40–41 updated to the honest
+expectations; fixtures: new `daily_brief_v1_3.json` (live-captured shape: ln-ewma 3.94,
+`sleep_breakdown_missing`, gated-null acwr/monotony) + 8 Dart contract tests;
+`daily_computed_metrics.json` bumped to 2.2. 369 Flutter tests, 0 analyze, Deno 105/105.
+Pre-existing pgTAP failures unchanged (auto_complete re-A/B-verified 13-run/4-fail without
+the migration — the earlier "Tests: 2" record was a stale-DB artifact).
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -144,12 +166,13 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Stitch/design             | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
 | Stability infra           | **Complete — deployed**              | `AGENTS.md` (commands)     | N/A                                           |
 | CI/CD automation          | **Complete — deployed**              | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` (deployment)                      |
-| Post-review optimizations | **In progress — Passes 0–1 done on `feature/review-optimizations`; Passes 2–5 queued** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
+| Post-review optimizations | **In progress — Passes 0–2 done on `feature/review-optimizations`; Passes 3–5 queued (owner reviews Today screen after Pass 2 before Pass 3)** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
 
 ## Global Current State
 
-- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 62 migrations (61 deployed;
-  `20260825120000_recovery_honesty.sql` deploys via CI on next merge to main).
+- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 64 migrations (61 deployed;
+  `20260825120000` + `20260906120000` + `20260906140000` + `20260907120000` deploy via CI
+  on next merge to main).
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
 - DeepSeek V4 Flash is the active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`) —
   the activation record is ADR 0011; the full optimization ladder spawned by the 2026-09-04

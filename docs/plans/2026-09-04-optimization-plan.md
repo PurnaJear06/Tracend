@@ -1,14 +1,19 @@
 # Tracend post-review fix + optimization plan — 2026-09-04
 
-> **Execution status (2026-09-06):** implementation started on branch
-> `feature/review-optimizations`. Before this plan began, PR #18
-> (`feature/precision-pro-ui-redesigns`) had already landed three of its items
-> ahead of this ladder: 0a (gitignore `session-*.md`), 0e (CLAUDE.md exact-case
-> commit), and 1a (respiratory rate collected end-to-end — health read type,
-> Edge contract, migration `20260906120000_resp_rate_sync.sql`). They are
-> marked DONE inline below. Everything else executes in pass order on this
-> branch, one commit per pass; merge points are owner-called (merge to `main`
-> auto-deploys).
+> **Execution status (2026-09-07):** implementation on branch
+> `feature/review-optimizations`. Passes 0–2 complete (one commit per pass).
+> Before this ladder began, PR #18 (`feature/precision-pro-ui-redesigns`) had
+> already landed three of its items ahead of it: 0a (gitignore `session-*.md`),
+> 0e (CLAUDE.md exact-case commit), and 1a (respiratory rate collected
+> end-to-end — health read type, Edge contract, migration
+> `20260906120000_resp_rate_sync.sql`). They are marked DONE inline below.
+> Pass 2 (math honesty) landed migration `20260907120000`: ln-domain HRV z,
+> ACWR ≥14-strain-day gate over zero-filled calendar windows, monotony ≥4-day
+> gate, sleep sub-score null-drop + renormalize + `sleep_breakdown_missing`,
+> 7-night cold-start floor, per-metric plausibility bands; scoring 2.2, brief
+> 1.3, engine baseline-v2. Passes 3–5 queued — owner reviews the Today screen
+> after Pass 2 (recovery numbers shift) before Pass 3 stacks on. Merge points
+> are owner-called (merge to `main` auto-deploys).
 
 ## Context
 
