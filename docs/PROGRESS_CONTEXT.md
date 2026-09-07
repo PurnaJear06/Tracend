@@ -142,6 +142,24 @@ authenticated + jwt claim — the brief is security definer and computes interna
 guard-payload tests run compute as postgres, the `future_date_guard_test` pattern);
 fixtures: new `daily_brief_v1_4.json` + 4 Dart contract tests; 378 Flutter tests, 0
 analyze, Deno 105/105. Full pgTAP 665 tests: only the 5 pre-existing failing files.
+2026-09-07 (Pass 3 — baseline dynamics, migration `20260907160000`): stored
+`user_baselines.spread` becomes a 21-day-half-life EWMA over per-observation |deviation|
+(was: static full-history 1.4826·MAD — a metric whose noise shrank kept being scored on its
+whole noisy past, and vice versa; Winsor bounds keep the static MAD scale); per-metric spread
+floors via new `baseline_floor_spread()` (hrv ln 0.05, rhr 2, sleep 15, weight 0.5, resp 0.5 —
+an all-identical history floors at its floor instead of raw 0, keeping z finite);
+`last_observation_date` now stamps the TRUE newest observation date (was: the compute's
+target_date — 08-26 data read as fresh on a 09-07 sync; the Aug-26-presented-as-today class);
+brief (1.4→1.5, additive) carries per-metric `last_obs_date` + `age_days`, null when never
+observed (anti-masquerade: never-observed ≠ observed-today); z-usability gate hardened to
+`spread > 0 AND n_observations >= 3` because the floor makes cold-start spreads non-zero —
+present-value-with-cold-baseline still reports missing (a Pass-3-introduced regression caught
+by `recovery_honesty_test` 14–15 before it shipped). pgTAP `baseline_dynamics_test.sql`
+14/14 (floor pins, true-date stamps, cold-start age 9 reported as 9, never-observed null,
+x3-scale-invariance survives the spread EWMA); `BaselineMetric` gains `lastObsDate`/`ageDays`
+(parse-only, no UI yet — server-first per plan); fixtures: `daily_brief_v1_5.json` + 4
+contract tests; 385 Flutter tests, 0 analyze, Deno 105/105; full pgTAP 679 with only the 5
+pre-existing failing files.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -182,12 +200,13 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Stitch/design             | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
 | Stability infra           | **Complete — deployed**              | `AGENTS.md` (commands)     | N/A                                           |
 | CI/CD automation          | **Complete — deployed**              | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` (deployment)                      |
-| Post-review optimizations | **In progress — Passes 0–2.5 done on `feature/review-optimizations`; Passes 3–5 queued** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
+| Post-review optimizations | **In progress — Passes 0–3 done on `feature/review-optimizations`; Passes 4–5 queued** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
 
 ## Global Current State
 
-- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 68 migrations (65 deployed through
-  `20260907120000`; `20260907140000` Pass 2.5 deploys via CI on next merge to main).
+- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 69 migrations (65 deployed through
+  `20260907120000`; `20260907140000` Pass 2.5 + `20260907160000` Pass 3 deploy via CI on next
+  merge to main).
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
 - DeepSeek V4 Flash is the active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`) —
   the activation record is ADR 0011; the full optimization ladder spawned by the 2026-09-04

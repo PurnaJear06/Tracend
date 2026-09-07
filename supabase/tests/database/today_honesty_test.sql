@@ -96,12 +96,13 @@ set local role authenticated;
 set local "request.jwt.claim.sub" =
   'a11ce000-0001-4001-8001-0000000000f1';
 
--- 1. Brief reports schema 1.4 (full payload, not the null-user early
---    return, which reports the same version).
+-- 1. Brief reports schema 1.5 (full payload, not the null-user early
+--    return, which reports the same version). Pass 3 (baseline dynamics)
+--    bumped 1.4 -> 1.5 with additive per-metric staleness fields.
 select is(
   public.get_my_daily_brief(current_date)->>'schema_version',
-  '1.4',
-  'brief schema_version is 1.4'
+  '1.5',
+  'brief schema_version is 1.5'
 );
 
 -- 2. today_raw passes today's measured HRV through verbatim.
