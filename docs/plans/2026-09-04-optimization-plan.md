@@ -13,7 +13,7 @@
 > 7-night cold-start floor, per-metric plausibility bands; scoring 2.2, brief
 > 1.3, engine baseline-v2. Pass 2.5 (Today-screen honesty: decision
 > freshness, raw values next to z, resp verification) added 2026-09-07 after
-> owner dogfooding; runs before Pass 3. Passes 3–5 queued — owner reviews the
+> owner dogfooding; runs before Pass 3. Pass 3 done 2026-09-07; Passes 4–5 queued — owner reviews the
 > Today screen after Pass 2 (recovery numbers shift) before Pass 3 stacks on.
 > Merge points are owner-called (merge to `main` auto-deploys).
 
@@ -120,15 +120,24 @@ tracked with exact case (pre-landed).
 stages missing → renormalized composite, no fabricated 0/50; first night < 100; out-of-band value
 rejected); flutter/deno gates; fixtures if any response semantics changed.
 
-## Pass 3 — baseline dynamics
+## Pass 3 — baseline dynamics — DONE 2026-09-07 (migration `20260907160000`)
 
 - **3a. Spread as EWMA** (noop: 21-day half-life, separate from 14-day center) + per-metric
-  floorSpread, replacing static full-history MAD. Additive columns on baselines + backfill
-  migration.
+  floorSpread, replacing static full-history MAD. — DONE as designed: stored spread is the
+  21-day EWMA over |deviation| with `baseline_floor_spread()` floors (hrv ln 0.05, rhr 2,
+  sleep 15, weight 0.5, resp 0.5); Winsor bounds keep the static MAD scale; no new columns
+  needed (spread column reused — same kind, better derivation; next fold re-derives, so no
+  backfill DDL).
 - **3b. Staleness tracking**: `nightsSinceNewestValidNight`, staleDays = 14, vital carry ≤ 7 days.
   Brief gains additive fields (`baseline_stale`, `baseline_age_days`) → schema_version bump +
-  fixtures. Server-first; minimal client display follows. Prevents "Aug-26 value presented as
-  today" class everywhere (feeds Pass 4 prompt contract).
+  fixtures. Server-first; minimal client display follows. — DONE simplified to the honest core:
+  `last_observation_date` now stamps the true newest observation date (the bug — it stamped the
+  compute's target_date); brief 1.4→1.5 carries per-metric `last_obs_date` + `age_days`
+  (null when never observed). The staleDays-14 flag / 7-day carry cap were NOT added — the
+  visible-fields design makes staleness explicit without a hardcoded gate; a display/AI-context
+  threshold can layer on the age fields later. z-usability gate hardened to
+  `spread > 0 AND n_observations >= 3` (the floors make cold spreads non-zero; caught a
+  would-be regression via recovery_honesty 14–15 pre-ship).
 
 **Verify:** pgTAP (stale baseline flagged; carry bounded), flutter/deno gates, fixtures bumped.
 

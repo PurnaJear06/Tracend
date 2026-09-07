@@ -104,11 +104,21 @@ class BaselineMetric {
     required this.spread,
     required this.nObs,
     required this.confidence,
+    this.lastObsDate,
+    this.ageDays,
   });
   final double ewma;
   final double spread;
   final int nObs;
   final String confidence;
+
+  /// True date of the newest observation behind this baseline, and its
+  /// age in days as of the brief's target date (0 = today). A baseline can
+  /// be weeks old when the watch stops being worn overnight — these make
+  /// the staleness visible instead of presenting an old value as current.
+  /// Null when the metric was never observed. Absent on briefs < 1.5.
+  final String? lastObsDate;
+  final int? ageDays;
 
   factory BaselineMetric.fromJson(Map<String, dynamic> json) {
     return BaselineMetric(
@@ -116,6 +126,8 @@ class BaselineMetric {
       spread: (json['spread'] as num).toDouble(),
       nObs: json['n_obs'] as int,
       confidence: json['confidence'] as String,
+      lastObsDate: json['last_obs_date'] as String?,
+      ageDays: (json['age_days'] as num?)?.toInt(),
     );
   }
 
@@ -125,10 +137,13 @@ class BaselineMetric {
       ewma == other.ewma &&
       spread == other.spread &&
       nObs == other.nObs &&
-      confidence == other.confidence;
+      confidence == other.confidence &&
+      lastObsDate == other.lastObsDate &&
+      ageDays == other.ageDays;
 
   @override
-  int get hashCode => Object.hash(ewma, spread, nObs, confidence);
+  int get hashCode =>
+      Object.hash(ewma, spread, nObs, confidence, lastObsDate, ageDays);
 }
 
 /// Today's measured values, exactly as recorded — never derived. The

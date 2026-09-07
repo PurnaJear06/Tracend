@@ -455,4 +455,71 @@ void main() {
       expect(ComputedMetrics.fromJson(v13Raw).todayRaw, isNull);
     });
   });
+
+  group(
+    'Daily Brief contract — get_my_daily_brief v1.5 (baseline dynamics)',
+    () {
+      const fixture = 'daily_brief_v1_5.json';
+
+      test('fixture is valid JSON and reports schema 1.5', () {
+        final json = _loadFixtureJson(fixture);
+
+        expect(json['schema_version'], '1.5');
+        expect(json['local_date'], isA<String>());
+        expect(json['computed'], isA<Map>());
+      });
+
+      test('baselines carry per-metric last_obs_date + age_days', () {
+        final json = _loadFixtureJson(fixture);
+        final baselines = Map<String, dynamic>.from(
+          (json['computed'] as Map)['baselines'] as Map,
+        );
+
+        // Observed metrics report the true newest observation date and its
+        // age; 0 means "observed today", never observed stays null.
+        final hrv = Map<String, dynamic>.from(baselines['hrv_sdnn_ms'] as Map);
+        expect(hrv['last_obs_date'], '2026-09-06');
+        expect(hrv['age_days'], 1);
+        final sleep = Map<String, dynamic>.from(
+          baselines['sleep_minutes'] as Map,
+        );
+        expect(sleep['age_days'], 0);
+        final resp = Map<String, dynamic>.from(
+          baselines['resp_rate_bpm'] as Map,
+        );
+        expect(resp['last_obs_date'], isNull);
+        expect(resp['age_days'], isNull);
+      });
+
+      test('staleness fields map into the BaselineMetric model', () {
+        final json = _loadFixtureJson(fixture);
+        final computedRaw = Map<String, dynamic>.from(json['computed'] as Map);
+        final m = ComputedMetrics.fromJson(computedRaw);
+
+        expect(m.baselines.hrv?.lastObsDate, '2026-09-06');
+        expect(m.baselines.hrv?.ageDays, 1);
+        expect(m.baselines.sleepMinutes?.ageDays, 0);
+        expect(m.baselines.respRate?.lastObsDate, isNull);
+        expect(m.baselines.respRate?.ageDays, isNull);
+        // Older briefs (v1.4) parse with the staleness fields null.
+        final v14 = _loadFixtureJson('daily_brief_v1_4.json');
+        final v14Raw = Map<String, dynamic>.from(v14['computed'] as Map);
+        final older = ComputedMetrics.fromJson(v14Raw);
+        expect(older.baselines.hrv?.lastObsDate, isNull);
+        expect(older.baselines.hrv?.ageDays, isNull);
+      });
+
+      test('all v1.4 fields survive (additive bump only)', () {
+        final json = _loadFixtureJson(fixture);
+        final computed = Map<String, dynamic>.from(json['computed'] as Map);
+
+        expect(computed['today_raw'], isA<Map>());
+        expect(computed['data_confidence'], isA<String>());
+        final scores = Map<String, dynamic>.from(computed['scores'] as Map);
+        expect(scores['recovery'], isA<num>());
+        expect(scores['recovery_breakdown'], isA<Map>());
+        expect(scores['sleep_breakdown_missing'], isA<List>());
+      });
+    },
+  );
 }

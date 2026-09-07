@@ -240,5 +240,45 @@ void main() {
       expect(a, equals(b));
       expect(a.hashCode, equals(b.hashCode));
     });
+
+    test('parses staleness fields (brief >= 1.5)', () {
+      final metric = BaselineMetric.fromJson(const {
+        'ewma': 3.94,
+        'spread': 0.06,
+        'n_obs': 7,
+        'confidence': 'medium',
+        'last_obs_date': '2026-09-06',
+        'age_days': 1,
+      });
+
+      expect(metric.lastObsDate, '2026-09-06');
+      expect(metric.ageDays, 1);
+    });
+
+    test('never-observed metric parses with null staleness', () {
+      final metric = BaselineMetric.fromJson(const {
+        'ewma': 0.0,
+        'spread': 0.5,
+        'n_obs': 0,
+        'confidence': 'cold_start',
+        'last_obs_date': null,
+        'age_days': null,
+      });
+
+      expect(metric.lastObsDate, isNull);
+      expect(metric.ageDays, isNull);
+    });
+
+    test('older briefs (no staleness keys) parse with null fields', () {
+      final metric = BaselineMetric.fromJson(const {
+        'ewma': 3.94,
+        'spread': 0.06,
+        'n_obs': 7,
+        'confidence': 'medium',
+      });
+
+      expect(metric.lastObsDate, isNull);
+      expect(metric.ageDays, isNull);
+    });
   });
 }

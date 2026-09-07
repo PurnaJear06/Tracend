@@ -122,15 +122,43 @@ baseline.
 ```text
 median = percentile_50(values)
 MAD    = 1.4826 * percentile_50(|values - median|)
-spread = MAD
 
 ±3×spread boundary  → Winsorize (clamp to boundary)
 > ±5×spread         → Hard reject (skip entirely, record was_outlier_rejected=true)
-spread = 0          → All values identical → return last value
 ```
 
 The `1.4826` constant makes MAD consistent with standard deviation for normally-distributed data
-(Hunter 1986).
+(Hunter 1986). (The historical "spread = 0 → return last value" cold-start shortcut inside
+`compute_winsorized_ewma` is superseded by the stored-spread rules below.)
+
+### Spread as EWMA + Floors (2026-09-07, Pass 3)
+
+The **stored** `user_baselines.spread` is no longer the static full-history MAD. Two failure modes
+motivated the change: a metric whose day-to-day noise *shrank* kept being z-scored against its
+whole noisy past, and one whose noise *grew* kept being scored on an ancient calm window.
+
+- **Stored spread** = a 21-day-half-life EWMA over per-observation |deviation from the running
+  center| (`0.9670·spread + 0.0330·|x_t − ewma_t|`), one step wider than the 14-day center
+  half-life for stability. Winsor bounds for the fold still use the static full-history MAD scale
+  (a static scale is right where the bounds clamp).
+- **Per-metric floors** (`baseline_floor_spread`): HRV 0.05 (ln-ms domain), RHR 2 bpm, sleep 15
+  min, weight 0.5 kg, resp 0.5 bpm. A spread below its floor would amplify noise into dramatic
+  z-scores on near-identical histories — including the all-identical history whose raw spread is
+  exactly 0.
+- **z usability gate** (hardened with the floors): a component z-scores only when the baseline has
+  `spread > 0` AND `n_observations >= 3` (the fold actually ran). The floor gives cold-start rows
+  a non-zero spread, so `spread > 0` alone would let a one-night baseline masquerade as usable —
+  a present value with a cold baseline is still reported missing, never "at baseline".
+
+### Baseline Staleness (2026-09-07, Pass 3)
+
+`user_baselines.last_observation_date` stamps the TRUE newest observation date (it previously
+recorded the compute's target date, so syncing on 09-07 with newest data from 08-26 read as
+fresh). The brief's per-metric baseline objects carry additive `last_obs_date` + `age_days`
+(0 = observed today); a never-observed metric reports null for both, never 0. This is the
+anti-masquerade rule: an old value can never silently present as current. Z-scoring policy is
+unchanged — a stale-but-valid baseline still z-scores (that is what a personal baseline is); the
+fields make staleness visible to display and the AI context (Pass 4).
 
 ### Fold Domains and Plausibility Bands (2026-09-07)
 
@@ -379,7 +407,7 @@ general = change_review_allowed  if training_eligible OR nutrition_eligible
 | Daily scoring JSON   | `schema_version`       | `2.2`        |
 | Eligibility          | `policy_version`       | `eligibility-v1` |
 | Training hub RPC     | `schema_version`       | `1.4`        |
-| Daily brief RPC      | `schema_version`       | `1.4`        |
+| Daily brief RPC      | `schema_version`       | `1.5`        |
 
 ### Rules
 
