@@ -41,6 +41,7 @@ class HealthDay {
     this.weightKg,
     this.restingHeartRateBpm,
     this.hrvSdnnMs,
+    this.respRateBpm,
   });
 
   final DateTime date;
@@ -55,6 +56,7 @@ class HealthDay {
   final double? weightKg;
   final double? restingHeartRateBpm;
   final double? hrvSdnnMs;
+  final double? respRateBpm;
 }
 
 class HealthHistory {

@@ -19,11 +19,13 @@ ComputedMetrics _metrics({
   int? recovery,
   RecoveryBreakdown? breakdown,
   String dataConfidence = 'medium',
+  TodayRaw? todayRaw,
 }) {
   return ComputedMetrics(
     scores: ComputedScores(recovery: recovery, recoveryBreakdown: breakdown),
     baselines: const ComputedBaselines(),
     dataConfidence: dataConfidence,
+    todayRaw: todayRaw,
   );
 }
 
@@ -265,6 +267,86 @@ void main() {
       expect(tester.hasRunningAnimations, isTrue);
       await tester.pumpAndSettle();
       expect(find.text('72'), findsOneWidget);
+    });
+
+    testWidgets('driver rows pair raw values with z (brief >= 1.4)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          RecoveryReadoutCard(
+            computed: _metrics(
+              recovery: 72,
+              breakdown: _breakdown,
+              todayRaw: const TodayRaw(
+                hrvMs: 38,
+                restingHrBpm: 52,
+                sleepMinutes: 411,
+                respRateBpm: 14.2,
+                dailyStrain: 42,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('38 ms · +0.5'), findsOneWidget);
+      expect(find.text('52 bpm · -0.2'), findsOneWidget);
+      expect(find.text('411 min · +0.8'), findsOneWidget);
+      expect(find.text('14 bpm · +0.1'), findsOneWidget);
+      expect(find.text('42.0 · -0.3'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('HRV driver, 38 ms, z-score +0.5'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('unmeasured components stay No data even with today_raw', (
+      tester,
+    ) async {
+      // The owner's watch-off day: sleep and resp measured nowhere, so
+      // today_raw carries nulls for them and the rows report No data.
+      const partial = RecoveryBreakdown(
+        hrvZ: -1.2,
+        rhrZ: 0.5,
+        sleepZ: 0,
+        respRateZ: 0,
+        prevStrainZ: 0,
+        missingComponents: ['sleep_minutes', 'resp_rate', 'prev_strain'],
+      );
+      await tester.pumpWidget(
+        _wrap(
+          RecoveryReadoutCard(
+            computed: _metrics(
+              recovery: 54,
+              breakdown: partial,
+              todayRaw: const TodayRaw(hrvMs: 38, restingHrBpm: 52),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('38 ms · -1.2'), findsOneWidget);
+      expect(find.text('52 bpm · +0.5'), findsOneWidget);
+      expect(find.text('No data'), findsNWidgets(3));
+    });
+
+    testWidgets('older briefs without today_raw keep z-only rows', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          RecoveryReadoutCard(
+            computed: _metrics(recovery: 72, breakdown: _breakdown),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('+0.5'), findsOneWidget);
+      expect(find.text('38 ms'), findsNothing);
     });
   });
 }

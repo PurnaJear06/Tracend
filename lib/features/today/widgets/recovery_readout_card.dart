@@ -30,7 +30,6 @@ class RecoveryReadoutCard extends StatelessWidget {
     final breakdown = computed.scores.recoveryBreakdown;
     final confidence = computed.dataConfidence;
     final lowConfidence = confidence == 'cold_start' || confidence == 'low';
-
     return PremiumGradientCard(
       glow: true,
       child: Column(
@@ -90,7 +89,7 @@ class RecoveryReadoutCard extends StatelessWidget {
           ),
           if (breakdown != null) ...[
             const SizedBox(height: TracendSpacing.md),
-            _DriverRows(breakdown: breakdown),
+            _DriverRows(breakdown: breakdown, todayRaw: computed.todayRaw),
           ],
         ],
       ),
@@ -167,9 +166,15 @@ class _BandChip extends StatelessWidget {
 }
 
 class _DriverRows extends StatelessWidget {
-  const _DriverRows({required this.breakdown});
+  const _DriverRows({required this.breakdown, required this.todayRaw});
 
   final RecoveryBreakdown breakdown;
+
+  /// Today's measured values (brief ≥ 1.4). When present, each row shows
+  /// the raw measurement next to the z-score so a driver reads as
+  /// "38 ms · −1.2" — a deviation from baseline, not a broken unit.
+  /// Null on older payloads: rows fall back to the z-score alone.
+  final TodayRaw? todayRaw;
 
   @override
   Widget build(BuildContext context) {
@@ -205,10 +210,37 @@ class _DriverRows extends StatelessWidget {
             zScore: drivers[i].$3,
             color: drivers[i].$4,
             missing: missing.contains(drivers[i].$2),
+            rawValue: _rawLabel(drivers[i].$2),
           ),
         ],
       ],
     );
+  }
+
+  /// Human raw value for one component, or null when unavailable (older
+  /// brief, or the component genuinely has no value today).
+  String? _rawLabel(String componentKey) {
+    final raw = todayRaw;
+    if (raw == null) return null;
+    final value = switch (componentKey) {
+      'hrv_sdnn' => raw.hrvMs,
+      'resting_hr' => raw.restingHrBpm,
+      'sleep_minutes' => raw.sleepMinutes?.toDouble(),
+      'resp_rate' => raw.respRateBpm,
+      'prev_strain' => raw.dailyStrain,
+      _ => null,
+    };
+    if (value == null) return null;
+    if (componentKey == 'sleep_minutes') {
+      return '${value.round()} min';
+    }
+    if (componentKey == 'hrv_sdnn') {
+      return '${value.round()} ms';
+    }
+    if (componentKey == 'prev_strain') {
+      return value.toStringAsFixed(1);
+    }
+    return '${value.round()} bpm';
   }
 }
 
@@ -227,12 +259,17 @@ class _DriverRow extends StatelessWidget {
     required this.zScore,
     required this.color,
     this.missing = false,
+    this.rawValue,
   });
 
   final String label;
   final double zScore;
   final Color color;
   final bool missing;
+
+  /// Today's measured value with its unit ('38 ms'), or null when the
+  /// brief predates today_raw or the component was not measured.
+  final String? rawValue;
 
   @override
   Widget build(BuildContext context) {
@@ -241,11 +278,17 @@ class _DriverRow extends StatelessWidget {
     final zText = missing
         ? 'No data'
         : '${zScore >= 0 ? '+' : ''}${zScore.toStringAsFixed(1)}';
+    final raw = rawValue;
+    // Raw value only ever accompanies a real z-score; a missing component
+    // reports 'No data' alone.
+    final detail = missing || raw == null ? zText : '$raw · $zText';
 
     return Semantics(
       label: missing
           ? '$label driver, no data'
-          : '$label driver, z-score $zText',
+          : raw == null
+          ? '$label driver, z-score $zText'
+          : '$label driver, $raw, z-score $zText',
       excludeSemantics: true,
       child: Row(
         children: [
@@ -302,9 +345,11 @@ class _DriverRow extends StatelessWidget {
           ),
           const SizedBox(width: TracendSpacing.xs),
           SizedBox(
-            width: 52,
+            // Wide enough for '411 min · +0.8'; the z-only rows of older
+            // briefs simply leave slack on the left.
+            width: 108,
             child: Text(
-              zText,
+              detail,
               textAlign: TextAlign.right,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 fontFamily: TracendFonts.monoFamily,

@@ -402,4 +402,57 @@ void main() {
       }
     });
   });
+
+  group('Daily Brief contract — get_my_daily_brief v1.4 (today honesty)', () {
+    const fixture = 'daily_brief_v1_4.json';
+
+    test('fixture is valid JSON and reports schema 1.4', () {
+      final json = _loadFixtureJson(fixture);
+
+      expect(json['schema_version'], '1.4');
+      expect(json['local_date'], isA<String>());
+      expect(json['computed'], isA<Map>());
+    });
+
+    test('computed.today_raw carries measured values, null = not measured', () {
+      final json = _loadFixtureJson(fixture);
+      final todayRaw = Map<String, dynamic>.from(
+        (json['computed'] as Map)['today_raw'] as Map,
+      );
+
+      expect(todayRaw['hrv_ms'], 38.0);
+      // Watch not worn overnight: sleep and resp absent, never zero.
+      expect(todayRaw['sleep_minutes'], isNull);
+      expect(todayRaw['resp_rate_bpm'], isNull);
+      expect(todayRaw['resting_hr_bpm'], isNull);
+      expect(todayRaw['daily_strain'], isA<num>());
+    });
+
+    test('all v1.3 fields survive (additive bump only)', () {
+      final json = _loadFixtureJson(fixture);
+      final computed = Map<String, dynamic>.from(json['computed'] as Map);
+      final scores = Map<String, dynamic>.from(computed['scores'] as Map);
+
+      expect(computed['baselines'], isA<Map>());
+      expect(computed['data_confidence'], isA<String>());
+      expect(scores['recovery'], isA<num>());
+      expect(scores['recovery_breakdown'], isA<Map>());
+      expect(scores['sleep_breakdown_missing'], isA<List>());
+    });
+
+    test('today_raw maps into the ComputedMetrics model', () {
+      final json = _loadFixtureJson(fixture);
+      final computedRaw = Map<String, dynamic>.from(json['computed'] as Map);
+      final m = ComputedMetrics.fromJson(computedRaw);
+
+      expect(m.todayRaw, isNotNull);
+      expect(m.todayRaw!.hrvMs, 38.0);
+      expect(m.todayRaw!.sleepMinutes, isNull);
+      expect(m.todayRaw!.respRateBpm, isNull);
+      // v1.3 payloads (no today_raw) still parse with todayRaw null.
+      final v13 = _loadFixtureJson('daily_brief_v1_3.json');
+      final v13Raw = Map<String, dynamic>.from(v13['computed'] as Map);
+      expect(ComputedMetrics.fromJson(v13Raw).todayRaw, isNull);
+    });
+  });
 }

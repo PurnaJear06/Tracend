@@ -126,6 +126,22 @@ expectations; fixtures: new `daily_brief_v1_3.json` (live-captured shape: ln-ewm
 `daily_computed_metrics.json` bumped to 2.2. 369 Flutter tests, 0 analyze, Deno 105/105.
 Pre-existing pgTAP failures unchanged (auto_complete re-A/B-verified 13-run/4-fail without
 the migration — the earlier "Tests: 2" record was a stale-DB artifact).
+2026-09-07 (Pass 2.5 — Today-screen honesty, migration `20260907140000`, owner dogfooding
+of Pass 2): driver rows now pair the raw measured value with its z (`38 ms · +0.5`) via the
+additive `computed.today_raw` passthrough object (HRV/RHR/sleep/resp + computed strain;
+all-null when unmeasured — never zero; brief RPC 1.3→1.4, scoring stays 2.2); the daily
+decision regenerates when the check-in lands after the decision cited `recovery_check_in`
+as missing (was: generated pre-check-in, stuck on gather-data all day even with
+"Morning status recorded" showing — the coach card and check-in bar contradicted each
+other); `loadHistory` selects `respiratory_rate_bpm` for the health history screen. Resp
+pipe re-verified sound end-to-end in code (plugin read→contract→`persist_health_sync`
+v2→v1→column→baseline fold; Apple Watch records resp only during sleep, so an empty
+today with the watch off is honest — past-night backfill confirmation is an owner SQL
+check against production). pgTAP `today_honesty_test.sql` 9/9 (brief-driven as
+authenticated + jwt claim — the brief is security definer and computes internally;
+guard-payload tests run compute as postgres, the `future_date_guard_test` pattern);
+fixtures: new `daily_brief_v1_4.json` + 4 Dart contract tests; 378 Flutter tests, 0
+analyze, Deno 105/105. Full pgTAP 665 tests: only the 5 pre-existing failing files.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -166,13 +182,12 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Stitch/design             | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
 | Stability infra           | **Complete — deployed**              | `AGENTS.md` (commands)     | N/A                                           |
 | CI/CD automation          | **Complete — deployed**              | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` (deployment)                      |
-| Post-review optimizations | **In progress — Passes 0–2 done on `feature/review-optimizations`; Passes 3–5 queued (owner reviews Today screen after Pass 2 before Pass 3)** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
+| Post-review optimizations | **In progress — Passes 0–2.5 done on `feature/review-optimizations`; Passes 3–5 queued** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
 
 ## Global Current State
 
-- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 64 migrations (61 deployed;
-  `20260825120000` + `20260906120000` + `20260906140000` + `20260907120000` deploy via CI
-  on next merge to main).
+- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 68 migrations (65 deployed through
+  `20260907120000`; `20260907140000` Pass 2.5 deploys via CI on next merge to main).
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
 - DeepSeek V4 Flash is the active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`) —
   the activation record is ADR 0011; the full optimization ladder spawned by the 2026-09-04

@@ -11,9 +11,11 @@
 > ACWR ≥14-strain-day gate over zero-filled calendar windows, monotony ≥4-day
 > gate, sleep sub-score null-drop + renormalize + `sleep_breakdown_missing`,
 > 7-night cold-start floor, per-metric plausibility bands; scoring 2.2, brief
-> 1.3, engine baseline-v2. Passes 3–5 queued — owner reviews the Today screen
-> after Pass 2 (recovery numbers shift) before Pass 3 stacks on. Merge points
-> are owner-called (merge to `main` auto-deploys).
+> 1.3, engine baseline-v2. Pass 2.5 (Today-screen honesty: decision
+> freshness, raw values next to z, resp verification) added 2026-09-07 after
+> owner dogfooding; runs before Pass 3. Passes 3–5 queued — owner reviews the
+> Today screen after Pass 2 (recovery numbers shift) before Pass 3 stacks on.
+> Merge points are owner-called (merge to `main` auto-deploys).
 
 ## Context
 
@@ -129,6 +131,53 @@ rejected); flutter/deno gates; fixtures if any response semantics changed.
   today" class everywhere (feeds Pass 4 prompt contract).
 
 **Verify:** pgTAP (stale baseline flagged; carry bounded), flutter/deno gates, fixtures bumped.
+
+## Pass 2.5 — Today-screen honesty fixes (owner dogfooding, 2026-09-07)
+
+Owner reviewed the Today screen after Pass 2 deployed and found one real bug plus
+two comprehension gaps. Passes 3–5 stay queued behind this.
+
+- **2.5a. Decision freshness (real bug).** The daily coach decision generates
+  once ([today_screen.dart sync pipeline, lines ~205-212] generates only when
+  no decision exists for today) and is never regenerated when the inputs it
+  cited as missing arrive. Sequence that produced the contradiction: decision
+  generated pre-check-in → policy outcome `request_data` (permitted actions
+  GATHER_DATA / MAINTAIN_TARGETS) → owner checks in → bar shows "Morning
+  status recorded" (reads the live table) but the T-COACH/N-COACH card still
+  says "gather data / missing recovery check-in" until tomorrow. Fix: after a
+  successful check-in (and after a health sync that delivers new data), if
+  today's decision's `missing_data` contains `recovery_check_in`, generate a
+  new decision (new idempotency key → new audited row; guardrails unchanged).
+  Also refresh `_latestDecision` after check-in delivery, not just the brief.
+- **2.5b. Raw values next to z-scores.** Owner read "HRV −1.2" as a broken
+  ms value; it is the z-score (deviation from personal baseline in spread
+  units) and was correct (38 ms vs ~50-60 ms ln-domain baseline), but
+  uninterpretable without the raw number. Fix: driver rows show
+  `38 ms · −1.2` style (raw value + z); RHR/resp/strain/sleep rows likewise.
+  Requires today's raw values in the brief payload: add an additive
+  `today_raw` object to `computed` (hrv_ms, resting_hr_bpm, sleep_minutes,
+  resp_rate_bpm, strain) → brief schema 1.3 → 1.4 + fixtures.
+- **2.5c. Resp-rate verification (may be working, must be proven).** Owner's
+  build asked for respiratory permission (prompt proves the build carries the
+  resp collection code from PR #18) and Apple Health holds past-night resp,
+  but the Today card shows resp "No data". Every code link checks out
+  (plugin 13.3.1 native mapping, read loop, aggregation, Edge contract, RPC
+  insert, baseline fold). Today's row is legitimately empty (watch not worn
+  last night → no overnight resp), so the question is whether past nights'
+  resp reached `daily_health_summaries`. Owner runs the dashboard SQL-editor
+  check; if rows are present with `respiratory_rate_bpm` values, the feature
+  works and only today is honestly empty (baseline builds over ~7 nights →
+  resp z joins the composite; confidence can reach `high`); if absent, a
+  real ingestion bug exists and gets its own fix before merge.
+- **2.5d. HealthDay model gap (found during trace).** `loadHistory` does not
+  select `respiratory_rate_bpm` and `HealthDay` has no resp field, so any
+  future UI showing resp history would silently show nothing. Additive
+  select + field.
+
+**Verify:** flutter analyze/test (widget test: decision regenerates after
+check-in lands; driver rows show raw + z; brief v1.4 fixture shape), deno
+fmt/lint/test, pgTAP if RPC shape changes (brief 1.3 → 1.4 bump + fixture),
+contract fixtures updated.
 
 ## Pass 4 — AI-context honesty (Edge Functions, no DB)
 
