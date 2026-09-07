@@ -131,6 +131,35 @@ class BaselineMetric {
   int get hashCode => Object.hash(ewma, spread, nObs, confidence);
 }
 
+/// Today's measured values, exactly as recorded — never derived. The
+/// recovery driver rows pair each raw value with its z-score so "−1.2"
+/// reads as "38 ms, 1.2 spreads below baseline" instead of a bare number
+/// the owner can mistake for a broken unit. Absent on briefs < 1.4.
+class TodayRaw {
+  const TodayRaw({
+    this.hrvMs,
+    this.restingHrBpm,
+    this.sleepMinutes,
+    this.respRateBpm,
+    this.dailyStrain,
+  });
+  final double? hrvMs;
+  final double? restingHrBpm;
+  final int? sleepMinutes;
+  final double? respRateBpm;
+  final double? dailyStrain;
+
+  factory TodayRaw.fromJson(Map<String, dynamic> json) {
+    return TodayRaw(
+      hrvMs: (json['hrv_ms'] as num?)?.toDouble(),
+      restingHrBpm: (json['resting_hr_bpm'] as num?)?.toDouble(),
+      sleepMinutes: json['sleep_minutes'] as int?,
+      respRateBpm: (json['resp_rate_bpm'] as num?)?.toDouble(),
+      dailyStrain: (json['daily_strain'] as num?)?.toDouble(),
+    );
+  }
+}
+
 class ComputedBaselines {
   const ComputedBaselines({
     this.hrv,
@@ -225,6 +254,7 @@ class ComputedMetrics {
     required this.scores,
     required this.baselines,
     required this.dataConfidence,
+    this.todayRaw,
   });
 
   factory ComputedMetrics.fromJson(Map<String, dynamic>? json) {
@@ -233,6 +263,7 @@ class ComputedMetrics {
     }
     final scoresRaw = json['scores'];
     final baselinesRaw = json['baselines'];
+    final todayRawRaw = json['today_raw'];
     return ComputedMetrics(
       scores: scoresRaw is Map
           ? ComputedScores.fromJson(Map<String, dynamic>.from(scoresRaw))
@@ -241,15 +272,20 @@ class ComputedMetrics {
           ? ComputedBaselines.fromJson(Map<String, dynamic>.from(baselinesRaw))
           : const ComputedBaselines(),
       dataConfidence: (json['data_confidence'] as String?) ?? 'cold_start',
+      todayRaw: todayRawRaw is Map
+          ? TodayRaw.fromJson(Map<String, dynamic>.from(todayRawRaw))
+          : null,
     );
   }
 
   const ComputedMetrics._empty()
     : scores = const ComputedScores(),
       baselines = const ComputedBaselines(),
-      dataConfidence = 'cold_start';
+      dataConfidence = 'cold_start',
+      todayRaw = null;
 
   final ComputedScores scores;
   final ComputedBaselines baselines;
   final String dataConfidence;
+  final TodayRaw? todayRaw;
 }

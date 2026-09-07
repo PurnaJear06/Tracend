@@ -111,6 +111,9 @@ class _TodayScreenState extends State<TodayScreen> {
         setState(() {
           _brief = widget.brief.load(DateTime.now());
         });
+        // The replayed check-in is new evidence: today's decision may have
+        // been generated without it and must be refreshed.
+        await _refreshDecisionAfterEvidence();
       }
     } on Exception {
       // Keep the envelope; retried on next launch.
@@ -204,7 +207,15 @@ class _TodayScreenState extends State<TodayScreen> {
         try {
           final latest = await widget.coach.loadLatest();
           final today = _dateKey(DateTime.now());
-          if (latest == null || latest.localDate != today) {
+          final citedCheckInMissing =
+              latest != null &&
+              latest.localDate == today &&
+              latest.missingData.contains('recovery_check_in');
+          if (latest == null ||
+              latest.localDate != today ||
+              citedCheckInMissing) {
+            // Same freshness rule as _refreshDecisionAfterEvidence: a
+            // decision generated before the check-in landed is stale.
             await widget.coach.generate();
           }
           if (!mounted) return;
@@ -238,12 +249,45 @@ class _TodayScreenState extends State<TodayScreen> {
       '${value.month.toString().padLeft(2, '0')}-'
       '${value.day.toString().padLeft(2, '0')}';
 
+  /// Refreshes the coaching decision after new evidence arrived.
+  ///
+  /// The daily decision generates once per day, but it can be generated
+  /// before the morning check-in — in that state the policy permits only
+  /// gather-data actions and cites `recovery_check_in` as missing, and the
+  /// card would keep saying "gather data" all day even after the check-in
+  /// lands (the bar reads the live table, so the two contradicted each
+  /// other). When today's decision cited the check-in as missing, a new
+  /// decision is generated (new idempotency key → new audited row); the
+  /// guardrails are unchanged, only the evidence is fresh. Failures are
+  /// silent — the stale decision remains valid coaching.
+  Future<void> _refreshDecisionAfterEvidence() async {
+    if (!widget.environment.hasSupabaseConfiguration) return;
+    try {
+      final latest = await widget.coach.loadLatest();
+      final today = _dateKey(DateTime.now());
+      final citedCheckInMissing =
+          latest != null &&
+          latest.localDate == today &&
+          latest.missingData.contains('recovery_check_in');
+      if (latest == null || latest.localDate != today || citedCheckInMissing) {
+        await widget.coach.generate();
+      }
+      if (!mounted) return;
+      setState(() {
+        _latestDecision = widget.coach.loadLatest();
+      });
+    } catch (_) {
+      // Stale-but-valid decision stays on screen; the hero sync retries.
+    }
+  }
+
   Future<void> _openCheckIn() async {
     await showCheckInSheet(context, widget.environment);
     if (mounted) {
       setState(() {
         _brief = widget.brief.load(DateTime.now());
       });
+      await _refreshDecisionAfterEvidence();
     }
   }
 

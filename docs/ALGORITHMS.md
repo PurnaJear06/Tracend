@@ -48,6 +48,18 @@ reported missing instead of joining at z = 0. Unusable components are excluded,
 (0 when unusable) so shipped clients keep parsing the shape they know. When no component is
 usable, `recovery_score` is NULL — never a fabricated number.
 
+### Raw Values Alongside z (2026-09-07, brief 1.4)
+
+Z-scores answer "how does today compare to *your* baseline" but hide what was actually
+measured, which misread in the owner's dogfooding (`−1.2 z` was a 38 ms night against a
+~50 ms ln-baseline). The brief's `computed.today_raw` object passes today's measured values
+through verbatim — `hrv_ms`, `resting_hr_bpm`, `sleep_minutes`, `resp_rate_bpm`, plus the
+computed `daily_strain` — with `null` for anything not measured that day (never zero). It is
+a passthrough from `daily_health_summaries`, never derived; the future-date guard payload
+carries the key with every value null so consumers never see a missing key. Client driver
+rows render `38 ms · +0.5` (raw · z); unmeasured components keep "No data" rather than a
+fake `+0.0`.
+
 ### Recovery Score Bands
 
 | Band      | Cutoff       | z-composite equivalent | Interpretation        |
@@ -367,7 +379,7 @@ general = change_review_allowed  if training_eligible OR nutrition_eligible
 | Daily scoring JSON   | `schema_version`       | `2.2`        |
 | Eligibility          | `policy_version`       | `eligibility-v1` |
 | Training hub RPC     | `schema_version`       | `1.4`        |
-| Daily brief RPC      | `schema_version`       | `1.3`        |
+| Daily brief RPC      | `schema_version`       | `1.4`        |
 
 ### Rules
 

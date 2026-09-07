@@ -113,7 +113,7 @@ class SupabaseHealthRepository implements HealthRepository {
         .select(
           'local_date,present_types,steps,active_energy_kcal,sleep_minutes,'
           'sleep_deep_minutes,sleep_rem_minutes,workout_count,workout_minutes,'
-          'weight_kg,resting_heart_rate_bpm,hrv_value_ms',
+          'weight_kg,resting_heart_rate_bpm,hrv_value_ms,respiratory_rate_bpm',
         )
         .order('local_date', ascending: false)
         .limit(31);
@@ -141,6 +141,7 @@ class SupabaseHealthRepository implements HealthRepository {
           restingHeartRateBpm: (row['resting_heart_rate_bpm'] as num?)
               ?.toDouble(),
           hrvSdnnMs: (row['hrv_value_ms'] as num?)?.toDouble(),
+          respRateBpm: (row['respiratory_rate_bpm'] as num?)?.toDouble(),
         );
       }).toList(),
     );
