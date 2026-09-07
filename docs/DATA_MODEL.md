@@ -553,6 +553,8 @@ One row per user per date. Persisted scoring output from `compute_daily_metrics`
 
 UNIQUE (user_id, local_date). Forced RLS, read-only for authenticated.
 
+Future-date guard (`20260906140000`): `compute_daily_metrics` never folds baselines through, or persists a row for, `target_date > current_date + 1` (max civil offset UTC+14, so `current_date + 1` is the latest possible local "today" anywhere; guards the Train weekday strip / week-rail future pages). Future briefs return the parse-stable read-only payload: recovery null, z-keys zero, all components missing, stored baselines unrefreshed, `data_confidence` low. Existing future-dated rows were deleted once in the same migration (derived data; recomputed on each brief).
+
 ### Algorithm Reference
 
 Full formula definitions with literature citations in [ALGORITHMS.md](./ALGORITHMS.md).
