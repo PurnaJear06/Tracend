@@ -15,7 +15,8 @@
 > freshness, raw values next to z, resp verification) added 2026-09-07 after
 > owner dogfooding; runs before Pass 3. Pass 3 done 2026-09-07; Pass 4 done
 > 2026-09-08 (Edge-only, no DB/client change; owner device-QA'd Passes 1–3 the
-> same day). Pass 5 queued. Merge points are owner-called (merge to `main`
+> same day). Pass 5 done 2026-09-08 — **the full ladder is complete** (test-only
+> pass: reference + parity; no migration, no deploy). Merge points are owner-called (merge to `main`
 > auto-deploys).
 
 ## Context
@@ -212,18 +213,31 @@ the prompts live). `test/contract/` fixtures NOT bumped: no response shape chang
 only), so coach_chat/coach_context fixtures stay pinned — covered instead by 7 new/updated deno
 tests. Budget verified neutral (98→105 deno tests, both CONTEXT BUDGET CONTRACT tests green).
 
-## Pass 5 — reference implementation + oracle tests (backend.md's highest-leverage item)
+## Pass 5 — reference implementation + oracle tests — DONE 2026-09-08 (test-only)
 
 - Independent Dart implementation of the pure math under `test/reference/`
   (`recovery_reference.dart`) written from ALGORITHMS.md, not from SQL: weights 0.55/0.20/0.15/0.05,
   weight renorm, logistic k=1.6, ln-HRV, EWMA schedule (3d ≤8 obs → 14d), spread, ±3σ clamp / ±5σ
-  reject, sanity bands, sleep subs, ACWR/monotony gates.
+  reject, sanity bands, sleep subs, ACWR/monotony gates. — DONE as designed. The reference
+  reproduces BOTH SQL fold passes (stored center via unfloored MAD bounds with the live
+  `MAD=0 → last value` shortcut; stored spread via floored bounds + 21-day EWMA, λ pinned to the
+  SQL's rounded 0.0330) — two Winsor regimes in one fold, now documented in ALGORITHMS.md §2.
 - Shared oracle fixtures (`test/reference/fixtures/*.json`), including the owner's real production
-  day (the old-69 → honest-62 case already in pgTAP).
+  day (the old-69 → honest-62 case already in pgTAP). — DONE: 12 fixtures; the owner day pins
+  recovery 62 / prev_strain_z −0.294.
 - pgTAP parity test runs the same fixtures through SQL; outputs must match the reference within ε.
-  Constants pinned once per side. This is the drift alarm for Passes 2–3.
-
-**Verify:** flutter test (reference self-tests), pgTAP parity, full pre-deploy gate.
+  Constants pinned once per side. This is the drift alarm for Passes 2–3. — DONE:
+  `reference_parity_test.sql` 28/28 (`scripts/test-db.sh` now ships the fixtures into the pgTAP
+  container at /fixtures; the parity test reads them via psql backticks).
+- **Spec reconciliation found and fixed 6 doc-vs-SQL drift points** (the pass's purpose):
+  two-Winsor-regimes documentation; the EWMA schedule table read "1–7 / 8+" one step early
+  (SQL: observations 2–8 fast, 9th stable); §1 usability wording missing the ≥3-observation
+  gate; §4 formula line missing the 10800s strain cap; §5 promised a ≥3-observation
+  weight-trend gate the SQL never enforced (REGR floor is 2 — **follow-up: a future migration
+  may raise the gate; the reference tracks SQL behavior until then**); §3 consistency input is
+  sleep duration, not stage history.
+- Verify bar met: flutter test 400 (385 + 15 reference), analyze 0, Deno 105/105, parity 28/28,
+  full pgTAP 692 with only the 5 pre-existing failing files (A/B-verified on main, parked).
 
 ---
 

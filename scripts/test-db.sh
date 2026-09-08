@@ -24,4 +24,13 @@ container_id="$("$repo_root/scripts/docker.sh" create \
   sh -lc 'pg_prove -h 127.0.0.1 -U postgres -d postgres /tests/*_test.sql')"
 
 "$repo_root/scripts/docker.sh" cp "$tests_dir/." "$container_id:/tests"
+
+# Shared oracle fixtures (Pass 5 reference parity) live outside the
+# database-test directory; ship them too so reference_parity_test.sql can
+# read them with psql backticks.
+fixtures_dir="$repo_root/test/reference/fixtures"
+if [[ -d "$fixtures_dir" ]]; then
+  "$repo_root/scripts/docker.sh" cp "$fixtures_dir/." "$container_id:/fixtures"
+fi
+
 "$repo_root/scripts/docker.sh" start --attach "$container_id"

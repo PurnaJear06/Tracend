@@ -1,0 +1,1 @@
+{"name":"hrv_x3_scale_invariant","target_date":"2026-09-08","health_days":[{"date":"2026-09-02","hrv_ms":120.0},{"date":"2026-09-03","hrv_ms":126.0},{"date":"2026-09-04","hrv_ms":132.0},{"date":"2026-09-05","hrv_ms":138.0},{"date":"2026-09-06","hrv_ms":144.0},{"date":"2026-09-07","hrv_ms":132.0},{"date":"2026-09-08","hrv_ms":186.0}],"sessions":[],"weight_days":[]}

@@ -47,6 +47,12 @@ accepted as a permanent retry.
 - **pgTAP (22 tests):** EWMA computation with normal and outlier data, cold-start NULL return,
   recovery score at known inputs, ACWR ratio, change eligibility gate outcomes, cross-user RLS on
   `user_baselines` and `metric_baseline_history`. File: `feature_engine_baseline_test.sql`.
+- **Reference parity (2026-09-08, Pass 5):** the independent Dart reference
+  (`test/reference/recovery_reference.dart`, written from ALGORITHMS.md, not from SQL) and 12
+  shared oracle fixtures (`test/reference/fixtures/*.json`). Dart self-tests run the fixtures
+  through the reference (15 tests); `reference_parity_test.sql` (28 assertions) seeds the SAME
+  fixtures into the DB and pins the SQL output — the drift alarm between the production SQL and
+  the documented math. `scripts/test-db.sh` ships the fixtures into the pgTAP container.
 - **Contract fixture:** `training_hub_v1_4.json` validates Flutter can parse enriched RPC shape with
   baselines, scores, and eligibility fields.
 - **Flutter unit tests (3):** healthSyncStart backfill window (7-day initial, 6-day subsequent),
