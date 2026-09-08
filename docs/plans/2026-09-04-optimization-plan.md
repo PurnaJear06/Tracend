@@ -13,9 +13,10 @@
 > 7-night cold-start floor, per-metric plausibility bands; scoring 2.2, brief
 > 1.3, engine baseline-v2. Pass 2.5 (Today-screen honesty: decision
 > freshness, raw values next to z, resp verification) added 2026-09-07 after
-> owner dogfooding; runs before Pass 3. Pass 3 done 2026-09-07; Passes 4–5 queued — owner reviews the
-> Today screen after Pass 2 (recovery numbers shift) before Pass 3 stacks on.
-> Merge points are owner-called (merge to `main` auto-deploys).
+> owner dogfooding; runs before Pass 3. Pass 3 done 2026-09-07; Pass 4 done
+> 2026-09-08 (Edge-only, no DB/client change; owner device-QA'd Passes 1–3 the
+> same day). Pass 5 queued. Merge points are owner-called (merge to `main`
+> auto-deploys).
 
 ## Context
 
@@ -188,7 +189,7 @@ check-in lands; driver rows show raw + z; brief v1.4 fixture shape), deno
 fmt/lint/test, pgTAP if RPC shape changes (brief 1.3 → 1.4 bump + fixture),
 contract fixtures updated.
 
-## Pass 4 — AI-context honesty (Edge Functions, no DB)
+## Pass 4 — AI-context honesty (Edge Functions, no DB) — DONE 2026-09-08
 
 - **4a. Stop stripping nulls** (`supabase/functions/_shared/providers/coach_chat_provider.ts:186`
   `if (value === null) return undefined`): keep nulls — schema-stable fields so the model can't
@@ -199,6 +200,17 @@ contract fixtures updated.
   'today/recent' without comparing the context date to the actual current date."
 - **4c. Tests**: `coach_chat_provider_test.ts` null-preservation cases; `test/contract/`
   coach_chat + coach_context fixtures; deno gates.
+
+**As-built (2026-09-08):** beyond the planned compactValue fix, the LIVE path
+(`formatContextAsMarkdown`, DeepSeek/Gemini) also hid nulls — its `if (v != null)` guards omitted
+unmeasured fields entirely; nulls now render as the "—" sentinel in health/check-in/brief-health
+sections, each health row carries its own date, the context renders a `coaching_date` anchor + a
+one-line Null Contract header, and measured `0` stays a real `0`. The prompt contract landed as a
+shared `nullContract` const spliced into all 3 chat system prompts plus the same contract in all
+3 decide interpreter prompts (deepseek/gemini/groq model providers, not index.ts — that's where
+the prompts live). `test/contract/` fixtures NOT bumped: no response shape changed (Edge-internal
+only), so coach_chat/coach_context fixtures stay pinned — covered instead by 7 new/updated deno
+tests. Budget verified neutral (98→105 deno tests, both CONTEXT BUDGET CONTRACT tests green).
 
 ## Pass 5 — reference implementation + oracle tests (backend.md's highest-leverage item)
 

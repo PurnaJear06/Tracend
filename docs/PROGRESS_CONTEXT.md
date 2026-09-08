@@ -160,6 +160,26 @@ x3-scale-invariance survives the spread EWMA); `BaselineMetric` gains `lastObsDa
 (parse-only, no UI yet — server-first per plan); fixtures: `daily_brief_v1_5.json` + 4
 contract tests; 385 Flutter tests, 0 analyze, Deno 105/105; full pgTAP 679 with only the 5
 pre-existing failing files.
+2026-09-08 (Pass 4 — AI-context honesty, Edge Functions only, no DB/client change): the model
+context stopped hiding NOT-MEASURED data. `compactValue`/`compactContext` now PRESERVE nulls
+(was: stripped — the model could read a missing metric as absent history or zero; empty
+arrays/objects stay pruned, absent ≠ not measured); `formatContextAsMarkdown` (live DeepSeek +
+Gemini path) renders null fields as the "—" sentinel instead of omitting them (`if (v != null)`
+guards removed from health/check-in/brief-health sections — a watch-off day now reads "- sleep:
+—" rather than silently absent), renders each health row's own date plus the context
+`coaching_date` anchor, and a one-line Null Contract header explains "—" up front; measured 0
+stays a real 0 (distinct fact from null). Every coach-chat system prompt (3 providers) carries
+the Data-honesty block (null/— = NOT MEASURED that day — say so, never zero, never a negative
+result; distinguish measured-zero; never say "today/recent" without checking the value's date
+against the context date), and all three decide interpreter prompts carry the same contract
+(null = NOT MEASURED, never zero, never infer; `feature_context.local_date` is the decision
+date — older values are past readings). Budget-neutral: nulls are ~4 chars; 32K/28K ceilings
+and both CONTEXT BUDGET CONTRACT tests unchanged and green. Deno 105/105 (+7 Pass 4 tests:
+null preservation through compaction, sentinel rendering, measured-zero vs null, date
+rendering, decide-context null serialization, prompt-contract assertions); AI_SAFETY_SPEC §11
+null contract; CONTEXT_BUDGET note. Owner device QA 2026-09-08 confirmed Passes 1–3 fixes
+visible on iPhone (raw values next to z, No-data rows honest on a watch-off night, coach card
+refresh after check-in).
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -200,7 +220,7 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Stitch/design             | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
 | Stability infra           | **Complete — deployed**              | `AGENTS.md` (commands)     | N/A                                           |
 | CI/CD automation          | **Complete — deployed**              | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` (deployment)                      |
-| Post-review optimizations | **In progress — Passes 0–3 done on `feature/review-optimizations`; Passes 4–5 queued** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
+| Post-review optimizations | **In progress — Passes 0–4 done (Pass 4 Edge-only 2026-09-08); Pass 5 queued** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
 
 ## Global Current State
 

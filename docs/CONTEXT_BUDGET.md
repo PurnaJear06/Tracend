@@ -15,12 +15,17 @@ budget test or explicitly increase the budget with justification.
 ```
 DB v1 (prepare_coach_chat)              16K guard ← ONLY check before this doc
 DB v2 (recent_other_conversations)      no guard
-DB v4 (context-kind enrichment)         no guard
+DB v4 (context-kind enrichment)        no guard
 DB v5 (memory: narrative + prefs + journal)  40K guard ← NEW (20260719090000)
 Edge (compactContext)                   30-40% compression
 Edge (fitContextToLimit)                32K ceiling, 3-tier progressive trimming
 Model (qwen/qwen3.6-27b)               131K tokens (~500K chars) ← huge headroom
 ```
+
+Null values are preserved end-to-end since Pass 4 (2026-09-08): `null` is the NOT MEASURED
+signal, not bloat. A null serializes to ~4 chars (`"k":null`), so null preservation adds
+negligible budget pressure; the 32K/28K ceilings and the `CONTEXT BUDGET CONTRACT` tests are
+unchanged and still enforced.
 
 ## Budget Values
 

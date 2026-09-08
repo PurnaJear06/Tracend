@@ -56,6 +56,18 @@ const answerSchema = {
   required: ["answer", "evidence", "missing_data", "safety_state", "suggested_follow_ups"],
 } as const;
 
+// Pass 4 (AI-context honesty): the null contract every coach-chat system
+// prompt carries. "—"/null in the context means NOT MEASURED that day — the
+// model must say so instead of reading absence as zero, and must date its
+// claims against the context date rather than assuming the newest row is
+// "today".
+const nullContract = "\n# Data honesty — never violate\n" +
+  '- null or "—" means NOT MEASURED that day. Say so plainly. It is NEVER zero, NEVER a negative result, and NEVER a small number.\n' +
+  "- Never treat a missing metric as zero in any calculation, comparison, or reasoning step.\n" +
+  '- Distinguish "not measured" (null) from "measured zero" (an explicit 0 in the data) — they are different facts.\n' +
+  '- The context carries its own date. Never say "today" or "recently" about a value without checking that value\'s date against the context date; a metric from an older date is a past reading, not a current one.\n' +
+  "- Never claim a metric exists or has a value when it is null or absent.\n";
+
 export function deterministicBoundary(question: string): CoachChatAnswerV1 | null {
   const normalized = question.toLowerCase();
   const emergency = [
@@ -183,9 +195,14 @@ const keyAbbreviations: Record<string, string> = {
 };
 
 function compactValue(value: unknown): unknown {
-  if (value === null) return undefined;
+  // null is the AI-context contract for "field exists but was NOT MEASURED
+  // that day". Stripping it let the model read a missing metric as absent
+  // history (or worse, zero) — the anti-masquerade rule is to keep nulls so
+  // the prompt contract ("null = not measured, never zero") can operate on
+  // them. Only structurally-empty arrays/objects are pruned.
+  if (value === null) return null;
   if (Array.isArray(value)) {
-    const compacted = value.map(compactValue).filter((v) => v !== undefined);
+    const compacted = value.map(compactValue);
     return compacted.length === 0 ? undefined : compacted;
   }
   if (typeof value === "object") {
@@ -316,6 +333,10 @@ function fitContextToLimit(bounded: string, maxLength: number, question: string)
 export function compactContext(context: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(context)) {
+    // Top-level null values pass through as null: the prompt contract
+    // teaches the model "null = NOT MEASURED", so they must survive.
+    // Structurally-empty branches stay pruned (key absent), which is
+    // distinct from null (key present, value null).
     const compressed = compactValue(value);
     if (compressed !== undefined) {
       const abbr = keyAbbreviations[key] ?? key;
@@ -369,6 +390,8 @@ const kindMaxBudget: Record<string, number> = {
 };
 
 function str(v: unknown): string {
+  // null is rendered as the sentinel "—", which the system prompt's null
+  // contract defines as NOT MEASURED (never zero, never fabricated).
   if (v === null || v === undefined) return "—";
   if (typeof v === "boolean") return v ? "Yes" : "No";
   return String(v);
@@ -395,6 +418,24 @@ export function formatContextAsMarkdown(
     used += s.length;
     return true;
   };
+
+  // 0. Coaching date — the anchor for date discipline. The model must see
+  // the date this context was prepared for so it can compare it against the
+  // user's "today" instead of assuming the latest row is current.
+  const coachingDate = ctx.coaching_date ?? ctx.d;
+  if (coachingDate != null) {
+    push(
+      `## Context Date\n**${
+        str(coachingDate)
+      }** — data from later dates does not exist yet; "—"/null fields were NOT MEASURED on this date.\n`,
+    );
+  }
+
+  // 0b. Honesty header: the "—" sentinel is the null contract. It must be
+  // explained once up front so every "—" below reads as NOT MEASURED.
+  push(
+    '## Null Contract\nIn this context, "—" or null means NOT MEASURED that day — it is never zero and never a negative result. A field absent from a section means that data source had nothing at all.\n',
+  );
 
   // 1. Active Training Plan
   const plan = obj(ctx.active_plan);
@@ -437,8 +478,10 @@ export function formatContextAsMarkdown(
   const checkIn = obj(ctx.latest_check_in) || obj(ctx.latest_check_in_detail);
   if (Object.keys(checkIn).length) {
     let s = "## Today's Check-In\n";
+    if (checkIn.local_date != null) {
+      s += `*date: ${str(checkIn.local_date)}*\n`;
+    }
     const fields = [
-      "local_date",
       "sleep_quality",
       "energy",
       "soreness",
@@ -448,10 +491,14 @@ export function formatContextAsMarkdown(
       "available_to_train",
       "notes",
     ];
+    let anyField = false;
     for (const f of fields) {
-      const v = checkIn[f];
-      if (v != null) s += `- ${f.replace(/_/g, " ")}: ${str(v)}\n`;
+      if (f in checkIn) {
+        s += `- ${f.replace(/_/g, " ")}: ${str(checkIn[f])}\n`;
+        anyField = true;
+      }
     }
+    if (!anyField) s += "- — Not measured —\n";
     push(s);
   }
 
@@ -479,12 +526,17 @@ export function formatContextAsMarkdown(
   const weight = obj(ctx.latest_weight);
   const delta = obj(ctx.eight_week_measurement_delta);
   const trend = obj(ctx.seven_day_healthkit_trend);
-  if (
-    Object.keys(health).length || Object.keys(measurement).length || Object.keys(weight).length ||
-    Object.keys(delta).length || Object.keys(trend).length
-  ) {
+  const hkPresent = Object.keys(health).length || Object.keys(measurement).length ||
+    Object.keys(weight).length ||
+    Object.keys(delta).length || Object.keys(trend).length;
+  if (hkPresent) {
     let s = "## Health Metrics\n";
     if (Object.keys(health).length) {
+      // The health row's own date: metrics from an older row are stale,
+      // not current — the model must see this to keep its dates straight.
+      if (health.local_date != null) {
+        s += `*date: ${str(health.local_date)}*\n`;
+      }
       const hkFields = [
         "resting_heart_rate_bpm",
         "hrv_sdnn_ms",
@@ -493,10 +545,14 @@ export function formatContextAsMarkdown(
         "steps_count",
         "completeness",
       ];
+      let anyField = false;
       for (const f of hkFields) {
-        const v = health[f];
-        if (v != null) s += `- ${f.replace(/_/g, " ")}: ${str(v)}\n`;
+        if (f in health) {
+          s += `- ${f.replace(/_/g, " ")}: ${str(health[f])}\n`;
+          anyField = true;
+        }
       }
+      if (!anyField) s += "- — Not measured —\n";
     }
     const meas = weight.weight_kg ?? measurement.weight_kg;
     if (meas != null) s += `- weight: ${str(meas)} kg\n`;
@@ -515,18 +571,19 @@ export function formatContextAsMarkdown(
     push(s);
   }
 
-  // 7. Brief health (general kind fallback)
+  // 7. Brief health (general kind fallback) — null fields render as the "—"
+  // sentinel instead of dropping the section, so a watch-off day reads as
+  // NOT MEASURED rather than silently absent.
   const briefHealth = arr(ctx.brief_health);
   if (briefHealth.length) {
     const latest = obj(briefHealth[0]);
-    if (latest.sleep_minutes != null || latest.resting_heart_rate_bpm != null) {
-      let s = "## Health\n";
-      if (latest.sleep_minutes != null) s += `- sleep: ${str(latest.sleep_minutes)} min\n`;
-      if (latest.resting_heart_rate_bpm != null) {
-        s += `- RHR: ${str(latest.resting_heart_rate_bpm)}\n`;
-      }
-      push(s);
+    let s = "## Health\n";
+    if (latest.local_date != null) s += `*date: ${str(latest.local_date)}*\n`;
+    if ("sleep_minutes" in latest) s += `- sleep: ${str(latest.sleep_minutes)} min\n`;
+    if ("resting_heart_rate_bpm" in latest) {
+      s += `- RHR: ${str(latest.resting_heart_rate_bpm)}\n`;
     }
+    push(s);
   }
 
   // 8. Nutrition Targets & Schedule
@@ -893,6 +950,7 @@ export async function generateCoachChat(
                   "- Temporary same-day adjustments are fine; persistent plan changes require explicit user approval.\n" +
                   "- Honor active_preferences — never suggest declined foods, exercises, or approaches.\n" +
                   "- When safety_state is limited or refused, explain why clearly and redirect to what you can help with.\n" +
+                  nullContract +
                   "\n" +
                   "Return ONLY a JSON object matching this schema:\n" +
                   JSON.stringify(answerSchema) +
@@ -1072,6 +1130,7 @@ export async function generateCoachChat(
                   "- Temporary same-day adjustments are fine; persistent plan changes require explicit user approval.\n" +
                   "- Honor active_preferences — never suggest declined foods, exercises, or approaches.\n" +
                   "- When safety_state is limited or refused, explain why clearly and redirect to what you can help with.\n" +
+                  nullContract +
                   "\n" +
                   "Return ONLY a JSON object matching this schema:\n" +
                   JSON.stringify(answerSchema) +
@@ -1189,6 +1248,7 @@ export async function generateCoachChat(
                 "- Temporary same-day adjustments are fine; persistent plan changes require explicit user approval.\n" +
                 "- Honor active_preferences — never suggest declined foods, exercises, or approaches.\n" +
                 "- When safety_state is limited or refused, explain why clearly and redirect to what you can help with.\n" +
+                nullContract +
                 "\n" +
                 "Return ONLY a JSON object matching this schema:\n" +
                 JSON.stringify(answerSchema),

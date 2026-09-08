@@ -150,10 +150,16 @@ Deno.test("classifyQuestion nutrition_focus takes priority over daily_action for
   }
 });
 
-Deno.test("compactContext strips null values", () => {
+Deno.test("compactContext preserves null values as NOT MEASURED (Pass 4)", () => {
   const input = { a: "hello", b: null, c: 0 };
   const result = compactContext(input);
-  if ("b" in result) throw new Error("null value b should be stripped");
+  // null must survive compaction: the prompt contract teaches the model
+  // "null = NOT MEASURED that day, never zero", which only works if the
+  // null actually reaches the model.
+  if (!("b" in result)) {
+    throw new Error("null value b must be preserved as NOT MEASURED, not stripped");
+  }
+  if (result.b !== null) throw new Error("preserved b must be exactly null");
   if (result.a !== "hello") throw new Error("non-null value a should be preserved");
   if (result.c !== 0) throw new Error("falsy value 0 should be preserved");
 });
@@ -189,11 +195,18 @@ Deno.test("compactContext truncates long rationales", () => {
   }
 });
 
-Deno.test("compactContext removes undefined-level keys after compaction", () => {
-  const input = { a: null, b: { c: null } };
-  const result = compactContext(input);
-  if ("a" in result) throw new Error("null top-level should be absent");
-  if ("b" in result) throw new Error("null-only nested should be absent");
+Deno.test("compactContext keeps null-bearing keys but drops null-only-nested empties distinctly", () => {
+  // A top-level null is a NOT MEASURED signal and must survive.
+  const withNull = { a: null, b: { c: null } };
+  const result = compactContext(withNull);
+  if (!("a" in result) || result.a !== null) {
+    throw new Error("top-level null must be preserved as null");
+  }
+  // { c: null } still holds one nullable field, so it survives too — the
+  // nested null is the honest "c not measured" signal.
+  if (!("b" in result)) throw new Error("null-bearing nested object must be preserved");
+  const b = result.b as Record<string, unknown>;
+  if (!("c" in b) || b.c !== null) throw new Error("nested null must be preserved as null");
 });
 
 Deno.test("compactContext preserves unknown keys as-is", () => {
@@ -682,5 +695,103 @@ Deno.test("CONTEXT BUDGET CONTRACT: markdown formatter stays within 28K ceiling"
       `CONTEXT BUDGET VIOLATION: full userMessage is ${userMessage.length} chars, ` +
         `exceeds 32,000 char hard ceiling.`,
     );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Pass 4 — AI-context honesty: nulls must reach the model as NOT MEASURED.
+// ---------------------------------------------------------------------------
+
+Deno.test("formatContextAsMarkdown renders null health metrics as the NOT MEASURED sentinel", () => {
+  const markdown = formatContextAsMarkdown({
+    coaching_date: "2026-09-08",
+    today_healthkit: {
+      local_date: "2026-09-08",
+      resting_heart_rate_bpm: null,
+      hrv_sdnn_ms: null,
+      sleep_minutes: null,
+      steps_count: null,
+    },
+  });
+  // Null metrics must appear as "—" (the sentinel the null contract defines),
+  // not vanish: a watch-off day reads as NOT MEASURED, never as absent data.
+  if (!markdown.includes("resting heart rate bpm: —")) {
+    throw new Error("null RHR must render as the '—' sentinel, not be omitted");
+  }
+  if (!markdown.includes("hrv sdnn ms: —")) {
+    throw new Error("null HRV must render as the '—' sentinel, not be omitted");
+  }
+  if (!markdown.includes("sleep minutes: —")) {
+    throw new Error("null sleep must render as the '—' sentinel, not be omitted");
+  }
+});
+
+Deno.test("formatContextAsMarkdown renders the context date for date discipline", () => {
+  const markdown = formatContextAsMarkdown({ coaching_date: "2026-09-08" });
+  if (!markdown.includes("2026-09-08")) {
+    throw new Error("coaching_date must be visible so the model can compare value dates");
+  }
+  const withNone = formatContextAsMarkdown({ active_plan: { title: "Block" } });
+  if (withNone.includes("## Context Date")) {
+    throw new Error("no date section should render when the context has no coaching_date");
+  }
+});
+
+Deno.test("formatContextAsMarkdown carries the null contract header", () => {
+  const markdown = formatContextAsMarkdown({});
+  if (!markdown.includes("NOT MEASURED")) {
+    throw new Error("null contract header must be present in every context");
+  }
+});
+
+Deno.test("formatContextAsMarkdown distinguishes measured zero from null (Pass 4)", () => {
+  const markdown = formatContextAsMarkdown({
+    today_healthkit: {
+      local_date: "2026-09-08",
+      steps_count: 0,
+      resting_heart_rate_bpm: null,
+    },
+  });
+  if (!markdown.includes("steps count: 0")) {
+    throw new Error("measured 0 must render as 0 (a real zero, distinct from null)");
+  }
+  if (!markdown.includes("resting heart rate bpm: —")) {
+    throw new Error("null must still render as '—'");
+  }
+});
+
+Deno.test("formatContextAsMarkdown renders null check-in fields rather than dropping them", () => {
+  const markdown = formatContextAsMarkdown({
+    latest_check_in: {
+      local_date: "2026-09-08",
+      sleep_quality: 3,
+      energy: null,
+      available_to_train: null,
+    },
+  });
+  if (!markdown.includes("energy: —")) {
+    throw new Error("null check-in energy must render as '—'");
+  }
+  if (!markdown.includes("available to train: —")) {
+    throw new Error("null available_to_train must render as '—'");
+  }
+  if (!markdown.includes("sleep quality: 3")) {
+    throw new Error("measured sleep quality must still render");
+  }
+});
+
+Deno.test("compactContext null preservation survives fitContextToLimit tiers (Groq path)", () => {
+  const ctx = {
+    coaching_date: "2026-09-08",
+    latest_check_in: { local_date: "2026-09-08", energy: null, sleep_quality: 3 },
+  };
+  const compacted = compactContext(ctx);
+  const ci = compacted.latest_check_in as Record<string, unknown>;
+  if (!("energy" in ci) || ci.energy !== null) {
+    throw new Error("null energy must survive compaction on the JSON path");
+  }
+  const bounded = JSON.stringify({ question: "How was my sleep?", context: compacted });
+  if (!bounded.includes('"energy":null')) {
+    throw new Error("serialized context must carry the null token");
   }
 });
