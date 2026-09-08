@@ -154,7 +154,7 @@ export class GeminiCoachModelProvider implements CoachModelProvider {
             systemInstruction: {
               parts: [{
                 text:
-                  "You are Tracend's controlled fitness coaching interpreter. Follow deterministic policy exactly. Use only supplied evidence codes. Never diagnose, invent data, create persistent changes, or broaden permitted actions. Return only the requested JSON.\n" +
+                  "You are Tracend's controlled fitness coaching interpreter. Follow deterministic policy exactly. Use only supplied evidence codes. Never diagnose, invent data, create persistent changes, or broaden permitted actions. In the prepared context, null means the metric was NOT MEASURED — never treat it as zero, never infer a value, and let missing_data drive gather-data recommendations instead of fabricated readings. feature_context.local_date is the decision date: values from earlier dates are past readings, never current. Return only the requested JSON.\n" +
                   "\n" +
                   "Evidence code reference: " +
                   "RECOVERY_WITHIN_BASELINE = recovery score ≥ 50, " +

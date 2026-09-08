@@ -299,6 +299,16 @@ override safety or the quality floor. Budget assumptions and hard controls are d
 - Direct identifiers, tokens, object keys, and unrelated history are excluded.
 - Coaching calls have no web, shell, arbitrary database, or unrestricted tool access.
 - The model may reference only supplied catalog identifiers.
+- **Null contract (2026-09-08, Pass 4):** a `null` value in any model context (chat or decision)
+  means the metric was NOT MEASURED that day. Context serialization MUST preserve nulls —
+  stripping them let the model read a missing metric as absent history or zero. Empty
+  arrays/objects stay pruned (absent ≠ not measured). Chat-context markdown renders null as the
+  "—" sentinel and every system prompt carries the rule: null/— is NEVER zero, NEVER a negative
+  result, and must be stated as "not measured"; an explicit `0` in the data is a measured zero, a
+  different fact from null. Date discipline: the context carries its own date (chat
+  `coaching_date`, decision `feature_context.local_date`) and the prompt forbids calling a value
+  "today/recent" without checking the value's date against it — a metric from an older row is a
+  past reading, never a current one.
 - Provider request bodies MUST use the multi-role message form: `system` carries identity,
   boundaries, refusal behaviour, schema, and evidence rules; `user` carries the user's raw message
   first (so greetings and questions receive a conversational answer matching what was asked) and the
