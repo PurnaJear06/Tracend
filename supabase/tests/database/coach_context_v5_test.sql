@@ -168,7 +168,7 @@ select is(
 );
 
 select ok(
-  (select (public.prepare_coach_chat_v4(
+  (select public.prepare_coach_chat_v4(
     (select id from auth.users limit 1), 'aaaaaaaa-2111-4111-8111-111111111111', 'change my plan',
     'Asia/Kolkata', gen_random_uuid(), 'plan_change'
   )->'context'->>'schema_version') = '3.0',

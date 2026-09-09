@@ -60,10 +60,18 @@ select is((select count(*) from public.health_workout_references
   where user_id = '11111111-1111-6666-8666-111111111111'), 1::bigint,
   'duplicate payload does not duplicate health references');
 
-select throws_ok($$select public.persist_health_workouts(
-  '11111111-1111-6666-8666-111111111111',
-  '[]'::jsonb
-)$$, '22023', null, 'empty payload is rejected');
+-- An empty array is the legitimate rest-day payload: health-sync always sends
+-- `workouts` (the contract defaults it to [] when absent) and
+-- persist_health_sync_v2 pipes it through here on every sync, so [] must be
+-- accepted with zero references — rejecting it would fail every no-workout day.
+select is(
+  (select public.persist_health_workouts(
+    '11111111-1111-6666-8666-111111111111',
+    '[]'::jsonb
+  )->>'accepted_count'),
+  '0',
+  'empty workout payload is accepted with zero references'
+);
 
 select throws_ok($$select public.persist_health_workouts(
   '00000000-0000-0000-0000-000000000000',
@@ -73,21 +81,22 @@ select throws_ok($$select public.persist_health_workouts(
 set local role authenticated;
 set local "request.jwt.claim.sub" = '11111111-1111-6666-8666-111111111111';
 
-select is(jsonb_array_length(public.get_my_workout_reconciliation_candidates()), 0::bigint,
+select is(jsonb_array_length(public.get_my_workout_reconciliation_candidates()), 0::int,
   'no reconciliation candidates without completed session');
 
 set local role service_role;
 
 insert into public.workout_sessions(
   id, user_id, planned_workout_id, plan_version_id, idempotency_key,
-  state, started_at, local_date, timezone, actual_started_at,
+  state, started_at, completed_at, local_date, timezone, actual_started_at,
   actual_ended_at, logging_completeness)
 values(
   '11111111-5111-6666-8666-111111111111', '11111111-1111-6666-8666-111111111111',
   (select id from public.planned_workouts
    where user_id = '11111111-1111-6666-8666-111111111111' limit 1),
   '11111111-4111-6666-8666-111111111111', gen_random_uuid(),
-  'completed', now() - interval '3 hours', current_date, 'Asia/Kolkata',
+  'completed', now() - interval '3 hours', now() - interval '2 hours 55 min',
+  current_date, 'Asia/Kolkata',
   now() - interval '3 hours', now() - interval '2 hours 55 min', 1);
 
 insert into public.workout_reconciliations(
@@ -103,7 +112,7 @@ values(
 set local role authenticated;
 set local "request.jwt.claim.sub" = '11111111-1111-6666-8666-111111111111';
 
-select is(jsonb_array_length(public.get_my_workout_reconciliation_candidates()), 1,
+select is(jsonb_array_length(public.get_my_workout_reconciliation_candidates()), 1::int,
   'reconciliation candidate is returned');
 
 select is((select public.get_my_workout_reconciliation_candidates()->0->>'status'), 'suggested',
@@ -120,7 +129,7 @@ select is((select count(*) from public.audit_events
 
 set local "request.jwt.claim.sub" = '22222222-2222-6666-8666-222222222222';
 
-select is((select jsonb_array_length(public.get_my_workout_reconciliation_candidates())), 0::bigint,
+select is((select jsonb_array_length(public.get_my_workout_reconciliation_candidates())), 0::int,
   'cross-user sees no reconciliation candidates');
 
 select throws_ok($$select public.respond_workout_reconciliation(
