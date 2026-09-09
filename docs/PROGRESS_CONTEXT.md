@@ -218,6 +218,35 @@ exposes them, with the exposure boundary documented in the test header (partial-
 pinned exactly on the Dart side; SQL side constrained via composite + breakdown-missing).
 Local pgTAP not re-run (owner declined the VM run); parity logic exercised through the
 Dart oracle layer and the unchanged seed helpers.
+2026-09-09 (CI parity — fresh-DB pgTAP in GitHub Actions, PR #24 `fix/pgtap-repair-and-ci-parity`):
+the 5 long-failing pgTAP files were repaired (each first classified statically — bad test vs
+production bug — per review guardrail) and pgTAP became a CI job so the suite can never silently
+rot again. Two real production bugs found and fixed in migration `20260909120000_auto_complete_guard.sql`
+(additive create-or-replace, guards only): `healthkit_auto_complete_workout` lacked the
+`preferred_weekday = extract(isodow ...)` guard its candidate sibling has (any planned workout in
+the active plan could be force-completed on any date with HealthKit data), and a NULL-duration hole
+(no summary row → coalesce leaves v_duration_seconds NULL → the `= 0` guard never fired) created
+phantom completed sessions with NULL duration. Test-side root causes: coach_context_v5 had two
+unbalanced parens (psql swallowed to EOF); phase_4 e9's source_id_hash was 61 chars not 64 — the
+validation regex rejected it as 'invalid daily summary' before the resp-140 value could reach the
+0–100 CHECK; workout_persistence compared jsonb_array_length (int) against bigint with no is()
+overload, its raw workout_sessions insert missed completed_at for the completed-state check, and
+its "empty payload rejected" expectation was aspirational — `[]` is the legitimate rest-day payload
+(health-sync contract defaults workouts to [] and persist_health_sync_v2 pipes it through every
+sync), now asserted as accepted_count=0; completion_candidate expected 42501 but the SQL-language
+RPC safely returns NULL under missing JWT (ownership predicates match zero rows). The 10 vacuous
+`ok(true)` assertions (8 phase_2 + 2 phase_3_coach) were replaced with real checks — resp-z sign
+via the negated deviation formula, weight-trend slope pins discriminating manual-vs-HealthKit
+sources (−0.7 vs −0.4), 14-day macro-window day−14 exclusion, exactly-one mutually-exclusive
+evidence codes. CI pgTAP job: `supabase start` → `db reset` (all migrations on a clean DB; no
+seed exists so reset is migrations-only) → pg_prove from the pinned `pg_prove:3.36` image with the
+tests + oracle fixtures mounted read-only. First run 2026-09-09: harness proven (906 assertions
+executed, 4 files failing with precise diagnostics); second run after repairs: **33 files, 928
+assertions, all green** in a real GitHub run — the full suite passes on a fresh database for the
+first time. All plan() counts verified programmatically (30/25/18/11); a hex-length + paren-balance
++ plan-count audit ran across all 33 files to prevent a fifth surprise (only known-scanner false
+positives flagged). pgTAP is no longer Colima-gated: schema drift, RPC guard regressions, and
+oracle-parity failures now block merge.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -259,12 +288,14 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Stability infra           | **Complete — deployed**              | `AGENTS.md` (commands)     | N/A                                           |
 | CI/CD automation          | **Complete — deployed**              | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` (deployment)                      |
 | Post-review optimizations | **Complete — Passes 0–5 all done (Pass 5 reference + oracle parity 2026-09-08, test-only)** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
+| pgTAP CI parity | **Green in GitHub — 33 files / 928 assertions on a fresh DB (2026-09-09, PR #24)** | `docs/CI_CD_DEPLOYMENT.md` §4.1 | `docs/handoff/backend.md` (2026-09-09 follow-ups-closed note) |
 
 ## Global Current State
 
-- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 69 migrations (65 deployed through
-  `20260907120000`; `20260907140000` Pass 2.5 + `20260907160000` Pass 3 deploy via CI on next
-  merge to main).
+- Supabase project `qsfzzsjenopqqqhvpyaw` (Singapore); 70 migrations (65 deployed through
+  `20260907120000`; `20260907140000` Pass 2.5 + `20260907160000` Pass 3 + `20260909120000`
+  auto-complete guards deploy via CI on next merge to main). pgTAP runs in CI on every push/PR
+  against a fresh local database — 33 files, 928 assertions, green 2026-09-09.
 - Navigation: five tabs — Today · Train · Coach · Nutrition · Progress.
 - DeepSeek V4 Flash is the active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`) —
   the activation record is ADR 0011; the full optimization ladder spawned by the 2026-09-04

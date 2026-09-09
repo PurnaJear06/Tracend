@@ -74,9 +74,18 @@ as enterprise CI dashboards.
 | Job | Runner | Timeout | Steps |
 |-----|--------|---------|-------|
 | deno | ubuntu-latest | 10 min | checkout → setup-deno 2.9.0 → `deno fmt --check` → `deno lint` → `deno test` |
-| flutter | ubuntu-latest | 15 min | checkout → flutter-action 3.41.7 (cached) → `flutter pub get` → `flutter analyze` → `flutter test` |
-| ios-build | macos-latest | 30 min | checkout → flutter-action 3.41.7 (cached) → `flutter pub get` → `flutter build ios --release --no-codesign` → upload artifact |
+| flutter-analyze | ubuntu-latest | 10 min | checkout → flutter-action 3.41.7 (cached) → `flutter pub get` → `flutter analyze` |
+| flutter-test | ubuntu-latest | 10 min | checkout → flutter-action 3.41.7 (cached) → `flutter pub get` → `flutter test` |
+| ios-build | macos-latest | 30 min | checkout → flutter-action 3.41.7 (cached) → `flutter pub get` → `flutter build ios --release --no-codesign` |
+| pgtap | ubuntu-latest | 15 min | checkout → setup-supabase 2.101.0 → `supabase start` (fresh local stack) → `supabase db reset` (all migrations on a clean DB) → `pg_prove` from the pinned `public.ecr.aws/supabase/pg_prove:3.36` image over all 33 test files + the 12 oracle fixtures (`test/reference/fixtures` mounted read-only) |
+| secret-scan | ubuntu-latest | 5 min | checkout (full history) → pinned gitleaks 8.30.1 binary (sha256-verified) → `gitleaks git --verbose .` |
 | migration-check | ubuntu-latest | 1 min | checkout → verify no duplicate migration timestamps |
+
+The pgTAP job is the clean-database parity gate: it provisions a fresh local Supabase stack, applies
+every migration from scratch, then runs the full ~930-assertion suite including the 223-assertion
+reference-parity oracle. This closes the gap where pgTAP previously ran only behind a local Colima
+gate — schema regressions and RPC guard drift now block CI before merge. Since the job starts from
+an empty database every run, no seed data or local state can mask a failure.
 
 **Migration uniqueness check logic:**
 ```bash
