@@ -1,5 +1,5 @@
 begin;
-select plan(24);
+select plan(25);
 
 insert into auth.users(id, role) values
   ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'authenticated'),
@@ -233,7 +233,7 @@ select throws_ok($$
         "sample_id_hash":"9999999999999999999999999999999999999999999999999999999999999999"
       }],
       "source_checksum":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "completeness":"partial",
+      "completeness":"complete",
       "observed_through":"2026-07-01T08:00:00Z"
     }]'::jsonb
   )

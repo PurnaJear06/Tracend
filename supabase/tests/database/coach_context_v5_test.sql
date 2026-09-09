@@ -163,7 +163,7 @@ select is(
       (select id from auth.users limit 1), 'aaaaaaaa-2111-4111-8111-111111111111', 'change my plan',
       'Asia/Kolkata', gen_random_uuid(), 'plan_change'
     )->'context'->'schema_version')
-  )::text, 'string',
+  ))::text, 'string',
   'v4 returns schema_version as string'
 );
 

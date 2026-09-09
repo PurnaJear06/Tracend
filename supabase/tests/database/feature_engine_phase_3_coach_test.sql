@@ -1,5 +1,5 @@
 begin;
-select plan(20);
+select plan(21);
 
 insert into auth.users(id,role) values
   ('aaaaaaaa-1111-4111-8111-111111111111','authenticated'),
@@ -175,8 +175,10 @@ with prep as (
   ) as result
 )
 select ok(
-  true,
-  '8: Weight evidence code production is valid'
+  ((result->'permitted_evidence')::jsonb ? 'WEIGHT_TRENDING_DOWN')::int
+  + ((result->'permitted_evidence')::jsonb ? 'WEIGHT_TRENDING_UP')::int
+  + ((result->'permitted_evidence')::jsonb ? 'WEIGHT_STABLE')::int = 1,
+  '8: exactly one mutually-exclusive weight evidence code (fixture slopes sit in the stable band)'
 ) from prep;
 
 -- ============================================================================
@@ -199,8 +201,21 @@ with prep as (
   ) as result
 )
 select ok(
-  true,
-  '10: Data confidence evidence reflects baseline maturity'
+  (result->'permitted_evidence')::jsonb ? 'DATA_CONFIDENCE_HIGH'
+   or (result->'permitted_evidence')::jsonb ? 'DATA_CONFIDENCE_LOW',
+  '10: Data confidence evidence reflects baseline maturity (exactly one emitted for the fixture)'
+) from prep;
+
+-- and only one of the pair can be present at a time
+with prep as (
+  select public.prepare_daily_coaching(
+    'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata', gen_random_uuid()::uuid
+  ) as result
+)
+select ok(
+  (((result->'permitted_evidence')::jsonb ? 'DATA_CONFIDENCE_HIGH')::int
+   + ((result->'permitted_evidence')::jsonb ? 'DATA_CONFIDENCE_LOW')::int) = 1,
+  '10b: HIGH and LOW confidence evidence are mutually exclusive'
 ) from prep;
 
 -- ============================================================================

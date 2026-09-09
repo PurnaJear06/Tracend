@@ -1,5 +1,5 @@
 begin;
-select plan(23);
+select plan(18);
 
 insert into auth.users(id, role) values
   ('11111111-1111-6666-8666-111111111111', 'authenticated'),
@@ -103,7 +103,7 @@ values(
 set local role authenticated;
 set local "request.jwt.claim.sub" = '11111111-1111-6666-8666-111111111111';
 
-select is((select jsonb_array_length(jsonb_agg(t)) from public.get_my_workout_reconciliation_candidates() t), 1::bigint,
+select is(jsonb_array_length(public.get_my_workout_reconciliation_candidates()), 1,
   'reconciliation candidate is returned');
 
 select is((select public.get_my_workout_reconciliation_candidates()->0->>'status'), 'suggested',

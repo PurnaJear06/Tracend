@@ -1,5 +1,5 @@
 begin;
-select plan(13);
+select plan(11);
 
 insert into auth.users(id, role) values
   ('11111111-1111-5555-8555-111111111111', 'authenticated'),

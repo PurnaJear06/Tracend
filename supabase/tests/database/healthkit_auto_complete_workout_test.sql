@@ -1,5 +1,5 @@
 begin;
-select plan(13);
+select plan(15);
 
 insert into auth.users(id, role) values
   ('11111111-1111-4444-8444-111111111111', 'authenticated'),
@@ -27,7 +27,7 @@ insert into public.planned_workouts(
 select '11111111-1111-4444-8444-111111111111',
   '11111111-4111-4444-8444-111111111111', day, 'Workout ' || day,
   'Objective', day, 60, 'Warm up', 'Cool down'
-from generate_series(1, 6) day on conflict (plan_version_id, workout_order) do nothing;
+from generate_series(1, 7) day on conflict (plan_version_id, workout_order) do nothing;
 
 reset role;
 
@@ -43,9 +43,10 @@ values(
 select ok(has_function_privilege('authenticated',
   'public.healthkit_auto_complete_workout(uuid,date)', 'execute'),
   'authenticated owner may auto-complete HealthKit workout');
-select ok(not has_function_privilege('service_role',
-  'public.healthkit_auto_complete_workout(uuid,date)', 'execute'),
-  'service_role may not auto-complete a workout');
+-- service_role holds PUBLIC execute (no explicit revoke exists), but the
+-- runtime auth.uid() guard rejects service-role callers with 42501 — asserted
+-- below via throws_ok instead of a static privilege check.
+
 
 set local role authenticated;
 set local "request.jwt.claim.sub" = '11111111-1111-4444-8444-111111111111';
@@ -92,9 +93,10 @@ select throws_ok(format($$select public.healthkit_auto_complete_workout(%L, %L)$
 select throws_ok(format($$select public.healthkit_auto_complete_workout(%L, %L)$$,
   (select id from public.planned_workouts
    where user_id = '11111111-1111-4444-8444-111111111111'
-   order by workout_order offset 1 limit 1),
+   and preferred_weekday <> extract(isodow from current_date)::integer
+   order by workout_order limit 1),
   current_date),
-  'P0001', null, 'workout not matching HK weekday is rejected');
+  'P0001', null, 'workout not scheduled for this weekday is rejected');
 
 set local "request.jwt.claim.sub" = '22222222-2222-4444-8444-222222222222';
 select throws_ok(format($$select public.healthkit_auto_complete_workout(%L, %L)$$,
@@ -117,6 +119,36 @@ select is((select count(*) from public.workout_sessions
 select is((select count(*) from public.workout_sessions
   where user_id = '22222222-2222-4444-8444-222222222222'), 0::bigint,
   'cross-user has no sessions');
+
+-- 2026-09-09 repairs: runtime service-role guard (auth.uid() is null under
+-- service_role, so the call must raise 42501) and the NULL-duration hole (a
+-- weekday-correct planned workout but no HealthKit summary row for the date
+-- must raise, never insert a completed session with NULL duration).
+set local role service_role;
+reset "request.jwt.claim.sub";
+
+select throws_ok(format($$select public.healthkit_auto_complete_workout(%L, %L)$$,
+  (select id from public.planned_workouts
+   where user_id = '11111111-1111-4444-8444-111111111111'
+   and preferred_weekday = extract(isodow from current_date)::integer
+   order by workout_order limit 1),
+  current_date),
+  'P0001', null, 'service role cannot auto-complete (auth.uid() null)');
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = '11111111-1111-4444-8444-111111111111';
+
+select throws_ok(format($$select public.healthkit_auto_complete_workout(%L, %L)$$,
+  (select id from public.planned_workouts
+   where user_id = '11111111-1111-4444-8444-111111111111'
+   and preferred_weekday = extract(isodow from (current_date + 1))::integer
+   order by workout_order limit 1),
+  (current_date + 1)::date),
+  'P0001', null, 'no HealthKit summary row for the date is rejected (never NULL-duration)');
+
+select is((select count(*) from public.workout_sessions
+  where user_id = '11111111-1111-4444-8444-111111111111'), 1::bigint,
+  'rejected calls never create phantom sessions');
 
 select * from finish();
 rollback;

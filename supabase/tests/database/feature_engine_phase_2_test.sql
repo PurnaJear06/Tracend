@@ -292,10 +292,14 @@ select ok(
   '29: recovery breakdown includes prev_strain_z'
 );
 
--- Verify resp rate is factored with correct sign (lower RR = better recovery)
+-- Verify resp rate is factored with correct sign (lower RR = better recovery):
+-- resp 14.0 today vs a ~14.6 baseline must yield a POSITIVE z (better than
+-- baseline), per -(today - baseline)/spread in compute_daily_metrics.
 select ok(
-  true,
-  '30: resp rate z uses negative sign (lower RR is better)'
+  (public.compute_daily_metrics(
+    'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata'
+  )->'scores'->'recovery_breakdown'->>'resp_rate_z')::numeric > 0,
+  '30: resp rate z is positive below baseline (lower RR is better)'
 );
 
 -- ============================================================================
@@ -447,8 +451,26 @@ select ok(
   '45: weight_trend_28d computed with >= 3 weight observations'
 );
 
+-- Recompute after adding one later weight observation: the trend must change,
+-- proving it reads live data instead of a stale snapshot.
+create temporary table trend_before as
+select (public.compute_daily_metrics(
+  'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata'
+)->'scores'->>'weight_trend_28d_kg_per_day')::numeric as t28;
+
+insert into public.daily_health_summaries(
+  user_id,local_date,timezone,present_types,source_refs,source_checksum,
+  completeness,observed_through,last_synced_at,
+  weight_kg)
+values
+  ('aaaaaaaa-1111-4111-8111-111111111111', current_date-8, 'Asia/Kolkata',
+   array['weight'],'[]'::jsonb,repeat('d',64),'partial',now(),now(), 75.0);
+
 select ok(
-  true,
+  (public.compute_daily_metrics(
+    'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata'
+  )->'scores'->>'weight_trend_28d_kg_per_day')::numeric
+  is distinct from (select t28 from trend_before),
   '46: weight trend recomputes with updated data'
 );
 
@@ -459,9 +481,19 @@ select ok(
   '47: R2 computed when enough weight data points'
 );
 
-select ok(
-  true,
-  '48: HealthKit + manual measurements merged for weight trend'
+-- HealthKit summaries and manual body_measurements merge: manual wins for a
+-- date present in both. With today's manual 76.4 replacing the HealthKit 77.0,
+-- the 7-day inputs are (−2: 77.8), (−1: 77.3), (0: 76.4) → slope −0.7 exactly
+-- (would be −0.4 if the HealthKit 77.0 were used instead).
+insert into public.body_measurements(user_id,measured_on,source,weight_kg)
+values('aaaaaaaa-1111-4111-8111-111111111111', current_date, 'manual', 76.4);
+
+select is(
+  (public.compute_daily_metrics(
+    'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata'
+  )->'scores'->>'weight_trend_7d_kg_per_day')::numeric,
+  -0.7::numeric,
+  '48: HealthKit + manual measurements merged (manual wins per date)'
 );
 
 -- ============================================================================
@@ -521,19 +553,59 @@ select cmp_ok(
   '50: macro adherence capped at 200%'
 );
 
+-- User B has an active target but zero confirmed meals: adherence must be NULL.
+insert into public.nutrition_target_sets(
+  id,user_id,version_number,status,calories,protein_g,carbohydrate_g,fat_g,
+  rationale,approved_at,effective_date)
+values(
+  'bbbbbbbb-5222-4222-8222-222222222222','bbbbbbbb-2222-4222-8222-222222222222',
+  1,'active',2000,140,200,60,'B targets',now(),current_date);
+
 select ok(
-  true,
+  (public.compute_daily_metrics(
+    'bbbbbbbb-2222-4222-8222-222222222222', current_date, 'Asia/Kolkata'
+  )->'scores'->>'macro_adherence_pct') is null,
   '51: zero confirmed meals → macro adherence NULL'
 );
 
+-- Deactivate user A's target: adherence must be NULL without an active set.
+update public.nutrition_target_sets
+  set status = 'superseded'
+  where user_id = 'aaaaaaaa-1111-4111-8111-111111111111' and status = 'active';
+
 select ok(
-  true,
+  (public.compute_daily_metrics(
+    'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata'
+  )->'scores'->>'macro_adherence_pct') is null,
   '52: no active target plan → macro adherence NULL'
 );
 
-select ok(
-  true,
-  '53: 14-day window used for macro adherence'
+-- 14-day window: a confirmed meal at target_date-14 must NOT enter the average.
+insert into public.nutrition_target_sets(
+  id,user_id,version_number,status,calories,protein_g,carbohydrate_g,fat_g,
+  rationale,approved_at,effective_date)
+values(
+  'aaaaaaaa-5222-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
+  2,'active',2400,170,280,70,'Reactivated targets',now(),current_date);
+
+insert into public.meals(
+  id,user_id,local_date,timezone,meal_type,source,status,idempotency_key,confirmed_at)
+values
+  ('aaaaaaaa-d888-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
+   current_date-14,'Asia/Kolkata','lunch','manual','confirmed',gen_random_uuid(),now());
+
+insert into public.meal_items(
+  id,user_id,meal_id,name_snapshot,serving_label,calories,protein_g,carbohydrate_g,fat_g,confirmed_at)
+values
+  ('aaaaaaaa-e888-4111-8111-111111111111','aaaaaaaa-1111-4111-8111-111111111111',
+   'aaaaaaaa-d888-4111-8111-111111111111','Test Meal','1 serving',1200,85,140,35,now());
+
+select is(
+  (public.compute_daily_metrics(
+    'aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata'
+  )->'scores'->>'macro_adherence_pct')::numeric,
+  100::numeric,
+  '53: 14-day window used for macro adherence (day −14 excluded)'
 );
 
 -- ============================================================================
@@ -606,15 +678,16 @@ select ok(
 set local role authenticated;
 set local "request.jwt.claim.sub"='aaaaaaaa-1111-4111-8111-111111111111';
 
-select ok(
+select is(
   (select count(*) from public.user_baselines
-   where user_id='aaaaaaaa-1111-4111-8111-111111111111') >= 0,
-  '61: authenticated user can read own baselines'
+   where user_id='aaaaaaaa-1111-4111-8111-111111111111')::integer,
+  5,
+  '61: authenticated user can read own baselines (all five present)'
 );
 
 select ok(
   (select count(*) from public.metric_baseline_history
-   where user_id='aaaaaaaa-1111-4111-8111-111111111111') >= 0,
+   where user_id='aaaaaaaa-1111-4111-8111-111111111111') >= 1,
   '62: authenticated user can read own baseline history'
 );
 
