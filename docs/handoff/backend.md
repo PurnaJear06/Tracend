@@ -90,6 +90,13 @@ This file is current-state handoff, not durable architecture. Keep detailed hist
   `feature_engine_phase_2_test.sql`; no independent reference implementation of the
   pure math (highest-leverage next rigor investment); cold-start edge: the first-ever
   logged sleep night scores duration 100 (baseline folds to tonight itself).
+  *(Status 2026-09-08: every one of these landed with the post-review optimization ladder
+  (docs/plans/2026-09-04-optimization-plan.md, Passes 0–5 all complete): ACWR ≥14-day gate,
+  sleep sub-score null-drop + renorm, spread EWMA + floors, staleness fields, plausibility bands,
+  duration cold-start floor, and the reference implementation + oracle parity
+  (test/reference/ + reference_parity_test.sql 28/28). Only the vacuous `ok(true)`
+  assertions in phase_2 tests remain from this list, alongside the 5 pre-existing pgTAP
+  failures parked on main.)*
 - **Coach Context v5 deployed:** migration `20260716130000_coach_context_v5.sql` replaces
   `prepare_coach_chat_v4` in-place with enriched v5 context. New fields: `nutrition_adherence`
   (days_with_confirmed_meals_7d, schedule_slot_compliance), extended `nutrition_compliance_7day`

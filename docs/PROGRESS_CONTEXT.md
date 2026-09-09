@@ -180,6 +180,44 @@ rendering, decide-context null serialization, prompt-contract assertions); AI_SA
 null contract; CONTEXT_BUDGET note. Owner device QA 2026-09-08 confirmed Passes 1–3 fixes
 visible on iPhone (raw values next to z, No-data rows honest on a watch-off night, coach card
 refresh after check-in).
+2026-09-08 (Pass 5 — reference implementation + oracle tests, test-only, no production
+behavior change): `test/reference/recovery_reference.dart` — an independent Dart
+re-derivation of the recovery/sleep/strain math written from ALGORITHMS.md, not from the SQL
+(both SQL fold passes reproduced: the stored center from `compute_winsorized_ewma` with
+unfloored MAD bounds and the live `MAD=0 → last value` shortcut, and the stored spread from
+the floored-bounds 21-day EWMA loop — two Winsor regimes in one fold, now documented).
+12 shared oracle fixtures `test/reference/fixtures/*.json` (zero data, HRV-only, cold start,
+full data, long sleep + resp, short night, sleep subs partial, 6-night floor, ln-scale x3
+invariance, out-of-band today, out-of-band history, ACWR/monotony windows) including the
+owner's real 2026-08-25 strain-only production day (62, prev_strain_z −0.294). Dart self-tests
+15/15 (fixtures through the reference); `reference_parity_test.sql` 28/28 runs the SAME
+fixtures through the production SQL — pins: 62, −0.294, ACWR 1.95, monotony 2.27, duration
+floor 85.6, x3-identical z. Any scoring drift between SQL and the documented math now breaks a
+test instead of shipping — the drift alarm for Passes 2–3. ALGORITHMS.md reconciled with the
+live SQL (6 drift points: two-Winsor-regimes documentation, EWMA schedule off-by-one
+"1–7/8+" → observations 2–8 fast / 9+ stable, §1 usability wording missing the ≥3-obs gate,
+§4 missing the 10800s strain cap in the formula line, §5's "minimum 3 observations" weight
+gate the SQL never enforced (REGR floor is 2), §3 consistency input is sleep duration not
+stage history); spread-EWMA λ pinned to the SQL's rounded 0.0330 literal. Harness:
+`scripts/test-db.sh` now ships the fixtures directory into the pgTAP container (/fixtures)
+so the parity test reads them via psql backticks. 400 Flutter tests (385 + 15), 0 analyze,
+Deno 105/105, full pgTAP 692 with only the 5 pre-existing failing files. Weight ≥3-gate
+follow-up recorded in the plan (SQL behavior = ≥2; doc promised 3 — never enforced).
+2026-09-09 (Pass 5 hardening after external review, test-only): every fixture now carries an
+embedded `expected` oracle block (tool/generate_expected.dart regenerates them from the
+reference), and BOTH sides assert it field-by-field — Dart 13 oracle tests + 15 anchor tests
+(flutter 413/413), pgTAP `assert_expected()` comparing recovery, all five z-scores, sleep
+quality, the four sub-scores (with the all-four-or-none breakdown exposure rule pinned),
+breakdown-missing, debt, strain, ACWR, monotony, confidence, and missing components per
+fixture (ε at the SQL's own rounding scale), plus the 12 independent hand anchors. Fixes the
+review gap: invariant-only assertions (non-null / non-zero / in-range) could not catch a sign
+flip or weight typo; a future SQL regression that reverses the RHR z now fails the parity
+suite. Follow-up same day: the partial-night sub-score rows were vacuous (the SQL exposes no
+individual subs without the full breakdown) — removed in favor of rows only where the SQL
+exposes them, with the exposure boundary documented in the test header (partial-night subs
+pinned exactly on the Dart side; SQL side constrained via composite + breakdown-missing).
+Local pgTAP not re-run (owner declined the VM run); parity logic exercised through the
+Dart oracle layer and the unchanged seed helpers.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 
@@ -220,7 +258,7 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Stitch/design             | **23 refs imported**                 | `docs/handoff/design.md`   | `design/stitch/README.md`                     |
 | Stability infra           | **Complete — deployed**              | `AGENTS.md` (commands)     | N/A                                           |
 | CI/CD automation          | **Complete — deployed**              | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` (deployment)                      |
-| Post-review optimizations | **In progress — Passes 0–4 done (Pass 4 Edge-only 2026-09-08); Pass 5 queued** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
+| Post-review optimizations | **Complete — Passes 0–5 all done (Pass 5 reference + oracle parity 2026-09-08, test-only)** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
 
 ## Global Current State
 

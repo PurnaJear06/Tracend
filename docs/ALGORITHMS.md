@@ -37,8 +37,9 @@ domain (2026-09-07, math honesty): the fold stores `ln(hrv_ms)`, today's value e
 the ln form gives proportional changes equal weight — two users whose histories differ only by a
 constant factor (device or physiology scale) receive identical z-scores. Other metrics stay raw.
 Sign inverted for RHR and resp rate
-components. A component is usable only when it has BOTH a value today AND a baseline with
-`spread > 0`; a present value without a usable baseline (cold start) previously masqueraded as
+components. A component is usable only when it has BOTH a value today (inside its plausibility
+band) AND a baseline with `spread > 0 AND n_observations >= 3` — the fold actually ran. A
+present value without a usable baseline (cold start) previously masqueraded as
 "exactly at baseline" (z = 0) with full weight. For prev_strain, "usable" means the 7-day
 strain average is > 0 AND the 28-day window of daily strains has `stddev > 0`: a single strain
 day (stddev undefined) or identical days (stddev 0) cannot produce a z-score, so prev_strain is
@@ -111,11 +112,14 @@ ewma_t   = lambda * winsorized_t + (1 - lambda) * ewma_{t-1}
 
 | Observations | Half-life | lambda     | Purpose                    |
 | ------------ | --------- | ---------- | -------------------------- |
-| 1-7 (early)  | 3 days    | 0.206      | Fast adapt from cold start |
-| 8+ (stable)  | 14 days   | 0.048      | Slow, stable tracking      |
+| 1 (seed)     | —         | —          | First observation seeds the EWMA |
+| 2-8 (early)  | 3 days    | 0.206      | Fast adapt from cold start |
+| 9+ (stable)  | 14 days   | 0.048      | Slow, stable tracking      |
 
-Transition at observation 8 prevents the first few readings from permanently anchoring the
-baseline.
+The first observation is the seed (no update runs); the 8th update still uses the fast
+half-life and the 9th is the first slow one. This transition at observation 8 (Pass-5
+reference reconciliation, 2026-09-08 — the table previously read "1-7 / 8+", one step
+early) prevents the first few readings from permanently anchoring the baseline.
 
 ### Winsorizing
 
@@ -128,8 +132,21 @@ MAD    = 1.4826 * percentile_50(|values - median|)
 ```
 
 The `1.4826` constant makes MAD consistent with standard deviation for normally-distributed data
-(Hunter 1986). (The historical "spread = 0 → return last value" cold-start shortcut inside
-`compute_winsorized_ewma` is superseded by the stored-spread rules below.)
+(Hunter 1986).
+
+**Two Winsor regimes in one fold** (Pass-5 reference reconciliation, 2026-09-08 — previously
+undocumented): the fold runs *two parallel passes* over the observation array, and they clamp
+at slightly different scales:
+
+- **Stored center** (`compute_winsorized_ewma`): bounds from the raw unfloored 1.4826·MAD.
+  Its historical cold-start shortcut is still live in the SQL — `MAD = 0 → return the last
+  observation` (an all-identical history anchors on its final value).
+- **Stored spread** (the fold loop): bounds from the *floored* spread
+  (`max(floor, 1.4826·MAD)`) plus the 21-day spread EWMA below. The floor is what keeps the
+  two regimes from producing a usable-center/unusable-spread disagreement.
+
+The reference implementation (`test/reference/recovery_reference.dart`, Pass 5) reproduces
+both passes exactly; changing one without the other drifts them apart.
 
 ### Spread as EWMA + Floors (2026-09-07, Pass 3)
 
@@ -138,9 +155,10 @@ motivated the change: a metric whose day-to-day noise *shrank* kept being z-scor
 whole noisy past, and one whose noise *grew* kept being scored on an ancient calm window.
 
 - **Stored spread** = a 21-day-half-life EWMA over per-observation |deviation from the running
-  center| (`0.9670·spread + 0.0330·|x_t − ewma_t|`), one step wider than the 14-day center
-  half-life for stability. Winsor bounds for the fold still use the static full-history MAD scale
-  (a static scale is right where the bounds clamp).
+  center| (`0.9670·spread + 0.0330·|x_t − ewma_t|`, using the SQL's rounded literals —
+  λ = 0.0330, not the unrounded `1 − 0.5^(1/21) ≈ 0.0327`), one step wider than the 14-day
+  center half-life for stability. Winsor bounds for the fold still use the static full-history
+  MAD scale (a static scale is right where the bounds clamp).
 - **Per-metric floors** (`baseline_floor_spread`): HRV 0.05 (ln-ms domain), RHR 2 bpm, sleep 15
   min, weight 0.5 kg, resp 0.5 bpm. A spread below its floor would amplify noise into dramatic
   z-scores on near-identical histories — including the all-identical history whose raw spread is
@@ -224,9 +242,10 @@ Result clipped to [0, 100].
 
 A sub-score whose input is missing scores NULL — never a fabricated 0 (which the weighted sum
 would read as a terrible night) or a coalesced 100. Missing awake minutes → efficiency NULL;
-missing deep OR REM stages → restorative NULL; fewer than 2 nights of stage/awake history →
-consistency NULL. Each NULL sub-score drops out and the composite **renormalizes over the
-remaining weights** (the same pattern as the recovery composite):
+missing deep OR REM stages → restorative NULL; fewer than 2 nights of sleep history in the
+7-day window → consistency NULL (measured on sleep duration, not stage data). Each NULL
+sub-score drops out and the composite **renormalizes over the remaining weights** (the same
+pattern as the recovery composite):
 
 ```text
 sleep_quality = sum(weight_i * score_i for non-null i) / sum(weight_i for non-null i)
@@ -273,9 +292,12 @@ Positive value = sleeping less than target on average over past 7 days.
 
 ```text
 daily_strain = sum(session_effort * duration_seconds / 600) for all completed sessions on date
+               where duration_seconds <= 10800 (3-hour cap; longer sessions are excluded —
+               the 2026-08-22 cap that fenced off the July-22 403-strain outlier)
 ```
 
-Session effort = 0–10 RPE. Strain normalised per 10-minute block.
+Session effort = 0–10 RPE. Strain normalised per 10-minute block. The same 10800-second
+cap applies to every strain window (ACWR, monotony, prev-strain z).
 
 ### Acute:Chronic Workload Ratio (ACWR)
 
@@ -338,7 +360,10 @@ weight_trend = REGR_SLOPE(weight_kg, epoch_days) from PostgreSQL aggregate
 
 - 7-day window: observations from target_date - 6 through target_date
 - 28-day window: observations from target_date - 27 through target_date
-- Minimum 3 observations required per window; otherwise null
+- Regression needs at least 2 observations (the REGR_* aggregate's own floor — 1 point yields
+  null). The "minimum 3" this section documented before 2026-09-08 was never enforced by the
+  SQL; a future migration may raise the gate, and the reference implementation tracks the
+  SQL's actual behavior until then.
 - R² computed via `REGR_R2` for the 28-day window
 - Sources merged: `body_measurements` UNION `daily_health_summaries` (manual entries take priority)
 
