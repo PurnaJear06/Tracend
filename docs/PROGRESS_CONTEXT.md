@@ -203,6 +203,17 @@ stage history); spread-EWMA λ pinned to the SQL's rounded 0.0330 literal. Harne
 so the parity test reads them via psql backticks. 400 Flutter tests (385 + 15), 0 analyze,
 Deno 105/105, full pgTAP 692 with only the 5 pre-existing failing files. Weight ≥3-gate
 follow-up recorded in the plan (SQL behavior = ≥2; doc promised 3 — never enforced).
+2026-09-09 (Pass 5 hardening after external review, test-only): every fixture now carries an
+embedded `expected` oracle block (tool/generate_expected.dart regenerates them from the
+reference), and BOTH sides assert it field-by-field — Dart 13 oracle tests + 15 anchor tests
+(flutter 413/413), pgTAP `assert_expected()` comparing recovery, all five z-scores, sleep
+quality, the four sub-scores (with the all-four-or-none breakdown exposure rule pinned),
+breakdown-missing, debt, strain, ACWR, monotony, confidence, and missing components per
+fixture (ε at the SQL's own rounding scale), plus the 12 independent hand anchors. Fixes the
+review gap: invariant-only assertions (non-null / non-zero / in-range) could not catch a sign
+flip or weight typo; a future SQL regression that reverses the RHR z now fails the parity
+suite. Local pgTAP not re-run (owner declined the VM run); parity logic exercised through the
+Dart oracle layer and the unchanged seed helpers.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.
 

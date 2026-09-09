@@ -192,9 +192,7 @@ class ReferenceScenario {
         .map((raw) => WorkoutSession.fromJson(raw as Map<String, dynamic>))
         .toList();
     final weights = (json['weight_days'] as List? ?? [])
-        .map(
-          (raw) => WeightEntry.fromJson(raw as Map<String, dynamic>),
-        )
+        .map((raw) => WeightEntry.fromJson(raw as Map<String, dynamic>))
         .toList();
     return ReferenceScenario(
       name: json['name'] as String,
@@ -274,8 +272,7 @@ Baseline foldBaseline({
   required List<({DateTime date, double value})> observations,
   required double floorSpread,
 }) {
-  final sorted = [...observations]
-    ..sort((a, b) => a.date.compareTo(b.date));
+  final sorted = [...observations]..sort((a, b) => a.date.compareTo(b.date));
   final values = sorted.map((o) => o.value).toList();
 
   // Cold start: fewer than 3 observations never fold.
@@ -284,8 +281,9 @@ Baseline foldBaseline({
       center: values.isEmpty ? 0 : values.first,
       spread: floorSpread,
       nObservations: values.length,
-      lastObservationDate:
-          sorted.isEmpty ? null : sorted[sorted.length - 1].date,
+      lastObservationDate: sorted.isEmpty
+          ? null
+          : sorted[sorted.length - 1].date,
       confidence: 'cold_start',
     );
   }
@@ -331,7 +329,9 @@ double _winsorizedEwma(List<double> values, double staticSpread) {
     final v = values[i];
     if (v < hardLower || v > hardUpper) continue;
     final winsorized = v.clamp(lower, upper);
-    final halfLife = i + 1 < kStableFromObservation ? kHalfLifeDaysEarly : kHalfLifeDaysStable;
+    final halfLife = i + 1 < kStableFromObservation
+        ? kHalfLifeDaysEarly
+        : kHalfLifeDaysStable;
     final lambda = 1 - math.pow(0.5, 1 / halfLife);
     ewma = lambda * winsorized + (1 - lambda) * ewma;
   }
@@ -357,7 +357,9 @@ double _spreadEwma(
   for (var i = 1; i < values.length; i++) {
     final v = values[i];
     if (v < hardLower || v > hardUpper) continue;
-    final halfLife = i + 1 < kStableFromObservation ? kHalfLifeDaysEarly : kHalfLifeDaysStable;
+    final halfLife = i + 1 < kStableFromObservation
+        ? kHalfLifeDaysEarly
+        : kHalfLifeDaysStable;
     final lambda = 1 - math.pow(0.5, 1 / halfLife);
     final winsorized = v.clamp(
       median - kWinsorClampSigmas * flooredStatic,
@@ -392,6 +394,10 @@ class RecoveryDay {
     required this.zResp,
     required this.zPrevStrain,
     required this.sleepQuality,
+    required this.subDurationScore,
+    required this.subEfficiencyScore,
+    required this.subRestorativeScore,
+    required this.subConsistencyScore,
     required this.sleepBreakdown,
     required this.sleepBreakdownMissing,
     required this.sleepDebtMinutes,
@@ -412,6 +418,15 @@ class RecoveryDay {
 
   /// The 0–100 composite (null when no sub-score was computable).
   final double? sleepQuality;
+
+  /// The four sub-scores individually (null = that sub-input was missing).
+  /// `sleepBreakdown` (below) exists only when all four are non-null — the
+  /// shipped-client parser contract — but the oracle fixtures pin each
+  /// computable sub independently, so partial nights keep their pins.
+  final double? subDurationScore;
+  final double? subEfficiencyScore;
+  final double? subRestorativeScore;
+  final double? subConsistencyScore;
 
   /// The four sub-scores (null = that sub-input was missing). The full
   /// breakdown object exists only when all four are non-null (shipped-client
@@ -443,10 +458,7 @@ class SleepBreakdown {
 
 /// Result of running one scenario through the reference.
 class ReferenceResult {
-  ReferenceResult({
-    required this.day,
-    required this.durationScoreFloorUsed,
-  });
+  ReferenceResult({required this.day, required this.durationScoreFloorUsed});
 
   /// The computed day (recovery, scores, baselines).
   final RecoveryDay day;
@@ -471,10 +483,9 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
   final today = byDate[target];
   // The fold uses the full history INCLUDING today (SQL: local_date <=
   // target_date).
-  final history = scenario.healthDays
-      .where((d) => !d.date.isAfter(target))
-      .toList()
-    ..sort((a, b) => a.date.compareTo(b.date));
+  final history =
+      scenario.healthDays.where((d) => !d.date.isAfter(target)).toList()
+        ..sort((a, b) => a.date.compareTo(b.date));
 
   // Baselines fold from the full history INCLUDING today (the SQL folds
   // `local_date <= target_date`, today included).
@@ -488,9 +499,10 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
     ];
   }
 
-  final hrvFold = foldObservations((d) => d.hrvMs, kBandHrvMs)
-      .map((o) => (date: o.date, value: math.log(o.value)))
-      .toList();
+  final hrvFold = foldObservations(
+    (d) => d.hrvMs,
+    kBandHrvMs,
+  ).map((o) => (date: o.date, value: math.log(o.value))).toList();
   final rhrFold = foldObservations((d) => d.restingHrBpm, kBandRhrBpm);
   final sleepFold = foldObservations((d) => d.sleepMinutes, kBandSleepMinutes);
   final respFold = foldObservations((d) => d.respRateBpm, kBandRespBpm);
@@ -504,10 +516,12 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
   final weightFold = [
     ...scenario.weightDays
         .where((w) => kBandWeightKg.contains(w.weightKg))
-        .map((w) => (
-              date: DateTime(w.date.year, w.date.month, w.date.day),
-              value: w.weightKg,
-            )),
+        .map(
+          (w) => (
+            date: DateTime(w.date.year, w.date.month, w.date.day),
+            value: w.weightKg,
+          ),
+        ),
     ...scenario.healthDays
         .where(
           (d) =>
@@ -605,9 +619,11 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
       .toList();
   double strainOn(DateTime day) => cappedSessions
       .where(
-        (s) =>
-            DateTime(s.date.year, s.date.month, s.date.day)
-                .isAtSameMomentAs(day),
+        (s) => DateTime(
+          s.date.year,
+          s.date.month,
+          s.date.day,
+        ).isAtSameMomentAs(day),
       )
       .fold(0, (total, s) => total + s.strain);
 
@@ -637,9 +653,7 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
     final avg28 = dayStrains.isEmpty
         ? null
         : dayStrains.reduce((a, b) => a + b) / dayStrains.length;
-    final stddev28 = avg28 == null
-        ? null
-        : _stddevSamp(dayStrains);
+    final stddev28 = avg28 == null ? null : _stddevSamp(dayStrains);
     if (stddev28 != null && stddev28 > 0 && avg28 != null) {
       zStrain = (prev7Avg - avg28) / stddev28;
       composite -= kWeightPrevStrain * zStrain;
@@ -663,13 +677,17 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
   List<String>? sleepMissing;
   int? sleepDebt;
   var floorUsed = false;
+  // Individual sub-scores, hoisted so the oracle pins survive partial nights
+  // (the SQL reports each computable sub independently of the full
+  // breakdown object).
+  double? durationScore;
+  double? efficiency;
+  double? restorative;
+  double? consistency;
 
   if (kBandSleepMinutes.contains(sleepToday)) {
     final tonight = sleepToday!;
     final sleepMissingList = <String>[];
-    double? efficiency;
-    double? restorative;
-    double? consistency;
 
     if (today?.sleepAwakeMinutes != null) {
       efficiency = (tonight - today!.sleepAwakeMinutes!) / tonight * 100;
@@ -683,12 +701,13 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
       sleepMissingList.add('restorative');
     }
 
-    double durationScore;
     final sleepBaselineForDuration = baselines['sleep_minutes']!;
     if (sleepBaselineForDuration.nObservations >= kSleepBaselineMinNights &&
         sleepBaselineForDuration.center > 0) {
-      durationScore = (tonight / sleepBaselineForDuration.center * 100)
-          .clamp(0, 100);
+      durationScore = (tonight / sleepBaselineForDuration.center * 100).clamp(
+        0,
+        100,
+      );
     } else {
       floorUsed = true;
       durationScore = (tonight / kSleepNeedFloorMinutes * 100).clamp(0, 100);
@@ -728,8 +747,9 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
 
     if (sleepWeightTotal > 0) {
       // SQL order: round the composite to an integer, then clamp 0..100.
-      sleepQuality = _roundHalfAway(sleepComposite / sleepWeightTotal)
-          .clamp(0, 100);
+      sleepQuality = _roundHalfAway(
+        sleepComposite / sleepWeightTotal,
+      ).clamp(0, 100);
     }
     if (sleepQuality != null &&
         efficiency != null &&
@@ -747,8 +767,7 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
     if (last7Nights.isNotEmpty) {
       final avg7 = last7Nights.reduce((a, b) => a + b) / last7Nights.length;
       // SQL: 480 - round(avg7); the debt result stays an integer.
-      sleepDebt =
-          (kSleepDebtTargetMinutes - _roundHalfAway(avg7)).round();
+      sleepDebt = (kSleepDebtTargetMinutes - _roundHalfAway(avg7)).round();
     }
   }
 
@@ -776,9 +795,11 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
   // ── Data confidence ──
   final healthMissing = missing.where((m) => m != 'prev_strain').length;
   final hasTodaySummary = scenario.healthDays.any(
-    (d) =>
-        DateTime(d.date.year, d.date.month, d.date.day).isAtSameMomentAs(
-            target),
+    (d) => DateTime(
+      d.date.year,
+      d.date.month,
+      d.date.day,
+    ).isAtSameMomentAs(target),
   );
   var confidence = 'high';
   if (!hasTodaySummary || healthMissing >= 3) {
@@ -797,6 +818,10 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
       zResp: zResp,
       zPrevStrain: zStrain,
       sleepQuality: sleepQuality,
+      subDurationScore: sleepQuality == null ? null : durationScore,
+      subEfficiencyScore: sleepQuality == null ? null : efficiency,
+      subRestorativeScore: sleepQuality == null ? null : restorative,
+      subConsistencyScore: sleepQuality == null ? null : consistency,
       sleepBreakdown: sleepBreakdown,
       sleepBreakdownMissing: sleepMissing,
       sleepDebtMinutes: sleepDebt,

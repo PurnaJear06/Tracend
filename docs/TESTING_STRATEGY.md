@@ -47,12 +47,19 @@ accepted as a permanent retry.
 - **pgTAP (22 tests):** EWMA computation with normal and outlier data, cold-start NULL return,
   recovery score at known inputs, ACWR ratio, change eligibility gate outcomes, cross-user RLS on
   `user_baselines` and `metric_baseline_history`. File: `feature_engine_baseline_test.sql`.
-- **Reference parity (2026-09-08, Pass 5):** the independent Dart reference
-  (`test/reference/recovery_reference.dart`, written from ALGORITHMS.md, not from SQL) and 12
-  shared oracle fixtures (`test/reference/fixtures/*.json`). Dart self-tests run the fixtures
-  through the reference (15 tests); `reference_parity_test.sql` (28 assertions) seeds the SAME
-  fixtures into the DB and pins the SQL output — the drift alarm between the production SQL and
-  the documented math. `scripts/test-db.sh` ships the fixtures into the pgTAP container.
+- **Reference parity (2026-09-08, Pass 5; hardened 2026-09-09):** the independent Dart reference
+  (`test/reference/recovery_reference.dart`, written from ALGORITHMS.md, not from SQL) and 13
+  shared oracle fixtures (`test/reference/fixtures/*.json`). Two assertion layers: (1) every
+  fixture carries an embedded `expected` oracle block (regenerate with
+  `dart run tool/generate_expected.dart test/reference/fixtures --write --force` after changing
+  fixture inputs) — the Dart self-tests compare every scored output (recovery, five z-scores,
+  sleep quality, the four sub-scores, breakdown-missing, debt, strain, ACWR, monotony,
+  confidence, missing components) against it (13 oracle tests + 15 anchor tests), and
+  `reference_parity_test.sql` runs the SAME fixtures through the production SQL asserting the
+  same block field-by-field — so a sign flip or weight typo in EITHER implementation breaks a
+  test; (2) independent hand-computed anchors (62, −0.294, 1.95, 2.27, 85.6, the x3
+  ln-invariance twin) so the oracle blocks can never go quietly circular.
+  `scripts/test-db.sh` ships the fixtures into the pgTAP container.
 - **Contract fixture:** `training_hub_v1_4.json` validates Flutter can parse enriched RPC shape with
   baselines, scores, and eligibility fields.
 - **Flutter unit tests (3):** healthSyncStart backfill window (7-day initial, 6-day subsequent),
