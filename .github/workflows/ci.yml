@@ -94,6 +94,33 @@ jobs:
       - name: iOS release build (no codesign)
         run: flutter build ios --release --no-codesign
 
+  pgtap:
+    name: pgTAP (fresh DB + migrations + parity)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: "2.101.0"
+
+      - name: Start local Supabase stack
+        run: supabase start
+
+      - name: Apply all migrations on a fresh database
+        run: supabase db reset
+
+      - name: Run pgTAP suite (incl. 223-assertion reference parity oracle)
+        run: |
+          docker run --rm \
+            --network container:supabase_db_Tracend \
+            --env PGPASSWORD=postgres \
+            --volume "$PWD/supabase/tests/database:/tests:ro" \
+            --volume "$PWD/test/reference/fixtures:/fixtures:ro" \
+            public.ecr.aws/supabase/pg_prove:3.36 \
+            sh -lc 'pg_prove -h 127.0.0.1 -U postgres -d postgres /tests/*_test.sql'
+
   secret-scan:
     name: Secret Scan (gitleaks)
     runs-on: ubuntu-latest

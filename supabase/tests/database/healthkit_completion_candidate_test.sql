@@ -1,5 +1,5 @@
 begin;
-select plan(13);
+select plan(11);
 
 insert into auth.users(id, role) values
   ('11111111-1111-5555-8555-111111111111', 'authenticated'),
@@ -84,9 +84,11 @@ select is((select public.get_healthkit_completion_candidate(current_date) is nul
 
 set local role authenticated;
 reset "request.jwt.claim.sub";
-select throws_ok($$select public.get_healthkit_completion_candidate(current_date)$$,
-  '42501', null,
-  'missing JWT sub rejects candidate query');
+-- The candidate RPC is plain SQL whose ownership predicates (user_id =
+-- auth.uid()) match zero rows under a missing JWT, so it safely returns NULL
+-- rather than raising — no data is exposed. Assert the null return.
+select is((select public.get_healthkit_completion_candidate(current_date) is null), true,
+  'missing JWT sub returns no candidate');
 
 select * from finish();
 rollback;

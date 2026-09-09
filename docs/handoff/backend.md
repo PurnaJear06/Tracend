@@ -97,6 +97,21 @@ This file is current-state handoff, not durable architecture. Keep detailed hist
   (test/reference/ + reference_parity_test.sql 28/28). Only the vacuous `ok(true)`
   assertions in phase_2 tests remain from this list, alongside the 5 pre-existing pgTAP
   failures parked on main.)*
+  *(Status 2026-09-09 — follow-ups closed: the vacuous assertions were replaced with real
+  checks (8 in `feature_engine_phase_2_test.sql`, 2 in `feature_engine_phase_3_coach_test.sql`);
+  the 5 failing files were repaired on `fix/pgtap-repair-and-ci-parity` — root causes: two
+  unbalanced parens (coach_context_v5), a 61-char source_id_hash violating the 64-hex
+  validation (phase_4 e9), int-vs-bigint `is()` casts + an aspirational empty-payload
+  expectation (workout_persistence — `[]` is the legitimate rest-day payload; health-sync
+  defaults workouts to [] and persist_health_sync_v2 pipes it through every sync), and a
+  stale 42501 expectation for a SQL-language RPC that safely returns NULL under missing JWT
+  (completion_candidate). Two real production bugs found and fixed in migration
+  `20260909120000_auto_complete_guard.sql`: the auto-complete RPC lacked the weekday guard
+  its candidate sibling has, and a NULL-duration hole created phantom completed sessions
+  when no HealthKit summary row existed. A fresh-DB pgTAP CI job (supabase start → db reset →
+  pg_prove pinned image) now enforces the whole suite — 33 files, 928 assertions, green in
+  a real GitHub run on 2026-09-09 — so this class of failure blocks merge instead of
+  slipping through the Colima gate.)*
 - **Coach Context v5 deployed:** migration `20260716130000_coach_context_v5.sql` replaces
   `prepare_coach_chat_v4` in-place with enriched v5 context. New fields: `nutrition_adherence`
   (days_with_confirmed_meals_7d, schedule_slot_compliance), extended `nutrition_compliance_7day`
