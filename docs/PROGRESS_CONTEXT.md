@@ -212,7 +212,11 @@ breakdown-missing, debt, strain, ACWR, monotony, confidence, and missing compone
 fixture (ε at the SQL's own rounding scale), plus the 12 independent hand anchors. Fixes the
 review gap: invariant-only assertions (non-null / non-zero / in-range) could not catch a sign
 flip or weight typo; a future SQL regression that reverses the RHR z now fails the parity
-suite. Local pgTAP not re-run (owner declined the VM run); parity logic exercised through the
+suite. Follow-up same day: the partial-night sub-score rows were vacuous (the SQL exposes no
+individual subs without the full breakdown) — removed in favor of rows only where the SQL
+exposes them, with the exposure boundary documented in the test header (partial-night subs
+pinned exactly on the Dart side; SQL side constrained via composite + breakdown-missing).
+Local pgTAP not re-run (owner declined the VM run); parity logic exercised through the
 Dart oracle layer and the unchanged seed helpers.
 
 **Purpose:** tiny live dashboard and pointer index, not a history dump.

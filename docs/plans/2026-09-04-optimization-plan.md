@@ -244,7 +244,12 @@ tests. Budget verified neutral (98→105 deno tests, both CONTEXT BUDGET CONTRAC
   recovery, all five z-scores, sleep quality, the four sub-scores (exposure rule: breakdown
   object exists ⟺ all four computable), breakdown-missing, debt, strain, ACWR, monotony,
   confidence, missing components. Dart 413/413 (13 oracle + 15 anchor + 385); pgTAP
-  `assert_expected()` runs 20 rows per fixture plus the 12 hand anchors (259 planned rows).
+  `assert_expected()` runs 15 rows per fixture (the four sub-score rows only where the SQL
+  exposes them — all-four-or-none breakdown rule) plus the 12 hand anchors: 223 planned rows.
+  Partial-night subs are SQL-internal (the production response exposes no individual subs
+  without the full breakdown) — they are pinned exactly on the Dart side, and the SQL side is
+  constrained through the composite + breakdown-missing; the boundary is documented in the
+  test header.
   Closes the invariant-only gap (a sign-flipped RHR z passed the old non-zero checks). Local
   pgTAP re-run skipped per owner (no VM); parity logic exercised via the Dart oracle layer.
 
