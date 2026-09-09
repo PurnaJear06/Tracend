@@ -79,38 +79,36 @@ Weight, measurements, and body metrics on a single date-ordered effective timeli
 
 ### The AI never touches the numbers
 
-This is the part that makes Tracend different from every other AI fitness app. The AI never touches the numbers. Deterministic code calculates every trend, adherence measure, and baseline from your Apple Health data. The model layer interprets results and proposes actions. Output passes schema, semantics, evidence-citation, and policy-permission checks, and is rejected on any failure. Nothing is activated, confirmed, or persisted without your explicit approval.
+Tracend separates **calculation** from **coaching**. Deterministic code turns your Apple Health and training data into trends, adherence measures, and personal baselines. The AI reads those results to explain what they mean and suggest what to do next — it does not calculate the source metrics or write directly to your data.
+
+Every suggestion is checked for valid structure, supporting evidence, and permission. If a check fails, the suggestion is rejected. If a change would be saved, **you must approve it first**.
 
 **Deterministic math. Interpretive model. Audited persistence.**
 
 ```mermaid
-flowchart LR
-  subgraph Client["Flutter iOS"]
-    UI["5 tabs<br/>Today · Train · Coach<br/>Nutrition · Progress"]
-    HK["Apple HealthKit"]
-    APR["Your approval<br/>required for every<br/>persistent change"]
-  end
-  subgraph Supabase["Supabase (Singapore)"]
-    EF["9 Edge Functions (Deno)"]
-    FEAT["Deterministic engine<br/>trends · adherence · baselines"]
-    CTX["Context assembly<br/>five-layer memory"]
-    VAL["Output validation<br/>schema · semantics · evidence"]
-    DB[("PostgreSQL<br/>RLS + audit events")]
-  end
-  subgraph AI["AI provider (server-side)"]
-    FL["Chat + vision<br/>interprets · proposes"]
-  end
-  UI <-->|RLS / RPC| DB
-  HK -->|health-sync| EF
-  EF --> FEAT
-  FEAT --> CTX
-  CTX -->|prompt| FL
-  FL -->|proposal| VAL
-  VAL -.->|reject any failure| FL
-  VAL -->|validated change| APR
-  APR -->|approved| DB
-  classDef gate fill:#4A57E8,stroke:#4A57E8,color:#ffffff
-  class APR gate
+flowchart TB
+  DATA["1 · SOURCE DATA<br/>Apple Health + your activity"]
+  MATH["2 · CALCULATE<br/>Trusted code computes trends,<br/>adherence, and baselines"]
+  AI["3 · INTERPRET<br/>AI explains results and<br/>proposes the next action"]
+  CHECK{"4 · VALIDATE<br/>Is it supported, safe,<br/>and allowed?"}
+  REJECT["Rejected<br/>Nothing changes"]
+  APPROVAL{"5 · YOU DECIDE<br/>Approve this change?"}
+  SAVE[("6 · SAVE WITH AN AUDIT TRAIL<br/>Protected by row-level security")]
+
+  DATA --> MATH --> AI --> CHECK
+  CHECK -->|No| REJECT
+  CHECK -->|Yes| APPROVAL
+  APPROVAL -->|No| REJECT
+  APPROVAL -->|Yes| SAVE
+
+  classDef trusted fill:#1F2937,stroke:#60A5FA,color:#F8FAFC,stroke-width:2px
+  classDef model fill:#312E81,stroke:#818CF8,color:#F8FAFC,stroke-width:2px
+  classDef gate fill:#4A57E8,stroke:#818CF8,color:#FFFFFF,stroke-width:2px
+  classDef stopped fill:#27272A,stroke:#71717A,color:#D4D4D8
+  class DATA,MATH,SAVE trusted
+  class AI model
+  class CHECK,APPROVAL gate
+  class REJECT stopped
 ```
 
 ## Architecture
