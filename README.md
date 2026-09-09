@@ -79,36 +79,53 @@ Weight, measurements, and body metrics on a single date-ordered effective timeli
 
 ### The AI never touches the numbers
 
-Tracend separates **calculation** from **coaching**. Deterministic code turns your Apple Health and training data into trends, adherence measures, and personal baselines. The AI reads those results to explain what they mean and suggest what to do next — it does not calculate the source metrics or write directly to your data.
+Tracend uses AI where judgment helps — never where correctness demands deterministic math. A dedicated feature engine computes every trend, adherence measure, and personal baseline from your health and training data. The model receives structured context, interprets the evidence, and returns a proposal. It never calculates source metrics or writes directly to the database.
 
-Every suggestion is checked for valid structure, supporting evidence, and permission. If a check fails, the suggestion is rejected. If a change would be saved, **you must approve it first**.
+Every proposal passes fail-closed schema, semantic, evidence-citation, and policy checks. A validated proposal can become a persistent change only after your explicit approval, creating a new version and an audit event.
 
-**Deterministic math. Interpretive model. Audited persistence.**
+> **AI proposes. Code verifies. You decide. Every change is auditable.**
 
 ```mermaid
 flowchart TB
-  DATA["1 · SOURCE DATA<br/>Apple Health + your activity"]
-  MATH["2 · CALCULATE<br/>Trusted code computes trends,<br/>adherence, and baselines"]
-  AI["3 · INTERPRET<br/>AI explains results and<br/>proposes the next action"]
-  CHECK{"4 · VALIDATE<br/>Is it supported, safe,<br/>and allowed?"}
-  REJECT["Rejected<br/>Nothing changes"]
-  APPROVAL{"5 · YOU DECIDE<br/>Approve this change?"}
-  SAVE[("6 · SAVE WITH AN AUDIT TRAIL<br/>Protected by row-level security")]
+  subgraph SIGNAL["01 · SIGNAL & COMPUTE"]
+    direction LR
+    HK["Apple HealthKit<br/>health signals"]
+    EDGE["Secure ingestion<br/>Deno Edge Functions"]
+    ENGINE["Deterministic feature engine<br/>baselines · trends · adherence"]
+    HK -->|health-sync| EDGE --> ENGINE
+  end
 
-  DATA --> MATH --> AI --> CHECK
-  CHECK -->|No| REJECT
-  CHECK -->|Yes| APPROVAL
-  APPROVAL -->|No| REJECT
-  APPROVAL -->|Yes| SAVE
+  subgraph INTELLIGENCE["02 · INTERPRET & VERIFY"]
+    direction LR
+    CONTEXT["Context assembly<br/>five-layer memory"]
+    MODEL["Server-side AI<br/>interpret · explain · propose"]
+    VALIDATE{"Fail-closed validation<br/>schema · semantics<br/>evidence · policy"}
+    BLOCK["Rejected<br/>zero state change"]
+    CONTEXT -->|structured evidence| MODEL -->|proposal| VALIDATE
+    VALIDATE -.->|any failure| BLOCK
+  end
 
-  classDef trusted fill:#1F2937,stroke:#60A5FA,color:#F8FAFC,stroke-width:2px
-  classDef model fill:#312E81,stroke:#818CF8,color:#F8FAFC,stroke-width:2px
-  classDef gate fill:#4A57E8,stroke:#818CF8,color:#FFFFFF,stroke-width:2px
-  classDef stopped fill:#27272A,stroke:#71717A,color:#D4D4D8
-  class DATA,MATH,SAVE trusted
-  class AI model
-  class CHECK,APPROVAL gate
-  class REJECT stopped
+  subgraph CONTROL["03 · APPROVE & PERSIST"]
+    direction LR
+    APPROVAL{"Human-in-the-loop gate<br/>your explicit approval"}
+    DB[("PostgreSQL<br/>RLS · versioning · audit events")]
+    APP["Flutter iOS<br/>Today · Train · Coach<br/>Nutrition · Progress"]
+    APPROVAL -->|approved change| DB <-->|typed RPCs| APP
+  end
+
+  ENGINE --> CONTEXT
+  VALIDATE -->|validated proposal| APPROVAL
+
+  classDef compute fill:#172033,stroke:#60A5FA,color:#F8FAFC,stroke-width:2px
+  classDef intelligence fill:#28245C,stroke:#A5B4FC,color:#F8FAFC,stroke-width:2px
+  classDef gate fill:#4A57E8,stroke:#A5B4FC,color:#FFFFFF,stroke-width:2px
+  classDef storage fill:#152E2B,stroke:#5EEAD4,color:#F8FAFC,stroke-width:2px
+  classDef rejected fill:#27272A,stroke:#71717A,color:#D4D4D8
+  class HK,EDGE,ENGINE compute
+  class CONTEXT,MODEL intelligence
+  class VALIDATE,APPROVAL gate
+  class DB,APP storage
+  class BLOCK rejected
 ```
 
 ## Architecture
