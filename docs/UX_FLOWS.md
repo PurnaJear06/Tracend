@@ -122,8 +122,9 @@ HealthKit, meal-photo AI, and progress-photo AI consent occur separately when th
 visible.
 
 After an owner restores an existing training history, the first explicit Apple Health refresh may
-backfill up to 31 days. The UI continues to use the existing partial/unknown states and does not
-claim an empty result means permission was denied. Later refreshes use the normal seven-day overlap.
+backfill up to 9 dates (today−8) to capture a full preceding night. The UI continues to use the
+existing partial/unknown states and does not claim an empty result means permission was denied.
+Later refreshes use the normal 8-date overlap.
 
 ### 4.2 Beginner: Guide me
 
@@ -193,9 +194,11 @@ updates Today and recomputes only when necessary.
 ### Evidence detail
 
 Readiness evidence is shown inline, not hidden behind a tap: the recovery readout lists
-each driver's true z-score next to its bar and shows No data for unusable components,
-the sleep architecture card carries the quality score with its four sub-scores
-(Duration, Efficiency, Restorative, Consistency) and the debt/surplus pill, the 7-day
+each driver's true z-score next to its bar and shows No data for unusable components
+(a valid sleep reading whose baseline is still maturing shows the measurement with
+"Building baseline" instead), the sleep architecture card carries the quality score
+with its four sub-scores (Duration, Efficiency, Restorative, Consistency) and the
+debt/surplus pill (positive = debt, negative = surplus, 0 = target met), the 7-day
 trend plots only recorded days with its date range and recorded-day count, and the
 session plan card states the real ACWR and zone. Sync source and freshness live in
 the profile's Apple Health status card and beside the hero sync chip (last health sync

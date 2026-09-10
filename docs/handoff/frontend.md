@@ -704,6 +704,43 @@ Post-deploy owner check (dashboard SQL editor): `present_types` gains `resp_rate
 a watch-sleep night; recent `sleep_minutes` land whole on morning rows within one
 sync.
 
+## Sleep UI Honesty — debt sign + Building-baseline row (2026-09-10)
+
+Two production UI bugs found via owner screenshots (GPT relay inspection), fixed on
+`fix/sleep-ui-debt-sign-and-baseline-row`:
+
+- **Debt/surplus sign inverted** (`sleep_architecture_card.dart` `_SleepDebt`): the
+  server's `sleep_debt_minutes = 480 − round(avg_7d_sleep)` makes positive = debt, but
+  the widget read `< 0` as debt — a real 5h 22m debt rendered as "Sleep surplus: 5h
+  22m". Fixed to `> 0`; added the 0 → "Sleep target met" state (honest wording, never
+  "0h 0m surplus"); debt keeps trending-down/attention, surplus keeps
+  trending-up/stable, zero renders trending-flat/stable.
+- **Valid sleep shown as No data** (`recovery_readout_card.dart` `_DriverRow`): a
+  recovery component is excluded when its baseline is immature (`spread > 0 and
+  n_observations >= 3` in SQL), but sleep quality only needs today's value in 1–960
+  minutes — so a measured, valid night showed "Sleep — No data" while the sleep
+  architecture card proved the data existed. New `buildingBaseline` state: when the
+  sleep driver is missing, `today_raw.sleep_minutes` is present, and `sleep_quality`
+  is non-null (the validity proof), the row renders the measurement stacked over a
+  "Building baseline" note (right-aligned, fits the 108pt slot) instead of No data.
+  Gated to sleep only: for other metrics a present-but-out-of-range value can also be
+  unusable, and only sleep quality certifies validity. Semantics label:
+  "Sleep driver, 144 min, building baseline".
+
+**Tests:** inverted expectations corrected (positive → "Sleep debt", negative → "Sleep
+surplus"); new zero-value test; screenshot regression reproducing the 2026-09-10
+morning (quality 50, duration 30, efficiency 88, restorative 37, consistency 95, debt
++322 → "Sleep debt: 5h 22m"; sleep row "144 min / Building baseline", never "No data");
+null-quality guard test (valid-looking sleep value without the proof stays No data).
+Full suite 416/416, analyze clean, format clean.
+
+**Docs:** DESIGN_SYSTEM (both component sections), UX_FLOWS (evidence detail),
+PROGRESS_CONTEXT (workstream row + dated entry), and corrected four stale "31-day
+backfill" claims (ARCHITECTURE, UX_FLOWS onboarding, IMPLEMENTATION_ROADMAP,
+TESTING_STRATEGY) to the real 9-date-initial/8-date-subsequent window — the 31-day
+window was deliberately reduced in Phase 3 and widened to 9/8 dates on 2026-09-06;
+the docs were stale, not the code. DATA_MODEL.md was already correct.
+
 ## Session Duration Cap (2026-08-22)
 
 **Client** (`active_workout_screen.dart`): `_maxSessionSeconds = 10800`, 15-second elapsed

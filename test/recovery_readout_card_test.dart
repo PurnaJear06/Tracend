@@ -17,12 +17,17 @@ Widget _wrap(Widget child, {Brightness brightness = Brightness.dark}) {
 
 ComputedMetrics _metrics({
   int? recovery,
+  int? sleepQuality,
   RecoveryBreakdown? breakdown,
   String dataConfidence = 'medium',
   TodayRaw? todayRaw,
 }) {
   return ComputedMetrics(
-    scores: ComputedScores(recovery: recovery, recoveryBreakdown: breakdown),
+    scores: ComputedScores(
+      recovery: recovery,
+      sleepQuality: sleepQuality,
+      recoveryBreakdown: breakdown,
+    ),
     baselines: const ComputedBaselines(),
     dataConfidence: dataConfidence,
     todayRaw: todayRaw,
@@ -331,6 +336,88 @@ void main() {
       expect(find.text('38 ms · -1.2'), findsOneWidget);
       expect(find.text('52 bpm · +0.5'), findsOneWidget);
       expect(find.text('No data'), findsNWidgets(3));
+    });
+
+    testWidgets(
+      'regression: screenshot 2026-09-10 — valid sleep, immature baseline',
+      (tester) async {
+        // The owner's morning: sleep measured (144 min, passed the backend's
+        // 1-960 gate, sleep quality computed) but the sleep baseline lacks 3
+        // observations, so the sleep driver is 'missing' from recovery. The
+        // row must show the reading + 'Building baseline', never 'No data'.
+        const partial = RecoveryBreakdown(
+          hrvZ: 0.3,
+          rhrZ: 1.9,
+          sleepZ: 0,
+          respRateZ: -0.6,
+          prevStrainZ: -0.6,
+          missingComponents: ['sleep_minutes'],
+        );
+        await tester.pumpWidget(
+          _wrap(
+            RecoveryReadoutCard(
+              computed: _metrics(
+                recovery: 85,
+                breakdown: partial,
+                sleepQuality: 50,
+                dataConfidence: 'medium',
+                todayRaw: const TodayRaw(
+                  hrvMs: 77,
+                  restingHrBpm: 52,
+                  sleepMinutes: 144,
+                  respRateBpm: 17,
+                  dailyStrain: 0,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Sleep row: the measurement with the honest note, not 'No data'.
+        expect(find.text('144 min'), findsOneWidget);
+        expect(find.text('Building baseline'), findsOneWidget);
+        expect(find.text('No data'), findsNothing);
+        expect(
+          find.bySemanticsLabel('Sleep driver, 144 min, building baseline'),
+          findsOneWidget,
+        );
+        // Other rows unaffected: real z-scores render as before.
+        expect(find.text('77 ms · +0.3'), findsOneWidget);
+        expect(find.text('52 bpm · +1.9'), findsOneWidget);
+        expect(find.text('17 bpm · -0.6'), findsOneWidget);
+      },
+    );
+
+    testWidgets('valid sleep value stays No data when quality is null', (
+      tester,
+    ) async {
+      // sleepQuality null means the backend never certified today's sleep
+      // through its 1-960 gate — the row must not claim Building baseline.
+      const partial = RecoveryBreakdown(
+        hrvZ: 0.3,
+        rhrZ: 0.5,
+        sleepZ: 0,
+        respRateZ: 0,
+        prevStrainZ: 0,
+        missingComponents: ['sleep_minutes'],
+      );
+      await tester.pumpWidget(
+        _wrap(
+          RecoveryReadoutCard(
+            computed: _metrics(
+              recovery: 60,
+              breakdown: partial,
+              todayRaw: const TodayRaw(hrvMs: 40, sleepMinutes: 144),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('No data'), findsOneWidget);
+      expect(find.bySemanticsLabel('Sleep driver, no data'), findsOneWidget);
+      expect(find.text('144 min'), findsNothing);
     });
 
     testWidgets('older briefs without today_raw keep z-only rows', (

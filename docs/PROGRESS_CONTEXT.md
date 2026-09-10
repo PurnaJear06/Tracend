@@ -289,6 +289,7 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | CI/CD automation          | **Complete — deployed**              | `docs/CI_CD_DEPLOYMENT.md` | `AGENTS.md` (deployment)                      |
 | Post-review optimizations | **Complete — Passes 0–5 all done (Pass 5 reference + oracle parity 2026-09-08, test-only)** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
 | pgTAP CI parity | **Green in GitHub — 33 files / 928 assertions on a fresh DB (2026-09-09, PR #24)** | `docs/CI_CD_DEPLOYMENT.md` §4.1 | `docs/handoff/backend.md` (2026-09-09 follow-ups-closed note) |
+| Sleep UI honesty | **Fixed — debt sign + Building-baseline row (2026-09-10)** | `docs/DESIGN_SYSTEM.md` (component sections) | this file, "Sleep UI Honesty" entry |
 
 ## Global Current State
 
@@ -332,6 +333,34 @@ ambiguous coaching_date). Prompt restructure separates system/rules from user/me
   client-side (`active_workout_screen.dart`) and server-side (`complete_workout` RPC) to 10800s.
   Raw historical value left untouched (no data rewrite). Migration:
   `20260822120000_session_duration_cap.sql` (additive, deployed 2026-08-22).
+
+## Sleep UI Honesty (2026-09-10)
+
+Two production UI bugs found via owner screenshots (GPT relay inspection), both fixed in
+`fix/sleep-ui-debt-sign-and-baseline-row`:
+
+- **Debt/surplus sign inverted** (`sleep_architecture_card.dart`): SQL defines
+  `sleep_debt_minutes = 480 − round(avg_7d_sleep)` — positive = debt — but the widget read
+  `< 0` as debt, rendering "Sleep surplus: 5h 22m" for a genuine 5h 22m debt. Fixed the
+  comparison, added the 0 → "Sleep target met" state (never "0h 0m surplus"), corrected
+  test expectations, and a new zero-value test.
+- **Valid sleep shown as No data** (`recovery_readout_card.dart`): recovery requires a
+  mature baseline (`spread > 0`, `n_observations ≥ 3`) per component, but sleep quality
+  only requires today's value to pass the 1–960-minute gate. So a measured, valid night
+  could show "Sleep — No data" on the Recovery card while the Sleep Architecture card
+  proved the data existed. Now, when the sleep driver is missing but the value is proven
+  valid (non-null `sleepQuality` + `today_raw.sleep_minutes`), the row shows the
+  measurement with a "Building baseline" note. Gated to sleep only — other metrics keep
+  No data because a present-but-out-of-range value can also be unusable. Screenshot
+  regression test reproduces the 2026-09-10 morning exactly.
+
+Also investigated (no change — intentional): docs claimed the first HealthKit sync
+backfills 31 days, but `healthSyncStart` requests 9 dates initially / 8 subsequently.
+The 31-day window was deliberately reduced to 7 (Phase 3, handoff/backend.md), then
+widened to 9/8 dates for night capture (2026-09-06, handoff/frontend.md). DATA_MODEL.md
+was already correct; ARCHITECTURE/UX_FLOWS/ROADMAP/TESTING_STRATEGY claims were stale
+and are corrected to the 9-date reality in this PR. The server 31-day max-window cap
+stays (it is a bound, not a promise).
 
 ## HealthKit Quick-Complete (2026-07-18)
 

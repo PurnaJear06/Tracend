@@ -267,8 +267,8 @@ parity, and activation.
 migrations added a service-only validated import, imported-plan seed bypass, and timezone-safe
 local-date handling. The hosted transaction replaced setup fixtures with newly versioned
 owner-confirmed goal, plan, targets, workouts, and progress checkpoints; prior versions remain and
-the known fixture measurement is explicitly superseded. The iOS client now performs one bounded
-31-day Apple Health backfill, then returns to seven-day overlap sync. pgTAP passes 264/264 and
+the known fixture measurement is explicitly superseded. The iOS client performs one bounded
+9-date Apple Health backfill (today−8), then returns to 8-date overlap sync. pgTAP passes 264/264 and
 Flutter passes 56/56. DeepSeek was rejected for restricted data after official privacy review.
 
 ## 10. Stability Hardening (2026-07-19)

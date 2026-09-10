@@ -17,6 +17,9 @@ import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 /// - score null: '--' + honest empty copy; driver rows only with a breakdown
 /// - driver missing: row reports 'No data' — a missing component is never
 ///   rendered as an at-baseline '+0.0'
+/// - driver missing but value proven valid (sleep with a non-null quality):
+///   row shows the measurement + 'Building baseline' — real reading,
+///   immature baseline, honest about both
 /// - cold_start / low confidence: 'Building baseline' caption under the score
 class RecoveryReadoutCard extends StatelessWidget {
   const RecoveryReadoutCard({required this.computed, super.key});
@@ -89,7 +92,11 @@ class RecoveryReadoutCard extends StatelessWidget {
           ),
           if (breakdown != null) ...[
             const SizedBox(height: TracendSpacing.md),
-            _DriverRows(breakdown: breakdown, todayRaw: computed.todayRaw),
+            _DriverRows(
+              breakdown: breakdown,
+              todayRaw: computed.todayRaw,
+              sleepQualityProven: computed.scores.sleepQuality != null,
+            ),
           ],
         ],
       ),
@@ -166,15 +173,26 @@ class _BandChip extends StatelessWidget {
 }
 
 class _DriverRows extends StatelessWidget {
-  const _DriverRows({required this.breakdown, required this.todayRaw});
+  const _DriverRows({
+    required this.breakdown,
+    required this.todayRaw,
+    required this.sleepQualityProven,
+  });
 
   final RecoveryBreakdown breakdown;
 
   /// Today's measured values (brief ≥ 1.4). When present, each row shows
   /// the raw measurement next to the z-score so a driver reads as
-  /// "38 ms · −1.2" — a deviation from baseline, not a broken unit.
+  /// "38 ms · +1.2" — a deviation from baseline, not a broken unit.
   /// Null on older payloads: rows fall back to the z-score alone.
   final TodayRaw? todayRaw;
+
+  /// Whether today's sleep passed the backend's validity gate. A non-null
+  /// sleep quality proves sleep_minutes was measured and within 1–960
+  /// minutes, so a simultaneously 'missing' sleep driver row means the
+  /// value is real but its baseline is immature — the row then shows the
+  /// measurement with a 'Building baseline' note instead of 'No data'.
+  final bool sleepQualityProven;
 
   @override
   Widget build(BuildContext context) {
@@ -211,6 +229,14 @@ class _DriverRows extends StatelessWidget {
             color: drivers[i].$4,
             missing: missing.contains(drivers[i].$2),
             rawValue: _rawLabel(drivers[i].$2),
+            // Gated to sleep only: for other metrics a present-but-out-of-range
+            // value can also be unusable, and only sleep quality certifies
+            // sleep validity.
+            buildingBaseline:
+                drivers[i].$2 == 'sleep_minutes' &&
+                missing.contains(drivers[i].$2) &&
+                todayRaw?.sleepMinutes != null &&
+                sleepQualityProven,
           ),
         ],
       ],
@@ -253,6 +279,13 @@ class _DriverRows extends StatelessWidget {
 /// When [missing] is true the component did not contribute to the score
 /// (value or baseline unavailable). The row reports 'No data' instead of an
 /// at-baseline '+0.0', which would falsely imply a measured, neutral reading.
+///
+/// When [buildingBaseline] is true the component's value is real and valid —
+/// verified for sleep by a non-null sleep quality, the backend's 1–960-minute
+/// gate — but the baseline is too immature to compare against (fewer than 3
+/// observations or zero spread). The row shows the measurement with a
+/// 'Building baseline' note: honest about the reading, honest about the
+/// missing comparison.
 class _DriverRow extends StatelessWidget {
   const _DriverRow({
     required this.label,
@@ -260,6 +293,7 @@ class _DriverRow extends StatelessWidget {
     required this.color,
     this.missing = false,
     this.rawValue,
+    this.buildingBaseline = false,
   });
 
   final String label;
@@ -271,6 +305,10 @@ class _DriverRow extends StatelessWidget {
   /// brief predates today_raw or the component was not measured.
   final String? rawValue;
 
+  /// Value measured and valid but its baseline still immature — see class
+  /// doc. Only ever true for sleep, and only when [missing] is true.
+  final bool buildingBaseline;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
@@ -280,15 +318,23 @@ class _DriverRow extends StatelessWidget {
         : '${zScore >= 0 ? '+' : ''}${zScore.toStringAsFixed(1)}';
     final raw = rawValue;
     // Raw value only ever accompanies a real z-score; a missing component
-    // reports 'No data' alone.
-    final detail = missing || raw == null ? zText : '$raw · $zText';
+    // reports 'No data' alone — unless the value is proven valid and only
+    // the baseline is immature, in which case it renders with the note.
+    final detail = missing
+        ? (buildingBaseline && raw != null ? raw : zText)
+        : raw == null
+        ? zText
+        : '$raw · $zText';
+    final semanticsLabel = missing
+        ? (buildingBaseline && raw != null
+              ? '$label driver, $raw, building baseline'
+              : '$label driver, no data')
+        : raw == null
+        ? '$label driver, z-score $zText'
+        : '$label driver, $raw, z-score $zText';
 
     return Semantics(
-      label: missing
-          ? '$label driver, no data'
-          : raw == null
-          ? '$label driver, z-score $zText'
-          : '$label driver, $raw, z-score $zText',
+      label: semanticsLabel,
       excludeSemantics: true,
       child: Row(
         children: [
@@ -348,20 +394,51 @@ class _DriverRow extends StatelessWidget {
             // Wide enough for '411 min · +0.8'; the z-only rows of older
             // briefs simply leave slack on the left.
             width: 108,
-            child: Text(
-              detail,
-              textAlign: TextAlign.right,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                fontFamily: TracendFonts.monoFamily,
-                fontSize: 11,
-                color: missing
-                    ? colors.textSecondary
-                    : zScore >= 0
-                    ? colors.stateStable
-                    : colors.stateAttention,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
+            child: buildingBaseline && missing && raw != null
+                ? Column(
+                    // The 'raw · note' pair does not fit one 108pt mono line,
+                    // so stack the measurement over the note, right-aligned.
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        raw,
+                        textAlign: TextAlign.right,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              fontFamily: TracendFonts.monoFamily,
+                              fontSize: 11,
+                              color: colors.textPrimary,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                      ),
+                      const SizedBox(height: TracendSpacing.xxs),
+                      Text(
+                        'Building baseline',
+                        textAlign: TextAlign.right,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              fontSize: 9,
+                              color: colors.textSecondary,
+                            ),
+                      ),
+                    ],
+                  )
+                : Text(
+                    detail,
+                    textAlign: TextAlign.right,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontFamily: TracendFonts.monoFamily,
+                      fontSize: 11,
+                      color: missing
+                          ? colors.textSecondary
+                          : zScore >= 0
+                          ? colors.stateStable
+                          : colors.stateAttention,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
           ),
         ],
       ),
