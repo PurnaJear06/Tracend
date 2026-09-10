@@ -16,6 +16,7 @@ import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 /// - full: score + band chip + sub-score rows + debt pill
 /// - score null: 'No data' + honest empty copy
 /// - cold_start / low confidence: 'Building baseline' caption under the score
+/// - debt pill: positive = debt, negative = surplus, 0 = target met
 class SleepArchitectureCard extends StatelessWidget {
   const SleepArchitectureCard({required this.computed, super.key});
 
@@ -258,16 +259,23 @@ class _SleepDebt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    final hasDebt = debtMinutes < 0;
+    // SQL convention (daily_computed_metrics): sleep_debt_minutes =
+    // 480 - round(avg_7d_sleep_minutes), so a POSITIVE value is debt (avg
+    // sleep under the 8-hour target) and a negative value is surplus.
+    final hasDebt = debtMinutes > 0;
     final hours = debtMinutes.abs() ~/ 60;
     final mins = debtMinutes.abs() % 60;
     final label = hasDebt
         ? 'Sleep debt: ${hours}h ${mins}m'
-        : 'Sleep surplus: ${hours}h ${mins}m';
-    final icon = hasDebt
+        : debtMinutes < 0
+        ? 'Sleep surplus: ${hours}h ${mins}m'
+        : 'Sleep target met';
+    final icon = debtMinutes > 0
         ? Icons.trending_down_rounded
-        : Icons.trending_up_rounded;
-    final color = hasDebt ? colors.stateAttention : colors.stateStable;
+        : debtMinutes < 0
+        ? Icons.trending_up_rounded
+        : Icons.trending_flat_rounded;
+    final color = debtMinutes > 0 ? colors.stateAttention : colors.stateStable;
 
     return Semantics(
       label: label,

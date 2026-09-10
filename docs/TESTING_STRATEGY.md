@@ -62,7 +62,7 @@ accepted as a permanent retry.
   `scripts/test-db.sh` ships the fixtures into the pgTAP container.
 - **Contract fixture:** `training_hub_v1_4.json` validates Flutter can parse enriched RPC shape with
   baselines, scores, and eligibility fields.
-- **Flutter unit tests (3):** healthSyncStart backfill window (7-day initial, 6-day subsequent),
+- **Flutter unit tests (3):** healthSyncStart backfill window (9-date initial, 8-date subsequent),
   deriveHealthConnectionState bands, canonical normalization preservation.
 
 ### Integration
@@ -71,7 +71,7 @@ accepted as a permanent retry.
 - Supabase Auth native Sign in with Apple using fixtures and nonce/error cases;
 - HealthKit normalization for authorized, partial, stale, duplicate, unavailable, and empty
   responses;
-- initial 31-day HealthKit backfill followed by seven-day overlap sync;
+- initial 9-date HealthKit backfill followed by 8-date overlap sync;
 - upload authorization, purpose binding, signed-read expiry, and deletion;
 - provider adapters using sanitized contracts, never production health data;
 - provider selection defaults to mock, the live-provider kill switch and paid- data gate fail

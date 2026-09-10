@@ -305,9 +305,9 @@ Execute grants are explicit and RLS/ownership rules remain enforced.
 5. A transaction upserts daily summaries and records the sync run.
 6. Feature snapshots consume only successfully normalized records.
 
-The first successful owner-device sync reads a bounded 31-day window so recent project history can
-be restored; later syncs read seven days. Only normalized daily summaries cross the device boundary,
-and the server contract rejects a window longer than 31 days.
+The first successful owner-device sync reads a bounded 9-date window (today−8) so recent project
+history can be restored; later syncs read eight dates (today−7). Only normalized daily summaries
+cross the device boundary, and the server contract rejects a window longer than 31 days.
 
 An empty response never proves permission denial.
 

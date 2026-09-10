@@ -217,7 +217,12 @@ with horizontal z-score bars and signed z values. Bar fill clamps z to ±2 for l
 labels and semantics always report the true z-score. Cold start shows `--` with honest
 next-step copy; low confidence adds "Building baseline". Unusable drivers (no value today
 or no usable baseline) render a No data row instead of a zero bar (Chunk 7), and a fully
-unusable recovery shows `--` rather than a fabricated score. Replaces the earlier centered
+unusable recovery shows `--` rather than a fabricated score. One gated exception (fixed
+2026-09-10): a sleep row whose value is proven valid (non-null sleep quality, the
+backend's 1–960-minute gate) but whose baseline is immature (< 3 observations) shows the
+measurement with a "Building baseline" note instead of No data — the reading is real,
+only the comparison is missing; other metrics keep No data because a present-but-
+out-of-range value can also be unusable. Replaces the earlier centered
 recovery ring and the recovery tile of the readiness strip. Training load (ACWR) is not
 part of this card — it renders as a display-only row inside `SessionPlanCard`.
 
@@ -231,9 +236,11 @@ rows (Duration, Efficiency, Restorative, Consistency) — label and rounded valu
 line, 0–100 bar beneath, no fixed-width columns, so accessibility text scales reflow
 rather than crowd. Cold start or low confidence adds "Building baseline" under the
 score; a null quality renders "No data" with honest copy. Sleep debt/surplus renders as
-a semantic pill. Baseline values are NOT repeated here — the recovery readout's driver
-rows carry them, and the card keeps one source of truth per screen. Every data element
-exposes a Semantics label (score, each sub-score, debt) per §8.
+a semantic pill (sign fixed 2026-09-10: `sleep_debt_minutes` is `480 − 7-day average`,
+so a positive value is debt and a negative value is surplus; 0 renders "Sleep target
+met", never "0h 0m surplus"). Baseline values are NOT repeated here — the recovery
+readout's driver rows carry them, and the card keeps one source of truth per screen.
+Every data element exposes a Semantics label (score, each sub-score, debt) per §8.
 
 ### `TrajectoryTrend`
 

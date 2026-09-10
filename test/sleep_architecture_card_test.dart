@@ -25,7 +25,7 @@ ComputedMetrics _fullMetrics() => ComputedMetrics(
       restorativeScore: 43.4,
       consistencyScore: 95.6,
     ),
-    sleepDebtMinutes: -65,
+    sleepDebtMinutes: 65,
   ),
   baselines: const ComputedBaselines(),
   dataConfidence: 'medium',
@@ -76,9 +76,9 @@ void main() {
       expect(find.textContaining('1h 5m'), findsOneWidget);
     });
 
-    testWidgets('shows sleep surplus badge', (tester) async {
+    testWidgets('shows sleep surplus badge for negative debt', (tester) async {
       final m = ComputedMetrics(
-        scores: const ComputedScores(sleepQuality: 80, sleepDebtMinutes: 30),
+        scores: const ComputedScores(sleepQuality: 80, sleepDebtMinutes: -30),
         baselines: const ComputedBaselines(),
         dataConfidence: 'medium',
       );
@@ -86,6 +86,22 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Sleep surplus'), findsOneWidget);
+      expect(find.textContaining('Sleep debt'), findsNothing);
+    });
+
+    testWidgets('zero debt reads as target met, not 0h 0m surplus', (
+      tester,
+    ) async {
+      final m = ComputedMetrics(
+        scores: const ComputedScores(sleepQuality: 80, sleepDebtMinutes: 0),
+        baselines: const ComputedBaselines(),
+        dataConfidence: 'medium',
+      );
+      await tester.pumpWidget(_wrap(SleepArchitectureCard(computed: m)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sleep target met'), findsOneWidget);
+      expect(find.textContaining('0h 0m'), findsNothing);
     });
 
     testWidgets('does not repeat baselines from the recovery readout', (
