@@ -6,8 +6,14 @@ insert into auth.users(id, role) values
   ('22222222-2222-4444-8444-222222222222', 'authenticated');
 
 insert into public.training_plans(id, user_id, title, source) values
-  ('11111111-3111-4444-8444-111111111111', '11111111-1111-4444-8444-111111111111', 'HK plan', 'user'),
-  ('22222222-3222-4444-8444-222222222222', '22222222-2222-4444-8444-222222222222', 'Other plan', 'user');
+  -- source 'imported' keeps the training_plan_version_seed_workouts trigger
+  -- from seeding its own Mon/Wed/Fri workouts for these plan versions: the
+  -- seed would collide with the orders this fixture inserts below
+  -- (on conflict do nothing skips them), leaving two workouts on some
+  -- weekdays and none on others — a date-dependent failure that first
+  -- surfaced on a Friday (2026-09-11). This fixture owns all 7 weekdays.
+  ('11111111-3111-4444-8444-111111111111', '11111111-1111-4444-8444-111111111111', 'HK plan', 'imported'),
+  ('22222222-3222-4444-8444-222222222222', '22222222-2222-4444-8444-222222222222', 'Other plan', 'imported');
 
 insert into public.training_plan_versions(
   id, user_id, plan_id, version_number, status, block_weeks, sessions_per_week,

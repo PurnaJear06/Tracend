@@ -604,6 +604,14 @@ hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm.
   session is attributed to the local day it ENDS (a 23:00→07:00 night lands whole on the
   morning's row). All other metrics attribute by sample start day. Attribution is
   client-side (`normalizeHealthSamples`); the Edge function performs no bucketing.
+- Sleep totals: `sleep_minutes` is the UNION of every asleep-category interval
+  (unspecified + Core + Deep + REM), and each stage column is the union within that
+  stage. A night can mix categories (a staged, scheduled stretch plus auto-detected
+  unspecified fragments), so a category preference discards measured minutes (fixed
+  2026-09-11: production stored 146 of 386 measured minutes) and a plain sum
+  double-counts overlapping sources. An awake-only night is `0`, not NULL — the
+  `health_sync_v1` contract couples the sleep type to a defined `sleep_minutes`, and the
+  server's 1–960 scoring gate reads 0 as absence.
 - Sync window: today−7 for regular syncs (8 dates), today−8 for the initial backfill
   (9 dates) — wide enough that the fetch captures a full night whose start falls the
   evening before the window's first date (HealthKit queries match by start instant).
