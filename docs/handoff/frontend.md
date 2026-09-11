@@ -45,8 +45,9 @@ visual system behavior belongs in `docs/DESIGN_SYSTEM.md`.
   train-of-thought steps with evidence IDs. Preference statements are detected and prompt a
   `PreferencePromptChip` with save/dismiss actions, persisting via `persist_coach_preference` RPC.
   Flutter 68/68 tests pass.
-- Live Coach replies now visibly identify **Qwen AI response**. A malformed or unavailable provider
-  response is a retryable error, never generic fallback prose shown as a successful Coach answer.
+- Live Coach replies visibly identify their provider. Coach response schema 1.1 maps stable server
+  failure codes to safe inline/Snackbar copy and never displays raw parser/provider details. The
+  client timeout is 45 seconds so the Edge Function can complete its bounded repair path.
   The signed hosted build with this behavior is installed and launched on the owner iPhone.
 - Coach now exposes deterministic source coverage and separates model evidence, actual data gaps,
   and suggested next actions. This prevents generated bullets from appearing to be evidence and

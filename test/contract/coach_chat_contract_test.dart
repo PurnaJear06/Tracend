@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tracend/features/coach/coach_repository.dart';
 
 Map<String, dynamic> _loadFixtureJson(String name) {
   final file = File('test/contract/fixtures/$name');
@@ -23,7 +24,49 @@ void main() {
     test('fixture is valid JSON and has message envelope', () {
       final json = _loadFixtureJson(fixture);
 
+      expect(json['schema_version'], '1.1');
       expect(json['message'], isA<Map>());
+    });
+
+    test(
+      'failure fixture exposes a safe versioned code without raw detail',
+      () {
+        final json = _loadFixtureJson('coach_chat_failure_response_v1_1.json');
+
+        expect(json['schema_version'], '1.1');
+        expect(json['error'], 'chat_unavailable');
+        expect(json['code'], 'provider_response_invalid');
+        expect(json.containsKey('detail'), isFalse);
+        expect(json.containsKey('provider'), isFalse);
+        expect(json.containsKey('model'), isFalse);
+        expect(
+          jsonEncode(json),
+          isNot(contains('Unexpected end of JSON input')),
+        );
+      },
+    );
+
+    test('Flutter maps stable failure codes to safe visible messages', () {
+      expect(
+        coachChatFailureMessage('provider_response_invalid'),
+        'Coach couldn’t complete that response. Please try again.',
+      );
+      expect(
+        coachChatFailureMessage('provider_response_truncated'),
+        'Coach couldn’t complete that response. Please try again.',
+      );
+      expect(
+        coachChatFailureMessage('provider_response_empty'),
+        'Coach couldn’t complete that response. Please try again.',
+      );
+      expect(
+        coachChatFailureMessage('provider_timeout'),
+        'Coach took too long to respond. Please try again.',
+      );
+      expect(
+        coachChatFailureMessage('provider_http_error'),
+        'Coach is unavailable right now. Your approved plan is unchanged.',
+      );
     });
 
     test(

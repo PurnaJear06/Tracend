@@ -96,13 +96,27 @@ class CoachContextSource {
 }
 
 class CoachUnavailableException implements Exception {
-  const CoachUnavailableException(this.message, {this.retryAfterSeconds});
+  const CoachUnavailableException(
+    this.message, {
+    this.code,
+    this.retryAfterSeconds,
+  });
   final String message;
+  final String? code;
   final int? retryAfterSeconds;
 
   @override
   String toString() => message;
 }
+
+String coachChatFailureMessage(String? code) => switch (code) {
+  'provider_response_empty' ||
+  'provider_response_truncated' ||
+  'provider_response_invalid' =>
+    'Coach couldn’t complete that response. Please try again.',
+  'provider_timeout' => 'Coach took too long to respond. Please try again.',
+  _ => 'Coach is unavailable right now. Your approved plan is unchanged.',
+};
 
 abstract interface class CoachContextRepository {
   Future<List<CoachContextSource>> loadContextStatus();
@@ -226,18 +240,13 @@ class SupabaseCoachRepository
             'idempotency_key': _uuid.v4(),
           },
         )
-        .timeout(const Duration(seconds: 30));
+        .timeout(const Duration(seconds: 45));
     if (response.status != 200 || response.data is! Map) {
-      String detail = 'unavailable';
+      String? code;
       int? retryAfter;
       if (response.data is Map) {
         final d = Map<String, dynamic>.from(response.data as Map);
-        final serverDetail = d['detail'] as String?;
-        if (serverDetail != null && serverDetail.isNotEmpty) {
-          detail = serverDetail;
-        } else {
-          detail = (d['error'] ?? d['message'] ?? detail) as String;
-        }
+        code = d['code'] as String?;
         final rawRetry = d['retry_after_seconds'];
         if (rawRetry is int) {
           retryAfter = rawRetry;
@@ -246,7 +255,8 @@ class SupabaseCoachRepository
         }
       }
       throw CoachUnavailableException(
-        'Coach chat is $detail.',
+        coachChatFailureMessage(code),
+        code: code,
         retryAfterSeconds: retryAfter,
       );
     }

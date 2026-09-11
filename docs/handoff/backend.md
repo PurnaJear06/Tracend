@@ -1,5 +1,17 @@
 # Backend Handoff
 
+## Coach Chat Reliability Hotfix (2026-09-11)
+
+The `fix/coach-chat-json-reliability` hotfix replaces loose plan-keyword routing with
+explicit create/modify intent, so the owner's exact mixed recovery/split beta prompt routes to
+`recovery` while an explicit request such as “create a new split” still routes to `plan_change`.
+DeepSeek chat now requires `finish_reason=stop`, uses a 4,096-token ceiling, and gives only
+empty/truncated/invalid output one non-thinking temperature-0 repair. Independent 28-second and
+10-second attempt controllers fit inside a 40-second Edge budget. Response schema 1.1 exposes only
+stable failure codes; failed-run persistence and Sentry tags retain sanitized diagnostics. Flutter
+uses a 45-second end-to-end timeout and maps codes to safe visible copy. No migration or manual
+deployment is required; merge-time automation deploys `coach-chat`.
+
 ## Active Personal Coaching Work
 
 Hosted forward migrations `20260716120000` through `20260716122000` deploy Coach Context v4:

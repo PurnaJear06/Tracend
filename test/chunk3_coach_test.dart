@@ -108,6 +108,23 @@ void main() {
     expect(repository.sentQuestions, contains('What should I eat next?'));
   });
 
+  testWidgets('Coach chat shows a safe alert without parser details', (
+    tester,
+  ) async {
+    await _tall(tester);
+    await tester.pumpWidget(_app(_ChatFailureRepository()));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'How is my recovery?');
+    await tester.tap(find.byTooltip('Send message'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Coach couldn’t complete that response. Please try again.'),
+      findsWidgets,
+    );
+    expect(find.textContaining('Unexpected end of JSON input'), findsNothing);
+  });
+
   testWidgets('long decision reason expands beyond six lines', (tester) async {
     final longReason = List.generate(
       12,
@@ -290,4 +307,13 @@ class _ChatRepository
 
   @override
   Future<void> deleteThread(String threadId) async {}
+}
+
+class _ChatFailureRepository extends _ChatRepository {
+  @override
+  Future<CoachMessage> sendMessage(String threadId, String question) =>
+      throw const CoachUnavailableException(
+        'Coach couldn’t complete that response. Please try again.',
+        code: 'provider_response_invalid',
+      );
 }

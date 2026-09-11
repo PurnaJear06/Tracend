@@ -206,9 +206,11 @@ time), in ordinary coaching language. Deterministic calculation and AI interpret
 labeled separately. Training and Nutrition remain perspectives in one controlled decision
 pipeline, not independent agents. The Coach tab provides direct user questions through the
 same workflow and never behaves like three separate autonomous chatbots. A live assistant
-message is labeled with its provider (for the owner test, **Qwen AI response**); a
-provider or validation failure never substitutes generic coaching text and instead shows a
-retryable unavailable state.
+message is labeled with its provider; a provider or validation failure never substitutes generic
+coaching text. Coach keeps the existing visible inline alert and Snackbar but maps the server's
+stable code to safe copy: incomplete responses ask the user to try again, timeouts say the Coach
+took too long, and other temporary failures state that the approved plan is unchanged. Raw parser,
+provider, and HTTP details never appear on the phone.
 
 Today uses a real timeline for check-in, workout, meal, and review actions. The primary
 decision always uses **Do this next** and remains actionable when AI is offline. A missing
