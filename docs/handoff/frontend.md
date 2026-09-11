@@ -704,6 +704,37 @@ Post-deploy owner check (dashboard SQL editor): `present_types` gains `resp_rate
 a watch-sleep night; recent `sleep_minutes` land whole on morning rows within one
 sync.
 
+## Sleep Aggregation Union — mixed-category nights (2026-09-11)
+
+Follow-on to Sleep UI Honesty: owner phone verification (146 min in Recovery) vs
+Apple Health (6h 42m) triggered the aggregation investigation. The production row
+for 2026-09-10 settled it — `sleep_minutes` 146 while the same row's stage columns
+held 240 staged minutes: the night mixed a staged 4-hour scheduled stretch with
+auto-detected unspecified fragments, and `_sleepMinutes`'s category preference
+(unspecified-first, early return) discarded everything the Watch staged. Root cause:
+the code assumed a night is either unspecified or staged, never both — every test
+encoded the same either/or assumption.
+
+Fix on `fix/sleep-aggregation-union` (`health_models.dart`):
+
+- `sleep_minutes` = **union of all asleep-category intervals** (unspecified + Core +
+  Deep + REM) via a merge-intervals helper. A preference discards measured chunks
+  (146 of 386 on 2026-09-10); a plain sum double-counts overlapping duplicate
+  sources. Per-stage columns get the same union within the stage.
+- Awake-only nights emit `0`, not null — `health_sync_v1` couples the sleep type to
+  a defined `sleep_minutes`, and the server's 1–960 scoring gate reads 0 as
+  absence. The unreachable `_durationMinutes` fallback is removed.
+- Tests: regression reproducing the 2026-09-10 night (mixed disjoint chunks → 386,
+  stages 186/34/20, awake 17), overlapping sources (60, not 120), awake-only (0).
+  One impossible fixture corrected (stage-less sleep sample — every HealthKit sleep
+  type carries a stage). 419 tests pass, 0 analysis issues.
+
+No server change, no migration, no schema_version bump. The daily row is
+client-upserted, so the next HealthKit refresh re-sends the window with correct
+totals and production self-corrects. Expected post-fix owner view: Sleep row
+"386 min · Building baseline", debt pill "3h 22m" (7-day avg 278), duration
+subscore ≈ 80.
+
 ## Sleep UI Honesty — debt sign + Building-baseline row (2026-09-10)
 
 Two production UI bugs found via owner screenshots (GPT relay inspection), fixed on

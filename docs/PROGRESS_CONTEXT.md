@@ -290,6 +290,7 @@ Stability infrastructure deployed 2026-07-19, context budget guard + health-chec
 | Post-review optimizations | **Complete — Passes 0–5 all done (Pass 5 reference + oracle parity 2026-09-08, test-only)** | [docs/plans/2026-09-04-optimization-plan.md](plans/2026-09-04-optimization-plan.md) | [docs/reviews/2026-09-04-full-project-review.md](reviews/2026-09-04-full-project-review.md) |
 | pgTAP CI parity | **Green in GitHub — 33 files / 928 assertions on a fresh DB (2026-09-09, PR #24)** | `docs/CI_CD_DEPLOYMENT.md` §4.1 | `docs/handoff/backend.md` (2026-09-09 follow-ups-closed note) |
 | Sleep UI honesty | **Fixed — debt sign + Building-baseline row (2026-09-10)** | `docs/DESIGN_SYSTEM.md` (component sections) | this file, "Sleep UI Honesty" entry |
+| Sleep aggregation | **Fixed — asleep-category interval union (2026-09-11)** | `docs/DATA_MODEL.md` (Health Sync Semantics), `docs/TESTING_STRATEGY.md` | this file, "Sleep Aggregation Union" entry |
 
 ## Global Current State
 
@@ -333,6 +334,30 @@ ambiguous coaching_date). Prompt restructure separates system/rules from user/me
   client-side (`active_workout_screen.dart`) and server-side (`complete_workout` RPC) to 10800s.
   Raw historical value left untouched (no data rewrite). Migration:
   `20260822120000_session_duration_cap.sql` (additive, deployed 2026-08-22).
+
+## Sleep Aggregation Union (2026-09-11)
+
+Follow-on to the Sleep UI Honesty work: owner phone verification (146 min shown) vs
+Apple Health (6h 42m asleep) exposed a client aggregation bug. The production row for
+2026-09-10 proved it — `sleep_minutes` 146 (unspecified-only, the old category
+preference) while the same row's stage columns held 240 staged minutes (Core 186 +
+Deep 34 + REM 20): 386 measured asleep minutes, two-thirds discarded. The first
+4-hour stretch was staged (scheduled sleep); the later fragmented chunks were
+auto-detected unspecified — the old `_sleepMinutes` assumed a night is either
+unspecified or staged, never both, and production disproved it.
+
+Fixed in `fix/sleep-aggregation-union`: `sleep_minutes` is now the **union of all
+asleep-category intervals** (unspecified + Core + Deep + REM), and each stage column
+is the union within that stage — a preference silently discards chunks, a plain sum
+double-counts overlapping duplicate sources. An awake-only night is `0`, not NULL
+(the `health_sync_v1` contract couples the sleep type to a defined `sleep_minutes`,
+and the server's 1–960 scoring gate reads 0 as absence). The unreachable
+`_durationMinutes` fallback was removed. Regression tests reproduce the
+2026-09-10 night exactly (mixed disjoint chunks → 386), plus overlapping sources
+(union, not sum) and awake-only (0, not null). No server change, no migration, no
+schema_version bump — the daily row is client-upserted, so the next HealthKit
+refresh self-corrects production history. Post-fix expectations: Sleep row
+"386 min · Building baseline", debt ≈ 3h 22m (7-day avg 278), duration subscore ≈ 80.
 
 ## Sleep UI Honesty (2026-09-10)
 

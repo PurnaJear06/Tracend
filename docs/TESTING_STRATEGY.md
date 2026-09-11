@@ -71,6 +71,9 @@ accepted as a permanent retry.
 - Supabase Auth native Sign in with Apple using fixtures and nonce/error cases;
 - HealthKit normalization for authorized, partial, stale, duplicate, unavailable, and empty
   responses;
+- sleep aggregation: the daily total and per-stage columns are the union of
+  asleep-category intervals, covering mixed-category nights (staged + unspecified
+  chunks), overlapping duplicate sources, and awake-only nights (0, not NULL);
 - initial 9-date HealthKit backfill followed by 8-date overlap sync;
 - upload authorization, purpose binding, signed-read expiry, and deletion;
 - provider adapters using sanitized contracts, never production health data;

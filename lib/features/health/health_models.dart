@@ -421,40 +421,55 @@ double? _sum(List<RawHealthSample> samples, HealthMetric metric) {
       : values.fold<double>(0, (total, sample) => total + sample.value);
 }
 
-int? _durationMinutes(List<RawHealthSample> samples, HealthMetric metric) {
-  final values = samples.where((sample) => sample.metric == metric);
-  return values.isEmpty
-      ? null
-      : values.fold<int>(
-          0,
-          (total, sample) =>
-              total + sample.end.difference(sample.start).inMinutes,
-        );
-}
-
 int? _sleepMinutes(List<RawHealthSample> samples) {
-  final asleep = _sleepStageMinutes(samples, SleepStage.asleep);
+  // The total is the UNION of every asleep-category interval — unspecified,
+  // Core, Deep, and REM. Production nights mix categories (a staged scheduled
+  // stretch plus auto-detected unspecified fragments — on 2026-09-10 a
+  // category preference stored 146 of 386 measured minutes), and separate
+  // sources can record the same hours, so a preference silently discards
+  // whole chunks and a plain sum double-counts overlaps.
+  final asleep = _unionMinutes(
+    samples.where(
+      (sample) =>
+          sample.sleepStage != null && sample.sleepStage != SleepStage.awake,
+    ),
+  );
   if (asleep != null) return asleep;
-  final stages = [
-    _sleepStageMinutes(samples, SleepStage.light),
-    _sleepStageMinutes(samples, SleepStage.deep),
-    _sleepStageMinutes(samples, SleepStage.rem),
-  ];
-  final available = stages.whereType<int>().toList();
-  return available.isEmpty
-      ? _durationMinutes(samples, HealthMetric.sleep)
-      : available.fold<int>(0, (total, value) => total + value);
+  // A night where only awake was observed is 0, not null: the
+  // health_sync_v1 contract couples the sleep type to a defined
+  // sleep_minutes, and the server's 1-960 scoring gate reads 0 as
+  // absence.
+  return samples.any((sample) => sample.metric == HealthMetric.sleep)
+      ? 0
+      : null;
 }
 
 int? _sleepStageMinutes(List<RawHealthSample> samples, SleepStage stage) {
-  final values = samples.where((sample) => sample.sleepStage == stage);
-  return values.isEmpty
-      ? null
-      : values.fold<int>(
-          0,
-          (total, sample) =>
-              total + sample.end.difference(sample.start).inMinutes,
-        );
+  // Same union discipline per stage: two sources can stage the same
+  // interval, and a plain sum would double-count it.
+  return _unionMinutes(samples.where((sample) => sample.sleepStage == stage));
+}
+
+/// Minutes covered by the samples' [start, end] intervals, with overlapping
+/// or abutting intervals merged so each span counts once. Null when there
+/// are no samples.
+int? _unionMinutes(Iterable<RawHealthSample> samples) {
+  final intervals = [for (final sample in samples) (sample.start, sample.end)]
+    ..sort((left, right) => left.$1.compareTo(right.$1));
+  if (intervals.isEmpty) return null;
+  var covered = 0;
+  var start = intervals.first.$1;
+  var end = intervals.first.$2;
+  for (final (sampleStart, sampleEnd) in intervals.skip(1)) {
+    if (sampleStart.isAfter(end)) {
+      covered += end.difference(start).inMinutes;
+      start = sampleStart;
+      end = sampleEnd;
+    } else if (sampleEnd.isAfter(end)) {
+      end = sampleEnd;
+    }
+  }
+  return covered + end.difference(start).inMinutes;
 }
 
 double? _latest(List<RawHealthSample> samples, HealthMetric metric) {

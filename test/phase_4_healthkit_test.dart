@@ -22,6 +22,7 @@ void main() {
           day.subtract(const Duration(hours: 8)),
           end: day.subtract(const Duration(hours: 1)),
           id: 'sleep-a',
+          sleepStage: SleepStage.asleep,
         ),
         _sample(HealthMetric.weight, 76.2, day, id: 'weight-a'),
         _sample(HealthMetric.restingHeartRate, 58, day, id: 'heart-a'),
@@ -236,6 +237,135 @@ void main() {
       reason: 'the night ends the next morning',
     );
     expect(summaries.last.sleepMinutes, 420);
+  });
+
+  test('a mixed-category night unions unspecified and staged chunks', () {
+    // Production regression (2026-09-10): a staged 4-hour stretch (Core 186
+    // + Deep 34 + REM 20) followed by auto-detected unspecified fragments
+    // and a mid-night awake spell. The old category preference stored only
+    // the unspecified 146 of 386 measured minutes.
+    final summaries = normalizeHealthSamples(
+      samples: [
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 9, 9, 22),
+          end: DateTime(2026, 9, 10, 1, 6),
+          id: 'core-1',
+          sleepStage: SleepStage.light,
+        ),
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 9, 10, 1, 6),
+          end: DateTime(2026, 9, 10, 1, 40),
+          id: 'deep-1',
+          sleepStage: SleepStage.deep,
+        ),
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 9, 10, 1, 40),
+          end: DateTime(2026, 9, 10, 2),
+          id: 'rem-1',
+          sleepStage: SleepStage.rem,
+        ),
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 9, 10, 3),
+          end: DateTime(2026, 9, 10, 4),
+          id: 'frag-1',
+          sleepStage: SleepStage.asleep,
+        ),
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 9, 10, 4),
+          end: DateTime(2026, 9, 10, 4, 17),
+          id: 'awake-1',
+          sleepStage: SleepStage.awake,
+        ),
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 9, 10, 4, 30),
+          end: DateTime(2026, 9, 10, 5, 56),
+          id: 'frag-2',
+          sleepStage: SleepStage.asleep,
+        ),
+      ],
+      requestedMetrics: HealthMetric.values.toSet(),
+      timezone: 'Asia/Kolkata',
+    );
+
+    expect(summaries, hasLength(1));
+    expect(summaries.single.localDate, DateTime(2026, 9, 10));
+    expect(summaries.single.sleepMinutes, 386);
+    expect(summaries.single.sleepLightMinutes, 186);
+    expect(summaries.single.sleepDeepMinutes, 34);
+    expect(summaries.single.sleepRemMinutes, 20);
+    expect(summaries.single.sleepAwakeMinutes, 17);
+  });
+
+  test('overlapping sleep sources union instead of double-counting', () {
+    final summaries = normalizeHealthSamples(
+      samples: [
+        // Two sources each record the same 23:00 -> 00:00 hour: one plain
+        // "asleep", one staged as Core. A plain sum would report 120.
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 6, 30, 23),
+          end: DateTime(2026, 7, 1),
+          id: 'watch-asleep',
+          sleepStage: SleepStage.asleep,
+        ),
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 6, 30, 23),
+          end: DateTime(2026, 7, 1),
+          id: 'app-core',
+          sleepStage: SleepStage.light,
+        ),
+      ],
+      requestedMetrics: HealthMetric.values.toSet(),
+      timezone: 'Asia/Kolkata',
+    );
+
+    expect(summaries, hasLength(1));
+    expect(summaries.single.localDate, DateTime(2026, 7, 1));
+    expect(summaries.single.sleepMinutes, 60);
+    expect(summaries.single.sleepLightMinutes, 60);
+  });
+
+  test('an awake-only night is zero sleep minutes, not null', () {
+    final summaries = normalizeHealthSamples(
+      samples: [
+        // Only restless awake-in-bed time was recorded — no asleep
+        // category exists. The health_sync_v1 contract requires
+        // sleep_minutes to be defined whenever sleep samples are present,
+        // and the server's 1-960 scoring gate reads 0 as absence.
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 6, 30, 23),
+          end: DateTime(2026, 6, 30, 23, 40),
+          id: 'awake-only',
+          sleepStage: SleepStage.awake,
+        ),
+      ],
+      requestedMetrics: HealthMetric.values.toSet(),
+      timezone: 'Asia/Kolkata',
+    );
+
+    expect(summaries.single.sleepMinutes, 0);
+    expect(summaries.single.sleepAwakeMinutes, 40);
+    expect(summaries.single.presentMetrics, contains(HealthMetric.sleep));
+    final json = summaries.single.toJson(HealthMetric.values.toSet());
+    expect(json['sleep_minutes'], 0);
+    expect(json['sleep_light_minutes'], isNull);
   });
 
   test(
