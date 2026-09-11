@@ -8,6 +8,22 @@ import {
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { captureException } from "../_shared/sentry.ts";
 
+export const coachChatResponseSchemaVersion = "1.1";
+
+function versionedResponse(payload: Record<string, unknown>): Record<string, unknown> {
+  return { schema_version: coachChatResponseSchemaVersion, ...payload };
+}
+
+export function coachChatFailureResponse(
+  error: CoachChatUnavailableError,
+): Record<string, unknown> {
+  return versionedResponse({
+    error: "chat_unavailable",
+    code: error.failureReason,
+    retry_after_seconds: error.retryAfterSeconds,
+  });
+}
+
 export function detectPreferenceStatement(question: string): string | null {
   const q = question.toLowerCase();
   const patterns: [RegExp, string][] = [
@@ -87,12 +103,16 @@ Deno.serve(async (request) => {
   const correlationId = extractCorrelationId(request);
   const log = createLogger(correlationId);
   const started = performance.now();
-  if (request.method !== "POST") return reply(405, { error: "method_not_allowed" });
+  if (request.method !== "POST") {
+    return reply(405, versionedResponse({ error: "method_not_allowed" }));
+  }
   let auth;
   try {
     auth = await requireAuth(request);
   } catch (e) {
-    if (e instanceof AuthError) return reply(e.status, { error: e.message });
+    if (e instanceof AuthError) {
+      return reply(e.status, versionedResponse({ error: e.message }));
+    }
     throw e;
   }
   let input;
@@ -100,12 +120,14 @@ Deno.serve(async (request) => {
     input = parseCoachChatRequest(await request.json());
   } catch {
     log.warn("invalid_chat_request");
-    return reply(422, { error: "invalid_chat_request" });
+    return reply(422, versionedResponse({ error: "invalid_chat_request" }));
   }
   const { error: budgetError } = await auth.serviceClient.rpc("assert_owner_ai_budget", {
     target_user_id: auth.userId,
   });
-  if (budgetError) return reply(429, { error: "ai_usage_limit" });
+  if (budgetError) {
+    return reply(429, versionedResponse({ error: "ai_usage_limit" }));
+  }
   const contextKind = classifyQuestion(input.question);
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
     "prepare_coach_chat_v6",
@@ -122,17 +144,26 @@ Deno.serve(async (request) => {
     log.error("prepare_coach_chat_v6 failed", {
       detail: prepareError?.message ?? "unknown",
     });
-    return reply(422, {
-      error: "chat_unavailable",
-      detail: prepareError?.message ?? "context_preparation_failed",
-    });
+    return reply(
+      422,
+      versionedResponse({
+        error: "chat_unavailable",
+        code: "context_preparation_failed",
+      }),
+    );
   }
   if (prepared.replayed) {
     const { data } = await auth.userClient.from("coach_messages").select().eq(
       "thread_id",
       input.thread_id,
     ).order("created_at");
-    return reply(200, { schema_version: "1.0", messages: data ?? [], replayed: true });
+    return reply(
+      200,
+      versionedResponse({
+        messages: data ?? [],
+        replayed: true,
+      }),
+    );
   }
 
   const context = prepared.context as Record<string, unknown>;
@@ -203,11 +234,13 @@ Deno.serve(async (request) => {
         inputUnits: String(generation.inputUnits),
         outputUnits: String(generation.outputUnits),
       });
-      return reply(422, {
-        error: "chat_rejected",
-        detail: error?.message ?? "persisted_result_null",
-        code: error?.code ?? "unknown",
-      });
+      return reply(
+        422,
+        versionedResponse({
+          error: "chat_rejected",
+          code: "persistence_rejected",
+        }),
+      );
     }
 
     const summaryText = buildSessionSummary(
@@ -229,7 +262,7 @@ Deno.serve(async (request) => {
     });
 
     const responsePayload: Record<string, unknown> = {
-      schema_version: "1.0",
+      schema_version: coachChatResponseSchemaVersion,
       message: {
         id: persisted.assistant_message_id,
         role: "assistant",
@@ -252,23 +285,35 @@ Deno.serve(async (request) => {
     });
     return reply(200, responsePayload);
   } catch (error) {
-    const diagnosticMessage = error instanceof Error
-      ? `${error.name}: ${error.message}`
-      : `${error}`;
     const unavailable = error instanceof CoachChatUnavailableError
       ? error
-      : new CoachChatUnavailableError("mock", "unknown");
+      : new CoachChatUnavailableError(
+        "mock",
+        "unknown",
+        "provider_response_invalid",
+        null,
+        {},
+        { cause: error },
+      );
     captureException(error, {
       userId: auth.userId,
       functionName: "coach-chat",
       correlationId,
+      runtime: "edge",
+      provider: unavailable.provider,
+      model: unavailable.model,
       contextKind,
+      failureCode: unavailable.failureReason,
+      attempt: unavailable.metadata.attempt,
+      finishReason: unavailable.metadata.finishReason,
       coachingDate,
     });
     log.error("coach_chat_failure", {
-      detail: diagnosticMessage,
+      failure_code: unavailable.failureReason,
       provider: unavailable.provider,
       model: unavailable.model,
+      attempt: unavailable.metadata.attempt ?? "unknown",
+      finish_reason: unavailable.metadata.finishReason ?? "unknown",
       latency_ms: Math.round(performance.now() - started),
     });
     try {
@@ -278,7 +323,7 @@ Deno.serve(async (request) => {
         policy_id: prepared.policy_evaluation_id,
         request_idempotency_key: input.idempotency_key,
         run_latency_ms: Math.round(performance.now() - chatStart),
-        error_code: "provider_or_validation_failed",
+        error_code: unavailable.failureReason,
         run_provider: unavailable.provider,
         run_model: unavailable.model,
       });
@@ -287,12 +332,6 @@ Deno.serve(async (request) => {
         detail: persistError instanceof Error ? persistError.message : String(persistError),
       });
     }
-    return reply(503, {
-      error: "chat_unavailable",
-      detail: diagnosticMessage,
-      provider: unavailable.provider,
-      model: unavailable.model,
-      retry_after_seconds: unavailable.retryAfterSeconds,
-    });
+    return reply(503, coachChatFailureResponse(unavailable));
   }
 });

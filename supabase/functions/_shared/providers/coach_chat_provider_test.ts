@@ -1,5 +1,7 @@
 import {
   classifyQuestion,
+  coachChatTiming,
+  CoachChatUnavailableError,
   compactContext,
   formatContextAsMarkdown,
   generateCoachChat,
@@ -16,25 +18,36 @@ Deno.test("Coach chat never turns an unconfigured provider into a mock answer", 
   }
 });
 
-Deno.test("classifyQuestion returns plan_change for planning keywords", () => {
-  const cases = [
-    "What is my weekly progress?",
+Deno.test("classifyQuestion requires an explicit plan modification request", () => {
+  const planChanges = [
     "Can you create a new plan?",
     "I want to change my plan",
-    "I have plateaued on bench",
-    "Rate my progression this month",
     "Design my next block",
     "Change my training program",
     "My routine needs an update",
     "I need a new split",
     "Should I deload this week?",
-    "Let's talk periodization",
-    "I think I hit a plateau",
+    "Recovery is poor; should I change my plan?",
   ];
-  for (const q of cases) {
+  for (const q of planChanges) {
     if (classifyQuestion(q) !== "plan_change") {
       throw new Error(`Expected plan_change for: "${q}", got: ${classifyQuestion(q)}`);
     }
+  }
+
+  const productionPrompt =
+    "hey couch my recovery is very poor idk why can you help me to improve my recovery and i have already completed my workout and for few ive splited the rotine morning i had weight training with abs and now eveing ill have cardio !";
+  if (classifyQuestion(productionPrompt) !== "recovery") {
+    throw new Error("The exact production prompt must classify as recovery");
+  }
+  if (classifyQuestion("My weekly progress?") !== "explain_evidence") {
+    throw new Error("Weekly progress is an evidence question, not a plan change");
+  }
+  if (classifyQuestion("I split training between morning and evening") !== "daily_action") {
+    throw new Error("Describing a split day is a daily action, not a plan change");
+  }
+  if (classifyQuestion("I want my routine explained") !== "explain_evidence") {
+    throw new Error("Mentioning a routine without requesting a change must not route to planning");
   }
 });
 
@@ -793,5 +806,309 @@ Deno.test("compactContext null preservation survives fitContextToLimit tiers (Gr
   const bounded = JSON.stringify({ question: "How was my sleep?", context: compacted });
   if (!bounded.includes('"energy":null')) {
     throw new Error("serialized context must carry the null token");
+  }
+});
+
+const validDeepSeekAnswer = JSON.stringify({
+  answer: "Your recovery evidence supports taking the evening session easier.",
+  evidence: [],
+  missing_data: [],
+  safety_state: "allowed",
+  suggested_follow_ups: [],
+  reasoning_chain: [],
+});
+
+function deepSeekResponse(
+  content: string,
+  finishReason: string | null = "stop",
+  promptTokens = 10,
+  completionTokens = 5,
+): Response {
+  return new Response(
+    JSON.stringify({
+      choices: [{
+        message: { content },
+        finish_reason: finishReason,
+      }],
+      usage: {
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+      },
+    }),
+    { status: 200 },
+  );
+}
+
+async function withDeepSeekEnvironment<T>(run: () => Promise<T>): Promise<T> {
+  const names = [
+    "COACH_AI_ENABLED",
+    "COACH_MODEL_PROVIDER",
+    "DEEPSEEK_API_KEY",
+    "DEEPSEEK_MODEL",
+  ] as const;
+  const previous = new Map(names.map((name) => [name, Deno.env.get(name)]));
+  Deno.env.set("COACH_AI_ENABLED", "true");
+  Deno.env.set("COACH_MODEL_PROVIDER", "deepseek");
+  Deno.env.set("DEEPSEEK_API_KEY", "synthetic-key");
+  Deno.env.set("DEEPSEEK_MODEL", "deepseek-v4-flash");
+  try {
+    return await run();
+  } finally {
+    for (const name of names) {
+      const value = previous.get(name);
+      if (value === undefined) Deno.env.delete(name);
+      else Deno.env.set(name, value);
+    }
+  }
+}
+
+Deno.test("DeepSeek Coach chat accepts complete JSON with finish_reason stop", async () => {
+  await withDeepSeekEnvironment(async () => {
+    let calls = 0;
+    const generation = await generateCoachChat(
+      "How is my recovery?",
+      {},
+      "recovery",
+      (() => {
+        calls += 1;
+        return Promise.resolve(deepSeekResponse(validDeepSeekAnswer));
+      }) as typeof fetch,
+    );
+    if (calls !== 1) throw new Error(`Expected one provider call, got ${calls}`);
+    if (generation.answer.safety_state !== "allowed") {
+      throw new Error("Valid DeepSeek JSON should be accepted");
+    }
+    if (generation.inputUnits !== 10 || generation.outputUnits !== 5) {
+      throw new Error("Provider usage must be returned from the attempt");
+    }
+  });
+});
+
+Deno.test("DeepSeek thinking is high only for an explicit plan change", async () => {
+  await withDeepSeekEnvironment(async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetcher = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return Promise.resolve(deepSeekResponse(validDeepSeekAnswer));
+    }) as typeof fetch;
+
+    await generateCoachChat("Create a new split", {}, "plan_change", fetcher);
+    await generateCoachChat("How is my recovery?", {}, "recovery", fetcher);
+
+    if (bodies[0].reasoning_effort !== "high") {
+      throw new Error("Explicit plan changes must retain high reasoning effort");
+    }
+    if ((bodies[0].thinking as Record<string, unknown>)?.type !== "enabled") {
+      throw new Error("Explicit plan changes must enable thinking");
+    }
+    if ((bodies[1].thinking as Record<string, unknown>)?.type !== "disabled") {
+      throw new Error("Recovery chat must disable thinking");
+    }
+    if ("reasoning_effort" in bodies[1]) {
+      throw new Error("Recovery chat must not request reasoning effort");
+    }
+  });
+});
+
+Deno.test("DeepSeek Coach chat repairs a finish_reason length response once", async () => {
+  await withDeepSeekEnvironment(async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const responses = [
+      deepSeekResponse('{"answer":"cut off', "length", 11, 6),
+      deepSeekResponse(validDeepSeekAnswer, "stop", 12, 7),
+    ];
+    const generation = await generateCoachChat(
+      "How is my recovery?",
+      {},
+      "recovery",
+      ((_input: RequestInfo | URL, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Promise.resolve(responses.shift()!);
+      }) as typeof fetch,
+    );
+    if (bodies.length !== 2) throw new Error("A truncated response must get exactly one repair");
+    if (generation.inputUnits !== 23 || generation.outputUnits !== 13) {
+      throw new Error("Usage must include both provider attempts");
+    }
+    const first = bodies[0];
+    const repair = bodies[1];
+    if (first.max_tokens !== 4096 || repair.max_tokens !== 4096) {
+      throw new Error("Both attempts must use the 4,096 output ceiling");
+    }
+    if ((repair.thinking as Record<string, unknown>)?.type !== "disabled") {
+      throw new Error("Repair must disable thinking");
+    }
+    if (repair.temperature !== 0) throw new Error("Repair temperature must be zero");
+    const messages = repair.messages as Array<Record<string, unknown>>;
+    const repairInput = String(messages[1]?.content ?? "");
+    if (!repairInput.includes("<invalid_candidate>")) {
+      throw new Error("Repair must carry the delimited untrusted candidate");
+    }
+  });
+});
+
+Deno.test("DeepSeek Coach chat repairs empty and malformed response content", async () => {
+  for (const invalid of ["", '{"answer":']) {
+    await withDeepSeekEnvironment(async () => {
+      let calls = 0;
+      const generation = await generateCoachChat(
+        "How is my recovery?",
+        {},
+        "recovery",
+        (() => {
+          calls += 1;
+          return Promise.resolve(
+            calls === 1 ? deepSeekResponse(invalid) : deepSeekResponse(validDeepSeekAnswer),
+          );
+        }) as typeof fetch,
+      );
+      if (calls !== 2 || generation.answer.safety_state !== "allowed") {
+        throw new Error("Empty or malformed content should receive one successful repair");
+      }
+    });
+  }
+});
+
+Deno.test("DeepSeek Coach chat repairs schema-invalid JSON", async () => {
+  await withDeepSeekEnvironment(async () => {
+    let calls = 0;
+    await generateCoachChat(
+      "How is my recovery?",
+      {},
+      "recovery",
+      (() => {
+        calls += 1;
+        return Promise.resolve(
+          calls === 1
+            ? deepSeekResponse(JSON.stringify({ answer: "Missing required fields" }))
+            : deepSeekResponse(validDeepSeekAnswer),
+        );
+      }) as typeof fetch,
+    );
+    if (calls !== 2) throw new Error("Schema-invalid JSON must receive one repair");
+  });
+});
+
+Deno.test("DeepSeek Coach chat exposes only a stable code after two invalid responses", async () => {
+  await withDeepSeekEnvironment(async () => {
+    let calls = 0;
+    try {
+      await generateCoachChat(
+        "How is my recovery?",
+        {},
+        "recovery",
+        (() => {
+          calls += 1;
+          return Promise.resolve(deepSeekResponse("Unexpected end of JSON input"));
+        }) as typeof fetch,
+      );
+      throw new Error("Expected the second invalid response to fail closed");
+    } catch (error) {
+      if (!(error instanceof CoachChatUnavailableError)) throw error;
+      if (calls !== 2) throw new Error(`Expected exactly two calls, got ${calls}`);
+      if (error.failureReason !== "provider_response_invalid") {
+        throw new Error(`Unexpected failure code: ${error.failureReason}`);
+      }
+      if (error.message.includes("Unexpected end")) {
+        throw new Error("Raw parser/provider content must not enter the public error");
+      }
+      if (error.metadata.attempt !== "repair") {
+        throw new Error("Failure metadata must identify the repair attempt");
+      }
+    }
+  });
+});
+
+Deno.test("DeepSeek Coach chat preserves empty and truncated failure categories", async () => {
+  const scenarios = [
+    {
+      response: () => deepSeekResponse("", "stop"),
+      expected: "provider_response_empty",
+    },
+    {
+      response: () => deepSeekResponse('{"answer":"cut', "length"),
+      expected: "provider_response_truncated",
+    },
+  ];
+  for (const scenario of scenarios) {
+    await withDeepSeekEnvironment(async () => {
+      try {
+        await generateCoachChat(
+          "How is my recovery?",
+          {},
+          "recovery",
+          (() => Promise.resolve(scenario.response())) as typeof fetch,
+        );
+        throw new Error(`Expected ${scenario.expected}`);
+      } catch (error) {
+        if (!(error instanceof CoachChatUnavailableError)) throw error;
+        if (error.failureReason !== scenario.expected) {
+          throw new Error(`Expected ${scenario.expected}, got ${error.failureReason}`);
+        }
+        if (error.metadata.attempt !== "repair") {
+          throw new Error("The terminal category must identify the repair attempt");
+        }
+      }
+    });
+  }
+});
+
+Deno.test("DeepSeek Coach chat does not retry HTTP, rate-limit, or timeout failures", async () => {
+  const scenarios: Array<{
+    expected: string;
+    fetcher: typeof fetch;
+  }> = [
+    {
+      expected: "provider_http_error",
+      fetcher:
+        (() => Promise.resolve(new Response("server error", { status: 500 }))) as typeof fetch,
+    },
+    {
+      expected: "provider_rate_limited",
+      fetcher: (() => Promise.resolve(new Response("slow down", { status: 429 }))) as typeof fetch,
+    },
+    {
+      expected: "provider_timeout",
+      fetcher: (() => Promise.reject(new DOMException("aborted", "AbortError"))) as typeof fetch,
+    },
+  ];
+  for (const scenario of scenarios) {
+    await withDeepSeekEnvironment(async () => {
+      let calls = 0;
+      try {
+        await generateCoachChat(
+          "How is my recovery?",
+          {},
+          "recovery",
+          ((input: RequestInfo | URL, init?: RequestInit) => {
+            calls += 1;
+            return scenario.fetcher(input, init);
+          }) as typeof fetch,
+        );
+        throw new Error(`Expected ${scenario.expected}`);
+      } catch (error) {
+        if (!(error instanceof CoachChatUnavailableError)) throw error;
+        if (error.failureReason !== scenario.expected) {
+          throw new Error(`Expected ${scenario.expected}, got ${error.failureReason}`);
+        }
+        if (calls !== 1) throw new Error(`${scenario.expected} must not be retried`);
+      }
+    });
+  }
+});
+
+Deno.test("DeepSeek Coach chat attempt budgets reserve time inside the Edge deadline", () => {
+  if (
+    coachChatTiming.initialAttemptMs + coachChatTiming.repairAttemptMs >=
+      coachChatTiming.totalDeadlineMs
+  ) {
+    throw new Error("Provider attempts must leave time for validation and persistence");
+  }
+  if (
+    coachChatTiming.totalDeadlineMs !== 40_000 ||
+    coachChatTiming.initialAttemptMs !== 28_000 ||
+    coachChatTiming.repairAttemptMs !== 10_000
+  ) {
+    throw new Error("Coach chat timing contract changed unexpectedly");
   }
 });

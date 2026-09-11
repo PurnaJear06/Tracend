@@ -331,6 +331,15 @@ returns a safe unavailable state while preserving logging and the active plan. A
 must never present deterministic fallback text as a successful model answer; deterministic emergency
 and clinical-boundary refusals remain explicitly labeled safety responses.
 
+DeepSeek Coach chat accepts provider output only when `finish_reason` is `stop`. Empty content,
+`length` truncation, malformed JSON, and schema rejection receive at most one repair attempt. The
+repair is non-thinking JSON mode at temperature 0, receives the same bounded question/context plus
+at most 12,000 characters of the failed candidate as explicitly delimited untrusted input, and is
+never used for authentication, rate-limit, HTTP, or timeout failures. The output ceiling is 4,096
+tokens; per-attempt limits are 28 seconds initial and 10 seconds repair inside a 40-second Edge
+deadline. Failed runs persist only a stable sanitized failure code. Response schema 1.1 exposes that
+code to Flutter without provider bodies, parser messages, prompts, or health context.
+
 ## 13. Evaluation
 
 Maintain anonymized fixtures covering:

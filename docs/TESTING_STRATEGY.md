@@ -84,6 +84,10 @@ accepted as a permanent retry.
 - live Coach chat never converts an unconfigured, provider-failed, or schema-invalid response into a
   successful deterministic fallback; a bounded schema-repair retry either returns validated model
   output or a sanitized failed run;
+- Coach-chat provider tests require `finish_reason=stop`, cover truncation, empty/malformed and
+  schema-invalid output, prove exactly one non-thinking repair, and prove HTTP, rate-limit, and
+  timeout failures are not retried. Contract tests pin response schema 1.1 and safe Flutter error
+  copy while rejecting raw parser/provider details;
 - user-scoped AI usage aggregation, including anonymous and cross-user denial, estimate labeling,
   and exclusion of secrets, prompts, request IDs, and raw errors;
 - nutrition forced RLS, private meal Storage policies, manual idempotency, unconfirmed-candidate
@@ -349,8 +353,11 @@ DSN is the only identifier reaching the client; the project lives at `sentry.io`
 `meal_description`, `food_items`, `ingredients`, `photo_url`, `signed_url`, `image_url`,
 `object_key`, `prompt`, `prompt_text`, `question`, `answer_text`, `answer_payload`.
 
-Edge Functions report exceptions from the main `coach-chat` and `meal-analyze` catch blocks with
-`userId`, `functionName`, and `correlationId` context. Failures are silent — a Sentry outage never
+Edge Functions report exceptions from the main `coach-chat` and `meal-analyze` catch blocks. Coach
+events add `runtime=edge`, provider, model, context kind, sanitized failure code, attempt, and finish
+reason tags plus a bounded stack string. Only whitelisted identifiers/dates enter `extra`; the
+question, health context, provider response, and HTTP body are excluded. Flutter and Edge remain in
+the same Sentry project and are separated by tags. Failures are silent — a Sentry outage never
 affects the caller.
 
 ## 11. Auth Hardening
