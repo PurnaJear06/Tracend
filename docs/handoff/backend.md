@@ -112,6 +112,18 @@ This file is current-state handoff, not durable architecture. Keep detailed hist
   pg_prove pinned image) now enforces the whole suite — 33 files, 928 assertions, green in
   a real GitHub run on 2026-09-09 — so this class of failure blocks merge instead of
   slipping through the Colima gate.)*
+  *(Status 2026-09-11 — first date-dependent fixture bug: CI's first Friday failed
+  `healthkit_completion_candidate_test` subtest 8. Root cause: both healthkit fixtures
+  used `source='user'` plans, so the `training_plan_version_seed_workouts` trigger
+  seeded Mon/Wed/Fri workouts whose orders collided with the fixtures' own 7-weekday
+  inserts (`on conflict do nothing` silently skipped them) — leaving two workouts on
+  Fri (and Wed) and zero on Tue. The "no candidate after auto-complete" assertion then
+  saw the *other* Friday workout as a legitimate candidate. Both fixtures switched to
+  `source='imported'` (the trigger's documented carve-out for plans that bring their
+  own workouts), so each owns all 7 weekdays deterministically. Verified 928/928
+  locally on 2026-09-11 (a real Friday) after the fix; the identical suite failed in
+  CI that morning, isolating the fixture as the only variable. A Tuesday run would
+  previously have aborted the auto-complete test mid-script on a NULL workout id.)*
 - **Coach Context v5 deployed:** migration `20260716130000_coach_context_v5.sql` replaces
   `prepare_coach_chat_v4` in-place with enriched v5 context. New fields: `nutrition_adherence`
   (days_with_confirmed_meals_7d, schedule_slot_compliance), extended `nutrition_compliance_7day`
