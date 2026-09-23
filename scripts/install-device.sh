@@ -7,6 +7,7 @@
 #   ./scripts/install-device.sh                 # auto-detect the connected iPhone
 #   ./scripts/install-device.sh --device <id>   # target a specific CoreDevice id
 #   DEVICE_ID=<id> ./scripts/install-device.sh  # same, via env var
+#   TRACEND_BUILD_NAME=1.1.0 TRACEND_BUILD_NUMBER=200 ./scripts/install-device.sh
 set -eu
 
 REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -29,13 +30,34 @@ if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_PUBLISHABLE_KEY:-}" ]; then
 fi
 
 DEVICE_ID="${DEVICE_ID:-}"
-for arg in "$@"; do
-  case "$arg" in
-    --device=*) DEVICE_ID="${arg#--device=}" ;;
-    --device) shift_next=1 ;;
-    *) if [ "${shift_next:-0}" = "1" ]; then DEVICE_ID="$arg"; shift_next=0; fi ;;
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --device=*) DEVICE_ID="${1#--device=}" ;;
+    --device)
+      shift
+      [ "$#" -gt 0 ] || { echo "--device requires a value." >&2; exit 1; }
+      DEVICE_ID="$1"
+      ;;
+    --build-name=*) TRACEND_BUILD_NAME="${1#--build-name=}" ;;
+    --build-name)
+      shift
+      [ "$#" -gt 0 ] || { echo "--build-name requires a value." >&2; exit 1; }
+      TRACEND_BUILD_NAME="$1"
+      ;;
+    --build-number=*) TRACEND_BUILD_NUMBER="${1#--build-number=}" ;;
+    --build-number)
+      shift
+      [ "$#" -gt 0 ] || { echo "--build-number requires a value." >&2; exit 1; }
+      TRACEND_BUILD_NUMBER="$1"
+      ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
+  shift
 done
+
+export TRACEND_BUILD_NAME TRACEND_BUILD_NUMBER
+BUILD_NAME=$(./scripts/app-version.sh name)
+BUILD_NUMBER=$(./scripts/app-version.sh number)
 
 list_devices() {
   xcrun devicectl list devices 2>/dev/null | sed -n '1,40p'
@@ -71,8 +93,11 @@ PY
 fi
 
 echo "==> Target device: $DEVICE_ID"
+echo "==> App version: $BUILD_NAME ($BUILD_NUMBER)"
 
 BUILD_ARGS="build ios --release
+  --build-name $BUILD_NAME
+  --build-number $BUILD_NUMBER
   --dart-define SUPABASE_URL=$SUPABASE_URL
   --dart-define SUPABASE_PUBLISHABLE_KEY=$SUPABASE_PUBLISHABLE_KEY"
 if [ -n "${SENTRY_DSN:-}" ]; then

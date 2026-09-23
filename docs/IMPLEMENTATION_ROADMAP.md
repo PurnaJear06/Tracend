@@ -9,8 +9,8 @@ pending measured structured-retrieval failure.
 **Status:** Execution order for the private-beta MVP\
 **Constraint:** This roadmap does not expand [PRD.md](./PRD.md)\
 **Backend:** Supabase Auth, PostgreSQL, Storage, Edge Functions, Queues, and Cron **Coordination:**
-Current cross-chat dashboard lives in [PROGRESS_CONTEXT.md](./PROGRESS_CONTEXT.md); scoped handoffs
-live in [`docs/handoff/`](./handoff/)
+Current cross-chat state lives in [PROGRESS_CONTEXT.md](./PROGRESS_CONTEXT.md). Completed phase plans
+and superseded handoffs live under [`docs/archive/`](./archive/) and are not active instructions.
 
 Build complete vertical slices instead of every screen, table, or AI component separately.
 

@@ -55,6 +55,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Format check
+        run: dart format --output=none --set-exit-if-changed lib test
+
       - name: Static analysis
         run: flutter analyze
 
@@ -92,7 +95,10 @@ jobs:
         run: flutter pub get
 
       - name: iOS release build (no codesign)
-        run: flutter build ios --release --no-codesign
+        run: |
+          flutter build ios --release --no-codesign \
+            --build-name "$(./scripts/app-version.sh name)" \
+            --build-number "$GITHUB_RUN_NUMBER"
 
   pgtap:
     name: pgTAP (fresh DB + migrations + parity)
@@ -152,10 +158,16 @@ jobs:
 
       - name: Check for duplicate migration timestamps
         run: |
-          DUPES=$(ls supabase/migrations/*.sql 2>/dev/null | sed 's|.*/||' | grep -oP '^\d+' | sort | uniq -d)
+          DUPES=$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' \
+            -exec basename {} \; | grep -oP '^\d+' | sort | uniq -d)
           if [ -n "$DUPES" ]; then
             echo "::error::Duplicate migration timestamps found: $DUPES"
             echo "Run: ls supabase/migrations/ | sort"
             exit 1
           fi
           echo "No duplicate migration timestamps found."
+
+      - name: Validate release version metadata
+        run: |
+          ./scripts/app-version.sh name
+          ./scripts/app-version.sh number
