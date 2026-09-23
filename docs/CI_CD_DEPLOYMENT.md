@@ -1,317 +1,94 @@
-# Tracend CI/CD & Deployment Plan
+# Tracend CI/CD and Release Controls
 
-**Status:** Implementation planned — not yet built
-**Provider:** DeepSeek V4 Flash (`COACH_MODEL_PROVIDER=deepseek`) active for Coach/chat
-**Last updated:** 2026-07-26
+**Status:** Implemented
 
----
+**Last verified design update:** 2026-09-23
 
-## 1. Problem Statement
+**Production project:** `qsfzzsjenopqqqhvpyaw` (Singapore)
 
-Deployment is currently 100% manual CLI — `pre-deploy.sh` → `db push` → `functions deploy` — run
-by the developer or AI agent. This creates risks:
+## Release path
 
-- 11 out of 56 migrations are "fix" migrations (evidence of deploy-then-patch pattern)
-- No automated backup before migration push
-- No deploy mutex — two concurrent `db push` commands could corrupt production
-- No migration timestamp collision detection before merge
-- No git hooks to catch errors before push
-- CI runs redundant overlapping jobs (ci.yml + pre-deploy.yml on same triggers)
-- iOS build artifact is discarded in CI
-- No deployment audit trail (no tags, no changelog)
+Production changes follow one path:
 
-## 2. Target State
+1. Open a pull request into `main`.
+2. Obtain the required review and pass every required CI check.
+3. Merge the pull request.
+4. CI runs again on the resulting `main` commit.
+5. `deploy.yml` starts only after that exact `main` CI run succeeds.
+6. The deploy workflow dry-runs migrations and independently backs up production.
+7. The backup job rejects failed or empty dumps, verifies SHA-256 checksums, and restores the
+   schema and data into an isolated local Supabase database.
+8. Only after the dry-run and restore drill pass may migrations and the nine Edge Functions deploy.
+9. The health smoke test must pass before the exact deployed commit receives a release tag.
 
-### Three GitHub Actions pipelines
+The deploy concurrency group is `production-deploy` with cancellation disabled. Deployments queue;
+they do not interrupt one another.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     GitHub Actions                           │
-│                                                             │
-│  ci.yml          deploy.yml          hotfix.yml             │
-│  ───────         ──────────          ─────────              │
-│  On: every push  On: merge to main   On: manual trigger     │
-│  ┌───────────┐   ┌───────────────┐   ┌───────────────┐     │
-│  │ deno      │   │ verify        │   │ dry-run       │     │
-│  │ flutter   │   │ dry-run       │   │ skip-backup   │     │
-│  │ ios-build │   │ backup        │   │ migrate       │     │
-│  │ migration │   │ migrate       │   │ deploy-func   │     │
-│  │  -check   │   │ deploy-func   │   │ smoke-test    │     │
-│  └───────────┘   │ smoke-test    │   │ tag-release   │     │
-│                  │ tag-release   │   └───────────────┘     │
-│                  └───────────────┘                          │
-└─────────────────────────────────────────────────────────────┘
-```
+## Required CI checks
 
-### Zero manual deployment steps
-Developer merges PR → deployment runs in GitHub automatically → green pipeline = deployed.
+Branch protection requires these pull-request checks:
 
-### Visual pipeline in GitHub Actions UI
-Each job is a box, each step expandable with logs, green/red status, timing per step. Same visual
-as enterprise CI dashboards.
+- `Deno (fmt + lint + test)`
+- `Flutter Analyze` (includes Dart formatting)
+- `Flutter Test`
+- `Flutter iOS Build (macOS)`
+- `pgTAP (fresh DB + migrations + parity)`
+- `Secret Scan (gitleaks)`
+- `Migration Collision Check` (also validates release version metadata)
 
-## 3. Files in Scope
+CI uses the pinned versions in the workflow. Local development uses repository wrappers from
+`scripts/`.
 
-| File | Action | Purpose |
-|------|--------|---------|
-| `.github/workflows/ci.yml` | Overwrite | Consolidated fast checks with caching + migration collision check |
-| `.github/workflows/deploy.yml` | Create | Auto-deploy on merge to main with concurrency lock |
-| `.github/workflows/hotfix.yml` | Create | Emergency manual deploy (skips backup) |
-| `.github/workflows/pre-deploy.yml` | Delete | Replaced by ci.yml + deploy.yml |
-| `.githooks/pre-push` | Create | Local guard: deno fmt/lint, flutter analyze, migration check |
-| `AGENTS.md` §12 | Edit | Deployment Rule — agents must not manually deploy |
+## Backup contract
 
-## 4. Pipeline Design
+The production backup contains separate role, schema, and data SQL files. The data dump uses COPY,
+matching Supabase's documented logical-backup flow. A backup is valid only when:
 
-### 4.1 CI Pipeline (`ci.yml`)
+- every expected file exists and is non-empty;
+- the generated SHA-256 manifest verifies;
+- schema and data restore with `ON_ERROR_STOP=1` inside the isolated database; and
+- the restored database contains public tables.
 
-**Trigger:** Every push and PR to `main` or `feature/**`
+Only an AES-256 encrypted GitHub Actions artifact is retained for 14 days; its passphrase exists as
+the `BACKUP_ARCHIVE_PASSPHRASE` Actions secret. Plaintext dumps are removed from the runner after
+the encrypted archive is validated. Backups must never be committed or uploaded unencrypted to this
+public repository. Storage object bytes are outside PostgreSQL logical dumps and require their own
+recovery process; database backups cover Storage metadata only.
 
-**Concurrency:** Cancel old runs on same branch when new push arrives (`cancel-in-progress: true`)
+Any backup or restore-drill failure stops the deployment before production mutation.
 
-**Jobs (all parallel):**
+## Version and build numbers
 
-| Job | Runner | Timeout | Steps |
-|-----|--------|---------|-------|
-| deno | ubuntu-latest | 10 min | checkout → setup-deno 2.9.0 → `deno fmt --check` → `deno lint` → `deno test` |
-| flutter-analyze | ubuntu-latest | 10 min | checkout → flutter-action 3.41.7 (cached) → `flutter pub get` → `flutter analyze` |
-| flutter-test | ubuntu-latest | 10 min | checkout → flutter-action 3.41.7 (cached) → `flutter pub get` → `flutter test` |
-| ios-build | macos-latest | 30 min | checkout → flutter-action 3.41.7 (cached) → `flutter pub get` → `flutter build ios --release --no-codesign` |
-| pgtap | ubuntu-latest | 15 min | checkout → setup-supabase 2.101.0 → `supabase start` (fresh local stack) → `supabase db reset` (all migrations on a clean DB) → `pg_prove` from the pinned `public.ecr.aws/supabase/pg_prove:3.36` image over all 33 test files + the 12 oracle fixtures (`test/reference/fixtures` mounted read-only) |
-| secret-scan | ubuntu-latest | 5 min | checkout (full history) → pinned gitleaks 8.30.1 binary (sha256-verified) → `gitleaks git --verbose .` |
-| migration-check | ubuntu-latest | 1 min | checkout → verify no duplicate migration timestamps |
+`pubspec.yaml` owns the semantic app version. `scripts/app-version.sh` validates it and produces the
+release metadata:
 
-The pgTAP job is the clean-database parity gate: it provisions a fresh local Supabase stack, applies
-every migration from scratch, then runs the full ~930-assertion suite including the 223-assertion
-reference-parity oracle. This closes the gap where pgTAP previously ran only behind a local Colima
-gate — schema regressions and RPC guard drift now block CI before merge. Since the job starts from
-an empty database every run, no seed data or local state can mask a failure.
+- local/device builds default to the semantic version plus the Git commit count;
+- CI iOS builds use the GitHub run number as the monotonic build number; and
+- an intentional release can override both with `TRACEND_BUILD_NAME` and
+  `TRACEND_BUILD_NUMBER` (or the equivalent `install-device.sh` flags).
 
-**Migration uniqueness check logic:**
-```bash
-DUPES=$(ls supabase/migrations/*.sql | sed 's|.*/||' | grep -oP '^\d+' | sort | uniq -d)
-[ -z "$DUPES" ] || { echo "Migration collision: $DUPES"; exit 1; }
+Examples:
+
+```sh
+./scripts/app-version.sh version
+./scripts/install-device.sh --build-name 1.1.0 --build-number 200
 ```
 
-### 4.2 Deploy Pipeline (`deploy.yml`)
+## Emergency path
 
-**Trigger:** Push to `main` (i.e., merge) or manual `workflow_dispatch`
+`hotfix.yml` is a manual emergency tool, not the normal release path. Its use requires explicit
+owner authorization, a recorded reason, and post-incident reconciliation through a reviewed PR.
+Agents must not deploy manually unless GitHub Actions is unavailable or the owner explicitly asks.
 
-**Concurrency:** Queue, do NOT cancel (`cancel-in-progress: false`) — only one deploy at a time
+## Rollback
 
-**Jobs (sequential):**
+- Edge Function rollback uses `scripts/rollback-function.sh <function>`.
+- Database migrations are forward-only. Correct a bad migration with a new additive migration.
+- Never edit, delete, or rewrite an applied migration.
 
-| # | Job | Purpose | Failure Behavior |
-|---|-----|---------|-----------------|
-| 1 | verify | Re-run all tests (flutter + deno + migration check) | Stop — nothing deployed |
-| 2 | dry-run | `supabase db push --linked --dry-run` | Stop — nothing deployed |
-| 3 | backup | `supabase db dump --linked` → upload as artifact | Stop — nothing deployed |
-| 4 | deploy-migrations | `supabase db push --linked` | Partial deploy — functions not updated |
-| 5 | deploy-functions | Deploy all 9 Edge Functions (parallel matrix) | Partial deploy — some functions new, some old |
-| 6 | smoke-test | `curl` health-check endpoint (3 retries) | Partial deploy — need rollback |
-| 7 | tag-release | Create `vYYYY.MM.DD-HHMM` git tag | Deploy complete — cosmetic only |
+## Repository security controls
 
-### 4.3 Hotfix Pipeline (`hotfix.yml`)
-
-**Trigger:** Manual `workflow_dispatch` only
-
-**Key differences from deploy.yml:**
-- Skips `verify` job (developer already tested)
-- Skips `backup` job by default (speed over safety in emergency)
-- Same `concurrency: production-deploy` group — joins same queue
-
-### 4.4 Pre-Push Git Hook (`.githooks/pre-push`)
-
-Runs before every `git push`:
-1. `deno fmt --check supabase/functions`
-2. `deno lint supabase/functions`
-3. `flutter analyze`
-4. Migration timestamp uniqueness check
-
-Blocks push if any check fails. Saves ~5 min of CI time by catching issues locally.
-
-## 5. Deployment Concurrency Lock
-
-```
-Developer A merges PR #1 ──→ deploy.yml starts (holds production-deploy lock)
-                               │
-                               ├─ verify ✓
-                               ├─ dry-run ✓
-                               ├─ backup ✓
-                               ⏳ deploy-migrations (in progress...)
-                               │
-Developer B merges PR #2 ──→ deploy.yml QUEUES (lock held)
-                               │
-                               │  ... waiting ...
-                               │
-                               ├─ deploy-migrations ✓
-                               ├─ deploy-functions ✓
-                               ├─ smoke-test ✓
-                               ├─ tag-release ✓
-                               │  LOCK RELEASED
-                               │
-                               ▼
-                               deploy.yml for PR #2 STARTS
-```
-
-## 6. Migration Collision Prevention
-
-### Problem
-Two developers on different branches create:
-- `20260726120000_add_feature_a.sql`
-- `20260726120000_add_feature_b.sql`
-
-Same timestamp → `db push` fails with `schema_migrations_pkey` unique constraint violation.
-
-### Solution (three layers)
-
-**Layer 1: Pre-push hook** — catches collisions before code leaves the developer's machine.
-
-**Layer 2: CI check** — migration-check job runs on every push/PR, blocks merge if collision found.
-
-**Layer 3: Deploy concurrency lock** — only one deploy runs at a time, preventing race conditions
-even without timestamp collisions.
-
-### Multi-developer workflow (documented for future team members)
-
-When rebasing a feature branch on latest `main` after another developer's migration was deployed:
-```bash
-git fetch origin
-git rebase origin/main
-# Re-timestamp own migration to current time
-OLD=$(ls supabase/migrations/*.sql | grep -v "origin" | tail -1)
-TIMESTAMP=$(date -u +%Y%m%d%H%M%S)
-NAME=$(basename "$OLD" | sed 's/^\d\+_//')
-git mv "$OLD" "supabase/migrations/${TIMESTAMP}_${NAME}"
-git commit --amend
-```
-
-## 7. Rollback Strategy
-
-### Edge Function Rollback
-```
-GitHub Actions → "Rollback Function" workflow (or manual CLI)
-→ ./scripts/rollback-function.sh <function_name>
-→ Checks out previous git version → deploys with --use-api
-```
-
-### Database Migration Rollback
-Applied migrations are NEVER edited, deleted, or reverted in place. Instead:
-1. Write a NEW forward migration that undoes the bad migration
-2. Push → PR → CI passes → merge → deploy pipeline runs
-3. Audit trail preserved — both the bad migration and the fix are in git history
-
-## 8. GitHub Secrets Required
-
-| Secret | Purpose | Source |
-|--------|---------|--------|
-| `SUPABASE_ACCESS_TOKEN` | Authenticate Supabase CLI for deploy, dry-run, backup | Supabase Dashboard → Account → Access Tokens |
-| `COACH_MODEL_PROVIDER` | Deploy metadata (optional, informational) | Set to `deepseek` |
-
-Backup uses `supabase db dump --linked` which works with just the access token — no separate
-database URL or password needed.
-
-## 9. Migration Safety Rules
-
-Enforced by CI, documented for developers:
-
-1. **Never create a migration directly on `main`.** Always on a feature branch.
-2. **Rebase on latest `main` before merging.** Resolves timestamp ordering.
-3. **Re-timestamp your migration after rebase.** Ensures chronological order.
-4. **Never revert an applied migration.** Write a new forward migration to undo.
-5. **Every migration must be additive.** No renames, no drops on live columns.
-6. **Every migration must be idempotent.** Use `IF NOT EXISTS` / `DROP IF EXISTS`.
-7. **Every migration must be backward-compatible.** Deployed app must still work.
-8. **Data migrations go in separate files AFTER the schema migration.**
-
-### 9.1 Deployment Order
-
-When a feature touches multiple layers, deploy in this order:
-
-1. **Database migration** (additive only — follow forward-compatible rules)
-2. **Edge Functions** (accept both old and new payload shapes)
-3. **Flutter build + install to iPhone** (once the new backend is live)
-
-Verify each layer deploys successfully before moving to the next. If any layer fails, roll back the
-migration and re-deploy the old Edge Function version.
-
-## 10. Agent Deployment Rule (AGENTS.md §12)
-
-After implementation, agents are prohibited from running deployment commands directly. Normal
-deployment is automated via GitHub Actions on merge to `main`. Manual CLI deployment is only
-permitted when GitHub Actions is down or the user explicitly requests it.
-
-## 11. Implementation Checklist
-
-### Phase 1 — CI/CD Files
-- [ ] `.github/workflows/ci.yml` — consolidated, cached, migration check added
-- [ ] `.github/workflows/deploy.yml` — auto-deploy pipeline with concurrency lock
-- [ ] `.github/workflows/hotfix.yml` — emergency manual deploy
-- [ ] `.github/workflows/pre-deploy.yml` — deleted (replaced)
-- [ ] `.githooks/pre-push` — local guard
-
-### Phase 2 — GitHub Configuration
-- [ ] `SUPABASE_ACCESS_TOKEN` secret added to GitHub Settings
-- [ ] Branch protection: require CI to pass before merge to `main`
-- [ ] Enable git hooks: `git config core.hooksPath .githooks`
-
-### Phase 3 — Validation
-- [ ] Test PR → verify `ci.yml` runs all jobs and passes
-- [ ] Merge test PR → verify `deploy.yml` runs dry-run successfully
-- [ ] First real deployment → verify full pipeline end-to-end
-
-### Phase 4 — Documentation
-- [ ] Update `AGENTS.md` with §12 Deployment Rule
-- [ ] Update `PROGRESS_CONTEXT.md` with CI/CD workstream status
-- [ ] Document migration workflow for future team members
-- [ ] Verify fastlane/TestFlight integration path for future
-
-## 12. Visual Reference
-
-### What the CI pipeline looks like:
-```
-CI #1567 — PurnaJear06 pushed to feature/feature-engine-phase-3
-┌──────────────────────────────────────────────────────────┐
-│ ✅ Deno (fmt + lint + test)               1m 12s         │
-│ ✅ Flutter (analyze + test)               2m 04s         │
-│ ✅ iOS Build (macOS)                      8m 31s         │
-│ ✅ Migration collision check              0m 03s         │
-└──────────────────────────────────────────────────────────┘
-```
-
-### What the Deploy pipeline looks like:
-```
-Deploy #42 — main ← Merged PR #11
-┌──────────────────────────────────────────────────────────┐
-│ │ Step                     │ Status │ Time    │          │
-│ ├───────────────────────────┼────────┼─────────┤          │
-│ │ verify                    │   ✅   │ 2m 14s  │          │
-│ │ dry-run                   │   ✅   │ 1m 08s  │          │
-│ │ backup                    │   ✅   │ 3m 42s  │          │
-│ │ deploy-migrations         │   ✅   │ 0m 45s  │          │
-│ │ deploy-functions (9 jobs) │   ✅   │ 2m 31s  │  ← click │
-│ │ smoke-test                │   ✅   │ 0m 02s  │          │
-│ │ tag-release               │   ✅   │ 0m 03s  │          │
-│ └───────────────────────────┴────────┴─────────┘          │
-└──────────────────────────────────────────────────────────┘
-
-Click "deploy-functions" → expands:
-  ✅ coach-chat (12s)
-  ✅ coach-decide (8s)
-  ✅ health-check (6s)
-  ✅ health-sync (11s)
-  ✅ meal-analyze (15s)
-  ✅ meal-media-retention (8s)
-  ✅ onboarding-propose-plan (9s)
-  ✅ privacy-delete-account (7s)
-  ✅ privacy-export (6s)
-```
-
-## 13. Related Documents
-
-- `AGENTS.md` — Agent behavior rules (will gain §12 Deployment Rule)
-- `BETA_OPERATIONS.md` — Backup, recovery, incident procedures
-- `ARCHITECTURE.md` — System architecture and deployment environments
-- `COST_MODEL.md` — Cost assumptions (DeepSeek V4 Flash active)
-- `IMPLEMENTATION_ROADMAP.md` — Phase sequencing
-- `PROGRESS_CONTEXT.md` — Live dashboard (will track CI/CD workstream)
+The GitHub repository requires pull requests, one approving review, passing status checks, resolved
+conversations, linear history protection against force-push/deletion, secret scanning, push
+protection, and Dependabot security updates. Administrators retain emergency bypass capability so a
+single-owner repository cannot be permanently deadlocked.

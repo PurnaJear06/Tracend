@@ -57,10 +57,11 @@ Do not convert CI workflow steps to wrapper scripts.
 
 **Backup** before any production mutation:
 ```sh
-./scripts/backup-db.sh               # schema + data
 ./scripts/backup-db.sh --schema-only
-./scripts/backup-db.sh --data-only
+PGPASSWORD=... ./scripts/backup-db.sh --data-only
 ```
+
+The automated deploy creates role, schema, and data dumps and runs the isolated restore drill.
 
 **Rollback** an Edge Function:
 ```sh
@@ -78,7 +79,7 @@ internal storage.
 ## Context & Docs (read order)
 
 1. `docs/PROGRESS_CONTEXT.md` — live dashboard (read first, every session)
-2. `docs/handoff/*.md` — per-workstream state (read the one relevant to your task)
+2. `docs/handoff/README.md` — active handoff pointer; archived handoffs are history only
 3. Authority docs (update when behavior changes):
    - `docs/PRD.md` — scope, features
    - `docs/ARCHITECTURE.md` — data flow, layers

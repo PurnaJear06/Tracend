@@ -65,12 +65,22 @@ else
 fi
 
 manifest="$backup_dir/SHA256SUMS"
+for dump_file in "$backup_dir"/*.sql; do
+  if [[ ! -s "$dump_file" ]]; then
+    echo "Backup is missing or empty: $dump_file" >&2
+    exit 1
+  fi
+done
+
 if command -v shasum &>/dev/null; then
   (cd "$backup_dir" && shasum -a 256 *.sql > "$manifest")
+  (cd "$backup_dir" && shasum -a 256 -c "$manifest")
 elif command -v sha256sum &>/dev/null; then
   (cd "$backup_dir" && sha256sum *.sql > "$manifest")
+  (cd "$backup_dir" && sha256sum -c "$manifest")
 else
-  echo "No sha256 tool found, skipping manifest." >&2
+  echo "No SHA-256 tool found; backup cannot be verified." >&2
+  exit 1
 fi
 
 echo "Backup complete: $backup_dir"

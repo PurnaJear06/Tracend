@@ -2,7 +2,7 @@
 /// scoring math, written from `docs/ALGORITHMS.md` — NOT from the SQL.
 ///
 /// Pass 5 of the post-review optimization ladder
-/// (docs/plans/2026-09-04-optimization-plan.md): the SQL pipeline in
+/// (docs/archive/plans/2026-09-04-optimization-plan.md): the SQL pipeline in
 /// `compute_user_baselines` / `compute_daily_metrics` (migration
 /// 20260907160000) is the production calculator; this file is an
 /// independent re-derivation of the same documented formulas in Dart.
