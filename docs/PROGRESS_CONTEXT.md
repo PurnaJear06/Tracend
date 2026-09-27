@@ -37,7 +37,8 @@ dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 
   secret scanning run in CI. Locally:
   - PR #35 passes 124 Deno tests, 422 Flutter tests, 34 pgTAP files / 951 assertions, analysis, an
     unsigned iOS release build, and the linked production migration dry-run.
-  - A1 passes 144 Deno tests and 35 pgTAP files, including the 28-assertion v8 file.
+  - A1 passes 145 Deno tests and, in CI on a fresh database, 35 pgTAP files / 987 assertions,
+    including the 36-assertion v8 file.
 
   The seven required PR checks gate every push; owner merge remains pending.
 

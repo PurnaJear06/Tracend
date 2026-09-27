@@ -66,10 +66,14 @@ Review fixes (2026-09-28, independent review of A1):
   `chat_context_too_large`, `thread_not_found`, and so on, or `sqlstate_<code>`. A question that
   could not be recorded and a data summary that could not be stored are captured too.
 
-Verification (local):
-- Deno fmt/lint clean. Deno tests: 144 passed, 7 database-dependent ignored.
-- Fresh local database reset applied every migration.
-- pgTAP: 35 files; `coach_chat_v8_test.sql` 28/28, and every existing file passes.
+Verification:
+- Deno fmt/lint clean. Deno tests: 145 passed, 7 database-dependent ignored.
+- pgTAP on a fresh database in CI, because the local Colima VM would not boot on 2026-09-28: every
+  migration applies; 35 files, 987 assertions; `coach_chat_v8_test.sql` has 36.
+- Before and after:
+  - On the pre-fix commit, test 30 fails with `died: 22023: chat context too large` (scratch
+    branch, CI run 36358845827).
+  - With the fix, every file passes (run 36358873313).
 
 Owner steps:
 1. Merge PR #35, then A1. There is no reinstall: the installed app sends request 1.0 and keeps
