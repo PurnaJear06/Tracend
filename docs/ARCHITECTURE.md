@@ -267,14 +267,26 @@ privacy-export
 authenticated read-model RPCs. They derive identity from `auth.uid()`, use only active approved
 versions and confirmed execution, and return bounded structured data for the iPhone client.
 
-Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS. `coach-chat` loads
-at most 20 recent messages from the current thread plus 20 recent messages from other saved Coach
-threads and compact deterministic context, including the active goal/profile schedule, up to seven
-days of normalized HealthKit summaries and confirmed nutrition totals, recent completed workouts,
-measurements, the latest weekly/daily decisions, and the latest check-in, invokes a no-tools
-structured-output provider, validates the complete answer and evidence, and persists both messages
-atomically. The daily Head Coach decision remains a separate immutable record pinned above
-conversation. `prepare_coach_chat_v2` reconciles context coverage independently from the same-day
+Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS. Since v8
+(2026-09-27) every question follows one path regardless of its wording:
+
+1. `prepare_coach_chat_v8` builds the same full athlete file for every question: the v7 base (goal,
+   profile, plan, targets, latest check-in and decisions, weekly review, fresh coaching-date scores,
+   permitted evidence, thread and cross-thread memory) plus `build_coach_athlete_context` (28-day
+   training log with sets and volume, 7/14/28-day totals, watch workouts, 28 days of watch data
+   with averages, eight weeks of weights, 14 days of check-ins, 28 days of logged nutrition,
+   today's meals, plan structure, proposals, reconciliations, data freshness), under a 90K
+   whole-section size guard.
+2. `record_coach_chat_question` stores the question before the model runs.
+3. The Edge Function renders the file as markdown (required truth first, conversation history
+   last, the question at the very end) and calls the no-tools structured-output provider.
+4. The answer is validated strictly for accuracy (JSON, keys, safety state, permitted evidence)
+   and against generous formatting ceilings, with one targeted repair.
+5. A valid answer is persisted with the question. Otherwise the failure and its finite rule names
+   are recorded, and app builds on request schema 1.1 receive a labeled deterministic data summary
+   (`persist_coach_chat_data_summary`) instead of an error.
+
+The daily Head Coach decision remains a separate immutable record pinned above conversation. `prepare_coach_chat_v2` reconciles context coverage independently from the same-day
 daily-decision policy: a recent HealthKit summary is valid chat context even when the current
 calendar day has no complete HealthKit row. `get_my_coach_context_status()` exposes only
 owner-scoped source availability, counts, and latest dates; it returns no health values or provider

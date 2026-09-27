@@ -1,11 +1,84 @@
 # Backend Handoff — FLUTTER-8 Coach Reliability
 
-**Status:** implementation and verification complete; PR review/owner merge pending
-**Branch:** `codex/coach-chat-validation-reliability`
-**Scope:** Edge Functions, additive SQL, and the Flutter tooling wrapper only; no app code change and
-no device reinstall expected
+**Status:** two PRs awaiting the owner's merge, in order:
+1. PR #35 `codex/coach-chat-validation-reliability`
+2. A1 `claude/coach-full-context-a1`, stacked on it
 
-## Current change
+**Scope:** Edge Functions, additive SQL, the live evaluation, and docs. No app code change, so no
+reinstall. A2 (app) follows.
+
+## A1 — full athlete file for every question, never a dead end
+
+Design and research: `/Users/purnajear/.claude/plans/precious-meandering-acorn.md` (owner-approved
+2026-09-27).
+
+Root cause:
+- A keyword router chose one topic, and both SQL (v4 per-kind enrichment) and Edge
+  (`selectRelevantContext`) removed data the question needed. "till" matched "ill" in production.
+  PR #35 would route the same question to nutrition and drop the training and weight history.
+- The markdown formatter also ignored most base history: HealthKit, measurements, nutrition
+  history, the weekly review and the profile.
+- Formatting limits rejected whole accurate answers.
+- DeepSeek failures could not be recorded.
+
+What A1 changes:
+- `prepare_coach_chat_v8` (`20260927230000_coach_chat_v8_full_athlete_context.sql`) gives every
+  question the same full file: the v7 base plus `build_coach_athlete_context` (28-day training log
+  with sets and volume, 7/14/28-day totals, watch workouts, 28 days of watch data with averages,
+  eight weeks of weights with amendments resolved, 14 days of check-ins, 28 days of logged
+  nutrition, today's meals, plan structure, proposals, reconciliations, data freshness). It has a
+  90K whole-section guard that lists what it drops. v7 stays for rollback.
+- The formatter renders all of it. Required truth comes first, conversation history last, and the
+  question at the very end (DeepSeek prefix cache). Dropped sections are named. Long coach messages
+  keep their ending, so a clarifying question survives.
+- Budgets: one 96K budget for every question (plan change 128K). The classification only chooses
+  thinking for explicit plan changes.
+- Accuracy rules stay strict. Formatting limits become generous ceilings (reasoning 10 × 200/400,
+  follow-ups 6 × 300, missing data 12 × 300, evidence 20 / label 400), while the prompt still asks
+  for short items.
+- The contract allows labeled estimates that show their inputs (owner decision), and one
+  clarifying question with quick replies.
+- `record_coach_chat_question` stores the question before the model runs and bumps
+  `last_message_at`.
+- `persist_failed_coach_chat_run` accepts DeepSeek and stores up to four finite rule names. The
+  Edge Function now checks its result.
+- Request schema 1.1 receives response 1.2: `answer_source` on every message, and on failure a
+  labeled deterministic data summary (`_shared/coach_chat_fallback.ts`) stored via
+  `persist_coach_chat_data_summary` instead of a 503. Request 1.0 (the installed app) is unchanged.
+- Sentry events carry an `answer_source` tag.
+- Live evaluation: `supabase/functions/_evals/` (about 60 prompts × 3 synthetic athletes, gates in
+  AI_SAFETY_SPEC §13) and the manual `Coach Eval` workflow.
+
+Verification (local):
+- Deno fmt/lint clean. Deno tests: 144 passed, 7 database-dependent ignored.
+- Fresh local database reset applied every migration.
+- pgTAP: 35 files; `coach_chat_v8_test.sql` 28/28, and every existing file passes.
+
+Owner steps:
+1. Merge PR #35, then A1. There is no reinstall: the installed app sends request 1.0 and keeps
+   today's behaviour, but already benefits from the full file, the relaxed formatting limits, and
+   failure recording.
+2. Add the `DEEPSEEK_API_KEY` repository secret, then run the `Coach Eval` workflow and review the
+   summary.
+
+See what the coach did in the last 7 days. These are read-only queries for the Supabase SQL editor:
+
+```sql
+select created_at::date as day,
+  count(*) filter (where status = 'succeeded') as answered,
+  count(*) filter (where status = 'failed') as failed,
+  string_agg(distinct sanitized_error_code, ', ') filter (where status = 'failed') as failures
+from public.model_runs
+where purpose = 'coach_chat' and created_at > now() - interval '7 days'
+group by 1 order by 1 desc;
+
+select created_at, metadata->>'error_code' as code, metadata->'rules' as rules
+from public.audit_events
+where action_code = 'coach.chat.model_run.failed' and created_at > now() - interval '7 days'
+order by created_at desc;
+```
+
+## PR #35 — base hardening
 
 - Coach answer validation exposes finite internal rules and JSON paths while public failures retain
   the stable sanitized error code.
@@ -51,6 +124,19 @@ Keep FLUTTER-8 open until the nine prompts in the PR checklist pass on the owner
 numbers match Today exactly, missing metrics are called not measured, no plan activates without
 approval, and any terminal failure shows finite rule names in Edge Sentry.
 
+## Next — A2 (app, needs a reinstall), then B (calculators)
+
+- A2:
+  - Send request schema 1.1 and render the data-summary bubble with Retry and the beta diagnostic
+    line.
+  - Reopen the last-opened thread (`shared_preferences`).
+  - Create a thread only on its first send.
+  - Refresh the thread list after each reply, and hide threads with no messages.
+  - Keep the raw error snackbar for real errors.
+  - Add the app `SENTRY_DSN`.
+- B: read-only deterministic calculators the model can call (`project_weight_goal`,
+  `training_summary`, `metric_stats`, `compare_periods`), so common estimates become exact.
+
 ## Recorded follow-ups — out of scope
 
 - Add short per-request row evidence aliases (`E1…En`) mapped server-side; never expose UUIDs to the
@@ -59,5 +145,10 @@ approval, and any terminal failure shows finite rule names in Edge Sentry.
   coordinated whitelist/prompt migration.
 - Add log-only numeric-grounding telemetry that counts answer numbers absent from context without
   logging content.
-- Add an on-demand live evaluation for first-pass validity, route accuracy, and the device
-  acceptance prompts.
+- The base context's `measurement_history` and `brief_measurements` still include amended weight
+  readings. v8 renders `weight_series_8w`, which resolves amendments, and uses the base history only
+  when no reading falls within eight weeks.
+- Set `TRACEND_ENV=production` as an Edge secret, so Sentry's `environment` tag stops reading
+  `unknown`.
+- A Sentry alert on every Coach chat failure event (current alerts fire only on a new issue) is
+  created once the owner approves it.

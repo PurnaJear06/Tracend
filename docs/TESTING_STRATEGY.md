@@ -83,7 +83,24 @@ accepted as a permanent retry.
   idempotency, rate limit, evidence grounding, and escalation;
 - live Coach chat never converts an unconfigured, provider-failed, or schema-invalid response into a
   successful deterministic fallback; a bounded schema-repair retry either returns validated model
-  output or a sanitized failed run;
+  output or a sanitized failed run. For request schema 1.1 the failed run is followed by the
+  labeled data summary: tests prove it copies every number verbatim from context, invents nothing
+  when data is missing, drops scores when scoring failed, cites only permitted evidence, passes the
+  answer contract, and is returned as response 1.2 with `answer_source: "data_summary"` and only
+  finite diagnostics;
+- Coach chat v8 tests prove every question kind renders the same full athlete file, both real
+  FLUTTER-8 prompts keep training, weight and nutrition data, the conversation precedes the question
+  and the question comes last, long coach messages keep their ending, dropped sections are named,
+  formatting slightly over the preferred length is accepted while accuracy rules still fail
+  closed, and the prompt allows labeled estimates and one clarifying question;
+- Coach chat v8 pgTAP (`coach_chat_v8_test.sql`, 28 assertions) proves identical sections for every
+  kind, training totals and volume from completed sets only, amended weights replaced, the audit
+  snapshot storing the delivered context, the question stored once before the model runs,
+  DeepSeek failures recorded with finite rule names, and the labeled summary stored once;
+- the live Coach chat evaluation (`supabase/functions/_evals/`, manual `Coach Eval` workflow) runs
+  about 60 varied prompts × 3 synthetic athletes against the real model with gates of at least 97%
+  model answers, zero dead-ends, safe handling of every safety prompt, zero unpermitted evidence,
+  and p95 latency under 25 s. Run it before merging any Coach chat change;
 - Coach-chat provider tests require `finish_reason=stop`, cover truncation, empty/malformed and
   schema-invalid output, unknown evidence, and overlong reasoning fields; prove exactly one
   non-thinking targeted repair receives only the finite rule/path/limit and allowed codes; and prove

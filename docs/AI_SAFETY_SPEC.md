@@ -310,26 +310,41 @@ override safety or the quality floor. Budget assumptions and hard controls are d
   "today/recent" without checking the value's date against it — a metric from an older row is a
   past reading, never a current one.
 - Provider request bodies MUST use the multi-role message form: `system` carries identity,
-  boundaries, refusal behaviour, schema, and evidence rules; `user` carries the user's raw message
-  first (so greetings and questions receive a conversational answer matching what was asked) and the
-  prepared context second, clearly labelled as supporting evidence. Bundling all instructions,
-  schema, the user's question, and the context into a single `user` turn is prohibited — it caused
-  the model to interpret the question as data and emit the same plan-style answer for any input,
-  including greetings. The instruction "Lead with one clear recommendation" is prohibited in
-  conversational chat prompts; recommendations are appropriate only when the user asks for guidance.
-  Same-day execution adjustments remain permitted; persistent plan or target changes remain
-  approval-gated.
+  boundaries, refusal behaviour, schema, and evidence rules; `user` carries the prepared context
+  first, wrapped in `<coaching_context>` and labelled as supporting evidence, and the user's raw
+  message last, labelled `User's message:`. Bundling instructions, schema, the question, and the
+  context into one undelimited `user` turn is prohibited — it caused the model to read the question
+  as data and emit the same plan-style answer for any input, including greetings. (Changed
+  2026-09-27 from question-first: the question now follows the long context, which is the
+  recommended order for long-context prompts, and the stable athlete file becomes a cacheable
+  prefix; greetings and one-word messages are in the live evaluation to catch that regression.)
+  The instruction "Lead with one clear recommendation" is prohibited in conversational chat
+  prompts; recommendations are appropriate only when the user asks for guidance. Same-day
+  execution adjustments remain permitted; persistent plan or target changes remain approval-gated.
 - Coach chat sends the raw question exactly once. Context Date, the null contract, the per-request
   evidence contract, and freshly computed scores are complete priority sections at the start of the
   bounded context. Trimming removes whole lower-priority sections, starting with conversation and
-  session history; it never slices a number, JSON value, or closing context delimiter.
+  session history; it never slices a number, JSON value, or closing context delimiter. Sections
+  left out for size are named in an "Omitted This Turn" line so the coach says what it cannot see.
+- **Full athlete file (2026-09-27, v8):** every chat question receives the same complete context
+  from `prepare_coach_chat_v8` — plan, goal, profile, check-ins, the 28-day training log and
+  7/14/28-day totals, watch workouts, 28 days of watch data with averages, eight weeks of weights,
+  nutrition targets and logged days, conversation memory, and data freshness. The question's
+  keyword classification may choose behaviour (thinking for explicit plan changes) and telemetry;
+  it never adds or removes data. `prepare_coach_chat_v7` remains for rollback.
 - If the deterministic scores cannot be computed for the coaching date, `prepare_coach_chat_v7`
-  marks Computed Scores unavailable and permits only non-score evidence codes; chat stays
-  available instead of failing, matching the Today brief's degradation.
-- Deterministic code owns every number and evidence code. The model may quote only numbers already
-  present in context with the same units and rounding. It may not calculate new averages,
-  percentage changes, projections, or other statistics. Missing/null values are described as not
-  measured.
+  (and v8, which builds on it) marks Computed Scores unavailable and permits only non-score
+  evidence codes; chat stays available instead of failing, matching the Today brief's degradation.
+- Deterministic code owns every measured number and evidence code. Numbers about the athlete's data
+  are quoted from context with the same units and rounding; the model never invents a measurement.
+  **Owner decision 2026-09-27:** the model may give an estimate (for example, time to reach a
+  target weight) derived from context numbers or numbers the athlete states, provided it calls it
+  an estimate, shows its inputs and assumptions, and never presents it as measured data.
+  Deterministic calculators for common estimates follow as the next change. Missing/null values
+  are described as not measured.
+- When a question is ambiguous or needs a detail the context lacks, the coach answers what the data
+  supports and asks one short clarifying question, offering likely replies as suggested follow-ups.
+  The reply returns with the next turn through the conversation history.
 - Every coach-chat provider uses one shared coach persona (coaching approach, communication style,
   hard boundaries), followed by the null contract and the output accuracy/validation contract so the
   contract's rules take precedence.
@@ -348,17 +363,34 @@ citation without adding facts or numbers. A live Coach chat must never delete in
 keep the prose, or present deterministic fallback text as a successful model answer; deterministic
 emergency and clinical-boundary refusals remain explicitly labeled safety responses.
 
+**Labeled data summary (2026-09-27):** for app builds that send request schema 1.1, the safe
+unavailable state is a deterministic data-summary reply instead of an error, so the athlete is
+never left at a dead end. It opens by saying the coach could not produce a full answer, copies
+every number verbatim from the prepared context (no estimates), cites only permitted evidence, and
+carries `safety_state: "unavailable"`, `answer_source: "data_summary"`, and a sanitized
+`diagnostic` (failure code and finite rule names). It is stored in the thread as an assistant
+message flagged `data_summary` and is never presented as the model's answer. Request schema 1.0
+builds keep the 503.
+
 DeepSeek Coach chat accepts provider output only when `finish_reason` is `stop`. Empty content,
 `length` truncation, malformed JSON, and schema rejection receive at most one repair attempt. The
 repair is non-thinking JSON mode at temperature 0, receives the same bounded question/context plus
 at most 12,000 characters of the failed candidate as explicitly delimited untrusted input, and is
 never used for authentication, rate-limit, HTTP, or timeout failures. The output ceiling is 4,096
 tokens; per-attempt limits are 28 seconds initial and 10 seconds repair inside a 40-second Edge
-deadline. Failed runs persist only a stable sanitized failure code. Response schema 1.1 exposes that
-code to Flutter without provider bodies, parser messages, prompts, or health context.
+deadline. Failed runs persist a stable sanitized failure code and at most four finite rule names
+(`persist_failed_coach_chat_run` accepts every provider `model_runs` allows, including DeepSeek),
+and the Edge Function checks that the record was written. The user's question is stored when the
+turn starts, so a failed answer never erases it. Response schema 1.1 exposes the failure code to
+Flutter without provider bodies, parser messages, prompts, or health context.
 
-The validator and model-facing schema share one set of maximum lengths, item counts, safety enums,
-evidence sources, and the request's exact evidence-code enum. Validation failures use a finite rule
+The validator and model-facing schema share one set of hard ceilings, item counts, safety enums,
+evidence sources, and the request's exact evidence-code enum. Accuracy and safety rules (JSON
+validity, keys and types, safety state, permitted evidence and reasoning citations) are strict.
+Formatting limits are generous ceilings (reasoning 10 items, step 200, value 400 characters;
+follow-ups 6 × 300; missing data 12 × 300; evidence 20, label 400) because an accurate answer must
+not be discarded for being slightly long; the prompt still asks for short items (about 80/160/120
+characters). Validation failures use a finite rule
 set (for example `json_syntax`, `evidence_code_not_permitted`, or
 `reasoning_value_too_long`) plus a JSON path. One structured outcome record captures each attempt's
 rule, path, latency, finish reason, and completion-token count. Sentry is emitted only for terminal
@@ -386,6 +418,15 @@ repeatability, schema validity, clarity, meal candidate accuracy, latency, and c
 
 Safety-critical cases require a 100% pass rate. A cheaper model cannot ship below a quality
 threshold. Prompt, policy, schema, or model changes require regression evaluation.
+
+**Live Coach chat evaluation (2026-09-27):** `supabase/functions/_evals/coach_chat_eval.ts` runs
+about 60 varied prompts (the real failures verbatim, mixed topics, typos and Hinglish, long
+messages, projections, unmeasured metrics, plan changes, safety, follow-ups, greetings) against
+three synthetic athletes through the production code path and the real model. Merge gates: at
+least 97% model answers, zero dead-ends, every safety prompt handled safely, zero unpermitted
+evidence, p95 latency under 25 seconds. Estimate labelling, clarifying questions, and a projection
+sanity range are reported. It runs on demand (`Coach Eval` workflow, `DEEPSEEK_API_KEY` repository
+secret) before any Coach chat change merges.
 
 ## 14. Observability and Review
 
