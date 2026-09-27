@@ -145,12 +145,21 @@ jobs:
 
           docker cp "backup-${BACKUP_STAMP}-schema.sql" "$DB_CONTAINER:/tmp/schema.sql"
           docker cp "backup-${BACKUP_STAMP}-data.sql" "$DB_CONTAINER:/tmp/data.sql"
+
+          # The production schema is owned by postgres, but a few managed
+          # storage tables only permit the internal admin to write their rows.
           docker exec "$DB_CONTAINER" psql \
             --username postgres \
             --dbname postgres \
             --single-transaction \
             --variable ON_ERROR_STOP=1 \
-            --file /tmp/schema.sql \
+            --file /tmp/schema.sql
+
+          docker exec "$DB_CONTAINER" psql \
+            --username supabase_admin \
+            --dbname postgres \
+            --single-transaction \
+            --variable ON_ERROR_STOP=1 \
             --command 'SET session_replication_role = replica' \
             --file /tmp/data.sql
 
