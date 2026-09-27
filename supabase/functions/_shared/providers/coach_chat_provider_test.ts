@@ -1,4 +1,6 @@
 import {
+  buildCoachChatAnswerSchema,
+  buildCoachChatUserMessage,
   classifyQuestion,
   coachChatTiming,
   CoachChatUnavailableError,
@@ -7,6 +9,10 @@ import {
   generateCoachChat,
   isCoachChatLiveProviderConfigured,
 } from "./coach_chat_provider.ts";
+import { coachChatAnswerLimits } from "../contracts/coach_chat_v1.ts";
+import v7ContextFixture from "../../../../test/contract/fixtures/coach_chat_context_v7_0.json" with {
+  type: "json",
+};
 
 Deno.test("Coach chat never turns an unconfigured provider into a mock answer", () => {
   const environment = new Map<string, string>([
@@ -151,6 +157,22 @@ Deno.test("classifyQuestion returns general for ambiguous queries", () => {
   for (const q of cases) {
     if (classifyQuestion(q) !== "general") {
       throw new Error(`Expected general for: "${q}", got: ${classifyQuestion(q)}`);
+    }
+  }
+});
+
+Deno.test("classifyQuestion uses whole words and routes the acceptance prompts", () => {
+  const cases: Array<[string, string]> = [
+    ["What will I eat for dinner to hit my protein target?", "nutrition_focus"],
+    ["I'm interested in improving my squat.", "general"],
+    ["Great session today — what should I do next?", "daily_action"],
+    ["How are my HRV and readiness today?", "recovery"],
+    ["I feel tired and exhausted.", "recovery"],
+  ];
+  for (const [question, expected] of cases) {
+    const actual = classifyQuestion(question);
+    if (actual !== expected) {
+      throw new Error(`Expected ${expected} for "${question}", got ${actual}`);
     }
   }
 });
@@ -711,6 +733,59 @@ Deno.test("CONTEXT BUDGET CONTRACT: markdown formatter stays within 28K ceiling"
   }
 });
 
+Deno.test("v7 contract fixture keeps authoritative sections whole and sends the question once", () => {
+  const question = "How is my recovery today?";
+  const oversized = {
+    ...v7ContextFixture,
+    recent_messages: Array.from(
+      { length: 100 },
+      () => ({ role: "assistant", content: "history ".repeat(500) }),
+    ),
+    session_journal: Array.from(
+      { length: 50 },
+      (_, index) => ({
+        coaching_date: `2026-08-${String(index + 1).padStart(2, "0")}`,
+        summary: "x".repeat(1000),
+      }),
+    ),
+  } as Record<string, unknown>;
+  const message = buildCoachChatUserMessage(question, oversized, "recovery");
+  if (!message.includes("## Context Date") || !message.includes("## Null Contract")) {
+    throw new Error("Required date/null sections must survive context pressure");
+  }
+  if (!message.includes("## Evidence Contract") || !message.includes("## Computed Scores")) {
+    throw new Error("Evidence and computed-score contracts must be first-class sections");
+  }
+  if (!message.includes("- recovery: 62/100")) {
+    throw new Error("Authoritative score must remain byte-exact under context pressure");
+  }
+  if (!message.endsWith("</coaching_context>")) {
+    throw new Error("Context wrapper must always close");
+  }
+  if (message.split(question).length - 1 !== 1) {
+    throw new Error("The user question must be sent exactly once");
+  }
+});
+
+Deno.test("model-facing schema is generated from validator limits and permitted codes", () => {
+  const schema = buildCoachChatAnswerSchema(["APPROVED_PLAN_ACTIVE"]);
+  const properties = schema.properties;
+  if (properties.answer.maxLength !== coachChatAnswerLimits.answerMaxLength) {
+    throw new Error("Answer schema limit drifted from validator constant");
+  }
+  if (properties.reasoning_chain.maxItems !== coachChatAnswerLimits.reasoningMaxItems) {
+    throw new Error("Reasoning item limit drifted from validator constant");
+  }
+  const reasoningProperties = properties.reasoning_chain.items.properties;
+  if (reasoningProperties.value.maxLength !== coachChatAnswerLimits.reasoningValueMaxLength) {
+    throw new Error("Reasoning value limit drifted from validator constant");
+  }
+  const evidenceCodes = properties.evidence.items.properties.code.enum;
+  if (evidenceCodes.length !== 1 || evidenceCodes[0] !== "APPROVED_PLAN_ACTIVE") {
+    throw new Error("Per-request evidence enum must match the validator whitelist");
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Pass 4 — AI-context honesty: nulls must reach the model as NOT MEASURED.
 // ---------------------------------------------------------------------------
@@ -884,6 +959,36 @@ Deno.test("DeepSeek Coach chat accepts complete JSON with finish_reason stop", a
   });
 });
 
+Deno.test("DeepSeek accepts a realistic recovery answer with evidence and reasoning", async () => {
+  await withDeepSeekEnvironment(async () => {
+    const answer = JSON.stringify({
+      answer: "Your recovery is 62/100. Keep today's work controlled.",
+      evidence: [{
+        code: "RECOVERY_WITHIN_BASELINE",
+        label: "Recovery is within the configured score band",
+        source: "feature_snapshot",
+      }],
+      missing_data: ["Respiratory rate was not measured"],
+      safety_state: "allowed",
+      suggested_follow_ups: ["Review today's workout intensity"],
+      reasoning_chain: [{
+        step: "Recovery",
+        value: "The supplied score is 62/100.",
+        evidence_id: "RECOVERY_WITHIN_BASELINE",
+      }],
+    });
+    const generation = await generateCoachChat(
+      "How is my recovery today?",
+      v7ContextFixture as Record<string, unknown>,
+      "recovery",
+      (() => Promise.resolve(deepSeekResponse(answer))) as typeof fetch,
+    );
+    if (generation.answer.evidence.length !== 1 || generation.attempts[0]?.outcome !== "valid") {
+      throw new Error("A grounded non-empty answer must pass on the first attempt");
+    }
+  });
+});
+
 Deno.test("DeepSeek thinking is high only for an explicit plan change", async () => {
   await withDeepSeekEnvironment(async () => {
     const bodies: Array<Record<string, unknown>> = [];
@@ -989,6 +1094,80 @@ Deno.test("DeepSeek Coach chat repairs schema-invalid JSON", async () => {
   });
 });
 
+Deno.test("DeepSeek targeted repair names the rule, path, limit, and allowed codes", async () => {
+  const scenarios = [
+    {
+      invalid: JSON.stringify({
+        answer: "Unsupported citation",
+        evidence: [{ code: "INVENTED", label: "Invented", source: "feature_snapshot" }],
+        missing_data: [],
+        safety_state: "allowed",
+        suggested_follow_ups: [],
+        reasoning_chain: [],
+      }),
+      rule: "evidence_code_not_permitted",
+      path: "evidence[0].code",
+      limit: null,
+    },
+    {
+      invalid: JSON.stringify({
+        answer: "Long reasoning",
+        evidence: [],
+        missing_data: [],
+        safety_state: "allowed",
+        suggested_follow_ups: [],
+        reasoning_chain: [{
+          step: "Recovery",
+          value: "x".repeat(coachChatAnswerLimits.reasoningValueMaxLength + 1),
+          evidence_id: null,
+        }],
+      }),
+      rule: "reasoning_value_too_long",
+      path: "reasoning_chain[0].value",
+      limit: coachChatAnswerLimits.reasoningValueMaxLength,
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    await withDeepSeekEnvironment(async () => {
+      const bodies: Array<Record<string, unknown>> = [];
+      const responses = [
+        deepSeekResponse(scenario.invalid),
+        deepSeekResponse(validDeepSeekAnswer),
+      ];
+      const generation = await generateCoachChat(
+        "How is my recovery?",
+        { permitted_evidence: ["APPROVED_PLAN_ACTIVE"] },
+        "recovery",
+        ((_input: RequestInfo | URL, init?: RequestInit) => {
+          bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+          return Promise.resolve(responses.shift()!);
+        }) as typeof fetch,
+      );
+      if (bodies.length !== 2 || generation.attempts.length !== 2) {
+        throw new Error("Targeted repair must make exactly one retry and retain both outcomes");
+      }
+      const repairMessages = bodies[1].messages as Array<Record<string, unknown>>;
+      const system = String(repairMessages[0]?.content ?? "");
+      for (
+        const required of [
+          `rule=${scenario.rule}`,
+          `path=${scenario.path}`,
+          "Allowed evidence codes: APPROVED_PLAN_ACTIVE",
+        ]
+      ) {
+        if (!system.includes(required)) throw new Error(`Repair prompt omitted ${required}`);
+      }
+      if (scenario.limit != null && !system.includes(`limit=${scenario.limit}`)) {
+        throw new Error("Repair prompt omitted the shared validator limit");
+      }
+      if (generation.attempts[0]?.rule !== scenario.rule) {
+        throw new Error("Initial validation rule must remain observable after successful repair");
+      }
+    });
+  }
+});
+
 Deno.test("DeepSeek Coach chat exposes only a stable code after two invalid responses", async () => {
   await withDeepSeekEnvironment(async () => {
     let calls = 0;
@@ -1014,6 +1193,15 @@ Deno.test("DeepSeek Coach chat exposes only a stable code after two invalid resp
       }
       if (error.metadata.attempt !== "repair") {
         throw new Error("Failure metadata must identify the repair attempt");
+      }
+      if (
+        error.metadata.initialRule !== "json_syntax" || error.metadata.repairRule !== "json_syntax"
+      ) {
+        throw new Error("Terminal failure must retain both finite validation rule names");
+      }
+      const metadata = JSON.stringify(error.metadata);
+      if (metadata.includes("Unexpected end")) {
+        throw new Error("Raw model content must not enter terminal metadata");
       }
     }
   });

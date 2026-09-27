@@ -9,6 +9,8 @@ export interface SentryContext {
   failureCode?: string;
   attempt?: string;
   finishReason?: string | null;
+  initialValidationRule?: string;
+  repairValidationRule?: string;
   coachingDate?: string;
   mealId?: string;
 }
@@ -87,6 +89,8 @@ export function buildSentryEvent(
       failure_code: context?.failureCode ?? "unknown",
       attempt: context?.attempt ?? "unknown",
       finish_reason: context?.finishReason ?? "unknown",
+      initial_validation_rule: context?.initialValidationRule ?? "none",
+      repair_validation_rule: context?.repairValidationRule ?? "none",
     },
     user: context?.userId ? { id: String(context.userId) } : undefined,
     extra: {

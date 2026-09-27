@@ -1,0 +1,59 @@
+{
+  "schema_version": "7.0",
+  "coaching_date": "2026-09-27",
+  "active_plan": {
+    "title": "Push/Pull/Legs Split",
+    "version_number": 1,
+    "sessions_per_week": 6,
+    "rationale": "Approved hypertrophy plan"
+  },
+  "latest_check_in": {
+    "local_date": "2026-09-27",
+    "sleep_quality": 2,
+    "energy": 3,
+    "soreness": 4,
+    "pain_severity": 0,
+    "available_to_train": true
+  },
+  "permitted_evidence": [
+    "APPROVED_PLAN_ACTIVE",
+    "HEALTH_CONTEXT_AVAILABLE",
+    "RECOVERY_WITHIN_BASELINE",
+    "SLEEP_QUALITY_POOR",
+    "DATA_CONFIDENCE_HIGH"
+  ],
+  "missing_data": [],
+  "computed_metrics": {
+    "local_date": "2026-09-27",
+    "recovery": {
+      "score": 62,
+      "breakdown": {
+        "hrv_z": 0.25,
+        "rhr_z": -0.1,
+        "sleep_z": -0.4,
+        "resp_rate_z": null,
+        "prev_strain_z": 0.2,
+        "missing_components": [
+          "resp_rate"
+        ]
+      }
+    },
+    "sleep": {
+      "quality": 45,
+      "debt_minutes": 95
+    },
+    "training_load": {
+      "acwr": null,
+      "monotony": null,
+      "strain": 32.5
+    },
+    "weight": {
+      "trend_7d_kg_per_day": null,
+      "trend_28d_kg_per_day": null
+    },
+    "nutrition": {
+      "adherence_pct": null
+    },
+    "data_confidence": "high"
+  }
+}

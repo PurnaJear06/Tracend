@@ -85,9 +85,17 @@ accepted as a permanent retry.
   successful deterministic fallback; a bounded schema-repair retry either returns validated model
   output or a sanitized failed run;
 - Coach-chat provider tests require `finish_reason=stop`, cover truncation, empty/malformed and
-  schema-invalid output, prove exactly one non-thinking repair, and prove HTTP, rate-limit, and
-  timeout failures are not retried. Contract tests pin response schema 1.1 and safe Flutter error
-  copy while rejecting raw parser/provider details;
+  schema-invalid output, unknown evidence, and overlong reasoning fields; prove exactly one
+  non-thinking targeted repair receives only the finite rule/path/limit and allowed codes; and prove
+  HTTP, rate-limit, and timeout failures are not retried. The model schema and authoritative
+  validator are asserted against the same exported limits. Contract tests pin response schema 1.1
+  and safe Flutter error copy while rejecting raw parser/provider details;
+- Coach context v7 pgTAP covers poor, mid-band, good, and NULL recovery evidence; absent check-ins;
+  stale versus same-date health; daily/chat evidence parity through the shared SQL helper; v6
+  rollback availability; and successful daily-decision persistence on a NULL-recovery day;
+- the versioned `coach_chat_context_v7_0.json` fixture and max-budget tests require Context Date,
+  Null Contract, Evidence Contract, and Computed Scores to remain whole, retain exact numeric text,
+  close the context delimiter, and include the user question once;
 - user-scoped AI usage aggregation, including anonymous and cross-user denial, estimate labeling,
   and exclusion of secrets, prompts, request IDs, and raw errors;
 - nutrition forced RLS, private meal Storage policies, manual idempotency, unconfirmed-candidate
@@ -354,8 +362,10 @@ DSN is the only identifier reaching the client; the project lives at `sentry.io`
 `object_key`, `prompt`, `prompt_text`, `question`, `answer_text`, `answer_payload`.
 
 Edge Functions report exceptions from the main `coach-chat` and `meal-analyze` catch blocks. Coach
-events add `runtime=edge`, provider, model, context kind, sanitized failure code, attempt, and finish
-reason tags plus a bounded stack string. Only whitelisted identifiers/dates enter `extra`; the
+events add `runtime=edge`, provider, model, context kind, sanitized failure code, attempt, finish
+reason, and initial/repair validation-rule tags plus a bounded stack string. Successful and failed
+requests log one sanitized attempt summary with outcome, finite rule/path, limits/counts, latency,
+and completion tokens. Only whitelisted identifiers/dates enter `extra`; the
 question, health context, provider response, and HTTP body are excluded. Flutter and Edge remain in
 the same Sentry project and are separated by tags. Failures are silent — a Sentry outage never
 affects the caller.

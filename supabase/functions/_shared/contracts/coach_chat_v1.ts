@@ -26,6 +26,84 @@ export type CoachChatAnswerV2 =
     reasoning_chain?: readonly ReasoningChainItem[];
   }>;
 
+export const coachChatAnswerLimits = Object.freeze({
+  answerMaxLength: 12_000,
+  evidenceMaxItems: 12,
+  evidenceLabelMaxLength: 240,
+  missingDataMaxItems: 12,
+  missingDataItemMaxLength: 120,
+  followUpsMaxItems: 4,
+  followUpMaxLength: 160,
+  reasoningMaxItems: 6,
+  reasoningStepMaxLength: 80,
+  reasoningValueMaxLength: 160,
+});
+
+export const coachChatSafetyStates = ["allowed", "limited", "refused", "unavailable"] as const;
+export const coachChatEvidenceSources = [
+  "feature_snapshot",
+  "policy_evaluation",
+  "coach_context",
+] as const;
+
+export const coachChatValidationRules = [
+  "json_syntax",
+  "invalid_root",
+  "unexpected_keys",
+  "answer_invalid",
+  "answer_too_long",
+  "safety_state_invalid",
+  "evidence_not_array",
+  "evidence_too_many",
+  "evidence_item_invalid",
+  "evidence_unexpected_keys",
+  "evidence_code_not_permitted",
+  "evidence_label_invalid",
+  "evidence_label_too_long",
+  "evidence_source_invalid",
+  "missing_data_not_array",
+  "missing_data_too_many",
+  "missing_data_item_invalid",
+  "missing_data_item_too_long",
+  "follow_ups_not_array",
+  "follow_ups_too_many",
+  "follow_up_invalid",
+  "follow_up_too_long",
+  "reasoning_not_array",
+  "reasoning_too_many",
+  "reasoning_item_invalid",
+  "reasoning_unexpected_keys",
+  "reasoning_step_invalid",
+  "reasoning_step_too_long",
+  "reasoning_value_invalid",
+  "reasoning_value_too_long",
+  "reasoning_evidence_invalid",
+  "reasoning_evidence_not_permitted",
+] as const;
+
+export type CoachChatValidationRule = typeof coachChatValidationRules[number];
+
+export class CoachChatAnswerValidationError extends Error {
+  constructor(
+    readonly rule: CoachChatValidationRule,
+    readonly path: string,
+    readonly limit?: number,
+    readonly actual?: number,
+  ) {
+    super(`invalid_chat_answer:${rule}:${path}`);
+    this.name = "CoachChatAnswerValidationError";
+  }
+}
+
+function invalid(
+  rule: CoachChatValidationRule,
+  path: string,
+  limit?: number,
+  actual?: number,
+): never {
+  throw new CoachChatAnswerValidationError(rule, path, limit, actual);
+}
+
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function parseCoachChatRequest(value: unknown): CoachChatRequestV1 {
@@ -53,51 +131,153 @@ export function parseCoachChatAnswer(
   permittedEvidence: readonly string[],
 ): CoachChatAnswerV2 {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("invalid_chat_answer");
+    invalid("invalid_root", "$");
   }
   const answer = value as Record<string, unknown>;
   const requiredKeys = "answer,evidence,missing_data,safety_state,suggested_follow_ups";
   const keys = Object.keys(answer).filter((k) => k !== "reasoning_chain").sort().join(",");
   if (keys !== requiredKeys) {
-    throw new Error("invalid_chat_answer");
+    invalid("unexpected_keys", "$");
+  }
+  if (typeof answer.answer !== "string" || answer.answer.trim().length < 1) {
+    invalid("answer_invalid", "answer");
+  }
+  if (answer.answer.length > coachChatAnswerLimits.answerMaxLength) {
+    invalid(
+      "answer_too_long",
+      "answer",
+      coachChatAnswerLimits.answerMaxLength,
+      answer.answer.length,
+    );
   }
   if (
-    typeof answer.answer !== "string" || answer.answer.trim().length < 1 ||
-    answer.answer.length > 12000 ||
-    !["allowed", "limited", "refused", "unavailable"].includes(String(answer.safety_state)) ||
-    !Array.isArray(answer.evidence) || answer.evidence.length > 12 ||
-    !Array.isArray(answer.missing_data) || answer.missing_data.length > 12 ||
-    !answer.missing_data.every((item) => typeof item === "string" && item.length <= 120) ||
-    !Array.isArray(answer.suggested_follow_ups) || answer.suggested_follow_ups.length > 4 ||
-    !answer.suggested_follow_ups.every((item) => typeof item === "string" && item.length <= 160)
-  ) throw new Error("invalid_chat_answer");
-  for (const item of answer.evidence) {
+    !coachChatSafetyStates.includes(answer.safety_state as typeof coachChatSafetyStates[number])
+  ) {
+    invalid("safety_state_invalid", "safety_state");
+  }
+  if (!Array.isArray(answer.evidence)) invalid("evidence_not_array", "evidence");
+  if (answer.evidence.length > coachChatAnswerLimits.evidenceMaxItems) {
+    invalid(
+      "evidence_too_many",
+      "evidence",
+      coachChatAnswerLimits.evidenceMaxItems,
+      answer.evidence.length,
+    );
+  }
+  if (!Array.isArray(answer.missing_data)) invalid("missing_data_not_array", "missing_data");
+  if (answer.missing_data.length > coachChatAnswerLimits.missingDataMaxItems) {
+    invalid(
+      "missing_data_too_many",
+      "missing_data",
+      coachChatAnswerLimits.missingDataMaxItems,
+      answer.missing_data.length,
+    );
+  }
+  for (const [index, item] of answer.missing_data.entries()) {
+    if (typeof item !== "string") invalid("missing_data_item_invalid", `missing_data[${index}]`);
+    if (item.length > coachChatAnswerLimits.missingDataItemMaxLength) {
+      invalid(
+        "missing_data_item_too_long",
+        `missing_data[${index}]`,
+        coachChatAnswerLimits.missingDataItemMaxLength,
+        item.length,
+      );
+    }
+  }
+  if (!Array.isArray(answer.suggested_follow_ups)) {
+    invalid("follow_ups_not_array", "suggested_follow_ups");
+  }
+  if (answer.suggested_follow_ups.length > coachChatAnswerLimits.followUpsMaxItems) {
+    invalid(
+      "follow_ups_too_many",
+      "suggested_follow_ups",
+      coachChatAnswerLimits.followUpsMaxItems,
+      answer.suggested_follow_ups.length,
+    );
+  }
+  for (const [index, item] of answer.suggested_follow_ups.entries()) {
+    if (typeof item !== "string") invalid("follow_up_invalid", `suggested_follow_ups[${index}]`);
+    if (item.length > coachChatAnswerLimits.followUpMaxLength) {
+      invalid(
+        "follow_up_too_long",
+        `suggested_follow_ups[${index}]`,
+        coachChatAnswerLimits.followUpMaxLength,
+        item.length,
+      );
+    }
+  }
+  for (const [index, item] of answer.evidence.entries()) {
+    const path = `evidence[${index}]`;
     if (!item || typeof item !== "object" || Array.isArray(item)) {
-      throw new Error("invalid_chat_answer");
+      invalid("evidence_item_invalid", path);
     }
     const evidence = item as Record<string, unknown>;
+    if (Object.keys(evidence).sort().join(",") !== "code,label,source") {
+      invalid("evidence_unexpected_keys", path);
+    }
+    if (typeof evidence.code !== "string" || !permittedEvidence.includes(evidence.code)) {
+      invalid("evidence_code_not_permitted", `${path}.code`);
+    }
+    if (typeof evidence.label !== "string") invalid("evidence_label_invalid", `${path}.label`);
+    if (evidence.label.length > coachChatAnswerLimits.evidenceLabelMaxLength) {
+      invalid(
+        "evidence_label_too_long",
+        `${path}.label`,
+        coachChatAnswerLimits.evidenceLabelMaxLength,
+        evidence.label.length,
+      );
+    }
     if (
-      Object.keys(evidence).sort().join(",") !== "code,label,source" ||
-      typeof evidence.code !== "string" || !permittedEvidence.includes(evidence.code) ||
-      typeof evidence.label !== "string" || evidence.label.length > 240 ||
-      !["feature_snapshot", "policy_evaluation", "coach_context"].includes(String(evidence.source))
-    ) throw new Error("invalid_chat_answer");
+      !coachChatEvidenceSources.includes(evidence.source as typeof coachChatEvidenceSources[number])
+    ) {
+      invalid("evidence_source_invalid", `${path}.source`);
+    }
   }
   if (answer.reasoning_chain !== undefined) {
-    if (!Array.isArray(answer.reasoning_chain) || answer.reasoning_chain.length > 6) {
-      throw new Error("invalid_chat_answer");
+    if (!Array.isArray(answer.reasoning_chain)) {
+      invalid("reasoning_not_array", "reasoning_chain");
     }
-    for (const item of answer.reasoning_chain) {
+    if (answer.reasoning_chain.length > coachChatAnswerLimits.reasoningMaxItems) {
+      invalid(
+        "reasoning_too_many",
+        "reasoning_chain",
+        coachChatAnswerLimits.reasoningMaxItems,
+        answer.reasoning_chain.length,
+      );
+    }
+    for (const [index, item] of answer.reasoning_chain.entries()) {
+      const path = `reasoning_chain[${index}]`;
       if (!item || typeof item !== "object" || Array.isArray(item)) {
-        throw new Error("invalid_chat_answer");
+        invalid("reasoning_item_invalid", path);
       }
       const step = item as Record<string, unknown>;
-      if (
-        typeof step.step !== "string" || step.step.length > 80 ||
-        typeof step.value !== "string" || step.value.length > 160 ||
-        (step.evidence_id !== null && step.evidence_id !== undefined &&
-          (typeof step.evidence_id !== "string" || !permittedEvidence.includes(step.evidence_id)))
-      ) throw new Error("invalid_chat_answer");
+      if (Object.keys(step).sort().join(",") !== "evidence_id,step,value") {
+        invalid("reasoning_unexpected_keys", path);
+      }
+      if (typeof step.step !== "string") invalid("reasoning_step_invalid", `${path}.step`);
+      if (step.step.length > coachChatAnswerLimits.reasoningStepMaxLength) {
+        invalid(
+          "reasoning_step_too_long",
+          `${path}.step`,
+          coachChatAnswerLimits.reasoningStepMaxLength,
+          step.step.length,
+        );
+      }
+      if (typeof step.value !== "string") invalid("reasoning_value_invalid", `${path}.value`);
+      if (step.value.length > coachChatAnswerLimits.reasoningValueMaxLength) {
+        invalid(
+          "reasoning_value_too_long",
+          `${path}.value`,
+          coachChatAnswerLimits.reasoningValueMaxLength,
+          step.value.length,
+        );
+      }
+      if (step.evidence_id !== null && typeof step.evidence_id !== "string") {
+        invalid("reasoning_evidence_invalid", `${path}.evidence_id`);
+      }
+      if (typeof step.evidence_id === "string" && !permittedEvidence.includes(step.evidence_id)) {
+        invalid("reasoning_evidence_not_permitted", `${path}.evidence_id`);
+      }
     }
   }
   return answer as unknown as CoachChatAnswerV2;
