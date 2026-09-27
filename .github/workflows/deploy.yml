@@ -103,8 +103,12 @@ jobs:
             exit 1
           }
 
+          # The disposable local stack's postgres role intentionally cannot
+          # modify every Supabase-managed migration table. Its internal admin
+          # role can clear that pre-seeded state before the production snapshot
+          # is replayed.
           docker exec "$DB_CONTAINER" psql \
-            --username postgres \
+            --username supabase_admin \
             --dbname postgres \
             --variable ON_ERROR_STOP=1 \
             --command 'DROP SCHEMA public CASCADE' \
