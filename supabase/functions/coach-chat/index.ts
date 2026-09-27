@@ -43,6 +43,28 @@ export function coachChatFailureResponse(
   });
 }
 
+// Context preparation raises fixed messages. Each maps to a finite code, so a
+// blocked turn names its cause in Sentry and in the beta app without free text.
+const coachChatPreparationFailures: Readonly<Record<string, string>> = {
+  "thread not found": "thread_not_found",
+  "invalid chat request": "invalid_chat_request",
+  "account not found": "account_not_found",
+  "approved plan required": "approved_plan_required",
+  "invalid timezone": "invalid_timezone",
+  "daily rate limit reached": "daily_rate_limit",
+  "monthly cost limit reached": "monthly_cost_limit",
+  "chat context too large": "chat_context_too_large",
+};
+
+export function coachChatPreparationFailureCode(
+  error: { code?: string; message?: string } | null,
+): string {
+  if (!error) return "missing_prepared_context";
+  const known = coachChatPreparationFailures[error.message ?? ""];
+  if (known) return known;
+  return /^[0-9A-Z]{5}$/.test(error.code ?? "") ? `sqlstate_${error.code}` : "unknown";
+}
+
 export function coachChatFailureRules(error: CoachChatUnavailableError): CoachChatValidationRule[] {
   return [error.metadata.initialRule, error.metadata.repairRule].filter(
     (rule): rule is CoachChatValidationRule => rule !== undefined,
@@ -202,14 +224,25 @@ Deno.serve(async (request) => {
     },
   );
   if (prepareError || !prepared) {
+    const reason = coachChatPreparationFailureCode(prepareError);
     log.error("prepare_coach_chat_v8 failed", {
       error_code: prepareError?.code ?? "missing_prepared_context",
+      reason,
+    });
+    captureException(new Error(`coach_chat_context_unavailable: ${reason}`), {
+      userId: auth.userId,
+      functionName: "coach-chat",
+      correlationId,
+      runtime: "edge",
+      contextKind,
+      failureCode: reason,
     });
     return reply(
       422,
       versionedResponse({
         error: "chat_unavailable",
         code: "context_preparation_failed",
+        reason,
       }),
     );
   }
@@ -241,6 +274,13 @@ Deno.serve(async (request) => {
   });
   if (recordError) {
     log.error("record_coach_chat_question failed", { error_code: recordError.code ?? "unknown" });
+    captureException(new Error("coach_chat_question_not_recorded"), {
+      userId: auth.userId,
+      functionName: "coach-chat",
+      correlationId,
+      runtime: "edge",
+      failureCode: recordError.code ?? "unknown",
+    });
   }
 
   const { data: ftsMessages, error: ftsError } = await auth.serviceClient.rpc(
@@ -464,6 +504,13 @@ Deno.serve(async (request) => {
     if (storeError) {
       log.error("persist_coach_chat_data_summary failed", {
         error_code: storeError.code ?? "unknown",
+      });
+      captureException(new Error("coach_chat_data_summary_not_stored"), {
+        userId: auth.userId,
+        functionName: "coach-chat",
+        correlationId,
+        runtime: "edge",
+        failureCode: storeError.code ?? "unknown",
       });
     }
     log.info("coach_chat_data_summary_served", {

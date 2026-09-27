@@ -6,10 +6,33 @@ import {
   coachChatDataSummaryResponse,
   coachChatFailureResponse,
   coachChatFailureRules,
+  coachChatPreparationFailureCode,
   coachChatResponseSchemaVersion,
   detectPreferenceStatement,
   supportsDataSummary,
 } from "./index.ts";
+
+Deno.test("a blocked context preparation names its cause with a finite code", () => {
+  assertEquals(
+    coachChatPreparationFailureCode({ code: "P0001", message: "daily rate limit reached" }),
+    "daily_rate_limit",
+  );
+  assertEquals(
+    coachChatPreparationFailureCode({ code: "22023", message: "chat context too large" }),
+    "chat_context_too_large",
+  );
+  assertEquals(
+    coachChatPreparationFailureCode({ code: "P0002", message: "approved plan required" }),
+    "approved_plan_required",
+  );
+  // Unknown database errors keep only the SQLSTATE, never the message text.
+  assertEquals(
+    coachChatPreparationFailureCode({ code: "42703", message: 'column "x" does not exist' }),
+    "sqlstate_42703",
+  );
+  assertEquals(coachChatPreparationFailureCode({ message: "fetch failed" }), "unknown");
+  assertEquals(coachChatPreparationFailureCode(null), "missing_prepared_context");
+});
 
 Deno.test("only the current app schema receives the data-summary reply", () => {
   assertEquals(supportsDataSummary({ schema_version: "1.1" }), true);
