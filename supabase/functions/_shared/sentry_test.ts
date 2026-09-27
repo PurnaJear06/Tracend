@@ -17,6 +17,7 @@ Deno.test("Edge Sentry event keeps diagnostic tags and excludes sensitive contex
     finishReason: "stop",
     initialValidationRule: "evidence_code_not_permitted",
     repairValidationRule: "reasoning_value_too_long",
+    answerSource: "data_summary",
     coachingDate: "2026-09-11",
     ...({
       question: "private question",
@@ -35,6 +36,7 @@ Deno.test("Edge Sentry event keeps diagnostic tags and excludes sensitive contex
   assertEquals(tags.finish_reason, "stop");
   assertEquals(tags.initial_validation_rule, "evidence_code_not_permitted");
   assertEquals(tags.repair_validation_rule, "reasoning_value_too_long");
+  assertEquals(tags.answer_source, "data_summary");
 
   const extra = event.extra as Record<string, unknown>;
   assertEquals(String(extra.stack).length, 4_000);

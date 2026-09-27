@@ -1,11 +1,90 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
 import { CoachChatUnavailableError } from "../_shared/providers/coach_chat_provider.ts";
+import { buildCoachChatDataSummary } from "../_shared/coach_chat_fallback.ts";
 import {
   buildSessionSummary,
+  coachChatDataSummaryResponse,
   coachChatFailureResponse,
+  coachChatFailureRules,
   coachChatResponseSchemaVersion,
   detectPreferenceStatement,
+  supportsDataSummary,
 } from "./index.ts";
+
+Deno.test("only the current app schema receives the data-summary reply", () => {
+  assertEquals(supportsDataSummary({ schema_version: "1.1" }), true);
+  assertEquals(supportsDataSummary({ schema_version: "1.0" }), false);
+});
+
+Deno.test("data-summary response is labeled and exposes only finite diagnostics", () => {
+  const error = new CoachChatUnavailableError(
+    "deepseek",
+    "deepseek-v4-flash",
+    "provider_response_invalid",
+    null,
+    { initialRule: "evidence_code_not_permitted", repairRule: "reasoning_step_too_long" },
+  );
+  const summary = buildCoachChatDataSummary({
+    permitted_evidence: ["APPROVED_PLAN_ACTIVE"],
+    weight_series_8w: [{ measured_on: "2026-09-25", weight_kg: 78.4 }],
+  });
+  const response = coachChatDataSummaryResponse(
+    summary,
+    error,
+    { assistant_message_id: "33333333-3333-4333-8333-333333333333", created_at: "2026-09-27" },
+    null,
+  );
+  assertEquals(response.schema_version, "1.2");
+  const message = response.message as Record<string, unknown>;
+  assertEquals(message.id, "33333333-3333-4333-8333-333333333333");
+  assertEquals(message.answer_source, "data_summary");
+  assertEquals(message.model_provider, "deterministic");
+  assertEquals(message.safety_state, "unavailable");
+  assertEquals(message.diagnostic, {
+    failure_code: "provider_response_invalid",
+    initial_rule: "evidence_code_not_permitted",
+    repair_rule: "reasoning_step_too_long",
+  });
+  assertEquals(coachChatFailureRules(error), [
+    "evidence_code_not_permitted",
+    "reasoning_step_too_long",
+  ]);
+});
+
+Deno.test("an unstored data summary still reaches the athlete", () => {
+  const error = new CoachChatUnavailableError(
+    "deepseek",
+    "deepseek-v4-flash",
+    "provider_timeout",
+    null,
+  );
+  const response = coachChatDataSummaryResponse(
+    buildCoachChatDataSummary({}),
+    error,
+    null,
+    null,
+  );
+  const message = response.message as Record<string, unknown>;
+  assert(typeof message.id === "string" && message.id.length === 36);
+  assertEquals(coachChatFailureRules(error), []);
+});
+
+Deno.test("buildSessionSummary reads the v8 athlete file", () => {
+  const summary = buildSessionSummary(
+    {
+      active_goal: { goal_type: "fat_loss" },
+      active_plan: { title: "Cut plan" },
+      weight_series_8w: [{ measured_on: "2026-09-25", weight_kg: 78.4 }],
+      training_log_28d: [{ local_date: "2026-09-26" }, { local_date: "2026-09-24" }],
+      health_daily_28d: [{ sleep_minutes: 402, resting_heart_rate_bpm: 58 }],
+    },
+    "2026-09-27",
+  );
+  assertStringIncludes(summary, "fat_loss phase: Cut plan.");
+  assertStringIncludes(summary, "Weight 78.4kg.");
+  assertStringIncludes(summary, "2 workouts in 28 days.");
+  assertStringIncludes(summary, "Sleep 402min.");
+});
 
 Deno.test("detectPreferenceStatement — negative food statement", () => {
   const result = detectPreferenceStatement("I don't eat mushrooms");

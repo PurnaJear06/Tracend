@@ -1,5 +1,14 @@
-import { parseCoachChatRequest } from "../_shared/contracts/coach_chat_v1.ts";
+import {
+  type CoachChatAnswerV2,
+  type CoachChatRequestV1,
+  type CoachChatValidationRule,
+  parseCoachChatRequest,
+} from "../_shared/contracts/coach_chat_v1.ts";
 import { createLogger, extractCorrelationId } from "../_shared/logger.ts";
+import {
+  buildCoachChatDataSummary,
+  coachChatDataSummaryModel,
+} from "../_shared/coach_chat_fallback.ts";
 import {
   classifyQuestion,
   CoachChatUnavailableError,
@@ -9,6 +18,16 @@ import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { captureException } from "../_shared/sentry.ts";
 
 export const coachChatResponseSchemaVersion = "1.1";
+// Request 1.1 (current app) gets response 1.2: answer_source on every message
+// and a labeled data-summary reply instead of a 503. Request 1.0 (older
+// installed builds) keeps response 1.1 unchanged.
+export const coachChatDataSummaryResponseSchemaVersion = "1.2";
+
+export function supportsDataSummary(
+  request: Pick<CoachChatRequestV1, "schema_version">,
+): boolean {
+  return request.schema_version === "1.1";
+}
 
 function versionedResponse(payload: Record<string, unknown>): Record<string, unknown> {
   return { schema_version: coachChatResponseSchemaVersion, ...payload };
@@ -22,6 +41,39 @@ export function coachChatFailureResponse(
     code: error.failureReason,
     retry_after_seconds: error.retryAfterSeconds,
   });
+}
+
+export function coachChatFailureRules(error: CoachChatUnavailableError): CoachChatValidationRule[] {
+  return [error.metadata.initialRule, error.metadata.repairRule].filter(
+    (rule): rule is CoachChatValidationRule => rule !== undefined,
+  );
+}
+
+export function coachChatDataSummaryResponse(
+  summary: CoachChatAnswerV2,
+  error: CoachChatUnavailableError,
+  stored: { assistant_message_id?: string; created_at?: string } | null,
+  budgetWarning: unknown,
+): Record<string, unknown> {
+  return {
+    schema_version: coachChatDataSummaryResponseSchemaVersion,
+    message: {
+      id: stored?.assistant_message_id ?? crypto.randomUUID(),
+      role: "assistant",
+      created_at: stored?.created_at ?? new Date().toISOString(),
+      model_provider: "deterministic",
+      model: coachChatDataSummaryModel,
+      answer_source: "data_summary",
+      diagnostic: {
+        failure_code: error.failureReason,
+        initial_rule: error.metadata.initialRule ?? null,
+        repair_rule: error.metadata.repairRule ?? null,
+      },
+      ...summary,
+    },
+    budget_warning: budgetWarning,
+    replayed: false,
+  };
 }
 
 export function detectPreferenceStatement(question: string): string | null {
@@ -62,17 +114,25 @@ export function buildSessionSummary(
 ): string {
   const activePlan = context.active_plan as Record<string, unknown> | undefined;
   const activeGoal = context.active_goal as Record<string, unknown> | undefined;
-  const weight = (context.latest_measurement as Record<string, unknown> | undefined)
-    ?.weight_kg ?? (context.latest_weight as Record<string, unknown> | undefined)?.weight_kg;
-  const sessions = Array.isArray(context.recent_execution) ? context.recent_execution : [];
-  const completed = sessions.filter(
-    (s: Record<string, unknown>) => (s.completion_rate as number) > 0,
-  ).length;
-  const healthDays = Array.isArray(context.brief_health) ? context.brief_health : [];
+  const weightSeries = Array.isArray(context.weight_series_8w) ? context.weight_series_8w : [];
+  const weight = (weightSeries[0] as Record<string, unknown> | undefined)?.weight_kg ??
+    (context.latest_measurement as Record<string, unknown> | undefined)?.weight_kg ??
+    (context.latest_weight as Record<string, unknown> | undefined)?.weight_kg;
+  const trainingLog = Array.isArray(context.training_log_28d) ? context.training_log_28d : null;
+  const sessions = trainingLog ??
+    (Array.isArray(context.recent_execution) ? context.recent_execution : []);
+  const completed = trainingLog
+    ? trainingLog.length
+    : sessions.filter((s: Record<string, unknown>) => (s.completion_rate as number) > 0).length;
+  const healthDays = Array.isArray(context.health_daily_28d)
+    ? context.health_daily_28d
+    : Array.isArray(context.brief_health)
+    ? context.brief_health
+    : [];
   const lastHealth = healthDays[0] as Record<string, unknown> | undefined;
   const sleep = lastHealth?.sleep_minutes;
   const rhr = lastHealth?.resting_heart_rate_bpm;
-  const goalLabel = activeGoal?.type as string ?? "training";
+  const goalLabel = (activeGoal?.goal_type ?? activeGoal?.type) as string ?? "training";
   const phase = activePlan?.title as string ?? "active plan";
   const meals = Array.isArray(context.confirmed_nutrition_history)
     ? context.confirmed_nutrition_history
@@ -82,7 +142,8 @@ export function buildSessionSummary(
   const parts: string[] = [];
   parts.push(`${goalLabel} phase: ${phase}.`);
   if (weight != null) parts.push(`Weight ${weight}kg.`);
-  if (completed > 0) parts.push(`${completed}/${sessions.length} workouts done.`);
+  if (trainingLog && completed > 0) parts.push(`${completed} workouts in 28 days.`);
+  else if (completed > 0) parts.push(`${completed}/${sessions.length} workouts done.`);
   if (sleep != null) parts.push(`Sleep ${sleep}min.`);
   if (rhr != null) parts.push(`RHR ${rhr}.`);
   if (mealDays > 0) parts.push(`Nutrition ${mealDays} days.`);
@@ -130,7 +191,7 @@ Deno.serve(async (request) => {
   }
   const contextKind = classifyQuestion(input.question);
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
-    "prepare_coach_chat_v7",
+    "prepare_coach_chat_v8",
     {
       target_user_id: auth.userId,
       target_thread_id: input.thread_id,
@@ -141,7 +202,7 @@ Deno.serve(async (request) => {
     },
   );
   if (prepareError || !prepared) {
-    log.error("prepare_coach_chat_v7 failed", {
+    log.error("prepare_coach_chat_v8 failed", {
       error_code: prepareError?.code ?? "missing_prepared_context",
     });
     return reply(
@@ -169,6 +230,18 @@ Deno.serve(async (request) => {
   const context = prepared.context as Record<string, unknown>;
   const coachingDate = (context.coaching_date as string) ??
     new Date().toISOString().slice(0, 10);
+
+  // Saved after the context is built (so it is not echoed as history) and
+  // before the model runs (so a failed answer cannot erase it).
+  const { error: recordError } = await auth.serviceClient.rpc("record_coach_chat_question", {
+    target_user_id: auth.userId,
+    target_thread_id: input.thread_id,
+    question: input.question,
+    request_idempotency_key: input.idempotency_key,
+  });
+  if (recordError) {
+    log.error("record_coach_chat_question failed", { error_code: recordError.code ?? "unknown" });
+  }
 
   const { data: ftsMessages, error: ftsError } = await auth.serviceClient.rpc(
     "search_coach_messages",
@@ -260,13 +333,16 @@ Deno.serve(async (request) => {
     });
 
     const responsePayload: Record<string, unknown> = {
-      schema_version: coachChatResponseSchemaVersion,
+      schema_version: supportsDataSummary(input)
+        ? coachChatDataSummaryResponseSchemaVersion
+        : coachChatResponseSchemaVersion,
       message: {
         id: persisted.assistant_message_id,
         role: "assistant",
         created_at: persisted.created_at ?? new Date().toISOString(),
         model_provider: generation.provider,
         model: generation.model,
+        ...(supportsDataSummary(input) ? { answer_source: "model" } : {}),
         ...generation.answer,
       },
       budget_warning: prepared.budget_warning,
@@ -305,6 +381,7 @@ Deno.serve(async (request) => {
         {},
         { cause: error },
       );
+    const servesDataSummary = supportsDataSummary(input);
     captureException(unavailable, {
       userId: auth.userId,
       functionName: "coach-chat",
@@ -318,6 +395,7 @@ Deno.serve(async (request) => {
       finishReason: unavailable.metadata.finishReason,
       initialValidationRule: unavailable.metadata.initialRule,
       repairValidationRule: unavailable.metadata.repairRule,
+      answerSource: servesDataSummary ? "data_summary" : "none",
       coachingDate,
     });
     log.error("coach_chat_failure", {
@@ -342,8 +420,11 @@ Deno.serve(async (request) => {
       })),
       latency_ms: Math.round(performance.now() - started),
     });
-    try {
-      await auth.serviceClient.rpc("persist_failed_coach_chat_run", {
+    // supabase-js reports RPC failures in `error` rather than throwing, so the
+    // result is checked; an unrecorded failure is itself reported.
+    const { error: failedRunError } = await auth.serviceClient.rpc(
+      "persist_failed_coach_chat_run",
+      {
         target_user_id: auth.userId,
         snapshot_id: prepared.feature_snapshot_id,
         policy_id: prepared.policy_evaluation_id,
@@ -352,12 +433,51 @@ Deno.serve(async (request) => {
         error_code: unavailable.failureReason,
         run_provider: unavailable.provider,
         run_model: unavailable.model,
-      });
-    } catch (persistError) {
+        failure_rules: coachChatFailureRules(unavailable),
+      },
+    );
+    if (failedRunError) {
       log.error("persist_failed_coach_chat_run failed", {
-        error_type: persistError instanceof Error ? persistError.name : typeof persistError,
+        error_code: failedRunError.code ?? "unknown",
+      });
+      captureException(new Error("coach_chat_failure_not_recorded"), {
+        userId: auth.userId,
+        functionName: "coach-chat",
+        correlationId,
+        runtime: "edge",
+        failureCode: failedRunError.code ?? "unknown",
       });
     }
-    return reply(503, coachChatFailureResponse(unavailable));
+
+    if (!servesDataSummary) return reply(503, coachChatFailureResponse(unavailable));
+
+    const summary = buildCoachChatDataSummary(context);
+    const { data: stored, error: storeError } = await auth.serviceClient.rpc(
+      "persist_coach_chat_data_summary",
+      {
+        target_user_id: auth.userId,
+        target_thread_id: input.thread_id,
+        request_idempotency_key: input.idempotency_key,
+        summary_payload: summary,
+      },
+    );
+    if (storeError) {
+      log.error("persist_coach_chat_data_summary failed", {
+        error_code: storeError.code ?? "unknown",
+      });
+    }
+    log.info("coach_chat_data_summary_served", {
+      failure_code: unavailable.failureReason,
+      stored: !storeError,
+    });
+    return reply(
+      200,
+      coachChatDataSummaryResponse(
+        summary,
+        unavailable,
+        storeError ? null : stored,
+        prepared.budget_warning,
+      ),
+    );
   }
 });

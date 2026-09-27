@@ -1,5 +1,8 @@
+// 1.1 clients render the labeled data-summary reply; 1.0 clients keep the 503.
+export const coachChatRequestSchemaVersions = ["1.0", "1.1"] as const;
+
 export type CoachChatRequestV1 = Readonly<{
-  schema_version: "1.0";
+  schema_version: typeof coachChatRequestSchemaVersions[number];
   thread_id: string;
   question: string;
   timezone: string;
@@ -26,17 +29,27 @@ export type CoachChatAnswerV2 =
     reasoning_chain?: readonly ReasoningChainItem[];
   }>;
 
+// Hard ceilings. Formatting limits are generous on purpose: an answer that is
+// accurate but a little long must not be thrown away. The prompt still asks for
+// short items (coachChatPreferredLengths); accuracy rules stay strict.
 export const coachChatAnswerLimits = Object.freeze({
   answerMaxLength: 12_000,
-  evidenceMaxItems: 12,
-  evidenceLabelMaxLength: 240,
+  evidenceMaxItems: 20,
+  evidenceLabelMaxLength: 400,
   missingDataMaxItems: 12,
-  missingDataItemMaxLength: 120,
-  followUpsMaxItems: 4,
-  followUpMaxLength: 160,
-  reasoningMaxItems: 6,
-  reasoningStepMaxLength: 80,
-  reasoningValueMaxLength: 160,
+  missingDataItemMaxLength: 300,
+  followUpsMaxItems: 6,
+  followUpMaxLength: 300,
+  reasoningMaxItems: 10,
+  reasoningStepMaxLength: 200,
+  reasoningValueMaxLength: 400,
+});
+
+export const coachChatPreferredLengths = Object.freeze({
+  reasoningStep: 80,
+  reasoningValue: 160,
+  followUp: 120,
+  missingDataItem: 120,
 });
 
 export const coachChatSafetyStates = ["allowed", "limited", "refused", "unavailable"] as const;
@@ -116,7 +129,9 @@ export function parseCoachChatRequest(value: unknown): CoachChatRequestV1 {
     throw new Error("invalid_chat_request");
   }
   if (
-    input.schema_version !== "1.0" || typeof input.thread_id !== "string" ||
+    !coachChatRequestSchemaVersions.includes(
+      input.schema_version as typeof coachChatRequestSchemaVersions[number],
+    ) || typeof input.thread_id !== "string" ||
     !uuid.test(input.thread_id) || typeof input.idempotency_key !== "string" ||
     !uuid.test(input.idempotency_key) || typeof input.question !== "string" ||
     input.question.trim().length < 1 || input.question.length > 2000 ||

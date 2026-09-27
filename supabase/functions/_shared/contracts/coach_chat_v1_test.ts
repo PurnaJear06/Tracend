@@ -18,6 +18,47 @@ Deno.test("chat request rejects ownership and accepts bounded input", () => {
   assertThrows(() => parseCoachChatRequest({ ...request, user_id: "unsafe" }));
 });
 
+Deno.test("chat request accepts app schema 1.0 and 1.1 only", () => {
+  const request = {
+    schema_version: "1.1",
+    thread_id: "11111111-1111-4111-8111-111111111111",
+    question: "How long until 72 kg?",
+    timezone: "Asia/Kolkata",
+    idempotency_key: "22222222-2222-4222-8222-222222222222",
+  };
+  assertEquals(parseCoachChatRequest(request).schema_version, "1.1");
+  assertThrows(() => parseCoachChatRequest({ ...request, schema_version: "2.0" }));
+});
+
+Deno.test("formatting a little over the preferred length no longer rejects an accurate answer", () => {
+  const answer = {
+    answer: "Grounded answer",
+    evidence: [],
+    missing_data: ["Maintenance calories — you haven't logged meals, so intake isn't measured"],
+    safety_state: "allowed",
+    suggested_follow_ups: [],
+    reasoning_chain: [{
+      step: "Compare the 14-day training load against the plan's weekly session target",
+      value: "7 sessions in 14 days against a plan of 5 per week, so slightly under plan",
+      evidence_id: null,
+    }],
+  };
+  assertEquals(parseCoachChatAnswer(answer, []).answer, "Grounded answer");
+  const error = assertThrows(
+    () =>
+      parseCoachChatAnswer({
+        ...answer,
+        reasoning_chain: [{
+          step: "x".repeat(coachChatAnswerLimits.reasoningStepMaxLength + 1),
+          value: "v",
+          evidence_id: null,
+        }],
+      }, []),
+    CoachChatAnswerValidationError,
+  );
+  assertEquals(error.rule, "reasoning_step_too_long");
+});
+
 Deno.test("chat answer rejects unsupported evidence", () => {
   const answer = {
     answer: "Keep the approved plan.",
