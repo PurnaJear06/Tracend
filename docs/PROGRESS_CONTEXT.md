@@ -14,17 +14,20 @@ owner-device acceptance before any UI redesign
   model output can explain or propose but cannot silently activate durable changes.
 - The first Coach chat reliability hotfix is deployed. A second FLUTTER-8 hardening change is in
   review: typed validation rules, targeted fail-closed repair, fresh coaching-date scores, shared
-  daily/chat evidence derivation, whole-section context budgeting, and word-boundary routing.
+  daily/chat evidence derivation, whole-section context budgeting, word-boundary routing, the full
+  shared coach persona on every provider, and a scoring-failure guard that keeps chat available.
 - HealthKit sleep aggregation handles mixed staged and unspecified intervals without double-counting.
 - Fresh-database pgTAP parity, Flutter/Deno tests, iOS compilation, migration collision checks, and
-  secret scanning run in CI. The FLUTTER-8 branch currently passes 130 Deno tests, 422 Flutter
-  tests, 34 pgTAP files / 948 assertions, analysis, an unsigned iOS release build, and the linked
-  production migration dry-run locally. All seven required PR checks are green; owner review and
-  merge remain pending.
+  secret scanning run in CI. The FLUTTER-8 branch passes 124 Deno tests locally (131 with the
+  database contract environment), 422 Flutter tests, 34 pgTAP files / 951 assertions, analysis, an
+  unsigned iOS release build, and the linked production migration dry-run. The seven required PR
+  checks gate every push; owner review and merge remain pending.
 
 ## Release controls
 
 - `main` accepts reviewed pull requests with all required checks passing.
+- Every agent follows the delivery workflow in `AGENTS.md`: a worktree and pull request per change,
+  no hook or branch-protection bypass, and no agent merges. The owner merges.
 - Deployment waits for successful CI on the exact merged `main` commit.
 - Failed, missing, empty, checksum-invalid, or non-restorable database backups stop deployment.
 - Production dumps are restore-drilled in an isolated local Supabase database before migration.

@@ -2,7 +2,8 @@
 
 **Status:** implementation and verification complete; PR review/owner merge pending
 **Branch:** `codex/coach-chat-validation-reliability`
-**Scope:** Edge Functions and additive SQL only; no Flutter change and no device reinstall expected
+**Scope:** Edge Functions, additive SQL, and the Flutter tooling wrapper only; no app code change and
+no device reinstall expected
 
 ## Current change
 
@@ -15,18 +16,34 @@
 - NULL recovery emits no recovery code. Daily and chat health availability both mean a HealthKit row
   on the coaching date; stale two-day health no longer becomes current evidence.
 - Required truth sections render before history and are never cut. The question is sent once.
-- Classifier patterns use word boundaries and include HRV, heart rate, readiness, tired, and
-  exhausted without false matches such as `will`, `interest`, or `great`.
+- Classifier patterns use word boundaries and include HRV, heart rate, readiness, tired, exhausted,
+  slept, and sleepless without false matches such as `will`, `interest`, or `great`.
+
+Review follow-ups on the same branch:
+
+- The live DeepSeek prompt had been reduced to a four-line persona. All providers now share one
+  `coachChatPersona` constant (coaching approach, communication style, hard boundaries) placed
+  before the null and output contracts. Its "celebrate wins" example now cites only numbers the
+  context shows, consistent with the no-new-statistics rule.
+- `prepare_coach_chat_v7` guards the score computation and evidence derivation like
+  `get_my_daily_brief`: a scoring failure yields `computed_metrics.unavailable` and only non-score
+  evidence codes instead of failing the whole chat. The migration was unapplied, so it was amended
+  in place.
+- `scripts/flutter.sh` clears git's hook variables (`GIT_DIR` and related). Inside the pre-push hook
+  Flutter had read the Tracend repository as its own SDK checkout, reported an unknown version, and
+  failed dependency resolution.
 
 ## Verification
 
-- Deno format/lint: clean; Deno tests: 130 passed with the local database contract environment.
+- Deno format/lint: clean; Deno tests: 124 passed and 7 database-dependent tests ignored without a
+  local database (131 with the database contract environment).
 - Fresh local database reset: all migrations applied, including
   `20260927120000_coach_chat_reliability_v7.sql`.
-- pgTAP: 34 files, 948 assertions, all passed.
+- pgTAP: 34 files, 951 assertions; `coach_chat_v7_test.sql` has 23, including the simulated
+  scoring failure.
 - Flutter: 422 tests passed; analysis clean; unsigned iOS release build passed.
 - Linked production migration dry-run passed and lists only the new v7 migration.
-- PR CI: all seven required checks passed, including fresh-database pgTAP and the macOS iOS build.
+- PR CI: the seven required checks gate every push to this branch; the PR shows the latest run.
 
 ## Post-deploy acceptance
 

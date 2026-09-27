@@ -88,11 +88,14 @@ accepted as a permanent retry.
   schema-invalid output, unknown evidence, and overlong reasoning fields; prove exactly one
   non-thinking targeted repair receives only the finite rule/path/limit and allowed codes; and prove
   HTTP, rate-limit, and timeout failures are not retried. The model schema and authoritative
-  validator are asserted against the same exported limits. Contract tests pin response schema 1.1
+  validator are asserted against the same exported limits. The DeepSeek system prompt must carry
+  the full shared coach persona before the output contract. Contract tests pin response schema 1.1
   and safe Flutter error copy while rejecting raw parser/provider details;
 - Coach context v7 pgTAP covers poor, mid-band, good, and NULL recovery evidence; absent check-ins;
   stale versus same-date health; daily/chat evidence parity through the shared SQL helper; v6
-  rollback availability; and successful daily-decision persistence on a NULL-recovery day;
+  rollback availability; successful daily-decision persistence on a NULL-recovery day; and a
+  simulated scoring-engine failure that must leave chat available with Computed Scores unavailable
+  and only non-score evidence codes;
 - the versioned `coach_chat_context_v7_0.json` fixture and max-budget tests require Context Date,
   Null Contract, Evidence Contract, and Computed Scores to remain whole, retain exact numeric text,
   close the context delimiter, and include the user question once;
