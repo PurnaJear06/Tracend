@@ -58,8 +58,8 @@ Owner steps:
 1. Merge PR #35, then A1. There is no reinstall: the installed app sends request 1.0 and keeps
    today's behaviour, but already benefits from the full file, the relaxed formatting limits, and
    failure recording.
-2. Add the `DEEPSEEK_API_KEY` repository secret, then run the `Coach Eval` workflow and review the
-   summary.
+2. Add the `DEEPSEEK_API_KEY` repository secret, then add the `coach-eval` label to the PR and
+   review the summary.
 
 See what the coach did in the last 7 days. These are read-only queries for the Supabase SQL editor:
 

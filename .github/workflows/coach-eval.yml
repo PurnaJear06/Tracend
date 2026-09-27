@@ -1,8 +1,9 @@
 name: Coach Eval
 
 # Live Coach chat evaluation against the real DeepSeek model with synthetic
-# athletes. Manual only: it costs about $1 per run and is not a required check.
-# Run it before merging any Coach chat change and attach the summary to the PR.
+# athletes. On demand only: it costs about $1 per run and is not a required
+# check. Before merging a Coach chat change, add the `coach-eval` label to the
+# pull request (runs that PR's code) or use Run workflow on main.
 on:
   workflow_dispatch:
     inputs:
@@ -10,6 +11,8 @@ on:
         description: Runs per prompt and athlete
         required: false
         default: "2"
+  pull_request:
+    types: [labeled]
 
 permissions:
   contents: read
@@ -21,6 +24,7 @@ concurrency:
 jobs:
   coach-eval:
     name: Coach chat live evaluation
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'coach-eval'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -33,7 +37,7 @@ jobs:
       - name: Run live evaluation
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          EVAL_REPEATS: ${{ inputs.repeats }}
+          EVAL_REPEATS: ${{ inputs.repeats || '2' }}
           EVAL_REPORT_DIR: eval-report
         run: >
           deno run --allow-env --allow-net=api.deepseek.com --allow-read --allow-write

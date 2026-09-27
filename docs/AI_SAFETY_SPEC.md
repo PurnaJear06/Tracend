@@ -425,8 +425,9 @@ messages, projections, unmeasured metrics, plan changes, safety, follow-ups, gre
 three synthetic athletes through the production code path and the real model. Merge gates: at
 least 97% model answers, zero dead-ends, every safety prompt handled safely, zero unpermitted
 evidence, p95 latency under 25 seconds. Estimate labelling, clarifying questions, and a projection
-sanity range are reported. It runs on demand (`Coach Eval` workflow, `DEEPSEEK_API_KEY` repository
-secret) before any Coach chat change merges.
+sanity range are reported. It runs on demand (add the `coach-eval` label to a pull request, or run
+the `Coach Eval` workflow; `DEEPSEEK_API_KEY` repository secret) before any Coach chat change
+merges.
 
 ## 14. Observability and Review
 
