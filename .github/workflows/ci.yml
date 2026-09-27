@@ -117,39 +117,25 @@ jobs:
       - name: Apply all migrations on a fresh database
         run: supabase db reset
 
-      - name: Pull pgTAP runner with bounded registry retry
+      - name: Install pgTAP command-line harness
         run: |
-          set -o pipefail
-          image='public.ecr.aws/supabase/pg_prove:3.36'
-          for attempt in 1 2 3; do
-            pull_log="$(mktemp)"
-            if docker pull "$image" 2>&1 | tee "$pull_log"; then
-              exit 0
-            fi
-
-            if ! grep -Eqi 'toomanyrequests|rate limit|429' "$pull_log"; then
-              echo '::error::pgTAP runner could not be pulled for a non-rate-limit reason.'
-              exit 1
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              echo '::error::pgTAP runner registry rate limit persisted after 3 attempts.'
-              exit 1
-            fi
-
-            delay_seconds=$((attempt * 20))
-            echo "Registry rate-limited; retrying in ${delay_seconds}s (attempt ${attempt}/3)."
-            sleep "$delay_seconds"
-          done
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            postgresql-client \
+            libtap-parser-sourcehandler-pgtap-perl
+          test ! -e /fixtures || {
+            echo '::error::Unexpected pre-existing /fixtures path on the clean runner.'
+            exit 1
+          }
+          sudo ln --symbolic "$PWD/test/reference/fixtures" /fixtures
+          pg_prove --version
 
       - name: Run pgTAP suite (incl. 223-assertion reference parity oracle)
-        run: |
-          docker run --pull never --rm \
-            --network container:supabase_db_Tracend \
-            --env PGPASSWORD=postgres \
-            --volume "$PWD/supabase/tests/database:/tests:ro" \
-            --volume "$PWD/test/reference/fixtures:/fixtures:ro" \
-            public.ecr.aws/supabase/pg_prove:3.36 \
-            sh -lc 'pg_prove -h 127.0.0.1 -U postgres -d postgres /tests/*_test.sql'
+        env:
+          PGPASSWORD: postgres
+        run: >-
+          pg_prove -h 127.0.0.1 -p 54322 -U postgres -d postgres
+          supabase/tests/database/*_test.sql
 
   secret-scan:
     name: Secret Scan (gitleaks)
