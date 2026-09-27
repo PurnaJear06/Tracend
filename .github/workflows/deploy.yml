@@ -109,7 +109,31 @@ jobs:
             --variable ON_ERROR_STOP=1 \
             --command 'DROP SCHEMA public CASCADE' \
             --command 'CREATE SCHEMA public' \
-            --command 'GRANT ALL ON SCHEMA public TO postgres, anon, authenticated, service_role'
+            --command 'GRANT ALL ON SCHEMA public TO postgres, anon, authenticated, service_role' \
+            --command "DO \$\$
+              DECLARE relation_list text;
+              BEGIN
+                SELECT string_agg(
+                  format('%I.%I', namespace.nspname, class.relname),
+                  ', ' ORDER BY namespace.nspname, class.relname
+                )
+                INTO relation_list
+                FROM pg_class AS class
+                JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
+                WHERE class.relkind IN ('r', 'p')
+                  AND namespace.nspname IN (
+                    'auth', 'realtime', 'storage', 'supabase_migrations', 'vault'
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM pg_inherits AS inheritance
+                    WHERE inheritance.inhrelid = class.oid
+                  );
+
+                IF relation_list IS NOT NULL THEN
+                  EXECUTE 'TRUNCATE TABLE ' || relation_list || ' RESTART IDENTITY CASCADE';
+                END IF;
+              END
+            \$\$;"
 
           docker cp "backup-${BACKUP_STAMP}-schema.sql" "$DB_CONTAINER:/tmp/schema.sql"
           docker cp "backup-${BACKUP_STAMP}-data.sql" "$DB_CONTAINER:/tmp/data.sql"
