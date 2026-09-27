@@ -168,6 +168,9 @@ Deno.test("classifyQuestion uses whole words and routes the acceptance prompts",
     ["Great session today — what should I do next?", "daily_action"],
     ["How are my HRV and readiness today?", "recovery"],
     ["I feel tired and exhausted.", "recovery"],
+    ["I slept badly last night — what should I change in today's workout?", "recovery"],
+    ["Another sleepless night; should I still lift?", "recovery"],
+    ["I'm still a bit sore from my last session — will that affect today?", "recovery"],
   ];
   for (const [question, expected] of cases) {
     const actual = classifyQuestion(question);
@@ -1011,6 +1014,40 @@ Deno.test("DeepSeek thinking is high only for an explicit plan change", async ()
     }
     if ("reasoning_effort" in bodies[1]) {
       throw new Error("Recovery chat must not request reasoning effort");
+    }
+  });
+});
+
+Deno.test("DeepSeek system prompt carries the full coach persona before the output contract", async () => {
+  await withDeepSeekEnvironment(async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetcher = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return Promise.resolve(deepSeekResponse(validDeepSeekAnswer));
+    }) as typeof fetch;
+
+    await generateCoachChat("How is my recovery?", {}, "recovery", fetcher);
+
+    const messages = bodies[0].messages as Array<Record<string, unknown>>;
+    const system = String(messages[0]?.content ?? "");
+    const markers = [
+      "working with this athlete through their journey",
+      "Build a mental timeline",
+      "Celebrate wins",
+      "Acknowledge setbacks without judgment",
+      "Match your tone to their mood",
+      "Offer natural follow-ups",
+      "# Hard boundaries — never violate",
+      "# Data honesty — never violate",
+      "# Output accuracy and validation contract",
+    ];
+    for (const marker of markers) {
+      if (!system.includes(marker)) {
+        throw new Error(`DeepSeek system prompt is missing: ${marker}`);
+      }
+    }
+    if (system.indexOf("Celebrate wins") > system.indexOf("# Output accuracy")) {
+      throw new Error("The output contract must follow the persona so its rules take precedence");
     }
   });
 });

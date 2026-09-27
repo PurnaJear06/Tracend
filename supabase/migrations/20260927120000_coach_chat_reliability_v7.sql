@@ -187,8 +187,6 @@ begin
 
   c := prepared->'context';
   coaching_date := coalesce((c->>'coaching_date')::date, current_date);
-  metrics_jsonb := public.compute_daily_metrics(target_user_id, coaching_date, coaching_timezone);
-  scores_jsonb := metrics_jsonb->'scores';
 
   select * into check_in from public.daily_check_ins
     where user_id=target_user_id and local_date=coaching_date and superseded_at is null;
@@ -196,12 +194,26 @@ begin
     where user_id=target_user_id and local_date=coaching_date and source_scope='healthkit')
     into has_health;
 
-  evidence := public.derive_daily_coaching_evidence(
-    metrics_jsonb,
-    check_in.id is not null,
-    check_in.pain_severity,
-    has_health
-  );
+  -- Same guard as get_my_daily_brief: a scoring failure must degrade chat to
+  -- "scores unavailable", never make the whole conversation unavailable.
+  begin
+    metrics_jsonb := public.compute_daily_metrics(target_user_id, coaching_date, coaching_timezone);
+    evidence := public.derive_daily_coaching_evidence(
+      metrics_jsonb,
+      check_in.id is not null,
+      check_in.pain_severity,
+      has_health
+    );
+  exception when others then
+    metrics_jsonb := null;
+    evidence := public.derive_daily_coaching_evidence(
+      null,
+      check_in.id is not null,
+      check_in.pain_severity,
+      has_health
+    );
+  end;
+  scores_jsonb := metrics_jsonb->'scores';
 
   select coalesce(array_agg(value), '{}') into missing
   from jsonb_array_elements_text(coalesce(c->'missing_data','[]'::jsonb)) value
@@ -209,7 +221,11 @@ begin
   if check_in.id is null then missing := missing || array['recovery_check_in']; end if;
   if not has_health then missing := missing || array['health_context']; end if;
 
-  computed_metrics := jsonb_build_object(
+  computed_metrics := case when metrics_jsonb is null then jsonb_build_object(
+    'local_date', coaching_date,
+    'unavailable', true,
+    'reason', 'computed scores unavailable for this date')
+  else jsonb_build_object(
     'local_date', coaching_date,
     'recovery', jsonb_build_object(
       'score', scores_jsonb->'recovery',
@@ -227,7 +243,7 @@ begin
     'nutrition', jsonb_build_object(
       'adherence_pct', scores_jsonb->'macro_adherence_pct'),
     'data_confidence', metrics_jsonb->'data_confidence'
-  );
+  ) end;
 
   c := c || jsonb_build_object(
     'schema_version', '7.0',

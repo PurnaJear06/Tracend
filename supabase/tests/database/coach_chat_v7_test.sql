@@ -1,5 +1,5 @@
 begin;
-select plan(20);
+select plan(23);
 
 insert into auth.users(id,role) values
   ('f1111111-aaaa-4111-8111-111111111111','authenticated');
@@ -161,6 +161,37 @@ select is(
     where user_id='f1111111-aaaa-4111-8111-111111111111'),
   1::bigint,
   '20: NULL-recovery daily decision is persisted once');
+
+-- Simulated scoring-engine failure; the replacement rolls back with the test.
+reset role;
+create or replace function public.compute_daily_metrics(
+  target_user_id uuid,
+  target_date date,
+  target_timezone text
+)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+begin
+  raise exception 'simulated scoring failure';
+end $$;
+set local role service_role;
+
+select lives_ok(
+  $$create temporary table chat_scoring_failed as
+    select public.prepare_coach_chat_v7(
+      'f1111111-aaaa-4111-8111-111111111111',
+      'f7111111-aaaa-4111-8111-111111111111',
+      'How is my recovery today?','Asia/Kolkata',gen_random_uuid(),'recovery') value$$,
+  '21: v7 stays available when compute_daily_metrics raises');
+
+select is(
+  (select value->'context'->'computed_metrics'->>'unavailable' from chat_scoring_failed),
+  'true',
+  '22: a scoring failure surfaces as computed scores unavailable');
+
+select is(
+  (select value->'context'->'permitted_evidence' from chat_scoring_failed),
+  '["APPROVED_PLAN_ACTIVE"]'::jsonb,
+  '23: a scoring failure permits only non-score evidence codes');
 
 select * from finish();
 rollback;
