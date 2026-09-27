@@ -19,7 +19,8 @@ owner-device acceptance before any UI redesign
 - Fresh-database pgTAP parity, Flutter/Deno tests, iOS compilation, migration collision checks, and
   secret scanning run in CI. The FLUTTER-8 branch currently passes 130 Deno tests, 422 Flutter
   tests, 34 pgTAP files / 948 assertions, analysis, an unsigned iOS release build, and the linked
-  production migration dry-run locally; PR CI remains the merge authority.
+  production migration dry-run locally. All seven required PR checks are green; owner review and
+  merge remain pending.
 
 ## Release controls
 

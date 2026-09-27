@@ -1,6 +1,6 @@
 # Backend Handoff — FLUTTER-8 Coach Reliability
 
-**Status:** implementation and local verification complete; PR review/CI pending
+**Status:** implementation and verification complete; PR review/owner merge pending
 **Branch:** `codex/coach-chat-validation-reliability`
 **Scope:** Edge Functions and additive SQL only; no Flutter change and no device reinstall expected
 
@@ -25,8 +25,8 @@
   `20260927120000_coach_chat_reliability_v7.sql`.
 - pgTAP: 34 files, 948 assertions, all passed.
 - Flutter: 422 tests passed; analysis clean; unsigned iOS release build passed.
-- Linked production migration dry-run passed and lists only the new v7 migration. Required PR checks
-  remain to be recorded before handoff is closed.
+- Linked production migration dry-run passed and lists only the new v7 migration.
+- PR CI: all seven required checks passed, including fresh-database pgTAP and the macOS iOS build.
 
 ## Post-deploy acceptance
 
