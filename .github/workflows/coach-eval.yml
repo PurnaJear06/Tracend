@@ -1,0 +1,48 @@
+name: Coach Eval
+
+# Live Coach chat evaluation against the real DeepSeek model with synthetic
+# athletes. Manual only: it costs about $1 per run and is not a required check.
+# Run it before merging any Coach chat change and attach the summary to the PR.
+on:
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: Runs per prompt and athlete
+        required: false
+        default: "2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coach-eval
+  cancel-in-progress: false
+
+jobs:
+  coach-eval:
+    name: Coach chat live evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: "2.9.0"
+
+      - name: Run live evaluation
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          EVAL_REPEATS: ${{ inputs.repeats }}
+          EVAL_REPORT_DIR: eval-report
+        run: >
+          deno run --allow-env --allow-net=api.deepseek.com --allow-read --allow-write
+          supabase/functions/_evals/coach_chat_eval.ts
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coach-eval-report
+          path: eval-report
+          retention-days: 30
