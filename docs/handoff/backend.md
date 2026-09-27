@@ -49,6 +49,23 @@ What A1 changes:
 - Live evaluation: `supabase/functions/_evals/` (about 60 prompts × 3 synthetic athletes, gates in
   AI_SAFETY_SPEC §13) and the manual `Coach Eval` workflow.
 
+Review fixes (2026-09-28, independent review of A1):
+- Conversation memory is rebuilt in v8. It holds the ten newest messages of the thread and of other
+  threads, each capped at 2,000 characters keeping its ending, and never a labeled data summary.
+  The plan required the exclusion; A1 had stored the `answer_source` flag without reading it.
+- Pre-existing since July, fixed here:
+  - v5's 40K guard kept the oldest ten of the last twenty messages, so long threads lost their
+    newest turns, including the coach's clarifying question.
+  - The base `prepare_coach_chat` raised `chat context too large` once the last twenty messages
+    pushed its context past 18,000 characters. Every new question in that thread then failed with a
+    422 before the model ran, and nothing reached Sentry.
+  - `20260928040000_coach_chat_long_threads.sql` makes that guard keep fewer, newest messages first
+    (20, 10, 4, none). It raises only when the context is oversized without any conversation.
+- Every blocked turn is now visible. A context-preparation failure reaches Sentry, and its 422
+  carries a finite `reason`: `daily_rate_limit`, `monthly_cost_limit`, `approved_plan_required`,
+  `chat_context_too_large`, `thread_not_found`, and so on, or `sqlstate_<code>`. A question that
+  could not be recorded and a data summary that could not be stored are captured too.
+
 Verification (local):
 - Deno fmt/lint clean. Deno tests: 144 passed, 7 database-dependent ignored.
 - Fresh local database reset applied every migration.
@@ -58,8 +75,10 @@ Owner steps:
 1. Merge PR #35, then A1. There is no reinstall: the installed app sends request 1.0 and keeps
    today's behaviour, but already benefits from the full file, the relaxed formatting limits, and
    failure recording.
-2. Add the `DEEPSEEK_API_KEY` repository secret, then add the `coach-eval` label to the PR and
-   review the summary.
+2. Live evaluation: on hold since 2026-09-28, because the owner cannot sign in to DeepSeek to create
+   a key. Once a key exists, add the `DEEPSEEK_API_KEY` repository secret, then add the
+   `coach-eval` label to the PR (or use Run workflow on `main`) and review the summary. Until then,
+   A1 is verified in production with the queries below after real use on the iPhone.
 
 See what the coach did in the last 7 days. These are read-only queries for the Supabase SQL editor:
 
@@ -76,6 +95,26 @@ select created_at, metadata->>'error_code' as code, metadata->'rules' as rules
 from public.audit_events
 where action_code = 'coach.chat.model_run.failed' and created_at > now() - interval '7 days'
 order by created_at desc;
+
+-- Labeled data summaries served (request 1.1 builds only, so zero until A2)
+select created_at::date as day, count(*) as data_summaries
+from public.coach_messages
+where answer_source = 'data_summary' and created_at > now() - interval '7 days'
+group by 1 order by 1 desc;
+
+-- Threads whose last 20 messages were near or past the old 18,000-character base guard (sizes only)
+with per_thread as (
+  select t.id,
+    (select coalesce(sum(length(jsonb_build_object('role', r.role, 'content', r.content)::text)), 0)
+       from (select m.role, m.content from public.coach_messages m
+             where m.thread_id = t.id order by m.created_at desc limit 20) r) as last20_chars
+  from public.coach_threads t where t.status = 'active'
+)
+select count(*) as active_threads,
+  count(*) filter (where last20_chars > 12000) as over_12k,
+  count(*) filter (where last20_chars > 18000) as over_18k,
+  max(last20_chars) as largest
+from per_thread;
 ```
 
 ## PR #35 — base hardening
@@ -134,6 +173,12 @@ approval, and any terminal failure shows finite rule names in Edge Sentry.
   - Refresh the thread list after each reply, and hide threads with no messages.
   - Keep the raw error snackbar for real errors.
   - Add the app `SENTRY_DSN`.
+  - Retry must send a new `idempotency_key`. The question is recorded under the request's key
+    before the model runs, and the base function treats a known key as a replay, so reusing it
+    returns the thread without a new answer.
+  - Treat `answer_source` null as a model answer: `persist_coach_chat_result` does not set it; only
+    data summaries carry a value.
+  - A replayed request still answers with response schema 1.1 and the raw thread rows.
 - B: read-only deterministic calculators the model can call (`project_weight_goal`,
   `training_summary`, `metric_stats`, `compare_periods`), so common estimates become exact.
 

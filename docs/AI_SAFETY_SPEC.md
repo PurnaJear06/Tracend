@@ -369,8 +369,9 @@ never left at a dead end. It opens by saying the coach could not produce a full 
 every number verbatim from the prepared context (no estimates), cites only permitted evidence, and
 carries `safety_state: "unavailable"`, `answer_source: "data_summary"`, and a sanitized
 `diagnostic` (failure code and finite rule names). It is stored in the thread as an assistant
-message flagged `data_summary` and is never presented as the model's answer. Request schema 1.0
-builds keep the 503.
+message flagged `data_summary` and is never presented as the model's answer: not to the athlete,
+and not to the model, whose conversation memory leaves it out. Request schema 1.0 builds keep the
+503.
 
 DeepSeek Coach chat accepts provider output only when `finish_reason` is `stop`. Empty content,
 `length` truncation, malformed JSON, and schema rejection receive at most one repair attempt. The

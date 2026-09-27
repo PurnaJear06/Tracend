@@ -276,8 +276,11 @@ Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS. 
    training log with sets and volume, 7/14/28-day totals, watch workouts, 28 days of watch data
    with averages, eight weeks of weights, 14 days of check-ins, 28 days of logged nutrition,
    today's meals, plan structure, proposals, reconciliations, data freshness), under a 90K
-   whole-section size guard.
-2. `record_coach_chat_question` stores the question before the model runs.
+   whole-section size guard. Conversation memory is the ten newest messages of the thread and of
+   other threads, each capped at 2,000 characters keeping its ending, never a labeled data
+   summary. A long thread keeps fewer, newest messages rather than failing preparation.
+2. `record_coach_chat_question` stores the question before the model runs. A preparation failure
+   returns 422 with a finite `reason` and reaches Sentry.
 3. The Edge Function renders the file as markdown (required truth first, conversation history
    last, the question at the very end) and calls the no-tools structured-output provider.
 4. The answer is validated strictly for accuracy (JSON, keys, safety state, permitted evidence)

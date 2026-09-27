@@ -1,6 +1,6 @@
 # Tracend Current State
 
-**As of:** 2026-09-27
+**As of:** 2026-09-28
 
 **Lifecycle:** owner-only private beta; not approved for public production
 
@@ -27,6 +27,11 @@ dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 
     - DeepSeek failures are recorded with rule names.
     - A labeled data-summary reply replaces the 503 for app request schema 1.1.
     - A live 60-prompt evaluation runs on demand.
+    - Review fixes (2026-09-28):
+      - Long threads keep their newest messages instead of failing with `chat context too large`.
+        That was a 422 before the model ran, pre-existing since July.
+      - Data summaries never re-enter the coach's memory.
+      - Every blocked turn reaches Sentry, and its 422 names a finite reason.
 - HealthKit sleep aggregation handles mixed staged and unspecified intervals without double-counting.
 - Fresh-database pgTAP parity, Flutter/Deno tests, iOS compilation, migration collision checks, and
   secret scanning run in CI. Locally:
@@ -53,9 +58,10 @@ See [CI_CD_DEPLOYMENT.md](./CI_CD_DEPLOYMENT.md) for the executable release cont
 
 These are not silently considered complete:
 
-1. Merge PR #35, then A1, after their required CI checks pass (no reinstall). Add the
-   `DEEPSEEK_API_KEY` repository secret and run the `Coach Eval` workflow. Then A2 (app, reinstall)
-   and B (calculators), followed by owner-device acceptance and Sentry verification.
+1. Merge PR #35, then A1, after their required CI checks pass (no reinstall). The live `Coach Eval`
+   run is on hold because the owner cannot sign in to DeepSeek to create a key. Until then, verify
+   A1 in production with the handoff queries after real iPhone use. Then A2 (app, reinstall) and B
+   (calculators), followed by owner-device acceptance and Sentry verification.
 2. Approve a coherent visual direction and then redesign from the current product truth; do not
    copy a competitor's protected assets or flows.
 3. Complete the Apple AI-consent/App Review review, privacy/legal review, pricing decision, developer
