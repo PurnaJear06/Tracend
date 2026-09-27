@@ -1,5 +1,5 @@
 begin;
-select plan(28);
+select plan(36);
 
 insert into auth.users(id,role) values
   ('f1888888-aaaa-4111-8111-111111111111','authenticated');
@@ -242,6 +242,72 @@ select is(
   (select count(*) from public.coach_messages where thread_id='f7888888-aaaa-4111-8111-111111111111'),
   2::bigint,
   '28: the thread keeps the question and the labeled reply');
+
+-- Conversation memory
+select is(
+  (select public.prepare_coach_chat_v8(
+    'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-111111111111',
+    'And protein?','Asia/Kolkata',gen_random_uuid(),'general')->'context'->'recent_messages'),
+  '[{"role": "user", "content": "How long until 72 kg?"}]'::jsonb,
+  '29: a labeled data summary never returns to the coach as its own words');
+
+-- A long thread saved before v8: each question and answer share created_at,
+-- and 24 messages of about 2,000 characters exceed the base 18,000-character
+-- guard. The newest answer is long and ends with a clarifying question.
+reset role;
+insert into public.coach_threads(id,user_id,title,status)
+values('f7888888-aaaa-4111-8111-222222222222','f1888888-aaaa-4111-8111-111111111111',
+  'Long conversation','active');
+insert into public.coach_messages(user_id,thread_id,role,content,created_at)
+select 'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-222222222222',
+  r.role,
+  case when t = 12 and r.role = 'assistant'
+    then 'A12 ' || repeat('x', 5000) || ' Which day works best?'
+    else (case r.role when 'user' then 'Q' else 'A' end) || lpad(t::text, 2, '0') || ' ' || repeat('x', 1995)
+  end,
+  now() - make_interval(mins => 60 - t)
+from generate_series(1, 12) t cross join (values ('user'), ('assistant')) r(role);
+set local role service_role;
+
+select lives_ok(
+  $$create temporary table v8_long as select public.prepare_coach_chat_v8(
+    'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-222222222222',
+    'Monday', 'Asia/Kolkata', gen_random_uuid(), 'general') value$$,
+  '30: a long conversation still gets an answer instead of chat context too large');
+
+select is(
+  (select jsonb_array_length(value->'context'->'recent_messages') from v8_long),
+  10,
+  '31: the coach keeps the ten newest messages');
+
+select is(
+  (select array[left(value->'context'->'recent_messages'->0->>'content', 3),
+    left(value->'context'->'recent_messages'->9->>'content', 3)] from v8_long),
+  array['Q08','A12'],
+  '32: the newest turns are kept, oldest first');
+
+select is(
+  (select array[value->'context'->'recent_messages'->0->>'role',
+    value->'context'->'recent_messages'->1->>'role'] from v8_long),
+  array['user','assistant'],
+  '33: a question saved with its answer comes first');
+
+select ok(
+  (select right(value->'context'->'recent_messages'->9->>'content', 21) = 'Which day works best?'
+    and length(value->'context'->'recent_messages'->9->>'content') <= 2000 from v8_long),
+  '34: a long answer is capped but keeps its closing clarifying question');
+
+select ok(
+  (select value->'context'->'recent_other_conversations' @> '[{"content": "How long until 72 kg?"}]'
+    and not value->'context'->'recent_other_conversations' @> '[{"content": "Here is what your data shows."}]'
+    from v8_long),
+  '35: other conversations keep the question and leave out the data summary');
+
+select lives_ok(
+  $$select public.prepare_coach_chat_v7(
+    'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-222222222222',
+    'Monday', 'Asia/Kolkata', gen_random_uuid(), 'general')$$,
+  '36: the v7 rollback path also survives a long conversation');
 
 select * from finish();
 rollback;

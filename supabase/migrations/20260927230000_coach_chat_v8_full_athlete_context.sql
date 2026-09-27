@@ -13,6 +13,8 @@
 --   (it rejected deepseek) and records the finite validation rule names.
 -- - persist_coach_chat_data_summary stores the labeled deterministic reply
 --   served when the model cannot produce a valid answer.
+-- - Conversation memory is rebuilt without labeled data summaries, keeping the
+--   newest turns (v5's size guard kept the oldest ten of the last twenty).
 
 alter table public.coach_messages
   add column answer_source text check (answer_source in ('model', 'data_summary'));
@@ -263,6 +265,38 @@ begin
 
   c := prepared->'context';
   coaching_date := coalesce((c->>'coaching_date')::date, current_date);
+
+  -- Conversation memory, rebuilt from coach_messages:
+  -- - A labeled data summary was shown to the athlete but not written by the
+  --   model, so it never returns to the model as the coach's own words.
+  -- - v5's size guard kept the first ten of the last twenty messages, which
+  --   are the oldest, so a long thread lost its newest turns (including the
+  --   coach's clarifying question). The newest ten are kept; the prompt shows ten.
+  -- - Before v8 a question and its answer were saved in one transaction with
+  --   the same created_at, so the question is ordered first.
+  -- - Each message is capped at 2,000 characters, keeping its ending, so a few
+  --   long answers cannot crowd the athlete file out of the size guard. The
+  --   prompt itself shows at most the first 300 and last 900 characters.
+  c := c || jsonb_build_object(
+    'recent_messages', (select coalesce(jsonb_agg(message order by created_at, turn_rank), '[]'::jsonb) from (
+      select jsonb_build_object('role', m.role, 'content', case when length(m.content) > 2000
+          then left(m.content, 500) || ' … ' || right(m.content, 1400) else m.content end) message,
+        m.created_at, case m.role when 'user' then 0 else 1 end turn_rank
+      from public.coach_messages m
+      where m.user_id = target_user_id and m.thread_id = target_thread_id
+        and m.answer_source is distinct from 'data_summary'
+      order by m.created_at desc, turn_rank desc limit 10
+    ) recent),
+    'recent_other_conversations', (select coalesce(jsonb_agg(message order by created_at, turn_rank), '[]'::jsonb) from (
+      select jsonb_build_object('role', m.role, 'content', case when length(m.content) > 2000
+          then left(m.content, 500) || ' … ' || right(m.content, 1400) else m.content end) message,
+        m.created_at, case m.role when 'user' then 0 else 1 end turn_rank
+      from public.coach_messages m
+      where m.user_id = target_user_id and m.thread_id <> target_thread_id
+        and m.answer_source is distinct from 'data_summary'
+      order by m.created_at desc, turn_rank desc limit 10
+    ) other));
+
   c := c || public.build_coach_athlete_context(target_user_id, coaching_date, coaching_timezone)
     || jsonb_build_object(
       'schema_version', '8.0',
