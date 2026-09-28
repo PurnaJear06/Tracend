@@ -337,7 +337,17 @@ active-goal RPC confirms one — the goal line never renders a fabricated value.
 ### `CoachMessage` and `MealScheduleTimeline`
 
 Coach messages use a restrained familiar bubble shape, selectable text, and an expandable evidence
-drawer; the pinned daily decision remains a separate solid surface. Meal schedule rows use time,
+drawer; the pinned daily decision remains a separate solid surface.
+
+A labeled reply that stands in for a failed model answer is a variant of the same bubble:
+- **Data summary:** an attention-color border and a `Data summary · not an AI answer` pill. It has
+  no provider pill.
+- **Safety referral:** the neutral border and a `Safety note · not an AI answer` pill, with no data
+  styling.
+- **Both:** a muted, selectable beta diagnostic line, and a `Retry` text button when the reply ends
+  the conversation.
+
+The pill text, not the color, carries the meaning. Meal schedule rows use time,
 label, planned quantities, and explicit status. Neither component uses color as the only state
 signal.
 
