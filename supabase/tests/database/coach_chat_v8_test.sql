@@ -394,10 +394,10 @@ values
 set local role service_role;
 
 select is(
-  (select public.prepare_coach_chat_v8(
+  (select (public.prepare_coach_chat_v8(
     'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-111111111111',
     'How did I sleep this week?','Asia/Kolkata',gen_random_uuid(),'general')
-    ->'context'->'health_averages'->'last_7_days'
+    ->'context'->'health_averages'->'last_7_days')
     - array['avg_resting_heart_rate_bpm','avg_hrv_ms','days_with_resting_heart_rate',
       'days_with_hrv']),
   '{"days_synced": 3, "days_with_sleep": 1, "avg_sleep_minutes": 420,
