@@ -1,8 +1,12 @@
 # Backend Handoff — FLUTTER-8 Coach Reliability
 
-**Status:** two PRs awaiting the owner's merge, in order:
+**Status:** live. Both PRs merged on 2026-09-28, in order:
 1. PR #35 `codex/coach-chat-validation-reliability`
-2. A1 `claude/coach-full-context-a1`, stacked on it
+2. A1 (#36) `claude/coach-full-context-a1`
+
+A1 has been live since 10:50 UTC. Its first deploy reported success while Supabase kept #35's code
+for two coach functions (see [Deploy incident](#deploy-incident-2026-09-28)). The owner's device
+check then passed, and FLUTTER-8 is resolved.
 
 **Scope:** Edge Functions, additive SQL, the live evaluation, and docs. No app code change, so no
 reinstall. A2 (app) follows.
@@ -125,18 +129,20 @@ Verification:
   - With the fix, every file passes (run 36358873313).
 
 Owner steps:
-1. Merge PR #35, then A1. There is no reinstall: the installed app sends request 1.0 and keeps
-   today's behaviour, but already benefits from the full file, the relaxed formatting limits, and
+1. Done: PR #35 and A1 merged. There was no reinstall: the installed app sends request 1.0 and keeps
+   its behaviour, but already benefits from the full file, the relaxed formatting limits, and
    failure recording.
-2. After the deploy finishes, and never before, switch the Edge secret `DEEPSEEK_MODEL` to
-   `deepseek-flash`. The code that accepts the new name must be live first.
-3. Live evaluation. The DeepSeek sign-in is blocked, so use the NaraRouter smoke test for now:
-   - Add the repository secret `EVAL_API_KEY` yourself, with a fresh NaraRouter key.
-   - Add the variable `EVAL_BASE_URL=https://router.bynara.id/v1`.
-   - Then add the `coach-eval` label to the PR: 17 calls, three of them free boundary answers.
-   With a DeepSeek key later, add `DEEPSEEK_API_KEY` and delete `EVAL_BASE_URL` for the real
-   regression run. Either way, verify A1 in production with the queries below after real use on the
-   iPhone.
+2. Switch the Edge secret `DEEPSEEK_MODEL` from `deepseek-v4-flash` to `deepseek-flash`. A1's code
+   accepts both and is confirmed live, so this is safe now. A secret change creates a new version of
+   every function, so afterwards confirm in `supabase functions list` that no function's
+   `UPDATED_AT` moved back.
+3. Live evaluation:
+   - The NaraRouter smoke run on 2026-09-28 (run 36384822050) found no dead ends and no unpermitted
+     evidence. The router was too slow to measure pass rates: 9 of 12 calls timed out.
+   - The DeepSeek regression run is still owed. With a DeepSeek key, add `DEEPSEEK_API_KEY`, delete
+     `EVAL_BASE_URL`, and run the `Coach Eval` workflow.
+
+The queries below measure A1 in production after real use on the iPhone.
 
 See what the coach did in the last 7 days. These are read-only queries for the Supabase SQL editor:
 
@@ -174,6 +180,33 @@ select count(*) as active_threads,
   max(last20_chars) as largest
 from per_thread;
 ```
+
+## Deploy incident (2026-09-28)
+
+- The A1 deploy (run 36392439194) reported success for all nine functions at 07:43 UTC. Supabase
+  still kept the previous version of `coach-chat`, `coach-decide`, `health-check` and
+  `privacy-export`.
+  - Their `UPDATED_AT` stayed at the 07:22 deploy of #35.
+  - The live `coach-chat` source, downloaded later, was byte-identical to #35.
+- #35's code accepts only `deepseek-v4-flash`. Switching `DEEPSEEK_MODEL` to `deepseek-flash` at
+  07:44 therefore turned the live provider off:
+  - Every chat failed with `provider_http_error` (FLUTTER-9: provider `mock`, model
+    `provider_not_configured`).
+  - `coach-decide` returned 503 `coach_provider_model_not_approved`.
+- Recovery: the owner restored `deepseek-v4-flash`, which both versions accept, and ran `hotfix.yml`
+  (run 36411972320). `coach-chat` and `coach-decide` have run A1's code since 10:50 UTC.
+  - That run dropped `health-sync`, which already ran the same code.
+  - Its tag step failed because `hotfix.yml` could not push tags.
+- A secret change creates a new version of every function: all nine versions rose by one, while
+  `UPDATED_AT` stayed the same.
+  - It is not proven whether the 07:44 secret change or the parallel deploys rolled the four
+    functions back.
+  - The hotfix run shows that parallel deploys alone can drop a function.
+- Prevention in the A1 close-out PR (details in `docs/CI_CD_DEPLOYMENT.md`):
+  - Functions deploy one at a time.
+  - `scripts/verify-live-function.sh` confirms each one is live and redeploys it once if not.
+  - A final job checks all of them before tagging.
+  - `hotfix.yml` can push its tag.
 
 ## PR #35 — base hardening
 
@@ -217,9 +250,17 @@ Review follow-ups on the same branch:
 
 ## Post-deploy acceptance
 
-Keep FLUTTER-8 open until the nine prompts in the PR checklist pass on the owner's iPhone, quoted
-numbers match Today exactly, missing metrics are called not measured, no plan activates without
-approval, and any terminal failure shows finite rule names in Edge Sentry.
+After the 10:50 UTC redeploy on 2026-09-28, the owner's iPhone got answers to their questions and
+Sentry recorded no errors. FLUTTER-8 and FLUTTER-9 are resolved; either reopens as regressed on a
+new event.
+
+The owner has not yet worked through the full checklist item by item, so keep checking it during
+normal use:
+- the nine prompts in the PR checklist;
+- quoted numbers match Today exactly;
+- missing metrics are called not measured;
+- no plan activates without approval;
+- any terminal failure shows finite rule names in Edge Sentry.
 
 ## Next — A2 (app, needs a reinstall), then B (calculators)
 

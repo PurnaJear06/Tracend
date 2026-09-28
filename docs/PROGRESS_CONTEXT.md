@@ -6,18 +6,20 @@
 
 **Current priority:** make Coach chat answer every question from the full athlete file and never
 dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 (app) → B
-(calculators). Finish owner-device acceptance before any UI redesign.
+(calculators). PR #35 and A1 are live and passed the owner's device check on 2026-09-28; A2 is next.
+Finish owner-device acceptance before any UI redesign.
 
 ## Shipped baseline
 
 - iOS-only Flutter app backed by Supabase Auth, PostgreSQL/RLS, Storage, and nine Edge Functions.
 - Deterministic recovery, sleep, training-load, nutrition, and plan state remains authoritative;
   model output can explain or propose but cannot silently activate durable changes.
-- The first Coach chat reliability hotfix is deployed. Two FLUTTER-8 changes are in review, in order:
+- Coach chat reliability (FLUTTER-8) is live. PR #35 and A1 (#36) merged on 2026-09-28, and A1 has
+  been live since a 10:50 UTC redeploy (see Release controls):
   - PR #35: typed validation rules, targeted fail-closed repair, fresh coaching-date scores, shared
     daily/chat evidence, whole-section budgeting, the full shared persona, and a scoring-failure
     guard.
-  - A1 (stacked on #35): the root-cause fix.
+  - A1 (#36): the root-cause fix.
     - Every question gets the same full athlete file (`prepare_coach_chat_v8`); keywords no longer
       remove data.
     - The formatter renders all history, and the question comes last for caching.
@@ -51,7 +53,7 @@ dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 
   - A1 passes 157 Deno tests and, in CI on a fresh database, every pgTAP file, including the
     45-assertion v8 file and the 7-assertion scoring-guard file.
 
-  The seven required PR checks gate every push; owner merge remains pending.
+  The seven required PR checks gate every push.
 
 ## Release controls
 
@@ -61,6 +63,9 @@ dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 
 - Deployment waits for successful CI on the exact merged `main` commit.
 - Failed, missing, empty, checksum-invalid, or non-restorable database backups stop deployment.
 - Production dumps are restore-drilled in an isolated local Supabase database before migration.
+- Edge Functions deploy one at a time, and each is confirmed live by comparing the deployed source
+  with the commit; the release tag waits for that check. On 2026-09-28, parallel deploys had
+  reported success while Supabase kept the previous version of four functions.
 - Semantic versions come from `pubspec.yaml`; build numbers are monotonic in CI and derived from Git
   history for local device builds.
 
@@ -70,11 +75,12 @@ See [CI_CD_DEPLOYMENT.md](./CI_CD_DEPLOYMENT.md) for the executable release cont
 
 These are not silently considered complete:
 
-1. Merge PR #35, then A1, after their required CI checks pass (no reinstall).
-   - After the deploy, switch the `DEEPSEEK_MODEL` Edge secret to `deepseek-flash`.
-   - The DeepSeek regression run is still owed. It is waiting for a DeepSeek key; a NaraRouter
-     smoke test can run first.
-   - Verify A1 in production with the handoff queries after real iPhone use.
+1. Coach chat: A1 is live. Remaining:
+   - Switch the `DEEPSEEK_MODEL` Edge secret from the legacy alias `deepseek-v4-flash` to
+     `deepseek-flash`, then confirm that no function moved back to older code.
+   - The DeepSeek regression run is still owed. It is waiting for a DeepSeek key; the NaraRouter
+     smoke run on 2026-09-28 was too slow to measure pass rates.
+   - Optionally, measure A1 in production with the handoff queries.
    - Then A2 (app, reinstall) and B (calculators), followed by owner-device acceptance and Sentry
      verification.
 2. Approve a coherent visual direction and then redesign from the current product truth; do not
@@ -87,8 +93,8 @@ These are not silently considered complete:
 ## What happens next
 
 The active implementation is the FLUTTER-8 Coach work described in
-[`docs/handoff/backend.md`](./handoff/backend.md): PR #35, A1, A2 and B. After merge, automatic
-deployment, and owner-device acceptance, return to the read-only product/UI audit and one
+[`docs/handoff/backend.md`](./handoff/backend.md). PR #35 and A1 are live. A2 (app) is next, in its
+own PR, then B. After owner-device acceptance, return to the read-only product/UI audit and one
 owner-approved redesign brief.
 
 ## Sources of truth
