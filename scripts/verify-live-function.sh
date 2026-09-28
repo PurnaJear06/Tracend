@@ -5,11 +5,12 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
   cat <<EOF
-Usage: verify-live-function.sh <function_name>
+Usage: verify-live-function.sh <function_name|--all>
 
 Confirm that production runs this checkout's code for one Edge Function. The
 deployed source is downloaded (read-only) and every file is compared byte for
-byte with supabase/functions/ in this checkout. A new version can take a moment
+byte with supabase/functions/ in this checkout. --all checks every function
+directory in the checkout. A new version can take a moment
 to become live, so a mismatch is retried before it fails.
 
 A successful deploy command is not proof: on 2026-09-28 Supabase reported
@@ -31,6 +32,22 @@ fi
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   usage
   exit 0
+fi
+
+if [[ "$1" == "--all" ]]; then
+  failed=0
+  found=0
+  for entry in "$repo_root"/supabase/functions/*/index.ts; do
+    [[ -f "$entry" ]] || continue
+    found=$((found + 1))
+    function_name="$(basename "$(dirname "$entry")")"
+    "$repo_root/scripts/verify-live-function.sh" "$function_name" || failed=1
+  done
+  if ((found == 0)); then
+    echo "No Edge Function directories found in this checkout." >&2
+    exit 1
+  fi
+  exit "$failed"
 fi
 
 function_name="$1"

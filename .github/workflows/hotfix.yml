@@ -115,13 +115,7 @@ jobs:
         run: |
           # Checks every function directory in the commit, so a function missing
           # from the deploy matrix fails here too.
-          failed=0
-          for entry in supabase/functions/*/index.ts; do
-            name=$(basename "$(dirname "$entry")")
-            case "$name" in _*) continue ;; esac
-            scripts/verify-live-function.sh "$name" || failed=1
-          done
-          exit "$failed"
+          scripts/verify-live-function.sh --all
 
   smoke-test:
     name: Smoke Test

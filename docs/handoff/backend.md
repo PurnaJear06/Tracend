@@ -4,9 +4,9 @@
 1. PR #35 `codex/coach-chat-validation-reliability`
 2. A1 (#36) `claude/coach-full-context-a1`
 
-A1 has been live since 10:50 UTC. Its first deploy reported success while Supabase kept #35's code
-for two coach functions (see [Deploy incident](#deploy-incident-2026-09-28)). The owner's device
-check then passed, and FLUTTER-8 is resolved.
+A1's server code has been live since 10:50 UTC. Its first deploy reported success while Supabase
+kept #35's code for two coach functions (see [Deploy incident](#deploy-incident-2026-09-28)). An
+owner device spot check then passed. The full FLUTTER-8 acceptance checklist remains open.
 
 **Scope:** Edge Functions, additive SQL, the live evaluation, and docs. No app code change, so no
 reinstall. A2 (app) follows.
@@ -132,10 +132,11 @@ Owner steps:
 1. Done: PR #35 and A1 merged. There was no reinstall: the installed app sends request 1.0 and keeps
    its behaviour, but already benefits from the full file, the relaxed formatting limits, and
    failure recording.
-2. Switch the Edge secret `DEEPSEEK_MODEL` from `deepseek-v4-flash` to `deepseek-flash`. A1's code
-   accepts both and is confirmed live, so this is safe now. A secret change creates a new version of
-   every function, so afterwards confirm in `supabase functions list` that no function's
-   `UPDATED_AT` moved back.
+2. After #40's deploy passes its per-function and final source checks, switch the Edge secret
+   `DEEPSEEK_MODEL` from `deepseek-v4-flash` to `deepseek-flash`. A1's code accepts both, but a secret
+   change creates a new version of every function. From the deployed commit, run
+   `./scripts/verify-live-function.sh --all` afterwards and require all nine checks to pass.
+   `UPDATED_AT` can stay unchanged even when a function version changes, so it is not proof.
 3. Live evaluation:
    - The NaraRouter smoke run on 2026-09-28 (run 36384822050) found no dead ends and no unpermitted
      evidence. The router was too slow to measure pass rates: 9 of 12 calls timed out.
@@ -251,8 +252,8 @@ Review follow-ups on the same branch:
 ## Post-deploy acceptance
 
 After the 10:50 UTC redeploy on 2026-09-28, the owner's iPhone got answers to their questions and
-Sentry recorded no errors. FLUTTER-8 and FLUTTER-9 are resolved; either reopens as regressed on a
-new event.
+Sentry recorded no errors. The FLUTTER-9 incident is recovered; FLUTTER-8's full acceptance remains
+open until the checklist and A2 app behavior are verified.
 
 The owner has not yet worked through the full checklist item by item, so keep checking it during
 normal use:

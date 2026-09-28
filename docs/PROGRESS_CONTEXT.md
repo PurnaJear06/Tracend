@@ -6,8 +6,8 @@
 
 **Current priority:** make Coach chat answer every question from the full athlete file and never
 dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 (app) → B
-(calculators). PR #35 and A1 are live and passed the owner's device check on 2026-09-28; A2 is next.
-Finish owner-device acceptance before any UI redesign.
+(calculators). PR #35 and A1's server code are live; an owner spot check passed on 2026-09-28.
+A2 is next. Finish the full owner-device acceptance checklist before any UI redesign.
 
 ## Shipped baseline
 
@@ -75,12 +75,13 @@ See [CI_CD_DEPLOYMENT.md](./CI_CD_DEPLOYMENT.md) for the executable release cont
 
 These are not silently considered complete:
 
-1. Coach chat: A1 is live. Remaining:
-   - Switch the `DEEPSEEK_MODEL` Edge secret from the legacy alias `deepseek-v4-flash` to
-     `deepseek-flash`, then confirm that no function moved back to older code.
+1. Coach chat: A1's server code is live. End-to-end acceptance remains open:
+   - After the #40 deploy passes, switch the `DEEPSEEK_MODEL` Edge secret from the legacy alias
+     `deepseek-v4-flash` to `deepseek-flash`, then run `./scripts/verify-live-function.sh --all`
+     from the deployed commit. `UPDATED_AT` does not prove that the source stayed live.
    - The DeepSeek regression run is still owed. It is waiting for a DeepSeek key; the NaraRouter
      smoke run on 2026-09-28 was too slow to measure pass rates.
-   - Optionally, measure A1 in production with the handoff queries.
+   - Measure A1 in production with the handoff queries after real iPhone use.
    - Then A2 (app, reinstall) and B (calculators), followed by owner-device acceptance and Sentry
      verification.
 2. Approve a coherent visual direction and then redesign from the current product truth; do not

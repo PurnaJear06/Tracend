@@ -145,7 +145,8 @@ Concurrency lock: `production-deploy` group (`cancel-in-progress: false`). One d
 A green deploy step is not proof that the new code is live. `scripts/verify-live-function.sh
 <name>` compares the deployed source with the checkout (read-only). An Edge secret change creates a
 new version of every function, so change a secret that only new code accepts after that code is
-confirmed live, then check that no function's `UPDATED_AT` in `supabase functions list` moved back.
+confirmed live, then run `./scripts/verify-live-function.sh --all` from the deployed commit.
+`UPDATED_AT` alone cannot prove the source stayed live.
 
 **Manual CLI deploy only when:** GitHub Actions is down OR user explicitly requests it. Must:
 verify `./scripts/pre-deploy.sh`, dry-run first, backup first, report each step.

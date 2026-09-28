@@ -42,18 +42,19 @@ The pipeline now guards against this:
 
 - Functions deploy one at a time (`max-parallel: 1`).
 - `scripts/verify-live-function.sh <function>` downloads the deployed source (read-only) and
-  compares every file byte for byte with the commit. It retries while a new version propagates.
+  compares its files byte for byte with the commit. It retries while a new version propagates.
 - If a function is not live after its deploy, the job deploys it once more. If it is still not live,
   the job fails and the release is not tagged.
-- `Verify Live Functions` re-checks every function directory in the commit after all deploys, so a
+- `Verify Live Functions` runs `scripts/verify-live-function.sh --all` after all deploys, so a
   function missing from the deploy matrix also fails.
 
 Changing an Edge secret (`supabase secrets set`) also creates a new version of every function, with
 an unchanged `UPDATED_AT`:
 
 - Change a secret that only new code accepts only after that code has passed the live-code check.
-- Afterwards, confirm in `supabase functions list` that no function's `UPDATED_AT` moved back.
-- Or check one function directly with `./scripts/verify-live-function.sh coach-chat`.
+- Afterwards, from the checkout of the deployed commit, run
+  `./scripts/verify-live-function.sh --all` and require all nine checks to pass. Repeat after any
+  later secret change. `UPDATED_AT` alone cannot prove the source stayed live.
 
 ## Required CI checks
 
