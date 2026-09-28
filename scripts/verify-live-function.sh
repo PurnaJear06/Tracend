@@ -98,7 +98,8 @@ matches_checkout() {
   echo "$function_name: the live code matches this checkout ($files files)."
 }
 
-scratch="$(mktemp -d)"
+mkdir -p "$repo_root/.tooling"
+scratch="$(mktemp -d "$repo_root/.tooling/verify-live-function.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 
 for ((attempt = 1; attempt <= attempts; attempt++)); do
