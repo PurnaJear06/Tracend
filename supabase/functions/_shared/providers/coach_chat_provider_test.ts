@@ -24,6 +24,24 @@ Deno.test("Coach chat never turns an unconfigured provider into a mock answer", 
   }
 });
 
+Deno.test("DeepSeek chat accepts V4.1 Flash under its new and legacy names only", () => {
+  const configured = (model: string) =>
+    isCoachChatLiveProviderConfigured(
+      new Map<string, string>([
+        ["COACH_AI_ENABLED", "true"],
+        ["COACH_MODEL_PROVIDER", "deepseek"],
+        ["DEEPSEEK_API_KEY", "synthetic-key"],
+        ["DEEPSEEK_MODEL", model],
+      ]),
+    );
+  if (!configured("deepseek-flash") || !configured("deepseek-v4-flash")) {
+    throw new Error("Both names of the approved DeepSeek Flash model must enable chat.");
+  }
+  if (configured("deepseek-v4-pro") || configured("deepseek-chat")) {
+    throw new Error("Any other DeepSeek model must keep chat fail-closed.");
+  }
+});
+
 Deno.test("classifyQuestion requires an explicit plan modification request", () => {
   const planChanges = [
     "Can you create a new plan?",
@@ -762,11 +780,247 @@ Deno.test("v7 contract fixture keeps authoritative sections whole and sends the 
   if (!message.includes("- recovery: 62/100")) {
     throw new Error("Authoritative score must remain byte-exact under context pressure");
   }
-  if (!message.endsWith("</coaching_context>")) {
-    throw new Error("Context wrapper must always close");
+  if (!message.includes("</coaching_context>\n\nUser's message:\n")) {
+    throw new Error("Context wrapper must always close before the question");
+  }
+  if (!message.endsWith(question)) {
+    throw new Error("The question must come last so the stable context can be cached");
   }
   if (message.split(question).length - 1 !== 1) {
     throw new Error("The user question must be sent exactly once");
+  }
+});
+
+// ---------------------------------------------------------------------------
+// v8 — one complete athlete file for every question.
+// ---------------------------------------------------------------------------
+
+function v8AthleteContext(): Record<string, unknown> {
+  return {
+    ...v7ContextFixture,
+    schema_version: "8.0",
+    active_plan: { title: "Cut plan", version_number: 2, sessions_per_week: 5 },
+    nutrition_targets: { calories: 1900, protein_g: 150, carbohydrate_g: 190, fat_g: 60 },
+    training_totals: {
+      last_7_days: {
+        days: 7,
+        sessions: 3,
+        total_minutes: 170,
+        completed_sets: 54,
+        volume_kg: 9120,
+      },
+      last_14_days: {
+        days: 14,
+        sessions: 7,
+        total_minutes: 400,
+        completed_sets: 120,
+        volume_kg: 20450,
+      },
+      last_28_days: {
+        days: 28,
+        sessions: 13,
+        total_minutes: 760,
+        completed_sets: 230,
+        volume_kg: 38900,
+      },
+    },
+    training_log_28d: [{
+      local_date: "2026-09-26",
+      workout: "Push day",
+      duration_minutes: 62,
+      completed_sets: 18,
+      volume_kg: 3120,
+      avg_rpe: 8,
+      effort: 7,
+    }],
+    watch_workouts_14d: [{
+      local_date: "2026-09-26",
+      activity_type: "running",
+      duration_minutes: 31,
+    }],
+    training_week_structure: {
+      sessions_per_week: 5,
+      block_weeks: 4,
+      planned_workouts: [{ name: "Push day", target_day: 1 }],
+    },
+    health_daily_28d: [{
+      local_date: "2026-09-27",
+      sleep_minutes: 402,
+      resting_heart_rate_bpm: 58,
+      hrv_ms: 44,
+      steps: 9100,
+      active_energy_kcal: 610,
+      workout_minutes: 70,
+      weight_kg: null,
+    }],
+    health_averages: {
+      last_7_days: {
+        days_synced: 7,
+        days_with_sleep: 1,
+        avg_sleep_minutes: 395,
+        days_with_resting_heart_rate: 7,
+        avg_resting_heart_rate_bpm: 57.9,
+      },
+    },
+    weight_series_8w: [
+      { measured_on: "2026-09-25", weight_kg: 78.4 },
+      { measured_on: "2026-08-10", weight_kg: 80.1 },
+    ],
+    check_ins_14d: [{ local_date: "2026-09-27", sleep_quality: 2, energy: 3, soreness: 4 }],
+    nutrition_daily_28d: [{ local_date: "2026-09-20", confirmed_meals: 3, calories: 1880 }],
+    today_confirmed_meals: [],
+    recent_messages: [
+      { role: "user", content: "How much should I eat?" },
+      { role: "assistant", content: "Is 1,900 kcal your intake on rest days too?" },
+    ],
+    omitted_sections: [],
+  };
+}
+
+const v8Sections = [
+  "## Training Totals",
+  "## Training Log (last 28 days)",
+  "## Watch Workouts (last 14 days)",
+  "## Training Week Structure",
+  "## Watch Data (last 28 days)",
+  "## Weight (last 8 weeks)",
+  "## Check-ins (last 14 days",
+  "## Nutrition\n",
+  "## Logged Nutrition",
+  "## This Conversation",
+];
+
+Deno.test("v8: every question kind renders the same full athlete file", () => {
+  const context = v8AthleteContext();
+  for (
+    const kind of [
+      "recovery",
+      "nutrition_focus",
+      "daily_action",
+      "explain_evidence",
+      "plan_change",
+      "general",
+    ]
+  ) {
+    const message = buildCoachChatUserMessage("Question", context, kind);
+    for (const section of v8Sections) {
+      if (!message.includes(section)) {
+        throw new Error(`${kind} question lost the "${section.trim()}" section`);
+      }
+    }
+  }
+});
+
+Deno.test("v8: the real failing prompts keep training, weight and nutrition data", () => {
+  const prompts = [
+    "hey coach, so can you please check my last two weeks workload? Let me know how much long it may take for me to go till 73 or 72 kg from my current weight and for diet. I am not logging the meals in the app, but I am having exact 1900 cal per day or whatever,",
+    "hey couch my recovery is very poor idk why can you help me to improve my recovery and i have already completed my workout and for few ive splited the rotine morning i had weight training with abs and now eveing ill have cardio !",
+  ];
+  for (const prompt of prompts) {
+    const message = buildCoachChatUserMessage(
+      prompt,
+      v8AthleteContext(),
+      classifyQuestion(prompt),
+    );
+    for (
+      const fact of [
+        "7 sessions, 400 min",
+        "2026-09-25: 78.4 kg",
+        "Targets: 1900 kcal",
+        "| 2026-09-26 | Push day | 62 |",
+      ]
+    ) {
+      if (!message.includes(fact)) throw new Error(`Prompt lost "${fact}"`);
+    }
+  }
+});
+
+Deno.test("v8: each watch average names the days its metric was measured", () => {
+  const message = buildCoachChatUserMessage("How did I sleep?", v8AthleteContext(), "recovery");
+  for (
+    const fact of [
+      "last 7 days averages (7 days synced)",
+      "sleep 395 min over 1 day measured",
+      "RHR 57.9 bpm over 7 days measured",
+    ]
+  ) {
+    if (!message.includes(fact)) throw new Error(`Watch averages lost "${fact}"`);
+  }
+});
+
+Deno.test("v8: the conversation sits right before the question, which comes last", () => {
+  const question = "Yes, every day";
+  const message = buildCoachChatUserMessage(question, v8AthleteContext(), "general");
+  const conversation = message.indexOf("## This Conversation");
+  const coachQuestion = message.indexOf("Is 1,900 kcal your intake on rest days too?");
+  const userMessage = message.indexOf("User's message:");
+  if (!(conversation > 0 && coachQuestion > conversation && userMessage > coachQuestion)) {
+    throw new Error("History must precede the question so a clarifying answer has its question");
+  }
+  if (!message.endsWith(question)) throw new Error("The question must come last");
+});
+
+Deno.test("v8: long coach messages keep their ending in history", () => {
+  const context = {
+    ...v8AthleteContext(),
+    recent_messages: [{
+      role: "assistant",
+      content: "x".repeat(2_000) + " Which session do you mean?",
+    }],
+  };
+  const message = buildCoachChatUserMessage("The morning one", context, "general");
+  if (!message.includes("Which session do you mean?")) {
+    throw new Error("A clarifying question at the end of a long message must survive");
+  }
+});
+
+Deno.test("v8: sections dropped for size are named for the coach", () => {
+  const context = {
+    ...v8AthleteContext(),
+    omitted_sections: ["recent_other_conversations"],
+    training_log_28d: Array.from({ length: 4_000 }, (_, index) => ({
+      local_date: `2026-09-${String((index % 28) + 1).padStart(2, "0")}`,
+      workout: "Push day",
+      duration_minutes: 60,
+    })),
+  };
+  const message = buildCoachChatUserMessage("How is my training?", context, "general");
+  if (!message.includes("## Omitted This Turn")) {
+    throw new Error("Dropped sections must be listed");
+  }
+  if (!message.includes("recent other conversations")) {
+    throw new Error("Sections dropped by the SQL size guard must be listed too");
+  }
+  if (!message.includes("- recovery: 62/100")) {
+    throw new Error("Required truth must survive when optional sections are dropped");
+  }
+});
+
+Deno.test("v8: the contract allows labeled estimates and one clarifying question", async () => {
+  let systemPrompt = "";
+  await withDeepSeekEnvironment(() =>
+    generateCoachChat(
+      "How long until 72 kg?",
+      v8AthleteContext(),
+      "general",
+      ((_input: unknown, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body));
+        systemPrompt = body.messages[0].content;
+        return Promise.resolve(deepSeekResponse(validDeepSeekAnswer));
+      }) as typeof fetch,
+    )
+  );
+  for (
+    const phrase of [
+      "Call it an estimate, show its inputs and assumptions",
+      "ask one short clarifying question",
+      "Numbers about the athlete's data come only from the prepared context",
+    ]
+  ) {
+    if (!systemPrompt.includes(phrase)) throw new Error(`System prompt lost: ${phrase}`);
+  }
+  if (systemPrompt.includes("Never calculate a new average")) {
+    throw new Error("The retired no-projection rule must not remain");
   }
 });
 

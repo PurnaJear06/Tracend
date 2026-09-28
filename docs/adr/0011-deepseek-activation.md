@@ -41,3 +41,18 @@ decisions run with thinking off for latency and cost determinism.
 - Gemini and Groq adapters remain in the codebase, disabled by default, and require their own
   data-terms/evaluation gates before any future use.
 - Provider changes require new regression results per AI_SAFETY_SPEC §10.
+
+## Update (2026-09-28): DeepSeek-V4.1-Flash
+
+DeepSeek retired V4 Flash on 2026-09-10 and serves DeepSeek-V4.1-Flash as `deepseek-flash`. The
+legacy name `deepseek-v4-flash` is "temporarily routed" to it, with no announced end date
+([DeepSeek change log](https://api-docs.deepseek.com/updates)). So production has answered with
+V4.1 Flash since 2026-09-10, without a regression run.
+
+- `_shared/providers/deepseek_models.ts` accepts exactly these two names, so the `DEEPSEEK_MODEL`
+  secret can move to `deepseek-flash` before DeepSeek removes the alias. Any other name keeps the
+  live provider off.
+- Cost estimates use V4.1 Flash peak prices (USD 0.30/1M input, 1.20/1M output). See
+  [COST_MODEL.md](../COST_MODEL.md).
+- Still owed: the AI_SAFETY_SPEC §10 regression run for V4.1 Flash, which is the live evaluation
+  in `supabase/functions/_evals/`.

@@ -4,10 +4,12 @@ import {
   type CoachChatAnswerV2,
   CoachChatAnswerValidationError,
   coachChatEvidenceSources,
+  coachChatPreferredLengths,
   coachChatSafetyStates,
   type CoachChatValidationRule,
   parseCoachChatAnswer,
 } from "../contracts/coach_chat_v1.ts";
+import { deepseekFlashPeakPricePerMillionUsd, isApprovedDeepseekModel } from "./deepseek_models.ts";
 
 export type CoachChatAttemptOutcome =
   | "valid"
@@ -432,48 +434,11 @@ export function compactContext(context: Record<string, unknown>): Record<string,
   return result;
 }
 
-export function selectRelevantContext(
-  ctx: Record<string, unknown>,
-  kind: string,
-): Record<string, unknown> {
-  const out = { ...ctx };
-  if (kind === "recovery") {
-    delete out["nutrition_targets"];
-    delete out["nutrition_schedule"];
-    delete out["today_confirmed_meals"];
-    delete out["today_meal_schedule"];
-  }
-  if (kind === "nutrition_focus") {
-    delete out["session_trends"];
-    delete out["last_3_sessions_summary"];
-    delete out["latest_healthkit"];
-    delete out["today_healthkit"];
-    delete out["seven_day_healthkit_trend"];
-    delete out["training_week_structure"];
-    delete out["schedule_slot_compliance"];
-    delete out["eight_week_measurement_delta"];
-  }
-  if (kind === "daily_action") {
-    delete out["meal_compliance"];
-    delete out["eight_week_measurement_delta"];
-    delete out["seven_day_healthkit_trend"];
-  }
-  if (kind === "explain_evidence") {
-    delete out["today_confirmed_meals"];
-    delete out["today_meal_schedule"];
-    delete out["training_week_structure"];
-  }
-  return out;
-}
-
-const kindMaxBudget: Record<string, number> = {
-  recovery: 64_000,
-  nutrition_focus: 64_000,
-  daily_action: 48_000,
-  explain_evidence: 64_000,
-  plan_change: 128_000,
-  general: 48_000,
-};
+// Every question gets the whole athlete file; the question kind never removes
+// data. Plan changes get more room for proposal history. Only whole
+// low-priority sections are dropped, and only when a file exceeds its budget.
+const coachChatContextBudget = 96_000;
+const planChangeContextBudget = 128_000;
 
 function str(v: unknown): string {
   // null is rendered as the sentinel "—", which the system prompt's null
@@ -497,10 +462,16 @@ export function formatContextAsMarkdown(
 ): string {
   const out: string[] = [];
   const deferredHistory: string[] = [];
+  const omitted: string[] = [];
+  // Room kept for the closing "Omitted This Turn" line.
+  const omittedReserve = 400;
   let used = 0;
 
   const push = (s: string): boolean => {
-    if (used + s.length > maxLength) return false;
+    if (used + s.length > maxLength - omittedReserve) {
+      omitted.push(s.split("\n", 1)[0].replace(/^#+\s*/, ""));
+      return false;
+    }
     out.push(s);
     used += s.length;
     return true;
@@ -575,6 +546,19 @@ export function formatContextAsMarkdown(
   }
   pushRequired(computedSection);
 
+  // 1a. Athlete profile
+  const profile = obj(ctx.profile_context);
+  if (Object.keys(profile).length) {
+    let s = "## Athlete Profile\n";
+    if (profile.experience_level != null) s += `- experience: ${str(profile.experience_level)}\n`;
+    if (profile.height_cm != null) s += `- height: ${str(profile.height_cm)} cm\n`;
+    if (profile.training_days != null) s += `- training days: ${str(profile.training_days)}\n`;
+    if (profile.session_minutes != null) {
+      s += `- session length: ${str(profile.session_minutes)} min\n`;
+    }
+    push(s);
+  }
+
   // 1. Active Training Plan
   const plan = obj(ctx.active_plan);
   if (Object.keys(plan).length) {
@@ -591,11 +575,20 @@ export function formatContextAsMarkdown(
   const goal = obj(ctx.active_goal);
   if (Object.keys(goal).length) {
     let s = "## Goal\n";
-    const type = str(goal.type ?? goal.target_label ?? "Active Goal");
+    const type = str(goal.goal_type ?? goal.type ?? goal.target_label ?? "Active Goal");
     s += `**${type}**`;
     if (goal.target_value != null) s += ` — target: ${str(goal.target_value)}`;
     if (goal.deadline) s += `, deadline: ${str(goal.deadline)}`;
     s += "\n";
+    const details = goal.details;
+    if (details && typeof details === "object" && !Array.isArray(details)) {
+      for (const [key, value] of Object.entries(details as Record<string, unknown>)) {
+        if (value !== null && typeof value === "object") continue;
+        s += `- ${key.replace(/_/g, " ")}: ${str(value)}\n`;
+      }
+    } else if (typeof details === "string" && details) {
+      s += `${details}\n`;
+    }
     push(s);
   }
 
@@ -610,6 +603,11 @@ export function formatContextAsMarkdown(
       s += "\n";
       push(s);
     }
+  }
+
+  // 3b. Latest weekly review (deterministic progress summary)
+  if (typeof ctx.latest_weekly_review === "string" && ctx.latest_weekly_review) {
+    push(`## Latest Weekly Review\n${ctx.latest_weekly_review}\n`);
   }
 
   // 4. Today's Check-In
@@ -640,8 +638,65 @@ export function formatContextAsMarkdown(
     push(s);
   }
 
-  // 5. Recent Training
-  const sessions = arr(
+  // 4b. Check-ins, last 14 days
+  const checkIns = arr(ctx.check_ins_14d);
+  if (checkIns.length) {
+    let s = "## Check-ins (last 14 days, scales 1-5, pain 0-10)\n";
+    s += "| Date | Sleep | Energy | Soreness | Hunger | Mood | Pain | Can train |\n";
+    s += "|------|-------|--------|----------|--------|------|------|-----------|\n";
+    for (const entry of checkIns) {
+      const c = obj(entry);
+      s += `| ${str(c.local_date)} | ${str(c.sleep_quality)} | ${str(c.energy)} | ${
+        str(c.soreness)
+      } | ${str(c.hunger)} | ${str(c.mood)} | ${str(c.pain_severity)} | ${
+        str(c.available_to_train)
+      } |\n`;
+    }
+    push(s);
+  }
+
+  // 5a. Training totals (deterministic)
+  const totals = obj(ctx.training_totals);
+  if (Object.keys(totals).length) {
+    let s = "## Training Totals (completed sessions)\n";
+    for (const label of ["last_7_days", "last_14_days", "last_28_days"]) {
+      const t = obj(totals[label]);
+      if (!Object.keys(t).length) continue;
+      s += `- ${label.replace(/_/g, " ")}: ${str(t.sessions)} sessions, ${
+        str(t.total_minutes)
+      } min, ${str(t.completed_sets)} completed sets, ${str(t.volume_kg)} kg volume\n`;
+    }
+    push(s);
+  }
+
+  // 5b. Training log, last 28 days (every completed session)
+  const trainingLog = Array.isArray(ctx.training_log_28d) ? ctx.training_log_28d : null;
+  if (trainingLog && trainingLog.length) {
+    let s = "## Training Log (last 28 days)\n";
+    s += "| Date | Workout | Min | Sets | Volume kg | Avg RPE | Effort |\n";
+    s += "|------|---------|-----|------|-----------|---------|--------|\n";
+    for (const row of trainingLog) {
+      const o = obj(row);
+      s += `| ${str(o.local_date)} | ${str(o.workout)} | ${str(o.duration_minutes)} | ${
+        str(o.completed_sets)
+      } | ${str(o.volume_kg)} | ${str(o.avg_rpe)} | ${str(o.effort)} |\n`;
+    }
+    push(s);
+  }
+
+  // 5c. Workouts recorded by the watch (may include sessions not logged in the app)
+  const watchWorkouts = arr(ctx.watch_workouts_14d);
+  if (watchWorkouts.length) {
+    let s = "## Watch Workouts (last 14 days)\n";
+    for (const workout of watchWorkouts) {
+      const w = obj(workout);
+      s += `- ${str(w.local_date)}: ${str(w.activity_type)}, ${str(w.duration_minutes)} min\n`;
+    }
+    push(s);
+  }
+
+  // 5. Recent Training (pre-v8 contexts, or sessions older than the 28-day log)
+  const sessions = trainingLog && trainingLog.length ? [] : arr(
     ctx.session_trends ?? ctx.last_3_sessions_summary ?? ctx.focused_execution ??
       ctx.recent_execution ?? ctx.brief_sessions,
   );
@@ -658,7 +713,56 @@ export function formatContextAsMarkdown(
     push(s);
   }
 
-  // 6. Health Metrics
+  // 6a. Watch data, last 28 days, with deterministic averages
+  const v8Health = Array.isArray(ctx.health_daily_28d);
+  const healthDays = arr(ctx.health_daily_28d);
+  const averages = obj(ctx.health_averages);
+  if (healthDays.length || Object.keys(averages).length) {
+    let s = "## Watch Data (last 28 days)\n";
+    // Each average covers only the days its metric was measured.
+    const over = (days: unknown) =>
+      days == null ? "" : ` over ${str(days)} ${days === 1 ? "day" : "days"} measured`;
+    for (const label of ["last_7_days", "last_28_days"]) {
+      const a = obj(averages[label]);
+      if (!Object.keys(a).length) continue;
+      s += `- ${label.replace(/_/g, " ")} averages (${str(a.days_synced)} days synced): sleep ${
+        str(a.avg_sleep_minutes)
+      } min${over(a.days_with_sleep)}, RHR ${str(a.avg_resting_heart_rate_bpm)} bpm${
+        over(a.days_with_resting_heart_rate)
+      }, HRV ${str(a.avg_hrv_ms)} ms${over(a.days_with_hrv)}, steps ${str(a.avg_steps)}${
+        over(a.days_with_steps)
+      }\n`;
+    }
+    if (healthDays.length) {
+      s += "| Date | Sleep min | RHR | HRV ms | Steps | Active kcal | Workout min | Weight kg |\n";
+      s += "|------|-----------|-----|--------|-------|-------------|-------------|-----------|\n";
+      for (const day of healthDays) {
+        const d = obj(day);
+        s += `| ${str(d.local_date)} | ${str(d.sleep_minutes)} | ${
+          str(d.resting_heart_rate_bpm)
+        } | ${str(d.hrv_ms)} | ${str(d.steps)} | ${str(d.active_energy_kcal)} | ${
+          str(d.workout_minutes)
+        } | ${str(d.weight_kg)} |\n`;
+      }
+    }
+    push(s);
+  }
+
+  // 6b. Weight, last 8 weeks (newest first); older readings only when none are recent
+  const weightSeries = arr(ctx.weight_series_8w);
+  const olderWeights = weightSeries.length ? [] : arr(ctx.measurement_history).slice().reverse();
+  if (weightSeries.length || (v8Health && olderWeights.length)) {
+    let s = weightSeries.length ? "## Weight (last 8 weeks)\n" : "## Weight (latest readings)\n";
+    for (const point of weightSeries.length ? weightSeries : olderWeights) {
+      const p = obj(point);
+      s += `- ${str(p.measured_on)}: ${str(p.weight_kg)} kg`;
+      if (p.waist_cm != null) s += `, waist ${str(p.waist_cm)} cm`;
+      s += "\n";
+    }
+    push(s);
+  }
+
+  // 6. Health Metrics (pre-v8 contexts)
   const health = obj(ctx.latest_healthkit ?? ctx.today_healthkit);
   const measurement = obj(ctx.latest_measurement);
   const weight = obj(ctx.latest_weight);
@@ -667,7 +771,7 @@ export function formatContextAsMarkdown(
   const hkPresent = Object.keys(health).length || Object.keys(measurement).length ||
     Object.keys(weight).length ||
     Object.keys(delta).length || Object.keys(trend).length;
-  if (hkPresent) {
+  if (hkPresent && !v8Health) {
     let s = "## Health Metrics\n";
     if (Object.keys(health).length) {
       // The health row's own date: metrics from an older row are stale,
@@ -713,7 +817,7 @@ export function formatContextAsMarkdown(
   // sentinel instead of dropping the section, so a watch-off day reads as
   // NOT MEASURED rather than silently absent.
   const briefHealth = arr(ctx.brief_health);
-  if (briefHealth.length) {
+  if (briefHealth.length && !v8Health) {
     const latest = obj(briefHealth[0]);
     let s = "## Health\n";
     if (latest.local_date != null) s += `*date: ${str(latest.local_date)}*\n`;
@@ -749,20 +853,39 @@ export function formatContextAsMarkdown(
     push(s);
   }
 
-  // 9. Today's Meals (nutrition_focus kind)
-  const meals = arr(ctx.today_confirmed_meals ?? ctx.today_meal_schedule);
+  // 9. Today's Meals: confirmed meals, else the planned schedule
+  const confirmedMeals = arr(ctx.today_confirmed_meals);
+  const meals = confirmedMeals.length ? confirmedMeals : arr(ctx.today_meal_schedule);
   if (meals.length) {
-    let s = "## Today's Meals\n";
-    for (const meal of meals.slice(0, 3)) {
+    let s = confirmedMeals.length
+      ? "## Today's Meals (confirmed)\n"
+      : "## Today's Meals (planned)\n";
+    for (const meal of meals) {
       const m = obj(meal);
       const foods = arr(m.foods);
       if (foods.length) {
         const items = foods.map((f) => {
           const fObj = obj(f);
-          return str(fObj.food_name ?? fObj.food ?? fObj.f ?? fObj.name);
+          const name = str(fObj.food_name ?? fObj.food ?? fObj.f ?? fObj.name);
+          return fObj.calories != null ? `${name} (${str(fObj.calories)} kcal)` : name;
         }).join(", ");
         s += `- ${items}\n`;
       }
+    }
+    push(s);
+  }
+
+  // 9b. Nutrition history: days with confirmed meals, last 28 days
+  const nutritionDays = arr(ctx.nutrition_daily_28d);
+  if (nutritionDays.length) {
+    let s = "## Logged Nutrition (days with confirmed meals, last 28 days)\n";
+    s += "| Date | Meals | kcal | Protein g | Carbs g | Fat g |\n";
+    s += "|------|-------|------|-----------|---------|-------|\n";
+    for (const day of nutritionDays) {
+      const d = obj(day);
+      s += `| ${str(d.local_date)} | ${str(d.confirmed_meals)} | ${str(d.calories)} | ${
+        str(d.protein_g)
+      } | ${str(d.carbohydrate_g)} | ${str(d.fat_g)} |\n`;
     }
     push(s);
   }
@@ -787,14 +910,22 @@ export function formatContextAsMarkdown(
     push(s);
   }
 
-  // 11. Training Week Structure (recovery kind)
-  const tws = arr(ctx.training_week_structure);
+  // 11. Training Week Structure: the SQL shape is an object with planned_workouts
+  const structure = obj(ctx.training_week_structure);
+  const tws = Array.isArray(ctx.training_week_structure)
+    ? ctx.training_week_structure
+    : arr(structure.planned_workouts);
   if (tws.length) {
     let s = "## Training Week Structure\n";
+    if (structure.sessions_per_week != null) {
+      s += `${str(structure.sessions_per_week)} sessions/week`;
+      if (structure.block_weeks != null) s += `, ${str(structure.block_weeks)}-week block`;
+      s += "\n";
+    }
     for (const day of tws.slice(0, 7)) {
       const d = obj(day);
-      s += `- ${str(d.preferred_weekday)} (week ${str(d.target_week)}): ${
-        str(d.prescribed_workout ?? d.workout_name)
+      s += `- weekday ${str(d.target_day ?? d.preferred_weekday)}: ${
+        str(d.name ?? d.prescribed_workout ?? d.workout_name)
       }\n`;
     }
     push(s);
@@ -811,17 +942,29 @@ export function formatContextAsMarkdown(
     deferredHistory.push(s);
   }
 
-  // 13. Recent Conversation
-  const msgs = arr(ctx.recent_messages ?? ctx.recent_other_conversations);
-  if (msgs.length) {
-    let s = "## Recent Conversation\n";
-    for (const msg of msgs.slice(0, 6)) {
+  // 13. Conversation memory, oldest first. Long messages keep their ending,
+  // where a coach's clarifying question usually sits.
+  const renderMessages = (title: string, messages: unknown[], limit: number): string => {
+    let s = `## ${title}\n`;
+    for (const msg of messages.slice(-limit)) {
       const m = obj(msg);
       const role = str(m.role).toUpperCase();
       const content = typeof m.content === "string" ? m.content : "";
-      if (content) s += `**${role}:** ${content.slice(0, 300)}${content.length > 300 ? "…" : ""}\n`;
+      if (!content) continue;
+      const shown = content.length > 1_200
+        ? `${content.slice(0, 300)} … ${content.slice(-900)}`
+        : content;
+      s += `**${role}:** ${shown}\n`;
     }
-    deferredHistory.push(s);
+    return s;
+  };
+  const otherMessages = arr(ctx.recent_other_conversations);
+  if (otherMessages.length) {
+    deferredHistory.push(renderMessages("Other Recent Conversations", otherMessages, 6));
+  }
+  const threadMessages = arr(ctx.recent_messages);
+  if (threadMessages.length) {
+    deferredHistory.push(renderMessages("This Conversation", threadMessages, 10));
   }
 
   // 14. Preferences
@@ -855,7 +998,12 @@ export function formatContextAsMarkdown(
       s += `- training coverage: ${str(quality.training_logging_coverage)}\n`;
     }
     if (quality.last_health_sync) s += `- last health sync: ${str(quality.last_health_sync)}\n`;
+    if (quality.last_check_in) s += `- last check-in: ${str(quality.last_check_in)}\n`;
     if (quality.last_confirmed_meal) s += `- last meal: ${str(quality.last_confirmed_meal)}\n`;
+    if (quality.last_measurement) s += `- last weigh-in: ${str(quality.last_measurement)}\n`;
+    if (quality.last_completed_workout) {
+      s += `- last completed workout: ${str(quality.last_completed_workout)}\n`;
+    }
     if (quality.conflict_count != null) s += `- conflicts: ${str(quality.conflict_count)}\n`;
     if (Object.keys(coverage).length) {
       const parts: string[] = [];
@@ -893,6 +1041,19 @@ export function formatContextAsMarkdown(
 
   for (const historySection of deferredHistory) push(historySection);
 
+  // Whole sections left out for size (here or by the SQL size guard) are named,
+  // so the coach says what it cannot see instead of guessing.
+  const sqlOmitted = arr(ctx.omitted_sections).filter((v): v is string => typeof v === "string");
+  const allOmitted = [...sqlOmitted.map((k) => k.replace(/_/g, " ")), ...omitted];
+  if (allOmitted.length) {
+    const list = allOmitted.join(", ");
+    pushRequired(
+      `## Omitted This Turn\nNot included for size: ${
+        list.length > 330 ? list.slice(0, 330) + "…" : list
+      }. Say so if the answer needs them.\n`,
+    );
+  }
+
   return out.join("\n");
 }
 
@@ -926,18 +1087,19 @@ export function classifyQuestion(question: string): string {
   return "general";
 }
 
+// The athlete file comes first and the question last: the file is stable
+// across a day's questions, so DeepSeek can serve it from its prefix cache,
+// and the conversation history sits right before the question it leads to.
 export function buildCoachChatUserMessage(
   question: string,
   context: Record<string, unknown>,
   contextKind: string,
 ): string {
-  const budget = kindMaxBudget[contextKind] ?? 64_000;
-  const prefix = "User's message:\n" + question +
-    "\n\nPrepared coaching context (supporting evidence only):\n<coaching_context>\n";
-  const suffix = "\n</coaching_context>";
+  const budget = contextKind === "plan_change" ? planChangeContextBudget : coachChatContextBudget;
+  const prefix = "Prepared coaching context (supporting evidence only):\n<coaching_context>\n";
+  const suffix = "\n</coaching_context>\n\nUser's message:\n" + question;
   const contextBudget = Math.max(0, budget - prefix.length - suffix.length);
-  const focused = selectRelevantContext(context, contextKind);
-  const markdown = formatContextAsMarkdown(focused, contextBudget);
+  const markdown = formatContextAsMarkdown(context, contextBudget);
   if (markdown.length > contextBudget) {
     throw new Error("required_context_exceeds_budget");
   }
@@ -954,17 +1116,16 @@ type ValidationIssue = Readonly<{
 function answerContractText(permittedEvidence: readonly string[]): string {
   const allowed = permittedEvidence.length > 0 ? permittedEvidence.join(", ") : "(none)";
   const l = coachChatAnswerLimits;
+  const p = coachChatPreferredLengths;
   return "\n# Output accuracy and validation contract\n" +
-    `- answer: at most ${l.answerMaxLength} characters.\n` +
-    `- evidence: at most ${l.evidenceMaxItems} items; label at most ${l.evidenceLabelMaxLength} characters.\n` +
-    `- missing_data: at most ${l.missingDataMaxItems} items; each at most ${l.missingDataItemMaxLength} characters.\n` +
-    `- suggested_follow_ups: at most ${l.followUpsMaxItems} items; each at most ${l.followUpMaxLength} characters.\n` +
-    `- reasoning_chain: at most ${l.reasoningMaxItems} items; step at most ${l.reasoningStepMaxLength} characters; value at most ${l.reasoningValueMaxLength} characters.\n` +
+    `- Keep items short: a reasoning step about ${p.reasoningStep} characters, its value about ${p.reasoningValue}, a follow-up about ${p.followUp}, a missing_data item about ${p.missingDataItem}.\n` +
+    `- Hard limits: answer ${l.answerMaxLength} characters; evidence ${l.evidenceMaxItems} items (label ${l.evidenceLabelMaxLength}); missing_data ${l.missingDataMaxItems} items (${l.missingDataItemMaxLength} each); suggested_follow_ups ${l.followUpsMaxItems} items (${l.followUpMaxLength} each); reasoning_chain ${l.reasoningMaxItems} items (step ${l.reasoningStepMaxLength}, value ${l.reasoningValueMaxLength}).\n` +
     `- Permitted evidence codes for this request: ${allowed}. Cite only these codes exactly. Leave evidence empty when none applies.\n` +
     "- Each reasoning evidence_id must be one permitted code or null.\n" +
-    "- Quote numbers exactly as they appear in the prepared context, with the same units and rounding.\n" +
-    "- Never calculate a new average, percentage change, projection, or other statistic. Describe comparisons qualitatively unless the exact figure appears in context.\n" +
-    "- If a needed value is null, —, or absent, say it was not measured.\n";
+    "- Numbers about the athlete's data come only from the prepared context, quoted with the same units and rounding. Never invent a measurement.\n" +
+    "- You may give an estimate (for example, time to reach a target weight) derived from context numbers or from numbers the athlete states. Call it an estimate, show its inputs and assumptions, and never present it as measured data.\n" +
+    "- If a needed value is null, —, or absent, say it was not measured.\n" +
+    "- If the question is ambiguous or needs a detail the context lacks (for example maintenance calories, a target date, or which session they mean), answer what the data supports, then ask one short clarifying question. Offer the likely replies in suggested_follow_ups, written as the athlete would say them.\n";
 }
 
 function repairContractText(
@@ -1005,7 +1166,7 @@ export function isCoachChatLiveProviderConfigured(
   }
   if (provider === "deepseek") {
     return enabled && Boolean(environment.get("DEEPSEEK_API_KEY")) &&
-      environment.get("DEEPSEEK_MODEL") === "deepseek-v4-flash";
+      isApprovedDeepseekModel(environment.get("DEEPSEEK_MODEL"));
   }
   return provider === "gemini" && enabled &&
     environment.get("GEMINI_PAID_DATA_TERMS_ACCEPTED") === "true" &&
@@ -1048,7 +1209,7 @@ export async function generateCoachChat(
   const deepseekKey = Deno.env.get("DEEPSEEK_API_KEY") ?? "";
   const deepseekModel = Deno.env.get("DEEPSEEK_MODEL") ?? "";
   const deepseekEnabled = provider === "deepseek" && enabled && deepseekKey &&
-    deepseekModel === "deepseek-v4-flash";
+    isApprovedDeepseekModel(deepseekModel);
   const geminiEnabled = provider === "gemini" && enabled && paid && key &&
     model === "gemini-3.5-flash";
   if (
@@ -1362,8 +1523,14 @@ export async function generateCoachChat(
           );
         }
       }
-      const inputRateDs = Number(Deno.env.get("DEEPSEEK_INPUT_COST_PER_MILLION_USD") ?? "0.14");
-      const outputRateDs = Number(Deno.env.get("DEEPSEEK_OUTPUT_COST_PER_MILLION_USD") ?? "0.28");
+      const inputRateDs = Number(
+        Deno.env.get("DEEPSEEK_INPUT_COST_PER_MILLION_USD") ??
+          deepseekFlashPeakPricePerMillionUsd.input,
+      );
+      const outputRateDs = Number(
+        Deno.env.get("DEEPSEEK_OUTPUT_COST_PER_MILLION_USD") ??
+          deepseekFlashPeakPricePerMillionUsd.output,
+      );
       return {
         answer,
         provider: "deepseek",

@@ -118,7 +118,7 @@ representative text-only month is inexpensive:
 | 4 weekly reviews on stronger model        | 8k input + 1.2k output each |        about $0.15 |
 | onboarding, retries, occasional conflicts |                    variable | budget $0.10–$0.75 |
 
-DeepSeek V4 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
+DeepSeek V4.1 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
 
 The Gemini Free tier is suitable only for synthetic evaluation data. Gemini paid-service routing
 requires billing-enabled project and data-terms review before it can process restricted data.
@@ -131,13 +131,22 @@ routes.
 **Prior owner test (ADR 0006, 2026-07-11, superseded 2026-07-26):** Groq Qwen `qwen/qwen3.6-27b`
 was used server-side for owner dogfooding through beta. Now superseded pending evaluation.
 
-**Active production provider (2026-07-26):** DeepSeek V4 Flash (`deepseek-v4-flash`) via
-`COACH_MODEL_PROVIDER=deepseek`. Pricing at the 2026-07-22 standard rate: USD 0.14 per million input
-tokens (USD 0.0028 cache hit) and USD 0.28 per million output tokens. A typical coach-chat request
-(~5K input + 500 output tokens) costs approximately USD 0.00084. At 30 requests/day this is roughly
-USD 0.75/month. A USD 2 top-up from the DeepSeek console covers approximately 2.5 months of owner
-usage. DeepSeek V4 Flash supports thinking mode, JSON structured output, and a 1M-token context
-window. API is OpenAI-compatible at `https://api.deepseek.com/v1/chat/completions`.
+**Active production provider (2026-07-26):** DeepSeek via `COACH_MODEL_PROVIDER=deepseek`, at
+`https://api.deepseek.com/v1/chat/completions` (OpenAI-compatible, JSON output, thinking mode,
+1M-token context).
+- **Model:** DeepSeek retired V4 Flash on 2026-09-10. Its name `deepseek-v4-flash` is temporarily
+  routed to DeepSeek-V4.1-Flash, whose own name is `deepseek-flash`. The Edge code accepts both
+  (`_shared/providers/deepseek_models.ts`).
+- **V4.1 Flash list prices** from 04:00 UTC on 2026-09-10, in USD per million tokens:
+  - Off-peak: 0.003 cache-hit input, 0.15 cache-miss input, 0.60 output.
+  - Peak (weekdays 01:00–04:00 and 06:00–10:00 UTC, which is 06:30–09:30 and 11:30–15:30 IST):
+    0.006, 0.30, 1.20.
+- **Cost estimates** use the peak cache-miss price (0.30 input, 1.20 output), so the USD 3 warning
+  and USD 5 hard stop never undercount. Until 2026-09-28 they used the retired V4 Flash rate (0.14
+  input, 0.28 output), which undercounted V4.1 Flash output by up to 4.3×.
+- **Per question:** a v8 question (~15K input + ~800 output tokens) is estimated at about
+  USD 0.0055. The real cost is lower off-peak (about USD 0.0027) and much lower on a same-day
+  follow-up that hits the cache.
 
 ## 5. Expected Monthly Scenarios
 

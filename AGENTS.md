@@ -170,7 +170,8 @@ See `docs/CI_CD_DEPLOYMENT.md` for full design.
 ## Key Facts
 
 - **Supabase project:** `qsfzzsjenopqqqhvpyaw` (Singapore, `ap-southeast-1`)
-- **Coach provider:** DeepSeek V4 Flash (`COACH_MODEL_PROVIDER=deepseek`). Prior: Gemini
+- **Coach provider:** DeepSeek V4.1 Flash (`COACH_MODEL_PROVIDER=deepseek`, model `deepseek-flash`;
+  DeepSeek routes the legacy `deepseek-v4-flash` to it for now). Prior: Gemini
   `gemini-3.5-flash`, Groq Qwen `qwen/qwen3.6-27b` (superseded).
 - **Coach-decide** defaults to deterministic mock. Live model requires all server-side secrets
   configured together.

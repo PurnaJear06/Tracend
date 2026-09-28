@@ -1,5 +1,6 @@
 import type { CoachModelProvider } from "./coach_model_provider.ts";
 import { DeepseekCoachModelProvider } from "./deepseek_coach_model_provider.ts";
+import { isApprovedDeepseekModel } from "./deepseek_models.ts";
 import { GeminiCoachModelProvider } from "./gemini_coach_model_provider.ts";
 import { GroqCoachModelProvider } from "./groq_coach_model_provider.ts";
 import { MockCoachModelProvider } from "./mock_coach_model_provider.ts";
@@ -58,7 +59,7 @@ export function createCoachModelProvider(
   }
   if (provider === "deepseek") {
     const model = required(environment, "DEEPSEEK_MODEL");
-    if (model !== "deepseek-v4-flash") {
+    if (!isApprovedDeepseekModel(model)) {
       throw new Error("coach_provider_model_not_approved");
     }
     return new DeepseekCoachModelProvider({

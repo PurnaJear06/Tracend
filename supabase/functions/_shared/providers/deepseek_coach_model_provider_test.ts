@@ -1,4 +1,19 @@
+import { assertInstanceOf, assertThrows } from "jsr:@std/assert@1.0.14";
 import { DeepseekCoachModelProvider } from "./deepseek_coach_model_provider.ts";
+
+Deno.test("Deepseek coach adapter accepts only the approved V4.1 Flash names", () => {
+  for (const model of ["deepseek-flash", "deepseek-v4-flash"]) {
+    assertInstanceOf(
+      new DeepseekCoachModelProvider({ apiKey: "synthetic-key", model }),
+      DeepseekCoachModelProvider,
+    );
+  }
+  assertThrows(
+    () => new DeepseekCoachModelProvider({ apiKey: "synthetic-key", model: "deepseek-v4-pro" }),
+    Error,
+    "deepseek_configuration_invalid",
+  );
+});
 
 Deno.test("Deepseek V4 Flash coach adapter sends bounded JSON-only requests", async () => {
   let request: Request | undefined;
