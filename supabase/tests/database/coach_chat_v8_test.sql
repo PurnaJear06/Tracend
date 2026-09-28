@@ -1,5 +1,5 @@
 begin;
-select plan(36);
+select plan(45);
 
 insert into auth.users(id,role) values
   ('f1888888-aaaa-4111-8111-111111111111','authenticated');
@@ -308,6 +308,101 @@ select lives_ok(
     'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-222222222222',
     'Monday', 'Asia/Kolkata', gen_random_uuid(), 'general')$$,
   '36: the v7 rollback path also survives a long conversation');
+
+-- A retried request (same idempotency key) reports what its first attempt
+-- produced; a saved question alone is not a reply.
+select ok(
+  (select (value->>'replayed')::boolean and value->'turn' @> '{"state": "answered",
+      "failure_code": "provider_response_invalid",
+      "message": {"answer_source": "data_summary", "safety_state": "unavailable"}}'
+    from (select public.prepare_coach_chat_v8(
+      'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-111111111111',
+      'How long until 72 kg?','Asia/Kolkata','fc888888-aaaa-4111-8111-111111111111',
+      'general') value) replay),
+  '37: a retry after a labeled data summary replays the summary');
+
+select lives_ok(
+  $$select public.record_coach_chat_question(
+    'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-111111111111',
+    'And carbs?','fc888888-aaaa-4111-8111-333333333333')$$,
+  '38: a second question is saved as its turn starts');
+
+select is(
+  (select public.prepare_coach_chat_v8(
+    'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-111111111111',
+    'And carbs?','Asia/Kolkata','fc888888-aaaa-4111-8111-333333333333','general')
+    ->'turn'->>'state'),
+  'in_progress',
+  '39: a retry while the model is still running is not a completed reply');
+
+select lives_ok(
+  $$select public.persist_failed_coach_chat_run(
+    'f1888888-aaaa-4111-8111-111111111111',
+    (select (value->>'feature_snapshot_id')::uuid from v8_by_kind where kind='general'),
+    (select (value->>'policy_evaluation_id')::uuid from v8_by_kind where kind='general'),
+    'fc888888-aaaa-4111-8111-333333333333',28000,'provider_timeout','deepseek',
+    'deepseek-flash','{}')$$,
+  '40: the second turn fails without a stored reply');
+
+select ok(
+  (select value->'turn' @> '{"state": "failed", "failure_code": "provider_timeout"}'
+      and value->'turn'->'message' = 'null'::jsonb
+    from (select public.prepare_coach_chat_v8(
+      'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-111111111111',
+      'And carbs?','Asia/Kolkata','fc888888-aaaa-4111-8111-333333333333',
+      'general') value) replay),
+  '41: a retry after a failure reports the failure code');
+
+select lives_ok(
+  $$select public.persist_coach_chat_result(
+    'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-222222222222',
+    'Protein?','fc888888-aaaa-4111-8111-444444444444',
+    (select (value->>'feature_snapshot_id')::uuid from v8_by_kind where kind='general'),
+    (select (value->>'policy_evaluation_id')::uuid from v8_by_kind where kind='general'),
+    '{"answer":"Keep protein at 150 g today.","evidence":[],"missing_data":[],
+      "safety_state":"allowed","suggested_follow_ups":[]}'::jsonb,
+    900,'deepseek','deepseek-flash',1000,200,0.001)$$,
+  '42: a model answer is stored');
+
+select ok(
+  (select value->'turn' @> '{"state": "answered", "model_provider": "deepseek",
+      "model": "deepseek-flash",
+      "message": {"content": "Keep protein at 150 g today.", "safety_state": "allowed"}}'
+      and value->'turn'->'message'->>'answer_source' is null
+    from (select public.prepare_coach_chat_v8(
+      'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-222222222222',
+      'Protein?','Asia/Kolkata','fc888888-aaaa-4111-8111-444444444444',
+      'general') value) replay),
+  '43: a retry after a model answer replays that answer');
+
+select ok(
+  not has_function_privilege('authenticated', 'public.coach_chat_turn(uuid,uuid)', 'execute'),
+  '44: the turn lookup is not executable by app users');
+
+-- Watch data: steps on three days, sleep measured on one night.
+reset role;
+insert into public.daily_health_summaries(
+  user_id,local_date,timezone,present_types,source_refs,source_checksum,
+  completeness,observed_through,last_synced_at,steps,sleep_minutes)
+values
+  ('f1888888-aaaa-4111-8111-111111111111',current_date,'Asia/Kolkata',
+    array['steps','sleep'],'[]'::jsonb,repeat('a',64),'partial',now(),now(),8000,420),
+  ('f1888888-aaaa-4111-8111-111111111111',current_date-1,'Asia/Kolkata',
+    array['steps'],'[]'::jsonb,repeat('b',64),'partial',now(),now(),9000,null),
+  ('f1888888-aaaa-4111-8111-111111111111',current_date-2,'Asia/Kolkata',
+    array['steps'],'[]'::jsonb,repeat('c',64),'partial',now(),now(),7000,null);
+set local role service_role;
+
+select is(
+  (select public.prepare_coach_chat_v8(
+    'f1888888-aaaa-4111-8111-111111111111','f7888888-aaaa-4111-8111-111111111111',
+    'How did I sleep this week?','Asia/Kolkata',gen_random_uuid(),'general')
+    ->'context'->'health_averages'->'last_7_days'
+    - array['avg_resting_heart_rate_bpm','avg_hrv_ms','days_with_resting_heart_rate',
+      'days_with_hrv']),
+  '{"days_synced": 3, "days_with_sleep": 1, "avg_sleep_minutes": 420,
+    "days_with_steps": 3, "avg_steps": 8000}'::jsonb,
+  '45: each watch-data average carries the days its metric was measured');
 
 select * from finish();
 rollback;

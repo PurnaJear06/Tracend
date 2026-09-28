@@ -96,24 +96,42 @@ const planAndTargets = {
 
 function richContext(): Record<string, unknown> {
   const log = trainingLog([1, 2, 4, 5, 7, 9, 10, 12, 15, 16, 18, 22, 25]);
+  // The watch was off on two nights, so sleep and HRV have fewer days than steps.
+  const watchOffNights = [3, 11];
   const health = Array.from({ length: 28 }, (_, days) => ({
     local_date: isoDaysAgo(days),
-    sleep_minutes: days === 0 ? 341 : 380 + ((days * 17) % 70),
+    sleep_minutes: watchOffNights.includes(days)
+      ? null
+      : days === 0
+      ? 341
+      : 380 + ((days * 17) % 70),
     resting_heart_rate_bpm: 56 + (days % 5),
-    hrv_ms: days === 0 ? 31 : 40 + ((days * 7) % 15),
+    hrv_ms: watchOffNights.includes(days) ? null : days === 0 ? 31 : 40 + ((days * 7) % 15),
     steps: 7000 + ((days * 911) % 5000),
     active_energy_kcal: 450 + ((days * 53) % 300),
     workout_minutes: log.some((s) => s.local_date === isoDaysAgo(days)) ? 65 : 0,
     weight_kg: null,
     completeness: "complete",
   }));
-  const avg = (
+  const measured = (
     days: number,
     key: "sleep_minutes" | "resting_heart_rate_bpm" | "hrv_ms" | "steps",
-  ) => {
-    const values = health.slice(0, days).map((d) => d[key]);
+  ) => health.slice(0, days).map((d) => d[key]).filter((v): v is number => v !== null);
+  const avg = (days: number, key: Parameters<typeof measured>[1]) => {
+    const values = measured(days, key);
     return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
   };
+  const averages = (days: number) => ({
+    days_synced: days,
+    days_with_sleep: measured(days, "sleep_minutes").length,
+    avg_sleep_minutes: avg(days, "sleep_minutes"),
+    days_with_resting_heart_rate: measured(days, "resting_heart_rate_bpm").length,
+    avg_resting_heart_rate_bpm: avg(days, "resting_heart_rate_bpm"),
+    days_with_hrv: measured(days, "hrv_ms").length,
+    avg_hrv_ms: avg(days, "hrv_ms"),
+    days_with_steps: measured(days, "steps").length,
+    avg_steps: avg(days, "steps"),
+  });
   const weights = Array.from({ length: 19 }, (_, index) => ({
     measured_on: isoDaysAgo(index * 3),
     // About 0.2 kg every 3 days, consistent with the -0.07 kg/day 28-day trend.
@@ -171,22 +189,7 @@ function richContext(): Record<string, unknown> {
       { local_date: isoDaysAgo(8), activity_type: "cycling", duration_minutes: 40 },
     ],
     health_daily_28d: health,
-    health_averages: {
-      last_7_days: {
-        days_synced: 7,
-        avg_sleep_minutes: avg(7, "sleep_minutes"),
-        avg_resting_heart_rate_bpm: avg(7, "resting_heart_rate_bpm"),
-        avg_hrv_ms: avg(7, "hrv_ms"),
-        avg_steps: avg(7, "steps"),
-      },
-      last_28_days: {
-        days_synced: 28,
-        avg_sleep_minutes: avg(28, "sleep_minutes"),
-        avg_resting_heart_rate_bpm: avg(28, "resting_heart_rate_bpm"),
-        avg_hrv_ms: avg(28, "hrv_ms"),
-        avg_steps: avg(28, "steps"),
-      },
-    },
+    health_averages: { last_7_days: averages(7), last_28_days: averages(28) },
     weight_series_8w: weights,
     nutrition_daily_28d: [
       {
@@ -275,16 +278,24 @@ function noWatchContext(): Record<string, unknown> {
     health_averages: {
       last_7_days: {
         days_synced: 0,
+        days_with_sleep: 0,
         avg_sleep_minutes: null,
+        days_with_resting_heart_rate: 0,
         avg_resting_heart_rate_bpm: null,
+        days_with_hrv: 0,
         avg_hrv_ms: null,
+        days_with_steps: 0,
         avg_steps: null,
       },
       last_28_days: {
         days_synced: 0,
+        days_with_sleep: 0,
         avg_sleep_minutes: null,
+        days_with_resting_heart_rate: 0,
         avg_resting_heart_rate_bpm: null,
+        days_with_hrv: 0,
         avg_hrv_ms: null,
+        days_with_steps: 0,
         avg_steps: null,
       },
     },

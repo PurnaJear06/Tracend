@@ -719,13 +719,18 @@ export function formatContextAsMarkdown(
   const averages = obj(ctx.health_averages);
   if (healthDays.length || Object.keys(averages).length) {
     let s = "## Watch Data (last 28 days)\n";
+    // Each average covers only the days its metric was measured.
+    const over = (days: unknown) =>
+      days == null ? "" : ` over ${str(days)} ${days === 1 ? "day" : "days"} measured`;
     for (const label of ["last_7_days", "last_28_days"]) {
       const a = obj(averages[label]);
       if (!Object.keys(a).length) continue;
       s += `- ${label.replace(/_/g, " ")} averages (${str(a.days_synced)} days synced): sleep ${
         str(a.avg_sleep_minutes)
-      } min, RHR ${str(a.avg_resting_heart_rate_bpm)} bpm, HRV ${str(a.avg_hrv_ms)} ms, steps ${
-        str(a.avg_steps)
+      } min${over(a.days_with_sleep)}, RHR ${str(a.avg_resting_heart_rate_bpm)} bpm${
+        over(a.days_with_resting_heart_rate)
+      }, HRV ${str(a.avg_hrv_ms)} ms${over(a.days_with_hrv)}, steps ${str(a.avg_steps)}${
+        over(a.days_with_steps)
       }\n`;
     }
     if (healthDays.length) {

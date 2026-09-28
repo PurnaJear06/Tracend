@@ -7,10 +7,11 @@
 //
 // Optional: EVAL_REPEATS (default 2), EVAL_CONCURRENCY (default 4),
 // EVAL_REPORT_DIR (default .tooling/coach-evals/<timestamp>),
-// EVAL_MAX_CALLS (cheap sample: one prompt per category first, rotating
-// athletes), and EVAL_BASE_URL + EVAL_API_KEY to send the same requests to an
-// OpenAI-compatible router instead of api.deepseek.com (EVAL_MODEL overrides
-// the model name; a router run is a smoke test, not production latency).
+// EVAL_MAX_CALLS (cheap sample: every safety prompt, then one prompt per other
+// category, rotating prompts and athletes), and EVAL_BASE_URL + EVAL_API_KEY
+// to send the same requests to an OpenAI-compatible router instead of
+// api.deepseek.com (EVAL_MODEL overrides the model name; a router run is a
+// smoke test, not production latency).
 // Exits non-zero when a merge gate fails. Synthetic data only.
 
 import prompts from "./prompts.json" with { type: "json" };
@@ -111,26 +112,51 @@ export function routedFetch(baseUrl: string, fetcher: typeof fetch = fetch): typ
   };
 }
 
-// A cheap run: at most maxCalls jobs, one per category per round, rotating
-// athletes, so twelve calls cover all twelve categories.
-export function sampleJobs<T extends Readonly<{ profileId: string; category: string }>>(
-  jobs: readonly T[],
-  maxCalls: number,
-): T[] {
+// A cheap run. Safety-critical cases need a 100% pass rate, so every safety
+// prompt runs once and none is sampled away. The rest of maxCalls takes one
+// prompt per other category per round, rotating prompts within a category and
+// athletes across categories and rounds.
+export function sampleJobs<
+  T extends Readonly<{ profileId: string; category: string; promptId: string; safety: boolean }>,
+>(jobs: readonly T[], maxCalls: number): T[] {
   if (!(maxCalls > 0) || maxCalls >= jobs.length) return [...jobs];
   const profiles = [...new Set(jobs.map((job) => job.profileId))];
-  const categories = [...new Set(jobs.map((job) => job.category))];
   const picked = new Set<T>();
+  const pickFirst = (...preferences: Array<(job: T) => boolean>) => {
+    for (const preferred of preferences) {
+      const job = jobs.find((j) => !picked.has(j) && preferred(j));
+      if (job) {
+        picked.add(job);
+        return;
+      }
+    }
+  };
+
+  const safetyPrompts = [...new Set(jobs.filter((j) => j.safety).map((j) => j.promptId))];
+  safetyPrompts.forEach((promptId, index) => {
+    const profileId = profiles[index % profiles.length];
+    pickFirst(
+      (j) => j.promptId === promptId && j.profileId === profileId,
+      (j) => j.promptId === promptId,
+    );
+  });
+
+  const others = jobs.filter((j) => !j.safety);
+  const categories = [...new Set(others.map((j) => j.category))];
   for (let round = 0; picked.size < maxCalls; round++) {
     const before = picked.size;
     for (const [index, category] of categories.entries()) {
       if (picked.size >= maxCalls) break;
+      const promptIds = [
+        ...new Set(others.filter((j) => j.category === category).map((j) => j.promptId)),
+      ];
+      const promptId = promptIds[round % promptIds.length];
       const profileId = profiles[(index + round) % profiles.length];
-      const job = jobs.find((j) =>
-        j.category === category && j.profileId === profileId && !picked.has(j)
-      ) ??
-        jobs.find((j) => j.category === category && !picked.has(j));
-      if (job) picked.add(job);
+      pickFirst(
+        (j) => j.promptId === promptId && j.profileId === profileId,
+        (j) => j.promptId === promptId,
+        (j) => j.category === category && !j.safety,
+      );
     }
     if (picked.size === before) break;
   }
@@ -185,7 +211,9 @@ async function runOne(
   } catch (error) {
     const latency_ms = Math.round(performance.now() - started);
     if (error instanceof CoachChatUnavailableError) {
-      const summary = buildCoachChatDataSummary(context);
+      // The fallback the athlete would get: a data summary, or a safety
+      // referral when the message may be about a health risk.
+      const summary = buildCoachChatDataSummary(context, prompt.text);
       return {
         ...base,
         outcome: "data_summary",
@@ -195,7 +223,9 @@ async function runOne(
         latency_ms,
         safety_state: summary.safety_state,
         answer: summary.answer,
-        checks: prompt.expect?.safety ? { safety: false } : {},
+        checks: prompt.expect?.safety
+          ? { safety: prompt.expect.safety.includes(summary.safety_state) }
+          : {},
       };
     }
     return {
@@ -242,6 +272,8 @@ async function main(): Promise<void> {
         repeat: index + 1,
         profileId: profile.id,
         category: prompt.category,
+        promptId: prompt.id,
+        safety: Boolean(prompt.expect?.safety),
       }))
     )
   );

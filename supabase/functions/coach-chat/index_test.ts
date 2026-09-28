@@ -7,6 +7,7 @@ import {
   coachChatFailureResponse,
   coachChatFailureRules,
   coachChatPreparationFailureCode,
+  coachChatReplayResponse,
   coachChatResponseSchemaVersion,
   detectPreferenceStatement,
   supportsDataSummary,
@@ -50,7 +51,7 @@ Deno.test("data-summary response is labeled and exposes only finite diagnostics"
   const summary = buildCoachChatDataSummary({
     permitted_evidence: ["APPROVED_PLAN_ACTIVE"],
     weight_series_8w: [{ measured_on: "2026-09-25", weight_kg: 78.4 }],
-  });
+  }, "How is my weight going?");
   const response = coachChatDataSummaryResponse(
     summary,
     error,
@@ -82,7 +83,7 @@ Deno.test("an unstored data summary still reaches the athlete", () => {
     null,
   );
   const response = coachChatDataSummaryResponse(
-    buildCoachChatDataSummary({}),
+    buildCoachChatDataSummary({}, "hi"),
     error,
     null,
     null,
@@ -90,6 +91,66 @@ Deno.test("an unstored data summary still reaches the athlete", () => {
   const message = response.message as Record<string, unknown>;
   assert(typeof message.id === "string" && message.id.length === 36);
   assertEquals(coachChatFailureRules(error), []);
+});
+
+Deno.test("a retried request returns its stored answer as the message the app reads", () => {
+  const stored = {
+    id: "44444444-4444-4444-8444-444444444444",
+    content: "Keep protein at 150 g today.",
+    evidence: [{ code: "APPROVED_PLAN_ACTIVE", label: "Plan", source: "coach_context" }],
+    missing_data: [],
+    safety_state: "allowed",
+    answer_source: null,
+    created_at: "2026-09-28T08:00:00Z",
+  };
+  const turn = {
+    state: "answered",
+    model_provider: "deepseek",
+    model: "deepseek-flash",
+    message: stored,
+  };
+  const current = coachChatReplayResponse(turn, true);
+  assertEquals(current.status, 200);
+  assertEquals(current.body.schema_version, "1.2");
+  assertEquals(current.body.replayed, true);
+  const message = current.body.message as Record<string, unknown>;
+  assertEquals(message.id, stored.id);
+  assertEquals(message.answer, stored.content);
+  assertEquals(message.answer_source, "model");
+  assertEquals(message.model_provider, "deepseek");
+  const installed = coachChatReplayResponse(turn, false);
+  assertEquals(installed.body.schema_version, "1.1");
+  assertEquals("answer_source" in (installed.body.message as Record<string, unknown>), false);
+});
+
+Deno.test("a retried request whose first attempt failed or is still running is not an answer", () => {
+  assertEquals(
+    coachChatReplayResponse({ state: "failed", failure_code: "provider_timeout" }, false),
+    {
+      status: 503,
+      body: {
+        schema_version: "1.1",
+        error: "chat_unavailable",
+        code: "provider_timeout",
+        retry_after_seconds: null,
+        replayed: true,
+      },
+    },
+  );
+  assertEquals(coachChatReplayResponse({ state: "in_progress" }, true).status, 409);
+  assertEquals(coachChatReplayResponse(undefined, true).status, 409);
+  // A stored data summary is replayed only to the app that can label it.
+  const summaryTurn = {
+    state: "answered",
+    failure_code: "provider_timeout",
+    message: { id: "55555555-5555-4555-8555-555555555555", answer_source: "data_summary" },
+  };
+  assertEquals(coachChatReplayResponse(summaryTurn, true).status, 200);
+  assertEquals(
+    (coachChatReplayResponse(summaryTurn, true).body.message as Record<string, unknown>).model,
+    "coach-data-summary-v1",
+  );
+  assertEquals(coachChatReplayResponse(summaryTurn, false).status, 503);
 });
 
 Deno.test("buildSessionSummary reads the v8 athlete file", () => {

@@ -8,16 +8,18 @@ name: Coach Eval
 # variable `EVAL_BASE_URL` (for example https://router.bynara.id/v1) and the
 # `EVAL_API_KEY` secret to send the same requests through an OpenAI-compatible
 # router instead; `EVAL_MODEL` overrides the model name. A router run is a
-# smoke test, not production latency. Each run makes 12 model calls (one
-# prompt per category) unless `max_calls` or the `EVAL_MAX_CALLS` variable
-# says otherwise; "all" runs every prompt for every athlete.
+# smoke test, not production latency. Each run makes 17 calls unless
+# `max_calls` or the `EVAL_MAX_CALLS` variable says otherwise: all six safety
+# prompts (three are answered by the deterministic boundary at no cost) and
+# one prompt from each other category. Safety prompts always run in full;
+# "all" runs every prompt for every athlete.
 on:
   workflow_dispatch:
     inputs:
       max_calls:
-        description: Model calls to make, or "all"
+        description: Runs to make (every safety prompt always runs), or "all"
         required: false
-        default: "12"
+        default: "17"
       repeats:
         description: Runs per prompt and athlete when max_calls is "all"
         required: false
@@ -51,7 +53,7 @@ jobs:
           EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
           EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
           EVAL_MODEL: ${{ vars.EVAL_MODEL }}
-          EVAL_MAX_CALLS: ${{ inputs.max_calls || vars.EVAL_MAX_CALLS || '12' }}
+          EVAL_MAX_CALLS: ${{ inputs.max_calls || vars.EVAL_MAX_CALLS || '17' }}
           EVAL_REPEATS: ${{ inputs.repeats || '2' }}
           EVAL_REPORT_DIR: eval-report
         run: |

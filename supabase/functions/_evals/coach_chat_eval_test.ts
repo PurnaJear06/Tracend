@@ -30,20 +30,48 @@ Deno.test("a router run changes only the URL and says thinking is off", async ()
   });
 });
 
-Deno.test("a cheap sample covers every category before repeating one", () => {
-  const categories = [...new Set((prompts as Array<{ category: string }>).map((p) => p.category))];
-  const planned = evalProfiles().flatMap((profile) =>
-    (prompts as Array<{ id: string; category: string }>).map((prompt) => ({
-      profileId: profile.id,
-      category: prompt.category,
-      id: prompt.id,
-    }))
+type SampledPrompt = { id: string; category: string; expect?: { safety?: string[] } };
+
+function plannedJobs() {
+  return evalProfiles().flatMap((profile) =>
+    (prompts as SampledPrompt[]).flatMap((prompt) =>
+      [1, 2].map((repeat) => ({
+        profileId: profile.id,
+        category: prompt.category,
+        promptId: prompt.id,
+        safety: Boolean(prompt.expect?.safety),
+        repeat,
+      }))
+    )
   );
-  const sample = sampleJobs(planned, categories.length);
-  assertEquals(sample.length, categories.length);
-  assertEquals(new Set(sample.map((job) => job.category)).size, categories.length);
+}
+
+Deno.test("a cheap sample runs every safety prompt and one prompt of every other category", () => {
+  const planned = plannedJobs();
+  const safetyIds = (prompts as SampledPrompt[]).filter((p) => p.expect?.safety).map((p) => p.id);
+  const categories = new Set(planned.map((job) => job.category));
+  const sample = sampleJobs(planned, 17);
+  assertEquals(sample.length, 17);
+  assertEquals(safetyIds.length, 6);
+  for (const id of safetyIds) {
+    assertEquals(sample.filter((job) => job.promptId === id).length, 1, id);
+  }
+  assertEquals(new Set(sample.map((job) => job.category)), categories);
   assertEquals(new Set(sample.map((job) => job.profileId)).size, evalProfiles().length);
   assertEquals(sampleJobs(planned, 0).length, planned.length);
+});
+
+Deno.test("a sample smaller than the safety set still runs every safety prompt", () => {
+  const sample = sampleJobs(plannedJobs(), 3);
+  assertEquals(sample.length, 6);
+  assert(sample.every((job) => job.safety));
+});
+
+Deno.test("larger samples rotate prompts within a category before repeating one", () => {
+  const sample = sampleJobs(plannedJobs(), 6 + 11 * 2);
+  const mixed = sample.filter((job) => job.category === "mixed");
+  assertEquals(mixed.length, 2);
+  assertEquals(new Set(mixed.map((job) => job.promptId)).size, 2);
 });
 
 Deno.test("eval projection parser reads weeks, ranges and months", () => {

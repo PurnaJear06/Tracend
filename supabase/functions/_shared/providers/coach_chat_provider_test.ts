@@ -854,7 +854,13 @@ function v8AthleteContext(): Record<string, unknown> {
       weight_kg: null,
     }],
     health_averages: {
-      last_7_days: { days_synced: 7, avg_sleep_minutes: 395, avg_resting_heart_rate_bpm: 57.9 },
+      last_7_days: {
+        days_synced: 7,
+        days_with_sleep: 1,
+        avg_sleep_minutes: 395,
+        days_with_resting_heart_rate: 7,
+        avg_resting_heart_rate_bpm: 57.9,
+      },
     },
     weight_series_8w: [
       { measured_on: "2026-09-25", weight_kg: 78.4 },
@@ -926,6 +932,19 @@ Deno.test("v8: the real failing prompts keep training, weight and nutrition data
     ) {
       if (!message.includes(fact)) throw new Error(`Prompt lost "${fact}"`);
     }
+  }
+});
+
+Deno.test("v8: each watch average names the days its metric was measured", () => {
+  const message = buildCoachChatUserMessage("How did I sleep?", v8AthleteContext(), "recovery");
+  for (
+    const fact of [
+      "last 7 days averages (7 days synced)",
+      "sleep 395 min over 1 day measured",
+      "RHR 57.9 bpm over 7 days measured",
+    ]
+  ) {
+    if (!message.includes(fact)) throw new Error(`Watch averages lost "${fact}"`);
   }
 });
 

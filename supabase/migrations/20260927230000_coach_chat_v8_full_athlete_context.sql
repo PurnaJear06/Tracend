@@ -15,6 +15,10 @@
 --   served when the model cannot produce a valid answer.
 -- - Conversation memory is rebuilt without labeled data summaries, keeping the
 --   newest turns (v5's size guard kept the oldest ten of the last twenty).
+-- - A retried request (same idempotency key) reports what its first attempt
+--   produced (coach_chat_turn), because a saved question is no longer proof
+--   of a completed reply.
+-- - Watch-data averages carry a day count per metric.
 
 alter table public.coach_messages
   add column answer_source text check (answer_source in ('model', 'data_summary'));
@@ -114,20 +118,31 @@ begin
       where user_id = target_user_id and local_date between coaching_date - 27 and coaching_date
     ) days),
 
+    -- Each average skips days its metric was not measured, so each carries
+    -- its own day count: a week of steps with one measured night is one
+    -- night of sleep evidence, not seven.
     'health_averages', jsonb_build_object(
       'last_7_days', (select jsonb_build_object(
         'days_synced', count(*),
+        'days_with_sleep', count(sleep_minutes),
         'avg_sleep_minutes', round(avg(sleep_minutes)::numeric, 0),
+        'days_with_resting_heart_rate', count(resting_heart_rate_bpm),
         'avg_resting_heart_rate_bpm', round(avg(resting_heart_rate_bpm)::numeric, 1),
+        'days_with_hrv', count(hrv_value_ms),
         'avg_hrv_ms', round(avg(hrv_value_ms)::numeric, 1),
+        'days_with_steps', count(steps),
         'avg_steps', round(avg(steps)::numeric, 0))
         from public.daily_health_summaries
         where user_id = target_user_id and local_date between coaching_date - 6 and coaching_date),
       'last_28_days', (select jsonb_build_object(
         'days_synced', count(*),
+        'days_with_sleep', count(sleep_minutes),
         'avg_sleep_minutes', round(avg(sleep_minutes)::numeric, 0),
+        'days_with_resting_heart_rate', count(resting_heart_rate_bpm),
         'avg_resting_heart_rate_bpm', round(avg(resting_heart_rate_bpm)::numeric, 1),
+        'days_with_hrv', count(hrv_value_ms),
         'avg_hrv_ms', round(avg(hrv_value_ms)::numeric, 1),
+        'days_with_steps', count(steps),
         'avg_steps', round(avg(steps)::numeric, 0))
         from public.daily_health_summaries
         where user_id = target_user_id and local_date between coaching_date - 27 and coaching_date)
@@ -242,6 +257,51 @@ revoke all on function public.build_coach_athlete_context(uuid,date,text)
 grant execute on function public.build_coach_athlete_context(uuid,date,text)
   to service_role;
 
+-- What a request's first attempt produced. The question is saved when a turn
+-- starts, so a saved question alone is not a completed reply: the turn is
+-- answered (a model answer or a labeled data summary), failed, or still in
+-- progress.
+create or replace function public.coach_chat_turn(
+  target_user_id uuid, request_idempotency_key uuid
+) returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare
+  question_row public.coach_messages%rowtype;
+  run public.model_runs%rowtype;
+  reply public.coach_messages%rowtype;
+begin
+  select * into question_row from public.coach_messages
+  where user_id = target_user_id and idempotency_key = request_idempotency_key;
+  select * into run from public.model_runs
+  where user_id = target_user_id and idempotency_key = request_idempotency_key;
+  -- persist_coach_chat_data_summary keys the summary from the request key.
+  select * into reply from public.coach_messages
+  where user_id = target_user_id
+    and idempotency_key = md5(request_idempotency_key::text || ':data_summary')::uuid;
+  -- persist_coach_chat_result stores a model answer with its run, in one
+  -- transaction.
+  if reply.id is null and run.status = 'succeeded' then
+    select * into reply from public.coach_messages
+    where user_id = target_user_id and thread_id = question_row.thread_id
+      and role = 'assistant' and created_at >= run.created_at
+    order by created_at limit 1;
+  end if;
+  return jsonb_build_object(
+    'state', case when reply.id is not null then 'answered'
+      when run.id is not null then 'failed' else 'in_progress' end,
+    'failure_code', run.sanitized_error_code,
+    'model_provider', run.provider,
+    'model', run.model,
+    'message', case when reply.id is not null then jsonb_build_object(
+      'id', reply.id, 'content', reply.content, 'evidence', reply.evidence,
+      'missing_data', to_jsonb(reply.missing_data), 'safety_state', reply.safety_state,
+      'answer_source', reply.answer_source, 'created_at', reply.created_at) end);
+end $$;
+
+revoke all on function public.coach_chat_turn(uuid,uuid)
+  from public, anon, authenticated;
+grant execute on function public.coach_chat_turn(uuid,uuid)
+  to service_role;
+
 create or replace function public.prepare_coach_chat_v8(
   target_user_id uuid, target_thread_id uuid, question text,
   coaching_timezone text, request_idempotency_key uuid, context_kind text
@@ -261,7 +321,10 @@ begin
   -- keyword guess.
   prepared := public.prepare_coach_chat_v7(target_user_id, target_thread_id,
     question, coaching_timezone, request_idempotency_key, 'general');
-  if coalesce((prepared->>'replayed')::boolean, false) then return prepared; end if;
+  if coalesce((prepared->>'replayed')::boolean, false) then
+    return prepared || jsonb_build_object(
+      'turn', public.coach_chat_turn(target_user_id, request_idempotency_key));
+  end if;
 
   c := prepared->'context';
   coaching_date := coalesce((c->>'coaching_date')::date, current_date);

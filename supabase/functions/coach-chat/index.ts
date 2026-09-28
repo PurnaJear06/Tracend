@@ -98,6 +98,71 @@ export function coachChatDataSummaryResponse(
   };
 }
 
+export type CoachChatTurn = Readonly<{
+  state?: string;
+  failure_code?: string | null;
+  model_provider?: string | null;
+  model?: string | null;
+  message?: Readonly<Record<string, unknown>> | null;
+}>;
+
+// A request retried with the same idempotency key gets what its first attempt
+// produced and never runs the model again. The question is saved when a turn
+// starts, so a saved question alone is not a completed reply: the turn is
+// answered, failed, or still in progress.
+export function coachChatReplayResponse(
+  turn: CoachChatTurn | null | undefined,
+  dataSummarySupported: boolean,
+): { status: number; body: Record<string, unknown> } {
+  const message = turn?.message;
+  const isDataSummary = message?.answer_source === "data_summary";
+  if (turn?.state === "answered" && message && (dataSummarySupported || !isDataSummary)) {
+    return {
+      status: 200,
+      body: {
+        schema_version: dataSummarySupported
+          ? coachChatDataSummaryResponseSchemaVersion
+          : coachChatResponseSchemaVersion,
+        message: {
+          id: message.id,
+          role: "assistant",
+          created_at: message.created_at,
+          model_provider: isDataSummary ? "deterministic" : turn.model_provider,
+          model: isDataSummary ? coachChatDataSummaryModel : turn.model,
+          ...(dataSummarySupported
+            ? { answer_source: isDataSummary ? "data_summary" : "model" }
+            : {}),
+          answer: message.content,
+          evidence: message.evidence ?? [],
+          missing_data: message.missing_data ?? [],
+          safety_state: message.safety_state,
+          suggested_follow_ups: [],
+        },
+        replayed: true,
+      },
+    };
+  }
+  if (turn?.state === "answered" || turn?.state === "failed") {
+    return {
+      status: 503,
+      body: versionedResponse({
+        error: "chat_unavailable",
+        code: turn.failure_code ?? "provider_response_invalid",
+        retry_after_seconds: null,
+        replayed: true,
+      }),
+    };
+  }
+  return {
+    status: 409,
+    body: versionedResponse({
+      error: "chat_in_progress",
+      code: "request_in_progress",
+      replayed: true,
+    }),
+  };
+}
+
 export function detectPreferenceStatement(question: string): string | null {
   const q = question.toLowerCase();
   const patterns: [RegExp, string][] = [
@@ -247,17 +312,17 @@ Deno.serve(async (request) => {
     );
   }
   if (prepared.replayed) {
-    const { data } = await auth.userClient.from("coach_messages").select().eq(
-      "thread_id",
-      input.thread_id,
-    ).order("created_at");
-    return reply(
-      200,
-      versionedResponse({
-        messages: data ?? [],
-        replayed: true,
-      }),
-    );
+    const replay = coachChatReplayResponse(prepared.turn, supportsDataSummary(input));
+    if (replay.status === 200) {
+      // Kept from the earlier replay response, which listed the thread.
+      const { data } = await auth.userClient.from("coach_messages").select().eq(
+        "thread_id",
+        input.thread_id,
+      ).order("created_at");
+      replay.body.messages = data ?? [];
+    }
+    log.info("coach_chat_replayed", { status: replay.status });
+    return reply(replay.status, replay.body);
   }
 
   const context = prepared.context as Record<string, unknown>;
@@ -491,7 +556,7 @@ Deno.serve(async (request) => {
 
     if (!servesDataSummary) return reply(503, coachChatFailureResponse(unavailable));
 
-    const summary = buildCoachChatDataSummary(context);
+    const summary = buildCoachChatDataSummary(context, input.question);
     const { data: stored, error: storeError } = await auth.serviceClient.rpc(
       "persist_coach_chat_data_summary",
       {
