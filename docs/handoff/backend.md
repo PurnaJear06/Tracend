@@ -74,18 +74,52 @@ Review fixes (2026-09-28, independent review of A1):
   - The cost defaults move from the retired 0.14/0.28 to V4.1 Flash peak prices (0.30/1.20 USD
     per 1M). Production sets no DeepSeek cost secret, so this takes effect on deploy.
 - Live evaluation:
-  - A run makes 12 calls (one prompt per category) unless `max_calls` or `EVAL_MAX_CALLS` asks
-    for more.
+  - A run makes 17 calls unless `max_calls` or `EVAL_MAX_CALLS` asks for another number: every
+    safety prompt, then one prompt from each other category.
   - It can go through an OpenAI-compatible router: repository variable `EVAL_BASE_URL`, secret
     `EVAL_API_KEY`, optional variable `EVAL_MODEL`. NaraRouter (`https://router.bynara.id/v1`)
     lists `deepseek-v4-flash` at a fraction of DeepSeek's price and does not name its upstream.
     Treat its results as a smoke test, not as DeepSeek's production behaviour or latency.
 
+Second review fixes (2026-09-28, PR review of #35 and A1):
+- The data summary is safe for any question. It does not answer the question, so a purging, injury
+  or fainting message that timed out would have received training and calorie numbers.
+  - A broad deterministic screen (`mayConcernHealthRisk`, grouped by the safety spec's red flags and
+    unsupported populations) now swaps the numbers for a safety referral: `safety_state: "limited"`,
+    no data, and a pointer to a doctor, physiotherapist or dietitian, or emergency services.
+  - A false alarm only replaces the numbers with the referral. Every other summary ends with the
+    same referral in one line, because no word list catches every phrasing.
+  - The narrow pre-model boundary is unchanged, so the model still answers ordinary soreness
+    questions.
+- A scoring failure no longer blocks the first chat of the day.
+  - The base preparation creates the day's snapshot through `prepare_daily_coaching`, which
+    computed scores without v7's guard.
+  - `20260928120000_daily_coaching_scoring_guard.sql` adds the guard. The snapshot is stored with
+    `scores_unavailable`, and evidence keeps only non-score codes, for chat and coach-decide alike.
+  - `daily_coaching_scoring_guard_test.sql` covers a day with no snapshot. PR #35's test created
+    one first, so it missed this path.
+- A retried request (same idempotency key) reports what its first attempt produced.
+  - A saved question is no longer proof of a reply, because the question is saved when the turn
+    starts.
+  - `coach_chat_turn` finds the stored answer or data summary, the failure code, or neither.
+  - The Edge Function returns the answer as `message` (the list `messages` stays), the original 503
+    code, or 409 `request_in_progress`. It never runs the model twice for one key.
+- Watch averages carry a day count per metric (`days_with_sleep`, `days_with_resting_heart_rate`,
+  `days_with_hrv`, `days_with_steps`). A week of steps with one measured night is now one night of
+  sleep evidence in the prompt and the summary, not "7 days synced".
+- The cheap evaluation always runs all six safety prompts. The three the pre-model boundary does not
+  catch (fainting, purging, injury) had been sampled away. A data summary served for a safety
+  prompt now passes only if it is the referral.
+- Unchanged by design: the installed app (request 1.0) still gets the 503 when the model fails,
+  so the beta keeps showing the raw failure code. A2 switches to request 1.1 and renders the labeled
+  reply.
+
 Verification:
-- Deno fmt/lint clean. Deno tests: 149 passed, 7 database-dependent ignored.
+- Deno fmt/lint clean. Deno tests: 157 passed, 7 database-dependent ignored.
 - pgTAP on a fresh database in CI, because the local Colima VM would not boot on 2026-09-28: every
-  migration applies; 35 files, 987 assertions; `coach_chat_v8_test.sql` has 36.
-- Before and after:
+  migration applies; `coach_chat_v8_test.sql` has 45 assertions and
+  `daily_coaching_scoring_guard_test.sql` 7.
+- Before and after, for the long-thread fix:
   - On the pre-fix commit, test 30 fails with `died: 22023: chat context too large` (scratch
     branch, CI run 36358845827).
   - With the fix, every file passes (run 36358873313).
@@ -99,7 +133,7 @@ Owner steps:
 3. Live evaluation. The DeepSeek sign-in is blocked, so use the NaraRouter smoke test for now:
    - Add the repository secret `EVAL_API_KEY` yourself, with a fresh NaraRouter key.
    - Add the variable `EVAL_BASE_URL=https://router.bynara.id/v1`.
-   - Then add the `coach-eval` label to the PR: 12 calls.
+   - Then add the `coach-eval` label to the PR: 17 calls, three of them free boundary answers.
    With a DeepSeek key later, add `DEEPSEEK_API_KEY` and delete `EVAL_BASE_URL` for the real
    regression run. Either way, verify A1 in production with the queries below after real use on the
    iPhone.
@@ -191,18 +225,16 @@ approval, and any terminal failure shows finite rule names in Edge Sentry.
 
 - A2:
   - Send request schema 1.1 and render the data-summary bubble with Retry and the beta diagnostic
-    line.
+    line. A summary with `safety_state: "limited"` is the safety referral, so show no data styling.
   - Reopen the last-opened thread (`shared_preferences`).
   - Create a thread only on its first send.
   - Refresh the thread list after each reply, and hide threads with no messages.
   - Keep the raw error snackbar for real errors.
   - Add the app `SENTRY_DSN`.
-  - Retry must send a new `idempotency_key`. The question is recorded under the request's key
-    before the model runs, and the base function treats a known key as a replay, so reusing it
-    returns the thread without a new answer.
+  - Retry after a failure must send a new `idempotency_key`. Reusing a key returns the first
+    attempt's outcome: its answer as `message`, its 503 code, or 409 `request_in_progress`.
   - Treat `answer_source` null as a model answer: `persist_coach_chat_result` does not set it; only
     data summaries carry a value.
-  - A replayed request still answers with response schema 1.1 and the raw thread rows.
 - B: read-only deterministic calculators the model can call (`project_weight_goal`,
   `training_summary`, `metric_stats`, `compare_periods`), so common estimates become exact.
 

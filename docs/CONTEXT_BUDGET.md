@@ -27,10 +27,11 @@ Model (deepseek-flash, V4.1 Flash)       4,096-token output ceiling; 1M-token co
 
 Since v8 (2026-09-27) the question's keyword classification never adds or removes data. Every
 question receives the same file: the v7 base plus `build_coach_athlete_context` (28-day training
-log and 7/14/28-day totals, watch workouts, 28 days of watch data with averages, eight weeks of
-weights, 14 days of check-ins, 28 days of logged nutrition, today's meals, plan structure,
-proposals, reconciliations, data freshness). The Edge message puts this file first and the
-question last, so the file is a stable, cacheable prefix across a day's questions.
+log and 7/14/28-day totals, watch workouts, 28 days of watch data with averages that each carry
+the days their metric was measured, eight weeks of weights, 14 days of check-ins, 28 days of
+logged nutrition, today's meals, plan structure, proposals, reconciliations, data freshness). The
+Edge message puts this file first and the question last, so the file is a stable, cacheable prefix
+across a day's questions.
 
 Conversation memory (2026-09-28): v8 rebuilds it from `coach_messages` as the ten newest messages
 of this thread and ten of other threads. Each message is capped at 2,000 characters, keeping its

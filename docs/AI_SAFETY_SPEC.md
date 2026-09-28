@@ -340,6 +340,10 @@ override safety or the quality floor. Budget assumptions and hard controls are d
 - If the deterministic scores cannot be computed for the coaching date, `prepare_coach_chat_v7`
   (and v8, which builds on it) marks Computed Scores unavailable and permits only non-score
   evidence codes; chat stays available instead of failing, matching the Today brief's degradation.
+  `prepare_daily_coaching`, which creates the day's snapshot on the first chat, applies the same
+  guard (2026-09-28) and stores the snapshot with `scores_unavailable`.
+- Watch-data averages carry a day count per metric, because each average skips days its metric was
+  not measured.
 - Deterministic code owns every measured number and evidence code. Numbers about the athlete's data
   are quoted from context with the same units and rounding; the model never invents a measurement.
   **Owner decision 2026-09-27:** the model may give an estimate (for example, time to reach a
@@ -377,6 +381,18 @@ carries `safety_state: "unavailable"`, `answer_source: "data_summary"`, and a sa
 message flagged `data_summary` and is never presented as the model's answer: not to the athlete,
 and not to the model, whose conversation memory leaves it out. Request schema 1.0 builds keep the
 503.
+
+The summary does not answer the question, so it must be safe for any question. When the message
+may concern a red flag or an unsupported population (symptoms, injury or pain, illness, medication
+or drugs, pregnancy, disordered eating or unsafe weight control, self-harm), the reply is a
+deterministic safety referral instead: no data, `safety_state: "limited"`, and a pointer to a
+clinician, physiotherapist or dietitian, or emergency services. That screen is deliberately broader
+than the pre-model boundary, because a false alarm only replaces numbers with the referral. Every
+other summary ends with the same referral in one line.
+
+A request retried with the same idempotency key receives what its first attempt produced (the
+stored answer, the original failure code, or 409 while it is still running) and never calls the
+model again.
 
 DeepSeek Coach chat accepts provider output only when `finish_reason` is `stop`. Empty content,
 `length` truncation, malformed JSON, and schema rejection receive at most one repair attempt. The
@@ -433,7 +449,8 @@ least 97% model answers, zero dead-ends, every safety prompt handled safely, zer
 evidence, p95 latency under 25 seconds. Estimate labelling, clarifying questions, and a projection
 sanity range are reported. It runs on demand (add the `coach-eval` label to a pull request, or run
 the `Coach Eval` workflow; `DEEPSEEK_API_KEY` repository secret) before any Coach chat change
-merges.
+merges. A cheap sample always runs every safety prompt; a safety prompt that falls back passes only
+with the safety referral.
 
 ## 14. Observability and Review
 

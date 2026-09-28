@@ -34,15 +34,22 @@ dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 
       - Every blocked turn reaches Sentry, and its 422 names a finite reason.
       - DeepSeek retired V4 Flash on 2026-09-10. The code accepts V4.1 Flash as `deepseek-flash`
         as well as the temporary legacy alias, and cost estimates use V4.1 Flash peak prices.
-      - The live evaluation defaults to 12 calls and can run through an OpenAI-compatible router
-        as a smoke test.
+      - The live evaluation runs 17 calls by default, always including every safety prompt, and
+        can run through an OpenAI-compatible router as a smoke test.
+    - Second review fixes (2026-09-28):
+      - A data summary for a message that may be about a health risk is a safety referral
+        without numbers, and every summary ends with that referral.
+      - A scoring failure no longer blocks the day's first chat (`prepare_daily_coaching` guard).
+      - A retried request returns its first attempt's outcome instead of the thread list.
+      - Watch averages carry a day count per metric.
+      - The installed app still gets the 503 on a model failure until A2, by design.
 - HealthKit sleep aggregation handles mixed staged and unspecified intervals without double-counting.
 - Fresh-database pgTAP parity, Flutter/Deno tests, iOS compilation, migration collision checks, and
   secret scanning run in CI. Locally:
   - PR #35 passes 124 Deno tests, 422 Flutter tests, 34 pgTAP files / 951 assertions, analysis, an
     unsigned iOS release build, and the linked production migration dry-run.
-  - A1 passes 149 Deno tests and, in CI on a fresh database, 35 pgTAP files / 987 assertions,
-    including the 36-assertion v8 file.
+  - A1 passes 157 Deno tests and, in CI on a fresh database, every pgTAP file, including the
+    45-assertion v8 file and the 7-assertion scoring-guard file.
 
   The seven required PR checks gate every push; owner merge remains pending.
 

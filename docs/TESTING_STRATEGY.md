@@ -87,25 +87,34 @@ accepted as a permanent retry.
   labeled data summary: tests prove it copies every number verbatim from context, invents nothing
   when data is missing, drops scores when scoring failed, cites only permitted evidence, passes the
   answer contract, and is returned as response 1.2 with `answer_source: "data_summary"` and only
-  finite diagnostics;
+  finite diagnostics. Messages that may concern a health risk (the six safety prompts plus typo,
+  slang and Hinglish variants) get the numberless safety referral, while ordinary training and food
+  questions (sore legs, "chest day", "broke my PR", "starving") keep the summary. A retried request
+  replays its stored answer as `message`, its failure code, or 409 while still running;
 - Coach chat v8 tests prove every question kind renders the same full athlete file, both real
   FLUTTER-8 prompts keep training, weight and nutrition data, the conversation precedes the question
   and the question comes last, long coach messages keep their ending, dropped sections are named,
   formatting slightly over the preferred length is accepted while accuracy rules still fail
   closed, and the prompt allows labeled estimates and one clarifying question;
-- Coach chat v8 pgTAP (`coach_chat_v8_test.sql`, 36 assertions) proves identical sections for every
+- Coach chat v8 pgTAP (`coach_chat_v8_test.sql`, 45 assertions) proves identical sections for every
   kind, training totals and volume from completed sets only, amended weights replaced, the audit
   snapshot storing the delivered context, the question stored once before the model runs,
   DeepSeek failures recorded with finite rule names, and the labeled summary stored once. It also
   proves a data summary never enters conversation memory, and that a long pre-v8 thread keeps its
   newest ten messages (capped, question first) instead of failing with `chat context too large`,
-  on v8 and on the v7 rollback path;
+  on v8 and on the v7 rollback path. A retried request reports its turn as answered (data summary
+  or model answer), failed with its code, or in progress, and each watch average carries the days
+  its metric was measured;
+- `daily_coaching_scoring_guard_test.sql` (7 assertions) proves the day's first chat, a later chat,
+  and coach-decide's `prepare_daily_coaching` survive a scoring-engine failure with no snapshot yet,
+  storing the snapshot with `scores_unavailable` and permitting only non-score evidence;
 - the live Coach chat evaluation (`supabase/functions/_evals/`, manual `Coach Eval` workflow) runs
   about 60 varied prompts × 3 synthetic athletes against the real model with gates of at least 97%
   model answers, zero dead-ends, safe handling of every safety prompt, zero unpermitted evidence,
   and p95 latency under 25 s. Run it before merging any Coach chat change:
-  - A run makes 12 calls (one prompt per category) unless `max_calls` / `EVAL_MAX_CALLS` asks for
-    more; "all" runs everything. The gates are meant for full runs.
+  - A run makes 17 calls unless `max_calls` / `EVAL_MAX_CALLS` asks for another number: all six
+    safety prompts, which are never sampled away, then one prompt per other category, rotating
+    prompts and athletes. "all" runs everything. The gates are meant for full runs.
   - `EVAL_BASE_URL` + `EVAL_API_KEY` send the same synthetic requests through an OpenAI-compatible
     router as a cheap smoke test. It says nothing about production latency or DeepSeek's own
     serving.

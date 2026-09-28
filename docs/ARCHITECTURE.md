@@ -287,7 +287,10 @@ Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS. 
    and against generous formatting ceilings, with one targeted repair.
 5. A valid answer is persisted with the question. Otherwise the failure and its finite rule names
    are recorded, and app builds on request schema 1.1 receive a labeled deterministic data summary
-   (`persist_coach_chat_data_summary`) instead of an error.
+   (`persist_coach_chat_data_summary`) instead of an error. If the message may concern a health
+   risk, that reply is a numberless safety referral instead.
+6. A request retried with the same idempotency key gets its first attempt's outcome from
+   `coach_chat_turn` (answer, failure code, or still in progress) and never calls the model twice.
 
 The daily Head Coach decision remains a separate immutable record pinned above conversation. `prepare_coach_chat_v2` reconciles context coverage independently from the same-day
 daily-decision policy: a recent HealthKit summary is valid chat context even when the current
