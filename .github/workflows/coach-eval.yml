@@ -1,14 +1,25 @@
 name: Coach Eval
 
-# Live Coach chat evaluation against the real DeepSeek model with synthetic
-# athletes. On demand only: it costs about $1 per run and is not a required
-# check. Before merging a Coach chat change, add the `coach-eval` label to the
-# pull request (runs that PR's code) or use Run workflow on main.
+# Live Coach chat evaluation with synthetic athletes. On demand only and not a
+# required check. Before merging a Coach chat change, add the `coach-eval` label
+# to the pull request (runs that PR's code) or use Run workflow on main.
+#
+# By default it calls DeepSeek (`DEEPSEEK_API_KEY` secret). Set the repository
+# variable `EVAL_BASE_URL` (for example https://router.bynara.id/v1) and the
+# `EVAL_API_KEY` secret to send the same requests through an OpenAI-compatible
+# router instead; `EVAL_MODEL` overrides the model name. A router run is a
+# smoke test, not production latency. Each run makes 12 model calls (one
+# prompt per category) unless `max_calls` or the `EVAL_MAX_CALLS` variable
+# says otherwise; "all" runs every prompt for every athlete.
 on:
   workflow_dispatch:
     inputs:
+      max_calls:
+        description: Model calls to make, or "all"
+        required: false
+        default: "12"
       repeats:
-        description: Runs per prompt and athlete
+        description: Runs per prompt and athlete when max_calls is "all"
         required: false
         default: "2"
   pull_request:
@@ -37,11 +48,19 @@ jobs:
       - name: Run live evaluation
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+          EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
+          EVAL_MODEL: ${{ vars.EVAL_MODEL }}
+          EVAL_MAX_CALLS: ${{ inputs.max_calls || vars.EVAL_MAX_CALLS || '12' }}
           EVAL_REPEATS: ${{ inputs.repeats || '2' }}
           EVAL_REPORT_DIR: eval-report
-        run: >
-          deno run --allow-env --allow-net=api.deepseek.com --allow-read --allow-write
-          supabase/functions/_evals/coach_chat_eval.ts
+        run: |
+          hosts="api.deepseek.com"
+          if [ -n "$EVAL_BASE_URL" ]; then
+            hosts="$hosts,$(printf '%s' "$EVAL_BASE_URL" | sed -E 's#^https?://([^/]+).*#\1#')"
+          fi
+          deno run --allow-env --allow-net="$hosts" --allow-read --allow-write \
+            supabase/functions/_evals/coach_chat_eval.ts
 
       - name: Upload report
         if: always()

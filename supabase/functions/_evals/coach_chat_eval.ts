@@ -6,7 +6,11 @@
 //     --allow-write supabase/functions/_evals/coach_chat_eval.ts
 //
 // Optional: EVAL_REPEATS (default 2), EVAL_CONCURRENCY (default 4),
-// EVAL_REPORT_DIR (default .tooling/coach-evals/<timestamp>).
+// EVAL_REPORT_DIR (default .tooling/coach-evals/<timestamp>),
+// EVAL_MAX_CALLS (cheap sample: one prompt per category first, rotating
+// athletes), and EVAL_BASE_URL + EVAL_API_KEY to send the same requests to an
+// OpenAI-compatible router instead of api.deepseek.com (EVAL_MODEL overrides
+// the model name; a router run is a smoke test, not production latency).
 // Exits non-zero when a merge gate fails. Synthetic data only.
 
 import prompts from "./prompts.json" with { type: "json" };
@@ -85,10 +89,59 @@ function percentile(values: readonly number[], p: number): number {
   return sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)];
 }
 
+const deepseekChatUrl = "https://api.deepseek.com/v1/chat/completions";
+
+// Sends the unchanged production request to another OpenAI-compatible
+// endpoint. Routers switch thinking with `reasoning_effort` rather than
+// DeepSeek's native `thinking` field, so a request that turns thinking off
+// also says so in their terms.
+export function routedFetch(baseUrl: string, fetcher: typeof fetch = fetch): typeof fetch {
+  const target = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  return (input, init) => {
+    if (String(input) !== deepseekChatUrl) return fetcher(input, init);
+    let body = init?.body;
+    if (typeof body === "string") {
+      const payload = JSON.parse(body);
+      if (payload.thinking?.type === "disabled" && payload.reasoning_effort === undefined) {
+        payload.reasoning_effort = "none";
+      }
+      body = JSON.stringify(payload);
+    }
+    return fetcher(target, { ...init, body });
+  };
+}
+
+// A cheap run: at most maxCalls jobs, one per category per round, rotating
+// athletes, so twelve calls cover all twelve categories.
+export function sampleJobs<T extends Readonly<{ profileId: string; category: string }>>(
+  jobs: readonly T[],
+  maxCalls: number,
+): T[] {
+  if (!(maxCalls > 0) || maxCalls >= jobs.length) return [...jobs];
+  const profiles = [...new Set(jobs.map((job) => job.profileId))];
+  const categories = [...new Set(jobs.map((job) => job.category))];
+  const picked = new Set<T>();
+  for (let round = 0; picked.size < maxCalls; round++) {
+    const before = picked.size;
+    for (const [index, category] of categories.entries()) {
+      if (picked.size >= maxCalls) break;
+      const profileId = profiles[(index + round) % profiles.length];
+      const job = jobs.find((j) =>
+        j.category === category && j.profileId === profileId && !picked.has(j)
+      ) ??
+        jobs.find((j) => j.category === category && !picked.has(j));
+      if (job) picked.add(job);
+    }
+    if (picked.size === before) break;
+  }
+  return [...picked];
+}
+
 async function runOne(
   profile: ReturnType<typeof evalProfiles>[number],
   prompt: EvalPrompt,
   repeat: number,
+  fetcher: typeof fetch,
 ): Promise<RunResult> {
   const context = structuredClone(profile.context);
   if (prompt.history) context.recent_messages = [...prompt.history];
@@ -103,7 +156,7 @@ async function runOne(
     context_kind: contextKind,
   };
   try {
-    const generation = await generateCoachChat(prompt.text, context, contextKind);
+    const generation = await generateCoachChat(prompt.text, context, contextKind, fetcher);
     const answer = generation.answer;
     const checks: Record<string, boolean> = {
       evidence_permitted: answer.evidence.every((e) => permitted.includes(e.code)),
@@ -156,27 +209,45 @@ async function runOne(
 }
 
 async function main(): Promise<void> {
-  if (!Deno.env.get("DEEPSEEK_API_KEY")) {
-    console.error("DEEPSEEK_API_KEY is required. Nothing was sent.");
+  const baseUrl = Deno.env.get("EVAL_BASE_URL")?.trim() ?? "";
+  const apiKey = baseUrl ? Deno.env.get("EVAL_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY");
+  if (!apiKey) {
+    console.error(
+      `${baseUrl ? "EVAL_API_KEY" : "DEEPSEEK_API_KEY"} is required. Nothing was sent.`,
+    );
     Deno.exit(2);
   }
+  // The router key travels in the same Authorization header the provider builds.
+  Deno.env.set("DEEPSEEK_API_KEY", apiKey);
   Deno.env.set("COACH_AI_ENABLED", "true");
   Deno.env.set("COACH_MODEL_PROVIDER", "deepseek");
-  Deno.env.set("DEEPSEEK_MODEL", Deno.env.get("DEEPSEEK_MODEL") ?? "deepseek-v4-flash");
+  // NaraRouter lists the model as deepseek-v4-flash; DeepSeek itself as deepseek-flash.
+  const model = Deno.env.get("EVAL_MODEL")?.trim() ||
+    (baseUrl ? "deepseek-v4-flash" : "deepseek-flash");
+  Deno.env.set("DEEPSEEK_MODEL", model);
+  const endpoint = baseUrl ? new URL(baseUrl).host : new URL(deepseekChatUrl).host;
+  const fetcher = baseUrl ? routedFetch(baseUrl) : fetch;
 
   const repeats = Number(Deno.env.get("EVAL_REPEATS") ?? "2");
   const concurrency = Number(Deno.env.get("EVAL_CONCURRENCY") ?? "4");
+  const maxCalls = Number(Deno.env.get("EVAL_MAX_CALLS") ?? "0");
   const reportDir = Deno.env.get("EVAL_REPORT_DIR") ??
     `.tooling/coach-evals/${new Date().toISOString().replace(/[:.]/g, "-")}`;
 
-  const jobs: Array<() => Promise<RunResult>> = [];
-  for (const profile of evalProfiles()) {
-    for (const prompt of prompts as EvalPrompt[]) {
-      for (let repeat = 1; repeat <= repeats; repeat++) {
-        jobs.push(() => runOne(profile, prompt, repeat));
-      }
-    }
-  }
+  const planned = evalProfiles().flatMap((profile) =>
+    (prompts as EvalPrompt[]).flatMap((prompt) =>
+      Array.from({ length: repeats }, (_, index) => ({
+        profile,
+        prompt,
+        repeat: index + 1,
+        profileId: profile.id,
+        category: prompt.category,
+      }))
+    )
+  );
+  const jobs: Array<() => Promise<RunResult>> = sampleJobs(planned, maxCalls).map((job) => () =>
+    runOne(job.profile, job.prompt, job.repeat, fetcher)
+  );
 
   const results: RunResult[] = [];
   let next = 0;
@@ -227,7 +298,12 @@ async function main(): Promise<void> {
   const summary = [
     `# Coach chat live evaluation — ${passed ? "PASSED" : "FAILED"}`,
     "",
-    `Runs: ${results.length} (${prompts.length} prompts × ${evalProfiles().length} athletes × ${repeats} repeats)`,
+    `Runs: ${results.length} of ${planned.length} (${prompts.length} prompts × ${evalProfiles().length} athletes × ${repeats} repeats${
+      jobs.length < planned.length ? `, sampled to ${jobs.length}` : ""
+    })`,
+    `Endpoint: ${endpoint}, model \`${model}\`${
+      baseUrl ? " (router smoke test: not production latency or upstream)" : ""
+    }`,
     "",
     "| Gate | Result | Value |",
     "|---|---|---|",

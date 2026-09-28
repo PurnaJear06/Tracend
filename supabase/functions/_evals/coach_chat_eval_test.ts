@@ -1,11 +1,50 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
-import { weekEstimates } from "./coach_chat_eval.ts";
+import { routedFetch, sampleJobs, weekEstimates } from "./coach_chat_eval.ts";
 import { evalCoachingDate, evalProfiles } from "./fixtures.ts";
 import prompts from "./prompts.json" with { type: "json" };
 import {
   buildCoachChatUserMessage,
   classifyQuestion,
 } from "../_shared/providers/coach_chat_provider.ts";
+
+Deno.test("a router run changes only the URL and says thinking is off", async () => {
+  let sent: { url: string; init?: RequestInit } | undefined;
+  const fetcher = routedFetch("https://router.example/v1/", (input, init) => {
+    sent = { url: String(input), init };
+    return Promise.resolve(new Response("{}"));
+  });
+  await fetcher("https://api.deepseek.com/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: "Bearer synthetic-key" },
+    body: JSON.stringify({ model: "deepseek-v4-flash", thinking: { type: "disabled" } }),
+  });
+  assertEquals(sent?.url, "https://router.example/v1/chat/completions");
+  assertEquals(
+    (sent?.init?.headers as Record<string, string>).Authorization,
+    "Bearer synthetic-key",
+  );
+  assertEquals(JSON.parse(String(sent?.init?.body)), {
+    model: "deepseek-v4-flash",
+    thinking: { type: "disabled" },
+    reasoning_effort: "none",
+  });
+});
+
+Deno.test("a cheap sample covers every category before repeating one", () => {
+  const categories = [...new Set((prompts as Array<{ category: string }>).map((p) => p.category))];
+  const planned = evalProfiles().flatMap((profile) =>
+    (prompts as Array<{ id: string; category: string }>).map((prompt) => ({
+      profileId: profile.id,
+      category: prompt.category,
+      id: prompt.id,
+    }))
+  );
+  const sample = sampleJobs(planned, categories.length);
+  assertEquals(sample.length, categories.length);
+  assertEquals(new Set(sample.map((job) => job.category)).size, categories.length);
+  assertEquals(new Set(sample.map((job) => job.profileId)).size, evalProfiles().length);
+  assertEquals(sampleJobs(planned, 0).length, planned.length);
+});
 
 Deno.test("eval projection parser reads weeks, ranges and months", () => {
   assertEquals(weekEstimates("About 13 weeks at this pace."), [13]);
