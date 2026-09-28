@@ -93,14 +93,22 @@ accepted as a permanent retry.
   and the question comes last, long coach messages keep their ending, dropped sections are named,
   formatting slightly over the preferred length is accepted while accuracy rules still fail
   closed, and the prompt allows labeled estimates and one clarifying question;
-- Coach chat v8 pgTAP (`coach_chat_v8_test.sql`, 28 assertions) proves identical sections for every
+- Coach chat v8 pgTAP (`coach_chat_v8_test.sql`, 36 assertions) proves identical sections for every
   kind, training totals and volume from completed sets only, amended weights replaced, the audit
   snapshot storing the delivered context, the question stored once before the model runs,
-  DeepSeek failures recorded with finite rule names, and the labeled summary stored once;
+  DeepSeek failures recorded with finite rule names, and the labeled summary stored once. It also
+  proves a data summary never enters conversation memory, and that a long pre-v8 thread keeps its
+  newest ten messages (capped, question first) instead of failing with `chat context too large`,
+  on v8 and on the v7 rollback path;
 - the live Coach chat evaluation (`supabase/functions/_evals/`, manual `Coach Eval` workflow) runs
   about 60 varied prompts × 3 synthetic athletes against the real model with gates of at least 97%
   model answers, zero dead-ends, safe handling of every safety prompt, zero unpermitted evidence,
-  and p95 latency under 25 s. Run it before merging any Coach chat change;
+  and p95 latency under 25 s. Run it before merging any Coach chat change:
+  - A run makes 12 calls (one prompt per category) unless `max_calls` / `EVAL_MAX_CALLS` asks for
+    more; "all" runs everything. The gates are meant for full runs.
+  - `EVAL_BASE_URL` + `EVAL_API_KEY` send the same synthetic requests through an OpenAI-compatible
+    router as a cheap smoke test. It says nothing about production latency or DeepSeek's own
+    serving.
 - Coach-chat provider tests require `finish_reason=stop`, cover truncation, empty/malformed and
   schema-invalid output, unknown evidence, and overlong reasoning fields; prove exactly one
   non-thinking targeted repair receives only the finite rule/path/limit and allowed codes; and prove
@@ -248,7 +256,7 @@ Score schema validity, policy compliance, grounding, decision class, hallucinati
 clarity, meal accuracy, latency, and estimated cost. Model, prompt, schema, retrieval, or
 orchestration changes require regression comparison to the baseline.
 
-DeepSeek V4 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
+DeepSeek V4.1 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
 Lite models are not production routes.
 Meal evaluation covers mixed dishes, oil/sauces, hidden ingredients, portion uncertainty, prompt
 injection, candidate edit rate, latency, and cost. Safety-critical and schema fixtures require 100%;

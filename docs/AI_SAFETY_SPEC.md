@@ -261,8 +261,13 @@ Use:
 - a stronger evaluated model for onboarding, periodic review, or ambiguous conflicts; and
 - no model call when deterministic output is sufficient.
 
-Providers sit behind `CoachModelProvider` inside Supabase Edge Functions. DeepSeek V4 Flash
-(`COACH_MODEL_PROVIDER=deepseek`) is the current active production provider for Coach text and chat.
+Providers sit behind `CoachModelProvider` inside Supabase Edge Functions. DeepSeek V4.1 Flash
+(`COACH_MODEL_PROVIDER=deepseek`, model `deepseek-flash`) is the current active production provider
+for Coach text and chat. DeepSeek retired V4 Flash on 2026-09-10 and routes the legacy name
+`deepseek-v4-flash` to V4.1 Flash for now, so the code accepts both names and nothing else. That
+silent model change still owes its regression run, the live evaluation below. The evaluation may
+send its synthetic athletes through an OpenAI-compatible router; a router never receives user data
+unless it passes its own privacy review.
 Under ADR 0006, Groq Qwen was an owner-only, time-bounded test provider and has been superseded. The
 mock remains the default and progress-photo vision stays separately disabled until its own evaluation
 gate passes. Provider and Supabase secret/service-role keys never enter Flutter. Price alone cannot

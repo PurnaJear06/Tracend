@@ -22,7 +22,7 @@ DB v7 (fresh scores + shared evidence)  replaces stale fields; no history expans
 DB v8 (full athlete file for every question)  rebuilds conversation memory; 90K guard, drops whole sections, lists them
 Edge (DeepSeek markdown)                96K (plan change 128K), wrappers and question reserved first
 Edge (legacy JSON providers)            compact/trim path retained for disabled providers
-Model (deepseek-v4-flash)               4,096-token output ceiling; 1M-token context window
+Model (deepseek-flash, V4.1 Flash)       4,096-token output ceiling; 1M-token context window
 ```
 
 Since v8 (2026-09-27) the question's keyword classification never adds or removes data. Every

@@ -285,7 +285,7 @@ audit events without storing secrets or unnecessary raw prompt content.
 
 ### 5.8 AI budgets and routing
 
-- Live coaching uses DeepSeek V4 Flash (`COACH_MODEL_PROVIDER=deepseek`), active since 2026-07-26
+- Live coaching uses DeepSeek Flash (`COACH_MODEL_PROVIDER=deepseek`; V4.1 since 2026-09-10), active since 2026-07-26
   under ADR 0011. Activation required the full all-or-nothing server-side secret gate
   (`COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`, provider API keys) per
   [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md) §10.

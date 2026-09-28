@@ -65,9 +65,24 @@ Review fixes (2026-09-28, independent review of A1):
   carries a finite `reason`: `daily_rate_limit`, `monthly_cost_limit`, `approved_plan_required`,
   `chat_context_too_large`, `thread_not_found`, and so on, or `sqlstate_<code>`. A question that
   could not be recorded and a data summary that could not be stored are captured too.
+- DeepSeek model and prices:
+  - DeepSeek retired V4 Flash on 2026-09-10. It serves V4.1 Flash as `deepseek-flash` and routes
+    the legacy `deepseek-v4-flash`, which production's `DEEPSEEK_MODEL` secret uses, to it "for
+    now", with no end date.
+  - Four checks required the exact old name, so removing the alias would have stopped every coach
+    chat. `_shared/providers/deepseek_models.ts` now accepts both names and nothing else.
+  - The cost defaults move from the retired 0.14/0.28 to V4.1 Flash peak prices (0.30/1.20 USD
+    per 1M). Production sets no DeepSeek cost secret, so this takes effect on deploy.
+- Live evaluation:
+  - A run makes 12 calls (one prompt per category) unless `max_calls` or `EVAL_MAX_CALLS` asks
+    for more.
+  - It can go through an OpenAI-compatible router: repository variable `EVAL_BASE_URL`, secret
+    `EVAL_API_KEY`, optional variable `EVAL_MODEL`. NaraRouter (`https://router.bynara.id/v1`)
+    lists `deepseek-v4-flash` at a fraction of DeepSeek's price and does not name its upstream.
+    Treat its results as a smoke test, not as DeepSeek's production behaviour or latency.
 
 Verification:
-- Deno fmt/lint clean. Deno tests: 145 passed, 7 database-dependent ignored.
+- Deno fmt/lint clean. Deno tests: 149 passed, 7 database-dependent ignored.
 - pgTAP on a fresh database in CI, because the local Colima VM would not boot on 2026-09-28: every
   migration applies; 35 files, 987 assertions; `coach_chat_v8_test.sql` has 36.
 - Before and after:
@@ -79,10 +94,15 @@ Owner steps:
 1. Merge PR #35, then A1. There is no reinstall: the installed app sends request 1.0 and keeps
    today's behaviour, but already benefits from the full file, the relaxed formatting limits, and
    failure recording.
-2. Live evaluation: on hold since 2026-09-28, because the owner cannot sign in to DeepSeek to create
-   a key. Once a key exists, add the `DEEPSEEK_API_KEY` repository secret, then add the
-   `coach-eval` label to the PR (or use Run workflow on `main`) and review the summary. Until then,
-   A1 is verified in production with the queries below after real use on the iPhone.
+2. After the deploy finishes, and never before, switch the Edge secret `DEEPSEEK_MODEL` to
+   `deepseek-flash`. The code that accepts the new name must be live first.
+3. Live evaluation. The DeepSeek sign-in is blocked, so use the NaraRouter smoke test for now:
+   - Add the repository secret `EVAL_API_KEY` yourself, with a fresh NaraRouter key.
+   - Add the variable `EVAL_BASE_URL=https://router.bynara.id/v1`.
+   - Then add the `coach-eval` label to the PR: 12 calls.
+   With a DeepSeek key later, add `DEEPSEEK_API_KEY` and delete `EVAL_BASE_URL` for the real
+   regression run. Either way, verify A1 in production with the queries below after real use on the
+   iPhone.
 
 See what the coach did in the last 7 days. These are read-only queries for the Supabase SQL editor:
 

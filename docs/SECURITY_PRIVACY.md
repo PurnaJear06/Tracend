@@ -157,7 +157,7 @@ Requirements:
 - Provider failure or policy change must degrade safely without changing the approved plan.
 - Provider-side persistent conversation state is disabled unless documented, consented, deletable,
   and required.
-- DeepSeek V4 Flash is the current active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`),
+- DeepSeek V4.1 Flash is the current active Coach/chat provider (`COACH_MODEL_PROVIDER=deepseek`),
   subject to the provider controls documented in [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md). Prior
   providers (Gemini `gemini-3.5-flash`, Groq Qwen) were superseded pending evaluation. New
   providers require privacy review and evaluation parity before use with restricted data.

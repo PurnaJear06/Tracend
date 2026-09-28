@@ -32,12 +32,16 @@ dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 
         That was a 422 before the model ran, pre-existing since July.
       - Data summaries never re-enter the coach's memory.
       - Every blocked turn reaches Sentry, and its 422 names a finite reason.
+      - DeepSeek retired V4 Flash on 2026-09-10. The code accepts V4.1 Flash as `deepseek-flash`
+        as well as the temporary legacy alias, and cost estimates use V4.1 Flash peak prices.
+      - The live evaluation defaults to 12 calls and can run through an OpenAI-compatible router
+        as a smoke test.
 - HealthKit sleep aggregation handles mixed staged and unspecified intervals without double-counting.
 - Fresh-database pgTAP parity, Flutter/Deno tests, iOS compilation, migration collision checks, and
   secret scanning run in CI. Locally:
   - PR #35 passes 124 Deno tests, 422 Flutter tests, 34 pgTAP files / 951 assertions, analysis, an
     unsigned iOS release build, and the linked production migration dry-run.
-  - A1 passes 145 Deno tests and, in CI on a fresh database, 35 pgTAP files / 987 assertions,
+  - A1 passes 149 Deno tests and, in CI on a fresh database, 35 pgTAP files / 987 assertions,
     including the 36-assertion v8 file.
 
   The seven required PR checks gate every push; owner merge remains pending.
@@ -59,10 +63,13 @@ See [CI_CD_DEPLOYMENT.md](./CI_CD_DEPLOYMENT.md) for the executable release cont
 
 These are not silently considered complete:
 
-1. Merge PR #35, then A1, after their required CI checks pass (no reinstall). The live `Coach Eval`
-   run is on hold because the owner cannot sign in to DeepSeek to create a key. Until then, verify
-   A1 in production with the handoff queries after real iPhone use. Then A2 (app, reinstall) and B
-   (calculators), followed by owner-device acceptance and Sentry verification.
+1. Merge PR #35, then A1, after their required CI checks pass (no reinstall).
+   - After the deploy, switch the `DEEPSEEK_MODEL` Edge secret to `deepseek-flash`.
+   - The DeepSeek regression run is still owed. It is waiting for a DeepSeek key; a NaraRouter
+     smoke test can run first.
+   - Verify A1 in production with the handoff queries after real iPhone use.
+   - Then A2 (app, reinstall) and B (calculators), followed by owner-device acceptance and Sentry
+     verification.
 2. Approve a coherent visual direction and then redesign from the current product truth; do not
    copy a competitor's protected assets or flows.
 3. Complete the Apple AI-consent/App Review review, privacy/legal review, pricing decision, developer

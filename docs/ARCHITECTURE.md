@@ -163,7 +163,7 @@ invoke a model or create a proposal.
 ### 3.7 AI provider
 
 - Edge Functions call providers through a small `CoachModelProvider` TypeScript interface.
-- DeepSeek V4 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
+- DeepSeek V4.1 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
 - Provider/model identifiers remain environment configuration; the mock provider stays the default
   until live-model gates pass. Coach-decide specifically defaults to the deterministic mock and
   requires all server-side secrets (`COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`, provider API keys)
