@@ -130,7 +130,7 @@ Deno.serve(async (request) => {
   }
   const contextKind = classifyQuestion(input.question);
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
-    "prepare_coach_chat_v6",
+    "prepare_coach_chat_v7",
     {
       target_user_id: auth.userId,
       target_thread_id: input.thread_id,
@@ -141,8 +141,8 @@ Deno.serve(async (request) => {
     },
   );
   if (prepareError || !prepared) {
-    log.error("prepare_coach_chat_v6 failed", {
-      detail: prepareError?.message ?? "unknown",
+    log.error("prepare_coach_chat_v7 failed", {
+      error_code: prepareError?.code ?? "missing_prepared_context",
     });
     return reply(
       422,
@@ -222,9 +222,7 @@ Deno.serve(async (request) => {
     });
     if (error || !persisted) {
       log.error("persist_coach_chat_result failed", {
-        errorMessage: error?.message ?? "null persisted",
         errorCode: error?.code ?? "none",
-        errorDetails: error?.details ?? "none",
         provider: generation.provider,
         hasAnswer: typeof generation.answer?.answer === "string",
         answerLen: typeof generation.answer?.answer === "string"
@@ -281,7 +279,19 @@ Deno.serve(async (request) => {
       latency_ms: Math.round(performance.now() - started),
       provider: generation.provider,
       model: generation.model,
+      context_kind: contextKind,
       replayed: false,
+      attempts: generation.attempts.map((attempt) => ({
+        attempt: attempt.attempt,
+        outcome: attempt.outcome,
+        rule: attempt.rule ?? "none",
+        path: attempt.path ?? "none",
+        limit: attempt.limit ?? null,
+        actual: attempt.actual ?? null,
+        latency_ms: attempt.latencyMs,
+        finish_reason: attempt.finishReason ?? "unknown",
+        completion_tokens: attempt.completionTokens,
+      })),
     });
     return reply(200, responsePayload);
   } catch (error) {
@@ -295,7 +305,7 @@ Deno.serve(async (request) => {
         {},
         { cause: error },
       );
-    captureException(error, {
+    captureException(unavailable, {
       userId: auth.userId,
       functionName: "coach-chat",
       correlationId,
@@ -306,14 +316,30 @@ Deno.serve(async (request) => {
       failureCode: unavailable.failureReason,
       attempt: unavailable.metadata.attempt,
       finishReason: unavailable.metadata.finishReason,
+      initialValidationRule: unavailable.metadata.initialRule,
+      repairValidationRule: unavailable.metadata.repairRule,
       coachingDate,
     });
     log.error("coach_chat_failure", {
       failure_code: unavailable.failureReason,
       provider: unavailable.provider,
       model: unavailable.model,
+      context_kind: contextKind,
       attempt: unavailable.metadata.attempt ?? "unknown",
       finish_reason: unavailable.metadata.finishReason ?? "unknown",
+      initial_rule: unavailable.metadata.initialRule ?? "none",
+      repair_rule: unavailable.metadata.repairRule ?? "none",
+      attempts: (unavailable.metadata.attempts ?? []).map((attempt) => ({
+        attempt: attempt.attempt,
+        outcome: attempt.outcome,
+        rule: attempt.rule ?? "none",
+        path: attempt.path ?? "none",
+        limit: attempt.limit ?? null,
+        actual: attempt.actual ?? null,
+        latency_ms: attempt.latencyMs,
+        finish_reason: attempt.finishReason ?? "unknown",
+        completion_tokens: attempt.completionTokens,
+      })),
       latency_ms: Math.round(performance.now() - started),
     });
     try {
@@ -329,7 +355,7 @@ Deno.serve(async (request) => {
       });
     } catch (persistError) {
       log.error("persist_failed_coach_chat_run failed", {
-        detail: persistError instanceof Error ? persistError.message : String(persistError),
+        error_type: persistError instanceof Error ? persistError.name : typeof persistError,
       });
     }
     return reply(503, coachChatFailureResponse(unavailable));

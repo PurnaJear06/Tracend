@@ -148,6 +148,25 @@ verify `./scripts/pre-deploy.sh`, dry-run first, backup first, report each step.
 
 See `docs/CI_CD_DEPLOYMENT.md` for full design.
 
+## Delivery workflow (every agent)
+
+1. **Work in your own worktree on a feature branch** created from `origin/main`, with `.tooling`
+   symlinked to the primary checkout's `.tooling` so tooling state stays on the external SSD. Never
+   edit, switch, stash, reset, or sync the primary checkout (`/Volumes/Crucial X9/dev/Tracend`): it
+   can hold the owner's uncommitted work and lag `origin/main`. Read deployed code from `origin/main`.
+2. **Never push to `main`.** Open a pull request; follow-up fixes go onto the same PR branch.
+3. **Never bypass the pre-push hook (`--no-verify`) or branch protection** without the owner's
+   explicit OK. If the hook fails, fix its cause.
+4. **Agents never merge.** When all seven required checks are green, hand the PR to the owner. A
+   single-account repository cannot approve its own pull request, so the owner merges with the
+   administrator option after checking the results and any agent review they asked for.
+5. **Merging deploys automatically** (`deploy.yml`). Edge Function and SQL-only changes need no app
+   reinstall; Flutter changes need `./scripts/install-device.sh` built from the merged `main` commit.
+6. **Reference Sentry issues as `Refs <ID>`, never `Fixes <ID>`** (that auto-resolves on merge).
+   Resolve an issue only after the owner's device check passes.
+7. **Update `docs/handoff/*.md` and `docs/PROGRESS_CONTEXT.md` in the same PR.** Do not add commits
+   that only record CI status; the PR shows it.
+
 ## Key Facts
 
 - **Supabase project:** `qsfzzsjenopqqqhvpyaw` (Singapore, `ap-southeast-1`)

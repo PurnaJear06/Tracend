@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 
+# Git exports these to hooks; Flutter would then read this repo as its own SDK
+# checkout, report an unknown version, and fail dependency resolution.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_PREFIX
+
 REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 . "$REPO_ROOT/tool/versions.env"
 

@@ -319,6 +319,20 @@ override safety or the quality floor. Budget assumptions and hard controls are d
   conversational chat prompts; recommendations are appropriate only when the user asks for guidance.
   Same-day execution adjustments remain permitted; persistent plan or target changes remain
   approval-gated.
+- Coach chat sends the raw question exactly once. Context Date, the null contract, the per-request
+  evidence contract, and freshly computed scores are complete priority sections at the start of the
+  bounded context. Trimming removes whole lower-priority sections, starting with conversation and
+  session history; it never slices a number, JSON value, or closing context delimiter.
+- If the deterministic scores cannot be computed for the coaching date, `prepare_coach_chat_v7`
+  marks Computed Scores unavailable and permits only non-score evidence codes; chat stays
+  available instead of failing, matching the Today brief's degradation.
+- Deterministic code owns every number and evidence code. The model may quote only numbers already
+  present in context with the same units and rounding. It may not calculate new averages,
+  percentage changes, projections, or other statistics. Missing/null values are described as not
+  measured.
+- Every coach-chat provider uses one shared coach persona (coaching approach, communication style,
+  hard boundaries), followed by the null contract and the output accuracy/validation contract so the
+  contract's rules take precedence.
 
 ## 12. Validation and Failure Handling
 
@@ -326,10 +340,13 @@ The invoking Supabase Edge Function validates schema, enums, ranges, evidence, p
 catalog references, coach-domain authority, prohibited content, escalation consistency, proposal
 freshness, and the authenticated user's authority.
 
-Invalid output is never partially applied. The system may attempt one schema-repair retry and then
-returns a safe unavailable state while preserving logging and the active plan. A live Coach chat
-must never present deterministic fallback text as a successful model answer; deterministic emergency
-and clinical-boundary refusals remain explicitly labeled safety responses.
+Invalid output is never partially applied. The system may attempt one targeted schema-repair retry
+and then returns a safe unavailable state while preserving logging and the active plan. The repair
+receives only a finite validation rule, JSON path, applicable limit/count, and the per-request
+allowed evidence codes. It fixes the stated defect and any sentence dependent on an invalid
+citation without adding facts or numbers. A live Coach chat must never delete invalid citations and
+keep the prose, or present deterministic fallback text as a successful model answer; deterministic
+emergency and clinical-boundary refusals remain explicitly labeled safety responses.
 
 DeepSeek Coach chat accepts provider output only when `finish_reason` is `stop`. Empty content,
 `length` truncation, malformed JSON, and schema rejection receive at most one repair attempt. The
@@ -339,6 +356,14 @@ never used for authentication, rate-limit, HTTP, or timeout failures. The output
 tokens; per-attempt limits are 28 seconds initial and 10 seconds repair inside a 40-second Edge
 deadline. Failed runs persist only a stable sanitized failure code. Response schema 1.1 exposes that
 code to Flutter without provider bodies, parser messages, prompts, or health context.
+
+The validator and model-facing schema share one set of maximum lengths, item counts, safety enums,
+evidence sources, and the request's exact evidence-code enum. Validation failures use a finite rule
+set (for example `json_syntax`, `evidence_code_not_permitted`, or
+`reasoning_value_too_long`) plus a JSON path. One structured outcome record captures each attempt's
+rule, path, latency, finish reason, and completion-token count. Sentry is emitted only for terminal
+failure and carries the initial and repair rule names; prompts, answers, provider bodies, questions,
+and health values never enter logs or Sentry.
 
 ## 13. Evaluation
 
