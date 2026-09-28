@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "threads": [
+    {
+      "id": "5f0f9a2e-3c1b-4d8e-9a6f-2b7c1d4e8f90",
+      "title": "How long until I reach 72 kg if I keep this diet?",
+      "last_message_at": "2026-09-29T08:31:00.000000+00:00",
+      "updated_at": "2026-09-29T08:31:00.000000+00:00"
+    },
+    {
+      "id": "9b2d4f6a-1c3e-4a5b-8d7f-0e1a2b3c4d5e",
+      "title": "Explain today’s evidence",
+      "last_message_at": "2026-09-28T07:58:00.000000+00:00",
+      "updated_at": "2026-09-28T07:58:00.000000+00:00"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.2",
+  "message": {
+    "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "role": "assistant",
+    "created_at": "2026-09-29T08:30:00.000000+00:00",
+    "model_provider": "deepseek",
+    "model": "deepseek-flash",
+    "answer_source": "model",
+    "answer": "You are 78.4 kg and your 28-day trend is -0.05 kg a day. At that pace, 72 kg is roughly 18 weeks away. This is an estimate from your logged weights, not a measurement.",
+    "evidence": [
+      {
+        "code": "APPROVED_PLAN_ACTIVE",
+        "label": "Approved plan is active",
+        "source": "coach_context"
+      }
+    ],
+    "missing_data": [],
+    "safety_state": "allowed",
+    "suggested_follow_ups": ["What would speed this up safely?"],
+    "reasoning_chain": [
+      {
+        "step": "Weight trend",
+        "value": "78.4 kg, 28-day trend -0.05 kg a day",
+        "evidence_id": null
+      }
+    ]
+  },
+  "budget_warning": null,
+  "replayed": false
+}

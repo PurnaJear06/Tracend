@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/coach/widgets/coach_composer.dart';
 import 'package:tracend/features/coach/widgets/coach_context_card.dart';
 import 'package:tracend/features/coach/widgets/coach_decision_card.dart';
@@ -15,9 +16,11 @@ import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 class CoachScreen extends StatefulWidget {
   const CoachScreen({
     this.repository = const FixtureCoachRepository(),
+    this.threadMemory = const SharedPreferencesCoachThreadMemory(),
     super.key,
   });
   final CoachRepository repository;
+  final CoachThreadMemory threadMemory;
   @override
   State<CoachScreen> createState() => _CoachScreenState();
 }
@@ -32,6 +35,9 @@ class _CoachScreenState extends State<CoachScreen> {
       : null;
   List<CoachThread> _threads = const [];
   List<CoachMessage> _messages = const [];
+
+  /// Null while the user is on a new conversation: its server thread is
+  /// created by the first send, so opening Coach never leaves an empty thread.
   String? _threadId;
   bool _loadingChat = true;
   bool _sending = false;
@@ -85,22 +91,21 @@ class _CoachScreenState extends State<CoachScreen> {
       return;
     }
     try {
-      final threads = await chat.loadThreads();
-      final threadId = threads.isEmpty
-          ? await chat.createThread()
-          : threads.first.id;
-      final messages = await chat.loadMessages(threadId);
+      final (threads, remembered) = await (
+        chat.loadThreads(),
+        widget.threadMemory.lastThreadId(),
+      ).wait;
+      // Reopen the conversation the user last had open; otherwise the one
+      // with the newest message; with none, start a new conversation.
+      final threadId = threads.any((thread) => thread.id == remembered)
+          ? remembered
+          : threads.firstOrNull?.id;
+      final messages = threadId == null
+          ? const <CoachMessage>[]
+          : await chat.loadMessages(threadId);
       if (!mounted) return;
       setState(() {
-        _threads = threads.isEmpty
-            ? [
-                CoachThread(
-                  id: threadId,
-                  title: 'New conversation',
-                  updatedAt: DateTime.now(),
-                ),
-              ]
-            : threads;
+        _threads = threads;
         _threadId = threadId;
         _messages = messages;
         _loadingChat = false;
@@ -124,6 +129,7 @@ class _CoachScreenState extends State<CoachScreen> {
       _loadingChat = true;
       _threadId = id;
     });
+    unawaited(widget.threadMemory.remember(id));
     try {
       final messages = await chat.loadMessages(id);
       if (mounted) {
@@ -143,30 +149,36 @@ class _CoachScreenState extends State<CoachScreen> {
     }
   }
 
-  Future<void> _newThread() async {
-    final chat = _chat;
-    if (chat == null) return;
+  void _newThread() => setState(() {
+    _threadId = null;
+    _messages = const [];
+    _error = null;
+    _preferencePrompt = null;
+  });
+
+  Future<String> _startThread(CoachChatRepository chat) async {
     final id = await chat.createThread();
-    if (!mounted) return;
-    setState(() {
-      _threadId = id;
-      _messages = const [];
-      _threads = [
-        CoachThread(
-          id: id,
-          title: 'New conversation',
-          updatedAt: DateTime.now(),
-        ),
-        ..._threads,
-      ];
-    });
+    unawaited(widget.threadMemory.remember(id));
+    if (mounted) setState(() => _threadId = id);
+    return id;
+  }
+
+  /// The server saves each question when its turn starts and names a new
+  /// thread after its first question, so the list changes after every send,
+  /// whether or not the Coach answered.
+  Future<void> _refreshThreads(CoachChatRepository chat) async {
+    try {
+      final threads = await chat.loadThreads();
+      if (mounted) setState(() => _threads = threads);
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+    }
   }
 
   Future<void> _send([String? suggestion]) async {
     final chat = _chat;
-    final threadId = _threadId;
     final question = (suggestion ?? _composer.text).trim();
-    if (chat == null || threadId == null || question.isEmpty || _sending) {
+    if (chat == null || question.isEmpty || _sending) {
       return;
     }
     _composer.clear();
@@ -185,6 +197,7 @@ class _CoachScreenState extends State<CoachScreen> {
     _scrollToEnd();
     final started = DateTime.now();
     try {
+      final threadId = _threadId ?? await _startThread(chat);
       final answer = await chat.sendMessage(threadId, question);
       Map<String, dynamic>? prompt;
       if (chat is SupabaseCoachRepository) {
@@ -201,8 +214,11 @@ class _CoachScreenState extends State<CoachScreen> {
       if (mounted) {
         await HapticFeedback.lightImpact();
         setState(() {
-          _messages = [..._messages, answer];
-          _preferencePrompt = prompt;
+          // The user may have opened another conversation while waiting.
+          if (_threadId == threadId) {
+            _messages = [..._messages, answer];
+            _preferencePrompt = prompt;
+          }
           _sending = false;
         });
         _scrollToEnd();
@@ -241,6 +257,20 @@ class _CoachScreenState extends State<CoachScreen> {
         );
       }
     }
+    unawaited(_refreshThreads(chat));
+  }
+
+  /// Retry is offered on a data summary that ends the conversation. It asks
+  /// the question the summary answered again, as a new turn with a new key.
+  VoidCallback? _retryFor(int index) {
+    if (index != _messages.length - 1 || _sending) return null;
+    for (var i = index - 1; i >= 0; i--) {
+      if (_messages[i].role == 'user') {
+        final question = _messages[i].content;
+        return () => _send(question);
+      }
+    }
+    return null;
   }
 
   void _scrollToEnd() {
@@ -301,6 +331,8 @@ class _CoachScreenState extends State<CoachScreen> {
           ],
         ),
         const SizedBox(height: TracendSpacing.sm),
+        if (_threads.isEmpty)
+          const Text('A conversation is saved here after its first message.'),
         for (final thread in _threads)
           ListTile(
             selected: thread.id == _threadId,
@@ -432,10 +464,11 @@ class _CoachScreenState extends State<CoachScreen> {
                     ],
                   ),
                 ] else
-                  for (final message in _messages) ...[
+                  for (final (index, message) in _messages.indexed) ...[
                     CoachMessageBubble(
                       message: message,
                       onSendFollowUp: (prompt) => _send(prompt),
+                      onRetry: message.isDataSummary ? _retryFor(index) : null,
                     ),
                     const SizedBox(height: TracendSpacing.sm),
                   ],

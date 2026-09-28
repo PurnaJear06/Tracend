@@ -146,4 +146,108 @@ void main() {
       }
     });
   });
+
+  // The Deno tests read the same request and data-summary fixtures, so the
+  // app and coach-chat cannot drift apart.
+  group('Coach Chat contract — request 1.1, response 1.2, thread list', () {
+    final fallbackCreatedAt = DateTime.utc(2026, 9, 29);
+
+    CoachMessage parse(Map<String, dynamic> row) => CoachMessage.fromJson(
+      row,
+      fallbackId: 'fallback-id',
+      fallbackCreatedAt: fallbackCreatedAt,
+    );
+
+    test('the app builds exactly the request 1.1 the server parses', () {
+      final fixture = _loadFixtureJson('coach_chat_request_v1_1.json');
+
+      expect(
+        coachChatRequestBody(
+          threadId: fixture['thread_id'] as String,
+          question: '  ${fixture['question']}  ',
+          timezone: fixture['timezone'] as String,
+          idempotencyKey: fixture['idempotency_key'] as String,
+        ),
+        fixture,
+      );
+      expect(coachChatRequestSchemaVersion, '1.1');
+    });
+
+    test('a model answer 1.2 is the Coach AI answer', () {
+      final json = _loadFixtureJson('coach_chat_response_v1_2.json');
+      expect(json['schema_version'], '1.2');
+      final message = parse(Map<String, dynamic>.from(json['message'] as Map));
+
+      expect(message.answerSource, 'model');
+      expect(message.isDataSummary, isFalse);
+      expect(message.diagnostic, isNull);
+      expect(message.modelProvider, 'deepseek');
+      expect(message.content, startsWith('You are 78.4 kg'));
+      expect(message.createdAt, DateTime.utc(2026, 9, 29, 8, 30));
+    });
+
+    test('a data summary 1.2 is labeled and carries its diagnostic', () {
+      final json = _loadFixtureJson(
+        'coach_chat_data_summary_response_v1_2.json',
+      );
+      expect(json['schema_version'], '1.2');
+      final message = parse(Map<String, dynamic>.from(json['message'] as Map));
+
+      expect(message.isDataSummary, isTrue);
+      expect(message.isSafetyReferral, isFalse);
+      expect(message.modelProvider, 'deterministic');
+      expect(message.safetyState, 'unavailable');
+      expect(message.suggestedFollowUps, isEmpty);
+      expect(message.evidence.single['code'], 'APPROVED_PLAN_ACTIVE');
+      expect(message.diagnostic?.failureCode, 'provider_response_invalid');
+      expect(message.diagnostic?.initialRule, 'evidence_code_not_permitted');
+      expect(message.diagnostic?.repairRule, 'reasoning_step_too_long');
+    });
+
+    test('a stored row without answer_source is a model answer', () {
+      final message = parse({
+        'id': 'stored-1',
+        'role': 'assistant',
+        'content': 'Stored answer.',
+        'created_at': '2026-09-28T07:58:00+00:00',
+        'answer_source': null,
+      });
+
+      expect(message.answerSource, isNull);
+      expect(message.isDataSummary, isFalse);
+    });
+
+    test('a stored safety referral is a data summary without a diagnostic', () {
+      final message = parse({
+        'id': 'stored-2',
+        'role': 'assistant',
+        'content': 'Please talk to a doctor.',
+        'created_at': '2026-09-28T07:58:00+00:00',
+        'answer_source': 'data_summary',
+        'safety_state': 'limited',
+        'evidence': <Object>[],
+        'missing_data': <Object>[],
+      });
+
+      expect(message.isSafetyReferral, isTrue);
+      expect(message.diagnostic, isNull);
+    });
+
+    test('the thread list 1.0 lists threads newest first', () {
+      final json = _loadFixtureJson('coach_threads_v1_0.json');
+      expect(json['schema_version'], '1.0');
+      final threads = (json['threads'] as List)
+          .map(
+            (thread) =>
+                CoachThread.fromJson(Map<String, dynamic>.from(thread as Map)),
+          )
+          .toList();
+
+      expect(threads.map((thread) => thread.id), [
+        '5f0f9a2e-3c1b-4d8e-9a6f-2b7c1d4e8f90',
+        '9b2d4f6a-1c3e-4a5b-8d7f-0e1a2b3c4d5e',
+      ]);
+      expect(threads.first.updatedAt, DateTime.utc(2026, 9, 29, 8, 31));
+    });
+  });
 }
