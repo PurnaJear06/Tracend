@@ -9,6 +9,7 @@ import {
   type CoachChatValidationRule,
   parseCoachChatAnswer,
 } from "../contracts/coach_chat_v1.ts";
+import { deepseekFlashPeakPricePerMillionUsd, isApprovedDeepseekModel } from "./deepseek_models.ts";
 
 export type CoachChatAttemptOutcome =
   | "valid"
@@ -1160,7 +1161,7 @@ export function isCoachChatLiveProviderConfigured(
   }
   if (provider === "deepseek") {
     return enabled && Boolean(environment.get("DEEPSEEK_API_KEY")) &&
-      environment.get("DEEPSEEK_MODEL") === "deepseek-v4-flash";
+      isApprovedDeepseekModel(environment.get("DEEPSEEK_MODEL"));
   }
   return provider === "gemini" && enabled &&
     environment.get("GEMINI_PAID_DATA_TERMS_ACCEPTED") === "true" &&
@@ -1203,7 +1204,7 @@ export async function generateCoachChat(
   const deepseekKey = Deno.env.get("DEEPSEEK_API_KEY") ?? "";
   const deepseekModel = Deno.env.get("DEEPSEEK_MODEL") ?? "";
   const deepseekEnabled = provider === "deepseek" && enabled && deepseekKey &&
-    deepseekModel === "deepseek-v4-flash";
+    isApprovedDeepseekModel(deepseekModel);
   const geminiEnabled = provider === "gemini" && enabled && paid && key &&
     model === "gemini-3.5-flash";
   if (
@@ -1517,8 +1518,14 @@ export async function generateCoachChat(
           );
         }
       }
-      const inputRateDs = Number(Deno.env.get("DEEPSEEK_INPUT_COST_PER_MILLION_USD") ?? "0.14");
-      const outputRateDs = Number(Deno.env.get("DEEPSEEK_OUTPUT_COST_PER_MILLION_USD") ?? "0.28");
+      const inputRateDs = Number(
+        Deno.env.get("DEEPSEEK_INPUT_COST_PER_MILLION_USD") ??
+          deepseekFlashPeakPricePerMillionUsd.input,
+      );
+      const outputRateDs = Number(
+        Deno.env.get("DEEPSEEK_OUTPUT_COST_PER_MILLION_USD") ??
+          deepseekFlashPeakPricePerMillionUsd.output,
+      );
       return {
         answer,
         provider: "deepseek",

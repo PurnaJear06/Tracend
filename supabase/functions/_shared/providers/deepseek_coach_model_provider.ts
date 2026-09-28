@@ -1,5 +1,6 @@
 import type { CoachDecisionV1 } from "../contracts/coach_decision_v1.ts";
 import { decisionSchema } from "./gemini_coach_model_provider.ts";
+import { isApprovedDeepseekModel } from "./deepseek_models.ts";
 import type {
   CoachModelGeneration,
   CoachModelProvider,
@@ -24,7 +25,7 @@ export class DeepseekCoachModelProvider implements CoachModelProvider {
   readonly #fetcher: typeof fetch;
 
   constructor(config: DeepseekCoachProviderConfig) {
-    if (!config.apiKey || config.model !== "deepseek-v4-flash") {
+    if (!config.apiKey || !isApprovedDeepseekModel(config.model)) {
       throw new Error("deepseek_configuration_invalid");
     }
     this.#apiKey = config.apiKey;

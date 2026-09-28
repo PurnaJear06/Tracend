@@ -24,6 +24,24 @@ Deno.test("Coach chat never turns an unconfigured provider into a mock answer", 
   }
 });
 
+Deno.test("DeepSeek chat accepts V4.1 Flash under its new and legacy names only", () => {
+  const configured = (model: string) =>
+    isCoachChatLiveProviderConfigured(
+      new Map<string, string>([
+        ["COACH_AI_ENABLED", "true"],
+        ["COACH_MODEL_PROVIDER", "deepseek"],
+        ["DEEPSEEK_API_KEY", "synthetic-key"],
+        ["DEEPSEEK_MODEL", model],
+      ]),
+    );
+  if (!configured("deepseek-flash") || !configured("deepseek-v4-flash")) {
+    throw new Error("Both names of the approved DeepSeek Flash model must enable chat.");
+  }
+  if (configured("deepseek-v4-pro") || configured("deepseek-chat")) {
+    throw new Error("Any other DeepSeek model must keep chat fail-closed.");
+  }
+});
+
 Deno.test("classifyQuestion requires an explicit plan modification request", () => {
   const planChanges = [
     "Can you create a new plan?",
