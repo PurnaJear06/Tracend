@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 
-**Last verified design update:** 2026-09-23
+**Last verified design update:** 2026-09-28
 
 **Production project:** `qsfzzsjenopqqqhvpyaw` (Singapore)
 
@@ -18,11 +18,43 @@ Production changes follow one path:
 6. The deploy workflow dry-runs migrations and independently backs up production.
 7. The backup job rejects failed or empty dumps, verifies SHA-256 checksums, and restores the
    schema and data into an isolated local Supabase database.
-8. Only after the dry-run and restore drill pass may migrations and the nine Edge Functions deploy.
-9. The health smoke test must pass before the exact deployed commit receives a release tag.
+8. Only after the dry-run and restore drill pass may migrations deploy, followed by the nine Edge
+   Functions one at a time.
+9. Each function deploy is confirmed live against the commit, and a final job checks every function
+   again (see [Live-code verification](#live-code-verification)).
+10. The health smoke test and the live-code check must pass before the exact deployed commit
+    receives a release tag.
 
 The deploy concurrency group is `production-deploy` with cancellation disabled. Deployments queue;
 they do not interrupt one another.
+
+## Live-code verification
+
+A successful `supabase functions deploy` does not prove that the new code is live.
+
+- On 2026-09-28, the deploy of PR #36 reported success for all nine functions, deployed in
+  parallel. Supabase kept the previous version of four of them, including `coach-chat` and
+  `coach-decide`.
+- An Edge secret that only the new code accepted then turned the Coach off (FLUTTER-9).
+- A redeploy later that day dropped one more function.
+
+The pipeline now guards against this:
+
+- Functions deploy one at a time (`max-parallel: 1`).
+- `scripts/verify-live-function.sh <function>` downloads the deployed source (read-only) and
+  compares its files byte for byte with the commit. It retries while a new version propagates.
+- If a function is not live after its deploy, the job deploys it once more. If it is still not live,
+  the job fails and the release is not tagged.
+- `Verify Live Functions` runs `scripts/verify-live-function.sh --all` after all deploys, so a
+  function missing from the deploy matrix also fails.
+
+Changing an Edge secret (`supabase secrets set`) also creates a new version of every function, with
+an unchanged `UPDATED_AT`:
+
+- Change a secret that only new code accepts only after that code has passed the live-code check.
+- Afterwards, from the checkout of the deployed commit, run
+  `./scripts/verify-live-function.sh --all` and require all nine checks to pass. Repeat after any
+  later secret change. `UPDATED_AT` alone cannot prove the source stayed live.
 
 ## Required CI checks
 
@@ -77,7 +109,8 @@ Examples:
 ## Emergency path
 
 `hotfix.yml` is a manual emergency tool, not the normal release path. Its use requires explicit
-owner authorization, a recorded reason, and post-incident reconciliation through a reviewed PR.
+owner authorization, a recorded reason, and post-incident reconciliation through a reviewed PR. It
+deploys and verifies functions exactly like `deploy.yml` and tags the commit `hf-v…`.
 Agents must not deploy manually unless GitHub Actions is unavailable or the owner explicitly asks.
 
 ## Rollback
