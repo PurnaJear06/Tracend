@@ -196,7 +196,7 @@ jobs:
           rm -f backup-*.sql SHA256SUMS "$ARCHIVE"
 
       - name: Upload encrypted backup artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: database-backup
           path: database-backup-*.tar.gz.enc
