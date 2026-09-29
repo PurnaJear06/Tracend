@@ -44,6 +44,23 @@ Deno.test("Groq Qwen meal adapter validates candidate output before persistence"
   }
 });
 
+Deno.test("Groq meal cost uses qwen3.8 rates, not the retired route's GROQ_* secrets", async () => {
+  const result = await analyzeGroqMealImage(
+    new Uint8Array([1, 2, 3]),
+    "image/jpeg",
+    () => Promise.resolve(candidateReply()),
+    environment({
+      GROQ_INPUT_COST_PER_MILLION_USD: "0.6",
+      GROQ_OUTPUT_COST_PER_MILLION_USD: "3",
+    }),
+  );
+  // 12 input tokens at USD 0.80/M and 20 output tokens at USD 4.00/M.
+  const expected = (12 * 0.8 + 20 * 4) / 1_000_000;
+  if (Math.abs(result.estimatedCostUsd - expected) > 1e-12) {
+    throw new Error(`Unexpected cost estimate: ${result.estimatedCostUsd}`);
+  }
+});
+
 Deno.test("Groq meal adapter defaults to qwen3.8, the successor of the retired qwen3.6", async () => {
   let sentModel = "";
   const result = await analyzeGroqMealImage(

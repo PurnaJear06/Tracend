@@ -1,9 +1,36 @@
 begin;
 
-select plan(7);
+select plan(9);
 
 insert into auth.users (id, role)
 values ('e3e3e3e3-e3e3-4e3e-8e3e-e3e3e3e3e3e3', 'authenticated');
+
+insert into public.meals (
+  id, user_id, local_date, timezone, meal_type, source, status, idempotency_key)
+values ('f4f4f4f4-f4f4-4f4f-8f4f-f4f4f4f4f4f4', 'e3e3e3e3-e3e3-4e3e-8e3e-e3e3e3e3e3e3',
+  current_date, 'Asia/Kolkata', 'lunch', 'photo_analysis', 'draft',
+  'a5a5a5a5-a5a5-4a5a-8a5a-a5a5a5a5a5a5');
+
+select is(
+  public.persist_meal_photo_candidates('e3e3e3e3-e3e3-4e3e-8e3e-e3e3e3e3e3e3',
+    'f4f4f4f4-f4f4-4f4f-8f4f-f4f4f4f4f4f4',
+    '[{"name":"Dal","serving_label":"1 bowl","calories":180,"protein_g":9,
+       "carbohydrate_g":24,"fat_g":5,"confidence":"low"}]'::jsonb,
+    'groq', 'qwen/qwen3.8-27b'),
+  1,
+  'candidates from Groq qwen3.8 are saved for review'
+);
+
+select throws_ok(
+  $$select public.persist_meal_photo_candidates('e3e3e3e3-e3e3-4e3e-8e3e-e3e3e3e3e3e3',
+    'f4f4f4f4-f4f4-4f4f-8f4f-f4f4f4f4f4f4',
+    '[{"name":"Dal","serving_label":"1 bowl","calories":180,"protein_g":9,
+       "carbohydrate_g":24,"fat_g":5,"confidence":"low"}]'::jsonb,
+    'groq', 'qwen/qwen3.9-27b')$$,
+  '22023',
+  null,
+  'candidates from an unlisted model are refused'
+);
 
 select lives_ok(
   $$select public.record_ai_usage_event('e3e3e3e3-e3e3-4e3e-8e3e-e3e3e3e3e3e3',
