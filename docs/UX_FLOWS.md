@@ -215,7 +215,8 @@ labeled separately. Training and Nutrition remain perspectives in one controlled
 pipeline, not independent agents. The Coach tab provides direct user questions through the
 same workflow and never behaves like three separate autonomous chatbots. A live assistant
 message is labeled with its provider; a provider or validation failure never substitutes generic
-coaching text.
+coaching text. Replies display bold, italic, and bullet or numbered lists, so they read as formatted
+text rather than raw Markdown.
 
 When the model cannot answer, Coach shows a labeled reply in its place:
 - "Data summary · not an AI answer": what the athlete's data shows.

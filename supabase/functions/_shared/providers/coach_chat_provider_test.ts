@@ -1024,6 +1024,29 @@ Deno.test("v8: the contract allows labeled estimates and one clarifying question
   }
 });
 
+Deno.test("the persona limits formatting to what the app displays", async () => {
+  let systemPrompt = "";
+  await withDeepSeekEnvironment(() =>
+    generateCoachChat(
+      "How is my training?",
+      v8AthleteContext(),
+      "general",
+      ((_input: unknown, init?: RequestInit) => {
+        systemPrompt = JSON.parse(String(init?.body)).messages[0].content;
+        return Promise.resolve(deepSeekResponse(validDeepSeekAnswer));
+      }) as typeof fetch,
+    )
+  );
+  for (
+    const phrase of [
+      'The app displays **bold**, *italic*, bullet lists ("- item") and numbered lists ("1. item"), and nothing else.',
+      "Never use headings, tables, code blocks, links, or emoji bullets.",
+    ]
+  ) {
+    if (!systemPrompt.includes(phrase)) throw new Error(`System prompt lost: ${phrase}`);
+  }
+});
+
 Deno.test("model-facing schema is generated from validator limits and permitted codes", () => {
   const schema = buildCoachChatAnswerSchema(["APPROVED_PLAN_ACTIVE"]);
   const properties = schema.properties;

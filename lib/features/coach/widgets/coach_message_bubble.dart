@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/widgets/coach_reply_text.dart';
 import 'package:tracend/features/coach/widgets/reasoning_chain_card.dart';
 import 'package:tracend/shared/widgets/evidence_accordion.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
@@ -9,6 +10,8 @@ import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 /// Chat bubble for one Coach message (plan §6.2).
 ///
 /// Binding contract:
+/// - a Coach reply renders its Markdown subset through [CoachReplyText]; the
+///   user's own text is shown exactly as typed
 /// - evidence rows = `CoachMessage.evidence` (label + source, display-only)
 /// - missing data = `CoachMessage.missingData`
 /// - suggested prompts ONLY from `CoachMessage.suggestedFollowUps`
@@ -86,13 +89,16 @@ class CoachMessageBubble extends StatelessWidget {
                 ),
                 const SizedBox(height: TracendSpacing.sm),
               ],
-              SelectableText(
-                message.content,
-                style: TextStyle(
-                  color: user ? colors.actionOnPrimary : colors.textPrimary,
-                  height: 1.45,
+              if (user)
+                SelectableText(
+                  message.content,
+                  style: TextStyle(color: colors.actionOnPrimary, height: 1.45),
+                )
+              else
+                CoachReplyText(
+                  message.content,
+                  style: TextStyle(color: colors.textPrimary, height: 1.45),
                 ),
-              ),
               if (!user && message.reasoningChain.isNotEmpty) ...[
                 const SizedBox(height: TracendSpacing.sm),
                 ReasoningChainCard(chain: message.reasoningChain),
