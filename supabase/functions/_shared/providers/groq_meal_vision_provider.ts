@@ -1,5 +1,12 @@
 import type { MealCandidate } from "./gemini_meal_vision_provider.ts";
 
+// Groq's paid price for qwen/qwen3.8-27b, USD per million tokens. The estimate
+// uses it even on the free tier so the owner budget never undercounts. It is
+// fixed here rather than read from GROQ_*_COST_PER_MILLION_USD, which carry the
+// retired qwen3.6 Coach route's lower rates.
+export const qwen38InputUsdPerMillion = 0.8;
+export const qwen38OutputUsdPerMillion = 4;
+
 export async function analyzeGroqMealImage(
   bytes: Uint8Array,
   contentType: string,
@@ -21,8 +28,10 @@ export async function analyzeGroqMealImage(
     throw new Error("meal_vision_disabled");
   }
   const apiKey = environment.get("GROQ_API_KEY") ?? "";
-  const model = environment.get("MEAL_VISION_MODEL") || "qwen/qwen3.6-27b";
-  if (!apiKey || model !== "qwen/qwen3.6-27b") throw new Error("meal_vision_configuration_invalid");
+  // qwen/qwen3.8-27b is Groq's named successor to qwen/qwen3.6-27b, which Groq
+  // shut down on 2026-09-14.
+  const model = environment.get("MEAL_VISION_MODEL") || "qwen/qwen3.8-27b";
+  if (!apiKey || model !== "qwen/qwen3.8-27b") throw new Error("meal_vision_configuration_invalid");
   if (
     bytes.length < 1 || bytes.length > 4_194_304 ||
     !["image/jpeg", "image/png"].includes(contentType)
@@ -103,17 +112,13 @@ export async function analyzeGroqMealImage(
     const outputUnits = Number.isInteger(usage?.completion_tokens)
       ? Number(usage?.completion_tokens)
       : 0;
-    const inputRate = Number(environment.get("GROQ_INPUT_COST_PER_MILLION_USD") ?? "0.6");
-    const outputRate = Number(environment.get("GROQ_OUTPUT_COST_PER_MILLION_USD") ?? "3");
-    if (
-      !Number.isFinite(inputRate) || !Number.isFinite(outputRate) || inputRate < 0 || outputRate < 0
-    ) throw new Error("meal_vision_configuration_invalid");
     return {
       candidates,
       model,
       inputUnits,
       outputUnits,
-      estimatedCostUsd: (inputUnits * inputRate + outputUnits * outputRate) / 1_000_000,
+      estimatedCostUsd: (inputUnits * qwen38InputUsdPerMillion +
+        outputUnits * qwen38OutputUsdPerMillion) / 1_000_000,
     };
   } finally {
     clearTimeout(timeout);

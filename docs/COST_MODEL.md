@@ -131,6 +131,23 @@ routes.
 **Prior owner test (ADR 0006, 2026-07-11, superseded 2026-07-26):** Groq Qwen `qwen/qwen3.6-27b`
 was used server-side for owner dogfooding through beta. Now superseded pending evaluation.
 
+**Owner AI budget (2026-09-29):** USD 1 monthly warning, USD 2 server-side hard stop, and 30
+requests per owner/day shared by Coach chat, daily decisions and meal photos
+(`assert_owner_ai_budget`, `get_my_ai_budget_state`). The daily count was 10, which about 10 meal
+photos a day would use up; the USD 2 stop still bounds spend.
+
+**Meal photos (2026-09-29):** Groq `qwen/qwen3.8-27b` (`MEAL_VISION_PROVIDER=groq`), the named
+successor of `qwen/qwen3.6-27b`, which Groq shut down on 2026-09-14. On Groq's free tier (no card
+on file) a request over the limit is refused rather than billed. Groq's published free limits for
+this model are 30 requests/minute, 1,000/day, 8,000 tokens/minute and 200,000 tokens/day. At
+roughly 3,000–4,000 tokens per photo, about 10 photos a day use under a fifth of the daily token
+allowance, and about two photos fit in one minute. Usage events still carry an estimate at Groq's paid
+qwen3.8 price (USD 0.80 input, 4.00 output per million tokens, fixed in
+`groq_meal_vision_provider.ts`), about USD 0.004 per photo, so the budget never undercounts if the
+key moves to a paid tier. Gemini paid-tier Flash was the
+more accurate alternative but needs a billing-enabled project; DeepSeek image input was ruled out
+because DeepSeek may train on inputs by default and stores them in China.
+
 **Active production provider (2026-07-26):** DeepSeek via `COACH_MODEL_PROVIDER=deepseek`, at
 `https://api.deepseek.com/v1/chat/completions` (OpenAI-compatible, JSON output, thinking mode,
 1M-token context).
@@ -141,8 +158,8 @@ was used server-side for owner dogfooding through beta. Now superseded pending e
   - Off-peak: 0.003 cache-hit input, 0.15 cache-miss input, 0.60 output.
   - Peak (weekdays 01:00–04:00 and 06:00–10:00 UTC, which is 06:30–09:30 and 11:30–15:30 IST):
     0.006, 0.30, 1.20.
-- **Cost estimates** use the peak cache-miss price (0.30 input, 1.20 output), so the USD 3 warning
-  and USD 5 hard stop never undercount. Until 2026-09-28 they used the retired V4 Flash rate (0.14
+- **Cost estimates** use the peak cache-miss price (0.30 input, 1.20 output), so the USD 1 warning
+  and USD 2 hard stop never undercount. Until 2026-09-28 they used the retired V4 Flash rate (0.14
   input, 0.28 output), which undercounted V4.1 Flash output by up to 4.3×.
 - **Per question:** a v8 question (~15K input + ~800 output tokens) is estimated at about
   USD 0.0055. The real cost is lower off-peak (about USD 0.0027) and much lower on a same-day

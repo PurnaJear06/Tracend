@@ -228,6 +228,14 @@ The user edits and confirms candidates; catalog data calculates nutrients. Uncon
 never affect adherence or coaching. Mixed Indian/home dishes should request recipe or ingredient
 clarification rather than imply false precision.
 
+Provider (2026-09-29): server-side Groq `qwen/qwen3.8-27b`, successor of the retired
+`qwen/qwen3.6-27b`. The function refuses any other Groq model name, and it stays off until
+`MEAL_VISION_ENABLED` and `MEAL_VISION_MODEL_EVALUATED` are both `true`; the owner sets the second
+only after checking the model on their own meal photos. Groq's Zero Data Retention setting must be
+on for the key's organization before the route is enabled. Meal photos are not covered by the AI
+coaching consent (which covers DeepSeek and states that photos are not sent); a separate
+meal-photo consent is required before anyone other than the owner uses photo analysis.
+
 ## 9. Physique Analysis
 
 Analysis requires separate consent and standardized front/side/back photo sets selected for
