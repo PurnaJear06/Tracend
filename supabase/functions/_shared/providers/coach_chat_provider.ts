@@ -50,7 +50,13 @@ export type CoachChatFailureCode =
   | "provider_response_truncated"
   | "provider_response_invalid";
 
-export const coachChatTiming = Object.freeze({
+export type CoachChatTiming = Readonly<{
+  totalDeadlineMs: number;
+  initialAttemptMs: number;
+  repairAttemptMs: number;
+}>;
+
+export const coachChatTiming: CoachChatTiming = Object.freeze({
   totalDeadlineMs: 40_000,
   initialAttemptMs: 28_000,
   repairAttemptMs: 10_000,
@@ -1179,6 +1185,7 @@ export async function generateCoachChat(
   context: Record<string, unknown>,
   contextKind: string = "general",
   fetcher: typeof fetch = fetch,
+  timing: CoachChatTiming = coachChatTiming,
 ): Promise<CoachChatGeneration> {
   const boundary = deterministicBoundary(question);
   if (boundary) {
@@ -1227,7 +1234,7 @@ export async function generateCoachChat(
   try {
     const ctx = context as Record<string, unknown>;
     if (deepseekEnabled) {
-      const deadline = Date.now() + coachChatTiming.totalDeadlineMs;
+      const deadline = Date.now() + timing.totalDeadlineMs;
       const dsUserMessage = buildCoachChatUserMessage(question, ctx, contextKind);
       const attempts: CoachChatAttemptTelemetry[] = [];
       const request = async (
@@ -1243,9 +1250,7 @@ export async function generateCoachChat(
       }> => {
         const repair = attempt === "repair";
         const useThinking = !repair && contextKind === "plan_change";
-        const requestedTimeout = repair
-          ? coachChatTiming.repairAttemptMs
-          : coachChatTiming.initialAttemptMs;
+        const requestedTimeout = repair ? timing.repairAttemptMs : timing.initialAttemptMs;
         const remaining = deadline - Date.now();
         if (remaining <= 0) {
           const telemetry: CoachChatAttemptTelemetry = {
