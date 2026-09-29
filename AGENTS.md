@@ -34,7 +34,8 @@ Key commands:
 
 **Device install config lives in the gitignored `.env`** (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
 optional `SENTRY_DSN`; see `.env.example`). `scripts/install-device.sh` sources it, builds the signed
-release, and installs on the paired iPhone. **Never ask the user for these keys — read `.env`.**
+release, checks that the bundle has its fonts and asset manifests (`scripts/verify-app-bundle.sh`),
+and installs on the paired iPhone. **Never ask the user for these keys — read `.env`.**
 If the publishable key is missing or rejected (401 "Invalid API key"), refresh it from the
 authenticated CLI and pipe it into `.env` at runtime, e.g.
 `./scripts/supabase.sh projects api-keys list --project-ref qsfzzsjenopqqqhvpyaw` then extract the
@@ -74,7 +75,10 @@ The automated deploy creates role, schema, and data dumps and runs the isolated 
 ```
 
 All tooling state, caches, `.dart_tool/`, `build/` → `.tooling/` on external SSD. Never on
-internal storage.
+internal storage. Checkouts never share build output: a worktree whose `.tooling` links to the
+primary checkout's shares the SDK, caches, and `ios/Pods`, but `scripts/flutter.sh` keeps its
+`.dart_tool/`, `build/`, and `ios/Flutter/ephemeral` in `.tooling/checkouts/<name>-<id>/` (its
+`checkout-path` file names the worktree; delete the directory with the worktree).
 
 ## Context & Docs (read order)
 

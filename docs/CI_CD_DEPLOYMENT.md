@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 
-**Last verified design update:** 2026-09-28
+**Last verified design update:** 2026-09-29
 
 **Production project:** `qsfzzsjenopqqqhvpyaw` (Singapore)
 
@@ -63,7 +63,8 @@ Branch protection requires these pull-request checks:
 - `Deno (fmt + lint + test)`
 - `Flutter Analyze` (includes Dart formatting)
 - `Flutter Test`
-- `Flutter iOS Build (macOS)`
+- `Flutter iOS Build (macOS)` (also checks the app bundle's assets; see
+  [Device installs](#device-installs))
 - `pgTAP (fresh DB + migrations + parity)`
 - `Secret Scan (gitleaks)`
 - `Migration Collision Check` (also validates release version metadata)
@@ -105,6 +106,28 @@ Examples:
 ./scripts/app-version.sh version
 ./scripts/install-device.sh --build-name 1.1.0 --build-number 200
 ```
+
+## Device installs
+
+`scripts/install-device.sh` builds the signed release from its own checkout and installs it on the
+owner's iPhone. Before installing, `scripts/verify-app-bundle.sh` checks that the bundle holds
+`AssetManifest.bin`, `FontManifest.json`, and every font file the manifest lists, including both
+icon fonts. A bundle without them still installs and launches, but draws every icon as a "?" box.
+CI runs the same check on its unsigned build.
+
+On 2026-09-29, build 185 reached the iPhone without any of its assets:
+
+- Every checkout built into one `build/` directory: the primary checkout, and each agent worktree
+  whose `.tooling` links to it.
+- When the build configuration changes, Flutter deletes the previous build's outputs by the paths
+  that build recorded. The previous build had run in a Codex worktree, so those paths reached the
+  files the new build had just written.
+
+`scripts/flutter.sh` now keeps each worktree's `.dart_tool/`, `build/`, and `ios/Flutter/ephemeral`
+in `.tooling/checkouts/<name>-<id>/`. The SDK, the dependency caches, and `ios/Pods` stay shared.
+CocoaPods writes the real location of the Pods directory into the tracked Xcode project, so a
+per-checkout copy would rewrite the project in every worktree. Flutter reinstalls pods whenever a
+checkout's `Podfile.lock` differs from the shared one.
 
 ## Emergency path
 

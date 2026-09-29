@@ -1,10 +1,10 @@
 # Backend Handoff — FLUTTER-8 Coach Reliability
 
-**Status:** PR #35 and A1 are live; A2 is in review.
+**Status:** PR #35, A1, and A2 are live; the owner's A2 device check is next.
 1. PR #35 `codex/coach-chat-validation-reliability` (merged 2026-09-28)
 2. A1 (#36) `claude/coach-full-context-a1` (merged 2026-09-28)
-3. A2 `claude/coach-chat-app-a2`: the app side, which needs a reinstall (see
-   [A2](#a2--the-app-side-needs-a-reinstall))
+3. A2 (#41) `claude/coach-chat-app-a2` (merged 2026-09-29): the app side, reinstalled on the
+   owner's iPhone (see [A2](#a2--the-app-side-needs-a-reinstall))
 
 A1's server code has been live since 10:50 UTC. Its first deploy reported success while Supabase
 kept #35's code for two coach functions (see [Deploy incident](#deploy-incident-2026-09-28)). An
@@ -320,10 +320,13 @@ Verification:
 - pgTAP, in CI: `coach_threads_list_test.sql`, 7 assertions.
 
 Owner steps:
-1. Merge A2. The deploy applies the migration; the installed app does not call the new function.
-2. Before the reinstall, add the app's `SENTRY_DSN` to `.env`. It is empty today, so the app
-   reports nothing to Sentry. Claude can fetch it from Sentry and pipe it in, with the owner's OK.
-3. Reinstall from the merged `main` with `./scripts/install-device.sh`.
+1. Done 2026-09-29: merged as 7495044. Deploy run 36518202414 applied the migration and
+   confirmed all nine functions live.
+2. Done: the app's `SENTRY_DSN` is in `.env`.
+3. Done: reinstalled from `main` 7495044. The first install (build 185) had no font files, so
+   every icon showed as a "?" box, because its build folder was shared with other checkouts (see
+   [Device installs](../CI_CD_DEPLOYMENT.md#device-installs)). A rebuild from the same commit,
+   checked by `scripts/verify-app-bundle.sh`, replaced it.
 4. On the iPhone:
    - Relaunch Coach. The conversation you last had open comes back, and the empty "New
      conversation" threads are gone from the list.

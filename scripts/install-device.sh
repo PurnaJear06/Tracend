@@ -113,6 +113,7 @@ if [ ! -d "$APP_PATH" ]; then
   echo "Build did not produce $APP_PATH." >&2
   exit 1
 fi
+./scripts/verify-app-bundle.sh "$APP_PATH"
 
 echo "==> Installing on device"
 xcrun devicectl device install app --device "$DEVICE_ID" "$APP_PATH"
