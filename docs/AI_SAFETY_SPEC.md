@@ -326,6 +326,9 @@ override safety or the quality floor. Budget assumptions and hard controls are d
   The instruction "Lead with one clear recommendation" is prohibited in conversational chat
   prompts; recommendations are appropriate only when the user asks for guidance. Same-day
   execution adjustments remain permitted; persistent plan or target changes remain approval-gated.
+- The shared Coach chat persona names the only formatting the app displays (bold, italic, bullet
+  and numbered lists) and rules out headings, tables, code blocks, links, and emoji bullets. The
+  app renders anything else as plain text, so formatting can never hide part of an answer.
 - Coach chat sends the raw question exactly once. Context Date, the null contract, the per-request
   evidence contract, and freshly computed scores are complete priority sections at the start of the
   bounded context. Trimming removes whole lower-priority sections, starting with conversation and
