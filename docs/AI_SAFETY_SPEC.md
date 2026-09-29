@@ -382,6 +382,13 @@ message flagged `data_summary` and is never presented as the model's answer: not
 and not to the model, whose conversation memory leaves it out. Request schema 1.0 builds keep the
 503.
 
+From A2 (2026-09-29) the app sends request 1.1 and labels the reply itself:
+- It titles a data summary "Data summary · not an AI answer" and never gives it a provider label.
+- It titles a safety referral "Safety note · not an AI answer", without data styling.
+- A live reply also shows the beta diagnostic line (failure code and finite rule names). Stored
+  replies keep the label but not the diagnostic.
+- Retry asks the question again as a new turn with a new idempotency key.
+
 The summary does not answer the question, so it must be safe for any question. When the message
 may concern a red flag or an unsupported population (symptoms, injury or pain, illness, medication
 or drugs, pregnancy, disordered eating or unsafe weight control, self-harm), the reply is a

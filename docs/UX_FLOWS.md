@@ -207,10 +207,21 @@ labeled separately. Training and Nutrition remain perspectives in one controlled
 pipeline, not independent agents. The Coach tab provides direct user questions through the
 same workflow and never behaves like three separate autonomous chatbots. A live assistant
 message is labeled with its provider; a provider or validation failure never substitutes generic
-coaching text. Coach keeps the existing visible inline alert and Snackbar but maps the server's
-stable code to safe copy: incomplete responses ask the user to try again, timeouts say the Coach
-took too long, and other temporary failures state that the approved plan is unchanged. Raw parser,
-provider, and HTTP details never appear on the phone.
+coaching text.
+
+When the model cannot answer, Coach shows a labeled reply in its place:
+- "Data summary · not an AI answer": what the athlete's data shows.
+- "Safety note · not an AI answer": for a message that may concern a health risk.
+
+A live labeled reply also shows a beta diagnostic line (failure code and rule names); a stored one
+keeps only its label, because the diagnostic is not stored. Retry appears when the reply ends the
+conversation, and it keeps whatever the user is typing.
+
+Other failures (sign-in, database, limits, network) keep the visible inline alert and Snackbar. A
+timeout says the Coach took too long. During the private beta, other errors show their raw text,
+including the HTTP status and the server's stable code, so the owner can see where they come from
+(owner decision, 2026-09-27). The server never sends parser messages, provider bodies, prompts, or
+health context.
 
 Today uses a real timeline for check-in, workout, meal, and review actions. The primary
 decision always uses **Do this next** and remains actionable when AI is offline. A missing
@@ -323,7 +334,14 @@ dated comparable observations.
 ### Coach conversation
 
 Coach opens with the latest daily Head Coach decision pinned above a familiar saved-thread
-conversation. The composer supports multiline input, keyboard-safe positioning,
+conversation:
+- It reopens the conversation last opened on this device, otherwise the one with the newest
+  message. With no saved conversation, it starts a new one.
+- A new conversation, from launch or from New, is saved only when its first message is sent.
+- Saved conversations lists only conversations that contain a message, newest first, and
+  refreshes after every send.
+
+The composer supports multiline input, keyboard-safe positioning,
 sending/typing/cancel states, selectable long answers, suggested questions, and expandable
 evidence/limits. Persistent suggestions route to the existing proposal approval screen and never
 apply in chat.

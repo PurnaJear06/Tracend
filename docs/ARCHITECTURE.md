@@ -292,6 +292,11 @@ Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS. 
 6. A request retried with the same idempotency key gets its first attempt's outcome from
    `coach_chat_turn` (answer, failure code, or still in progress) and never calls the model twice.
 
+The app (A2) sends request 1.1 and renders the labeled data summary. It lists conversations with
+`get_my_coach_threads()`, which returns only the caller's active threads that contain a message,
+newest first. It reopens the conversation last opened on the device and creates a thread on its
+first send, so opening Coach never stores an empty thread.
+
 The daily Head Coach decision remains a separate immutable record pinned above conversation. `prepare_coach_chat_v2` reconciles context coverage independently from the same-day
 daily-decision policy: a recent HealthKit summary is valid chat context even when the current
 calendar day has no complete HealthKit row. `get_my_coach_context_status()` exposes only

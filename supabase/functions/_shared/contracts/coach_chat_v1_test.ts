@@ -5,6 +5,9 @@ import {
   parseCoachChatAnswer,
   parseCoachChatRequest,
 } from "./coach_chat_v1.ts";
+import appRequestFixture from "../../../../test/contract/fixtures/coach_chat_request_v1_1.json" with {
+  type: "json",
+};
 
 Deno.test("chat request rejects ownership and accepts bounded input", () => {
   const request = parseCoachChatRequest({
@@ -28,6 +31,10 @@ Deno.test("chat request accepts app schema 1.0 and 1.1 only", () => {
   };
   assertEquals(parseCoachChatRequest(request).schema_version, "1.1");
   assertThrows(() => parseCoachChatRequest({ ...request, schema_version: "2.0" }));
+});
+
+Deno.test("the request the app builds (shared contract fixture) parses unchanged", () => {
+  assertEquals(parseCoachChatRequest(appRequestFixture), appRequestFixture);
 });
 
 Deno.test("formatting a little over the preferred length no longer rejects an accurate answer", () => {

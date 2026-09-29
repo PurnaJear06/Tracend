@@ -12,6 +12,51 @@ import {
   detectPreferenceStatement,
   supportsDataSummary,
 } from "./index.ts";
+import appDataSummaryFixture from "../../../test/contract/fixtures/coach_chat_data_summary_response_v1_2.json" with {
+  type: "json",
+};
+
+// Every key path of a JSON value, e.g. "message.diagnostic.failure_code".
+// Array items share their parent's path, so evidence rows are checked too.
+function keyPaths(value: unknown, prefix = ""): string[] {
+  if (Array.isArray(value)) return [...new Set(value.flatMap((item) => keyPaths(item, prefix)))];
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value).flatMap(([key, child]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+    return [path, ...keyPaths(child, path)];
+  }).sort();
+}
+
+Deno.test("the data-summary response matches the app's contract fixture key for key", () => {
+  const error = new CoachChatUnavailableError(
+    "deepseek",
+    "deepseek-flash",
+    "provider_response_invalid",
+    null,
+    { initialRule: "evidence_code_not_permitted", repairRule: "reasoning_step_too_long" },
+  );
+  const response = coachChatDataSummaryResponse(
+    buildCoachChatDataSummary({
+      permitted_evidence: ["APPROVED_PLAN_ACTIVE"],
+      weight_series_8w: [{ measured_on: "2026-09-25", weight_kg: 78.4 }],
+    }, "How long until I reach 72 kg?"),
+    error,
+    {
+      assistant_message_id: appDataSummaryFixture.message.id,
+      created_at: appDataSummaryFixture.message.created_at,
+    },
+    null,
+  );
+  assertEquals(keyPaths(response), keyPaths(appDataSummaryFixture));
+  const message = response.message as Record<string, unknown>;
+  const expected = appDataSummaryFixture.message;
+  assertEquals(response.schema_version, appDataSummaryFixture.schema_version);
+  assertEquals(message.answer_source, expected.answer_source);
+  assertEquals(message.model_provider, expected.model_provider);
+  assertEquals(message.model, expected.model);
+  assertEquals(message.safety_state, expected.safety_state);
+  assertEquals(message.diagnostic, expected.diagnostic);
+});
 
 Deno.test("a blocked context preparation names its cause with a finite code", () => {
   assertEquals(

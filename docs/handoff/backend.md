@@ -1,15 +1,18 @@
 # Backend Handoff — FLUTTER-8 Coach Reliability
 
-**Status:** live. Both PRs merged on 2026-09-28, in order:
-1. PR #35 `codex/coach-chat-validation-reliability`
-2. A1 (#36) `claude/coach-full-context-a1`
+**Status:** PR #35 and A1 are live; A2 is in review.
+1. PR #35 `codex/coach-chat-validation-reliability` (merged 2026-09-28)
+2. A1 (#36) `claude/coach-full-context-a1` (merged 2026-09-28)
+3. A2 `claude/coach-chat-app-a2`: the app side, which needs a reinstall (see
+   [A2](#a2--the-app-side-needs-a-reinstall))
 
 A1's server code has been live since 10:50 UTC. Its first deploy reported success while Supabase
 kept #35's code for two coach functions (see [Deploy incident](#deploy-incident-2026-09-28)). An
 owner device spot check then passed. The full FLUTTER-8 acceptance checklist remains open.
 
-**Scope:** Edge Functions, additive SQL, the live evaluation, and docs. No app code change, so no
-reinstall. A2 (app) follows.
+**Scope:**
+- A1: Edge Functions, additive SQL, the live evaluation, and docs. No reinstall.
+- A2: the app, one additive read-only RPC, and docs. Needs a reinstall.
 
 ## A1 — full athlete file for every question, never a dead end
 
@@ -132,11 +135,12 @@ Owner steps:
 1. Done: PR #35 and A1 merged. There was no reinstall: the installed app sends request 1.0 and keeps
    its behaviour, but already benefits from the full file, the relaxed formatting limits, and
    failure recording.
-2. After #40's deploy passes its per-function and final source checks, switch the Edge secret
-   `DEEPSEEK_MODEL` from `deepseek-v4-flash` to `deepseek-flash`. A1's code accepts both, but a secret
-   change creates a new version of every function. From the deployed commit, run
-   `./scripts/verify-live-function.sh --all` afterwards and require all nine checks to pass.
-   `UPDATED_AT` can stay unchanged even when a function version changes, so it is not proof.
+2. Done on 2026-09-28: `DEEPSEEK_MODEL` is `deepseek-flash`, switched after #40's deploy passed its
+   source checks.
+   - Afterwards, `./scripts/verify-live-function.sh --all` confirmed that all nine live functions
+     match the released commit.
+   - A secret change creates a new version of every function, and `UPDATED_AT` can stay unchanged
+     when that happens, so it is not proof.
 3. Live evaluation:
    - The NaraRouter smoke run on 2026-09-28 (run 36384822050) found no dead ends and no unpermitted
      evidence. The router was too slow to measure pass rates: 9 of 12 calls timed out.
@@ -263,22 +267,75 @@ normal use:
 - no plan activates without approval;
 - any terminal failure shows finite rule names in Edge Sentry.
 
-## Next — A2 (app, needs a reinstall), then B (calculators)
+## A2 — the app side (needs a reinstall)
 
-- A2:
-  - Send request schema 1.1 and render the data-summary bubble with Retry and the beta diagnostic
-    line. A summary with `safety_state: "limited"` is the safety referral, so show no data styling.
-  - Reopen the last-opened thread (`shared_preferences`).
-  - Create a thread only on its first send.
-  - Refresh the thread list after each reply, and hide threads with no messages.
-  - Keep the raw error snackbar for real errors.
-  - Add the app `SENTRY_DSN`.
-  - Retry after a failure must send a new `idempotency_key`. Reusing a key returns the first
-    attempt's outcome: its answer as `message`, its 503 code, or 409 `request_in_progress`.
-  - Treat `answer_source` null as a model answer: `persist_coach_chat_result` does not set it; only
-    data summaries carry a value.
-- B: read-only deterministic calculators the model can call (`project_weight_goal`,
-  `training_summary`, `metric_stats`, `compare_periods`), so common estimates become exact.
+What A2 changes:
+- **Request 1.1.** The app sends request 1.1 (`coachChatRequestBody`), so a model failure returns
+  the labeled data summary (response 1.2) instead of a 503. Every send, including Retry, gets a new
+  idempotency key; reusing one would only return the first attempt's outcome.
+- **Labeled replies.** `CoachMessageBubble` titles a data summary "Data summary · not an AI answer"
+  and never gives it the provider label.
+  - A live summary also shows the beta diagnostic line (failure code and rule names). Stored
+    summaries keep the label, but the server does not store the diagnostic.
+  - A summary with `safety_state: "limited"` is titled "Safety note · not an AI answer", without
+    data styling.
+- **Retry.** It appears on a labeled reply that ends the conversation and asks the same question
+  again as a new turn.
+- **Answer source.** `answer_source` null is a model answer: `persist_coach_chat_result` does not
+  set it, and only data summaries carry a value.
+- **Chat history:**
+  - Coach reopens the conversation last opened on this device (`CoachThreadMemory`, backed by
+    `shared_preferences`). Otherwise it opens the one with the newest message; with none, it starts
+    a new conversation. A store that does not answer within a second falls back rather than
+    blocking the chat.
+  - A thread is created by its first send, never by opening Coach or tapping New.
+  - The list comes from `get_my_coach_threads()` (migration
+    `20260929090000_coach_threads_with_messages.sql`, schema 1.0). It returns only active threads
+    that contain a message, newest first, so the empty threads earlier builds created disappear.
+  - The list refreshes after every send, answered or not, because the server saves the question
+    when the turn starts. A new conversation is listed as soon as its thread exists, and only the
+    newest list request may replace the list. A list requested before the new thread existed no
+    longer applies, so it cannot remove the new conversation.
+  - A send finishes only in the conversation it started in. If the user taps New or opens another
+    conversation while its thread is being created or its reply is pending, the new thread is not
+    selected or remembered and the reply is not shown there. The server keeps both, so the thread
+    appears in the list.
+  - The composer is disabled while a conversation loads. Retry and suggestion chips keep a typed
+    draft.
+- **Beta errors.** Real failures keep the inline alert and the snackbar with the raw error text.
+
+Review fixes (GPT reviews of #41, 2026-09-29):
+- the first-send race;
+- stale list refreshes, including an older list that removed a new conversation (re-review);
+- a Retry that cleared the typed draft;
+- docs that promised a diagnostic on stored replies.
+
+Each race test fails on the unguarded screen.
+
+Verification:
+- Flutter: 443 tests (21 new: 15 widget, 6 contract); analysis and formatting clean.
+- Deno: 159 tests.
+  - The request the app builds parses unchanged.
+  - The data-summary response matches the app's fixture key for key.
+- pgTAP, in CI: `coach_threads_list_test.sql`, 7 assertions.
+
+Owner steps:
+1. Merge A2. The deploy applies the migration; the installed app does not call the new function.
+2. Before the reinstall, add the app's `SENTRY_DSN` to `.env`. It is empty today, so the app
+   reports nothing to Sentry. Claude can fetch it from Sentry and pipe it in, with the owner's OK.
+3. Reinstall from the merged `main` with `./scripts/install-device.sh`.
+4. On the iPhone:
+   - Relaunch Coach. The conversation you last had open comes back, and the empty "New
+     conversation" threads are gone from the list.
+   - Tap New. Nothing is added to the list until the first message is sent, and then it appears
+     right away.
+   - A model failure now shows a labeled data summary or safety note, with Retry and the beta
+     diagnostic. Other errors still show the raw text.
+
+## Next — B (calculators)
+
+Read-only deterministic calculators the model can call (`project_weight_goal`, `training_summary`,
+`metric_stats`, `compare_periods`), so common estimates become exact.
 
 ## Recorded follow-ups — out of scope
 

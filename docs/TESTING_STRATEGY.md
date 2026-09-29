@@ -125,6 +125,24 @@ accepted as a permanent retry.
   validator are asserted against the same exported limits. The DeepSeek system prompt must carry
   the full shared coach persona before the output contract. Contract tests pin response schema 1.1
   and safe Flutter error copy while rejecting raw parser/provider details;
+- Coach chat A2 is covered at four levels:
+  - **Shared fixtures:** request 1.1, response 1.2 (model answer and data summary), and the
+    `get_my_coach_threads` 1.0 list. Deno proves the request the app builds parses unchanged and
+    the data-summary response matches the app's fixture key for key.
+  - **Flutter contract tests:** they parse all three fixtures, and prove that an `answer_source`
+    of null is a model answer.
+  - **Widget tests:** reopening the last conversation or falling back to the newest; lazy thread
+    creation; list refresh after each send; the labeled data summary with its diagnostic; Retry as
+    a new turn that keeps a typed draft; the safety note; stored summaries; raw beta errors; and a
+    disabled composer while a conversation loads.
+  - **Race tests** (each fails on the unguarded screen):
+    - a reply that arrives after the user switched conversations;
+    - a first send whose conversation the user left while its thread was being created;
+    - a new conversation listed as soon as its thread exists;
+    - an older list refresh that finishes last;
+    - a list requested before a new conversation existed, which must not remove it.
+  - **pgTAP:** the thread list returns only active threads with messages, newest first,
+    owner-scoped, and callable by authenticated users only;
 - Coach context v7 pgTAP covers poor, mid-band, good, and NULL recovery evidence; absent check-ins;
   stale versus same-date health; daily/chat evidence parity through the shared SQL helper; v6
   rollback availability; successful daily-decision persistence on a NULL-recovery day; and a

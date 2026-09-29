@@ -15,30 +15,55 @@ import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 /// - provider label from `CoachMessage.modelProvider`
 /// - reasoning from `CoachMessage.reasoningChain` (structured data only —
 ///   never hidden model chain-of-thought)
+/// - a data summary (`CoachMessage.isDataSummary`) is labeled as not an AI
+///   answer, never carries the provider label, and shows the beta diagnostic
+///   when the live response included one. A safety referral
+///   (`CoachMessage.isSafetyReferral`) is labeled as a safety note without the
+///   data-summary styling.
 class CoachMessageBubble extends StatelessWidget {
   const CoachMessageBubble({
     required this.message,
     this.onSendFollowUp,
+    this.onRetry,
     super.key,
   });
 
   final CoachMessage message;
   final void Function(String prompt)? onSendFollowUp;
 
+  /// Asks the question again. Offered on a data summary that ends the
+  /// conversation.
+  final VoidCallback? onRetry;
+
   @override
   Widget build(BuildContext context) {
     final user = message.role == 'user';
+    final summary = !user && message.isDataSummary;
+    final referral = summary && message.isSafetyReferral;
+    final diagnostic = summary ? message.diagnostic : null;
     final colors = context.tracendColors;
     return Align(
       alignment: user ? Alignment.centerRight : Alignment.centerLeft,
       child: Semantics(
-        label: user ? 'You said' : 'Coach said',
+        label: user
+            ? 'You said'
+            : referral
+            ? 'Safety note'
+            : summary
+            ? 'Data summary'
+            : 'Coach said',
         child: Container(
           constraints: const BoxConstraints(maxWidth: 620),
           padding: const EdgeInsets.all(TracendSpacing.md),
           decoration: BoxDecoration(
             color: user ? colors.actionPrimary : colors.surface,
-            border: user ? null : Border.all(color: colors.borderSubtle),
+            border: user
+                ? null
+                : Border.all(
+                    color: summary && !referral
+                        ? colors.stateAttention
+                        : colors.borderSubtle,
+                  ),
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(18),
               topRight: const Radius.circular(18),
@@ -49,6 +74,18 @@ class CoachMessageBubble extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (summary) ...[
+                TracendPill(
+                  label: referral
+                      ? 'Safety note · not an AI answer'
+                      : 'Data summary · not an AI answer',
+                  icon: referral
+                      ? CupertinoIcons.heart
+                      : CupertinoIcons.doc_text,
+                  color: colors.stateAttention,
+                ),
+                const SizedBox(height: TracendSpacing.sm),
+              ],
               SelectableText(
                 message.content,
                 style: TextStyle(
@@ -60,7 +97,7 @@ class CoachMessageBubble extends StatelessWidget {
                 const SizedBox(height: TracendSpacing.sm),
                 ReasoningChainCard(chain: message.reasoningChain),
               ],
-              if (!user && message.modelProvider != null) ...[
+              if (!user && !summary && message.modelProvider != null) ...[
                 const SizedBox(height: TracendSpacing.xs),
                 TracendPill(
                   label: message.modelProvider == 'groq'
@@ -124,6 +161,29 @@ class CoachMessageBubble extends StatelessWidget {
                         onPressed: () => onSendFollowUp?.call(prompt),
                       ),
                   ],
+                ),
+              ],
+              if (diagnostic != null) ...[
+                const SizedBox(height: TracendSpacing.sm),
+                SelectableText(
+                  [
+                    'Beta diagnostic: ${diagnostic.failureCode}',
+                    if (diagnostic.initialRule != null)
+                      'first attempt: ${diagnostic.initialRule}',
+                    if (diagnostic.repairRule != null)
+                      'repair: ${diagnostic.repairRule}',
+                  ].join(' · '),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+                ),
+              ],
+              if (onRetry != null) ...[
+                const SizedBox(height: TracendSpacing.xs),
+                TextButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(CupertinoIcons.arrow_clockwise),
+                  label: const Text('Retry'),
                 ),
               ],
             ],

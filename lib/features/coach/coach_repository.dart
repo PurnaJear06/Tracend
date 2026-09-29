@@ -65,6 +65,13 @@ class CoachThread {
     required this.title,
     required this.updatedAt,
   });
+
+  factory CoachThread.fromJson(Map<String, dynamic> json) => CoachThread(
+    id: json['id'] as String,
+    title: json['title'] as String,
+    updatedAt: DateTime.parse(json['updated_at'] as String),
+  );
+
   final String id;
   final String title;
   final DateTime updatedAt;
@@ -122,6 +129,47 @@ abstract interface class CoachContextRepository {
   Future<List<CoachContextSource>> loadContextStatus();
 }
 
+/// Request schema 1.1 asks coach-chat for response 1.2: `answer_source` on
+/// every message, and a labeled data summary (HTTP 200) instead of a 503 when
+/// the model cannot produce a valid answer.
+const coachChatRequestSchemaVersion = '1.1';
+
+/// Every call gets a new idempotency key, so a retry is a new turn. Reusing a
+/// key would only return the first attempt's outcome.
+Map<String, String> coachChatRequestBody({
+  required String threadId,
+  required String question,
+  required String timezone,
+  required String idempotencyKey,
+}) => {
+  'schema_version': coachChatRequestSchemaVersion,
+  'thread_id': threadId,
+  'question': question.trim(),
+  'timezone': timezone,
+  'idempotency_key': idempotencyKey,
+};
+
+/// Why the model did not answer, sent with a live data summary for the beta.
+/// Stored summaries do not keep it.
+class CoachChatDiagnostic {
+  const CoachChatDiagnostic({
+    required this.failureCode,
+    this.initialRule,
+    this.repairRule,
+  });
+
+  factory CoachChatDiagnostic.fromJson(Map<String, dynamic> json) =>
+      CoachChatDiagnostic(
+        failureCode: json['failure_code'] as String,
+        initialRule: json['initial_rule'] as String?,
+        repairRule: json['repair_rule'] as String?,
+      );
+
+  final String failureCode;
+  final String? initialRule;
+  final String? repairRule;
+}
+
 class CoachMessage {
   const CoachMessage({
     required this.id,
@@ -135,7 +183,44 @@ class CoachMessage {
     this.modelProvider,
     this.model,
     this.reasoningChain = const [],
+    this.answerSource,
+    this.diagnostic,
   });
+
+  /// Parses a stored `coach_messages` row or a coach-chat response message.
+  factory CoachMessage.fromJson(
+    Map<String, dynamic> row, {
+    required String fallbackId,
+    required DateTime fallbackCreatedAt,
+  }) {
+    final diagnostic = row['diagnostic'];
+    return CoachMessage(
+      id: row['id'] as String? ?? fallbackId,
+      role: row['role'] as String,
+      content: row['content'] as String? ?? row['answer'] as String,
+      createdAt: row['created_at'] is String
+          ? DateTime.parse(row['created_at'] as String)
+          : fallbackCreatedAt,
+      evidence: (row['evidence'] as List? ?? const [])
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList(),
+      missingData: List<String>.from(row['missing_data'] as List? ?? const []),
+      safetyState: row['safety_state'] as String? ?? 'allowed',
+      suggestedFollowUps: List<String>.from(
+        row['suggested_follow_ups'] as List? ?? const [],
+      ),
+      modelProvider: row['model_provider'] as String?,
+      model: row['model'] as String?,
+      reasoningChain: (row['reasoning_chain'] as List? ?? const [])
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList(),
+      answerSource: row['answer_source'] as String?,
+      diagnostic: diagnostic is Map
+          ? CoachChatDiagnostic.fromJson(Map<String, dynamic>.from(diagnostic))
+          : null,
+    );
+  }
+
   final String id;
   final String role;
   final String content;
@@ -147,6 +232,19 @@ class CoachMessage {
   final String? modelProvider;
   final String? model;
   final List<Map<String, dynamic>> reasoningChain;
+
+  /// `model` or `data_summary`. Null for user messages and for model answers,
+  /// which the server stores without a source; only data summaries carry one.
+  final String? answerSource;
+  final CoachChatDiagnostic? diagnostic;
+
+  /// A labeled deterministic reply from the athlete's data, served when the
+  /// model could not answer. Never the Coach AI's own answer.
+  bool get isDataSummary => answerSource == 'data_summary';
+
+  /// A data summary for a message that may concern a health risk: a safety
+  /// referral that carries no numbers from the athlete's data.
+  bool get isSafetyReferral => isDataSummary && safetyState == 'limited';
 }
 
 abstract interface class CoachChatRepository {
@@ -187,20 +285,17 @@ class SupabaseCoachRepository
         .toList();
   }
 
+  /// Active threads that contain at least one message, newest first. Empty
+  /// threads from earlier builds are never listed.
   @override
   Future<List<CoachThread>> loadThreads() async {
-    final rows = await _client
-        .from('coach_threads')
-        .select('id,title,updated_at')
-        .eq('status', 'active')
-        .order('last_message_at', ascending: false);
-    return rows
+    final value = Map<String, dynamic>.from(
+      await _client.rpc('get_my_coach_threads') as Map,
+    );
+    return (value['threads'] as List? ?? const [])
         .map(
-          (row) => CoachThread(
-            id: row['id'] as String,
-            title: row['title'] as String,
-            updatedAt: DateTime.parse(row['updated_at'] as String),
-          ),
+          (thread) =>
+              CoachThread.fromJson(Map<String, dynamic>.from(thread as Map)),
         )
         .toList();
   }
@@ -232,13 +327,12 @@ class SupabaseCoachRepository
     final response = await _client.functions
         .invoke(
           'coach-chat',
-          body: {
-            'schema_version': '1.0',
-            'thread_id': threadId,
-            'question': question.trim(),
-            'timezone': account['timezone'] as String? ?? 'UTC',
-            'idempotency_key': _uuid.v4(),
-          },
+          body: coachChatRequestBody(
+            threadId: threadId,
+            question: question,
+            timezone: account['timezone'] as String? ?? 'UTC',
+            idempotencyKey: _uuid.v4(),
+          ),
         )
         .timeout(const Duration(seconds: 45));
     if (response.status != 200 || response.data is! Map) {
@@ -289,27 +383,12 @@ class SupabaseCoachRepository
 
   Future<Map<String, dynamic>?> loadLastRawResponse() async => _lastResponse;
 
-  CoachMessage _messageFromJson(Map<String, dynamic> row) => CoachMessage(
-    id: row['id'] as String? ?? _uuid.v4(),
-    role: row['role'] as String,
-    content: row['content'] as String? ?? row['answer'] as String,
-    createdAt: DateTime.parse(
-      row['created_at'] as String? ?? _now().toUtc().toIso8601String(),
-    ),
-    evidence: (row['evidence'] as List? ?? const [])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList(),
-    missingData: List<String>.from(row['missing_data'] as List? ?? const []),
-    safetyState: row['safety_state'] as String? ?? 'allowed',
-    suggestedFollowUps: List<String>.from(
-      row['suggested_follow_ups'] as List? ?? const [],
-    ),
-    modelProvider: row['model_provider'] as String?,
-    model: row['model'] as String?,
-    reasoningChain: (row['reasoning_chain'] as List? ?? const [])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList(),
-  );
+  CoachMessage _messageFromJson(Map<String, dynamic> row) =>
+      CoachMessage.fromJson(
+        row,
+        fallbackId: _uuid.v4(),
+        fallbackCreatedAt: _now().toUtc(),
+      );
 
   @override
   Future<void> deleteThread(String threadId) async {

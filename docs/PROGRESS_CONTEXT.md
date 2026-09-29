@@ -1,13 +1,14 @@
 # Tracend Current State
 
-**As of:** 2026-09-28
+**As of:** 2026-09-29
 
 **Lifecycle:** owner-only private beta; not approved for public production
 
 **Current priority:** make Coach chat answer every question from the full athlete file and never
 dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 (app) → B
 (calculators). PR #35 and A1's server code are live; an owner spot check passed on 2026-09-28.
-A2 is next. Finish the full owner-device acceptance checklist before any UI redesign.
+A2 (the app) is in review. Finish the full owner-device acceptance checklist before any UI
+redesign.
 
 ## Shipped baseline
 
@@ -45,6 +46,11 @@ A2 is next. Finish the full owner-device acceptance checklist before any UI rede
       - A retried request returns its first attempt's outcome instead of the thread list.
       - Watch averages carry a day count per metric.
       - The installed app still gets the 503 on a model failure until A2, by design.
+  - A2 (in review, needs a reinstall): the app side.
+    - The app sends request 1.1, so a model failure shows a labeled data summary or safety note,
+      with Retry and the beta diagnostic.
+    - Coach reopens the last conversation and creates a thread on its first send.
+    - It lists only conversations that contain a message (`get_my_coach_threads`).
 - HealthKit sleep aggregation handles mixed staged and unspecified intervals without double-counting.
 - Fresh-database pgTAP parity, Flutter/Deno tests, iOS compilation, migration collision checks, and
   secret scanning run in CI. Locally:
@@ -52,6 +58,8 @@ A2 is next. Finish the full owner-device acceptance checklist before any UI rede
     unsigned iOS release build, and the linked production migration dry-run.
   - A1 passes 157 Deno tests and, in CI on a fresh database, every pgTAP file, including the
     45-assertion v8 file and the 7-assertion scoring-guard file.
+  - A2 passes 443 Flutter tests and 159 Deno tests. Its 7-assertion thread-list pgTAP file runs
+    in CI.
 
   The seven required PR checks gate every push.
 
@@ -76,14 +84,14 @@ See [CI_CD_DEPLOYMENT.md](./CI_CD_DEPLOYMENT.md) for the executable release cont
 These are not silently considered complete:
 
 1. Coach chat: A1's server code is live. End-to-end acceptance remains open:
-   - After the #40 deploy passes, switch the `DEEPSEEK_MODEL` Edge secret from the legacy alias
-     `deepseek-v4-flash` to `deepseek-flash`, then run `./scripts/verify-live-function.sh --all`
-     from the deployed commit. `UPDATED_AT` does not prove that the source stayed live.
+   - Done on 2026-09-28: `DEEPSEEK_MODEL` is `deepseek-flash`, and afterwards all nine live
+     functions matched the released commit (`./scripts/verify-live-function.sh --all`).
    - The DeepSeek regression run is still owed. It is waiting for a DeepSeek key; the NaraRouter
      smoke run on 2026-09-28 was too slow to measure pass rates.
    - Measure A1 in production with the handoff queries after real iPhone use.
-   - Then A2 (app, reinstall) and B (calculators), followed by owner-device acceptance and Sentry
-     verification.
+   - Merge A2, then reinstall with the app's `SENTRY_DSN` in `.env`, then run the A2 device check
+     in the handoff.
+   - Then B (calculators), followed by owner-device acceptance and Sentry verification.
 2. Approve a coherent visual direction and then redesign from the current product truth; do not
    copy a competitor's protected assets or flows.
 3. Complete the Apple AI-consent/App Review review, privacy/legal review, pricing decision, developer
@@ -94,9 +102,9 @@ These are not silently considered complete:
 ## What happens next
 
 The active implementation is the FLUTTER-8 Coach work described in
-[`docs/handoff/backend.md`](./handoff/backend.md). PR #35 and A1 are live. A2 (app) is next, in its
-own PR, then B. After owner-device acceptance, return to the read-only product/UI audit and one
-owner-approved redesign brief.
+[`docs/handoff/backend.md`](./handoff/backend.md). PR #35 and A1 are live. A2 (the app) is in
+review in its own PR, then B. After owner-device acceptance, return to the read-only product/UI
+audit and one owner-approved redesign brief.
 
 ## Sources of truth
 
