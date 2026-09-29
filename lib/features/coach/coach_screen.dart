@@ -260,6 +260,24 @@ class _CoachScreenState extends State<CoachScreen> {
     final started = DateTime.now();
     try {
       final threadId = _threadId ?? await _startThread(chat, view, question);
+      // AI coaching can be turned off in Account while the thread is
+      // created; nothing is sent to the provider after that.
+      if (!_aiAllowed) {
+        if (mounted) {
+          if (suggestion == null && _composer.text.isEmpty) {
+            _composer.text = question;
+          }
+          setState(() {
+            _messages = [
+              for (final message in _messages)
+                if (message.id != local.id) message,
+            ];
+            _sending = false;
+          });
+        }
+        unawaited(_refreshThreads(chat));
+        return;
+      }
       final answer = await chat.sendMessage(threadId, question);
       Map<String, dynamic>? prompt;
       if (chat is SupabaseCoachRepository) {

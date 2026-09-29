@@ -1,11 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/account/account_screen.dart';
+import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/today/check_in_queue.dart';
+import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/today/today_screen.dart';
 
 class _Memory implements CoachThreadMemory {
   @override
@@ -13,6 +20,66 @@ class _Memory implements CoachThreadMemory {
 
   @override
   Future<void> remember(String threadId) async {}
+}
+
+/// Coach backend whose thread creation and decision load wait for [gate],
+/// so a test can change the AI coaching answer mid-request.
+class _GatedCoach implements CoachRepository, CoachChatRepository {
+  Completer<void>? gate;
+  int sent = 0;
+  int generated = 0;
+
+  Future<void> _wait() async {
+    final pending = gate;
+    if (pending != null) await pending.future;
+  }
+
+  @override
+  Future<List<CoachThread>> loadThreads() async => const [];
+
+  @override
+  Future<String> createThread() async {
+    await _wait();
+    return 'thread-1';
+  }
+
+  @override
+  Future<List<CoachMessage>> loadMessages(String threadId) async => const [];
+
+  @override
+  Future<CoachMessage> sendMessage(String threadId, String question) async {
+    sent++;
+    return CoachMessage(
+      id: 'answer',
+      role: 'assistant',
+      content: 'Answer.',
+      createdAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<void> deleteThread(String threadId) async {}
+
+  @override
+  Future<CoachDecision?> loadLatest() async {
+    await _wait();
+    return null;
+  }
+
+  @override
+  Future<CoachDecision> generate() async {
+    generated++;
+    throw StateError('not needed');
+  }
+
+  @override
+  Future<Map<String, dynamic>> loadUsage() async => const {};
+}
+
+class _EmptyBrief implements DailyBriefRepository {
+  @override
+  Future<DailyBrief> load(DateTime date) async =>
+      DailyBrief(localDate: date.toIso8601String().substring(0, 10));
 }
 
 Widget _app(Widget home) => MaterialApp(theme: TracendTheme.dark, home: home);
@@ -187,5 +254,84 @@ void main() {
 
     expect(repository.recorded, [false]);
     expect(find.text('Off'), findsOneWidget);
+  });
+
+  testWidgets('turning AI coaching off mid-send sends nothing to the Coach', (
+    tester,
+  ) async {
+    await _tall(tester);
+    final consent = AiCoachingConsentController(
+      FixtureAiCoachingConsentRepository(AiCoachingChoice.granted),
+      initial: AiCoachingChoice.granted,
+    );
+    final coach = _GatedCoach();
+    await tester.pumpWidget(
+      _app(
+        CoachScreen(
+          repository: coach,
+          threadMemory: _Memory(),
+          aiConsent: consent,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    coach.gate = Completer<void>();
+    await tester.enterText(find.byType(TextField), 'How was my week?');
+    await tester.tap(find.byTooltip('Send message'));
+    await tester.pump();
+    await consent.record(granted: false);
+    coach.gate!.complete();
+    await tester.pumpAndSettle();
+
+    expect(coach.sent, 0);
+    expect(find.text('AI coaching is off'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      'How was my week?',
+    );
+  });
+
+  testWidgets('turning AI coaching off mid-load generates no decision', (
+    tester,
+  ) async {
+    await _tall(tester);
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final consent = AiCoachingConsentController(
+      FixtureAiCoachingConsentRepository(),
+    );
+    final coach = _GatedCoach();
+    await tester.pumpWidget(
+      _app(
+        TodayScreen(
+          environment: const AppEnvironment(
+            name: 'test',
+            supabaseUrl: 'https://example.supabase.co',
+            supabasePublishableKey: 'sb_publishable_test',
+          ),
+          coach: coach,
+          brief: _EmptyBrief(),
+          queueFactory: () => CheckInQueue(preferences),
+          checkInSender: (localDate, timezone, key, payload) async => true,
+          aiConsent: consent,
+        ),
+      ),
+    );
+    // Bounded pumps: the NOW-dot pulse never settles.
+    await tester.pump(const Duration(seconds: 1));
+
+    coach.gate = Completer<void>();
+    await consent.record(granted: true);
+    await tester.pump();
+    await consent.record(granted: false);
+    coach.gate!.complete();
+    await tester.pump(const Duration(seconds: 1));
+    expect(coach.generated, 0);
+
+    // Control: with AI coaching left on, the same load does generate.
+    await consent.record(granted: true);
+    await tester.pump(const Duration(seconds: 1));
+    expect(coach.generated, 1);
   });
 }

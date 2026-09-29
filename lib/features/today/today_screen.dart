@@ -300,7 +300,12 @@ class _TodayScreenState extends State<TodayScreen> {
           latest != null &&
           latest.localDate == today &&
           latest.missingData.contains('recovery_check_in');
-      if (latest == null || latest.localDate != today || citedCheckInMissing) {
+      // Checked again after the load: Today stays mounted while AI coaching
+      // is turned off in Account, so the answer can change during the wait.
+      if (_aiAllowed &&
+          (latest == null ||
+              latest.localDate != today ||
+              citedCheckInMissing)) {
         await widget.coach.generate();
       }
       if (!mounted) return;
