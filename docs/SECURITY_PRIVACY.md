@@ -58,6 +58,9 @@ Classification is inherited by derived data. A summary of health data remains re
 Consent choices are separate and versioned for:
 
 - private-beta terms and privacy notice;
+- AI coaching: sending the athlete's Tracend data to the Coach's AI provider for chat answers and
+  daily decisions (`ai_coaching`; a decline is stored as `withdrawn`, and a grant of an older notice
+  version is asked again);
 - HealthKit read/sync by requested data type;
 - meal-photo storage and AI analysis;
 - progress-photo storage and progress-photo AI analysis as separate choices;

@@ -52,6 +52,7 @@ void main() {
 
     expect(find.text('Terms of use'), findsOneWidget);
     expect(find.text('Privacy policy'), findsOneWidget);
+    expect(find.text('AI coaching'), findsOneWidget);
     expect(find.text('Progress photo storage'), findsOneWidget);
     expect(find.text('Progress photo AI analysis'), findsOneWidget);
     expect(find.text('Notifications'), findsOneWidget);
@@ -62,7 +63,7 @@ void main() {
       find.textContaining('Withdrawn · 20/8/2026 · v1 · iOS app'),
       findsOneWidget,
     );
-    expect(find.text('No record yet'), findsNWidgets(2));
+    expect(find.text('No record yet'), findsNWidgets(3));
   });
 
   testWidgets('empty ledger shows an honest empty state', (tester) async {
