@@ -7,7 +7,8 @@
 **Current priority:** make Coach chat answer every question from the full athlete file and never
 dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 (app) → B
 (calculators). PR #35 and A1's server code are live; an owner spot check passed on 2026-09-28.
-A2 (the app) is in review. Finish the full owner-device acceptance checklist before any UI
+A2 (the app) was merged and deployed on 2026-09-29 and is installed on the owner's iPhone; the
+owner's A2 device check is next. Finish the full owner-device acceptance checklist before any UI
 redesign.
 
 ## Shipped baseline
@@ -46,11 +47,15 @@ redesign.
       - A retried request returns its first attempt's outcome instead of the thread list.
       - Watch averages carry a day count per metric.
       - The installed app still gets the 503 on a model failure until A2, by design.
-  - A2 (in review, needs a reinstall): the app side.
+  - A2 (#41, merged 2026-09-29): the app side.
     - The app sends request 1.1, so a model failure shows a labeled data summary or safety note,
       with Retry and the beta diagnostic.
     - Coach reopens the last conversation and creates a thread on its first send.
     - It lists only conversations that contain a message (`get_my_coach_threads`).
+    - The first install (build 185) had no font files, so every icon showed as a "?" box. Its
+      build folder was shared with other checkouts. A rebuild from the same commit, with every font
+      present, replaced it the same day (see
+      [Device installs](./CI_CD_DEPLOYMENT.md#device-installs)).
 - HealthKit sleep aggregation handles mixed staged and unspecified intervals without double-counting.
 - Fresh-database pgTAP parity, Flutter/Deno tests, iOS compilation, migration collision checks, and
   secret scanning run in CI. Locally:
@@ -76,6 +81,8 @@ redesign.
   reported success while Supabase kept the previous version of four functions.
 - Semantic versions come from `pubspec.yaml`; build numbers are monotonic in CI and derived from Git
   history for local device builds.
+- Each checkout builds in its own folder. The device installer refuses an app bundle without its
+  fonts and asset manifests, and CI checks the same on its iOS build.
 
 See [CI_CD_DEPLOYMENT.md](./CI_CD_DEPLOYMENT.md) for the executable release contract.
 
@@ -89,8 +96,8 @@ These are not silently considered complete:
    - The DeepSeek regression run is still owed. It is waiting for a DeepSeek key; the NaraRouter
      smoke run on 2026-09-28 was too slow to measure pass rates.
    - Measure A1 in production with the handoff queries after real iPhone use.
-   - Merge A2, then reinstall with the app's `SENTRY_DSN` in `.env`, then run the A2 device check
-     in the handoff.
+   - A2 is merged, deployed, and reinstalled with the app's `SENTRY_DSN`. The owner's A2 device
+     check in the handoff is next.
    - Then B (calculators), followed by owner-device acceptance and Sentry verification.
 2. Approve a coherent visual direction and then redesign from the current product truth; do not
    copy a competitor's protected assets or flows.
@@ -102,9 +109,9 @@ These are not silently considered complete:
 ## What happens next
 
 The active implementation is the FLUTTER-8 Coach work described in
-[`docs/handoff/backend.md`](./handoff/backend.md). PR #35 and A1 are live. A2 (the app) is in
-review in its own PR, then B. After owner-device acceptance, return to the read-only product/UI
-audit and one owner-approved redesign brief.
+[`docs/handoff/backend.md`](./handoff/backend.md). PR #35, A1, and A2 are live. B follows the
+owner's A2 device check. After owner-device acceptance, return to the read-only product/UI audit
+and one owner-approved redesign brief.
 
 ## Sources of truth
 

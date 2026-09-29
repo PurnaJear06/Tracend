@@ -100,6 +100,9 @@ jobs:
             --build-name "$(./scripts/app-version.sh name)" \
             --build-number "$GITHUB_RUN_NUMBER"
 
+      - name: Verify app bundle assets
+        run: ./scripts/verify-app-bundle.sh build/ios/iphoneos/Runner.app
+
   pgtap:
     name: pgTAP (fresh DB + migrations + parity)
     runs-on: ubuntu-latest
