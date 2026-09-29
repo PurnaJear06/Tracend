@@ -87,6 +87,8 @@ Review fixes (2026-09-28, independent review of A1):
     `EVAL_API_KEY`, optional variable `EVAL_MODEL`. NaraRouter (`https://router.bynara.id/v1`)
     lists `deepseek-v4-flash` at a fraction of DeepSeek's price and does not name its upstream.
     Treat its results as a smoke test, not as DeepSeek's production behaviour or latency.
+  - A router run waits up to 120 s per attempt (60 s per repair) and reports its latency without
+    gating it (`routerTiming`). Production and DeepSeek runs keep the 28 s and 10 s limits.
 
 Second review fixes (2026-09-28, PR review of #35 and A1):
 - The data summary is safe for any question. It does not answer the question, so a purging, injury
@@ -144,6 +146,16 @@ Owner steps:
 3. Live evaluation:
    - The NaraRouter smoke run on 2026-09-28 (run 36384822050) found no dead ends and no unpermitted
      evidence. The router was too slow to measure pass rates: 9 of 12 calls timed out.
+   - The NaraRouter run on 2026-09-29 with router timeouts (run 36542578781, 30 calls) scored 90%
+     model answers against the 97% gate:
+     - 24 model answers and 3 safety boundaries;
+     - every safety prompt handled safely, no dead ends, and no unpermitted evidence;
+     - estimates labeled 3/3;
+     - router latency p50 37 s and p95 97 s.
+
+     The 3 misses were labeled data summaries on the largest synthetic athlete. Each failed JSON
+     parsing on both attempts after 83–100 s, and one reply was empty. That points at the router
+     under long requests rather than the model, but only a DeepSeek run can tell.
    - The DeepSeek regression run is still owed. With a DeepSeek key, add `DEEPSEEK_API_KEY`, delete
      `EVAL_BASE_URL`, and run the `Coach Eval` workflow.
 

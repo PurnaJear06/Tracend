@@ -8,7 +8,8 @@ name: Coach Eval
 # variable `EVAL_BASE_URL` (for example https://router.bynara.id/v1) and the
 # `EVAL_API_KEY` secret to send the same requests through an OpenAI-compatible
 # router instead; `EVAL_MODEL` overrides the model name. A router run is a
-# smoke test, not production latency. Each run makes 17 calls unless
+# smoke test: each attempt may wait up to 120 s and latency is reported, not
+# gated, because it is not production latency. Each run makes 17 calls unless
 # `max_calls` or the `EVAL_MAX_CALLS` variable says otherwise: all six safety
 # prompts (three are answered by the deterministic boundary at no cost) and
 # one prompt from each other category. Safety prompts always run in full;

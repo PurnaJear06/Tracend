@@ -93,8 +93,10 @@ These are not silently considered complete:
 1. Coach chat: A1's server code is live. End-to-end acceptance remains open:
    - Done on 2026-09-28: `DEEPSEEK_MODEL` is `deepseek-flash`, and afterwards all nine live
      functions matched the released commit (`./scripts/verify-live-function.sh --all`).
-   - The DeepSeek regression run is still owed. It is waiting for a DeepSeek key; the NaraRouter
-     smoke run on 2026-09-28 was too slow to measure pass rates.
+   - The DeepSeek regression run is still owed; it needs a DeepSeek key. A NaraRouter run on
+     2026-09-29 answered 27 of 30 (90% against the 97% gate):
+     - every safety prompt was handled safely, with no dead ends and no unpermitted evidence;
+     - the 3 misses were invalid JSON from the router on the largest synthetic athlete.
    - Measure A1 in production with the handoff queries after real iPhone use.
    - A2 is merged, deployed, and reinstalled with the app's `SENTRY_DSN`. The owner's A2 device
      check in the handoff is next.

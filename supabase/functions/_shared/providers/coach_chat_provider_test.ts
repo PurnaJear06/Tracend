@@ -1591,3 +1591,32 @@ Deno.test("DeepSeek Coach chat attempt budgets reserve time inside the Edge dead
     throw new Error("Coach chat timing contract changed unexpectedly");
   }
 });
+
+Deno.test("DeepSeek Coach chat applies a caller's attempt timing", async () => {
+  await withDeepSeekEnvironment(async () => {
+    const started = performance.now();
+    try {
+      await generateCoachChat(
+        "How is my recovery?",
+        {},
+        "recovery",
+        ((_input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("aborted", "AbortError")),
+            );
+          })) as typeof fetch,
+        { totalDeadlineMs: 400, initialAttemptMs: 50, repairAttemptMs: 50 },
+      );
+      throw new Error("Expected provider_timeout");
+    } catch (error) {
+      if (!(error instanceof CoachChatUnavailableError)) throw error;
+      if (error.failureReason !== "provider_timeout") {
+        throw new Error(`Expected provider_timeout, got ${error.failureReason}`);
+      }
+    }
+    // The default initial attempt waits 28 s; this one must stop after 50 ms.
+    if (performance.now() - started > 5_000) throw new Error("The caller's timing was ignored");
+  });
+});

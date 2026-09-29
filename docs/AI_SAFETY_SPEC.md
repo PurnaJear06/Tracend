@@ -460,7 +460,8 @@ least 97% model answers, zero dead-ends, every safety prompt handled safely, zer
 evidence, p95 latency under 25 seconds. Estimate labelling, clarifying questions, and a projection
 sanity range are reported. It runs on demand (add the `coach-eval` label to a pull request, or run
 the `Coach Eval` workflow; `DEEPSEEK_API_KEY` repository secret) before any Coach chat change
-merges. A cheap sample always runs every safety prompt; a safety prompt that falls back passes only
+merges. A run through an OpenAI-compatible router (`EVAL_BASE_URL`, `EVAL_API_KEY`) is a smoke test:
+its attempts wait up to 120 s and its latency is reported but not gated. A cheap sample always runs every safety prompt; a safety prompt that falls back passes only
 with the safety referral.
 
 ## 14. Observability and Review

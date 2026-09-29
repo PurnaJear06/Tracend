@@ -11,7 +11,8 @@
 // category, rotating prompts and athletes), and EVAL_BASE_URL + EVAL_API_KEY
 // to send the same requests to an OpenAI-compatible router instead of
 // api.deepseek.com (EVAL_MODEL overrides the model name; a router run is a
-// smoke test, not production latency).
+// smoke test, not production latency: it waits up to routerTiming for each
+// attempt and does not gate on latency).
 // Exits non-zero when a merge gate fails. Synthetic data only.
 
 import prompts from "./prompts.json" with { type: "json" };
@@ -19,6 +20,8 @@ import { evalProfiles } from "./fixtures.ts";
 import { buildCoachChatDataSummary } from "../_shared/coach_chat_fallback.ts";
 import {
   classifyQuestion,
+  type CoachChatTiming,
+  coachChatTiming,
   CoachChatUnavailableError,
   generateCoachChat,
 } from "../_shared/providers/coach_chat_provider.ts";
@@ -91,6 +94,16 @@ function percentile(values: readonly number[], p: number): number {
 }
 
 const deepseekChatUrl = "https://api.deepseek.com/v1/chat/completions";
+
+// A router adds its own queue and hop, so its replies often exceed the
+// production attempt limits: on 2026-09-28 NaraRouter's fastest reply took
+// 21 s and every other call hit the 28 s limit. Router runs wait longer so
+// they measure the answers rather than the router's speed.
+export const routerTiming: CoachChatTiming = Object.freeze({
+  totalDeadlineMs: 190_000,
+  initialAttemptMs: 120_000,
+  repairAttemptMs: 60_000,
+});
 
 // Sends the unchanged production request to another OpenAI-compatible
 // endpoint. Routers switch thinking with `reasoning_effort` rather than
@@ -168,6 +181,7 @@ async function runOne(
   prompt: EvalPrompt,
   repeat: number,
   fetcher: typeof fetch,
+  timing: CoachChatTiming,
 ): Promise<RunResult> {
   const context = structuredClone(profile.context);
   if (prompt.history) context.recent_messages = [...prompt.history];
@@ -182,7 +196,13 @@ async function runOne(
     context_kind: contextKind,
   };
   try {
-    const generation = await generateCoachChat(prompt.text, context, contextKind, fetcher);
+    const generation = await generateCoachChat(
+      prompt.text,
+      context,
+      contextKind,
+      fetcher,
+      timing,
+    );
     const answer = generation.answer;
     const checks: Record<string, boolean> = {
       evidence_permitted: answer.evidence.every((e) => permitted.includes(e.code)),
@@ -257,6 +277,7 @@ async function main(): Promise<void> {
   Deno.env.set("DEEPSEEK_MODEL", model);
   const endpoint = baseUrl ? new URL(baseUrl).host : new URL(deepseekChatUrl).host;
   const fetcher = baseUrl ? routedFetch(baseUrl) : fetch;
+  const timing = baseUrl ? routerTiming : coachChatTiming;
 
   const repeats = Number(Deno.env.get("EVAL_REPEATS") ?? "2");
   const concurrency = Number(Deno.env.get("EVAL_CONCURRENCY") ?? "4");
@@ -278,7 +299,7 @@ async function main(): Promise<void> {
     )
   );
   const jobs: Array<() => Promise<RunResult>> = sampleJobs(planned, maxCalls).map((job) => () =>
-    runOne(job.profile, job.prompt, job.repeat, fetcher)
+    runOne(job.profile, job.prompt, job.repeat, fetcher, timing)
   );
 
   const results: RunResult[] = [];
@@ -323,7 +344,8 @@ async function main(): Promise<void> {
     dead_ends: count("dead_end") <= evalGates.maxDeadEnds,
     safety: failedCheck("safety") <= evalGates.maxSafetyFailures,
     unpermitted_evidence: failedCheck("evidence_permitted") <= evalGates.maxUnpermittedEvidence,
-    p95_latency: percentile(latencies, 95) <= evalGates.maxP95LatencyMs,
+    // A router's latency says nothing about production, so it is reported only.
+    p95_latency: Boolean(baseUrl) || percentile(latencies, 95) <= evalGates.maxP95LatencyMs,
   };
   const passed = Object.values(gates).every(Boolean);
 
@@ -334,7 +356,11 @@ async function main(): Promise<void> {
       jobs.length < planned.length ? `, sampled to ${jobs.length}` : ""
     })`,
     `Endpoint: ${endpoint}, model \`${model}\`${
-      baseUrl ? " (router smoke test: not production latency or upstream)" : ""
+      baseUrl
+        ? ` (router smoke test: not production latency or upstream; attempts wait up to ${
+          routerTiming.initialAttemptMs / 1000
+        } s, repairs ${routerTiming.repairAttemptMs / 1000} s)`
+        : ""
     }`,
     "",
     "| Gate | Result | Value |",
@@ -350,7 +376,7 @@ async function main(): Promise<void> {
       failedCheck("evidence_permitted")
     } |`,
     `| p95 latency ≤ ${evalGates.maxP95LatencyMs / 1000} s | ${
-      gates.p95_latency ? "pass" : "FAIL"
+      baseUrl ? "not gated (router)" : gates.p95_latency ? "pass" : "FAIL"
     } | ${(percentile(latencies, 95) / 1000).toFixed(1)} s (p50 ${
       (percentile(latencies, 50) / 1000).toFixed(1)
     } s) |`,
