@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
@@ -13,15 +17,43 @@ import 'package:tracend/shared/widgets/targets_grid.dart';
 import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
+/// Opens the camera or the photo library and returns the chosen photo, or
+/// null when the user cancels.
+typedef MealPhotoPicker = Future<XFile?> Function(ImageSource source);
+
+Future<XFile?> _pickWithImagePicker(ImageSource source) =>
+    ImagePicker().pickImage(
+      source: source,
+      imageQuality: 82,
+      maxWidth: 1600,
+      requestFullMetadata: false,
+    );
+
+/// What the meal-photo area says when a photo fails. Access problems name the
+/// setting to change; anything else names the failed step and its code.
+String mealPhotoFailureMessage(
+  MealPhotoFailure failure,
+) => switch (failure.code) {
+  'camera_access_denied' =>
+    'Tracend cannot use the camera. Allow it in Settings › Tracend › Camera, or choose a photo from your library.',
+  'photo_access_denied' =>
+    'Tracend cannot open your photos. Allow it in Settings › Tracend › Photos.',
+  'photo_too_large' => 'This photo is larger than 4 MB. Choose a smaller one.',
+  _ =>
+    'Meal photo analysis failed (${failure.step}: ${failure.code}). Enter the meal manually; nothing was added to your totals.',
+};
+
 class NutritionScreen extends StatefulWidget {
   const NutritionScreen({
     this.repository = const FixtureNutritionRepository(),
     this.coach = const FixtureCoachRepository(),
+    this.pickPhoto = _pickWithImagePicker,
     super.key,
   });
 
   final NutritionRepository repository;
   final CoachRepository coach;
+  final MealPhotoPicker pickPhoto;
 
   @override
   State<NutritionScreen> createState() => _NutritionScreenState();
@@ -32,6 +64,11 @@ class _NutritionScreenState extends State<NutritionScreen> {
   bool _loading = true;
   bool _working = false;
   String? _error;
+
+  /// Shown under the photo buttons, where the user is looking; `_error` sits
+  /// at the top of the screen, out of view from there.
+  String? _photoError;
+  bool _analyzingPhoto = false;
   NutritionTargets? _targets;
   NutritionSummary? _summary;
   List<MealEntry> _meals = const [];
@@ -160,16 +197,20 @@ class _NutritionScreenState extends State<NutritionScreen> {
   Future<void> _selectMealPhoto(ImageSource source) async {
     final repository = widget.repository;
     if (repository is! MealPhotoRepository) return;
-    final photo = await ImagePicker().pickImage(
-      source: source,
-      imageQuality: 82,
-      maxWidth: 1600,
-      requestFullMetadata: false,
-    );
-    if (photo == null) return;
+    setState(() => _photoError = null);
+    final XFile? photo;
+    try {
+      photo = await widget.pickPhoto(source);
+    } on PlatformException catch (error, stackTrace) {
+      // A refused camera or photo permission ends here. Uncaught, it used to
+      // make the button look dead.
+      _photoFailed(MealPhotoFailure('picker', error.code), stackTrace);
+      return;
+    }
+    if (photo == null || !mounted) return;
     setState(() {
       _working = true;
-      _error = null;
+      _analyzingPhoto = true;
     });
     try {
       final mealId = await (repository as MealPhotoRepository).analyzeMealPhoto(
@@ -177,21 +218,36 @@ class _NutritionScreenState extends State<NutritionScreen> {
         mealType: 'lunch',
         bytes: await photo.readAsBytes(),
       );
-      await _openCandidateReview(mealId);
-    } catch (e) {
-      debugPrint('Non-critical error: $e');
-      if (mounted) {
-        setState(
-          () => _error =
-              'Meal photo analysis is unavailable. Enter the meal manually; no estimate was added to totals.',
-        );
-      }
+      if (!mounted) return;
+      setState(() => _analyzingPhoto = false);
+      await _openCandidateReview(mealId, fromPhoto: true);
+    } catch (error, stackTrace) {
+      _photoFailed(
+        error is MealPhotoFailure
+            ? error
+            : MealPhotoFailure('app', error.runtimeType.toString()),
+        stackTrace,
+      );
     } finally {
-      if (mounted) setState(() => _working = false);
+      if (mounted) {
+        setState(() {
+          _working = false;
+          _analyzingPhoto = false;
+        });
+      }
     }
   }
 
-  Future<void> _openCandidateReview(String mealId) async {
+  void _photoFailed(MealPhotoFailure failure, StackTrace stackTrace) {
+    debugPrint('Meal photo failed: $failure');
+    unawaited(Sentry.captureException(failure, stackTrace: stackTrace));
+    if (mounted) setState(() => _photoError = mealPhotoFailureMessage(failure));
+  }
+
+  Future<void> _openCandidateReview(
+    String mealId, {
+    bool fromPhoto = false,
+  }) async {
     setState(() {
       _working = true;
       _error = null;
@@ -210,11 +266,16 @@ class _NutritionScreenState extends State<NutritionScreen> {
       await _run(() => widget.repository.confirmCandidates(mealId, selected));
     } catch (e) {
       debugPrint('Non-critical error: $e');
+      const message =
+          'Draft could not be opened. Retry or delete it and enter the meal manually.';
       if (mounted) {
-        setState(
-          () => _error =
-              'Draft could not be opened. Retry or delete it and enter the meal manually.',
-        );
+        setState(() {
+          if (fromPhoto) {
+            _photoError = message;
+          } else {
+            _error = message;
+          }
+        });
       }
     } finally {
       if (mounted) setState(() => _working = false);
@@ -420,6 +481,30 @@ class _NutritionScreenState extends State<NutritionScreen> {
                 : () => _selectMealPhoto(ImageSource.gallery),
             icon: const Icon(CupertinoIcons.photo_on_rectangle),
             label: const Text('Choose from Photo Library'),
+          ),
+        ],
+        if (_analyzingPhoto) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          const LinearProgressIndicator(minHeight: 3),
+          const SizedBox(height: TracendSpacing.xxs),
+          Text(
+            'Analyzing meal photo…',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+        if (_photoError != null) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          TracendCard(
+            child: Row(
+              children: [
+                Icon(
+                  CupertinoIcons.exclamationmark_triangle,
+                  color: colors.stateAttention,
+                ),
+                const SizedBox(width: TracendSpacing.sm),
+                Expanded(child: Text(_photoError!)),
+              ],
+            ),
           ),
         ],
         const SizedBox(height: TracendSpacing.xs),

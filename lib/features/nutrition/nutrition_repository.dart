@@ -95,11 +95,27 @@ abstract interface class ScheduledMealLogger {
 }
 
 abstract interface class MealPhotoRepository {
+  /// Uploads the photo, creates its draft meal, and runs the analysis.
+  /// Throws a [MealPhotoFailure] naming the step that failed.
   Future<String> analyzeMealPhoto({
     required DateTime date,
     required String mealType,
     required Uint8List bytes,
   });
+}
+
+/// The step at which a meal photo failed, and the error's code. The error's
+/// message is left out because it can contain the photo's storage path; the
+/// code alone is shown on screen and reported to Sentry.
+class MealPhotoFailure implements Exception {
+  const MealPhotoFailure(this.step, this.code);
+
+  /// `picker`, `upload`, `draft`, `analysis`, or `app`.
+  final String step;
+  final String code;
+
+  @override
+  String toString() => 'MealPhotoFailure($step: $code)';
 }
 
 class MealCandidate {
@@ -211,22 +227,33 @@ class SupabaseNutritionRepository
     required String mealType,
     required Uint8List bytes,
   }) async {
-    if (bytes.isEmpty || bytes.length > 4194304) {
-      throw const FormatException('Meal photo must be 4 MB or smaller.');
+    if (bytes.isEmpty) throw const MealPhotoFailure('upload', 'photo_empty');
+    if (bytes.length > 4194304) {
+      throw const MealPhotoFailure('upload', 'photo_too_large');
     }
     final userId = _client.auth.currentUser!.id;
     final requestId = _uuid.v4();
     final path = '$userId/meal/$requestId.jpg';
-    await _client.storage
-        .from('meal-images')
-        .uploadBinary(
-          path,
-          bytes,
-          fileOptions: const FileOptions(
-            contentType: 'image/jpeg',
-            upsert: false,
-          ),
-        );
+    try {
+      await _client.storage
+          .from('meal-images')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: const FileOptions(
+              contentType: 'image/jpeg',
+              upsert: false,
+            ),
+          );
+    } catch (error) {
+      throw MealPhotoFailure(
+        'upload',
+        error is StorageException
+            ? error.statusCode ?? 'storage_error'
+            : error.runtimeType.toString(),
+      );
+    }
+    var step = 'draft';
     try {
       final account = await _client
           .from('user_accounts')
@@ -249,19 +276,38 @@ class SupabaseNutritionRepository
             as Map,
       );
       final mealId = draft['meal_id'] as String;
+      step = 'analysis';
       final response = await _client.functions.invoke(
         'meal-analyze',
         body: {'schema_version': '1.0', 'meal_id': mealId},
       );
       if (response.status != 200) {
-        throw StateError('Meal analysis unavailable.');
+        throw MealPhotoFailure(step, '${response.status}');
       }
       return mealId;
-    } catch (e) {
-      debugPrint('Non-critical error: $e');
-      await _client.storage.from('meal-images').remove([path]);
-      rethrow;
+    } catch (error) {
+      try {
+        await _client.storage.from('meal-images').remove([path]);
+      } catch (_) {
+        // Best effort: a failed removal must not hide why the photo failed.
+      }
+      throw switch (error) {
+        MealPhotoFailure() => error,
+        FunctionException() => MealPhotoFailure(step, _functionFailure(error)),
+        PostgrestException(:final code) => MealPhotoFailure(
+          step,
+          code ?? 'database_error',
+        ),
+        _ => MealPhotoFailure(step, error.runtimeType.toString()),
+      };
     }
+  }
+
+  /// `503 meal_analysis_unavailable` from the function's JSON error body.
+  static String _functionFailure(FunctionException error) {
+    final details = error.details;
+    final code = details is Map ? details['error'] : null;
+    return code is String ? '${error.status} $code' : '${error.status}';
   }
 
   @override

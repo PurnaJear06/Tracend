@@ -373,7 +373,8 @@ Before inviting testers:
 - account export and deletion work end to end;
 - media is private and signed URLs expire;
 - cross-user authorization tests pass;
-- logs and crash reports pass sensitive-data inspection;
+- logs and crash reports pass sensitive-data inspection; a meal-photo failure reaches Sentry as
+  its step and error code only, because the error message can contain the photo's storage path;
 - provider data controls are recorded and configured; and
 - the owner completes at least two weeks of dogfooding before broader invitations.
 
