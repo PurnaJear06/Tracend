@@ -83,8 +83,8 @@ product need requires a minimized application copy.
 ### `consent_records`
 
 Append-only records containing consent type, notice version, grant/withdrawal state, source, and
-timestamp. Types include terms, privacy, HealthKit sync, meal-photo AI, progress-photo AI, and
-notifications. Current consent is the latest record per user and type.
+timestamp. Types include terms, privacy, AI coaching (`ai_coaching`), HealthKit sync, meal-photo AI,
+progress-photo AI, and notifications. Current consent is the latest record per user and type.
 
 ### `user_profiles`
 

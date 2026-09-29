@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
@@ -9,11 +10,16 @@ class OnboardingFlow extends StatefulWidget {
   const OnboardingFlow({
     required this.repository,
     required this.onCompleted,
+    this.aiConsent,
     super.key,
   });
 
   final OnboardingRepository repository;
   final VoidCallback onCompleted;
+
+  /// Records the AI coaching answer. Without one the step still asks, and the
+  /// app asks again after onboarding.
+  final AiCoachingConsentController? aiConsent;
 
   @override
   State<OnboardingFlow> createState() => _OnboardingFlowState();
@@ -22,12 +28,20 @@ class OnboardingFlow extends StatefulWidget {
 class _OnboardingFlowState extends State<OnboardingFlow> {
   static const _sections = [
     'Eligibility',
+    'AI',
     'Path',
     'Goal',
     'Context',
     'Review',
     'Proposal',
   ];
+  static const _eligibilityStep = 0;
+  static const _aiStep = 1;
+  static const _pathStep = 2;
+  static const _goalStep = 3;
+  static const _contextStep = 4;
+  static const _reviewStep = 5;
+  static const _proposalStep = 6;
   static const _goals = <String, String>{
     'fat_loss': 'Fat loss',
     'muscle_gain': 'Muscle gain',
@@ -46,7 +60,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   bool _needsClinicalSupport = false;
   bool _terms = false;
   bool _privacy = false;
-  int _step = 0;
+  bool? _aiChoice;
+
+  /// The answer already stored, so passing the step again adds no record.
+  bool? _aiRecorded;
+  int _step = _eligibilityStep;
   String? _path;
   String _goal = 'recomposition';
   String _experience = 'beginner';
@@ -59,8 +77,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   @override
   void initState() {
     super.initState();
+    _aiChoice = _aiRecorded = _answered(widget.aiConsent?.choice);
     _restore();
   }
+
+  static bool? _answered(AiCoachingChoice? choice) => switch (choice) {
+    AiCoachingChoice.granted => true,
+    AiCoachingChoice.declined => false,
+    _ => null,
+  };
 
   @override
   void dispose() {
@@ -124,7 +149,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _error = null;
     });
     try {
-      if (_step == 0) {
+      if (_step == _eligibilityStep) {
         await widget.repository.recordEligibilityAndConsent(
           eligible: true,
           experience: _experience,
@@ -132,8 +157,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           sessionMinutes: _sessionMinutes,
         );
       }
-      if (_step == 2) await widget.repository.saveGoal(_goal);
-      if (_step < 4) {
+      if (_step == _aiStep && _aiChoice != _aiRecorded) {
+        await widget.aiConsent?.record(granted: _aiChoice!);
+        _aiRecorded = _aiChoice;
+      }
+      if (_step == _goalStep) await widget.repository.saveGoal(_goal);
+      if (_step < _reviewStep) {
         final next = _step + 1;
         await widget.repository.saveDraft(
           path: _path,
@@ -141,7 +170,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           payload: _payload,
         );
         setState(() => _step = next);
-      } else if (_step == 4) {
+      } else if (_step == _reviewStep) {
         await widget.repository.saveDraft(
           path: _path,
           currentSection: 'proposal',
@@ -150,7 +179,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         final proposal = await widget.repository.generateProposal();
         setState(() {
           _proposal = proposal;
-          _step = 5;
+          _step = _proposalStep;
         });
       }
     } catch (e) {
@@ -165,11 +194,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   bool _isStepValid() {
-    if (_step == 0) {
+    if (_step == _eligibilityStep) {
       return _adult && !_needsClinicalSupport && _terms && _privacy;
     }
-    if (_step == 1) return _path != null;
-    if (_step == 3) {
+    if (_step == _aiStep) return _aiChoice != null;
+    if (_step == _pathStep) return _path != null;
+    if (_step == _contextStep) {
       return _equipment.text.trim().isNotEmpty &&
           _nutrition.text.trim().isNotEmpty &&
           (_path != 'experienced' || _currentPlan.text.trim().isNotEmpty);
@@ -178,13 +208,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   String _validationMessage() {
-    if (_step == 0 && _needsClinicalSupport) {
+    if (_step == _eligibilityStep && _needsClinicalSupport) {
       return 'Tracend cannot create a plan for clinical nutrition, pregnancy, acute injury, or rehabilitation needs.';
     }
-    if (_step == 0) {
+    if (_step == _eligibilityStep) {
       return 'Confirm adult eligibility, terms, and privacy to continue.';
     }
-    if (_step == 1) return 'Choose the onboarding path that fits you.';
+    if (_step == _aiStep) return 'Choose whether to allow AI coaching.';
+    if (_step == _pathStep) return 'Choose the onboarding path that fits you.';
     return 'Complete the required fields before continuing.';
   }
 
@@ -202,7 +233,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       } else {
         setState(() {
           _proposal = null;
-          _step = 4;
+          _step = _reviewStep;
           _error = action == 'reject'
               ? 'Proposal rejected. Your answers are unchanged.'
               : 'Revision requested. Review your answers before generating again.';
@@ -227,7 +258,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Set up Tracend'),
-        leading: _step > 0 && _step < 5
+        leading: _step > _eligibilityStep && _step < _proposalStep
             ? IconButton(
                 tooltip: 'Previous section',
                 onPressed: _saving ? null : () => setState(() => _step--),
@@ -268,7 +299,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 ),
               ),
             ),
-            if (_step < 5)
+            if (_step < _proposalStep)
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                   TracendSpacing.gutter,
@@ -299,7 +330,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                       onPressed: _saving ? null : _continue,
                       child: _saving
                           ? const TracendLoadingIndicator(size: 20)
-                          : Text(_step == 4 ? 'Build proposal' : 'Continue'),
+                          : Text(
+                              _step == _reviewStep
+                                  ? 'Build proposal'
+                                  : 'Continue',
+                            ),
                     ),
                   ],
                 ),
@@ -311,11 +346,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   Widget _stepBody() => switch (_step) {
-    0 => _eligibility(),
-    1 => _pathSelection(),
-    2 => _goalSelection(),
-    3 => _contextForm(),
-    4 => _review(),
+    _eligibilityStep => _eligibility(),
+    _aiStep => _aiCoaching(),
+    _pathStep => _pathSelection(),
+    _goalStep => _goalSelection(),
+    _contextStep => _contextForm(),
+    _reviewStep => _review(),
     _ => _proposalView(),
   };
 
@@ -362,6 +398,33 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         value: _privacy,
         onChanged: (value) => setState(() => _privacy = value ?? false),
         title: const Text('I have read the privacy notice'),
+      ),
+    ],
+  );
+
+  Widget _aiCoaching() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _heading(
+        'Allow AI coaching?',
+        'Your answer is saved when you continue. You can change it later in Account.',
+      ),
+      const AiCoachingDisclosure(),
+      const SizedBox(height: TracendSpacing.lg),
+      _ChoiceCard(
+        selected: _aiChoice == true,
+        icon: CupertinoIcons.sparkles,
+        title: 'Allow AI coaching',
+        body: 'The Coach chat and your daily decision use DeepSeek.',
+        onTap: () => setState(() => _aiChoice = true),
+      ),
+      const SizedBox(height: TracendSpacing.sm),
+      _ChoiceCard(
+        selected: _aiChoice == false,
+        icon: CupertinoIcons.hand_raised,
+        title: 'Not now',
+        body: 'Everything else works; the Coach chat stays off.',
+        onTap: () => setState(() => _aiChoice = false),
       ),
     ],
   );

@@ -268,6 +268,10 @@ for Coach text and chat. DeepSeek retired V4 Flash on 2026-09-10 and routes the 
 silent model change still owes its regression run, the live evaluation below. The evaluation may
 send its synthetic athletes through an OpenAI-compatible router; a router never receives user data
 unless it passes its own privacy review.
+Coach chat and the daily decision send an athlete's data to the provider only while their current
+`ai_coaching` consent is granted (UX_FLOWS §4.1). The app does not call either function for an athlete
+who declined. Server-side enforcement in `coach-chat` and `coach-decide` follows once the owner's
+installed app can record the answer.
 Under ADR 0006, Groq Qwen was an owner-only, time-bounded test provider and has been superseded. The
 mock remains the default and progress-photo vision stays separately disabled until its own evaluation
 gate passes. Provider and Supabase secret/service-role keys never enter Flutter. Price alone cannot

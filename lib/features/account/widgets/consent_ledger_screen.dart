@@ -55,6 +55,7 @@ class _ConsentLedgerScreenState extends State<ConsentLedgerScreen> {
   static const _purposeLabels = <String, String>{
     'terms': 'Terms of use',
     'privacy': 'Privacy policy',
+    'ai_coaching': 'AI coaching',
     'progress_photo_storage': 'Progress photo storage',
     'progress_photo_ai': 'Progress photo AI analysis',
     'notifications': 'Notifications',

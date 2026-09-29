@@ -15,6 +15,7 @@ import 'package:tracend/features/account/widgets/consent_ledger_screen.dart';
 import 'package:tracend/features/account/widgets/notification_sheet.dart';
 import 'package:tracend/features/account/widgets/profile_goals_screen.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_status_card.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
@@ -41,6 +42,7 @@ class AccountScreen extends StatefulWidget {
     this.notifications = const FixtureNotificationRepository(),
     this.exports = const FixturePrivacyExportRepository(),
     this.deletion = const FixtureAccountDeletionRepository(),
+    this.aiConsent,
     super.key,
   });
 
@@ -51,6 +53,9 @@ class AccountScreen extends StatefulWidget {
   final NotificationRepository notifications;
   final PrivacyExportRepository exports;
   final AccountDeletionRepository deletion;
+
+  /// Where AI coaching is turned on or off. Null without a backend.
+  final AiCoachingConsentController? aiConsent;
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
@@ -208,6 +213,24 @@ class _AccountScreenState extends State<AccountScreen> {
               padding: EdgeInsets.zero,
               child: Column(
                 children: [
+                  if (widget.aiConsent case final aiConsent?) ...[
+                    ListenableBuilder(
+                      listenable: aiConsent,
+                      builder: (context, _) => AccountRow(
+                        title: 'AI coaching',
+                        detail: aiConsent.granted
+                            ? 'On · DeepSeek writes Coach answers'
+                            : 'Off',
+                        onTap: () =>
+                            showAiCoachingConsentSheet(context, aiConsent),
+                      ),
+                    ),
+                    Divider(
+                      height: 1,
+                      thickness: 0.5,
+                      color: colors.borderHairline,
+                    ),
+                  ],
                   AccountRow(
                     title: 'Privacy and AI processing',
                     detail: 'Review consent by purpose',

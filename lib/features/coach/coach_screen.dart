@@ -11,16 +11,22 @@ import 'package:tracend/features/coach/widgets/coach_context_card.dart';
 import 'package:tracend/features/coach/widgets/coach_decision_card.dart';
 import 'package:tracend/features/coach/widgets/coach_message_bubble.dart';
 import 'package:tracend/features/coach/widgets/preference_prompt_chip.dart';
+import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class CoachScreen extends StatefulWidget {
   const CoachScreen({
     this.repository = const FixtureCoachRepository(),
     this.threadMemory = const SharedPreferencesCoachThreadMemory(),
+    this.aiConsent,
     super.key,
   });
   final CoachRepository repository;
   final CoachThreadMemory threadMemory;
+
+  /// Chat and decisions send the athlete's data to the AI provider only while
+  /// this is granted. Null without a backend, where nothing is sent.
+  final AiCoachingConsentController? aiConsent;
   @override
   State<CoachScreen> createState() => _CoachScreenState();
 }
@@ -56,9 +62,17 @@ class _CoachScreenState extends State<CoachScreen> {
   StreamSubscription<int>? _cooldownSubscription;
   int? _cooldownRemaining;
 
+  bool get _aiAllowed => widget.aiConsent?.granted ?? true;
+
+  void _consentChanged() => setState(() {});
+
+  Future<void> _reviewAiCoaching() =>
+      showAiCoachingConsentSheet(context, widget.aiConsent!);
+
   @override
   void initState() {
     super.initState();
+    widget.aiConsent?.addListener(_consentChanged);
     _decision = widget.repository.loadLatest();
     if (widget.repository is CoachContextRepository) {
       _contextStatus = (widget.repository as CoachContextRepository)
@@ -68,7 +82,17 @@ class _CoachScreenState extends State<CoachScreen> {
   }
 
   @override
+  void didUpdateWidget(CoachScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.aiConsent != widget.aiConsent) {
+      oldWidget.aiConsent?.removeListener(_consentChanged);
+      widget.aiConsent?.addListener(_consentChanged);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.aiConsent?.removeListener(_consentChanged);
     _composer.dispose();
     _scroll.dispose();
     _cooldownSubscription?.cancel();
@@ -213,6 +237,10 @@ class _CoachScreenState extends State<CoachScreen> {
     if (chat == null || question.isEmpty || _sending || _loadingChat) {
       return;
     }
+    if (!_aiAllowed) {
+      await _reviewAiCoaching();
+      return;
+    }
     // Retry and suggestion chips keep whatever the user is typing.
     if (suggestion == null) _composer.clear();
     final view = _view;
@@ -232,6 +260,24 @@ class _CoachScreenState extends State<CoachScreen> {
     final started = DateTime.now();
     try {
       final threadId = _threadId ?? await _startThread(chat, view, question);
+      // AI coaching can be turned off in Account while the thread is
+      // created; nothing is sent to the provider after that.
+      if (!_aiAllowed) {
+        if (mounted) {
+          if (suggestion == null && _composer.text.isEmpty) {
+            _composer.text = question;
+          }
+          setState(() {
+            _messages = [
+              for (final message in _messages)
+                if (message.id != local.id) message,
+            ];
+            _sending = false;
+          });
+        }
+        unawaited(_refreshThreads(chat));
+        return;
+      }
       final answer = await chat.sendMessage(threadId, question);
       Map<String, dynamic>? prompt;
       if (chat is SupabaseCoachRepository) {
@@ -321,6 +367,10 @@ class _CoachScreenState extends State<CoachScreen> {
   }
 
   Future<void> _generate() async {
+    if (!_aiAllowed) {
+      await _reviewAiCoaching();
+      return;
+    }
     setState(() => _generating = true);
     try {
       final value = await widget.repository.generate();
@@ -471,6 +521,29 @@ class _CoachScreenState extends State<CoachScreen> {
                   ),
                 ],
                 const SectionLabel('Conversation'),
+                if (!_aiAllowed) ...[
+                  TracendCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'AI coaching is off',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: TracendSpacing.xxs),
+                        const Text(
+                          'The Coach sends your Tracend data to DeepSeek to answer, so it needs your permission first.',
+                        ),
+                        const SizedBox(height: TracendSpacing.sm),
+                        OutlinedButton(
+                          onPressed: _reviewAiCoaching,
+                          child: const Text('Review AI coaching'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: TracendSpacing.sm),
+                ],
                 if (_loadingChat)
                   const LinearProgressIndicator(minHeight: 3)
                 else if (_messages.isEmpty) ...[
@@ -519,6 +592,7 @@ class _CoachScreenState extends State<CoachScreen> {
           CoachComposer(
             controller: _composer,
             enabled:
+                _aiAllowed &&
                 !_sending &&
                 !_loadingChat &&
                 _chat != null &&

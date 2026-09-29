@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
+import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 
@@ -33,6 +34,7 @@ void main() {
 
   testWidgets('beginner completes proposal approval flow', (tester) async {
     final repository = _FakeOnboardingRepository();
+    final consent = FixtureAiCoachingConsentRepository();
     var completed = false;
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -45,6 +47,7 @@ void main() {
         home: OnboardingFlow(
           repository: repository,
           onCompleted: () => completed = true,
+          aiConsent: AiCoachingConsentController(consent),
         ),
       ),
     );
@@ -54,6 +57,13 @@ void main() {
     await _tapText(tester, 'I accept the private-beta terms');
     await _tapText(tester, 'I have read the privacy notice');
     await _continue(tester);
+
+    expect(find.text('Allow AI coaching?'), findsOneWidget);
+    await _continue(tester);
+    expect(find.text('Choose whether to allow AI coaching.'), findsOneWidget);
+    await _tapText(tester, 'Allow AI coaching');
+    await _continue(tester);
+    expect(consent.recorded, [true]);
 
     await _tapText(tester, 'Guide me');
     await _continue(tester);
@@ -77,6 +87,44 @@ void main() {
     expect(completed, isTrue);
     expect(repository.lastResponse, 'accept');
     expect(repository.savedPath, 'beginner');
+  });
+
+  testWidgets('passing the AI step again records only a changed answer', (
+    tester,
+  ) async {
+    final consent = FixtureAiCoachingConsentRepository();
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.light,
+        home: OnboardingFlow(
+          repository: _FakeOnboardingRepository(),
+          onCompleted: () {},
+          aiConsent: AiCoachingConsentController(consent),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _tapText(tester, 'I am 18 or older');
+    await _tapText(tester, 'I accept the private-beta terms');
+    await _tapText(tester, 'I have read the privacy notice');
+    await _continue(tester);
+
+    await _tapText(tester, 'Allow AI coaching');
+    await _continue(tester);
+    await tester.tap(find.byTooltip('Previous section'));
+    await tester.pumpAndSettle();
+    await _continue(tester);
+    expect(consent.recorded, [true]);
+
+    await tester.tap(find.byTooltip('Previous section'));
+    await tester.pumpAndSettle();
+    await _tapText(tester, 'Not now');
+    await _continue(tester);
+    expect(consent.recorded, [true, false]);
   });
 
   testWidgets('experienced draft restores the preserve path', (tester) async {
@@ -105,7 +153,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Section 3 of 6'), findsOneWidget);
+    expect(find.textContaining('Section 4 of 7'), findsOneWidget);
     expect(find.text('Strength'), findsOneWidget);
     await _continue(tester);
     expect(find.text('Current plan and what works *'), findsOneWidget);

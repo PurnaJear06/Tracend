@@ -7,6 +7,7 @@ import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
@@ -19,10 +20,19 @@ import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/widgets/tracend_glass.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({required this.environment, this.onSignOut, super.key});
+  const AppShell({
+    required this.environment,
+    this.onSignOut,
+    this.aiConsent,
+    super.key,
+  });
 
   final AppEnvironment environment;
   final Future<void> Function()? onSignOut;
+
+  /// The AI coaching answer. Null only without a backend, where no data
+  /// reaches an AI provider.
+  final AiCoachingConsentController? aiConsent;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -86,6 +96,7 @@ class _AppShellState extends State<AppShell> {
         nutrition: _nutrition,
         onOpenProgress: () => _selectTab(4),
         onOpenNutrition: () => _selectTab(3),
+        aiConsent: widget.aiConsent,
       ),
       TrainScreen(
         key: const ValueKey('tab_train'),
@@ -93,7 +104,11 @@ class _AppShellState extends State<AppShell> {
         brief: _brief,
         coach: _coach,
       ),
-      CoachScreen(key: const ValueKey('tab_coach'), repository: _coach),
+      CoachScreen(
+        key: const ValueKey('tab_coach'),
+        repository: _coach,
+        aiConsent: widget.aiConsent,
+      ),
       NutritionScreen(
         key: const ValueKey('tab_nutrition'),
         repository: _nutrition,

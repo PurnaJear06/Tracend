@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
+import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/shell/app_shell.dart';
@@ -19,6 +20,7 @@ class _Phase2GateState extends State<Phase2Gate> {
   bool _loading = true;
   bool _authenticated = false;
   bool _onboardingComplete = false;
+  AiCoachingConsentController? _aiConsent;
   String? _error;
 
   @override
@@ -58,6 +60,10 @@ class _Phase2GateState extends State<Phase2Gate> {
         }
         final repository = SupabaseOnboardingRepository(client);
         final complete = await repository.isOnboardingComplete();
+        final aiConsent = _aiConsent ??= AiCoachingConsentController(
+          SupabaseAiCoachingConsentRepository(client),
+        );
+        await aiConsent.load();
         setState(() {
           _authenticated = true;
           _onboardingComplete = complete;
@@ -72,6 +78,12 @@ class _Phase2GateState extends State<Phase2Gate> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  @override
+  void dispose() {
+    _aiConsent?.dispose();
+    super.dispose();
   }
 
   Future<void> _signOut() async {
@@ -113,13 +125,27 @@ class _Phase2GateState extends State<Phase2Gate> {
     if (!_authenticated) {
       return OwnerAuthScreen(onAuthenticated: _refresh);
     }
+    final aiConsent = _aiConsent!;
     if (!_onboardingComplete) {
       return OnboardingFlow(
         repository: SupabaseOnboardingRepository(Supabase.instance.client),
         onCompleted: _refresh,
+        aiConsent: aiConsent,
       );
     }
-    return AppShell(environment: widget.environment, onSignOut: _signOut);
+    // Accounts created before the question existed, and anyone asked again
+    // after a notice change, answer once before the app opens.
+    if (aiConsent.choice == AiCoachingChoice.undecided) {
+      return AiCoachingConsentScreen(
+        controller: aiConsent,
+        onDecided: () => setState(() {}),
+      );
+    }
+    return AppShell(
+      environment: widget.environment,
+      onSignOut: _signOut,
+      aiConsent: aiConsent,
+    );
   }
 }
 

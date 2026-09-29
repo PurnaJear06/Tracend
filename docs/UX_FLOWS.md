@@ -116,7 +116,15 @@ optional permissions before explaining their purpose.
 3. Ask only eligibility questions required by the PRD.
 4. If excluded, stop plan generation and show appropriate professional guidance.
 5. Accept terms and privacy notice.
-6. Choose **Guide me** or **I know my current plan**.
+6. Choose whether to allow AI coaching. The disclosure names the provider (DeepSeek, operated by
+   Hangzhou DeepSeek Artificial Intelligence Co., Ltd., on servers in China), the data it receives,
+   and what works without it. **Allow AI coaching** and **Not now** are both valid answers.
+7. Choose **Guide me** or **I know my current plan**.
+
+An account that has not answered the current AI coaching notice (created before the question
+existed, or asked again after the notice changed) answers it once before the app opens. While AI
+coaching is off, Coach shows **AI coaching is off** with **Review AI coaching**, its composer is
+disabled, and Today generates no AI decision. **Account › AI coaching** turns it on or off.
 
 HealthKit, meal-photo AI, and progress-photo AI consent occur separately when their value is
 visible.
@@ -443,8 +451,8 @@ Privacy screens show consent by purpose, provider disclosure, photo retention co
 data, export, and deletion.
 
 **Privacy and AI processing** opens a read-only consent ledger: the latest append-only
-`consent_records` entry per purpose (terms, privacy, progress photo storage, progress photo AI,
-notifications) with its grant/withdrawal state, date, and notice version. Purposes without a record
+`consent_records` entry per purpose (terms, privacy, AI coaching, progress photo storage, progress
+photo AI, notifications) with its grant/withdrawal state, date, and notice version. Purposes without a record
 say so. The ledger never edits records; withdrawal happens through the flow that owns each purpose.
 
 - Export and deletion require recent authentication.

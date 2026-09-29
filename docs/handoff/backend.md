@@ -340,6 +340,22 @@ Owner steps:
 Read-only deterministic calculators the model can call (`project_weight_goal`, `training_summary`,
 `metric_stats`, `compare_periods`), so common estimates become exact.
 
+## AI coaching consent (2026-09-29)
+
+The owner asked for an AI consent screen and confirmed that onboarding had none. Only terms and
+privacy were recorded.
+
+- Migration `20260929130000_ai_coaching_consent.sql` adds the `ai_coaching` consent purpose.
+  pgTAP (`ai_coaching_consent_test.sql`) checks own-only writes, no rewrites, and own-only reads.
+- The app asks in onboarding (section 2 of 7), then once before the app opens for any account that
+  has not answered the current notice (`ai-coaching-v1`). Coach and Account can turn it on or off.
+  While it is off, Coach cannot send and Today generates no AI decision.
+- Server enforcement is the next PR. `coach-chat` refuses without a current grant, and
+  `coach-decide` falls back to the deterministic decision. It must merge only after the owner has
+  answered in the new app; otherwise the owner's own Coach would stop working until then.
+- Meal-photo AI consent comes with the meal-photo provider switch, because its disclosure must name
+  that provider.
+
 ## Recorded follow-ups — out of scope
 
 - Add short per-request row evidence aliases (`E1…En`) mapped server-side; never expose UUIDs to the
