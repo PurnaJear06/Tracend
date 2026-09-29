@@ -46,9 +46,9 @@
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Tracend does not write health data. This key is required by HealthKit.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Tracend uses the camera only when you choose to capture private standardized progress photos.</string>
+	<string>Tracend uses the camera only when you choose to photograph a meal for analysis or capture private progress photos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Tracend lets you select private progress photos that you explicitly choose to save.</string>
+	<string>Tracend opens your photo library only when you choose a meal photo to analyze or a private progress photo to save.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

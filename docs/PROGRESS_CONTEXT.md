@@ -99,11 +99,15 @@ These are not silently considered complete:
    - A2 is merged, deployed, and reinstalled with the app's `SENTRY_DSN`. The owner's A2 device
      check in the handoff is next.
    - Then B (calculators), followed by owner-device acceptance and Sentry verification.
-2. Approve a coherent visual direction and then redesign from the current product truth; do not
+2. Meal photos do not work. Groq shut down the configured vision model on 2026-09-14, so
+   analysis needs another provider; Gemini on a billing-enabled project is recommended. Separately,
+   the AI budget in code (10 requests a day, $2 a month) contradicts the PRD (30 a day, $5). See the
+   backend handoff, "Meal photos".
+3. Approve a coherent visual direction and then redesign from the current product truth; do not
    copy a competitor's protected assets or flows.
-3. Complete the Apple AI-consent/App Review review, privacy/legal review, pricing decision, developer
+4. Complete the Apple AI-consent/App Review review, privacy/legal review, pricing decision, developer
    account/entity decision, and brand/IP clearance before expanding beyond owner dogfooding.
-4. Refresh dependencies in small reviewed batches; old Dependabot PRs were based on obsolete code
+5. Refresh dependencies in small reviewed batches; old Dependabot PRs were based on obsolete code
    and checks and are not release candidates.
 
 ## What happens next

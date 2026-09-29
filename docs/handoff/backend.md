@@ -335,6 +335,32 @@ Owner steps:
    - A model failure now shows a labeled data summary or safety note, with Retry and the beta
      diagnostic. Other errors still show the raw text.
 
+## Meal photos (2026-09-29)
+
+The owner reported that the Nutrition photo buttons did nothing. Findings:
+- **App.**
+  - A refused camera permission threw from the picker, outside the error handling.
+  - Every other failure appeared only in the error card at the top of the screen, out of view from
+    the buttons.
+  - Nothing reached Sentry.
+
+  Now progress and failures show under the buttons, with the failed step and its code. A refused
+  permission names the setting, and Sentry receives the step and code (never the message, which can
+  hold the storage path).
+- **Provider.**
+  - Groq shut down `qwen/qwen3.6-27b` on 2026-09-14 ([deprecations](https://console.groq.com/docs/deprecations)).
+    The Groq meal adapter hard-wires that model, so with `MEAL_VISION_PROVIDER=groq` every analysis
+    now fails with 503 `meal_analysis_unavailable`.
+  - Photos need another provider. The recommendation is Gemini on a billing-enabled project, which
+    the Gemini adapter already supports for `gemini-3.5-flash`. It is the owner's decision, and the
+    secrets are the owner's to set.
+- **Budget.** `assert_owner_ai_budget` (migration `20260711100000`) blocks meal analysis and Coach
+  chat once daily coaching, chat, and meal requests reach 10 a day, or once $2 has been spent in the
+  month. PRD and ADRs 0005, 0006, and 0011 say 30 requests a day and a $5 hard stop. This is a
+  documentation-versus-code conflict for the owner to resolve.
+- Sentry shows no meal-analyze errors in 90 days, so recent attempts failed before the provider
+  call (picker, upload, draft, or the 429 budget check). The new on-screen code will show which.
+
 ## Next — B (calculators)
 
 Read-only deterministic calculators the model can call (`project_weight_goal`, `training_summary`,

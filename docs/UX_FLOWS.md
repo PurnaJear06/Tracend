@@ -315,6 +315,10 @@ AI observation                 Confirmed meal
 - Each timeline meal exposes a labeled delete control. Deletion requires a destructive confirmation
   explaining that the meal leaves daily totals.
 - Failure offers **Retry**, **Enter manually**, and **Delete photo**.
+- While a photo is analyzed, a progress line appears under the photo buttons. A failure is shown in
+  the same place, never only at the top of the screen, out of view. A refused camera or photo
+  permission names the iOS setting to change. Any other failure names the step (`picker`, `upload`,
+  `draft`, `analysis`) and its error code, for example `analysis: 503 meal_analysis_unavailable`.
 
 ## 9. Progress Review
 
