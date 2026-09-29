@@ -339,8 +339,9 @@ active-goal RPC confirms one — the goal line never renders a fabricated value.
 Coach messages use a restrained familiar bubble shape, selectable text, and an expandable evidence
 drawer; the pinned daily decision remains a separate solid surface. A Coach reply renders a small
 Markdown subset: bold, italic, and bullet or numbered lists, with headings shown as bold lines and
-links as their label. Anything else, including an unmatched marker, stays as typed. The athlete's
-own messages are shown exactly as typed.
+a link as its label followed by its destination in plain text (selectable, not tappable). Anything
+else, including an unmatched marker, stays as typed. The athlete's own messages are shown exactly
+as typed.
 
 A labeled reply that stands in for a failed model answer is a variant of the same bubble:
 - **Data summary:** an attention-color border and a `Data summary · not an AI answer` pill. It has

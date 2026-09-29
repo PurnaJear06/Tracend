@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 
 /// The Markdown subset a Coach reply may use: bold, italic, inline code,
-/// bullet and numbered lists, and headings shown as bold lines. Links show
-/// their label only. Anything else, including an unmatched marker, stays as
-/// typed, so a reply is never lost to formatting.
+/// bullet and numbered lists, and headings shown as bold lines. A link shows
+/// its label followed by its destination as plain text, which can be selected
+/// and copied but is not tappable. Anything else, including an unmatched
+/// marker, stays as typed, so a reply is never lost to formatting.
 enum CoachReplyBlockKind { paragraph, heading, bullet, numbered }
 
 @immutable
@@ -71,8 +72,8 @@ final _inline = RegExp(
   r'|(?<![\w_])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![\w_])'
   // `code`
   r'|`([^`\n]+)`'
-  // [label](target) shows the label only
-  r'|\[([^\]\n]+)\]\([^)\s]+\)',
+  // [label](target) shows the label, then the target
+  r'|\[([^\]\n]+)\]\(([^)\s]+)\)',
 );
 
 /// Splits a reply into display blocks.
@@ -177,9 +178,12 @@ List<CoachReplySpan> parseCoachInline(
         CoachReplySpan(match.group(5)!, bold: bold, italic: italic, code: true),
       );
     } else {
-      spans.addAll(
-        parseCoachInline(match.group(6)!, bold: bold, italic: italic),
-      );
+      final label = match.group(6)!;
+      final target = match.group(7)!;
+      spans.addAll(parseCoachInline(label, bold: bold, italic: italic));
+      if (label != target) {
+        spans.add(CoachReplySpan(' ($target)', bold: bold, italic: italic));
+      }
     }
     start = match.end;
   }

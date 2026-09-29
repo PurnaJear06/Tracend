@@ -48,11 +48,18 @@ void main() {
       ]);
     });
 
-    test('a link shows its label only', () {
+    test('a link keeps its destination after the label', () {
       expect(parseCoachInline('See [your plan](https://example.com) today'), [
         const CoachReplySpan('See '),
         const CoachReplySpan('your plan'),
+        const CoachReplySpan(' (https://example.com)'),
         const CoachReplySpan(' today'),
+      ]);
+    });
+
+    test('a link labelled with its own address shows it once', () {
+      expect(parseCoachInline('[https://example.com](https://example.com)'), [
+        const CoachReplySpan('https://example.com'),
       ]);
     });
   });
