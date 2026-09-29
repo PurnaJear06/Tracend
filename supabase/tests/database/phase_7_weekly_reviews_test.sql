@@ -79,8 +79,13 @@ select is(
   (select count(*) from public.weekly_review_jobs),
   1::bigint, 'owner sees one deduplicated job'
 );
+-- Last week's Tuesday: never a Monday and inside the eight-week window, so
+-- only the Monday rule rejects it. (current_date - 1 is a Monday whenever the
+-- suite runs on a Tuesday.)
 select throws_ok(
-  $$select public.request_my_weekly_review(current_date - 1)$$,
+  $$select public.request_my_weekly_review(
+    current_date - (extract(isodow from current_date)::integer - 1) - 6
+  )$$,
   '22023', 'invalid review week', 'non-Monday review is rejected'
 );
 
