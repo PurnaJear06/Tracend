@@ -139,7 +139,8 @@ accepted as a permanent retry.
     - a reply that arrives after the user switched conversations;
     - a first send whose conversation the user left while its thread was being created;
     - a new conversation listed as soon as its thread exists;
-    - an older list refresh that finishes last.
+    - an older list refresh that finishes last;
+    - a list requested before a new conversation existed, which must not remove it.
   - **pgTAP:** the thread list returns only active threads with messages, newest first,
     owner-scoped, and callable by authenticated users only;
 - Coach context v7 pgTAP covers poor, mid-band, good, and NULL recovery evidence; absent check-ins;

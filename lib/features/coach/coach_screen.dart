@@ -180,6 +180,9 @@ class _CoachScreenState extends State<CoachScreen> {
       unawaited(widget.threadMemory.remember(id));
       setState(() {
         _threadId = id;
+        // A list requested before this thread existed would drop it, so it
+        // no longer applies; this send's own refresh brings the server list.
+        _threadsRequest++;
         _threads = [
           CoachThread(id: id, title: question, updatedAt: DateTime.now()),
           ..._threads,

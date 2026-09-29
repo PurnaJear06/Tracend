@@ -407,6 +407,40 @@ void main() {
     expect(find.widgetWithText(ListTile, 'Stale title'), findsNothing);
   });
 
+  testWidgets('a list requested before a new conversation existed does not '
+      'remove it', (tester) async {
+    await _tall(tester);
+    final secondReply = Completer<CoachMessage>();
+    final repository = _HistoryRepository(
+      threads: [_thread('t1', 'First chat')],
+      messages: {
+        't1': [_user('u1', 'Hello')],
+      },
+      replies: [_answer('a1', 'One'), secondReply],
+    );
+    await tester.pumpWidget(_app(repository, _Memory('t1')));
+    await tester.pumpAndSettle();
+    final beforeNewThread = Completer<List<CoachThread>>();
+    repository.threadListGates.add(beforeNewThread);
+
+    await _send(tester, 'Follow-up in the first chat');
+    await _openSheet(tester);
+    await tester.tap(find.text('New'));
+    await tester.pumpAndSettle();
+    await _send(tester, 'A brand new question');
+    beforeNewThread.complete([_thread('t1', 'First chat')]);
+    await tester.pumpAndSettle();
+    await _openSheet(tester);
+
+    expect(
+      find.widgetWithText(ListTile, 'A brand new question'),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(ListTile, 'First chat'), findsOneWidget);
+    secondReply.complete(_answer('a2', 'Two'));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('Retry keeps the message the user is typing', (tester) async {
     await _tall(tester);
     final repository = _HistoryRepository(

@@ -58,7 +58,7 @@ redesign.
     unsigned iOS release build, and the linked production migration dry-run.
   - A1 passes 157 Deno tests and, in CI on a fresh database, every pgTAP file, including the
     45-assertion v8 file and the 7-assertion scoring-guard file.
-  - A2 passes 442 Flutter tests and 159 Deno tests. Its 7-assertion thread-list pgTAP file runs
+  - A2 passes 443 Flutter tests and 159 Deno tests. Its 7-assertion thread-list pgTAP file runs
     in CI.
 
   The seven required PR checks gate every push.

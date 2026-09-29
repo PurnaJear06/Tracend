@@ -294,7 +294,8 @@ What A2 changes:
     that contain a message, newest first, so the empty threads earlier builds created disappear.
   - The list refreshes after every send, answered or not, because the server saves the question
     when the turn starts. A new conversation is listed as soon as its thread exists, and only the
-    newest list request may replace the list.
+    newest list request may replace the list. A list requested before the new thread existed no
+    longer applies, so it cannot remove the new conversation.
   - A send finishes only in the conversation it started in. If the user taps New or opens another
     conversation while its thread is being created or its reply is pending, the new thread is not
     selected or remembered and the reply is not shown there. The server keeps both, so the thread
@@ -303,12 +304,16 @@ What A2 changes:
     draft.
 - **Beta errors.** Real failures keep the inline alert and the snackbar with the raw error text.
 
-Review fixes (GPT review of #41, 2026-09-29): the first-send race, stale list refreshes, a Retry
-that cleared the typed draft, and docs that promised a diagnostic on stored replies. Each race test
-fails on the unguarded screen.
+Review fixes (GPT reviews of #41, 2026-09-29):
+- the first-send race;
+- stale list refreshes, including an older list that removed a new conversation (re-review);
+- a Retry that cleared the typed draft;
+- docs that promised a diagnostic on stored replies.
+
+Each race test fails on the unguarded screen.
 
 Verification:
-- Flutter: 442 tests (20 new: 14 widget, 6 contract); analysis and formatting clean.
+- Flutter: 443 tests (21 new: 15 widget, 6 contract); analysis and formatting clean.
 - Deno: 159 tests.
   - The request the app builds parses unchanged.
   - The data-summary response matches the app's fixture key for key.
