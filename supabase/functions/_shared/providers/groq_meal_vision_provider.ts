@@ -21,8 +21,10 @@ export async function analyzeGroqMealImage(
     throw new Error("meal_vision_disabled");
   }
   const apiKey = environment.get("GROQ_API_KEY") ?? "";
-  const model = environment.get("MEAL_VISION_MODEL") || "qwen/qwen3.6-27b";
-  if (!apiKey || model !== "qwen/qwen3.6-27b") throw new Error("meal_vision_configuration_invalid");
+  // qwen/qwen3.8-27b is Groq's named successor to qwen/qwen3.6-27b, which Groq
+  // shut down on 2026-09-14.
+  const model = environment.get("MEAL_VISION_MODEL") || "qwen/qwen3.8-27b";
+  if (!apiKey || model !== "qwen/qwen3.8-27b") throw new Error("meal_vision_configuration_invalid");
   if (
     bytes.length < 1 || bytes.length > 4_194_304 ||
     !["image/jpeg", "image/png"].includes(contentType)

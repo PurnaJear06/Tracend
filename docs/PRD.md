@@ -289,10 +289,12 @@ audit events without storing secrets or unnecessary raw prompt content.
   under ADR 0011. Activation required the full all-or-nothing server-side secret gate
   (`COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`, provider API keys) per
   [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md) §10.
-- The monthly owner warning is USD 3, the server-side hard stop is USD 5, and conversational
-  coaching is limited to 30 requests per owner/day.
+- The monthly owner warning is USD 1 and the server-side hard stop is USD 2 (owner decision,
+  2026-09-29). Coach chat, daily decisions and meal photos share 30 requests per owner/day.
 - Meal verification and photo interpretation use evaluated providers with bounded context,
   output, request budgets, and task-specific thinking. Lite models are not production routes.
+  Meal photos use server-side Groq `qwen/qwen3.8-27b` on Groq's free tier (2026-09-29), the
+  successor Groq named when it shut down `qwen/qwen3.6-27b` on 2026-09-14.
 - Prior providers are superseded pending re-evaluation: Gemini `gemini-3.5-flash` (ADR 0005 —
   gated alternative requiring paid-service privacy terms) and server-side Groq Qwen
   `qwen/qwen3.6-27b` (ADR 0006 — owner-only test route, 2026-07-11 through 2026-07-26).
