@@ -138,10 +138,13 @@ photos a day would use up; the USD 2 stop still bounds spend.
 
 **Meal photos (2026-09-29):** Groq `qwen/qwen3.8-27b` (`MEAL_VISION_PROVIDER=groq`), the named
 successor of `qwen/qwen3.6-27b`, which Groq shut down on 2026-09-14. On Groq's free tier (no card
-on file) a request over the limit is refused rather than billed. Groq's published free limits for
-this model are 30 requests/minute, 1,000/day, 8,000 tokens/minute and 200,000 tokens/day. At
-roughly 3,000–4,000 tokens per photo, about 10 photos a day use under a fifth of the daily token
-allowance, and about two photos fit in one minute. Usage events still carry an estimate at Groq's paid
+on file) a request over the limit is refused rather than billed. The binding free-tier limit is
+**1,000 output tokens per minute** for this model (Groq's 429 on the owner's key, 2026-09-30). Groq
+refuses a request whose `max_completion_tokens` exceeds it before generating anything, so the
+request asks for at most 1,000 and leaves out the qwen3.6 route's reasoning options (with them the
+same request was refused; without them it succeeded). A test photo used about 1,340 input tokens.
+About one photo per minute fits; a second photo within the minute may be refused with
+`meal_vision_request_failed:429:rate_limit_exceeded`. Usage events still carry an estimate at Groq's paid
 qwen3.8 price (USD 0.80 input, 4.00 output per million tokens, fixed in
 `groq_meal_vision_provider.ts`), about USD 0.004 per photo, so the budget never undercounts if the
 key moves to a paid tier. Gemini paid-tier Flash was the

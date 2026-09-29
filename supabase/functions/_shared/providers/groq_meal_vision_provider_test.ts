@@ -97,3 +97,51 @@ Deno.test("Groq meal adapter refuses the retired qwen3.6 model before calling Gr
     throw new Error(`Retired model was not refused: ${message}`);
   }
 });
+
+Deno.test("Groq meal request fits the free tier's 1,000 output tokens per minute", async () => {
+  let body: Record<string, unknown> = {};
+  await analyzeGroqMealImage(
+    new Uint8Array([1, 2, 3]),
+    "image/jpeg",
+    (_input, init) => {
+      body = JSON.parse(String(init?.body));
+      return Promise.resolve(candidateReply());
+    },
+    environment({}),
+  );
+  if (
+    Number(body.max_completion_tokens) > 1000 || "reasoning_effort" in body ||
+    "reasoning_format" in body
+  ) {
+    throw new Error(`Request exceeds the free tier: ${JSON.stringify(body).slice(0, 200)}`);
+  }
+});
+
+Deno.test("a Groq refusal names its status and code, not its message", async () => {
+  let message = "";
+  try {
+    await analyzeGroqMealImage(
+      new Uint8Array([1, 2, 3]),
+      "image/jpeg",
+      () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: {
+                message: "Request too large for model in organization org_x",
+                type: "tokens",
+                code: "rate_limit_exceeded",
+              },
+            }),
+            { status: 429 },
+          ),
+        ),
+      environment({}),
+    );
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  if (message !== "meal_vision_request_failed:429:rate_limit_exceeded") {
+    throw new Error(`Unexpected failure: ${message}`);
+  }
+});

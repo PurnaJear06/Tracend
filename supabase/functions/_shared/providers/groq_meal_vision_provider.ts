@@ -52,9 +52,11 @@ export async function analyzeGroqMealImage(
       body: JSON.stringify({
         model,
         temperature: 0.1,
-        max_completion_tokens: 1800,
-        reasoning_effort: "none",
-        reasoning_format: "hidden",
+        // Groq's free tier allows qwen3.8 1,000 output tokens per minute and
+        // refuses outright (429) a request whose limit asks for more. The
+        // reasoning options from the qwen3.6 route are left out: with them
+        // Groq refused this request on the free tier (2026-09-30 owner test).
+        max_completion_tokens: 1000,
         response_format: { type: "json_object" },
         messages: [{
           role: "user",
@@ -72,7 +74,17 @@ export async function analyzeGroqMealImage(
         }],
       }),
     });
-    if (!response.ok) throw new Error("meal_vision_request_failed");
+    if (!response.ok) {
+      // Groq's status and error code (never its message) reach Sentry and the
+      // logs, so a refusal can be told apart from an outage.
+      const failure = await response.json().catch(() => null) as
+        | { error?: { code?: unknown } }
+        | null;
+      const code = typeof failure?.error?.code === "string"
+        ? failure.error.code.replace(/[^a-z0-9_]/gi, "").slice(0, 40)
+        : "unknown";
+      throw new Error(`meal_vision_request_failed:${response.status}:${code}`);
+    }
     const payload = await response.json() as Record<string, unknown>;
     const message = Array.isArray(payload.choices)
       ? (payload.choices[0] as Record<string, unknown>)?.message as
