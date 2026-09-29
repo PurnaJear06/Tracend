@@ -344,8 +344,8 @@ A labeled reply that stands in for a failed model answer is a variant of the sam
   no provider pill.
 - **Safety referral:** the neutral border and a `Safety note · not an AI answer` pill, with no data
   styling.
-- **Both:** a muted, selectable beta diagnostic line, and a `Retry` text button when the reply ends
-  the conversation.
+- **Both:** a muted, selectable beta diagnostic line on a live reply (a stored reply has none), and
+  a `Retry` text button when the reply ends the conversation.
 
 The pill text, not the color, carries the meaning. Meal schedule rows use time,
 label, planned quantities, and explicit status. Neither component uses color as the only state

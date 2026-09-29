@@ -213,8 +213,9 @@ When the model cannot answer, Coach shows a labeled reply in its place:
 - "Data summary · not an AI answer": what the athlete's data shows.
 - "Safety note · not an AI answer": for a message that may concern a health risk.
 
-Each labeled reply carries a beta diagnostic line (failure code and rule names). Retry appears when
-the reply ends the conversation.
+A live labeled reply also shows a beta diagnostic line (failure code and rule names); a stored one
+keeps only its label, because the diagnostic is not stored. Retry appears when the reply ends the
+conversation, and it keeps whatever the user is typing.
 
 Other failures (sign-in, database, limits, network) keep the visible inline alert and Snackbar. A
 timeout says the Coach took too long. During the private beta, other errors show their raw text,

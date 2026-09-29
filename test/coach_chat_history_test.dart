@@ -319,6 +319,129 @@ void main() {
     expect(find.text('A late answer'), findsNothing);
     expect(find.textContaining('Ask about training'), findsOneWidget);
   });
+
+  testWidgets('a first send stays with its conversation when the user moves '
+      'on while its thread is being created', (tester) async {
+    await _tall(tester);
+    final memory = _Memory();
+    final creating = Completer<String>();
+    final repository = _HistoryRepository(
+      replies: [
+        _answer('a1', 'Answer to the first question'),
+        _answer('a2', 'Answer to the second question'),
+      ],
+    )..createGate = creating;
+    await tester.pumpWidget(_app(repository, memory));
+    await tester.pumpAndSettle();
+
+    await _send(tester, 'First question');
+    await _openSheet(tester);
+    await tester.tap(find.text('New'));
+    await tester.pumpAndSettle();
+    creating.complete('thread-1');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Answer to the first question'), findsNothing);
+    expect(find.textContaining('Ask about training'), findsOneWidget);
+    expect(memory.remembered, isEmpty);
+
+    await _send(tester, 'Second question');
+    expect(repository.sent, [
+      ('thread-1', 'First question'),
+      ('thread-2', 'Second question'),
+    ]);
+    expect(find.text('Answer to the second question'), findsOneWidget);
+    expect(memory.remembered, ['thread-2']);
+
+    await _openSheet(tester);
+    expect(find.widgetWithText(ListTile, 'First question'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'Second question'), findsOneWidget);
+  });
+
+  testWidgets('a new conversation is listed as soon as its thread exists', (
+    tester,
+  ) async {
+    await _tall(tester);
+    final reply = Completer<CoachMessage>();
+    final repository = _HistoryRepository(replies: [reply]);
+    await tester.pumpWidget(_app(repository, _Memory()));
+    await tester.pumpAndSettle();
+
+    await _send(tester, 'How long until I reach 72 kg?');
+    await _openSheet(tester);
+
+    expect(
+      find.widgetWithText(ListTile, 'How long until I reach 72 kg?'),
+      findsOneWidget,
+    );
+    reply.complete(_answer('a1', 'About 18 weeks at your current trend.'));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('only the newest thread-list refresh updates the list', (
+    tester,
+  ) async {
+    await _tall(tester);
+    final repository = _HistoryRepository(
+      threads: [_thread('t1', 'Current title')],
+      messages: {
+        't1': [_user('u1', 'Hello')],
+      },
+      replies: [_answer('a1', 'One'), _answer('a2', 'Two')],
+    );
+    await tester.pumpWidget(_app(repository, _Memory()));
+    await tester.pumpAndSettle();
+    final older = Completer<List<CoachThread>>();
+    final newer = Completer<List<CoachThread>>();
+    repository.threadListGates.addAll([older, newer]);
+
+    await _send(tester, 'First');
+    await _send(tester, 'Second');
+    newer.complete([_thread('t1', 'Newest title')]);
+    await tester.pumpAndSettle();
+    older.complete([_thread('t1', 'Stale title')]);
+    await tester.pumpAndSettle();
+    await _openSheet(tester);
+
+    expect(find.widgetWithText(ListTile, 'Newest title'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'Stale title'), findsNothing);
+  });
+
+  testWidgets('Retry keeps the message the user is typing', (tester) async {
+    await _tall(tester);
+    final repository = _HistoryRepository(
+      replies: [_summary(), _answer('a2', 'Here is my full take.')],
+    );
+    await tester.pumpWidget(_app(repository, _Memory()));
+    await tester.pumpAndSettle();
+
+    await _send(tester, 'How is my weight going?');
+    await tester.enterText(find.byType(TextField), 'My next question');
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    expect(repository.sent.map((sent) => sent.$2), [
+      'How is my weight going?',
+      'How is my weight going?',
+    ]);
+    expect(find.text('My next question'), findsOneWidget);
+  });
+
+  testWidgets('the composer is disabled while a conversation loads', (
+    tester,
+  ) async {
+    await _tall(tester);
+    final loading = Completer<List<CoachMessage>>();
+    final repository = _HistoryRepository(threads: [_thread('t1', 'First')]);
+    repository.messageGates['t1'] = loading;
+    await tester.pumpWidget(_app(repository, _Memory()));
+    await tester.pump();
+
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    loading.complete([_user('u1', 'First question')]);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isTrue);
+  });
 }
 
 class _Memory implements CoachThreadMemory {
@@ -355,18 +478,34 @@ class _HistoryRepository implements CoachRepository, CoachChatRepository {
   int created = 0;
   int threadLoads = 0;
 
+  /// When set, the next createThread waits for it.
+  Completer<String>? createGate;
+
+  /// Answered in order by the next loadThreads calls, before the live list.
+  final threadListGates = <Completer<List<CoachThread>>>[];
+
+  /// When set, loadMessages for this thread waits for it.
+  final messageGates = <String, Completer<List<CoachMessage>>>{};
+
   @override
-  Future<List<CoachThread>> loadThreads() async {
+  Future<List<CoachThread>> loadThreads() {
     threadLoads++;
-    return List.of(_threads);
+    if (threadListGates.isNotEmpty) return threadListGates.removeAt(0).future;
+    return Future.value(List.of(_threads));
   }
 
   @override
-  Future<String> createThread() async => 'thread-${++created}';
+  Future<String> createThread() {
+    created++;
+    final gate = createGate;
+    createGate = null;
+    return gate?.future ?? Future.value('thread-$created');
+  }
 
   @override
-  Future<List<CoachMessage>> loadMessages(String threadId) async =>
-      _messages[threadId] ?? const [];
+  Future<List<CoachMessage>> loadMessages(String threadId) =>
+      messageGates.remove(threadId)?.future ??
+      Future.value(_messages[threadId] ?? const []);
 
   @override
   Future<CoachMessage> sendMessage(String threadId, String question) {

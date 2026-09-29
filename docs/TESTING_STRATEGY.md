@@ -133,8 +133,13 @@ accepted as a permanent retry.
     of null is a model answer.
   - **Widget tests:** reopening the last conversation or falling back to the newest; lazy thread
     creation; list refresh after each send; the labeled data summary with its diagnostic; Retry as
-    a new turn; the safety note; stored summaries; raw beta errors; and a reply that arrives after
-    the user switched conversations.
+    a new turn that keeps a typed draft; the safety note; stored summaries; raw beta errors; and a
+    disabled composer while a conversation loads.
+  - **Race tests** (each fails on the unguarded screen):
+    - a reply that arrives after the user switched conversations;
+    - a first send whose conversation the user left while its thread was being created;
+    - a new conversation listed as soon as its thread exists;
+    - an older list refresh that finishes last.
   - **pgTAP:** the thread list returns only active threads with messages, newest first,
     owner-scoped, and callable by authenticated users only;
 - Coach context v7 pgTAP covers poor, mid-band, good, and NULL recovery evidence; absent check-ins;

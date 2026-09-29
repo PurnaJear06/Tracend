@@ -293,12 +293,22 @@ What A2 changes:
     `20260929090000_coach_threads_with_messages.sql`, schema 1.0). It returns only active threads
     that contain a message, newest first, so the empty threads earlier builds created disappear.
   - The list refreshes after every send, answered or not, because the server saves the question
-    when the turn starts.
-  - A reply that arrives after the user opened another conversation is not added to it.
+    when the turn starts. A new conversation is listed as soon as its thread exists, and only the
+    newest list request may replace the list.
+  - A send finishes only in the conversation it started in. If the user taps New or opens another
+    conversation while its thread is being created or its reply is pending, the new thread is not
+    selected or remembered and the reply is not shown there. The server keeps both, so the thread
+    appears in the list.
+  - The composer is disabled while a conversation loads. Retry and suggestion chips keep a typed
+    draft.
 - **Beta errors.** Real failures keep the inline alert and the snackbar with the raw error text.
 
+Review fixes (GPT review of #41, 2026-09-29): the first-send race, stale list refreshes, a Retry
+that cleared the typed draft, and docs that promised a diagnostic on stored replies. Each race test
+fails on the unguarded screen.
+
 Verification:
-- Flutter: 437 tests (15 new: 9 widget, 6 contract); analysis and formatting clean.
+- Flutter: 442 tests (20 new: 14 widget, 6 contract); analysis and formatting clean.
 - Deno: 159 tests.
   - The request the app builds parses unchanged.
   - The data-summary response matches the app's fixture key for key.
