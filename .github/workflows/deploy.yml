@@ -258,9 +258,11 @@ jobs:
       - name: Deploy ${{ matrix.function }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_CLI: supabase
         run: |
           supabase link --project-ref qsfzzsjenopqqqhvpyaw
-          supabase functions deploy ${{ matrix.function }} --project-ref qsfzzsjenopqqqhvpyaw --use-api
+          # Retries Supabase's intermittent "unexpected deploy status 500".
+          scripts/deploy-function.sh ${{ matrix.function }}
 
       - name: Confirm ${{ matrix.function }} is live
         env:
@@ -271,7 +273,7 @@ jobs:
             exit 0
           fi
           echo "::warning::${{ matrix.function }} was reported deployed but is not live. Deploying once more."
-          supabase functions deploy ${{ matrix.function }} --project-ref qsfzzsjenopqqqhvpyaw --use-api
+          scripts/deploy-function.sh ${{ matrix.function }}
           scripts/verify-live-function.sh ${{ matrix.function }}
 
   verify-functions:
