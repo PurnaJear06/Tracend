@@ -4,7 +4,7 @@ PODS:
   - device_info_plus (0.0.1):
     - Flutter
   - Flutter (1.0.0)
-  - health (13.3.1):
+  - health (13.3.2):
     - Flutter
   - image_picker_ios (0.0.1):
     - Flutter
@@ -60,7 +60,7 @@ SPEC CHECKSUMS:
   app_links: a754cbec3c255bd4bbb4d236ecc06f28cd9a7ce8
   device_info_plus: 21fcca2080fbcd348be798aa36c3e5ed849eefbe
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  health: 4decf5d74e8f54c58a8c07a385fc72f629a831d9
+  health: 72947bca89ee7906256d6f650db061ca4b2f92c7
   image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
   package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
   Sentry: 5321d74bdd28d6f6f8beaa1ca06f1fdc746bff49
