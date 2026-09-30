@@ -3,6 +3,8 @@ import { parseCoachRequest } from "../_shared/contracts/coach_request_v1.ts";
 import type { CoachModelGeneration } from "../_shared/providers/coach_model_provider.ts";
 import { createCoachModelProvider } from "../_shared/providers/create_coach_model_provider.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
+import { aiCoachingConsent } from "../_shared/ai_consent.ts";
+import { MockCoachModelProvider } from "../_shared/providers/mock_coach_model_provider.ts";
 
 const SAFE_REASON = /^[a-z][a-z0-9_]{0,60}$/;
 const SAFE_EVIDENCE_CODE = /^[A-Z][A-Z_]{0,39}$/;
@@ -73,6 +75,13 @@ Deno.serve(async (request) => {
       : reply(409, { error: "decision_pending" });
   }
 
+  // Without the athlete's current AI coaching consent (or when the check
+  // fails), the day's decision comes from the deterministic provider and no
+  // data reaches the AI provider.
+  const useModel = await aiCoachingConsent(
+    (name, params) => auth.serviceClient.rpc(name, params),
+    auth.userId,
+  ) === "granted";
   const started = performance.now();
   let generated: CoachModelGeneration | undefined;
   try {
@@ -88,15 +97,16 @@ Deno.serve(async (request) => {
     if (snapshotError || !snapshot || typeof snapshot.features !== "object") {
       throw new Error("feature_context_unavailable");
     }
-    generated = await createCoachModelProvider().generateDecision({
-      decisionKind: "daily",
-      featureSnapshotId: prepared.feature_snapshot_id,
-      policyEvaluationId: prepared.policy_evaluation_id,
-      policyOutcome: outcome,
-      permittedEvidence: evidence,
-      featureContext: snapshot.features as Record<string, unknown>,
-      missingData: prepared.missing_data ?? [],
-    });
+    generated = await (useModel ? createCoachModelProvider() : new MockCoachModelProvider())
+      .generateDecision({
+        decisionKind: "daily",
+        featureSnapshotId: prepared.feature_snapshot_id,
+        policyEvaluationId: prepared.policy_evaluation_id,
+        policyOutcome: outcome,
+        permittedEvidence: evidence,
+        featureContext: snapshot.features as Record<string, unknown>,
+        missingData: prepared.missing_data ?? [],
+      });
     const decision = parseCoachDecision(generated.decision, evidence, outcome);
     const persistedPayload = { ...decision, local_date: input.local_date };
     const { data: persisted, error } = await auth.serviceClient.rpc(
@@ -147,14 +157,18 @@ Deno.serve(async (request) => {
       request_idempotency_key: input.idempotency_key,
       run_latency_ms: Math.round(performance.now() - started),
       error_code: reason,
-      run_provider: Deno.env.get("COACH_MODEL_PROVIDER") === "gemini"
+      run_provider: !useModel
+        ? "mock"
+        : Deno.env.get("COACH_MODEL_PROVIDER") === "gemini"
         ? "gemini"
         : Deno.env.get("COACH_MODEL_PROVIDER") === "groq"
         ? "groq"
         : Deno.env.get("COACH_MODEL_PROVIDER") === "deepseek"
         ? "deepseek"
         : "mock",
-      run_model: Deno.env.get("COACH_MODEL_PROVIDER") === "gemini"
+      run_model: !useModel
+        ? "deterministic-mock-v2"
+        : Deno.env.get("COACH_MODEL_PROVIDER") === "gemini"
         ? (Deno.env.get("GEMINI_MODEL") || "unconfigured")
         : Deno.env.get("COACH_MODEL_PROVIDER") === "groq"
         ? (Deno.env.get("GROQ_MODEL") || "unconfigured")

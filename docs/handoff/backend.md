@@ -388,11 +388,17 @@ privacy were recorded.
 - The app asks in onboarding (section 2 of 7), then once before the app opens for any account that
   has not answered the current notice (`ai-coaching-v1`). Coach and Account can turn it on or off.
   While it is off, Coach cannot send and Today generates no AI decision.
-- Server enforcement is the next PR. `coach-chat` refuses without a current grant, and
-  `coach-decide` falls back to the deterministic decision. It must merge only after the owner has
-  answered in the new app; otherwise the owner's own Coach would stop working until then.
-- Meal-photo AI consent comes with the meal-photo provider switch, because its disclosure must name
-  that provider.
+- Server enforcement (2026-09-30, after the owner granted consent on build 208):
+  - `has_ai_coaching_consent(uuid)` (migration `20260930090000`, service-role only) is true only when
+    the newest `ai_coaching` record grants `ai-coaching-v1`. It must change together with
+    `aiCoachingNoticeVersion` in the app. pgTAP (`ai_coaching_consent_enforcement_test.sql`) covers
+    no record, a grant, another athlete's grant, a withdrawal, an older notice, and the privileges.
+  - `coach-chat` checks it before the budget and the model. It answers 403 `ai_consent_required`
+    without a grant, and 503 `ai_consent_unavailable`, reported to Sentry, when the check fails.
+  - `coach-decide` uses the deterministic provider unless the check returns a grant, so a failed
+    check never sends data.
+  - Shared helper: `_shared/ai_consent.ts`, with Deno tests.
+- Meal-photo AI consent (naming Groq) is still owed before any second user.
 
 ## Recorded follow-ups — out of scope
 

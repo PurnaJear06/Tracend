@@ -278,8 +278,11 @@ send its synthetic athletes through an OpenAI-compatible router; a router never 
 unless it passes its own privacy review.
 Coach chat and the daily decision send an athlete's data to the provider only while their current
 `ai_coaching` consent is granted (UX_FLOWS §4.1). The app does not call either function for an athlete
-who declined. Server-side enforcement in `coach-chat` and `coach-decide` follows once the owner's
-installed app can record the answer.
+who declined, and the server enforces the same rule for every caller (2026-09-30):
+`has_ai_coaching_consent` reads the newest `ai_coaching` record, and only a grant of the current
+notice version counts. `coach-chat` answers 403 `ai_consent_required` without it, and 503
+`ai_consent_unavailable` when the check fails. `coach-decide` then uses the deterministic provider,
+so no data reaches the AI provider.
 Under ADR 0006, Groq Qwen was an owner-only, time-bounded test provider and has been superseded. The
 mock remains the default and progress-photo vision stays separately disabled until its own evaluation
 gate passes. Provider and Supabase secret/service-role keys never enter Flutter. Price alone cannot
