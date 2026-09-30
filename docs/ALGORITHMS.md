@@ -367,6 +367,33 @@ weight_trend = REGR_SLOPE(weight_kg, epoch_days) from PostgreSQL aggregate
 - R² computed via `REGR_R2` for the 28-day window
 - Sources merged: `body_measurements` UNION `daily_health_summaries` (manual entries take priority)
 
+### Coach Calculators (2026-09-30)
+
+`supabase/functions/_shared/coach_calculations.ts` computes exact numbers from the Coach athlete
+file (`prepare_coach_chat_v8`) and renders them as the "Calculated by Tracend" context section. The
+model quotes these instead of doing its own arithmetic. Windows end on the coaching date.
+
+- **Weight trend:** the same OLS slope and sources as above (body measurements plus HealthKit
+  daily weights; identical same-day readings count once), over 4 weeks (28 days) and 8 weeks
+  (56 days), reported in kg/week. A window needs readings on at least 4 days spanning at least 14
+  days; otherwise no trend is given.
+- **Weight projection (labeled estimate):** the current pace is the 4-week trend (the 8-week trend
+  when the 4-week one lacks readings). The other window widens the range only when it points the
+  same way. Under 0.05 kg/week the weight counts as stable and no date is projected. The section
+  lists the weeks to each of the next 10 whole kilograms in the trend's direction (plus a goal
+  weight, if one is stored), capped at 104 weeks, and the weight expected in 4, 8, 12 and 26
+  weeks.
+- **Training:** sessions, minutes, completed sets, volume, average RPE and average session length
+  for the last 7 days, the previous 7 days and the last 28 days; the week-over-week session and
+  volume change; the 28-day pace per week next to the plan's sessions per week.
+- **Watch metrics:** sleep, resting heart rate, HRV, steps, active energy and workout minutes, each
+  averaged over its measured days only (with the day count) for the last 7, previous 7 and last 28
+  days, plus the 28-day range. A week-over-week change needs at least 3 measured days in each week.
+- **Nutrition:** averages per day with confirmed meals (unlogged days are unknown, not zero) over 7
+  and 28 days, and the difference from each nutrition target.
+- Rounding is half away from zero, like PostgreSQL `round(numeric, n)`, so the averages match the
+  SQL ones already in the file.
+
 ### Literature
 
 - Standard ordinary least squares regression methodology. Neter, J. et al. (1996). *Applied Linear

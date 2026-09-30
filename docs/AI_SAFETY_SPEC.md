@@ -367,8 +367,11 @@ override safety or the quality floor. Budget assumptions and hard controls are d
   **Owner decision 2026-09-27:** the model may give an estimate (for example, time to reach a
   target weight) derived from context numbers or numbers the athlete states, provided it calls it
   an estimate, shows its inputs and assumptions, and never presents it as measured data.
-  Deterministic calculators for common estimates follow as the next change. Missing/null values
-  are described as not measured.
+  Deterministic calculators (2026-09-30, `_shared/coach_calculations.ts`, see
+  `docs/ALGORITHMS.md` §5) put exact averages, week-over-week changes, weight trends and a labeled
+  weight projection in a "Calculated by Tracend" context section. The model quotes these instead of
+  computing its own and still calls a projection an estimate. Other estimates follow the rule
+  above. Missing/null values are described as not measured.
 - When a question is ambiguous or needs a detail the context lacks, the coach answers what the data
   supports and asks one short clarifying question, offering likely replies as suggested follow-ups.
   The reply returns with the next turn through the conversation history.
