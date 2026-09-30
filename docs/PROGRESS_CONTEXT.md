@@ -127,8 +127,8 @@ The active implementation is the FLUTTER-8 Coach work described in
 [`docs/handoff/backend.md`](./handoff/backend.md). PR #35, A1, and A2 are live. B follows the
 owner's A2 device check. After owner-device acceptance, return to the read-only product/UI audit
 and one owner-approved redesign brief. AI coaching now needs the athlete's consent, which is asked
-in onboarding and once for existing accounts. The owner has answered on device, so server
-enforcement is the next PR.
+in onboarding and once for existing accounts. For server enforcement status, see the backend
+handoff, "AI coaching consent".
 
 ## Sources of truth
 
