@@ -129,8 +129,8 @@ These are not silently considered complete:
    - `health` 13.3.2 (2026-09-30, after batch 1): it rewrote its iOS plugin in Swift. The iOS
      release build fails with "Definition of 'HealthPlugin' must be imported from module
      'health.Swift'" only in a checkout that built 13.3.1 before: `flutter clean` leaves the old
-     `HealthPlugin.h` in that checkout's `ios/Release-iphoneos/health`. Delete that folder once.
-     CI builds from scratch. Its new iOS 15 minimum is below the app's 17.
+     `HealthPlugin.h` in that checkout's `build/ios/Release-iphoneos/health` (`build` links to the
+     checkout's own build folder under `.tooling`). Delete that folder once. CI builds from scratch. Its new iOS 15 minimum is below the app's 17.
    - GitHub Actions: `actions/checkout` v4 → v5 and the last `supabase/setup-cli@v1` → v2, for the
      Node.js 20 deprecation warning GitHub showed on every job.
    - Majors not taken: `cupertino_icons` 2.0.0 and the pinned `device_info_plus` override.
