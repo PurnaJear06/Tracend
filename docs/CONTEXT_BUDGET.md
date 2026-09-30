@@ -31,7 +31,10 @@ log and 7/14/28-day totals, watch workouts, 28 days of watch data with averages 
 the days their metric was measured, eight weeks of weights, 14 days of check-ins, 28 days of
 logged nutrition, today's meals, plan structure, proposals, reconciliations, data freshness). The
 Edge message puts this file first and the question last, so the file is a stable, cacheable prefix
-across a day's questions.
+across a day's questions. Since 2026-09-30 the Edge message also carries a "Calculated by Tracend"
+section computed from the same file (about 2,600 characters for a fully logged athlete). It adds no
+database query and no model call, and it keeps the prefix cacheable because it changes only when
+the file does.
 
 Conversation memory (2026-09-28): v8 rebuilds it from `coach_messages` as the ten newest messages
 of this thread and ten of other threads. Each message is capped at 2,000 characters, keeping its

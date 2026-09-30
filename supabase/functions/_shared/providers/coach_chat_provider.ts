@@ -10,6 +10,7 @@ import {
   parseCoachChatAnswer,
 } from "../contracts/coach_chat_v1.ts";
 import { deepseekFlashPeakPricePerMillionUsd, isApprovedDeepseekModel } from "./deepseek_models.ts";
+import { calculateCoachNumbers, formatCoachCalculations } from "../coach_calculations.ts";
 
 export type CoachChatAttemptOutcome =
   | "valid"
@@ -515,6 +516,12 @@ export function formatContextAsMarkdown(
       "\n",
   );
 
+  // Exact calculator results (averages, changes, trends, projections) come
+  // before the raw rows they summarize, so the model quotes them instead of
+  // doing its own arithmetic.
+  const calculations = calculateCoachNumbers(ctx);
+  const calculatedWeightTrend = (calculations?.weight?.trends.length ?? 0) > 0;
+
   const computed = obj(ctx.computed_metrics);
   let computedSection = "## Computed Scores\n";
   if (Object.keys(computed).length && !computed.unavailable) {
@@ -534,7 +541,9 @@ export function formatContextAsMarkdown(
       computedSection += "\n";
     }
     const wt = obj(computed.weight);
-    if (Object.keys(wt).length) {
+    // The calculated weight trend below replaces this one: two slopes from
+    // different cut-offs would disagree in the same answer.
+    if (Object.keys(wt).length && !calculatedWeightTrend) {
       computedSection += `- weight trend: 7d ${str(wt.trend_7d_kg_per_day)} kg/day`;
       if (wt.trend_28d_kg_per_day != null) {
         computedSection += `, 28d ${str(wt.trend_28d_kg_per_day)} kg/day`;
@@ -552,6 +561,9 @@ export function formatContextAsMarkdown(
     computedSection += "- unavailable\n";
   }
   pushRequired(computedSection);
+
+  const calculatedSection = formatCoachCalculations(calculations);
+  if (calculatedSection) push(calculatedSection);
 
   // 1a. Athlete profile
   const profile = obj(ctx.profile_context);
@@ -1130,6 +1142,7 @@ function answerContractText(permittedEvidence: readonly string[]): string {
     `- Permitted evidence codes for this request: ${allowed}. Cite only these codes exactly. Leave evidence empty when none applies.\n` +
     "- Each reasoning evidence_id must be one permitted code or null.\n" +
     "- Numbers about the athlete's data come only from the prepared context, quoted with the same units and rounding. Never invent a measurement.\n" +
+    '- The "Calculated by Tracend" section holds exact results. When it has the average, change, trend or projection you need, quote it with its window instead of computing your own. Its projections are still estimates: call them estimates.\n' +
     "- You may give an estimate (for example, time to reach a target weight) derived from context numbers or from numbers the athlete states. Call it an estimate, show its inputs and assumptions, and never present it as measured data.\n" +
     "- If a needed value is null, —, or absent, say it was not measured.\n" +
     "- If the question is ambiguous or needs a detail the context lacks (for example maintenance calories, a target date, or which session they mean), answer what the data supports, then ask one short clarifying question. Offer the likely replies in suggested_follow_ups, written as the athlete would say them.\n";

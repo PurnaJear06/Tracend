@@ -7,10 +7,10 @@
 **Current priority:** make Coach chat answer every question from the full athlete file and never
 dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 (app) → B
 (calculators). PR #35 and A1's server code are live; an owner spot check passed on 2026-09-28.
-A2 (the app) was merged and deployed on 2026-09-29. Build 208 (main e59aa23) is installed on the
-owner's iPhone, and on 2026-09-30 the owner reported Coach, AI consent, and meal photos working. Next
-are server-side consent enforcement and B, then the full owner-device acceptance checklist before
-any UI redesign.
+A2 (the app) was merged and deployed on 2026-09-29. Server-side AI consent enforcement (#51) is
+live, and build 217 (main bc2f92b) is installed; on 2026-09-30 the owner reported Coach, AI
+consent, and meal photos working. B (deterministic calculators) is in review and waits on the
+direct DeepSeek eval. Then comes the full owner-device acceptance checklist, before any UI redesign.
 
 ## Shipped baseline
 
@@ -111,7 +111,8 @@ These are not silently considered complete:
    - Measure A1 in production with the handoff queries after real iPhone use.
    - A2 is merged, deployed, and reinstalled with the app's `SENTRY_DSN`. The owner's A2 device
      check in the handoff is next.
-   - Then B (calculators), followed by owner-device acceptance and Sentry verification.
+   - B (calculators, `_shared/coach_calculations.ts`) is in review. Its merge gate is the direct
+     DeepSeek eval, before and after. Then owner-device acceptance and Sentry verification.
 2. Meal photos need their own AI consent before anyone other than the owner uses them: the AI
    coaching notice covers DeepSeek and says photos are not sent, but meal photos go to Groq. See the
    backend handoff, "Meal photos".
@@ -133,8 +134,8 @@ These are not silently considered complete:
 ## What happens next
 
 The active implementation is the FLUTTER-8 Coach work described in
-[`docs/handoff/backend.md`](./handoff/backend.md). PR #35, A1, and A2 are live. B follows the
-owner's A2 device check. After owner-device acceptance, return to the read-only product/UI audit
+[`docs/handoff/backend.md`](./handoff/backend.md). PR #35, A1, and A2 are live, and the owner's A2 device
+check passed. B is in review. After owner-device acceptance, return to the read-only product/UI audit
 and one owner-approved redesign brief. AI coaching now needs the athlete's consent, which is asked
 in onboarding and once for existing accounts. For server enforcement status, see the backend
 handoff, "AI coaching consent".

@@ -282,7 +282,10 @@ Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS. 
 2. `record_coach_chat_question` stores the question before the model runs. A preparation failure
    returns 422 with a finite `reason` and reaches Sentry.
 3. The Edge Function renders the file as markdown (required truth first, conversation history
-   last, the question at the very end) and calls the no-tools structured-output provider.
+   last, the question at the very end) and calls the no-tools structured-output provider. Before
+   the raw rows, deterministic calculators (`_shared/coach_calculations.ts`) add exact averages,
+   week-over-week changes, weight trends and a labeled weight projection computed from the same
+   file, so the model quotes numbers instead of computing them.
 4. The answer is validated strictly for accuracy (JSON, keys, safety state, permitted evidence)
    and against generous formatting ceilings, with one targeted repair.
 5. A valid answer is persisted with the question. Otherwise the failure and its finite rule names

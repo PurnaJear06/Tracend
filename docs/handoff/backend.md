@@ -393,10 +393,32 @@ Update, 2026-09-30 (#48, #49, and the Coach-header PR):
   iCloud photo iOS could not load) and `ai_usage_limit`.
 - **Still open.** Meal-photo consent naming Groq, before any second user.
 
-## Next — B (calculators)
+## B — Coach calculators (2026-09-30)
 
-Read-only deterministic calculators the model can call (`project_weight_goal`, `training_summary`,
-`metric_stats`, `compare_periods`), so common estimates become exact.
+`supabase/functions/_shared/coach_calculations.ts` computes exact numbers from the athlete file that
+`prepare_coach_chat_v8` already returns, and `formatContextAsMarkdown` renders them as a "Calculated
+by Tracend" section before the raw rows. The contract tells the model to quote them instead of
+computing its own. Details are in `docs/ALGORITHMS.md` §5.
+
+- Covered: weight trend (4 and 8 weeks, kg/week) and a labeled projection (weeks to each of the
+  next 10 whole kilograms, weight in 4/8/12/26 weeks); training for the last 7, previous 7 and
+  last 28 days with the week-over-week change and the plan pace; watch-metric averages with day
+  counts, changes and 28-day ranges; nutrition averages per logged day against targets.
+- When the calculated weight trend exists, the feature engine's kg/day weight line is left out of
+  "Computed Scores", so one answer never shows two slopes from different cut-offs.
+- **Changed from the plan:** the plan had the model call SQL functions through DeepSeek function
+  calling. The calculators run in the Edge Function instead, over data already in the file:
+  - no second model call, so no added latency;
+  - no DeepSeek tool behavior that could not be tested without a key;
+  - the eval runs them on its synthetic athletes.
+  The limit is the file's windows (28 days, 8 weeks of weight). A projection to a target the
+  athlete names still uses the table's nearest whole kilogram.
+- Tests: `_shared/coach_calculations_test.ts` (14; a manual weight wins over a different
+  HealthKit weight on the same date, as in the feature engine). The rich eval athlete's 72 kg projection is
+  14 weeks, inside the eval's 9–18 reference.
+- **Owed before merge:** the direct DeepSeek eval, run on `main` (before) and on the PR (after). It
+  needs the `DEEPSEEK_API_KEY` repository secret, and the `EVAL_BASE_URL` variable removed so the
+  run goes to DeepSeek instead of NaraRouter.
 
 ## AI coaching consent (2026-09-29)
 
