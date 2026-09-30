@@ -121,6 +121,14 @@ These are not silently considered complete:
    account/entity decision, and brand/IP clearance before expanding beyond owner dogfooding.
 5. Refresh dependencies in small reviewed batches; old Dependabot PRs were based on obsolete code
    and checks and are not release candidates.
+   - Batch 1 (2026-09-30): `supabase_flutter` 2.17.2, `shared_preferences` 2.5.5, `uuid` 4.6.0,
+     and in-range transitive updates. The passkeys and `ua_client_hints` pods left with the old
+     `gotrue`. A network failure during a function call now arrives as `FunctionsFetchException`,
+     so Health maps it to "Connection lost" (`healthSyncFailureMessage`).
+   - Held back: `health` 13.3.2, which rewrote its iOS plugin in Swift. The release build fails
+     with "Definition of 'HealthPlugin' must be imported from module 'health.Swift'", and the
+     plugin raises its iOS minimum to 15.0. It needs its own change with a HealthKit device check.
+   - Majors not taken: `cupertino_icons` 2.0.0 and the pinned `device_info_plus` override.
 
 ## What happens next
 

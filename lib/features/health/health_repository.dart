@@ -14,6 +14,17 @@ abstract interface class HealthRepository {
   Future<HealthSyncStatus> sync();
 }
 
+/// What Health shows for a failed sync attempt. Since functions_client 2.7 a
+/// request that never reached the server arrives as [FunctionsFetchException]
+/// (status 0) instead of the transport's own exception.
+String healthSyncFailureMessage(Object error) => switch (error) {
+  FunctionsFetchException() ||
+  SocketException() => 'Connection lost. Check your internet and try again.',
+  TimeoutException() =>
+    'Sync timed out. The server may be starting up. Try again now.',
+  _ => '$error',
+};
+
 class SupabaseHealthRepository implements HealthRepository {
   SupabaseHealthRepository(
     this._client,
@@ -227,16 +238,8 @@ class SupabaseHealthRepository implements HealthRepository {
             ? (response.data as Map)['error'] ?? '${response.status}'
             : '${response.status}';
         lastException = _HealthSyncException(detail.toString());
-      } on SocketException catch (_) {
-        lastException = _HealthSyncException(
-          'Connection lost. Check your internet and try again.',
-        );
-      } on TimeoutException {
-        lastException = _HealthSyncException(
-          'Sync timed out. The server may be starting up. Try again now.',
-        );
-      } catch (e) {
-        lastException = _HealthSyncException('$e');
+      } catch (error) {
+        lastException = _HealthSyncException(healthSyncFailureMessage(error));
       }
     }
     throw lastException ?? _HealthSyncException('Sync failed.');
