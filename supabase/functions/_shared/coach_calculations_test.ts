@@ -144,6 +144,26 @@ Deno.test("HealthKit weights join body measurements; identical same-day readings
   assertEquals(calc.weight!.trends[0].kg_per_week, -0.5);
 });
 
+Deno.test("a manual weight wins over a different HealthKit weight on the same date", () => {
+  const calc = calculateCoachNumbers({
+    coaching_date: date,
+    weight_series_8w: weights([[0, 80], [7, 80.5], [14, 81], [21, 81.5]]),
+    health_daily_28d: [
+      // The scale synced to HealthKit disagrees with the manual entries.
+      { local_date: daysAgo(0), weight_kg: 83 },
+      { local_date: daysAgo(14), weight_kg: 79 },
+      // A HealthKit-only date still counts.
+      { local_date: daysAgo(10), weight_kg: 80.8 },
+    ],
+  })!;
+  const weight = calc.weight!;
+  assertEquals(weight.latest_kg, 80);
+  assertEquals(weight.trends[0].readings, 5);
+  // Without the HealthKit conflicts the manual line is exactly -0.5 kg/week;
+  // 80.8 kg on day 10 sits 0.086 kg above it, which moves the fit very little.
+  assertEquals(weight.trends[0].kg_per_week, -0.5);
+});
+
 Deno.test("training windows, week-over-week change and plan pace", () => {
   const session = (days: number, minutes: number, volume: number, rpe: number | null) => ({
     local_date: daysAgo(days),

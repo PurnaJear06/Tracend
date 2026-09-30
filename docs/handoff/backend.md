@@ -409,7 +409,8 @@ computing its own. Details are in `docs/ALGORITHMS.md` §5.
   - the eval runs them on its synthetic athletes.
   The limit is the file's windows (28 days, 8 weeks of weight). A projection to a target the
   athlete names still uses the table's nearest whole kilogram.
-- Tests: `_shared/coach_calculations_test.ts` (13). The rich eval athlete's 72 kg projection is
+- Tests: `_shared/coach_calculations_test.ts` (14; a manual weight wins over a different
+  HealthKit weight on the same date, as in the feature engine). The rich eval athlete's 72 kg projection is
   14 weeks, inside the eval's 9–18 reference.
 - **Owed before merge:** the direct DeepSeek eval, run on `main` (before) and on the PR (after). It
   needs the `DEEPSEEK_API_KEY` repository secret, and the `EVAL_BASE_URL` variable removed so the

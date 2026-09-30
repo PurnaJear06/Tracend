@@ -373,10 +373,10 @@ weight_trend = REGR_SLOPE(weight_kg, epoch_days) from PostgreSQL aggregate
 file (`prepare_coach_chat_v8`) and renders them as the "Calculated by Tracend" context section. The
 model quotes these instead of doing its own arithmetic. Windows end on the coaching date.
 
-- **Weight trend:** the same OLS slope and sources as above (body measurements plus HealthKit
-  daily weights; identical same-day readings count once), over 4 weeks (28 days) and 8 weeks
-  (56 days), reported in kg/week. A window needs readings on at least 4 days spanning at least 14
-  days; otherwise no trend is given.
+- **Weight trend:** the same OLS slope, sources and precedence as above (body measurements, plus
+  HealthKit daily weights only on dates without a body measurement; identical readings count
+  once), over 4 weeks (28 days) and 8 weeks (56 days), reported in kg/week. A window needs
+  readings on at least 4 days spanning at least 14 days; otherwise no trend is given.
 - **Weight projection (labeled estimate):** the current pace is the 4-week trend (the 8-week trend
   when the 4-week one lacks readings). The other window widens the range only when it points the
   same way. Under 0.05 kg/week the weight counts as stable and no date is projected. The section

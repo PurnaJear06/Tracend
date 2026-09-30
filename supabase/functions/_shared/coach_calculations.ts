@@ -156,23 +156,29 @@ function mean(values: readonly number[]): number | null {
 type WeightPoint = Readonly<{ day: number; date: string; kg: number }>;
 
 function weightPoints(ctx: Record<string, unknown>, today: number): WeightPoint[] {
-  // Same sources as the feature engine's weight trend: body measurements plus
-  // HealthKit daily weights, with identical same-day readings counted once.
+  // Same sources and precedence as the feature engine's weight trend
+  // (docs/ALGORITHMS.md §5): body measurements, plus HealthKit daily weights
+  // only on dates with no body measurement. Identical readings count once.
   const seen = new Set<string>();
+  const manualDays = new Set<number>();
   const points: WeightPoint[] = [];
-  const add = (date: unknown, weight: unknown) => {
+  const add = (date: unknown, weight: unknown, manual: boolean) => {
     const day = dayIndex(date);
     const kg = num(weight);
     if (day === null || kg === null || kg <= 0 || day > today) return;
+    if (!manual && manualDays.has(day)) return;
     const key = `${date}|${kg}`;
     if (seen.has(key)) return;
     seen.add(key);
+    if (manual) manualDays.add(day);
     points.push({ day, date: date as string, kg });
   };
   for (const point of arr(ctx.weight_series_8w)) {
-    add(obj(point).measured_on, obj(point).weight_kg);
+    add(obj(point).measured_on, obj(point).weight_kg, true);
   }
-  for (const row of arr(ctx.health_daily_28d)) add(obj(row).local_date, obj(row).weight_kg);
+  for (const row of arr(ctx.health_daily_28d)) {
+    add(obj(row).local_date, obj(row).weight_kg, false);
+  }
   return points;
 }
 
