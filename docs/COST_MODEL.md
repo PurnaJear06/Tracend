@@ -133,7 +133,9 @@ was used server-side for owner dogfooding through beta. Now superseded pending e
 
 **Owner AI budget (2026-09-29):** USD 1 monthly warning, USD 2 server-side hard stop, and 30
 requests per owner/day shared by Coach chat, daily decisions and meal photos
-(`assert_owner_ai_budget`, `get_my_ai_budget_state`). The daily count was 10, which about 10 meal
+(`assert_owner_ai_budget`, `get_my_ai_budget_state`). The daily-decision preparation
+(`prepare_daily_coaching`) applies the same 30, counting only runs that called an AI model
+(2026-09-30). The daily count was 10, which about 10 meal
 photos a day would use up; the USD 2 stop still bounds spend.
 
 **Meal photos (2026-09-29):** Groq `qwen/qwen3.8-27b` (`MEAL_VISION_PROVIDER=groq`), the named

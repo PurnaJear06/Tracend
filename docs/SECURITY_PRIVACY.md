@@ -60,7 +60,9 @@ Consent choices are separate and versioned for:
 - private-beta terms and privacy notice;
 - AI coaching: sending the athlete's Tracend data to the Coach's AI provider for chat answers and
   daily decisions (`ai_coaching`; a decline is stored as `withdrawn`, and a grant of an older notice
-  version is asked again);
+  version is asked again). The server enforces it: `coach-chat` refuses and `coach-decide` falls
+  back to the deterministic decision without a current grant (`has_ai_coaching_consent`,
+  service-role only);
 - HealthKit read/sync by requested data type;
 - meal-photo storage and AI analysis;
 - progress-photo storage and progress-photo AI analysis as separate choices;
