@@ -395,9 +395,15 @@ privacy were recorded.
     no record, a grant, another athlete's grant, a withdrawal, an older notice, and the privileges.
   - `coach-chat` checks it before the budget and the model. It answers 403 `ai_consent_required`
     without a grant, and 503 `ai_consent_unavailable`, reported to Sentry, when the check fails.
-  - `coach-decide` uses the deterministic provider unless the check returns a grant, so a failed
-    check never sends data.
-  - Shared helper: `_shared/ai_consent.ts`, with Deno tests.
+  - `coach-decide` checks it first, then uses the deterministic provider unless the check returns a
+    grant, so a failed check never sends data.
+  - The decisions live in `_shared/ai_consent.ts` (`coachChatConsentRefusal`) and
+    `_shared/providers/daily_decision_provider.ts`, with Deno tests. The handlers only wire them in;
+    there are no handler-level tests, because each handler starts `Deno.serve` on import.
+  - `prepare_daily_coaching` (migration `20260930091000`) now counts only runs that called an AI
+    model, up to 30 a day. Before, it counted deterministic runs as well and capped at 10, which
+    could refuse the free decision to an athlete without consent and contradicted the owner budget
+    of 30 a day. pgTAP: `daily_coaching_limit_test.sql`.
 - Meal-photo AI consent (naming Groq) is still owed before any second user.
 
 ## Recorded follow-ups — out of scope

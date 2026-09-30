@@ -52,17 +52,11 @@ select is(
   'a grant of an older notice does not count'
 );
 
-set local role authenticated;
-set local "request.jwt.claim.sub" = 'b6b6b6b6-b6b6-4b6b-8b6b-b6b6b6b6b6b6';
-
-select throws_ok(
-  $$select public.has_ai_coaching_consent('b6b6b6b6-b6b6-4b6b-8b6b-b6b6b6b6b6b6')$$,
-  '42501',
-  null,
+select ok(
+  not has_function_privilege('authenticated',
+    'public.has_ai_coaching_consent(uuid)', 'execute'),
   'the app cannot call the check directly'
 );
-
-reset role;
 
 select ok(
   not has_function_privilege('anon',

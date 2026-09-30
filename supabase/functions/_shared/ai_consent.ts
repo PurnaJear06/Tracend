@@ -21,3 +21,13 @@ export async function aiCoachingConsent(
     return "unavailable";
   }
 }
+
+/// What coach-chat answers instead of calling the model, or null to go on.
+export function coachChatConsentRefusal(
+  consent: AiCoachingConsent,
+): { status: 403 | 503; error: string } | null {
+  if (consent === "granted") return null;
+  return consent === "unavailable"
+    ? { status: 503, error: "ai_consent_unavailable" }
+    : { status: 403, error: "ai_consent_required" };
+}

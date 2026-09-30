@@ -16,7 +16,7 @@ import {
 } from "../_shared/providers/coach_chat_provider.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { captureException } from "../_shared/sentry.ts";
-import { aiCoachingConsent } from "../_shared/ai_consent.ts";
+import { aiCoachingConsent, coachChatConsentRefusal } from "../_shared/ai_consent.ts";
 
 export const coachChatResponseSchemaVersion = "1.1";
 // Request 1.1 (current app) gets response 1.2: answer_source on every message
@@ -277,17 +277,17 @@ Deno.serve(async (request) => {
     (name, params) => auth.serviceClient.rpc(name, params),
     auth.userId,
   );
-  if (consent === "unavailable") {
-    log.error("ai_consent_check_failed");
-    captureException(new Error("ai_consent_check_failed"), {
-      userId: auth.userId,
-      functionName: "coach-chat",
-      correlationId,
-    });
-    return reply(503, versionedResponse({ error: "ai_consent_unavailable" }));
-  }
-  if (consent === "not_granted") {
-    return reply(403, versionedResponse({ error: "ai_consent_required" }));
+  const refusal = coachChatConsentRefusal(consent);
+  if (refusal) {
+    if (consent === "unavailable") {
+      log.error("ai_consent_check_failed");
+      captureException(new Error("ai_consent_check_failed"), {
+        userId: auth.userId,
+        functionName: "coach-chat",
+        correlationId,
+      });
+    }
+    return reply(refusal.status, versionedResponse({ error: refusal.error }));
   }
   const { error: budgetError } = await auth.serviceClient.rpc("assert_owner_ai_budget", {
     target_user_id: auth.userId,
