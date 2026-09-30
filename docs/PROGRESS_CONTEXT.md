@@ -1,15 +1,16 @@
 # Tracend Current State
 
-**As of:** 2026-09-29
+**As of:** 2026-09-30
 
 **Lifecycle:** owner-only private beta; not approved for public production
 
 **Current priority:** make Coach chat answer every question from the full athlete file and never
 dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 (app) → B
 (calculators). PR #35 and A1's server code are live; an owner spot check passed on 2026-09-28.
-A2 (the app) was merged and deployed on 2026-09-29 and is installed on the owner's iPhone; the
-owner's A2 device check is next. Finish the full owner-device acceptance checklist before any UI
-redesign.
+A2 (the app) was merged and deployed on 2026-09-29. Build 208 (main e59aa23) is installed on the
+owner's iPhone, and on 2026-09-30 the owner reported Coach, AI consent, and meal photos working. Next
+are server-side consent enforcement and B, then the full owner-device acceptance checklist before
+any UI redesign.
 
 ## Shipped baseline
 
@@ -57,6 +58,15 @@ redesign.
       present, replaced it the same day (see
       [Device installs](./CI_CD_DEPLOYMENT.md#device-installs)).
 - HealthKit sleep aggregation handles mixed staged and unspecified intervals without double-counting.
+- Owner batch, 2026-09-29/30 (PRs #42–#49, all deployed):
+  - each checkout builds in its own folder, and installs refuse an app bundle without its fonts;
+  - AI coaching consent in onboarding and Account, with Coach and Today gated in the app;
+  - Coach replies render bold, italic and lists;
+  - meal-photo failures show under the buttons and reach Sentry;
+  - meal photos run on Groq `qwen/qwen3.8-27b` on the free tier, which allows 1,000 output tokens a
+    minute (about one photo a minute);
+  - the owner AI budget is USD 1 warning, USD 2 stop, 30 requests a day;
+  - `sentry_flutter` 9.30.1 with matching iOS pods.
 - Fresh-database pgTAP parity, Flutter/Deno tests, iOS compilation, migration collision checks, and
   secret scanning run in CI. Locally:
   - PR #35 passes 124 Deno tests, 422 Flutter tests, 34 pgTAP files / 951 assertions, analysis, an
@@ -101,9 +111,8 @@ These are not silently considered complete:
    - A2 is merged, deployed, and reinstalled with the app's `SENTRY_DSN`. The owner's A2 device
      check in the handoff is next.
    - Then B (calculators), followed by owner-device acceptance and Sentry verification.
-2. Meal photos do not work. Groq shut down the configured vision model on 2026-09-14, so
-   analysis needs another provider; Gemini on a billing-enabled project is recommended. Separately,
-   the AI budget in code (10 requests a day, $2 a month) contradicts the PRD (30 a day, $5). See the
+2. Meal photos need their own AI consent before anyone other than the owner uses them: the AI
+   coaching notice covers DeepSeek and says photos are not sent, but meal photos go to Groq. See the
    backend handoff, "Meal photos".
 3. Approve a coherent visual direction and then redesign from the current product truth; do not
    copy a competitor's protected assets or flows.
@@ -118,8 +127,8 @@ The active implementation is the FLUTTER-8 Coach work described in
 [`docs/handoff/backend.md`](./handoff/backend.md). PR #35, A1, and A2 are live. B follows the
 owner's A2 device check. After owner-device acceptance, return to the read-only product/UI audit
 and one owner-approved redesign brief. AI coaching now needs the athlete's consent, which is asked
-in onboarding and once for existing accounts. Server enforcement follows once the owner has
-answered on device.
+in onboarding and once for existing accounts. For server enforcement status, see the backend
+handoff, "AI coaching consent".
 
 ## Sources of truth
 

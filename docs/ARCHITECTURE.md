@@ -297,7 +297,7 @@ The app (A2) sends request 1.1 and renders the labeled data summary. It lists co
 newest first. It reopens the conversation last opened on the device and creates a thread on its
 first send, so opening Coach never stores an empty thread.
 
-The daily Head Coach decision remains a separate immutable record pinned above conversation. `prepare_coach_chat_v2` reconciles context coverage independently from the same-day
+The daily Head Coach decision remains a separate immutable record, shown on Today; Coach no longer pins it above conversations (2026-09-30). `prepare_coach_chat_v2` reconciles context coverage independently from the same-day
 daily-decision policy: a recent HealthKit summary is valid chat context even when the current
 calendar day has no complete HealthKit row. `get_my_coach_context_status()` exposes only
 owner-scoped source availability, counts, and latest dates; it returns no health values or provider

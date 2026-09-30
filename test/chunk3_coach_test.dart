@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,39 +21,7 @@ Future<void> _tall(WidgetTester tester) async {
   );
 }
 
-CoachDecision _decision({
-  String confidence = 'high',
-  String reason = 'Evidence supports the current plan.',
-}) => CoachDecision(
-  id: 'decision-1',
-  localDate: '2026-08-24',
-  trainingAction: 'Proceed',
-  trainingSummary: 'Training stays as planned.',
-  nutritionAction: 'Keep intake unchanged',
-  nutritionSummary: 'Prioritize protein.',
-  finalDecision: 'Keep the approved plan.',
-  reason: reason,
-  confidence: confidence,
-  evidence: const [
-    {
-      'code': 'RECOVERY_WITHIN_BASELINE',
-      'label': 'Recovery indicators are within the recent baseline',
-      'source': 'feature_snapshot',
-    },
-  ],
-  missingData: const ['workout_execution'],
-  riskFlags: const [],
-  createdAt: DateTime(2026, 8, 24),
-);
-
 void main() {
-  testWidgets('confidence always comes from the decision', (tester) async {
-    await tester.pumpWidget(_app(_DecisionRepository(confidence: 'low')));
-    await tester.pumpAndSettle();
-    expect(find.text('Confidence: low'), findsOneWidget);
-    expect(find.textContaining('medium'), findsNothing);
-  });
-
   testWidgets('coaching context uses the evidence accordion', (tester) async {
     await tester.pumpWidget(_app(_ChatRepository()));
     await tester.pumpAndSettle();
@@ -70,6 +36,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Apple Health summaries'), findsOneWidget);
     expect(find.textContaining('latest 2026-07-10'), findsOneWidget);
+  });
+
+  testWidgets('an ongoing conversation has no pinned cards above it', (
+    tester,
+  ) async {
+    await _tall(tester);
+    await tester.pumpWidget(_app(_ChatRepository()));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Explain today');
+    await tester.tap(find.byTooltip('Send message'));
+    await tester.pumpAndSettle();
+
+    // Today's decision lives on Today; what the Coach can see shows only on
+    // a new conversation.
+    expect(find.text('HEAD COACH'), findsNothing);
+    expect(find.text('No daily decision yet'), findsNothing);
+    expect(find.text('Your coaching context'), findsNothing);
+    expect(find.text('Your approved plan remains available.'), findsOneWidget);
   });
 
   testWidgets('message evidence accordion expands to real evidence', (
@@ -124,97 +108,6 @@ void main() {
     );
     expect(find.textContaining('Unexpected end of JSON input'), findsNothing);
   });
-
-  testWidgets('long decision reason expands beyond six lines', (tester) async {
-    final longReason = List.generate(
-      12,
-      (i) => 'Evidence point $i supports maintaining the approved plan today.',
-    ).join(' ');
-    await tester.pumpWidget(_app(_DecisionRepository(reason: longReason)));
-    await tester.pumpAndSettle();
-    expect(find.text('Show more'), findsOneWidget);
-    await tester.tap(find.text('Show more'));
-    await tester.pumpAndSettle();
-    expect(find.text('Show less'), findsOneWidget);
-  });
-
-  testWidgets('short decision reason has no dead expansion control', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_app(_DecisionRepository()));
-    await tester.pumpAndSettle();
-    expect(find.text('Show more'), findsNothing);
-  });
-
-  testWidgets('empty decision state offers generation', (tester) async {
-    await tester.pumpWidget(_app(_EmptyRepository()));
-    await tester.pumpAndSettle();
-    expect(find.text('No daily decision yet'), findsOneWidget);
-    expect(find.text('Generate today’s decision'), findsOneWidget);
-  });
-
-  testWidgets('decision loading shows a progress card', (tester) async {
-    await tester.pumpWidget(_app(_LoadingRepository()));
-    await tester.pump();
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
-  });
-
-  testWidgets('generation failure shows the safe fallback', (tester) async {
-    await tester.pumpWidget(_app(_FailureRepository()));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Generate today’s decision'));
-    await tester.pumpAndSettle();
-    expect(
-      find.text('Coaching is unavailable. Your approved plan is unchanged.'),
-      findsOneWidget,
-    );
-  });
-}
-
-class _DecisionRepository implements CoachRepository {
-  const _DecisionRepository({this.confidence = 'high', this.reason});
-  final String confidence;
-  final String? reason;
-
-  @override
-  Future<CoachDecision?> loadLatest() async => _decision(
-    confidence: confidence,
-    reason: reason ?? 'Evidence supports the current plan.',
-  );
-  @override
-  Future<CoachDecision> generate() async => _decision();
-  @override
-  Future<Map<String, dynamic>> loadUsage() async => const {};
-}
-
-class _EmptyRepository implements CoachRepository {
-  const _EmptyRepository();
-  @override
-  Future<CoachDecision?> loadLatest() async => null;
-  @override
-  Future<CoachDecision> generate() async => _decision();
-  @override
-  Future<Map<String, dynamic>> loadUsage() async => const {};
-}
-
-class _FailureRepository implements CoachRepository {
-  const _FailureRepository();
-  @override
-  Future<CoachDecision?> loadLatest() async => null;
-  @override
-  Future<CoachDecision> generate() => throw StateError('offline');
-  @override
-  Future<Map<String, dynamic>> loadUsage() async => const {};
-}
-
-class _LoadingRepository implements CoachRepository {
-  const _LoadingRepository();
-  @override
-  Future<CoachDecision?> loadLatest() => Completer<CoachDecision?>().future;
-  @override
-  Future<CoachDecision> generate() => throw StateError('not needed');
-  @override
-  Future<Map<String, dynamic>> loadUsage() async => const {};
 }
 
 class _ChatRepository

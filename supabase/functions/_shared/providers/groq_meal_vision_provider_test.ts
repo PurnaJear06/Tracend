@@ -145,3 +145,37 @@ Deno.test("a Groq refusal names its status and code, not its message", async () 
     throw new Error(`Unexpected failure: ${message}`);
   }
 });
+
+Deno.test("a photo with no food is an empty answer, not a failure", async () => {
+  const result = await analyzeGroqMealImage(
+    new Uint8Array([1, 2, 3]),
+    "image/jpeg",
+    () =>
+      Promise.resolve(
+        new Response(JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ candidates: [] }) } }],
+          usage: { prompt_tokens: 1339, completion_tokens: 15 },
+        })),
+      ),
+    environment({}),
+  );
+  if (result.candidates.length !== 0 || result.inputUnits !== 1339) {
+    throw new Error("An empty answer was not returned as empty.");
+  }
+});
+
+Deno.test("the prompt allows an empty answer instead of an invented food", async () => {
+  let prompt = "";
+  await analyzeGroqMealImage(
+    new Uint8Array([1, 2, 3]),
+    "image/jpeg",
+    (_input, init) => {
+      prompt = JSON.parse(String(init?.body)).messages[0].content[0].text;
+      return Promise.resolve(candidateReply());
+    },
+    environment({}),
+  );
+  if (!prompt.includes("0-20 objects") || !prompt.includes("never invent a food")) {
+    throw new Error(`Prompt still requires a candidate: ${prompt.slice(0, 120)}`);
+  }
+});

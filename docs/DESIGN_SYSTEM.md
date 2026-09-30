@@ -337,7 +337,7 @@ active-goal RPC confirms one — the goal line never renders a fabricated value.
 ### `CoachMessage` and `MealScheduleTimeline`
 
 Coach messages use a restrained familiar bubble shape, selectable text, and an expandable evidence
-drawer; the pinned daily decision remains a separate solid surface. A Coach reply renders a small
+drawer. The daily decision is shown on Today, not above Coach conversations. A Coach reply renders a small
 Markdown subset: bold, italic, and bullet or numbered lists, with headings shown as bold lines and
 a link as its label followed by its destination in plain text (selectable, not tappable). Anything
 else, including an unmatched marker, stays as typed. The athlete's own messages are shown exactly

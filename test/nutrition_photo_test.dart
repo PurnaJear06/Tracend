@@ -143,4 +143,37 @@ void main() {
       'This photo is larger than 4 MB. Choose a smaller one.',
     );
   });
+
+  test('a photo iOS cannot load, no food, and limits say what happened', () {
+    expect(
+      mealPhotoFailureMessage(
+        const MealPhotoFailure('picker', 'invalid_image'),
+      ),
+      contains('iCloud'),
+    );
+    expect(
+      mealPhotoFailureMessage(
+        const MealPhotoFailure('analysis', '422 meal_no_food_found'),
+      ),
+      startsWith('No food was found in this photo.'),
+    );
+    expect(
+      mealPhotoFailureMessage(
+        const MealPhotoFailure('analysis', '429 meal_vision_busy'),
+      ),
+      contains('Wait a minute'),
+    );
+    expect(
+      mealPhotoFailureMessage(
+        const MealPhotoFailure('analysis', '429 ai_usage_limit'),
+      ),
+      contains(r'$2'),
+    );
+    expect(
+      mealPhotoFailureMessage(
+        const MealPhotoFailure('analysis', '503 meal_analysis_unavailable'),
+      ),
+      startsWith('Meal photo analysis failed (analysis: 503'),
+    );
+  });
 }

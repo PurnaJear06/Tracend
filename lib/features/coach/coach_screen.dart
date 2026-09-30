@@ -8,7 +8,6 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/coach/widgets/coach_composer.dart';
 import 'package:tracend/features/coach/widgets/coach_context_card.dart';
-import 'package:tracend/features/coach/widgets/coach_decision_card.dart';
 import 'package:tracend/features/coach/widgets/coach_message_bubble.dart';
 import 'package:tracend/features/coach/widgets/preference_prompt_chip.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
@@ -34,7 +33,6 @@ class CoachScreen extends StatefulWidget {
 class _CoachScreenState extends State<CoachScreen> {
   final _composer = TextEditingController();
   final _scroll = ScrollController();
-  late Future<CoachDecision?> _decision;
   Future<List<CoachContextSource>>? _contextStatus;
   CoachChatRepository? get _chat => widget.repository is CoachChatRepository
       ? widget.repository as CoachChatRepository
@@ -56,7 +54,6 @@ class _CoachScreenState extends State<CoachScreen> {
   int _threadsRequest = 0;
   bool _loadingChat = true;
   bool _sending = false;
-  bool _generating = false;
   String? _error;
   Map<String, dynamic>? _preferencePrompt;
   StreamSubscription<int>? _cooldownSubscription;
@@ -73,7 +70,6 @@ class _CoachScreenState extends State<CoachScreen> {
   void initState() {
     super.initState();
     widget.aiConsent?.addListener(_consentChanged);
-    _decision = widget.repository.loadLatest();
     if (widget.repository is CoachContextRepository) {
       _contextStatus = (widget.repository as CoachContextRepository)
           .loadContextStatus();
@@ -366,28 +362,6 @@ class _CoachScreenState extends State<CoachScreen> {
     });
   }
 
-  Future<void> _generate() async {
-    if (!_aiAllowed) {
-      await _reviewAiCoaching();
-      return;
-    }
-    setState(() => _generating = true);
-    try {
-      final value = await widget.repository.generate();
-      if (mounted) setState(() => _decision = Future.value(value));
-    } catch (e) {
-      debugPrint('Non-critical error: $e');
-      if (mounted) {
-        setState(
-          () => _error =
-              'Coaching is unavailable. Your approved plan is unchanged.',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _generating = false);
-    }
-  }
-
   void _showThreads() => showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
@@ -458,27 +432,6 @@ class _CoachScreenState extends State<CoachScreen> {
                 TracendSpacing.lg,
               ),
               children: [
-                FutureBuilder<CoachDecision?>(
-                  future: _decision,
-                  builder: (context, snapshot) => CoachDecisionCard(
-                    decision: snapshot.data,
-                    loading:
-                        snapshot.connectionState == ConnectionState.waiting,
-                    generating: _generating,
-                    onGenerate: _generate,
-                  ),
-                ),
-                if (_contextStatus != null) ...[
-                  const SizedBox(height: TracendSpacing.sm),
-                  FutureBuilder<List<CoachContextSource>>(
-                    future: _contextStatus,
-                    builder: (context, snapshot) => CoachContextCard(
-                      sources: snapshot.data,
-                      loading:
-                          snapshot.connectionState == ConnectionState.waiting,
-                    ),
-                  ),
-                ],
                 if (_error != null) ...[
                   const SizedBox(height: TracendSpacing.sm),
                   TracendCard(
@@ -553,6 +506,20 @@ class _CoachScreenState extends State<CoachScreen> {
                     ),
                   ),
                   const SizedBox(height: TracendSpacing.sm),
+                  // What the Coach can see, shown once on a new conversation
+                  // rather than above every one. Today's decision lives on
+                  // Today.
+                  if (_contextStatus != null) ...[
+                    FutureBuilder<List<CoachContextSource>>(
+                      future: _contextStatus,
+                      builder: (context, snapshot) => CoachContextCard(
+                        sources: snapshot.data,
+                        loading:
+                            snapshot.connectionState == ConnectionState.waiting,
+                      ),
+                    ),
+                    const SizedBox(height: TracendSpacing.sm),
+                  ],
                   Wrap(
                     spacing: TracendSpacing.xs,
                     runSpacing: TracendSpacing.xs,

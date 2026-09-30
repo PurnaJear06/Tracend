@@ -236,7 +236,8 @@ Today uses a real timeline for check-in, workout, meal, and review actions. The 
 decision always uses **Do this next** and remains actionable when AI is offline. A missing
 readiness signal becomes a direct recovery action (sync Apple Health or add a check-in).
 
-Coach shows an expandable **Your coaching context** card before conversation. It lists approved
+Coach shows an expandable **Your coaching context** card on a new conversation, before its first
+message; an ongoing conversation shows no cards above it. It lists approved
 plan, goal/profile, Apple Health, check-ins, confirmed nutrition, completed Tracend workouts,
 measurements, and conversation history with honest availability/count/latest-date metadata.
 Model-cited evidence and actual data gaps use **Evidence used and data gaps**; generated follow-up
@@ -326,8 +327,12 @@ AI observation                 Confirmed meal
 - Failure offers **Retry**, **Enter manually**, and **Delete photo**.
 - While a photo is analyzed, a progress line appears under the photo buttons. A failure is shown in
   the same place, never only at the top of the screen, out of view. A refused camera or photo
-  permission names the iOS setting to change. Any other failure names the step (`picker`, `upload`,
-  `draft`, `analysis`) and its error code, for example `analysis: 503 meal_analysis_unavailable`.
+  permission names the iOS setting to change. Four outcomes say what happened in plain words: a
+  library photo iOS could not load (`invalid_image`, usually an iCloud photo that did not
+  download), no food in the photo (422 `meal_no_food_found`), the provider's free tier being busy
+  (429 `meal_vision_busy`, about one photo a minute), and the AI budget being reached (429
+  `ai_usage_limit`). Any other failure names the step (`picker`, `upload`, `draft`, `analysis`) and
+  its error code, for example `analysis: 503 meal_analysis_unavailable`.
 
 ## 9. Progress Review
 
@@ -346,8 +351,8 @@ dated comparable observations.
 
 ### Coach conversation
 
-Coach opens with the latest daily Head Coach decision pinned above a familiar saved-thread
-conversation:
+Coach opens a familiar saved-thread conversation. The daily Head Coach decision is on Today, not
+pinned above every conversation (owner report, 2026-09-30):
 - It reopens the conversation last opened on this device, otherwise the one with the newest
   message. With no saved conversation, it starts a new one.
 - A new conversation, from launch or from New, is saved only when its first message is sent.
