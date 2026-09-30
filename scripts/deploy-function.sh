@@ -47,7 +47,7 @@ output="$(mktemp)"
 trap 'rm -f "$output"' EXIT
 
 for ((attempt = 1; attempt <= attempts; attempt++)); do
-  if $cli functions deploy "$function_name" --project-ref "$project_ref" --use-api 2>&1 |
+  if "$cli" functions deploy "$function_name" --project-ref "$project_ref" --use-api 2>&1 |
     tee "$output"; then
     exit 0
   fi
