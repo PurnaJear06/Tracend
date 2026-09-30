@@ -380,7 +380,10 @@ Update, 2026-09-30 (#48, #49, and the Coach-header PR):
   a minute. A request asking for more is refused outright, and the qwen3.6 reasoning options made
   it fail as well. The request now asks for at most 1,000 and sends no reasoning options (#49).
 - **Budget resolved.** The owner chose USD 2: USD 1 warning, USD 2 stop, 30 requests a day (#48).
-- **Plain outcomes.** A photo with no food returns 422 `meal_no_food_found`, a free-tier refusal
+- **Plain outcomes.** A photo with no food returns 422 `meal_no_food_found`. Both prompts (and
+  Gemini's schema) allow 0–20 candidates, so a model is never pushed to invent a food, and the
+  empty draft is removed with `delete_my_meal`, which also schedules its photo for deletion. A
+  free-tier refusal
   returns 429 `meal_vision_busy`, and Groq's status and code reach Sentry
   (`meal_vision_request_failed:<status>:<code>`). The app words these, plus `invalid_image` (an
   iCloud photo iOS could not load) and `ai_usage_limit`.

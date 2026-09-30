@@ -73,6 +73,13 @@ Deno.serve(async (request) => {
       // The model looked and found no food. That is an answer, not an outage;
       // the call still counts toward the budget.
       await recordUsage();
+      // Nothing to review, so the draft goes, the way the app deletes a meal
+      // (which also schedules the photo for deletion). A failed removal
+      // leaves a draft with no candidates; the answer still stands.
+      const { error: discardError } = await auth.userClient.rpc("delete_my_meal", {
+        target_meal_id: body.meal_id,
+      });
+      if (discardError) log.warn("meal_no_food_draft_not_removed");
       log.info("meal_analysis_no_food", {
         latency_ms: visionLatency,
         provider,
