@@ -88,7 +88,8 @@ any UI redesign.
 - Production dumps are restore-drilled in an isolated local Supabase database before migration.
 - Edge Functions deploy one at a time, and each is confirmed live by comparing the deployed source
   with the commit; the release tag waits for that check. On 2026-09-28, parallel deploys had
-  reported success while Supabase kept the previous version of four functions.
+  reported success while Supabase kept the previous version of four functions. Supabase's
+  intermittent deploy 500 is retried automatically (`scripts/deploy-function.sh`).
 - Semantic versions come from `pubspec.yaml`; build numbers are monotonic in CI and derived from Git
   history for local device builds.
 - Each checkout builds in its own folder. The device installer refuses an app bundle without its

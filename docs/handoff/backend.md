@@ -224,6 +224,10 @@ from per_thread;
   - `scripts/verify-live-function.sh` confirms each one is live and redeploys it once if not.
   - A final job checks all of them before tagging.
   - `hotfix.yml` can push its tag.
+- Deploy 500s (2026-09-29, run 36644106585): Supabase answered `unexpected deploy status 500`
+  ("Function deploy failed due to an internal error") for `coach-chat` and `health-sync`. Two
+  reruns were needed. Both workflows now deploy through `scripts/deploy-function.sh`, which
+  retries a 5xx answer up to three times (30 s, then 60 s) and fails at once on any other error.
 
 ## PR #35 — base hardening
 

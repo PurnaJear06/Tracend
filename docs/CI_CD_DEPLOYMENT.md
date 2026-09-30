@@ -41,6 +41,11 @@ A successful `supabase functions deploy` does not prove that the new code is liv
 The pipeline now guards against this:
 
 - Functions deploy one at a time (`max-parallel: 1`).
+- Each deploy runs through `scripts/deploy-function.sh`. Supabase's deploy service sometimes
+  answers `unexpected deploy status 500` ("Function deploy failed due to an internal error"). On
+  2026-09-29 `coach-chat` and `health-sync` failed this way twice and passed on a third manual
+  rerun. The script retries a 5xx answer up to three times, waiting 30 s and then 60 s. Any other
+  error (bundling, token) fails at once.
 - `scripts/verify-live-function.sh <function>` downloads the deployed source (read-only) and
   compares its files byte for byte with the commit. It retries while a new version propagates.
 - If a function is not live after its deploy, the job deploys it once more. If it is still not live,
