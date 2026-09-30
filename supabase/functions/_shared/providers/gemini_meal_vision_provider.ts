@@ -133,7 +133,8 @@ export async function analyzeMealImage(
     }
     const parsed = JSON.parse((parts[0] as Record<string, string>).text) as Record<string, unknown>;
     if (
-      !Array.isArray(parsed.candidates) || parsed.candidates.length < 1 ||
+      // An empty list is a valid answer: no food in the photo.
+      !Array.isArray(parsed.candidates) ||
       parsed.candidates.length > 20
     ) {
       throw new Error("meal_vision_response_invalid");

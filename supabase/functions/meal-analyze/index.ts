@@ -57,6 +57,29 @@ Deno.serve(async (request) => {
         new Uint8Array(await image.arrayBuffer()),
         media.content_type as string,
       );
+    const visionLatency = Math.round(performance.now() - started);
+    const recordUsage = () =>
+      auth.serviceClient.rpc("record_ai_usage_event", {
+        target_user_id: auth.userId,
+        run_purpose: "meal_vision",
+        run_provider: provider,
+        run_model: result.model,
+        run_input_units: result.inputUnits,
+        run_output_units: result.outputUnits,
+        run_estimated_cost_usd: result.estimatedCostUsd,
+        run_latency_ms: visionLatency,
+      });
+    if (result.candidates.length === 0) {
+      // The model looked and found no food. That is an answer, not an outage;
+      // the call still counts toward the budget.
+      await recordUsage();
+      log.info("meal_analysis_no_food", {
+        latency_ms: visionLatency,
+        provider,
+        model: result.model,
+      });
+      return reply(422, { error: "meal_no_food_found" });
+    }
     const persistenceCandidates = result.candidates.map((
       { assumptions: _assumptions, question: _question, ...candidate },
     ) => candidate);
@@ -68,17 +91,7 @@ Deno.serve(async (request) => {
       run_model: result.model,
     });
     if (error) return reply(422, { error: "meal_analysis_rejected" });
-    const visionLatency = Math.round(performance.now() - started);
-    await auth.serviceClient.rpc("record_ai_usage_event", {
-      target_user_id: auth.userId,
-      run_purpose: "meal_vision",
-      run_provider: provider,
-      run_model: result.model,
-      run_input_units: result.inputUnits,
-      run_output_units: result.outputUnits,
-      run_estimated_cost_usd: result.estimatedCostUsd,
-      run_latency_ms: visionLatency,
-    });
+    await recordUsage();
     log.info("meal_analysis_complete", {
       latency_ms: visionLatency,
       provider,
@@ -91,6 +104,11 @@ Deno.serve(async (request) => {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    if (message.startsWith("meal_vision_request_failed:429:")) {
+      // Groq's free tier allows about one photo a minute. Busy, not broken.
+      log.warn("meal_analysis_busy", { detail: message });
+      return reply(429, { error: "meal_vision_busy" });
+    }
     captureException(err, {
       userId: auth.userId,
       functionName: "meal-analyze",

@@ -373,6 +373,19 @@ The owner reported that the Nutrition photo buttons did nothing. Findings:
 - Sentry shows no meal-analyze errors in 90 days, so recent attempts failed before the provider
   call (picker, upload, draft, or the 429 budget check). The new on-screen code will show which.
 
+Update, 2026-09-30 (#48, #49, and the Coach-header PR):
+- **Provider.** Groq `qwen/qwen3.8-27b`, the successor Groq named, on the owner's existing Groq
+  key (free tier). The owner set `MEAL_VISION_MODEL=qwen/qwen3.8-27b`.
+- **Free-tier limit.** Groq's 429 on the owner's key showed the binding limit: 1,000 output tokens
+  a minute. A request asking for more is refused outright, and the qwen3.6 reasoning options made
+  it fail as well. The request now asks for at most 1,000 and sends no reasoning options (#49).
+- **Budget resolved.** The owner chose USD 2: USD 1 warning, USD 2 stop, 30 requests a day (#48).
+- **Plain outcomes.** A photo with no food returns 422 `meal_no_food_found`, a free-tier refusal
+  returns 429 `meal_vision_busy`, and Groq's status and code reach Sentry
+  (`meal_vision_request_failed:<status>:<code>`). The app words these, plus `invalid_image` (an
+  iCloud photo iOS could not load) and `ai_usage_limit`.
+- **Still open.** Meal-photo consent naming Groq, before any second user.
+
 ## Next — B (calculators)
 
 Read-only deterministic calculators the model can call (`project_weight_goal`, `training_summary`,

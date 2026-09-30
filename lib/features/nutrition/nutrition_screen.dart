@@ -39,6 +39,16 @@ String mealPhotoFailureMessage(
   'photo_access_denied' =>
     'Tracend cannot open your photos. Allow it in Settings › Tracend › Photos.',
   'photo_too_large' => 'This photo is larger than 4 MB. Choose a smaller one.',
+  // iOS could not hand over the photo, usually one kept only in iCloud that
+  // did not download.
+  'invalid_image' =>
+    'This photo could not be loaded from your library. If it is stored in iCloud, try again on Wi-Fi, or take a photo instead.',
+  '422 meal_no_food_found' =>
+    'No food was found in this photo. Try a clear photo of the plate, or enter the meal manually.',
+  '429 meal_vision_busy' =>
+    'Photo analysis is busy: the free tier handles about one photo a minute. Wait a minute and try again.',
+  '429 ai_usage_limit' =>
+    'You have reached today’s AI limit (30 requests) or this month’s \$2 limit. Enter the meal manually.',
   _ =>
     'Meal photo analysis failed (${failure.step}: ${failure.code}). Enter the meal manually; nothing was added to your totals.',
 };

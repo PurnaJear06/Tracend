@@ -94,7 +94,8 @@ export async function analyzeGroqMealImage(
     if (typeof message?.content !== "string") throw new Error("meal_vision_response_invalid");
     const parsed = JSON.parse(message.content) as Record<string, unknown>;
     if (
-      !Array.isArray(parsed.candidates) || parsed.candidates.length < 1 ||
+      // An empty list is a valid answer: no food in the photo.
+      !Array.isArray(parsed.candidates) ||
       parsed.candidates.length > 20
     ) {
       throw new Error("meal_vision_response_invalid");

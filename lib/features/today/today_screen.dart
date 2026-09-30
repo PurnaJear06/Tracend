@@ -599,7 +599,7 @@ class _CoachPerspectiveSection extends StatelessWidget {
           return TracendCard(
             child: Text(
               aiAllowed
-                  ? 'Open Coach or tap Sync to generate an evidence-backed daily decision.'
+                  ? 'Tap Sync to generate an evidence-backed daily decision.'
                   : 'AI coaching is off, so no daily decision is generated. Turn it on in Account.',
             ),
           );
