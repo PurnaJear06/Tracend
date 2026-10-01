@@ -375,11 +375,13 @@ A labeled reply that stands in for a failed model answer is a variant of the sam
 The pill text, not the color, carries the meaning.
 
 `NutritionTimeline` (`lib/features/nutrition/widgets/meal_cards.dart`) is the meal schedule
-timeline: one card with a time column, a connected rail, and a marker per row (teal check logged,
-amber spark draft, amber ring due, grey ring planned, faint ring optional, dash not logged). Each
-row also states its status in words (**Logged**, **Needs review**, **Due now**, **Planned**,
-**Optional**, **Not logged**), and screen readers announce it. Logged rows list foods and `kcal`, `P`, `C`, `F` as separate
-mono parts that wrap whole. At large text sizes the time joins the title line and the actions move
+timeline: one card of rows in time order, each with a mono time, a status glyph (teal check logged,
+amber spark draft, amber ring due, grey ring planned, faint ring optional, dash not logged), and a
+title that carries the calories for a logged meal (**Lunch · 691 kcal**). The second line always
+opens with the status word (**logged**, **needs review**, **due now**, **planned**, **optional**,
+**not logged**) followed by the foods. A logged meal ends with `MacroSplitBar`: its energy split
+into protein, carbs, and fat (4, 4, and 9 kcal per gram) in the totals card's colors, with the grams
+spoken to screen readers. At large text sizes the time joins the title line and the actions move
 under the row. Neither component uses color as the only state signal.
 
 ## 6. Motion and Haptics

@@ -87,8 +87,9 @@ List<TimelineEntry> buildNutritionTimeline(
   return entries;
 }
 
-/// The day as one vertical timeline in a single card. Every state carries a
-/// word as well as a marker, so color is never the only signal.
+/// The day's meals in one card, in time order. Each row reads as
+/// "Lunch · 691 kcal" with its foods and a protein / carbs / fat split bar,
+/// and states its status in words, so color is never the only signal.
 class NutritionTimeline extends StatelessWidget {
   const NutritionTimeline({
     required this.entries,
@@ -142,11 +143,9 @@ class NutritionTimeline extends StatelessWidget {
       ),
       child: Column(
         children: [
-          for (var i = 0; i < entries.length; i++)
-            _TimelineRow(
-              entry: entries[i],
-              isFirst: i == 0,
-              isLast: i == entries.length - 1,
+          for (final entry in entries)
+            _MealRow(
+              entry: entry,
               enabled: enabled,
               onReview: onReview,
               onDelete: onDelete,
@@ -160,11 +159,9 @@ class NutritionTimeline extends StatelessWidget {
 
 enum _Marker { logged, draft, due, upcoming, optional, skipped }
 
-class _TimelineRow extends StatelessWidget {
-  const _TimelineRow({
+class _MealRow extends StatelessWidget {
+  const _MealRow({
     required this.entry,
-    required this.isFirst,
-    required this.isLast,
     required this.enabled,
     required this.onReview,
     required this.onDelete,
@@ -172,8 +169,6 @@ class _TimelineRow extends StatelessWidget {
   });
 
   final TimelineEntry entry;
-  final bool isFirst;
-  final bool isLast;
   final bool enabled;
   final ValueChanged<MealEntry> onReview;
   final ValueChanged<MealEntry> onDelete;
@@ -211,60 +206,38 @@ class _TimelineRow extends StatelessWidget {
       _Marker.draft || _Marker.due => colors.accentAmber,
       _ => colors.textSecondary,
     };
+    final logged = meal != null && meal.items.isNotEmpty;
+    final title = logged
+        ? '${entry.title} · ${meal.calories.round()} kcal'
+        : entry.title;
 
-    final details = <Widget>[
-      if (meal != null && meal.items.isNotEmpty) ...[
-        Text(
-          meal.items.map((item) => item.name).join(' · '),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: theme.bodyMedium,
-        ),
-        Semantics(
-          label:
-              '${meal.calories.round()} kilocalories, protein '
-              '${meal.protein.round()} grams, carbohydrate '
-              '${meal.carbohydrate.round()} grams, fat ${meal.fat.round()} grams',
-          excludeSemantics: true,
-          child: Wrap(
-            spacing: TracendSpacing.sm,
-            children: [
-              for (final part in [
-                '${meal.calories.round()} kcal',
-                'P ${meal.protein.round()}',
-                'C ${meal.carbohydrate.round()}',
-                'F ${meal.fat.round()}',
-              ])
-                Text(part, style: TracendTheme.dataUtility(colors)),
-            ],
-          ),
-        ),
-      ] else if (entry.isDraft)
-        Text('Check the foods before they count.', style: theme.bodyMedium)
-      else if (slot != null && meal == null)
-        Text(
-          slot.foods
+    final foods = logged
+        ? meal.items.map((item) => item.name).join(' · ')
+        : entry.isDraft
+        ? 'Check the foods before they count.'
+        : slot != null && meal == null
+        ? slot.foods
               .map(
                 (food) => [food['name'], food['quantity']]
                     .whereType<String>()
                     .where((part) => part.isNotEmpty)
                     .join(' '),
               )
-              .join(' · '),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: theme.bodyMedium?.copyWith(
-            color: muted ? colors.textSecondary : null,
-          ),
-        ),
-    ];
+              .join(' · ')
+        : null;
 
     final action = switch (marker) {
       _Marker.logged => null,
       _Marker.draft => TextButton(
         key: ValueKey('review-meal-${meal!.id}'),
         onPressed: enabled ? () => onReview(meal) : null,
-        child: const Text('Review'),
+        // Sits under the text, so it aligns with it instead of padding in.
+        style: TextButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: const Size(44, 44),
+          alignment: Alignment.centerLeft,
+        ),
+        child: const Text('Review foods'),
       ),
       _ => TextButton(
         key: ValueKey('log-scheduled-${slot!.id}'),
@@ -272,82 +245,144 @@ class _TimelineRow extends StatelessWidget {
         child: const Text('Log'),
       ),
     };
+    final menu = meal == null
+        ? null
+        : _MealMenu(meal: meal, enabled: enabled, onDelete: onDelete);
 
-    // Large text leaves no room for side columns: the time joins the title
-    // line and the actions move under the details.
+    // Large text leaves no room for a time column or trailing actions: the
+    // time joins the title line and the actions move under the row.
     final stacked = MediaQuery.textScalerOf(context).scale(14) > 20;
     final timeText = Text(
       entry.time,
       style: TracendTheme.dataUtility(colors).copyWith(fontSize: 12),
     );
-    final menu = meal == null
-        ? null
-        : _MealMenu(meal: meal, enabled: enabled, onDelete: onDelete);
 
-    return IntrinsicHeight(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: TracendSpacing.xs),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!stacked)
             SizedBox(
-              width: 46,
+              width: 44,
               child: Padding(
-                padding: const EdgeInsets.only(top: TracendSpacing.sm + 2),
+                padding: const EdgeInsets.only(top: 3),
                 child: timeText,
               ),
             ),
-          _Rail(
-            marker: marker,
-            isFirst: isFirst,
-            isLast: isLast,
-            colors: colors,
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: _StatusGlyph(marker: marker, colors: colors),
           ),
           const SizedBox(width: TracendSpacing.sm),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: TracendSpacing.sm),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Wrap(
-                    spacing: TracendSpacing.xs,
-                    crossAxisAlignment: WrapCrossAlignment.center,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: TracendSpacing.xs,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (stacked && entry.time.isNotEmpty) timeText,
+                    Text(
+                      title,
+                      style: theme.titleMedium?.copyWith(
+                        color: muted ? colors.textSecondary : null,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                // The status word always opens the second line, so every row
+                // reads the same way: "logged · Banana · Black coffee".
+                Text.rich(
+                  TextSpan(
                     children: [
-                      if (stacked && entry.time.isNotEmpty) timeText,
-                      Text(
-                        entry.title,
-                        style: theme.titleMedium?.copyWith(
-                          color: muted ? colors.textSecondary : null,
-                        ),
+                      TextSpan(
+                        text: status.toLowerCase(),
+                        style: TracendTheme.dataUtility(
+                          colors,
+                        ).copyWith(fontSize: 12, color: statusColor),
                       ),
-                      Text(
-                        status.toUpperCase(),
-                        semanticsLabel: status,
-                        style: TracendTheme.labelCaps(
-                          context,
-                          color: statusColor,
-                        ),
-                      ),
+                      if (foods != null && foods.isNotEmpty)
+                        TextSpan(text: '  ·  $foods'),
                     ],
                   ),
-                  const SizedBox(height: 2),
-                  ...details,
-                  if (stacked && (action != null || menu != null))
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [?action, ?menu],
-                    )
-                  else if (entry.isDraft)
-                    Align(alignment: Alignment.centerLeft, child: action),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+                ),
+                if (logged) ...[
+                  const SizedBox(height: TracendSpacing.xs),
+                  MacroSplitBar(meal: meal),
                 ],
-              ),
+                if (stacked && (action != null || menu != null))
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [?action, ?menu],
+                  )
+                else if (entry.isDraft)
+                  Align(alignment: Alignment.centerLeft, child: action),
+              ],
             ),
           ),
-          if (!stacked && action != null && !entry.isDraft)
-            Align(alignment: Alignment.topCenter, child: action),
-          if (!stacked && menu != null)
-            Align(alignment: Alignment.topCenter, child: menu),
+          if (!stacked && action != null && !entry.isDraft) action,
+          if (!stacked && menu != null) menu,
         ],
+      ),
+    );
+  }
+}
+
+/// A meal's energy split into protein, carbs, and fat (4, 4, and 9 kcal per
+/// gram), in the totals card's colors. Screen readers hear the grams.
+class MacroSplitBar extends StatelessWidget {
+  const MacroSplitBar({required this.meal, super.key});
+
+  final MealEntry meal;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    final parts = [
+      (meal.protein * 4, colors.actionPrimary),
+      (meal.carbohydrate * 4, colors.stateStable),
+      (meal.fat * 9, colors.accentAmber),
+    ];
+    final total = parts.fold<double>(0, (sum, part) => sum + part.$1);
+    return Semantics(
+      label:
+          'Protein ${meal.protein.round()} grams, carbohydrate '
+          '${meal.carbohydrate.round()} grams, fat ${meal.fat.round()} grams',
+      excludeSemantics: true,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: SizedBox(
+          height: 4,
+          child: total <= 0
+              ? Container(color: colors.borderSubtle)
+              : Row(
+                  children: [
+                    for (var i = 0; i < parts.length; i++)
+                      if (parts[i].$1 > 0)
+                        Expanded(
+                          flex: (parts[i].$1 / total * 1000).round().clamp(
+                            1,
+                            1000,
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              right: i < parts.length - 1 ? 2 : 0,
+                            ),
+                            child: Container(color: parts[i].$2),
+                          ),
+                        ),
+                  ],
+                ),
+        ),
       ),
     );
   }
@@ -397,71 +432,41 @@ class _MealMenu extends StatelessWidget {
   );
 }
 
-class _Rail extends StatelessWidget {
-  const _Rail({
-    required this.marker,
-    required this.isFirst,
-    required this.isLast,
-    required this.colors,
-  });
+class _StatusGlyph extends StatelessWidget {
+  const _StatusGlyph({required this.marker, required this.colors});
 
   final _Marker marker;
-  final bool isFirst;
-  final bool isLast;
   final TracendColors colors;
 
-  static const _dotSize = 18.0;
+  static const _size = 18.0;
 
   @override
-  Widget build(BuildContext context) {
-    final line = colors.borderSubtle;
-    return SizedBox(
-      width: 22,
-      child: Column(
-        children: [
-          Container(
-            width: 2,
-            height: TracendSpacing.sm + 2,
-            color: isFirst ? Colors.transparent : line,
-          ),
-          _dot(),
-          Expanded(
-            child: Container(
-              width: 2,
-              color: isLast ? Colors.transparent : line,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _dot() => switch (marker) {
-    _Marker.logged => _filled(colors.stateStable, CupertinoIcons.checkmark),
-    _Marker.draft => _filled(colors.accentAmber, CupertinoIcons.sparkles),
+  Widget build(BuildContext context) => switch (marker) {
+    _Marker.logged => Icon(
+      CupertinoIcons.checkmark_circle_fill,
+      size: _size,
+      color: colors.stateStable,
+    ),
+    _Marker.draft => Icon(
+      CupertinoIcons.sparkles,
+      size: _size,
+      color: colors.accentAmber,
+    ),
     _Marker.due => _ring(colors.accentAmber, 2.5),
-    _Marker.upcoming => _ring(colors.textSecondary, 2),
-    _Marker.optional => _ring(colors.borderSubtle, 2),
+    _Marker.upcoming => _ring(colors.textSecondary, 1.75),
+    _Marker.optional => _ring(colors.borderSubtle, 1.75),
     _Marker.skipped => SizedBox.square(
-      dimension: _dotSize,
+      dimension: _size,
       child: Center(
         child: Container(width: 8, height: 2, color: colors.textSecondary),
       ),
     ),
   };
 
-  Widget _filled(Color color, IconData icon) => Container(
-    width: _dotSize,
-    height: _dotSize,
-    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    child: Icon(icon, size: 11, color: colors.canvas),
-  );
-
   Widget _ring(Color color, double width) => Container(
-    width: _dotSize,
-    height: _dotSize,
+    width: _size,
+    height: _size,
     decoration: BoxDecoration(
-      color: colors.surface,
       shape: BoxShape.circle,
       border: Border.all(color: color, width: width),
     ),

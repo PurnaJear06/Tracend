@@ -48,6 +48,18 @@ MealEntry _meal(
         ],
 );
 
+extension on MealEntry {
+  MealEntry copyWithItems(List<MealItem> items) => MealEntry(
+    id: id,
+    type: type,
+    status: status,
+    source: source,
+    loggedAt: loggedAt,
+    scheduleItemId: scheduleItemId,
+    items: items,
+  );
+}
+
 void main() {
   group('buildNutritionTimeline', () {
     test('a meal logged from a slot replaces the planned row', () {
@@ -194,11 +206,51 @@ void main() {
     await tester.pumpAndSettle();
     for (final word in ['Logged', 'Needs review', 'Planned']) {
       expect(
-        find.bySemanticsLabel(RegExp('(^|\\n)$word(\\n|\$)')),
+        find.bySemanticsLabel(RegExp('(^|\\n)$word\\b', caseSensitive: false)),
         findsWidgets,
         reason: word,
       );
     }
+    handle.dispose();
+  });
+
+  testWidgets('a split bar sizes macros by energy and speaks grams', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.light,
+        home: Scaffold(
+          body: SizedBox(
+            width: 300,
+            child: MacroSplitBar(
+              meal: _meal('m', hour: 12).copyWithItems(const [
+                MealItem(
+                  name: 'Mix',
+                  calories: 400,
+                  protein: 25,
+                  carbohydrate: 25,
+                  fat: 20,
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+    final widths = [
+      for (final box in tester.widgetList<Expanded>(find.byType(Expanded)))
+        box.flex,
+    ];
+    // 100 kcal protein, 100 kcal carbs, 180 kcal fat.
+    expect(widths, [263, 263, 474]);
+    expect(
+      find.bySemanticsLabel(
+        'Protein 25 grams, carbohydrate 25 grams, fat 20 grams',
+      ),
+      findsOneWidget,
+    );
     handle.dispose();
   });
 
@@ -216,16 +268,21 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Chicken rice'), findsWidgets);
-    expect(find.text('612 kcal'), findsWidgets);
+    expect(find.text('Pre-workout · 612 kcal'), findsOneWidget);
+    expect(find.text('Lunch · 612 kcal'), findsOneWidget);
     expect(
-      find.bySemanticsLabel(RegExp('612 kilocalories, protein 41 grams')),
-      findsWidgets,
+      find.text('logged  ·  Chicken rice', findRichText: true),
+      findsNWidgets(2),
     );
-    expect(find.text('LOGGED'), findsNWidgets(2));
-    expect(find.text('NEEDS REVIEW'), findsOneWidget);
-    expect(find.text('PLANNED'), findsOneWidget);
-    expect(find.text('Rice 150 g · Chicken 120 g'), findsOneWidget);
+    expect(find.byType(MacroSplitBar), findsNWidgets(2));
+    expect(
+      find.textContaining('needs review  ·', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.text('planned  ·  Rice 150 g · Chicken 120 g', findRichText: true),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('log-scheduled-dinner')), findsOneWidget);
   });
 }
