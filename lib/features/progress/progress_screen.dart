@@ -21,12 +21,24 @@ const progressPeriods = <(int, String)>[(28, '4W'), (84, '12W'), (182, '6M')];
 /// Recent weigh-ins shown before "See all".
 const _recentWeighIns = 3;
 
+/// Opens the camera or library for one pose; null when the user cancels.
+typedef ProgressPhotoPicker = Future<XFile?> Function(ImageSource source);
+
+Future<XFile?> _pickWithImagePicker(ImageSource source) =>
+    ImagePicker().pickImage(
+      source: source,
+      imageQuality: 88,
+      maxWidth: 1800,
+      requestFullMetadata: false,
+    );
+
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({
     required this.repository,
     this.training,
     this.brief,
     this.now = DateTime.now,
+    this.pickPhoto = _pickWithImagePicker,
     super.key,
   });
   final ProgressRepository repository;
@@ -35,6 +47,7 @@ class ProgressScreen extends StatefulWidget {
 
   /// Clock for the period window and relative dates.
   final DateTime Function() now;
+  final ProgressPhotoPicker pickPhoto;
   @override
   State<ProgressScreen> createState() => _ProgressScreenState();
 }
@@ -389,13 +402,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
   ) async {
     try {
       _activeSet ??= await widget.repository.beginPhotoSet();
-      final picker = ImagePicker();
-      final photo = await picker.pickImage(
-        source: source,
-        imageQuality: 88,
-        maxWidth: 1800,
-        requestFullMetadata: false,
-      );
+      final photo = await widget.pickPhoto(source);
       if (photo == null) return (captured: false, error: null);
       await widget.repository.uploadPhoto(
         setId: _activeSet!,
@@ -410,9 +417,10 @@ class _ProgressScreenState extends State<ProgressScreen> {
       }
       return (captured: true, error: null);
     } catch (e) {
+      // Keep the open set and its finished poses: the capture sheet still
+      // shows them, so a retry must upload into the same set rather than
+      // start a second, partial one.
       debugPrint('Non-critical error: $e');
-      _activeSet = null;
-      _capturedPoses.clear();
       return (
         captured: false,
         error: 'Photo was not saved. Try again when ready.',
