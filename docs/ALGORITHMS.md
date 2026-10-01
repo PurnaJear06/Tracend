@@ -460,6 +460,9 @@ general = change_review_allowed  if training_eligible OR nutrition_eligible
 | Eligibility          | `policy_version`       | `eligibility-v1` |
 | Training hub RPC     | `schema_version`       | `1.4`        |
 | Daily brief RPC      | `schema_version`       | `1.5`        |
+| Onboarding plan      | `policy_version`       | `onboarding-policy-v1` |
+| Exercise catalog     | `catalog_version`      | `catalog-v1` |
+| Onboarding proposal  | `schema_version`       | `2.0`        |
 
 ### Rules
 
@@ -472,3 +475,89 @@ general = change_review_allowed  if training_eligible OR nutrition_eligible
    - Updated ADR if the change is architectural
    - Entry in `docs/ALGORITHMS.md` (this file)
 5. No silent algorithm changes. Version bump in code must match version in constraint.
+
+## 9. Onboarding Plan Policy (`onboarding-policy-v1`, 2026-10)
+
+Code: `supabase/functions/_shared/onboarding/policy.ts`. An onboarding plan, from a model or from
+Tracend's rules, must stay inside these ranges. `plan_contract.ts` rejects it otherwise. The ranges
+are evidence-based guardrails, not a prescription; the model chooses within them.
+
+### Energy
+
+```text
+BMR  = 10·kg + 6.25·cm − 5·age + 5      (male)
+BMR  = 10·kg + 6.25·cm − 5·age − 161    (female)
+     unspecified sex: both, as a range (female … male); confidence low
+
+TDEE = BMR × daily-activity factor + training energy
+       factor: mostly sitting 1.2 · some standing 1.375 · mostly standing 1.55 · physical labour 1.725
+       training energy (kcal/day) = 4 × 3.5 × kg / 200 × session minutes × sessions per week / 7
+```
+
+- **Two separate answers:**
+  - Daily activity is its own answer, so planned lifting is not counted twice. NIDDK's Body Weight
+    Planner also treats activity as its own input.
+  - Training energy uses net MET 4: resistance training is about 5 METs (Compendium of Physical
+    Activities), minus the resting MET the base factor already counts.
+- **Equation choice:** Mifflin-St Jeor is the equation most often within 10% of measured resting
+  energy (Frankenfield 2005). For unspecified sex there is no published single equation, so both
+  are kept as a range rather than inventing a midpoint.
+
+### Calories
+
+| Goal | Window around TDEE |
+| --- | --- |
+| Fat loss | −25% … −10% |
+| Muscle gain | +5% … +15% |
+| Recomposition | −10% … 0% |
+| Strength | 0% … +10% |
+| Aesthetic | −5% … +5% |
+
+- **Floor:** max(BMR, 1,200 kcal female / 1,500 kcal male or unspecified), from NHLBI guidance.
+- **When the floor applies:** if the window starts below the floor, the floor wins and confidence
+  is capped at low.
+- **Basis:** fat loss of about 0.5–1% of body weight a week preserves lean mass (Helms 2014). A
+  lean-gain surplus of about 10–20% gains about 0.25–0.5% of body weight a week (Iraki 2019).
+
+### Macros
+
+- **Protein:** 1.6–2.2 g/kg, up to 2.6 g/kg in a deficit (fat loss, recomposition). Iraki 2019;
+  ISSN 2017 gives 1.4–2.0 g/kg and 2.3–3.1 g/kg of lean mass in a deficit.
+- **High BMI:** at BMI ≥ 30, protein uses the weight at BMI 25. This is a design choice; no source
+  sets that cutoff.
+- **Fat:** at least max(20% of calories, 0.5 g/kg) and at most 35% of calories (US DRI 20–35%).
+- **Carbohydrate:** the rest. Below 2 g/kg it is flagged as an assumption, not rejected.
+- **Macro sum:** 4·protein + 4·carbohydrate + 9·fat must be within 5% of the calorie target.
+
+### Training
+
+| Days (chosen weekdays, at most 6) | Split |
+| --- | --- |
+| 1–3 | Full body |
+| 4 | Upper / lower |
+| 5 | Upper, lower, push, pull, legs |
+| 6 | Push / pull / legs ×2 |
+
+- **Per session:**
+  - working sets at most min(30, minutes / 3);
+  - exercises at most min(8, 2 + minutes / 15);
+  - estimated length = 8 min warm-up + Σ sets × (45 s + rest), within the athlete's minutes
+    + max(5, 15%).
+- **Weekly sets per target muscle** (the catalog's first muscle): at most 12 for beginners and 20
+  for intermediates. ACSM 2026 gives about 10+ sets per muscle a week; Schoenfeld 2017.
+- **Coverage:** every week includes a squat or lunge, a hinge, a push and a pull.
+- **Prescription ranges:**
+  - Reps 6–20, or 3–20 for strength.
+  - RPE 7–8.5 for beginners (RIR 2–3) and 7–9 for intermediates.
+  - Rest 60–180 s, or up to 240 s for strength.
+  - Sets per exercise 1–5.
+- **Blocks:** 4–8 weeks, with the last week a deload. Deloads in practice come about every 5–6
+  weeks (Sports Med Open 2024).
+- **Rules plan:**
+  - The same limits, using split templates and the first equipment-compatible catalog exercise for
+    each movement slot.
+  - Sessions of 45 minutes or less keep compound rests at 2 minutes so that they still cover the
+    patterns.
+  - A Deno test proves it is valid for every equipment set × 1–6 days × both paths × every goal ×
+    30–120 minutes.
+

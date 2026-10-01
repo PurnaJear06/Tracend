@@ -18,7 +18,7 @@ Production changes follow one path:
 6. The deploy workflow dry-runs migrations and independently backs up production.
 7. The backup job rejects failed or empty dumps, verifies SHA-256 checksums, and restores the
    schema and data into an isolated local Supabase database.
-8. Only after the dry-run and restore drill pass may migrations deploy, followed by the nine Edge
+8. Only after the dry-run and restore drill pass may migrations deploy, followed by the ten Edge
    Functions one at a time.
 9. Each function deploy is confirmed live against the commit, and a final job checks every function
    again (see [Live-code verification](#live-code-verification)).
@@ -58,7 +58,7 @@ an unchanged `UPDATED_AT`:
 
 - Change a secret that only new code accepts only after that code has passed the live-code check.
 - Afterwards, from the checkout of the deployed commit, run
-  `./scripts/verify-live-function.sh --all` and require all nine checks to pass. Repeat after any
+  `./scripts/verify-live-function.sh --all` and require every check to pass (ten functions since 2026-10). Repeat after any
   later secret change. `UPDATED_AT` alone cannot prove the source stayed live.
 
 ## Required CI checks

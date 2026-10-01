@@ -1,0 +1,72 @@
+name: Onboarding Eval
+
+# Live onboarding plan evaluation with 12 synthetic athletes. On demand only and
+# not a required check. Run it before setting ONBOARDING_PLAN_MODEL_EVALUATED=true
+# for a provider or model: add the `onboarding-eval` label to a pull request or
+# use Run workflow on main.
+#
+# By default it calls DeepSeek (`DEEPSEEK_API_KEY` secret) with deepseek-flash.
+# The provider and model inputs pick another one; its key comes from the
+# matching secret (`GROQ_API_KEY`, `GEMINI_API_KEY`). Setting the repository
+# variable `EVAL_BASE_URL` and the `EVAL_API_KEY` secret sends the requests
+# through an OpenAI-compatible router instead, as a smoke test without the
+# latency gate. Each run makes 12 to 24 calls (one repair at most per athlete).
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: deepseek, groq or gemini
+        required: false
+        default: deepseek
+      model:
+        description: The provider's model id
+        required: false
+        default: deepseek-flash
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onboarding-eval
+  cancel-in-progress: false
+
+jobs:
+  onboarding-eval:
+    name: Onboarding plan live evaluation
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'onboarding-eval'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: "2.9.0"
+
+      - name: Run live evaluation
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+          EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
+          EVAL_PROVIDER: ${{ inputs.provider || 'deepseek' }}
+          EVAL_MODEL: ${{ inputs.model || 'deepseek-flash' }}
+          EVAL_REPORT_DIR: eval-report
+        run: |
+          hosts="api.deepseek.com,api.groq.com,generativelanguage.googleapis.com"
+          if [ -n "$EVAL_BASE_URL" ]; then
+            hosts="$hosts,$(printf '%s' "$EVAL_BASE_URL" | sed -E 's#^https?://([^/]+).*#\1#')"
+          fi
+          deno run --allow-env --allow-net="$hosts" --allow-write \
+            supabase/functions/_evals/onboarding_plan_eval.ts
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: onboarding-eval-report
+          path: eval-report
+          retention-days: 30

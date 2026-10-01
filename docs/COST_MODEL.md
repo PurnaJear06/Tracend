@@ -166,6 +166,12 @@ because DeepSeek may train on inputs by default and stores them in China.
 - **Cost estimates** use the peak cache-miss price (0.30 input, 1.20 output), so the USD 1 warning
   and USD 2 hard stop never undercount. Until 2026-09-28 they used the retired V4 Flash rate (0.14
   input, 0.28 output), which undercounted V4.1 Flash output by up to 4.3×.
+- **Onboarding plan** (2026-10, `ONBOARDING_PLAN_*`):
+  - about 4K input and 2–3K output tokens, roughly USD 0.004 at the peak price;
+  - a repaired plan costs about twice that;
+  - it is recorded in `ai_usage_events` as `onboarding_plan` and counts toward the USD 2 stop and
+    the 30-a-day limit;
+  - a provider without a known price must set the cost secrets, or the rules plan is used.
 - **Per question:** a v8 question (~15K input + ~800 output tokens) is estimated at about
   USD 0.0055. The real cost is lower off-peak (about USD 0.0027) and much lower on a same-day
   follow-up that hits the cache.

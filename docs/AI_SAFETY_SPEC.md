@@ -202,6 +202,36 @@ Onboarding output identifies assumptions, missing information, confidence, and c
 uncertainty. It uses only compatible catalog exercises. Training and nutrition proposals require
 approval.
 
+Since 2026-10 (`onboarding-plan`, policy `onboarding-policy-v1`):
+
+- **The model chooses inside ranges that deterministic code computes.** The prompt states every
+  range, and `_shared/onboarding/plan_contract.ts` rejects a plan that leaves any of them, with one
+  of 28 finite rule names. The formulas and sources are in ALGORITHMS.md §9.
+  - **Calories:** a goal window around maintenance, with a floor of the larger of BMR and
+    1,200 kcal (female) or 1,500 kcal (male or unspecified).
+  - **Macros:** protein 1.6–2.2 g/kg (2.6 g/kg in a deficit), fat 20–35% of calories and at least
+    0.5 g/kg, and a macro sum within 5% of calories.
+  - **Training:**
+    - one workout on each chosen weekday, at most six;
+    - a set and exercise budget per session length, and the session must fit its minutes;
+    - weekly sets per target muscle at most 12 for beginners and 20 for intermediates;
+    - each week includes a squat or lunge, a hinge, a push and a pull;
+    - reps 6–20 (3–20 for strength), RPE 7–8.5 (beginners) or 7–9, rest 60–180 s (240 s for
+      strength), and blocks of 4–8 weeks.
+- **Exercises:** only active `exercise_catalog` slugs that the athlete's equipment and experience
+  allow.
+- **What deterministic code sets, not the model:** names from the catalog, workout order and
+  length, and a confidence cap. Confidence is low when sex is unspecified or the calorie floor
+  applies, and medium otherwise.
+- **When the model is not used:**
+  - A plan that fails validation gets one targeted repair.
+  - Anything else becomes the **rules plan**, built by the same policy without a model. That also
+    happens with no `onboarding_plan` consent, no evaluated provider, or an exhausted budget.
+  - Every athlete gets a valid plan, labelled with its origin (`ai` or `rules`) and any fallback
+    reason.
+- **Approval:** `respond_to_onboarding_proposal_v2` inserts exactly the approved workouts and
+  exercises, and activates the goal, profile and onboarding weight, in one transaction.
+
 ## 7. Eligibility and Escalation
 
 The MVP does not support:
@@ -280,13 +310,36 @@ Coach chat and the daily decision send an athlete's data to the provider only wh
 `ai_coaching` consent is granted (UX_FLOWS §4.1). The app does not call either function for an athlete
 who declined, and the server enforces the same rule for every caller (2026-09-30):
 `has_ai_coaching_consent` reads the newest `ai_coaching` record, and only a grant of the current
-notice version counts. `coach-chat` answers 403 `ai_consent_required` without it, and 503
+notice version counts. Since 2026-10 the notice is server data, current per purpose
+(`ai_notice_current` for `coach_chat`, `daily_coaching` and `onboarding_plan`), and a grant counts
+for a purpose only when it names the notice that is current for that purpose. `coach-chat` answers 403 `ai_consent_required` without it, and 503
 `ai_consent_unavailable` when the check fails. `coach-decide` then uses the deterministic provider,
 so no data reaches the AI provider.
 Under ADR 0006, Groq Qwen was an owner-only, time-bounded test provider and has been superseded. The
 mock remains the default and progress-photo vision stays separately disabled until its own evaluation
 gate passes. Provider and Supabase secret/service-role keys never enter Flutter. Price alone cannot
 qualify a model.
+
+**Onboarding plans** have their own provider settings and switch without a code change:
+
+- **Settings:**
+  - `ONBOARDING_PLAN_PROVIDER`: `mock` (rules only, the default), `deepseek`, `groq` or `gemini`.
+  - `ONBOARDING_PLAN_MODEL`.
+  - The provider's key.
+  - `ONBOARDING_PLAN_MODEL_EVALUATED=true`.
+  - The input and output prices, unless the provider has a known default. DeepSeek uses its peak
+    price.
+- **Calls:** every provider is called through its OpenAI-compatible chat-completions endpoint in
+  JSON mode (`_shared/providers/onboarding_plan_provider.ts`).
+- **To switch provider or model:**
+  1. Run the Onboarding Eval workflow (`.github/workflows/onboarding-eval.yml`) for the candidate.
+     It must give at least 90% of the synthetic athletes a valid model plan without fallback, with
+     p95 latency under 60 s.
+  2. Set the secrets.
+  3. Run `./scripts/verify-live-function.sh --all`.
+  4. **Because athletes agreed to a named provider,** a provider change also publishes a new notice
+     for every purpose: `select private.publish_ai_notice(version, provider_label, purposes, body)`.
+     Older grants stop counting at once, and the app asks again.
 
 Live model activation requires all server-side secrets (`COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`,
 provider API keys) configured together as an all-or-nothing gate. Coach-decide specifically defaults

@@ -21,7 +21,9 @@ New-user onboarding: a 2026-10-01 audit found the onboarding plan is still the P
 it ignores goal, equipment and session length. The approved plan is not the delivered plan, and
 reopening on the proposal step spins forever. The owner chose an AI-proposed plan, validated by
 deterministic code, with a swappable provider. PR 1 fixes Today's workout date, Start session, and
-the Coach's proposal line; PR 2 (server) and PR 3 (app) build the AI plan. See
+the Coach's proposal line. PR 2 (server, in review) adds per-purpose AI notices, an exercise
+catalog, `onboarding-policy-v1` and the new `onboarding-plan` function (any provider, set by secrets,
+with a rules fallback). PR 3 (app) follows. See
 [`docs/handoff/onboarding.md`](./handoff/onboarding.md).
 
 ## Shipped baseline

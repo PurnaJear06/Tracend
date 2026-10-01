@@ -62,3 +62,16 @@ Deno.test("the daily decision uses the AI model only with a grant", () => {
   }
   assertEquals(built, 1);
 });
+
+Deno.test("a purpose asks about that purpose's current notice", async () => {
+  let asked: Record<string, unknown> = {};
+  await aiCoachingConsent(
+    (_name, params) => {
+      asked = params;
+      return Promise.resolve({ data: true, error: null });
+    },
+    "athlete-1",
+    "onboarding_plan",
+  );
+  assertEquals(asked, { target_user_id: "athlete-1", consent_purpose: "onboarding_plan" });
+});

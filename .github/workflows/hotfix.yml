@@ -66,6 +66,7 @@ jobs:
           - health-sync
           - meal-analyze
           - meal-media-retention
+          - onboarding-plan
           - onboarding-propose-plan
           - privacy-delete-account
           - privacy-export

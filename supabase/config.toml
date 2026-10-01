@@ -182,6 +182,9 @@ password_requirements = "lower_upper_letters_digits"
 [functions.onboarding-propose-plan]
 verify_jwt = true
 
+[functions.onboarding-plan]
+verify_jwt = true
+
 [functions.health-sync]
 verify_jwt = true
 
