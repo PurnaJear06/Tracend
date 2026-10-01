@@ -174,6 +174,15 @@ if echo "$STEPS" | grep -q "deno"; then
     die "Deno tests failed"
   fi
 
+  info "backup storage script tests ..."
+  if bash "$repo_root/scripts/test-store-backup.sh" 2>&1 | while IFS= read -r line; do
+    echo "    $line"
+  done; then
+    pass "backup storage tests passed"
+  else
+    die "backup storage tests failed"
+  fi
+
   if [[ "$FAILURES" -gt 0 ]]; then
     echo ""
     fail "$FAILURES Deno step(s) failed"

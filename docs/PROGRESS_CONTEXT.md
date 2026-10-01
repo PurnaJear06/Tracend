@@ -91,6 +91,9 @@ open; see [`docs/handoff/backend.md`](./handoff/backend.md).
 - Deployment waits for successful CI on the exact merged `main` commit.
 - Failed, missing, empty, checksum-invalid, or non-restorable database backups stop deployment.
 - Production dumps are restore-drilled in an isolated local Supabase database before migration.
+- The encrypted backup is stored in a separate private repository by `scripts/store-backup.sh`
+  (newest 30 kept), never as a workflow artifact: artifacts of a public repository are downloadable
+  by any signed-in GitHub user.
 - Edge Functions deploy one at a time, and each is confirmed live by comparing the deployed source
   with the commit; the release tag waits for that check. On 2026-09-28, parallel deploys had
   reported success while Supabase kept the previous version of four functions. Supabase's

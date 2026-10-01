@@ -448,6 +448,26 @@ privacy were recorded.
     of 30 a day. pgTAP: `daily_coaching_limit_test.sql`.
 - Meal-photo AI consent (naming Groq) is still owed before any second user.
 
+## Backup storage moved to a private repository (2026-10-01)
+
+- **Found:** the deploy workflow uploaded each encrypted backup as a GitHub Actions artifact.
+  Artifacts of a public repository can be downloaded by any signed-in GitHub user. Sixteen were
+  live. The oldest (2026-09-23) predates the encryption step and was a plaintext SQL dump of the
+  `public` schema (no `auth` schema), downloadable from 2026-09-23 until it was removed on
+  2026-10-01.
+- **Done:** all sixteen were copied to the private repository `PurnaJear06/Tracend-backups` and
+  verified byte for byte, then the public artifacts were deleted. The plaintext dump was
+  re-encrypted into the same format; its passphrase is the owner's macOS Keychain item
+  `tracend-backup-2026-09-23T052611-passphrase`. The others open with `BACKUP_ARCHIVE_PASSPHRASE`.
+- **Going forward:** the deploy step "Store encrypted backup in the private backups repository"
+  runs `scripts/store-backup.sh` (tests: `scripts/test-store-backup.sh`, run by CI and
+  `pre-deploy.sh`). It needs the `BACKUP_REPO` variable and the `BACKUP_REPO_DEPLOY_KEY` secret (a
+  write deploy key, `tracend-ci-backup-writer`, scoped to the backups repository only). It keeps the
+  newest 30, writes a single orphan commit, and aborts unless the only changes are the new file and
+  retention pruning. A failure still stops the deployment before production mutation.
+- **Check after the first merge:** the new `database-backup-*.tar.gz.enc` appears in the private
+  repository and the public repository's artifact list has no `database-backup` entry.
+
 ## Recorded follow-ups — out of scope
 
 - Add short per-request row evidence aliases (`E1…En`) mapped server-side; never expose UUIDs to the

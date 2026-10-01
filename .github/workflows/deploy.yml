@@ -195,13 +195,16 @@ jobs:
             -pass env:BACKUP_ARCHIVE_PASSPHRASE | tar -tzf - >/dev/null
           rm -f backup-*.sql SHA256SUMS "$ARCHIVE"
 
-      - name: Upload encrypted backup artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: database-backup
-          path: database-backup-*.tar.gz.enc
-          if-no-files-found: error
-          retention-days: 14
+      - name: Store encrypted backup in the private backups repository
+        env:
+          BACKUP_REPO: ${{ vars.BACKUP_REPO }}
+          BACKUP_REPO_DEPLOY_KEY: ${{ secrets.BACKUP_REPO_DEPLOY_KEY }}
+        run: |
+          test -n "$BACKUP_REPO" && test -n "$BACKUP_REPO_DEPLOY_KEY" || {
+            echo "::error::The BACKUP_REPO variable and BACKUP_REPO_DEPLOY_KEY secret must be configured."
+            exit 1
+          }
+          bash scripts/store-backup.sh "database-backup-${BACKUP_STAMP}.tar.gz.enc"
 
   deploy-migrations:
     name: Deploy Migrations

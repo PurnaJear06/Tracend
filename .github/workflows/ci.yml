@@ -40,6 +40,9 @@ jobs:
       - name: Unit tests (no DB)
         run: deno test --allow-env --allow-net supabase/functions
 
+      - name: Backup storage script tests
+        run: bash scripts/test-store-backup.sh
+
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest
