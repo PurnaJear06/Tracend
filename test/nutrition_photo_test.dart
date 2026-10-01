@@ -15,6 +15,7 @@ class _PhotoRepository extends FixtureNutritionRepository
   final MealPhotoFailure? failure;
   final Completer<void>? gate;
   int analyzed = 0;
+  String? mealType;
 
   @override
   Future<String> analyzeMealPhoto({
@@ -23,6 +24,7 @@ class _PhotoRepository extends FixtureNutritionRepository
     required Uint8List bytes,
   }) async {
     analyzed++;
+    this.mealType = mealType;
     await gate?.future;
     if (failure != null) throw failure!;
     return 'meal-1';
@@ -40,14 +42,21 @@ Widget _app(_PhotoRepository repository, MealPhotoPicker pickPhoto) =>
       ),
     );
 
-Future<void> _tap(WidgetTester tester, String label) async {
-  final button = find.text(label);
+/// Opens Log a meal, optionally picks a meal type, then picks [label].
+Future<void> _tap(WidgetTester tester, String label, {String? mealType}) async {
+  final button = find.byKey(const ValueKey('log-a-meal'));
   await tester.scrollUntilVisible(
     button,
     240,
     scrollable: find.byType(Scrollable).first,
   );
   await tester.tap(button);
+  await tester.pumpAndSettle();
+  if (mealType != null) {
+    await tester.tap(find.text(mealType));
+    await tester.pump();
+  }
+  await tester.tap(find.text(label));
   await tester.pump();
 }
 
@@ -64,7 +73,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await _tap(tester, 'Analyze meal photo');
+      await _tap(tester, 'Take a photo');
       await tester.pump();
 
       expect(tester.takeException(), isNull);
@@ -96,7 +105,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.textContaining('(analysis: 503 meal_analysis_unavailable)'),
+      find.textContaining('Photo analysis did not work this time.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Beta diagnostic · analysis: 503 meal_analysis_unavailable'),
       findsOneWidget,
     );
     expect(repository.analyzed, 1);
@@ -117,6 +130,19 @@ void main() {
     expect(find.text('Analyzing meal photo…'), findsNothing);
   });
 
+  testWidgets('a photo meal is saved under the meal type chosen', (
+    tester,
+  ) async {
+    final repository = _PhotoRepository();
+    await tester.pumpWidget(_app(repository, _photo));
+    await tester.pumpAndSettle();
+
+    await _tap(tester, 'Choose from Photo Library', mealType: 'Dinner');
+    await tester.pumpAndSettle();
+
+    expect(repository.mealType, 'dinner');
+  });
+
   testWidgets('cancelling the picker changes nothing', (tester) async {
     final repository = _PhotoRepository();
     await tester.pumpWidget(_app(repository, (_) async => null));
@@ -126,7 +152,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.analyzed, 0);
-    expect(find.textContaining('Meal photo analysis failed'), findsNothing);
+    expect(find.textContaining('Photo analysis did not work'), findsNothing);
   });
 
   test('access and size problems name what to do', () {
@@ -173,7 +199,19 @@ void main() {
       mealPhotoFailureMessage(
         const MealPhotoFailure('analysis', '503 meal_analysis_unavailable'),
       ),
-      startsWith('Meal photo analysis failed (analysis: 503'),
+      startsWith('Photo analysis did not work this time.'),
+    );
+    expect(
+      mealPhotoFailureDiagnostic(
+        const MealPhotoFailure('analysis', '503 meal_analysis_unavailable'),
+      ),
+      'Beta diagnostic · analysis: 503 meal_analysis_unavailable',
+    );
+    expect(
+      mealPhotoFailureDiagnostic(
+        const MealPhotoFailure('analysis', '429 meal_vision_busy'),
+      ),
+      isNull,
     );
   });
 }

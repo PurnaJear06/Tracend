@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
@@ -17,10 +18,18 @@ import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 /// - no targets: consumed only, honest "No active target set" note
 /// - no consumed: targets only, empty bars (cold start)
 class TargetsGrid extends StatelessWidget {
-  const TargetsGrid({required this.summary, required this.targets, super.key});
+  const TargetsGrid({
+    required this.summary,
+    required this.targets,
+    this.glow = true,
+    super.key,
+  });
 
   final NutritionSummary? summary;
   final NutritionTargets? targets;
+
+  /// Off when another card on the screen is the hero.
+  final bool glow;
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +73,7 @@ class TargetsGrid extends StatelessWidget {
     );
 
     return PremiumGradientCard(
-      glow: true,
+      glow: glow,
       glowColor: colors.accentAmber,
       padding: const EdgeInsets.all(TracendSpacing.sm),
       child: Column(
@@ -78,7 +87,7 @@ class TargetsGrid extends StatelessWidget {
             child: _TargetsTag(),
           ),
           _WideCell(
-            label: 'ENERGY INTAKE',
+            label: 'CALORIES',
             labelColor: colors.textSecondary,
             consumed: _round(calories),
             target: '/ ${_round(targets.calories)} kcal',
@@ -121,7 +130,7 @@ class TargetsGrid extends StatelessWidget {
               const SizedBox(width: TracendSpacing.xxs),
               Expanded(
                 child: _HalfCell(
-                  label: 'FATS',
+                  label: 'FAT',
                   labelColor: colors.accentAmber,
                   consumed: _round(fat),
                   target: '/ ${_round(targets.fat)}g',
@@ -159,14 +168,10 @@ class _TargetsTag extends StatelessWidget {
         const SizedBox(width: TracendSpacing.xxs),
         Flexible(
           child: Text(
-            'DAILY TARGETS',
+            'FROM CONFIRMED MEALS',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              fontSize: 10,
-              letterSpacing: 1.4,
-              color: colors.accentAmber,
-            ),
+            style: TracendTheme.labelCaps(context, color: colors.accentAmber),
           ),
         ),
       ],
@@ -223,12 +228,10 @@ class _WideCell extends StatelessWidget {
                     children: [
                       Text(
                         label,
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              fontSize: 10,
-                              letterSpacing: 1.2,
-                              color: labelColor,
-                            ),
+                        style: TracendTheme.labelCaps(
+                          context,
+                          color: labelColor,
+                        ),
                       ),
                       const SizedBox(height: TracendSpacing.xxs),
                       Row(
@@ -331,11 +334,7 @@ class _HalfCell extends StatelessWidget {
           children: [
             Text(
               label,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                fontSize: 10,
-                letterSpacing: 1.2,
-                color: labelColor,
-              ),
+              style: TracendTheme.labelCaps(context, color: labelColor),
             ),
             const SizedBox(height: TracendSpacing.xxs),
             Row(

@@ -1,10 +1,20 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 
-/// Nutrition coach insight (plan §5.2, Stitch `nutrition.html` hero).
+/// "High confidence" for `high`; any other value is shown as given.
+String confidenceLabel(String confidence) => switch (confidence) {
+  'high' => 'High confidence',
+  'medium' => 'Medium confidence',
+  'low' => 'Low confidence',
+  _ => 'Confidence: $confidence',
+};
+
+/// Nutrition coach insight, shown below the day timeline as secondary
+/// guidance (plan §5.2).
 ///
 /// Binding contract:
 /// - headline = `CoachDecision.nutritionAction`
@@ -23,29 +33,31 @@ class NutritionInsightCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     return PremiumGradientCard(
-      glow: true,
-      glowColor: colors.accentAmber,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 3,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: colors.accentAmber,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+              Icon(
+                CupertinoIcons.chat_bubble_text_fill,
+                size: 16,
+                color: colors.accentAmber,
               ),
               const SizedBox(width: TracendSpacing.xs),
+              Expanded(
+                child: Text(
+                  'COACH',
+                  style: TracendTheme.labelCaps(
+                    context,
+                    color: colors.accentAmber,
+                  ),
+                ),
+              ),
               Text(
-                'COACH INSIGHT',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontSize: 10,
-                  letterSpacing: 1.4,
-                  color: colors.accentAmber,
+                confidenceLabel(decision.confidence),
+                style: TracendTheme.labelCaps(
+                  context,
+                  color: colors.textSecondary,
                 ),
               ),
             ],
@@ -60,31 +72,7 @@ class NutritionInsightCard extends StatelessWidget {
           const SizedBox(height: TracendSpacing.xs),
           Text(
             decision.nutritionSummary,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w300),
-          ),
-          const SizedBox(height: TracendSpacing.sm),
-          Divider(height: 1, color: colors.borderHairline),
-          const SizedBox(height: TracendSpacing.sm),
-          Row(
-            children: [
-              Icon(
-                CupertinoIcons.sparkles,
-                size: 14,
-                color: colors.textSecondary,
-              ),
-              const SizedBox(width: TracendSpacing.xxs),
-              Text(
-                'Confidence: ${decision.confidence}',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontFamily: TracendFonts.monoFamily,
-                  fontSize: 10,
-                  letterSpacing: 0.8,
-                  color: colors.textSecondary,
-                ),
-              ),
-            ],
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
         ],
       ),

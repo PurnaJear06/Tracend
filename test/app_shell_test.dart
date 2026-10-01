@@ -45,7 +45,12 @@ void main() {
     await tester.tap(find.text('Nutrition').last);
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Confirmed meals only · Today'), findsOneWidget);
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey('log-a-meal')),
+      find.byType(CustomScrollView),
+      const Offset(0, -200),
+    );
+    expect(find.byKey(const ValueKey('log-a-meal')), findsOneWidget);
     expect(find.byKey(const ValueKey('tab-nutrition')), findsOneWidget);
 
     await tester.tap(find.text('Progress').last);

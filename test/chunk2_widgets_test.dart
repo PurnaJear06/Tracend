@@ -208,7 +208,8 @@ void main() {
         find.text('Prioritize protein across your remaining meals.'),
         findsOneWidget,
       );
-      expect(find.text('Confidence: high'), findsOneWidget);
+      expect(find.text('HIGH CONFIDENCE'.toUpperCase()), findsNothing);
+      expect(find.text('High confidence'), findsOneWidget);
     });
   });
 
@@ -392,6 +393,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await _scrollToEnd(tester);
+      expect(find.byKey(const ValueKey('log-a-meal')), findsOneWidget);
       expect(find.byType(NutritionInsightCard), findsNothing);
     });
 
@@ -411,6 +414,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await _scrollToEnd(tester);
       expect(find.byType(NutritionInsightCard), findsOneWidget);
       expect(find.text('Keep intake unchanged'), findsOneWidget);
     });
@@ -511,4 +515,10 @@ class _DecisionCoachRepository implements CoachRepository {
 
   @override
   Future<Map<String, dynamic>> loadUsage() async => const {};
+}
+
+/// The coach card sits at the end of Nutrition, below the day timeline.
+Future<void> _scrollToEnd(WidgetTester tester) async {
+  await tester.drag(find.byType(CustomScrollView), const Offset(0, -2000));
+  await tester.pumpAndSettle();
 }

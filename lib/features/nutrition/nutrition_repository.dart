@@ -31,17 +31,75 @@ class NutritionTargets {
   final double fat;
 }
 
+/// One confirmed food inside a meal (`meal_items`).
+class MealItem {
+  const MealItem({
+    required this.name,
+    required this.calories,
+    required this.protein,
+    required this.carbohydrate,
+    required this.fat,
+  });
+  final String name;
+  final double calories;
+  final double protein;
+  final double carbohydrate;
+  final double fat;
+}
+
 class MealEntry {
   const MealEntry({
     required this.id,
     required this.type,
     required this.status,
     required this.source,
+    this.items = const [],
+    this.loggedAt,
+    this.scheduleItemId,
   });
+
+  /// Maps a `meals` row with its embedded `meal_items`.
+  factory MealEntry.fromRow(Map<String, dynamic> row) {
+    final logged = row['confirmed_at'] ?? row['created_at'];
+    return MealEntry(
+      id: row['id'] as String,
+      type: row['meal_type'] as String,
+      status: row['status'] as String,
+      source: row['source'] as String,
+      loggedAt: logged is String ? DateTime.parse(logged).toLocal() : null,
+      scheduleItemId: row['nutrition_schedule_item_id'] as String?,
+      items: [
+        for (final item in (row['meal_items'] as List? ?? const []))
+          MealItem(
+            name: (item as Map)['name_snapshot'] as String,
+            calories: (item['calories'] as num).toDouble(),
+            protein: (item['protein_g'] as num).toDouble(),
+            carbohydrate: (item['carbohydrate_g'] as num).toDouble(),
+            fat: (item['fat_g'] as num).toDouble(),
+          ),
+      ],
+    );
+  }
+
   final String id;
   final String type;
   final String status;
   final String source;
+
+  /// Confirmed foods; empty for a draft, whose foods are still candidates.
+  final List<MealItem> items;
+
+  /// When the meal was confirmed, or created for a draft.
+  final DateTime? loggedAt;
+
+  /// The schedule slot this meal fills, when it was logged from one.
+  final String? scheduleItemId;
+
+  double get calories => items.fold(0, (sum, item) => sum + item.calories);
+  double get protein => items.fold(0, (sum, item) => sum + item.protein);
+  double get carbohydrate =>
+      items.fold(0, (sum, item) => sum + item.carbohydrate);
+  double get fat => items.fold(0, (sum, item) => sum + item.fat);
 }
 
 class ScheduledMeal {
@@ -406,19 +464,14 @@ class SupabaseNutritionRepository
   Future<List<MealEntry>> loadMeals(DateTime date) async {
     final rows = await _client
         .from('meals')
-        .select('id,meal_type,status,source')
+        .select(
+          'id,meal_type,status,source,confirmed_at,created_at,'
+          'nutrition_schedule_item_id,'
+          'meal_items(name_snapshot,calories,protein_g,carbohydrate_g,fat_g)',
+        )
         .eq('local_date', _dateKey(date))
         .order('created_at');
-    return rows
-        .map(
-          (row) => MealEntry(
-            id: row['id'] as String,
-            type: row['meal_type'] as String,
-            status: row['status'] as String,
-            source: row['source'] as String,
-          ),
-        )
-        .toList();
+    return rows.map(MealEntry.fromRow).toList();
   }
 
   @override

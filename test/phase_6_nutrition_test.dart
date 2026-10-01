@@ -10,16 +10,20 @@ void main() {
   ) async {
     await tester.pumpWidget(_app(_NutritionRepository()));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Confirmed meals only · Today'), findsOneWidget);
+    expect(find.text('FROM CONFIRMED MEALS'), findsOneWidget);
     expect(find.text('540'), findsOneWidget);
     expect(find.textContaining('/ 2200 kcal'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('breakfast'),
+      find.text('Breakfast'),
       180,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('breakfast'), findsOneWidget);
-    expect(find.text('Enter manually'), findsOneWidget);
+    expect(find.text('Breakfast'), findsOneWidget);
+    expect(find.text('Oats · Greek yogurt'), findsOneWidget);
+    expect(find.text('540 kcal'), findsOneWidget);
+    expect(find.text('P 35'), findsOneWidget);
+    expect(find.text('confirmed'), findsNothing);
+    expect(find.text('breakfast'), findsNothing);
   });
 
   testWidgets('Nutrition can reopen persisted meals from a previous day', (
@@ -42,8 +46,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(repository.loadedDates.length, greaterThanOrEqualTo(2));
     expect(repository.loadedDates.last.day, yesterday.day);
-    expect(find.textContaining('Confirmed meals only ·'), findsOneWidget);
-    expect(find.textContaining('· Today'), findsNothing);
+    expect(find.text('Yesterday'), findsOneWidget);
+    expect(find.text('Today’s meals'.toUpperCase()), findsNothing);
   });
 
   testWidgets('Manual meal validates fields before confirmation', (
@@ -51,6 +55,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_app(_NutritionRepository()));
     await tester.pumpAndSettle();
+    await _openLogMeal(tester);
     await tester.tap(find.text('Enter manually'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Confirm meal'));
@@ -107,7 +112,7 @@ void main() {
     );
     await tester.ensureVisible(reviewButton);
     await tester.pumpAndSettle();
-    expect(find.text('Review & edit draft'), findsOneWidget);
+    expect(find.text('NEEDS REVIEW'), findsOneWidget);
     await tester.tap(reviewButton);
     await tester.pumpAndSettle();
     expect(find.text('Edit estimate'), findsOneWidget);
@@ -145,13 +150,15 @@ void main() {
     final repository = _NutritionRepository();
     await tester.pumpWidget(_app(repository));
     await tester.pumpAndSettle();
-    final deleteButton = find.byKey(const ValueKey('delete-meal-meal-1'));
+    final menu = find.byKey(const ValueKey('meal-menu-meal-1'));
     await tester.scrollUntilVisible(
-      deleteButton,
+      menu,
       240,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.tap(deleteButton);
+    await tester.tap(menu);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('delete-meal-meal-1')));
     await tester.pumpAndSettle();
     expect(find.text('Delete this meal?'), findsOneWidget);
     expect(repository.deletedMealId, isNull);
@@ -166,8 +173,8 @@ Widget _app(NutritionRepository repository) => MaterialApp(
   home: Scaffold(body: NutritionScreen(repository: repository)),
 );
 
-Future<void> _tapReviewSampleAnalysis(WidgetTester tester) async {
-  final button = find.text('Review sample analysis');
+Future<void> _openLogMeal(WidgetTester tester) async {
+  final button = find.byKey(const ValueKey('log-a-meal'));
   await tester.scrollUntilVisible(
     button,
     240,
@@ -176,6 +183,12 @@ Future<void> _tapReviewSampleAnalysis(WidgetTester tester) async {
   await tester.ensureVisible(button);
   await tester.pumpAndSettle();
   await tester.tap(button);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _tapReviewSampleAnalysis(WidgetTester tester) async {
+  await _openLogMeal(tester);
+  await tester.tap(find.text('Review sample analysis'));
   await tester.pumpAndSettle();
 }
 
@@ -209,11 +222,28 @@ class _NutritionRepository implements NutritionRepository {
 
   @override
   Future<List<MealEntry>> loadMeals(DateTime date) async => [
-    const MealEntry(
+    MealEntry(
       id: 'meal-1',
       type: 'breakfast',
       status: 'confirmed',
       source: 'manual',
+      loggedAt: DateTime(date.year, date.month, date.day, 8, 5),
+      items: const [
+        MealItem(
+          name: 'Oats',
+          calories: 380,
+          protein: 15,
+          carbohydrate: 58,
+          fat: 9,
+        ),
+        MealItem(
+          name: 'Greek yogurt',
+          calories: 160,
+          protein: 20,
+          carbohydrate: 4,
+          fat: 9,
+        ),
+      ],
     ),
     if (includeDraft)
       const MealEntry(
