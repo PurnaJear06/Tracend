@@ -59,6 +59,13 @@ expect_eq "history is squashed to one commit" "1" "$(remote_commits "$r")"
 store "$r" "$f2" >/dev/null
 expect_eq "re-storing the same file keeps the same set" "2" "$(git --git-dir="$r" ls-tree --name-only main backups/ | grep -c .)"
 
+# 3b. A relative path works from another directory: the deploy workflow passes a bare file name.
+f3="$(make_backup 2026-10-01T030000 three)"
+(cd "$(dirname "$f3")" && store "$r" "$(basename "$f3")" >/dev/null)
+expect_eq "a bare file name resolves from the caller's directory" \
+  "database-backup-2026-10-01T010000.tar.gz.enc database-backup-2026-10-01T020000.tar.gz.enc database-backup-2026-10-01T030000.tar.gz.enc " \
+  "$(remote_backups "$r")"
+
 # 4. The same name with different content is refused and the remote is untouched.
 before="$(git --git-dir="$r" rev-parse main)"
 changed="$base/in/changed/database-backup-2026-10-01T020000.tar.gz.enc"

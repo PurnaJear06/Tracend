@@ -20,13 +20,14 @@ set -euo pipefail
 die() { echo "store-backup: $*" >&2; exit 1; }
 
 [ "$#" -eq 1 ] || die "usage: $0 <database-backup-*.tar.gz.enc>"
-backup_file="$1"
-backup_name="$(basename "$backup_file")"
+backup_name="$(basename "$1")"
 branch="${BACKUP_BRANCH:-main}"
 keep="${BACKUP_KEEP:-30}"
 retry_delay="${BACKUP_RETRY_DELAY:-5}"
 
-[ -s "$backup_file" ] || die "backup file is missing or empty: $backup_file"
+[ -s "$1" ] || die "backup file is missing or empty: $1"
+# Absolute path: the script changes directory into a scratch repository before copying.
+backup_file="$(cd "$(dirname "$1")" && pwd)/$backup_name"
 case "$backup_name" in
   database-backup-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9].tar.gz.enc) ;;
   *) die "unexpected backup file name: $backup_name" ;;
