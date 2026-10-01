@@ -122,9 +122,29 @@ abstract interface class ProgressRepository {
   Future<void> acknowledgeWeeklyReview(String reviewId);
 }
 
-class SupabaseProgressRepository implements ProgressRepository {
+/// Reads the user's active primary goal so Progress can say whether the
+/// weight is moving toward it. Optional: screens check `is` before calling.
+abstract interface class ProgressGoalRepository {
+  /// The active `user_goals.goal_type` with the highest priority, or null.
+  Future<String?> loadActiveGoal();
+}
+
+class SupabaseProgressRepository
+    implements ProgressRepository, ProgressGoalRepository {
   SupabaseProgressRepository(this._client);
   final SupabaseClient _client;
+
+  @override
+  Future<String?> loadActiveGoal() async {
+    final row = await _client
+        .from('user_goals')
+        .select('goal_type')
+        .eq('status', 'active')
+        .order('priority')
+        .limit(1)
+        .maybeSingle();
+    return row?['goal_type'] as String?;
+  }
 
   @override
   Future<List<BodyMeasurement>> loadMeasurements() async {

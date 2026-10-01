@@ -149,6 +149,10 @@ accessibility sizes. Tabular figures are required for changing values and timers
   content.
 - Avoid nested scrolling, edge controls that conflict with system gestures, and dense edge-to-edge
   charts.
+- Repeated items of one kind (weigh-ins, photo sets, meals) share one grouped surface
+  (`TracendGroupedList`), never a card per row. A main screen shows at most three recent items;
+  the rest open from a **See all** action on the section label. Only the screen's hero card uses
+  the corner glow.
 
 ### 3.4 Elevation and material
 
@@ -311,6 +315,23 @@ entry uses the correct keyboard, retains the previous set as reference, and work
 Separates AI-observed foods from confirmed catalog items. Every candidate shows editable amount,
 preparation assumption, confidence, and unresolved questions. Totals update only after confirmation.
 
+### `TracendGroupedList` and `TracendListRow`
+
+One `PremiumGradientCard` with hairline dividers between rows. A row is at least 52pt tall:
+title (17pt w600), optional secondary line, optional trailing value, and a chevron only when the
+row opens something. Section labels can carry a trailing text action (`SectionLabel(actionLabel:)`)
+such as **See all**. Period choices use `TracendSegmentedControl` (iOS sliding segments, 44pt).
+
+### `WeightHeroCard`
+
+The Progress hero. It shows the latest weigh-in, the change between the first and last weigh-in in
+the selected period, the server's weekly rate (`weightTrend28d`, else `weightTrend7d`, × 7), a plain
+word for the 28-day R² (**Steady trend** ≥ 0.6, **Some day-to-day variation** ≥ 0.3, **Too noisy
+to call yet** below), and the `EvidenceTrendChart`. The change is tinted `stateStable` only when it
+moves toward the active goal (`fat_loss` down, `muscle_gain` up); otherwise it stays neutral, and the
+arrow and spoken label carry the direction. An info button explains that dots are recorded
+weigh-ins and lines are calculated, with no AI.
+
 ### `MetricTrend`
 
 Uses a line for time trend, a range band for uncertainty where applicable, explicit units, direct
@@ -436,6 +457,11 @@ Tracend is direct, calm, specific, and nonjudgmental.
 - Buttons use outcome verbs: **Start workout**, **Confirm meal**, **Accept change**, and **Delete
   account**.
 - Never use shame, physique ranking, fake urgency, streak loss, or medical certainty.
+- Format for people, not databases: **Today**, **Yesterday**, or **Mon 28 Sep** for dates
+  (`lib/shared/formatting.dart`); weight rates per week; stored codes as words (`healthkit` →
+  **Apple Health**, `lunch` → **Lunch**).
+- Say an honesty label once per surface in plain words (**Calculated from your logs · no AI**)
+  instead of repeating engineering captions such as "deterministic" or "no smoothing".
 
 ## 10. Anti-Patterns
 

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/shared/formatting.dart';
 
 class DatedTrendValue {
   const DatedTrendValue(this.date, this.value);
@@ -196,12 +197,14 @@ class EvidenceTrendChart extends StatelessWidget {
               _TrendLegend(overlays: overlays),
               const SizedBox(height: TracendSpacing.xs),
             ],
-            Row(
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              spacing: TracendSpacing.sm,
+              runSpacing: TracendSpacing.xxs,
               children: [
-                Text(_date(ordered.first.date)),
-                const Spacer(),
+                Text(shortDate(ordered.first.date)),
                 Text(
-                  '${_number(latest.value)} $unit · ${_date(latest.date)}',
+                  '${_number(latest.value)} $unit · ${shortDate(latest.date)}',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: context.tracendColors.textPrimary,
                     fontFeatures: const [FontFeature.tabularFigures()],
@@ -219,7 +222,6 @@ class EvidenceTrendChart extends StatelessWidget {
       '${overlay.label} ${overlay.slopeKgPerDay.toStringAsFixed(3)} kg/day'
       '${overlay.lowConfidence ? ' (low confidence)' : ''}';
 
-  static String _date(DateTime date) => '${date.day}/${date.month}';
   static String _number(double value) =>
       value >= 100 ? value.round().toString() : value.toStringAsFixed(1);
 }
@@ -271,11 +273,13 @@ class _TrendLegend extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: TracendSpacing.xxs),
-              Text(
-                overlay.lowConfidence
-                    ? '${overlay.label} · low confidence'
-                    : overlay.label,
-                style: style,
+              Flexible(
+                child: Text(
+                  overlay.lowConfidence
+                      ? '${overlay.label} · low confidence'
+                      : overlay.label,
+                  style: style,
+                ),
               ),
             ],
           ),

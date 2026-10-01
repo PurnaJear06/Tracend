@@ -1,16 +1,17 @@
 # Tracend Current State
 
-**As of:** 2026-09-30
+**As of:** 2026-10-01
 
 **Lifecycle:** owner-only private beta; not approved for public production
 
-**Current priority:** make Coach chat answer every question from the full athlete file and never
-dead-end (FLUTTER-8). The plan is owner-approved: PR #35 → A1 (server) → A2 (app) → B
-(calculators). PR #35 and A1's server code are live; an owner spot check passed on 2026-09-28.
-A2 (the app) was merged and deployed on 2026-09-29. Server-side AI consent enforcement (#51) is
-live, and build 217 (main bc2f92b) is installed; on 2026-09-30 the owner reported Coach, AI
-consent, and meal photos working. B (deterministic calculators) is in review and waits on the
-direct DeepSeek eval. Then comes the full owner-device acceptance checklist, before any UI redesign.
+**Current priority:** UI polish, so the app reads as a finished consumer product rather than a
+beta full of logs. The owner approved the plan on 2026-10-01 and chose to start it before the full
+owner-device acceptance checklist. Order: Progress (P1) → Nutrition (P2) → Today, Train, Coach,
+Account (P3–P6). Workstream state: [`docs/handoff/ui-polish.md`](./handoff/ui-polish.md).
+
+The FLUTTER-8 Coach work is shipped: PR #35, A1, A2, and B are live (B at main 21c3b55, build 225).
+The direct DeepSeek evaluation is still unmeasured, and the owner's device check on build 225 is
+open; see [`docs/handoff/backend.md`](./handoff/backend.md).
 
 ## Shipped baseline
 
@@ -137,12 +138,10 @@ These are not silently considered complete:
 
 ## What happens next
 
-The active implementation is the FLUTTER-8 Coach work described in
-[`docs/handoff/backend.md`](./handoff/backend.md). PR #35, A1, and A2 are live, and the owner's A2 device
-check passed. B is in review. After owner-device acceptance, return to the read-only product/UI audit
-and one owner-approved redesign brief. AI coaching now needs the athlete's consent, which is asked
-in onboarding and once for existing accounts. For server enforcement status, see the backend
-handoff, "AI coaching consent".
+UI polish, one PR per screen, in the order in [`docs/handoff/ui-polish.md`](./handoff/ui-polish.md).
+Each PR changes only Flutter code and docs, so it needs a device install from merged `main` and no
+backend deploy. AI coaching needs the athlete's consent, asked in onboarding and once for existing
+accounts; for server enforcement status, see the backend handoff, "AI coaching consent".
 
 ## Sources of truth
 

@@ -1,174 +1,149 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
-import 'package:tracend/shared/widgets/premium_gradient_card.dart';
-import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/formatting.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
 
-/// Headline snapshot: latest confirmed weigh-in and timeline change.
-/// Every number traces to a confirmed [BodyMeasurement] or the
-/// deterministic `get_my_progress_summary` RPC — never an AI estimate.
-class ProgressSnapshotCard extends StatelessWidget {
-  const ProgressSnapshotCard({
+/// The latest weigh-ins as one grouped list. Each row shows the change from
+/// the weigh-in before it, a plain difference of two confirmed values.
+class WeighInList extends StatelessWidget {
+  const WeighInList({
     required this.measurements,
-    required this.fallback,
+    required this.onOpen,
+    this.limit,
+    this.now,
     super.key,
   });
 
+  /// Every confirmed weigh-in, oldest first.
   final List<BodyMeasurement> measurements;
-  final ProgressSummary fallback;
+  final ValueChanged<BodyMeasurement> onOpen;
+
+  /// Show only the newest [limit] rows when set.
+  final int? limit;
+  final DateTime? now;
 
   @override
   Widget build(BuildContext context) {
-    final current = measurements.isEmpty
-        ? fallback.currentWeightKg
-        : measurements.last.weightKg;
-    final change = measurements.length >= 2
-        ? measurements.last.weightKg - measurements.first.weightKg
-        : fallback.weightChangeKg;
-    return PremiumGradientCard(
-      glow: true,
-      padding: const EdgeInsets.all(TracendSpacing.gutter),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TracendPill(
-            label: measurements.length >= 2
-                ? '${measurements.length} confirmed days'
-                : 'Gathering baseline',
-            icon: measurements.length >= 2
-                ? CupertinoIcons.chart_bar_fill
-                : CupertinoIcons.plus_circle_fill,
-            color: measurements.length >= 2
-                ? context.tracendColors.stateStable
-                : context.tracendColors.actionPrimary,
+    final colors = context.tracendColors;
+    final newestFirst = measurements.reversed.toList();
+    final shown = limit == null
+        ? newestFirst
+        : newestFirst.take(limit!).toList();
+    return TracendGroupedList(
+      children: [
+        for (var i = 0; i < shown.length; i++)
+          _WeighInRow(
+            value: shown[i],
+            previous: i + 1 < newestFirst.length ? newestFirst[i + 1] : null,
+            onOpen: () => onOpen(shown[i]),
+            now: now,
+            colors: colors,
           ),
-          const SizedBox(height: TracendSpacing.sm),
-          Text(
-            current == null
-                ? 'Add your first weigh-in'
-                : '${current.toStringAsFixed(1)} kg',
-            style: Theme.of(context).textTheme.displaySmall?.copyWith(
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-          const SizedBox(height: TracendSpacing.xs),
-          Text(
-            change == null
-                ? 'Use the same morning protocol when practical.'
-                : '${change > 0 ? '+' : ''}${change.toStringAsFixed(1)} kg across your confirmed timeline.',
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
-          const SizedBox(height: TracendSpacing.sm),
-          Text(
-            'Latest confirmed weigh-in · no AI estimate',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
-      ),
+      ],
     );
   }
 }
 
-class EmptyMeasurementsCard extends StatelessWidget {
-  const EmptyMeasurementsCard({super.key});
+class _WeighInRow extends StatelessWidget {
+  const _WeighInRow({
+    required this.value,
+    required this.previous,
+    required this.onOpen,
+    required this.now,
+    required this.colors,
+  });
+
+  final BodyMeasurement value;
+  final BodyMeasurement? previous;
+  final VoidCallback onOpen;
+  final DateTime? now;
+  final TracendColors colors;
 
   @override
-  Widget build(BuildContext context) => const TracendCard(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) {
+    final date = friendlyDate(value.date, now: now);
+    final source = measurementSourceLabel(value.source);
+    final delta = previous == null
+        ? null
+        : double.parse(
+            (value.weightKg - previous!.weightKg).toStringAsFixed(1),
+          );
+    return TracendListRow(
+      title: '${value.weightKg.toStringAsFixed(1)} kg',
+      subtitle: '$date · $source',
+      semanticLabel:
+          'Weigh-in ${value.weightKg.toStringAsFixed(1)} kilograms, $date, '
+          '$source. Opens details.',
+      onTap: onOpen,
+      trailing: delta == null
+          ? null
+          : Text(
+              delta == 0
+                  ? '0.0'
+                  : '${delta > 0 ? '+' : '\u2212'}${delta.abs().toStringAsFixed(1)}',
+              style: TracendTheme.dataUtility(colors),
+            ),
+    );
+  }
+}
+
+/// Every weigh-in, newest first, in a scrollable sheet.
+class WeighInHistorySheet extends StatelessWidget {
+  const WeighInHistorySheet({
+    required this.measurements,
+    required this.onOpen,
+    this.now,
+    super.key,
+  });
+
+  final List<BodyMeasurement> measurements;
+  final ValueChanged<BodyMeasurement> onOpen;
+  final DateTime? now;
+
+  @override
+  Widget build(BuildContext context) => DraggableScrollableSheet(
+    expand: false,
+    initialChildSize: 0.7,
+    maxChildSize: 0.95,
+    builder: (context, controller) => ListView(
+      controller: controller,
+      padding: const EdgeInsets.fromLTRB(
+        TracendSpacing.gutter,
+        0,
+        TracendSpacing.gutter,
+        TracendSpacing.xl,
+      ),
       children: [
-        Icon(CupertinoIcons.chart_bar),
-        SizedBox(height: 12),
-        Text('No measurements yet'),
-        SizedBox(height: 4),
+        Text('All weigh-ins', style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: TracendSpacing.xxs),
         Text(
-          'Your first confirmed entry becomes the baseline. A trend needs at least two dates.',
+          '${measurements.length} recorded',
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
+        const SizedBox(height: TracendSpacing.md),
+        WeighInList(measurements: measurements, onOpen: onOpen, now: now),
       ],
     ),
   );
 }
 
-/// One confirmed measurement row. Tappable: opens [MeasurementDetailSheet]
-/// so the "Tap a history row to verify" copy is a real affordance.
-class MeasurementHistoryRow extends StatelessWidget {
-  const MeasurementHistoryRow({
-    required this.value,
-    required this.onOpen,
+/// Detail sheet for one confirmed measurement: date, source, weight, and
+/// optional tape measurements. Read-only — editing is not a confirmed flow.
+class MeasurementDetailSheet extends StatelessWidget {
+  const MeasurementDetailSheet({
+    required this.measurement,
+    this.now,
     super.key,
   });
 
-  final BodyMeasurement value;
-  final VoidCallback onOpen;
+  final BodyMeasurement measurement;
+  final DateTime? now;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    return Semantics(
-      button: true,
-      label:
-          'Weigh-in ${value.weightKg.toStringAsFixed(1)} kilograms on '
-          '${value.date.day}/${value.date.month}/${value.date.year}, '
-          'source ${value.source}. Opens details.',
-      child: InkWell(
-        onTap: onOpen,
-        borderRadius: BorderRadius.circular(TracendRadii.card),
-        child: TracendCard(
-          child: Row(
-            children: [
-              Icon(
-                CupertinoIcons.checkmark_seal_fill,
-                color: colors.stateStable,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${value.weightKg.toStringAsFixed(1)} kg',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    Text(
-                      '${value.date.day}/${value.date.month}/${value.date.year} · ${value.source}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-              if (value.waistCm != null)
-                Text(
-                  '${value.waistCm!.toStringAsFixed(1)} cm waist',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              const SizedBox(width: TracendSpacing.xs),
-              Icon(
-                CupertinoIcons.chevron_forward,
-                size: 14,
-                color: colors.textSecondary,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Detail sheet for one confirmed measurement: date, source, weight, and
-/// optional tape measurements. Read-only — editing is not a confirmed flow.
-class MeasurementDetailSheet extends StatelessWidget {
-  const MeasurementDetailSheet({required this.measurement, super.key});
-
-  final BodyMeasurement measurement;
-
-  @override
-  Widget build(BuildContext context) {
     final rows = <(String, String)>[
       ('Weight', '${measurement.weightKg.toStringAsFixed(1)} kg'),
       if (measurement.waistCm != null)
@@ -184,44 +159,44 @@ class MeasurementDetailSheet extends StatelessWidget {
     ];
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        padding: const EdgeInsets.fromLTRB(
+          TracendSpacing.gutter,
+          0,
+          TracendSpacing.gutter,
+          TracendSpacing.lg,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Confirmed weigh-in',
+              friendlyDate(measurement.date, now: now),
               style: Theme.of(context).textTheme.headlineSmall,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: TracendSpacing.xxs),
             Text(
-              '${measurement.date.day}/${measurement.date.month}/${measurement.date.year} · source: ${measurement.source}',
+              measurementSourceLabel(measurement.source),
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: 16),
-            for (final (label, value) in rows)
-              Padding(
-                padding: const EdgeInsets.only(bottom: TracendSpacing.xs),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ),
-                    Text(
+            const SizedBox(height: TracendSpacing.md),
+            TracendGroupedList(
+              children: [
+                for (final (label, value) in rows)
+                  TracendListRow(
+                    title: label,
+                    trailing: Text(
                       value,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: colors.textPrimary,
                         fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
-                  ],
-                ),
-              ),
-            const SizedBox(height: TracendSpacing.xs),
+                  ),
+              ],
+            ),
+            const SizedBox(height: TracendSpacing.sm),
             Text(
-              'Confirmed entries are evidence. They are never edited silently.',
+              'Saved weigh-ins are never changed behind your back.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
@@ -276,7 +251,8 @@ class _MeasurementEntrySheetState extends State<MeasurementEntrySheet> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Confirmed manual entry · kilograms and centimeters',
+              'Only weight is required. Weigh in at the same time of day, '
+              'ideally in the morning, for the clearest trend.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
