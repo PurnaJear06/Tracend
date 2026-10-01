@@ -87,10 +87,16 @@ matching Supabase's documented logical-backup flow. A backup is valid only when:
 - schema and data restore with `ON_ERROR_STOP=1` inside the isolated database; and
 - the restored database contains public tables.
 
-Only an AES-256 encrypted GitHub Actions artifact is retained for 14 days; its passphrase exists as
-the `BACKUP_ARCHIVE_PASSPHRASE` Actions secret. Plaintext dumps are removed from the runner after
-the encrypted archive is validated. Backups must never be committed or uploaded unencrypted to this
-public repository. Storage object bytes are outside PostgreSQL logical dumps and require their own
+Only an AES-256 encrypted archive is kept; its passphrase exists as the `BACKUP_ARCHIVE_PASSPHRASE`
+Actions secret. Plaintext dumps are removed from the runner after the encrypted archive is
+validated. The archive is stored in the separate **private** repository named by the `BACKUP_REPO`
+Actions variable (`PurnaJear06/Tracend-backups`), never as a workflow artifact: artifacts of a
+public repository can be downloaded by any signed-in GitHub user. `scripts/store-backup.sh`
+pushes it with `BACKUP_REPO_DEPLOY_KEY`, a deploy key with write access to that one repository,
+keeps the newest 30 backups, rewrites the branch as one orphan commit so history does not grow,
+and refuses to push unless the only changes are the new file and retention pruning. Backups must
+never be committed or uploaded unencrypted anywhere, and the backups repository must stay private.
+`scripts/test-store-backup.sh` covers the script in CI. Storage object bytes are outside PostgreSQL logical dumps and require their own
 recovery process; database backups cover Storage metadata only.
 
 Any backup or restore-drill failure stops the deployment before production mutation.
