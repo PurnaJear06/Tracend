@@ -179,6 +179,29 @@ void main() {
     expect(find.text('Enter manually'), findsOneWidget);
   });
 
+  testWidgets('every timeline state is announced in words', (tester) async {
+    final handle = tester.ensureSemantics();
+    tester.view.physicalSize = const Size(390, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.light,
+        home: Scaffold(body: NutritionScreen(repository: _DayRepository())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (final word in ['Logged', 'Needs review', 'Planned']) {
+      expect(
+        find.bySemanticsLabel(RegExp('(^|\\n)$word(\\n|\$)')),
+        findsWidgets,
+        reason: word,
+      );
+    }
+    handle.dispose();
+  });
+
   testWidgets('the timeline shows foods, totals, and states in words', (
     tester,
   ) async {
@@ -199,6 +222,7 @@ void main() {
       find.bySemanticsLabel(RegExp('612 kilocalories, protein 41 grams')),
       findsWidgets,
     );
+    expect(find.text('LOGGED'), findsNWidgets(2));
     expect(find.text('NEEDS REVIEW'), findsOneWidget);
     expect(find.text('PLANNED'), findsOneWidget);
     expect(find.text('Rice 150 g · Chicken 120 g'), findsOneWidget);

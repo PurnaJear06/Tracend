@@ -377,7 +377,8 @@ The pill text, not the color, carries the meaning.
 `NutritionTimeline` (`lib/features/nutrition/widgets/meal_cards.dart`) is the meal schedule
 timeline: one card with a time column, a connected rail, and a marker per row (teal check logged,
 amber spark draft, amber ring due, grey ring planned, faint ring optional, dash not logged). Each
-row also states its status in words. Logged rows list foods and `kcal`, `P`, `C`, `F` as separate
+row also states its status in words (**Logged**, **Needs review**, **Due now**, **Planned**,
+**Optional**, **Not logged**), and screen readers announce it. Logged rows list foods and `kcal`, `P`, `C`, `F` as separate
 mono parts that wrap whole. At large text sizes the time joins the title line and the actions move
 under the row. Neither component uses color as the only state signal.
 

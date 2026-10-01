@@ -199,7 +199,7 @@ class _TimelineRow extends StatelessWidget {
     final slot = entry.scheduled;
     final muted = marker == _Marker.skipped;
     final status = switch (marker) {
-      _Marker.logged => null,
+      _Marker.logged => 'Logged',
       _Marker.draft => 'Needs review',
       _Marker.due => 'Due now',
       _Marker.upcoming => 'Planned',
@@ -207,6 +207,7 @@ class _TimelineRow extends StatelessWidget {
       _Marker.skipped => 'Not logged',
     };
     final statusColor = switch (marker) {
+      _Marker.logged => colors.stateStable,
       _Marker.draft || _Marker.due => colors.accentAmber,
       _ => colors.textSecondary,
     };
@@ -319,14 +320,14 @@ class _TimelineRow extends StatelessWidget {
                           color: muted ? colors.textSecondary : null,
                         ),
                       ),
-                      if (status != null)
-                        Text(
-                          status.toUpperCase(),
-                          style: TracendTheme.labelCaps(
-                            context,
-                            color: statusColor,
-                          ),
+                      Text(
+                        status.toUpperCase(),
+                        semanticsLabel: status,
+                        style: TracendTheme.labelCaps(
+                          context,
+                          color: statusColor,
                         ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 2),
