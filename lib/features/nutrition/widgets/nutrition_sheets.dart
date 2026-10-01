@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
+import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class ManualMealResult {
@@ -34,8 +35,170 @@ class HideKeyboardButton extends StatelessWidget {
   }
 }
 
+const mealTypes = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+/// The meal type a new log most likely is, from the time it is logged.
+String defaultMealType(DateTime now) {
+  final minutes = now.hour * 60 + now.minute;
+  if (minutes < 10 * 60 + 30) return 'breakfast';
+  if (minutes < 15 * 60) return 'lunch';
+  if (minutes < 17 * 60 + 30) return 'snack';
+  return 'dinner';
+}
+
+enum LogMealMethod { camera, library, manual, sample }
+
+class LogMealChoice {
+  const LogMealChoice(this.mealType, this.method);
+  final String mealType;
+  final LogMealMethod method;
+}
+
+/// One entry point for every way to log a meal. The meal type is chosen
+/// first so a photo meal is saved under the right meal.
+class LogMealSheet extends StatefulWidget {
+  const LogMealSheet({
+    required this.initialMealType,
+    required this.photosAvailable,
+    super.key,
+  });
+
+  final String initialMealType;
+
+  /// False on the fixture repository, which offers a sample analysis
+  /// instead of the camera.
+  final bool photosAvailable;
+
+  @override
+  State<LogMealSheet> createState() => _LogMealSheetState();
+}
+
+class _LogMealSheetState extends State<LogMealSheet> {
+  late String _mealType = widget.initialMealType;
+
+  void _choose(LogMealMethod method) =>
+      Navigator.pop(context, LogMealChoice(_mealType, method));
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).textTheme;
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          TracendSpacing.gutter,
+          0,
+          TracendSpacing.gutter,
+          TracendSpacing.lg,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Log a meal', style: theme.headlineSmall),
+            const SizedBox(height: TracendSpacing.md),
+            Wrap(
+              spacing: TracendSpacing.xs,
+              runSpacing: TracendSpacing.xs,
+              children: [
+                for (final type in mealTypes)
+                  ChoiceChip(
+                    label: Text(mealTypeLabel(type)),
+                    selected: _mealType == type,
+                    materialTapTargetSize: MaterialTapTargetSize.padded,
+                    onSelected: (_) => setState(() => _mealType = type),
+                  ),
+              ],
+            ),
+            const SizedBox(height: TracendSpacing.md),
+            if (widget.photosAvailable) ...[
+              _MethodTile(
+                icon: CupertinoIcons.camera_fill,
+                title: 'Take a photo',
+                detail: 'Tracend suggests the foods; you check them.',
+                onTap: () => _choose(LogMealMethod.camera),
+              ),
+              const SizedBox(height: TracendSpacing.xs),
+              _MethodTile(
+                icon: CupertinoIcons.photo_on_rectangle,
+                title: 'Choose from Photo Library',
+                detail: 'Use a photo you already took.',
+                onTap: () => _choose(LogMealMethod.library),
+              ),
+            ] else
+              _MethodTile(
+                icon: CupertinoIcons.camera_viewfinder,
+                title: 'Review sample analysis',
+                detail: 'A built-in example. Nothing counts until you confirm.',
+                onTap: () => _choose(LogMealMethod.sample),
+              ),
+            const SizedBox(height: TracendSpacing.xs),
+            _MethodTile(
+              icon: CupertinoIcons.pencil,
+              title: 'Enter manually',
+              detail: 'Type the food, serving, and nutrition.',
+              onTap: () => _choose(LogMealMethod.manual),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MethodTile extends StatelessWidget {
+  const _MethodTile({
+    required this.icon,
+    required this.title,
+    required this.detail,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String detail;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    return Material(
+      color: colors.surfaceRaised,
+      borderRadius: BorderRadius.circular(TracendRadii.control),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(TracendRadii.control),
+        child: Padding(
+          padding: const EdgeInsets.all(TracendSpacing.md),
+          child: Row(
+            children: [
+              Icon(icon, color: colors.actionPrimary),
+              const SizedBox(width: TracendSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: Theme.of(context).textTheme.titleMedium),
+                    Text(detail, style: Theme.of(context).textTheme.bodyMedium),
+                  ],
+                ),
+              ),
+              Icon(
+                CupertinoIcons.chevron_forward,
+                size: 14,
+                color: colors.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class ManualMealSheet extends StatefulWidget {
-  const ManualMealSheet({super.key});
+  const ManualMealSheet({this.initialMealType = 'breakfast', super.key});
+
+  final String initialMealType;
+
   @override
   State<ManualMealSheet> createState() => _ManualMealSheetState();
 }
@@ -48,7 +211,7 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
   final _protein = TextEditingController();
   final _carbs = TextEditingController();
   final _fat = TextEditingController();
-  String _mealType = 'breakfast';
+  late String _mealType = widget.initialMealType;
 
   @override
   void dispose() {
@@ -116,19 +279,20 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
             ),
             const SizedBox(height: TracendSpacing.xs),
             Text(
-              'Confirmed entries immediately contribute to today’s totals.',
+              'It counts toward your totals as soon as you confirm it.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: TracendSpacing.md),
             DropdownButtonFormField<String>(
               initialValue: _mealType,
               decoration: const InputDecoration(labelText: 'Meal type'),
-              items: const ['breakfast', 'lunch', 'dinner', 'snack']
-                  .map(
-                    (value) =>
-                        DropdownMenuItem(value: value, child: Text(value)),
-                  )
-                  .toList(),
+              items: [
+                for (final value in mealTypes)
+                  DropdownMenuItem(
+                    value: value,
+                    child: Text(mealTypeLabel(value)),
+                  ),
+              ],
               onChanged: (value) => setState(() => _mealType = value!),
             ),
             TextFormField(
@@ -233,7 +397,7 @@ class _CandidateSheetState extends State<CandidateSheet> {
               ),
               const SizedBox(height: TracendSpacing.xs),
               const Text(
-                'Estimates can be wrong. Select recognized foods and correct names, servings, or nutrition before confirming.',
+                'These are estimates from your photo. Check portions, oil, sauces, and hidden ingredients, then confirm only what you ate.',
               ),
               const SizedBox(height: TracendSpacing.md),
               for (final item in widget.candidates) ...[

@@ -5,13 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/widgets/meal_cards.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_insight_card.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_sheets.dart';
+import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/date_pill_strip.dart';
+import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 import 'package:tracend/shared/widgets/targets_grid.dart';
 import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
@@ -30,7 +33,8 @@ Future<XFile?> _pickWithImagePicker(ImageSource source) =>
     );
 
 /// What the meal-photo area says when a photo fails. Access problems name the
-/// setting to change; anything else names the failed step and its code.
+/// setting to change; anything else says plainly that analysis did not work,
+/// and [mealPhotoFailureDiagnostic] adds the failed step and its code.
 String mealPhotoFailureMessage(
   MealPhotoFailure failure,
 ) => switch (failure.code) {
@@ -50,8 +54,15 @@ String mealPhotoFailureMessage(
   '429 ai_usage_limit' =>
     'You have reached today’s AI limit (30 requests) or this month’s \$2 limit. Enter the meal manually.',
   _ =>
-    'Meal photo analysis failed (${failure.step}: ${failure.code}). Enter the meal manually; nothing was added to your totals.',
+    'Photo analysis did not work this time. Enter the meal manually; nothing was added to your totals.',
 };
+
+/// The beta diagnostic shown under a photo failure that has no specific
+/// message, so the failing step stays visible (owner decision 2026-10-01).
+String? mealPhotoFailureDiagnostic(MealPhotoFailure failure) =>
+    mealPhotoFailureMessage(failure).startsWith('Photo analysis did not work')
+    ? 'Beta diagnostic · ${failure.step}: ${failure.code}'
+    : null;
 
 class NutritionScreen extends StatefulWidget {
   const NutritionScreen({
@@ -78,6 +89,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
   /// Shown under the photo buttons, where the user is looking; `_error` sits
   /// at the top of the screen, out of view from there.
   String? _photoError;
+  String? _photoDiagnostic;
   bool _analyzingPhoto = false;
   NutritionTargets? _targets;
   NutritionSummary? _summary;
@@ -150,16 +162,19 @@ class _NutritionScreenState extends State<NutritionScreen> {
 
   bool get _isCurrentWeek => mondayOf(_date) == mondayOf(DateTime.now());
 
-  String get _dateLabel => _isToday
-      ? 'Today'
-      : '${_date.day.toString().padLeft(2, '0')}/${_date.month.toString().padLeft(2, '0')}/${_date.year}';
+  String get _dateLabel => friendlyDate(_date);
 
-  Future<void> _openManualMeal([ScheduledMeal? scheduled]) async {
+  Future<void> _openManualMeal({
+    ScheduledMeal? scheduled,
+    String? mealType,
+  }) async {
     final input = await showModalBottomSheet<ManualMealResult>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => const ManualMealSheet(),
+      builder: (_) => ManualMealSheet(
+        initialMealType: mealType ?? defaultMealType(DateTime.now()),
+      ),
     );
     if (input == null) return;
     await _run(() {
@@ -180,7 +195,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
     });
   }
 
-  Future<void> _reviewFixture() async {
+  Future<void> _reviewFixture(String mealType) async {
     setState(() {
       _working = true;
       _error = null;
@@ -188,7 +203,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
     try {
       final mealId = await widget.repository.createFixtureMeal(
         date: _date,
-        mealType: 'lunch',
+        mealType: mealType,
       );
       await _openCandidateReview(mealId);
     } catch (e) {
@@ -204,10 +219,13 @@ class _NutritionScreenState extends State<NutritionScreen> {
     }
   }
 
-  Future<void> _selectMealPhoto(ImageSource source) async {
+  Future<void> _selectMealPhoto(ImageSource source, String mealType) async {
     final repository = widget.repository;
     if (repository is! MealPhotoRepository) return;
-    setState(() => _photoError = null);
+    setState(() {
+      _photoError = null;
+      _photoDiagnostic = null;
+    });
     final XFile? photo;
     try {
       photo = await widget.pickPhoto(source);
@@ -225,7 +243,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
     try {
       final mealId = await (repository as MealPhotoRepository).analyzeMealPhoto(
         date: _date,
-        mealType: 'lunch',
+        mealType: mealType,
         bytes: await photo.readAsBytes(),
       );
       if (!mounted) return;
@@ -251,7 +269,12 @@ class _NutritionScreenState extends State<NutritionScreen> {
   void _photoFailed(MealPhotoFailure failure, StackTrace stackTrace) {
     debugPrint('Meal photo failed: $failure');
     unawaited(Sentry.captureException(failure, stackTrace: stackTrace));
-    if (mounted) setState(() => _photoError = mealPhotoFailureMessage(failure));
+    if (mounted) {
+      setState(() {
+        _photoError = mealPhotoFailureMessage(failure);
+        _photoDiagnostic = mealPhotoFailureDiagnostic(failure);
+      });
+    }
   }
 
   Future<void> _openCandidateReview(
@@ -345,15 +368,45 @@ class _NutritionScreenState extends State<NutritionScreen> {
     );
   }
 
+  Future<void> _openLogMeal() async {
+    final photos = widget.repository is MealPhotoRepository;
+    final choice = await showModalBottomSheet<LogMealChoice>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (_) => LogMealSheet(
+        initialMealType: defaultMealType(DateTime.now()),
+        photosAvailable: photos,
+      ),
+    );
+    if (choice == null || !mounted) return;
+    switch (choice.method) {
+      case LogMealMethod.camera:
+        await _selectMealPhoto(ImageSource.camera, choice.mealType);
+      case LogMealMethod.library:
+        await _selectMealPhoto(ImageSource.gallery, choice.mealType);
+      case LogMealMethod.manual:
+        await _openManualMeal(mealType: choice.mealType);
+      case LogMealMethod.sample:
+        await _reviewFixture(choice.mealType);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
+    final theme = Theme.of(context).textTheme;
     final nextMeal = _isToday ? _schedule?.nextMeal : null;
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
+    final timeline = buildNutritionTimeline(
+      _schedule?.items ?? const [],
+      _meals,
+    );
     return TracendScrollView(
       title: 'Nutrition',
-      subtitle: 'Confirmed meals only · $_dateLabel',
+      subtitle: _dateLabel,
       children: [
         DatePillStrip(
           selectedDate: _date,
@@ -365,22 +418,99 @@ class _NutritionScreenState extends State<NutritionScreen> {
               ? null
               : () => _selectDate(mondayOf(_date).add(const Duration(days: 7))),
         ),
-        const SizedBox(height: TracendSpacing.md),
-        if (_loading) const LinearProgressIndicator(minHeight: 3),
+        SizedBox(
+          height: TracendSpacing.md,
+          child: _loading
+              ? const Center(child: LinearProgressIndicator(minHeight: 2))
+              : null,
+        ),
         if (_error != null) ...[
-          TracendCard(
-            child: Row(
-              children: [
-                Icon(
-                  CupertinoIcons.exclamationmark_triangle,
-                  color: colors.stateAttention,
-                ),
-                const SizedBox(width: TracendSpacing.sm),
-                Expanded(child: Text(_error!)),
-              ],
+          _NoticeCard(message: _error!),
+          const SizedBox(height: TracendSpacing.md),
+        ],
+        if (nextMeal != null) ...[
+          MicroMotionEntrance(
+            child: PremiumGradientCard(
+              glow: true,
+              glowColor: colors.accentAmber,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TracendPill(
+                    label:
+                        '${nextMeal.status == 'due' ? 'Due now' : 'Next meal'} · ${nextMeal.time}',
+                    icon: CupertinoIcons.clock_fill,
+                    color: nextMeal.status == 'due'
+                        ? colors.stateAttention
+                        : colors.accentAmber,
+                  ),
+                  const SizedBox(height: TracendSpacing.sm),
+                  Text(nextMeal.label, style: theme.displaySmall),
+                  const SizedBox(height: TracendSpacing.xs),
+                  Text(
+                    nextMeal.foods
+                        .map((food) => '${food['name']} · ${food['quantity']}')
+                        .join('\n'),
+                    style: theme.bodyMedium,
+                  ),
+                  const SizedBox(height: TracendSpacing.md),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _working
+                          ? null
+                          : () => _openManualMeal(scheduled: nextMeal),
+                      icon: const Icon(CupertinoIcons.check_mark_circled_solid),
+                      label: const Text('Log meal'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: TracendSpacing.md),
+        ],
+        MicroMotionEntrance(
+          delay: MicroMotion.stagger(1),
+          child: TargetsGrid(
+            summary: _summary,
+            targets: _targets,
+            glow: nextMeal == null,
+          ),
+        ),
+        SectionLabel(_isToday ? 'Today’s meals' : 'Meals'),
+        NutritionTimeline(
+          entries: timeline,
+          enabled: !_working,
+          onReview: (meal) => _openCandidateReview(meal.id),
+          onDelete: _deleteMeal,
+          onLog: (slot) => _openManualMeal(scheduled: slot),
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+        SizedBox(
+          width: double.infinity,
+          // The next-meal card owns the screen's primary action when shown.
+          child: nextMeal == null
+              ? FilledButton(
+                  key: const ValueKey('log-a-meal'),
+                  onPressed: _working ? null : _openLogMeal,
+                  child: _LogMealLabel(working: _working),
+                )
+              : OutlinedButton(
+                  key: const ValueKey('log-a-meal'),
+                  onPressed: _working ? null : _openLogMeal,
+                  child: _LogMealLabel(working: _working),
+                ),
+        ),
+        if (_analyzingPhoto) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          const LinearProgressIndicator(minHeight: 3),
+          const SizedBox(height: TracendSpacing.xxs),
+          Text('Analyzing meal photo…', style: theme.bodySmall),
+        ],
+        if (_photoError != null) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          _NoticeCard(message: _photoError!, diagnostic: _photoDiagnostic),
         ],
         FutureBuilder<CoachDecision?>(
           future: _decision,
@@ -388,161 +518,72 @@ class _NutritionScreenState extends State<NutritionScreen> {
             final decision = snapshot.data;
             if (decision == null) return const SizedBox.shrink();
             return Padding(
-              padding: const EdgeInsets.only(bottom: TracendSpacing.md),
+              padding: const EdgeInsets.only(top: TracendSpacing.lg),
               child: NutritionInsightCard(decision: decision),
             );
           },
         ),
-        if (nextMeal != null) ...[
-          PremiumGradientCard(
-            glow: true,
-            glowColor: colors.accentAmber,
+      ],
+    );
+  }
+}
+
+class _LogMealLabel extends StatelessWidget {
+  const _LogMealLabel({required this.working});
+  final bool working;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      working
+          ? const TracendLoadingIndicator(size: 18)
+          : const Icon(CupertinoIcons.plus, size: 18),
+      const SizedBox(width: TracendSpacing.xs),
+      const Flexible(child: Text('Log a meal')),
+    ],
+  );
+}
+
+class _NoticeCard extends StatelessWidget {
+  const _NoticeCard({required this.message, this.diagnostic});
+
+  final String message;
+
+  /// Beta diagnostic, shown smaller under the message.
+  final String? diagnostic;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    return PremiumGradientCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            CupertinoIcons.exclamationmark_triangle,
+            color: colors.stateAttention,
+          ),
+          const SizedBox(width: TracendSpacing.sm),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TracendPill(
-                  label:
-                      '${nextMeal.status == 'due' ? 'Due now' : 'Next meal'} · ${nextMeal.time}',
-                  icon: CupertinoIcons.clock_fill,
-                  color: nextMeal.status == 'due'
-                      ? colors.stateAttention
-                      : colors.accentAmber,
-                ),
-                const SizedBox(height: TracendSpacing.sm),
-                Text(
-                  nextMeal.label,
-                  style: Theme.of(context).textTheme.displaySmall,
-                ),
-                const SizedBox(height: TracendSpacing.xs),
-                for (final food in nextMeal.foods)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: TracendSpacing.xxs),
-                    child: Text('${food['name']} · ${food['quantity']}'),
+                Text(message),
+                if (diagnostic != null) ...[
+                  const SizedBox(height: TracendSpacing.xxs),
+                  SelectableText(
+                    diagnostic!,
+                    style: TracendTheme.dataUtility(
+                      colors,
+                    ).copyWith(fontSize: 12),
                   ),
-                const SizedBox(height: TracendSpacing.md),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _working
-                        ? null
-                        : () => _openManualMeal(nextMeal),
-                    icon: const Icon(CupertinoIcons.check_mark_circled_solid),
-                    label: const Text('Log meal'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SectionLabel('Confirmed nutrition'),
-        ],
-        TargetsGrid(summary: _summary, targets: _targets),
-        if (_schedule != null && _schedule!.items.isNotEmpty) ...[
-          const SectionLabel('Meal schedule'),
-          PremiumGradientCard(
-            padding: const EdgeInsets.symmetric(
-              horizontal: TracendSpacing.md,
-              vertical: TracendSpacing.sm,
-            ),
-            child: Column(
-              children: [
-                for (
-                  var index = 0;
-                  index < _schedule!.items.length;
-                  index++
-                ) ...[
-                  ScheduledMealRow(item: _schedule!.items[index]),
-                  if (index != _schedule!.items.length - 1)
-                    Divider(
-                      height: TracendSpacing.lg,
-                      color: colors.borderHairline,
-                    ),
                 ],
               ],
             ),
           ),
         ],
-        const SectionLabel('Add a meal'),
-        FilledButton.icon(
-          onPressed: _working ? null : _openManualMeal,
-          icon: _working
-              ? const TracendLoadingIndicator(size: 18)
-              : const Icon(CupertinoIcons.pencil),
-          label: const Text('Enter manually'),
-        ),
-        const SizedBox(height: TracendSpacing.sm),
-        OutlinedButton.icon(
-          onPressed: _working
-              ? null
-              : widget.repository is MealPhotoRepository
-              ? () => _selectMealPhoto(ImageSource.camera)
-              : _reviewFixture,
-          icon: const Icon(CupertinoIcons.camera_viewfinder),
-          label: Text(
-            widget.repository is MealPhotoRepository
-                ? 'Analyze meal photo'
-                : 'Review sample analysis',
-          ),
-        ),
-        if (widget.repository is MealPhotoRepository) ...[
-          const SizedBox(height: TracendSpacing.sm),
-          OutlinedButton.icon(
-            onPressed: _working
-                ? null
-                : () => _selectMealPhoto(ImageSource.gallery),
-            icon: const Icon(CupertinoIcons.photo_on_rectangle),
-            label: const Text('Choose from Photo Library'),
-          ),
-        ],
-        if (_analyzingPhoto) ...[
-          const SizedBox(height: TracendSpacing.sm),
-          const LinearProgressIndicator(minHeight: 3),
-          const SizedBox(height: TracendSpacing.xxs),
-          Text(
-            'Analyzing meal photo…',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
-        if (_photoError != null) ...[
-          const SizedBox(height: TracendSpacing.sm),
-          TracendCard(
-            child: Row(
-              children: [
-                Icon(
-                  CupertinoIcons.exclamationmark_triangle,
-                  color: colors.stateAttention,
-                ),
-                const SizedBox(width: TracendSpacing.sm),
-                Expanded(child: Text(_photoError!)),
-              ],
-            ),
-          ),
-        ],
-        const SizedBox(height: TracendSpacing.xs),
-        Text(
-          widget.repository is MealPhotoRepository
-              ? 'AI candidates are estimates. Review portions, oil, sauces and hidden ingredients before confirmation.'
-              : 'Sample analysis is a local fixture. Nothing affects totals until you confirm it.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        SectionLabel(_isToday ? 'Today’s timeline' : '$_dateLabel timeline'),
-        if (!_loading && _meals.isEmpty)
-          const TracendCard(
-            child: Text(
-              'No confirmed meals yet. Manual logging stays available when analysis is unavailable.',
-            ),
-          )
-        else
-          for (final meal in _meals) ...[
-            MealCard(
-              meal: meal,
-              onReview: meal.status == 'draft' && !_working
-                  ? () => _openCandidateReview(meal.id)
-                  : null,
-              onDelete: _working ? null : () => _deleteMeal(meal),
-            ),
-            const SizedBox(height: TracendSpacing.sm),
-          ],
-      ],
+      ),
     );
   }
 }

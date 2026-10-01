@@ -20,8 +20,8 @@ captions ("no AI estimate", "R² 0.43", "display-only, no detail destination yet
 
 | Step | Scope | State |
 | --- | --- | --- |
-| P1 | Progress: period control on top, `WeightHeroCard` (goal-aware change, kg/week, steadiness words, chart), weekly review moved up, three recent weigh-ins + See all, strength tiles, one photo card + capture sheet | PR open |
-| P2 | Nutrition: one day timeline merging schedule and logged meals (foods, kcal, macros via `meal_items` embed), one **Log a meal** sheet with time-of-day meal type (fixes photo meals always saved as Lunch), coach insight demoted, confidence as words | Next |
+| P1 | Progress: period control on top, `WeightHeroCard` (goal-aware change, kg/week, steadiness words, chart), weekly review moved up, three recent weigh-ins + See all, strength tiles, one photo card + capture sheet | PR #56 |
+| P2 | Nutrition: one day timeline merging schedule and logged meals (foods, kcal, macros via `meal_items` embed), one **Log a meal** sheet with time-of-day meal type (fixes photo meals always saved as Lunch), coach insight demoted, confidence as words | PR open |
 | P3 | Today: confidence pill and z-scores out of the first screenful; plain labels for PRECISION READOUTS, METABOLIC TARGET, T-COACH/N-COACH, g PRO; one "Today at a glance" list; tokens for two hard-coded colors | Queued |
 | P4 | Train: verdict-first training load (ACWR, Ratio, Monotony behind ⓘ), "Effort 8/10" for RPE, one glow card, rewrite "No fixture workout was substituted" | Queued |
 | P5 | Coach: one "How I got this" drawer for provider, evidence ids, and missing keys (friendly labels); beta diagnostic kept inside it; fix the ISO date in the context card | Queued |
@@ -37,3 +37,14 @@ captions ("no AI estimate", "R² 0.43", "display-only, no detail destination yet
   old rows overflowed by up to 264px.
 - Only the first two sections use the entrance stagger; sections built later by scrolling appear
   at once.
+
+## P2 notes
+
+- `loadMeals` embeds `meal_items` and reads `confirmed_at` and `nutrition_schedule_item_id`. The
+  select grant and RLS already exist (`20260702110000_phase_6_nutrition_foundation.sql`); a meal
+  logged from a slot is matched through `nutrition_schedule_item_id`, the same column
+  `get_my_nutrition_schedule` uses for `logged`.
+- Photo meals were always saved as `lunch`; the chosen type now reaches `create_meal_photo_draft`.
+- Delete lives in a **⋯** menu; its confirmation opens from `onSelected`, after the menu closes.
+- The fallback photo error is plain words plus a `Beta diagnostic · step: code` line.
+

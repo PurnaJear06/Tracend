@@ -290,8 +290,24 @@ days with a completed session.
 
 ## 8. Nutrition and Meal Confirmation
 
-and **Log meal**. A vertical day timeline distinguishes upcoming, due, logged, skipped, and optional
-items. Macro totals remain secondary and include confirmed consumption only.
+The active schedule places **Next meal** first with local time, planned foods, quantities, status,
+and **Log meal**. Macro totals come next, labeled **From confirmed meals**, and count confirmed
+consumption only.
+
+Below them, **Today's meals** is one vertical day timeline in time order. It merges the schedule and
+the logged meals: a confirmed meal logged from a slot replaces that slot's planned row. Every row
+has a time, a marker, and a state word, so color is never the only signal:
+- Logged meals show their foods and `kcal · P · C · F` from `meal_items`, with a **⋯** menu that
+  holds **Delete meal**.
+- A draft shows **Needs review** and a **Review** action.
+- Unlogged slots show **Due now**, **Planned**, **Optional**, or **Not logged** with their planned
+  foods and a **Log** action.
+
+One **Log a meal** button follows the timeline. It opens a sheet that first picks the meal type
+(preselected by time of day: Breakfast before 10:30, Lunch before 15:00, Snack before 17:30, then
+Dinner) and then **Take a photo**, **Choose from Photo Library**, or **Enter manually**. A photo
+meal is saved under the chosen type. The coach's nutrition guidance sits at the end of the screen,
+with its confidence in words.
 
 Nutrition opens on Today and provides previous/next-day controls. Previous dates visibly identify a
 saved daily log and reload confirmed totals and meals; the next-day control stops at Today. A day
@@ -317,22 +333,23 @@ AI observation                 Confirmed meal
 - Totals include only confirmed items.
 - Editing a candidate uses visible labels and inline validation; changes and selection are applied
   together only by **Confirm selected foods**.
-- A draft meal remains visible in the timeline with a labeled **Review & edit draft** action that
+- A draft meal remains visible in the timeline as **Needs review** with a **Review** action that
   restores its candidates; users never need to create a second analysis to resume unfinished review.
 - Meal forms dismiss the keyboard by dragging, tapping outside a field, or an explicit **Hide
   keyboard** control. This control is required for iOS numeric keyboards that do not provide a
   native Done key.
-- Each timeline meal exposes a labeled delete control. Deletion requires a destructive confirmation
-  explaining that the meal leaves daily totals.
+- Each timeline meal's **⋯** menu holds a labeled **Delete meal** action. Deletion requires a
+  destructive confirmation explaining that the meal leaves daily totals.
 - Failure offers **Retry**, **Enter manually**, and **Delete photo**.
-- While a photo is analyzed, a progress line appears under the photo buttons. A failure is shown in
+- While a photo is analyzed, a progress line appears under **Log a meal**. A failure is shown in
   the same place, never only at the top of the screen, out of view. A refused camera or photo
   permission names the iOS setting to change. Four outcomes say what happened in plain words: a
   library photo iOS could not load (`invalid_image`, usually an iCloud photo that did not
   download), no food in the photo (422 `meal_no_food_found`), the provider's free tier being busy
   (429 `meal_vision_busy`, about one photo a minute), and the AI budget being reached (429
-  `ai_usage_limit`). Any other failure names the step (`picker`, `upload`, `draft`, `analysis`) and
-  its error code, for example `analysis: 503 meal_analysis_unavailable`.
+  `ai_usage_limit`). Any other failure says the analysis did not work and keeps the beta
+  diagnostic on a smaller second line naming the step (`picker`, `upload`, `draft`, `analysis`) and
+  its error code, for example `Beta diagnostic · analysis: 503 meal_analysis_unavailable`.
 
 ## 9. Progress Review
 

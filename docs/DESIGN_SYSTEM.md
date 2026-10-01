@@ -372,9 +372,14 @@ A labeled reply that stands in for a failed model answer is a variant of the sam
 - **Both:** a muted, selectable beta diagnostic line on a live reply (a stored reply has none), and
   a `Retry` text button when the reply ends the conversation.
 
-The pill text, not the color, carries the meaning. Meal schedule rows use time,
-label, planned quantities, and explicit status. Neither component uses color as the only state
-signal.
+The pill text, not the color, carries the meaning.
+
+`NutritionTimeline` (`lib/features/nutrition/widgets/meal_cards.dart`) is the meal schedule
+timeline: one card with a time column, a connected rail, and a marker per row (teal check logged,
+amber spark draft, amber ring due, grey ring planned, faint ring optional, dash not logged). Each
+row also states its status in words. Logged rows list foods and `kcal`, `P`, `C`, `F` as separate
+mono parts that wrap whole. At large text sizes the time joins the title line and the actions move
+under the row. Neither component uses color as the only state signal.
 
 ## 6. Motion and Haptics
 
