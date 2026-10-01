@@ -227,7 +227,7 @@ begin
     where g.user_id = target_user_id and g.status = 'succeeded'
       and g.snapshot_hash = target_snapshot_hash
       and p.status = 'pending' and p.expires_at > now()
-    order by g.created_at desc limit 1;
+    order by g.created_at desc, g.attempt desc limit 1;
   if found then
     return jsonb_build_object('generation_id', finished.id, 'status', 'succeeded',
       'proposal_id', finished.proposal_id, 'started', false);
@@ -282,7 +282,8 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     'started_at', g.created_at)
   from public.onboarding_generations g
   where g.user_id = auth.uid()
-  order by g.created_at desc
+  -- attempt breaks ties between generations started in one transaction.
+  order by g.created_at desc, g.attempt desc
   limit 1;
 $$;
 revoke all on function public.get_my_onboarding_generation() from public, anon, authenticated;
