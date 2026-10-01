@@ -464,6 +464,37 @@ function arr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
+/**
+ * One line per plan proposal. `proposed_training` is an object (title, block
+ * length, sessions per week, weekly structure), so printing it directly gave
+ * the model "[object Object]". Older contexts carry it as text.
+ */
+export function formatPlanProposal(p: Record<string, unknown>): string {
+  const training = p.proposed_training;
+  const parts = [str(p.status)];
+  if (typeof training === "string") {
+    parts.push(training.slice(0, 200));
+  } else if (training && typeof training === "object") {
+    const t = training as Record<string, unknown>;
+    if (t.title != null) parts.push(str(t.title));
+    if (t.block_weeks != null) parts.push(`${str(t.block_weeks)} wk`);
+    if (t.sessions_per_week != null) parts.push(`${str(t.sessions_per_week)}/wk`);
+    const days = arr(t.weekly_structure).map((day) =>
+      typeof day === "string" ? day : str(obj(day).name)
+    );
+    if (days.length) parts.push(days.join(", ").slice(0, 160));
+  } else if (p.headline != null) {
+    parts.push(str(p.headline).slice(0, 200));
+  }
+  const nutrition = obj(p.proposed_nutrition);
+  if (nutrition.calories != null) {
+    parts.push(`${str(nutrition.calories)} kcal / ${str(nutrition.protein_g)} g protein`);
+  }
+  if (p.confidence != null) parts.push(`confidence ${str(p.confidence)}`);
+  if (p.effective_date != null) parts.push(`from ${str(p.effective_date)}`);
+  return parts.join(" · ");
+}
+
 export function formatContextAsMarkdown(
   ctx: Record<string, unknown>,
   maxLength: number = 28_000,
@@ -1039,8 +1070,7 @@ export function formatContextAsMarkdown(
   if (proposals.length) {
     let s = "## Plan Proposals\n";
     for (const prop of proposals.slice(0, 3)) {
-      const p = obj(prop);
-      s += `- ${str(p.status)}: ${str(p.proposed_training ?? p.headline).slice(0, 200)}\n`;
+      s += `- ${formatPlanProposal(obj(prop))}\n`;
     }
     push(s);
   }

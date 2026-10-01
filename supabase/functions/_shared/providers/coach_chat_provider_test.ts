@@ -1,3 +1,4 @@
+import { assertEquals } from "jsr:@std/assert@1.0.14";
 import {
   buildCoachChatAnswerSchema,
   buildCoachChatUserMessage,
@@ -6,6 +7,7 @@ import {
   CoachChatUnavailableError,
   compactContext,
   formatContextAsMarkdown,
+  formatPlanProposal,
   generateCoachChat,
   isCoachChatLiveProviderConfigured,
 } from "./coach_chat_provider.ts";
@@ -1642,4 +1644,29 @@ Deno.test("DeepSeek Coach chat applies a caller's attempt timing", async () => {
     // The default initial attempt waits 28 s; this one must stop after 50 ms.
     if (performance.now() - started > 5_000) throw new Error("The caller's timing was ignored");
   });
+});
+
+Deno.test("formatPlanProposal summarises structured and text proposals", () => {
+  const structured = formatPlanProposal({
+    status: "pending",
+    proposed_training: {
+      title: "Foundation Block",
+      block_weeks: 6,
+      sessions_per_week: 3,
+      weekly_structure: ["Full body A", { name: "Full body B" }],
+      prescription: { strategy: "repeatable_full_body_foundation" },
+    },
+    proposed_nutrition: { calories: 2250, protein_g: 150 },
+    confidence: "medium",
+    effective_date: "2026-10-01",
+  });
+  assertEquals(
+    structured,
+    "pending · Foundation Block · 6 wk · 3/wk · Full body A, Full body B · " +
+      "2250 kcal / 150 g protein · confidence medium · from 2026-10-01",
+  );
+  assertEquals(
+    formatPlanProposal({ status: "accepted", proposed_training: "Keep the split" }),
+    "accepted · Keep the split",
+  );
 });

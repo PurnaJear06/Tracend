@@ -1,6 +1,6 @@
 # Tracend Current State
 
-**As of:** 2026-10-01
+**As of:** 2026-10-02
 
 **Lifecycle:** owner-only private beta; not approved for public production
 
@@ -16,6 +16,13 @@ meals only (#58). P3–P6 wait for the owner's device check on the new build.
 The FLUTTER-8 Coach work is shipped: PR #35, A1, A2, and B are live (B at main 21c3b55, build 225).
 The direct DeepSeek evaluation is still unmeasured, and the owner's device check on build 225 is
 open; see [`docs/handoff/backend.md`](./handoff/backend.md).
+
+New-user onboarding: a 2026-10-01 audit found the onboarding plan is still the Phase-2 mock, and
+it ignores goal, equipment and session length. The approved plan is not the delivered plan, and
+reopening on the proposal step spins forever. The owner chose an AI-proposed plan, validated by
+deterministic code, with a swappable provider. PR 1 fixes Today's workout date, Start session, and
+the Coach's proposal line; PR 2 (server) and PR 3 (app) build the AI plan. See
+[`docs/handoff/onboarding.md`](./handoff/onboarding.md).
 
 ## Shipped baseline
 

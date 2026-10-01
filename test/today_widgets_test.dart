@@ -16,6 +16,7 @@ import 'package:tracend/features/today/widgets/precision_divider.dart';
 import 'package:tracend/features/today/widgets/recovery_readout_card.dart';
 import 'package:tracend/features/today/widgets/session_plan_card.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
+import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 
 Widget _wrap(Widget child) {
@@ -510,6 +511,44 @@ void main() {
       expect(find.text('72'), findsWidgets);
     });
   });
+
+  group('TodayScreen Start session', () {
+    testWidgets("opens the brief's workout, not a sample", (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: Scaffold(
+            body: TodayScreen(
+              environment: const AppEnvironment(
+                name: 'test',
+                supabaseUrl: '',
+                supabasePublishableKey: '',
+              ),
+              brief: _PlannedBriefRepository(),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 1));
+
+      final start = find.widgetWithText(FilledButton, 'Start session');
+      await tester.ensureVisible(start);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(start);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+
+      final detail = find.byType(WorkoutDetailScreen);
+      expect(detail, findsOneWidget);
+      final screen = tester.widget<WorkoutDetailScreen>(detail);
+      expect(screen.workout?.id, 'b1d6c1a2-0000-4000-8000-000000000001');
+      expect(screen.workout?.name, 'Pull day');
+      expect(screen.workout?.exercises.single.name, 'Lat pulldown');
+      expect(screen.sessionDate, DateTime(2026, 8, 23));
+    });
+  });
 }
 
 class _ComputedBriefRepository implements DailyBriefRepository {
@@ -536,3 +575,33 @@ class _ReloadBriefRepository implements DailyBriefRepository {
 }
 
 void _noop() {}
+
+class _PlannedBriefRepository implements DailyBriefRepository {
+  @override
+  Future<DailyBrief> load(DateTime date) async => _brief(
+    workout: const {
+      'id': 'b1d6c1a2-0000-4000-8000-000000000001',
+      'weekday': 7,
+      'name': 'Pull day',
+      'objective': 'Build pulling strength.',
+      'estimated_minutes': 45,
+      'warm_up': 'Easy rowing.',
+      'cooldown_cardio': 'Walk.',
+      'exercises': [
+        {
+          'id': 'e1',
+          'order': 1,
+          'name': 'Lat pulldown',
+          'set_count': 3,
+          'rep_min': 8,
+          'rep_max': 10,
+          'target_rpe': 8,
+          'rest_seconds': 120,
+          'notes': '',
+        },
+      ],
+    },
+    checkIn: const {'energy': 3},
+    computed: _computed(recovery: 72, sleepQuality: 80),
+  );
+}

@@ -45,6 +45,32 @@ class PlannedWorkout {
   final String warmUp;
   final String cooldownCardio;
 
+  /// Parses a workout from `get_my_training_hub` or the daily brief's
+  /// `today_workout`, which share one shape.
+  factory PlannedWorkout.fromHubJson(Map<String, dynamic> row) =>
+      PlannedWorkout(
+        id: row['id'] as String,
+        name: row['name'] as String,
+        objective: row['objective'] as String,
+        weekday: (row['weekday'] as num?)?.toInt(),
+        estimatedMinutes: (row['estimated_minutes'] as num).toInt(),
+        warmUp: row['warm_up'] as String? ?? '',
+        cooldownCardio: row['cooldown_cardio'] as String? ?? '',
+        exercises: (row['exercises'] as List? ?? const []).map((item) {
+          final exercise = Map<String, dynamic>.from(item as Map);
+          return PlannedExercise(
+            order: (exercise['order'] as num).toInt(),
+            name: exercise['name'] as String,
+            setCount: (exercise['set_count'] as num).toInt(),
+            repMin: (exercise['rep_min'] as num).toInt(),
+            repMax: (exercise['rep_max'] as num).toInt(),
+            targetRpe: exercise['target_rpe'] as num? ?? 8,
+            restSeconds: (exercise['rest_seconds'] as num? ?? 90).toInt(),
+            notes: exercise['notes'] as String? ?? '',
+          );
+        }).toList(),
+      );
+
   static const fixture = PlannedWorkout(
     id: 'fixture-push',
     name: 'Push day',
@@ -283,7 +309,11 @@ class SupabaseWorkoutRepository
         ? Map<String, dynamic>.from(value['active_plan'] as Map)
         : const <String, dynamic>{};
     final workouts = (value['workouts'] as List? ?? const [])
-        .map((item) => _workoutFromJson(Map<String, dynamic>.from(item as Map)))
+        .map(
+          (item) => PlannedWorkout.fromHubJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
         .toList();
     final adherence = value['adherence'] is Map
         ? Map<String, dynamic>.from(value['adherence'] as Map)
@@ -327,29 +357,6 @@ class SupabaseWorkoutRepository
     workoutCount: (row['workout_count'] as num).toInt(),
     workoutMinutes: (row['workout_minutes'] as num).toInt(),
     localDate: DateTime.parse(row['local_date'] as String),
-  );
-
-  PlannedWorkout _workoutFromJson(Map<String, dynamic> row) => PlannedWorkout(
-    id: row['id'] as String,
-    name: row['name'] as String,
-    objective: row['objective'] as String,
-    weekday: (row['weekday'] as num?)?.toInt(),
-    estimatedMinutes: (row['estimated_minutes'] as num).toInt(),
-    warmUp: row['warm_up'] as String? ?? '',
-    cooldownCardio: row['cooldown_cardio'] as String? ?? '',
-    exercises: (row['exercises'] as List? ?? const []).map((item) {
-      final exercise = Map<String, dynamic>.from(item as Map);
-      return PlannedExercise(
-        order: (exercise['order'] as num).toInt(),
-        name: exercise['name'] as String,
-        setCount: (exercise['set_count'] as num).toInt(),
-        repMin: (exercise['rep_min'] as num).toInt(),
-        repMax: (exercise['rep_max'] as num).toInt(),
-        targetRpe: exercise['target_rpe'] as num? ?? 8,
-        restSeconds: (exercise['rest_seconds'] as num? ?? 90).toInt(),
-        notes: exercise['notes'] as String? ?? '',
-      );
-    }).toList(),
   );
 
   @override
