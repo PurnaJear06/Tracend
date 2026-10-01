@@ -3,27 +3,89 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 
-/// Version of the AI coaching disclosure. Change it whenever the provider, the
-/// data sent, or the purpose changes: a grant of an older version no longer
-/// counts, so everyone is asked again.
+/// Version of the built-in AI coaching disclosure, shown only when the
+/// server's current notice cannot be loaded. The notice the athlete answers is
+/// server data (`get_current_ai_notice`): the owner republishes it when the
+/// provider, the data sent or the purpose changes, and a grant of an older
+/// version no longer counts, so everyone is asked again.
 const aiCoachingNoticeVersion = 'ai-coaching-v1';
+
+/// An AI notice: what AI coaching sends, to whom, and what works without it.
+class AiNotice {
+  const AiNotice({
+    required this.version,
+    required this.providerLabel,
+    required this.body,
+  });
+
+  final String version;
+  final String providerLabel;
+
+  /// Paragraphs separated by blank lines.
+  final String body;
+
+  /// The notice built into this app, matching `ai-coaching-v1` on the server.
+  static const builtIn = AiNotice(
+    version: aiCoachingNoticeVersion,
+    providerLabel: 'DeepSeek',
+    body:
+        'The Coach chat and your daily decision are written by an AI model. '
+        'To write them, Tracend sends DeepSeek your training plan and '
+        'workout logs, check-ins, Apple Health summaries (sleep, heart rate, '
+        'HRV, steps and workouts), meals and nutrition targets, body '
+        'measurements, goals and preferences, and the messages you send the '
+        'Coach. Your name, email address and photos are not sent.\n\n'
+        'DeepSeek is run by Hangzhou DeepSeek Artificial Intelligence Co., '
+        'Ltd. and processes this data on servers in China. Its terms, not '
+        'Tracend’s, decide how long it keeps requests.\n\n'
+        'Without AI coaching, your plan, logging, Apple Health sync and '
+        'progress keep working; the Coach chat and AI daily decisions stay '
+        'off. You can change this at any time in Account.',
+  );
+
+  /// Reads `get_current_ai_notice`; null when the response is not a notice.
+  static AiNotice? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final version = value['version'];
+    final provider = value['provider_label'];
+    final body = value['body'];
+    if (version is! String || provider is! String || body is! String) {
+      return null;
+    }
+    if (version.isEmpty || body.trim().isEmpty) return null;
+    return AiNotice(version: version, providerLabel: provider, body: body);
+  }
+
+  List<String> get paragraphs => body
+      .split(RegExp(r'\n\s*\n'))
+      .map((paragraph) => paragraph.trim())
+      .where((paragraph) => paragraph.isNotEmpty)
+      .toList();
+}
 
 /// The athlete's current answer to the AI coaching disclosure.
 enum AiCoachingChoice { undecided, granted, declined }
 
 /// Reads the newest `ai_coaching` record (or none). Only a grant of the
 /// current notice version counts as granted.
-AiCoachingChoice aiCoachingChoiceFrom(Map<String, dynamic>? latest) {
+AiCoachingChoice aiCoachingChoiceFrom(
+  Map<String, dynamic>? latest, {
+  String currentVersion = aiCoachingNoticeVersion,
+}) {
   if (latest == null) return AiCoachingChoice.undecided;
   if (latest['action'] != 'granted') return AiCoachingChoice.declined;
-  return latest['notice_version'] == aiCoachingNoticeVersion
+  return latest['notice_version'] == currentVersion
       ? AiCoachingChoice.granted
       : AiCoachingChoice.undecided;
 }
 
 abstract interface class AiCoachingConsentRepository {
-  /// The newest `ai_coaching` record: a grant of the current notice version,
-  /// a decline, or none (also when the grant was of an older version).
+  /// The notice the athlete is asked about, as of the last [load].
+  AiNotice get notice;
+
+  /// Loads the current notice, then the newest `ai_coaching` record: a grant
+  /// of that notice, a decline, or none (also when the grant was of an older
+  /// version).
   Future<AiCoachingChoice> load();
 
   /// Appends a grant, or a decline stored as `withdrawn`.
@@ -37,14 +99,30 @@ class SupabaseAiCoachingConsentRepository
   final SupabaseClient _client;
 
   @override
+  AiNotice notice = AiNotice.builtIn;
+
+  @override
   Future<AiCoachingChoice> load() async {
+    try {
+      notice =
+          AiNotice.fromJson(await _client.rpc('get_current_ai_notice')) ??
+          AiNotice.builtIn;
+    } catch (e) {
+      // Builds older than the server notice, or an offline moment, keep the
+      // built-in text; the server still decides what a grant covers.
+      debugPrint('Non-critical error: $e');
+      notice = AiNotice.builtIn;
+    }
     final rows = await _client
         .from('consent_records')
         .select('notice_version,action')
         .eq('consent_type', 'ai_coaching')
         .order('created_at', ascending: false)
         .limit(1);
-    return aiCoachingChoiceFrom(rows.isEmpty ? null : rows.first);
+    return aiCoachingChoiceFrom(
+      rows.isEmpty ? null : rows.first,
+      currentVersion: notice.version,
+    );
   }
 
   @override
@@ -54,7 +132,7 @@ class SupabaseAiCoachingConsentRepository
     await _client.from('consent_records').insert({
       'user_id': user.id,
       'consent_type': 'ai_coaching',
-      'notice_version': aiCoachingNoticeVersion,
+      'notice_version': notice.version,
       'action': granted ? 'granted' : 'withdrawn',
       'source': 'ios_app',
     });
@@ -66,9 +144,13 @@ class FixtureAiCoachingConsentRepository
     implements AiCoachingConsentRepository {
   FixtureAiCoachingConsentRepository([
     this.choice = AiCoachingChoice.undecided,
+    this.notice = AiNotice.builtIn,
   ]);
 
   AiCoachingChoice choice;
+
+  @override
+  AiNotice notice;
   final recorded = <bool>[];
 
   @override
@@ -95,6 +177,9 @@ class AiCoachingConsentController extends ChangeNotifier {
   AiCoachingChoice get choice => _choice;
   bool get granted => _choice == AiCoachingChoice.granted;
 
+  /// The notice the athlete answers; recorded with their choice.
+  AiNotice get notice => _repository.notice;
+
   Future<void> load() async {
     _choice = await _repository.load();
     notifyListeners();
@@ -107,39 +192,24 @@ class AiCoachingConsentController extends ChangeNotifier {
   }
 }
 
-/// What AI coaching sends, to whom, and what still works without it.
+/// What AI coaching sends, to whom, and what still works without it: the
+/// current server notice, or the built-in one.
 class AiCoachingDisclosure extends StatelessWidget {
-  const AiCoachingDisclosure({super.key});
+  const AiCoachingDisclosure({this.notice = AiNotice.builtIn, super.key});
+
+  final AiNotice notice;
 
   @override
   Widget build(BuildContext context) {
     final body = Theme.of(context).textTheme.bodyLarge;
+    final paragraphs = notice.paragraphs;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'The Coach chat and your daily decision are written by an AI model. '
-          'To write them, Tracend sends DeepSeek your training plan and '
-          'workout logs, check-ins, Apple Health summaries (sleep, heart rate, '
-          'HRV, steps and workouts), meals and nutrition targets, body '
-          'measurements, goals and preferences, and the messages you send the '
-          'Coach. Your name, email address and photos are not sent.',
-          style: body,
-        ),
-        const SizedBox(height: TracendSpacing.sm),
-        Text(
-          'DeepSeek is run by Hangzhou DeepSeek Artificial Intelligence Co., '
-          'Ltd. and processes this data on servers in China. Its terms, not '
-          'Tracend’s, decide how long it keeps requests.',
-          style: body,
-        ),
-        const SizedBox(height: TracendSpacing.sm),
-        Text(
-          'Without AI coaching, your plan, logging, Apple Health sync and '
-          'progress keep working; the Coach chat and AI daily decisions stay '
-          'off. You can change this at any time in Account.',
-          style: body,
-        ),
+        for (var i = 0; i < paragraphs.length; i++) ...[
+          if (i > 0) const SizedBox(height: TracendSpacing.sm),
+          Text(paragraphs[i], style: body),
+        ],
       ],
     );
   }
@@ -201,7 +271,7 @@ class _AiCoachingConsentScreenState extends State<AiCoachingConsentScreen> {
             style: Theme.of(context).textTheme.headlineMedium,
           ),
           const SizedBox(height: TracendSpacing.md),
-          const AiCoachingDisclosure(),
+          AiCoachingDisclosure(notice: widget.controller.notice),
           const SizedBox(height: TracendSpacing.lg),
           if (_error != null) ...[
             Text(
@@ -303,7 +373,7 @@ class _AiCoachingConsentSheetState extends State<_AiCoachingConsentSheet> {
           style: Theme.of(context).textTheme.titleLarge,
         ),
         const SizedBox(height: TracendSpacing.md),
-        const AiCoachingDisclosure(),
+        AiCoachingDisclosure(notice: widget.controller.notice),
         const SizedBox(height: TracendSpacing.lg),
         if (_error != null) ...[
           Text(

@@ -1,7 +1,8 @@
 # Onboarding Handoff — new-user plan
 
-**Status:** PR 1 (owner-facing fixes, [#60](https://github.com/PurnaJear06/Tracend/pull/60)) and
-PR 2 (server) are in review. PR 3 (app) follows PR 2.
+**Status:** PR 1 (owner-facing fixes, [#60](https://github.com/PurnaJear06/Tracend/pull/60)), PR 2
+(server, [#61](https://github.com/PurnaJear06/Tracend/pull/61)) and PR 3 (app) are in review. Merge
+them in that order.
 
 Plan (owner-approved 2026-10-01, revised after a GPT review):
 `/Users/purnajear/.claude/plans/smooth-munching-castle.md`.
@@ -148,10 +149,65 @@ v1 approval now refuses 2.0 proposals.
   shows origin, model and fallback reason.
 - `select status, error_code, created_at from onboarding_generations order by created_at desc limit 20;`
 
-## PR 3 — app (after PR 2)
+## PR 3 — app
 
-- New onboarding steps: about you, schedule, equipment.
-- Resumable generation.
-- Revision note.
-- A proposal screen that shows every workout and how the targets were calculated.
-- Server-rendered AI notice.
+Branch `claude/onboarding-ai-app`, stacked on PR 2. It needs PR 2 deployed first, because it calls
+`onboarding-plan`, `get_my_onboarding_generation`, `respond_to_onboarding_proposal_v2` and
+`get_current_ai_notice`.
+
+**Onboarding** (`lib/features/onboarding/onboarding_flow.dart`)
+
+- **The steps:** Eligibility → AI → Path → Goal → About you → Schedule → Equipment →
+  Food & limits → Review → Plan.
+- **The draft payload:**
+  - New keys: `sex`, `birth_year`, `height_cm`, `weight_kg`, `target_weight_kg`,
+    `daily_activity`, `training_weekdays`, `equipment_items` and `revision_note`.
+  - The old keys keep their types (`training_days` int, `equipment` string).
+- **Older drafts:**
+  - `context` maps to About you.
+  - A draft without `sex` resumes at About you.
+  - An old day count becomes an even spread of weekdays.
+- **The Plan step** polls the server generation:
+  - Running keeps waiting, and a finished proposal opens.
+  - Failed shows **Try again**.
+  - An answered or superseded generation returns to Review.
+  - There is no state without a way out, and **Sign out** is in the app bar on every step.
+- **The proposal screen** (`onboarding_proposal_view.dart`) shows provenance, confidence, the
+  assessment, every day with its exercises, the nutrition targets with how they were calculated,
+  kept/changed, assumptions and unknowns.
+- **Request changes** sends a note, which is used in the next build.
+
+**AI notice** (`lib/features/consent/ai_coaching_consent.dart`)
+
+- The disclosure renders `get_current_ai_notice` and records that version. The built-in v1 text
+  appears only when the server can't be reached.
+- The consent gate asks again when the server's current version changes.
+
+**Tests:** 13 onboarding widget tests:
+
+- the full journey and payload;
+- the AI step: records only a changed answer, and shows the server notice;
+- old-draft restores (section `context`, and `review` without the new answers);
+- resume: running → proposal, answered → review, failed → Try again;
+- request changes with a note;
+- server-reported missing answers;
+- under-18 refused;
+- Sign out.
+
+Plus notice parsing and version tests.
+
+**After merge and install** (owner):
+
+1. Publish v2 for every purpose, so the Coach and the onboarding plan share one notice:
+
+   ```sql
+   select private.publish_ai_notice('ai-coaching-v3', 'DeepSeek', array['coach_chat','daily_coaching','onboarding_plan'], (select body from public.ai_consent_notices where version = 'ai-coaching-v2'));
+   ```
+
+   The app asks once, and you accept.
+2. Create a second test account on the phone and complete both paths:
+   - close the app while the plan builds, then reopen;
+   - request changes;
+   - approve, then check that Train shows the approved days and exercises and that the Coach
+     knows your goal and equipment.
+3. Delete the test account in Account.

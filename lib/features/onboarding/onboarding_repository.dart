@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class OnboardingDraft {
@@ -12,11 +14,128 @@ class OnboardingDraft {
   final Map<String, dynamic> payload;
 }
 
+/// The server's onboarding plan generation (`get_my_onboarding_generation`).
+class OnboardingGeneration {
+  const OnboardingGeneration({
+    required this.id,
+    required this.status,
+    this.proposalId,
+    this.proposalStatus,
+    this.errorCode,
+  });
+
+  final String id;
+
+  /// `running`, `succeeded`, `failed` or `superseded`.
+  final String status;
+  final String? proposalId;
+  final String? proposalStatus;
+  final String? errorCode;
+
+  bool get running => status == 'running';
+
+  /// Finished with a proposal the athlete has not answered yet.
+  bool get readyForReview =>
+      status == 'succeeded' &&
+      proposalId != null &&
+      (proposalStatus == null || proposalStatus == 'pending');
+
+  static OnboardingGeneration? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final id = value['generation_id'];
+    final status = value['status'];
+    if (id is! String || status is! String) return null;
+    return OnboardingGeneration(
+      id: id,
+      status: status,
+      proposalId: value['proposal_id'] as String?,
+      proposalStatus: value['proposal_status'] as String?,
+      errorCode: value['error_code'] as String?,
+    );
+  }
+}
+
+/// The server could not start a plan because answers are missing.
+class OnboardingAnswersIncomplete implements Exception {
+  const OnboardingAnswersIncomplete(this.missing);
+
+  final List<String> missing;
+}
+
+class ProposalExercise {
+  const ProposalExercise({
+    required this.name,
+    required this.sets,
+    required this.repMin,
+    required this.repMax,
+    required this.targetRpe,
+    required this.restSeconds,
+    required this.notes,
+  });
+
+  final String name;
+  final int sets;
+  final int repMin;
+  final int repMax;
+  final num targetRpe;
+  final int restSeconds;
+  final String notes;
+}
+
+class ProposalWorkout {
+  const ProposalWorkout({
+    required this.weekday,
+    required this.name,
+    required this.objective,
+    required this.estimatedMinutes,
+    required this.exercises,
+  });
+
+  final int weekday;
+  final String name;
+  final String objective;
+  final int estimatedMinutes;
+  final List<ProposalExercise> exercises;
+}
+
+/// How Tracend calculated the calorie range (onboarding-policy-v1).
+class ProposalCalculation {
+  const ProposalCalculation({
+    required this.bmrKcal,
+    required this.activityFactor,
+    required this.tdeeKcal,
+    required this.calorieRangeKcal,
+    required this.floorApplied,
+  });
+
+  final List<int> bmrKcal;
+  final num activityFactor;
+  final List<int> tdeeKcal;
+  final List<int> calorieRangeKcal;
+  final bool floorApplied;
+}
+
+/// A 2.0 onboarding proposal: the exact plan that approval activates.
 class OnboardingProposal {
   const OnboardingProposal({
     required this.id,
-    required this.training,
-    required this.nutrition,
+    required this.title,
+    required this.blockWeeks,
+    required this.origin,
+    required this.model,
+    required this.workouts,
+    required this.calories,
+    required this.proteinG,
+    required this.carbohydrateG,
+    required this.fatG,
+    required this.nutritionRationale,
+    required this.assessment,
+    required this.assumptions,
+    required this.missingInformation,
+    required this.keptFromCurrentPlan,
+    required this.changedFromCurrentPlan,
+    required this.progression,
+    required this.calculation,
     required this.rationale,
     required this.benefit,
     required this.downside,
@@ -24,12 +143,97 @@ class OnboardingProposal {
   });
 
   final String id;
-  final Map<String, dynamic> training;
-  final Map<String, dynamic> nutrition;
+  final String title;
+  final int blockWeeks;
+
+  /// `ai` or `rules`.
+  final String origin;
+  final String? model;
+  final List<ProposalWorkout> workouts;
+  final int calories;
+  final int proteinG;
+  final int carbohydrateG;
+  final int fatG;
+  final String nutritionRationale;
+  final String assessment;
+  final List<String> assumptions;
+  final List<String> missingInformation;
+  final List<String> keptFromCurrentPlan;
+  final List<String> changedFromCurrentPlan;
+  final String progression;
+  final ProposalCalculation? calculation;
   final String rationale;
   final String benefit;
   final String downside;
   final String confidence;
+
+  static List<String> _strings(Object? value) =>
+      value is List ? value.whereType<String>().toList() : const [];
+
+  static List<int> _ints(Object? value) => value is List
+      ? value.whereType<num>().map((item) => item.round()).toList()
+      : const [];
+
+  factory OnboardingProposal.fromRow(Map<String, dynamic> row) {
+    final training = Map<String, dynamic>.from(row['proposed_training'] as Map);
+    final nutrition = Map<String, dynamic>.from(
+      row['proposed_nutrition'] as Map,
+    );
+    final calculation = training['calculation'];
+    return OnboardingProposal(
+      id: row['id'] as String,
+      title: training['title'] as String,
+      blockWeeks: (training['block_weeks'] as num).toInt(),
+      origin: training['origin'] as String? ?? 'rules',
+      model: training['model'] as String?,
+      workouts: (training['weekly_structure'] as List).map((item) {
+        final workout = Map<String, dynamic>.from(item as Map);
+        return ProposalWorkout(
+          weekday: (workout['preferred_weekday'] as num).toInt(),
+          name: workout['name'] as String,
+          objective: workout['objective'] as String? ?? '',
+          estimatedMinutes: (workout['estimated_minutes'] as num).toInt(),
+          exercises: (workout['exercises'] as List).map((entry) {
+            final exercise = Map<String, dynamic>.from(entry as Map);
+            return ProposalExercise(
+              name: exercise['name'] as String,
+              sets: (exercise['sets'] as num).toInt(),
+              repMin: (exercise['rep_min'] as num).toInt(),
+              repMax: (exercise['rep_max'] as num).toInt(),
+              targetRpe: exercise['target_rpe'] as num,
+              restSeconds: (exercise['rest_seconds'] as num).toInt(),
+              notes: exercise['notes'] as String? ?? '',
+            );
+          }).toList(),
+        );
+      }).toList(),
+      calories: (nutrition['calories'] as num).toInt(),
+      proteinG: (nutrition['protein_g'] as num).toInt(),
+      carbohydrateG: (nutrition['carbohydrate_g'] as num).toInt(),
+      fatG: (nutrition['fat_g'] as num).toInt(),
+      nutritionRationale: nutrition['rationale'] as String? ?? '',
+      assessment: training['assessment'] as String? ?? '',
+      assumptions: _strings(training['assumptions']),
+      missingInformation: _strings(training['missing_information']),
+      keptFromCurrentPlan: _strings(training['kept_from_current_plan']),
+      changedFromCurrentPlan: _strings(training['changed_from_current_plan']),
+      progression:
+          (training['prescription'] as Map?)?['progression'] as String? ?? '',
+      calculation: calculation is Map
+          ? ProposalCalculation(
+              bmrKcal: _ints(calculation['bmr_kcal']),
+              activityFactor: calculation['activity_factor'] as num? ?? 0,
+              tdeeKcal: _ints(calculation['tdee_kcal']),
+              calorieRangeKcal: _ints(calculation['calorie_range_kcal']),
+              floorApplied: calculation['floor_applied'] == true,
+            )
+          : null,
+      rationale: row['rationale'] as String,
+      benefit: row['expected_benefit'] as String,
+      downside: row['downside'] as String,
+      confidence: row['confidence'] as String,
+    );
+  }
 }
 
 abstract interface class OnboardingRepository {
@@ -47,9 +251,15 @@ abstract interface class OnboardingRepository {
     required int sessionMinutes,
   });
   Future<void> saveGoal(String goal);
-  Future<OnboardingProposal> generateProposal();
+
+  /// Starts (or returns) the plan generation for the saved draft.
+  /// Throws [OnboardingAnswersIncomplete] when answers are missing.
+  Future<OnboardingGeneration> startGeneration();
+
+  /// The newest generation, or null when there is none.
+  Future<OnboardingGeneration?> loadGeneration();
   Future<OnboardingProposal> loadProposal(String proposalId);
-  Future<void> respond(String proposalId, String action);
+  Future<void> respond(String proposalId, String action, {String? note});
 }
 
 class SupabaseOnboardingRepository implements OnboardingRepository {
@@ -160,15 +370,41 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
   }
 
   @override
-  Future<OnboardingProposal> generateProposal() async {
-    final result = await _client.functions.invoke('onboarding-propose-plan');
-    if (result.status != 200 || result.data is! Map) {
-      throw const FormatException('Proposal generation failed.');
+  Future<OnboardingGeneration> startGeneration() async {
+    try {
+      final result = await _client.functions
+          .invoke('onboarding-plan')
+          .timeout(const Duration(seconds: 20));
+      final generation = OnboardingGeneration.fromJson(result.data);
+      if (generation == null) {
+        throw const FormatException('Plan generation did not start.');
+      }
+      return generation;
+    } on FunctionException catch (error) {
+      final details = error.details;
+      if (error.status == 422 &&
+          details is Map &&
+          details['error'] == 'onboarding_answers_incomplete') {
+        throw OnboardingAnswersIncomplete(
+          (details['missing'] as List? ?? const [])
+              .whereType<String>()
+              .toList(),
+        );
+      }
+      rethrow;
+    } on TimeoutException {
+      // The request may still have started a generation; the caller polls.
+      final generation = await loadGeneration();
+      if (generation != null) return generation;
+      rethrow;
     }
-    final proposalId = (result.data as Map)['proposal_id'] as String?;
-    if (proposalId == null) throw const FormatException('Proposal ID missing.');
-    return loadProposal(proposalId);
   }
+
+  @override
+  Future<OnboardingGeneration?> loadGeneration() async =>
+      OnboardingGeneration.fromJson(
+        await _client.rpc('get_my_onboarding_generation'),
+      );
 
   @override
   Future<OnboardingProposal> loadProposal(String proposalId) async {
@@ -179,22 +415,18 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
         )
         .eq('id', proposalId)
         .single();
-    return OnboardingProposal(
-      id: row['id'] as String,
-      training: Map<String, dynamic>.from(row['proposed_training'] as Map),
-      nutrition: Map<String, dynamic>.from(row['proposed_nutrition'] as Map),
-      rationale: row['rationale'] as String,
-      benefit: row['expected_benefit'] as String,
-      downside: row['downside'] as String,
-      confidence: row['confidence'] as String,
-    );
+    return OnboardingProposal.fromRow(row);
   }
 
   @override
-  Future<void> respond(String proposalId, String action) async {
+  Future<void> respond(String proposalId, String action, {String? note}) async {
     await _client.rpc(
-      'respond_to_onboarding_proposal',
-      params: {'proposal_id': proposalId, 'response_action': action},
+      'respond_to_onboarding_proposal_v2',
+      params: {
+        'proposal_id': proposalId,
+        'response_action': action,
+        'revision_note': note,
+      },
     );
   }
 }

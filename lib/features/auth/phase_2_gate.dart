@@ -131,6 +131,7 @@ class _Phase2GateState extends State<Phase2Gate> {
         repository: SupabaseOnboardingRepository(Supabase.instance.client),
         onCompleted: _refresh,
         aiConsent: aiConsent,
+        onSignOut: _signOut,
       );
     }
     // Accounts created before the question existed, and anyone asked again
