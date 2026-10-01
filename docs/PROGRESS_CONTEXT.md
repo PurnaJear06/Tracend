@@ -9,6 +9,10 @@ beta full of logs. The owner approved the plan on 2026-10-01 and chose to start 
 owner-device acceptance checklist. Order: Progress (P1) → Nutrition (P2) → Today, Train, Coach,
 Account (P3–P6). Workstream state: [`docs/handoff/ui-polish.md`](./handoff/ui-polish.md).
 
+Progress (#56) and Nutrition (#57) merged on 2026-10-01, and build 235 (main 46c892b) is installed.
+The owner liked Progress but found Nutrition ordinary, and chose option A's row style for Today's
+meals only (#58). P3–P6 wait for the owner's device check on the new build.
+
 The FLUTTER-8 Coach work is shipped: PR #35, A1, A2, and B are live (B at main 21c3b55, build 225).
 The direct DeepSeek evaluation is still unmeasured, and the owner's device check on build 225 is
 open; see [`docs/handoff/backend.md`](./handoff/backend.md).

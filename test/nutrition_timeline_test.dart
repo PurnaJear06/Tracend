@@ -254,6 +254,41 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('a split bar leaves no trailing gap when a macro is zero', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.light,
+        home: Scaffold(
+          body: SizedBox(
+            width: 300,
+            child: MacroSplitBar(
+              meal: _meal('m', hour: 12).copyWithItems(const [
+                MealItem(
+                  name: 'Banana',
+                  calories: 105,
+                  protein: 1,
+                  carbohydrate: 27,
+                  fat: 0,
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+    final segments = find.descendant(
+      of: find.byType(MacroSplitBar),
+      matching: find.byType(Padding),
+    );
+    final paddings = [
+      for (final box in tester.widgetList<Padding>(segments))
+        (box.padding as EdgeInsets).right,
+    ];
+    expect(paddings, [2, 0]);
+  });
+
   testWidgets('the timeline shows foods, totals, and states in words', (
     tester,
   ) async {

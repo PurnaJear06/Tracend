@@ -347,11 +347,13 @@ class MacroSplitBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
+    // Only macros the meal has get a segment, so gaps fall between visible
+    // segments and the bar never ends on an empty gap.
     final parts = [
       (meal.protein * 4, colors.actionPrimary),
       (meal.carbohydrate * 4, colors.stateStable),
       (meal.fat * 9, colors.accentAmber),
-    ];
+    ].where((part) => part.$1 > 0).toList();
     final total = parts.fold<double>(0, (sum, part) => sum + part.$1);
     return Semantics(
       label:
@@ -367,19 +369,18 @@ class MacroSplitBar extends StatelessWidget {
               : Row(
                   children: [
                     for (var i = 0; i < parts.length; i++)
-                      if (parts[i].$1 > 0)
-                        Expanded(
-                          flex: (parts[i].$1 / total * 1000).round().clamp(
-                            1,
-                            1000,
-                          ),
-                          child: Padding(
-                            padding: EdgeInsets.only(
-                              right: i < parts.length - 1 ? 2 : 0,
-                            ),
-                            child: Container(color: parts[i].$2),
-                          ),
+                      Expanded(
+                        flex: (parts[i].$1 / total * 1000).round().clamp(
+                          1,
+                          1000,
                         ),
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            right: i < parts.length - 1 ? 2 : 0,
+                          ),
+                          child: Container(color: parts[i].$2),
+                        ),
+                      ),
                   ],
                 ),
         ),
