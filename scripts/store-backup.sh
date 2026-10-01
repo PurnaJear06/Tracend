@@ -19,6 +19,20 @@ set -euo pipefail
 
 die() { echo "store-backup: $*" >&2; exit 1; }
 
+# GitHub's published SSH host keys, from https://api.github.com/meta ("ssh_keys"). Fingerprints:
+# https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints
+# They are pinned so a network or DNS attacker cannot impersonate github.com and receive the backup
+# or feed back false branch state. A key that does not match aborts the run. If GitHub ever rotates
+# its Ed25519 key, replace these lines from the published list; the RSA key was rotated once, in
+# March 2023, and ssh prefers Ed25519 here, so that does not affect this script.
+github_known_hosts() {
+  cat <<'KNOWN_HOSTS'
+github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
+KNOWN_HOSTS
+}
+
 [ "$#" -eq 1 ] || die "usage: $0 <database-backup-*.tar.gz.enc>"
 backup_name="$(basename "$1")"
 branch="${BACKUP_BRANCH:-main}"
@@ -56,8 +70,9 @@ else
   remote_url="git@github.com:${BACKUP_REPO}.git"
   # A secret can lose its trailing newline; OpenSSH rejects a key without one.
   (umask 077 && printf '%s\n' "$BACKUP_REPO_DEPLOY_KEY" >"$workdir/deploy_key")
+  github_known_hosts >"$workdir/known_hosts"
   printf -v GIT_SSH_COMMAND \
-    'ssh -i %q -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=%q' \
+    'ssh -i %q -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=%q -o GlobalKnownHostsFile=/dev/null' \
     "$workdir/deploy_key" "$workdir/known_hosts"
   export GIT_SSH_COMMAND
 fi

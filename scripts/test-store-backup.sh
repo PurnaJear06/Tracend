@@ -118,20 +118,29 @@ else
 fi
 if store "$r" "$f1" BACKUP_KEEP=0 >/dev/null 2>&1; then fail "BACKUP_KEEP=0 must fail"; else pass "BACKUP_KEEP=0 fails"; fi
 
-# 10. Deploy key handling, with a stub ssh so nothing touches the network: the key file is
-# private (mode 600), ends with a newline even when the secret lost it, and is never printed.
+# 10. Deploy key and host key handling, with a stub ssh so nothing touches the network: the key
+# file is private (mode 600), ends with a newline even when the secret lost it, and is never
+# printed; host keys are checked strictly against exactly GitHub's three published fingerprints
+# (https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints).
 mkdir -p "$base/bin"
 cat >"$base/bin/ssh" <<'STUB'
 #!/bin/sh
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -i) key="$2"; shift 2 ;;
+    -o)
+      case "$2" in
+        StrictHostKeyChecking=*) strict="${2#*=}" ;;
+        UserKnownHostsFile=*) hosts="${2#*=}" ;;
+      esac
+      shift 2 ;;
     *) shift ;;
   esac
 done
 mode="$(stat -c %a "$key" 2>/dev/null || stat -f %Lp "$key")"
 last="$(tail -c 1 "$key" | od -An -c | tr -d ' ')"
-printf 'mode=%s lastbyte=%s\n' "$mode" "$last" >>"$STUB_LOG"
+prints="$(ssh-keygen -lf "$hosts" | awk '{print $2}' | LC_ALL=C sort | tr '\n' ' ')"
+printf 'mode=%s lastbyte=%s strict=%s fingerprints=%s\n' "$mode" "$last" "$strict" "$prints" >>"$STUB_LOG"
 exit 255
 STUB
 chmod +x "$base/bin/ssh"
@@ -139,7 +148,10 @@ export STUB_LOG="$base/ssh-stub.log"
 : >"$STUB_LOG"
 output="$(env -u BACKUP_REPO_URL PATH="$base/bin:$PATH" BACKUP_REPO="owner/missing" \
   BACKUP_REPO_DEPLOY_KEY="SECRET-KEY-MATERIAL" bash "$script" "$f1" 2>&1 || true)"
-expect_eq "ssh was used with a mode 600 key ending in a newline" "mode=600 lastbyte=\\n" "$(sort -u "$STUB_LOG")"
+expect_eq "ssh gets a mode 600 key ending in a newline" "mode=600 lastbyte=\\n" "$(sort -u "$STUB_LOG" | sed -E 's/ strict=.*//')"
+expect_eq "host key checking is strict and pinned to GitHub's three published keys" \
+  "strict=yes fingerprints=SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s " \
+  "$(sort -u "$STUB_LOG" | sed -E 's/^mode=[0-9]+ lastbyte=[^ ]+ //')"
 case "$output" in
   *SECRET-KEY-MATERIAL*) fail "the deploy key must never be printed" ;;
   *) pass "the deploy key is never printed" ;;
