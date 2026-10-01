@@ -13,9 +13,9 @@ void main() {
     await tester.pumpWidget(_app(_Repository()));
     await tester.pumpAndSettle();
     expect(find.text('Add your first weigh-in'), findsOneWidget);
-    expect(find.text('No measurements yet'), findsOneWidget);
-    await _reveal(tester, find.text('Record measurement'));
     expect(find.text('Record measurement'), findsOneWidget);
+    expect(find.byTooltip('Record measurement'), findsOneWidget);
+    expect(find.text('Recent weigh-ins'.toUpperCase()), findsNothing);
   });
 
   testWidgets('Measurement form validates and saves canonical values', (
@@ -24,8 +24,7 @@ void main() {
     final repository = _Repository();
     await tester.pumpWidget(_app(repository));
     await tester.pumpAndSettle();
-    await _reveal(tester, find.text('Record measurement'));
-    await tester.tap(find.text('Record measurement'));
+    await tester.tap(find.byTooltip('Record measurement'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Save measurement'));
     await tester.tap(find.text('Save measurement'));
@@ -51,10 +50,12 @@ void main() {
     await _reveal(tester, find.text('Open weekly review'));
     await tester.tap(find.text('Open weekly review'));
     await tester.pumpAndSettle();
-    expect(find.text('1 · Outcome'), findsOneWidget);
-    expect(
-      find.textContaining('No persistent plan change is implied'),
-      findsOneWidget,
+    expect(find.text('Outcome'), findsOneWidget);
+    expect(find.text('Week of 29 Jun'), findsOneWidget);
+    expect(find.textContaining('Calculated from your logs'), findsOneWidget);
+    await _revealInSheet(
+      tester,
+      find.textContaining('This review never changes them'),
     );
   });
 
@@ -91,9 +92,13 @@ void main() {
     await _reveal(tester, find.text('Open weekly review'));
     await tester.tap(find.text('Open weekly review'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('2 of 3 planned workouts'), findsOneWidget);
-    expect(find.textContaining('No persistent plan change'), findsOneWidget);
-    await tester.ensureVisible(find.text('Mark reviewed'));
+    expect(find.text('2 of 3'), findsOneWidget);
+    expect(find.text('67%'), findsOneWidget);
+    await _revealInSheet(
+      tester,
+      find.textContaining('This review never changes them'),
+    );
+    await _revealInSheet(tester, find.text('Mark reviewed'));
     await tester.tap(find.text('Mark reviewed'));
     await tester.pumpAndSettle();
     expect(repository.acknowledgedReviewId, 'review-1');
@@ -110,9 +115,23 @@ Future<void> _reveal(WidgetTester tester, Finder target) async {
   await tester.pump();
 }
 
+Future<void> _revealInSheet(WidgetTester tester, Finder target) async {
+  await tester.scrollUntilVisible(
+    target,
+    120,
+    scrollable: find.byType(Scrollable).last,
+  );
+  await tester.pump();
+}
+
 Widget _app(ProgressRepository repository) => MaterialApp(
   theme: TracendTheme.light,
-  home: Scaffold(body: ProgressScreen(repository: repository)),
+  home: Scaffold(
+    body: ProgressScreen(
+      repository: repository,
+      now: () => DateTime(2026, 7, 6),
+    ),
+  ),
 );
 
 class _Repository implements ProgressRepository {

@@ -8,49 +8,68 @@ import 'package:tracend/features/progress/widgets/photo_widgets.dart';
 import 'package:tracend/features/progress/widgets/training_evidence_widgets.dart';
 import 'package:tracend/features/progress/widgets/weekly_review_widgets.dart';
 import 'package:tracend/features/progress/widgets/weight_trend_card.dart';
-import 'package:tracend/features/progress/weight_trend_indicator.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/widgets/micro_motion.dart';
+import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
+
+/// Period options; the selection covers weigh-ins and workouts alike.
+const progressPeriods = <(int, String)>[(28, '4W'), (84, '12W'), (182, '6M')];
+
+/// Recent weigh-ins shown before "See all".
+const _recentWeighIns = 3;
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({
     required this.repository,
     this.training,
     this.brief,
+    this.now = DateTime.now,
     super.key,
   });
   final ProgressRepository repository;
   final TrainingHubRepository? training;
   final DailyBriefRepository? brief;
+
+  /// Clock for the period window and relative dates.
+  final DateTime Function() now;
   @override
   State<ProgressScreen> createState() => _ProgressScreenState();
 }
 
+typedef _ProgressData = ({
+  List<BodyMeasurement> measurements,
+  ProgressSummary summary,
+  List<ProgressPhotoSet> photoSets,
+  WeeklyProgressReview? weeklyReview,
+  WeeklyReviewJob? weeklyReviewJob,
+  TrainingHubData? training,
+});
+
 class _ProgressScreenState extends State<ProgressScreen> {
-  late Future<
-    ({
-      List<BodyMeasurement> measurements,
-      ProgressSummary summary,
-      List<ProgressPhotoSet> photoSets,
-      WeeklyProgressReview? weeklyReview,
-      WeeklyReviewJob? weeklyReviewJob,
-      TrainingHubData? training,
-    })
-  >
-  _future;
+  late Future<_ProgressData> _future;
   int _periodDays = 84;
   String? _activeSet;
   final Set<String> _capturedPoses = {};
   bool _hasConsent = false;
   late final Future<DailyBrief> _brief;
+  late final Future<String?> _goal;
+
   @override
   void initState() {
     super.initState();
     _reload();
     _brief = (widget.brief ?? const FixtureDailyBriefRepository()).load(
-      DateTime.now(),
+      widget.now(),
     );
+    final repository = widget.repository;
+    _goal = repository is ProgressGoalRepository
+        ? (repository as ProgressGoalRepository).loadActiveGoal().catchError(
+            (Object _) => null,
+          )
+        : Future<String?>.value();
   }
 
   void _reload() {
@@ -80,180 +99,165 @@ class _ProgressScreenState extends State<ProgressScreen> {
     future: _future,
     builder: (context, snapshot) {
       final data = snapshot.data;
+      final loading = snapshot.connectionState == ConnectionState.waiting;
       return TracendScrollView(
         title: 'Progress',
-        subtitle: 'Measured evidence, reviewed over time',
-        children: [
-          if (snapshot.connectionState == ConnectionState.waiting)
-            const LinearProgressIndicator()
-          else if (snapshot.hasError)
-            _ErrorCard(
-              onRetry: () {
-                setState(_reload);
-              },
-            )
-          else
-            ..._content(
-              context,
-              data!.measurements,
-              data.summary,
-              data.photoSets,
-              data.weeklyReview,
-              data.weeklyReviewJob,
-              data.training,
+        subtitle: 'Your body and strength over time',
+        trailing: IconButton.filledTonal(
+          key: const ValueKey('record-measurement-header'),
+          onPressed: _record,
+          tooltip: 'Record measurement',
+          style: IconButton.styleFrom(
+            backgroundColor: context.tracendColors.actionPrimary.withValues(
+              alpha: 0.16,
             ),
+            foregroundColor: context.tracendColors.actionPrimary,
+          ),
+          icon: const Icon(CupertinoIcons.plus),
+        ),
+        children: [
+          TracendSegmentedControl<int>(
+            segments: progressPeriods,
+            selected: _periodDays,
+            onChanged: (days) => setState(() {
+              _periodDays = days;
+              _reload();
+            }),
+          ),
+          SizedBox(
+            height: TracendSpacing.md,
+            child: loading
+                ? const Center(child: LinearProgressIndicator(minHeight: 2))
+                : null,
+          ),
+          if (data != null)
+            ..._content(data)
+          else if (snapshot.hasError)
+            _ErrorCard(onRetry: () => setState(_reload)),
         ],
       );
     },
   );
 
-  List<Widget> _content(
-    BuildContext context,
-    List<BodyMeasurement> measurements,
-    ProgressSummary summary,
-    List<ProgressPhotoSet> photoSets,
-    WeeklyProgressReview? weeklyReview,
-    WeeklyReviewJob? weeklyReviewJob,
-    TrainingHubData? training,
-  ) => [
-    ProgressSnapshotCard(measurements: measurements, fallback: summary),
-    const SectionLabel('Weight history'),
-    if (measurements.isEmpty)
-      const EmptyMeasurementsCard()
-    else
+  List<Widget> _content(_ProgressData data) {
+    final now = widget.now();
+    final windowStart = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: _periodDays - 1));
+    final periodMeasurements = data.measurements
+        .where((m) => !m.date.isBefore(windowStart))
+        .toList();
+    final sections = <Widget>[
       FutureBuilder<DailyBrief>(
         future: _brief,
-        builder: (context, snapshot) => WeightTrendCard(
-          measurements: measurements,
-          computed: snapshot.data?.computed,
-        ),
-      ),
-    FutureBuilder<DailyBrief>(
-      future: _brief,
-      builder: (context, snapshot) {
-        if (snapshot.hasData && snapshot.data?.computed != null) {
-          return WeightTrendIndicator(
-            computed: snapshot.data!.computed!,
-            sparklineValues: measurements.isEmpty
-                ? null
-                : measurements.map((m) => m.weightKg).toList(),
-          );
-        }
-        return const SizedBox.shrink();
-      },
-    ),
-    const SizedBox(height: TracendSpacing.sm),
-    SizedBox(
-      width: double.infinity,
-      child: FilledButton.icon(
-        key: const ValueKey('record-measurement'),
-        onPressed: _record,
-        icon: const Icon(CupertinoIcons.plus),
-        label: const Text('Record measurement'),
-      ),
-    ),
-    if (measurements.isNotEmpty) ...[
-      const SizedBox(height: TracendSpacing.sm),
-      ...measurements.reversed
-          .take(8)
-          .map(
-            (m) => Padding(
-              padding: const EdgeInsets.only(bottom: TracendSpacing.xs),
-              child: MeasurementHistoryRow(
-                value: m,
-                onOpen: () => _openMeasurementDetail(m),
-              ),
-            ),
-          ),
-    ],
-    const SectionLabel('Training evidence'),
-    TrainingEvidenceSection(training: training),
-    const SectionLabel('Private progress photos'),
-    PosePhotoRow(
-      pose: 'front',
-      label: 'Front photo',
-      guidance: 'Face the camera with full body visible',
-      isCaptured: _activeSet != null && _capturedPoses.contains('front'),
-      onCamera: () => _capturePose('front', ImageSource.camera),
-      onGallery: () => _capturePose('front', ImageSource.gallery),
-    ),
-    PosePhotoRow(
-      pose: 'side',
-      label: 'Side photo',
-      guidance: 'Turn 90 degrees, arm away from body',
-      isCaptured: _activeSet != null && _capturedPoses.contains('side'),
-      onCamera: () => _capturePose('side', ImageSource.camera),
-      onGallery: () => _capturePose('side', ImageSource.gallery),
-    ),
-    PosePhotoRow(
-      pose: 'back',
-      label: 'Back photo',
-      guidance: 'Face away from camera, natural stance',
-      isCaptured: _activeSet != null && _capturedPoses.contains('back'),
-      onCamera: () => _capturePose('back', ImageSource.camera),
-      onGallery: () => _capturePose('back', ImageSource.gallery),
-    ),
-    PosePhotoRow(
-      pose: 'lower',
-      label: 'Lower body',
-      guidance: 'Full lower body from waist down',
-      isCaptured: _activeSet != null && _capturedPoses.contains('lower'),
-      onCamera: () => _capturePose('lower', ImageSource.camera),
-      onGallery: () => _capturePose('lower', ImageSource.gallery),
-    ),
-    if (photoSets.isNotEmpty)
-      ...photoSets.map(
-        (set) => Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: PhotoSetCard(
-            set: set,
-            onView: () => _viewSet(set),
-            onDelete: () => _deleteSet(set),
+        builder: (context, brief) => FutureBuilder<String?>(
+          future: _goal,
+          builder: (context, goal) => WeightHeroCard(
+            measurements: data.measurements,
+            periodMeasurements: periodMeasurements,
+            computed: brief.data?.computed,
+            goal: goal.data,
+            fallbackWeightKg: data.summary.currentWeightKg,
+            onRecord: _record,
+            now: now,
           ),
         ),
       ),
-    const SectionLabel('Weekly review'),
-    WeeklyReviewActionCard(
-      weeklyReview: weeklyReview,
-      weeklyReviewJob: weeklyReviewJob,
-      onTap: weeklyReview != null
-          ? () => _openWeeklyReview(weeklyReview)
-          : weeklyReviewJob?.isPending == true
-          ? () => setState(_reload)
-          : _requestWeeklyReview,
-    ),
-    const SectionLabel('Training review period'),
-    Material(
-      color: Colors.transparent,
-      child: Wrap(
-        spacing: TracendSpacing.xs,
-        runSpacing: TracendSpacing.xs,
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final option in const [
-            (label: '4 weeks', days: 28),
-            (label: '12 weeks', days: 84),
-            (label: '6 months', days: 182),
-          ])
-            ChoiceChip(
-              label: Text(option.label),
-              selected: _periodDays == option.days,
-              materialTapTargetSize: MaterialTapTargetSize.padded,
-              onSelected: (_) => setState(() {
-                _periodDays = option.days;
-                _reload();
-              }),
-            ),
+          const SectionLabel('This week'),
+          WeeklyReviewActionCard(
+            weeklyReview: data.weeklyReview,
+            weeklyReviewJob: data.weeklyReviewJob,
+            now: now,
+            onTap: data.weeklyReview != null
+                ? () => _openWeeklyReview(data.weeklyReview!)
+                : data.weeklyReviewJob?.isPending == true
+                ? () => setState(_reload)
+                : _requestWeeklyReview,
+          ),
         ],
       ),
-    ),
-  ];
+      if (data.measurements.isNotEmpty)
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SectionLabel(
+              'Recent weigh-ins',
+              actionLabel: data.measurements.length > _recentWeighIns
+                  ? 'See all'
+                  : null,
+              onAction: () => _openAllWeighIns(data.measurements),
+            ),
+            WeighInList(
+              measurements: data.measurements,
+              limit: _recentWeighIns,
+              onOpen: _openMeasurementDetail,
+              now: now,
+            ),
+          ],
+        ),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionLabel('Strength'),
+          TrainingEvidenceSection(
+            training: data.training,
+            periodDays: _periodDays,
+          ),
+        ],
+      ),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionLabel('Progress photos'),
+          PhotoProgressCard(
+            photoSets: data.photoSets,
+            inProgress: _activeSet != null && _capturedPoses.isNotEmpty,
+            onCapture: _openPhotoCapture,
+            onOpenSets: () => _openPhotoSets(data.photoSets),
+            now: now,
+          ),
+        ],
+      ),
+    ];
+    // Only the first screenful enters with motion; sections built later by
+    // scrolling appear at once instead of waiting out a stagger delay.
+    return [
+      for (var i = 0; i < sections.length; i++)
+        i < 2
+            ? MicroMotionEntrance(
+                delay: MicroMotion.stagger(i),
+                child: sections[i],
+              )
+            : sections[i],
+    ];
+  }
 
   Future<void> _openMeasurementDetail(BodyMeasurement measurement) async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => MeasurementDetailSheet(measurement: measurement),
+      builder: (_) =>
+          MeasurementDetailSheet(measurement: measurement, now: widget.now()),
+    );
+  }
+
+  Future<void> _openAllWeighIns(List<BodyMeasurement> measurements) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (_) => WeighInHistorySheet(
+        measurements: measurements,
+        onOpen: _openMeasurementDetail,
+        now: widget.now(),
+      ),
     );
   }
 
@@ -264,7 +268,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       setState(_reload);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Weekly review queued. Refresh in a few minutes.'),
+          content: Text('Preparing your weekly review. Check back soon.'),
         ),
       );
     } on ProgressSessionException {
@@ -279,7 +283,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not queue the weekly review. Try again.'),
+          content: Text('Could not start the weekly review. Try again.'),
         ),
       );
     }
@@ -290,7 +294,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => WeeklyReviewSheet(review: review),
+      useSafeArea: true,
+      builder: (_) => WeeklyReviewSheet(review: review, now: widget.now()),
     );
     if (acknowledge != true || review.acknowledged) return;
     await widget.repository.acknowledgeWeeklyReview(review.id);
@@ -311,7 +316,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       setState(_reload);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Measurement recorded')));
+      ).showSnackBar(const SnackBar(content: Text('Weigh-in saved')));
     } catch (e) {
       debugPrint('Non-critical error: $e');
       if (!mounted) return;
@@ -332,7 +337,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Save private progress photos?'),
         content: const Text(
-          'Front, side and back photos will be stored privately. They will not be sent to Gemini or analyzed by AI.',
+          'Your photos are stored privately and only you can open them. '
+          'They are never sent to an AI model.',
         ),
         actions: [
           TextButton(
@@ -360,10 +366,27 @@ class _ProgressScreenState extends State<ProgressScreen> {
     }
   }
 
-  Future<void> _capturePose(String pose, ImageSource source) async {
+  Future<void> _openPhotoCapture() async {
     await _ensureConsent();
     if (!_hasConsent || !mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (_) => PhotoCaptureSheet(
+        captured: _activeSet == null ? const {} : {..._capturedPoses},
+        onCapture: _capturePose,
+      ),
+    );
+    if (mounted) setState(_reload);
+  }
 
+  /// Uploads one pose into the open set for the capture sheet.
+  Future<({bool captured, String? error})> _capturePose(
+    String pose,
+    ImageSource source,
+  ) async {
     try {
       _activeSet ??= await widget.repository.beginPhotoSet();
       final picker = ImagePicker();
@@ -373,7 +396,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
         maxWidth: 1800,
         requestFullMetadata: false,
       );
-      if (photo == null) return;
+      if (photo == null) return (captured: false, error: null);
       await widget.repository.uploadPhoto(
         setId: _activeSet!,
         pose: pose,
@@ -381,25 +404,38 @@ class _ProgressScreenState extends State<ProgressScreen> {
         contentType: 'image/jpeg',
       );
       _capturedPoses.add(pose);
-      if (_capturedPoses.length == 4) {
+      if (_capturedPoses.length == progressPhotoPoses.length) {
         _activeSet = null;
         _capturedPoses.clear();
       }
+      return (captured: true, error: null);
     } catch (e) {
       debugPrint('Non-critical error: $e');
       _activeSet = null;
       _capturedPoses.clear();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Photo was not saved. Retry when ready.'),
-          ),
-        );
-      }
-      rethrow;
-    } finally {
-      if (mounted) setState(_reload);
+      return (
+        captured: false,
+        error: 'Photo was not saved. Try again when ready.',
+      );
     }
+  }
+
+  Future<void> _openPhotoSets(List<ProgressPhotoSet> sets) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (sheetContext) => PhotoSetsSheet(
+        photoSets: sets,
+        now: widget.now(),
+        onView: _viewSet,
+        onDelete: (set) {
+          Navigator.pop(sheetContext);
+          _deleteSet(set);
+        },
+      ),
+    );
   }
 
   Future<void> _viewSet(ProgressPhotoSet set) async {
@@ -430,7 +466,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Delete this photo set?'),
         content: const Text(
-          'The private images and progress records will be permanently removed.',
+          'The photos will be permanently removed. This cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -439,6 +475,9 @@ class _ProgressScreenState extends State<ProgressScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
             child: const Text('Delete set'),
           ),
         ],
@@ -454,12 +493,17 @@ class _ErrorCard extends StatelessWidget {
   const _ErrorCard({required this.onRetry});
   final VoidCallback onRetry;
   @override
-  Widget build(BuildContext context) => TracendCard(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => PremiumGradientCard(
+    child: Row(
       children: [
-        const Text('Progress could not be loaded.'),
-        const SizedBox(height: 8),
+        Icon(
+          CupertinoIcons.wifi_exclamationmark,
+          color: context.tracendColors.stateAttention,
+        ),
+        const SizedBox(width: TracendSpacing.sm),
+        const Expanded(
+          child: Text('Progress could not load. Check your connection.'),
+        ),
         TextButton(onPressed: onRetry, child: const Text('Retry')),
       ],
     ),

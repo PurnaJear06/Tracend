@@ -349,6 +349,20 @@ Progress provides period selection for measurements, comparable strength, workou
 confirmed-nutrition coverage, weekly review, and private photos. A chart appears only after two real
 dated comparable observations.
 
+The screen reads top to bottom as one answer, then detail:
+1. A **4W · 12W · 6M** segmented control (default 12W) that scopes the weight change, chart, and
+   workout count. The header **+** records a measurement.
+2. The weight hero (`WeightHeroCard`): latest weigh-in and its date, change since the first weigh-in
+   in the period, the weekly rate, a plain-word trend steadiness, and the chart. With no weigh-in it
+   asks for the first one; with one in the period it asks for another before drawing a trend.
+3. **This week:** the weekly review card (§11).
+4. **Recent weigh-ins:** the newest three in one grouped list, each with its change from the one
+   before; **See all** opens every weigh-in. A row opens the read-only detail.
+5. **Strength:** workouts done of planned in the period, then a horizontal row of best confirmed
+   lifts.
+6. **Progress photos:** one card with the last set's date, **Take progress photos**, and **View past
+   sets**.
+
 ### Coach conversation
 
 Coach opens a familiar saved-thread conversation. The daily Head Coach decision is on Today, not
@@ -371,12 +385,13 @@ apply in chat.
 Guide distance, pose, framing, lighting, clothing consistency, and timing. Retake remains available.
 Physique photos never appear in general dashboard surfaces or notifications.
 
-Capture requires explicit storage consent, then guides front, side, and back in order. Before each
-native camera launch, Tracend names the required pose, displays its position in the three-photo
-sequence, and provides concise framing guidance. The user explicitly opens the camera or cancels the
-set; the native camera is never launched without this in-app context. Completed and partial sets
-remain visible with labeled view and delete controls. Viewing uses short-lived authorization. No
-photo is sent to Gemini or analyzed until separate AI consent and evaluation gates are implemented.
+Capture requires explicit storage consent, then opens a capture sheet that lists front, side, back,
+and lower body with framing guidance, a check per finished pose, and how many are done. The user
+explicitly opens the camera or library for a pose; the native camera is never launched without this
+in-app context. Errors stay inline in the sheet, and **Finish later** keeps a partial set open.
+Completed and partial sets are listed under **View past sets** with labeled view and delete
+controls. Viewing uses short-lived authorization. No photo is sent to an AI model or analyzed until
+separate AI consent and evaluation gates are implemented.
 
 ### Comparison
 

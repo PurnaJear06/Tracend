@@ -180,21 +180,52 @@ class TracendPill extends StatelessWidget {
 }
 
 class SectionLabel extends StatelessWidget {
-  const SectionLabel(this.label, {super.key});
+  const SectionLabel(this.label, {this.actionLabel, this.onAction, super.key});
 
   final String label;
 
+  /// Optional trailing text action, such as "See all".
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
   @override
   Widget build(BuildContext context) {
+    // labelCaps restyle (owner-approved 2026-09-04, DESIGN_SYSTEM §3.2:
+    // "every caps label renders through TracendTheme.labelCaps") — text
+    // content unchanged, style-only, so all tabs inherit the standard.
+    final text = Text(
+      label.toUpperCase(),
+      style: TracendTheme.labelCaps(context),
+    );
+    if (actionLabel == null || onAction == null) {
+      return Padding(
+        padding: const EdgeInsets.only(
+          top: TracendSpacing.lg,
+          bottom: TracendSpacing.sm,
+        ),
+        child: text,
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(
-        top: TracendSpacing.lg,
-        bottom: TracendSpacing.sm,
+        top: TracendSpacing.sm,
+        bottom: TracendSpacing.xxs,
       ),
-      // labelCaps restyle (owner-approved 2026-09-04, DESIGN_SYSTEM §3.2:
-      // "every caps label renders through TracendTheme.labelCaps") — text
-      // content unchanged, style-only, so all tabs inherit the standard.
-      child: Text(label.toUpperCase(), style: TracendTheme.labelCaps(context)),
+      child: Row(
+        children: [
+          Expanded(child: text),
+          TextButton(
+            onPressed: onAction,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(44, 44),
+              padding: const EdgeInsets.symmetric(
+                horizontal: TracendSpacing.xs,
+              ),
+            ),
+            child: Text(actionLabel!),
+          ),
+        ],
+      ),
     );
   }
 }

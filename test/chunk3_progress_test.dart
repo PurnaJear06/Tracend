@@ -20,6 +20,7 @@ Widget _app(
       repository: repository,
       brief: brief,
       training: training,
+      now: () => DateTime(2026, 8, 25),
     ),
   ),
 );
@@ -57,18 +58,46 @@ void main() {
     expect(find.text('Measured'), findsNothing);
   });
 
-  testWidgets('tapping a history row opens the detail sheet', (tester) async {
+  testWidgets('tapping a recent weigh-in opens the detail sheet', (
+    tester,
+  ) async {
     await tester.pumpWidget(_app(_Repository(withTrend: true)));
     await tester.pumpAndSettle();
-    final row = find.text('22/8/2026 · manual');
+    final row = find.text('Sat 22 Aug · Entered by you');
     await _reveal(tester, row);
+    expect(find.text('\u22120.2'), findsOneWidget);
     await tester.tap(row);
     await tester.pumpAndSettle();
-    expect(find.text('Confirmed weigh-in'), findsOneWidget);
-    expect(find.textContaining('source: manual'), findsOneWidget);
+    expect(find.text('Sat 22 Aug'), findsOneWidget);
+    expect(find.text('Weight'), findsOneWidget);
+    expect(find.textContaining('manual'), findsNothing);
   });
 
-  testWidgets('measurement entry and weekly review open; photos visible', (
+  testWidgets('recent weigh-ins show three rows and See all shows every one', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(_Repository(withTrend: true)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Sat 1 Aug'), findsNothing);
+    await _reveal(tester, find.text('See all'));
+    await tester.tap(find.text('See all'));
+    await tester.pumpAndSettle();
+    expect(find.text('All weigh-ins'), findsOneWidget);
+    expect(find.text('Sat 1 Aug · Entered by you'), findsOneWidget);
+  });
+
+  testWidgets('the period control filters the weight chart', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(_app(_Repository(withTrend: true)));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel(RegExp('across 4 weigh-ins')), findsOneWidget);
+    await tester.tap(find.text('4W'));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel(RegExp('across 4 weigh-ins')), findsOneWidget);
+    handle.dispose();
+  });
+
+  testWidgets('measurement entry and weekly review open; photos guided', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(800, 2400);
@@ -78,8 +107,7 @@ void main() {
     await tester.pumpWidget(_app(_Repository(withTrend: true)));
     await tester.pumpAndSettle();
 
-    await _reveal(tester, find.text('Record measurement'));
-    await tester.tap(find.text('Record measurement'));
+    await tester.tap(find.byTooltip('Record measurement'));
     await tester.pumpAndSettle();
     expect(find.text('Save measurement'), findsOneWidget);
     await tester.tapAt(const Offset(5, 5));
@@ -92,11 +120,32 @@ void main() {
     await tester.tapAt(const Offset(5, 5));
     await tester.pumpAndSettle();
 
-    await _reveal(tester, find.text('Front photo'));
+    expect(find.text('Front photo'), findsNothing);
+    await _reveal(tester, find.text('Take progress photos'));
+    await tester.tap(find.text('Take progress photos'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('I agree and continue'));
+    await tester.pumpAndSettle();
     expect(find.text('Front photo'), findsOneWidget);
+    expect(find.text('Lower body'), findsOneWidget);
+    expect(find.text('Finish later'), findsOneWidget);
   });
 
-  testWidgets('training evidence shows display-only progression', (
+  testWidgets('past photo sets open from one card', (tester) async {
+    await tester.pumpWidget(
+      _app(_Repository(withTrend: true, withPhotos: true)),
+    );
+    await tester.pumpAndSettle();
+    await _reveal(tester, find.text('View past sets (2)'));
+    expect(find.text('Last set · Sat 22 Aug'), findsOneWidget);
+    await tester.tap(find.text('View past sets (2)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Past photo sets'), findsOneWidget);
+    expect(find.text('4 photos'), findsOneWidget);
+    expect(find.text('2 of 4 photos · unfinished'), findsOneWidget);
+  });
+
+  testWidgets('strength shows workouts and lift tiles in plain words', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -105,29 +154,59 @@ void main() {
     await tester.pumpAndSettle();
     await _reveal(tester, find.text('Bench press'));
     expect(find.text('Bench press'), findsOneWidget);
-    expect(
-      find.textContaining('display-only, no detail destination yet'),
-      findsOneWidget,
-    );
+    expect(find.text('80 kg'), findsOneWidget);
+    expect(find.text('Best · 3 workouts'), findsOneWidget);
+    expect(find.text('Last 12 weeks'), findsOneWidget);
+    expect(find.textContaining('display-only'), findsNothing);
   });
 
-  testWidgets('sparkline wires real weigh-in values into the indicator', (
-    tester,
-  ) async {
-    final handle = tester.ensureSemantics();
+  testWidgets('the hero shows the weekly rate in plain words', (tester) async {
     await tester.pumpWidget(
       _app(_Repository(withTrend: true), brief: _Brief(withTrends: true)),
     );
     await tester.pumpAndSettle();
-    await _reveal(tester, find.text('WEIGHT TREND'));
-    expect(
-      find.bySemanticsLabel(
-        RegExp('Weight across your last .* confirmed weigh-ins'),
-      ),
-      findsOneWidget,
-    );
-    handle.dispose();
+    expect(find.text('\u22120.3 kg/week'), findsOneWidget);
+    expect(find.text('Steady trend'), findsOneWidget);
+    expect(find.text('WEIGHT TREND'), findsNothing);
   });
+
+  testWidgets('full page and photo sheet fit 320pt at 2x text', (tester) async {
+    _largeTextPhone(tester);
+    await tester.pumpWidget(
+      _app(
+        _Repository(withTrend: true, withPhotos: true),
+        brief: _Brief(withTrends: true),
+        training: _TrainingHub(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 30; i++) {
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -300));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+    await tester.dragUntilVisible(
+      find.text('Take progress photos'),
+      find.byType(CustomScrollView),
+      const Offset(0, 300),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Take progress photos'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('I agree and continue'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Progress photos'), findsOneWidget);
+  });
+}
+
+void _largeTextPhone(WidgetTester tester) {
+  tester.view.physicalSize = const Size(320, 844);
+  tester.view.devicePixelRatio = 1;
+  tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 }
 
 class _Brief implements DailyBriefRepository {
@@ -175,8 +254,9 @@ class _TrainingHub implements TrainingHubRepository {
 }
 
 class _Repository implements ProgressRepository {
-  _Repository({this.withTrend = false});
+  _Repository({this.withTrend = false, this.withPhotos = false});
   final bool withTrend;
+  final bool withPhotos;
 
   @override
   Future<List<BodyMeasurement>> loadMeasurements() async => withTrend
@@ -205,7 +285,22 @@ class _Repository implements ProgressRepository {
   Future<void> saveMeasurement(BodyMeasurement measurement) async {}
 
   @override
-  Future<List<ProgressPhotoSet>> loadPhotoSets() async => const [];
+  Future<List<ProgressPhotoSet>> loadPhotoSets() async => withPhotos
+      ? [
+          ProgressPhotoSet(
+            id: 'set-2',
+            date: DateTime(2026, 8, 22),
+            status: 'complete',
+            objectKeys: const ['a', 'b', 'c', 'd'],
+          ),
+          ProgressPhotoSet(
+            id: 'set-1',
+            date: DateTime(2026, 8, 1),
+            status: 'draft',
+            objectKeys: const ['a', 'b'],
+          ),
+        ]
+      : const [];
   @override
   Future<void> grantPhotoStorageConsent() async {}
   @override
