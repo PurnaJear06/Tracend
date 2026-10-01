@@ -2,12 +2,16 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/progress/progress_screen.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+
+Future<XFile?> _photo(ImageSource source) async =>
+    XFile.fromData(Uint8List.fromList(const [1, 2, 3]), name: 'pose.jpg');
 
 Widget _app(
   ProgressRepository repository, {
@@ -21,6 +25,7 @@ Widget _app(
       brief: brief,
       training: training,
       now: () => DateTime(2026, 8, 25),
+      pickPhoto: _photo,
     ),
   ),
 );
@@ -170,6 +175,46 @@ void main() {
     expect(find.text('WEIGHT TREND'), findsNothing);
   });
 
+  testWidgets('a failed pose upload retries into the same photo set', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = _FlakyUploadRepository(failOnUpload: 2);
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+    await _reveal(tester, find.text('Take progress photos'));
+    await tester.tap(find.text('Take progress photos'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('I agree and continue'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Take Front photo'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Take Side photo'));
+    await tester.pumpAndSettle();
+    expect(find.text('Photo was not saved. Try again when ready.'), findsOne);
+    expect(find.textContaining('1 of 4 done'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Take Side photo'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Take Back photo'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Take Lower body'));
+    await tester.pumpAndSettle();
+
+    expect(repository.setsStarted, 1);
+    expect(repository.uploads, [
+      ('set-1', 'front'),
+      ('set-1', 'side'),
+      ('set-1', 'back'),
+      ('set-1', 'lower'),
+    ]);
+    expect(find.text('Done'), findsOneWidget);
+  });
+
   testWidgets('full page and photo sheet fit 320pt at 2x text', (tester) async {
     _largeTextPhone(tester);
     await tester.pumpWidget(
@@ -207,6 +252,29 @@ void _largeTextPhone(WidgetTester tester) {
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+}
+
+/// Upload fails once on the given call, then succeeds.
+class _FlakyUploadRepository extends _Repository {
+  _FlakyUploadRepository({required this.failOnUpload}) : super(withTrend: true);
+  final int failOnUpload;
+  int setsStarted = 0;
+  final uploads = <(String, String)>[];
+  int _attempts = 0;
+
+  @override
+  Future<String> beginPhotoSet() async => 'set-${++setsStarted}';
+
+  @override
+  Future<void> uploadPhoto({
+    required String setId,
+    required String pose,
+    required Uint8List bytes,
+    required String contentType,
+  }) async {
+    if (++_attempts == failOnUpload) throw StateError('network');
+    uploads.add((setId, pose));
+  }
 }
 
 class _Brief implements DailyBriefRepository {
