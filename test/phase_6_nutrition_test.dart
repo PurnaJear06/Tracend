@@ -14,14 +14,15 @@ void main() {
     expect(find.text('540'), findsOneWidget);
     expect(find.textContaining('/ 2200 kcal'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('Breakfast'),
+      find.text('Breakfast · 540 kcal'),
       180,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('Breakfast'), findsOneWidget);
-    expect(find.text('Oats · Greek yogurt'), findsOneWidget);
-    expect(find.text('540 kcal'), findsOneWidget);
-    expect(find.text('P 35'), findsOneWidget);
+    expect(find.text('Breakfast · 540 kcal'), findsOneWidget);
+    expect(
+      find.text('logged  ·  Oats · Greek yogurt', findRichText: true),
+      findsOneWidget,
+    );
     expect(find.text('confirmed'), findsNothing);
     expect(find.text('breakfast'), findsNothing);
   });
@@ -112,7 +113,10 @@ void main() {
     );
     await tester.ensureVisible(reviewButton);
     await tester.pumpAndSettle();
-    expect(find.text('NEEDS REVIEW'), findsOneWidget);
+    expect(
+      find.textContaining('needs review', findRichText: true),
+      findsOneWidget,
+    );
     await tester.tap(reviewButton);
     await tester.pumpAndSettle();
     expect(find.text('Edit estimate'), findsOneWidget);

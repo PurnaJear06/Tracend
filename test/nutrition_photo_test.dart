@@ -50,6 +50,8 @@ Future<void> _tap(WidgetTester tester, String label, {String? mealType}) async {
     240,
     scrollable: find.byType(Scrollable).first,
   );
+  await tester.ensureVisible(button);
+  await tester.pumpAndSettle();
   await tester.tap(button);
   await tester.pumpAndSettle();
   if (mealType != null) {

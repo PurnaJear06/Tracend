@@ -297,9 +297,9 @@ consumption only.
 Below them, **Today's meals** is one vertical day timeline in time order. It merges the schedule and
 the logged meals: a confirmed meal logged from a slot replaces that slot's planned row. Every row
 has a time, a marker, and a state word, so color is never the only signal:
-- Logged meals say **Logged** and show their foods and `kcal · P · C · F` from `meal_items`, with a
-  **⋯** menu that holds **Delete meal**.
-- A draft shows **Needs review** and a **Review** action.
+- Logged meals read **Lunch · 691 kcal**, then **logged** and their foods from `meal_items`, then a
+  protein / carbs / fat split bar, with a **⋯** menu that holds **Delete meal**.
+- A draft shows **needs review** and a **Review foods** action.
 - Unlogged slots show **Due now**, **Planned**, **Optional**, or **Not logged** with their planned
   foods and a **Log** action.
 

@@ -20,8 +20,9 @@ captions ("no AI estimate", "R² 0.43", "display-only, no detail destination yet
 
 | Step | Scope | State |
 | --- | --- | --- |
-| P1 | Progress: period control on top, `WeightHeroCard` (goal-aware change, kg/week, steadiness words, chart), weekly review moved up, three recent weigh-ins + See all, strength tiles, one photo card + capture sheet | PR #56 |
-| P2 | Nutrition: one day timeline merging schedule and logged meals (foods, kcal, macros via `meal_items` embed), one **Log a meal** sheet with time-of-day meal type (fixes photo meals always saved as Lunch), coach insight demoted, confidence as words | PR open |
+| P1 | Progress: period control on top, `WeightHeroCard` (goal-aware change, kg/week, steadiness words, chart), weekly review moved up, three recent weigh-ins + See all, strength tiles, one photo card + capture sheet | Merged #56 |
+| P2 | Nutrition: one day timeline merging schedule and logged meals (foods, kcal, macros via `meal_items` embed), one **Log a meal** sheet with time-of-day meal type (fixes photo meals always saved as Lunch), coach insight demoted, confidence as words | Merged #57; build 235 installed |
+| P2b | Today's meals in option A's row style (owner's pick after build 235): time, status glyph, **Lunch · 691 kcal**, a second line that opens with the status word, and a protein / carbs / fat split bar | PR #58 |
 | P3 | Today: confidence pill and z-scores out of the first screenful; plain labels for PRECISION READOUTS, METABOLIC TARGET, T-COACH/N-COACH, g PRO; one "Today at a glance" list; tokens for two hard-coded colors | Queued |
 | P4 | Train: verdict-first training load (ACWR, Ratio, Monotony behind ⓘ), "Effort 8/10" for RPE, one glow card, rewrite "No fixture workout was substituted" | Queued |
 | P5 | Coach: one "How I got this" drawer for provider, evidence ids, and missing keys (friendly labels); beta diagnostic kept inside it; fix the ISO date in the context card | Queued |
@@ -47,4 +48,15 @@ captions ("no AI estimate", "R² 0.43", "display-only, no detail destination yet
 - Photo meals were always saved as `lunch`; the chosen type now reaches `create_meal_photo_draft`.
 - Delete lives in a **⋯** menu; its confirmation opens from `onSelected`, after the menu closes.
 - The fallback photo error is plain words plus a `Beta diagnostic · step: code` line.
+
+## P2b notes (#58)
+
+- After build 235 the owner said Nutrition felt ordinary. Two directions were sketched: A, a "fuel
+  line" chart of the day, and B, protein first with a Log again row. The owner chose A's **row
+  style only**, kept the header, and declined the chart.
+- `MacroSplitBar` sizes segments by energy (4, 4, and 9 kcal per gram). It draws only the macros a
+  meal has, with gaps between visible segments only, so a zero-fat meal has no trailing gap.
+- Not shown: meal photos, because SECURITY_PRIVACY limits them to proposing foods. Planned slots
+  carry no calories, so nothing projects them.
+- Owner liked Progress as built; keep its patterns for P3–P6.
 
