@@ -174,6 +174,10 @@ function config(): { config: OnboardingModelConfig; router: boolean } {
           ...entry.extraBody,
           ...("thinking" in entry.extraBody ? { reasoning_effort: "none" } : {}),
         },
+        // The router ignores both settings and DeepSeek V4 still thinks (9-21
+        // thousand characters of reasoning per answer on 2026-10-02), so a
+        // routed answer gets room for the reasoning on top of the plan.
+        maxOutputTokens: 24_000,
         price,
       },
     };

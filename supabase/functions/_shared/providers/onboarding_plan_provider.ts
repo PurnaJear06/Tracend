@@ -49,7 +49,12 @@ export type OnboardingModelConfig = Readonly<{
   apiKey: string;
   extraBody: Record<string, unknown>;
   price: Readonly<{ input: number; output: number }>;
+  /** Output token limit; production uses onboardingPlanMaxOutputTokens. */
+  maxOutputTokens?: number;
 }>;
+
+/** Room for a compact six-day plan with thinking off. */
+export const onboardingPlanMaxOutputTokens = 6000;
 
 export type OnboardingModelResolution =
   | { kind: "model"; config: OnboardingModelConfig }
@@ -167,7 +172,7 @@ export async function callOnboardingModel(
       body: JSON.stringify({
         model: config.model,
         temperature,
-        max_tokens: 6000,
+        max_tokens: config.maxOutputTokens ?? onboardingPlanMaxOutputTokens,
         response_format: { type: "json_object" },
         ...config.extraBody,
         messages,

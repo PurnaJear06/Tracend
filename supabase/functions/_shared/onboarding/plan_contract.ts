@@ -21,19 +21,23 @@ import {
 // either valid as a whole or rejected with one finite rule name; nothing is
 // partially applied (AI_SAFETY_SPEC §12).
 
+// Text limits keep a whole plan small enough to generate inside the output
+// token limit and the time budget: a six-day plan has about 40 exercises, so
+// every character per exercise or workout is multiplied. The 2026-10-02 eval
+// showed a 2-day plan of 9,500 characters under the earlier, looser limits.
 export const onboardingPlanLimits = Object.freeze({
   titleMaxLength: 80,
-  assessmentMaxLength: 600,
-  listMaxItems: 6,
-  listItemMaxLength: 200,
-  progressionMaxLength: 300,
-  rationaleMaxLength: 1000,
-  benefitMaxLength: 500,
-  downsideMaxLength: 500,
+  assessmentMaxLength: 300,
+  listMaxItems: 4,
+  listItemMaxLength: 140,
+  progressionMaxLength: 200,
+  rationaleMaxLength: 400,
+  benefitMaxLength: 200,
+  downsideMaxLength: 200,
   workoutNameMaxLength: 60,
-  workoutTextMaxLength: 300,
-  exerciseNotesMaxLength: 200,
-  nutritionRationaleMaxLength: 500,
+  workoutTextMaxLength: 140,
+  exerciseNotesMaxLength: 80,
+  nutritionRationaleMaxLength: 240,
 });
 
 export const onboardingPlanValidationRules = [
