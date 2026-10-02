@@ -167,7 +167,13 @@ function config(): { config: OnboardingModelConfig; router: boolean } {
         model,
         url: `${router.replace(/\/$/, "")}/chat/completions`,
         apiKey: Deno.env.get("EVAL_API_KEY") ?? "",
-        extraBody: {},
+        // The provider's own request settings, plus thinking off in the
+        // routers' terms (as coach_chat_eval.ts does). Without it DeepSeek V4
+        // thinks by default and spends the token limit before the plan.
+        extraBody: {
+          ...entry.extraBody,
+          ...("thinking" in entry.extraBody ? { reasoning_effort: "none" } : {}),
+        },
         price,
       },
     };
