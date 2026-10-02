@@ -40,10 +40,8 @@ select is((select timezone from public.user_accounts where id = 'f3000000-0000-4
 select is(private.local_date_for('f3000000-0000-4000-8000-000000000001'),
   (statement_timestamp() at time zone 'Pacific/Kiritimati')::date,
   'the athlete''s local date follows the stored zone');
-set local role anon;
-select throws_ok($$select public.set_my_timezone('UTC')$$, '42501', null,
+select ok(not has_function_privilege('anon', 'public.set_my_timezone(text)', 'execute'),
   'a signed-out caller cannot set a zone');
-reset role;
 
 -- Approval keeps the answers the Coach needs, on the athlete's date ------------------------
 
