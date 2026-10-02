@@ -82,9 +82,12 @@ void main() {
     await _continue(tester);
 
     expect(find.text('Food and limits.'), findsOneWidget);
+    await _tapText(tester, 'Squats');
+    await _tapText(tester, 'Overhead pressing');
     await _continue(tester);
     expect(find.text('Review before building.'), findsOneWidget);
     expect(find.text('Mon, Wed, Thu, Fri · 60 min'), findsOneWidget);
+    expect(find.text('Squats, Overhead pressing'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Build my plan'));
     await tester.pump();
@@ -109,6 +112,7 @@ void main() {
     expect(payload['birth_year'], 1992);
     expect(payload['daily_activity'], 'some_standing');
     expect(payload['goal'], 'fat_loss');
+    expect(payload['avoid_patterns'], ['squat', 'vertical_push']);
 
     final approve = find.widgetWithText(FilledButton, 'Approve plan');
     await tester.ensureVisible(approve);
@@ -309,6 +313,156 @@ void main() {
     expect(find.text('Add your equipment to build your plan.'), findsOneWidget);
   });
 
+  testWidgets(
+    'a draft that never answered movements to avoid does not invent an answer',
+    (tester) async {
+      final repository = _FakeOnboardingRepository(
+        draft: _draft('review'),
+        missing: const ['avoid_patterns'],
+      );
+      await _pump(tester, repository);
+      await tester.tap(find.widgetWithText(FilledButton, 'Build my plan'));
+      await tester.pumpAndSettle();
+      expect(repository.savedPayload!.containsKey('avoid_patterns'), isFalse);
+      expect(find.text('Food and limits.'), findsOneWidget);
+      expect(
+        find.textContaining('Choose the movements your plan should leave out'),
+        findsOneWidget,
+      );
+      await _continue(tester);
+      expect(repository.savedPayload!['avoid_patterns'], isEmpty);
+    },
+  );
+
+  testWidgets('answers no plan can meet open the step to change', (
+    tester,
+  ) async {
+    final repository = _FakeOnboardingRepository(
+      draft: _draft('review'),
+      infeasible: const ['avoid_patterns', 'equipment_items'],
+    );
+    await _pump(tester, repository);
+    await tester.tap(find.widgetWithText(FilledButton, 'Build my plan'));
+    await tester.pumpAndSettle();
+    expect(find.text('Food and limits.'), findsOneWidget);
+    expect(
+      find.textContaining('Avoid fewer movements or add equipment'),
+      findsOneWidget,
+    );
+    expect(repository.startCalls, 1);
+  });
+
+  testWidgets('reopening an expired proposal offers a rebuild that works', (
+    tester,
+  ) async {
+    var completed = false;
+    final repository = _FakeOnboardingRepository(
+      draft: _draft('proposal'),
+      generations: [
+        const OnboardingGeneration(
+          id: 'gen-1',
+          status: 'succeeded',
+          proposalId: 'p-1',
+          proposalStatus: 'expired',
+        ),
+        const OnboardingGeneration(id: 'gen-2', status: 'running'),
+        const OnboardingGeneration(
+          id: 'gen-2',
+          status: 'succeeded',
+          proposalId: 'p-2',
+          proposalStatus: 'pending',
+        ),
+      ],
+    );
+    await _pump(tester, repository, onCompleted: () => completed = true);
+    await tester.pumpAndSettle();
+
+    expect(find.text('This plan proposal expired.'), findsOneWidget);
+    expect(find.text('Approve plan'), findsNothing);
+    expect(find.byTooltip('Previous section'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Build a new plan'));
+    await tester.pump();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(repository.startCalls, 1);
+    expect(find.text('Your starting plan'), findsOneWidget);
+
+    final approve = find.widgetWithText(FilledButton, 'Approve plan');
+    await tester.ensureVisible(approve);
+    await tester.pumpAndSettle();
+    await tester.tap(approve);
+    await tester.pumpAndSettle();
+    expect(repository.respondedIds, ['p-2']);
+    expect(completed, isTrue);
+  });
+
+  testWidgets('a proposal that expires before approval offers a rebuild', (
+    tester,
+  ) async {
+    var completed = false;
+    final repository = _FakeOnboardingRepository(
+      draft: _draft('proposal'),
+      generations: [_succeeded],
+      staleResponses: 1,
+    );
+    await _pump(tester, repository, onCompleted: () => completed = true);
+    await tester.pumpAndSettle();
+
+    final approve = find.widgetWithText(FilledButton, 'Approve plan');
+    await tester.ensureVisible(approve);
+    await tester.pumpAndSettle();
+    await tester.tap(approve);
+    await tester.pumpAndSettle();
+    expect(completed, isFalse);
+    expect(find.text('This plan proposal expired.'), findsOneWidget);
+    expect(find.byTooltip('Previous section'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Build a new plan'));
+    await tester.pump();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.text('Your starting plan'), findsOneWidget);
+    final again = find.widgetWithText(FilledButton, 'Approve plan');
+    await tester.ensureVisible(again);
+    await tester.pumpAndSettle();
+    await tester.tap(again);
+    await tester.pumpAndSettle();
+    expect(completed, isTrue);
+  });
+
+  test('generation status reads an expired proposal as not reviewable', () {
+    final expired = OnboardingGeneration.fromJson({
+      'generation_id': 'gen-1',
+      'status': 'succeeded',
+      'proposal_id': 'p-1',
+      'proposal_status': 'expired',
+      'proposal_expires_at': '2026-09-25T10:00:00Z',
+    })!;
+    expect(expired.proposalExpired, isTrue);
+    expect(expired.readyForReview, isFalse);
+    // An older server still says pending; the expiry time decides.
+    final lapsed = OnboardingGeneration.fromJson({
+      'generation_id': 'gen-1',
+      'status': 'succeeded',
+      'proposal_id': 'p-1',
+      'proposal_status': 'pending',
+      'proposal_expires_at': '2026-09-25T10:00:00Z',
+    })!;
+    expect(lapsed.readyForReview, isFalse);
+    final fresh = OnboardingGeneration.fromJson({
+      'generation_id': 'gen-1',
+      'status': 'succeeded',
+      'proposal_id': 'p-1',
+      'proposal_status': 'pending',
+      'proposal_expires_at': DateTime.now()
+          .add(const Duration(days: 3))
+          .toUtc()
+          .toIso8601String(),
+    })!;
+    expect(fresh.readyForReview, isTrue);
+  });
+
   testWidgets('under-18 birth years are refused', (tester) async {
     await _pump(
       tester,
@@ -413,13 +567,21 @@ class _FakeOnboardingRepository implements OnboardingRepository {
     this.draft,
     List<OnboardingGeneration> generations = const [],
     this.missing,
+    this.infeasible,
+    this.staleResponses = 0,
   }) : _generations = [...generations];
 
   final OnboardingDraft? draft;
   final List<OnboardingGeneration> _generations;
   final List<String>? missing;
+  final List<String>? infeasible;
+
+  /// How many responses fail as stale before they succeed.
+  int staleResponses;
   Map<String, dynamic>? savedPayload;
+  int startCalls = 0;
   final responses = <String>[];
+  final respondedIds = <String>[];
   final notes = <String?>[];
 
   OnboardingGeneration? _next() => _generations.isEmpty
@@ -456,7 +618,9 @@ class _FakeOnboardingRepository implements OnboardingRepository {
 
   @override
   Future<OnboardingGeneration> startGeneration() async {
+    startCalls++;
     if (missing != null) throw OnboardingAnswersIncomplete(missing!);
+    if (infeasible != null) throw OnboardingPlanInfeasible(infeasible!);
     return _next() ?? _running;
   }
 
@@ -518,7 +682,12 @@ class _FakeOnboardingRepository implements OnboardingRepository {
 
   @override
   Future<void> respond(String proposalId, String action, {String? note}) async {
+    if (staleResponses > 0) {
+      staleResponses--;
+      throw const OnboardingProposalStale();
+    }
     responses.add(action);
+    respondedIds.add(proposalId);
     notes.add(note);
   }
 }

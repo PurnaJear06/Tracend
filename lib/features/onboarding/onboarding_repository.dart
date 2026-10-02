@@ -21,6 +21,7 @@ class OnboardingGeneration {
     required this.status,
     this.proposalId,
     this.proposalStatus,
+    this.proposalExpiresAt,
     this.errorCode,
   });
 
@@ -30,14 +31,27 @@ class OnboardingGeneration {
   final String status;
   final String? proposalId;
   final String? proposalStatus;
+
+  /// When the proposal stops being answerable (seven days after it was made).
+  final DateTime? proposalExpiresAt;
   final String? errorCode;
 
   bool get running => status == 'running';
+
+  /// Finished, but its proposal expired before the athlete answered it.
+  /// The server reports this; the expiry time also catches an older server.
+  bool get proposalExpired =>
+      status == 'succeeded' &&
+      (proposalStatus == 'expired' ||
+          (proposalStatus == 'pending' &&
+              proposalExpiresAt != null &&
+              !proposalExpiresAt!.isAfter(DateTime.now())));
 
   /// Finished with a proposal the athlete has not answered yet.
   bool get readyForReview =>
       status == 'succeeded' &&
       proposalId != null &&
+      !proposalExpired &&
       (proposalStatus == null || proposalStatus == 'pending');
 
   static OnboardingGeneration? fromJson(Object? value) {
@@ -50,6 +64,9 @@ class OnboardingGeneration {
       status: status,
       proposalId: value['proposal_id'] as String?,
       proposalStatus: value['proposal_status'] as String?,
+      proposalExpiresAt: DateTime.tryParse(
+        value['proposal_expires_at'] as String? ?? '',
+      ),
       errorCode: value['error_code'] as String?,
     );
   }
@@ -60,6 +77,21 @@ class OnboardingAnswersIncomplete implements Exception {
   const OnboardingAnswersIncomplete(this.missing);
 
   final List<String> missing;
+}
+
+/// No safe plan fits these answers (for example, the equipment and the
+/// movements to avoid leave a training day empty). [change] names the answers
+/// that decide it; retrying unchanged answers gives the same result.
+class OnboardingPlanInfeasible implements Exception {
+  const OnboardingPlanInfeasible(this.change);
+
+  final List<String> change;
+}
+
+/// The proposal can no longer be answered: it expired, or a newer build
+/// replaced it. The athlete builds a fresh one from the same answers.
+class OnboardingProposalStale implements Exception {
+  const OnboardingProposalStale();
 }
 
 class ProposalExercise {
@@ -106,6 +138,8 @@ class ProposalCalculation {
     required this.tdeeKcal,
     required this.calorieRangeKcal,
     required this.floorApplied,
+    required this.ceilingKcal,
+    required this.ceilingApplied,
   });
 
   final List<int> bmrKcal;
@@ -113,6 +147,8 @@ class ProposalCalculation {
   final List<int> tdeeKcal;
   final List<int> calorieRangeKcal;
   final bool floorApplied;
+  final int? ceilingKcal;
+  final bool ceilingApplied;
 }
 
 /// A 2.0 onboarding proposal: the exact plan that approval activates.
@@ -226,6 +262,8 @@ class OnboardingProposal {
               tdeeKcal: _ints(calculation['tdee_kcal']),
               calorieRangeKcal: _ints(calculation['calorie_range_kcal']),
               floorApplied: calculation['floor_applied'] == true,
+              ceilingKcal: (calculation['ceiling_kcal'] as num?)?.toInt(),
+              ceilingApplied: calculation['ceiling_applied'] == true,
             )
           : null,
       rationale: row['rationale'] as String,
@@ -253,12 +291,16 @@ abstract interface class OnboardingRepository {
   Future<void> saveGoal(String goal);
 
   /// Starts (or returns) the plan generation for the saved draft.
-  /// Throws [OnboardingAnswersIncomplete] when answers are missing.
+  /// Throws [OnboardingAnswersIncomplete] when answers are missing and
+  /// [OnboardingPlanInfeasible] when no safe plan fits them.
   Future<OnboardingGeneration> startGeneration();
 
   /// The newest generation, or null when there is none.
   Future<OnboardingGeneration?> loadGeneration();
   Future<OnboardingProposal> loadProposal(String proposalId);
+
+  /// Throws [OnboardingProposalStale] when the proposal can no longer be
+  /// answered; nothing was activated.
   Future<void> respond(String proposalId, String action, {String? note});
 }
 
@@ -382,14 +424,15 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
       return generation;
     } on FunctionException catch (error) {
       final details = error.details;
-      if (error.status == 422 &&
-          details is Map &&
-          details['error'] == 'onboarding_answers_incomplete') {
-        throw OnboardingAnswersIncomplete(
-          (details['missing'] as List? ?? const [])
-              .whereType<String>()
-              .toList(),
-        );
+      if (error.status == 422 && details is Map) {
+        List<String> strings(Object? value) =>
+            (value as List? ?? const []).whereType<String>().toList();
+        if (details['error'] == 'onboarding_answers_incomplete') {
+          throw OnboardingAnswersIncomplete(strings(details['missing']));
+        }
+        if (details['error'] == 'onboarding_plan_infeasible') {
+          throw OnboardingPlanInfeasible(strings(details['change']));
+        }
       }
       rethrow;
     } on TimeoutException {
@@ -420,13 +463,23 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
 
   @override
   Future<void> respond(String proposalId, String action, {String? note}) async {
-    await _client.rpc(
-      'respond_to_onboarding_proposal_v2',
-      params: {
-        'proposal_id': proposalId,
-        'response_action': action,
-        'revision_note': note,
-      },
-    );
+    final Object? result;
+    try {
+      result = await _client.rpc(
+        'respond_to_onboarding_proposal_v2',
+        params: {
+          'proposal_id': proposalId,
+          'response_action': action,
+          'revision_note': note,
+        },
+      );
+    } on PostgrestException catch (error) {
+      // 55000: no longer pending (expired, or replaced by a newer build).
+      if (error.code == '55000') throw const OnboardingProposalStale();
+      rethrow;
+    }
+    if (result is Map && result['status'] == 'expired') {
+      throw const OnboardingProposalStale();
+    }
   }
 }

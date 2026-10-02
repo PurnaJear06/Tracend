@@ -145,7 +145,9 @@ The app since 2026-10:
 Eligibility → AI coaching → Path → Goal
   → About you (sex, birth year, height, weight, optional target weight, daily activity)
   → Schedule (weekday chips, up to six; session length)
-  → Equipment (chips; none = bodyweight) → Food & limits (+ current plan if experienced)
+  → Equipment (chips; none = bodyweight)
+  → Food & limits (diet; movements to avoid as chips; other limitations; + current plan if
+    experienced)
   → Review → Build my plan → Plan (approve, request changes, or reject)
 ```
 
@@ -154,7 +156,13 @@ Eligibility → AI coaching → Path → Goal
   - a running generation keeps waiting;
   - a finished proposal opens;
   - a failed one offers **Try again**;
-  - an answered one returns to Review.
+  - an answered one returns to Review;
+  - an expired one (proposals last seven days), or one that expires while the athlete answers it,
+    shows **This plan proposal expired.** with **Build a new plan** and **Back to review**.
+- **Movements to avoid** never appear in the plan. An athlete who wrote a limitation in an older
+  build is asked to choose them (or none) before building.
+- **Answers no safe plan fits** (for example, bodyweight only while avoiding every pushing and
+  pulling movement) open the step to change, with what to change; nothing is built.
 - **Request changes** asks "What should change?" and sends the note with the next build.
 - **Sign out** stays available on every step.
 - A draft from an older build continues at **About you**.

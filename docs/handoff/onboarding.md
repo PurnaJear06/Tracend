@@ -161,7 +161,10 @@ Branch `claude/onboarding-ai-app`, stacked on PR 2. It needs PR 2 deployed first
   Food & limits → Review → Plan.
 - **The draft payload:**
   - New keys: `sex`, `birth_year`, `height_cm`, `weight_kg`, `target_weight_kg`,
-    `daily_activity`, `training_weekdays`, `equipment_items` and `revision_note`.
+    `daily_activity`, `training_weekdays`, `equipment_items`, `avoid_patterns` and
+    `revision_note`.
+  - `avoid_patterns` is written only once the athlete has passed Food & limits, so an older
+    draft is never read as "nothing to avoid".
   - The old keys keep their types (`training_days` int, `equipment` string).
 - **Older drafts:**
   - `context` maps to About you.
@@ -171,6 +174,10 @@ Branch `claude/onboarding-ai-app`, stacked on PR 2. It needs PR 2 deployed first
   - Running keeps waiting, and a finished proposal opens.
   - Failed shows **Try again**.
   - An answered or superseded generation returns to Review.
+  - An expired proposal, at reopen or when answering it (`OnboardingProposalStale`), shows
+    **Build a new plan** and **Back to review**; the same answers start a fresh generation.
+  - `onboarding_plan_infeasible` opens the step to change with a message
+    (`OnboardingPlanInfeasible`).
   - There is no state without a way out, and **Sign out** is in the app bar on every step.
 - **The proposal screen** (`onboarding_proposal_view.dart`) shows provenance, confidence, the
   assessment, every day with its exercises, the nutrition targets with how they were calculated,
@@ -183,14 +190,16 @@ Branch `claude/onboarding-ai-app`, stacked on PR 2. It needs PR 2 deployed first
   appears only when the server can't be reached.
 - The consent gate asks again when the server's current version changes.
 
-**Tests:** 13 onboarding widget tests:
+**Tests:** 17 onboarding widget tests and a generation-status test:
 
 - the full journey and payload;
 - the AI step: records only a changed answer, and shows the server notice;
 - old-draft restores (section `context`, and `review` without the new answers);
 - resume: running → proposal, answered → review, failed → Try again;
 - request changes with a note;
-- server-reported missing answers;
+- server-reported missing answers, including movements to avoid for an older draft;
+- infeasible answers opening their step;
+- an expired proposal at reopen and while approving, each rebuilt and approved;
 - under-18 refused;
 - Sign out.
 

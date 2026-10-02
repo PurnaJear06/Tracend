@@ -122,6 +122,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'kettlebells': 'Kettlebells',
     'bands': 'Resistance bands',
   };
+
+  /// Movement patterns the plan leaves out; the server enforces them.
+  static const _avoidChoices = <String, String>{
+    'squat': 'Squats',
+    'lunge': 'Lunges and step-ups',
+    'hinge': 'Deadlifts and hip hinges',
+    'horizontal_push': 'Bench press and push-ups',
+    'vertical_push': 'Overhead pressing',
+    'horizontal_pull': 'Rows',
+    'vertical_pull': 'Pull-ups and pulldowns',
+  };
   static const _maxTrainingDays = 6;
   static const _fieldLabels = {
     'sex': 'sex',
@@ -132,6 +143,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'training_weekdays': 'training days',
     'session_minutes': 'session length',
     'equipment_items': 'equipment',
+    'avoid_patterns': 'movements to avoid',
     'current_plan': 'current plan',
     'goal': 'goal',
     'path': 'starting point',
@@ -165,10 +177,18 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   Set<int> _weekdays = {1, 3, 5};
   int _sessionMinutes = 60;
   Set<String> _equipment = {};
+  Set<String> _avoid = {};
+
+  /// The movements-to-avoid question was answered (an empty set means none).
+  /// Drafts from older builds have not answered it.
+  bool _avoidAnswered = false;
 
   /// Plan step state: waiting for the server, or its generation failed.
   bool _generating = false;
   bool _generationFailed = false;
+
+  /// The proposal expired (or was replaced) before it was answered.
+  bool _proposalExpired = false;
 
   /// Bumped to stop a running poll (leaving the step, a new build).
   int _pollRun = 0;
@@ -227,6 +247,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       'equipment': _equipmentNote.text.trim(),
       'nutrition_context': _nutrition.text.trim(),
       'constraints': _constraints.text.trim(),
+      if (_avoidAnswered) 'avoid_patterns': _avoid.toList()..sort(),
       if (_path == 'experienced') 'current_plan': _currentPlan.text.trim(),
       if (_revisionNote.text.trim().isNotEmpty)
         'revision_note': _revisionNote.text.trim(),
@@ -283,6 +304,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         _nutrition.text =
             payload['nutrition_context'] as String? ?? _nutrition.text;
         _constraints.text = payload['constraints'] as String? ?? '';
+        final avoid = payload['avoid_patterns'];
+        if (avoid is List) {
+          _avoidAnswered = true;
+          _avoid = avoid
+              .whereType<String>()
+              .where(_avoidChoices.containsKey)
+              .toSet();
+        }
         _currentPlan.text = payload['current_plan'] as String? ?? '';
         _revisionNote.text = payload['revision_note'] as String? ?? '';
         var restored = _sectionKeys.indexOf(draft.currentSection);
@@ -317,6 +346,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     try {
       final generation = await widget.repository.loadGeneration();
       if (!mounted) return;
+      if (generation != null && generation.proposalExpired) {
+        _showProposalExpired();
+        return;
+      }
       if (generation == null ||
           generation.status == 'superseded' ||
           (generation.status == 'succeeded' && !generation.readyForReview)) {
@@ -338,6 +371,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _generationFailed = true;
   });
 
+  void _showProposalExpired() => setState(() {
+    _proposal = null;
+    _generating = false;
+    _generationFailed = false;
+    _proposalExpired = true;
+    _error = null;
+    _step = _proposalStep;
+  });
+
   /// Polls the generation until it has a proposal, fails, or takes too long.
   Future<void> _follow(OnboardingGeneration first) async {
     final run = ++_pollRun;
@@ -346,6 +388,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     try {
       while (true) {
         if (!mounted || run != _pollRun) return;
+        if (generation.proposalExpired) {
+          _showProposalExpired();
+          return;
+        }
         if (generation.readyForReview) {
           final proposal = await widget.repository.loadProposal(
             generation.proposalId!,
@@ -379,6 +425,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _error = null;
       _proposal = null;
       _generationFailed = false;
+      _proposalExpired = false;
     });
     try {
       await widget.repository.saveDraft(
@@ -400,7 +447,28 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       setState(() {
         _saving = false;
         _step = _stepForMissing(error.missing);
-        _error = 'Add your ${labels.join(', ')} to build your plan.';
+        _error =
+            error.missing.length == 1 && error.missing.first == 'avoid_patterns'
+            ? 'You wrote a limitation. Choose the movements your plan should leave out, or none, then build your plan.'
+            : 'Add your ${labels.join(', ')} to build your plan.';
+      });
+    } on OnboardingPlanInfeasible catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _step = error.change.contains('avoid_patterns')
+            ? _foodStep
+            : _stepForMissing(error.change);
+        _error = switch (_step) {
+          _scheduleStep =>
+            'Tracend could not fit a safe plan into these sessions. Choose longer sessions, then build again.',
+          _aboutStep =>
+            'Tracend could not set safe nutrition targets from these answers. Check your weight and daily activity, then build again.',
+          _foodStep =>
+            'With your equipment and the movements you avoid, some training days would have no exercise. Avoid fewer movements or add equipment, then build again.',
+          _ =>
+            'With this equipment, some training days would have no exercise. Add equipment, then build again.',
+        };
       });
     } catch (e) {
       debugPrint('Non-critical error: $e');
@@ -456,6 +524,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         _aiRecorded = _aiChoice;
       }
       if (_step == _goalStep) await widget.repository.saveGoal(_goal);
+      if (_step == _foodStep) _avoidAnswered = true;
       final next = _step + 1;
       await widget.repository.saveDraft(
         path: _path,
@@ -542,6 +611,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             ? 'Proposal rejected. Your answers are unchanged.'
             : 'Change your answers if needed, then build the plan again.';
       });
+    } on OnboardingProposalStale {
+      if (mounted) _showProposalExpired();
     } catch (e) {
       debugPrint('Non-critical error: $e');
       setState(() {
@@ -568,6 +639,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     setState(() {
       _generating = false;
       _generationFailed = false;
+      _proposalExpired = false;
       _error = null;
       _step = _step == _proposalStep ? _reviewStep : _step - 1;
     });
@@ -630,7 +702,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                       : const Duration(milliseconds: 220),
                   child: KeyedSubtree(
                     key: ValueKey(
-                      '$_step-${_proposal?.id}-$_generating-$_generationFailed',
+                      '$_step-${_proposal?.id}-$_generating-$_generationFailed-$_proposalExpired',
                     ),
                     child: _stepBody(),
                   ),
@@ -1041,10 +1113,34 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         'Diet pattern, allergies, dislikes, meal schedule',
       ),
       const SizedBox(height: TracendSpacing.md),
+      _label('Movements to avoid'),
+      Text(
+        'Your plan never includes these. Leave all off if none.',
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      const SizedBox(height: TracendSpacing.xs),
+      Wrap(
+        spacing: TracendSpacing.xs,
+        runSpacing: TracendSpacing.xs,
+        children: _avoidChoices.entries
+            .map(
+              (entry) => FilterChip(
+                label: Text(entry.value),
+                selected: _avoid.contains(entry.key),
+                onSelected: (on) => setState(
+                  () => _avoid = on
+                      ? {..._avoid, entry.key}
+                      : ({..._avoid}..remove(entry.key)),
+                ),
+              ),
+            )
+            .toList(),
+      ),
+      const SizedBox(height: TracendSpacing.md),
       _field(
         _constraints,
-        'Limitations or dislikes',
-        'Optional: exercises that hurt or you dislike',
+        'Other limitations or dislikes',
+        'Optional: anything else your coach should know',
         required: false,
       ),
       if (_path == 'experienced') ...[
@@ -1119,6 +1215,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                           .map((item) => _equipmentChoices[item]!)
                           .join(', '),
               ),
+              if (_avoid.isNotEmpty) ...[
+                const Divider(height: TracendSpacing.xl),
+                _ReviewRow(
+                  'Avoid',
+                  _avoidChoices.entries
+                      .where((entry) => _avoid.contains(entry.key))
+                      .map((entry) => entry.value)
+                      .join(', '),
+                ),
+              ],
               if (_path == 'experienced') ...[
                 const Divider(height: TracendSpacing.xl),
                 _ReviewRow('Keep', _currentPlan.text),
@@ -1154,6 +1260,25 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         onApprove: () => _respond('accept'),
         onRequestRevision: _requestRevision,
         onReject: () => _respond('reject'),
+      );
+    }
+    if (_proposalExpired) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _heading(
+            'This plan proposal expired.',
+            'Proposals last seven days, so the plan you approve matches your current answers. Your answers are saved; build a fresh plan from them.',
+          ),
+          FilledButton(
+            onPressed: _saving ? null : _buildPlan,
+            child: const Text('Build a new plan'),
+          ),
+          TextButton(
+            onPressed: _saving ? null : _back,
+            child: const Text('Back to review'),
+          ),
+        ],
       );
     }
     if (_generationFailed) {

@@ -174,9 +174,12 @@ class OnboardingProposalView extends StatelessWidget {
     final floor = calc.floorApplied
         ? ' The range starts at Tracend\'s minimum for you, so weigh-ins will show whether it needs to move.'
         : '';
+    final ceiling = calc.ceilingApplied && calc.ceilingKcal != null
+        ? ' Your estimate is above ${calc.ceilingKcal} kcal, the most Tracend sets, so the range is capped there.'
+        : '';
     return 'Resting energy ${_range(calc.bmrKcal)} kcal × activity ${calc.activityFactor} '
         'plus training ≈ ${_range(calc.tdeeKcal)} kcal to maintain. '
-        'For your goal Tracend allows ${_range(calc.calorieRangeKcal)} kcal.$floor';
+        'For your goal Tracend allows ${_range(calc.calorieRangeKcal)} kcal.$floor$ceiling';
   }
 }
 
