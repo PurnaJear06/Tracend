@@ -39,7 +39,13 @@ movements to avoid on the profile for the Coach; C adds the optional Apple Healt
 time zone stored); D fixes onboarding's remaining flaws (draft
 restore that could overwrite answers, duplicate consent records, review with Edit, steppers,
 2x-text layout, reject confirmation, a "You're set" screen, the profile's onboarding answers). Evals run
-through NaraRouter only (owner's decision). See
+through NaraRouter only (owner's decision). All four merged and deployed 2026-10-02 (c35946c) and
+the app is installed. On the owner's fresh account the AI plan worked (thinking, 38 s) but felt
+generic, so a **coach-quality batch** of three PRs follows: (1) coach intake — training years,
+barbell top sets turned into starting loads, up to two focus muscles with weekly set minimums,
+0–3 follow-up questions from the coach, and Apple Health usual months against the last 28 days
+(`onboarding-policy-v2`, in review); (2) an owner-only physique check on progress photos; (3)
+calibration and a stale-safe re-plan from two weeks of logged sets. See
 [`docs/handoff/onboarding.md`](./handoff/onboarding.md).
 
 ## Shipped baseline

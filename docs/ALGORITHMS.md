@@ -458,9 +458,9 @@ general = change_review_allowed  if training_eligible OR nutrition_eligible
 | Daily metrics        | `feature_engine_version` | `daily-v2`  |
 | Daily scoring JSON   | `schema_version`       | `2.2`        |
 | Eligibility          | `policy_version`       | `eligibility-v1` |
-| Training hub RPC     | `schema_version`       | `1.4`        |
-| Daily brief RPC      | `schema_version`       | `1.5`        |
-| Onboarding plan      | `policy_version`       | `onboarding-policy-v1` |
+| Training hub RPC     | `schema_version`       | `1.5`        |
+| Daily brief RPC      | `schema_version`       | `1.6`        |
+| Onboarding plan      | `policy_version`       | `onboarding-policy-v2` |
 | Exercise catalog     | `catalog_version`      | `catalog-v1` |
 | Onboarding proposal  | `schema_version`       | `2.0`        |
 
@@ -476,7 +476,7 @@ general = change_review_allowed  if training_eligible OR nutrition_eligible
    - Entry in `docs/ALGORITHMS.md` (this file)
 5. No silent algorithm changes. Version bump in code must match version in constraint.
 
-## 9. Onboarding Plan Policy (`onboarding-policy-v1`, 2026-10)
+## 9. Onboarding Plan Policy (`onboarding-policy-v2`, 2026-10)
 
 Code: `supabase/functions/_shared/onboarding/policy.ts`. An onboarding plan, from a model or from
 Tracend's rules, must stay inside these ranges. `plan_contract.ts` rejects it otherwise. The ranges
@@ -606,4 +606,61 @@ Code: `supabase/functions/_shared/onboarding/health_summary.ts`.
 - **Steps to daily activity** (shared with the app's About you step): under 5,000 mostly sitting;
   5,000–7,499 some standing; 7,500 and over mostly standing (Tudor-Locke step bands). Steps never
   suggest physical labour.
+- **Short sleep note:** when the usual months have enough sleep (below), the note says whether the
+  short sleep is the athlete's usual or below it.
+
+### Coach intake (`onboarding-policy-v2`, 2026-10)
+
+Code: `strength.ts`, `policy.ts`, `health_history.ts`, `questions.ts` in
+`supabase/functions/_shared/onboarding/`.
+
+- **Training years** (experienced path): under 1, 1–2, 3–5, over 5. Under a year keeps the beginner
+  limits; older drafts without the answer keep the experience they were built with. Years never
+  raise a volume limit: someone back after a long break has the years but not the work capacity.
+- **Reported top sets:** barbell bench press, back squat, deadlift, overhead press and row only, as
+  the load on the bar × reps (1–15) with 0–4 reps left. Dumbbell, cable, machine and pull-up loads
+  wait until their load basis (per hand, assistance, stack increments) is represented.
+- **One-rep max:** Epley with reps in reserve, `load × (1 + (reps + reps_left) / 30)`, to 0.5 kg.
+- **Starting load** for an exercise that is a reported lift:
+  `e1RM / (1 + (rep_max + (10 − target_RPE)) / 30) × 0.95`, rounded **down** to 2.5 kg; none below
+  an empty 20 kg bar. Deterministic code adds it after validation; the model never writes a load.
+- **Ratios** (row ÷ bench, deadlift ÷ squat) are passed to the model only for pairs the athlete
+  reported, as hints. Code states no norm: published ratio norms vary with build and technique,
+  so no band is hard-coded.
+- **Focus muscles** (0–2, the catalog's target muscles): each gets a weekly-set minimum of
+  `min(10, floor(set budget per session × days × 0.3 ÷ focus muscles))`, never above the maximum.
+  Volume counts on the catalog's first muscle only, as the maximum does. Prioritising one or two
+  muscles is how Alpha Progression, Dr. Muscle and MacroFactor specialise; volume is the main
+  hypertrophy lever (Pelland 2025) and exercise order does not change growth (Nunes 2021), so the
+  plan moves sets, not limits.
+- **Feasible minimum:** the rules plan fills the focus muscles first by adding sets, then an
+  exercise, then by swapping an accessory aimed at another muscle, inside every limit.
+  `policiesFor` lowers each minimum to what that reached, so a valid plan always exists (Deno
+  sweep: every schedule × 30/60/90 minutes × equipment set × 0, 1 or 2 focus muscles).
+- **Follow-up questions:** 0–3, each in one allowed topic (split history, recovery between
+  sessions, a stalled lift, exercise preference, schedule flexibility, daily eating routine), up
+  to 160 characters, optionally 2–4 quick answers. Injury, pain and medical questions are refused.
+  Stored per hash of the answers and Apple Health data, so a retry never asks the model again and
+  an edited answer makes earlier follow-up answers stale.
+
+### Usual months (2026-10)
+
+Code: `health_history.ts` (server) and `lib/features/health/health_baseline.dart` (app).
+
+- **Window:** the 11 completed calendar months before the athlete's current month; the month in
+  progress never counts. The app sends one row per month: workouts, strength workouts
+  (`TRADITIONAL_` and `FUNCTIONAL_STRENGTH_TRAINING`), workout minutes, nights of sleep and their
+  average, weigh-in days and their average, days with any data, and the first and last date with
+  data. No raw sample leaves the phone. During onboarding the follow-up questions and the plan wait
+  up to 30 s for the upload (retrying one that failed), because both are hashed with these months.
+- **Counted months:**
+  - strength: from the first month with any workout (earlier months may predate the watch);
+  - sleep: months with at least 20 nights;
+  - weight: months with at least 4 weigh-in days.
+- **Usual values** need at least 3 counted months: the median strength workouts a week, the mean
+  sleep, and the change between the first and last counted month's weight.
+- **Returning from a break:** usual strength at least 2 a week and the last 28 days under half of
+  it (none found lately counts as none, because the history proves workouts are readable). The
+  session set budget drops a fifth and the RPE ceiling 0.5 (`startLighter`) for the first block,
+  and a note says why.
 

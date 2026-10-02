@@ -69,6 +69,11 @@ class OnboardingProposalView extends StatelessWidget {
           '${proposal.workouts.length} ${proposal.workouts.length == 1 ? 'day' : 'days'} a week',
           style: text.titleMedium,
         ),
+        if (proposal.calculation?.priorityMinimums case final focus?
+            when focus.isNotEmpty) ...[
+          const SizedBox(height: TracendSpacing.xxs),
+          Text(focusLine(focus), style: text.bodyMedium),
+        ],
         const SizedBox(height: TracendSpacing.sm),
         for (final workout in proposal.workouts) ...[
           _WorkoutCard(workout: workout),
@@ -192,9 +197,29 @@ class OnboardingProposalView extends StatelessWidget {
     final health = calc.health == null
         ? ''
         : '\n\n${appleHealthLine(calc.health!)}';
+    final history = calc.history == null
+        ? ''
+        : '\n${usualMonthsLine(calc.history!)}';
     return 'Resting energy ${_range(calc.bmrKcal)} kcal × activity ${calc.activityFactor} '
         'plus training ≈ ${_range(calc.tdeeKcal)} kcal to maintain. '
-        'For your goal Tracend allows ${_range(calc.calorieRangeKcal)} kcal.$floor$ceiling$health';
+        'For your goal Tracend allows ${_range(calc.calorieRangeKcal)} kcal.$floor$ceiling$health$history';
+  }
+
+  /// "Focus: chest 10+ sets a week · shoulders 9+ sets a week."
+  static String focusLine(List<({String muscle, int sets})> focus) =>
+      'Focus: ${focus.map((item) => '${item.muscle} ${item.sets}+ sets a week').join(' · ')}.';
+
+  /// "Your usual months (11): strength 3.4 times a week · sleep 7 h 5 min."
+  static String usualMonthsLine(ProposalHealthHistory history) {
+    final parts = [
+      if (history.usualStrengthPerWeek case final strength?)
+        'strength ${_number(strength)} ${strength == 1 ? 'time' : 'times'} a week',
+      if (history.usualSleepMinutes case final sleep?)
+        'sleep ${sleep ~/ 60} h ${sleep % 60} min',
+    ];
+    return parts.isEmpty
+        ? 'Apple Health has ${history.months} earlier ${history.months == 1 ? 'month' : 'months'}, not enough to show your usual.'
+        : 'Your usual months (${history.months}): ${parts.join(' · ')}.';
   }
 
   /// "Apple Health, last 28 days: about 9,100 steps a day · 3 workouts a
@@ -254,6 +279,13 @@ class _WorkoutCard extends StatelessWidget {
                     ' · ${OnboardingProposalView.effortText(exercise.targetRpe)} · ${_rest(exercise.restSeconds)}',
                     style: text.bodySmall,
                   ),
+                  if (exercise.startLoadKg case final load?)
+                    Text(
+                      'Start at ${OnboardingProposalView._number(load)} kg',
+                      style: text.bodySmall?.copyWith(
+                        color: context.tracendColors.actionPrimary,
+                      ),
+                    ),
                   if (exercise.notes.isNotEmpty)
                     Text(exercise.notes, style: text.bodySmall),
                 ],

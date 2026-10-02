@@ -14,6 +14,7 @@ class PlannedExercise {
     required this.targetRpe,
     this.restSeconds = 90,
     this.notes = '',
+    this.targetLoadKg,
   });
   final int order;
   final String name;
@@ -23,6 +24,9 @@ class PlannedExercise {
   final num targetRpe;
   final int restSeconds;
   final String notes;
+
+  /// The starting load Tracend set from a reported top set; null when none.
+  final num? targetLoadKg;
 }
 
 class PlannedWorkout {
@@ -67,6 +71,7 @@ class PlannedWorkout {
             targetRpe: exercise['target_rpe'] as num? ?? 8,
             restSeconds: (exercise['rest_seconds'] as num? ?? 90).toInt(),
             notes: exercise['notes'] as String? ?? '',
+            targetLoadKg: exercise['target_load_kg'] as num?,
           );
         }).toList(),
       );
@@ -440,7 +445,7 @@ class SupabaseWorkoutRepository
         .select(
           'id,name,objective,estimated_minutes,preferred_weekday,'
           'training_plan_versions!inner(status),'
-          'planned_exercises(exercise_order,display_name_snapshot,set_count,rep_min,rep_max,target_rpe,rest_seconds,notes)',
+          'planned_exercises(exercise_order,display_name_snapshot,set_count,rep_min,rep_max,target_rpe,rest_seconds,notes,target_load_kg)',
         )
         .eq('training_plan_versions.status', 'active')
         .eq('preferred_weekday', weekday)
@@ -472,6 +477,7 @@ class SupabaseWorkoutRepository
               targetRpe: e['target_rpe'] as num,
               restSeconds: e['rest_seconds'] as int? ?? 90,
               notes: e['notes'] as String? ?? '',
+              targetLoadKg: e['target_load_kg'] as num?,
             ),
           )
           .toList(),

@@ -114,6 +114,9 @@ Since 2026-10, approval of an onboarding plan also writes the following, and onl
 - `nutrition_note`
 - `avoid_patterns` (movement patterns the athlete asked to avoid; read by the Coach) and
   `equipment_note`, since 2026-10-02
+- `training_years` (`under_1`, `1_2`, `3_5`, `over_5`), `priority_muscles` (at most 2) and
+  `strong_muscles` (at most 3), catalog target muscles, since the coach intake (2026-10); the Coach
+  reads them
 
 At the same time it writes the real `training_days` (ISO weekdays), `session_minutes`,
 `height_cm` and `experience_level`. Clients can write only the fields onboarding step 0 writes.
@@ -145,7 +148,10 @@ Rules:
   stored proposal; `persist_onboarding_proposal_v3` (and v2, which delegates to it) refuses an
   exercise with an avoided pattern.
 - **Apple Health:** the snapshot's `health` holds the 28-day summary used for the plan (or null),
-  so it is part of the snapshot hash: connecting Apple Health builds a new plan.
+  and `health_history` the usual months (or null), so both are part of the snapshot hash:
+  connecting Apple Health builds a new plan.
+- **Policy version:** the snapshot's `policy_version` (`onboarding-policy-v1` or `-v2`) is stored
+  as the feature snapshot's engine version.
 - **Telemetry:** `persist_onboarding_proposal_v3` adds the model call's thinking flag, latency,
   attempts, token counts and finish reason to the `onboarding.plan.generated` audit event.
 
@@ -254,7 +260,25 @@ expansion does not modify the approved version.
 Ordered prescriptions containing workout, catalog exercise and display snapshot, set count, rep
 range, target RPE or reps in reserve, optional load/progression rule, rest range, notes, and
 approved alternatives. `exercise_slug` (nullable, since 2026-10) references the catalog entry an onboarding plan
-chose. The generic seed and the imported plan have none.
+chose. The generic seed and the imported plan have none. `target_load_kg` (nullable, 0–2000, since
+the coach intake) is the starting load Tracend set from a reported barbell top set; the training
+hub (1.5) and daily brief (1.6) return it and the active workout pre-fills it.
+
+### `onboarding_questions`
+
+The coach's follow-up questions for one set of onboarding answers: user, `questions_hash` (the
+answers and Apple Health data they were asked for), up to 3 questions (allowed topic, text, quick
+answers), the reason none were asked, and the call's telemetry. `status` is `running` while one
+request asks the model (until `lease_expires_at`), then `ready`. Written only by the
+`onboarding-plan` function (`claim_onboarding_questions`, `store_onboarding_questions`,
+`release_onboarding_questions`; service role); the athlete reads their own. The answers live in the onboarding draft (`follow_ups`, `follow_ups_hash`).
+
+### `health_history_months`
+
+One row per user and completed calendar month, from the app (`save_health_history`): workouts,
+strength workouts, workout minutes, nights of sleep and their average, weigh-in days and their
+average, days with any data, and the first and last date with data. Only months before the
+athlete's current month, at most 12 back. Owner-read RLS; exported and deleted with the account.
 
 ### `workout_sessions`
 

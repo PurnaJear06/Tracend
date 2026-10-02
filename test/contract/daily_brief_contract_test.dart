@@ -522,4 +522,18 @@ void main() {
       });
     },
   );
+
+  group('Daily Brief contract — get_my_daily_brief v1.6 (starting loads)', () {
+    const fixture = 'daily_brief_v1_6.json';
+
+    test('today_workout exercises may carry a starting load', () {
+      final json = _loadFixtureJson(fixture);
+      expect(json['schema_version'], '1.6');
+      final workout = Map<String, dynamic>.from(json['today_workout'] as Map);
+      final exercise = Map<String, dynamic>.from(
+        (workout['exercises'] as List).first as Map,
+      );
+      expect(exercise['target_load_kg'], 82.5);
+    });
+  });
 }

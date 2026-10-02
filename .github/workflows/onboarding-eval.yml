@@ -1,6 +1,6 @@
 name: Onboarding Eval
 
-# Live onboarding plan evaluation with 12 synthetic athletes. On demand only and
+# Live onboarding plan evaluation with 13 synthetic athletes. On demand only and
 # not a required check. Run it before setting ONBOARDING_PLAN_MODEL_EVALUATED=true
 # for a provider or model: add the `onboarding-eval` label to a pull request or
 # use Run workflow on main.

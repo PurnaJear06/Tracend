@@ -15,6 +15,9 @@ import {
   generationLeaseSeconds,
   handleOnboardingPlan,
   type OnboardingStore,
+  type QuestionsClaim,
+  questionsLeaseSeconds,
+  type StoredQuestions,
 } from "./handler.ts";
 
 type EdgeRuntimeGlobal = { EdgeRuntime?: { waitUntil(work: Promise<unknown>): void } };
@@ -88,6 +91,67 @@ function supabaseStore(client: SupabaseClient, userId: string): OnboardingStore 
         })),
       };
     },
+    async loadHealthHistory(from, through) {
+      const { data, error } = await client.from("health_history_months")
+        .select(
+          "month,workouts,strength_workouts,workout_minutes,sleep_nights,sleep_minutes_avg,weight_days,weight_kg_avg,data_days",
+        )
+        .eq("user_id", userId).gte("month", from).lte("month", through);
+      if (error) throw error;
+      const optional = (value: unknown) =>
+        value === null || value === undefined ? null : Number(value);
+      return (data ?? []).map((row) => ({
+        month: String(row.month),
+        workouts: Number(row.workouts),
+        strength_workouts: Number(row.strength_workouts),
+        workout_minutes: Number(row.workout_minutes),
+        sleep_nights: Number(row.sleep_nights),
+        sleep_minutes_avg: optional(row.sleep_minutes_avg),
+        weight_days: Number(row.weight_days),
+        weight_kg_avg: optional(row.weight_kg_avg),
+        data_days: Number(row.data_days),
+      }));
+    },
+    async claimQuestions(questionsHash) {
+      const { data, error } = await client.rpc("claim_onboarding_questions", {
+        target_user_id: userId,
+        target_questions_hash: questionsHash,
+        lease_seconds: questionsLeaseSeconds,
+      });
+      if (error) throw error;
+      return data as QuestionsClaim;
+    },
+    async saveQuestions(questionsHash, stored) {
+      const { data, error } = await client.rpc("store_onboarding_questions", {
+        target_user_id: userId,
+        target_questions_hash: questionsHash,
+        target_questions: stored.questions,
+        target_skipped_reason: stored.skipped_reason,
+        target_metadata: stored.metadata,
+      });
+      if (error) throw error;
+      return data as StoredQuestions;
+    },
+    async releaseQuestions(questionsHash) {
+      const { error } = await client.rpc("release_onboarding_questions", {
+        target_user_id: userId,
+        target_questions_hash: questionsHash,
+      });
+      if (error) throw error;
+    },
+    async recordQuestionUsage(usage) {
+      const { error } = await client.rpc("record_ai_usage_event", {
+        target_user_id: userId,
+        run_purpose: "onboarding_questions",
+        run_provider: usage.provider,
+        run_model: usage.model,
+        run_input_units: usage.inputUnits,
+        run_output_units: usage.outputUnits,
+        run_estimated_cost_usd: usage.estimatedCostUsd,
+        run_latency_ms: usage.latencyMs,
+      });
+      if (error) throw error;
+    },
     consent() {
       return aiCoachingConsent(
         ((name, params) => client.rpc(name, params)) as ConsentRpc,
@@ -156,6 +220,9 @@ Deno.serve(async (request) => {
     throw e;
   }
   const runtime = (globalThis as EdgeRuntimeGlobal).EdgeRuntime;
+  // Older app builds send no body: they always ask for the plan.
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  const mode = body?.mode === "questions" ? "questions" : "plan";
   const sentry = (failureCode: string, fields: Record<string, unknown>) => ({
     functionName: "onboarding-plan",
     correlationId,
@@ -165,6 +232,7 @@ Deno.serve(async (request) => {
   });
   try {
     return await handleOnboardingPlan({
+      mode,
       store: supabaseStore(auth.serviceClient, auth.userId),
       resolution: () => resolveOnboardingModel(),
       currentYear: new Date().getUTCFullYear(),

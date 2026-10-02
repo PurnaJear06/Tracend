@@ -1,13 +1,15 @@
 import { type HealthSummary, startsLighter } from "./health_summary.ts";
+import { type HealthHistory, returningFromBreak } from "./health_history.ts";
 import type { DailyActivity, Goal, OnboardingAnswers, Sex } from "./answers.ts";
-import type { MovementPattern } from "./catalog.ts";
+import type { MovementPattern, Muscle } from "./catalog.ts";
 
-// onboarding-policy-v1: the safe ranges an onboarding plan must stay inside.
+// onboarding-policy-v2: the safe ranges an onboarding plan must stay inside.
 // Deterministic code computes them; the model chooses within them and its plan
 // is rejected outside them. Sources are in docs/ALGORITHMS.md ("Onboarding
-// plan policy").
+// plan policy"). v2 adds the focus-muscle minimums and the return-from-a-break
+// start; v1 plans stay valid as they were stored.
 
-export const onboardingPolicyVersion = "onboarding-policy-v1";
+export const onboardingPolicyVersion = "onboarding-policy-v2";
 
 /** Mifflin-St Jeor resting energy, kcal/day. */
 export function mifflinStJeor(
@@ -173,10 +175,22 @@ export type TrainingPolicy = Readonly<{
   requiredPatternGroups: readonly (readonly MovementPattern[])[];
   avoidPatterns: readonly MovementPattern[];
   /**
-   * Apple Health shows short sleep, so the first block keeps effort half an
-   * RPE point lower. Only this policy changes effort or volume limits.
+   * Apple Health shows short sleep or a break from lifting, so the first block
+   * keeps effort half an RPE point lower. Only this policy changes effort or
+   * volume limits.
    */
   startLighter: boolean;
+  /**
+   * Lifting much less than usual (health_history.ts): the session set budget
+   * is a fifth lower as well, so the first two weeks ease back in.
+   */
+  returningFromBreak: boolean;
+  /**
+   * The weekly sets each focus muscle must get, counted on the catalog's first
+   * muscle like the maximum. policiesFor lowers a minimum to what the athlete's
+   * equipment and schedule can hold, so a valid plan always exists.
+   */
+  priorityMinimums: readonly Readonly<{ muscle: Muscle; sets: number }>[];
 }>;
 
 const patternGroups: readonly (readonly MovementPattern[])[] = [
@@ -186,22 +200,54 @@ const patternGroups: readonly (readonly MovementPattern[])[] = [
   ["horizontal_pull", "vertical_pull"],
 ];
 
+/** The most weekly sets a focus muscle is guaranteed, before any cap. */
+export const priorityMinimumCeiling = 10;
+/** The share of the week's set budget the focus muscles may claim together. */
+export const priorityBudgetShare = 0.3;
+
+/**
+ * Weekly sets a focus muscle is guaranteed: a share of the week's set budget,
+ * split between the focus muscles, rounded down and never above the per-muscle
+ * maximum. Focus moves volume between muscles; it never raises a limit.
+ */
+export function priorityMinimumSets(
+  setBudgetPerSession: number,
+  days: number,
+  priorities: number,
+  maxWeeklySetsPerMuscle: number,
+): number {
+  if (priorities < 1) return 0;
+  const share = Math.floor(setBudgetPerSession * days * priorityBudgetShare / priorities);
+  return Math.min(priorityMinimumCeiling, share, maxWeeklySetsPerMuscle);
+}
+
 export function trainingPolicy(
   answers: OnboardingAnswers,
   health: HealthSummary | null = null,
+  history: HealthHistory | null = null,
 ): TrainingPolicy {
   const minutes = answers.sessionMinutes;
   const strength = answers.goal === "strength";
   const beginner = answers.experience === "beginner";
   const avoid: readonly MovementPattern[] = answers.avoidPatterns;
-  const lighter = startsLighter(health);
+  const returning = returningFromBreak(history, health);
+  const lighter = startsLighter(health) || returning;
   const rpeHigh = (beginner ? 8.5 : 9) - (lighter ? 0.5 : 0);
+  const fullBudget = Math.min(30, Math.floor(minutes / 3));
+  const setBudgetPerSession = returning ? Math.floor(fullBudget * 0.8) : fullBudget;
+  const maxWeeklySetsPerMuscle = beginner ? 12 : 20;
+  const minimum = priorityMinimumSets(
+    setBudgetPerSession,
+    answers.trainingWeekdays.length,
+    answers.priorityMuscles.length,
+    maxWeeklySetsPerMuscle,
+  );
   return {
     split: splitForDays(answers.trainingWeekdays.length),
     blockWeeks: [4, 8],
-    setBudgetPerSession: Math.min(30, Math.floor(minutes / 3)),
+    setBudgetPerSession,
     maxExercisesPerSession: Math.min(8, 2 + Math.floor(minutes / 15)),
-    maxWeeklySetsPerMuscle: beginner ? 12 : 20,
+    maxWeeklySetsPerMuscle,
     setsPerExercise: [1, 5],
     reps: [strength ? 3 : 6, 20],
     rpe: [7, rpeHigh],
@@ -212,6 +258,10 @@ export function trainingPolicy(
       .filter((group) => group.length > 0),
     avoidPatterns: avoid,
     startLighter: lighter,
+    returningFromBreak: returning,
+    priorityMinimums: minimum > 0
+      ? answers.priorityMuscles.map((muscle) => ({ muscle, sets: minimum }))
+      : [],
   };
 }
 

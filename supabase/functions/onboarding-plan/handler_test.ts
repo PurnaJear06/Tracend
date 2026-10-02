@@ -2,12 +2,17 @@ import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { catalogBySlug, exerciseCatalogV1 } from "../_shared/onboarding/catalog.ts";
 import { generateOnboardingProposal } from "../_shared/onboarding/generate.ts";
 import type { OnboardingProposalPayload } from "../_shared/onboarding/plan_contract.ts";
+import type { AiCoachingConsent } from "../_shared/ai_consent.ts";
+import type { OnboardingModelResolution } from "../_shared/providers/onboarding_plan_provider.ts";
 import {
   type GenerationClaim,
   type GenerationMetadata,
   handleOnboardingPlan,
   type HandlerDeps,
   type OnboardingStore,
+  questionsPollMs,
+  questionsWaitMs,
+  type StoredQuestions,
 } from "./handler.ts";
 
 const completeDraft = {
@@ -49,6 +54,11 @@ function store(overrides: Partial<OnboardingStore> & { claimAs?: GenerationClaim
     loadCatalog: () => Promise.resolve([...exerciseCatalogV1]),
     timezone: () => Promise.resolve("UTC"),
     loadHealth: () => Promise.resolve({ days: [], workouts: [] }),
+    loadHealthHistory: () => Promise.resolve([]),
+    claimQuestions: () => Promise.resolve({ started: true }),
+    saveQuestions: (_hash, stored) => Promise.resolve(stored),
+    releaseQuestions: () => Promise.resolve(),
+    recordQuestionUsage: () => Promise.resolve(),
     consent: () => Promise.resolve("granted"),
     budgetAvailable: () => Promise.resolve(true),
     recordUsage: () => Promise.resolve(),
@@ -70,6 +80,7 @@ const quiet = { info: () => {}, warn: () => {}, error: () => {} };
 async function run(fake: OnboardingStore, extra: Partial<HandlerDeps> = {}) {
   const work: Promise<void>[] = [];
   const response = await handleOnboardingPlan({
+    mode: "plan",
     store: fake,
     resolution: () => ({ kind: "rules", reason: "provider_mock" }),
     currentYear: 2026,
@@ -287,4 +298,257 @@ Deno.test("Apple Health is read for the athlete's own 28 days and changes the ha
   const again = withHealth(steps(10));
   await run(again.fake, { now: () => new Date("2026-10-02T21:00:00Z") });
   assertEquals(again.calls.claimedHashes[0], connected.calls.claimedHashes[0]);
+});
+
+Deno.test("the usual months are read for completed months only and change the hash", async () => {
+  const windows: [string, string][] = [];
+  const month = (start: string) => ({
+    month: start,
+    workouts: 16,
+    strength_workouts: 16,
+    workout_minutes: 960,
+    sleep_nights: 28,
+    sleep_minutes_avg: 430,
+    weight_days: 4,
+    weight_kg_avg: 68,
+    data_days: 29,
+  });
+  const withHistory = store({
+    loadHealthHistory: (from, through) => {
+      windows.push([from, through]);
+      return Promise.resolve(["2026-07-01", "2026-08-01", "2026-09-01"].map(month));
+    },
+  });
+  const none = store();
+  await run(none.fake);
+  await run(withHistory.fake);
+  assertEquals(windows[0], ["2025-11-01", "2026-09-01"]);
+  assert(none.calls.claimedHashes[0] !== withHistory.calls.claimedHashes[0]);
+  const training = withHistory.calls.persisted[0].proposal.training;
+  const calculation = training.calculation as {
+    health_history?: { usual_strength_per_week?: number };
+  };
+  assertEquals(calculation.health_history?.usual_strength_per_week, 3.6);
+  // Lifting about 3.6 times a week usually and nothing lately: a break.
+  assertEquals(
+    (training.calculation as { returning_from_break?: boolean }).returning_from_break,
+    true,
+  );
+});
+
+const questionsDraft = {
+  path: "experienced",
+  payload: {
+    ...completeDraft.payload,
+    current_plan: "Upper/lower 4 days",
+    training_years: "over_5",
+    priority_muscles: ["chest"],
+  },
+};
+
+const deepseek: OnboardingModelResolution = {
+  kind: "model",
+  config: {
+    provider: "deepseek",
+    model: "deepseek-flash",
+    url: "https://api.deepseek.com/v1/chat/completions",
+    apiKey: "test-key",
+    extraBody: {},
+    thinkingBody: {},
+    thinking: true,
+    price: { input: 0.3, output: 1.2 },
+  },
+};
+
+const oneQuestion = () =>
+  Promise.resolve({
+    questions: [{
+      category: "stalled_lift" as const,
+      question: "How often do you bench?",
+      choices: ["Once a week", "Twice a week"],
+    }],
+    usage: null,
+    skippedReason: null,
+  });
+
+/** Claims as the database does: the first request starts, later ones get its outcome. */
+function questionStore(overrides: Partial<OnboardingStore> = {}) {
+  const saved = new Map<string, StoredQuestions>();
+  const running = new Set<string>();
+  const released: string[] = [];
+  const fake = store({
+    loadDraft: () => Promise.resolve(questionsDraft),
+    claimQuestions: (hash) => {
+      const stored = saved.get(hash);
+      if (stored) return Promise.resolve({ started: false, stored });
+      if (running.has(hash)) return Promise.resolve({ started: false });
+      running.add(hash);
+      return Promise.resolve({ started: true });
+    },
+    saveQuestions: (hash, stored) => {
+      running.delete(hash);
+      saved.set(hash, stored);
+      return Promise.resolve(stored);
+    },
+    releaseQuestions: (hash) => {
+      running.delete(hash);
+      released.push(hash);
+      return Promise.resolve();
+    },
+    ...overrides,
+  }).fake;
+  return { fake, saved, running, released };
+}
+
+Deno.test("questions are asked once per set of answers and stored under its hash", async () => {
+  const { fake } = questionStore();
+  let asked = 0;
+  const askQuestions = () => {
+    asked++;
+    return oneQuestion();
+  };
+  const first = await run(fake, { mode: "questions", resolution: () => deepseek, askQuestions });
+  assertEquals(first.response.status, 200);
+  assertEquals(first.body.questions.length, 1);
+  assertEquals(first.backgroundRuns, 0);
+  const again = await run(fake, { mode: "questions", resolution: () => deepseek, askQuestions });
+  assertEquals(again.body, first.body);
+  assertEquals(asked, 1);
+});
+
+Deno.test("an overlapping request waits for the first one's questions instead of asking", async () => {
+  const { fake } = questionStore();
+  let asked = 0;
+  let finish = () => {};
+  const askQuestions = () => {
+    asked++;
+    return new Promise<Awaited<ReturnType<typeof oneQuestion>>>((done) => {
+      finish = () => oneQuestion().then(done);
+    });
+  };
+  // Whichever request claims first asks; the other polls until it is done.
+  let polls = 0;
+  const sleep = () => {
+    if (++polls >= 3) finish();
+    return new Promise<void>((done) => setTimeout(done, 0));
+  };
+  const deps = { mode: "questions" as const, resolution: () => deepseek, askQuestions, sleep };
+  const [a, b] = await Promise.all([run(fake, deps), run(fake, deps)]);
+  assertEquals(asked, 1);
+  assertEquals(b.body, a.body);
+  assertEquals(b.body.questions.length, 1);
+});
+
+Deno.test("a claim held past the wait answers without questions and stores nothing", async () => {
+  const { fake, saved } = questionStore({
+    claimQuestions: () => Promise.resolve({ started: false }),
+  });
+  let polls = 0;
+  const { body } = await run(fake, {
+    mode: "questions",
+    resolution: () => deepseek,
+    askQuestions: () => {
+      throw new Error("no call expected");
+    },
+    sleep: () => {
+      polls++;
+      return Promise.resolve();
+    },
+  });
+  assertEquals(body.questions, []);
+  assertEquals(body.skipped_reason, "questions_in_progress");
+  assertEquals(polls, questionsWaitMs / questionsPollMs);
+  assertEquals(saved.size, 0);
+});
+
+Deno.test("no consent, no budget or no model ask nothing and are never stored", async () => {
+  const { fake, saved } = questionStore();
+  let consent: AiCoachingConsent = "not_granted";
+  let budget = true;
+  const ask = (resolution: OnboardingModelResolution = deepseek) =>
+    run(
+      {
+        ...fake,
+        consent: () => Promise.resolve(consent),
+        budgetAvailable: () => Promise.resolve(budget),
+      },
+      { mode: "questions", resolution: () => resolution, askQuestions: oneQuestion },
+    );
+  assertEquals((await ask()).body.skipped_reason, "ai_consent_not_granted");
+  consent = "granted";
+  budget = false;
+  assertEquals((await ask()).body.skipped_reason, "ai_usage_limit");
+  budget = true;
+  assertEquals(
+    (await ask({ kind: "rules", reason: "model_not_evaluated" })).body.skipped_reason,
+    "model_not_evaluated",
+  );
+  assertEquals(saved.size, 0);
+  // Consent granted, budget back, model ready: the same answers get questions.
+  assertEquals((await ask()).body.questions.length, 1);
+  assertEquals(saved.size, 1);
+});
+
+Deno.test("a failed question call releases its claim, so it may be asked again", async () => {
+  const { fake, saved, running, released } = questionStore();
+  const { body } = await run(fake, {
+    mode: "questions",
+    resolution: () => deepseek,
+    askQuestions: () =>
+      Promise.resolve({ questions: [], usage: null, skippedReason: "provider_timeout" }),
+  });
+  assertEquals(body.questions, []);
+  assertEquals(body.skipped_reason, "provider_timeout");
+  assertEquals(saved.size, 0);
+  assertEquals(released.length, 1);
+  assertEquals(running.size, 0);
+  const retry = await run(fake, {
+    mode: "questions",
+    resolution: () => deepseek,
+    askQuestions: oneQuestion,
+  });
+  assertEquals(retry.body.questions.length, 1);
+});
+
+Deno.test("follow-up answers reach the plan only for the answers they were asked for", async () => {
+  const hashes: string[] = [];
+  const ask = store({
+    loadDraft: () => Promise.resolve(questionsDraft),
+    saveQuestions: (hash, value) => {
+      hashes.push(hash);
+      return Promise.resolve(value);
+    },
+  });
+  await run(ask.fake, {
+    mode: "questions",
+    resolution: () => deepseek,
+    askQuestions: () => Promise.resolve({ questions: [], usage: null, skippedReason: null }),
+  });
+  const followUps = [{
+    category: "stalled_lift",
+    question: "How often do you bench?",
+    answer: "Once a week",
+  }];
+  const snapshots: Record<string, unknown>[] = [];
+  const planWith = (payload: Record<string, unknown>) =>
+    store({
+      loadDraft: () => Promise.resolve({ ...questionsDraft, payload }),
+      persist: (_id, _hash, snapshot) => {
+        snapshots.push(snapshot);
+        return Promise.resolve("stored");
+      },
+    }).fake;
+  await run(
+    planWith({ ...questionsDraft.payload, follow_ups: followUps, follow_ups_hash: hashes[0] }),
+  );
+  // An earlier answer changed after the questions: the follow-ups are stale.
+  await run(planWith({
+    ...questionsDraft.payload,
+    session_minutes: 60,
+    follow_ups: followUps,
+    follow_ups_hash: hashes[0],
+  }));
+  const answers = (index: number) => snapshots[index].answers as { follow_ups: unknown[] };
+  assertEquals(answers(0).follow_ups.length, 1);
+  assertEquals(answers(1).follow_ups, []);
 });

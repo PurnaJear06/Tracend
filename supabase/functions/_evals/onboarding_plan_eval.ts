@@ -15,9 +15,10 @@
 // .tooling/onboarding-evals/<timestamp>.
 //
 // Gate: at least 90% of athletes get a valid model plan (initial or repaired)
-// without falling back to the rules plan, and, for a direct provider, p95
-// latency under 60 s (120 s with thinking). Exits non-zero when the gate
-// fails. Synthetic data only.
+// without falling back to the rules plan, every valid plan for an athlete with
+// focus muscles names one of them in its assessment, and, for a direct
+// provider, p95 latency under 60 s (120 s with thinking). Exits non-zero when
+// the gate fails. Synthetic data only.
 
 import { type OnboardingAnswers } from "../_shared/onboarding/answers.ts";
 import { exerciseCatalogV1 } from "../_shared/onboarding/catalog.ts";
@@ -29,6 +30,12 @@ import {
   shiftDate,
   summarizeHealth,
 } from "../_shared/onboarding/health_summary.ts";
+import {
+  type HealthHistory,
+  type HealthMonth,
+  monthStart,
+  summarizeHealthHistory,
+} from "../_shared/onboarding/health_history.ts";
 import {
   type OnboardingModelConfig,
   type OnboardingPlanProviderName,
@@ -54,6 +61,12 @@ const base: OnboardingAnswers = {
   limitations: "",
   avoidPatterns: [],
   currentPlan: "",
+  trainingYears: null,
+  trainingHistory: "",
+  currentLifts: [],
+  priorityMuscles: [],
+  strongMuscles: [],
+  followUps: [],
   revisionNote: "",
 };
 
@@ -127,6 +140,21 @@ const athletes: Readonly<Record<string, OnboardingAnswers>> = {
     sessionMinutes: 90,
     currentPlan:
       "Upper/lower 4 days: squat 5x5, bench 5x5, deadlift 3x5, rows, pull-ups; stalled on bench for 6 weeks",
+    trainingYears: "3_5",
+    trainingHistory: "Squat and deadlift keep moving; bench has been stuck at 90 kg for 6 weeks",
+    currentLifts: [
+      { slug: "barbell-bench-press", loadKg: 90, reps: 5, repsLeft: 1 },
+      { slug: "barbell-back-squat", loadKg: 130, reps: 5, repsLeft: 2 },
+      { slug: "barbell-deadlift", loadKg: 170, reps: 3, repsLeft: 2 },
+      { slug: "barbell-row", loadKg: 70, reps: 8, repsLeft: 2 },
+    ],
+    priorityMuscles: ["chest"],
+    strongMuscles: ["quads", "hamstrings"],
+    followUps: [{
+      category: "stalled_lift",
+      question: "How often do you bench each week now?",
+      answer: "Once, always 5x5 at the same weight",
+    }],
   },
   "experienced-muscle-gain-ppl-6d": {
     ...base,
@@ -136,6 +164,26 @@ const athletes: Readonly<Record<string, OnboardingAnswers>> = {
     trainingWeekdays: [1, 2, 3, 4, 5, 6],
     sessionMinutes: 75,
     currentPlan: "PPL twice a week, about 22 sets for chest, mostly machines, sleeping 6 h",
+    trainingYears: "over_5",
+    trainingHistory: "Chest and arms grow easily; my back and shoulders lag behind",
+    priorityMuscles: ["back", "shoulders"],
+    strongMuscles: ["chest", "biceps"],
+  },
+  // Five years of lifting four times a week, then two lazy months.
+  "experienced-returning-gym-4d": {
+    ...base,
+    path: "experienced",
+    experience: "intermediate",
+    goal: "aesthetic",
+    trainingWeekdays: [1, 2, 4, 5],
+    sessionMinutes: 60,
+    currentPlan: "Upper/lower, stopped for two months after a busy period at work",
+    trainingYears: "over_5",
+    currentLifts: [
+      { slug: "barbell-bench-press", loadKg: 80, reps: 8, repsLeft: 2 },
+      { slug: "barbell-back-squat", loadKg: 100, reps: 8, repsLeft: 2 },
+    ],
+    priorityMuscles: ["chest"],
   },
   "experienced-fat-loss-kettlebell-3d": {
     ...base,
@@ -204,6 +252,25 @@ const health: Readonly<Record<string, HealthSummary>> = {
   ),
   // Steps but no workouts found: nothing is claimed about training.
   "experienced-strength-gym-4d": syntheticHealth(() => ({ steps: 8800, sleep_minutes: 410 })),
+};
+
+// Usual months for the returning athlete: four strength sessions a week, every
+// night's sleep and a weekly weigh-in, through the month before last.
+const history: Readonly<Record<string, HealthHistory>> = {
+  "experienced-returning-gym-4d": summarizeHealthHistory(
+    Array.from({ length: 11 }, (_, index): HealthMonth => ({
+      month: monthStart(evalToday, index + 1),
+      workouts: index < 2 ? 1 : 17,
+      strength_workouts: index < 2 ? 1 : 17,
+      workout_minutes: index < 2 ? 60 : 1100,
+      sleep_nights: 30,
+      sleep_minutes_avg: 440,
+      weight_days: 4,
+      weight_kg_avg: 80 + index * 0.2,
+      data_days: 30,
+    })),
+    evalToday,
+  )!,
 };
 
 function config(): { config: OnboardingModelConfig; router: boolean } {
@@ -313,7 +380,9 @@ async function main() {
       recording,
       timing,
       health[name] ?? null,
+      history[name] ?? null,
     );
+    const assessment = String(result.proposal.training.assessment ?? "").toLowerCase();
     const row = {
       athlete: name,
       apple_health: name in health,
@@ -326,6 +395,10 @@ async function main() {
       reasoning_units: result.usage?.reasoningUnits ?? 0,
       calories: result.proposal.nutrition.calories,
       title: result.proposal.training.title,
+      // An assessment that names a focus muscle speaks to this athlete.
+      names_focus: answers.priorityMuscles.length === 0 ||
+        answers.priorityMuscles.some((muscle) => assessment.includes(muscle)),
+      assessment: result.proposal.training.assessment,
       calls,
     };
     calls = [];
@@ -362,6 +435,7 @@ async function main() {
   const p95LimitMs = modelConfig.thinking ? 120_000 : 60_000;
   const gates = {
     valid_rate_at_least_90pct: summary.valid_rate >= 0.9,
+    ai_plans_name_focus_muscles: results.every((row) => row.origin !== "ai" || row.names_focus),
     p95_within_limit: router || summary.p95_latency_ms < p95LimitMs,
   };
   const dir = Deno.env.get("EVAL_REPORT_DIR") ??

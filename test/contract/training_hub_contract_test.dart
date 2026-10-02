@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tracend/features/train/workout_repository.dart';
 
 String _readFixture(String name) {
   final file = File('test/contract/fixtures/$name');
@@ -210,6 +211,23 @@ void main() {
       for (final day in completedDays) {
         expect(day, isA<String>());
         expect(() => DateTime.parse(day as String), returnsNormally);
+      }
+    });
+  });
+
+  group('Training Hub contract — get_my_training_hub v1.5', () {
+    const fixture = 'training_hub_v1_5.json';
+
+    test('v1.5 adds a nullable starting load to every exercise', () {
+      final json = _loadFixtureJson(fixture);
+      expect(json['schema_version'], '1.5');
+      final workouts = (json['workouts'] as List).toMapList();
+      final exercises = (workouts.first['exercises'] as List).toMapList();
+      expect(exercises.first['target_load_kg'], 82.5);
+      final parsed = PlannedWorkout.fromHubJson(workouts.first);
+      expect(parsed.exercises.first.targetLoadKg, 82.5);
+      for (final exercise in exercises.skip(1)) {
+        expect(exercise['target_load_kg'], anyOf(isNull, isA<num>()));
       }
     });
   });

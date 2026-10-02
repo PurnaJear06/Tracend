@@ -25,6 +25,18 @@ import {
   localDate,
   summarizeHealth,
 } from "../_shared/onboarding/health_summary.ts";
+import {
+  type HealthHistory,
+  type HealthMonth,
+  historyWindow,
+  summarizeHealthHistory,
+} from "../_shared/onboarding/health_history.ts";
+import {
+  followUpGateReason,
+  type FollowUpQuestion,
+  type FollowUpResult,
+  generateFollowUpQuestions,
+} from "../_shared/onboarding/questions.ts";
 import { sha256 } from "../_shared/onboarding/snapshot.ts";
 import type { OnboardingModelResolution } from "../_shared/providers/onboarding_plan_provider.ts";
 
@@ -34,12 +46,28 @@ import type { OnboardingModelResolution } from "../_shared/providers/onboarding_
 // with the same answers returns the same generation. Answers no valid plan can
 // meet are refused at once (422 onboarding_plan_infeasible, with the answers
 // to change), so retrying them never starts a generation or calls a model.
+//
+// POST onboarding-plan {"mode":"questions"}: the coach's follow-up questions
+// for the current answers, answered synchronously. One request claims the
+// answers' hash before asking the model; an overlapping one waits for its
+// outcome. The model's outcome is stored under the hash, so a retry returns the
+// same questions without a model call, and an edited answer gets new ones. No
+// consent, no budget or no model ask nothing and store nothing, so they never
+// outlast their cause. Follow-up answers count toward the plan only while they
+// carry that hash.
 
 /**
  * Longer than the model deadline (75 s, or 125 s with thinking) plus storing,
  * shorter than the 150 s Edge background limit.
  */
 export const generationLeaseSeconds = 140;
+
+/** Longer than the question deadline (40 s) plus storing. */
+export const questionsLeaseSeconds = 60;
+
+/** How long an overlapping question request waits, polling once a second. */
+export const questionsWaitMs = 45_000;
+export const questionsPollMs = 1_000;
 
 /**
  * How the model call went, stored in the onboarding.plan.generated audit event
@@ -86,6 +114,18 @@ export interface OnboardingStore {
     from: string,
     through: string,
   ): Promise<{ days: HealthDay[]; workouts: HealthWorkout[] }>;
+  /** Apple Health monthly totals for months starting in [from, through]. */
+  loadHealthHistory(from: string, through: string): Promise<HealthMonth[]>;
+  /**
+   * Started: this request asks the model. Otherwise the stored outcome, or
+   * none while another request holds the claim.
+   */
+  claimQuestions(questionsHash: string): Promise<QuestionsClaim>;
+  /** Stores the questions; when another request stored first, returns those. */
+  saveQuestions(questionsHash: string, questions: StoredQuestions): Promise<StoredQuestions>;
+  /** Drops this request's claim after a failed call, so a retry asks again. */
+  releaseQuestions(questionsHash: string): Promise<void>;
+  recordQuestionUsage(usage: GenerationUsage): Promise<void>;
   consent(): Promise<AiCoachingConsent>;
   budgetAvailable(): Promise<boolean>;
   recordUsage(usage: GenerationUsage): Promise<void>;
@@ -106,7 +146,17 @@ export type Observer = Readonly<{
   error(event: string, error: unknown, fields: Record<string, unknown>): void;
 }>;
 
+export type StoredQuestions = Readonly<{
+  questions: readonly FollowUpQuestion[];
+  skipped_reason: string | null;
+  metadata: GenerationMetadata | null;
+}>;
+
+export type QuestionsClaim = Readonly<{ started: boolean; stored?: StoredQuestions }>;
+
 export type HandlerDeps = Readonly<{
+  /** "questions" for the follow-up questions, otherwise the plan. */
+  mode: "plan" | "questions";
   store: OnboardingStore;
   resolution: () => OnboardingModelResolution;
   currentYear: number;
@@ -115,31 +165,61 @@ export type HandlerDeps = Readonly<{
   background: (work: Promise<void>) => void;
   observer: Observer;
   generate?: typeof generateOnboardingProposal;
+  askQuestions?: typeof generateFollowUpQuestions;
+  /** Waits between polls of a claim another request holds. */
+  sleep?: (ms: number) => Promise<void>;
 }>;
+
+/**
+ * The hash follow-up questions are stored under: the answers without the
+ * follow-ups themselves or a revision note, with the Apple Health data. Any
+ * other edit changes it, so stale follow-up answers are never used.
+ */
+export function followUpsHash(
+  answers: OnboardingAnswers,
+  health: HealthSummary | null,
+  history: HealthHistory | null,
+): Promise<string> {
+  const { follow_ups: _followUps, revision_note: _revision, ...asked } = answersSnapshot(
+    answers,
+  );
+  return sha256({ policy_version: onboardingPolicyVersion, answers: asked, health, history });
+}
 
 export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response> {
   const draft = await deps.store.loadDraft();
   if (!draft) return reply(422, { error: "onboarding_draft_incomplete" });
-  const parsed: AnswersResult = parseOnboardingAnswers(
+  const asked: AnswersResult = parseOnboardingAnswers(
     draft.path,
     draft.payload,
     deps.currentYear,
   );
-  if (!parsed.ok) {
-    return reply(422, { error: "onboarding_answers_incomplete", missing: parsed.missing });
+  if (!asked.ok) {
+    return reply(422, { error: "onboarding_answers_incomplete", missing: asked.missing });
   }
   const catalog = await deps.store.loadCatalog();
-  const health = await loadHealthSummary(deps);
+  const { health, history } = await loadHealthContext(deps);
   try {
-    validRulesPlan(policiesFor(parsed.answers, catalog, health));
+    validRulesPlan(policiesFor(asked.answers, catalog, health, history));
   } catch (error) {
     if (!(error instanceof OnboardingPlanInfeasibleError)) throw error;
     return reply(422, {
       error: "onboarding_plan_infeasible",
       rule: error.rule,
-      change: answersToChange(error.rule, parsed.answers),
+      change: answersToChange(error.rule, asked.answers),
     });
   }
+  const questionsHash = await followUpsHash(asked.answers, health, history);
+  if (deps.mode === "questions") {
+    return await handleQuestions(deps, asked.answers, health, history, questionsHash);
+  }
+  // Follow-up answers count only when they were given for these answers.
+  const parsed = parseOnboardingAnswers(
+    draft.path,
+    draft.payload,
+    deps.currentYear,
+    questionsHash,
+  ) as Extract<AnswersResult, { ok: true }>;
   const snapshot = {
     schema_version: "2.0",
     policy_version: onboardingPolicyVersion,
@@ -148,6 +228,7 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
     // Part of the hash: connecting Apple Health builds a new plan, the same
     // data reuses the existing one.
     health,
+    health_history: history,
   };
   const snapshotHash = await sha256(snapshot);
   const claim = await deps.store.claim(snapshotHash);
@@ -167,9 +248,106 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
       parsed.answers,
       catalog,
       health,
+      history,
     ),
   );
   return reply(202, body);
+}
+
+async function handleQuestions(
+  deps: HandlerDeps,
+  answers: OnboardingAnswers,
+  health: HealthSummary | null,
+  history: HealthHistory | null,
+  questionsHash: string,
+): Promise<Response> {
+  const { store, observer } = deps;
+  const respond = (stored: StoredQuestions) =>
+    reply(200, {
+      schema_version: "1.0",
+      questions_hash: questionsHash,
+      questions: stored.questions,
+      ...(stored.skipped_reason ? { skipped_reason: stored.skipped_reason } : {}),
+    });
+  const resolution = deps.resolution();
+  let consentGranted = false;
+  let budgetAvailable = false;
+  if (resolution.kind === "model") {
+    consentGranted = (await store.consent()) === "granted";
+    if (consentGranted) budgetAvailable = await store.budgetAvailable();
+  }
+  const closed = followUpGateReason(resolution, { consentGranted, budgetAvailable });
+  if (closed !== null) return respond({ questions: [], skipped_reason: closed, metadata: null });
+  const sleep = deps.sleep ?? ((ms: number) => new Promise((done) => setTimeout(done, ms)));
+  let claim = await store.claimQuestions(questionsHash);
+  for (
+    let waited = 0;
+    !claim.started && !claim.stored && waited < questionsWaitMs;
+    waited += questionsPollMs
+  ) {
+    await sleep(questionsPollMs);
+    claim = await store.claimQuestions(questionsHash);
+  }
+  if (claim.stored) return respond(claim.stored);
+  if (!claim.started) {
+    return respond({ questions: [], skipped_reason: "questions_in_progress", metadata: null });
+  }
+  const release = async () => {
+    try {
+      await store.releaseQuestions(questionsHash);
+    } catch (error) {
+      // The claim then lapses with its lease.
+      observer.error("onboarding_questions_claim_not_released", error, {});
+    }
+  };
+  let result: FollowUpResult;
+  try {
+    result = await (deps.askQuestions ?? generateFollowUpQuestions)(
+      answers,
+      resolution,
+      { consentGranted, budgetAvailable },
+      health,
+      history,
+    );
+  } catch (error) {
+    await release();
+    throw error;
+  }
+  if (result.usage) {
+    try {
+      await store.recordQuestionUsage(result.usage);
+    } catch (error) {
+      observer.error("onboarding_questions_usage_not_recorded", error, {});
+    }
+  }
+  const metadata = result.usage
+    ? {
+      thinking: result.usage.thinking,
+      latency_ms: result.usage.latencyMs,
+      attempts: 1,
+      input_units: result.usage.inputUnits,
+      output_units: result.usage.outputUnits,
+      reasoning_units: result.usage.reasoningUnits,
+      finish_reason: result.usage.finishReason,
+    }
+    : null;
+  const outcome: StoredQuestions = {
+    questions: result.questions,
+    skipped_reason: result.skippedReason,
+    metadata,
+  };
+  observer.info("onboarding_questions_generated", {
+    questions: result.questions.length,
+    skippedReason: result.skippedReason,
+    metadata,
+  });
+  // A failed call is not stored, so a retry may ask again; the model's answer
+  // is final for these answers.
+  if (result.skippedReason?.startsWith("provider_")) {
+    await release();
+    return respond(outcome);
+  }
+  return respond(await store.saveQuestions(questionsHash, outcome));
 }
 
 /** The answers that decide whether a broken rule can be met. */
@@ -187,14 +365,24 @@ export function answersToChange(rule: string, answers: OnboardingAnswers): strin
 }
 
 /**
- * The 28 complete days before the athlete's local today, summarised; null
- * without Apple Health data (ALGORITHMS §9).
+ * The 28 complete days before the athlete's local today, and their usual
+ * completed months, summarised; each null without Apple Health data
+ * (ALGORITHMS §9).
  */
-async function loadHealthSummary(deps: HandlerDeps): Promise<HealthSummary | null> {
+async function loadHealthContext(
+  deps: HandlerDeps,
+): Promise<{ health: HealthSummary | null; history: HealthHistory | null }> {
   const today = localDate(deps.now(), await deps.store.timezone());
-  const { from, through } = healthWindow(today);
-  const { days, workouts } = await deps.store.loadHealth(from, through);
-  return summarizeHealth(days, workouts, today);
+  const recent = healthWindow(today);
+  const months = historyWindow(today);
+  const [{ days, workouts }, rows] = await Promise.all([
+    deps.store.loadHealth(recent.from, recent.through),
+    deps.store.loadHealthHistory(months.from, months.through),
+  ]);
+  return {
+    health: summarizeHealth(days, workouts, today),
+    history: summarizeHealthHistory(rows, today),
+  };
 }
 
 async function runGeneration(
@@ -205,6 +393,7 @@ async function runGeneration(
   answers: OnboardingAnswers,
   catalog: CatalogExercise[],
   health: HealthSummary | null,
+  history: HealthHistory | null,
 ): Promise<void> {
   const { store, observer } = deps;
   try {
@@ -223,6 +412,7 @@ async function runGeneration(
       fetch,
       undefined,
       health,
+      history,
     );
     if (result.usage) {
       try {

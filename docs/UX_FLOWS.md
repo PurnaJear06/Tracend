@@ -148,10 +148,25 @@ Eligibility → AI coaching → Path → Goal
   → About you (sex, birth year, height, weight, optional target weight, daily activity)
   → Schedule (weekday chips, up to six; session length)
   → Equipment (chips; none = bodyweight)
-  → Food & limits (diet; movements to avoid as chips; other limitations; + current plan if
-    experienced)
-  → Review → Build my plan → Plan (approve, request changes, or reject)
+  → Food & limits (diet; movements to avoid as chips; other limitations)
+  → Your training (experienced: years trained, current plan, what has worked and stalled)
+  → Current lifts (experienced, optional: barbell top sets — weight on the bar, reps, reps left)
+  → Focus (optional: up to two muscles to bring up, up to three already strong)
+  → Review → Continue to your coach
+  → Coach questions (0–3 questions; skip any time) → Build my plan
+  → Plan (approve, request changes, or reject)
 ```
+
+- **Coach questions:** the coach reads the answers (usually under 30 seconds) and may ask up to
+  three short questions with quick answers or a written one. **Skip and build my plan** is there
+  while it reads; with no questions the plan builds straight away. Editing any earlier answer
+  clears the follow-up answers, because they were asked for the old answers.
+- **Apple Health** also shows the athlete's usual months next to the last weeks once it connects
+  ("Strength: 3.4× a week usually · 1× a week lately", "Sleep: 6 h 50 min usually"), or says the
+  plan uses the last 4 weeks when there are fewer than three earlier months.
+- **The proposal** shows **Start at ‹kg›** on exercises Tracend set a starting load for, a
+  **Focus** line under Training, and the usual months in **How this was calculated**. Train
+  pre-fills the kg field with the starting load.
 
 - **Apple Health** reads the last four weeks when the athlete taps **Connect Apple Health**, then
   shows what it found (days and categories). Nothing found explains Settings › Health › Data Access
@@ -184,12 +199,14 @@ Eligibility → AI coaching → Path → Goal
   buttons for exact values, read aloud with their unit. The birth-year number pad closes after
   four digits or a tap outside. Choice cards show their selected state with a border and tint.
 - **Review** lists every answer (Apple Health, daily activity, equipment and its note, diet,
-  movements to avoid, limitations, and the current plan for an experienced athlete). Each row has
+  movements to avoid, limitations, focus, and for an experienced athlete their training and top
+  sets). Each row has
   **Edit**, which opens its step; that step's button reads **Save and return to review**. At
   large text sizes labels sit above their values.
 - **Building your plan** says it usually takes under a minute and can take up to two.
 - A draft from an older build continues at **About you**.
-- The header reads **Step N of 11 · ‹section›**.
+- The header reads **Step N of M · ‹section›**: 15 steps for an experienced athlete, 13 for a
+  beginner, who skips Your training and Current lifts.
 
 The original target flow:
 

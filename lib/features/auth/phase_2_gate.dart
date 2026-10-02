@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +7,7 @@ import 'package:tracend/app/environment.dart';
 import 'package:tracend/features/account/account_time_zone.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
@@ -28,6 +31,9 @@ class _Phase2GateState extends State<Phase2Gate> {
   /// One Apple Health repository for onboarding and the app; its state is
   /// kept per signed-in athlete.
   HealthRepository? _health;
+
+  /// The athlete's usual months from Apple Health, sent at most once a month.
+  HealthBaselineSource? _baseline;
   String? _error;
 
   @override
@@ -73,6 +79,8 @@ class _Phase2GateState extends State<Phase2Gate> {
           SupabaseAiCoachingConsentRepository(client),
         );
         await aiConsent.load();
+        // The usual months a later plan review compares with; never blocks.
+        if (complete) unawaited(_baselineSource().refreshIfDue());
         setState(() {
           _authenticated = true;
           _onboardingComplete = complete;
@@ -88,6 +96,12 @@ class _Phase2GateState extends State<Phase2Gate> {
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  HealthBaselineSource _baselineSource() =>
+      _baseline ??= SupabaseHealthBaselineSource(
+        Supabase.instance.client,
+        SharedPreferencesAsync(),
+      );
 
   @override
   void dispose() {
@@ -145,6 +159,7 @@ class _Phase2GateState extends State<Phase2Gate> {
         onCompleted: _refresh,
         aiConsent: aiConsent,
         health: health,
+        healthBaseline: _baselineSource(),
         onSignOut: _signOut,
       );
     }

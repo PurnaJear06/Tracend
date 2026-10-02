@@ -244,6 +244,18 @@ Since 2026-10 (`onboarding-plan`, policy `onboarding-policy-v1`):
   breathing rate are not sent: without a personal baseline they cannot guide a starting plan. The
   summary reaches the model only with `onboarding_plan` consent, as a data block, and is stored in
   the onboarding snapshot and the proposal's calculation (evidence `APPLE_HEALTH_SUMMARY_28D`).
+- **Usual months** (2026-10): the app sends monthly totals for the 11 completed months before this
+  one (workouts, strength workouts, sleep and weight with their coverage; no raw sample). The plan
+  compares the usual months with the last 28 days. The only limit it changes: lifting under half of
+  a usual two or more sessions a week starts the block with a fifth fewer sets a session and the RPE
+  ceiling half a point lower, with a note. Stored in the snapshot and the proposal's calculation
+  (evidence `APPLE_HEALTH_HISTORY_11M`).
+- **Coach intake** (2026-10): training years, what has worked and stalled, reported barbell top
+  sets, and up to two focus muscles. Code turns the top sets into one-rep-max estimates and starting
+  loads for those lifts, and gives each focus muscle a weekly set minimum inside the existing
+  maximum (ALGORITHMS §9); the validator rejects a plan below a minimum (`priority_volume_missing`).
+  The model never writes a load. Approval copies starting loads to `planned_exercises` and keeps
+  training years and muscles on the profile, which the Coach reads.
 - **No deload promise:** the app repeats one weekly template, so the prompt forbids promising a
   deload or a different week, and the proposal no longer stores `deload_week`.
 - **When the model is not used:**
@@ -261,8 +273,8 @@ Since 2026-10 (`onboarding-plan`, policy `onboarding-policy-v1`):
 - **Approval:** `respond_to_onboarding_proposal_v2` inserts exactly the approved workouts and
   exercises, and activates the goal, profile and onboarding weight, in one transaction, dated with
   the athlete's local date at approval (`user_accounts.timezone`, set by the app through
-  `set_my_timezone`). The profile keeps the movements to avoid and the equipment note, which the
-  Coach reads and is told never to contradict.
+  `set_my_timezone`). The profile keeps the movements to avoid, the equipment note, the training
+  years and the focus and strong muscles, which the Coach reads and is told never to contradict.
 
 ## 7. Eligibility and Escalation
 
@@ -374,6 +386,27 @@ qualify a model.
 - **Telemetry:** the `onboarding.plan.generated` audit event stores whether the call thought, its
   latency, attempts, input, output and reasoning tokens, and the last finish reason
   (`persist_onboarding_proposal_v3`). Prompts and answers are never stored there.
+- **Follow-up questions** (2026-10): before the plan, the same provider may ask 0–3 questions
+  (`onboarding-plan` with `mode: "questions"`, `_shared/onboarding/questions.ts`). Same consent
+  (`onboarding_plan`) and budget gates; thinking as configured, 4,000 output tokens, 40 s. Each
+  question must belong to an allowed topic (split history, recovery between sessions, a stalled
+  lift, exercise preference, schedule flexibility, daily eating routine); a reply with any other
+  topic, or injury, pain, medical, pregnancy or disorder wording, is dropped whole and the plan is
+  built without questions. One request claims the hash of the answers before asking
+  (`claim_onboarding_questions`, 60 s lease); an overlapping request waits up to 45 s for its
+  outcome instead of asking again. The model's outcome is stored per hash (`onboarding_questions`);
+  a failed call releases the claim so a retry may ask, and no consent, no budget or no ready model
+  is answered without storing anything, so it never outlasts its cause. Usage is recorded as
+  `onboarding_questions`, and the `onboarding.questions.generated` audit event carries the same
+  telemetry as the plan. The athlete can skip at any time; the plan then starts once the running
+  question request settles (at most 45 s in the app), so the two calls never spend the budget at
+  once. Questions never block onboarding.
+- **What the plan model receives since onboarding-policy-v2:** the athlete's training years, what
+  has worked and stalled (their words, as data), reported barbell top sets with Tracend's
+  one-rep-max estimates and ratios, focus and strong muscles, follow-up answers, and the Apple
+  Health usual months next to the last 28 days. Starting loads, focus minimums and the
+  return-from-a-break limits are set by code (ALGORITHMS §9); the model chooses within them and
+  must name the athlete's focus and history in its assessment.
 - **Changing any `ONBOARDING_PLAN_*` secret** creates a new version of every Edge Function. Wait for
   the change to finish, then run `./scripts/verify-live-function.sh --all` from the deployed commit.
   To roll thinking back: `./scripts/supabase.sh secrets set ONBOARDING_PLAN_THINKING=off

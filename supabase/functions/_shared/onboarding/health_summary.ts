@@ -38,6 +38,8 @@ export type HealthSummary = Readonly<{
   sleep_nights?: number;
   /** Present only when at least one workout was found: none found proves nothing. */
   workouts_per_week?: number;
+  /** Strength workouts a week; present (possibly 0) whenever workouts are. */
+  strength_workouts_per_week?: number;
   workout_minutes_per_week?: number;
   workout_types?: readonly string[];
   weight_latest_kg?: number;
@@ -76,6 +78,15 @@ export function healthWindow(today: string): Readonly<{ from: string; through: s
 
 const value = (input: number | null) =>
   typeof input === "number" && Number.isFinite(input) && input > 0 ? input : null;
+
+/** HealthKit workout types that count as strength training. */
+export const strengthActivityTypes: readonly string[] = [
+  "TRADITIONAL_STRENGTH_TRAINING",
+  "FUNCTIONAL_STRENGTH_TRAINING",
+];
+
+export const isStrengthWorkout = (activityType: string) =>
+  strengthActivityTypes.includes(activityType.trim().toUpperCase());
 
 const readable = (activityType: string) => activityType.toLowerCase().replaceAll("_", " ").trim();
 
@@ -149,6 +160,10 @@ export function summarizeHealth(
     ...(found.length
       ? {
         workouts_per_week: roundTo(found.length / weeks, 1),
+        strength_workouts_per_week: roundTo(
+          found.filter((workout) => isStrengthWorkout(workout.activity_type)).length / weeks,
+          1,
+        ),
         workout_minutes_per_week: Math.round(
           found.reduce((sum, workout) => sum + workout.duration_seconds, 0) / 60 / weeks,
         ),
