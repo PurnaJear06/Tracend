@@ -4,6 +4,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/health/health_models.dart';
+import 'package:tracend/features/health/health_repository.dart';
+import 'package:tracend/features/onboarding/health_activity.dart';
 import 'package:tracend/features/onboarding/onboarding_proposal_view.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
@@ -25,6 +28,7 @@ class OnboardingFlow extends StatefulWidget {
     required this.repository,
     required this.onCompleted,
     this.aiConsent,
+    this.health,
     this.onSignOut,
     this.pollInterval = const Duration(seconds: 3),
     this.pollTimeout = const Duration(seconds: 150),
@@ -38,6 +42,10 @@ class OnboardingFlow extends StatefulWidget {
   /// Records the AI coaching answer. Without one the step still asks, and the
   /// app asks again after onboarding.
   final AiCoachingConsentController? aiConsent;
+
+  /// Apple Health, offered as an optional step; without one the step can only
+  /// be skipped.
+  final HealthRepository? health;
   final Future<void> Function()? onSignOut;
   final Duration pollInterval;
 
@@ -55,6 +63,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'AI',
     'Path',
     'Goal',
+    'Apple Health',
     'About you',
     'Schedule',
     'Equipment',
@@ -67,6 +76,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'ai',
     'path',
     'goal',
+    'health',
     'about',
     'schedule',
     'equipment',
@@ -81,12 +91,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   static const _aiStep = 1;
   static const _pathStep = 2;
   static const _goalStep = 3;
-  static const _aboutStep = 4;
-  static const _scheduleStep = 5;
-  static const _equipmentStep = 6;
-  static const _foodStep = 7;
-  static const _reviewStep = 8;
-  static const _proposalStep = 9;
+  static const _healthStep = 4;
+  static const _aboutStep = 5;
+  static const _scheduleStep = 6;
+  static const _equipmentStep = 7;
+  static const _foodStep = 8;
+  static const _reviewStep = 9;
+  static const _proposalStep = 10;
 
   static const _goals = <String, String>{
     'fat_loss': 'Fat loss',
@@ -134,6 +145,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'vertical_pull': 'Pull-ups and pulldowns',
   };
   static const _maxTrainingDays = 6;
+
+  /// The server accepts weights from 35 to 250 kg.
+  static const _minWeightKg = 35.0;
+  static const _maxWeightKg = 250.0;
   static const _fieldLabels = {
     'sex': 'sex',
     'birth_year': 'birth year',
@@ -182,6 +197,22 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// The movements-to-avoid question was answered (an empty set means none).
   /// Drafts from older builds have not answered it.
   bool _avoidAnswered = false;
+
+  /// The Apple Health answer: `connected`, `skipped`, or `empty` (connected,
+  /// but nothing came back). Older drafts have none; the step is optional.
+  String? _healthImport;
+  bool _healthBusy = false;
+  String? _healthMessage;
+  OnboardingHealthFacts? _healthFacts;
+
+  /// The weight slider holds the Apple Health weight until the athlete moves it.
+  bool _weightFromHealth = false;
+
+  /// About you was answered, so Apple Health never overwrites it.
+  bool _aboutPassed = false;
+
+  HealthRepository get _health =>
+      widget.health ?? const ManualHealthRepository();
 
   /// Plan step state: waiting for the server, or its generation failed.
   bool _generating = false;
@@ -248,6 +279,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       'nutrition_context': _nutrition.text.trim(),
       'constraints': _constraints.text.trim(),
       if (_avoidAnswered) 'avoid_patterns': _avoid.toList()..sort(),
+      'health_import': ?_healthImport,
       if (_path == 'experienced') 'current_plan': _currentPlan.text.trim(),
       if (_revisionNote.text.trim().isNotEmpty)
         'revision_note': _revisionNote.text.trim(),
@@ -314,6 +346,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         }
         _currentPlan.text = payload['current_plan'] as String? ?? '';
         _revisionNote.text = payload['revision_note'] as String? ?? '';
+        final healthImport = payload['health_import'];
+        if (const ['connected', 'skipped', 'empty'].contains(healthImport)) {
+          _healthImport = healthImport as String;
+        }
         var restored = _sectionKeys.indexOf(draft.currentSection);
         if (restored < 0) {
           restored = _legacySections[draft.currentSection] ?? _eligibilityStep;
@@ -324,6 +360,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           restored = _aboutStep;
         }
         if (restored > 0) _step = restored;
+        _aboutPassed = _step > _aboutStep;
         resumeGeneration = _step == _proposalStep;
       }
     } catch (e) {
@@ -334,6 +371,90 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       if (mounted) setState(() => _loading = false);
     }
     if (resumeGeneration && mounted) unawaited(_resumeGeneration());
+    if (mounted && _healthImport != 'skipped') unawaited(_loadHealthFacts());
+  }
+
+  /// Reopened with Apple Health already connected (an earlier run, or a sync
+  /// that finished before the app closed): show what it holds.
+  Future<void> _loadHealthFacts() async {
+    try {
+      final status = await _health.loadStatus();
+      if (status.state == HealthConnectionState.manualOnly ||
+          status.state == HealthConnectionState.unavailable) {
+        return;
+      }
+      final facts = onboardingHealthFacts(
+        await _health.loadHistory(),
+        DateTime.now(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _healthFacts = facts;
+        _healthImport ??= facts.hasData ? 'connected' : 'empty';
+        _prefillFromHealth(facts);
+      });
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+    }
+  }
+
+  Future<void> _connectHealth() async {
+    if (_healthBusy) return;
+    setState(() {
+      _healthBusy = true;
+      _healthMessage = null;
+      _error = null;
+    });
+    try {
+      final status = await _health.connectAndSync();
+      if (!mounted) return;
+      if (status.state == HealthConnectionState.manualOnly ||
+          status.state == HealthConnectionState.unavailable) {
+        setState(() {
+          _healthBusy = false;
+          _healthMessage = status.accessError == null
+              ? 'Apple Health is not available on this device. You can skip this step.'
+              : status.detail;
+        });
+        return;
+      }
+      final facts = onboardingHealthFacts(
+        await _health.loadHistory(),
+        DateTime.now(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _healthBusy = false;
+        _healthFacts = facts;
+        _healthImport = facts.hasData ? 'connected' : 'empty';
+        _prefillFromHealth(facts);
+      });
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      if (!mounted) return;
+      setState(() {
+        _healthBusy = false;
+        _healthMessage =
+            'Apple Health could not be read. Check the connection and try again, or skip this step.';
+      });
+    }
+  }
+
+  /// The newest Apple Health weight starts the weight slider, until About you
+  /// has been answered.
+  void _prefillFromHealth(OnboardingHealthFacts facts) {
+    final weight = facts.latestWeightKg;
+    if (_aboutPassed || weight == null) return;
+    _weightKg = weight.clamp(_minWeightKg, _maxWeightKg);
+    _weightFromHealth = true;
+  }
+
+  Future<void> _skipHealth() async {
+    setState(() {
+      _healthImport = 'skipped';
+      _healthMessage = null;
+    });
+    await _continue();
   }
 
   /// Reopened on the Plan step: show the stored proposal, keep waiting for a
@@ -525,6 +646,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       }
       if (_step == _goalStep) await widget.repository.saveGoal(_goal);
       if (_step == _foodStep) _avoidAnswered = true;
+      if (_step == _aboutStep) _aboutPassed = true;
       final next = _step + 1;
       await widget.repository.saveDraft(
         path: _path,
@@ -547,6 +669,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _eligibilityStep => _adult && !_needsClinicalSupport && _terms && _privacy,
     _aiStep => _aiChoice != null,
     _pathStep => _path != null,
+    _healthStep => _healthImport != null && !_healthBusy,
     _aboutStep =>
       _sex != null && _dailyActivity != null && _birthYearError() == null,
     _scheduleStep => _weekdays.isNotEmpty,
@@ -574,6 +697,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         'Confirm adult eligibility, terms, and privacy to continue.',
       _aiStep => 'Choose whether to allow AI coaching.',
       _pathStep => 'Choose the onboarding path that fits you.',
+      _healthStep => 'Connect Apple Health, or choose Skip for now.',
       _aboutStep =>
         _sex == null
             ? 'Choose an option for sex.'
@@ -758,6 +882,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _aiStep => _aiCoaching(),
     _pathStep => _pathSelection(),
     _goalStep => _goalSelection(),
+    _healthStep => _appleHealth(),
     _aboutStep => _aboutYou(),
     _scheduleStep => _schedule(),
     _equipmentStep => _equipmentSelection(),
@@ -909,6 +1034,126 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     ],
   );
 
+  static const _planMetrics = {
+    HealthMetric.steps,
+    HealthMetric.activeEnergy,
+    HealthMetric.sleep,
+    HealthMetric.workouts,
+    HealthMetric.weight,
+  };
+
+  /// What the Apple Health step found, for the step and for Review.
+  String _healthSummary() {
+    final facts = _healthFacts;
+    return switch (_healthImport) {
+      'connected' when facts != null => [
+        '${facts.daysWithData} of $onboardingHealthWindowDays days',
+        // Only what the plan uses.
+        HealthMetric.values
+            .where(
+              (metric) =>
+                  facts.metrics.contains(metric) &&
+                  _planMetrics.contains(metric),
+            )
+            .map((metric) => metric.label.toLowerCase())
+            .join(', '),
+      ].where((part) => part.isNotEmpty).join(' · '),
+      'connected' => 'Connected',
+      'empty' => 'Connected, but no data came back',
+      'skipped' => 'Not connected',
+      _ => 'Not answered',
+    };
+  }
+
+  Widget _appleHealth() {
+    final text = Theme.of(context).textTheme;
+    final connected = _healthImport == 'connected';
+    final empty = _healthImport == 'empty';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _heading(
+          'Connect Apple Health?',
+          'Your plan can use the last 4 weeks from your iPhone and Apple Watch: steps, active energy, sleep, workouts and weight. Your plan works either way.',
+        ),
+        if (connected || empty)
+          TracendCard(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  connected
+                      ? CupertinoIcons.check_mark_circled_solid
+                      : CupertinoIcons.exclamationmark_circle,
+                  color: connected
+                      ? context.tracendColors.actionPrimary
+                      : context.tracendColors.stateAttention,
+                ),
+                const SizedBox(width: TracendSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        connected
+                            ? 'Apple Health connected'
+                            : 'No Apple Health data came back',
+                        style: text.titleMedium,
+                      ),
+                      const SizedBox(height: TracendSpacing.xxs),
+                      Text(
+                        connected
+                            ? '${_healthSummary()}. Next, your weight and daily activity show what it found; you confirm them.'
+                            : 'If you expected data, open Settings › Health › Data Access & Devices › Tracend, turn the categories on, then try again. Or continue without it.',
+                        style: text.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (_healthMessage != null) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              _healthMessage!,
+              style: text.bodyMedium?.copyWith(
+                color: context.tracendColors.stateAttention,
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: TracendSpacing.md),
+        if (!connected)
+          FilledButton.tonalIcon(
+            onPressed: _healthBusy || _saving ? null : _connectHealth,
+            icon: _healthBusy
+                ? const TracendLoadingIndicator(size: 18)
+                : const Icon(CupertinoIcons.heart_fill),
+            label: Text(
+              _healthBusy
+                  ? 'Reading the last 4 weeks…'
+                  : empty
+                  ? 'Try again'
+                  : 'Connect Apple Health',
+            ),
+          ),
+        if (!connected && !empty)
+          TextButton(
+            onPressed: _healthBusy || _saving ? null : _skipHealth,
+            child: const Text('Skip for now'),
+          ),
+        const SizedBox(height: TracendSpacing.sm),
+        Text(
+          'Read-only: Tracend never writes to Apple Health. You can connect or refresh it later in Account.',
+          style: text.bodySmall,
+        ),
+      ],
+    );
+  }
+
   bool get _goalHasTarget =>
       _goal == 'fat_loss' || _goal == 'muscle_gain' || _goal == 'recomposition';
 
@@ -965,13 +1210,21 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         onChanged: (value) => setState(() => _heightCm = value),
       ),
       _label('Current weight: ${_weightLabel(_weightKg)}'),
+      if (_weightFromHealth && _healthFacts?.latestWeightDate != null)
+        Text(
+          'From Apple Health, ${_dayMonth(_healthFacts!.latestWeightDate!)}. Move the slider if it has changed.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
       Slider(
-        value: _weightKg.clamp(35, 200),
-        min: 35,
-        max: 200,
-        divisions: 330,
+        value: _weightKg.clamp(_minWeightKg, _maxWeightKg),
+        min: _minWeightKg,
+        max: _maxWeightKg,
+        divisions: ((_maxWeightKg - _minWeightKg) * 2).round(),
         label: _weightLabel(_weightKg),
-        onChanged: (value) => setState(() => _weightKg = value),
+        onChanged: (value) => setState(() {
+          _weightKg = value;
+          _weightFromHealth = false;
+        }),
       ),
       if (_goalHasTarget) ...[
         SwitchListTile(
@@ -987,28 +1240,59 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             style: Theme.of(context).textTheme.titleMedium,
           ),
           Slider(
-            value: _targetWeightKg!.clamp(35, 200),
-            min: 35,
-            max: 200,
-            divisions: 330,
+            value: _targetWeightKg!.clamp(_minWeightKg, _maxWeightKg),
+            min: _minWeightKg,
+            max: _maxWeightKg,
+            divisions: ((_maxWeightKg - _minWeightKg) * 2).round(),
             label: _weightLabel(_targetWeightKg!),
             onChanged: (value) => setState(() => _targetWeightKg = value),
           ),
         ],
       ],
       _label('Outside training, your day is'),
+      if (_healthFacts?.stepsPerDay case final steps?)
+        Padding(
+          padding: const EdgeInsets.only(bottom: TracendSpacing.xs),
+          child: Text(
+            'Apple Health: about ${roundedSteps(steps)} steps a day over the last 4 weeks.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
       for (final entry in _activities.entries) ...[
         _ChoiceCard(
           selected: _dailyActivity == entry.key,
           icon: CupertinoIcons.person_crop_circle,
           title: entry.value.$1,
           body: entry.value.$2,
+          tag:
+              _healthFacts?.stepsPerDay != null &&
+                  activityFromSteps(_healthFacts!.stepsPerDay!) == entry.key
+              ? 'Matches your steps'
+              : null,
           onTap: () => setState(() => _dailyActivity = entry.key),
         ),
         const SizedBox(height: TracendSpacing.xs),
       ],
     ],
   );
+
+  static const _months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  static String _dayMonth(DateTime date) =>
+      '${date.day} ${_months[date.month - 1]}';
 
   static String _weightLabel(double kg) {
     final rounded = _half(kg);
@@ -1195,6 +1479,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               ),
               const Divider(height: TracendSpacing.xl),
               _ReviewRow('Goal', _goals[_goal]!),
+              const Divider(height: TracendSpacing.xl),
+              _ReviewRow('Apple Health', _healthSummary()),
               const Divider(height: TracendSpacing.xl),
               _ReviewRow(
                 'You',
@@ -1385,6 +1671,7 @@ class _ChoiceCard extends StatelessWidget {
     required this.title,
     required this.body,
     required this.onTap,
+    this.tag,
   });
 
   final bool selected;
@@ -1392,6 +1679,9 @@ class _ChoiceCard extends StatelessWidget {
   final String title;
   final String body;
   final VoidCallback onTap;
+
+  /// A short fact shown under the body, such as what Apple Health suggests.
+  final String? tag;
 
   @override
   Widget build(BuildContext context) {
@@ -1412,6 +1702,17 @@ class _ChoiceCard extends StatelessWidget {
                   children: [
                     Text(title, style: Theme.of(context).textTheme.titleMedium),
                     Text(body, style: Theme.of(context).textTheme.bodyMedium),
+                    if (tag != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: TracendSpacing.xxs),
+                        child: Text(
+                          tag!,
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: context.tracendColors.actionPrimary,
+                              ),
+                        ),
+                      ),
                   ],
                 ),
               ),

@@ -195,6 +195,23 @@ v1 approval now refuses 2.0 proposals.
 - **No deload promise:** the app repeats one weekly template, so the prompt forbids it and
   `deload_week` is no longer stored.
 
+**App: Apple Health step, per-athlete state, time zone** (PR C, needs an install):
+
+- **Step 5 of 11, Apple Health** (optional), between Goal and About you. Connect runs
+  `connectAndSync`; the draft records `health_import` (`connected`, `skipped` or `empty`), which
+  the server never requires. About you prefills the weight from Apple Health (newest within 14
+  days, never over an answered weight) and tags the daily-activity answer average steps point to
+  (`lib/features/onboarding/health_activity.dart`, the same bands as the server).
+- **First sync reads 31 dates** (`healthSyncStart`, today−30): the server's 28-day summary and
+  the baselines have four weeks. A sync carries at most the newest 100 workouts.
+- **Per-athlete health state** (`HealthPreferences`): keys include the user id. The older shared
+  state is adopted only when its last sync is within 5 minutes of the account's newest server
+  sync, then deleted either way, so another account never inherits "connected". The owner's
+  phone keeps its connection; the next sync after the update reads the full 31 dates once.
+- **Time zone:** a `com.tracend.app/time_zone` channel returns the device's IANA zone;
+  `Phase2Gate` stores it with `set_my_timezone` when it differs.
+- One `SupabaseHealthRepository` is shared by onboarding and the app.
+
 **Switching provider or model later** (AI_SAFETY_SPEC §10):
 
 1. Run the eval for the candidate.

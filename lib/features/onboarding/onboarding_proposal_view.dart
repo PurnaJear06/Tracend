@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/onboarding/health_activity.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
@@ -177,10 +178,36 @@ class OnboardingProposalView extends StatelessWidget {
     final ceiling = calc.ceilingApplied && calc.ceilingKcal != null
         ? ' Your estimate is above ${calc.ceilingKcal} kcal, the most Tracend sets, so the range is capped there.'
         : '';
+    final health = calc.health == null
+        ? ''
+        : '\n\n${appleHealthLine(calc.health!)}';
     return 'Resting energy ${_range(calc.bmrKcal)} kcal × activity ${calc.activityFactor} '
         'plus training ≈ ${_range(calc.tdeeKcal)} kcal to maintain. '
-        'For your goal Tracend allows ${_range(calc.calorieRangeKcal)} kcal.$floor$ceiling';
+        'For your goal Tracend allows ${_range(calc.calorieRangeKcal)} kcal.$floor$ceiling$health';
   }
+
+  /// "Apple Health, last 28 days: about 9,100 steps a day · 3 workouts a
+  /// week · sleep 6 h 50 min · weight down 0.3 kg a week."
+  static String appleHealthLine(ProposalHealth health) {
+    final parts = [
+      if (health.stepsPerDay case final steps?)
+        'about ${roundedSteps(steps)} steps a day',
+      if (health.workoutsPerWeek case final workouts?)
+        '${_number(workouts)} ${workouts == 1 ? 'workout' : 'workouts'} a week',
+      if (health.sleepMinutesPerNight case final sleep?)
+        'sleep ${sleep ~/ 60} h ${sleep % 60} min',
+      if (health.weightTrendKgPerWeek case final trend?)
+        trend.abs() < 0.05
+            ? 'weight steady'
+            : 'weight ${trend < 0 ? 'down' : 'up'} ${_number(trend.abs())} kg a week',
+    ];
+    return parts.isEmpty
+        ? 'Apple Health: ${health.daysWithData} of ${health.windowDays} days had data, not enough to average.'
+        : 'Apple Health, last ${health.windowDays} days: ${parts.join(' · ')}.';
+  }
+
+  static String _number(num value) =>
+      value % 1 == 0 ? '${value.toInt()}' : value.toStringAsFixed(1);
 }
 
 class _WorkoutCard extends StatelessWidget {

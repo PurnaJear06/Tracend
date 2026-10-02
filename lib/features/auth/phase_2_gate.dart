@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
+import 'package:tracend/features/account/account_time_zone.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/shell/app_shell.dart';
@@ -21,6 +24,10 @@ class _Phase2GateState extends State<Phase2Gate> {
   bool _authenticated = false;
   bool _onboardingComplete = false;
   AiCoachingConsentController? _aiConsent;
+
+  /// One Apple Health repository for onboarding and the app; its state is
+  /// kept per signed-in athlete.
+  HealthRepository? _health;
   String? _error;
 
   @override
@@ -58,6 +65,8 @@ class _Phase2GateState extends State<Phase2Gate> {
           });
           return;
         }
+        // Local dates on the server follow the device's time zone.
+        await AccountTimeZone.supabase(client).sync();
         final repository = SupabaseOnboardingRepository(client);
         final complete = await repository.isOnboardingComplete();
         final aiConsent = _aiConsent ??= AiCoachingConsentController(
@@ -126,11 +135,16 @@ class _Phase2GateState extends State<Phase2Gate> {
       return OwnerAuthScreen(onAuthenticated: _refresh);
     }
     final aiConsent = _aiConsent!;
+    final health = _health ??= SupabaseHealthRepository(
+      Supabase.instance.client,
+      SharedPreferencesAsync(),
+    );
     if (!_onboardingComplete) {
       return OnboardingFlow(
         repository: SupabaseOnboardingRepository(Supabase.instance.client),
         onCompleted: _refresh,
         aiConsent: aiConsent,
+        health: health,
         onSignOut: _signOut,
       );
     }
@@ -146,6 +160,7 @@ class _Phase2GateState extends State<Phase2Gate> {
       environment: widget.environment,
       onSignOut: _signOut,
       aiConsent: aiConsent,
+      health: health,
     );
   }
 }

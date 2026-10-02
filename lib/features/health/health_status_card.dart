@@ -117,7 +117,7 @@ class _HealthStatusCardState extends State<HealthStatusCard> {
           Text(
             refreshed
                 ? available.isEmpty
-                      ? 'No recent Apple Health values were found. Coaching continues with your manual entries.'
+                      ? 'No Apple Health values came back. If you expected data, open Settings › Health › Data Access & Devices › Tracend and turn the categories on. Coaching continues with your manual entries.'
                       : '${available.map((metric) => metric.label).join(', ')} ${available.length == 1 ? 'is' : 'are'} ready for coaching.'
                 : status.detail,
             style: Theme.of(context).textTheme.bodyMedium,
@@ -162,7 +162,7 @@ class _HealthStatusCardState extends State<HealthStatusCard> {
               status.state == HealthConnectionState.manualOnly) ...[
             const SizedBox(height: TracendSpacing.sm),
             Text(
-              'Reads: steps, active energy, sleep, workouts, weight, resting heart rate and HRV (SDNN).',
+              'Reads: steps, active energy, sleep, workouts, weight, resting heart rate, HRV and breathing rate.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

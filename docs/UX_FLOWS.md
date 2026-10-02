@@ -129,13 +129,14 @@ existed, or asked again after the notice changed) answers it once before the app
 coaching is off, Coach shows **AI coaching is off** with **Review AI coaching**, its composer is
 disabled, and Today generates no AI decision. **Account › AI coaching** turns it on or off.
 
-HealthKit, meal-photo AI, and progress-photo AI consent occur separately when their value is
-visible.
+Meal-photo AI and progress-photo AI consent occur separately when their value is visible. Apple
+Health is offered once, as the optional onboarding step below, and otherwise from the profile.
 
-After an owner restores an existing training history, the first explicit Apple Health refresh may
-backfill up to 9 dates (today−8) to capture a full preceding night. The UI continues to use the
-existing partial/unknown states and does not claim an empty result means permission was denied.
-Later refreshes use the normal 8-date overlap.
+The first Apple Health sync on an account reads 31 dates (today−30), so the onboarding summary
+and the baselines have four weeks behind them; later refreshes read the last 8 dates. The UI keeps
+the partial/unknown states and never claims an empty result means permission was denied. Apple
+Health state on the phone belongs to the signed-in athlete: another account on the same phone
+starts as not connected.
 
 ### 4.2 Beginner: Guide me
 
@@ -143,6 +144,7 @@ The app since 2026-10:
 
 ```text
 Eligibility → AI coaching → Path → Goal
+  → Apple Health (optional: Connect, or Skip for now)
   → About you (sex, birth year, height, weight, optional target weight, daily activity)
   → Schedule (weekday chips, up to six; session length)
   → Equipment (chips; none = bodyweight)
@@ -151,6 +153,15 @@ Eligibility → AI coaching → Path → Goal
   → Review → Build my plan → Plan (approve, request changes, or reject)
 ```
 
+- **Apple Health** reads the last four weeks when the athlete taps **Connect Apple Health**, then
+  shows what it found (days and categories). Nothing found explains Settings › Health › Data Access
+  & Devices and offers **Try again**; the athlete can always continue. A failed read can be retried
+  or skipped. Reopened after a sync that finished, the step shows it as connected. About you then
+  starts the weight at the newest Apple Health weight from the last 14 days (labelled with its
+  date, until the athlete moves it, and never over an answered weight) and shows average steps
+  with a **Matches your steps** tag on the daily-activity answer they point to. The athlete's own
+  answers are what count. Review shows what Apple Health contributed, and the proposal's **How
+  this was calculated** adds the summary the plan used.
 - **Build my plan** starts a server generation and shows **Building your plan**. The app polls the
   generation, so the athlete can leave and come back:
   - a running generation keeps waiting;

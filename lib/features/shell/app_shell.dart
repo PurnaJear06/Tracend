@@ -24,6 +24,7 @@ class AppShell extends StatefulWidget {
     required this.environment,
     this.onSignOut,
     this.aiConsent,
+    this.health,
     super.key,
   });
 
@@ -33,6 +34,10 @@ class AppShell extends StatefulWidget {
   /// The AI coaching answer. Null only without a backend, where no data
   /// reaches an AI provider.
   final AiCoachingConsentController? aiConsent;
+
+  /// Apple Health, shared with onboarding so both read one per-athlete state.
+  /// Built here when not given.
+  final HealthRepository? health;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -56,12 +61,14 @@ class _AppShellState extends State<AppShell> {
             SharedPreferencesAsync(),
           )
         : FixtureWorkoutRepository();
-    _health = widget.environment.hasSupabaseConfiguration
-        ? SupabaseHealthRepository(
-            Supabase.instance.client,
-            SharedPreferencesAsync(),
-          )
-        : const ManualHealthRepository();
+    _health =
+        widget.health ??
+        (widget.environment.hasSupabaseConfiguration
+            ? SupabaseHealthRepository(
+                Supabase.instance.client,
+                SharedPreferencesAsync(),
+              )
+            : const ManualHealthRepository());
     _coach = widget.environment.hasSupabaseConfiguration
         ? SupabaseCoachRepository(Supabase.instance.client)
         : const FixtureCoachRepository();

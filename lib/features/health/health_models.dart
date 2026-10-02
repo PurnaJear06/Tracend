@@ -105,27 +105,38 @@ class RawHealthSample {
   final double? workoutEnergyKcal;
 }
 
+/// The most workouts one health-sync request may carry (health_sync_v1).
+const healthSyncMaxWorkouts = 100;
+
+/// Workout references for health-sync, newest first. A 31-day first sync can
+/// find more workouts than one request carries, so only the newest
+/// [healthSyncMaxWorkouts] are sent instead of the whole sync failing.
 List<Map<String, Object?>> healthWorkoutReferences(
   List<RawHealthSample> samples,
-) => samples.where((sample) => sample.metric == HealthMetric.workouts).map((
-  sample,
-) {
-  final local = sample.start.toLocal();
-  return <String, Object?>{
-    'sample_id_hash': _hash(sample.sampleId),
-    'source_id_hash': _hash(sample.sourceId),
-    'activity_type': sample.workoutActivityType ?? 'OTHER',
-    'started_at': sample.start.toUtc().toIso8601String(),
-    'ended_at': sample.end.toUtc().toIso8601String(),
-    'duration_seconds': sample.end.difference(sample.start).inSeconds,
-    if (sample.workoutEnergyKcal != null)
-      'energy_kcal': DailyHealthSummary._rounded(sample.workoutEnergyKcal!),
-    'local_date':
-        '${local.year.toString().padLeft(4, '0')}-'
-        '${local.month.toString().padLeft(2, '0')}-'
-        '${local.day.toString().padLeft(2, '0')}',
-  };
-}).toList();
+) =>
+    (samples.where((sample) => sample.metric == HealthMetric.workouts).toList()
+          ..sort((a, b) => b.start.compareTo(a.start)))
+        .take(healthSyncMaxWorkouts)
+        .map((sample) {
+          final local = sample.start.toLocal();
+          return <String, Object?>{
+            'sample_id_hash': _hash(sample.sampleId),
+            'source_id_hash': _hash(sample.sourceId),
+            'activity_type': sample.workoutActivityType ?? 'OTHER',
+            'started_at': sample.start.toUtc().toIso8601String(),
+            'ended_at': sample.end.toUtc().toIso8601String(),
+            'duration_seconds': sample.end.difference(sample.start).inSeconds,
+            if (sample.workoutEnergyKcal != null)
+              'energy_kcal': DailyHealthSummary._rounded(
+                sample.workoutEnergyKcal!,
+              ),
+            'local_date':
+                '${local.year.toString().padLeft(4, '0')}-'
+                '${local.month.toString().padLeft(2, '0')}-'
+                '${local.day.toString().padLeft(2, '0')}',
+          };
+        })
+        .toList();
 
 class HealthReadResult {
   const HealthReadResult({

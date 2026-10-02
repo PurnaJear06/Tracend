@@ -27,30 +27,49 @@ String healthSyncFailureMessage(Object error) => switch (error) {
 
 class SupabaseHealthRepository implements HealthRepository {
   SupabaseHealthRepository(
-    this._client,
-    this._preferences, {
+    SupabaseClient client,
+    SharedPreferencesAsync preferences, {
     HealthDataSource? source,
     DateTime Function()? now,
-  }) : _source = source ?? HealthKitDataSource(),
+  }) : _client = client,
+       _state = HealthPreferences(
+         preferences,
+         userId: () => client.auth.currentUser?.id,
+         serverLastSync: () => _serverLastSync(client),
+       ),
+       _source = source ?? HealthKitDataSource(),
        _now = now ?? DateTime.now;
 
-  static const _lastSyncKey = 'health.last_successful_sync';
-  static const _availableTypesKey = 'health.available_types';
-  static const _initialBackfillCompleteKey =
-      'health.initial_31_day_backfill_complete';
-  static const _accessErrorKey = 'health.access_error';
   static const _uuid = Uuid();
 
   final SupabaseClient _client;
-  final SharedPreferencesAsync _preferences;
+  final HealthPreferences _state;
   final HealthDataSource _source;
   final DateTime Function() _now;
 
+  /// The newest sync the server holds for the signed-in athlete (RLS limits
+  /// the rows to their own).
+  static Future<DateTime?> _serverLastSync(SupabaseClient client) async {
+    final row = await client
+        .from('daily_health_summaries')
+        .select('last_synced_at')
+        .order('last_synced_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    final value = row?['last_synced_at'];
+    return value is String ? DateTime.tryParse(value) : null;
+  }
+
   @override
   Future<HealthSyncStatus> loadStatus() async {
-    final stored = await _preferences.getString(_lastSyncKey);
-    final codes = await _preferences.getStringList(_availableTypesKey) ?? [];
-    final accessErrorCode = await _preferences.getString(_accessErrorKey);
+    final keys = await _state.keys();
+    if (keys == null) {
+      return const HealthSyncStatus(state: HealthConnectionState.manualOnly);
+    }
+    final preferences = _state.preferences;
+    final stored = await preferences.getString(keys.lastSync);
+    final codes = await preferences.getStringList(keys.availableTypes) ?? [];
+    final accessErrorCode = await preferences.getString(keys.accessError);
     final available = HealthMetric.values
         .where((metric) => codes.contains(metric.code))
         .toSet();
@@ -89,12 +108,17 @@ class SupabaseHealthRepository implements HealthRepository {
 
   @override
   Future<HealthSyncStatus> connectAndSync() async {
+    final keys = await _state.keys();
+    if (keys == null) {
+      return const HealthSyncStatus(state: HealthConnectionState.manualOnly);
+    }
+    final preferences = _state.preferences;
     final source = _source;
     if (source is HealthKitDataSource) {
       final configured = await source.isConfigured();
       if (!configured) {
-        await _preferences.setString(
-          _accessErrorKey,
+        await preferences.setString(
+          keys.accessError,
           HealthAccessError.configurationFailed.name,
         );
         return const HealthSyncStatus(
@@ -105,8 +129,8 @@ class SupabaseHealthRepository implements HealthRepository {
     }
     final authorized = await source.requestReadAccess();
     if (!authorized) {
-      await _preferences.setString(
-        _accessErrorKey,
+      await preferences.setString(
+        keys.accessError,
         HealthAccessError.authorizationDenied.name,
       );
       return const HealthSyncStatus(
@@ -160,9 +184,14 @@ class SupabaseHealthRepository implements HealthRepository {
 
   @override
   Future<HealthSyncStatus> sync() async {
+    final keys = await _state.keys();
+    if (keys == null) {
+      return const HealthSyncStatus(state: HealthConnectionState.manualOnly);
+    }
+    final preferences = _state.preferences;
     final now = _now();
     final initialBackfillComplete =
-        await _preferences.getBool(_initialBackfillCompleteKey) ?? false;
+        await preferences.getBool(keys.initialBackfillComplete) ?? false;
     final start = healthSyncStart(
       now: now,
       initialBackfillComplete: initialBackfillComplete,
@@ -170,14 +199,14 @@ class SupabaseHealthRepository implements HealthRepository {
     final result = await _source.read(start, now);
     if (result.unavailable) {
       if (result.accessError != null) {
-        await _preferences.setString(_accessErrorKey, result.accessError!.name);
+        await preferences.setString(keys.accessError, result.accessError!.name);
       }
       return HealthSyncStatus(
         state: HealthConnectionState.unavailable,
         accessError: result.accessError,
       );
     }
-    await _preferences.remove(_accessErrorKey);
+    await preferences.remove(keys.accessError);
     final timezone = await _loadTimezone();
     final summaries = normalizeHealthSamples(
       samples: result.samples,
@@ -185,12 +214,12 @@ class SupabaseHealthRepository implements HealthRepository {
       timezone: timezone,
     );
     await _invokeSync(result, summaries, start, now);
-    await _preferences.setString(_lastSyncKey, now.toUtc().toIso8601String());
-    await _preferences.setStringList(
-      _availableTypesKey,
+    await preferences.setString(keys.lastSync, now.toUtc().toIso8601String());
+    await preferences.setStringList(
+      keys.availableTypes,
       result.returnedMetrics.map((metric) => metric.code).toList(),
     );
-    await _preferences.setBool(_initialBackfillCompleteKey, true);
+    await preferences.setBool(keys.initialBackfillComplete, true);
     return HealthSyncStatus(
       state: deriveHealthConnectionState(
         now: now,
@@ -265,17 +294,115 @@ class SupabaseHealthRepository implements HealthRepository {
   }
 }
 
+/// Calendar days before today a sync reads from: the first sync fills the
+/// 28-day onboarding summary and the baselines (31 dates, today included, the
+/// most health-sync accepts: a window of 31 days and 32 summaries); later
+/// syncs refresh the last week.
+const healthInitialBackfillDays = 30;
+const healthRefreshDays = 7;
+
 DateTime healthSyncStart({
   required DateTime now,
   required bool initialBackfillComplete,
 }) {
-  // The window covers today and the seven calendar days before it, so the
-  // fetch (which matches samples by start instant) also captures a night
-  // that began the evening before the window's first date and ended that
-  // morning. HealthKit attribute queries cap at 31 days; summaries cap at 32
-  // rows, and 9 dates never approach either.
+  // Local midnight, so the fetch (which matches samples by start instant)
+  // covers whole days; a night that began the evening before the first date
+  // is only partly counted on that date, which the onboarding summary's 28
+  // days never include.
   final localDay = DateTime(now.year, now.month, now.day);
-  return localDay.subtract(Duration(days: initialBackfillComplete ? 7 : 8));
+  return localDay.subtract(
+    Duration(
+      days: initialBackfillComplete
+          ? healthRefreshDays
+          : healthInitialBackfillDays,
+    ),
+  );
+}
+
+/// The preference keys holding one athlete's Apple Health state.
+class HealthPreferenceKeys {
+  HealthPreferenceKeys(String userId)
+    : lastSync = 'health.$userId.last_successful_sync',
+      availableTypes = 'health.$userId.available_types',
+      initialBackfillComplete = 'health.$userId.initial_backfill_complete',
+      accessError = 'health.$userId.access_error';
+
+  final String lastSync;
+  final String availableTypes;
+  final String initialBackfillComplete;
+  final String accessError;
+}
+
+/// Apple Health state on this device, kept per athlete, so another account
+/// signed in on the same phone starts as not connected.
+///
+/// Builds before 2026-10 kept one unscoped state. It is adopted only when it
+/// provably belongs to the signed-in athlete: its last sync is within five
+/// minutes of the newest sync the server holds for them. Otherwise it is
+/// deleted and the athlete connects again. Either way the unscoped keys are
+/// removed, so no later account can inherit them.
+class HealthPreferences {
+  HealthPreferences(
+    this.preferences, {
+    required String? Function() userId,
+    required Future<DateTime?> Function() serverLastSync,
+  }) : _userId = userId,
+       _serverLastSync = serverLastSync;
+
+  static const legacyLastSync = 'health.last_successful_sync';
+  static const legacyAvailableTypes = 'health.available_types';
+  static const legacyInitialBackfillComplete =
+      'health.initial_31_day_backfill_complete';
+  static const legacyAccessError = 'health.access_error';
+  static const adoptionTolerance = Duration(minutes: 5);
+
+  final SharedPreferencesAsync preferences;
+  final String? Function() _userId;
+  final Future<DateTime?> Function() _serverLastSync;
+  final _settled = <String, Future<void>>{};
+
+  /// The signed-in athlete's keys, after any older state is settled; null
+  /// when nobody is signed in.
+  Future<HealthPreferenceKeys?> keys() async {
+    final userId = _userId();
+    if (userId == null) return null;
+    final keys = HealthPreferenceKeys(userId);
+    try {
+      await (_settled[userId] ??= _settleLegacy(keys));
+    } catch (_) {
+      // The server could not be asked; keep the old state and ask again later.
+      _settled.remove(userId)?.ignore();
+    }
+    return keys;
+  }
+
+  Future<void> _settleLegacy(HealthPreferenceKeys keys) async {
+    final legacy = await preferences.getString(legacyLastSync);
+    if (legacy == null) return;
+    final legacySync = DateTime.tryParse(legacy);
+    final own = await preferences.getString(keys.lastSync);
+    if (own == null && legacySync != null) {
+      final server = await _serverLastSync();
+      if (server != null &&
+          server.difference(legacySync).abs() <= adoptionTolerance) {
+        await preferences.setString(keys.lastSync, legacy);
+        final types = await preferences.getStringList(legacyAvailableTypes);
+        if (types != null) {
+          await preferences.setStringList(keys.availableTypes, types);
+        }
+        // The backfill flag is not carried over: older builds read 9 days,
+        // so the next sync reads the full 31 dates once.
+        final accessError = await preferences.getString(legacyAccessError);
+        if (accessError != null) {
+          await preferences.setString(keys.accessError, accessError);
+        }
+      }
+    }
+    await preferences.remove(legacyLastSync);
+    await preferences.remove(legacyAvailableTypes);
+    await preferences.remove(legacyInitialBackfillComplete);
+    await preferences.remove(legacyAccessError);
+  }
 }
 
 class ManualHealthRepository implements HealthRepository {
