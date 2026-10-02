@@ -219,9 +219,10 @@ async function main() {
       title: result.proposal.training.title,
     };
     results.push(row);
+    const status = result.attempts.find((attempt) => attempt.httpStatus !== null)?.httpStatus;
     console.log(
-      `${name}: ${row.origin}${
-        row.fallback_reason ? ` (${row.fallback_reason})` : ""
+      `${name}: ${row.origin}${row.fallback_reason ? ` (${row.fallback_reason})` : ""}${
+        status ? ` HTTP ${status}` : ""
       } ${row.latency_ms} ms`,
     );
   }
@@ -256,6 +257,11 @@ async function main() {
     JSON.stringify({ summary, gates, results }, null, 2),
   );
   console.log(JSON.stringify({ summary, gates }, null, 2));
+  if (router) {
+    console.log(
+      "Router smoke test: this does not evaluate the provider. Run with route=direct before setting ONBOARDING_PLAN_MODEL_EVALUATED=true.",
+    );
+  }
   if (!Object.values(gates).every(Boolean)) Deno.exit(1);
 }
 

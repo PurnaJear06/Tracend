@@ -68,6 +68,8 @@ export type GenerationAttempt = Readonly<{
   outcome: "valid" | "invalid" | "call_failed";
   rule: string | null;
   latencyMs: number;
+  /** The provider's HTTP status when the call failed with one. */
+  httpStatus: number | null;
 }>;
 
 export type GenerationUsage = Readonly<{
@@ -343,6 +345,7 @@ export async function generateOnboardingProposal(
         outcome: "call_failed",
         rule: error.code,
         latencyMs: error.latencyMs,
+        httpStatus: error.httpStatus,
       });
       // An empty or cut-off answer earns the repair; a timeout, rate limit or
       // HTTP error does not, since the time or quota is already spent.
@@ -358,7 +361,13 @@ export async function generateOnboardingProposal(
     try {
       const plan = parseOnboardingPlan(content);
       validateOnboardingPlan(plan, policies);
-      attempts.push({ attempt, outcome: "valid", rule: null, latencyMs: attemptLatency });
+      attempts.push({
+        attempt,
+        outcome: "valid",
+        rule: null,
+        latencyMs: attemptLatency,
+        httpStatus: null,
+      });
       return {
         proposal: buildOnboardingProposal(plan, policies, {
           origin: "ai",
@@ -372,7 +381,13 @@ export async function generateOnboardingProposal(
       };
     } catch (error) {
       if (!(error instanceof OnboardingPlanValidationError)) throw error;
-      attempts.push({ attempt, outcome: "invalid", rule: error.rule, latencyMs: attemptLatency });
+      attempts.push({
+        attempt,
+        outcome: "invalid",
+        rule: error.rule,
+        latencyMs: attemptLatency,
+        httpStatus: null,
+      });
       if (attempt === "repair") return rules(error.rule, usage(), attempts);
       repair = { rule: error.rule, path: error.path, candidate: content };
     }
