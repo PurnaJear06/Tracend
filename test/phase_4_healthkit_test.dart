@@ -457,13 +457,19 @@ void main() {
     );
   });
 
-  test('first sync backfills the initial 9-day window', () {
+  test('first sync reads 31 dates; later syncs the last week', () {
+    // 4 July back to 4 June inclusive: 31 dates, a 30-day window, inside
+    // health-sync's 31-day and 32-summary limits.
     expect(
       healthSyncStart(
         now: DateTime(2026, 7, 4, 8),
         initialBackfillComplete: false,
       ),
-      DateTime(2026, 6, 26),
+      DateTime(2026, 6, 4),
+    );
+    expect(
+      DateTime(2026, 7, 4).difference(DateTime(2026, 6, 4)).inDays,
+      lessThanOrEqualTo(31),
     );
     expect(
       healthSyncStart(

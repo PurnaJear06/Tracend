@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/health/health_models.dart';
+import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 
@@ -64,6 +66,14 @@ void main() {
     await _tapText(tester, 'Fat loss');
     await _continue(tester);
 
+    expect(find.text('Connect Apple Health?'), findsOneWidget);
+    await _continue(tester);
+    expect(
+      find.text('Connect Apple Health, or choose Skip for now.'),
+      findsOneWidget,
+    );
+    await _tapText(tester, 'Skip for now');
+
     expect(find.text('About you.'), findsOneWidget);
     await _continue(tester);
     expect(find.text('Choose an option for sex.'), findsOneWidget);
@@ -113,6 +123,7 @@ void main() {
     expect(payload['daily_activity'], 'some_standing');
     expect(payload['goal'], 'fat_loss');
     expect(payload['avoid_patterns'], ['squat', 'vertical_push']);
+    expect(payload['health_import'], 'skipped');
 
     final approve = find.widgetWithText(FilledButton, 'Approve plan');
     await tester.ensureVisible(approve);
@@ -190,9 +201,13 @@ void main() {
     );
     await _pump(tester, repository);
 
-    expect(find.textContaining('Section 5 of 10'), findsOneWidget);
+    expect(find.textContaining('Section 6 of 11'), findsOneWidget);
     expect(find.text('About you.'), findsOneWidget);
     expect(find.text('Current weight: 82 kg'), findsOneWidget);
+    await tester.tap(find.byTooltip('Previous section'));
+    await tester.pumpAndSettle();
+    // The Apple Health step is new and optional; an older draft passes it.
+    expect(find.text('Connect Apple Health?'), findsOneWidget);
     await tester.tap(find.byTooltip('Previous section'));
     await tester.pumpAndSettle();
     expect(find.text('Strength'), findsOneWidget);
@@ -490,6 +505,198 @@ void main() {
     await tester.pumpAndSettle();
     expect(signedOut, isTrue);
   });
+
+  group('Apple Health step', () {
+    final today = DateTime.now();
+    HealthDay day(int back, {int? steps, double? weightKg}) => HealthDay(
+      date: DateTime(today.year, today.month, today.day - back),
+      presentMetrics: {
+        if (steps != null) HealthMetric.steps,
+        if (weightKg != null) HealthMetric.weight,
+      },
+      steps: steps,
+      weightKg: weightKg,
+    );
+    final history = HealthHistory([
+      for (var back = 20; back >= 1; back--) day(back, steps: 9100),
+      day(3, weightKg: 81.5),
+    ]);
+
+    testWidgets(
+      'connecting fills weight and shows steps; the athlete confirms',
+      (tester) async {
+        final repository = _FakeOnboardingRepository(draft: _draft('health'));
+        final health = _FakeHealth(connectStatus: _connected, history: history);
+        await _pump(tester, repository, health: health);
+
+        expect(find.text('Connect Apple Health?'), findsOneWidget);
+        await _tapText(tester, 'Connect Apple Health');
+        expect(health.connectCalls, 1);
+        expect(find.text('Apple Health connected'), findsOneWidget);
+        expect(
+          find.textContaining('21 of 28 days · steps, weight'),
+          findsOneWidget,
+        );
+        await _continue(tester);
+
+        expect(find.text('About you.'), findsOneWidget);
+        expect(find.text('Current weight: 81.5 kg'), findsOneWidget);
+        expect(find.textContaining('From Apple Health,'), findsOneWidget);
+        expect(
+          find.text(
+            'Apple Health: about 9,100 steps a day over the last 4 weeks.',
+          ),
+          findsOneWidget,
+        );
+        // 9,100 steps matches "on my feet most of the day", nothing else.
+        expect(find.text('Matches your steps'), findsOneWidget);
+        expect(repository.savedPayload!['health_import'], 'connected');
+      },
+    );
+
+    testWidgets(
+      'steps without workouts or weight still connect; no data explains access',
+      (tester) async {
+        final repository = _FakeOnboardingRepository(draft: _draft('health'));
+        final health = _FakeHealth(
+          connectStatus: const HealthSyncStatus(
+            state: HealthConnectionState.partial,
+            availableMetrics: {},
+          ),
+          history: const HealthHistory([]),
+        );
+        await _pump(tester, repository, health: health);
+        await _tapText(tester, 'Connect Apple Health');
+        expect(find.text('No Apple Health data came back'), findsOneWidget);
+        expect(find.textContaining('Data Access & Devices'), findsOneWidget);
+        expect(find.text('Try again'), findsOneWidget);
+        await _continue(tester);
+        expect(find.text('About you.'), findsOneWidget);
+        expect(repository.savedPayload!['health_import'], 'empty');
+        // Nothing came back, so the weight stays the athlete's own answer.
+        expect(find.text('Current weight: 68 kg'), findsOneWidget);
+      },
+    );
+
+    testWidgets('a failed or refused connection can be retried or skipped', (
+      tester,
+    ) async {
+      final repository = _FakeOnboardingRepository(draft: _draft('health'));
+      final health = _FakeHealth(connectThrows: true);
+      await _pump(tester, repository, health: health);
+      await _tapText(tester, 'Connect Apple Health');
+      expect(find.textContaining('could not be read'), findsOneWidget);
+      health
+        ..connectThrows = false
+        ..connectStatus = const HealthSyncStatus(
+          state: HealthConnectionState.manualOnly,
+          accessError: HealthAccessError.authorizationDenied,
+        );
+      await _tapText(tester, 'Connect Apple Health');
+      expect(health.connectCalls, 2);
+      await _tapText(tester, 'Skip for now');
+      expect(find.text('About you.'), findsOneWidget);
+      expect(repository.savedPayload!['health_import'], 'skipped');
+    });
+
+    testWidgets(
+      'reopened after the app closed mid-sync, a finished sync counts',
+      (tester) async {
+        // The sync finished, but the app closed before Continue was saved.
+        final health = _FakeHealth(status: _connected, history: history);
+        await _pump(
+          tester,
+          _FakeOnboardingRepository(draft: _draft('health')),
+          health: health,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Apple Health connected'), findsOneWidget);
+        expect(health.connectCalls, 0);
+      },
+    );
+
+    testWidgets('an answered weight is never replaced by Apple Health', (
+      tester,
+    ) async {
+      final health = _FakeHealth(status: _connected, history: history);
+      await _pump(
+        tester,
+        _FakeOnboardingRepository(draft: _draft('schedule')),
+        health: health,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Previous section'));
+      await tester.pumpAndSettle();
+      expect(find.text('Current weight: 68 kg'), findsOneWidget);
+      expect(find.textContaining('From Apple Health,'), findsNothing);
+    });
+
+    testWidgets('the proposal shows the Apple Health the plan used', (
+      tester,
+    ) async {
+      final repository = _FakeOnboardingRepository(
+        draft: _draft('review'),
+        generations: [_succeeded],
+        calculationHealth: const {
+          'window_days': 28,
+          'days_with_data': 26,
+          'steps_per_day': 9132,
+          'workouts_per_week': 3,
+          'sleep_minutes_per_night': 410,
+          'weight_trend_kg_per_week': -0.3,
+        },
+      );
+      await _pump(tester, repository);
+      await tester.tap(find.widgetWithText(FilledButton, 'Build my plan'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining(
+          'Apple Health, last 28 days: about 9,100 steps a day · 3 workouts a week · sleep 6 h 50 min · weight down 0.3 kg a week.',
+        ),
+        findsOneWidget,
+      );
+    });
+  });
+}
+
+const _connected = HealthSyncStatus(
+  state: HealthConnectionState.connected,
+  availableMetrics: {HealthMetric.steps, HealthMetric.weight},
+);
+
+class _FakeHealth implements HealthRepository {
+  _FakeHealth({
+    this.status = const HealthSyncStatus(
+      state: HealthConnectionState.manualOnly,
+    ),
+    this.connectStatus = const HealthSyncStatus(
+      state: HealthConnectionState.manualOnly,
+    ),
+    this.history = const HealthHistory([]),
+    this.connectThrows = false,
+  });
+
+  HealthSyncStatus status;
+  HealthSyncStatus connectStatus;
+  HealthHistory history;
+  bool connectThrows;
+  int connectCalls = 0;
+
+  @override
+  Future<HealthSyncStatus> loadStatus() async => status;
+
+  @override
+  Future<HealthHistory> loadHistory() async => history;
+
+  @override
+  Future<HealthSyncStatus> connectAndSync() async {
+    connectCalls++;
+    if (connectThrows) throw Exception('sync failed');
+    return status = connectStatus;
+  }
+
+  @override
+  Future<HealthSyncStatus> sync() async => status;
 }
 
 const _running = OnboardingGeneration(id: 'gen-1', status: 'running');
@@ -527,6 +734,7 @@ Future<void> _pump(
   AiCoachingConsentController? consent,
   Future<void> Function()? onSignOut,
   int? currentYear,
+  HealthRepository? health,
 }) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1;
@@ -539,6 +747,7 @@ Future<void> _pump(
         repository: repository,
         onCompleted: onCompleted ?? () {},
         aiConsent: consent,
+        health: health,
         onSignOut: onSignOut,
         pollInterval: Duration.zero,
         currentYear: currentYear,
@@ -569,7 +778,11 @@ class _FakeOnboardingRepository implements OnboardingRepository {
     this.missing,
     this.infeasible,
     this.staleResponses = 0,
+    this.calculationHealth,
   }) : _generations = [...generations];
+
+  /// The Apple Health summary the fake proposal's calculation carries.
+  final Map<String, Object?>? calculationHealth;
 
   final OnboardingDraft? draft;
   final List<OnboardingGeneration> _generations;
@@ -646,6 +859,7 @@ class _FakeOnboardingRepository implements OnboardingRepository {
             'tdee_kcal': [2100, 2100],
             'calorie_range_kcal': [1580, 1890],
             'floor_applied': false,
+            'health': ?calculationHealth,
           },
           'weekly_structure': [
             {

@@ -34,8 +34,9 @@ onboarding batch is four stacked PRs: A turns on thinking for the first attempt 
 `ONBOARDING_PLAN_THINKING`, default on) and stores call telemetry in the audit event; B publishes notice
 `ai-coaching-v4` for every purpose (fixing new athletes' grants never counting for the plan),
 stores the device time zone, feeds a 28-day Apple Health summary into the plan, and keeps
-movements to avoid on the profile for the Coach; C and D add the Apple Health onboarding step and
-fix onboarding's remaining flaws. Evals run
+movements to avoid on the profile for the Coach; C adds the optional Apple Health onboarding step
+(weight and activity shown from it, a 31-date first sync, health state per athlete, the device
+time zone stored); D fixes onboarding's remaining flaws. Evals run
 through NaraRouter only (owner's decision). See
 [`docs/handoff/onboarding.md`](./handoff/onboarding.md).
 

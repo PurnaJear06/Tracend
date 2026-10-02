@@ -18,6 +18,7 @@ class SceneDelegate: FlutterSceneDelegate {
     flutterEngine.run()
     GeneratedPluginRegistrant.register(with: flutterEngine)
     configureNotifications(on: flutterEngine.binaryMessenger)
+    configureTimeZone(on: flutterEngine.binaryMessenger)
     registerSceneLifeCycle(with: flutterEngine)
 
     window?.rootViewController = FlutterViewController(
@@ -37,6 +38,23 @@ class SceneDelegate: FlutterSceneDelegate {
   override func sceneDidDisconnect(_ scene: UIScene) {
     unregisterSceneLifeCycle(with: flutterEngine)
     super.sceneDidDisconnect(scene)
+  }
+
+  /// The device's IANA time zone (for example Asia/Kolkata), which the app
+  /// stores on the account so local dates match the athlete's day.
+  private func configureTimeZone(on messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.tracend.app/time_zone",
+      binaryMessenger: messenger
+    )
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "identifier":
+        result(TimeZone.current.identifier)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 
   private func configureNotifications(on messenger: FlutterBinaryMessenger) {

@@ -140,6 +140,7 @@ class ProposalCalculation {
     required this.floorApplied,
     required this.ceilingKcal,
     required this.ceilingApplied,
+    this.health,
   });
 
   final List<int> bmrKcal;
@@ -149,6 +150,45 @@ class ProposalCalculation {
   final bool floorApplied;
   final int? ceilingKcal;
   final bool ceilingApplied;
+
+  /// The Apple Health summary the plan used; null without Apple Health or in
+  /// proposals from before 2026-10.
+  final ProposalHealth? health;
+}
+
+/// The 28-day Apple Health summary in a proposal's calculation. Every value is
+/// optional: the server includes a metric only with enough days behind it.
+class ProposalHealth {
+  const ProposalHealth({
+    required this.windowDays,
+    required this.daysWithData,
+    this.stepsPerDay,
+    this.workoutsPerWeek,
+    this.sleepMinutesPerNight,
+    this.weightTrendKgPerWeek,
+  });
+
+  static ProposalHealth? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final window = value['window_days'];
+    final days = value['days_with_data'];
+    if (window is! num || days is! num) return null;
+    return ProposalHealth(
+      windowDays: window.toInt(),
+      daysWithData: days.toInt(),
+      stepsPerDay: (value['steps_per_day'] as num?)?.toInt(),
+      workoutsPerWeek: value['workouts_per_week'] as num?,
+      sleepMinutesPerNight: (value['sleep_minutes_per_night'] as num?)?.toInt(),
+      weightTrendKgPerWeek: value['weight_trend_kg_per_week'] as num?,
+    );
+  }
+
+  final int windowDays;
+  final int daysWithData;
+  final int? stepsPerDay;
+  final num? workoutsPerWeek;
+  final int? sleepMinutesPerNight;
+  final num? weightTrendKgPerWeek;
 }
 
 /// A 2.0 onboarding proposal: the exact plan that approval activates.
@@ -264,6 +304,7 @@ class OnboardingProposal {
               floorApplied: calculation['floor_applied'] == true,
               ceilingKcal: (calculation['ceiling_kcal'] as num?)?.toInt(),
               ceilingApplied: calculation['ceiling_applied'] == true,
+              health: ProposalHealth.fromJson(calculation['health']),
             )
           : null,
       rationale: row['rationale'] as String,
