@@ -606,6 +606,23 @@ export function formatContextAsMarkdown(
     if (profile.session_minutes != null) {
       s += `- session length: ${str(profile.session_minutes)} min\n`;
     }
+    if (profile.sex != null) s += `- sex: ${str(profile.sex)}\n`;
+    if (profile.age != null) s += `- age: ${str(profile.age)}\n`;
+    if (profile.daily_activity != null) {
+      s += `- daily activity outside training: ${
+        str(profile.daily_activity).replaceAll("_", " ")
+      }\n`;
+    }
+    if (Array.isArray(profile.equipment)) {
+      const equipment = profile.equipment.map((item) => str(item).replaceAll("_", " "));
+      s += `- equipment: ${equipment.length ? equipment.join(", ") : "bodyweight only"}\n`;
+    }
+    if (profile.limitations != null) {
+      s += `- limitations (athlete's words): ${str(profile.limitations)}\n`;
+    }
+    if (profile.nutrition_notes != null) {
+      s += `- diet notes (athlete's words): ${str(profile.nutrition_notes)}\n`;
+    }
     push(s);
   }
 

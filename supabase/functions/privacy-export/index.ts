@@ -35,6 +35,8 @@ const dataTables = [
   "coach_decisions",
   "change_proposals",
   "change_responses",
+  "onboarding_generations",
+  "ai_usage_events",
   "audit_events",
   "notification_preferences",
 ] as const;

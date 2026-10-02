@@ -276,6 +276,7 @@ Deno.serve(async (request) => {
   const consent = await aiCoachingConsent(
     (name, params) => auth.serviceClient.rpc(name, params),
     auth.userId,
+    "coach_chat",
   );
   const refusal = coachChatConsentRefusal(consent);
   if (refusal) {

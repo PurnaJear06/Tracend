@@ -86,11 +86,56 @@ Append-only records containing consent type, notice version, grant/withdrawal st
 timestamp. Types include terms, privacy, AI coaching (`ai_coaching`), HealthKit sync, meal-photo AI,
 progress-photo AI, and notifications. Current consent is the latest record per user and type.
 
+### `ai_consent_notices` and `ai_notice_current`
+
+Global, read-only to athletes. Each published AI notice has a version, a provider label, the
+purposes it covers (`coach_chat`, `daily_coaching`, `onboarding_plan`), and its body. Notices are
+never edited. `ai_notice_current` names the current notice for each purpose, one row per purpose.
+`private.publish_ai_notice` inserts a notice and repoints its purposes in one transaction. An
+`ai_coaching` consent counts for a purpose only when its `notice_version` is that purpose's current
+version.
+
 ### `user_profiles`
 
 One row per user containing adult-attestation timestamp, height, experience level, training
 schedule, available time, activity description, and onboarding state. Do not store unnecessary
 identity documents.
+
+Since 2026-10, approval of an onboarding plan also writes the following, and only approval can
+(column grants):
+
+- `sex` (`male`, `female` or `unspecified`)
+- `birth_year`
+- `daily_activity`
+- `equipment` (chip values)
+- `limitations_note`
+- `nutrition_note`
+
+At the same time it writes the real `training_days` (ISO weekdays), `session_minutes`,
+`height_cm` and `experience_level`. Clients can write only the fields onboarding step 0 writes.
+
+### `onboarding_generations`
+
+One row per onboarding plan generation, with columns:
+
+- the snapshot hash of the reviewed answers;
+- `status` (`running`, `succeeded`, `failed` or `superseded`);
+- the attempt number and a lease;
+- the resulting proposal;
+- a failure code.
+
+Rules:
+
+- **One running generation per user.**
+- **Claiming:** `claim_onboarding_generation` returns the running or finished generation for the
+  same answers, and supersedes a generation for older answers.
+- **Writes:** worker writes land only while their generation is still running and current.
+- **Expiry:** an expired lease reads as `failed`, and a pending proposal past its `expires_at`
+  (7 days) reads as `expired` in `get_my_onboarding_generation`, which also returns
+  `proposal_expires_at`. Answering an expired proposal stores `expired` and returns it.
+- **Movements to avoid:** the snapshot's `answers.avoid_patterns` (movement patterns) bind the
+  stored proposal; `persist_onboarding_proposal_v2` refuses an exercise with an avoided pattern.
+
 
 ### `onboarding_drafts`
 
@@ -154,10 +199,28 @@ Curated exercise definitions with stable slug, name, movement pattern, muscles, 
 laterality, level, contraindication tags, substitution group, instructions, and catalog version.
 Catalog changes do not rewrite historical snapshots.
 
+Implemented 2026-10 (`catalog-v1`, 72 exercises):
+
+- **Columns:** slug, name, movement pattern, primary muscles (the first is the target),
+  required equipment (empty means bodyweight), level, compound flag, `status`
+  (`active` or `retired`) with `retired_at`, and catalog version.
+- **Source:** the rows mirror `supabase/functions/_shared/onboarding/catalog.ts`, and a Deno
+  test keeps the two equal.
+- **Lifecycle:** exercises are retired, never deleted; generation uses only active ones.
+- **Not yet implemented:** laterality, contraindication tags, substitution groups and
+  instructions.
+
 ### `training_plans`
 
-Plan lineage containing user, goal, title, block objective, source (`ai`, `user`, `imported`, or
-`hybrid`), and timestamps.
+Plan lineage containing user, goal, title, block objective, source, and timestamps. The source
+is one of:
+
+- `ai` or `rules`: an onboarding plan, by origin;
+- `mock_ai`: the Phase-2 onboarding plan;
+- `user`, `imported` or `hybrid`.
+
+Plans whose source is `ai`, `rules` or `imported` arrive with their workouts and never get the
+generic seed.
 
 ### `training_plan_versions`
 
@@ -177,7 +240,8 @@ expansion does not modify the approved version.
 
 Ordered prescriptions containing workout, catalog exercise and display snapshot, set count, rep
 range, target RPE or reps in reserve, optional load/progression rule, rest range, notes, and
-approved alternatives.
+approved alternatives. `exercise_slug` (nullable, since 2026-10) references the catalog entry an onboarding plan
+chose. The generic seed and the imported plan have none.
 
 ### `workout_sessions`
 
@@ -369,9 +433,21 @@ Bounded persistent proposal containing source decision, domain/action, current a
 or versions, evidence, rationale, expected benefit/downside, confidence, effective date, expiry, and
 status.
 
+Onboarding proposals have two schema versions:
+
+- **1.0:** the Phase-2 mock, with names only.
+- **2.0 (2026-10):** the exact `weekly_structure` (workouts with catalog exercises, sets, reps,
+  RPE and rest). It also records origin (`ai` or `rules`), provider, model, fallback reason, policy
+  and catalog versions, and the assessment, assumptions and missing information. It shows how the
+  calories were calculated.
+
+`private.is_valid_initial_proposal_v2` checks the 2.0 structure, and the catalog is checked when the
+proposal is stored and again when it is approved. v1 approval refuses 2.0 proposals.
+
 ### `change_responses`
 
-Append-only acceptance, rejection, or revision request. Acceptance runs one transaction that locks
+Append-only acceptance, rejection, or revision request (with an optional `revision_note`, ≤500
+characters, since 2026-10). Acceptance runs one transaction that locks
 the current proposal, creates the new plan/target version, supersedes the previous version, and
 writes an audit event.
 

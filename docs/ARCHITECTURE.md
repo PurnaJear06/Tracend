@@ -258,10 +258,25 @@ health-check
 health-sync
 meal-analyze
 meal-media-retention
+onboarding-plan
 onboarding-propose-plan
 privacy-delete-account
 privacy-export
 ```
+
+**Onboarding plan generation.** `onboarding-plan` (2026-10) builds the starting plan from the
+reviewed answers. `onboarding-propose-plan`, the Phase-2 mock, stays for installed older builds.
+
+1. The function claims a durable generation (`claim_onboarding_generation`) and answers 202 at once.
+2. It keeps working in `EdgeRuntime.waitUntil`:
+   - it computes `onboarding-policy-v1`;
+   - it asks the configured model to choose within that policy, if the athlete's `onboarding_plan`
+     consent, an evaluated provider and the budget allow;
+   - it validates the plan, with one repair, or falls back to the rules plan;
+   - it stores a 2.0 proposal with `persist_onboarding_proposal_v2`.
+3. The app polls `get_my_onboarding_generation`.
+4. On approval, `respond_to_onboarding_proposal_v2` inserts exactly the proposed workouts. See
+   AI_SAFETY_SPEC §6, "Initial plan".
 
 `get_my_training_hub(period)`, `get_my_nutrition_schedule(date)`, and `get_my_daily_brief(date)` are
 authenticated read-model RPCs. They derive identity from `auth.uid()`, use only active approved

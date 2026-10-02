@@ -1670,3 +1670,35 @@ Deno.test("formatPlanProposal summarises structured and text proposals", () => {
     "accepted · Keep the split",
   );
 });
+
+Deno.test("the athlete profile shows the onboarding answers approval stores", () => {
+  const markdown = formatContextAsMarkdown({
+    coaching_date: "2026-10-02",
+    profile_context: {
+      experience_level: "beginner",
+      training_days: [1, 3, 5],
+      sex: "female",
+      age: 34,
+      daily_activity: "some_standing",
+      equipment: ["dumbbells", "pull_up_bar"],
+      limitations: "Left knee dislikes deep lunges",
+      nutrition_notes: "Vegetarian",
+    },
+  });
+  for (
+    const line of [
+      "- sex: female",
+      "- age: 34",
+      "- daily activity outside training: some standing",
+      "- equipment: dumbbells, pull up bar",
+      "- limitations (athlete's words): Left knee dislikes deep lunges",
+      "- diet notes (athlete's words): Vegetarian",
+    ]
+  ) {
+    if (!markdown.includes(line)) throw new Error(`missing: ${line}`);
+  }
+  const bodyweight = formatContextAsMarkdown({ profile_context: { equipment: [] } });
+  if (!bodyweight.includes("- equipment: bodyweight only")) {
+    throw new Error("empty equipment should read bodyweight only");
+  }
+});

@@ -80,6 +80,20 @@ Requirements:
 - Provider names or categories, data sent, purpose, and relevant retention behavior are disclosed
   before AI photo processing.
 
+
+AI consent is per purpose (2026-10):
+
+- **The notice is server data.** `ai_consent_notices` holds every notice, and `ai_notice_current`
+  names the current notice for the Coach chat, the daily decision and the onboarding plan.
+- **A grant counts only for a current notice.** It counts for a purpose only while it names that
+  purpose's current notice, so publishing a new notice (for example after a provider change) asks
+  every athlete again.
+- **New profile fields:**
+  - The onboarding answers approval stores on `user_profiles` (sex, birth year, daily activity,
+    equipment, limitations and diet notes) are writable only through approval. Clients keep column
+    grants for the step-0 fields only.
+  - They are exported by `privacy-export` and deleted with the account. So are
+    `onboarding_generations` and `ai_usage_events`.
 ## 4. HealthKit
 
 - Request only steps, active energy, sleep, workouts, weight, resting heart rate, and HRV needed for

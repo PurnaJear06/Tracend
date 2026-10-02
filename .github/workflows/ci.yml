@@ -38,7 +38,7 @@ jobs:
         run: deno lint supabase/functions
 
       - name: Unit tests (no DB)
-        run: deno test --allow-env --allow-net supabase/functions
+        run: deno test --allow-env --allow-net --allow-read=supabase/migrations supabase/functions
 
       - name: Backup storage script tests
         run: bash scripts/test-store-backup.sh

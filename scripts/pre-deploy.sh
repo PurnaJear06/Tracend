@@ -165,8 +165,8 @@ if echo "$STEPS" | grep -q "deno"; then
     die "lint issues"
   fi
 
-  info "deno test --allow-env --allow-net ..."
-  if "$repo_root/scripts/deno.sh" test --allow-env --allow-net supabase/functions 2>&1 | while IFS= read -r line; do
+  info "deno test --allow-env --allow-net --allow-read=supabase/migrations ..."
+  if "$repo_root/scripts/deno.sh" test --allow-env --allow-net --allow-read=supabase/migrations supabase/functions 2>&1 | while IFS= read -r line; do
     echo "    $line"
   done; then
     pass "Deno tests passed"
