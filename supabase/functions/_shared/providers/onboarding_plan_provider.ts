@@ -8,6 +8,12 @@ import { deepseekFlashPeakPricePerMillionUsd } from "./deepseek_models.ts";
 //   ONBOARDING_PLAN_MODEL_EVALUATED=true   set only after the onboarding eval passes
 //   ONBOARDING_PLAN_INPUT_COST_PER_MILLION_USD / _OUTPUT_  (required unless the
 //                              provider has a known default price)
+//   ONBOARDING_PLAN_THINKING   on (the default) | off: the first attempt reasons
+//                              before answering, for providers that support it
+//
+// Changing any of these creates a new version of every Edge Function: wait for
+// the change to finish, then run ./scripts/verify-live-function.sh --all from
+// the deployed commit.
 //
 // Every provider is called through its OpenAI-compatible chat-completions
 // endpoint in JSON mode. A provider change also needs a new AI notice
@@ -21,9 +27,13 @@ export const onboardingPlanProviders = {
     defaultPrice: deepseekFlashPeakPricePerMillionUsd as
       | Readonly<{ input: number; output: number }>
       | null,
-    // Live DeepSeek requests without this failed after about 17 s
-    // (deepseek_coach_model_provider.ts).
+    // Thinking off. DeepSeek V4 thinks by default; live daily-decision requests
+    // without this flag failed after about 17 s (deepseek_coach_model_provider.ts).
     extraBody: { thinking: { type: "disabled" } } as Record<string, unknown>,
+    // Thinking on: the request Coach chat sends for plan changes.
+    thinkingBody: { thinking: { type: "enabled" }, reasoning_effort: "high" } as
+      | Record<string, unknown>
+      | null,
   },
   groq: {
     url: "https://api.groq.com/openai/v1/chat/completions",
@@ -31,6 +41,7 @@ export const onboardingPlanProviders = {
     requiredFlags: [] as string[],
     defaultPrice: null,
     extraBody: {} as Record<string, unknown>,
+    thinkingBody: null,
   },
   gemini: {
     url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
@@ -38,6 +49,7 @@ export const onboardingPlanProviders = {
     requiredFlags: ["GEMINI_PAID_DATA_TERMS_ACCEPTED"],
     defaultPrice: null,
     extraBody: {} as Record<string, unknown>,
+    thinkingBody: null,
   },
 } as const;
 export type OnboardingPlanProviderName = keyof typeof onboardingPlanProviders;
@@ -47,14 +59,25 @@ export type OnboardingModelConfig = Readonly<{
   model: string;
   url: string;
   apiKey: string;
+  /** Request fields for an answer without thinking. */
   extraBody: Record<string, unknown>;
+  /** Request fields for a thinking answer; null when the provider has none. */
+  thinkingBody: Record<string, unknown> | null;
+  /** The first attempt thinks: the setting is on and the provider supports it. */
+  thinking: boolean;
   price: Readonly<{ input: number; output: number }>;
-  /** Output token limit; production uses onboardingPlanMaxOutputTokens. */
+  /**
+   * Output token limit for every call; when absent, production uses
+   * onboardingPlanMaxOutputTokens, or the thinking limit for a thinking call.
+   */
   maxOutputTokens?: number;
 }>;
 
 /** Room for a compact six-day plan with thinking off. */
 export const onboardingPlanMaxOutputTokens = 6000;
+
+/** Reasoning counts toward the output limit, so a thinking call needs more. */
+export const onboardingPlanThinkingMaxOutputTokens = 24_000;
 
 export type OnboardingModelResolution =
   | { kind: "model"; config: OnboardingModelConfig }
@@ -85,6 +108,10 @@ export function resolveOnboardingModel(env: Env = Deno.env): OnboardingModelReso
   if (entry.requiredFlags.some((flag) => env.get(flag) !== "true")) {
     return { kind: "rules", reason: "provider_terms_not_accepted" };
   }
+  const thinkingSetting = env.get("ONBOARDING_PLAN_THINKING") ?? "on";
+  if (thinkingSetting !== "on" && thinkingSetting !== "off") {
+    return { kind: "rules", reason: "provider_configuration_invalid" };
+  }
   const apiKey = env.get(entry.keyEnv) ?? "";
   if (!apiKey) return { kind: "rules", reason: "provider_key_missing" };
   const input = price(env, "ONBOARDING_PLAN_INPUT_COST_PER_MILLION_USD") ??
@@ -101,6 +128,8 @@ export function resolveOnboardingModel(env: Env = Deno.env): OnboardingModelReso
       url: entry.url,
       apiKey,
       extraBody: entry.extraBody,
+      thinkingBody: entry.thinkingBody,
+      thinking: thinkingSetting === "on" && entry.thinkingBody !== null,
       price: { input, output },
     },
   };
@@ -113,9 +142,15 @@ export type ModelCallFailure =
   | "provider_response_empty"
   | "provider_response_truncated";
 
-export type ModelUsage = Readonly<{ inputUnits: number; outputUnits: number }>;
+export type ModelUsage = Readonly<{
+  inputUnits: number;
+  /** Every billed output token, reasoning included. */
+  outputUnits: number;
+  /** The reasoning part of outputUnits, when the provider reports it. */
+  reasoningUnits: number;
+}>;
 
-const noUsage: ModelUsage = Object.freeze({ inputUnits: 0, outputUnits: 0 });
+const noUsage: ModelUsage = Object.freeze({ inputUnits: 0, outputUnits: 0, reasoningUnits: 0 });
 
 export class OnboardingModelCallError extends Error {
   readonly code: ModelCallFailure;
@@ -150,16 +185,29 @@ export type ModelCallResult = Readonly<{
   content: string;
   inputUnits: number;
   outputUnits: number;
+  reasoningUnits: number;
+  finishReason: string | null;
   latencyMs: number;
 }>;
+
+/**
+ * A thinking call leaves temperature out (thinking models ignore it); any
+ * other call sets it.
+ */
+export type ModelCallMode =
+  | Readonly<{ thinking: true }>
+  | Readonly<{ thinking: false; temperature: number }>;
 
 export async function callOnboardingModel(
   config: OnboardingModelConfig,
   messages: readonly Readonly<{ role: "system" | "user"; content: string }>[],
   timeoutMs: number,
-  temperature: number,
+  mode: ModelCallMode,
   fetcher: typeof fetch = fetch,
 ): Promise<ModelCallResult> {
+  if (mode.thinking && config.thinkingBody === null) {
+    throw new Error("onboarding model has no thinking mode");
+  }
   const started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
   const controller = new AbortController();
@@ -169,14 +217,24 @@ export async function callOnboardingModel(
       method: "POST",
       signal: controller.signal,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
-      body: JSON.stringify({
-        model: config.model,
-        temperature,
-        max_tokens: config.maxOutputTokens ?? onboardingPlanMaxOutputTokens,
-        response_format: { type: "json_object" },
-        ...config.extraBody,
-        messages,
-      }),
+      body: JSON.stringify(
+        mode.thinking
+          ? {
+            model: config.model,
+            max_tokens: config.maxOutputTokens ?? onboardingPlanThinkingMaxOutputTokens,
+            response_format: { type: "json_object" },
+            ...config.thinkingBody,
+            messages,
+          }
+          : {
+            model: config.model,
+            temperature: mode.temperature,
+            max_tokens: config.maxOutputTokens ?? onboardingPlanMaxOutputTokens,
+            response_format: { type: "json_object" },
+            ...config.extraBody,
+            messages,
+          },
+      ),
     });
     if (!response.ok) {
       await response.body?.cancel();
@@ -193,10 +251,13 @@ export async function callOnboardingModel(
       : undefined;
     const message = choice?.message as Record<string, unknown> | undefined;
     const reported = payload.usage as Record<string, unknown> | undefined;
+    const details = reported?.completion_tokens_details as Record<string, unknown> | undefined;
     const usage: ModelUsage = {
       inputUnits: tokens(reported?.prompt_tokens),
       outputUnits: tokens(reported?.completion_tokens),
+      reasoningUnits: tokens(details?.reasoning_tokens),
     };
+    const finishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : null;
     if (choice?.finish_reason === "length") {
       throw new OnboardingModelCallError("provider_response_truncated", elapsed(), usage);
     }
@@ -205,7 +266,7 @@ export async function callOnboardingModel(
     if (!content.trim()) {
       throw new OnboardingModelCallError("provider_response_empty", elapsed(), usage);
     }
-    return { content, ...usage, latencyMs: elapsed() };
+    return { content, ...usage, finishReason, latencyMs: elapsed() };
   } catch (error) {
     if (error instanceof OnboardingModelCallError) throw error;
     if (error instanceof Error && error.name === "AbortError") {

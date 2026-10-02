@@ -5,14 +5,16 @@ name: Onboarding Eval
 # for a provider or model: add the `onboarding-eval` label to a pull request or
 # use Run workflow on main.
 #
-# By default it calls DeepSeek directly (`DEEPSEEK_API_KEY` repository secret)
-# with deepseek-flash. The provider and model inputs pick another one; its key
-# comes from the matching repository secret (`GROQ_API_KEY`, `GEMINI_API_KEY`).
-# Only a direct run evaluates a model. route=router sends the same requests
-# through the OpenAI-compatible router in the `EVAL_BASE_URL` variable (with
-# `EVAL_API_KEY`) as a smoke test without the latency gate; it never counts for
-# ONBOARDING_PLAN_MODEL_EVALUATED. Each run makes 12 to 24 calls (one repair at
-# most per athlete).
+# route=router (the default) sends the requests through the OpenAI-compatible
+# router in the `EVAL_BASE_URL` variable with `EVAL_API_KEY`; the owner keeps
+# provider credits for production, so evals run there (use the router's model
+# id, e.g. deepseek-v4-flash). The router ignores thinking-off and adds its own
+# timeouts, so it cannot prove the exact production request; the first
+# production plans are checked through the onboarding.plan.generated audit
+# metadata. route=direct calls the provider with its repository secret
+# (`DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`) and gates p95 latency.
+# thinking matches ONBOARDING_PLAN_THINKING. Each run makes 12 to 24 calls (one
+# repair at most per athlete).
 on:
   workflow_dispatch:
     inputs:
@@ -21,15 +23,21 @@ on:
         required: false
         default: deepseek
       model:
-        description: The provider's model id
+        description: Model id (empty = deepseek-v4-flash on the router, deepseek-flash direct)
         required: false
-        default: deepseek-flash
+        default: ""
       route:
-        description: direct (evaluates the model) or router (smoke test only)
+        description: router (EVAL_BASE_URL) or direct (provider key secret)
         required: false
-        default: direct
+        default: router
         type: choice
-        options: [direct, router]
+        options: [router, direct]
+      thinking:
+        description: on or off, as ONBOARDING_PLAN_THINKING
+        required: false
+        default: "on"
+        type: choice
+        options: ["on", "off"]
   pull_request:
     types: [labeled]
 
@@ -59,9 +67,10 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
-          EVAL_BASE_URL: ${{ inputs.route == 'router' && vars.EVAL_BASE_URL || '' }}
+          EVAL_BASE_URL: ${{ inputs.route != 'direct' && vars.EVAL_BASE_URL || '' }}
+          EVAL_THINKING: ${{ inputs.thinking || 'on' }}
           EVAL_PROVIDER: ${{ inputs.provider || 'deepseek' }}
-          EVAL_MODEL: ${{ inputs.model || 'deepseek-flash' }}
+          EVAL_MODEL: ${{ inputs.model || (inputs.route != 'direct' && 'deepseek-v4-flash' || 'deepseek-flash') }}
           EVAL_REPORT_DIR: eval-report
         run: |
           hosts="api.deepseek.com,api.groq.com,generativelanguage.googleapis.com"

@@ -273,7 +273,8 @@ reviewed answers. `onboarding-propose-plan`, the Phase-2 mock, stays for install
    - it asks the configured model to choose within that policy, if the athlete's `onboarding_plan`
      consent, an evaluated provider and the budget allow;
    - it validates the plan, with one repair, or falls back to the rules plan;
-   - it stores a 2.0 proposal with `persist_onboarding_proposal_v2`.
+   - it stores a 2.0 proposal with `persist_onboarding_proposal_v3`, which also writes the call
+     telemetry to the audit event.
 3. The app polls `get_my_onboarding_generation`.
 4. On approval, `respond_to_onboarding_proposal_v2` inserts exactly the proposed workouts. See
    AI_SAFETY_SPEC §6, "Initial plan".

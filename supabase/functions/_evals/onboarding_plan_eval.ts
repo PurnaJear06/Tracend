@@ -10,19 +10,18 @@
 // (default deepseek-flash) pick the model; the provider's own key secret is
 // read (DEEPSEEK_API_KEY, GROQ_API_KEY or GEMINI_API_KEY). EVAL_BASE_URL +
 // EVAL_API_KEY send the same requests to an OpenAI-compatible router instead
-// (a smoke test: latency is reported, not gated). EVAL_REPORT_DIR defaults to
+// (latency is reported, not gated). EVAL_THINKING (on | off; default on)
+// matches ONBOARDING_PLAN_THINKING. EVAL_REPORT_DIR defaults to
 // .tooling/onboarding-evals/<timestamp>.
 //
 // Gate: at least 90% of athletes get a valid model plan (initial or repaired)
 // without falling back to the rules plan, and, for a direct provider, p95
-// latency under 60 s. Exits non-zero when the gate fails. Synthetic data only.
+// latency under 60 s (100 s with thinking). Exits non-zero when the gate
+// fails. Synthetic data only.
 
 import { type OnboardingAnswers } from "../_shared/onboarding/answers.ts";
 import { exerciseCatalogV1 } from "../_shared/onboarding/catalog.ts";
-import {
-  generateOnboardingProposal,
-  onboardingPlanTiming,
-} from "../_shared/onboarding/generate.ts";
+import { generateOnboardingProposal } from "../_shared/onboarding/generate.ts";
 import {
   type OnboardingModelConfig,
   type OnboardingPlanProviderName,
@@ -159,6 +158,11 @@ function config(): { config: OnboardingModelConfig; router: boolean } {
   if (!entry) throw new Error(`Unknown EVAL_PROVIDER ${providerName}`);
   const model = Deno.env.get("EVAL_MODEL") ?? "deepseek-flash";
   const price = entry.defaultPrice ?? { input: 0, output: 0 };
+  const thinkingSetting = Deno.env.get("EVAL_THINKING") ?? "on";
+  if (thinkingSetting !== "on" && thinkingSetting !== "off") {
+    throw new Error(`EVAL_THINKING must be on or off, not ${thinkingSetting}`);
+  }
+  const thinking = thinkingSetting === "on" && entry.thinkingBody !== null;
   if (router) {
     return {
       router: true,
@@ -168,14 +172,16 @@ function config(): { config: OnboardingModelConfig; router: boolean } {
         url: `${router.replace(/\/$/, "")}/chat/completions`,
         apiKey: Deno.env.get("EVAL_API_KEY") ?? "",
         // The provider's own request settings, plus thinking off in the
-        // routers' terms (as coach_chat_eval.ts does). Without it DeepSeek V4
-        // thinks by default and spends the token limit before the plan.
+        // routers' terms (as coach_chat_eval.ts does) for calls that should
+        // not think.
         extraBody: {
           ...entry.extraBody,
           ...("thinking" in entry.extraBody ? { reasoning_effort: "none" } : {}),
         },
-        // The router ignores both settings and DeepSeek V4 still thinks (9-21
-        // thousand characters of reasoning per answer on 2026-10-02), so a
+        thinkingBody: entry.thinkingBody,
+        thinking,
+        // The router ignores thinking-off and DeepSeek V4 still thinks (9-21
+        // thousand characters of reasoning per answer on 2026-10-02), so every
         // routed answer gets room for the reasoning on top of the plan.
         maxOutputTokens: 24_000,
         price,
@@ -192,6 +198,8 @@ function config(): { config: OnboardingModelConfig; router: boolean } {
       url: entry.url,
       apiKey,
       extraBody: entry.extraBody,
+      thinkingBody: entry.thinkingBody,
+      thinking,
       price,
     },
   };
@@ -204,9 +212,11 @@ const percentile = (values: number[], p: number) => {
 
 async function main() {
   const { config: modelConfig, router } = config();
+  // A direct run uses production timing (chosen by thinking); the router adds
+  // its own queueing and gets more room.
   const timing = router
     ? { totalDeadlineMs: 240_000, initialAttemptMs: 120_000, repairAttemptMs: 120_000 }
-    : onboardingPlanTiming;
+    : undefined;
   const results = [];
   // What the provider returned for each call (synthetic athletes only), so a
   // failed run shows why: finish reason, token counts and the answer's end.
@@ -253,6 +263,8 @@ async function main() {
       attempts: result.attempts,
       latency_ms: Math.round(performance.now() - started),
       cost_usd: result.usage?.estimatedCostUsd ?? 0,
+      output_units: result.usage?.outputUnits ?? 0,
+      reasoning_units: result.usage?.reasoningUnits ?? 0,
       calories: result.proposal.nutrition.calories,
       title: result.proposal.training.title,
       calls,
@@ -276,6 +288,7 @@ async function main() {
     provider: modelConfig.provider,
     model: modelConfig.model,
     router,
+    thinking: modelConfig.thinking,
     athletes: results.length,
     valid_without_fallback: valid,
     valid_rate: valid / results.length,
@@ -283,11 +296,14 @@ async function main() {
     fallback: results.length - valid,
     p50_latency_ms: percentile(latencies, 0.5),
     p95_latency_ms: percentile(latencies, 0.95),
+    p50_output_units: percentile(results.map((row) => row.output_units), 0.5),
+    p50_reasoning_units: percentile(results.map((row) => row.reasoning_units), 0.5),
     total_cost_usd: Math.round(results.reduce((sum, row) => sum + row.cost_usd, 0) * 1e6) / 1e6,
   };
+  const p95LimitMs = modelConfig.thinking ? 100_000 : 60_000;
   const gates = {
     valid_rate_at_least_90pct: summary.valid_rate >= 0.9,
-    p95_under_60s: router || summary.p95_latency_ms < 60_000,
+    p95_within_limit: router || summary.p95_latency_ms < p95LimitMs,
   };
   const dir = Deno.env.get("EVAL_REPORT_DIR") ??
     `.tooling/onboarding-evals/${new Date().toISOString().replaceAll(":", "-")}`;
@@ -299,7 +315,7 @@ async function main() {
   console.log(JSON.stringify({ summary, gates }, null, 2));
   if (router) {
     console.log(
-      "Router smoke test: this does not evaluate the provider. Run with route=direct before setting ONBOARDING_PLAN_MODEL_EVALUATED=true.",
+      "Router run: the router forwards to the provider with its own model id and timeouts and ignores thinking-off, so it does not prove the exact production request.",
     );
   }
   if (!Object.values(gates).every(Boolean)) Deno.exit(1);

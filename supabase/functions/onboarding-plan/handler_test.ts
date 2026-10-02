@@ -1,7 +1,14 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { catalogBySlug, exerciseCatalogV1 } from "../_shared/onboarding/catalog.ts";
+import { generateOnboardingProposal } from "../_shared/onboarding/generate.ts";
 import type { OnboardingProposalPayload } from "../_shared/onboarding/plan_contract.ts";
-import { type GenerationClaim, handleOnboardingPlan, type OnboardingStore } from "./handler.ts";
+import {
+  type GenerationClaim,
+  type GenerationMetadata,
+  handleOnboardingPlan,
+  type HandlerDeps,
+  type OnboardingStore,
+} from "./handler.ts";
 
 const completeDraft = {
   path: "beginner",
@@ -24,7 +31,11 @@ const completeDraft = {
 function store(overrides: Partial<OnboardingStore> & { claimAs?: GenerationClaim } = {}) {
   const calls = {
     claimedHashes: [] as string[],
-    persisted: [] as { generationId: string; proposal: OnboardingProposalPayload }[],
+    persisted: [] as {
+      generationId: string;
+      proposal: OnboardingProposalPayload;
+      metadata: GenerationMetadata | null;
+    }[],
     failed: [] as string[],
   };
   const fake: OnboardingStore = {
@@ -39,8 +50,8 @@ function store(overrides: Partial<OnboardingStore> & { claimAs?: GenerationClaim
     consent: () => Promise.resolve("granted"),
     budgetAvailable: () => Promise.resolve(true),
     recordUsage: () => Promise.resolve(),
-    persist: (generationId, _hash, _snapshot, proposal) => {
-      calls.persisted.push({ generationId, proposal });
+    persist: (generationId, _hash, _snapshot, proposal, metadata) => {
+      calls.persisted.push({ generationId, proposal, metadata });
       return Promise.resolve("stored");
     },
     fail: (generationId) => {
@@ -54,7 +65,7 @@ function store(overrides: Partial<OnboardingStore> & { claimAs?: GenerationClaim
 
 const quiet = { info: () => {}, warn: () => {}, error: () => {} };
 
-async function run(fake: OnboardingStore) {
+async function run(fake: OnboardingStore, extra: Partial<HandlerDeps> = {}) {
   const work: Promise<void>[] = [];
   const response = await handleOnboardingPlan({
     store: fake,
@@ -62,6 +73,7 @@ async function run(fake: OnboardingStore) {
     currentYear: 2026,
     background: (promise) => work.push(promise),
     observer: quiet,
+    ...extra,
   });
   await Promise.all(work);
   return { response, body: await response.json(), backgroundRuns: work.length };
@@ -179,4 +191,61 @@ Deno.test("answers no plan can meet are refused before any generation, every tim
     assertEquals(backgroundRuns, 0);
   }
   assertEquals(calls.claimedHashes.length, 0);
+});
+
+Deno.test("the rules plan stores no model telemetry; a model plan stores its call", async () => {
+  const rules = store();
+  await run(rules.fake);
+  assertEquals(rules.calls.persisted[0].metadata, null);
+
+  const modelled = store();
+  await run(modelled.fake, {
+    resolution: () => ({
+      kind: "model",
+      config: {
+        provider: "deepseek",
+        model: "deepseek-flash",
+        url: "https://api.deepseek.com/v1/chat/completions",
+        apiKey: "test-key",
+        extraBody: {},
+        thinkingBody: {},
+        thinking: true,
+        price: { input: 0.3, output: 1.2 },
+      },
+    }),
+    generate: (answers, catalog, _resolution, gate) =>
+      generateOnboardingProposal(answers, catalog, { kind: "rules", reason: "stub" }, gate)
+        .then((result) => ({
+          ...result,
+          fallbackReason: null,
+          usage: {
+            provider: "deepseek",
+            model: "deepseek-flash",
+            thinking: true,
+            inputUnits: 4100,
+            outputUnits: 9800,
+            reasoningUnits: 7300,
+            finishReason: "stop",
+            estimatedCostUsd: 0.013,
+            latencyMs: 41_250,
+          },
+          attempts: [{
+            attempt: "initial",
+            outcome: "valid",
+            rule: null,
+            path: null,
+            latencyMs: 41_250,
+            httpStatus: null,
+          }],
+        })),
+  });
+  assertEquals(modelled.calls.persisted[0].metadata, {
+    thinking: true,
+    latency_ms: 41_250,
+    attempts: 1,
+    input_units: 4100,
+    output_units: 9800,
+    reasoning_units: 7300,
+    finish_reason: "stop",
+  });
 });

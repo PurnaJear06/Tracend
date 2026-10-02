@@ -27,8 +27,38 @@ import type { OnboardingModelResolution } from "../_shared/providers/onboarding_
 // meet are refused at once (422 onboarding_plan_infeasible, with the answers
 // to change), so retrying them never starts a generation or calls a model.
 
-/** Longer than the 75 s model deadline plus storing, shorter than Edge limits. */
+/**
+ * Longer than the model deadline (75 s, or 110 s with thinking) plus storing,
+ * shorter than the 150 s Edge background limit.
+ */
 export const generationLeaseSeconds = 140;
+
+/**
+ * How the model call went, stored in the onboarding.plan.generated audit event
+ * so production plans can be checked (persist_onboarding_proposal_v3).
+ */
+export type GenerationMetadata = Readonly<{
+  thinking: boolean;
+  latency_ms: number;
+  attempts: number;
+  input_units: number;
+  output_units: number;
+  reasoning_units: number;
+  finish_reason: string | null;
+}>;
+
+export function generationMetadata(result: GenerationResult): GenerationMetadata | null {
+  if (!result.usage) return null;
+  return {
+    thinking: result.usage.thinking,
+    latency_ms: result.usage.latencyMs,
+    attempts: result.attempts.length,
+    input_units: result.usage.inputUnits,
+    output_units: result.usage.outputUnits,
+    reasoning_units: result.usage.reasoningUnits,
+    finish_reason: result.usage.finishReason,
+  };
+}
 
 export type GenerationClaim = Readonly<{
   generation_id: string;
@@ -50,6 +80,7 @@ export interface OnboardingStore {
     snapshotHash: string,
     snapshot: Record<string, unknown>,
     proposal: OnboardingProposalPayload,
+    metadata: GenerationMetadata | null,
   ): Promise<"stored" | "superseded">;
   fail(generationId: string, code: string): Promise<void>;
 }
@@ -164,6 +195,7 @@ async function runGeneration(
       model: result.usage?.model ?? null,
       fallbackReason: result.fallbackReason,
       attempts: result.attempts,
+      metadata: generationMetadata(result),
     };
     // A model was asked and its plan was not used: worth a look.
     if (result.usage && result.fallbackReason) {
@@ -171,7 +203,13 @@ async function runGeneration(
     } else {
       observer.info("onboarding_plan_generated", fields);
     }
-    const stored = await store.persist(generationId, snapshotHash, snapshot, result.proposal);
+    const stored = await store.persist(
+      generationId,
+      snapshotHash,
+      snapshot,
+      result.proposal,
+      generationMetadata(result),
+    );
     if (stored === "superseded") {
       observer.info("onboarding_plan_superseded", { generationId });
     }

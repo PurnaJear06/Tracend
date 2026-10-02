@@ -28,9 +28,12 @@ coaching checks its own notice, nutrition capped to the database bounds with inf
 refused up front, billed failures counted, and expired proposals recoverable. PR 3 (app) adds the
 new onboarding steps (including movements to avoid), a resumable plan build, the full proposal
 screen, expired-plan recovery and the server-rendered AI notice. All three merged and deployed
-2026-10-02 (`c0931ef`); the app is installed. The onboarding eval now calls the provider directly
-by default (the first run went to the router and reached no model); after it passes, set the
-`ONBOARDING_PLAN_*` secrets. See
+2026-10-02 (`c0931ef`), with the eval fixes (#63, #64, `dd76316`); the app is installed and the
+`ONBOARDING_PLAN_*` secrets are set, so consenting athletes get a DeepSeek plan. The final
+onboarding batch is four stacked PRs: A turns on thinking for the first attempt (setting
+`ONBOARDING_PLAN_THINKING`, default on) and stores call telemetry in the audit event; B, C and D add
+Apple Health to the plan and the onboarding steps and fix onboarding's remaining flaws. Evals run
+through NaraRouter only (owner's decision). See
 [`docs/handoff/onboarding.md`](./handoff/onboarding.md).
 
 ## Shipped baseline

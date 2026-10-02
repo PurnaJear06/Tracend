@@ -1,8 +1,17 @@
 # Onboarding Handoff — new-user plan
 
-**Status:** PR 1 (owner-facing fixes, [#60](https://github.com/PurnaJear06/Tracend/pull/60)), PR 2
-(server, [#61](https://github.com/PurnaJear06/Tracend/pull/61)) and PR 3 (app) are in review. Merge
-them in that order.
+**Status:** PR 1–3 ([#60](https://github.com/PurnaJear06/Tracend/pull/60),
+[#61](https://github.com/PurnaJear06/Tracend/pull/61), #62) and the eval fixes (#63, #64) are merged
+and deployed (2026-10-02). The `ONBOARDING_PLAN_*` secrets are set (deepseek / deepseek-flash /
+evaluated). The final onboarding batch is four stacked PRs (plan:
+`/Users/purnajear/.claude/plans/sprightly-splashing-dolphin.md`):
+
+- **A** thinking for the first attempt, timing and audit telemetry (this section: "Thinking");
+- **B** notice v4, timezone, Apple Health summary in the plan, avoided movements on the profile;
+- **C** the Apple Health onboarding step and per-account health state;
+- **D** onboarding recovery and UI fixes.
+
+The owner tests once from a fresh account after all four merge.
 
 Plan (owner-approved 2026-10-01, revised after a GPT review):
 `/Users/purnajear/.claude/plans/smooth-munching-castle.md`.
@@ -151,6 +160,23 @@ v1 approval now refuses 2.0 proposals.
 3. Then run `./scripts/verify-live-function.sh --all` from the deployed commit.
 4. Until then every new athlete gets the rules plan, which is still built from their answers.
 
+**Thinking** (PR A, AI_SAFETY_SPEC §10):
+
+- `ONBOARDING_PLAN_THINKING` is `on` when unset: the first attempt reasons (DeepSeek `thinking`
+  enabled, `reasoning_effort: high`, no temperature, 24,000 output tokens) within 85 s of a 110 s
+  deadline. The repair never thinks. The 140 s lease and the 150 s Edge background limit still
+  cover the deadline plus storing.
+- Why: the starting plan is the biggest decision in the app, it builds in the background, and the
+  owner's router evals (which always think) are what passed. Coach chat already sends the same
+  thinking request directly to DeepSeek for plan changes.
+- Evals run through NaraRouter only (owner's decision, 2026-10-02: keep DeepSeek credits for
+  production), so the first direct thinking plan is the owner's fresh-account test. Check it with
+  the audit query below: `thinking`, `latency_ms`, `reasoning_units` and `finish_reason` are stored
+  with every model plan.
+- **Rollback:** `./scripts/supabase.sh secrets set ONBOARDING_PLAN_THINKING=off --project-ref
+  qsfzzsjenopqqqhvpyaw`. A secret change creates a new version of every function: wait for it,
+  then run `./scripts/verify-live-function.sh --all` from the deployed commit.
+
 **Switching provider or model later** (AI_SAFETY_SPEC §10):
 
 1. Run the eval for the candidate.
@@ -164,7 +190,8 @@ v1 approval now refuses 2.0 proposals.
 **Owner queries** (SQL editor):
 
 - `select metadata from audit_events where action_code = 'onboarding.plan.generated' order by created_at desc limit 20;`
-  shows origin, model and fallback reason.
+  shows origin, model and fallback reason, and for a model plan whether it thought, its latency,
+  attempts, tokens (reasoning separately) and finish reason.
 - `select status, error_code, created_at from onboarding_generations order by created_at desc limit 20;`
 
 ## PR 3 — app
