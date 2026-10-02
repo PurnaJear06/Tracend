@@ -347,7 +347,7 @@ qualify a model.
     price.
   - `ONBOARDING_PLAN_THINKING`: `on` (the default when unset) or `off`. With it on, the first
     attempt reasons before answering (DeepSeek: `thinking` enabled, `reasoning_effort: high`, no
-    temperature, 24,000 output tokens) and gets 85 s of a 110 s deadline. The repair never thinks.
+    temperature, 24,000 output tokens) and gets 105 s of a 125 s deadline. The repair never thinks.
     A provider without a thinking mode ignores the setting. Off restores the request used before
     2026-10 (thinking disabled, temperature 0.2, 6,000 tokens, 55 s of 75 s).
 - **Calls:** every provider is called through its OpenAI-compatible chat-completions endpoint in
@@ -362,7 +362,7 @@ qualify a model.
 - **To switch provider or model:**
   1. Run the Onboarding Eval workflow (`.github/workflows/onboarding-eval.yml`) for the candidate.
      It must give at least 90% of the synthetic athletes a valid model plan without fallback. A
-     direct run also gates p95 latency (60 s, or 100 s with thinking). The owner runs evals through
+     direct run also gates p95 latency (60 s, or 120 s with thinking). The owner runs evals through
      the router (`EVAL_API_KEY`) to keep provider credits for production; the router ignores
      thinking-off and adds its own timeouts, so it cannot prove the exact production request, and
      the first production plans are checked through the audit telemetry instead.

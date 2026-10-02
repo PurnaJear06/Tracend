@@ -16,7 +16,7 @@
 //
 // Gate: at least 90% of athletes get a valid model plan (initial or repaired)
 // without falling back to the rules plan, and, for a direct provider, p95
-// latency under 60 s (100 s with thinking). Exits non-zero when the gate
+// latency under 60 s (120 s with thinking). Exits non-zero when the gate
 // fails. Synthetic data only.
 
 import { type OnboardingAnswers } from "../_shared/onboarding/answers.ts";
@@ -300,7 +300,7 @@ async function main() {
     p50_reasoning_units: percentile(results.map((row) => row.reasoning_units), 0.5),
     total_cost_usd: Math.round(results.reduce((sum, row) => sum + row.cost_usd, 0) * 1e6) / 1e6,
   };
-  const p95LimitMs = modelConfig.thinking ? 100_000 : 60_000;
+  const p95LimitMs = modelConfig.thinking ? 120_000 : 60_000;
   const gates = {
     valid_rate_at_least_90pct: summary.valid_rate >= 0.9,
     p95_within_limit: router || summary.p95_latency_ms < p95LimitMs,

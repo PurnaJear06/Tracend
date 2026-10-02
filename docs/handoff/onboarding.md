@@ -163,7 +163,7 @@ v1 approval now refuses 2.0 proposals.
 **Thinking** (PR A, AI_SAFETY_SPEC §10):
 
 - `ONBOARDING_PLAN_THINKING` is `on` when unset: the first attempt reasons (DeepSeek `thinking`
-  enabled, `reasoning_effort: high`, no temperature, 24,000 output tokens) within 85 s of a 110 s
+  enabled, `reasoning_effort: high`, no temperature, 24,000 output tokens) within 105 s of a 125 s
   deadline. The repair never thinks. The 140 s lease and the 150 s Edge background limit still
   cover the deadline plus storing.
 - Why: the starting plan is the biggest decision in the app, it builds in the background, and the

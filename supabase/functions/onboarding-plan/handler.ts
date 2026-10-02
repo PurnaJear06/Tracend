@@ -28,7 +28,7 @@ import type { OnboardingModelResolution } from "../_shared/providers/onboarding_
 // to change), so retrying them never starts a generation or calls a model.
 
 /**
- * Longer than the model deadline (75 s, or 110 s with thinking) plus storing,
+ * Longer than the model deadline (75 s, or 125 s with thinking) plus storing,
  * shorter than the 150 s Edge background limit.
  */
 export const generationLeaseSeconds = 140;

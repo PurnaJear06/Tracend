@@ -469,8 +469,8 @@ Deno.test("thinking gets the longer deadline; off keeps the original one", () =>
   assertEquals(onboardingTimingFor({ thinking: false }), onboardingPlanTiming);
   assertEquals(onboardingPlanTiming.totalDeadlineMs, 75_000);
   assertEquals(onboardingTimingFor({ thinking: true }), {
-    totalDeadlineMs: 110_000,
-    initialAttemptMs: 85_000,
+    totalDeadlineMs: 125_000,
+    initialAttemptMs: 105_000,
     repairAttemptMs: 20_000,
   });
   // Model time plus storing stays inside the 140 s generation lease.

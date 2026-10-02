@@ -64,13 +64,15 @@ export const onboardingPlanTiming: OnboardingPlanTiming = Object.freeze({
 });
 
 /**
- * A thinking first attempt gets more time; the repair never thinks. The total
- * plus storing stays inside the 140 s generation lease and the 150 s Edge
- * background limit of the Free plan.
+ * A thinking first attempt gets more time; the repair never thinks. A six-day
+ * plan with its reasoning is 8-10 thousand output tokens, which took 86-92 s
+ * through the eval router (2026-10-02). The total plus storing stays inside
+ * the 140 s generation lease and the 150 s Edge background limit of the Free
+ * plan.
  */
 export const onboardingPlanThinkingTiming: OnboardingPlanTiming = Object.freeze({
-  totalDeadlineMs: 110_000,
-  initialAttemptMs: 85_000,
+  totalDeadlineMs: 125_000,
+  initialAttemptMs: 105_000,
   repairAttemptMs: 20_000,
 });
 
