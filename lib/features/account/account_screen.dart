@@ -378,16 +378,25 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _openDeletion() async {
-    final deleted = await showModalBottomSheet<bool>(
+    final outcome = await showModalBottomSheet<AccountDeletionOutcome>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (_) => AccountDeletionSheet(repository: widget.deletion),
     );
-    if (deleted == true && mounted) {
-      await widget.onSignOut?.call();
-      if (mounted) Navigator.of(context).pop();
-    }
+    if (outcome == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await widget.onSignOut?.call();
+    if (mounted) Navigator.of(context).pop();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          outcome == AccountDeletionOutcome.deleted
+              ? 'Your account was deleted.'
+              : 'You were signed out. Sign in to see whether the account remains.',
+        ),
+      ),
+    );
   }
 
   Future<void> _openCoachThreads() async {

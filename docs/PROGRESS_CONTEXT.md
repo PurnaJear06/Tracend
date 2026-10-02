@@ -51,6 +51,14 @@ under its own notice, and the athlete confirms up to two as their focus (in revi
 re-plan from two weeks of logged sets. See
 [`docs/handoff/onboarding.md`](./handoff/onboarding.md).
 
+Account deletion recovery (owner report 2026-10-02, build 273): after **Delete account** spun
+and the app was force-closed, it opened on "Connection needed" for a deleted account. The gate
+never asked Auth whether a stored, unexpired session's account still existed, and the deletion
+request had no timeout. The fix (in review) validates the session with Auth on launch, signs out
+on any refusal, bounds the deletion wait with server confirmation and **Check again**, stores the
+pending check-in per athlete, and lets a stopped deletion be claimed again (additive migration).
+Needs a reinstall. See [`docs/handoff/account-session.md`](./handoff/account-session.md).
+
 ## Shipped baseline
 
 - iOS-only Flutter app backed by Supabase Auth, PostgreSQL/RLS, Storage, and nine Edge Functions.

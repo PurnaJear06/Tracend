@@ -38,11 +38,20 @@ enum CheckInReplayOutcome {
 /// The envelope stores the answer day's `local_date` and `timezone` next to
 /// the payload: a check-in belongs to the day it was answered, so a replay on
 /// a later launch must never re-date it to today.
+///
+/// The envelope is kept per athlete, so a check-in waiting for one account is
+/// never sent under another signed in on the same phone, and survives its own
+/// athlete's sign-out until they return.
 class CheckInQueue {
-  CheckInQueue(this._preferences);
+  CheckInQueue(this._preferences, {String? userId})
+    : _key = userId == null ? legacyStorageKey : storageKeyFor(userId);
   final SharedPreferences _preferences;
+  final String _key;
 
-  static const _key = 'daily_check_in_pending';
+  /// Builds before per-athlete envelopes kept one for the device.
+  static const legacyStorageKey = 'daily_check_in_pending';
+
+  static String storageKeyFor(String userId) => '$legacyStorageKey.$userId';
 
   /// Persist a check-in envelope for possible replay, returning the generated
   /// idempotency key. The same key serves both the immediate save attempt and
@@ -75,6 +84,7 @@ class CheckInQueue {
   /// envelope stored for the next launch. A stored envelope that predates
   /// this format is discarded as stale.
   Future<CheckInReplayOutcome> replay(CheckInSend send) async {
+    await _adoptLegacy();
     final stored = _preferences.getString(_key);
     if (stored == null) return CheckInReplayOutcome.none;
     final Map<String, dynamic> envelope;
@@ -110,5 +120,17 @@ class CheckInQueue {
     } on Exception {
       return CheckInReplayOutcome.retained;
     }
+  }
+
+  /// An envelope from an older build belongs to whoever was signed in then;
+  /// the first athlete to open Today takes it, as before.
+  Future<void> _adoptLegacy() async {
+    if (_key == legacyStorageKey) return;
+    final legacy = _preferences.getString(legacyStorageKey);
+    if (legacy == null) return;
+    if (_preferences.getString(_key) == null) {
+      await _preferences.setString(_key, legacy);
+    }
+    await _preferences.remove(legacyStorageKey);
   }
 }

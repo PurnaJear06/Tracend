@@ -344,7 +344,12 @@ history.
 - Destructive verification uses synthetic accounts only. Failure never reports completion to the
   app.
 
-- Account deletion requires explicit confirmation and revokes active sessions promptly.
+- Account deletion requires explicit confirmation and revokes active sessions promptly. Deleting
+  from the app removes that athlete's local data (Apple Health sync state, an unsent check-in, the
+  open Coach thread) once the server confirms. Any device still holding a deleted account's
+  session signs out at its next launch or refresh. Within the access token's hour Auth reports
+  `user_not_found` and the local data goes too; after it only a refused refresh token is known,
+  so the per-athlete data stays on the device, readable by no other account.
 - New processing stops while deletion is pending.
 - Delete relational user data, media, queued jobs, caches, exports, and supported provider
   application state.

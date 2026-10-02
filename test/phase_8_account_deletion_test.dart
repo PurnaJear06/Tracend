@@ -47,12 +47,17 @@ class _DeletionRepository implements AccountDeletionRepository {
   bool deleted = false;
 
   @override
-  Future<void> delete({
+  Future<AccountDeletionOutcome> delete({
     required String accountPassword,
     required String confirmation,
   }) async {
     expect(accountPassword, 'account-password');
     expect(confirmation, 'DELETE');
     deleted = true;
+    return AccountDeletionOutcome.deleted;
   }
+
+  @override
+  Future<AccountDeletionOutcome> confirm() async =>
+      AccountDeletionOutcome.deleted;
 }

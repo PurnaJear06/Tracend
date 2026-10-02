@@ -104,7 +104,14 @@ optional permissions before explaining their purpose.
 `Launch → Restore session → Today`
 
 - Restore selected tab, scroll position, and safe in-progress drafts.
-- If token refresh fails, preserve local workout data and request sign-in without deleting it.
+- Restoring asks Auth whether the account and session still exist; an access token alone stays
+  valid for up to an hour after its account is deleted.
+- If Auth refuses the session (deleted account, revoked session, or a refused refresh token), the
+  app signs out on this device and shows sign-in, never a connection error. A lost connection
+  keeps the session and offers **Retry**.
+- A refused session for an account that may still exist keeps that athlete's unsent check-in and
+  Apple Health sync state, stored per athlete so no other account can read them, for their next
+  sign-in. When Auth says the account no longer exists, its local data is removed.
 - Resolve deep links only after authentication and authorization.
 
 ## 4. Onboarding
@@ -603,8 +610,13 @@ say so. The ledger never edits records; withdrawal happens through the flow that
 - Export asks for the account password and a separate 12-character export password, explains media
   inclusion and expiry, and exposes download only when ready. Tracend cannot recover that password.
 - Deletion explains complete irreversible scope, requires the password and exact `DELETE`, and
-  returns to signed-out state only after server completion.
-- Deletion explains scope and irreversibility and shows pending/completed state.
+  returns to signed-out state only after the server confirms it (its reply, or Auth reporting the
+  account gone).
+- The wait is bounded: the app stops waiting for the reply after 60 seconds, then asks the server
+  where the deletion stands a few more times. If it is still running, the sheet says it has not
+  been confirmed yet and offers **Check again**. A failed deletion says the account remains.
+- Reopening the app after an interrupted deletion that finished lands on sign-in; deleting again
+  never asks for the password of an account that is already gone.
 - Withdrawing photo-AI consent stops new processing and applies
   [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md).
 
