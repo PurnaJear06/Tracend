@@ -2,7 +2,7 @@
 import type { OnboardingAnswers } from "./answers.ts";
 import { type EquipmentItem, exerciseCatalogV1 } from "./catalog.ts";
 import type { PlanPolicies } from "./plan_contract.ts";
-import { nutritionPolicy, trainingPolicy } from "./policy.ts";
+import { policiesFor as policiesForCatalog } from "./generate.ts";
 
 export const equipmentSets: Record<string, EquipmentItem[]> = {
   bodyweight: [],
@@ -38,6 +38,7 @@ export function answersFor(overrides: Partial<OnboardingAnswers> = {}): Onboardi
     equipmentNote: "",
     nutritionContext: "",
     limitations: "",
+    avoidPatterns: [],
     currentPlan: "",
     revisionNote: "",
     ...overrides,
@@ -45,10 +46,5 @@ export function answersFor(overrides: Partial<OnboardingAnswers> = {}): Onboardi
 }
 
 export function policiesFor(answers: OnboardingAnswers): PlanPolicies {
-  return {
-    answers,
-    nutrition: nutritionPolicy(answers),
-    training: trainingPolicy(answers),
-    catalog: exerciseCatalogV1,
-  };
+  return policiesForCatalog(answers, exerciseCatalogV1);
 }

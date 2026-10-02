@@ -568,15 +568,45 @@ export const catalogBySlug: ReadonlyMap<string, CatalogExercise> = new Map(
   exerciseCatalogV1.map((exercise) => [exercise.slug, exercise]),
 );
 
-/** Exercises this athlete can do with their equipment and experience. */
+/**
+ * The movement patterns an athlete can ask a plan to leave out (onboarding
+ * "movements to avoid"). Every exercise with that pattern is excluded.
+ */
+export const avoidablePatterns = [
+  "squat",
+  "lunge",
+  "hinge",
+  "horizontal_push",
+  "vertical_push",
+  "horizontal_pull",
+  "vertical_pull",
+] as const satisfies readonly MovementPattern[];
+export type AvoidablePattern = typeof avoidablePatterns[number];
+
+export const avoidablePatternLabels: Readonly<Record<AvoidablePattern, string>> = Object.freeze({
+  squat: "squats",
+  lunge: "lunges and step-ups",
+  hinge: "deadlifts and hip hinges",
+  horizontal_push: "bench pressing and push-ups",
+  vertical_push: "overhead pressing",
+  horizontal_pull: "rows",
+  vertical_pull: "pull-ups and pulldowns",
+});
+
+/**
+ * Exercises this athlete can do with their equipment and experience, leaving
+ * out the movement patterns they asked to avoid.
+ */
 export function allowedExercises(
   catalog: readonly CatalogExercise[],
   equipment: readonly EquipmentItem[],
   experience: "beginner" | "intermediate",
+  avoid: readonly MovementPattern[] = [],
 ): CatalogExercise[] {
   const owned = new Set(equipment);
   return catalog.filter((exercise) =>
     exercise.equipment.every((item) => owned.has(item)) &&
-    (experience === "intermediate" || exercise.level === "beginner")
+    (experience === "intermediate" || exercise.level === "beginner") &&
+    !avoid.includes(exercise.pattern)
   );
 }

@@ -8,31 +8,35 @@ const answering = (data: unknown, error: unknown = null): ConsentRpc => () =>
   Promise.resolve({ data, error });
 
 Deno.test("a current grant allows AI coaching", async () => {
-  assertEquals(await aiCoachingConsent(answering(true), "u"), "granted");
+  assertEquals(await aiCoachingConsent(answering(true), "u", "coach_chat"), "granted");
 });
 
 Deno.test("no grant, or a withdrawal, is not granted", async () => {
-  assertEquals(await aiCoachingConsent(answering(false), "u"), "not_granted");
+  assertEquals(await aiCoachingConsent(answering(false), "u", "coach_chat"), "not_granted");
 });
 
 Deno.test("a failed or malformed check is unavailable, never granted", async () => {
   assertEquals(
-    await aiCoachingConsent(answering(null, { code: "PGRST202" }), "u"),
+    await aiCoachingConsent(answering(null, { code: "PGRST202" }), "u", "coach_chat"),
     "unavailable",
   );
-  assertEquals(await aiCoachingConsent(answering("yes"), "u"), "unavailable");
+  assertEquals(await aiCoachingConsent(answering("yes"), "u", "coach_chat"), "unavailable");
   assertEquals(
-    await aiCoachingConsent(() => Promise.reject(new Error("offline")), "u"),
+    await aiCoachingConsent(() => Promise.reject(new Error("offline")), "u", "coach_chat"),
     "unavailable",
   );
 });
 
 Deno.test("the check asks about the signed-in athlete", async () => {
   let asked = "";
-  await aiCoachingConsent((_name, params) => {
-    asked = params.target_user_id;
-    return Promise.resolve({ data: true, error: null });
-  }, "athlete-1");
+  await aiCoachingConsent(
+    (_name, params) => {
+      asked = params.target_user_id;
+      return Promise.resolve({ data: true, error: null });
+    },
+    "athlete-1",
+    "coach_chat",
+  );
   assertEquals(asked, "athlete-1");
 });
 
@@ -74,4 +78,19 @@ Deno.test("a purpose asks about that purpose's current notice", async () => {
     "onboarding_plan",
   );
   assertEquals(asked, { target_user_id: "athlete-1", consent_purpose: "onboarding_plan" });
+});
+
+Deno.test("each caller's purpose reaches the check unchanged", async () => {
+  for (const purpose of ["coach_chat", "daily_coaching", "onboarding_plan"] as const) {
+    let asked: Record<string, unknown> = {};
+    await aiCoachingConsent(
+      (_name, params) => {
+        asked = params;
+        return Promise.resolve({ data: true, error: null });
+      },
+      "athlete-1",
+      purpose,
+    );
+    assertEquals(asked, { target_user_id: "athlete-1", consent_purpose: purpose });
+  }
 });

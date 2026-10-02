@@ -130,7 +130,11 @@ Rules:
 - **Claiming:** `claim_onboarding_generation` returns the running or finished generation for the
   same answers, and supersedes a generation for older answers.
 - **Writes:** worker writes land only while their generation is still running and current.
-- **Expiry:** an expired lease reads as `failed`.
+- **Expiry:** an expired lease reads as `failed`, and a pending proposal past its `expires_at`
+  (7 days) reads as `expired` in `get_my_onboarding_generation`, which also returns
+  `proposal_expires_at`. Answering an expired proposal stores `expired` and returns it.
+- **Movements to avoid:** the snapshot's `answers.avoid_patterns` (movement patterns) bind the
+  stored proposal; `persist_onboarding_proposal_v2` refuses an exercise with an avoided pattern.
 
 
 ### `onboarding_drafts`

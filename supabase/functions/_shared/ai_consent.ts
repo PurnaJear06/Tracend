@@ -7,21 +7,22 @@ export type AiConsentPurpose = "coach_chat" | "daily_coaching" | "onboarding_pla
 
 export type ConsentRpc = (
   name: "has_ai_coaching_consent",
-  params: { target_user_id: string; consent_purpose?: AiConsentPurpose },
+  params: { target_user_id: string; consent_purpose: AiConsentPurpose },
 ) => PromiseLike<{ data: unknown; error: unknown }>;
 
 /// Reads `has_ai_coaching_consent`: true only when the newest ai_coaching
-/// record grants the notice that is current for the purpose (the Coach chat
-/// when none is given).
+/// record grants the notice that is current for the purpose. Every caller
+/// names its purpose, so a notice published for one purpose never decides
+/// another.
 export async function aiCoachingConsent(
   rpc: ConsentRpc,
   userId: string,
-  purpose?: AiConsentPurpose,
+  purpose: AiConsentPurpose,
 ): Promise<AiCoachingConsent> {
   try {
     const { data, error } = await rpc(
       "has_ai_coaching_consent",
-      purpose ? { target_user_id: userId, consent_purpose: purpose } : { target_user_id: userId },
+      { target_user_id: userId, consent_purpose: purpose },
     );
     if (error || typeof data !== "boolean") return "unavailable";
     return data ? "granted" : "not_granted";

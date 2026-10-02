@@ -516,6 +516,9 @@ TDEE = BMR × daily-activity factor + training energy
 - **Floor:** max(BMR, 1,200 kcal female / 1,500 kcal male or unspecified), from NHLBI guidance.
 - **When the floor applies:** if the window starts below the floor, the floor wins and confidence
   is capped at low.
+- **Ceiling:** 6,000 kcal, the database bound. A window above it is capped (a 180 kg labourer
+  gaining muscle on six 2-hour sessions estimates about 6,500–7,100 kcal), confidence is capped at
+  low, and the plan says so.
 - **Basis:** fat loss of about 0.5–1% of body weight a week preserves lean mass (Helms 2014). A
   lean-gain surplus of about 10–20% gains about 0.25–0.5% of body weight a week (Iraki 2019).
 
@@ -523,10 +526,14 @@ TDEE = BMR × daily-activity factor + training energy
 
 - **Protein:** 1.6–2.2 g/kg, up to 2.6 g/kg in a deficit (fat loss, recomposition). Iraki 2019;
   ISSN 2017 gives 1.4–2.0 g/kg and 2.3–3.1 g/kg of lean mass in a deficit.
-- **High BMI:** at BMI ≥ 30, protein uses the weight at BMI 25. This is a design choice; no source
-  sets that cutoff.
+- **High BMI:** at BMI ≥ 30, protein and the fat minimum use the weight at BMI 25. This is a design
+  choice; no source sets that cutoff. With total weight, a 250 kg athlete's 0.5 g/kg fat minimum
+  passed the 35% maximum at their calorie target.
 - **Fat:** at least max(20% of calories, 0.5 g/kg) and at most 35% of calories (US DRI 20–35%).
-- **Carbohydrate:** the rest. Below 2 g/kg it is flagged as an assumption, not rejected.
+- **Carbohydrate:** the rest, 20–1,000 g. Below 2 g/kg it is flagged as an assumption, not
+  rejected. The rules plan raises fat (within its maximum) when carbohydrate would pass 1,000 g.
+- **Absolute bounds:** calories 1,000–6,000, protein 30–400 g, carbohydrate 20–1,000 g, fat
+  20–300 g, equal to `private.is_valid_initial_proposal_v2`.
 - **Macro sum:** 4·protein + 4·carbohydrate + 9·fat must be within 5% of the calorie target.
 
 ### Training
@@ -545,7 +552,10 @@ TDEE = BMR × daily-activity factor + training energy
     + max(5, 15%).
 - **Weekly sets per target muscle** (the catalog's first muscle): at most 12 for beginners and 20
   for intermediates. ACSM 2026 gives about 10+ sets per muscle a week; Schoenfeld 2017.
-- **Coverage:** every week includes a squat or lunge, a hinge, a push and a pull.
+- **Coverage:** every week includes a squat or lunge, a hinge, a push and a pull. A pattern the
+  athlete avoids is not required; a group with no pattern left that they can do is dropped.
+- **Movements to avoid:** squat, lunge, hinge, horizontal push, vertical push, horizontal pull,
+  vertical pull. Every exercise with an avoided pattern is excluded.
 - **Prescription ranges:**
   - Reps 6–20, or 3–20 for strength.
   - RPE 7–8.5 for beginners (RIR 2–3) and 7–9 for intermediates.
@@ -558,6 +568,11 @@ TDEE = BMR × daily-activity factor + training energy
     each movement slot.
   - Sessions of 45 minutes or less keep compound rests at 2 minutes so that they still cover the
     patterns.
-  - A Deno test proves it is valid for every equipment set × 1–6 days × both paths × every goal ×
-    30–120 minutes.
+  - A slot with nothing the athlete can do takes its sibling pattern (squat ↔ lunge, horizontal ↔
+    vertical push or pull).
+  - It is validated before use. Answers it cannot meet are refused as infeasible (see
+    AI_SAFETY_SPEC §6), never stored.
+  - Deno tests prove it is valid for every equipment set × 1–6 days × both paths × every goal ×
+    30–120 minutes; its nutrition is valid and storable for 14,400 combinations of body size, age,
+    activity, goal, sex and schedule; and it is valid with any one movement avoided.
 

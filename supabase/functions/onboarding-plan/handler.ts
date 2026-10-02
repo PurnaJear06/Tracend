@@ -11,6 +11,9 @@ import {
   generateOnboardingProposal,
   type GenerationResult,
   type GenerationUsage,
+  OnboardingPlanInfeasibleError,
+  policiesFor,
+  validRulesPlan,
 } from "../_shared/onboarding/generate.ts";
 import type { OnboardingProposalPayload } from "../_shared/onboarding/plan_contract.ts";
 import { onboardingPolicyVersion } from "../_shared/onboarding/policy.ts";
@@ -20,7 +23,9 @@ import type { OnboardingModelResolution } from "../_shared/providers/onboarding_
 // POST onboarding-plan: start (or return) the athlete's onboarding plan
 // generation and answer at once with its id. The plan is built in the
 // background; the app polls get_my_onboarding_generation. A repeated request
-// with the same answers returns the same generation.
+// with the same answers returns the same generation. Answers no valid plan can
+// meet are refused at once (422 onboarding_plan_infeasible, with the answers
+// to change), so retrying them never starts a generation or calls a model.
 
 /** Longer than the 75 s model deadline plus storing, shorter than Edge limits. */
 export const generationLeaseSeconds = 140;
@@ -76,6 +81,17 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
   if (!parsed.ok) {
     return reply(422, { error: "onboarding_answers_incomplete", missing: parsed.missing });
   }
+  const catalog = await deps.store.loadCatalog();
+  try {
+    validRulesPlan(policiesFor(parsed.answers, catalog));
+  } catch (error) {
+    if (!(error instanceof OnboardingPlanInfeasibleError)) throw error;
+    return reply(422, {
+      error: "onboarding_plan_infeasible",
+      rule: error.rule,
+      change: answersToChange(error.rule, parsed.answers),
+    });
+  }
   const snapshot = {
     schema_version: "2.0",
     policy_version: onboardingPolicyVersion,
@@ -91,8 +107,24 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
     ...(claim.proposal_id ? { proposal_id: claim.proposal_id } : {}),
   };
   if (!claim.started) return reply(claim.status === "succeeded" ? 200 : 202, body);
-  deps.background(runGeneration(deps, claim.generation_id, snapshotHash, snapshot, parsed.answers));
+  deps.background(
+    runGeneration(deps, claim.generation_id, snapshotHash, snapshot, parsed.answers, catalog),
+  );
   return reply(202, body);
+}
+
+/** The answers that decide whether a broken rule can be met. */
+export function answersToChange(rule: string, answers: OnboardingAnswers): string[] {
+  if (rule === "session_too_long" || rule === "session_set_budget_exceeded") {
+    return ["session_minutes"];
+  }
+  if (
+    rule.startsWith("calories") || rule.startsWith("protein") || rule.startsWith("fat") ||
+    rule.startsWith("carbohydrate") || rule === "macro_sum_mismatch"
+  ) {
+    return ["weight_kg", "daily_activity"];
+  }
+  return answers.avoidPatterns.length ? ["avoid_patterns", "equipment_items"] : ["equipment_items"];
 }
 
 async function runGeneration(
@@ -101,10 +133,10 @@ async function runGeneration(
   snapshotHash: string,
   snapshot: Record<string, unknown>,
   answers: OnboardingAnswers,
+  catalog: CatalogExercise[],
 ): Promise<void> {
   const { store, observer } = deps;
   try {
-    const catalog = await store.loadCatalog();
     const resolution = deps.resolution();
     let consentGranted = false;
     let budgetAvailable = false;
@@ -146,7 +178,10 @@ async function runGeneration(
   } catch (error) {
     observer.error("onboarding_plan_generation_failed", error, { generationId });
     try {
-      await store.fail(generationId, "generation_failed");
+      await store.fail(
+        generationId,
+        error instanceof OnboardingPlanInfeasibleError ? "plan_infeasible" : "generation_failed",
+      );
     } catch (failError) {
       // The lease expires on its own; the app then reads the generation as failed.
       observer.error("onboarding_plan_failure_not_recorded", failError, { generationId });

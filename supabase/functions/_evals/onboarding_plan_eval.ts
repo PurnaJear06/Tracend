@@ -46,6 +46,7 @@ const base: OnboardingAnswers = {
   equipmentNote: "",
   nutritionContext: "",
   limitations: "",
+  avoidPatterns: [],
   currentPlan: "",
   revisionNote: "",
 };
@@ -97,6 +98,8 @@ const athletes: Readonly<Record<string, OnboardingAnswers>> = {
     heightCm: 178,
     targetWeightKg: 110,
     equipment: ["machines", "cables", "dumbbells"],
+    limitations: "Squats and overhead pressing hurt; avoid both",
+    avoidPatterns: ["squat", "vertical_push"],
   },
   "beginner-light-woman-fat-loss": {
     ...base,
@@ -136,6 +139,7 @@ const athletes: Readonly<Record<string, OnboardingAnswers>> = {
     equipment: ["kettlebells", "pull_up_bar"],
     currentPlan: "Kettlebell swings and presses three times a week, 30 minutes",
     limitations: "Right shoulder aches with overhead pressing",
+    avoidPatterns: ["vertical_push"],
   },
   "experienced-recomp-gym-revision": {
     ...base,

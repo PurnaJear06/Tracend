@@ -47,6 +47,18 @@ export const goalCalorieAdjustments: Readonly<Record<Goal, readonly [number, num
     aesthetic: [-0.05, 0.05],
   });
 
+/**
+ * The absolute nutrition bounds a 2.0 proposal may carry. They equal the
+ * database check (private.is_valid_initial_proposal_v2), so a plan that passes
+ * validation is always storable; policy_test.ts keeps the two equal.
+ */
+export const nutritionBounds = Object.freeze({
+  calories: [1000, 6000] as const,
+  proteinG: [30, 400] as const,
+  carbohydrateG: [20, 1000] as const,
+  fatG: [20, 300] as const,
+});
+
 const sexFloorKcal: Readonly<Record<Sex, number>> = Object.freeze({
   female: 1200,
   male: 1500,
@@ -59,8 +71,12 @@ export type NutritionPolicy = Readonly<{
   tdeeKcal: readonly [number, number];
   activityFactor: number;
   floorKcal: number;
+  /** The highest calorie target Tracend sets (nutritionBounds). */
+  ceilingKcal: number;
   calories: readonly [number, number];
   floorApplied: boolean;
+  /** The goal range was above the ceiling and was capped to it. */
+  ceilingApplied: boolean;
   protein: readonly [number, number];
   /** Minimum fat in grams at a given calorie target. */
   fatMinG: (calories: number) => number;
@@ -88,26 +104,41 @@ export function nutritionPolicy(answers: OnboardingAnswers): NutritionPolicy {
   const tdeeHigh = bmrHigh * factor + training;
   const [adjustLow, adjustHigh] = goalCalorieAdjustments[goal];
   const floor = Math.max(sexFloorKcal[sex], Math.round(bmrLow));
+  // From BMI 30, protein and the fat minimum follow the weight at BMI 25, so
+  // they track lean mass instead of total weight.
+  const bmi = weightKg / ((heightCm / 100) ** 2);
+  const referenceWeight = bmi >= 30 ? 25 * (heightCm / 100) ** 2 : weightKg;
   let low = round10(tdeeLow * (1 + adjustLow));
   let high = round10(tdeeHigh * (1 + adjustHigh));
   const floorApplied = low < floor;
   low = Math.max(low, floor);
   high = Math.max(high, low);
-  const bmi = weightKg / ((heightCm / 100) ** 2);
-  const referenceWeight = bmi >= 30 ? 25 * (heightCm / 100) ** 2 : weightKg;
+  // Very large estimates (a heavy athlete with a physical job training long
+  // sessions) are capped, never passed on as a target nothing can store.
+  const ceiling = nutritionBounds.calories[1];
+  const ceilingApplied = high > ceiling;
+  high = Math.min(high, ceiling);
+  low = Math.min(low, high);
   const deficit = adjustHigh < 0 || goal === "recomposition";
-  const proteinLow = Math.max(30, Math.round(1.6 * referenceWeight));
-  const proteinHigh = Math.min(400, Math.round((deficit ? 2.6 : 2.2) * referenceWeight));
+  const [proteinMin, proteinMax] = nutritionBounds.proteinG;
+  const proteinLow = Math.max(proteinMin, Math.round(1.6 * referenceWeight));
+  const proteinHigh = Math.min(proteinMax, Math.round((deficit ? 2.6 : 2.2) * referenceWeight));
   return {
     bmrKcal: [Math.round(bmrLow), Math.round(bmrHigh)],
     tdeeKcal: [Math.round(tdeeLow), Math.round(tdeeHigh)],
     activityFactor: factor,
     floorKcal: floor,
+    ceilingKcal: ceiling,
     calories: [low, high],
     floorApplied,
+    ceilingApplied,
     protein: [proteinLow, proteinHigh],
-    fatMinG: (calories) => Math.max(20, Math.ceil(Math.max(0.2 * calories / 9, 0.5 * weightKg))),
-    fatMaxG: (calories) => Math.min(300, Math.floor(0.35 * calories / 9)),
+    fatMinG: (calories) =>
+      Math.max(
+        nutritionBounds.fatG[0],
+        Math.ceil(Math.max(0.2 * calories / 9, 0.5 * referenceWeight)),
+      ),
+    fatMaxG: (calories) => Math.min(nutritionBounds.fatG[1], Math.floor(0.35 * calories / 9)),
     carbohydrateFlagBelowG: Math.round(2 * weightKg),
     macroTolerance: 0.05,
   };
@@ -134,14 +165,26 @@ export type TrainingPolicy = Readonly<{
   restSeconds: readonly [number, number];
   /** Minutes a session may run over the athlete's chosen length. */
   sessionOverrunMinutes: number;
-  /** Each week must include one movement from every group. */
+  /**
+   * Each week must include one movement from every group. A pattern the
+   * athlete avoids is not required, and a group they avoid entirely is dropped.
+   */
   requiredPatternGroups: readonly (readonly MovementPattern[])[];
+  avoidPatterns: readonly MovementPattern[];
 }>;
+
+const patternGroups: readonly (readonly MovementPattern[])[] = [
+  ["squat", "lunge"],
+  ["hinge"],
+  ["horizontal_push", "vertical_push"],
+  ["horizontal_pull", "vertical_pull"],
+];
 
 export function trainingPolicy(answers: OnboardingAnswers): TrainingPolicy {
   const minutes = answers.sessionMinutes;
   const strength = answers.goal === "strength";
   const beginner = answers.experience === "beginner";
+  const avoid: readonly MovementPattern[] = answers.avoidPatterns;
   return {
     split: splitForDays(answers.trainingWeekdays.length),
     blockWeeks: [4, 8],
@@ -153,12 +196,10 @@ export function trainingPolicy(answers: OnboardingAnswers): TrainingPolicy {
     rpe: beginner ? [7, 8.5] : [7, 9],
     restSeconds: [60, strength ? 240 : 180],
     sessionOverrunMinutes: Math.max(5, Math.round(minutes * 0.15)),
-    requiredPatternGroups: [
-      ["squat", "lunge"],
-      ["hinge"],
-      ["horizontal_push", "vertical_push"],
-      ["horizontal_pull", "vertical_pull"],
-    ],
+    requiredPatternGroups: patternGroups
+      .map((group) => group.filter((pattern) => !avoid.includes(pattern)))
+      .filter((group) => group.length > 0),
+    avoidPatterns: avoid,
   };
 }
 
@@ -182,7 +223,7 @@ export function confidenceCap(
   answers: OnboardingAnswers,
   nutrition: NutritionPolicy,
 ): "low" | "medium" {
-  if (nutrition.floorApplied) return "low";
+  if (nutrition.floorApplied || nutrition.ceilingApplied) return "low";
   if (answers.sex === "unspecified") return "low";
   // Targets are first estimates until weigh-ins confirm them (2-3 weeks).
   return "medium";

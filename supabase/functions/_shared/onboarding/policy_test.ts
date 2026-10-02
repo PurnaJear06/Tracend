@@ -4,11 +4,13 @@ import {
   confidenceCap,
   estimateWorkoutMinutes,
   mifflinStJeor,
+  nutritionBounds,
   nutritionPolicy,
   splitForDays,
   trainingEnergyPerDay,
   trainingPolicy,
 } from "./policy.ts";
+import type { AvoidablePattern } from "./catalog.ts";
 import { answersFor } from "./test_helpers.ts";
 
 Deno.test("Mifflin-St Jeor matches the published equation", () => {
@@ -81,6 +83,54 @@ Deno.test("fat bounds follow calories and body weight", () => {
   const policy = nutritionPolicy(answersFor({ weightKg: 78 }));
   assertEquals(policy.fatMinG(2000), Math.ceil(Math.max(0.2 * 2000 / 9, 39)));
   assertEquals(policy.fatMaxG(2000), Math.floor(0.35 * 2000 / 9));
+  // From BMI 30 the per-kg minimum follows the weight at BMI 25, so the
+  // minimum never passes the 35% maximum for a very heavy athlete.
+  const heavy = nutritionPolicy(answersFor({ weightKg: 250, heightCm: 150, goal: "fat_loss" }));
+  assertEquals(heavy.fatMinG(0), Math.ceil(0.5 * 25 * 1.5 ** 2));
+  assert(heavy.fatMinG(heavy.calories[0]) <= heavy.fatMaxG(heavy.calories[0]));
+});
+
+Deno.test("nutrition bounds equal the database check, and the range never leaves them", async () => {
+  const sql = await Deno.readTextFile(
+    new URL("../../../migrations/20261002092000_onboarding_plan_v2.sql", import.meta.url),
+  );
+  const bound = (field: string) => {
+    const match = sql.match(
+      new RegExp(`jsonb_int_between\\(nutrition -> '${field}', (\\d+), (\\d+)\\)`),
+    );
+    assert(match, `${field} bound not found in the migration`);
+    return [Number(match[1]), Number(match[2])];
+  };
+  assertEquals(bound("calories"), [...nutritionBounds.calories]);
+  assertEquals(bound("protein_g"), [...nutritionBounds.proteinG]);
+  assertEquals(bound("carbohydrate_g"), [...nutritionBounds.carbohydrateG]);
+  assertEquals(bound("fat_g"), [...nutritionBounds.fatG]);
+
+  const huge = nutritionPolicy(answersFor({
+    weightKg: 180,
+    heightCm: 190,
+    dailyActivity: "physical_labour",
+    goal: "muscle_gain",
+    trainingWeekdays: [1, 2, 3, 4, 5, 6],
+    sessionMinutes: 120,
+  }));
+  assertEquals(huge.calories, [6000, 6000]);
+  assert(huge.ceilingApplied && !huge.floorApplied);
+  assertEquals(confidenceCap(answersFor(), huge), "low");
+  assert(!nutritionPolicy(answersFor()).ceilingApplied);
+});
+
+Deno.test("movements to avoid leave the required groups; a fully avoided group is dropped", () => {
+  const groups = (avoidPatterns: readonly AvoidablePattern[]) =>
+    trainingPolicy(answersFor({ avoidPatterns })).requiredPatternGroups;
+  assertEquals(groups([]).length, 4);
+  assertEquals(groups(["squat", "vertical_push"]), [
+    ["lunge"],
+    ["hinge"],
+    ["horizontal_push"],
+    ["horizontal_pull", "vertical_pull"],
+  ]);
+  assertEquals(groups(["squat", "lunge"]).length, 3);
 });
 
 Deno.test("splits and session limits by schedule", () => {
@@ -133,6 +183,7 @@ Deno.test("answers: complete drafts parse, old drafts list what is missing", () 
   assertEquals(parsed.answers.weightKg, 63.5);
   assertEquals(parsed.answers.age, 36);
   assertEquals(answersSnapshot(parsed.answers).equipment_items, ["barbell", "bench"]);
+  assertEquals(parsed.answers.avoidPatterns, []);
 
   const old = parseOnboardingAnswers("beginner", {
     goal: "recomposition",
@@ -171,4 +222,41 @@ Deno.test("answers: under-18s, seven training days and an experienced path witho
     ok: false,
     missing: ["birth_year", "training_weekdays", "current_plan"],
   });
+});
+
+Deno.test("answers: movements to avoid are kept, and a written limitation needs them", () => {
+  const complete = {
+    goal: "fat_loss",
+    sex: "male",
+    birth_year: 1994,
+    height_cm: 180,
+    weight_kg: 90,
+    daily_activity: "mostly_sitting",
+    training_weekdays: [1, 3, 5],
+    session_minutes: 60,
+    equipment_items: ["dumbbells"],
+  };
+  assertEquals(
+    parseOnboardingAnswers("beginner", {
+      ...complete,
+      constraints: "Squats and overhead pressing hurt; avoid both",
+    }, 2026),
+    { ok: false, missing: ["avoid_patterns"] },
+  );
+  const parsed = parseOnboardingAnswers("beginner", {
+    ...complete,
+    constraints: "Squats and overhead pressing hurt; avoid both",
+    avoid_patterns: ["vertical_push", "squat", "jumping"],
+  }, 2026);
+  assert(parsed.ok);
+  if (!parsed.ok) return;
+  assertEquals(parsed.answers.avoidPatterns, ["squat", "vertical_push"]);
+  assertEquals(answersSnapshot(parsed.answers).avoid_patterns, ["squat", "vertical_push"]);
+  // A limitation answered with "none of these" is complete.
+  const none = parseOnboardingAnswers("beginner", {
+    ...complete,
+    constraints: "I dislike burpees",
+    avoid_patterns: [],
+  }, 2026);
+  assert(none.ok);
 });

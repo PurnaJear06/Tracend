@@ -92,14 +92,34 @@ v1 approval now refuses 2.0 proposals.
 
 - `onboarding-plan` (`handler.ts` plus `index.ts`) answers 202 and generates in
   `EdgeRuntime.waitUntil`.
-- `_shared/onboarding/`: answers, catalog, policy, contract (28 rules), rules plan, generator.
+- `_shared/onboarding/`: answers, catalog, policy, contract (29 rules), rules plan, generator.
 - `_shared/providers/onboarding_plan_provider.ts`: any OpenAI-compatible provider by settings.
 
 **Tests**
 
-- 226 Deno tests. The rules plan is valid in all 3,600 combinations tested.
+- 242 Deno tests. The rules plan is valid in all 3,600 schedule combinations, its nutrition in
+  14,400 body-size combinations, and with any one movement avoided.
 - `onboarding_plan_v2_test.sql`: 44 pgTAP checks, including consent per purpose, stale workers,
   catalog refusal, exact workouts on approval, column grants and cross-user access.
+- `onboarding_review_fixes_test.sql`: 15 pgTAP checks for the review fixes below.
+
+**Review fixes** (2026-10-02, `20261002094000_onboarding_review_fixes.sql` and the Edge code):
+
+1. **Movements to avoid** are a structured answer (`avoid_patterns`), required when the athlete
+   writes a limitation. The prompt, the catalog sent, the validator (`exercise_avoided`), the rules
+   plan and `persist_onboarding_proposal_v2` all enforce them.
+2. **Daily coaching** checks its own notice: coach-decide passes `daily_coaching`, coach-chat
+   passes `coach_chat`, and the purpose is now required in `aiCoachingConsent`.
+3. **Nutrition bounds** equal the database check; calories are capped at 6,000 kcal and the fat
+   minimum uses the BMI-25 weight from BMI 30. The rules plan is validated before any model call;
+   infeasible answers get 422 `onboarding_plan_infeasible` with the answers to change, and no
+   generation starts.
+4. **Usage:** empty and cut-off answers carry the provider's token counts, so every billed attempt,
+   including the repair, counts toward the budget.
+5. **Expiry:** `get_my_onboarding_generation` reports a pending proposal past its expiry as
+   `expired` (with `proposal_expires_at`), and `respond_to_onboarding_proposal_v2` stores the
+   expiry and returns status `expired` instead of raising. The same answers then start a fresh
+   generation.
 
 **Rollout after merge** (deploy is automatic; nothing is visible until PR 3):
 

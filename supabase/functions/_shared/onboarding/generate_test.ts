@@ -1,6 +1,12 @@
-import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
+import { assert, assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert@1.0.14";
 import { exerciseCatalogV1 } from "./catalog.ts";
-import { generateOnboardingProposal, onboardingUserMessage } from "./generate.ts";
+import { catalogBySlug } from "./catalog.ts";
+import {
+  generateOnboardingProposal,
+  OnboardingPlanInfeasibleError,
+  onboardingSystemPrompt,
+  onboardingUserMessage,
+} from "./generate.ts";
 import { buildRulesPlan } from "./rules_plan.ts";
 import { answersFor, policiesFor } from "./test_helpers.ts";
 import {
@@ -83,7 +89,9 @@ const model: OnboardingModelResolution = {
 };
 const open = { consentGranted: true, budgetAvailable: true };
 
-function scripted(...replies: (string | number | "abort")[]) {
+type Billed = Readonly<{ content: string; finish: string; input: number; output: number }>;
+
+function scripted(...replies: (string | number | "abort" | Billed)[]) {
   const bodies: Record<string, unknown>[] = [];
   const fetcher = ((_url: string, init: RequestInit) => {
     bodies.push(JSON.parse(init.body as string));
@@ -92,6 +100,12 @@ function scripted(...replies: (string | number | "abort")[]) {
       return Promise.reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
     }
     if (typeof next === "number") return Promise.resolve(new Response("{}", { status: next }));
+    if (typeof next === "object") {
+      return Promise.resolve(Response.json({
+        choices: [{ message: { content: next.content }, finish_reason: next.finish }],
+        usage: { prompt_tokens: next.input, completion_tokens: next.output },
+      }));
+    }
     return Promise.resolve(Response.json({
       choices: [{ message: { content: next ?? "" }, finish_reason: "stop" }],
       usage: { prompt_tokens: 4000, completion_tokens: 2000 },
@@ -217,4 +231,96 @@ Deno.test("athlete text is sent as escaped data with only allowed exercises", ()
   assertStringIncludes(message, "<revision_request>");
   assertStringIncludes(message, "push-up | Push-up");
   assert(!message.includes("leg-press"), "machines are not offered to a bodyweight athlete");
+});
+
+Deno.test("empty and cut-off answers are billed, and every attempt is counted", async () => {
+  const truncated: Billed = {
+    content: '{"title": "Foun',
+    finish: "length",
+    input: 4000,
+    output: 6000,
+  };
+  const empty: Billed = { content: "", finish: "stop", input: 4000, output: 6000 };
+  for (const replies of [[truncated, truncated], [empty, truncated], [truncated, empty]]) {
+    const result = await generateOnboardingProposal(
+      answers,
+      exerciseCatalogV1,
+      model,
+      open,
+      scripted(...replies).fetcher,
+    );
+    assertEquals(result.proposal.training.origin, "rules");
+    assertEquals(result.attempts.map((a) => a.outcome), ["call_failed", "call_failed"]);
+    assertEquals([result.usage?.inputUnits, result.usage?.outputUnits], [8000, 12000]);
+    assertEquals(result.usage?.estimatedCostUsd, (8000 * 0.3 + 12000 * 1.2) / 1_000_000);
+  }
+  // A billed failure followed by a repaired plan counts both calls.
+  const repaired = await generateOnboardingProposal(
+    answers,
+    exerciseCatalogV1,
+    model,
+    open,
+    scripted(truncated, aiPlan).fetcher,
+  );
+  assertEquals(repaired.proposal.training.origin, "ai");
+  assertEquals([repaired.usage?.inputUnits, repaired.usage?.outputUnits], [8000, 8000]);
+});
+
+const avoiding = answersFor({
+  goal: "muscle_gain",
+  limitations: "Squats and overhead pressing hurt; avoid both",
+  avoidPatterns: ["squat", "vertical_push"],
+});
+
+const patternsOf = (training: Record<string, unknown>) =>
+  (training.weekly_structure as { exercises: { slug: string }[] }[])
+    .flatMap((workout) => workout.exercises)
+    .map((exercise) => catalogBySlug.get(exercise.slug)!.pattern);
+
+Deno.test("movements to avoid: the model is told, offered none, and checked", async () => {
+  const system = onboardingSystemPrompt(policiesFor(avoiding));
+  assertStringIncludes(system, "avoid squats, overhead pressing");
+  const message = onboardingUserMessage(avoiding, exerciseCatalogV1);
+  for (const slug of ["goblet-squat", "barbell-back-squat", "dumbbell-shoulder-press"]) {
+    assert(!message.includes(`${slug} |`), `${slug} is not offered`);
+  }
+  // The model ignores the request twice (squats and shoulder presses): rules plan.
+  const ignoring = JSON.stringify(validPlan);
+  const result = await generateOnboardingProposal(
+    avoiding,
+    exerciseCatalogV1,
+    model,
+    open,
+    scripted(ignoring, ignoring).fetcher,
+  );
+  assertEquals(result.attempts.map((a) => a.rule), ["exercise_avoided", "exercise_avoided"]);
+  assertEquals(result.proposal.training.origin, "rules");
+  const patterns = patternsOf(result.proposal.training);
+  assert(!patterns.includes("squat") && !patterns.includes("vertical_push"));
+  assertStringIncludes(
+    (result.proposal.training.assumptions as string[])[0],
+    "Leaves out, as you asked: squats, overhead pressing.",
+  );
+});
+
+Deno.test("infeasible answers stop before any model call", async () => {
+  const { fetcher, bodies } = scripted(aiPlan);
+  const error = await assertRejects(
+    () =>
+      generateOnboardingProposal(
+        answersFor({
+          equipment: [],
+          trainingWeekdays: [1, 2, 4, 5],
+          limitations: "Shoulder surgery",
+          avoidPatterns: ["horizontal_push", "vertical_push", "horizontal_pull", "vertical_pull"],
+        }),
+        exerciseCatalogV1,
+        model,
+        open,
+        fetcher,
+      ),
+    OnboardingPlanInfeasibleError,
+  );
+  assertEquals(error.rule, "exercise_count_out_of_range");
+  assertEquals(bodies.length, 0);
 });

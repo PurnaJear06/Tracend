@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
-import { exerciseCatalogV1 } from "../_shared/onboarding/catalog.ts";
+import { catalogBySlug, exerciseCatalogV1 } from "../_shared/onboarding/catalog.ts";
 import type { OnboardingProposalPayload } from "../_shared/onboarding/plan_contract.ts";
 import { type GenerationClaim, handleOnboardingPlan, type OnboardingStore } from "./handler.ts";
 
@@ -112,10 +112,71 @@ Deno.test("the same answers hash the same, and a running or finished generation 
 
 Deno.test("a failure in the background marks the generation failed", async () => {
   const { fake, calls } = store({
-    loadCatalog: () => Promise.reject(new Error("database unavailable")),
+    persist: () => Promise.reject(new Error("database unavailable")),
   });
   const { response } = await run(fake);
   assertEquals(response.status, 202);
   assertEquals(calls.failed, ["gen-1"]);
-  assertEquals(calls.persisted.length, 0);
+});
+
+Deno.test("movements to avoid never reach the plan", async () => {
+  const { fake, calls } = store({
+    loadDraft: () =>
+      Promise.resolve({
+        ...completeDraft,
+        payload: {
+          ...completeDraft.payload,
+          constraints: "Squats and overhead pressing hurt; avoid both",
+          avoid_patterns: ["squat", "vertical_push"],
+        },
+      }),
+  });
+  const { response } = await run(fake);
+  assertEquals(response.status, 202);
+  const slugs = (calls.persisted[0].proposal.training.weekly_structure as {
+    exercises: { slug: string }[];
+  }[]).flatMap((workout) => workout.exercises.map((exercise) => exercise.slug));
+  const patterns = slugs.map((slug) => catalogBySlug.get(slug)!.pattern);
+  assert(!patterns.includes("squat") && !patterns.includes("vertical_push"));
+  assert(patterns.includes("lunge"), "squats give way to lunges");
+});
+
+Deno.test("a written limitation without movements to avoid is incomplete", async () => {
+  const { fake, calls } = store({
+    loadDraft: () =>
+      Promise.resolve({
+        ...completeDraft,
+        payload: { ...completeDraft.payload, constraints: "Squats hurt" },
+      }),
+  });
+  const { response, body } = await run(fake);
+  assertEquals(response.status, 422);
+  assertEquals(body.missing, ["avoid_patterns"]);
+  assertEquals(calls.claimedHashes.length, 0);
+});
+
+Deno.test("answers no plan can meet are refused before any generation, every time", async () => {
+  // Bodyweight only and every upper-body pattern avoided: upper days are empty.
+  const { fake, calls } = store({
+    loadDraft: () =>
+      Promise.resolve({
+        ...completeDraft,
+        payload: {
+          ...completeDraft.payload,
+          training_weekdays: [1, 2, 4, 5],
+          equipment_items: [],
+          constraints: "Shoulder surgery last year",
+          avoid_patterns: ["horizontal_push", "vertical_push", "horizontal_pull", "vertical_pull"],
+        },
+      }),
+  });
+  for (let retry = 0; retry < 2; retry++) {
+    const { response, body, backgroundRuns } = await run(fake);
+    assertEquals(response.status, 422);
+    assertEquals(body.error, "onboarding_plan_infeasible");
+    assertEquals(body.rule, "exercise_count_out_of_range");
+    assertEquals(body.change, ["avoid_patterns", "equipment_items"]);
+    assertEquals(backgroundRuns, 0);
+  }
+  assertEquals(calls.claimedHashes.length, 0);
 });

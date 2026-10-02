@@ -80,6 +80,26 @@ Deno.test("exercise rules", () => {
   assertEquals(invalid(rest), "rest_out_of_range");
 });
 
+Deno.test("an exercise from a movement the athlete avoids is rejected", () => {
+  const avoiding = policiesFor(answersFor({
+    equipment: equipmentSets.dumbbells,
+    limitations: "Squats and overhead pressing hurt; avoid both",
+    avoidPatterns: ["squat", "vertical_push"],
+  }));
+  // The plan built without the request starts with a squat.
+  assertEquals(valid.workouts[0].exercises[0].slug, "bodyweight-squat");
+  assertEquals(
+    rule(() => validateOnboardingPlan(valid, avoiding)),
+    "exercise_avoided",
+  );
+  const pressing = copy();
+  pressing.workouts[0].exercises[0].slug = "dumbbell-shoulder-press";
+  assertEquals(
+    rule(() => validateOnboardingPlan(pressing as OnboardingPlan, avoiding)),
+    "exercise_avoided",
+  );
+});
+
 Deno.test("volume and time rules", () => {
   const budget = copy();
   for (const exercise of budget.workouts[0].exercises) exercise.sets = 5;

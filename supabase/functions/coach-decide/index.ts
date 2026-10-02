@@ -56,12 +56,13 @@ Deno.serve(async (request) => {
   } catch {
     return reply(422, { error: "invalid_coach_request" });
   }
-  // Checked before anything else: without the athlete's current AI coaching
-  // consent (or when the check fails), the day's decision comes from the
-  // deterministic provider and no data reaches the AI provider.
+  // Checked before anything else: without the athlete's consent to the notice
+  // current for daily coaching (or when the check fails), the day's decision
+  // comes from the deterministic provider and no data reaches the AI provider.
   const consent = await aiCoachingConsent(
     (name, params) => auth.serviceClient.rpc(name, params),
     auth.userId,
+    "daily_coaching",
   );
   const useModel = consent === "granted";
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(

@@ -206,29 +206,44 @@ Since 2026-10 (`onboarding-plan`, policy `onboarding-policy-v1`):
 
 - **The model chooses inside ranges that deterministic code computes.** The prompt states every
   range, and `_shared/onboarding/plan_contract.ts` rejects a plan that leaves any of them, with one
-  of 28 finite rule names. The formulas and sources are in ALGORITHMS.md §9.
+  of 29 finite rule names. The formulas and sources are in ALGORITHMS.md §9.
   - **Calories:** a goal window around maintenance, with a floor of the larger of BMR and
-    1,200 kcal (female) or 1,500 kcal (male or unspecified).
+    1,200 kcal (female) or 1,500 kcal (male or unspecified), and a ceiling of 6,000 kcal.
   - **Macros:** protein 1.6–2.2 g/kg (2.6 g/kg in a deficit), fat 20–35% of calories and at least
     0.5 g/kg, and a macro sum within 5% of calories.
+  - **Storable:** the absolute nutrition bounds equal the database check, so a valid plan is
+    always storable (`policy_test.ts` compares them with the migration).
   - **Training:**
     - one workout on each chosen weekday, at most six;
     - a set and exercise budget per session length, and the session must fit its minutes;
     - weekly sets per target muscle at most 12 for beginners and 20 for intermediates;
-    - each week includes a squat or lunge, a hinge, a push and a pull;
+    - each week includes a squat or lunge, a hinge, a push and a pull, except a group the
+      athlete avoids entirely or cannot do with their equipment;
     - reps 6–20 (3–20 for strength), RPE 7–8.5 (beginners) or 7–9, rest 60–180 s (240 s for
       strength), and blocks of 4–8 weeks.
 - **Exercises:** only active `exercise_catalog` slugs that the athlete's equipment and experience
-  allow.
+  allow, never from a movement pattern the athlete chose to avoid (rule `exercise_avoided`).
+  - The onboarding "movements to avoid" answer is structured (squats, lunges, hinges, horizontal
+    and overhead pressing, rows, vertical pulling). A written limitation needs that answer too,
+    because the rules plan cannot read free text.
+  - The prompt names the avoided patterns and the catalog it receives leaves them out; the
+    validator, the rules plan and `persist_onboarding_proposal_v2` all enforce them.
 - **What deterministic code sets, not the model:** names from the catalog, workout order and
-  length, and a confidence cap. Confidence is low when sex is unspecified or the calorie floor
+  length, a confidence cap, and fixed notes (the movements left out, the calorie ceiling, low
+  carbohydrate). Confidence is low when sex is unspecified or the calorie floor or ceiling
   applies, and medium otherwise.
 - **When the model is not used:**
   - A plan that fails validation gets one targeted repair.
   - Anything else becomes the **rules plan**, built by the same policy without a model. That also
     happens with no `onboarding_plan` consent, no evaluated provider, or an exhausted budget.
-  - Every athlete gets a valid plan, labelled with its origin (`ai` or `rules`) and any fallback
-    reason.
+  - The rules plan is built and validated before any model call. When it cannot meet the
+    policy (equipment and movements to avoid leave a day empty), the answers are infeasible:
+    `onboarding-plan` answers 422 `onboarding_plan_infeasible` with the answers to change, starts
+    no generation and calls no model, so a retry with the same answers cannot repeat a failure.
+  - Otherwise every athlete gets a valid plan, labelled with its origin (`ai` or `rules`) and any
+    fallback reason.
+  - Every billed call counts toward the AI budget, including empty or cut-off answers and the
+    repair attempt.
 - **Approval:** `respond_to_onboarding_proposal_v2` inserts exactly the approved workouts and
   exercises, and activates the goal, profile and onboarding weight, in one transaction.
 

@@ -108,17 +108,35 @@ export type ModelCallFailure =
   | "provider_response_empty"
   | "provider_response_truncated";
 
+export type ModelUsage = Readonly<{ inputUnits: number; outputUnits: number }>;
+
+const noUsage: ModelUsage = Object.freeze({ inputUnits: 0, outputUnits: 0 });
+
 export class OnboardingModelCallError extends Error {
   readonly code: ModelCallFailure;
   readonly latencyMs: number;
+  /**
+   * Tokens the provider reported for a failed answer. An empty or cut-off
+   * answer is still billed, so it counts toward the AI budget.
+   */
+  readonly usage: ModelUsage;
 
-  constructor(code: ModelCallFailure, latencyMs: number, options?: ErrorOptions) {
+  constructor(
+    code: ModelCallFailure,
+    latencyMs: number,
+    usage: ModelUsage = noUsage,
+    options?: ErrorOptions,
+  ) {
     super(code, options);
     this.name = "OnboardingModelCallError";
     this.code = code;
     this.latencyMs = latencyMs;
+    this.usage = usage;
   }
 }
+
+const tokens = (value: unknown): number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0;
 
 export type ModelCallResult = Readonly<{
   content: string;
@@ -164,27 +182,28 @@ export async function callOnboardingModel(
       ? payload.choices[0] as Record<string, unknown> | undefined
       : undefined;
     const message = choice?.message as Record<string, unknown> | undefined;
-    const usage = payload.usage as Record<string, unknown> | undefined;
+    const reported = payload.usage as Record<string, unknown> | undefined;
+    const usage: ModelUsage = {
+      inputUnits: tokens(reported?.prompt_tokens),
+      outputUnits: tokens(reported?.completion_tokens),
+    };
     if (choice?.finish_reason === "length") {
-      throw new OnboardingModelCallError("provider_response_truncated", elapsed());
+      throw new OnboardingModelCallError("provider_response_truncated", elapsed(), usage);
     }
     const content = typeof message?.content === "string" ? message.content : "";
     // DeepSeek documents that JSON mode "may occasionally return empty content".
-    if (!content.trim()) throw new OnboardingModelCallError("provider_response_empty", elapsed());
-    return {
-      content,
-      inputUnits: Number.isInteger(usage?.prompt_tokens) ? Number(usage?.prompt_tokens) : 0,
-      outputUnits: Number.isInteger(usage?.completion_tokens)
-        ? Number(usage?.completion_tokens)
-        : 0,
-      latencyMs: elapsed(),
-    };
+    if (!content.trim()) {
+      throw new OnboardingModelCallError("provider_response_empty", elapsed(), usage);
+    }
+    return { content, ...usage, latencyMs: elapsed() };
   } catch (error) {
     if (error instanceof OnboardingModelCallError) throw error;
     if (error instanceof Error && error.name === "AbortError") {
-      throw new OnboardingModelCallError("provider_timeout", elapsed(), { cause: error });
+      throw new OnboardingModelCallError("provider_timeout", elapsed(), noUsage, { cause: error });
     }
-    throw new OnboardingModelCallError("provider_http_error", elapsed(), { cause: error });
+    throw new OnboardingModelCallError("provider_http_error", elapsed(), noUsage, {
+      cause: error,
+    });
   } finally {
     clearTimeout(timer);
   }

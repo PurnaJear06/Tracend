@@ -1,10 +1,11 @@
 import type { OnboardingAnswers } from "./answers.ts";
-import { allowedExercises, type CatalogExercise } from "./catalog.ts";
+import { allowedExercises, avoidablePatternLabels, type CatalogExercise } from "./catalog.ts";
 import {
   buildOnboardingProposal,
   onboardingPlanJsonShape,
   onboardingPlanLimits,
   OnboardingPlanValidationError,
+  type OnboardingPlanValidationRule,
   type OnboardingProposalPayload,
   parseOnboardingPlan,
   type PlanPolicies,
@@ -21,7 +22,34 @@ import {
 
 // Builds the onboarding proposal: the configured model proposes within
 // onboarding-policy-v1, deterministic code validates it, one targeted repair
-// is allowed, and anything else becomes the rules plan.
+// is allowed, and anything else becomes the rules plan. The rules plan is
+// validated too; when it cannot meet the policy (equipment and movements to
+// avoid leave a day empty), the answers are infeasible and nothing is stored.
+
+/** The answers leave no valid plan; the athlete has to change them. */
+export class OnboardingPlanInfeasibleError extends Error {
+  readonly rule: OnboardingPlanValidationRule;
+
+  constructor(rule: OnboardingPlanValidationRule) {
+    super(`onboarding plan infeasible: ${rule}`);
+    this.name = "OnboardingPlanInfeasibleError";
+    this.rule = rule;
+  }
+}
+
+/** The rules plan for these answers, validated against the same policy. */
+export function validRulesPlan(policies: PlanPolicies) {
+  const plan = buildRulesPlan(policies);
+  try {
+    validateOnboardingPlan(plan, policies);
+  } catch (error) {
+    if (error instanceof OnboardingPlanValidationError) {
+      throw new OnboardingPlanInfeasibleError(error.rule);
+    }
+    throw error;
+  }
+  return plan;
+}
 
 export type OnboardingPlanTiming = Readonly<{
   totalDeadlineMs: number;
@@ -102,7 +130,18 @@ export function onboardingSystemPrompt(policies: PlanPolicies): string {
       training.rpe[1]
     }; rest_seconds ${training.restSeconds[0]}-${training.restSeconds[1]}.`,
     `- Weekly sets for each target muscle (the first muscle in the catalog line) at most ${training.maxWeeklySetsPerMuscle}.`,
-    "- Every week includes a squat or lunge, a hinge, a push and a pull.",
+    `- Every week includes one movement from each group: ${
+      training.requiredPatternGroups.map((group) => group.join(" or ")).join("; ")
+    }.`,
+    ...(answers.avoidPatterns.length
+      ? [
+        `- The athlete asked to avoid ${
+          answers.avoidPatterns.map((pattern) => avoidablePatternLabels[pattern]).join(", ")
+        } (patterns ${
+          answers.avoidPatterns.join(", ")
+        }). The catalog leaves them out; never use one of these patterns.`,
+      ]
+      : []),
     `- block_weeks ${training.blockWeeks[0]}-${training.blockWeeks[1]}; the last week is a deload.`,
     "",
     "Nutrition rules (computed by Tracend from the athlete's answers):",
@@ -115,7 +154,9 @@ export function onboardingSystemPrompt(policies: PlanPolicies): string {
       nutrition.calories[1]
     } kcal (never below ${nutrition.floorKcal}).`,
     `- protein_g ${nutrition.protein[0]}-${nutrition.protein[1]}.`,
-    "- fat_g at least 20% of calories and at least 0.5 g per kg of body weight, at most 35% of calories.",
+    `- fat_g at least 20% of calories and at least ${
+      nutrition.fatMinG(0)
+    } g, at most 35% of calories.`,
     "- carbohydrate_g is the rest; 4 x protein + 4 x carbohydrate + 9 x fat must be within 5% of calories.",
     "",
     "Coaching rules:",
@@ -150,9 +191,15 @@ export function onboardingUserMessage(
     equipment_note: answers.equipmentNote,
     nutrition_context: answers.nutritionContext,
     limitations: answers.limitations,
+    movements_to_avoid: answers.avoidPatterns,
     current_plan: answers.currentPlan,
   };
-  const lines = allowedExercises(catalog, answers.equipment, answers.experience)
+  const lines = allowedExercises(
+    catalog,
+    answers.equipment,
+    answers.experience,
+    answers.avoidPatterns,
+  )
     .map((exercise) =>
       `${exercise.slug} | ${exercise.name} | ${exercise.pattern} | ${exercise.muscles.join(", ")}`
     );
@@ -175,10 +222,22 @@ export function policiesFor(
   answers: OnboardingAnswers,
   catalog: readonly CatalogExercise[],
 ): PlanPolicies {
+  const training = trainingPolicy(answers);
+  // A movement group is required only while the athlete can still do one of
+  // its patterns: avoiding push-ups with no equipment leaves no push to require.
+  const available = new Set(
+    allowedExercises(catalog, answers.equipment, answers.experience, answers.avoidPatterns)
+      .map((exercise) => exercise.pattern),
+  );
   return {
     answers,
     nutrition: nutritionPolicy(answers),
-    training: trainingPolicy(answers),
+    training: {
+      ...training,
+      requiredPatternGroups: training.requiredPatternGroups
+        .map((group) => group.filter((pattern) => available.has(pattern)))
+        .filter((group) => group.length > 0),
+    },
     catalog,
   };
 }
@@ -192,12 +251,15 @@ export async function generateOnboardingProposal(
   timing: OnboardingPlanTiming = onboardingPlanTiming,
 ): Promise<GenerationResult> {
   const policies = policiesFor(answers, catalog);
+  // Built and checked before any model call: infeasible answers throw here and
+  // spend nothing, and every fallback below is a plan known to be valid.
+  const fallback = validRulesPlan(policies);
   const rules = (
     fallbackReason: string,
     usage: GenerationUsage | null,
     attempts: GenerationAttempt[],
   ) => ({
-    proposal: buildOnboardingProposal(buildRulesPlan(policies), policies, {
+    proposal: buildOnboardingProposal(fallback, policies, {
       origin: "rules" as const,
       provider: null,
       model: null,
@@ -273,6 +335,8 @@ export async function generateOnboardingProposal(
       content = result.content;
     } catch (error) {
       if (!(error instanceof OnboardingModelCallError)) throw error;
+      inputUnits += error.usage.inputUnits;
+      outputUnits += error.usage.outputUnits;
       latencyMs += error.latencyMs;
       attempts.push({
         attempt,

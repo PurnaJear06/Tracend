@@ -1,8 +1,15 @@
 import type { OnboardingAnswers } from "./answers.ts";
-import { allowedExercises, type CatalogExercise, catalogVersion } from "./catalog.ts";
+import {
+  allowedExercises,
+  type AvoidablePattern,
+  avoidablePatternLabels,
+  type CatalogExercise,
+  catalogVersion,
+} from "./catalog.ts";
 import {
   confidenceCap,
   estimateWorkoutMinutes,
+  nutritionBounds,
   type NutritionPolicy,
   onboardingPolicyVersion,
   type TrainingPolicy,
@@ -44,6 +51,7 @@ export const onboardingPlanValidationRules = [
   "exercise_count_out_of_range",
   "unknown_exercise",
   "exercise_not_allowed",
+  "exercise_avoided",
   "duplicate_exercise_in_workout",
   "sets_out_of_range",
   "reps_out_of_range",
@@ -346,6 +354,9 @@ export function validateOnboardingPlan(plan: OnboardingPlan, policies: PlanPolic
       if (!known.has(exercise.slug)) fail("unknown_exercise", `${exercisePath}.slug`);
       const entry = allowed.get(exercise.slug);
       if (!entry) fail("exercise_not_allowed", `${exercisePath}.slug`);
+      if (training.avoidPatterns.includes(entry.pattern)) {
+        fail("exercise_avoided", `${exercisePath}.slug`);
+      }
       if (seen.has(exercise.slug)) fail("duplicate_exercise_in_workout", `${exercisePath}.slug`);
       seen.add(exercise.slug);
       if (!between(exercise.sets, training.setsPerExercise)) {
@@ -400,7 +411,7 @@ export function validateOnboardingPlan(plan: OnboardingPlan, policies: PlanPolic
   ) {
     fail("fat_out_of_range", "$.nutrition.fat_g");
   }
-  if (food.carbohydrate_g < 20 || food.carbohydrate_g > 1000) {
+  if (!between(food.carbohydrate_g, nutritionBounds.carbohydrateG)) {
     fail("carbohydrate_out_of_range", "$.nutrition.carbohydrate_g");
   }
   const macroCalories = 4 * food.protein_g + 4 * food.carbohydrate_g + 9 * food.fat_g;
@@ -443,9 +454,21 @@ export function buildOnboardingProposal(
   const workouts = [...plan.workouts].sort((a, b) => a.weekday - b.weekday);
   const cap = confidenceCap(policies.answers, policies.nutrition);
   const confidence = confidenceRank[plan.confidence] > confidenceRank[cap] ? cap : plan.confidence;
-  const carbohydrateFlag = plan.nutrition.carbohydrate_g < policies.nutrition.carbohydrateFlagBelowG
-    ? ["Carbohydrate is below 2 g per kg of body weight, which may limit training energy."]
-    : [];
+  // Notes deterministic code always adds, whatever the model wrote.
+  const avoided = policies.answers.avoidPatterns.map((pattern: AvoidablePattern) =>
+    avoidablePatternLabels[pattern]
+  );
+  const notes = [
+    ...(avoided.length ? [`Leaves out, as you asked: ${avoided.join(", ")}.`] : []),
+    ...(policies.nutrition.ceilingApplied
+      ? [
+        `Your estimated needs are above ${policies.nutrition.ceilingKcal} kcal, the most Tracend sets; weigh-ins over 2-3 weeks will show whether to change it.`,
+      ]
+      : []),
+    ...(plan.nutrition.carbohydrate_g < policies.nutrition.carbohydrateFlagBelowG
+      ? ["Carbohydrate is below 2 g per kg of body weight, which may limit training energy."]
+      : []),
+  ];
   return {
     training: {
       title: plan.title,
@@ -487,7 +510,7 @@ export function buildOnboardingProposal(
       policy_version: onboardingPolicyVersion,
       catalog_version: catalogVersion,
       assessment: plan.assessment,
-      assumptions: [...plan.assumptions, ...carbohydrateFlag].slice(0, 7),
+      assumptions: [...notes, ...plan.assumptions],
       missing_information: plan.missing_information,
       kept_from_current_plan: plan.kept_from_current_plan,
       changed_from_current_plan: plan.changed_from_current_plan,
@@ -498,6 +521,8 @@ export function buildOnboardingProposal(
         calorie_range_kcal: policies.nutrition.calories,
         floor_kcal: policies.nutrition.floorKcal,
         floor_applied: policies.nutrition.floorApplied,
+        ceiling_kcal: policies.nutrition.ceilingKcal,
+        ceiling_applied: policies.nutrition.ceilingApplied,
         protein_range_g: policies.nutrition.protein,
       },
     },

@@ -23,7 +23,10 @@ reopening on the proposal step spins forever. The owner chose an AI-proposed pla
 deterministic code, with a swappable provider. PR 1 fixes Today's workout date, Start session, and
 the Coach's proposal line. PR 2 (server, in review) adds per-purpose AI notices, an exercise
 catalog, `onboarding-policy-v1` and the new `onboarding-plan` function (any provider, set by secrets,
-with a rules fallback). PR 3 (app) follows. See
+with a rules fallback). Review fixes on PR 2: movements to avoid enforced on every path, daily
+coaching checks its own notice, nutrition capped to the database bounds with infeasible answers
+refused up front, billed failures counted, and expired proposals recoverable. PR 3 (app) follows.
+See
 [`docs/handoff/onboarding.md`](./handoff/onboarding.md).
 
 ## Shipped baseline

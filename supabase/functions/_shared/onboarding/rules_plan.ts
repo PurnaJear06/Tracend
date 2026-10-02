@@ -1,6 +1,6 @@
 import { allowedExercises, type CatalogExercise, type MovementPattern } from "./catalog.ts";
 import type { OnboardingPlan, PlanExercise, PlanPolicies, PlanWorkout } from "./plan_contract.ts";
-import { estimateWorkoutMinutes, type Split } from "./policy.ts";
+import { estimateWorkoutMinutes, nutritionBounds, type Split } from "./policy.ts";
 
 // The rules plan: a complete onboarding plan built only by deterministic code
 // from onboarding-policy-v1 and the catalog. It is used whenever a model is
@@ -8,6 +8,17 @@ import { estimateWorkoutMinutes, type Split } from "./policy.ts";
 // fails validation after one repair, so every athlete gets a valid plan.
 
 type Slot = readonly MovementPattern[];
+
+// When a slot has nothing the athlete can do (equipment, or a movement they
+// avoid), its sibling pattern fills it, so a day keeps its balance.
+const substitutes: Readonly<Partial<Record<MovementPattern, readonly MovementPattern[]>>> = {
+  squat: ["lunge"],
+  lunge: ["squat"],
+  horizontal_push: ["vertical_push"],
+  vertical_push: ["horizontal_push"],
+  horizontal_pull: ["vertical_pull"],
+  vertical_pull: ["horizontal_pull"],
+};
 type DayTemplate = Readonly<{ name: string; objective: string; slots: readonly Slot[] }>;
 
 const fullBodyA: DayTemplate = {
@@ -166,7 +177,12 @@ function prescription(
 
 export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
   const { answers, training, nutrition } = policies;
-  const allowed = allowedExercises(policies.catalog, answers.equipment, answers.experience);
+  const allowed = allowedExercises(
+    policies.catalog,
+    answers.equipment,
+    answers.experience,
+    answers.avoidPatterns,
+  );
   const days = templates[training.split](answers.trainingWeekdays.length);
   const usedThisWeek = new Set<string>();
   const weeklySets = new Map<string, number>();
@@ -182,11 +198,16 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
     );
     for (const slot of day.slots) {
       if (exercises.length >= training.maxExercisesPerSession) break;
-      const candidates = slot.flatMap((pattern) =>
-        allowed.filter((exercise) =>
-          exercise.pattern === pattern && !exercises.some((item) => item.slug === exercise.slug)
-        )
-      );
+      const fill = (patterns: readonly MovementPattern[]) =>
+        patterns.flatMap((pattern) =>
+          allowed.filter((exercise) =>
+            exercise.pattern === pattern && !exercises.some((item) => item.slug === exercise.slug)
+          )
+        );
+      const own = fill(slot);
+      const candidates = own.length
+        ? own
+        : fill(slot.flatMap((pattern) => substitutes[pattern] ?? []));
       const choice = candidates.find((exercise) => !usedThisWeek.has(exercise.slug)) ??
         candidates[0];
       if (!choice) continue;
@@ -236,9 +257,15 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
     nutrition.protein[1],
     Math.max(nutrition.protein[0], Math.round(reference * (deficit ? 2.0 : 1.8))),
   );
+  // A quarter of calories from fat, more when carbohydrate would otherwise
+  // pass its upper bound.
   const fat = Math.min(
     nutrition.fatMaxG(calories),
-    Math.max(nutrition.fatMinG(calories), Math.round(0.25 * calories / 9)),
+    Math.max(
+      nutrition.fatMinG(calories),
+      Math.round(0.25 * calories / 9),
+      Math.ceil((calories - 4 * protein - 4 * nutritionBounds.carbohydrateG[1]) / 9),
+    ),
   );
   const carbohydrate = Math.max(20, Math.round((calories - 4 * protein - 9 * fat) / 4));
   const experienced = answers.path === "experienced";
@@ -251,6 +278,11 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
       : "Built by Tracend's rules from your schedule, equipment and goal, so the first weeks set a measurable baseline.",
     assumptions: [
       "Calories are an estimate from your height, weight, age and activity; weigh-ins over 2-3 weeks will confirm them.",
+      ...(answers.limitations
+        ? [
+          "Tracend's rules use the movements you chose to avoid but cannot read your note; tell the Coach anything it did not cover.",
+        ]
+        : []),
     ],
     missing_information: answers.sex === "unspecified"
       ? ["Sex was not given, so the calorie range covers both estimates."]

@@ -1,9 +1,15 @@
-import { type EquipmentItem, equipmentItems } from "./catalog.ts";
+import {
+  type AvoidablePattern,
+  avoidablePatterns,
+  type EquipmentItem,
+  equipmentItems,
+} from "./catalog.ts";
 
 // The reviewed onboarding answers an onboarding plan is built from, parsed
 // from onboarding_drafts.payload. Old drafts (before 2026-10) lack the body,
-// schedule and equipment fields; they get a list of what is missing, never
-// invented values.
+// schedule and equipment fields, and a draft with a written limitation but no
+// movements-to-avoid answer is incomplete; they get a list of what is missing,
+// never invented values.
 
 export const goals = ["fat_loss", "muscle_gain", "recomposition", "strength", "aesthetic"] as const;
 export type Goal = typeof goals[number];
@@ -48,6 +54,8 @@ export type OnboardingAnswers = Readonly<{
   equipmentNote: string;
   nutritionContext: string;
   limitations: string;
+  /** Movement patterns the plan must leave out; every path enforces them. */
+  avoidPatterns: readonly AvoidablePattern[];
   currentPlan: string;
   revisionNote: string;
 }>;
@@ -117,6 +125,13 @@ export function parseOnboardingAnswers(
   if (equipment === null) missing.push("equipment_items");
   const currentPlan = text(payload.current_plan);
   if (path === "experienced" && !currentPlan) missing.push("current_plan");
+  const limitations = text(payload.constraints);
+  // A written limitation needs the structured answer too: the rules plan cannot
+  // read the note, so it must not guess which movements to leave out.
+  const avoidPatterns = Array.isArray(payload.avoid_patterns)
+    ? avoidablePatterns.filter((item) => (payload.avoid_patterns as unknown[]).includes(item))
+    : null;
+  if (avoidPatterns === null && limitations) missing.push("avoid_patterns");
 
   if (missing.length) return { ok: false, missing };
   return {
@@ -137,7 +152,8 @@ export function parseOnboardingAnswers(
       equipment: equipment!,
       equipmentNote: text(payload.equipment),
       nutritionContext: text(payload.nutrition_context),
-      limitations: text(payload.constraints),
+      limitations,
+      avoidPatterns: avoidPatterns ?? [],
       currentPlan,
       revisionNote: text(payload.revision_note),
     },
@@ -162,6 +178,7 @@ export function answersSnapshot(answers: OnboardingAnswers): Record<string, unkn
     equipment_note: answers.equipmentNote,
     nutrition_context: answers.nutritionContext,
     limitations: answers.limitations,
+    avoid_patterns: answers.avoidPatterns,
     current_plan: answers.currentPlan,
     revision_note: answers.revisionNote,
   };
