@@ -120,18 +120,21 @@ export class OnboardingModelCallError extends Error {
    * answer is still billed, so it counts toward the AI budget.
    */
   readonly usage: ModelUsage;
+  /** The provider's HTTP status for an HTTP or rate-limit failure. */
+  readonly httpStatus: number | null;
 
   constructor(
     code: ModelCallFailure,
     latencyMs: number,
     usage: ModelUsage = noUsage,
-    options?: ErrorOptions,
+    options?: ErrorOptions & { httpStatus?: number },
   ) {
     super(code, options);
     this.name = "OnboardingModelCallError";
     this.code = code;
     this.latencyMs = latencyMs;
     this.usage = usage;
+    this.httpStatus = options?.httpStatus ?? null;
   }
 }
 
@@ -175,6 +178,8 @@ export async function callOnboardingModel(
       throw new OnboardingModelCallError(
         response.status === 429 ? "provider_rate_limited" : "provider_http_error",
         elapsed(),
+        noUsage,
+        { httpStatus: response.status },
       );
     }
     const payload = await response.json() as Record<string, unknown>;

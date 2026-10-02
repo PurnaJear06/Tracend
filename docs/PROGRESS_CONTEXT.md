@@ -27,8 +27,10 @@ with a rules fallback). Review fixes on PR 2: movements to avoid enforced on eve
 coaching checks its own notice, nutrition capped to the database bounds with infeasible answers
 refused up front, billed failures counted, and expired proposals recoverable. PR 3 (app) adds the
 new onboarding steps (including movements to avoid), a resumable plan build, the full proposal
-screen, expired-plan recovery and the server-rendered AI notice. Merge #60 → #61 → PR 3 in order.
-See
+screen, expired-plan recovery and the server-rendered AI notice. All three merged and deployed
+2026-10-02 (`c0931ef`); the app is installed. The onboarding eval now calls the provider directly
+by default (the first run went to the router and reached no model); after it passes, set the
+`ONBOARDING_PLAN_*` secrets. See
 [`docs/handoff/onboarding.md`](./handoff/onboarding.md).
 
 ## Shipped baseline

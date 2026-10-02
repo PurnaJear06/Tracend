@@ -125,8 +125,13 @@ v1 approval now refuses 2.0 proposals.
 **Rollout after merge** (deploy is automatic; nothing is visible until PR 3):
 
 1. Run the Onboarding Eval workflow (Actions → Onboarding Eval → Run workflow; provider
-   `deepseek`, model `deepseek-flash`). It needs the `DEEPSEEK_API_KEY` repository secret. The gate
-   is at least 90% valid model plans and p95 under 60 s.
+   `deepseek`, model `deepseek-flash`, route `direct`). It needs the `DEEPSEEK_API_KEY` repository
+   secret (GitHub → Settings → Secrets and variables → Actions); the Supabase Edge secret of the
+   same name is separate. The gate is at least 90% valid model plans and p95 under 60 s. Route
+   `router` only smoke-tests through `EVAL_BASE_URL` and never counts as an evaluation.
+   - First run (2026-10-02, before this option): the `EVAL_BASE_URL` variable sent all 12 calls to
+     the router, which answered with an HTTP error every time; DeepSeek was not called and the
+     repository had no `DEEPSEEK_API_KEY`. Failed calls now show their HTTP status.
 2. If it passes, set the secrets `ONBOARDING_PLAN_PROVIDER=deepseek`,
    `ONBOARDING_PLAN_MODEL=deepseek-flash` and `ONBOARDING_PLAN_MODEL_EVALUATED=true`. The
    DeepSeek key is already set for the Coach.

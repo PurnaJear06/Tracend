@@ -10,4 +10,7 @@
    <FileRef
       location = "group:../.tooling/ios/Pods/Pods.xcodeproj">
    </FileRef>
+   <FileRef
+      location = "group:../../Tracend/.tooling/ios/Pods/Pods.xcodeproj">
+   </FileRef>
 </Workspace>

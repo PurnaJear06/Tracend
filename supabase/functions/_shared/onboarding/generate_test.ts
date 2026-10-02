@@ -193,6 +193,19 @@ Deno.test("empty JSON earns a repair; a timeout or HTTP error goes straight to r
     scripted(429).fetcher,
   );
   assertEquals(limited.fallbackReason, "provider_rate_limited");
+  assertEquals(limited.attempts[0].httpStatus, 429);
+  const refused = await generateOnboardingProposal(
+    answers,
+    exerciseCatalogV1,
+    model,
+    open,
+    scripted(401).fetcher,
+  );
+  assertEquals(
+    [refused.fallbackReason, refused.attempts[0].httpStatus],
+    ["provider_http_error", 401],
+  );
+  assertEquals(timeout.attempts[0].httpStatus, null);
 });
 
 Deno.test("no consent, no budget or no provider means no model call", async () => {

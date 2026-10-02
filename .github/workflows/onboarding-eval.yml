@@ -5,12 +5,14 @@ name: Onboarding Eval
 # for a provider or model: add the `onboarding-eval` label to a pull request or
 # use Run workflow on main.
 #
-# By default it calls DeepSeek (`DEEPSEEK_API_KEY` secret) with deepseek-flash.
-# The provider and model inputs pick another one; its key comes from the
-# matching secret (`GROQ_API_KEY`, `GEMINI_API_KEY`). Setting the repository
-# variable `EVAL_BASE_URL` and the `EVAL_API_KEY` secret sends the requests
-# through an OpenAI-compatible router instead, as a smoke test without the
-# latency gate. Each run makes 12 to 24 calls (one repair at most per athlete).
+# By default it calls DeepSeek directly (`DEEPSEEK_API_KEY` repository secret)
+# with deepseek-flash. The provider and model inputs pick another one; its key
+# comes from the matching repository secret (`GROQ_API_KEY`, `GEMINI_API_KEY`).
+# Only a direct run evaluates a model. route=router sends the same requests
+# through the OpenAI-compatible router in the `EVAL_BASE_URL` variable (with
+# `EVAL_API_KEY`) as a smoke test without the latency gate; it never counts for
+# ONBOARDING_PLAN_MODEL_EVALUATED. Each run makes 12 to 24 calls (one repair at
+# most per athlete).
 on:
   workflow_dispatch:
     inputs:
@@ -22,6 +24,12 @@ on:
         description: The provider's model id
         required: false
         default: deepseek-flash
+      route:
+        description: direct (evaluates the model) or router (smoke test only)
+        required: false
+        default: direct
+        type: choice
+        options: [direct, router]
   pull_request:
     types: [labeled]
 
@@ -51,7 +59,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
-          EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
+          EVAL_BASE_URL: ${{ inputs.route == 'router' && vars.EVAL_BASE_URL || '' }}
           EVAL_PROVIDER: ${{ inputs.provider || 'deepseek' }}
           EVAL_MODEL: ${{ inputs.model || 'deepseek-flash' }}
           EVAL_REPORT_DIR: eval-report
