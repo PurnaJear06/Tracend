@@ -268,9 +268,10 @@ hub (1.5) and daily brief (1.6) return it and the active workout pre-fills it.
 
 The coach's follow-up questions for one set of onboarding answers: user, `questions_hash` (the
 answers and Apple Health data they were asked for), up to 3 questions (allowed topic, text, quick
-answers), the reason none were asked, and the call's telemetry. Written only by the
-`onboarding-plan` function (`store_onboarding_questions`, service role); the athlete reads their
-own. The answers live in the onboarding draft (`follow_ups`, `follow_ups_hash`).
+answers), the reason none were asked, and the call's telemetry. `status` is `running` while one
+request asks the model (until `lease_expires_at`), then `ready`. Written only by the
+`onboarding-plan` function (`claim_onboarding_questions`, `store_onboarding_questions`,
+`release_onboarding_questions`; service role); the athlete reads their own. The answers live in the onboarding draft (`follow_ups`, `follow_ups_hash`).
 
 ### `health_history_months`
 

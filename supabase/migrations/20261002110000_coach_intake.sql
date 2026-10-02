@@ -758,11 +758,16 @@ create table public.onboarding_questions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.user_accounts (id) on delete cascade,
   questions_hash text not null check (questions_hash ~ '^[0-9a-f]{64}$'),
-  questions jsonb not null check (private.is_valid_follow_up_questions(questions)),
+  -- 'running' while one request asks the model (until lease_expires_at), then
+  -- 'ready' with its outcome.
+  status text not null default 'ready' check (status in ('running', 'ready')),
+  lease_expires_at timestamptz,
+  questions jsonb not null default '[]' check (private.is_valid_follow_up_questions(questions)),
   skipped_reason text check (length(skipped_reason) between 1 and 80),
   metadata jsonb check (private.is_valid_generation_metadata(metadata)),
   created_at timestamptz not null default now(),
-  unique (user_id, questions_hash)
+  unique (user_id, questions_hash),
+  check ((status = 'running') = (lease_expires_at is not null))
 );
 alter table public.onboarding_questions enable row level security;
 alter table public.onboarding_questions force row level security;
@@ -771,8 +776,44 @@ create policy onboarding_questions_own_read on public.onboarding_questions
 revoke all on public.onboarding_questions from anon, authenticated;
 grant select on public.onboarding_questions to authenticated;
 
--- Called by the onboarding-plan function with the service role. A second
--- request for the same answers gets the questions the first one stored.
+-- Called by the onboarding-plan function with the service role before it asks
+-- the model, so one request asks for a set of answers: started, the stored
+-- outcome, or neither while another request holds the lease.
+create function public.claim_onboarding_questions(
+  target_user_id uuid, target_questions_hash text, lease_seconds integer
+) returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  existing public.onboarding_questions%rowtype;
+begin
+  if lease_seconds not between 30 and 120 then
+    raise exception 'invalid lease' using errcode = '22023';
+  end if;
+  insert into public.onboarding_questions(user_id, questions_hash, status, lease_expires_at)
+  values (target_user_id, target_questions_hash, 'running',
+    now() + make_interval(secs => lease_seconds))
+  on conflict (user_id, questions_hash) do nothing;
+  if found then return jsonb_build_object('started', true); end if;
+  select * into existing from public.onboarding_questions
+    where user_id = target_user_id and questions_hash = target_questions_hash for update;
+  if existing.status = 'ready' then
+    return jsonb_build_object('started', false, 'stored', jsonb_build_object(
+      'questions', existing.questions, 'skipped_reason', existing.skipped_reason,
+      'metadata', existing.metadata));
+  end if;
+  if existing.lease_expires_at <= now() then
+    update public.onboarding_questions
+      set lease_expires_at = now() + make_interval(secs => lease_seconds)
+      where id = existing.id;
+    return jsonb_build_object('started', true);
+  end if;
+  return jsonb_build_object('started', false);
+end $$;
+revoke all on function public.claim_onboarding_questions(uuid, text, integer)
+from public, anon, authenticated;
+grant execute on function public.claim_onboarding_questions(uuid, text, integer) to service_role;
+
+-- Stores the model's outcome for the claimed answers. When another request
+-- stored first, returns those questions.
 create function public.store_onboarding_questions(
   target_user_id uuid,
   target_questions_hash text,
@@ -783,14 +824,22 @@ create function public.store_onboarding_questions(
 declare
   stored public.onboarding_questions%rowtype;
 begin
-  insert into public.onboarding_questions(
-    user_id, questions_hash, questions, skipped_reason, metadata
-  ) values (
-    target_user_id, target_questions_hash, target_questions,
-    nullif(target_skipped_reason, ''), target_metadata
-  )
-  on conflict (user_id, questions_hash) do nothing
-  returning * into stored;
+  update public.onboarding_questions
+    set status = 'ready', lease_expires_at = null, questions = target_questions,
+      skipped_reason = nullif(target_skipped_reason, ''), metadata = target_metadata
+    where user_id = target_user_id and questions_hash = target_questions_hash
+      and status = 'running'
+    returning * into stored;
+  if not found then
+    insert into public.onboarding_questions(
+      user_id, questions_hash, questions, skipped_reason, metadata
+    ) values (
+      target_user_id, target_questions_hash, target_questions,
+      nullif(target_skipped_reason, ''), target_metadata
+    )
+    on conflict (user_id, questions_hash) do nothing
+    returning * into stored;
+  end if;
   if found then
     insert into public.audit_events(user_id, action_code, target_type, target_id, outcome, metadata)
     values (target_user_id, 'onboarding.questions.generated', 'onboarding_questions', stored.id,
@@ -808,6 +857,18 @@ revoke all on function public.store_onboarding_questions(uuid, text, jsonb, text
 from public, anon, authenticated;
 grant execute on function public.store_onboarding_questions(uuid, text, jsonb, text, jsonb)
 to service_role;
+
+-- A failed model call stores nothing: the claim is dropped so a retry asks again.
+create function public.release_onboarding_questions(
+  target_user_id uuid, target_questions_hash text
+) returns void language sql security definer set search_path = '' as $$
+  delete from public.onboarding_questions
+    where user_id = target_user_id and questions_hash = target_questions_hash
+      and status = 'running';
+$$;
+revoke all on function public.release_onboarding_questions(uuid, text)
+from public, anon, authenticated;
+grant execute on function public.release_onboarding_questions(uuid, text) to service_role;
 
 -- Apple Health history -----------------------------------------------------------
 

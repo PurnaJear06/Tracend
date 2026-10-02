@@ -332,12 +332,15 @@ for short sleep.
   top-up that lowers a minimum only to what fits, and `priority_volume_missing` in the validator.
 - **Database:** `user_profiles.training_years/priority_muscles/strong_muscles`,
   `planned_exercises.target_load_kg` (copied at approval; hub 1.5, brief 1.6),
-  `onboarding_questions` + `store_onboarding_questions` (service role), `health_history_months` +
+  `onboarding_questions` + `claim_/store_/release_onboarding_questions` (service role; one request
+  asks per hash, only model outcomes are stored), `health_history_months` +
   `save_health_history`, usage purpose `onboarding_questions`, Coach context v8 with the new
   profile fields. Both tables are in the privacy export.
 - **App:** `lib/features/health/health_baseline.dart` reads workouts, sleep and weight for 11
   completed months (HealthKit `readMetrics`), sends monthly totals once a month, and the Apple
-  Health step shows usual vs recent. The proposal shows **Start at ‹kg›** and a Focus line; Train
+  Health step shows usual vs recent. The questions and the plan wait (up to 30 s) for that upload
+  and retry a failed one, so a late upload never changes the answers' hash between them; Skip
+  starts the plan once the running question request settles. The proposal shows **Start at ‹kg›** and a Focus line; Train
   pre-fills the kg field.
 - **Deviation from the plan, on purpose:** strength ratios (row ÷ bench, deadlift ÷ squat) are
   passed to the model as data, but code states no norm: published ratio norms vary with build and

@@ -651,7 +651,8 @@ Code: `health_history.ts` (server) and `lib/features/health/health_baseline.dart
   progress never counts. The app sends one row per month: workouts, strength workouts
   (`TRADITIONAL_` and `FUNCTIONAL_STRENGTH_TRAINING`), workout minutes, nights of sleep and their
   average, weigh-in days and their average, days with any data, and the first and last date with
-  data. No raw sample leaves the phone.
+  data. No raw sample leaves the phone. During onboarding the follow-up questions and the plan wait
+  up to 30 s for the upload (retrying one that failed), because both are hashed with these months.
 - **Counted months:**
   - strength: from the first month with any workout (earlier months may predate the watch);
   - sleep: months with at least 20 nights;

@@ -114,6 +114,21 @@ export type FollowUpResult = Readonly<{
   skippedReason: string | null;
 }>;
 
+/**
+ * Why no model may be asked right now, or null when it may. These reasons
+ * change with consent, the day's budget and the server settings, never with
+ * the answers, so they are never stored as the answers' outcome.
+ */
+export function followUpGateReason(
+  resolution: OnboardingModelResolution,
+  gate: GenerationGate,
+): string | null {
+  if (resolution.kind === "rules") return resolution.reason;
+  if (!gate.consentGranted) return "ai_consent_not_granted";
+  if (!gate.budgetAvailable) return "ai_usage_limit";
+  return null;
+}
+
 export async function generateFollowUpQuestions(
   answers: OnboardingAnswers,
   resolution: OnboardingModelResolution,
@@ -122,13 +137,10 @@ export async function generateFollowUpQuestions(
   history: HealthHistory | null = null,
   fetcher: typeof fetch = fetch,
 ): Promise<FollowUpResult> {
-  if (resolution.kind === "rules") {
-    return { questions: [], usage: null, skippedReason: resolution.reason };
+  const closed = followUpGateReason(resolution, gate);
+  if (closed !== null || resolution.kind === "rules") {
+    return { questions: [], usage: null, skippedReason: closed };
   }
-  if (!gate.consentGranted) {
-    return { questions: [], usage: null, skippedReason: "ai_consent_not_granted" };
-  }
-  if (!gate.budgetAvailable) return { questions: [], usage: null, skippedReason: "ai_usage_limit" };
   const config = { ...resolution.config, maxOutputTokens: followUpMaxOutputTokens };
   const messages = [
     { role: "system" as const, content: followUpSystemPrompt() },

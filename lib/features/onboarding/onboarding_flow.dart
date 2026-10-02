@@ -116,6 +116,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   static const _questionsStep = 13;
   static const _proposalStep = 14;
 
+  /// How long the questions or the plan wait for the usual months to be sent
+  /// before going ahead without them.
+  static const _baselineWait = Duration(seconds: 30);
+
   static const _goals = <String, (String, String)>{
     'fat_loss': (
       'Fat loss',
@@ -292,6 +296,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   HealthBaseline? _baseline;
   bool _baselineBusy = false;
 
+  /// The read of the usual months in progress; a second caller joins it.
+  Future<void>? _baselineRead;
+
+  /// The usual months were sent this session (or Apple Health had none to
+  /// read), so questions and the plan can be built with them.
+  bool _baselineSent = false;
+
   /// How long the athlete has trained (experienced path).
   String? _years;
 
@@ -309,6 +320,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   /// Bumped to ignore a question request still running (Skip, Back).
   int _questionsRun = 0;
+
+  /// The latest question request, settled either way; the plan starts only
+  /// after it, so the two never spend the athlete's AI budget at once.
+  Future<void> _questionsCall = Future.value();
 
   HealthRepository get _health =>
       widget.health ?? const ManualHealthRepository();
@@ -584,18 +599,39 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   /// Reads the usual months and sends them, so the plan can compare them
-  /// with the last 4 weeks. Never blocks the step.
-  Future<void> _loadBaseline() async {
+  /// with the last 4 weeks. Never blocks the step; a read already running is
+  /// joined.
+  Future<void> _loadBaseline() {
     final source = widget.healthBaseline;
-    if (source == null || _baselineBusy) return;
-    setState(() => _baselineBusy = true);
+    if (source == null) return Future.value();
+    return _baselineRead ??= _readBaseline(
+      source,
+    ).whenComplete(() => _baselineRead = null);
+  }
+
+  Future<void> _readBaseline(HealthBaselineSource source) async {
+    if (mounted) setState(() => _baselineBusy = true);
     try {
       final baseline = await source.load();
+      _baselineSent = true;
       if (mounted) setState(() => _baseline = baseline);
     } catch (e) {
       debugPrint('Non-critical error: $e');
     } finally {
       if (mounted) setState(() => _baselineBusy = false);
+    }
+  }
+
+  /// The questions and the plan are hashed with the usual months. With Apple
+  /// Health connected they wait for the months to be sent, retrying a read
+  /// that failed or never ran (a restored draft), so an upload landing
+  /// between the questions and the plan never discards the follow-up answers.
+  Future<void> _awaitBaseline() async {
+    if (_baselineSent || _healthImport != 'connected') return;
+    try {
+      await _loadBaseline().timeout(_baselineWait);
+    } on TimeoutException catch (e) {
+      debugPrint('Non-critical error: $e');
     }
   }
 
@@ -770,6 +806,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _proposalExpired = false;
     });
     try {
+      // A skipped question request still running finishes first (the app
+      // gives up on it after 45 s).
+      await _questionsCall;
+      await _awaitBaseline();
+      if (!mounted) return;
       await widget.repository.saveDraft(
         path: _path,
         currentSection: _sectionKeys[_proposalStep],
@@ -881,8 +922,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _asking = true;
       _questions = const [];
     });
+    await _awaitBaseline();
+    if (!mounted || run != _questionsRun) return;
     try {
-      final result = await widget.repository.askQuestions();
+      final call = widget.repository.askQuestions();
+      _questionsCall = call.then<void>((_) {}, onError: (Object _) {});
+      final result = await call;
       if (!mounted || run != _questionsRun) return;
       setState(() {
         // Answers carry over only to questions asked for the same answers.
@@ -2022,16 +2067,26 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   Widget _coachQuestions() {
     final text = Theme.of(context).textTheme;
-    if (_asking) {
+    // Skipped while the coach was reading: the plan starts once it finishes.
+    final building = !_asking && _saving && _questions.isEmpty;
+    if (_asking || building) {
       return Column(
         children: [
           const SizedBox(height: TracendSpacing.xl),
           const TracendLoadingIndicator(size: 32),
           const SizedBox(height: TracendSpacing.lg),
-          Text('Your coach is reading your answers', style: text.headlineSmall),
+          Text(
+            building
+                ? 'Building your plan'
+                : 'Your coach is reading your answers',
+            textAlign: TextAlign.center,
+            style: text.headlineSmall,
+          ),
           const SizedBox(height: TracendSpacing.xs),
           Text(
-            'It may ask a few questions before building your plan. Usually under 30 seconds; you can skip.',
+            building
+                ? 'It starts as soon as your coach has finished reading.'
+                : 'It may ask a few questions before building your plan. Usually under 30 seconds; you can skip.',
             textAlign: TextAlign.center,
             style: text.bodyMedium,
           ),

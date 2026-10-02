@@ -32,6 +32,7 @@ import {
   summarizeHealthHistory,
 } from "../_shared/onboarding/health_history.ts";
 import {
+  followUpGateReason,
   type FollowUpQuestion,
   type FollowUpResult,
   generateFollowUpQuestions,
@@ -47,16 +48,26 @@ import type { OnboardingModelResolution } from "../_shared/providers/onboarding_
 // to change), so retrying them never starts a generation or calls a model.
 //
 // POST onboarding-plan {"mode":"questions"}: the coach's follow-up questions
-// for the current answers, answered synchronously. They are stored under the
-// answers' hash, so a retry returns the same questions without a model call,
-// and an edited answer gets new ones. Follow-up answers count toward the plan
-// only while they carry that hash.
+// for the current answers, answered synchronously. One request claims the
+// answers' hash before asking the model; an overlapping one waits for its
+// outcome. The model's outcome is stored under the hash, so a retry returns the
+// same questions without a model call, and an edited answer gets new ones. No
+// consent, no budget or no model ask nothing and store nothing, so they never
+// outlast their cause. Follow-up answers count toward the plan only while they
+// carry that hash.
 
 /**
  * Longer than the model deadline (75 s, or 125 s with thinking) plus storing,
  * shorter than the 150 s Edge background limit.
  */
 export const generationLeaseSeconds = 140;
+
+/** Longer than the question deadline (40 s) plus storing. */
+export const questionsLeaseSeconds = 60;
+
+/** How long an overlapping question request waits, polling once a second. */
+export const questionsWaitMs = 45_000;
+export const questionsPollMs = 1_000;
 
 /**
  * How the model call went, stored in the onboarding.plan.generated audit event
@@ -105,10 +116,15 @@ export interface OnboardingStore {
   ): Promise<{ days: HealthDay[]; workouts: HealthWorkout[] }>;
   /** Apple Health monthly totals for months starting in [from, through]. */
   loadHealthHistory(from: string, through: string): Promise<HealthMonth[]>;
-  /** The questions stored for these answers, or null when none are. */
-  loadQuestions(questionsHash: string): Promise<StoredQuestions | null>;
+  /**
+   * Started: this request asks the model. Otherwise the stored outcome, or
+   * none while another request holds the claim.
+   */
+  claimQuestions(questionsHash: string): Promise<QuestionsClaim>;
   /** Stores the questions; when another request stored first, returns those. */
   saveQuestions(questionsHash: string, questions: StoredQuestions): Promise<StoredQuestions>;
+  /** Drops this request's claim after a failed call, so a retry asks again. */
+  releaseQuestions(questionsHash: string): Promise<void>;
   recordQuestionUsage(usage: GenerationUsage): Promise<void>;
   consent(): Promise<AiCoachingConsent>;
   budgetAvailable(): Promise<boolean>;
@@ -136,6 +152,8 @@ export type StoredQuestions = Readonly<{
   metadata: GenerationMetadata | null;
 }>;
 
+export type QuestionsClaim = Readonly<{ started: boolean; stored?: StoredQuestions }>;
+
 export type HandlerDeps = Readonly<{
   /** "questions" for the follow-up questions, otherwise the plan. */
   mode: "plan" | "questions";
@@ -148,6 +166,8 @@ export type HandlerDeps = Readonly<{
   observer: Observer;
   generate?: typeof generateOnboardingProposal;
   askQuestions?: typeof generateFollowUpQuestions;
+  /** Waits between polls of a claim another request holds. */
+  sleep?: (ms: number) => Promise<void>;
 }>;
 
 /**
@@ -249,8 +269,6 @@ async function handleQuestions(
       questions: stored.questions,
       ...(stored.skipped_reason ? { skipped_reason: stored.skipped_reason } : {}),
     });
-  const existing = await store.loadQuestions(questionsHash);
-  if (existing) return respond(existing);
   const resolution = deps.resolution();
   let consentGranted = false;
   let budgetAvailable = false;
@@ -258,13 +276,43 @@ async function handleQuestions(
     consentGranted = (await store.consent()) === "granted";
     if (consentGranted) budgetAvailable = await store.budgetAvailable();
   }
-  const result: FollowUpResult = await (deps.askQuestions ?? generateFollowUpQuestions)(
-    answers,
-    resolution,
-    { consentGranted, budgetAvailable },
-    health,
-    history,
-  );
+  const closed = followUpGateReason(resolution, { consentGranted, budgetAvailable });
+  if (closed !== null) return respond({ questions: [], skipped_reason: closed, metadata: null });
+  const sleep = deps.sleep ?? ((ms: number) => new Promise((done) => setTimeout(done, ms)));
+  let claim = await store.claimQuestions(questionsHash);
+  for (
+    let waited = 0;
+    !claim.started && !claim.stored && waited < questionsWaitMs;
+    waited += questionsPollMs
+  ) {
+    await sleep(questionsPollMs);
+    claim = await store.claimQuestions(questionsHash);
+  }
+  if (claim.stored) return respond(claim.stored);
+  if (!claim.started) {
+    return respond({ questions: [], skipped_reason: "questions_in_progress", metadata: null });
+  }
+  const release = async () => {
+    try {
+      await store.releaseQuestions(questionsHash);
+    } catch (error) {
+      // The claim then lapses with its lease.
+      observer.error("onboarding_questions_claim_not_released", error, {});
+    }
+  };
+  let result: FollowUpResult;
+  try {
+    result = await (deps.askQuestions ?? generateFollowUpQuestions)(
+      answers,
+      resolution,
+      { consentGranted, budgetAvailable },
+      health,
+      history,
+    );
+  } catch (error) {
+    await release();
+    throw error;
+  }
   if (result.usage) {
     try {
       await store.recordQuestionUsage(result.usage);
@@ -293,9 +341,12 @@ async function handleQuestions(
     skippedReason: result.skippedReason,
     metadata,
   });
-  // A failed call is not stored, so a retry may ask again; every other outcome
+  // A failed call is not stored, so a retry may ask again; the model's answer
   // is final for these answers.
-  if (result.skippedReason?.startsWith("provider_")) return respond(outcome);
+  if (result.skippedReason?.startsWith("provider_")) {
+    await release();
+    return respond(outcome);
+  }
   return respond(await store.saveQuestions(questionsHash, outcome));
 }
 

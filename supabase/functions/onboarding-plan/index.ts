@@ -15,6 +15,8 @@ import {
   generationLeaseSeconds,
   handleOnboardingPlan,
   type OnboardingStore,
+  type QuestionsClaim,
+  questionsLeaseSeconds,
   type StoredQuestions,
 } from "./handler.ts";
 
@@ -110,12 +112,14 @@ function supabaseStore(client: SupabaseClient, userId: string): OnboardingStore 
         data_days: Number(row.data_days),
       }));
     },
-    async loadQuestions(questionsHash) {
-      const { data, error } = await client.from("onboarding_questions")
-        .select("questions,skipped_reason,metadata")
-        .eq("user_id", userId).eq("questions_hash", questionsHash).maybeSingle();
+    async claimQuestions(questionsHash) {
+      const { data, error } = await client.rpc("claim_onboarding_questions", {
+        target_user_id: userId,
+        target_questions_hash: questionsHash,
+        lease_seconds: questionsLeaseSeconds,
+      });
       if (error) throw error;
-      return data ? data as StoredQuestions : null;
+      return data as QuestionsClaim;
     },
     async saveQuestions(questionsHash, stored) {
       const { data, error } = await client.rpc("store_onboarding_questions", {
@@ -127,6 +131,13 @@ function supabaseStore(client: SupabaseClient, userId: string): OnboardingStore 
       });
       if (error) throw error;
       return data as StoredQuestions;
+    },
+    async releaseQuestions(questionsHash) {
+      const { error } = await client.rpc("release_onboarding_questions", {
+        target_user_id: userId,
+        target_questions_hash: questionsHash,
+      });
+      if (error) throw error;
     },
     async recordQuestionUsage(usage) {
       const { error } = await client.rpc("record_ai_usage_event", {

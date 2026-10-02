@@ -392,10 +392,15 @@ qualify a model.
   question must belong to an allowed topic (split history, recovery between sessions, a stalled
   lift, exercise preference, schedule flexibility, daily eating routine); a reply with any other
   topic, or injury, pain, medical, pregnancy or disorder wording, is dropped whole and the plan is
-  built without questions. Questions are stored per hash of the answers (`onboarding_questions`),
-  usage is recorded as `onboarding_questions`, and the `onboarding.questions.generated` audit event
-  carries the same telemetry as the plan. The athlete can skip at any time; questions never block
-  onboarding.
+  built without questions. One request claims the hash of the answers before asking
+  (`claim_onboarding_questions`, 60 s lease); an overlapping request waits up to 45 s for its
+  outcome instead of asking again. The model's outcome is stored per hash (`onboarding_questions`);
+  a failed call releases the claim so a retry may ask, and no consent, no budget or no ready model
+  is answered without storing anything, so it never outlasts its cause. Usage is recorded as
+  `onboarding_questions`, and the `onboarding.questions.generated` audit event carries the same
+  telemetry as the plan. The athlete can skip at any time; the plan then starts once the running
+  question request settles (at most 45 s in the app), so the two calls never spend the budget at
+  once. Questions never block onboarding.
 - **What the plan model receives since onboarding-policy-v2:** the athlete's training years, what
   has worked and stalled (their words, as data), reported barbell top sets with Tracend's
   one-rep-max estimates and ratios, focus and strong muscles, follow-up answers, and the Apple

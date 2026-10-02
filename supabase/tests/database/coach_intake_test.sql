@@ -1,5 +1,5 @@
 begin;
-select plan(27);
+select plan(35);
 
 insert into auth.users(id, role) values
   ('f4000000-0000-4000-8000-000000000001', 'authenticated'),
@@ -122,6 +122,34 @@ select is((select metadata->>'reasoning_units' from public.audit_events
 select ok(not has_function_privilege('authenticated',
     'public.store_onboarding_questions(uuid, text, jsonb, text, jsonb)', 'execute'),
   'only the server stores questions');
+select ok(not has_function_privilege('authenticated',
+    'public.claim_onboarding_questions(uuid, text, integer)', 'execute'),
+  'and only the server claims them');
+
+set local role service_role;
+select is(public.claim_onboarding_questions('f4000000-0000-4000-8000-000000000001',
+    repeat('d', 64), 60), '{"started": true}'::jsonb, 'the first request claims the answers');
+select is(public.claim_onboarding_questions('f4000000-0000-4000-8000-000000000001',
+    repeat('d', 64), 60), '{"started": false}'::jsonb, 'an overlapping one does not ask again');
+select public.store_onboarding_questions('f4000000-0000-4000-8000-000000000001', repeat('d', 64),
+  '[{"category":"split_history","question":"Which split?","choices":[]}]', null, null);
+select is(public.claim_onboarding_questions('f4000000-0000-4000-8000-000000000001',
+    repeat('d', 64), 60)->'stored'->'questions'->0->>'category', 'split_history',
+  'once stored, a claim returns the questions');
+select is(public.claim_onboarding_questions('f4000000-0000-4000-8000-000000000001',
+    repeat('e', 64), 60)->>'started', 'true', 'a failed call''s answers are claimed');
+select public.release_onboarding_questions('f4000000-0000-4000-8000-000000000001', repeat('e', 64));
+select is(public.claim_onboarding_questions('f4000000-0000-4000-8000-000000000001',
+    repeat('e', 64), 60)->>'started', 'true', 'and after the release, claimed again');
+reset role;
+update public.onboarding_questions set lease_expires_at = now() - interval '1 second'
+  where questions_hash = repeat('e', 64);
+set local role service_role;
+select is(public.claim_onboarding_questions('f4000000-0000-4000-8000-000000000001',
+    repeat('e', 64), 60)->>'started', 'true', 'a lapsed claim is taken over');
+select throws_ok($$select public.claim_onboarding_questions('f4000000-0000-4000-8000-000000000001',
+    repeat('f', 64), 600)$$, '22023', null, 'the lease stays short');
+reset role;
 
 -- Apple Health history ----------------------------------------------------------------------
 

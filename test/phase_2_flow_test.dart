@@ -887,13 +887,20 @@ void main() {
       ]);
     });
 
-    testWidgets('skip builds the plan while the coach is still reading', (
+    testWidgets('skip builds the plan once the coach has finished reading', (
       tester,
     ) async {
       final repository = _FakeOnboardingRepository(
         draft: _experiencedDraft('review'),
         generations: [_succeeded],
       )..questionsDelay = Completer<void>();
+      repository.questions = const [
+        FollowUpQuestion(
+          category: 'stalled_lift',
+          question: 'How often do you bench now?',
+          choices: [],
+        ),
+      ];
       await _pump(tester, repository);
       await tester.tap(
         find.widgetWithText(FilledButton, 'Continue to your coach'),
@@ -904,15 +911,46 @@ void main() {
       await tester.tap(
         find.widgetWithText(FilledButton, 'Skip and build my plan'),
       );
-      await tester.pumpAndSettle();
-      expect(find.text('Your starting plan'), findsOneWidget);
-      expect(repository.startCalls, 1);
-      expect(repository.savedPayload!.containsKey('follow_ups'), isFalse);
-      // The late answer changes nothing.
+      await tester.pump();
+      await tester.pump();
+      // The question request is still running: the plan waits for it, so the
+      // two never spend the AI budget at once.
+      expect(find.text('Building your plan'), findsOneWidget);
+      expect(repository.startCalls, 0);
       repository.questionsDelay!.complete();
       await tester.pumpAndSettle();
       expect(find.text('Your starting plan'), findsOneWidget);
+      expect(repository.startCalls, 1);
+      // The late questions change nothing.
+      expect(find.text('How often do you bench now?'), findsNothing);
+      expect(repository.savedPayload!.containsKey('follow_ups'), isFalse);
     });
+
+    testWidgets(
+      'questions and the plan wait for the usual months, retrying a failed read',
+      (tester) async {
+        final repository = _FakeOnboardingRepository(
+          draft: _experiencedDraft('questions', {'health_import': 'connected'}),
+          generations: [_succeeded],
+        );
+        final baseline = _FakeBaseline(const HealthBaseline(months: 11))
+          ..delay = Completer<void>()
+          ..failures = 1;
+        await _pump(tester, repository, healthBaseline: baseline);
+        await tester.pump();
+        // A draft restored on the questions step: the months are read first.
+        expect(baseline.loads, 1);
+        expect(repository.askCalls, 0);
+        expect(find.text('Your coach is reading your answers'), findsOneWidget);
+        baseline.delay!.complete();
+        await tester.pumpAndSettle();
+        // That read failed: the questions went ahead, and the plan retries it.
+        expect(repository.askCalls, 1);
+        expect(baseline.loads, 2);
+        expect(repository.startCalls, 1);
+        expect(find.text('Your starting plan'), findsOneWidget);
+      },
+    );
 
     testWidgets(
       'an edited answer drops the follow-up answers it no longer fits',
@@ -1255,9 +1293,20 @@ class _FakeBaseline implements HealthBaselineSource {
   final HealthBaseline? baseline;
   int loads = 0;
 
+  /// When set, the read waits for it (a long Apple Health read).
+  Completer<void>? delay;
+
+  /// How many reads fail before one succeeds.
+  int failures = 0;
+
   @override
   Future<HealthBaseline?> load() async {
     loads++;
+    await delay?.future;
+    if (failures > 0) {
+      failures--;
+      throw Exception('HealthKit busy');
+    }
     return baseline;
   }
 
