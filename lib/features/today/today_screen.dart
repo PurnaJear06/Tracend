@@ -179,7 +179,10 @@ class _TodayScreenState extends State<TodayScreen> {
   Future<CheckInQueue?> _resolveQueue() async {
     if (widget.queueFactory != null) return widget.queueFactory!();
     final preferences = await SharedPreferences.getInstance();
-    return CheckInQueue(preferences);
+    return CheckInQueue(
+      preferences,
+      userId: Supabase.instance.client.auth.currentUser?.id,
+    );
   }
 
   void _reloadHealth() {

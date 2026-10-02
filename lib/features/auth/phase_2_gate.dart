@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/features/account/account_time_zone.dart';
+import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_baseline.dart';
@@ -14,9 +15,18 @@ import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/shell/app_shell.dart';
 
 class Phase2Gate extends StatefulWidget {
-  const Phase2Gate({required this.environment, super.key});
+  const Phase2Gate({
+    required this.environment,
+    this.client,
+    this.localData,
+    super.key,
+  });
 
   final AppEnvironment environment;
+
+  /// The app's Supabase client unless a test provides one.
+  final SupabaseClient? client;
+  final LocalAccountData? localData;
 
   @override
   State<Phase2Gate> createState() => _Phase2GateState();
@@ -35,11 +45,29 @@ class _Phase2GateState extends State<Phase2Gate> {
   /// The athlete's usual months from Apple Health, sent at most once a month.
   HealthBaselineSource? _baseline;
   String? _error;
+  StreamSubscription<AuthState>? _authEvents;
+
+  /// The athlete the gate last let in, for clearing their local data once
+  /// Auth has already removed the session.
+  String? _userId;
+
+  SupabaseClient get _client => widget.client ?? Supabase.instance.client;
+  late final LocalAccountData _localData =
+      widget.localData ?? LocalAccountData();
 
   @override
   void initState() {
     super.initState();
     if (widget.environment.hasSupabaseConfiguration) {
+      // A refresh token Auth refuses while the app is open (the account was
+      // deleted elsewhere) removes the session; the athlete lands on sign-in.
+      _authEvents = _client.auth.onAuthStateChange.listen((state) {
+        if (state.event == AuthChangeEvent.signedOut &&
+            state.signOutReason != SignOutReason.userInitiated &&
+            _authenticated) {
+          unawaited(_endRejectedSession(_userId, accountDeleted: false));
+        }
+      }, onError: (Object _) {});
       _refresh();
     } else {
       _loading = false;
@@ -52,25 +80,30 @@ class _Phase2GateState extends State<Phase2Gate> {
       _error = null;
     });
     try {
-      final client = Supabase.instance.client;
-      var session = client.auth.currentSession;
+      final client = _client;
+      final session = client.auth.currentSession;
       if (session == null) {
         setState(() {
           _authenticated = false;
           _onboardingComplete = false;
         });
       } else {
-        if (session.isExpired) {
-          session = (await client.auth.refreshSession()).session;
-        }
-        if (session == null) {
-          await client.auth.signOut(scope: SignOutScope.local);
-          setState(() {
-            _authenticated = false;
-            _onboardingComplete = false;
-          });
+        final userId = session.user.id;
+        try {
+          if (session.isExpired) await client.auth.refreshSession();
+          // An access token stays valid for up to an hour after its user is
+          // deleted, and the database checks only its signature. Auth says
+          // whether the account and this session still exist.
+          await client.auth.getUser();
+        } on AuthException catch (error) {
+          if (!isRejectedSession(error)) rethrow;
+          await _endRejectedSession(
+            userId,
+            accountDeleted: isDeletedUser(error),
+          );
           return;
         }
+        _userId = userId;
         // Local dates on the server follow the device's time zone.
         await AccountTimeZone.supabase(client).sync();
         final repository = SupabaseOnboardingRepository(client);
@@ -97,24 +130,44 @@ class _Phase2GateState extends State<Phase2Gate> {
     }
   }
 
-  HealthBaselineSource _baselineSource() =>
-      _baseline ??= SupabaseHealthBaselineSource(
-        Supabase.instance.client,
-        SharedPreferencesAsync(),
-      );
+  /// Ends the session Auth refused and shows sign-in, with no network
+  /// needed; a deleted account's local data goes too.
+  Future<void> _endRejectedSession(
+    String? userId, {
+    required bool accountDeleted,
+  }) async {
+    await endRejectedSession(
+      _client,
+      _localData,
+      userId,
+      accountDeleted: accountDeleted,
+    );
+    _userId = null;
+    if (!mounted) return;
+    setState(() {
+      _authenticated = false;
+      _onboardingComplete = false;
+      _error = null;
+      _loading = false;
+    });
+  }
+
+  HealthBaselineSource _baselineSource() => _baseline ??=
+      SupabaseHealthBaselineSource(_client, SharedPreferencesAsync());
 
   @override
   void dispose() {
+    _authEvents?.cancel();
     _aiConsent?.dispose();
     super.dispose();
   }
 
   Future<void> _signOut() async {
     try {
-      await Supabase.instance.client.auth.signOut();
+      await _client.auth.signOut();
     } catch (e) {
       debugPrint('Non-critical error: $e');
-      await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
+      await _client.auth.signOut(scope: SignOutScope.local);
     }
     await _refresh();
   }
@@ -150,12 +203,12 @@ class _Phase2GateState extends State<Phase2Gate> {
     }
     final aiConsent = _aiConsent!;
     final health = _health ??= SupabaseHealthRepository(
-      Supabase.instance.client,
+      _client,
       SharedPreferencesAsync(),
     );
     if (!_onboardingComplete) {
       return OnboardingFlow(
-        repository: SupabaseOnboardingRepository(Supabase.instance.client),
+        repository: SupabaseOnboardingRepository(_client),
         onCompleted: _refresh,
         aiConsent: aiConsent,
         health: health,

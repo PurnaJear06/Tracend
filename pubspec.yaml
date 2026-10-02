@@ -54,6 +54,9 @@ dependency_overrides:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # MockClient for the session and account deletion tests, which drive the
+  # real Supabase client against scripted Auth, REST and function responses.
+  http: 1.6.0
   # In-memory SharedPreferencesAsync for the per-athlete health state tests.
   shared_preferences_platform_interface: 2.4.2
 

@@ -11,7 +11,7 @@ abstract interface class CoachThreadMemory {
 class SharedPreferencesCoachThreadMemory implements CoachThreadMemory {
   const SharedPreferencesCoachThreadMemory();
 
-  static const _key = 'tracend_coach_last_thread_id';
+  static const storageKey = 'tracend_coach_last_thread_id';
 
   /// Coach waits for this before it shows any conversation. A store that does
   /// not answer (as in hosts without the plugin) falls back to the newest one.
@@ -23,7 +23,7 @@ class SharedPreferencesCoachThreadMemory implements CoachThreadMemory {
       final preferences = await SharedPreferences.getInstance().timeout(
         _readTimeout,
       );
-      return preferences.getString(_key);
+      return preferences.getString(storageKey);
     } catch (e) {
       debugPrint('Non-critical error: $e');
       return null;
@@ -33,7 +33,10 @@ class SharedPreferencesCoachThreadMemory implements CoachThreadMemory {
   @override
   Future<void> remember(String threadId) async {
     try {
-      await (await SharedPreferences.getInstance()).setString(_key, threadId);
+      await (await SharedPreferences.getInstance()).setString(
+        storageKey,
+        threadId,
+      );
     } catch (e) {
       debugPrint('Non-critical error: $e');
     }
