@@ -220,4 +220,58 @@ void main() {
       isNull,
     );
   });
+
+  group('per athlete', () {
+    const athleteA = '11111111-1111-4111-8111-111111111111';
+    const athleteB = '22222222-2222-4222-8222-222222222222';
+
+    Future<int> replayCount(String userId) async {
+      var sent = 0;
+      final queue = CheckInQueue(
+        await SharedPreferences.getInstance(),
+        userId: userId,
+      );
+      await queue.replay((localDate, timezone, key, payload) async {
+        sent++;
+        return true;
+      });
+      return sent;
+    }
+
+    test('one athlete\'s pending check-in is never sent for another', () async {
+      SharedPreferences.setMockInitialValues({});
+      await CheckInQueue(
+        await SharedPreferences.getInstance(),
+        userId: athleteA,
+      ).enqueue(
+        payload: const {'energy': 3},
+        localDate: '2026-10-02',
+        timezone: 'Asia/Kolkata',
+      );
+
+      expect(await replayCount(athleteB), 0);
+      expect(await replayCount(athleteA), 1);
+      expect(await replayCount(athleteA), 0);
+    });
+
+    test('an older build\'s envelope goes to the first athlete', () async {
+      SharedPreferences.setMockInitialValues({
+        CheckInQueue.legacyStorageKey: jsonEncode({
+          'idempotency_key': 'legacy-key',
+          'local_date': '2026-10-01',
+          'timezone': 'Asia/Kolkata',
+          'payload': {'energy': 2},
+        }),
+      });
+
+      expect(await replayCount(athleteA), 1);
+      expect(
+        (await SharedPreferences.getInstance()).getString(
+          CheckInQueue.legacyStorageKey,
+        ),
+        isNull,
+      );
+      expect(await replayCount(athleteB), 0);
+    });
+  });
 }

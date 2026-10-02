@@ -53,7 +53,12 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     // The envelope is queued before the RPC so the check-in survives a lost
     // connection; Today retries it on the next launch via CheckInQueue.
     final preferences = await SharedPreferences.getInstance();
-    final queue = CheckInQueue(preferences);
+    final queue = CheckInQueue(
+      preferences,
+      userId: widget.environment.hasSupabaseConfiguration
+          ? Supabase.instance.client.auth.currentUser?.id
+          : null,
+    );
     final idempotencyKey = await queue.enqueue(
       payload: payload,
       localDate: localDate,

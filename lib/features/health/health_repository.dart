@@ -322,10 +322,13 @@ DateTime healthSyncStart({
 /// The preference keys holding one athlete's Apple Health state.
 class HealthPreferenceKeys {
   HealthPreferenceKeys(String userId)
-    : lastSync = 'health.$userId.last_successful_sync',
-      availableTypes = 'health.$userId.available_types',
-      initialBackfillComplete = 'health.$userId.initial_backfill_complete',
-      accessError = 'health.$userId.access_error';
+    : lastSync = '${prefix(userId)}last_successful_sync',
+      availableTypes = '${prefix(userId)}available_types',
+      initialBackfillComplete = '${prefix(userId)}initial_backfill_complete',
+      accessError = '${prefix(userId)}access_error';
+
+  /// Every Apple Health key of one athlete starts with this.
+  static String prefix(String userId) => 'health.$userId.';
 
   final String lastSync;
   final String availableTypes;

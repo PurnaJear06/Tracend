@@ -272,8 +272,12 @@ class SupabaseHealthBaselineSource implements HealthBaselineSource {
 
   String? get _key {
     final user = _client.auth.currentUser?.id;
-    return user == null ? null : 'tracend.$user.health_history_month';
+    return user == null ? null : historyMonthKey(user);
   }
+
+  /// The month the athlete's usual months were last sent.
+  static String historyMonthKey(String userId) =>
+      'tracend.$userId.health_history_month';
 
   @override
   Future<HealthBaseline?> load() async {

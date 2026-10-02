@@ -6,7 +6,8 @@ import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/privacy_export_repository.dart';
 
 /// Permanent account deletion sheet: password + exact `DELETE` confirmation
-/// (UX_FLOWS.md §13). Returns true only after the server completes.
+/// (UX_FLOWS.md §13). Returns the outcome once this device is signed out: the
+/// server confirmed the deletion, or Auth refused the session.
 class AccountDeletionSheet extends StatefulWidget {
   const AccountDeletionSheet({required this.repository, super.key});
 
@@ -20,6 +21,9 @@ class _AccountDeletionSheetState extends State<AccountDeletionSheet> {
   final _password = TextEditingController();
   final _confirmation = TextEditingController();
   bool _working = false;
+
+  /// The server has not confirmed the deletion yet; the athlete checks again.
+  bool _unconfirmed = false;
   String? _error;
 
   @override
@@ -34,16 +38,34 @@ class _AccountDeletionSheetState extends State<AccountDeletionSheet> {
       setState(() => _error = 'Enter your password and type DELETE exactly.');
       return;
     }
+    await _settle(
+      () => widget.repository.delete(
+        accountPassword: _password.text,
+        confirmation: _confirmation.text,
+      ),
+    );
+  }
+
+  Future<void> _settle(Future<AccountDeletionOutcome> Function() run) async {
     setState(() {
       _working = true;
       _error = null;
     });
     try {
-      await widget.repository.delete(
-        accountPassword: _password.text,
-        confirmation: _confirmation.text,
-      );
-      if (mounted) Navigator.of(context).pop(true);
+      final outcome = await run();
+      if (!mounted) return;
+      if (outcome == AccountDeletionOutcome.unconfirmed) {
+        setState(() => _unconfirmed = true);
+      } else {
+        Navigator.of(context).pop(outcome);
+      }
+    } on AuthRetryableFetchException {
+      if (mounted) {
+        setState(
+          () => _error =
+              'Deletion did not start. Check the connection and try again.',
+        );
+      }
     } on AuthException {
       if (mounted) {
         setState(() => _error = 'Your account password was not accepted.');
@@ -51,10 +73,10 @@ class _AccountDeletionSheetState extends State<AccountDeletionSheet> {
     } catch (e) {
       debugPrint('Non-critical error: $e');
       if (mounted) {
-        setState(
-          () => _error =
-              'Deletion did not complete. Your account remains available.',
-        );
+        setState(() {
+          _unconfirmed = false;
+          _error = 'Deletion did not complete. Your account remains available.';
+        });
       }
     } finally {
       if (mounted) setState(() => _working = false);
@@ -83,38 +105,64 @@ class _AccountDeletionSheetState extends State<AccountDeletionSheet> {
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: TracendSpacing.md),
-          TextField(
-            controller: _password,
-            obscureText: true,
-            textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(labelText: 'Account password'),
-          ),
-          const SizedBox(height: TracendSpacing.sm),
-          TextField(
-            controller: _confirmation,
-            textCapitalization: TextCapitalization.characters,
-            decoration: const InputDecoration(labelText: 'Type DELETE'),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: TracendSpacing.sm),
+          if (_unconfirmed) ...[
             Text(
-              _error!,
-              style: TextStyle(color: context.tracendColors.stateDanger),
+              'Deletion has not been confirmed yet. It may still be finishing on the server.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: TracendSpacing.sm),
+              Text(
+                _error!,
+                style: TextStyle(color: context.tracendColors.stateDanger),
+              ),
+            ],
+            const SizedBox(height: TracendSpacing.md),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _working
+                    ? null
+                    : () => _settle(widget.repository.confirm),
+                child: Text(_working ? 'Checking...' : 'Check again'),
+              ),
+            ),
+          ] else ...[
+            TextField(
+              controller: _password,
+              obscureText: true,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'Account password'),
+            ),
+            const SizedBox(height: TracendSpacing.sm),
+            TextField(
+              controller: _confirmation,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(labelText: 'Type DELETE'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: TracendSpacing.sm),
+              Text(
+                _error!,
+                style: TextStyle(color: context.tracendColors.stateDanger),
+              ),
+            ],
+            const SizedBox(height: TracendSpacing.md),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: context.tracendColors.stateDanger,
+                ),
+                onPressed: _working ? null : _delete,
+                child: Text(
+                  _working
+                      ? 'Deleting account...'
+                      : 'Permanently delete account',
+                ),
+              ),
             ),
           ],
-          const SizedBox(height: TracendSpacing.md),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: context.tracendColors.stateDanger,
-              ),
-              onPressed: _working ? null : _delete,
-              child: Text(
-                _working ? 'Deleting account...' : 'Permanently delete account',
-              ),
-            ),
-          ),
         ],
       ),
     ),
