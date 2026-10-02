@@ -167,8 +167,10 @@ because DeepSeek may train on inputs by default and stores them in China.
   and USD 2 hard stop never undercount. Until 2026-09-28 they used the retired V4 Flash rate (0.14
   input, 0.28 output), which undercounted V4.1 Flash output by up to 4.3×.
 - **Onboarding plan** (2026-10, `ONBOARDING_PLAN_*`):
-  - about 4K input and 2–3K output tokens, roughly USD 0.004 at the peak price;
-  - a repaired plan costs about twice that;
+  - about 4K input and 2–3K output tokens, roughly USD 0.004 at the peak price, with thinking off;
+  - with thinking on (the default since 2026-10), reasoning adds roughly 4–7K output tokens, so
+    about USD 0.01 a plan; reasoning is billed as output and recorded on its own in the audit event;
+  - a repaired plan adds one non-thinking call (about USD 0.004);
   - it is recorded in `ai_usage_events` as `onboarding_plan` and counts toward the USD 2 stop and
     the 30-a-day limit;
   - a provider without a known price must set the cost secrets, or the rules plan is used.

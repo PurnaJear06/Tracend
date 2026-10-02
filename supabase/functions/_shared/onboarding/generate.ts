@@ -63,6 +63,23 @@ export const onboardingPlanTiming: OnboardingPlanTiming = Object.freeze({
   repairAttemptMs: 20_000,
 });
 
+/**
+ * A thinking first attempt gets more time; the repair never thinks. A six-day
+ * plan with its reasoning is 8-10 thousand output tokens, which took 86-92 s
+ * through the eval router (2026-10-02). The total plus storing stays inside
+ * the 140 s generation lease and the 150 s Edge background limit of the Free
+ * plan.
+ */
+export const onboardingPlanThinkingTiming: OnboardingPlanTiming = Object.freeze({
+  totalDeadlineMs: 125_000,
+  initialAttemptMs: 105_000,
+  repairAttemptMs: 20_000,
+});
+
+/** The timing for a model: longer when its first attempt thinks. */
+export const onboardingTimingFor = (config: Readonly<{ thinking: boolean }>) =>
+  config.thinking ? onboardingPlanThinkingTiming : onboardingPlanTiming;
+
 export type GenerationAttempt = Readonly<{
   attempt: "initial" | "repair";
   outcome: "valid" | "invalid" | "call_failed";
@@ -77,8 +94,15 @@ export type GenerationAttempt = Readonly<{
 export type GenerationUsage = Readonly<{
   provider: string;
   model: string;
+  /** The first attempt thought before answering. */
+  thinking: boolean;
   inputUnits: number;
+  /** Every billed output token, reasoning included. */
   outputUnits: number;
+  /** The reasoning part of outputUnits, when the provider reports it. */
+  reasoningUnits: number;
+  /** The last answer's finish reason, when one arrived. */
+  finishReason: string | null;
   estimatedCostUsd: number;
   latencyMs: number;
 }>;
@@ -256,7 +280,7 @@ export async function generateOnboardingProposal(
   resolution: OnboardingModelResolution,
   gate: GenerationGate,
   fetcher: typeof fetch = fetch,
-  timing: OnboardingPlanTiming = onboardingPlanTiming,
+  timingOverride?: OnboardingPlanTiming,
 ): Promise<GenerationResult> {
   const policies = policiesFor(answers, catalog);
   // Built and checked before any model call: infeasible answers throw here and
@@ -282,18 +306,24 @@ export async function generateOnboardingProposal(
   if (!gate.budgetAvailable) return rules("ai_usage_limit", null, []);
 
   const config = resolution.config;
+  const timing = timingOverride ?? onboardingTimingFor(config);
   const deadline = Date.now() + timing.totalDeadlineMs;
   const system = onboardingSystemPrompt(policies);
   const user = onboardingUserMessage(answers, catalog);
   const attempts: GenerationAttempt[] = [];
   let inputUnits = 0;
   let outputUnits = 0;
+  let reasoningUnits = 0;
+  let finishReason: string | null = null;
   let latencyMs = 0;
   const usage = (): GenerationUsage => ({
     provider: config.provider,
     model: config.model,
+    thinking: config.thinking,
     inputUnits,
     outputUnits,
+    reasoningUnits,
+    finishReason,
     estimatedCostUsd: estimateCostUsd(config, inputUnits, outputUnits),
     latencyMs: Math.min(120_000, latencyMs),
   });
@@ -329,15 +359,21 @@ export async function generateOnboardingProposal(
     let content: string;
     let attemptLatency: number;
     try {
+      // Only the first attempt thinks: a repair fixes one named rule and has
+      // little time left.
       const result = await callOnboardingModel(
         config,
         messages,
         budgetMs,
-        attempt === "initial" ? 0.2 : 0,
+        attempt === "initial"
+          ? (config.thinking ? { thinking: true } : { thinking: false, temperature: 0.2 })
+          : { thinking: false, temperature: 0 },
         fetcher,
       );
       inputUnits += result.inputUnits;
       outputUnits += result.outputUnits;
+      reasoningUnits += result.reasoningUnits;
+      finishReason = result.finishReason;
       latencyMs += result.latencyMs;
       attemptLatency = result.latencyMs;
       content = result.content;
@@ -345,6 +381,8 @@ export async function generateOnboardingProposal(
       if (!(error instanceof OnboardingModelCallError)) throw error;
       inputUnits += error.usage.inputUnits;
       outputUnits += error.usage.outputUnits;
+      reasoningUnits += error.usage.reasoningUnits;
+      if (error.code === "provider_response_truncated") finishReason = "length";
       latencyMs += error.latencyMs;
       attempts.push({
         attempt,

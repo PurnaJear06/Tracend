@@ -227,7 +227,8 @@ Since 2026-10 (`onboarding-plan`, policy `onboarding-policy-v1`):
     and overhead pressing, rows, vertical pulling). A written limitation needs that answer too,
     because the rules plan cannot read free text.
   - The prompt names the avoided patterns and the catalog it receives leaves them out; the
-    validator, the rules plan and `persist_onboarding_proposal_v2` all enforce them.
+    validator, the rules plan and `persist_onboarding_proposal_v3` (v2 delegates to it) all
+    enforce them.
 - **What deterministic code sets, not the model:** names from the catalog, workout order and
   length, a confidence cap, and fixed notes (the movements left out, the calorie ceiling, low
   carbohydrate). Confidence is low when sex is unspecified or the calorie floor or ceiling
@@ -344,12 +345,27 @@ qualify a model.
   - `ONBOARDING_PLAN_MODEL_EVALUATED=true`.
   - The input and output prices, unless the provider has a known default. DeepSeek uses its peak
     price.
+  - `ONBOARDING_PLAN_THINKING`: `on` (the default when unset) or `off`. With it on, the first
+    attempt reasons before answering (DeepSeek: `thinking` enabled, `reasoning_effort: high`, no
+    temperature, 24,000 output tokens) and gets 105 s of a 125 s deadline. The repair never thinks.
+    A provider without a thinking mode ignores the setting. Off restores the request used before
+    2026-10 (thinking disabled, temperature 0.2, 6,000 tokens, 55 s of 75 s).
 - **Calls:** every provider is called through its OpenAI-compatible chat-completions endpoint in
   JSON mode (`_shared/providers/onboarding_plan_provider.ts`).
+- **Telemetry:** the `onboarding.plan.generated` audit event stores whether the call thought, its
+  latency, attempts, input, output and reasoning tokens, and the last finish reason
+  (`persist_onboarding_proposal_v3`). Prompts and answers are never stored there.
+- **Changing any `ONBOARDING_PLAN_*` secret** creates a new version of every Edge Function. Wait for
+  the change to finish, then run `./scripts/verify-live-function.sh --all` from the deployed commit.
+  To roll thinking back: `./scripts/supabase.sh secrets set ONBOARDING_PLAN_THINKING=off
+  --project-ref qsfzzsjenopqqqhvpyaw`, then the same check.
 - **To switch provider or model:**
   1. Run the Onboarding Eval workflow (`.github/workflows/onboarding-eval.yml`) for the candidate.
-     It must give at least 90% of the synthetic athletes a valid model plan without fallback, with
-     p95 latency under 60 s.
+     It must give at least 90% of the synthetic athletes a valid model plan without fallback. A
+     direct run also gates p95 latency (60 s, or 120 s with thinking). The owner runs evals through
+     the router (`EVAL_API_KEY`) to keep provider credits for production; the router ignores
+     thinking-off and adds its own timeouts, so it cannot prove the exact production request, and
+     the first production plans are checked through the audit telemetry instead.
   2. Set the secrets.
   3. Run `./scripts/verify-live-function.sh --all`.
   4. **Because athletes agreed to a named provider,** a provider change also publishes a new notice

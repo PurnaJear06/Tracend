@@ -76,8 +76,8 @@ function supabaseStore(client: SupabaseClient, userId: string): OnboardingStore 
       });
       if (error) throw error;
     },
-    async persist(generationId, snapshotHash, snapshot, proposal) {
-      const { error } = await client.rpc("persist_onboarding_proposal_v2", {
+    async persist(generationId, snapshotHash, snapshot, proposal, metadata) {
+      const { error } = await client.rpc("persist_onboarding_proposal_v3", {
         target_generation_id: generationId,
         target_user_id: userId,
         target_snapshot_hash: snapshotHash,
@@ -89,6 +89,7 @@ function supabaseStore(client: SupabaseClient, userId: string): OnboardingStore 
         proposal_benefit: proposal.benefit,
         proposal_downside: proposal.downside,
         proposal_confidence: proposal.confidence,
+        generation_metadata: metadata,
       });
       if (error) {
         // 55000: a newer generation replaced this one while it ran.

@@ -4,12 +4,16 @@ import { catalogBySlug } from "./catalog.ts";
 import {
   generateOnboardingProposal,
   OnboardingPlanInfeasibleError,
+  onboardingPlanThinkingTiming,
+  onboardingPlanTiming,
   onboardingSystemPrompt,
+  onboardingTimingFor,
   onboardingUserMessage,
 } from "./generate.ts";
 import { buildRulesPlan } from "./rules_plan.ts";
 import { answersFor, policiesFor } from "./test_helpers.ts";
 import {
+  callOnboardingModel,
   type OnboardingModelResolution,
   resolveOnboardingModel,
 } from "../providers/onboarding_plan_provider.ts";
@@ -29,7 +33,31 @@ Deno.test("provider settings: mock by default, any configured provider, safe ref
     assertEquals(deepseek.config.url, "https://api.deepseek.com/v1/chat/completions");
     assertEquals(deepseek.config.price, { input: 0.3, output: 1.2 });
     assertEquals(deepseek.config.extraBody, { thinking: { type: "disabled" } });
+    assertEquals(deepseek.config.thinkingBody, {
+      thinking: { type: "enabled" },
+      reasoning_effort: "high",
+    });
+    // Thinking is on unless the setting turns it off.
+    assertEquals(deepseek.config.thinking, true);
   }
+  const deepseekOff = resolveOnboardingModel(env({
+    ONBOARDING_PLAN_PROVIDER: "deepseek",
+    ONBOARDING_PLAN_MODEL: "deepseek-flash",
+    ONBOARDING_PLAN_MODEL_EVALUATED: "true",
+    ONBOARDING_PLAN_THINKING: "off",
+    DEEPSEEK_API_KEY: "test-key",
+  }));
+  assert(deepseekOff.kind === "model" && deepseekOff.config.thinking === false);
+  assertEquals(
+    resolveOnboardingModel(env({
+      ONBOARDING_PLAN_PROVIDER: "deepseek",
+      ONBOARDING_PLAN_MODEL: "deepseek-flash",
+      ONBOARDING_PLAN_MODEL_EVALUATED: "true",
+      ONBOARDING_PLAN_THINKING: "yes",
+      DEEPSEEK_API_KEY: "test-key",
+    })),
+    { kind: "rules", reason: "provider_configuration_invalid" },
+  );
   const groq = resolveOnboardingModel(env({
     ONBOARDING_PLAN_PROVIDER: "groq",
     ONBOARDING_PLAN_MODEL: "some/model",
@@ -39,6 +67,8 @@ Deno.test("provider settings: mock by default, any configured provider, safe ref
     ONBOARDING_PLAN_OUTPUT_COST_PER_MILLION_USD: "0.6",
   }));
   assert(groq.kind === "model" && groq.config.url.startsWith("https://api.groq.com/"));
+  // A provider without a thinking mode never thinks.
+  assert(groq.kind === "model" && groq.config.thinking === false);
   assertEquals(
     resolveOnboardingModel(env({
       ONBOARDING_PLAN_PROVIDER: "groq",
@@ -84,12 +114,33 @@ const model: OnboardingModelResolution = {
     url: "https://api.deepseek.com/v1/chat/completions",
     apiKey: "test-key",
     extraBody: {},
+    thinkingBody: null,
+    thinking: false,
+    price: { input: 0.3, output: 1.2 },
+  },
+};
+const thinkingModel: OnboardingModelResolution = {
+  kind: "model",
+  config: {
+    provider: "deepseek",
+    model: "deepseek-flash",
+    url: "https://api.deepseek.com/v1/chat/completions",
+    apiKey: "test-key",
+    extraBody: { thinking: { type: "disabled" } },
+    thinkingBody: { thinking: { type: "enabled" }, reasoning_effort: "high" },
+    thinking: true,
     price: { input: 0.3, output: 1.2 },
   },
 };
 const open = { consentGranted: true, budgetAvailable: true };
 
-type Billed = Readonly<{ content: string; finish: string; input: number; output: number }>;
+type Billed = Readonly<{
+  content: string;
+  finish: string;
+  input: number;
+  output: number;
+  reasoning?: number;
+}>;
 
 function scripted(...replies: (string | number | "abort" | Billed)[]) {
   const bodies: Record<string, unknown>[] = [];
@@ -103,7 +154,13 @@ function scripted(...replies: (string | number | "abort" | Billed)[]) {
     if (typeof next === "object") {
       return Promise.resolve(Response.json({
         choices: [{ message: { content: next.content }, finish_reason: next.finish }],
-        usage: { prompt_tokens: next.input, completion_tokens: next.output },
+        usage: {
+          prompt_tokens: next.input,
+          completion_tokens: next.output,
+          ...(next.reasoning === undefined
+            ? {}
+            : { completion_tokens_details: { reasoning_tokens: next.reasoning } }),
+        },
       }));
     }
     return Promise.resolve(Response.json({
@@ -336,4 +393,96 @@ Deno.test("infeasible answers stop before any model call", async () => {
   );
   assertEquals(error.rule, "exercise_count_out_of_range");
   assertEquals(bodies.length, 0);
+});
+
+Deno.test("thinking: the first attempt thinks without temperature and with room to reason", async () => {
+  const { fetcher, bodies } = scripted({
+    content: aiPlan,
+    finish: "stop",
+    input: 4000,
+    output: 9000,
+    reasoning: 6500,
+  });
+  const result = await generateOnboardingProposal(
+    answers,
+    exerciseCatalogV1,
+    thinkingModel,
+    open,
+    fetcher,
+  );
+  assertEquals(result.proposal.training.origin, "ai");
+  assertEquals(bodies.length, 1);
+  assertEquals(bodies[0].thinking, { type: "enabled" });
+  assertEquals(bodies[0].reasoning_effort, "high");
+  assertEquals("temperature" in bodies[0], false);
+  assertEquals(bodies[0].max_tokens, 24_000);
+  // Reasoning is billed as output; it is also reported on its own.
+  assertEquals(result.usage?.outputUnits, 9000);
+  assertEquals(result.usage?.reasoningUnits, 6500);
+  assertEquals(result.usage?.thinking, true);
+  assertEquals(result.usage?.finishReason, "stop");
+  assertEquals(result.usage?.estimatedCostUsd, (4000 * 0.3 + 9000 * 1.2) / 1_000_000);
+});
+
+Deno.test("thinking: the repair never thinks", async () => {
+  const broken = JSON.stringify({
+    ...validPlan,
+    nutrition: { ...validPlan.nutrition, calories: 9000 },
+  });
+  const { fetcher, bodies } = scripted(broken, aiPlan);
+  const result = await generateOnboardingProposal(
+    answers,
+    exerciseCatalogV1,
+    thinkingModel,
+    open,
+    fetcher,
+  );
+  assertEquals(result.proposal.training.origin, "ai");
+  assertEquals(bodies.length, 2);
+  assertEquals(bodies[0].thinking, { type: "enabled" });
+  assertEquals(bodies[1].thinking, { type: "disabled" });
+  assertEquals(bodies[1].temperature, 0);
+  assertEquals(bodies[1].max_tokens, 6000);
+  assertEquals("reasoning_effort" in bodies[1], false);
+});
+
+Deno.test("thinking off sends exactly the request it sent before", async () => {
+  const off: OnboardingModelResolution = {
+    kind: "model",
+    config: { ...thinkingModel.config, thinking: false } as typeof model.config,
+  };
+  const { fetcher, bodies } = scripted(aiPlan);
+  const result = await generateOnboardingProposal(answers, exerciseCatalogV1, off, open, fetcher);
+  assertEquals(result.usage?.thinking, false);
+  assertEquals(result.usage?.reasoningUnits, 0);
+  const { messages: _messages, ...rest } = bodies[0];
+  assertEquals(rest, {
+    model: "deepseek-flash",
+    temperature: 0.2,
+    max_tokens: 6000,
+    response_format: { type: "json_object" },
+    thinking: { type: "disabled" },
+  });
+});
+
+Deno.test("thinking gets the longer deadline; off keeps the original one", () => {
+  assertEquals(onboardingTimingFor({ thinking: false }), onboardingPlanTiming);
+  assertEquals(onboardingPlanTiming.totalDeadlineMs, 75_000);
+  assertEquals(onboardingTimingFor({ thinking: true }), {
+    totalDeadlineMs: 125_000,
+    initialAttemptMs: 105_000,
+    repairAttemptMs: 20_000,
+  });
+  // Model time plus storing stays inside the 140 s generation lease.
+  assert(onboardingPlanThinkingTiming.totalDeadlineMs < 140_000);
+});
+
+Deno.test("a provider without thinking refuses a thinking call", async () => {
+  assert(model.kind === "model");
+  const config = model.config;
+  await assertRejects(
+    () => callOnboardingModel(config, [], 1000, { thinking: true }, scripted(aiPlan).fetcher),
+    Error,
+    "no thinking mode",
+  );
 });

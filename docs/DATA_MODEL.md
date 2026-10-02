@@ -134,7 +134,8 @@ Rules:
   (7 days) reads as `expired` in `get_my_onboarding_generation`, which also returns
   `proposal_expires_at`. Answering an expired proposal stores `expired` and returns it.
 - **Movements to avoid:** the snapshot's `answers.avoid_patterns` (movement patterns) bind the
-  stored proposal; `persist_onboarding_proposal_v2` refuses an exercise with an avoided pattern.
+  stored proposal; `persist_onboarding_proposal_v3` (and v2, which delegates to it) refuses an
+  exercise with an avoided pattern.
 
 
 ### `onboarding_drafts`
