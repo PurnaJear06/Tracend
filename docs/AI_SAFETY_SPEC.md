@@ -329,7 +329,8 @@ new grant. Withdrawing stops new checks; past results stay until the set or acco
 
 **Input.** The front, side and back photos of one complete set (Groq accepts three images), each a
 JPEG of at most 3 MB with every metadata segment (EXIF, location, XMP, ICC, comments) removed on the
-server before sending (`_shared/physique/jpeg.ts`); the app already re-encodes at capture (longest
+server before sending, across every scan of a progressive file, and nothing after its end marker
+(`_shared/physique/jpeg.ts`); the app already re-encodes at capture (longest
 side 1800 px, no metadata). Also sex, height, latest weight and body measurements, and the active
 goal, as data. The check is hidden when the athlete's own notes mention an eating concern.
 

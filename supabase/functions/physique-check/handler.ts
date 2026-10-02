@@ -142,16 +142,23 @@ export async function handlePhysiqueCheck(
 
   const calls: PhysiqueCall[] = [];
   let recorded = 0;
+  // Every billed call is recorded once, before anything is stored. A failed
+  // record is reported but never turns an answer into a failure: retrying
+  // would pay for another call.
   const record = async () => {
     while (recorded < calls.length) {
       const spent = calls[recorded++];
-      await store.recordUsage({
-        model: config.model,
-        inputUnits: spent.inputUnits,
-        outputUnits: spent.outputUnits,
-        estimatedCostUsd: spent.estimatedCostUsd,
-        latencyMs: spent.latencyMs,
-      });
+      try {
+        await store.recordUsage({
+          model: config.model,
+          inputUnits: spent.inputUnits,
+          outputUnits: spent.outputUnits,
+          estimatedCostUsd: spent.estimatedCostUsd,
+          latencyMs: spent.latencyMs,
+        });
+      } catch {
+        observer.warn("physique_check_usage_not_recorded", { attempt: recorded });
+      }
     }
   };
   try {
@@ -177,6 +184,7 @@ export async function handlePhysiqueCheck(
       observer.warn("physique_check_invalid", { ...metadata, rule: parsed.rule });
       return reply(502, { error: "physique_check_invalid" });
     }
+    await record();
     const analysisId = await store.persist(
       body.photo_set_id,
       parsed.result,
@@ -184,7 +192,6 @@ export async function handlePhysiqueCheck(
       noticeVersion,
       metadata,
     );
-    await record();
     observer.info("physique_check_complete", metadata);
     return reply(200, { schema_version: "1.0", analysis_id: analysisId, result: parsed.result });
   } catch (error) {

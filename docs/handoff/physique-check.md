@@ -35,6 +35,17 @@ AI_SAFETY_SPEC §9.
   sheets. The card says "Sent to Groq only when you start a physique check" only for accounts the
   function serves; for everyone else it still says "Never sent to AI", which stays true.
 
+## Review fixes (before merge)
+
+- A stored check and its disclosure load apart from current availability: switching the check off
+  never makes the card claim photos were "never sent to AI".
+- The newest photo set is chosen deterministically (`captured_on`, then `created_at`, then `id`).
+- The JPEG cleaner walks the whole file: metadata between progressive scans and anything after the
+  end marker are removed.
+- Deleting a set reloads the stored check, so a deleted analysis can't be opened.
+- Usage is recorded before the result is stored. A failed usage record is reported to Sentry but
+  never turns a stored answer into a failure, since a retry would pay for another call.
+
 ## Deliberate deviations from the plan
 
 - **Three photos, not four.** Groq's vision API takes at most three images per request, so the

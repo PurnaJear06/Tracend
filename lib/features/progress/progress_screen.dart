@@ -116,18 +116,18 @@ class _ProgressScreenState extends State<ProgressScreen> {
         );
   }
 
+  /// Whether a check can run now, and the newest stored check. They load
+  /// apart: a check run earlier stays visible, and disclosed, after the
+  /// feature is switched off for this account.
   Future<_PhysiqueState> _loadPhysique() async {
-    final provider = await widget.physique.loadProvider();
-    if (provider == null) return (provider: null, latest: null);
+    final provider = widget.physique.loadProvider();
+    PhysiqueAnalysis? latest;
     try {
-      return (
-        provider: provider,
-        latest: await widget.physique.loadLatestAnalysis(),
-      );
+      latest = await widget.physique.loadLatestAnalysis();
     } catch (e) {
       debugPrint('Non-critical error: $e');
-      return (provider: provider, latest: null);
     }
+    return (provider: await provider, latest: latest);
   }
 
   @override
@@ -555,7 +555,12 @@ class _ProgressScreenState extends State<ProgressScreen> {
     );
     if (confirmed != true) return;
     await widget.repository.deletePhotoSet(set);
-    if (mounted) setState(_reload);
+    if (!mounted) return;
+    // The set's physique checks were deleted with it.
+    setState(() {
+      _reload();
+      _physique = _loadPhysique();
+    });
   }
 }
 

@@ -515,8 +515,11 @@ offers **Physique check** on the newest complete set:
 `Consent sheet (server notice, first time or after a new notice) → Checking (usually under 30 s) →
 Result: "AI visual estimate, not a measurement", muscles with confidence and reason, observations,
 photo tips, limitations → choose up to two → Use as my focus`.
-Nothing changes without that confirmation; the Coach uses the focus at once and the plan at its
-next review. Errors (consent, today's AI limit, Groq busy, photos that cannot be checked, an
+The newest set is the one taken last (`captured_on`, then `created_at`). A stored check stays
+visible after the feature is switched off for the account, and the card then says a set was sent
+to AI only for a check the athlete started, never "never". Deleting a set removes its checks from
+the card at once. Nothing changes without that confirmation; the Coach uses the focus at once and
+the plan at its next review. Errors (consent, today's AI limit, Groq busy, photos that cannot be checked, an
 unusable answer) stay inline in the sheet. **Turn off photo checks** records a withdrawal.
 
 ### Comparison

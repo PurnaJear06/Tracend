@@ -16,35 +16,56 @@ const isMetadata = (marker: number) => (marker >= 0xe1 && marker <= 0xef) || mar
 
 /**
  * The photo without its metadata segments, or null when it is not a
- * well-formed JPEG. The image data from the start of scan on is copied as is.
+ * well-formed JPEG. The whole file is walked: a progressive JPEG has several
+ * scans, and metadata may sit between them. Each scan's entropy-coded data is
+ * copied as is; anything after the end-of-image marker is dropped.
  */
 export function stripJpegMetadata(bytes: Uint8Array): Uint8Array | null {
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== startOfImage) return null;
   const kept: Uint8Array[] = [bytes.subarray(0, 2)];
   let offset = 2;
-  while (offset < bytes.length) {
-    if (bytes[offset] !== 0xff) return null;
+  let scans = 0;
+  while (true) {
+    if (offset + 1 >= bytes.length || bytes[offset] !== 0xff) return null;
     const marker = bytes[offset + 1];
-    if (marker === undefined) return null;
     if (marker === 0xff) {
       // Fill bytes between segments.
       offset += 1;
       continue;
     }
-    if (marker === endOfImage) return null;
-    if (marker === startOfScan) {
-      kept.push(bytes.subarray(offset));
+    if (marker === endOfImage) {
+      if (scans === 0) return null;
+      kept.push(bytes.subarray(offset, offset + 2));
       break;
     }
-    if (marker >= 0xd0 && marker <= 0xd7) return null;
+    if ((marker >= 0xd0 && marker <= 0xd7) || marker === startOfImage || marker === 0x01) {
+      return null;
+    }
     if (offset + 4 > bytes.length) return null;
     const length = (bytes[offset + 2] << 8) | bytes[offset + 3];
-    const end = offset + 2 + length;
+    let end = offset + 2 + length;
     if (length < 2 || end > bytes.length) return null;
+    if (marker === startOfScan) {
+      // The scan header, then its entropy-coded data up to the next marker
+      // that is neither a stuffed 0xFF00 nor a restart marker.
+      scans += 1;
+      while (end < bytes.length) {
+        if (bytes[end] !== 0xff) {
+          end += 1;
+          continue;
+        }
+        const next = bytes[end + 1];
+        if (next === 0x00 || (next !== undefined && next >= 0xd0 && next <= 0xd7)) {
+          end += 2;
+          continue;
+        }
+        break;
+      }
+      if (end >= bytes.length) return null;
+    }
     if (!isMetadata(marker)) kept.push(bytes.subarray(offset, end));
     offset = end;
   }
-  if (offset >= bytes.length) return null;
   const size = kept.reduce((total, part) => total + part.length, 0);
   const clean = new Uint8Array(size);
   let at = 0;

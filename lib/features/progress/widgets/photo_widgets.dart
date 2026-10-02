@@ -69,7 +69,7 @@ class PhotoProgressCard extends StatelessWidget {
 
   /// Who photos go to when this account starts a physique check, as the
   /// server names it; null when it may not. The privacy line then says when
-  /// they leave the app.
+  /// they leave the app; with a stored check it never says "never".
   final String? photoCheckProvider;
 
   /// Starts a check on the newest set; null hides the action.
@@ -84,7 +84,7 @@ class PhotoProgressCard extends StatelessWidget {
     final theme = Theme.of(context).textTheme;
     final latest = photoSets.isEmpty ? null : photoSets.first;
     final provider = photoCheckProvider;
-    final physique = provider != null ? latestPhysique : null;
+    final physique = latestPhysique;
     return PremiumGradientCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -110,6 +110,9 @@ class PhotoProgressCard extends StatelessWidget {
                       provider != null
                           ? 'Only you can see these. Sent to $provider only '
                                 'when you start a physique check.'
+                          : physique != null
+                          ? 'Only you can see these. A set was sent to AI '
+                                'only for a physique check you started.'
                           : 'Only you can see these. Never sent to AI.',
                       style: theme.bodyMedium,
                     ),

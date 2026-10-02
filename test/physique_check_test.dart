@@ -155,13 +155,50 @@ void main() {
     tester,
   ) async {
     _tallView(tester);
-    final physique = _Physique(enabled: false, latest: _analysis());
-    await _pumpProgress(tester, physique);
+    await _pumpProgress(tester, _Physique(enabled: false));
     expect(find.text(_privateCopy), findsOneWidget);
     expect(find.text(_checkCopy), findsNothing);
     expect(find.text('Physique check'), findsNothing);
     expect(find.textContaining('Focus suggested'), findsNothing);
-    expect(physique.latestLoads, 0);
+  });
+
+  testWidgets(
+    'a check run before the feature was switched off stays disclosed',
+    (tester) async {
+      _tallView(tester);
+      await _pumpProgress(
+        tester,
+        _Physique(enabled: false, latest: _analysis()),
+      );
+      expect(find.text(_privateCopy), findsNothing);
+      expect(
+        find.text(
+          'Only you can see these. A set was sent to AI only for a physique '
+          'check you started.',
+        ),
+        findsOneWidget,
+      );
+      expect(_checkAction, findsNothing);
+      expect(find.textContaining('Focus suggested'), findsOneWidget);
+    },
+  );
+
+  testWidgets('deleting a set drops the check that went with it', (
+    tester,
+  ) async {
+    _tallView(tester);
+    final physique = _Physique(latest: _analysis());
+    await _pumpProgress(tester, physique);
+    expect(find.textContaining('Focus suggested'), findsOneWidget);
+    await tester.tap(find.text('View past set'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Delete photo set'));
+    await tester.pumpAndSettle();
+    physique.latest = null;
+    await tester.tap(find.text('Delete set'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Focus suggested'), findsNothing);
+    expect(physique.latestLoads, 2);
   });
 
   testWidgets('enabled accounts see the check on a complete newest set', (
@@ -443,7 +480,7 @@ class _Physique implements PhysiqueCheckRepository {
 
   final bool enabled;
   bool granted;
-  final PhysiqueAnalysis? latest;
+  PhysiqueAnalysis? latest;
   final PhysiqueCheckError? checkError;
   final Completer<PhysiqueAnalysis>? pending;
   final log = <String>[];

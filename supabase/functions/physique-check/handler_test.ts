@@ -221,3 +221,37 @@ Deno.test("Groq busy answers 429 and records nothing", async () => {
   assertEquals([result.status, result.body.error], [429, "physique_check_busy"]);
   assertEquals(calls.usage.length, 0);
 });
+
+Deno.test("a failed usage record never fails a stored answer", async () => {
+  const warnings: string[] = [];
+  const { store, calls } = fakeStore({ recordUsage: () => Promise.reject(new Error("down")) });
+  const result = await run(store, check, {
+    call: answering([valid]).call,
+    observer: { info: () => {}, warn: (event) => warnings.push(event) },
+  });
+  assertEquals(result.status, 200);
+  assertEquals(calls.persisted.length, 1);
+  assertEquals(warnings, ["physique_check_usage_not_recorded"]);
+});
+
+Deno.test("usage is recorded before storing, so a failed store still counts the call", async () => {
+  const order: string[] = [];
+  const { store } = fakeStore({
+    recordUsage: () => {
+      order.push("usage");
+      return Promise.resolve();
+    },
+    persist: () => {
+      order.push("persist");
+      return Promise.reject(new Error("database down"));
+    },
+  });
+  let failed = false;
+  try {
+    await run(store, check, { call: answering([valid]).call });
+  } catch {
+    failed = true;
+  }
+  assert(failed);
+  assertEquals(order, ["usage", "persist"]);
+});

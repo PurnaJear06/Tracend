@@ -42,3 +42,46 @@ Deno.test("anything that is not a well-formed JPEG is refused", () => {
   assertEquals(stripJpegMetadata(new Uint8Array([0xff, 0xd8, ...segment(0xdb, [1])])), null);
   assertEquals(stripJpegMetadata(new Uint8Array([0xff, 0xd8, 0xff, 0xd9])), null);
 });
+
+Deno.test("a progressive JPEG is walked to the end: metadata between scans goes too", () => {
+  const huffman = segment(0xc4, [0x00, 0x01]);
+  // Entropy data with a stuffed 0xFF00 and a restart marker, kept as is.
+  const firstScan = [0xff, 0xda, 0x00, 0x03, 0x01, 0x10, 0xff, 0x00, 0x20, 0xff, 0xd0, 0x30];
+  const lateExif = segment(0xe1, [...new TextEncoder().encode("Exif\0\0GPS 12.97N")]);
+  const lateComment = segment(0xfe, [...new TextEncoder().encode("serial 1234")]);
+  const secondScan = [0xff, 0xda, 0x00, 0x03, 0x02, 0x40, 0x50];
+  const trailer = [...new TextEncoder().encode("GPS after end")];
+  const photo = new Uint8Array([
+    0xff,
+    0xd8,
+    ...huffman,
+    ...firstScan,
+    ...lateExif,
+    ...huffman,
+    ...lateComment,
+    ...secondScan,
+    0xff,
+    0xd9,
+    ...trailer,
+  ]);
+  const clean = stripJpegMetadata(photo)!;
+  assertEquals([...clean], [
+    0xff,
+    0xd8,
+    ...huffman,
+    ...firstScan,
+    ...huffman,
+    ...secondScan,
+    0xff,
+    0xd9,
+  ]);
+  const text = new TextDecoder().decode(clean);
+  assert(!text.includes("GPS") && !text.includes("serial"));
+});
+
+Deno.test("a scan that never ends is refused", () => {
+  assertEquals(
+    stripJpegMetadata(new Uint8Array([0xff, 0xd8, 0xff, 0xda, 0x00, 0x03, 0x01, 0x10, 0x20])),
+    null,
+  );
+});
