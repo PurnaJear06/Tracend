@@ -5,14 +5,6 @@
 -- argument; v2 stays for the Edge Function deployed before this one and
 -- stores no telemetry.
 
-create function private.is_integer_between(value jsonb, low bigint, high bigint)
-returns boolean language sql immutable set search_path = '' as $$
-  select case when jsonb_typeof(value) = 'number' then
-    (value #>> '{}')::numeric = trunc((value #>> '{}')::numeric)
-    and (value #>> '{}')::numeric between low and high
-  else false end;
-$$;
-
 -- Missing keys make the checks null; coalesce turns that into invalid.
 create function private.is_valid_generation_metadata(metadata jsonb)
 returns boolean language sql immutable set search_path = '' as $$
@@ -24,18 +16,16 @@ returns boolean language sql immutable set search_path = '' as $$
         'output_units', 'reasoning_units', 'finish_reason')
     )
     and jsonb_typeof(metadata -> 'thinking') = 'boolean'
-    and private.is_integer_between(metadata -> 'latency_ms', 0, 120000)
-    and private.is_integer_between(metadata -> 'attempts', 0, 2)
-    and private.is_integer_between(metadata -> 'input_units', 0, 1000000)
-    and private.is_integer_between(metadata -> 'output_units', 0, 100000)
-    and private.is_integer_between(metadata -> 'reasoning_units', 0, 100000)
+    and private.jsonb_int_between(metadata -> 'latency_ms', 0, 120000)
+    and private.jsonb_int_between(metadata -> 'attempts', 0, 2)
+    and private.jsonb_int_between(metadata -> 'input_units', 0, 1000000)
+    and private.jsonb_int_between(metadata -> 'output_units', 0, 100000)
+    and private.jsonb_int_between(metadata -> 'reasoning_units', 0, 100000)
     and coalesce(jsonb_typeof(metadata -> 'finish_reason'), 'null') in ('null', 'string')
     and length(coalesce(metadata ->> 'finish_reason', '')) <= 40,
     false);
 $$;
 
-revoke all on function private.is_integer_between(jsonb, bigint, bigint)
-from public, anon, authenticated;
 revoke all on function private.is_valid_generation_metadata(jsonb)
 from public, anon, authenticated;
 
