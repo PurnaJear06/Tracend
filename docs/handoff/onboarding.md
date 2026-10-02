@@ -177,6 +177,24 @@ v1 approval now refuses 2.0 proposals.
   qsfzzsjenopqqqhvpyaw`. A secret change creates a new version of every function: wait for it,
   then run `./scripts/verify-live-function.sh --all` from the deployed commit.
 
+**Server: notice v4, time zone, Apple Health summary, profile** (PR B):
+
+- **Notice `ai-coaching-v4`** is published by migration for all three purposes, with the
+  Apple Health summary and movements to avoid in its text. It replaces the owner's v3 SQL step
+  (do not run it). Before v4, the app showed v1 (current for the most purposes) while the plan
+  checked v2, so a new athlete's grant never counted for the plan.
+- **`set_my_timezone`** stores the device's zone (the app calls it from PR C); approval dates
+  the plan, targets and onboarding weight with the athlete's local date.
+- **Apple Health summary:** `onboarding-plan` reads the 28 days before the athlete's local today
+  from `daily_health_summaries` and `health_workout_references`, summarises them
+  (`_shared/onboarding/health_summary.ts`, ALGORITHMS §9), puts the summary in the snapshot (so in
+  the hash), the prompt (`<health_summary>`), the proposal's `calculation.health` and evidence.
+  Only short sleep changes a limit (RPE ceiling −0.5). No workouts found is missing information.
+- **Profile:** approval keeps `avoid_patterns` and `equipment_note`; the Coach's profile shows
+  them and is told never to suggest an avoided movement. `current_plan` is deliberately not kept.
+- **No deload promise:** the app repeats one weekly template, so the prompt forbids it and
+  `deload_week` is no longer stored.
+
 **Switching provider or model later** (AI_SAFETY_SPEC §10):
 
 1. Run the eval for the candidate.
@@ -252,13 +270,8 @@ Plus notice parsing and version tests.
 
 **After merge and install** (owner):
 
-1. Publish v2 for every purpose, so the Coach and the onboarding plan share one notice:
-
-   ```sql
-   select private.publish_ai_notice('ai-coaching-v3', 'DeepSeek', array['coach_chat','daily_coaching','onboarding_plan'], (select body from public.ai_consent_notices where version = 'ai-coaching-v2'));
-   ```
-
-   The app asks once, and you accept.
+1. ~~Publish v3 for every purpose~~: replaced by `ai-coaching-v4`, published by migration in
+   PR B. The app asks once, and you accept.
 2. Create a second test account on the phone and complete both paths:
    - close the app while the plan builds, then reopen;
    - request changes;

@@ -561,8 +561,10 @@ TDEE = BMR × daily-activity factor + training energy
   - RPE 7–8.5 for beginners (RIR 2–3) and 7–9 for intermediates.
   - Rest 60–180 s, or up to 240 s for strength.
   - Sets per exercise 1–5.
-- **Blocks:** 4–8 weeks, with the last week a deload. Deloads in practice come about every 5–6
-  weeks (Sports Med Open 2024).
+- **Blocks:** 4–8 weeks before a review. The app repeats one weekly template, so the plan never
+  promises a deload or a different week; progression is adding reps or load within the ranges.
+  (Deloads in practice come about every 5–6 weeks, Sports Med Open 2024, and need a week-by-week
+  plan the app does not have yet.)
 - **Rules plan:**
   - The same limits, using split templates and the first equipment-compatible catalog exercise for
     each movement slot.
@@ -575,4 +577,33 @@ TDEE = BMR × daily-activity factor + training energy
   - Deno tests prove it is valid for every equipment set × 1–6 days × both paths × every goal ×
     30–120 minutes; its nutrition is valid and storable for 14,400 combinations of body size, age,
     activity, goal, sex and schedule; and it is valid with any one movement avoided.
+
+### Apple Health summary (2026-10)
+
+Code: `supabase/functions/_shared/onboarding/health_summary.ts`.
+
+- **Window:** the 28 dates before the athlete's local today (`user_accounts.timezone`). Today's
+  partial row is left out; yesterday's is kept.
+- **Included only with enough data:**
+  - steps and active energy: averages over days with a value, at least 7 such days;
+  - sleep: average over nights with a value, at least 7 nights;
+  - workouts: per week, minutes per week and the three commonest types, only when at least one
+    workout was found. None found is listed as missing information, never read as inactivity:
+    HealthKit hides whether read access was denied;
+  - weight: the latest reading in the window, and the least-squares trend (`coach_calculations.ts`
+    `weightTrendKgPerWeek`, at least 4 readings across 14 days).
+- **Left out:** resting heart rate, HRV and breathing rate, which need a personal baseline the
+  athlete does not have yet.
+- **Rounding:** steps and kcal to whole numbers, sleep to whole minutes, workouts per week 0.1,
+  weight 0.1, trend 0.01, so the same data gives the same snapshot hash.
+- **What it changes:**
+  - **Short sleep** (average under 6 h): the RPE ceiling drops 0.5 and the rules plan's targets
+    drop 0.5 (`startLighter`). Short sleep impairs recovery and strength-endurance; a lighter
+    first block is the conservative choice.
+  - **Nothing else changes a number.** The athlete's answers set the calorie and protein ranges.
+  - **Notes:** an Apple Health weight more than 3 kg from the answer, and average steps two or
+    more activity levels from the daily-activity answer.
+- **Steps to daily activity** (shared with the app's About you step): under 5,000 mostly sitting;
+  5,000–7,499 some standing; 7,500 and over mostly standing (Tudor-Locke step bands). Steps never
+  suggest physical labour.
 

@@ -52,6 +52,42 @@ function supabaseStore(client: SupabaseClient, userId: string): OnboardingStore 
         compound: row.is_compound,
       }));
     },
+    async timezone() {
+      const { data, error } = await client.from("user_accounts")
+        .select("timezone").eq("id", userId).maybeSingle();
+      if (error) throw error;
+      return typeof data?.timezone === "string" ? data.timezone : "UTC";
+    },
+    async loadHealth(from, through) {
+      const [days, workouts] = await Promise.all([
+        client.from("daily_health_summaries")
+          .select("local_date,steps,active_energy_kcal,sleep_minutes,weight_kg")
+          .eq("user_id", userId).eq("source_scope", "healthkit")
+          .gte("local_date", from).lte("local_date", through),
+        client.from("health_workout_references")
+          .select("local_date,activity_type,duration_seconds")
+          .eq("user_id", userId)
+          .gte("local_date", from).lte("local_date", through),
+      ]);
+      if (days.error) throw days.error;
+      if (workouts.error) throw workouts.error;
+      const number = (value: unknown) =>
+        value === null || value === undefined ? null : Number(value);
+      return {
+        days: (days.data ?? []).map((row) => ({
+          local_date: String(row.local_date),
+          steps: number(row.steps),
+          active_energy_kcal: number(row.active_energy_kcal),
+          sleep_minutes: number(row.sleep_minutes),
+          weight_kg: number(row.weight_kg),
+        })),
+        workouts: (workouts.data ?? []).map((row) => ({
+          local_date: String(row.local_date),
+          activity_type: String(row.activity_type),
+          duration_seconds: Number(row.duration_seconds),
+        })),
+      };
+    },
     consent() {
       return aiCoachingConsent(
         ((name, params) => client.rpc(name, params)) as ConsentRpc,
@@ -132,6 +168,7 @@ Deno.serve(async (request) => {
       store: supabaseStore(auth.serviceClient, auth.userId),
       resolution: () => resolveOnboardingModel(),
       currentYear: new Date().getUTCFullYear(),
+      now: () => new Date(),
       background: (work) => runtime ? runtime.waitUntil(work) : void work,
       observer: {
         info: (event, fields) => log.info(event, fields),

@@ -77,7 +77,9 @@ access/refresh-token table.
 ### `user_accounts`
 
 One application-owned row keyed by `id = auth.users.id`, containing locale, timezone, unit system,
-account status, onboarding state, and timestamps. Email remains in Supabase Auth unless a documented
+account status, onboarding state, and timestamps. The app writes `timezone` (the device's IANA
+zone) through `set_my_timezone`, which accepts only names Postgres knows; before 2026-10 it stayed
+at the default `UTC`. Email remains in Supabase Auth unless a documented
 product need requires a minimized application copy.
 
 ### `consent_records`
@@ -110,9 +112,15 @@ Since 2026-10, approval of an onboarding plan also writes the following, and onl
 - `equipment` (chip values)
 - `limitations_note`
 - `nutrition_note`
+- `avoid_patterns` (movement patterns the athlete asked to avoid; read by the Coach) and
+  `equipment_note`, since 2026-10-02
 
 At the same time it writes the real `training_days` (ISO weekdays), `session_minutes`,
 `height_cm` and `experience_level`. Clients can write only the fields onboarding step 0 writes.
+The onboarding `current_plan` text is deliberately not kept on the profile: the approved plan
+replaces it, and the onboarding feature snapshot keeps it for the audit trail. Approval dates the
+plan, nutrition targets and onboarding weight with the athlete's local date
+(`private.local_date_for`, from `user_accounts.timezone`).
 
 ### `onboarding_generations`
 
@@ -136,6 +144,10 @@ Rules:
 - **Movements to avoid:** the snapshot's `answers.avoid_patterns` (movement patterns) bind the
   stored proposal; `persist_onboarding_proposal_v3` (and v2, which delegates to it) refuses an
   exercise with an avoided pattern.
+- **Apple Health:** the snapshot's `health` holds the 28-day summary used for the plan (or null),
+  so it is part of the snapshot hash: connecting Apple Health builds a new plan.
+- **Telemetry:** `persist_onboarding_proposal_v3` adds the model call's thinking flag, latency,
+  attempts, token counts and finish reason to the `onboarding.plan.generated` audit event.
 
 
 ### `onboarding_drafts`

@@ -1,3 +1,4 @@
+import { type HealthSummary, startsLighter } from "./health_summary.ts";
 import type { DailyActivity, Goal, OnboardingAnswers, Sex } from "./answers.ts";
 import type { MovementPattern } from "./catalog.ts";
 
@@ -171,6 +172,11 @@ export type TrainingPolicy = Readonly<{
    */
   requiredPatternGroups: readonly (readonly MovementPattern[])[];
   avoidPatterns: readonly MovementPattern[];
+  /**
+   * Apple Health shows short sleep, so the first block keeps effort half an
+   * RPE point lower. Only this policy changes effort or volume limits.
+   */
+  startLighter: boolean;
 }>;
 
 const patternGroups: readonly (readonly MovementPattern[])[] = [
@@ -180,11 +186,16 @@ const patternGroups: readonly (readonly MovementPattern[])[] = [
   ["horizontal_pull", "vertical_pull"],
 ];
 
-export function trainingPolicy(answers: OnboardingAnswers): TrainingPolicy {
+export function trainingPolicy(
+  answers: OnboardingAnswers,
+  health: HealthSummary | null = null,
+): TrainingPolicy {
   const minutes = answers.sessionMinutes;
   const strength = answers.goal === "strength";
   const beginner = answers.experience === "beginner";
   const avoid: readonly MovementPattern[] = answers.avoidPatterns;
+  const lighter = startsLighter(health);
+  const rpeHigh = (beginner ? 8.5 : 9) - (lighter ? 0.5 : 0);
   return {
     split: splitForDays(answers.trainingWeekdays.length),
     blockWeeks: [4, 8],
@@ -193,13 +204,14 @@ export function trainingPolicy(answers: OnboardingAnswers): TrainingPolicy {
     maxWeeklySetsPerMuscle: beginner ? 12 : 20,
     setsPerExercise: [1, 5],
     reps: [strength ? 3 : 6, 20],
-    rpe: beginner ? [7, 8.5] : [7, 9],
+    rpe: [7, rpeHigh],
     restSeconds: [60, strength ? 240 : 180],
     sessionOverrunMinutes: Math.max(5, Math.round(minutes * 0.15)),
     requiredPatternGroups: patternGroups
       .map((group) => group.filter((pattern) => !avoid.includes(pattern)))
       .filter((group) => group.length > 0),
     avoidPatterns: avoid,
+    startLighter: lighter,
   };
 }
 

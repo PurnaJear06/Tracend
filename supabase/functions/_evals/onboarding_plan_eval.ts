@@ -23,6 +23,13 @@ import { type OnboardingAnswers } from "../_shared/onboarding/answers.ts";
 import { exerciseCatalogV1 } from "../_shared/onboarding/catalog.ts";
 import { generateOnboardingProposal } from "../_shared/onboarding/generate.ts";
 import {
+  type HealthDay,
+  type HealthSummary,
+  type HealthWorkout,
+  shiftDate,
+  summarizeHealth,
+} from "../_shared/onboarding/health_summary.ts";
+import {
   type OnboardingModelConfig,
   type OnboardingPlanProviderName,
   onboardingPlanProviders,
@@ -151,6 +158,54 @@ const athletes: Readonly<Record<string, OnboardingAnswers>> = {
   },
 };
 
+// Synthetic Apple Health for four athletes, summarised by the production code.
+const evalToday = "2026-10-03";
+function syntheticHealth(
+  day: (back: number) => Partial<HealthDay>,
+  workouts: readonly Readonly<{ back: number; type: string; minutes: number }>[] = [],
+): HealthSummary {
+  const days: HealthDay[] = Array.from({ length: 28 }, (_, index) => ({
+    local_date: shiftDate(evalToday, index + 1),
+    steps: null,
+    active_energy_kcal: null,
+    sleep_minutes: null,
+    weight_kg: null,
+    ...day(index + 1),
+  }));
+  const found: HealthWorkout[] = workouts.map((workout) => ({
+    local_date: shiftDate(evalToday, workout.back),
+    activity_type: workout.type,
+    duration_seconds: workout.minutes * 60,
+  }));
+  return summarizeHealth(days, found, evalToday)!;
+}
+
+const health: Readonly<Record<string, HealthSummary>> = {
+  // Losing about half a kilo a week, weighed every few days.
+  "beginner-fat-loss-gym-3d": syntheticHealth((back) => ({
+    steps: 6400,
+    active_energy_kcal: 380,
+    sleep_minutes: 420,
+    weight_kg: back % 3 === 0 ? 84 + back * 0.07 : null,
+  })),
+  // Short sleep: the plan starts lighter.
+  "beginner-muscle-gain-dumbbells-4d": syntheticHealth(() => ({
+    steps: 7200,
+    sleep_minutes: 340,
+  })),
+  // Very active, already lifting four times a week.
+  "experienced-muscle-gain-ppl-6d": syntheticHealth(
+    () => ({ steps: 12600, active_energy_kcal: 720, sleep_minutes: 450 }),
+    Array.from({ length: 16 }, (_, index) => ({
+      back: 1 + Math.floor(index * 1.7),
+      type: index % 4 === 3 ? "RUNNING" : "TRADITIONAL_STRENGTH_TRAINING",
+      minutes: 65,
+    })),
+  ),
+  // Steps but no workouts found: nothing is claimed about training.
+  "experienced-strength-gym-4d": syntheticHealth(() => ({ steps: 8800, sleep_minutes: 410 })),
+};
+
 function config(): { config: OnboardingModelConfig; router: boolean } {
   const router = Deno.env.get("EVAL_BASE_URL");
   const providerName = (Deno.env.get("EVAL_PROVIDER") ?? "deepseek") as OnboardingPlanProviderName;
@@ -234,6 +289,8 @@ async function main() {
         : "";
       calls.push({
         status: response.status,
+        // A provider or router error says why (a 503 carries no plan).
+        ...(response.ok ? {} : { error: JSON.stringify(payload.error ?? payload).slice(0, 300) }),
         finish_reason: choice?.finish_reason ?? null,
         usage: payload.usage ?? null,
         content_chars: content.length,
@@ -255,9 +312,11 @@ async function main() {
       { consentGranted: true, budgetAvailable: true },
       recording,
       timing,
+      health[name] ?? null,
     );
     const row = {
       athlete: name,
+      apple_health: name in health,
       origin: result.proposal.training.origin as string,
       fallback_reason: result.fallbackReason,
       attempts: result.attempts,

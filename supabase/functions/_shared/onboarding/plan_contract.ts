@@ -1,4 +1,5 @@
-import type { OnboardingAnswers } from "./answers.ts";
+import type { DailyActivity, OnboardingAnswers } from "./answers.ts";
+import { activityFromSteps, type HealthSummary } from "./health_summary.ts";
 import {
   allowedExercises,
   type AvoidablePattern,
@@ -316,6 +317,8 @@ export function parseOnboardingPlan(content: string): OnboardingPlan {
 
 export type PlanPolicies = Readonly<{
   answers: OnboardingAnswers;
+  /** The athlete's last 28 days of Apple Health; null when there is none. */
+  health: HealthSummary | null;
   nutrition: NutritionPolicy;
   training: TrainingPolicy;
   catalog: readonly CatalogExercise[];
@@ -444,6 +447,80 @@ export type OnboardingProposalPayload = Readonly<{
 
 const confidenceRank = { low: 0, medium: 1, high: 2 } as const;
 
+const activityRank: Record<DailyActivity, number> = {
+  mostly_sitting: 0,
+  some_standing: 1,
+  mostly_standing: 2,
+  physical_labour: 3,
+};
+
+const activityLabels: Record<DailyActivity, string> = {
+  mostly_sitting: "mostly sitting",
+  some_standing: "some standing",
+  mostly_standing: "mostly standing",
+  physical_labour: "physical labour",
+};
+
+const hoursAndMinutes = (minutes: number) => `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+
+/**
+ * Notes deterministic code always adds, whatever the model wrote, most
+ * important first. Apple Health notes never change a number: the athlete's
+ * answers set the targets, and only short sleep (trainingPolicy) changes effort.
+ */
+export function requiredNotes(plan: OnboardingPlan, policies: PlanPolicies): string[] {
+  const { answers, health, nutrition, training } = policies;
+  const avoided = answers.avoidPatterns.map((pattern: AvoidablePattern) =>
+    avoidablePatternLabels[pattern]
+  );
+  const steps = health?.steps_per_day;
+  const implied = steps === undefined ? null : activityFromSteps(steps);
+  return [
+    ...(avoided.length ? [`Leaves out, as you asked: ${avoided.join(", ")}.`] : []),
+    ...(nutrition.ceilingApplied
+      ? [
+        `Your estimated needs are above ${nutrition.ceilingKcal} kcal, the most Tracend sets; weigh-ins over 2-3 weeks will show whether to change it.`,
+      ]
+      : []),
+    ...(training.startLighter && health?.sleep_minutes_per_night !== undefined
+      ? [
+        `Sleep has averaged ${
+          hoursAndMinutes(health.sleep_minutes_per_night)
+        } a night, so this block keeps effort at RPE ${training.rpe[1]} or below.`,
+      ]
+      : []),
+    ...(health?.weight_latest_kg !== undefined &&
+        Math.abs(health.weight_latest_kg - answers.weightKg) > 3
+      ? [
+        `Apple Health's latest weight is ${health.weight_latest_kg} kg (${health.weight_latest_date}); the plan uses the ${answers.weightKg} kg you entered.`,
+      ]
+      : []),
+    ...(plan.nutrition.carbohydrate_g < nutrition.carbohydrateFlagBelowG
+      ? ["Carbohydrate is below 2 g per kg of body weight, which may limit training energy."]
+      : []),
+    ...(steps !== undefined && implied !== null &&
+        Math.abs(activityRank[answers.dailyActivity] - activityRank[implied]) >= 2
+      ? [
+        `You average ${steps} steps a day, which looks like "${
+          activityLabels[implied]
+        }"; calories use your answer, "${activityLabels[answers.dailyActivity]}".`,
+      ]
+      : []),
+  ];
+}
+
+/** What deterministic code knows is missing, before the model's own list. */
+export function requiredMissingInformation(health: HealthSummary | null): string[] {
+  if (!health) {
+    return ["Apple Health isn't connected, so your daily activity is your own estimate."];
+  }
+  return health.workouts_per_week === undefined
+    ? [
+      "No workouts were found in Apple Health for the last 4 weeks; training history is from your answers.",
+    ]
+    : [];
+}
+
 /**
  * The change_proposals 2.0 payload. Deterministic code orders the workouts by
  * weekday, names exercises from the catalog, sets each workout's length, and
@@ -458,21 +535,8 @@ export function buildOnboardingProposal(
   const workouts = [...plan.workouts].sort((a, b) => a.weekday - b.weekday);
   const cap = confidenceCap(policies.answers, policies.nutrition);
   const confidence = confidenceRank[plan.confidence] > confidenceRank[cap] ? cap : plan.confidence;
-  // Notes deterministic code always adds, whatever the model wrote.
-  const avoided = policies.answers.avoidPatterns.map((pattern: AvoidablePattern) =>
-    avoidablePatternLabels[pattern]
-  );
-  const notes = [
-    ...(avoided.length ? [`Leaves out, as you asked: ${avoided.join(", ")}.`] : []),
-    ...(policies.nutrition.ceilingApplied
-      ? [
-        `Your estimated needs are above ${policies.nutrition.ceilingKcal} kcal, the most Tracend sets; weigh-ins over 2-3 weeks will show whether to change it.`,
-      ]
-      : []),
-    ...(plan.nutrition.carbohydrate_g < policies.nutrition.carbohydrateFlagBelowG
-      ? ["Carbohydrate is below 2 g per kg of body weight, which may limit training energy."]
-      : []),
-  ];
+  const notes = requiredNotes(plan, policies);
+  const missing = requiredMissingInformation(policies.health);
   return {
     training: {
       title: plan.title,
@@ -504,7 +568,6 @@ export function buildOnboardingProposal(
           ? "preserve_validated_practices"
           : "foundation_block",
         progression: plan.progression,
-        deload_week: plan.block_weeks,
         review_after_weeks: 2,
       },
       origin: origin.origin,
@@ -514,8 +577,10 @@ export function buildOnboardingProposal(
       policy_version: onboardingPolicyVersion,
       catalog_version: catalogVersion,
       assessment: plan.assessment,
-      assumptions: [...notes, ...plan.assumptions],
-      missing_information: plan.missing_information,
+      // Tracend's own notes first; the model's fill what is left of the limit.
+      assumptions: [...notes, ...plan.assumptions].slice(0, onboardingPlanLimits.listMaxItems),
+      missing_information: [...missing, ...plan.missing_information]
+        .slice(0, onboardingPlanLimits.listMaxItems),
       kept_from_current_plan: plan.kept_from_current_plan,
       changed_from_current_plan: plan.changed_from_current_plan,
       calculation: {
@@ -528,6 +593,7 @@ export function buildOnboardingProposal(
         ceiling_kcal: policies.nutrition.ceilingKcal,
         ceiling_applied: policies.nutrition.ceilingApplied,
         protein_range_g: policies.nutrition.protein,
+        ...(policies.health ? { health: policies.health } : {}),
       },
     },
     nutrition: {
@@ -548,6 +614,13 @@ export function buildOnboardingProposal(
         label: "Tracend's safe ranges for calories, protein, fat and training volume",
         source: "policy_evaluation",
       },
+      ...(policies.health
+        ? [{
+          code: "APPLE_HEALTH_SUMMARY_28D",
+          label: "Your Apple Health summary for the last 28 days",
+          source: "feature_snapshot",
+        }]
+        : []),
     ],
     rationale: plan.rationale,
     benefit: plan.expected_benefit,

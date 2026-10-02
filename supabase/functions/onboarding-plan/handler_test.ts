@@ -47,6 +47,8 @@ function store(overrides: Partial<OnboardingStore> & { claimAs?: GenerationClaim
       );
     },
     loadCatalog: () => Promise.resolve([...exerciseCatalogV1]),
+    timezone: () => Promise.resolve("UTC"),
+    loadHealth: () => Promise.resolve({ days: [], workouts: [] }),
     consent: () => Promise.resolve("granted"),
     budgetAvailable: () => Promise.resolve(true),
     recordUsage: () => Promise.resolve(),
@@ -71,6 +73,7 @@ async function run(fake: OnboardingStore, extra: Partial<HandlerDeps> = {}) {
     store: fake,
     resolution: () => ({ kind: "rules", reason: "provider_mock" }),
     currentYear: 2026,
+    now: () => new Date("2026-10-02T09:00:00Z"),
     background: (promise) => work.push(promise),
     observer: quiet,
     ...extra,
@@ -248,4 +251,40 @@ Deno.test("the rules plan stores no model telemetry; a model plan stores its cal
     reasoning_units: 7300,
     finish_reason: "stop",
   });
+});
+
+Deno.test("Apple Health is read for the athlete's own 28 days and changes the hash", async () => {
+  const windows: [string, string][] = [];
+  const steps = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      local_date: `2026-09-${String(10 + index).padStart(2, "0")}`,
+      steps: 9000,
+      active_energy_kcal: null,
+      sleep_minutes: null,
+      weight_kg: null,
+    }));
+  const withHealth = (days: ReturnType<typeof steps>) =>
+    store({
+      timezone: () => Promise.resolve("Asia/Kolkata"),
+      loadHealth: (from, through) => {
+        windows.push([from, through]);
+        return Promise.resolve({ days, workouts: [] });
+      },
+    });
+  const none = store();
+  await run(none.fake, { now: () => new Date("2026-10-02T20:00:00Z") });
+  const connected = withHealth(steps(10));
+  await run(connected.fake, { now: () => new Date("2026-10-02T20:00:00Z") });
+  // 20:00 UTC on 2 October is 3 October in India: the window ends on the 2nd.
+  assertEquals(windows[0], ["2026-09-05", "2026-10-02"]);
+  assert(none.calls.claimedHashes[0] !== connected.calls.claimedHashes[0]);
+  const calculation = connected.calls.persisted[0].proposal.training.calculation as {
+    health?: { steps_per_day?: number };
+  };
+  assertEquals(calculation.health?.steps_per_day, 9000);
+
+  // The same data on the same day reuses the generation.
+  const again = withHealth(steps(10));
+  await run(again.fake, { now: () => new Date("2026-10-02T21:00:00Z") });
+  assertEquals(again.calls.claimedHashes[0], connected.calls.claimedHashes[0]);
 });
