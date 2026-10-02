@@ -129,9 +129,22 @@ v1 approval now refuses 2.0 proposals.
    secret (GitHub → Settings → Secrets and variables → Actions); the Supabase Edge secret of the
    same name is separate. The gate is at least 90% valid model plans and p95 under 60 s. Route
    `router` only smoke-tests through `EVAL_BASE_URL` and never counts as an evaluation.
-   - First run (2026-10-02, before this option): the `EVAL_BASE_URL` variable sent all 12 calls to
-     the router, which answered with an HTTP error every time; DeepSeek was not called and the
-     repository had no `DEEPSEEK_API_KEY`. Failed calls now show their HTTP status.
+   - **Eval runs on 2026-10-02.** The report now records every provider response: status,
+     finish reason, token counts and the answer's length.
+     - Run 1: the `EVAL_BASE_URL` variable sent all 12 calls to the router, which returned
+       HTTP 404 for the model id `deepseek-flash`; the router calls it `deepseek-v4-flash`.
+     - Run 2 (direct): stopped at once because the repository has no `DEEPSEEK_API_KEY` secret.
+     - Router runs with `deepseek-v4-flash`: every answer was cut off at 6,000 tokens. The router
+       ignores both `thinking: disabled` and `reasoning_effort: none`, and DeepSeek V4 wrote
+       9,000–21,000 characters of reasoning per answer. Even the one answer that finished was a
+       9,500-character 2-day plan, too long for a 6-day plan to fit.
+     - Fix: tighter text limits (exercise notes 80 characters and usually empty, workout texts
+       140, shorter assessment and lists) and compact JSON. Router runs get 24,000 output tokens
+       for the reasoning they cannot turn off; production keeps 6,000 with thinking off.
+     - Router result after the fix: 12/12 valid (one repaired), p95 49 s, $0.11 a run. Plans are
+       3,900–8,200 characters, about 2,400 tokens for the largest.
+     - Still needed: a direct run, which evaluates the production request (thinking off). The
+       router run only shows that the prompt and limits produce valid plans.
 2. If it passes, set the secrets `ONBOARDING_PLAN_PROVIDER=deepseek`,
    `ONBOARDING_PLAN_MODEL=deepseek-flash` and `ONBOARDING_PLAN_MODEL_EVALUATED=true`. The
    DeepSeek key is already set for the Coach.

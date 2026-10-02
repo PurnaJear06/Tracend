@@ -167,7 +167,17 @@ function config(): { config: OnboardingModelConfig; router: boolean } {
         model,
         url: `${router.replace(/\/$/, "")}/chat/completions`,
         apiKey: Deno.env.get("EVAL_API_KEY") ?? "",
-        extraBody: {},
+        // The provider's own request settings, plus thinking off in the
+        // routers' terms (as coach_chat_eval.ts does). Without it DeepSeek V4
+        // thinks by default and spends the token limit before the plan.
+        extraBody: {
+          ...entry.extraBody,
+          ...("thinking" in entry.extraBody ? { reasoning_effort: "none" } : {}),
+        },
+        // The router ignores both settings and DeepSeek V4 still thinks (9-21
+        // thousand characters of reasoning per answer on 2026-10-02), so a
+        // routed answer gets room for the reasoning on top of the plan.
+        maxOutputTokens: 24_000,
         price,
       },
     };
@@ -198,6 +208,34 @@ async function main() {
     ? { totalDeadlineMs: 240_000, initialAttemptMs: 120_000, repairAttemptMs: 120_000 }
     : onboardingPlanTiming;
   const results = [];
+  // What the provider returned for each call (synthetic athletes only), so a
+  // failed run shows why: finish reason, token counts and the answer's end.
+  let calls: Record<string, unknown>[] = [];
+  const recording: typeof fetch = async (input, init) => {
+    const response = await fetch(input, init);
+    const copy = response.clone();
+    try {
+      const payload = await copy.json() as Record<string, unknown>;
+      const choice = (payload.choices as Record<string, unknown>[] | undefined)?.[0];
+      const message = choice?.message as Record<string, unknown> | undefined;
+      const content = typeof message?.content === "string" ? message.content : "";
+      const reasoning = typeof message?.reasoning_content === "string"
+        ? message.reasoning_content
+        : "";
+      calls.push({
+        status: response.status,
+        finish_reason: choice?.finish_reason ?? null,
+        usage: payload.usage ?? null,
+        content_chars: content.length,
+        reasoning_chars: reasoning.length,
+        content_head: content.slice(0, 200),
+        content_tail: content.slice(-300),
+      });
+    } catch {
+      calls.push({ status: response.status, body: "not JSON" });
+    }
+    return response;
+  };
   for (const [name, answers] of Object.entries(athletes)) {
     const started = performance.now();
     const result = await generateOnboardingProposal(
@@ -205,7 +243,7 @@ async function main() {
       exerciseCatalogV1,
       { kind: "model", config: modelConfig },
       { consentGranted: true, budgetAvailable: true },
-      fetch,
+      recording,
       timing,
     );
     const row = {
@@ -217,7 +255,9 @@ async function main() {
       cost_usd: result.usage?.estimatedCostUsd ?? 0,
       calories: result.proposal.nutrition.calories,
       title: result.proposal.training.title,
+      calls,
     };
+    calls = [];
     results.push(row);
     const status = result.attempts.find((attempt) => attempt.httpStatus !== null)?.httpStatus;
     console.log(
