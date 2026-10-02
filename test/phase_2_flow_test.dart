@@ -6,6 +6,7 @@ import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
+import 'package:tracend/features/onboarding/onboarding_proposal_view.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 
 void main() {
@@ -130,6 +131,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(approve);
     await tester.pumpAndSettle();
+    // Approval shows "You're set" once; the app opens from its button.
+    expect(completed, isFalse);
+    expect(find.text("You're set."), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Go to Today'));
+    await tester.pumpAndSettle();
     expect(completed, isTrue);
     expect(repository.responses, ['accept']);
   });
@@ -201,7 +207,7 @@ void main() {
     );
     await _pump(tester, repository);
 
-    expect(find.textContaining('Section 6 of 11'), findsOneWidget);
+    expect(find.textContaining('Step 6 of 11'), findsOneWidget);
     expect(find.text('About you.'), findsOneWidget);
     expect(find.text('Current weight: 82 kg'), findsOneWidget);
     await tester.tap(find.byTooltip('Previous section'));
@@ -304,7 +310,17 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(revise);
     await tester.pumpAndSettle();
+    // An empty request cannot be sent.
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Request changes'),
+          )
+          .onPressed,
+      isNull,
+    );
     await tester.enterText(find.byType(TextField).last, 'No deadlifts');
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Request changes'));
     await tester.pumpAndSettle();
 
@@ -409,6 +425,11 @@ void main() {
     await tester.tap(approve);
     await tester.pumpAndSettle();
     expect(repository.respondedIds, ['p-2']);
+    // Approval shows "You're set" once; the app opens from its button.
+    expect(completed, isFalse);
+    expect(find.text("You're set."), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Go to Today'));
+    await tester.pumpAndSettle();
     expect(completed, isTrue);
   });
 
@@ -442,6 +463,11 @@ void main() {
     await tester.ensureVisible(again);
     await tester.pumpAndSettle();
     await tester.tap(again);
+    await tester.pumpAndSettle();
+    // Approval shows "You're set" once; the app opens from its button.
+    expect(completed, isFalse);
+    expect(find.text("You're set."), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Go to Today'));
     await tester.pumpAndSettle();
     expect(completed, isTrue);
   });
@@ -504,6 +530,191 @@ void main() {
     await tester.tap(find.text('Sign out'));
     await tester.pumpAndSettle();
     expect(signedOut, isTrue);
+  });
+
+  group('recovery and controls', () {
+    testWidgets('answers that fail to load are never overwritten', (
+      tester,
+    ) async {
+      final repository = _FakeOnboardingRepository(draft: _draft('schedule'))
+        ..failingLoads = 1;
+      await _pump(tester, repository, onSignOut: () async {});
+      await tester.pumpAndSettle();
+      expect(find.text('Your answers did not load.'), findsOneWidget);
+      expect(find.text('Continue'), findsNothing);
+      expect(find.text('Sign out'), findsOneWidget);
+      expect(repository.saveCalls, 0);
+      await tester.tap(find.widgetWithText(FilledButton, 'Try again'));
+      await tester.pumpAndSettle();
+      expect(find.text('When do you train?'), findsOneWidget);
+    });
+
+    testWidgets('no goal is chosen for the athlete', (tester) async {
+      await _pump(
+        tester,
+        _FakeOnboardingRepository(
+          draft: const OnboardingDraft(
+            path: 'beginner',
+            currentSection: 'goal',
+            payload: {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Lose fat and build muscle at about the same weight.'),
+        findsOneWidget,
+      );
+      await _continue(tester);
+      expect(
+        find.text('Choose what your first block should prioritize.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('editing one answer from Review returns to Review', (
+      tester,
+    ) async {
+      final repository = _FakeOnboardingRepository(draft: _draft('review'));
+      await _pump(tester, repository);
+      await tester.pumpAndSettle();
+      expect(find.text('No dairy'), findsOneWidget);
+      final edit = find.byTooltip('Edit equipment');
+      await tester.ensureVisible(edit);
+      await tester.tap(edit);
+      await tester.pumpAndSettle();
+      expect(find.text('What can you train with?'), findsOneWidget);
+      await _tapText(tester, 'Kettlebells');
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Save and return to review'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Review before building.'), findsOneWidget);
+      expect(find.text('Dumbbells, Kettlebells'), findsOneWidget);
+      expect(repository.savedPayload!['equipment_items'], [
+        'dumbbells',
+        'kettlebells',
+      ]);
+    });
+
+    testWidgets('exact values with − and +, spoken with their unit', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await _pump(tester, _FakeOnboardingRepository(draft: _draft('about')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Increase current weight'));
+      await tester.pumpAndSettle();
+      expect(find.text('Current weight: 68.5 kg'), findsOneWidget);
+      await tester.tap(find.byTooltip('Decrease height'));
+      await tester.pumpAndSettle();
+      expect(find.text('Height: 164 cm'), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('68.5 kg')), findsWidgets);
+      handle.dispose();
+    });
+
+    testWidgets('rejecting asks first; one tap approves once', (tester) async {
+      final repository = _FakeOnboardingRepository(
+        draft: _draft('proposal'),
+        generations: [_succeeded],
+      );
+      await _pump(tester, repository);
+      await tester.pumpAndSettle();
+      final reject = find.widgetWithText(TextButton, 'Reject proposal');
+      await tester.ensureVisible(reject);
+      await tester.tap(reject);
+      await tester.pumpAndSettle();
+      expect(find.text('Reject this plan?'), findsOneWidget);
+      await tester.tap(find.text('Keep reviewing'));
+      await tester.pumpAndSettle();
+      expect(repository.responses, isEmpty);
+
+      final approve = find.widgetWithText(FilledButton, 'Approve plan');
+      await tester.ensureVisible(approve);
+      await tester.tap(approve);
+      await tester.tap(approve, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(repository.responses, ['accept']);
+      expect(find.textContaining('Next session:'), findsOneWidget);
+      expect(find.text('Each day: 2100 kcal · 140 g protein'), findsOneWidget);
+    });
+
+    testWidgets('an unavailable plan builder says so', (tester) async {
+      final repository = _FakeOnboardingRepository(draft: _draft('review'))
+        ..unavailable = true;
+      await _pump(tester, repository);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Build my plan'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('The plan builder is unavailable. Try again in a minute.'),
+        findsOneWidget,
+      );
+    });
+
+    test('effort reads as reps left', () {
+      expect(
+        OnboardingProposalView.effortText(7.5),
+        'RPE 7.5 (about 2–3 reps left)',
+      );
+      expect(OnboardingProposalView.effortText(8), 'RPE 8 (about 2 reps left)');
+      expect(OnboardingProposalView.effortText(9), 'RPE 9 (about 1 rep left)');
+    });
+  });
+
+  group('2x text', () {
+    Future<void> large(
+      WidgetTester tester,
+      _FakeOnboardingRepository repo,
+    ) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await _pump(tester, repo, onSignOut: () async {}, width: 320);
+      await tester.pumpAndSettle();
+    }
+
+    for (final section in [
+      'eligibility',
+      'ai',
+      'path',
+      'goal',
+      'health',
+      'about',
+      'schedule',
+      'equipment',
+      'food',
+      'review',
+    ]) {
+      testWidgets('$section lays out at 2x text', (tester) async {
+        await large(tester, _FakeOnboardingRepository(draft: _draft(section)));
+        expect(tester.takeException(), isNull);
+        await tester.drag(
+          find.byType(Scrollable).first,
+          const Offset(0, -2000),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('the proposal and "You\'re set" lay out at 2x text', (
+      tester,
+    ) async {
+      await large(
+        tester,
+        _FakeOnboardingRepository(
+          draft: _draft('proposal'),
+          generations: [_succeeded],
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      final approve = find.widgetWithText(FilledButton, 'Approve plan');
+      await tester.ensureVisible(approve);
+      await tester.tap(approve);
+      await tester.pumpAndSettle();
+      expect(find.text("You're set."), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('Apple Health step', () {
@@ -735,8 +946,9 @@ Future<void> _pump(
   Future<void> Function()? onSignOut,
   int? currentYear,
   HealthRepository? health,
+  double width = 390,
 }) async {
-  tester.view.physicalSize = const Size(390, 844);
+  tester.view.physicalSize = Size(width, 844);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -806,8 +1018,19 @@ class _FakeOnboardingRepository implements OnboardingRepository {
   @override
   Future<bool> isOnboardingComplete() async => false;
 
+  /// How many draft loads fail before one succeeds.
+  int failingLoads = 0;
+  bool unavailable = false;
+  int saveCalls = 0;
+
   @override
-  Future<OnboardingDraft?> loadDraft() async => draft;
+  Future<OnboardingDraft?> loadDraft() async {
+    if (failingLoads > 0) {
+      failingLoads--;
+      throw Exception('offline');
+    }
+    return draft;
+  }
 
   @override
   Future<void> saveDraft({
@@ -815,16 +1038,16 @@ class _FakeOnboardingRepository implements OnboardingRepository {
     required String currentSection,
     required Map<String, dynamic> payload,
   }) async {
+    saveCalls++;
     savedPayload = payload;
   }
 
+  int eligibilityCalls = 0;
+
   @override
-  Future<void> recordEligibilityAndConsent({
-    required bool eligible,
-    required String experience,
-    required int trainingDays,
-    required int sessionMinutes,
-  }) async {}
+  Future<void> recordEligibilityAndConsent({required bool eligible}) async {
+    eligibilityCalls++;
+  }
 
   @override
   Future<void> saveGoal(String goal) async {}
@@ -834,6 +1057,7 @@ class _FakeOnboardingRepository implements OnboardingRepository {
     startCalls++;
     if (missing != null) throw OnboardingAnswersIncomplete(missing!);
     if (infeasible != null) throw OnboardingPlanInfeasible(infeasible!);
+    if (unavailable) throw const OnboardingPlanUnavailable();
     return _next() ?? _running;
   }
 

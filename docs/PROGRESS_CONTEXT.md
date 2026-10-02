@@ -36,7 +36,9 @@ onboarding batch is four stacked PRs: A turns on thinking for the first attempt 
 stores the device time zone, feeds a 28-day Apple Health summary into the plan, and keeps
 movements to avoid on the profile for the Coach; C adds the optional Apple Health onboarding step
 (weight and activity shown from it, a 31-date first sync, health state per athlete, the device
-time zone stored); D fixes onboarding's remaining flaws. Evals run
+time zone stored); D fixes onboarding's remaining flaws (draft
+restore that could overwrite answers, duplicate consent records, review with Edit, steppers,
+2x-text layout, reject confirmation, a "You're set" screen, the profile's onboarding answers). Evals run
 through NaraRouter only (owner's decision). See
 [`docs/handoff/onboarding.md`](./handoff/onboarding.md).
 

@@ -90,6 +90,11 @@ class OnboardingPlanInfeasible implements Exception {
 
 /// The proposal can no longer be answered: it expired, or a newer build
 /// replaced it. The athlete builds a fresh one from the same answers.
+/// The plan builder could not start (HTTP 503); nothing was saved or spent.
+class OnboardingPlanUnavailable implements Exception {
+  const OnboardingPlanUnavailable();
+}
+
 class OnboardingProposalStale implements Exception {
   const OnboardingProposalStale();
 }
@@ -323,12 +328,10 @@ abstract interface class OnboardingRepository {
     required String currentSection,
     required Map<String, dynamic> payload,
   });
-  Future<void> recordEligibilityAndConsent({
-    required bool eligible,
-    required String experience,
-    required int trainingDays,
-    required int sessionMinutes,
-  });
+
+  /// Records adult eligibility, and terms and privacy consent unless this
+  /// version is already granted. Approval writes the rest of the profile.
+  Future<void> recordEligibilityAndConsent({required bool eligible});
   Future<void> saveGoal(String goal);
 
   /// Starts (or returns) the plan generation for the saved draft.
@@ -396,36 +399,42 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
         .eq('id', _userId);
   }
 
+  static const _legalNoticeVersion = '2026-07-01';
+
   @override
-  Future<void> recordEligibilityAndConsent({
-    required bool eligible,
-    required String experience,
-    required int trainingDays,
-    required int sessionMinutes,
-  }) async {
+  Future<void> recordEligibilityAndConsent({required bool eligible}) async {
+    // Only the eligibility answer: training days, session length and
+    // experience come from the approved plan, never from step-0 defaults.
     await _client.from('user_profiles').upsert({
       'user_id': _userId,
       'adult_attested_at': DateTime.now().toUtc().toIso8601String(),
       'eligible': eligible,
-      'experience_level': experience,
-      'training_days': List<int>.generate(trainingDays, (index) => index + 1),
-      'session_minutes': sessionMinutes,
     });
+    final records = await _client
+        .from('consent_records')
+        .select('consent_type,notice_version,action')
+        .eq('user_id', _userId)
+        .inFilter('consent_type', ['terms', 'privacy'])
+        .order('created_at', ascending: false);
+    bool granted(String type) {
+      final newest = records.where((row) => row['consent_type'] == type);
+      return newest.isNotEmpty &&
+          newest.first['action'] == 'granted' &&
+          newest.first['notice_version'] == _legalNoticeVersion;
+    }
+
+    // Passing this step again adds no duplicate records.
+    final missing = ['terms', 'privacy'].where((type) => !granted(type));
+    if (missing.isEmpty) return;
     await _client.from('consent_records').insert([
-      {
-        'user_id': _userId,
-        'consent_type': 'terms',
-        'notice_version': '2026-07-01',
-        'action': 'granted',
-        'source': 'owner_development',
-      },
-      {
-        'user_id': _userId,
-        'consent_type': 'privacy',
-        'notice_version': '2026-07-01',
-        'action': 'granted',
-        'source': 'owner_development',
-      },
+      for (final type in missing)
+        {
+          'user_id': _userId,
+          'consent_type': type,
+          'notice_version': _legalNoticeVersion,
+          'action': 'granted',
+          'source': 'ios_app',
+        },
     ]);
   }
 
@@ -474,7 +483,12 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
         if (details['error'] == 'onboarding_plan_infeasible') {
           throw OnboardingPlanInfeasible(strings(details['change']));
         }
+        // No saved draft with a path: the starting point is what is missing.
+        if (details['error'] == 'onboarding_draft_incomplete') {
+          throw const OnboardingAnswersIncomplete(['path']);
+        }
       }
+      if (error.status == 503) throw const OnboardingPlanUnavailable();
       rethrow;
     } on TimeoutException {
       // The request may still have started a generation; the caller polls.

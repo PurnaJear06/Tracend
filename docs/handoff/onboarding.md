@@ -212,6 +212,24 @@ v1 approval now refuses 2.0 proposals.
   `Phase2Gate` stores it with `set_my_timezone` when it differs.
 - One `SupabaseHealthRepository` is shared by onboarding and the app.
 
+**Onboarding recovery and UI** (PR D, needs an install):
+
+- **Recovery:** a failed draft load shows **Try again** and saves nothing (it used to let
+  Continue overwrite the draft with defaults); the load times out after 15 s; Sign out is
+  available while loading. Eligibility writes only the eligibility answer (no more default
+  training days) and adds terms and privacy records only when that version is not already
+  granted. 422 `onboarding_draft_incomplete` opens Path; 503 says the builder is unavailable.
+  Missing `mounted` checks added; Approve, Reject, Request changes, Build and Sign out ignore a
+  second tap.
+- **UI:** no preselected goal, goal descriptions; −/+ steppers with spoken values; birth-year
+  keyboard closes; choice cards show selection; Review lists every answer with **Edit** (returns
+  to Review), stacked at large text; **Step N of 11**; waiting copy says up to two minutes;
+  Reject asks first; Request changes needs a note; RPE explained in reps left; **You're set.**
+  after approval; Account › Profile and goals shows the onboarding answers and no longer tells
+  athletes to ask the Coach for a proposal (no Coach plan-change path exists yet).
+- **Not changed** (owner's choice or out of scope): lb/ft units, translations, links to the
+  terms text, raw error text in beta.
+
 **Switching provider or model later** (AI_SAFETY_SPEC §10):
 
 1. Run the eval for the candidate.
