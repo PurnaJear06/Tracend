@@ -289,6 +289,8 @@ async function main() {
         : "";
       calls.push({
         status: response.status,
+        // A provider or router error says why (a 503 carries no plan).
+        ...(response.ok ? {} : { error: JSON.stringify(payload.error ?? payload).slice(0, 300) }),
         finish_reason: choice?.finish_reason ?? null,
         usage: payload.usage ?? null,
         content_chars: content.length,
