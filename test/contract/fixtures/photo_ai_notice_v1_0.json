@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "version": "progress-photo-ai-v1",
+  "provider_label": "Groq",
+  "model": "qwen/qwen3.8-27b",
+  "body": "Tracend sends your front, side and back photos to Groq.\n\nNothing changes until you confirm a focus.",
+  "granted": false
+}

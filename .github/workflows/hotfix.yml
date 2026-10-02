@@ -68,6 +68,7 @@ jobs:
           - meal-media-retention
           - onboarding-plan
           - onboarding-propose-plan
+          - physique-check
           - privacy-delete-account
           - privacy-export
     steps:

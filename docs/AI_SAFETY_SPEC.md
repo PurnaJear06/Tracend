@@ -312,26 +312,49 @@ meal-photo consent is required before anyone other than the owner uses photo ana
 
 ## 9. Physique Analysis
 
-Analysis requires separate consent and standardized front/side/back photo sets selected for
-comparison.
+**Status (2026-10): owner-only experiment.** The `physique-check` Edge Function serves only the
+user IDs in `PHYSIQUE_VISION_ALLOWED_USERS` (empty at deploy). Before the owner adds their own ID,
+Groq's Zero Data Retention must be on for the key's organization and the proof (date or screenshot)
+recorded in `docs/handoff/physique-check.md`. No other account may be added until a separate
+evaluation passes: consented or synthetic sets across body types and skin tones; pose, clothing,
+lighting and pump changes; repeatability; wrong priorities; forbidden outputs; text written into the
+image; and empty, unrelated or low-quality photos.
 
-Allowed:
+**Consent.** Its own server-versioned notice (`photo_ai_notices`, consent type `progress_photo_ai`),
+separate from the DeepSeek coaching notices, which stay true: DeepSeek never receives photos. The
+notice names Groq, the model, the data sent, Zero Data Retention, what Tracend keeps and how to stop.
+Consent counts only when the athlete's newest `progress_photo_ai` record grants the newest notice
+(`has_photo_ai_consent`); a new provider, model, data sent or retention is a new notice and needs a
+new grant. Withdrawing stops new checks; past results stay until the set or account is deleted.
 
-- visible change and balance observations relevant to the goal;
-- cautious training-emphasis proposals;
-- comparability and quality limitations;
-- approximate body-fat **range**, never a point estimate, with confidence; and
-- reference to weight, waist, performance, and repeated standardized observations.
+**Input.** The front, side and back photos of one complete set (Groq accepts three images), each a
+JPEG of at most 3 MB with every metadata segment (EXIF, location, XMP, ICC, comments) removed on the
+server before sending (`_shared/physique/jpeg.ts`); the app already re-encodes at capture (longest
+side 1800 px, no metadata). Also sex, height, latest weight and body measurements, and the active
+goal, as data. The check is hidden when the athlete's own notes mention an eating concern.
 
-Prohibited:
+**Output** (`_shared/physique/contract.ts`, `private.is_valid_physique_result`): 1–3
+`development_priorities` from the catalog's primary muscles, each with confidence and a reason of at
+most 120 characters, relative to the athlete's own build; up to three neutral observations; photo
+issues from a fixed list (lighting, pose, clothing, framing, blur, mismatch), which cap confidence
+(one at medium, two or more at low); and limitations. Any unexpected key, unknown muscle, or a
+percentage, body-fat, score or rating, appearance judgement, sexual, medical, sensitive-trait or
+eating wording rejects the whole reply. One text-only correction is asked (the photos are not sent
+again) when Groq reports at least 2,500 tokens left in the minute; otherwise, or if the correction
+also fails, nothing is stored (502 `physique_check_invalid`) and the tokens are still counted.
 
+**Use.** The result is shown as an AI visual estimate, not a measurement. Nothing changes on its
+own: the athlete chooses up to two suggested muscles (`set_my_priority_muscles`), which become
+`user_profiles.priority_muscles`. Only confirmed focus muscles reach the Coach and the next plan;
+the analysis text never does.
+
+Prohibited, always:
+
+- any body-fat figure or range, muscle-mass claim, score or rating;
 - medical, disease, or hormonal inference;
-- exact body-fat or muscle-mass claims;
 - sexualized, insulting, shaming, or identity-based language;
 - facial recognition; and
 - unrelated sensitive-trait inference.
-
-The UI labels results as AI visual estimates, not measurements.
 
 ## 10. Provider and Model Routing
 
@@ -363,8 +386,8 @@ most purposes, and a grant covers only that one version. `coach-chat` answers 40
 `ai_consent_unavailable` when the check fails. `coach-decide` then uses the deterministic provider,
 so no data reaches the AI provider.
 Under ADR 0006, Groq Qwen was an owner-only, time-bounded test provider and has been superseded. The
-mock remains the default and progress-photo vision stays separately disabled until its own evaluation
-gate passes. Provider and Supabase secret/service-role keys never enter Flutter. Price alone cannot
+mock remains the default. Progress-photo vision is an owner-only experiment (§9) behind its own
+allowlist and notice. Provider and Supabase secret/service-role keys never enter Flutter. Price alone cannot
 qualify a model.
 
 **Onboarding plans** have their own provider settings and switch without a code change:

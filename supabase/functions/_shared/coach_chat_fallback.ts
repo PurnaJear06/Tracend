@@ -18,6 +18,10 @@ import type { CoachChatAnswerV2 } from "./contracts/coach_chat_v1.ts";
 
 export const coachChatDataSummaryModel = "coach-data-summary-v1";
 
+/** Eating disorders and unsafe weight control (also hides the physique check). */
+export const eatingConcernPattern =
+  /purg(?:e|ed|es|ing)\b|laxative|diuretic|\bbinge|bulimi|anorexi|starv(?:e|ing) myself|starvation|stop(?:ped)? eating|not eating (?:at all|anything)|eating disorder|dehydrat/;
+
 // Grouped by the red flags and unsupported populations in AI_SAFETY_SPEC.md.
 const healthRiskPatterns: readonly RegExp[] = [
   // Red-flag symptoms and emergencies
@@ -31,7 +35,7 @@ const healthRiskPatterns: readonly RegExp[] = [
   // Pregnancy
   /pregnan|postpartum|post-partum|breastfeed|trimester/,
   // Eating disorders and unsafe weight control
-  /purg(?:e|ed|es|ing)\b|laxative|diuretic|\bbinge|bulimi|anorexi|starv(?:e|ing) myself|starvation|stop(?:ped)? eating|not eating (?:at all|anything)|eating disorder|dehydrat/,
+  eatingConcernPattern,
   // Self-harm and crisis
   /suicid|kill myself|self[- ]?harm|end my life|want to die/,
 ];

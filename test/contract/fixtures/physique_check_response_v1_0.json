@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "analysis_id": "00000000-0000-4000-8000-000000000001",
+  "result": {
+    "schema_version": "1.0",
+    "development_priorities": [
+      {
+        "muscle": "chest",
+        "confidence": "medium",
+        "reason": "Upper chest looks flatter than the shoulders."
+      },
+      {
+        "muscle": "calves",
+        "confidence": "low",
+        "reason": "Calves look small next to the thighs."
+      }
+    ],
+    "observations": ["Back is broad for the waist."],
+    "photo_issues": ["lighting"],
+    "limitations": "Photos cannot show strength or body fat precisely."
+  }
+}

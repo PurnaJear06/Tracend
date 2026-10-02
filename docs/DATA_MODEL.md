@@ -374,8 +374,24 @@ framing/quality results. No public URL is stored.
 ### `physique_analyses`
 
 Versioned comparison result referencing baseline/current sets, provider metadata, qualitative
-observations, development priorities, approximate body-fat range if returned, confidence,
-limitations, and validation state. It is not a body-composition measurement or diagnosis.
+observations, development priorities, confidence, limitations, and validation state. It is not a
+body-composition measurement or diagnosis.
+
+**Physique check (2026-10, owner-only).** Written only by `persist_physique_analysis` (service role)
+for one complete set (baseline = current). `result` holds the validated reply
+(`private.is_valid_physique_result`: 1–3 catalog muscles with confidence and reason, up to three
+observations, photo issues from a fixed list, limitations; no body-fat field or score can be stored),
+`notice_version` the photo AI notice it ran under, and `confirmed_muscles`/`confirmed_at` what the
+athlete chose with `set_my_priority_muscles` (at most two, only suggested muscles), which also writes
+`user_profiles.priority_muscles`. `body_fat_range` is never written. Deleting the set deletes its
+analyses first; both are in the privacy export.
+
+### `photo_ai_notices`
+
+The progress-photo AI notice the athlete grants before a physique check: version, provider label,
+model, body. The newest is current; published by migration or `private.publish_photo_ai_notice`,
+never edited. A grant is a `consent_records` row of type `progress_photo_ai` naming the version
+(`has_photo_ai_consent`, `get_my_photo_ai_notice`).
 
 ### `progress_reviews`
 

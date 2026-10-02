@@ -12,6 +12,7 @@ import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/progress/progress_screen.dart';
+import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
@@ -50,6 +51,7 @@ class _AppShellState extends State<AppShell> {
   late final CoachRepository _coach;
   late final NutritionRepository _nutrition;
   late final ProgressRepository _progress;
+  late final PhysiqueCheckRepository _physique;
   late final DailyBriefRepository _brief;
 
   @override
@@ -78,6 +80,9 @@ class _AppShellState extends State<AppShell> {
     _progress = widget.environment.hasSupabaseConfiguration
         ? SupabaseProgressRepository(Supabase.instance.client)
         : const FixtureProgressRepository();
+    _physique = widget.environment.hasSupabaseConfiguration
+        ? SupabasePhysiqueCheckRepository(Supabase.instance.client)
+        : const FixturePhysiqueCheckRepository();
     _brief = widget.environment.hasSupabaseConfiguration
         ? SupabaseDailyBriefRepository(Supabase.instance.client)
         : const FixtureDailyBriefRepository();
@@ -128,6 +133,7 @@ class _AppShellState extends State<AppShell> {
             ? _workouts as TrainingHubRepository
             : null,
         brief: _brief,
+        physique: _physique,
       ),
     ];
 

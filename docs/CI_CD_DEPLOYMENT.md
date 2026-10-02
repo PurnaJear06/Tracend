@@ -58,7 +58,7 @@ an unchanged `UPDATED_AT`:
 
 - Change a secret that only new code accepts only after that code has passed the live-code check.
 - Afterwards, from the checkout of the deployed commit, run
-  `./scripts/verify-live-function.sh --all` and require every check to pass (ten functions since 2026-10). Repeat after any
+  `./scripts/verify-live-function.sh --all` and require every check to pass (eleven functions since the physique check, 2026-10). Repeat after any
   later secret change. `UPDATED_AT` alone cannot prove the source stayed live.
 
 ## Required CI checks

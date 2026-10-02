@@ -2,7 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
+import 'package:tracend/features/progress/widgets/physique_check_widgets.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
@@ -41,12 +43,18 @@ typedef PoseCapture =
 
 /// Progress photos on the main screen: one card with the latest set, the
 /// capture action, and the way into past sets. Photos never render here.
+/// Accounts with physique checks also get the check action and its latest
+/// result.
 class PhotoProgressCard extends StatelessWidget {
   const PhotoProgressCard({
     required this.photoSets,
     required this.inProgress,
     required this.onCapture,
     required this.onOpenSets,
+    this.photoCheckProvider,
+    this.onPhysiqueCheck,
+    this.latestPhysique,
+    this.onOpenPhysique,
     this.now,
     super.key,
   });
@@ -58,6 +66,16 @@ class PhotoProgressCard extends StatelessWidget {
   final bool inProgress;
   final VoidCallback onCapture;
   final VoidCallback onOpenSets;
+
+  /// Who photos go to when this account starts a physique check, as the
+  /// server names it; null when it may not. The privacy line then says when
+  /// they leave the app.
+  final String? photoCheckProvider;
+
+  /// Starts a check on the newest set; null hides the action.
+  final VoidCallback? onPhysiqueCheck;
+  final PhysiqueAnalysis? latestPhysique;
+  final ValueChanged<PhysiqueAnalysis>? onOpenPhysique;
   final DateTime? now;
 
   @override
@@ -65,6 +83,8 @@ class PhotoProgressCard extends StatelessWidget {
     final colors = context.tracendColors;
     final theme = Theme.of(context).textTheme;
     final latest = photoSets.isEmpty ? null : photoSets.first;
+    final provider = photoCheckProvider;
+    final physique = provider != null ? latestPhysique : null;
     return PremiumGradientCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -87,7 +107,10 @@ class PhotoProgressCard extends StatelessWidget {
                       style: theme.titleMedium,
                     ),
                     Text(
-                      'Only you can see these. Never sent to AI.',
+                      provider != null
+                          ? 'Only you can see these. Sent to $provider only '
+                                'when you start a physique check.'
+                          : 'Only you can see these. Never sent to AI.',
                       style: theme.bodyMedium,
                     ),
                   ],
@@ -117,6 +140,36 @@ class PhotoProgressCard extends StatelessWidget {
               ),
             ),
           ),
+          if (provider != null && onPhysiqueCheck != null) ...[
+            const SizedBox(height: TracendSpacing.xs),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: onPhysiqueCheck,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(CupertinoIcons.sparkles, size: 18),
+                    SizedBox(width: TracendSpacing.xs),
+                    Flexible(
+                      child: Text(
+                        'Physique check',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          if (physique != null && onOpenPhysique != null) ...[
+            const SizedBox(height: TracendSpacing.xs),
+            PhysiqueSummaryRow(
+              analysis: physique,
+              onOpen: () => onOpenPhysique!(physique),
+              now: now,
+            ),
+          ],
           if (photoSets.isNotEmpty)
             Center(
               child: TextButton(

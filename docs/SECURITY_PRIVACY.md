@@ -160,6 +160,11 @@ AI consent is per purpose (2026-10):
   deletion removes Storage bytes before relational metadata; a failed byte deletion leaves the set
   visible for safe retry.
 - Progress photos are included only in user-requested comparison jobs, never routine text coaching.
+- A physique check (owner-only experiment, AI_SAFETY_SPEC §9) sends the front, side and back photos
+  of one set to Groq only when the athlete starts it, under its own notice and consent
+  (`progress_photo_ai`), with metadata stripped on the server and Groq's Zero Data Retention on.
+  Results (`physique_analyses`) are owner-read, exported, and deleted with their set (analyses go
+  first, `delete_my_progress_photo_set`) or the account.
 - Face recognition, identity matching, sensitive-trait inference, and unrelated reuse are
   prohibited.
 
@@ -168,8 +173,8 @@ AI consent is per purpose (2026-10):
 - AI requests originate only from Supabase Edge Functions; provider keys and Supabase
   secret/service-role keys never enter Flutter.
 - ADR 0006 permits Groq Qwen only for the owner’s disclosed, time-bounded Coach and meal-photo test.
-  It remains server-only, purpose-bound, kill-switchable, and excluded from progress-photo
-  processing pending separate evaluation.
+  It remains server-only, purpose-bound and kill-switchable. Progress-photo processing is limited to
+  the owner-only physique check (`PHYSIQUE_VISION_ALLOWED_USERS`) pending separate evaluation.
 - Flutter never presents a provider-key entry field or transmits a provider credential supplied by a
   user. The owner configures provider credentials in environment-specific Supabase secret
   management.
