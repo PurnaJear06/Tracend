@@ -255,3 +255,24 @@ Deno.test("usage is recorded before storing, so a failed store still counts the 
   assert(failed);
   assertEquals(order, ["usage", "persist"]);
 });
+
+Deno.test("photos with nothing to judge ask for a retake, without a correction", async () => {
+  const { store, calls } = fakeStore();
+  const nothing = JSON.stringify({
+    development_priorities: [],
+    observations: [],
+    photo_issues: ["framing"],
+    limitations: "The images do not show a person's body.",
+  });
+  const model = answering([nothing], 6000);
+  const warnings: string[] = [];
+  const result = await run(store, check, {
+    call: model.call,
+    observer: { info: () => {}, warn: (event) => warnings.push(event) },
+  });
+  assertEquals([result.status, result.body.error], [422, "photo_set_unassessable"]);
+  assertEquals(model.sent.length, 1);
+  assertEquals(calls.persisted.length, 0);
+  assertEquals(calls.usage.length, 1);
+  assertEquals(warnings, []);
+});

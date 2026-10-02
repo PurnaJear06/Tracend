@@ -519,8 +519,8 @@ The newest set is the one taken last (`captured_on`, then `created_at`). A store
 visible after the feature is switched off for the account, and the card then says a set was sent
 to AI only for a check the athlete started, never "never". Deleting a set removes its checks from
 the card at once. Nothing changes without that confirmation; the Coach uses the focus at once and
-the plan at its next review. Errors (consent, today's AI limit, Groq busy, photos that cannot be checked, an
-unusable answer) stay inline in the sheet. **Turn off photo checks** records a withdrawal.
+the plan at its next review. Errors (consent, today's AI limit, Groq busy, photos that cannot be checked, photos
+that show no physique to judge, an unusable answer) stay inline in the sheet. **Turn off photo checks** records a withdrawal.
 
 ### Comparison
 

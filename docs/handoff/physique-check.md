@@ -1,7 +1,21 @@
 # Physique check (owner-only experiment)
 
-**Status (2026-10-02):** PR open, not deployed. PR 2 of the coach-quality batch (plan:
+**Status (2026-10-02):** live. #72 merged and deployed (`9995cc3`), and verify-live matched all 11
+functions. Groq Zero Data Retention was turned on by the owner on 2026-10-02.
+`PHYSIQUE_VISION_ENABLED=true` and the owner's ID in `PHYSIQUE_VISION_ALLOWED_USERS` were set the
+same day; verify-live matched again afterwards. PR 2 of the coach-quality batch (plan:
 `~/.claude/plans/sprightly-splashing-dolphin.md`; PR 1, the coach intake, shipped in #70).
+
+**First owner test (2026-10-02):**
+- Random, non-physique images came back "didn't return a usable answer" twice.
+- Sentry FLUTTER-F shows the rule `priority_count`: the model honestly suggested no muscle, and the
+  contract required 1–3. The second try was Groq's one-check-a-minute limit (429).
+- A follow-up PR treats "no muscle suggested" as `photo_set_unassessable` (retake the set), not an
+  invalid reply.
+- In the same test, a library photo kept only in iCloud failed to load and showed the generic "Photo
+  was not saved". Progress now says why (as Nutrition does), picks the photo before opening a set
+  (so a failed pick no longer leaves an empty "Last set · today"), and reports real upload failures
+  to Sentry.
 
 ## What it does
 
@@ -66,7 +80,7 @@ AI_SAFETY_SPEC §9.
 1. Wait for the deploy, then run `./scripts/verify-live-function.sh --all` from the merged commit
    (11 functions).
 2. Groq console → Settings → Data Controls → turn on **Zero Data Retention** for the organization
-   that owns `GROQ_API_KEY`. Record the date here: **ZDR proof: _not yet recorded_**.
+   that owns `GROQ_API_KEY`. Record the date here: **ZDR proof: enabled by the owner on 2026-10-02.**
 3. Find your user ID (dashboard SQL editor, read-only):
    `select id from auth.users where email = '<your email>';`
 4. Set the secrets in the Supabase dashboard (Edge Functions → Secrets): `PHYSIQUE_VISION_ENABLED`

@@ -39,7 +39,17 @@ Deno.test("any broken rule rejects the whole reply", () => {
     ["not json", "not_json"],
     ["[]", "not_object"],
     [reply({ body_fat: "15%" }), "unexpected_keys"],
-    [reply({ development_priorities: [] }), "priority_count"],
+    [reply({ development_priorities: [] }), "nothing_to_assess"],
+    [
+      reply({
+        development_priorities: ["chest", "back", "core", "calves"].map((muscle) => ({
+          muscle,
+          confidence: "low",
+          reason: "Small.",
+        })),
+      }),
+      "priority_count",
+    ],
     [
       reply({
         development_priorities: [{ muscle: "forearms", confidence: "low", reason: "Small." }],

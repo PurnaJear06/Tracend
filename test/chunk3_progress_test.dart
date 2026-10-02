@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
@@ -17,6 +16,7 @@ Widget _app(
   ProgressRepository repository, {
   DailyBriefRepository? brief,
   TrainingHubRepository? training,
+  ProgressPhotoPicker? pickPhoto,
 }) => MaterialApp(
   theme: TracendTheme.dark,
   home: Scaffold(
@@ -25,7 +25,7 @@ Widget _app(
       brief: brief,
       training: training,
       now: () => DateTime(2026, 8, 25),
-      pickPhoto: _photo,
+      pickPhoto: pickPhoto ?? _photo,
     ),
   ),
 );
@@ -173,6 +173,46 @@ void main() {
     expect(find.text('\u22120.3 kg/week'), findsOneWidget);
     expect(find.text('Steady trend'), findsOneWidget);
     expect(find.text('WEIGHT TREND'), findsNothing);
+  });
+
+  testWidgets('a photo iOS cannot hand over says why and opens no set', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = _FlakyUploadRepository(failOnUpload: 0);
+    var cancel = false;
+    await tester.pumpWidget(
+      _app(
+        repository,
+        pickPhoto: (_) async {
+          if (cancel) return null;
+          throw PlatformException(code: 'invalid_image');
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _reveal(tester, find.text('Take progress photos'));
+    await tester.tap(find.text('Take progress photos'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('I agree and continue'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Choose Front photo from library'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'This photo could not be loaded from your library. If it is stored in '
+        'iCloud, try again on Wi-Fi, or take a photo instead.',
+      ),
+      findsOneWidget,
+    );
+    cancel = true;
+    await tester.tap(find.byTooltip('Take Front photo'));
+    await tester.pumpAndSettle();
+    expect(repository.setsStarted, 0);
+    expect(repository.uploads, isEmpty);
   });
 
   testWidgets('a failed pose upload retries into the same photo set', (
