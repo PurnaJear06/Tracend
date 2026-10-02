@@ -1,6 +1,10 @@
 import { reply } from "../_shared/auth.ts";
 import { eatingConcernPattern } from "../_shared/coach_chat_fallback.ts";
-import { parsePhysiqueResult, type PhysiqueResult } from "../_shared/physique/contract.ts";
+import {
+  nothingToAssess,
+  parsePhysiqueResult,
+  type PhysiqueResult,
+} from "../_shared/physique/contract.ts";
 import { maxPhotoBytes, stripJpegMetadata } from "../_shared/physique/jpeg.ts";
 import {
   callPhysiqueVision,
@@ -21,7 +25,9 @@ import {
 // {"schema_version":"1.0","mode":"check","photo_set_id":…}: sends the front,
 // side and back photos of one complete set to the model after checking the
 // current photo AI notice is granted and the AI budget allows it. A reply that
-// breaks the contract gets one text-only correction when the provider's
+// suggests no muscle means the photos show nothing to judge (422
+// photo_set_unassessable, no correction asked). A reply that breaks the
+// contract gets one text-only correction when the provider's
 // minute still has room; otherwise nothing is stored. The stored result is a
 // suggestion: only muscles the athlete confirms (set_my_priority_muscles)
 // become their focus.
@@ -166,7 +172,7 @@ export async function handlePhysiqueCheck(
     let parsed = parsePhysiqueResult(calls[0].content);
     const firstRule = parsed.ok ? null : parsed.rule;
     const room = calls[0].remainingTokens;
-    if (!parsed.ok && room !== null && room >= repairTokens) {
+    if (!parsed.ok && parsed.rule !== nothingToAssess && room !== null && room >= repairTokens) {
       calls.push(
         await call(config, athlete, null, { previous: calls[0].content, rule: parsed.rule }),
       );
@@ -179,6 +185,12 @@ export async function handlePhysiqueCheck(
       output_units: calls.reduce((total, spent) => total + spent.outputUnits, 0),
       ...(firstRule ? { first_rule_broken: firstRule } : {}),
     };
+    if (!parsed.ok && parsed.rule === nothingToAssess) {
+      // The photos show nothing to judge: tell the athlete to retake them.
+      await record();
+      observer.info("physique_check_nothing_to_assess", metadata);
+      return reply(422, { error: "photo_set_unassessable" });
+    }
     if (!parsed.ok) {
       await record();
       observer.warn("physique_check_invalid", { ...metadata, rule: parsed.rule });

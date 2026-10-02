@@ -340,7 +340,10 @@ most 120 characters, relative to the athlete's own build; up to three neutral ob
 issues from a fixed list (lighting, pose, clothing, framing, blur, mismatch), which cap confidence
 (one at medium, two or more at low); and limitations. Any unexpected key, unknown muscle, or a
 percentage, body-fat, score or rating, appearance judgement, sexual, medical, sensitive-trait or
-eating wording rejects the whole reply. One text-only correction is asked (the photos are not sent
+eating wording rejects the whole reply. A reply that suggests no muscle at all means the photos
+show no physique to judge (an unrelated picture, the body out of frame): nothing is stored, no
+correction is asked, and the athlete is told to retake the set (422 `photo_set_unassessable`). One
+text-only correction is asked (the photos are not sent
 again) when Groq reports at least 2,500 tokens left in the minute; otherwise, or if the correction
 also fails, nothing is stored (502 `physique_check_invalid`) and the tokens are still counted.
 

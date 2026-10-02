@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
@@ -22,6 +26,18 @@ const progressPeriods = <(int, String)>[(28, '4W'), (84, '12W'), (182, '6M')];
 
 /// Recent weigh-ins shown before "See all".
 const _recentWeighIns = 3;
+
+/// What the capture sheet says when iOS could not hand over a photo.
+String progressPhotoPickMessage(String code) => switch (code) {
+  'camera_access_denied' =>
+    'Tracend cannot use the camera. Allow it in Settings › Tracend › Camera, or choose a photo from your library.',
+  'photo_access_denied' =>
+    'Tracend cannot open your photos. Allow it in Settings › Tracend › Photos.',
+  // Usually a photo kept only in iCloud that did not download.
+  'invalid_image' =>
+    'This photo could not be loaded from your library. If it is stored in iCloud, try again on Wi-Fi, or take a photo instead.',
+  _ => 'This photo could not be opened. Try again, or take a photo instead.',
+};
 
 /// Opens the camera or library for one pose; null when the user cancels.
 typedef ProgressPhotoPicker = Future<XFile?> Function(ImageSource source);
@@ -440,10 +456,18 @@ class _ProgressScreenState extends State<ProgressScreen> {
     String pose,
     ImageSource source,
   ) async {
+    // The photo is chosen before a set is opened, so a cancelled or failed
+    // pick never leaves an empty set behind.
+    final XFile? photo;
+    try {
+      photo = await widget.pickPhoto(source);
+    } on PlatformException catch (e) {
+      debugPrint('Progress photo pick failed: ${e.code}');
+      return (captured: false, error: progressPhotoPickMessage(e.code));
+    }
+    if (photo == null) return (captured: false, error: null);
     try {
       _activeSet ??= await widget.repository.beginPhotoSet();
-      final photo = await widget.pickPhoto(source);
-      if (photo == null) return (captured: false, error: null);
       await widget.repository.uploadPhoto(
         setId: _activeSet!,
         pose: pose,
@@ -456,11 +480,12 @@ class _ProgressScreenState extends State<ProgressScreen> {
         _capturedPoses.clear();
       }
       return (captured: true, error: null);
-    } catch (e) {
+    } catch (e, stackTrace) {
       // Keep the open set and its finished poses: the capture sheet still
       // shows them, so a retry must upload into the same set rather than
       // start a second, partial one.
       debugPrint('Non-critical error: $e');
+      unawaited(Sentry.captureException(e, stackTrace: stackTrace));
       return (
         captured: false,
         error: 'Photo was not saved. Try again when ready.',

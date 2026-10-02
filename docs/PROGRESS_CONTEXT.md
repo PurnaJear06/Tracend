@@ -46,7 +46,8 @@ barbell top sets turned into starting loads, up to two focus muscles with weekly
 0–3 follow-up questions from the coach, and Apple Health usual months against the last 28 days
 (`onboarding-policy-v2`, merged in #70 and deployed `a716afb`, build 273 installed); (2) an
 owner-only physique check on progress photos: Groq suggests muscles to develop from one photo set
-under its own notice, and the athlete confirms up to two as their focus (in review; see
+under its own notice, and the athlete confirms up to two as their focus (merged in #72, deployed
+`9995cc3`, on for the owner only; see
 [`docs/handoff/physique-check.md`](./handoff/physique-check.md)); (3) calibration and a stale-safe
 re-plan from two weeks of logged sets. See
 [`docs/handoff/onboarding.md`](./handoff/onboarding.md).

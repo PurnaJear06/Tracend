@@ -31,6 +31,9 @@ export type PhysiqueParse =
   | Readonly<{ ok: false; rule: string }>;
 
 export const reasonMaxLength = 120;
+
+/** The rule for a reply that suggests no muscle at all. */
+export const nothingToAssess = "nothing_to_assess";
 export const observationMaxLength = 160;
 export const limitationsMaxLength = 240;
 
@@ -97,7 +100,13 @@ export function parsePhysiqueResult(content: string): PhysiqueParse {
     return { ok: false, rule: "photo_issues" };
   }
   const priorities = reply.development_priorities;
-  if (!Array.isArray(priorities) || priorities.length < 1 || priorities.length > 3) {
+  // No muscle to suggest is the model saying the photos show no physique it
+  // can judge (an unrelated picture, the body out of frame): an answer about
+  // the photos, not a broken reply.
+  if (Array.isArray(priorities) && priorities.length === 0) {
+    return { ok: false, rule: nothingToAssess };
+  }
+  if (!Array.isArray(priorities) || priorities.length > 3) {
     return { ok: false, rule: "priority_count" };
   }
   const parsed: DevelopmentPriority[] = [];

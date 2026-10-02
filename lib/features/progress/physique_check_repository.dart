@@ -230,6 +230,12 @@ enum PhysiqueCheckError {
     "These photos can't be checked. Take a new set with the camera.",
     retryable: false,
   ),
+  unassessable(
+    'photo_set_unassessable',
+    "These photos don't show enough of your body to suggest muscles. Retake "
+        'the set with your full body in frame, fitted clothing and even light.',
+    retryable: false,
+  ),
   invalid(
     'physique_check_invalid',
     "The check didn't return a usable answer. Nothing was saved. Try again.",
