@@ -327,12 +327,34 @@ class _TodayScreenState extends State<TodayScreen> {
     }
   }
 
-  void _openWorkout() {
-    Navigator.of(context).push<void>(
+  /// Opens the brief's workout: the one planned for the date the brief was
+  /// loaded for. A fixture brief carries no workout id, so its repository's
+  /// workout opens instead.
+  Future<void> _openWorkout(DailyBrief brief) async {
+    final row = brief.workout;
+    PlannedWorkout? workout;
+    if (row != null && row['id'] is String) {
+      workout = PlannedWorkout.fromHubJson(row);
+    } else {
+      try {
+        workout = await widget.workouts?.loadTodayWorkout();
+      } catch (e) {
+        debugPrint('Non-critical error: $e');
+      }
+    }
+    if (workout == null || !mounted) return;
+    final completed = await Navigator.of(context).push<bool>(
       CupertinoPageRoute(
-        builder: (_) => WorkoutDetailScreen(repository: widget.workouts),
+        builder: (_) => WorkoutDetailScreen(
+          repository: widget.workouts,
+          workout: workout,
+          sessionDate: DateTime.tryParse(brief.localDate) ?? DateTime.now(),
+        ),
       ),
     );
+    if (completed == true && mounted) {
+      setState(() => _brief = widget.brief.load(DateTime.now()));
+    }
   }
 
   @override
@@ -384,10 +406,12 @@ class _TodayScreenState extends State<TodayScreen> {
                 healthHistory: _healthHistory,
                 syncing: _syncing,
                 onSync: _syncEverything,
-                onStartSession: brief.workout != null ? _openWorkout : null,
+                onStartSession: brief.workout != null
+                    ? () => _openWorkout(brief)
+                    : null,
                 onViewAnalytics: widget.onOpenProgress,
                 onOpenNutrition: widget.onOpenNutrition,
-                onOpenWorkout: _openWorkout,
+                onOpenWorkout: () => _openWorkout(brief),
                 onCheckIn: _openCheckIn,
               );
             }

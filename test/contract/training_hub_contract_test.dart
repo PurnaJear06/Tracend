@@ -49,14 +49,14 @@ void main() {
       expect(active['start_date'], isA<String>());
     });
 
-    test('workouts list is parseable (matches _workoutFromJson)', () {
+    test('workouts list is parseable (matches PlannedWorkout.fromHubJson)', () {
       final json = _loadFixtureJson(fixture);
       final workouts = (json['workouts'] as List).toMapList();
 
       expect(workouts, isNotEmpty);
 
       for (final row in workouts) {
-        // These fields match the parsing in SupabaseWorkoutRepository._workoutFromJson
+        // These fields match the parsing in PlannedWorkout.fromHubJson
         expect(row['id'], isA<String>());
         expect(row['name'], isA<String>());
         expect(row['objective'], isA<String>());
