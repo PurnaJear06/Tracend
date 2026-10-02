@@ -2,9 +2,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/progress/widgets/measurement_widgets.dart';
 import 'package:tracend/features/progress/widgets/photo_widgets.dart';
+import 'package:tracend/features/progress/widgets/physique_check_widgets.dart';
 import 'package:tracend/features/progress/widgets/training_evidence_widgets.dart';
 import 'package:tracend/features/progress/widgets/weekly_review_widgets.dart';
 import 'package:tracend/features/progress/widgets/weight_trend_card.dart';
@@ -37,6 +39,7 @@ class ProgressScreen extends StatefulWidget {
     required this.repository,
     this.training,
     this.brief,
+    this.physique = const FixturePhysiqueCheckRepository(),
     this.now = DateTime.now,
     this.pickPhoto = _pickWithImagePicker,
     super.key,
@@ -44,6 +47,7 @@ class ProgressScreen extends StatefulWidget {
   final ProgressRepository repository;
   final TrainingHubRepository? training;
   final DailyBriefRepository? brief;
+  final PhysiqueCheckRepository physique;
 
   /// Clock for the period window and relative dates.
   final DateTime Function() now;
@@ -61,6 +65,9 @@ typedef _ProgressData = ({
   TrainingHubData? training,
 });
 
+/// Whether this account may run physique checks, and its newest result.
+typedef _PhysiqueState = ({String? provider, PhysiqueAnalysis? latest});
+
 class _ProgressScreenState extends State<ProgressScreen> {
   late Future<_ProgressData> _future;
   int _periodDays = 84;
@@ -69,11 +76,13 @@ class _ProgressScreenState extends State<ProgressScreen> {
   bool _hasConsent = false;
   late final Future<DailyBrief> _brief;
   late final Future<String?> _goal;
+  late Future<_PhysiqueState> _physique;
 
   @override
   void initState() {
     super.initState();
     _reload();
+    _physique = _loadPhysique();
     _brief = (widget.brief ?? const FixtureDailyBriefRepository()).load(
       widget.now(),
     );
@@ -105,6 +114,20 @@ class _ProgressScreenState extends State<ProgressScreen> {
             training: v[5] as TrainingHubData?,
           ),
         );
+  }
+
+  /// Whether a check can run now, and the newest stored check. They load
+  /// apart: a check run earlier stays visible, and disclosed, after the
+  /// feature is switched off for this account.
+  Future<_PhysiqueState> _loadPhysique() async {
+    final provider = widget.physique.loadProvider();
+    PhysiqueAnalysis? latest;
+    try {
+      latest = await widget.physique.loadLatestAnalysis();
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+    }
+    return (provider: await provider, latest: latest);
   }
 
   @override
@@ -227,12 +250,29 @@ class _ProgressScreenState extends State<ProgressScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SectionLabel('Progress photos'),
-          PhotoProgressCard(
-            photoSets: data.photoSets,
-            inProgress: _activeSet != null && _capturedPoses.isNotEmpty,
-            onCapture: _openPhotoCapture,
-            onOpenSets: () => _openPhotoSets(data.photoSets),
-            now: now,
+          FutureBuilder<_PhysiqueState>(
+            future: _physique,
+            builder: (context, physique) {
+              final provider = physique.data?.provider;
+              final newest = data.photoSets.isEmpty
+                  ? null
+                  : data.photoSets.first;
+              return PhotoProgressCard(
+                photoSets: data.photoSets,
+                inProgress: _activeSet != null && _capturedPoses.isNotEmpty,
+                onCapture: _openPhotoCapture,
+                onOpenSets: () => _openPhotoSets(data.photoSets),
+                photoCheckProvider: provider,
+                onPhysiqueCheck:
+                    provider != null && newest?.status == 'complete'
+                    ? () => _openPhysiqueCheck(photoSetId: newest!.id)
+                    : null,
+                latestPhysique: physique.data?.latest,
+                onOpenPhysique: (analysis) =>
+                    _openPhysiqueCheck(analysis: analysis),
+                now: now,
+              );
+            },
           ),
         ],
       ),
@@ -428,6 +468,28 @@ class _ProgressScreenState extends State<ProgressScreen> {
     }
   }
 
+  /// Starts a check on [photoSetId], or opens the stored [analysis].
+  Future<void> _openPhysiqueCheck({
+    String? photoSetId,
+    PhysiqueAnalysis? analysis,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (_) => PhysiqueCheckSheet(
+        repository: widget.physique,
+        photoSetId: photoSetId,
+        analysis: analysis,
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _physique = _loadPhysique();
+    });
+  }
+
   Future<void> _openPhotoSets(List<ProgressPhotoSet> sets) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -493,7 +555,12 @@ class _ProgressScreenState extends State<ProgressScreen> {
     );
     if (confirmed != true) return;
     await widget.repository.deletePhotoSet(set);
-    if (mounted) setState(_reload);
+    if (!mounted) return;
+    // The set's physique checks were deleted with it.
+    setState(() {
+      _reload();
+      _physique = _loadPhysique();
+    });
   }
 }
 

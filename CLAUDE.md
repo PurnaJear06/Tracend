@@ -186,9 +186,10 @@ See `docs/CI_CD_DEPLOYMENT.md` for full design.
   configured together.
 - **Platform:** iOS only, owner's iPhone 12. No Android. `build ios --release --no-codesign`
   is the compilation gate.
-- **10 Edge Functions:** coach-chat, coach-decide, health-check, health-sync, meal-analyze,
+- **11 Edge Functions:** coach-chat, coach-decide, health-check, health-sync, meal-analyze,
   meal-media-retention, onboarding-plan, onboarding-propose-plan (Phase-2 mock, kept for older
-  builds), privacy-delete-account, privacy-export.
+  builds), physique-check (owner-only experiment, `PHYSIQUE_VISION_*`), privacy-delete-account,
+  privacy-export.
 - **Onboarding plan model** is set by `ONBOARDING_PLAN_PROVIDER` / `ONBOARDING_PLAN_MODEL`
   (default `mock` = Tracend's rules plan). The owner switches providers; see AI_SAFETY_SPEC §10 for
   the eval, secrets and `private.publish_ai_notice` steps.

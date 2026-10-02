@@ -29,6 +29,7 @@ const dataTables = [
   "progress_photo_sets",
   "progress_photos",
   "progress_reviews",
+  "physique_analyses",
   "weekly_review_jobs",
   "feature_snapshots",
   "policy_evaluations",

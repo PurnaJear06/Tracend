@@ -215,7 +215,10 @@ class SupabaseProgressRepository
     final sets = await _client
         .from('progress_photo_sets')
         .select('id,captured_on,status')
-        .order('captured_on', ascending: false);
+        .order('captured_on', ascending: false)
+        // Several sets can share a day: the newest is the one taken last.
+        .order('created_at', ascending: false)
+        .order('id');
     final photos = await _client
         .from('progress_photos')
         .select('photo_set_id,media_objects(object_key)');

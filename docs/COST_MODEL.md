@@ -138,6 +138,12 @@ requests per owner/day shared by Coach chat, daily decisions and meal photos
 (2026-09-30). The daily count was 10, which about 10 meal
 photos a day would use up; the USD 2 stop still bounds spend.
 
+**Physique check (2026-10, owner-only):** the same Groq model with three photos at 2,048 input
+tokens each plus about 600 prompt tokens, and up to 800 output tokens: about USD 0.007 per check
+at the paid price, recorded as `progress_vision` and counted toward the 30-a-day limit. One check
+uses about 7,600 of the free tier's 8,000 tokens a minute, so a second check (or the text-only
+correction) within the minute may be refused (429 `physique_check_busy`).
+
 **Meal photos (2026-09-29):** Groq `qwen/qwen3.8-27b` (`MEAL_VISION_PROVIDER=groq`), the named
 successor of `qwen/qwen3.6-27b`, which Groq shut down on 2026-09-14. On Groq's free tier (no card
 on file) a request over the limit is refused rather than billed. The binding free-tier limit is

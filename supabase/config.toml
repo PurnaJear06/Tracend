@@ -185,6 +185,9 @@ verify_jwt = true
 [functions.onboarding-plan]
 verify_jwt = true
 
+[functions.physique-check]
+verify_jwt = true
+
 [functions.health-sync]
 verify_jwt = true
 

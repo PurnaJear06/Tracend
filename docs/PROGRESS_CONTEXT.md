@@ -44,8 +44,11 @@ the app is installed. On the owner's fresh account the AI plan worked (thinking,
 generic, so a **coach-quality batch** of three PRs follows: (1) coach intake — training years,
 barbell top sets turned into starting loads, up to two focus muscles with weekly set minimums,
 0–3 follow-up questions from the coach, and Apple Health usual months against the last 28 days
-(`onboarding-policy-v2`, in review); (2) an owner-only physique check on progress photos; (3)
-calibration and a stale-safe re-plan from two weeks of logged sets. See
+(`onboarding-policy-v2`, merged in #70 and deployed `a716afb`, build 273 installed); (2) an
+owner-only physique check on progress photos: Groq suggests muscles to develop from one photo set
+under its own notice, and the athlete confirms up to two as their focus (in review; see
+[`docs/handoff/physique-check.md`](./handoff/physique-check.md)); (3) calibration and a stale-safe
+re-plan from two weeks of logged sets. See
 [`docs/handoff/onboarding.md`](./handoff/onboarding.md).
 
 Account deletion recovery (owner report 2026-10-02, build 273): after **Delete account** spun

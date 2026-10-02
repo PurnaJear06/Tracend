@@ -506,8 +506,21 @@ and lower body with framing guidance, a check per finished pose, and how many ar
 explicitly opens the camera or library for a pose; the native camera is never launched without this
 in-app context. Errors stay inline in the sheet, and **Finish later** keeps a partial set open.
 Completed and partial sets are listed under **View past sets** with labeled view and delete
-controls. Viewing uses short-lived authorization. No photo is sent to an AI model or analyzed until
-separate AI consent and evaluation gates are implemented.
+controls. Viewing uses short-lived authorization.
+
+**Physique check (2026-10, owner-only experiment).** Only for accounts the `physique-check`
+function serves; everyone else sees no change and the card still says photos are never sent to AI.
+For a served account, the card says photos are sent to Groq only when a check is started, and
+offers **Physique check** on the newest complete set:
+`Consent sheet (server notice, first time or after a new notice) → Checking (usually under 30 s) →
+Result: "AI visual estimate, not a measurement", muscles with confidence and reason, observations,
+photo tips, limitations → choose up to two → Use as my focus`.
+The newest set is the one taken last (`captured_on`, then `created_at`). A stored check stays
+visible after the feature is switched off for the account, and the card then says a set was sent
+to AI only for a check the athlete started, never "never". Deleting a set removes its checks from
+the card at once. Nothing changes without that confirmation; the Coach uses the focus at once and
+the plan at its next review. Errors (consent, today's AI limit, Groq busy, photos that cannot be checked, an
+unusable answer) stay inline in the sheet. **Turn off photo checks** records a withdrawal.
 
 ### Comparison
 
