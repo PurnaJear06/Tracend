@@ -162,6 +162,17 @@ class OnboardingProposalView extends StatelessWidget {
     );
   }
 
+  /// RPE in plain words: reps left in reserve, 10 − RPE (RPE 7.5 → about
+  /// 2–3 reps left).
+  static String effortText(num rpe) {
+    final left = 10 - rpe;
+    final reps = left % 1 == 0
+        ? '${left.toInt()} ${left == 1 ? 'rep' : 'reps'} left'
+        : '${left.floor()}–${left.ceil()} reps left';
+    final shown = rpe % 1 == 0 ? '${rpe.toInt()}' : '$rpe';
+    return 'RPE $shown (about $reps)';
+  }
+
   static String _confidence(String value) =>
       value.isEmpty ? value : value[0].toUpperCase() + value.substring(1);
 
@@ -240,7 +251,7 @@ class _WorkoutCard extends StatelessWidget {
                   Text(exercise.name),
                   Text(
                     '${exercise.sets} × ${exercise.repMin == exercise.repMax ? exercise.repMin : '${exercise.repMin}–${exercise.repMax}'}'
-                    ' · RPE ${exercise.targetRpe} · ${_rest(exercise.restSeconds)}',
+                    ' · ${OnboardingProposalView.effortText(exercise.targetRpe)} · ${_rest(exercise.restSeconds)}',
                     style: text.bodySmall,
                   ),
                   if (exercise.notes.isNotEmpty)

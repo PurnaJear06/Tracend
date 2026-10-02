@@ -99,12 +99,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   static const _reviewStep = 9;
   static const _proposalStep = 10;
 
-  static const _goals = <String, String>{
-    'fat_loss': 'Fat loss',
-    'muscle_gain': 'Muscle gain',
-    'recomposition': 'Recomposition',
-    'strength': 'Strength',
-    'aesthetic': 'Aesthetic emphasis',
+  static const _goals = <String, (String, String)>{
+    'fat_loss': (
+      'Fat loss',
+      'Lose fat while keeping your strength and muscle.',
+    ),
+    'muscle_gain': (
+      'Muscle gain',
+      'Build muscle with a small calorie surplus.',
+    ),
+    'recomposition': (
+      'Recomposition',
+      'Lose fat and build muscle at about the same weight.',
+    ),
+    'strength': ('Strength', 'Lift heavier on the main movements.'),
+    'aesthetic': (
+      'Aesthetic emphasis',
+      'Shape and balance how your body looks.',
+    ),
   };
   static const _sexes = <String, String>{
     'female': 'Female',
@@ -171,7 +183,18 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   final _currentPlan = TextEditingController();
   final _revisionNote = TextEditingController();
   bool _loading = true;
+
+  /// The saved answers could not be loaded. Nothing can be saved until they
+  /// are, so a retry never overwrites them with defaults.
+  bool _restoreFailed = false;
   bool _saving = false;
+  bool _signingOut = false;
+
+  /// Editing one answer from Review: Continue returns to Review.
+  bool _returnToReview = false;
+
+  /// The approved proposal, shown once as "You're set" before the app opens.
+  OnboardingProposal? _approved;
   bool _adult = false;
   bool _needsClinicalSupport = false;
   bool _terms = false;
@@ -182,7 +205,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   bool? _aiRecorded;
   int _step = _eligibilityStep;
   String? _path;
-  String _goal = 'recomposition';
+
+  /// Chosen on the Goal step; nothing is preselected.
+  String? _goal;
   String _experience = 'beginner';
   String? _sex;
   String? _dailyActivity;
@@ -299,7 +324,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   Future<void> _restore() async {
     var resumeGeneration = false;
     try {
-      final draft = await widget.repository.loadDraft();
+      final draft = await widget.repository.loadDraft().timeout(
+        const Duration(seconds: 15),
+      );
       if (draft != null) {
         final payload = draft.payload;
         _path = draft.path;
@@ -363,13 +390,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         _aboutPassed = _step > _aboutStep;
         resumeGeneration = _step == _proposalStep;
       }
+      _restoreFailed = false;
     } catch (e) {
       debugPrint('Non-critical error: $e');
-      _error =
-          'Your saved onboarding answers could not be restored. Retry before continuing.';
+      _restoreFailed = true;
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+    if (_restoreFailed) return;
     if (resumeGeneration && mounted) unawaited(_resumeGeneration());
     if (mounted && _healthImport != 'skipped') unawaited(_loadHealthFacts());
   }
@@ -457,6 +485,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     await _continue();
   }
 
+  Future<void> _retryRestore() async {
+    setState(() {
+      _loading = true;
+      _restoreFailed = false;
+    });
+    await _restore();
+  }
+
+  Future<void> _signOut() async {
+    if (_signingOut) return;
+    setState(() => _signingOut = true);
+    try {
+      await widget.onSignOut?.call();
+    } finally {
+      if (mounted) setState(() => _signingOut = false);
+    }
+  }
+
   /// Reopened on the Plan step: show the stored proposal, keep waiting for a
   /// running generation, or go back to Review.
   Future<void> _resumeGeneration() async {
@@ -541,6 +587,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   Future<void> _buildPlan() async {
+    if (_saving) return;
     setState(() {
       _saving = true;
       _error = null;
@@ -572,6 +619,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             error.missing.length == 1 && error.missing.first == 'avoid_patterns'
             ? 'You wrote a limitation. Choose the movements your plan should leave out, or none, then build your plan.'
             : 'Add your ${labels.join(', ')} to build your plan.';
+      });
+    } on OnboardingPlanUnavailable {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = 'The plan builder is unavailable. Try again in a minute.';
       });
     } on OnboardingPlanInfeasible catch (error) {
       if (!mounted) return;
@@ -633,29 +686,29 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     });
     try {
       if (_step == _eligibilityStep) {
-        await widget.repository.recordEligibilityAndConsent(
-          eligible: true,
-          experience: _experience,
-          trainingDays: _weekdays.length,
-          sessionMinutes: _sessionMinutes,
-        );
+        await widget.repository.recordEligibilityAndConsent(eligible: true);
       }
       if (_step == _aiStep && _aiChoice != _aiRecorded) {
         await widget.aiConsent?.record(granted: _aiChoice!);
         _aiRecorded = _aiChoice;
       }
-      if (_step == _goalStep) await widget.repository.saveGoal(_goal);
+      if (_step == _goalStep) await widget.repository.saveGoal(_goal!);
       if (_step == _foodStep) _avoidAnswered = true;
       if (_step == _aboutStep) _aboutPassed = true;
-      final next = _step + 1;
+      final next = _returnToReview ? _reviewStep : _step + 1;
       await widget.repository.saveDraft(
         path: _path,
         currentSection: _sectionKeys[next],
         payload: _payload,
       );
-      setState(() => _step = next);
+      if (!mounted) return;
+      setState(() {
+        _step = next;
+        _returnToReview = false;
+      });
     } catch (e) {
       debugPrint('Non-critical error: $e');
+      if (!mounted) return;
       setState(() {
         _error =
             'This section could not be saved. Check the connection and try again.';
@@ -669,6 +722,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _eligibilityStep => _adult && !_needsClinicalSupport && _terms && _privacy,
     _aiStep => _aiChoice != null,
     _pathStep => _path != null,
+    _goalStep => _goal != null,
     _healthStep => _healthImport != null && !_healthBusy,
     _aboutStep =>
       _sex != null && _dailyActivity != null && _birthYearError() == null,
@@ -697,6 +751,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         'Confirm adult eligibility, terms, and privacy to continue.',
       _aiStep => 'Choose whether to allow AI coaching.',
       _pathStep => 'Choose the onboarding path that fits you.',
+      _goalStep => 'Choose what your first block should prioritize.',
       _healthStep => 'Connect Apple Health, or choose Skip for now.',
       _aboutStep =>
         _sex == null
@@ -718,8 +773,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     });
     try {
       await widget.repository.respond(proposal.id, action, note: note);
+      if (!mounted) return;
       if (action == 'accept') {
-        widget.onCompleted();
+        setState(() {
+          _approved = proposal;
+          _proposal = null;
+        });
         return;
       }
       _revisionNote.text = action == 'request_revision' ? (note ?? '') : '';
@@ -739,6 +798,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       if (mounted) _showProposalExpired();
     } catch (e) {
       debugPrint('Non-critical error: $e');
+      if (!mounted) return;
       setState(() {
         _error = 'Your response was not saved. Nothing has changed; try again.';
       });
@@ -747,20 +807,70 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     }
   }
 
+  bool _sheetOpen = false;
+
   Future<void> _requestRevision() async {
-    final note = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => const _RevisionSheet(),
-    );
-    if (note == null) return;
-    await _respond('request_revision', note: note.isEmpty ? null : note);
+    if (_sheetOpen || _saving) return;
+    _sheetOpen = true;
+    final String? note;
+    try {
+      note = await showModalBottomSheet<String>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => const _RevisionSheet(),
+      );
+    } finally {
+      _sheetOpen = false;
+    }
+    if (note == null || note.isEmpty || !mounted) return;
+    await _respond('request_revision', note: note);
+  }
+
+  Future<void> _confirmReject() async {
+    if (_sheetOpen || _saving) return;
+    _sheetOpen = true;
+    final bool? confirmed;
+    try {
+      confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Reject this plan?'),
+          content: const Text(
+            'Nothing starts. Your answers stay saved, and you can build a new plan from them.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep reviewing'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reject plan'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      _sheetOpen = false;
+    }
+    if (confirmed == true && mounted) await _respond('reject');
+  }
+
+  /// Opens one step from Review; Continue there returns to Review.
+  void _editFromReview(int step) {
+    _pollRun++;
+    setState(() {
+      _returnToReview = true;
+      _error = null;
+      _step = step;
+    });
   }
 
   void _back() {
     _pollRun++;
     setState(() {
+      _returnToReview = false;
       _generating = false;
       _generationFailed = false;
       _proposalExpired = false;
@@ -769,11 +879,51 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     });
   }
 
+  List<Widget> _signOutAction() => [
+    if (widget.onSignOut != null)
+      TextButton(
+        onPressed: _saving || _signingOut ? null : _signOut,
+        child: const Text('Sign out'),
+      ),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_loading || _restoreFailed) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Set up Tracend'),
+          actions: _signOutAction(),
+        ),
+        body: SafeArea(
+          child: Center(
+            child: _loading
+                ? Semantics(
+                    label: 'Loading your saved answers',
+                    child: const TracendLoadingIndicator(size: 32),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.all(TracendSpacing.gutter),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _heading(
+                          'Your answers did not load.',
+                          'They are still saved. Check the connection and try again; nothing is saved until they load.',
+                        ),
+                        FilledButton(
+                          onPressed: _retryRestore,
+                          child: const Text('Try again'),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ),
+      );
     }
+    if (_approved != null) return _done(_approved!);
     final onPlan = _step == _proposalStep;
     final canGoBack =
         _step > _eligibilityStep && (!onPlan || _proposal == null) && !_saving;
@@ -787,13 +937,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 icon: const Icon(CupertinoIcons.back),
               )
             : null,
-        actions: [
-          if (widget.onSignOut != null)
-            TextButton(
-              onPressed: _saving ? null : () => widget.onSignOut!(),
-              child: const Text('Sign out'),
-            ),
-        ],
+        actions: _signOutAction(),
       ),
       body: SafeArea(
         top: false,
@@ -807,12 +951,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Section ${_step + 1} of ${_sections.length} · ${_sections[_step]}',
+                    'Step ${_step + 1} of ${_sections.length} · ${_sections[_step]}',
                     style: Theme.of(context).textTheme.labelMedium,
                   ),
                   const SizedBox(height: TracendSpacing.xs),
-                  LinearProgressIndicator(
-                    value: (_step + 1) / _sections.length,
+                  ExcludeSemantics(
+                    child: LinearProgressIndicator(
+                      value: (_step + 1) / _sections.length,
+                    ),
                   ),
                 ],
               ),
@@ -852,6 +998,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                           : Text(
                               _step == _reviewStep
                                   ? 'Build my plan'
+                                  : _returnToReview
+                                  ? 'Save and return to review'
                                   : 'Continue',
                             ),
                     ),
@@ -1024,8 +1172,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           children: _goals.entries
               .map(
                 (entry) => RadioListTile<String>(
+                  contentPadding: EdgeInsets.zero,
                   value: entry.key,
-                  title: Text(entry.value),
+                  title: Text(entry.value.$1),
+                  subtitle: Text(entry.value.$2),
                 ),
               )
               .toList(),
@@ -1191,8 +1341,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         key: const ValueKey('birth-year'),
         controller: _birthYear,
         keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.done,
         maxLength: 4,
-        onChanged: (_) => setState(() {}),
+        // The iOS number pad has no Done key: a tap outside or the fourth
+        // digit closes it, so it never covers the rest of the step.
+        onTapOutside: (_) => FocusScope.of(context).unfocus(),
+        onChanged: (value) {
+          if (value.length == 4) FocusScope.of(context).unfocus();
+          setState(() {});
+        },
         decoration: InputDecoration(
           hintText: 'e.g. 1994',
           counterText: '',
@@ -1201,12 +1358,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         ),
       ),
       _label('Height: ${_heightCm.round()} cm'),
-      Slider(
-        value: _heightCm.clamp(120, 230),
+      _Stepper(
+        label: 'Height',
+        value: _heightCm.roundToDouble().clamp(120, 230),
         min: 120,
         max: 230,
-        divisions: 110,
-        label: '${_heightCm.round()} cm',
+        step: 1,
+        format: (value) => '${value.round()} cm',
         onChanged: (value) => setState(() => _heightCm = value),
       ),
       _label('Current weight: ${_weightLabel(_weightKg)}'),
@@ -1215,12 +1373,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           'From Apple Health, ${_dayMonth(_healthFacts!.latestWeightDate!)}. Move the slider if it has changed.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
-      Slider(
-        value: _weightKg.clamp(_minWeightKg, _maxWeightKg),
+      _Stepper(
+        label: 'Current weight',
+        value: _half(_weightKg).clamp(_minWeightKg, _maxWeightKg),
         min: _minWeightKg,
         max: _maxWeightKg,
-        divisions: ((_maxWeightKg - _minWeightKg) * 2).round(),
-        label: _weightLabel(_weightKg),
+        step: 0.5,
+        format: _weightLabel,
         onChanged: (value) => setState(() {
           _weightKg = value;
           _weightFromHealth = false;
@@ -1239,12 +1398,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             'Target: ${_weightLabel(_targetWeightKg!)}',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          Slider(
-            value: _targetWeightKg!.clamp(_minWeightKg, _maxWeightKg),
+          _Stepper(
+            label: 'Target weight',
+            value: _half(_targetWeightKg!).clamp(_minWeightKg, _maxWeightKg),
             min: _minWeightKg,
             max: _maxWeightKg,
-            divisions: ((_maxWeightKg - _minWeightKg) * 2).round(),
-            label: _weightLabel(_targetWeightKg!),
+            step: 0.5,
+            format: _weightLabel,
             onChanged: (value) => setState(() => _targetWeightKg = value),
           ),
         ],
@@ -1332,12 +1492,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         style: Theme.of(context).textTheme.bodySmall,
       ),
       _label('Session length: $_sessionMinutes minutes'),
-      Slider(
+      _Stepper(
+        label: 'Session length',
         value: _sessionMinutes.toDouble().clamp(30, 120),
         min: 30,
         max: 120,
-        divisions: 6,
-        label: '$_sessionMinutes minutes',
+        step: 15,
+        format: (value) => '${value.round()} minutes',
         onChanged: (value) => setState(() => _sessionMinutes = value.round()),
       ),
     ],
@@ -1457,12 +1618,88 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     ),
   );
 
-  Widget _review() {
+  List<_ReviewRow> _reviewRows() {
     final weekdays = _weekdays.toList()..sort();
     final days = weekdays.map((day) => onboardingWeekdayLabels[day - 1]);
     final target = _targetWeightKg == null
         ? ''
         : ' → ${_weightLabel(_targetWeightKg!)}';
+    String orNone(String value) => value.trim().isEmpty ? 'None' : value.trim();
+    return [
+      _ReviewRow(
+        'Path',
+        _path == 'experienced' ? 'Preserve what works' : 'Guide me',
+        onEdit: () => _editFromReview(_pathStep),
+      ),
+      _ReviewRow(
+        'Goal',
+        _goals[_goal]?.$1 ?? 'Not chosen',
+        onEdit: () => _editFromReview(_goalStep),
+      ),
+      _ReviewRow(
+        'Apple Health',
+        _healthSummary(),
+        onEdit: () => _editFromReview(_healthStep),
+      ),
+      _ReviewRow(
+        'You',
+        '${_sexes[_sex] ?? '—'} · born ${_birthYear.text} · '
+            '${_heightCm.round()} cm · ${_weightLabel(_weightKg)}$target',
+        onEdit: () => _editFromReview(_aboutStep),
+      ),
+      _ReviewRow(
+        'Daily activity',
+        _activities[_dailyActivity]?.$1 ?? 'Not chosen',
+        onEdit: () => _editFromReview(_aboutStep),
+      ),
+      _ReviewRow(
+        'Schedule',
+        '${days.join(', ')} · $_sessionMinutes min',
+        onEdit: () => _editFromReview(_scheduleStep),
+      ),
+      _ReviewRow(
+        'Equipment',
+        [
+          if (_equipment.isEmpty)
+            'Bodyweight only'
+          else
+            (_equipment.toList()..sort())
+                .map((item) => _equipmentChoices[item]!)
+                .join(', '),
+          if (_equipmentNote.text.trim().isNotEmpty) _equipmentNote.text.trim(),
+        ].join(' · '),
+        onEdit: () => _editFromReview(_equipmentStep),
+      ),
+      _ReviewRow(
+        'Diet',
+        orNone(_nutrition.text),
+        onEdit: () => _editFromReview(_foodStep),
+      ),
+      _ReviewRow(
+        'Avoid',
+        _avoid.isEmpty
+            ? 'None'
+            : _avoidChoices.entries
+                  .where((entry) => _avoid.contains(entry.key))
+                  .map((entry) => entry.value)
+                  .join(', '),
+        onEdit: () => _editFromReview(_foodStep),
+      ),
+      _ReviewRow(
+        'Limitations',
+        orNone(_constraints.text),
+        onEdit: () => _editFromReview(_foodStep),
+      ),
+      if (_path == 'experienced')
+        _ReviewRow(
+          'Keep',
+          orNone(_currentPlan.text),
+          onEdit: () => _editFromReview(_foodStep),
+        ),
+    ];
+  }
+
+  Widget _review() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1473,47 +1710,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         TracendCard(
           child: Column(
             children: [
-              _ReviewRow(
-                'Path',
-                _path == 'experienced' ? 'Preserve what works' : 'Guide me',
-              ),
-              const Divider(height: TracendSpacing.xl),
-              _ReviewRow('Goal', _goals[_goal]!),
-              const Divider(height: TracendSpacing.xl),
-              _ReviewRow('Apple Health', _healthSummary()),
-              const Divider(height: TracendSpacing.xl),
-              _ReviewRow(
-                'You',
-                '${_sexes[_sex] ?? '—'} · born ${_birthYear.text} · '
-                    '${_heightCm.round()} cm · ${_weightLabel(_weightKg)}$target',
-              ),
-              const Divider(height: TracendSpacing.xl),
-              _ReviewRow(
-                'Schedule',
-                '${days.join(', ')} · $_sessionMinutes min',
-              ),
-              const Divider(height: TracendSpacing.xl),
-              _ReviewRow(
-                'Equipment',
-                _equipment.isEmpty
-                    ? 'Bodyweight only'
-                    : (_equipment.toList()..sort())
-                          .map((item) => _equipmentChoices[item]!)
-                          .join(', '),
-              ),
-              if (_avoid.isNotEmpty) ...[
-                const Divider(height: TracendSpacing.xl),
-                _ReviewRow(
-                  'Avoid',
-                  _avoidChoices.entries
-                      .where((entry) => _avoid.contains(entry.key))
-                      .map((entry) => entry.value)
-                      .join(', '),
-                ),
-              ],
-              if (_path == 'experienced') ...[
-                const Divider(height: TracendSpacing.xl),
-                _ReviewRow('Keep', _currentPlan.text),
+              for (final (index, row) in _reviewRows().indexed) ...[
+                if (index > 0) const Divider(height: TracendSpacing.xl),
+                row,
               ],
             ],
           ),
@@ -1545,7 +1744,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         error: _error,
         onApprove: () => _respond('accept'),
         onRequestRevision: _requestRevision,
-        onReject: () => _respond('reject'),
+        onReject: _confirmReject,
       );
     }
     if (_proposalExpired) {
@@ -1597,11 +1796,80 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         ),
         const SizedBox(height: TracendSpacing.xs),
         Text(
-          'This can take up to a minute. You can leave the app; your plan will be here when you come back.',
+          'Usually under a minute; it can take up to two. You can leave the app; your plan will be here when you come back.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],
+    );
+  }
+
+  /// Shown once after approval, before the app opens.
+  Widget _done(OnboardingProposal plan) {
+    final text = Theme.of(context).textTheme;
+    final today = DateTime.now().weekday;
+    final ordered = [...plan.workouts]
+      ..sort((a, b) => a.weekday.compareTo(b.weekday));
+    final next = ordered.isEmpty
+        ? null
+        : ordered.firstWhere(
+            (workout) => workout.weekday >= today,
+            orElse: () => ordered.first,
+          );
+    final nextDay = next == null || next.weekday < 1 || next.weekday > 7
+        ? ''
+        : next.weekday == today
+        ? 'Today'
+        : onboardingWeekdayLabels[next.weekday - 1];
+    final health = switch (_healthImport) {
+      'connected' =>
+        'Apple Health is connected. Today, your recovery and the Coach use it.',
+      'empty' =>
+        'Apple Health returned no data. Allow access in Settings, then refresh it in Account.',
+      _ =>
+        'Connect Apple Health any time in Account to add sleep, steps and workouts.',
+    };
+    return Scaffold(
+      appBar: AppBar(title: const Text('Set up Tracend')),
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.all(TracendSpacing.gutter),
+          children: [
+            _heading(
+              "You're set.",
+              'Your plan is active. Nothing else changes without your approval.',
+            ),
+            TracendCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(plan.title, style: text.titleMedium),
+                  if (next != null) ...[
+                    const SizedBox(height: TracendSpacing.xs),
+                    Text(
+                      'Next session: $nextDay · ${next.name} · about ${next.estimatedMinutes} min',
+                      style: text.bodyLarge,
+                    ),
+                  ],
+                  const Divider(height: TracendSpacing.xl),
+                  Text(
+                    'Each day: ${plan.calories} kcal · ${plan.proteinG} g protein',
+                    style: text.bodyLarge,
+                  ),
+                  const Divider(height: TracendSpacing.xl),
+                  Text(health, style: text.bodyMedium),
+                ],
+              ),
+            ),
+            const SizedBox(height: TracendSpacing.lg),
+            FilledButton(
+              onPressed: widget.onCompleted,
+              child: const Text('Go to Today'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1651,9 +1919,15 @@ class _RevisionSheetState extends State<_RevisionSheet> {
           ),
         ),
         const SizedBox(height: TracendSpacing.sm),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(_note.text.trim()),
-          child: const Text('Request changes'),
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _note,
+          builder: (context, value, _) => FilledButton(
+            // Changes need words; an empty request would rebuild the same plan.
+            onPressed: value.text.trim().isEmpty
+                ? null
+                : () => Navigator.of(context).pop(value.text.trim()),
+            child: const Text('Request changes'),
+          ),
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -1685,46 +1959,67 @@ class _ChoiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(TracendRadii.card),
+      side: BorderSide(
+        color: selected ? colors.actionPrimary : colors.borderSubtle,
+        width: selected ? 2 : 1,
+      ),
+    );
     return Semantics(
       selected: selected,
       button: true,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(TracendRadii.card),
-        onTap: onTap,
-        child: TracendCard(
-          child: Row(
-            children: [
-              Icon(icon, color: context.tracendColors.actionPrimary),
-              const SizedBox(width: TracendSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: Theme.of(context).textTheme.titleMedium),
-                    Text(body, style: Theme.of(context).textTheme.bodyMedium),
-                    if (tag != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: TracendSpacing.xxs),
-                        child: Text(
-                          tag!,
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(
-                                color: context.tracendColors.actionPrimary,
-                              ),
-                        ),
+      child: Material(
+        color: selected
+            ? colors.actionPrimary.withValues(alpha: 0.08)
+            : colors.surface,
+        shape: shape,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          customBorder: shape,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(TracendSpacing.md),
+            child: Row(
+              children: [
+                Icon(icon, color: context.tracendColors.actionPrimary),
+                const SizedBox(width: TracendSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-                  ],
+                      Text(body, style: Theme.of(context).textTheme.bodyMedium),
+                      if (tag != null)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            top: TracendSpacing.xxs,
+                          ),
+                          child: Text(
+                            tag!,
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(
+                                  color: context.tracendColors.actionPrimary,
+                                ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              Icon(
-                selected
-                    ? CupertinoIcons.check_mark_circled_solid
-                    : CupertinoIcons.circle,
-                color: selected
-                    ? context.tracendColors.actionPrimary
-                    : context.tracendColors.textSecondary,
-              ),
-            ],
+                Icon(
+                  selected
+                      ? CupertinoIcons.check_mark_circled_solid
+                      : CupertinoIcons.circle,
+                  color: selected
+                      ? context.tracendColors.actionPrimary
+                      : context.tracendColors.textSecondary,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1733,22 +2028,106 @@ class _ChoiceCard extends StatelessWidget {
 }
 
 class _ReviewRow extends StatelessWidget {
-  const _ReviewRow(this.label, this.value);
+  const _ReviewRow(this.label, this.value, {required this.onEdit});
 
   final String label;
   final String value;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
+    final labelText = Text(
+      label,
+      style: Theme.of(context).textTheme.labelMedium,
+    );
+    final edit = IconButton(
+      tooltip: 'Edit ${label.toLowerCase()}',
+      onPressed: onEdit,
+      icon: const Icon(CupertinoIcons.pencil),
+    );
+    // Large text: the label sits above its value instead of a narrow column.
+    if (MediaQuery.textScalerOf(context).scale(1) > 1.3) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [labelText, Text(value)],
+            ),
+          ),
+          edit,
+        ],
+      );
+    }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 88,
-          child: Text(label, style: Theme.of(context).textTheme.labelMedium),
+        Padding(
+          padding: const EdgeInsets.only(top: TracendSpacing.sm),
+          child: SizedBox(width: 96, child: labelText),
         ),
-        Expanded(child: Text(value)),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: TracendSpacing.sm),
+            child: Text(value),
+          ),
+        ),
+        edit,
       ],
     );
   }
+}
+
+/// A slider with − and + buttons for exact values. The value is spoken with
+/// its unit ("172 cm"), not as a percentage.
+class _Stepper extends StatelessWidget {
+  const _Stepper({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.step,
+    required this.format,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final double step;
+  final String Function(double value) format;
+  final ValueChanged<double> onChanged;
+
+  void _nudge(double by) => onChanged(
+    (((value + by) / step).round() * step).clamp(min, max).toDouble(),
+  );
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      IconButton(
+        tooltip: 'Decrease ${label.toLowerCase()}',
+        onPressed: value <= min ? null : () => _nudge(-step),
+        icon: const Icon(CupertinoIcons.minus_circle),
+      ),
+      Expanded(
+        child: Slider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: ((max - min) / step).round(),
+          label: format(value),
+          semanticFormatterCallback: format,
+          onChanged: onChanged,
+        ),
+      ),
+      IconButton(
+        tooltip: 'Increase ${label.toLowerCase()}',
+        onPressed: value >= max ? null : () => _nudge(step),
+        icon: const Icon(CupertinoIcons.plus_circle),
+      ),
+    ],
+  );
 }

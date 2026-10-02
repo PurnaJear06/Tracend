@@ -174,9 +174,22 @@ Eligibility → AI coaching → Path → Goal
   build is asked to choose them (or none) before building.
 - **Answers no safe plan fits** (for example, bodyweight only while avoiding every pushing and
   pulling movement) open the step to change, with what to change; nothing is built.
-- **Request changes** asks "What should change?" and sends the note with the next build.
-- **Sign out** stays available on every step.
+- **Request changes** asks "What should change?" and sends the note with the next build; it
+  needs a note.
+- **Sign out** stays available on every step, including while saved answers load.
+- **Saved answers that fail to load** show **Your answers did not load.** with **Try again**;
+  nothing is saved until they load, so defaults never overwrite them.
+- **Goal:** nothing is preselected; each goal has a one-line description.
+- **Inputs:** height, weight, target weight and session length are sliders with − and +
+  buttons for exact values, read aloud with their unit. The birth-year number pad closes after
+  four digits or a tap outside. Choice cards show their selected state with a border and tint.
+- **Review** lists every answer (Apple Health, daily activity, equipment and its note, diet,
+  movements to avoid, limitations, and the current plan for an experienced athlete). Each row has
+  **Edit**, which opens its step; that step's button reads **Save and return to review**. At
+  large text sizes labels sit above their values.
+- **Building your plan** says it usually takes under a minute and can take up to two.
 - A draft from an older build continues at **About you**.
+- The header reads **Step N of 11 · ‹section›**.
 
 The original target flow:
 
@@ -202,21 +215,26 @@ arbitrary replacement of valid practices.
 ### 4.4 Initial plan approval
 
 Show goal, assumptions, weekly structure, exercise prescription, nutrition targets, confidence,
-missing information, and safety boundaries. Actions are **Approve plan**, **Edit answers**, and
-**Request revision**. Generation never activates a plan.
+missing information, and safety boundaries. Actions are **Approve plan**, **Request changes**
+(with a note) and **Reject proposal** (after a confirmation; answers stay saved). Answers are
+edited from Review. Generation never activates a plan.
 
 The 2026-10 proposal screen shows:
 
 - **Provenance:** **Proposed by AI (‹model›) · checked by Tracend**, or **Built by Tracend's rules**.
 - **Confidence.**
 - **The assessment.**
-- **Training:** every training day with its exercises (sets × reps, RPE, rest).
+- **Training:** every training day with its exercises (sets × reps, RPE with the reps left in
+  plain words, for example "RPE 7.5 (about 2–3 reps left)", rest).
 - **Nutrition:** the targets and **How this was calculated** (resting energy × activity plus
   training, and the goal range).
 - **For an experienced athlete:** what was kept and what changed.
 - **The plan's reasoning:** why, benefit, downside, assumptions, and what is not known yet.
 
-Approval activates exactly those workouts.
+Approval activates exactly those workouts, then shows **You're set.** once: the plan, the next
+session and its weekday, the daily calories and protein, and the Apple Health status, with **Go
+to Today**. **Account › Profile and goals** lists the onboarding answers approval kept (sex, birth
+year, daily activity, equipment and its note, movements to avoid, limitations, diet), read-only.
 
 ## 5. Today and Daily Coaching
 

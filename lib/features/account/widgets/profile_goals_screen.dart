@@ -86,6 +86,12 @@ class ProfileGoalsScreen extends StatelessWidget {
                   },
                 ),
               ),
+              if (profile['sex'] != null) ...[
+                const AccountSectionLabel('ONBOARDING ANSWERS'),
+                TracendCard(
+                  child: DetailRows(rows: onboardingAnswerRows(profile)),
+                ),
+              ],
               const AccountSectionLabel('APPROVED PLAN'),
               TracendCard(
                 child: DetailRows(
@@ -100,7 +106,7 @@ class ProfileGoalsScreen extends StatelessWidget {
               ),
               const SizedBox(height: TracendSpacing.sm),
               const Text(
-                'Plan-changing edits remain approval-gated. Ask Coach for a proposal when you want to change your goal or ongoing plan.',
+                'These come from the onboarding answers you approved. Nothing about your plan changes without your approval.',
               ),
             ],
           );
@@ -108,4 +114,51 @@ class ProfileGoalsScreen extends StatelessWidget {
       ),
     ),
   );
+}
+
+const _activityLabels = {
+  'mostly_sitting': 'Mostly sitting',
+  'some_standing': 'On my feet some of the day',
+  'mostly_standing': 'On my feet most of the day',
+  'physical_labour': 'Physical work',
+};
+
+const _avoidLabels = {
+  'squat': 'Squats',
+  'lunge': 'Lunges and step-ups',
+  'hinge': 'Deadlifts and hip hinges',
+  'horizontal_push': 'Bench press and push-ups',
+  'vertical_push': 'Overhead pressing',
+  'horizontal_pull': 'Rows',
+  'vertical_pull': 'Pull-ups and pulldowns',
+};
+
+/// The onboarding answers approval keeps on the profile, read-only.
+Map<String, String> onboardingAnswerRows(Map<String, dynamic> profile) {
+  String text(Object? value) {
+    final trimmed = value?.toString().trim() ?? '';
+    return trimmed.isEmpty ? 'None' : trimmed;
+  }
+
+  List<String> list(Object? value) =>
+      value is List ? value.map((item) => item.toString()).toList() : const [];
+  final equipment = list(profile['equipment']);
+  final avoid = list(profile['avoid_patterns']);
+  return {
+    'Sex': friendlyEnum(profile['sex']),
+    'Birth year': text(profile['birth_year']),
+    'Daily activity':
+        _activityLabels[profile['daily_activity']] ??
+        friendlyEnum(profile['daily_activity']),
+    'Equipment': equipment.isEmpty
+        ? 'Bodyweight only'
+        : equipment.map(friendlyEnum).join(', '),
+    if ((profile['equipment_note']?.toString().trim() ?? '').isNotEmpty)
+      'Equipment note': text(profile['equipment_note']),
+    'Movements to avoid': avoid.isEmpty
+        ? 'None'
+        : avoid.map((pattern) => _avoidLabels[pattern] ?? pattern).join(', '),
+    'Limitations': text(profile['limitations_note']),
+    'Diet': text(profile['nutrition_note']),
+  };
 }

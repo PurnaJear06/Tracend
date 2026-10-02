@@ -326,7 +326,11 @@ class _AccountScreenState extends State<AccountScreen> {
     final values = await Future.wait([
       client
           .from('user_profiles')
-          .select('experience_level,height_cm,training_days,session_minutes')
+          .select(
+            'experience_level,height_cm,training_days,session_minutes,sex,'
+            'birth_year,daily_activity,equipment,equipment_note,avoid_patterns,'
+            'limitations_note,nutrition_note',
+          )
           .maybeSingle(),
       client
           .from('user_goals')
