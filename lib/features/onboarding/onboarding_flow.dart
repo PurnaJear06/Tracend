@@ -1,16 +1,34 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/onboarding/onboarding_proposal_view.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+
+/// Weekday labels, ISO order (index 0 = Monday).
+const onboardingWeekdayLabels = [
+  'Mon',
+  'Tue',
+  'Wed',
+  'Thu',
+  'Fri',
+  'Sat',
+  'Sun',
+];
 
 class OnboardingFlow extends StatefulWidget {
   const OnboardingFlow({
     required this.repository,
     required this.onCompleted,
     this.aiConsent,
+    this.onSignOut,
+    this.pollInterval = const Duration(seconds: 3),
+    this.pollTimeout = const Duration(seconds: 150),
+    this.currentYear,
     super.key,
   });
 
@@ -20,6 +38,12 @@ class OnboardingFlow extends StatefulWidget {
   /// Records the AI coaching answer. Without one the step still asks, and the
   /// app asks again after onboarding.
   final AiCoachingConsentController? aiConsent;
+  final Future<void> Function()? onSignOut;
+  final Duration pollInterval;
+
+  /// Longer than the server's generation lease; after it the app offers a retry.
+  final Duration pollTimeout;
+  final int? currentYear;
 
   @override
   State<OnboardingFlow> createState() => _OnboardingFlowState();
@@ -31,17 +55,39 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'AI',
     'Path',
     'Goal',
-    'Context',
+    'About you',
+    'Schedule',
+    'Equipment',
+    'Food & limits',
     'Review',
-    'Proposal',
+    'Plan',
   ];
+  static const _sectionKeys = [
+    'eligibility',
+    'ai',
+    'path',
+    'goal',
+    'about',
+    'schedule',
+    'equipment',
+    'food',
+    'review',
+    'proposal',
+  ];
+
+  /// Sections saved by builds before 2026-10 map onto the new steps.
+  static const _legacySections = {'context': _aboutStep};
   static const _eligibilityStep = 0;
   static const _aiStep = 1;
   static const _pathStep = 2;
   static const _goalStep = 3;
-  static const _contextStep = 4;
-  static const _reviewStep = 5;
-  static const _proposalStep = 6;
+  static const _aboutStep = 4;
+  static const _scheduleStep = 5;
+  static const _equipmentStep = 6;
+  static const _foodStep = 7;
+  static const _reviewStep = 8;
+  static const _proposalStep = 9;
+
   static const _goals = <String, String>{
     'fat_loss': 'Fat loss',
     'muscle_gain': 'Muscle gain',
@@ -49,11 +95,66 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'strength': 'Strength',
     'aesthetic': 'Aesthetic emphasis',
   };
+  static const _sexes = <String, String>{
+    'female': 'Female',
+    'male': 'Male',
+    'unspecified': 'Prefer not to say',
+  };
+  static const _activities = <String, (String, String)>{
+    'mostly_sitting': ('Mostly sitting', 'Desk work, driving, studying'),
+    'some_standing': (
+      'On my feet some of the day',
+      'Teaching, lab work, errands',
+    ),
+    'mostly_standing': (
+      'On my feet most of the day',
+      'Retail, nursing, hospitality',
+    ),
+    'physical_labour': ('Physical work', 'Construction, farming, warehouse'),
+  };
+  static const _equipmentChoices = <String, String>{
+    'dumbbells': 'Dumbbells',
+    'barbell': 'Barbell and rack',
+    'bench': 'Bench',
+    'cables': 'Cable machine',
+    'machines': 'Weight machines',
+    'pull_up_bar': 'Pull-up bar',
+    'kettlebells': 'Kettlebells',
+    'bands': 'Resistance bands',
+  };
 
-  final _equipment = TextEditingController(text: 'Full gym');
+  /// Movement patterns the plan leaves out; the server enforces them.
+  static const _avoidChoices = <String, String>{
+    'squat': 'Squats',
+    'lunge': 'Lunges and step-ups',
+    'hinge': 'Deadlifts and hip hinges',
+    'horizontal_push': 'Bench press and push-ups',
+    'vertical_push': 'Overhead pressing',
+    'horizontal_pull': 'Rows',
+    'vertical_pull': 'Pull-ups and pulldowns',
+  };
+  static const _maxTrainingDays = 6;
+  static const _fieldLabels = {
+    'sex': 'sex',
+    'birth_year': 'birth year',
+    'height_cm': 'height',
+    'weight_kg': 'weight',
+    'daily_activity': 'daily activity',
+    'training_weekdays': 'training days',
+    'session_minutes': 'session length',
+    'equipment_items': 'equipment',
+    'avoid_patterns': 'movements to avoid',
+    'current_plan': 'current plan',
+    'goal': 'goal',
+    'path': 'starting point',
+  };
+
+  final _birthYear = TextEditingController();
+  final _equipmentNote = TextEditingController();
   final _nutrition = TextEditingController(text: 'No dietary restrictions');
   final _constraints = TextEditingController();
   final _currentPlan = TextEditingController();
+  final _revisionNote = TextEditingController();
   bool _loading = true;
   bool _saving = false;
   bool _adult = false;
@@ -68,11 +169,33 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   String? _path;
   String _goal = 'recomposition';
   String _experience = 'beginner';
-  int _trainingDays = 3;
-  int _sessionMinutes = 60;
+  String? _sex;
+  String? _dailyActivity;
+  double _heightCm = 170;
   double _weightKg = 75;
+  double? _targetWeightKg;
+  Set<int> _weekdays = {1, 3, 5};
+  int _sessionMinutes = 60;
+  Set<String> _equipment = {};
+  Set<String> _avoid = {};
+
+  /// The movements-to-avoid question was answered (an empty set means none).
+  /// Drafts from older builds have not answered it.
+  bool _avoidAnswered = false;
+
+  /// Plan step state: waiting for the server, or its generation failed.
+  bool _generating = false;
+  bool _generationFailed = false;
+
+  /// The proposal expired (or was replaced) before it was answered.
+  bool _proposalExpired = false;
+
+  /// Bumped to stop a running poll (leaving the step, a new build).
+  int _pollRun = 0;
   OnboardingProposal? _proposal;
   String? _error;
+
+  int get _currentYear => widget.currentYear ?? DateTime.now().year;
 
   @override
   void initState() {
@@ -89,26 +212,60 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   @override
   void dispose() {
-    _equipment.dispose();
+    _pollRun++;
+    _birthYear.dispose();
+    _equipmentNote.dispose();
     _nutrition.dispose();
     _constraints.dispose();
     _currentPlan.dispose();
+    _revisionNote.dispose();
     super.dispose();
   }
 
-  Map<String, dynamic> get _payload => {
-    'goal': _goal,
-    'experience': _experience,
-    'training_days': _trainingDays,
-    'session_minutes': _sessionMinutes,
-    'weight_kg': _weightKg.round(),
-    'equipment': _equipment.text.trim(),
-    'nutrition_context': _nutrition.text.trim(),
-    'constraints': _constraints.text.trim(),
-    if (_path == 'experienced') 'current_plan': _currentPlan.text.trim(),
+  int? get _birthYearValue => int.tryParse(_birthYear.text.trim());
+
+  static double _half(double kg) => (kg * 2).round() / 2;
+
+  Map<String, dynamic> get _payload {
+    final weekdays = _weekdays.toList()..sort();
+    return {
+      'goal': _goal,
+      'experience': _experience,
+      'sex': _sex,
+      'birth_year': _birthYearValue,
+      'height_cm': _heightCm.round(),
+      'weight_kg': _half(_weightKg),
+      'target_weight_kg': _targetWeightKg == null
+          ? null
+          : _half(_targetWeightKg!),
+      'daily_activity': _dailyActivity,
+      'training_weekdays': weekdays,
+      // Read by builds before 2026-10 as a day count.
+      'training_days': weekdays.length,
+      'session_minutes': _sessionMinutes,
+      'equipment_items': _equipment.toList()..sort(),
+      'equipment': _equipmentNote.text.trim(),
+      'nutrition_context': _nutrition.text.trim(),
+      'constraints': _constraints.text.trim(),
+      if (_avoidAnswered) 'avoid_patterns': _avoid.toList()..sort(),
+      if (_path == 'experienced') 'current_plan': _currentPlan.text.trim(),
+      if (_revisionNote.text.trim().isNotEmpty)
+        'revision_note': _revisionNote.text.trim(),
+    };
+  }
+
+  /// An even spread for a day count saved by builds before 2026-10.
+  static Set<int> _spreadFor(int days) => switch (days.clamp(1, 6)) {
+    1 => {1},
+    2 => {1, 4},
+    3 => {1, 3, 5},
+    4 => {1, 2, 4, 5},
+    5 => {1, 2, 3, 5, 6},
+    _ => {1, 2, 3, 4, 5, 6},
   };
 
   Future<void> _restore() async {
+    var resumeGeneration = false;
     try {
       final draft = await widget.repository.loadDraft();
       if (draft != null) {
@@ -116,18 +273,58 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         _path = draft.path;
         _goal = payload['goal'] as String? ?? _goal;
         _experience = payload['experience'] as String? ?? _experience;
-        _trainingDays = payload['training_days'] as int? ?? _trainingDays;
-        _sessionMinutes = payload['session_minutes'] as int? ?? _sessionMinutes;
+        _sex = payload['sex'] as String?;
+        final birthYear = payload['birth_year'];
+        if (birthYear is num) _birthYear.text = '${birthYear.toInt()}';
+        _heightCm = (payload['height_cm'] as num?)?.toDouble() ?? _heightCm;
         _weightKg = (payload['weight_kg'] as num?)?.toDouble() ?? _weightKg;
-        _equipment.text = payload['equipment'] as String? ?? _equipment.text;
+        _targetWeightKg = (payload['target_weight_kg'] as num?)?.toDouble();
+        _dailyActivity = payload['daily_activity'] as String?;
+        final weekdays = payload['training_weekdays'];
+        if (weekdays is List) {
+          _weekdays = weekdays
+              .whereType<num>()
+              .map((day) => day.toInt())
+              .where((day) => day >= 1 && day <= 7)
+              .take(_maxTrainingDays)
+              .toSet();
+        } else if (payload['training_days'] is num) {
+          _weekdays = _spreadFor((payload['training_days'] as num).toInt());
+        }
+        _sessionMinutes =
+            (payload['session_minutes'] as num?)?.toInt() ?? _sessionMinutes;
+        final equipment = payload['equipment_items'];
+        if (equipment is List) {
+          _equipment = equipment
+              .whereType<String>()
+              .where(_equipmentChoices.containsKey)
+              .toSet();
+        }
+        _equipmentNote.text = payload['equipment'] as String? ?? '';
         _nutrition.text =
             payload['nutrition_context'] as String? ?? _nutrition.text;
         _constraints.text = payload['constraints'] as String? ?? '';
+        final avoid = payload['avoid_patterns'];
+        if (avoid is List) {
+          _avoidAnswered = true;
+          _avoid = avoid
+              .whereType<String>()
+              .where(_avoidChoices.containsKey)
+              .toSet();
+        }
         _currentPlan.text = payload['current_plan'] as String? ?? '';
-        final restored = _sections.indexWhere(
-          (section) => section.toLowerCase() == draft.currentSection,
-        );
+        _revisionNote.text = payload['revision_note'] as String? ?? '';
+        var restored = _sectionKeys.indexOf(draft.currentSection);
+        if (restored < 0) {
+          restored = _legacySections[draft.currentSection] ?? _eligibilityStep;
+        }
+        // A draft from an older build lacks the newer answers: continue from
+        // the first step that asks for them.
+        if (restored > _aboutStep && !payload.containsKey('sex')) {
+          restored = _aboutStep;
+        }
         if (restored > 0) _step = restored;
+        resumeGeneration = _step == _proposalStep;
       }
     } catch (e) {
       debugPrint('Non-critical error: $e');
@@ -136,12 +333,177 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+    if (resumeGeneration && mounted) unawaited(_resumeGeneration());
+  }
+
+  /// Reopened on the Plan step: show the stored proposal, keep waiting for a
+  /// running generation, or go back to Review.
+  Future<void> _resumeGeneration() async {
+    setState(() {
+      _generating = true;
+      _generationFailed = false;
+    });
+    try {
+      final generation = await widget.repository.loadGeneration();
+      if (!mounted) return;
+      if (generation != null && generation.proposalExpired) {
+        _showProposalExpired();
+        return;
+      }
+      if (generation == null ||
+          generation.status == 'superseded' ||
+          (generation.status == 'succeeded' && !generation.readyForReview)) {
+        setState(() {
+          _generating = false;
+          _step = _reviewStep;
+        });
+        return;
+      }
+      await _follow(generation);
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      if (mounted) _showGenerationFailure();
+    }
+  }
+
+  void _showGenerationFailure() => setState(() {
+    _generating = false;
+    _generationFailed = true;
+  });
+
+  void _showProposalExpired() => setState(() {
+    _proposal = null;
+    _generating = false;
+    _generationFailed = false;
+    _proposalExpired = true;
+    _error = null;
+    _step = _proposalStep;
+  });
+
+  /// Polls the generation until it has a proposal, fails, or takes too long.
+  Future<void> _follow(OnboardingGeneration first) async {
+    final run = ++_pollRun;
+    final deadline = DateTime.now().add(widget.pollTimeout);
+    var generation = first;
+    try {
+      while (true) {
+        if (!mounted || run != _pollRun) return;
+        if (generation.proposalExpired) {
+          _showProposalExpired();
+          return;
+        }
+        if (generation.readyForReview) {
+          final proposal = await widget.repository.loadProposal(
+            generation.proposalId!,
+          );
+          if (!mounted || run != _pollRun) return;
+          setState(() {
+            _proposal = proposal;
+            _generating = false;
+            _generationFailed = false;
+            _step = _proposalStep;
+          });
+          return;
+        }
+        if (!generation.running || DateTime.now().isAfter(deadline)) {
+          _showGenerationFailure();
+          return;
+        }
+        await Future<void>.delayed(widget.pollInterval);
+        if (!mounted || run != _pollRun) return;
+        generation = await widget.repository.loadGeneration() ?? generation;
+      }
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      if (mounted && run == _pollRun) _showGenerationFailure();
+    }
+  }
+
+  Future<void> _buildPlan() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+      _proposal = null;
+      _generationFailed = false;
+      _proposalExpired = false;
+    });
+    try {
+      await widget.repository.saveDraft(
+        path: _path,
+        currentSection: _sectionKeys[_proposalStep],
+        payload: _payload,
+      );
+      final generation = await widget.repository.startGeneration();
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _generating = true;
+        _step = _proposalStep;
+      });
+      await _follow(generation);
+    } on OnboardingAnswersIncomplete catch (error) {
+      if (!mounted) return;
+      final labels = error.missing.map((key) => _fieldLabels[key] ?? key);
+      setState(() {
+        _saving = false;
+        _step = _stepForMissing(error.missing);
+        _error =
+            error.missing.length == 1 && error.missing.first == 'avoid_patterns'
+            ? 'You wrote a limitation. Choose the movements your plan should leave out, or none, then build your plan.'
+            : 'Add your ${labels.join(', ')} to build your plan.';
+      });
+    } on OnboardingPlanInfeasible catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _step = error.change.contains('avoid_patterns')
+            ? _foodStep
+            : _stepForMissing(error.change);
+        _error = switch (_step) {
+          _scheduleStep =>
+            'Tracend could not fit a safe plan into these sessions. Choose longer sessions, then build again.',
+          _aboutStep =>
+            'Tracend could not set safe nutrition targets from these answers. Check your weight and daily activity, then build again.',
+          _foodStep =>
+            'With your equipment and the movements you avoid, some training days would have no exercise. Avoid fewer movements or add equipment, then build again.',
+          _ =>
+            'With this equipment, some training days would have no exercise. Add equipment, then build again.',
+        };
+      });
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error =
+            'Your plan could not be started. Check the connection and try again.';
+      });
+    }
+  }
+
+  int _stepForMissing(List<String> missing) {
+    if (missing.contains('path')) return _pathStep;
+    if (missing.contains('goal')) return _goalStep;
+    const about = ['sex', 'birth_year', 'height_cm', 'weight_kg'];
+    if (missing.any(about.contains) || missing.contains('daily_activity')) {
+      return _aboutStep;
+    }
+    if (missing.contains('training_weekdays') ||
+        missing.contains('session_minutes')) {
+      return _scheduleStep;
+    }
+    if (missing.contains('equipment_items')) return _equipmentStep;
+    return _foodStep;
   }
 
   Future<void> _continue() async {
     if (_saving) return;
     if (!_isStepValid()) {
       setState(() => _error = _validationMessage());
+      return;
+    }
+    if (_step == _reviewStep) {
+      await _buildPlan();
       return;
     }
     setState(() {
@@ -153,7 +515,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         await widget.repository.recordEligibilityAndConsent(
           eligible: true,
           experience: _experience,
-          trainingDays: _trainingDays,
+          trainingDays: _weekdays.length,
           sessionMinutes: _sessionMinutes,
         );
       }
@@ -162,26 +524,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         _aiRecorded = _aiChoice;
       }
       if (_step == _goalStep) await widget.repository.saveGoal(_goal);
-      if (_step < _reviewStep) {
-        final next = _step + 1;
-        await widget.repository.saveDraft(
-          path: _path,
-          currentSection: _sections[next].toLowerCase(),
-          payload: _payload,
-        );
-        setState(() => _step = next);
-      } else if (_step == _reviewStep) {
-        await widget.repository.saveDraft(
-          path: _path,
-          currentSection: 'proposal',
-          payload: _payload,
-        );
-        final proposal = await widget.repository.generateProposal();
-        setState(() {
-          _proposal = proposal;
-          _step = _proposalStep;
-        });
-      }
+      if (_step == _foodStep) _avoidAnswered = true;
+      final next = _step + 1;
+      await widget.repository.saveDraft(
+        path: _path,
+        currentSection: _sectionKeys[next],
+        payload: _payload,
+      );
+      setState(() => _step = next);
     } catch (e) {
       debugPrint('Non-critical error: $e');
       setState(() {
@@ -193,33 +543,49 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     }
   }
 
-  bool _isStepValid() {
-    if (_step == _eligibilityStep) {
-      return _adult && !_needsClinicalSupport && _terms && _privacy;
-    }
-    if (_step == _aiStep) return _aiChoice != null;
-    if (_step == _pathStep) return _path != null;
-    if (_step == _contextStep) {
-      return _equipment.text.trim().isNotEmpty &&
-          _nutrition.text.trim().isNotEmpty &&
-          (_path != 'experienced' || _currentPlan.text.trim().isNotEmpty);
-    }
-    return true;
+  bool _isStepValid() => switch (_step) {
+    _eligibilityStep => _adult && !_needsClinicalSupport && _terms && _privacy,
+    _aiStep => _aiChoice != null,
+    _pathStep => _path != null,
+    _aboutStep =>
+      _sex != null && _dailyActivity != null && _birthYearError() == null,
+    _scheduleStep => _weekdays.isNotEmpty,
+    _foodStep =>
+      _nutrition.text.trim().isNotEmpty &&
+          (_path != 'experienced' || _currentPlan.text.trim().isNotEmpty),
+    _ => true,
+  };
+
+  String? _birthYearError() {
+    final year = _birthYearValue;
+    if (year == null) return 'Enter your birth year.';
+    final age = _currentYear - year;
+    if (age < 18) return 'Tracend is for adults 18 and over.';
+    if (age > 100) return 'Check the year.';
+    return null;
   }
 
   String _validationMessage() {
     if (_step == _eligibilityStep && _needsClinicalSupport) {
       return 'Tracend cannot create a plan for clinical nutrition, pregnancy, acute injury, or rehabilitation needs.';
     }
-    if (_step == _eligibilityStep) {
-      return 'Confirm adult eligibility, terms, and privacy to continue.';
-    }
-    if (_step == _aiStep) return 'Choose whether to allow AI coaching.';
-    if (_step == _pathStep) return 'Choose the onboarding path that fits you.';
-    return 'Complete the required fields before continuing.';
+    return switch (_step) {
+      _eligibilityStep =>
+        'Confirm adult eligibility, terms, and privacy to continue.',
+      _aiStep => 'Choose whether to allow AI coaching.',
+      _pathStep => 'Choose the onboarding path that fits you.',
+      _aboutStep =>
+        _sex == null
+            ? 'Choose an option for sex.'
+            : _dailyActivity == null
+            ? 'Choose how active you are outside training.'
+            : _birthYearError()!,
+      _scheduleStep => 'Choose at least one training day.',
+      _ => 'Complete the required fields before continuing.',
+    };
   }
 
-  Future<void> _respond(String action) async {
+  Future<void> _respond(String action, {String? note}) async {
     final proposal = _proposal;
     if (proposal == null || _saving) return;
     setState(() {
@@ -227,27 +593,56 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _error = null;
     });
     try {
-      await widget.repository.respond(proposal.id, action);
+      await widget.repository.respond(proposal.id, action, note: note);
       if (action == 'accept') {
         widget.onCompleted();
-      } else {
-        setState(() {
-          _proposal = null;
-          _step = _reviewStep;
-          _error = action == 'reject'
-              ? 'Proposal rejected. Your answers are unchanged.'
-              : 'Revision requested. Review your answers before generating again.';
-        });
+        return;
       }
+      _revisionNote.text = action == 'request_revision' ? (note ?? '') : '';
+      await widget.repository.saveDraft(
+        path: _path,
+        currentSection: _sectionKeys[_reviewStep],
+        payload: _payload,
+      );
+      setState(() {
+        _proposal = null;
+        _step = _reviewStep;
+        _error = action == 'reject'
+            ? 'Proposal rejected. Your answers are unchanged.'
+            : 'Change your answers if needed, then build the plan again.';
+      });
+    } on OnboardingProposalStale {
+      if (mounted) _showProposalExpired();
     } catch (e) {
       debugPrint('Non-critical error: $e');
       setState(() {
-        _error =
-            'The proposal response was not saved. It has not changed your active plan.';
+        _error = 'Your response was not saved. Nothing has changed; try again.';
       });
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _requestRevision() async {
+    final note = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const _RevisionSheet(),
+    );
+    if (note == null) return;
+    await _respond('request_revision', note: note.isEmpty ? null : note);
+  }
+
+  void _back() {
+    _pollRun++;
+    setState(() {
+      _generating = false;
+      _generationFailed = false;
+      _proposalExpired = false;
+      _error = null;
+      _step = _step == _proposalStep ? _reviewStep : _step - 1;
+    });
   }
 
   @override
@@ -255,16 +650,26 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    final onPlan = _step == _proposalStep;
+    final canGoBack =
+        _step > _eligibilityStep && (!onPlan || _proposal == null) && !_saving;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Set up Tracend'),
-        leading: _step > _eligibilityStep && _step < _proposalStep
+        leading: canGoBack
             ? IconButton(
                 tooltip: 'Previous section',
-                onPressed: _saving ? null : () => setState(() => _step--),
+                onPressed: _back,
                 icon: const Icon(CupertinoIcons.back),
               )
             : null,
+        actions: [
+          if (widget.onSignOut != null)
+            TextButton(
+              onPressed: _saving ? null : () => widget.onSignOut!(),
+              child: const Text('Sign out'),
+            ),
+        ],
       ),
       body: SafeArea(
         top: false,
@@ -295,11 +700,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                   duration: MediaQuery.disableAnimationsOf(context)
                       ? Duration.zero
                       : const Duration(milliseconds: 220),
-                  child: KeyedSubtree(key: ValueKey(_step), child: _stepBody()),
+                  child: KeyedSubtree(
+                    key: ValueKey(
+                      '$_step-${_proposal?.id}-$_generating-$_generationFailed-$_proposalExpired',
+                    ),
+                    child: _stepBody(),
+                  ),
                 ),
               ),
             ),
-            if (_step < _proposalStep)
+            if (!onPlan)
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                   TracendSpacing.gutter,
@@ -310,29 +720,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (_error != null)
-                      Semantics(
-                        liveRegion: true,
-                        child: Padding(
-                          padding: const EdgeInsets.only(
-                            bottom: TracendSpacing.sm,
-                          ),
-                          child: Text(
-                            _error!,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: context.tracendColors.stateDanger,
-                                ),
-                          ),
-                        ),
-                      ),
+                    if (_error != null) _errorText(),
                     FilledButton(
                       onPressed: _saving ? null : _continue,
                       child: _saving
                           ? const TracendLoadingIndicator(size: 20)
                           : Text(
                               _step == _reviewStep
-                                  ? 'Build proposal'
+                                  ? 'Build my plan'
                                   : 'Continue',
                             ),
                     ),
@@ -345,14 +740,30 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     );
   }
 
+  Widget _errorText() => Semantics(
+    liveRegion: true,
+    child: Padding(
+      padding: const EdgeInsets.only(bottom: TracendSpacing.sm),
+      child: Text(
+        _error!,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: context.tracendColors.stateDanger,
+        ),
+      ),
+    ),
+  );
+
   Widget _stepBody() => switch (_step) {
     _eligibilityStep => _eligibility(),
     _aiStep => _aiCoaching(),
     _pathStep => _pathSelection(),
     _goalStep => _goalSelection(),
-    _contextStep => _contextForm(),
+    _aboutStep => _aboutYou(),
+    _scheduleStep => _schedule(),
+    _equipmentStep => _equipmentSelection(),
+    _foodStep => _foodAndLimits(),
     _reviewStep => _review(),
-    _ => _proposalView(),
+    _ => _plan(),
   };
 
   Widget _heading(String title, String body) => Column(
@@ -363,6 +774,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       Text(body, style: Theme.of(context).textTheme.bodyLarge),
       const SizedBox(height: TracendSpacing.lg),
     ],
+  );
+
+  Widget _label(String text) => Padding(
+    padding: const EdgeInsets.only(
+      top: TracendSpacing.md,
+      bottom: TracendSpacing.xs,
+    ),
+    child: Text(text, style: Theme.of(context).textTheme.titleMedium),
   );
 
   Widget _eligibility() => Column(
@@ -409,13 +828,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         'Allow AI coaching?',
         'Your answer is saved when you continue. You can change it later in Account.',
       ),
-      const AiCoachingDisclosure(),
+      AiCoachingDisclosure(
+        notice: widget.aiConsent?.notice ?? AiNotice.builtIn,
+      ),
       const SizedBox(height: TracendSpacing.lg),
       _ChoiceCard(
         selected: _aiChoice == true,
         icon: CupertinoIcons.sparkles,
         title: 'Allow AI coaching',
-        body: 'The Coach chat and your daily decision use DeepSeek.',
+        body:
+            'An AI model drafts your starting plan within Tracend\'s safety ranges and writes the Coach chat and daily decision.',
         onTap: () => setState(() => _aiChoice = true),
       ),
       const SizedBox(height: TracendSpacing.sm),
@@ -423,7 +845,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         selected: _aiChoice == false,
         icon: CupertinoIcons.hand_raised,
         title: 'Not now',
-        body: 'Everything else works; the Coach chat stays off.',
+        body:
+            'Tracend builds your plan with its own rules; the Coach chat stays off.',
         onTap: () => setState(() => _aiChoice = false),
       ),
     ],
@@ -434,7 +857,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     children: [
       _heading(
         'Choose your starting point.',
-        'Both paths end with a proposal you must approve.',
+        'Both paths end with a plan you approve before it starts.',
       ),
       _ChoiceCard(
         selected: _path == 'beginner',
@@ -486,62 +909,238 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     ],
   );
 
-  Widget _contextForm() => Column(
+  bool get _goalHasTarget =>
+      _goal == 'fat_loss' || _goal == 'muscle_gain' || _goal == 'recomposition';
+
+  Widget _aboutYou() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       _heading(
-        'Make the proposal practical.',
-        'These answers are autosaved when you continue.',
+        'About you.',
+        'Your calorie and protein targets are calculated from these.',
       ),
-      Text(
-        'Training days per week: $_trainingDays',
-        style: Theme.of(context).textTheme.titleMedium,
+      _label('Sex'),
+      Wrap(
+        spacing: TracendSpacing.xs,
+        runSpacing: TracendSpacing.xs,
+        children: _sexes.entries
+            .map(
+              (entry) => ChoiceChip(
+                label: Text(entry.value),
+                selected: _sex == entry.key,
+                onSelected: (_) => setState(() => _sex = entry.key),
+              ),
+            )
+            .toList(),
       ),
+      if (_sex == 'unspecified')
+        Padding(
+          padding: const EdgeInsets.only(top: TracendSpacing.xs),
+          child: Text(
+            'Your calorie range will cover both estimates, so it is less precise.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      _label('Birth year'),
+      TextField(
+        key: const ValueKey('birth-year'),
+        controller: _birthYear,
+        keyboardType: TextInputType.number,
+        maxLength: 4,
+        onChanged: (_) => setState(() {}),
+        decoration: InputDecoration(
+          hintText: 'e.g. 1994',
+          counterText: '',
+          border: const OutlineInputBorder(),
+          errorText: _birthYear.text.length == 4 ? _birthYearError() : null,
+        ),
+      ),
+      _label('Height: ${_heightCm.round()} cm'),
       Slider(
-        value: _trainingDays.toDouble(),
-        min: 1,
-        max: 7,
-        divisions: 6,
-        label: '$_trainingDays',
-        onChanged: (value) => setState(() => _trainingDays = value.round()),
+        value: _heightCm.clamp(120, 230),
+        min: 120,
+        max: 230,
+        divisions: 110,
+        label: '${_heightCm.round()} cm',
+        onChanged: (value) => setState(() => _heightCm = value),
       ),
-      Text(
-        'Session duration: $_sessionMinutes minutes',
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
+      _label('Current weight: ${_weightLabel(_weightKg)}'),
       Slider(
-        value: _sessionMinutes.toDouble(),
+        value: _weightKg.clamp(35, 200),
+        min: 35,
+        max: 200,
+        divisions: 330,
+        label: _weightLabel(_weightKg),
+        onChanged: (value) => setState(() => _weightKg = value),
+      ),
+      if (_goalHasTarget) ...[
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: _targetWeightKg != null,
+          onChanged: (on) =>
+              setState(() => _targetWeightKg = on ? _weightKg : null),
+          title: const Text('I have a target weight'),
+        ),
+        if (_targetWeightKg != null) ...[
+          Text(
+            'Target: ${_weightLabel(_targetWeightKg!)}',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          Slider(
+            value: _targetWeightKg!.clamp(35, 200),
+            min: 35,
+            max: 200,
+            divisions: 330,
+            label: _weightLabel(_targetWeightKg!),
+            onChanged: (value) => setState(() => _targetWeightKg = value),
+          ),
+        ],
+      ],
+      _label('Outside training, your day is'),
+      for (final entry in _activities.entries) ...[
+        _ChoiceCard(
+          selected: _dailyActivity == entry.key,
+          icon: CupertinoIcons.person_crop_circle,
+          title: entry.value.$1,
+          body: entry.value.$2,
+          onTap: () => setState(() => _dailyActivity = entry.key),
+        ),
+        const SizedBox(height: TracendSpacing.xs),
+      ],
+    ],
+  );
+
+  static String _weightLabel(double kg) {
+    final rounded = _half(kg);
+    return '${rounded % 1 == 0 ? rounded.toInt() : rounded} kg';
+  }
+
+  Widget _schedule() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _heading(
+        'When do you train?',
+        'Pick your training days; keep at least one rest day.',
+      ),
+      Wrap(
+        spacing: TracendSpacing.xs,
+        runSpacing: TracendSpacing.xs,
+        children: [
+          for (var day = 1; day <= 7; day++)
+            FilterChip(
+              label: Text(onboardingWeekdayLabels[day - 1]),
+              selected: _weekdays.contains(day),
+              onSelected: (on) => setState(() {
+                if (!on) {
+                  _weekdays = {..._weekdays}..remove(day);
+                } else if (_weekdays.length < _maxTrainingDays) {
+                  _weekdays = {..._weekdays, day};
+                } else {
+                  _error = 'Up to six training days; keep one for rest.';
+                }
+              }),
+            ),
+        ],
+      ),
+      const SizedBox(height: TracendSpacing.xs),
+      Text(
+        '${_weekdays.length} ${_weekdays.length == 1 ? 'day' : 'days'} a week',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      _label('Session length: $_sessionMinutes minutes'),
+      Slider(
+        value: _sessionMinutes.toDouble().clamp(30, 120),
         min: 30,
         max: 120,
         divisions: 6,
         label: '$_sessionMinutes minutes',
         onChanged: (value) => setState(() => _sessionMinutes = value.round()),
       ),
+    ],
+  );
+
+  Widget _equipmentSelection() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _heading(
+        'What can you train with?',
+        'Your plan uses only exercises this equipment allows. Choose none for bodyweight only.',
+      ),
+      Wrap(
+        spacing: TracendSpacing.xs,
+        runSpacing: TracendSpacing.xs,
+        children: _equipmentChoices.entries
+            .map(
+              (entry) => FilterChip(
+                label: Text(entry.value),
+                selected: _equipment.contains(entry.key),
+                onSelected: (on) => setState(
+                  () => _equipment = on
+                      ? {..._equipment, entry.key}
+                      : ({..._equipment}..remove(entry.key)),
+                ),
+              ),
+            )
+            .toList(),
+      ),
+      const SizedBox(height: TracendSpacing.xs),
       Text(
-        'Current weight: ${_weightKg.round()} kg',
-        style: Theme.of(context).textTheme.titleMedium,
+        _equipment.isEmpty
+            ? 'Bodyweight only'
+            : '${_equipment.length} selected',
+        style: Theme.of(context).textTheme.bodySmall,
       ),
-      Slider(
-        value: _weightKg,
-        min: 40,
-        max: 180,
-        divisions: 140,
-        label: '${_weightKg.round()} kg',
-        onChanged: (value) => setState(() => _weightKg = value),
-      ),
-      const SizedBox(height: TracendSpacing.sm),
-      _field(_equipment, 'Equipment', 'Example: full gym, dumbbells and bench'),
       const SizedBox(height: TracendSpacing.md),
       _field(
+        _equipmentNote,
+        'Anything else about your equipment',
+        'Example: dumbbells up to 20 kg',
+        required: false,
+      ),
+    ],
+  );
+
+  Widget _foodAndLimits() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _heading(
+        'Food and limits.',
+        'Your coach plans around these, in your own words.',
+      ),
+      _field(
         _nutrition,
-        'Nutrition context',
+        'Diet',
         'Diet pattern, allergies, dislikes, meal schedule',
+      ),
+      const SizedBox(height: TracendSpacing.md),
+      _label('Movements to avoid'),
+      Text(
+        'Your plan never includes these. Leave all off if none.',
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      const SizedBox(height: TracendSpacing.xs),
+      Wrap(
+        spacing: TracendSpacing.xs,
+        runSpacing: TracendSpacing.xs,
+        children: _avoidChoices.entries
+            .map(
+              (entry) => FilterChip(
+                label: Text(entry.value),
+                selected: _avoid.contains(entry.key),
+                onSelected: (on) => setState(
+                  () => _avoid = on
+                      ? {..._avoid, entry.key}
+                      : ({..._avoid}..remove(entry.key)),
+                ),
+              ),
+            )
+            .toList(),
       ),
       const SizedBox(height: TracendSpacing.md),
       _field(
         _constraints,
-        'Constraints or preferences',
-        'Optional exercise limitations or strong dislikes',
+        'Other limitations or dislikes',
+        'Optional: anything else your coach should know',
         required: false,
       ),
       if (_path == 'experienced') ...[
@@ -564,133 +1163,219 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     controller: controller,
     minLines: 1,
     maxLines: 4,
+    maxLength: 500,
     decoration: InputDecoration(
       labelText: required ? '$label *' : label,
       helperText: helper,
       helperMaxLines: 2,
+      counterText: '',
       border: const OutlineInputBorder(),
     ),
   );
 
-  Widget _review() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _heading(
-        'Review before generation.',
-        'The mock provider receives only this confirmed snapshot.',
-      ),
-      TracendCard(
-        child: Column(
-          children: [
-            _ReviewRow(
-              'Path',
-              _path == 'experienced' ? 'Preserve what works' : 'Guide me',
-            ),
-            const Divider(height: TracendSpacing.xl),
-            _ReviewRow('Goal', _goals[_goal]!),
-            const Divider(height: TracendSpacing.xl),
-            _ReviewRow(
-              'Schedule',
-              '$_trainingDays days · $_sessionMinutes min',
-            ),
-            const Divider(height: TracendSpacing.xl),
-            _ReviewRow(
-              'Baseline',
-              '${_weightKg.round()} kg · ${_equipment.text}',
-            ),
-            if (_path == 'experienced') ...[
-              const Divider(height: TracendSpacing.xl),
-              _ReviewRow('Keep', _currentPlan.text),
-            ],
-          ],
-        ),
-      ),
-      const SizedBox(height: TracendSpacing.md),
-      Text(
-        'Generation creates a proposal only. Nothing becomes active until you approve it.',
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
-    ],
-  );
-
-  Widget _proposalView() {
-    final proposal = _proposal;
-    if (proposal == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final structure = (proposal.training['weekly_structure'] as List).join(
-      ' · ',
-    );
+  Widget _review() {
+    final weekdays = _weekdays.toList()..sort();
+    final days = weekdays.map((day) => onboardingWeekdayLabels[day - 1]);
+    final target = _targetWeightKg == null
+        ? ''
+        : ' → ${_weightLabel(_targetWeightKg!)}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _heading(
-          'Your proposed starting plan.',
-          'Review the tradeoffs before activating version 1.',
+          'Review before building.',
+          'Your plan is built from these answers and checked against Tracend\'s safety ranges.',
         ),
-        StatusChip(
-          label:
-              '${proposal.confidence.toUpperCase()} confidence · approval required',
-          icon: CupertinoIcons.doc_text_search,
-        ),
-        const SizedBox(height: TracendSpacing.md),
         TracendCard(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                proposal.training['title'] as String,
-                style: Theme.of(context).textTheme.titleLarge,
+              _ReviewRow(
+                'Path',
+                _path == 'experienced' ? 'Preserve what works' : 'Guide me',
               ),
-              const SizedBox(height: TracendSpacing.xs),
-              Text('${proposal.training['block_weeks']} weeks · $structure'),
               const Divider(height: TracendSpacing.xl),
-              Text(
-                'Nutrition targets',
-                style: Theme.of(context).textTheme.titleMedium,
+              _ReviewRow('Goal', _goals[_goal]!),
+              const Divider(height: TracendSpacing.xl),
+              _ReviewRow(
+                'You',
+                '${_sexes[_sex] ?? '—'} · born ${_birthYear.text} · '
+                    '${_heightCm.round()} cm · ${_weightLabel(_weightKg)}$target',
               ),
-              Text(
-                '${proposal.nutrition['calories']} kcal · ${proposal.nutrition['protein_g']}g protein · '
-                '${proposal.nutrition['carbohydrate_g']}g carbs · ${proposal.nutrition['fat_g']}g fat',
+              const Divider(height: TracendSpacing.xl),
+              _ReviewRow(
+                'Schedule',
+                '${days.join(', ')} · $_sessionMinutes min',
               ),
+              const Divider(height: TracendSpacing.xl),
+              _ReviewRow(
+                'Equipment',
+                _equipment.isEmpty
+                    ? 'Bodyweight only'
+                    : (_equipment.toList()..sort())
+                          .map((item) => _equipmentChoices[item]!)
+                          .join(', '),
+              ),
+              if (_avoid.isNotEmpty) ...[
+                const Divider(height: TracendSpacing.xl),
+                _ReviewRow(
+                  'Avoid',
+                  _avoidChoices.entries
+                      .where((entry) => _avoid.contains(entry.key))
+                      .map((entry) => entry.value)
+                      .join(', '),
+                ),
+              ],
+              if (_path == 'experienced') ...[
+                const Divider(height: TracendSpacing.xl),
+                _ReviewRow('Keep', _currentPlan.text),
+              ],
             ],
           ),
         ),
-        const SectionLabel('Why this proposal'),
-        Text(proposal.rationale),
-        const SectionLabel('Expected benefit'),
-        Text(proposal.benefit),
-        const SectionLabel('Downside and uncertainty'),
-        Text(proposal.downside),
-        if (_error != null) ...[
+        if (_revisionNote.text.trim().isNotEmpty) ...[
           const SizedBox(height: TracendSpacing.md),
-          Semantics(liveRegion: true, child: Text(_error!)),
+          _field(
+            _revisionNote,
+            'What should change',
+            'Sent with your next plan request',
+            required: false,
+          ),
         ],
-        const SizedBox(height: TracendSpacing.lg),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: _saving ? null : () => _respond('accept'),
-            child: const Text('Approve plan'),
-          ),
-        ),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            onPressed: _saving ? null : () => _respond('request_revision'),
-            child: const Text('Request revision'),
-          ),
-        ),
-        SizedBox(
-          width: double.infinity,
-          child: TextButton(
-            onPressed: _saving ? null : () => _respond('reject'),
-            child: const Text('Reject proposal'),
-          ),
+        const SizedBox(height: TracendSpacing.md),
+        Text(
+          'Building creates a proposal only. Nothing starts until you approve it.',
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],
     );
   }
+
+  Widget _plan() {
+    final proposal = _proposal;
+    if (proposal != null) {
+      return OnboardingProposalView(
+        proposal: proposal,
+        saving: _saving,
+        error: _error,
+        onApprove: () => _respond('accept'),
+        onRequestRevision: _requestRevision,
+        onReject: () => _respond('reject'),
+      );
+    }
+    if (_proposalExpired) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _heading(
+            'This plan proposal expired.',
+            'Proposals last seven days, so the plan you approve matches your current answers. Your answers are saved; build a fresh plan from them.',
+          ),
+          FilledButton(
+            onPressed: _saving ? null : _buildPlan,
+            child: const Text('Build a new plan'),
+          ),
+          TextButton(
+            onPressed: _saving ? null : _back,
+            child: const Text('Back to review'),
+          ),
+        ],
+      );
+    }
+    if (_generationFailed) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _heading(
+            'Your plan was not built.',
+            'Something went wrong while building it. Your answers are saved.',
+          ),
+          FilledButton(
+            onPressed: _saving ? null : _buildPlan,
+            child: const Text('Try again'),
+          ),
+          TextButton(
+            onPressed: _saving ? null : _back,
+            child: const Text('Back to review'),
+          ),
+        ],
+      );
+    }
+    return Column(
+      children: [
+        const SizedBox(height: TracendSpacing.xl),
+        const TracendLoadingIndicator(size: 32),
+        const SizedBox(height: TracendSpacing.lg),
+        Text(
+          'Building your plan',
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        const SizedBox(height: TracendSpacing.xs),
+        Text(
+          'This can take up to a minute. You can leave the app; your plan will be here when you come back.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
+    );
+  }
+}
+
+class _RevisionSheet extends StatefulWidget {
+  const _RevisionSheet();
+
+  @override
+  State<_RevisionSheet> createState() => _RevisionSheetState();
+}
+
+class _RevisionSheetState extends State<_RevisionSheet> {
+  final _note = TextEditingController();
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      TracendSpacing.gutter,
+      TracendSpacing.gutter,
+      TracendSpacing.gutter,
+      TracendSpacing.gutter + MediaQuery.viewInsetsOf(context).bottom,
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'What should change?',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+        TextField(
+          controller: _note,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 5,
+          maxLength: 500,
+          decoration: const InputDecoration(
+            hintText: 'Example: fewer exercises per session, no deadlifts',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_note.text.trim()),
+          child: const Text('Request changes'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _ChoiceCard extends StatelessWidget {

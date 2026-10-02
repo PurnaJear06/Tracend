@@ -119,6 +119,9 @@ optional permissions before explaining their purpose.
 6. Choose whether to allow AI coaching. The disclosure names the provider (DeepSeek, operated by
    Hangzhou DeepSeek Artificial Intelligence Co., Ltd., on servers in China), the data it receives,
    and what works without it. **Allow AI coaching** and **Not now** are both valid answers.
+   - Since 2026-10 the text is the server's current notice (`get_current_ai_notice`). The app
+     records that notice's version, and the built-in text is shown only if it cannot load.
+   - Without AI coaching, Tracend's rules build the starting plan.
 7. Choose **Guide me** or **I know my current plan**.
 
 An account that has not answered the current AI coaching notice (created before the question
@@ -135,6 +138,36 @@ existing partial/unknown states and does not claim an empty result means permiss
 Later refreshes use the normal 8-date overlap.
 
 ### 4.2 Beginner: Guide me
+
+The app since 2026-10:
+
+```text
+Eligibility → AI coaching → Path → Goal
+  → About you (sex, birth year, height, weight, optional target weight, daily activity)
+  → Schedule (weekday chips, up to six; session length)
+  → Equipment (chips; none = bodyweight)
+  → Food & limits (diet; movements to avoid as chips; other limitations; + current plan if
+    experienced)
+  → Review → Build my plan → Plan (approve, request changes, or reject)
+```
+
+- **Build my plan** starts a server generation and shows **Building your plan**. The app polls the
+  generation, so the athlete can leave and come back:
+  - a running generation keeps waiting;
+  - a finished proposal opens;
+  - a failed one offers **Try again**;
+  - an answered one returns to Review;
+  - an expired one (proposals last seven days), or one that expires while the athlete answers it,
+    shows **This plan proposal expired.** with **Build a new plan** and **Back to review**.
+- **Movements to avoid** never appear in the plan. An athlete who wrote a limitation in an older
+  build is asked to choose them (or none) before building.
+- **Answers no safe plan fits** (for example, bodyweight only while avoiding every pushing and
+  pulling movement) open the step to change, with what to change; nothing is built.
+- **Request changes** asks "What should change?" and sends the note with the next build.
+- **Sign out** stays available on every step.
+- A draft from an older build continues at **About you**.
+
+The original target flow:
 
 ```text
 Goal → Experience → Schedule → Equipment → Preferences
@@ -160,6 +193,19 @@ arbitrary replacement of valid practices.
 Show goal, assumptions, weekly structure, exercise prescription, nutrition targets, confidence,
 missing information, and safety boundaries. Actions are **Approve plan**, **Edit answers**, and
 **Request revision**. Generation never activates a plan.
+
+The 2026-10 proposal screen shows:
+
+- **Provenance:** **Proposed by AI (‹model›) · checked by Tracend**, or **Built by Tracend's rules**.
+- **Confidence.**
+- **The assessment.**
+- **Training:** every training day with its exercises (sets × reps, RPE, rest).
+- **Nutrition:** the targets and **How this was calculated** (resting energy × activity plus
+  training, and the goal range).
+- **For an experienced athlete:** what was kept and what changed.
+- **The plan's reasoning:** why, benefit, downside, assumptions, and what is not known yet.
+
+Approval activates exactly those workouts.
 
 ## 5. Today and Daily Coaching
 

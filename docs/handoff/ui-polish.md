@@ -26,7 +26,7 @@ captions ("no AI estimate", "R² 0.43", "display-only, no detail destination yet
 | P3 | Today: confidence pill and z-scores out of the first screenful; plain labels for PRECISION READOUTS, METABOLIC TARGET, T-COACH/N-COACH, g PRO; one "Today at a glance" list; tokens for two hard-coded colors | Queued |
 | P4 | Train: verdict-first training load (ACWR, Ratio, Monotony behind ⓘ), "Effort 8/10" for RPE, one glow card, rewrite "No fixture workout was substituted" | Queued |
 | P5 | Coach: one "How I got this" drawer for provider, evidence ids, and missing keys (friendly labels); beta diagnostic kept inside it; fix the ISO date in the context card | Queued |
-| P6 | Account and onboarding: grouped lists, Appearance out of Connections, cost to 2 decimals, remove "The mock provider receives only this confirmed snapshot.", notice versions as dates, wire or remove the no-op Edit button | Queued |
+| P6 | Account and onboarding: grouped lists, Appearance out of Connections, cost to 2 decimals, notice versions as dates, wire or remove the no-op Edit button | Queued (the onboarding items, including the "mock provider" copy, are rebuilt in onboarding PR 3; see [`onboarding.md`](./onboarding.md)) |
 
 ## P1 notes
 

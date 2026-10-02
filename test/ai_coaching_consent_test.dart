@@ -117,6 +117,18 @@ void main() {
       );
     });
 
+    test('a grant counts only for the notice the server says is current', () {
+      final latest = {'action': 'granted', 'notice_version': 'ai-coaching-v1'};
+      expect(
+        aiCoachingChoiceFrom(latest, currentVersion: 'ai-coaching-v1'),
+        AiCoachingChoice.granted,
+      );
+      expect(
+        aiCoachingChoiceFrom(latest, currentVersion: 'ai-coaching-v2'),
+        AiCoachingChoice.undecided,
+      );
+    });
+
     test('a withdrawal is a decline, whatever its version', () {
       expect(
         aiCoachingChoiceFrom({
@@ -333,5 +345,33 @@ void main() {
     await consent.record(granted: true);
     await tester.pump(const Duration(seconds: 1));
     expect(coach.generated, 1);
+  });
+
+  group('AiNotice', () {
+    test('reads the server notice and splits its paragraphs', () {
+      final notice = AiNotice.fromJson({
+        'schema_version': '1.0',
+        'version': 'ai-coaching-v2',
+        'provider_label': 'DeepSeek',
+        'body': 'One.\n\nTwo.\n \nThree.',
+        'purposes': ['onboarding_plan'],
+      });
+      expect(notice?.version, 'ai-coaching-v2');
+      expect(notice?.paragraphs, ['One.', 'Two.', 'Three.']);
+    });
+
+    test('anything that is not a notice falls back to none', () {
+      expect(AiNotice.fromJson(null), isNull);
+      expect(AiNotice.fromJson({'version': 'v'}), isNull);
+      expect(
+        AiNotice.fromJson({'version': '', 'provider_label': 'X', 'body': 'B'}),
+        isNull,
+      );
+    });
+
+    test('the built-in notice is the v1 text in three paragraphs', () {
+      expect(AiNotice.builtIn.version, aiCoachingNoticeVersion);
+      expect(AiNotice.builtIn.paragraphs, hasLength(3));
+    });
   });
 }

@@ -25,7 +25,9 @@ the Coach's proposal line. PR 2 (server, in review) adds per-purpose AI notices,
 catalog, `onboarding-policy-v1` and the new `onboarding-plan` function (any provider, set by secrets,
 with a rules fallback). Review fixes on PR 2: movements to avoid enforced on every path, daily
 coaching checks its own notice, nutrition capped to the database bounds with infeasible answers
-refused up front, billed failures counted, and expired proposals recoverable. PR 3 (app) follows.
+refused up front, billed failures counted, and expired proposals recoverable. PR 3 (app) adds the
+new onboarding steps (including movements to avoid), a resumable plan build, the full proposal
+screen, expired-plan recovery and the server-rendered AI notice. Merge #60 → #61 → PR 3 in order.
 See
 [`docs/handoff/onboarding.md`](./handoff/onboarding.md).
 
