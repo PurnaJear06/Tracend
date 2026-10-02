@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/health_activity.dart';
@@ -29,6 +30,7 @@ class OnboardingFlow extends StatefulWidget {
     required this.onCompleted,
     this.aiConsent,
     this.health,
+    this.healthBaseline,
     this.onSignOut,
     this.pollInterval = const Duration(seconds: 3),
     this.pollTimeout = const Duration(seconds: 150),
@@ -46,6 +48,9 @@ class OnboardingFlow extends StatefulWidget {
   /// Apple Health, offered as an optional step; without one the step can only
   /// be skipped.
   final HealthRepository? health;
+
+  /// The athlete's usual months from Apple Health, read after Connect.
+  final HealthBaselineSource? healthBaseline;
   final Future<void> Function()? onSignOut;
   final Duration pollInterval;
 
@@ -68,7 +73,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'Schedule',
     'Equipment',
     'Food & limits',
+    'Your training',
+    'Current lifts',
+    'Focus',
     'Review',
+    'Coach questions',
     'Plan',
   ];
   static const _sectionKeys = [
@@ -81,7 +90,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'schedule',
     'equipment',
     'food',
+    'training',
+    'lifts',
+    'focus',
     'review',
+    'questions',
     'proposal',
   ];
 
@@ -96,8 +109,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   static const _scheduleStep = 6;
   static const _equipmentStep = 7;
   static const _foodStep = 8;
-  static const _reviewStep = 9;
-  static const _proposalStep = 10;
+  static const _trainingStep = 9;
+  static const _liftsStep = 10;
+  static const _focusStep = 11;
+  static const _reviewStep = 12;
+  static const _questionsStep = 13;
+  static const _proposalStep = 14;
 
   static const _goals = <String, (String, String)>{
     'fat_loss': (
@@ -158,6 +175,39 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   };
   static const _maxTrainingDays = 6;
 
+  static const _trainingYears = <String, String>{
+    'under_1': 'Under a year',
+    '1_2': '1–2 years',
+    '3_5': '3–5 years',
+    'over_5': 'Over 5 years',
+  };
+
+  /// The barbell lifts a top set can be reported for; the load is the whole
+  /// bar, so the server can estimate a one-rep max and starting loads.
+  static const _lifts = <String, String>{
+    'barbell-bench-press': 'Bench press',
+    'barbell-back-squat': 'Back squat',
+    'barbell-deadlift': 'Deadlift',
+    'barbell-overhead-press': 'Overhead press',
+    'barbell-row': 'Barbell row',
+  };
+
+  /// The catalog's target muscles, in catalog order.
+  static const _muscles = <String, String>{
+    'quads': 'Quads',
+    'glutes': 'Glutes',
+    'hamstrings': 'Hamstrings',
+    'chest': 'Chest',
+    'back': 'Back',
+    'shoulders': 'Shoulders',
+    'biceps': 'Biceps',
+    'triceps': 'Triceps',
+    'core': 'Core',
+    'calves': 'Calves',
+  };
+  static const _maxPriorityMuscles = 2;
+  static const _maxStrongMuscles = 3;
+
   /// The server accepts weights from 35 to 250 kg.
   static const _minWeightKg = 35.0;
   static const _maxWeightKg = 250.0;
@@ -172,6 +222,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     'equipment_items': 'equipment',
     'avoid_patterns': 'movements to avoid',
     'current_plan': 'current plan',
+    'training_years': 'training years',
     'goal': 'goal',
     'path': 'starting point',
   };
@@ -181,6 +232,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   final _nutrition = TextEditingController(text: 'No dietary restrictions');
   final _constraints = TextEditingController();
   final _currentPlan = TextEditingController();
+  final _trainingHistory = TextEditingController();
   final _revisionNote = TextEditingController();
   bool _loading = true;
 
@@ -236,6 +288,28 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// About you was answered, so Apple Health never overwrites it.
   bool _aboutPassed = false;
 
+  /// The athlete's usual months, read after Apple Health connects.
+  HealthBaseline? _baseline;
+  bool _baselineBusy = false;
+
+  /// How long the athlete has trained (experienced path).
+  String? _years;
+
+  /// Reported top sets by lift slug.
+  Map<String, _LiftEntry> _liftEntries = {};
+  Set<String> _priority = {};
+  Set<String> _strong = {};
+
+  /// The coach's questions for the answers named by [_followUpsHash]; the
+  /// athlete's answers are kept by question.
+  List<FollowUpQuestion> _questions = const [];
+  String? _followUpsHash;
+  Map<String, String> _followUpAnswers = {};
+  bool _asking = false;
+
+  /// Bumped to ignore a question request still running (Skip, Back).
+  int _questionsRun = 0;
+
   HealthRepository get _health =>
       widget.health ?? const ManualHealthRepository();
 
@@ -274,6 +348,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _nutrition.dispose();
     _constraints.dispose();
     _currentPlan.dispose();
+    _trainingHistory.dispose();
     _revisionNote.dispose();
     super.dispose();
   }
@@ -305,11 +380,60 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       'constraints': _constraints.text.trim(),
       if (_avoidAnswered) 'avoid_patterns': _avoid.toList()..sort(),
       'health_import': ?_healthImport,
-      if (_path == 'experienced') 'current_plan': _currentPlan.text.trim(),
+      if (_path == 'experienced') ...{
+        'current_plan': _currentPlan.text.trim(),
+        'training_years': ?_years,
+        'training_history': _trainingHistory.text.trim(),
+        'current_lifts': [
+          for (final slug in _lifts.keys)
+            if (_liftEntries[slug] case final entry?) entry.toJson(slug),
+        ],
+      },
+      'priority_muscles': _muscles.keys.where(_priority.contains).toList(),
+      'strong_muscles': _muscles.keys.where(_strong.contains).toList(),
+      if (_followUpsHash != null) ...{
+        'follow_ups_hash': _followUpsHash,
+        'follow_ups': [
+          for (final question in _questions)
+            if (_followUpAnswers[question.question]?.trim() case final answer?
+                when answer.isNotEmpty)
+              {
+                'category': question.category,
+                'question': question.question,
+                'answer': answer,
+              },
+        ],
+      },
       if (_revisionNote.text.trim().isNotEmpty)
         'revision_note': _revisionNote.text.trim(),
     };
   }
+
+  /// The training and lifts steps are for the experienced path only.
+  bool _skips(int step) =>
+      _path != 'experienced' && (step == _trainingStep || step == _liftsStep);
+
+  int _after(int step) {
+    var next = step + 1;
+    while (_skips(next)) {
+      next++;
+    }
+    return next;
+  }
+
+  int _before(int step) {
+    var previous = step - 1;
+    while (previous > 0 && _skips(previous)) {
+      previous--;
+    }
+    return previous;
+  }
+
+  /// The steps this athlete sees, for "Step N of M".
+  List<int> get _visibleSteps => [
+    for (var step = 0; step < _sections.length; step++)
+      if (!_skips(step)) step,
+  ];
 
   /// An even spread for a day count saved by builds before 2026-10.
   static Set<int> _spreadFor(int days) => switch (days.clamp(1, 6)) {
@@ -372,6 +496,34 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               .toSet();
         }
         _currentPlan.text = payload['current_plan'] as String? ?? '';
+        final years = payload['training_years'];
+        if (_trainingYears.containsKey(years)) _years = years as String;
+        _trainingHistory.text = payload['training_history'] as String? ?? '';
+        _liftEntries = {
+          for (final item in payload['current_lifts'] as List? ?? const [])
+            if (item is Map && _lifts.containsKey(item['slug']))
+              item['slug'] as String: _LiftEntry.fromJson(item),
+        };
+        List<String> muscles(Object? value) => (value as List? ?? const [])
+            .whereType<String>()
+            .where(_muscles.containsKey)
+            .toList();
+        _priority = muscles(
+          payload['priority_muscles'],
+        ).take(_maxPriorityMuscles).toSet();
+        _strong = muscles(
+          payload['strong_muscles'],
+        ).take(_maxStrongMuscles).toSet();
+        if (payload['follow_ups_hash'] case final String hash) {
+          _followUpsHash = hash;
+          _followUpAnswers = {
+            for (final item in payload['follow_ups'] as List? ?? const [])
+              if (item is Map &&
+                  item['question'] is String &&
+                  item['answer'] is String)
+                item['question'] as String: item['answer'] as String,
+          };
+        }
         _revisionNote.text = payload['revision_note'] as String? ?? '';
         final healthImport = payload['health_import'];
         if (const ['connected', 'skipped', 'empty'].contains(healthImport)) {
@@ -386,6 +538,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         if (restored > _aboutStep && !payload.containsKey('sex')) {
           restored = _aboutStep;
         }
+        if (_skips(restored)) restored = _focusStep;
         if (restored > 0) _step = restored;
         _aboutPassed = _step > _aboutStep;
         resumeGeneration = _step == _proposalStep;
@@ -399,6 +552,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     }
     if (_restoreFailed) return;
     if (resumeGeneration && mounted) unawaited(_resumeGeneration());
+    if (_step == _questionsStep && mounted) unawaited(_fetchQuestions());
     if (mounted && _healthImport != 'skipped') unawaited(_loadHealthFacts());
   }
 
@@ -421,8 +575,27 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         _healthImport ??= facts.hasData ? 'connected' : 'empty';
         _prefillFromHealth(facts);
       });
+      if (_healthImport == 'connected' && _step <= _reviewStep) {
+        unawaited(_loadBaseline());
+      }
     } catch (e) {
       debugPrint('Non-critical error: $e');
+    }
+  }
+
+  /// Reads the usual months and sends them, so the plan can compare them
+  /// with the last 4 weeks. Never blocks the step.
+  Future<void> _loadBaseline() async {
+    final source = widget.healthBaseline;
+    if (source == null || _baselineBusy) return;
+    setState(() => _baselineBusy = true);
+    try {
+      final baseline = await source.load();
+      if (mounted) setState(() => _baseline = baseline);
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+    } finally {
+      if (mounted) setState(() => _baselineBusy = false);
     }
   }
 
@@ -457,6 +630,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         _healthImport = facts.hasData ? 'connected' : 'empty';
         _prefillFromHealth(facts);
       });
+      if (_healthImport == 'connected') unawaited(_loadBaseline());
     } catch (e) {
       debugPrint('Non-critical error: $e');
       if (!mounted) return;
@@ -609,54 +783,131 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         _step = _proposalStep;
       });
       await _follow(generation);
-    } on OnboardingAnswersIncomplete catch (error) {
+    } catch (error) {
       if (!mounted) return;
-      final labels = error.missing.map((key) => _fieldLabels[key] ?? key);
-      setState(() {
-        _saving = false;
-        _step = _stepForMissing(error.missing);
-        _error =
-            error.missing.length == 1 && error.missing.first == 'avoid_patterns'
-            ? 'You wrote a limitation. Choose the movements your plan should leave out, or none, then build your plan.'
-            : 'Add your ${labels.join(', ')} to build your plan.';
-      });
-    } on OnboardingPlanUnavailable {
-      if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _error = 'The plan builder is unavailable. Try again in a minute.';
-      });
-    } on OnboardingPlanInfeasible catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _step = error.change.contains('avoid_patterns')
-            ? _foodStep
-            : _stepForMissing(error.change);
-        _error = switch (_step) {
-          _scheduleStep =>
-            'Tracend could not fit a safe plan into these sessions. Choose longer sessions, then build again.',
-          _aboutStep =>
-            'Tracend could not set safe nutrition targets from these answers. Check your weight and daily activity, then build again.',
-          _foodStep =>
-            'With your equipment and the movements you avoid, some training days would have no exercise. Avoid fewer movements or add equipment, then build again.',
-          _ =>
-            'With this equipment, some training days would have no exercise. Add equipment, then build again.',
-        };
-      });
+      if (!_showPlanRefusal(error)) {
+        debugPrint('Non-critical error: $error');
+        setState(() {
+          _saving = false;
+          _error =
+              'Your plan could not be started. Check the connection and try again.';
+        });
+      }
+    }
+  }
+
+  /// Shows why the plan builder refused these answers and opens the step to
+  /// change; false for any other error.
+  bool _showPlanRefusal(Object error) {
+    switch (error) {
+      case OnboardingAnswersIncomplete(:final missing):
+        final labels = missing.map((key) => _fieldLabels[key] ?? key);
+        setState(() {
+          _saving = false;
+          _asking = false;
+          _step = _stepForMissing(missing);
+          _error = missing.length == 1 && missing.first == 'avoid_patterns'
+              ? 'You wrote a limitation. Choose the movements your plan should leave out, or none, then build your plan.'
+              : 'Add your ${labels.join(', ')} to build your plan.';
+        });
+        return true;
+      case OnboardingPlanUnavailable():
+        setState(() {
+          _saving = false;
+          _asking = false;
+          _step = _reviewStep;
+          _error = 'The plan builder is unavailable. Try again in a minute.';
+        });
+        return true;
+      case OnboardingPlanInfeasible(:final change):
+        setState(() {
+          _saving = false;
+          _asking = false;
+          _step = change.contains('avoid_patterns')
+              ? _foodStep
+              : _stepForMissing(change);
+          _error = switch (_step) {
+            _scheduleStep =>
+              'Tracend could not fit a safe plan into these sessions. Choose longer sessions, then build again.',
+            _aboutStep =>
+              'Tracend could not set safe nutrition targets from these answers. Check your weight and daily activity, then build again.',
+            _foodStep =>
+              'With your equipment and the movements you avoid, some training days would have no exercise. Avoid fewer movements or add equipment, then build again.',
+            _ =>
+              'With this equipment, some training days would have no exercise. Add equipment, then build again.',
+          };
+        });
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /// Review → the coach's questions: the answers are saved, then the coach
+  /// may ask up to three questions before the plan is built.
+  Future<void> _askQuestions() async {
+    if (_saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.repository.saveDraft(
+        path: _path,
+        currentSection: _sectionKeys[_questionsStep],
+        payload: _payload,
+      );
     } catch (e) {
       debugPrint('Non-critical error: $e');
       if (!mounted) return;
       setState(() {
         _saving = false;
         _error =
-            'Your plan could not be started. Check the connection and try again.';
+            'This section could not be saved. Check the connection and try again.';
       });
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      _step = _questionsStep;
+    });
+    await _fetchQuestions();
+  }
+
+  Future<void> _fetchQuestions() async {
+    final run = ++_questionsRun;
+    setState(() {
+      _asking = true;
+      _questions = const [];
+    });
+    try {
+      final result = await widget.repository.askQuestions();
+      if (!mounted || run != _questionsRun) return;
+      setState(() {
+        // Answers carry over only to questions asked for the same answers.
+        if (result.hash != _followUpsHash) _followUpAnswers = {};
+        _followUpsHash = result.hash;
+        _questions = result.questions;
+        _asking = false;
+      });
+      if (result.questions.isEmpty) await _buildPlan();
+    } catch (error) {
+      if (!mounted || run != _questionsRun) return;
+      if (_showPlanRefusal(error)) return;
+      // Questions are optional: without them the plan is built from the answers.
+      debugPrint('Non-critical error: $error');
+      setState(() => _asking = false);
+      await _buildPlan();
     }
   }
 
   int _stepForMissing(List<String> missing) {
     if (missing.contains('path')) return _pathStep;
+    if (missing.contains('current_plan') ||
+        missing.contains('training_years')) {
+      return _trainingStep;
+    }
     if (missing.contains('goal')) return _goalStep;
     const about = ['sex', 'birth_year', 'height_cm', 'weight_kg'];
     if (missing.any(about.contains) || missing.contains('daily_activity')) {
@@ -677,6 +928,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       return;
     }
     if (_step == _reviewStep) {
+      await _askQuestions();
+      return;
+    }
+    if (_step == _questionsStep) {
+      // Building now: a question request still running is ignored.
+      _questionsRun++;
+      setState(() => _asking = false);
       await _buildPlan();
       return;
     }
@@ -695,7 +953,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       if (_step == _goalStep) await widget.repository.saveGoal(_goal!);
       if (_step == _foodStep) _avoidAnswered = true;
       if (_step == _aboutStep) _aboutPassed = true;
-      final next = _returnToReview ? _reviewStep : _step + 1;
+      // Changed answers get new questions; old follow-up answers no longer fit.
+      _followUpsHash = null;
+      _followUpAnswers = {};
+      final next = _returnToReview ? _reviewStep : _after(_step);
       await widget.repository.saveDraft(
         path: _path,
         currentSection: _sectionKeys[next],
@@ -727,9 +988,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _aboutStep =>
       _sex != null && _dailyActivity != null && _birthYearError() == null,
     _scheduleStep => _weekdays.isNotEmpty,
-    _foodStep =>
-      _nutrition.text.trim().isNotEmpty &&
-          (_path != 'experienced' || _currentPlan.text.trim().isNotEmpty),
+    _foodStep => _nutrition.text.trim().isNotEmpty,
+    _trainingStep => _years != null && _currentPlan.text.trim().isNotEmpty,
     _ => true,
   };
 
@@ -760,6 +1020,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             ? 'Choose how active you are outside training.'
             : _birthYearError()!,
       _scheduleStep => 'Choose at least one training day.',
+      _trainingStep =>
+        _years == null
+            ? 'Choose how long you have trained.'
+            : 'Describe your current plan.',
       _ => 'Complete the required fields before continuing.',
     };
   }
@@ -869,13 +1133,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   void _back() {
     _pollRun++;
+    _questionsRun++;
     setState(() {
       _returnToReview = false;
       _generating = false;
       _generationFailed = false;
       _proposalExpired = false;
+      _asking = false;
       _error = null;
-      _step = _step == _proposalStep ? _reviewStep : _step - 1;
+      _step = _step == _proposalStep || _step == _questionsStep
+          ? _reviewStep
+          : _before(_step);
     });
   }
 
@@ -951,13 +1219,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Step ${_step + 1} of ${_sections.length} · ${_sections[_step]}',
+                    'Step $_stepNumber of ${_visibleSteps.length} · ${_sections[_step]}',
                     style: Theme.of(context).textTheme.labelMedium,
                   ),
                   const SizedBox(height: TracendSpacing.xs),
                   ExcludeSemantics(
                     child: LinearProgressIndicator(
-                      value: (_step + 1) / _sections.length,
+                      value: _stepNumber / _visibleSteps.length,
                     ),
                   ),
                 ],
@@ -972,7 +1240,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                       : const Duration(milliseconds: 220),
                   child: KeyedSubtree(
                     key: ValueKey(
-                      '$_step-${_proposal?.id}-$_generating-$_generationFailed-$_proposalExpired',
+                      '$_step-${_proposal?.id}-$_generating-$_generationFailed-$_proposalExpired-$_asking',
                     ),
                     child: _stepBody(),
                   ),
@@ -997,7 +1265,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                           ? const TracendLoadingIndicator(size: 20)
                           : Text(
                               _step == _reviewStep
-                                  ? 'Build my plan'
+                                  ? 'Continue to your coach'
+                                  : _step == _questionsStep
+                                  ? (_asking
+                                        ? 'Skip and build my plan'
+                                        : 'Build my plan')
                                   : _returnToReview
                                   ? 'Save and return to review'
                                   : 'Continue',
@@ -1035,9 +1307,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _scheduleStep => _schedule(),
     _equipmentStep => _equipmentSelection(),
     _foodStep => _foodAndLimits(),
+    _trainingStep => _training(),
+    _liftsStep => _currentLifts(),
+    _focusStep => _focus(),
     _reviewStep => _review(),
+    _questionsStep => _coachQuestions(),
     _ => _plan(),
   };
+
+  /// The step's position among the steps this athlete sees.
+  int get _stepNumber => _visibleSteps.indexOf(_step) + 1;
 
   Widget _heading(String title, String body) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1224,7 +1503,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       children: [
         _heading(
           'Connect Apple Health?',
-          'Your plan can use the last 4 weeks from your iPhone and Apple Watch: steps, active energy, sleep, workouts and weight. Your plan works either way.',
+          'Your plan can use the last 4 weeks from your iPhone and Apple Watch (steps, active energy, sleep, workouts and weight) and compare them with your usual months. Your plan works either way.',
         ),
         if (connected || empty)
           TracendCard(
@@ -1257,6 +1536,21 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                             : 'If you expected data, open Settings › Health › Data Access & Devices › Tracend, turn the categories on, then try again. Or continue without it.',
                         style: text.bodyMedium,
                       ),
+                      if (connected && _baselineBusy) ...[
+                        const SizedBox(height: TracendSpacing.xs),
+                        Text(
+                          'Reading your usual months…',
+                          style: text.bodySmall,
+                        ),
+                      ],
+                      if (connected)
+                        for (final line in _baselineLines())
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              top: TracendSpacing.xs,
+                            ),
+                            child: Text(line, style: text.bodyMedium),
+                          ),
                     ],
                   ),
                 ),
@@ -1588,16 +1882,204 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         'Optional: anything else your coach should know',
         required: false,
       ),
-      if (_path == 'experienced') ...[
-        const SizedBox(height: TracendSpacing.md),
-        _field(
-          _currentPlan,
-          'Current plan and what works',
-          'Describe your split, key lifts, targets, adherence, and plateau context',
+    ],
+  );
+
+  Widget _training() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _heading(
+        'Your training so far.',
+        'A coach starts from what you have done. Your plan keeps what works.',
+      ),
+      _label('How long have you trained consistently?'),
+      Wrap(
+        spacing: TracendSpacing.xs,
+        runSpacing: TracendSpacing.xs,
+        children: _trainingYears.entries
+            .map(
+              (entry) => ChoiceChip(
+                label: Text(entry.value),
+                selected: _years == entry.key,
+                onSelected: (_) => setState(() => _years = entry.key),
+              ),
+            )
+            .toList(),
+      ),
+      if (_years == 'under_1')
+        Padding(
+          padding: const EdgeInsets.only(top: TracendSpacing.xs),
+          child: Text(
+            'Under a year keeps beginner effort and volume limits.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ),
+      const SizedBox(height: TracendSpacing.md),
+      _field(
+        _currentPlan,
+        'Current plan',
+        'Your split, days, main lifts and sets, and how you have kept to it',
+      ),
+      const SizedBox(height: TracendSpacing.md),
+      _field(
+        _trainingHistory,
+        'What has worked, and what has stalled',
+        'Example: legs grow easily; bench stuck at 80 kg for two months',
+        required: false,
+      ),
+    ],
+  );
+
+  Widget _currentLifts() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _heading(
+        'Recent top sets.',
+        'Optional. Add a recent hard set for the barbell lifts you do: the weight on the bar, the reps, and how many more you could have done. Tracend estimates your strength and sets starting weights from it.',
+      ),
+      for (final entry in _lifts.entries) ...[
+        _LiftCard(
+          name: entry.value,
+          entry: _liftEntries[entry.key],
+          onChanged: (value) => setState(() {
+            _liftEntries = {..._liftEntries};
+            if (value == null) {
+              _liftEntries.remove(entry.key);
+            } else {
+              _liftEntries[entry.key] = value;
+            }
+          }),
+        ),
+        const SizedBox(height: TracendSpacing.sm),
       ],
     ],
   );
+
+  Widget _muscleChips(
+    Set<String> selected,
+    int max,
+    ValueChanged<Set<String>> onChanged,
+  ) => Wrap(
+    spacing: TracendSpacing.xs,
+    runSpacing: TracendSpacing.xs,
+    children: _muscles.entries
+        .map(
+          (entry) => FilterChip(
+            label: Text(entry.value),
+            selected: selected.contains(entry.key),
+            onSelected: (on) {
+              if (on && selected.length >= max) {
+                setState(
+                  () => _error =
+                      'Choose at most $max. Focusing on everything is focusing on nothing.',
+                );
+                return;
+              }
+              setState(() => _error = null);
+              onChanged(
+                on
+                    ? {...selected, entry.key}
+                    : ({...selected}..remove(entry.key)),
+              );
+            },
+          ),
+        )
+        .toList(),
+  );
+
+  Widget _focus() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _heading(
+        'Where should the plan focus?',
+        'Optional. Pick at most two muscles to bring up: they get more weekly sets, taken from the others. Focusing on everything is focusing on nothing.',
+      ),
+      _label('Bring up'),
+      _muscleChips(
+        _priority,
+        _maxPriorityMuscles,
+        (value) => setState(() {
+          _priority = value;
+          _strong = {..._strong}..removeAll(value);
+        }),
+      ),
+      _label('Already strong'),
+      Text(
+        'Optional, up to three. Your coach keeps these in maintenance.',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      const SizedBox(height: TracendSpacing.xs),
+      _muscleChips(
+        _strong,
+        _maxStrongMuscles,
+        (value) => setState(() {
+          _strong = value;
+          _priority = {..._priority}..removeAll(value);
+        }),
+      ),
+    ],
+  );
+
+  Widget _coachQuestions() {
+    final text = Theme.of(context).textTheme;
+    if (_asking) {
+      return Column(
+        children: [
+          const SizedBox(height: TracendSpacing.xl),
+          const TracendLoadingIndicator(size: 32),
+          const SizedBox(height: TracendSpacing.lg),
+          Text('Your coach is reading your answers', style: text.headlineSmall),
+          const SizedBox(height: TracendSpacing.xs),
+          Text(
+            'It may ask a few questions before building your plan. Usually under 30 seconds; you can skip.',
+            textAlign: TextAlign.center,
+            style: text.bodyMedium,
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _heading(
+          'A few questions from your coach.',
+          'Answer what you can; anything left blank is fine.',
+        ),
+        for (final question in _questions) ...[
+          _QuestionCard(
+            question: question,
+            answer: _followUpAnswers[question.question] ?? '',
+            onChanged: (answer) => setState(
+              () => _followUpAnswers = {
+                ..._followUpAnswers,
+                question.question: answer,
+              },
+            ),
+          ),
+          const SizedBox(height: TracendSpacing.sm),
+        ],
+      ],
+    );
+  }
+
+  /// The usual-vs-recent lines on the Apple Health step.
+  List<String> _baselineLines() {
+    final baseline = _baseline;
+    if (baseline == null) return const [];
+    String sleep(int minutes) => '${minutes ~/ 60} h ${minutes % 60} min';
+    String times(double value) =>
+        '${value % 1 == 0 ? value.toInt() : value}× a week';
+    return [
+      if (baseline.usualStrengthPerWeek case final usual?)
+        'Strength: ${times(usual)} usually'
+            '${baseline.recentStrengthPerWeek == null ? '' : ' · ${times(baseline.recentStrengthPerWeek!)} lately'}',
+      if (baseline.usualSleepMinutes case final usual?)
+        'Sleep: ${sleep(usual)} usually'
+            '${_healthFacts?.sleepMinutesPerNight == null ? '' : ' · ${sleep(_healthFacts!.sleepMinutesPerNight!)} lately'}',
+      if (!baseline.hasUsual)
+        'Fewer than 3 earlier months of data, so your plan uses the last 4 weeks.',
+    ];
+  }
 
   Widget _field(
     TextEditingController controller,
@@ -1690,12 +2172,40 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         orNone(_constraints.text),
         onEdit: () => _editFromReview(_foodStep),
       ),
-      if (_path == 'experienced')
+      if (_path == 'experienced') ...[
         _ReviewRow(
-          'Keep',
-          orNone(_currentPlan.text),
-          onEdit: () => _editFromReview(_foodStep),
+          'Training',
+          [
+            _trainingYears[_years] ?? 'Years not chosen',
+            orNone(_currentPlan.text),
+            if (_trainingHistory.text.trim().isNotEmpty)
+              _trainingHistory.text.trim(),
+          ].join(' · '),
+          onEdit: () => _editFromReview(_trainingStep),
         ),
+        _ReviewRow(
+          'Top sets',
+          _liftEntries.isEmpty
+              ? 'None'
+              : [
+                  for (final entry in _lifts.entries)
+                    if (_liftEntries[entry.key] case final lift?)
+                      '${entry.value} ${lift.summary}',
+                ].join(' · '),
+          onEdit: () => _editFromReview(_liftsStep),
+        ),
+      ],
+      _ReviewRow(
+        'Focus',
+        [
+          _priority.isEmpty
+              ? 'No focus'
+              : 'Bring up ${_muscles.entries.where((entry) => _priority.contains(entry.key)).map((entry) => entry.value.toLowerCase()).join(', ')}',
+          if (_strong.isNotEmpty)
+            'strong ${_muscles.entries.where((entry) => _strong.contains(entry.key)).map((entry) => entry.value.toLowerCase()).join(', ')}',
+        ].join(' · '),
+        onEdit: () => _editFromReview(_focusStep),
+      ),
     ];
   }
 
@@ -2130,4 +2640,191 @@ class _Stepper extends StatelessWidget {
       ),
     ],
   );
+}
+
+/// A reported barbell top set: the weight on the bar, the reps, and how many
+/// more reps were left.
+@immutable
+class _LiftEntry {
+  const _LiftEntry({
+    required this.loadKg,
+    required this.reps,
+    required this.repsLeft,
+  });
+
+  static const initial = _LiftEntry(loadKg: 60, reps: 5, repsLeft: 2);
+
+  factory _LiftEntry.fromJson(Map<dynamic, dynamic> json) => _LiftEntry(
+    loadKg: (json['load_kg'] as num?)?.toDouble() ?? initial.loadKg,
+    reps: (json['reps'] as num?)?.toInt() ?? initial.reps,
+    repsLeft: (json['reps_left'] as num?)?.toInt() ?? initial.repsLeft,
+  );
+
+  final double loadKg;
+  final int reps;
+  final int repsLeft;
+
+  _LiftEntry copyWith({double? loadKg, int? reps, int? repsLeft}) => _LiftEntry(
+    loadKg: loadKg ?? this.loadKg,
+    reps: reps ?? this.reps,
+    repsLeft: repsLeft ?? this.repsLeft,
+  );
+
+  Map<String, Object> toJson(String slug) => {
+    'slug': slug,
+    'load_kg': loadKg,
+    'reps': reps,
+    'reps_left': repsLeft,
+  };
+
+  String get summary =>
+      '${loadKg % 1 == 0 ? loadKg.toInt() : loadKg} kg × $reps'
+      '${repsLeft == 0 ? ' to failure' : ', $repsLeft left'}';
+}
+
+class _LiftCard extends StatelessWidget {
+  const _LiftCard({
+    required this.name,
+    required this.entry,
+    required this.onChanged,
+  });
+
+  final String name;
+  final _LiftEntry? entry;
+
+  /// Null removes the lift.
+  final ValueChanged<_LiftEntry?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final lift = entry;
+    return TracendCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: lift != null,
+            onChanged: (on) => onChanged(on ? _LiftEntry.initial : null),
+            title: Text(name, style: text.titleMedium),
+            subtitle: lift == null ? null : Text(lift.summary),
+          ),
+          if (lift != null) ...[
+            Text('Weight on the bar: ${lift.summary.split(' ×').first}'),
+            _Stepper(
+              label: '$name weight',
+              value: lift.loadKg.clamp(20, 400),
+              min: 20,
+              max: 400,
+              step: 2.5,
+              format: (value) => '${value % 1 == 0 ? value.toInt() : value} kg',
+              onChanged: (value) => onChanged(lift.copyWith(loadKg: value)),
+            ),
+            Text('Reps: ${lift.reps}'),
+            _Stepper(
+              label: '$name reps',
+              value: lift.reps.toDouble(),
+              min: 1,
+              max: 15,
+              step: 1,
+              format: (value) => '${value.round()} reps',
+              onChanged: (value) =>
+                  onChanged(lift.copyWith(reps: value.round())),
+            ),
+            Text('Reps you could still have done'),
+            const SizedBox(height: TracendSpacing.xs),
+            Wrap(
+              spacing: TracendSpacing.xs,
+              runSpacing: TracendSpacing.xs,
+              children: [
+                for (var left = 0; left <= 4; left++)
+                  ChoiceChip(
+                    label: Text(left == 0 ? 'None' : '$left'),
+                    selected: lift.repsLeft == left,
+                    onSelected: (_) => onChanged(lift.copyWith(repsLeft: left)),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _QuestionCard extends StatefulWidget {
+  const _QuestionCard({
+    required this.question,
+    required this.answer,
+    required this.onChanged,
+  });
+
+  final FollowUpQuestion question;
+  final String answer;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_QuestionCard> createState() => _QuestionCardState();
+}
+
+class _QuestionCardState extends State<_QuestionCard> {
+  late final _written = TextEditingController(
+    text: widget.question.choices.contains(widget.answer) ? '' : widget.answer,
+  );
+
+  @override
+  void dispose() {
+    _written.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final question = widget.question;
+    return TracendCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            question.question,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          if (question.choices.isNotEmpty) ...[
+            const SizedBox(height: TracendSpacing.xs),
+            Wrap(
+              spacing: TracendSpacing.xs,
+              runSpacing: TracendSpacing.xs,
+              children: [
+                for (final choice in question.choices)
+                  ChoiceChip(
+                    label: Text(choice),
+                    selected: widget.answer == choice,
+                    onSelected: (on) {
+                      _written.clear();
+                      widget.onChanged(on ? choice : '');
+                    },
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(height: TracendSpacing.xs),
+          TextField(
+            controller: _written,
+            minLines: 1,
+            maxLines: 3,
+            maxLength: 300,
+            onChanged: widget.onChanged,
+            decoration: InputDecoration(
+              labelText: question.choices.isEmpty
+                  ? 'Your answer'
+                  : 'Or in your own words',
+              counterText: '',
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

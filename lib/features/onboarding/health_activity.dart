@@ -10,6 +10,7 @@ class OnboardingHealthFacts {
     this.stepsPerDay,
     this.latestWeightKg,
     this.latestWeightDate,
+    this.sleepMinutesPerNight,
   });
 
   /// Days in the last four weeks with any Apple Health value.
@@ -23,6 +24,10 @@ class OnboardingHealthFacts {
   /// The newest weight from the last [onboardingWeightMaxAgeDays] days.
   final double? latestWeightKg;
   final DateTime? latestWeightDate;
+
+  /// Average sleep over the same weeks, when at least
+  /// [onboardingMinimumStepDays] nights have sleep.
+  final int? sleepMinutesPerNight;
 
   bool get hasData => daysWithData > 0;
 }
@@ -50,6 +55,10 @@ OnboardingHealthFacts onboardingHealthFacts(
     for (final day in window)
       if ((day.steps ?? 0) > 0) day.steps!,
   ];
+  final sleep = [
+    for (final day in window)
+      if ((day.sleepMinutes ?? 0) > 0) day.sleepMinutes!,
+  ];
   final weighed = [
     for (final day in history.days)
       if ((day.weightKg ?? 0) > 0 &&
@@ -66,6 +75,9 @@ OnboardingHealthFacts onboardingHealthFacts(
         : null,
     latestWeightKg: weighed.isEmpty ? null : weighed.last.weightKg,
     latestWeightDate: weighed.isEmpty ? null : weighed.last.date,
+    sleepMinutesPerNight: sleep.length >= onboardingMinimumStepDays
+        ? (sleep.reduce((a, b) => a + b) / sleep.length).round()
+        : null,
   );
 }
 

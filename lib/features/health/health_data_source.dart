@@ -98,10 +98,19 @@ class HealthKitDataSource implements HealthDataSource {
   String? get lastConfigureError => _lastConfigureError;
 
   @override
-  Future<HealthReadResult> read(DateTime start, DateTime end) async {
+  Future<HealthReadResult> read(DateTime start, DateTime end) =>
+      readMetrics(start, end, requestedMetrics);
+
+  /// Reads only [metrics]; the history reads workouts, sleep and weight for a
+  /// year without a year of step samples.
+  Future<HealthReadResult> readMetrics(
+    DateTime start,
+    DateTime end,
+    Set<HealthMetric> metrics,
+  ) async {
     if (!Platform.isIOS) {
       return HealthReadResult(
-        requestedMetrics: requestedMetrics,
+        requestedMetrics: metrics,
         returnedMetrics: {},
         samples: [],
         unavailable: true,
@@ -112,7 +121,7 @@ class HealthKitDataSource implements HealthDataSource {
       await _configure();
     } catch (_) {
       return HealthReadResult(
-        requestedMetrics: requestedMetrics,
+        requestedMetrics: metrics,
         returnedMetrics: {},
         samples: [],
         unavailable: true,
@@ -125,6 +134,7 @@ class HealthKitDataSource implements HealthDataSource {
       var successfulQueries = 0;
       for (final type in _types) {
         final metric = _metricByType[type]!;
+        if (!metrics.contains(metric)) continue;
         try {
           final points = await _health.getHealthDataFromTypes(
             types: [type],
@@ -145,7 +155,7 @@ class HealthKitDataSource implements HealthDataSource {
       }
       if (successfulQueries == 0) {
         return HealthReadResult(
-          requestedMetrics: requestedMetrics,
+          requestedMetrics: metrics,
           returnedMetrics: {},
           samples: [],
           unavailable: true,
@@ -153,14 +163,14 @@ class HealthKitDataSource implements HealthDataSource {
         );
       }
       return HealthReadResult(
-        requestedMetrics: requestedMetrics,
+        requestedMetrics: metrics,
         returnedMetrics: returned,
         samples: samples,
       );
     } catch (e) {
       debugPrint('Non-critical error: $e');
       return HealthReadResult(
-        requestedMetrics: requestedMetrics,
+        requestedMetrics: metrics,
         returnedMetrics: {},
         samples: [],
         unavailable: true,

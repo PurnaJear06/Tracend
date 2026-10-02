@@ -1,5 +1,12 @@
 import type { DailyActivity, OnboardingAnswers } from "./answers.ts";
-import { activityFromSteps, type HealthSummary } from "./health_summary.ts";
+import {
+  activityFromSteps,
+  type HealthSummary,
+  shortSleepMinutes,
+  startsLighter,
+} from "./health_summary.ts";
+import type { HealthHistory } from "./health_history.ts";
+import { type LiftEstimate, startingLoadKg, strengthRatios } from "./strength.ts";
 import {
   allowedExercises,
   type AvoidablePattern,
@@ -17,7 +24,7 @@ import {
 } from "./policy.ts";
 
 // The onboarding plan contract: what a model (or the rules fallback) returns,
-// how it is validated against onboarding-policy-v1 and the catalog, and the
+// how it is validated against onboarding-policy-v2 and the catalog, and the
 // change_proposals 2.0 payload deterministic code builds from it. A plan is
 // either valid as a whole or rejected with one finite rule name; nothing is
 // partially applied (AI_SAFETY_SPEC §12).
@@ -28,7 +35,8 @@ import {
 // showed a 2-day plan of 9,500 characters under the earlier, looser limits.
 export const onboardingPlanLimits = Object.freeze({
   titleMaxLength: 80,
-  assessmentMaxLength: 300,
+  // Room to speak to this athlete: focus, history, lifts and follow-ups.
+  assessmentMaxLength: 450,
   listMaxItems: 4,
   listItemMaxLength: 140,
   progressionMaxLength: 200,
@@ -65,6 +73,7 @@ export const onboardingPlanValidationRules = [
   "session_set_budget_exceeded",
   "session_too_long",
   "weekly_muscle_volume_exceeded",
+  "priority_volume_missing",
   "pattern_coverage_missing",
   "calories_out_of_range",
   "protein_out_of_range",
@@ -319,6 +328,10 @@ export type PlanPolicies = Readonly<{
   answers: OnboardingAnswers;
   /** The athlete's last 28 days of Apple Health; null when there is none. */
   health: HealthSummary | null;
+  /** The athlete's usual months from Apple Health; null when there are none. */
+  history: HealthHistory | null;
+  /** One-rep-max estimates from the reported barbell lifts (strength.ts). */
+  lifts: readonly LiftEstimate[];
   nutrition: NutritionPolicy;
   training: TrainingPolicy;
   catalog: readonly CatalogExercise[];
@@ -401,6 +414,11 @@ export function validateOnboardingPlan(plan: OnboardingPlan, policies: PlanPolic
       fail("weekly_muscle_volume_exceeded", `$.workouts:${muscle}`);
     }
   }
+  for (const priority of training.priorityMinimums) {
+    if ((weeklySets.get(priority.muscle) ?? 0) < priority.sets) {
+      fail("priority_volume_missing", `$.workouts:${priority.muscle}`);
+    }
+  }
   for (const group of training.requiredPatternGroups) {
     if (!group.some((pattern) => patterns.has(pattern))) {
       fail("pattern_coverage_missing", `$.workouts:${group.join("|")}`);
@@ -469,24 +487,46 @@ const hoursAndMinutes = (minutes: number) => `${Math.floor(minutes / 60)} h ${mi
  * answers set the targets, and only short sleep (trainingPolicy) changes effort.
  */
 export function requiredNotes(plan: OnboardingPlan, policies: PlanPolicies): string[] {
-  const { answers, health, nutrition, training } = policies;
+  const { answers, health, history, nutrition, training } = policies;
   const avoided = answers.avoidPatterns.map((pattern: AvoidablePattern) =>
     avoidablePatternLabels[pattern]
   );
   const steps = health?.steps_per_day;
   const implied = steps === undefined ? null : activityFromSteps(steps);
+  const sleep = health?.sleep_minutes_per_night;
+  const usualSleep = history?.usual_sleep_minutes;
+  const sleepIsUsual = usualSleep !== undefined && usualSleep < shortSleepMinutes;
   return [
     ...(avoided.length ? [`Leaves out, as you asked: ${avoided.join(", ")}.`] : []),
+    ...(training.priorityMinimums.length
+      ? [
+        `Your focus: ${
+          training.priorityMinimums.map((item) => `${item.muscle} gets at least ${item.sets} sets`)
+            .join(" and ")
+        } a week.`,
+      ]
+      : []),
     ...(nutrition.ceilingApplied
       ? [
         `Your estimated needs are above ${nutrition.ceilingKcal} kcal, the most Tracend sets; weigh-ins over 2-3 weeks will show whether to change it.`,
       ]
       : []),
-    ...(training.startLighter && health?.sleep_minutes_per_night !== undefined
+    ...(training.returningFromBreak && history?.usual_strength_per_week !== undefined
       ? [
-        `Sleep has averaged ${
-          hoursAndMinutes(health.sleep_minutes_per_night)
-        } a night, so this block keeps effort at RPE ${training.rpe[1]} or below.`,
+        `You usually lift ${history.usual_strength_per_week}x a week; the last 4 weeks averaged ${
+          health?.strength_workouts_per_week ?? 0
+        }, so the first two weeks ease back in (RPE ${training.rpe[1]} or below).`,
+      ]
+      : []),
+    ...(startsLighter(health) && sleep !== undefined
+      ? [
+        `Sleep has averaged ${hoursAndMinutes(sleep)} a night${
+          usualSleep === undefined
+            ? ""
+            : sleepIsUsual
+            ? ", about your usual"
+            : `, below your usual ${hoursAndMinutes(usualSleep)}`
+        }, so this block keeps effort at RPE ${training.rpe[1]} or below.`,
       ]
       : []),
     ...(health?.weight_latest_kg !== undefined &&
@@ -537,6 +577,7 @@ export function buildOnboardingProposal(
   const confidence = confidenceRank[plan.confidence] > confidenceRank[cap] ? cap : plan.confidence;
   const notes = requiredNotes(plan, policies);
   const missing = requiredMissingInformation(policies.health);
+  const estimates = new Map(policies.lifts.map((lift) => [lift.slug as string, lift.e1rm_kg]));
   return {
     training: {
       title: plan.title,
@@ -551,17 +592,24 @@ export function buildOnboardingProposal(
         estimated_minutes: estimateWorkoutMinutes(workout.exercises),
         warm_up_guidance: workout.warm_up,
         cool_down_guidance: workout.cool_down,
-        exercises: workout.exercises.map((exercise, order) => ({
-          exercise_order: order + 1,
-          slug: exercise.slug,
-          name: bySlug.get(exercise.slug)!.name,
-          sets: exercise.sets,
-          rep_min: exercise.rep_min,
-          rep_max: exercise.rep_max,
-          target_rpe: exercise.target_rpe,
-          rest_seconds: exercise.rest_seconds,
-          notes: exercise.notes,
-        })),
+        exercises: workout.exercises.map((exercise, order) => {
+          const e1rm = estimates.get(exercise.slug);
+          const load = e1rm === undefined
+            ? null
+            : startingLoadKg(e1rm, exercise.rep_max, exercise.target_rpe);
+          return {
+            exercise_order: order + 1,
+            slug: exercise.slug,
+            name: bySlug.get(exercise.slug)!.name,
+            sets: exercise.sets,
+            rep_min: exercise.rep_min,
+            rep_max: exercise.rep_max,
+            target_rpe: exercise.target_rpe,
+            rest_seconds: exercise.rest_seconds,
+            notes: exercise.notes,
+            ...(load === null ? {} : { start_load_kg: load }),
+          };
+        }),
       })),
       prescription: {
         strategy: policies.answers.path === "experienced"
@@ -594,6 +642,14 @@ export function buildOnboardingProposal(
         ceiling_applied: policies.nutrition.ceilingApplied,
         protein_range_g: policies.nutrition.protein,
         ...(policies.health ? { health: policies.health } : {}),
+        ...(policies.history ? { health_history: policies.history } : {}),
+        ...(policies.lifts.length
+          ? { strength: { lifts: policies.lifts, ratios: strengthRatios(policies.lifts) } }
+          : {}),
+        ...(policies.training.priorityMinimums.length
+          ? { priority_minimums: policies.training.priorityMinimums }
+          : {}),
+        ...(policies.training.returningFromBreak ? { returning_from_break: true } : {}),
       },
     },
     nutrition: {
@@ -610,14 +666,28 @@ export function buildOnboardingProposal(
         source: "feature_snapshot",
       },
       {
-        code: "ONBOARDING_POLICY_V1",
+        code: "ONBOARDING_POLICY_V2",
         label: "Tracend's safe ranges for calories, protein, fat and training volume",
         source: "policy_evaluation",
       },
+      ...(policies.lifts.length
+        ? [{
+          code: "REPORTED_BARBELL_LIFTS",
+          label: "The recent top sets you reported",
+          source: "feature_snapshot",
+        }]
+        : []),
       ...(policies.health
         ? [{
           code: "APPLE_HEALTH_SUMMARY_28D",
           label: "Your Apple Health summary for the last 28 days",
+          source: "feature_snapshot",
+        }]
+        : []),
+      ...(policies.history
+        ? [{
+          code: "APPLE_HEALTH_HISTORY_11M",
+          label: "Your usual months in Apple Health",
           source: "feature_snapshot",
         }]
         : []),

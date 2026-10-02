@@ -1,6 +1,7 @@
 // Shared fixtures for the onboarding plan tests.
 import type { OnboardingAnswers } from "./answers.ts";
 import type { HealthSummary } from "./health_summary.ts";
+import type { HealthHistory } from "./health_history.ts";
 import { type EquipmentItem, exerciseCatalogV1 } from "./catalog.ts";
 import type { PlanPolicies } from "./plan_contract.ts";
 import { policiesFor as policiesForCatalog } from "./generate.ts";
@@ -41,6 +42,12 @@ export function answersFor(overrides: Partial<OnboardingAnswers> = {}): Onboardi
     limitations: "",
     avoidPatterns: [],
     currentPlan: "",
+    trainingYears: null,
+    trainingHistory: "",
+    currentLifts: [],
+    priorityMuscles: [],
+    strongMuscles: [],
+    followUps: [],
     revisionNote: "",
     ...overrides,
   };
@@ -49,6 +56,7 @@ export function answersFor(overrides: Partial<OnboardingAnswers> = {}): Onboardi
 export function policiesFor(
   answers: OnboardingAnswers,
   health: HealthSummary | null = null,
+  history: HealthHistory | null = null,
 ): PlanPolicies {
-  return policiesForCatalog(answers, exerciseCatalogV1, health);
+  return policiesForCatalog(answers, exerciseCatalogV1, health, history);
 }

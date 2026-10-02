@@ -1685,6 +1685,9 @@ Deno.test("the athlete profile shows the onboarding answers approval stores", ()
       nutrition_notes: "Vegetarian",
       equipment_note: "Dumbbells up to 20 kg",
       movements_to_avoid: ["squat", "vertical_push"],
+      training_years: "over_5",
+      priority_muscles: ["chest", "shoulders"],
+      strong_muscles: ["back"],
     },
   });
   for (
@@ -1697,6 +1700,9 @@ Deno.test("the athlete profile shows the onboarding answers approval stores", ()
       "- diet notes (athlete's words): Vegetarian",
       "- equipment note (athlete's words): Dumbbells up to 20 kg",
       "- movements to avoid (the athlete's choice; never suggest an exercise from these): squats, overhead pressing",
+      "- training for: over 5 years",
+      "- focus muscles (the athlete's choice; their plan gives these extra weekly sets): chest, shoulders",
+      "- strong muscles (the athlete's view): back",
     ]
   ) {
     if (!markdown.includes(line)) throw new Error(`missing: ${line}`);

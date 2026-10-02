@@ -8,6 +8,7 @@ import {
   handleOnboardingPlan,
   type HandlerDeps,
   type OnboardingStore,
+  type StoredQuestions,
 } from "./handler.ts";
 
 const completeDraft = {
@@ -49,6 +50,10 @@ function store(overrides: Partial<OnboardingStore> & { claimAs?: GenerationClaim
     loadCatalog: () => Promise.resolve([...exerciseCatalogV1]),
     timezone: () => Promise.resolve("UTC"),
     loadHealth: () => Promise.resolve({ days: [], workouts: [] }),
+    loadHealthHistory: () => Promise.resolve([]),
+    loadQuestions: () => Promise.resolve(null),
+    saveQuestions: (_hash, stored) => Promise.resolve(stored),
+    recordQuestionUsage: () => Promise.resolve(),
     consent: () => Promise.resolve("granted"),
     budgetAvailable: () => Promise.resolve(true),
     recordUsage: () => Promise.resolve(),
@@ -70,6 +75,7 @@ const quiet = { info: () => {}, warn: () => {}, error: () => {} };
 async function run(fake: OnboardingStore, extra: Partial<HandlerDeps> = {}) {
   const work: Promise<void>[] = [];
   const response = await handleOnboardingPlan({
+    mode: "plan",
     store: fake,
     resolution: () => ({ kind: "rules", reason: "provider_mock" }),
     currentYear: 2026,
@@ -287,4 +293,144 @@ Deno.test("Apple Health is read for the athlete's own 28 days and changes the ha
   const again = withHealth(steps(10));
   await run(again.fake, { now: () => new Date("2026-10-02T21:00:00Z") });
   assertEquals(again.calls.claimedHashes[0], connected.calls.claimedHashes[0]);
+});
+
+Deno.test("the usual months are read for completed months only and change the hash", async () => {
+  const windows: [string, string][] = [];
+  const month = (start: string) => ({
+    month: start,
+    workouts: 16,
+    strength_workouts: 16,
+    workout_minutes: 960,
+    sleep_nights: 28,
+    sleep_minutes_avg: 430,
+    weight_days: 4,
+    weight_kg_avg: 68,
+    data_days: 29,
+  });
+  const withHistory = store({
+    loadHealthHistory: (from, through) => {
+      windows.push([from, through]);
+      return Promise.resolve(["2026-07-01", "2026-08-01", "2026-09-01"].map(month));
+    },
+  });
+  const none = store();
+  await run(none.fake);
+  await run(withHistory.fake);
+  assertEquals(windows[0], ["2025-11-01", "2026-09-01"]);
+  assert(none.calls.claimedHashes[0] !== withHistory.calls.claimedHashes[0]);
+  const training = withHistory.calls.persisted[0].proposal.training;
+  const calculation = training.calculation as {
+    health_history?: { usual_strength_per_week?: number };
+  };
+  assertEquals(calculation.health_history?.usual_strength_per_week, 3.6);
+  // Lifting about 3.6 times a week usually and nothing lately: a break.
+  assertEquals(
+    (training.calculation as { returning_from_break?: boolean }).returning_from_break,
+    true,
+  );
+});
+
+const questionsDraft = {
+  path: "experienced",
+  payload: {
+    ...completeDraft.payload,
+    current_plan: "Upper/lower 4 days",
+    training_years: "over_5",
+    priority_muscles: ["chest"],
+  },
+};
+
+Deno.test("questions are asked once per set of answers and stored under its hash", async () => {
+  const saved = new Map<string, StoredQuestions>();
+  let asked = 0;
+  const fakeStore = () =>
+    store({
+      loadDraft: () => Promise.resolve(questionsDraft),
+      loadQuestions: (hash) => Promise.resolve(saved.get(hash) ?? null),
+      saveQuestions: (hash, stored) => {
+        saved.set(hash, stored);
+        return Promise.resolve(stored);
+      },
+    }).fake;
+  const askQuestions = () => {
+    asked++;
+    return Promise.resolve({
+      questions: [{
+        category: "stalled_lift" as const,
+        question: "How often do you bench?",
+        choices: ["Once a week", "Twice a week"],
+      }],
+      usage: null,
+      skippedReason: null,
+    });
+  };
+  const first = await run(fakeStore(), { mode: "questions", askQuestions });
+  assertEquals(first.response.status, 200);
+  assertEquals(first.body.questions.length, 1);
+  assertEquals(first.backgroundRuns, 0);
+  const again = await run(fakeStore(), { mode: "questions", askQuestions });
+  assertEquals(again.body, first.body);
+  assertEquals(asked, 1);
+});
+
+Deno.test("a failed question call is not stored, so it may be asked again", async () => {
+  let stored = 0;
+  const { fake } = store({
+    loadDraft: () => Promise.resolve(questionsDraft),
+    saveQuestions: (_hash, value) => {
+      stored++;
+      return Promise.resolve(value);
+    },
+  });
+  const { body } = await run(fake, {
+    mode: "questions",
+    askQuestions: () =>
+      Promise.resolve({ questions: [], usage: null, skippedReason: "provider_timeout" }),
+  });
+  assertEquals(body.questions, []);
+  assertEquals(body.skipped_reason, "provider_timeout");
+  assertEquals(stored, 0);
+});
+
+Deno.test("follow-up answers reach the plan only for the answers they were asked for", async () => {
+  const hashes: string[] = [];
+  const ask = store({
+    loadDraft: () => Promise.resolve(questionsDraft),
+    saveQuestions: (hash, value) => {
+      hashes.push(hash);
+      return Promise.resolve(value);
+    },
+  });
+  await run(ask.fake, {
+    mode: "questions",
+    askQuestions: () => Promise.resolve({ questions: [], usage: null, skippedReason: null }),
+  });
+  const followUps = [{
+    category: "stalled_lift",
+    question: "How often do you bench?",
+    answer: "Once a week",
+  }];
+  const snapshots: Record<string, unknown>[] = [];
+  const planWith = (payload: Record<string, unknown>) =>
+    store({
+      loadDraft: () => Promise.resolve({ ...questionsDraft, payload }),
+      persist: (_id, _hash, snapshot) => {
+        snapshots.push(snapshot);
+        return Promise.resolve("stored");
+      },
+    }).fake;
+  await run(
+    planWith({ ...questionsDraft.payload, follow_ups: followUps, follow_ups_hash: hashes[0] }),
+  );
+  // An earlier answer changed after the questions: the follow-ups are stale.
+  await run(planWith({
+    ...questionsDraft.payload,
+    session_minutes: 60,
+    follow_ups: followUps,
+    follow_ups_hash: hashes[0],
+  }));
+  const answers = (index: number) => snapshots[index].answers as { follow_ups: unknown[] };
+  assertEquals(answers(0).follow_ups.length, 1);
+  assertEquals(answers(1).follow_ups, []);
 });

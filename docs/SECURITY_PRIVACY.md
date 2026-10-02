@@ -101,6 +101,14 @@ AI consent is per purpose (2026-10):
 - Onboarding may ask for Apple Health access as an optional step; skipping it never blocks a plan.
   The onboarding plan receives only a 28-day summary (average steps, active energy and sleep,
   workouts found, latest weight and trend), never raw samples, heart rate, HRV or breathing rate.
+- After Apple Health connects, the app reads workouts, sleep and weight for the 11 completed months
+  before this one and sends only monthly totals with their coverage (`save_health_history`, table
+  `health_history_months`, owner-read RLS; refreshed at most once a month). No sample, heart rate,
+  HRV, breathing rate or step history is sent. The plan uses them to compare the athlete's usual
+  months with the last 28 days. They are in the privacy export and deleted with the account.
+- The coach's follow-up questions are stored with their hash and telemetry in
+  `onboarding_questions` (owner-read RLS, server-written, exported, deleted with the account); the
+  athlete's answers stay in the onboarding draft.
 - Request access near the relevant feature rather than at unexplained launch time.
 - Provide accurate iOS purpose strings for every read/write capability; MVP is read-oriented unless
   a documented requirement adds writing.

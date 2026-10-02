@@ -1,17 +1,17 @@
 # Onboarding Handoff — new-user plan
 
-**Status:** PR 1–3 ([#60](https://github.com/PurnaJear06/Tracend/pull/60),
-[#61](https://github.com/PurnaJear06/Tracend/pull/61), #62) and the eval fixes (#63, #64) are merged
-and deployed (2026-10-02). The `ONBOARDING_PLAN_*` secrets are set (deepseek / deepseek-flash /
-evaluated). The final onboarding batch is four stacked PRs (plan:
-`/Users/purnajear/.claude/plans/sprightly-splashing-dolphin.md`):
+**Status:** the final onboarding batch (#65 thinking, #69 Apple Health summary, #67 Apple Health
+step, #68 recovery and UI) is merged and deployed (c35946c, 2026-10-02) and installed. The owner's
+fresh-account test worked (AI plan, thinking, 38 s) but the plan felt generic. The **coach-quality
+batch** follows in three PRs (plan: `/Users/purnajear/.claude/plans/sprightly-splashing-dolphin.md`,
+revised after an external review):
 
-- **A** thinking for the first attempt, timing and audit telemetry (this section: "Thinking");
-- **B** notice v4, timezone, Apple Health summary in the plan, avoided movements on the profile;
-- **C** the Apple Health onboarding step and per-account health state;
-- **D** onboarding recovery and UI fixes.
-
-The owner tests once from a fresh account after all four merge.
+1. **Coach intake** (this branch, `claude/coach-intake`): training years, barbell top sets →
+   starting loads, focus muscles with weekly set minimums, the coach's follow-up questions, and
+   Apple Health usual months vs the last 28 days. See "Coach intake" below.
+2. **Physique check**: Groq vision on the athlete's own progress photos, its own consent notice,
+   owner-only until a broader evaluation; confirmed focus muscles only.
+3. **Calibration and re-plan**: after two weeks of logged sets, a stale-safe plan version N+1.
 
 Plan (owner-approved 2026-10-01, revised after a GPT review):
 `/Users/purnajear/.claude/plans/smooth-munching-castle.md`.
@@ -313,3 +313,40 @@ Plus notice parsing and version tests.
    - approve, then check that Train shows the approved days and exercises and that the Coach
      knows your goal and equipment.
 3. Delete the test account in Account.
+
+## Coach intake (coach-quality PR 1, 2026-10-02)
+
+Branch `claude/coach-intake`, migration `20261002110000_coach_intake.sql`, policy
+`onboarding-policy-v2`. Why: the owner's fresh account got a valid AI plan that "ChatGPT could
+give from height, weight and goal". The experienced path reduced to one free-text box, nothing
+asked for lifts or weak points, and Apple Health was a 28-day average that changed the plan only
+for short sleep.
+
+- **New steps** (found by key, so older drafts resume): Your training (years, current plan, what
+  has worked and stalled), Current lifts (experienced, optional barbell top sets), Focus (both
+  paths, up to two muscles to bring up and three strong), and Coach questions after Review.
+  Experienced athletes see 15 steps, beginners 13.
+- **Server** (`_shared/onboarding/`): `strength.ts` (Epley with reps in reserve, starting loads),
+  `health_history.ts` (usual months, break rule), `questions.ts` (0–3 follow-up questions from an
+  allowlist; `onboarding-plan` `mode: "questions"`), focus minimums in `policy.ts` with a rules-plan
+  top-up that lowers a minimum only to what fits, and `priority_volume_missing` in the validator.
+- **Database:** `user_profiles.training_years/priority_muscles/strong_muscles`,
+  `planned_exercises.target_load_kg` (copied at approval; hub 1.5, brief 1.6),
+  `onboarding_questions` + `store_onboarding_questions` (service role), `health_history_months` +
+  `save_health_history`, usage purpose `onboarding_questions`, Coach context v8 with the new
+  profile fields. Both tables are in the privacy export.
+- **App:** `lib/features/health/health_baseline.dart` reads workouts, sleep and weight for 11
+  completed months (HealthKit `readMetrics`), sends monthly totals once a month, and the Apple
+  Health step shows usual vs recent. The proposal shows **Start at ‹kg›** and a Focus line; Train
+  pre-fills the kg field.
+- **Deviation from the plan, on purpose:** strength ratios (row ÷ bench, deadlift ÷ squat) are
+  passed to the model as data, but code states no norm: published ratio norms vary with build and
+  technique, and an invented band would be a fact the code cannot back. Sleep months count from 20
+  nights and weight months from 4 weigh-ins (20 weigh-ins a month is rarer than the review
+  assumed).
+- **Not changed:** proposal `schema_version` stays 2.0 (`start_load_kg` is an optional key the
+  validator now checks); volume limits; nutrition.
+- **Verify after deploy:** `./scripts/verify-live-function.sh --all`; owner device test on a new
+  account (experienced path, lifts, chest focus, answer or skip questions); read-only SQL for the
+  `onboarding.questions.generated` and `onboarding.plan.generated` audit telemetry.
+

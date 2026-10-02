@@ -108,6 +108,7 @@ class ProposalExercise {
     required this.targetRpe,
     required this.restSeconds,
     required this.notes,
+    this.startLoadKg,
   });
 
   final String name;
@@ -117,6 +118,58 @@ class ProposalExercise {
   final num targetRpe;
   final int restSeconds;
   final String notes;
+
+  /// Set by Tracend from a reported barbell top set; null for the rest.
+  final num? startLoadKg;
+}
+
+/// A follow-up question from the coach, asked before the plan is built.
+class FollowUpQuestion {
+  const FollowUpQuestion({
+    required this.category,
+    required this.question,
+    required this.choices,
+  });
+
+  final String category;
+  final String question;
+
+  /// Answers to tap; empty when the athlete writes one.
+  final List<String> choices;
+
+  static FollowUpQuestion? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final category = value['category'];
+    final question = value['question'];
+    if (category is! String || question is! String) return null;
+    return FollowUpQuestion(
+      category: category,
+      question: question,
+      choices: (value['choices'] as List? ?? const [])
+          .whereType<String>()
+          .toList(),
+    );
+  }
+}
+
+/// The coach's questions for the saved answers. [hash] names those answers:
+/// follow-up answers count for the plan only while they carry it.
+class OnboardingQuestions {
+  const OnboardingQuestions({required this.hash, required this.questions});
+
+  final String hash;
+  final List<FollowUpQuestion> questions;
+
+  static OnboardingQuestions? fromJson(Object? value) {
+    if (value is! Map || value['questions_hash'] is! String) return null;
+    return OnboardingQuestions(
+      hash: value['questions_hash'] as String,
+      questions: (value['questions'] as List? ?? const [])
+          .map(FollowUpQuestion.fromJson)
+          .whereType<FollowUpQuestion>()
+          .toList(),
+    );
+  }
 }
 
 class ProposalWorkout {
@@ -135,7 +188,7 @@ class ProposalWorkout {
   final List<ProposalExercise> exercises;
 }
 
-/// How Tracend calculated the calorie range (onboarding-policy-v1).
+/// How Tracend calculated the plan (onboarding-policy-v1 and v2).
 class ProposalCalculation {
   const ProposalCalculation({
     required this.bmrKcal,
@@ -146,6 +199,9 @@ class ProposalCalculation {
     required this.ceilingKcal,
     required this.ceilingApplied,
     this.health,
+    this.history,
+    this.priorityMinimums = const [],
+    this.returningFromBreak = false,
   });
 
   final List<int> bmrKcal;
@@ -159,6 +215,38 @@ class ProposalCalculation {
   /// The Apple Health summary the plan used; null without Apple Health or in
   /// proposals from before 2026-10.
   final ProposalHealth? health;
+
+  /// The athlete's usual months; null without enough Apple Health history.
+  final ProposalHealthHistory? history;
+
+  /// Focus muscles and the weekly sets each is guaranteed.
+  final List<({String muscle, int sets})> priorityMinimums;
+
+  /// The athlete lifts far less lately than usual, so the block eases in.
+  final bool returningFromBreak;
+}
+
+/// The usual months in a proposal's calculation (health_history.ts). Each
+/// value is present only with enough covered months behind it.
+class ProposalHealthHistory {
+  const ProposalHealthHistory({
+    required this.months,
+    this.usualStrengthPerWeek,
+    this.usualSleepMinutes,
+  });
+
+  static ProposalHealthHistory? fromJson(Object? value) {
+    if (value is! Map || value['months'] is! num) return null;
+    return ProposalHealthHistory(
+      months: (value['months'] as num).toInt(),
+      usualStrengthPerWeek: value['usual_strength_per_week'] as num?,
+      usualSleepMinutes: (value['usual_sleep_minutes'] as num?)?.toInt(),
+    );
+  }
+
+  final int months;
+  final num? usualStrengthPerWeek;
+  final int? usualSleepMinutes;
 }
 
 /// The 28-day Apple Health summary in a proposal's calculation. Every value is
@@ -284,6 +372,7 @@ class OnboardingProposal {
               targetRpe: exercise['target_rpe'] as num,
               restSeconds: (exercise['rest_seconds'] as num).toInt(),
               notes: exercise['notes'] as String? ?? '',
+              startLoadKg: exercise['start_load_kg'] as num?,
             );
           }).toList(),
         );
@@ -310,6 +399,21 @@ class OnboardingProposal {
               ceilingKcal: (calculation['ceiling_kcal'] as num?)?.toInt(),
               ceilingApplied: calculation['ceiling_applied'] == true,
               health: ProposalHealth.fromJson(calculation['health']),
+              history: ProposalHealthHistory.fromJson(
+                calculation['health_history'],
+              ),
+              priorityMinimums: [
+                for (final item
+                    in calculation['priority_minimums'] as List? ?? const [])
+                  if (item is Map &&
+                      item['muscle'] is String &&
+                      item['sets'] is num)
+                    (
+                      muscle: item['muscle'] as String,
+                      sets: (item['sets'] as num).toInt(),
+                    ),
+              ],
+              returningFromBreak: calculation['returning_from_break'] == true,
             )
           : null,
       rationale: row['rationale'] as String,
@@ -338,6 +442,11 @@ abstract interface class OnboardingRepository {
   /// Throws [OnboardingAnswersIncomplete] when answers are missing and
   /// [OnboardingPlanInfeasible] when no safe plan fits them.
   Future<OnboardingGeneration> startGeneration();
+
+  /// The coach's follow-up questions for the saved draft, asked once per set
+  /// of answers. Throws like [startGeneration] when answers are missing or no
+  /// safe plan fits them.
+  Future<OnboardingQuestions> askQuestions();
 
   /// The newest generation, or null when there is none.
   Future<OnboardingGeneration?> loadGeneration();
@@ -462,6 +571,43 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
   }
 
   @override
+  Future<OnboardingQuestions> askQuestions() async {
+    try {
+      final result = await _client.functions
+          .invoke('onboarding-plan', body: {'mode': 'questions'})
+          .timeout(const Duration(seconds: 45));
+      final questions = OnboardingQuestions.fromJson(result.data);
+      if (questions == null) {
+        throw const FormatException('The coach sent no questions.');
+      }
+      return questions;
+    } on FunctionException catch (error) {
+      _throwPlanError(error);
+    }
+  }
+
+  /// The plan builder's refusals as typed errors; anything else rethrows.
+  static Never _throwPlanError(FunctionException error) {
+    final details = error.details;
+    if (error.status == 422 && details is Map) {
+      List<String> strings(Object? value) =>
+          (value as List? ?? const []).whereType<String>().toList();
+      if (details['error'] == 'onboarding_answers_incomplete') {
+        throw OnboardingAnswersIncomplete(strings(details['missing']));
+      }
+      if (details['error'] == 'onboarding_plan_infeasible') {
+        throw OnboardingPlanInfeasible(strings(details['change']));
+      }
+      // No saved draft with a path: the starting point is what is missing.
+      if (details['error'] == 'onboarding_draft_incomplete') {
+        throw const OnboardingAnswersIncomplete(['path']);
+      }
+    }
+    if (error.status == 503) throw const OnboardingPlanUnavailable();
+    throw error;
+  }
+
+  @override
   Future<OnboardingGeneration> startGeneration() async {
     try {
       final result = await _client.functions
@@ -473,23 +619,7 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
       }
       return generation;
     } on FunctionException catch (error) {
-      final details = error.details;
-      if (error.status == 422 && details is Map) {
-        List<String> strings(Object? value) =>
-            (value as List? ?? const []).whereType<String>().toList();
-        if (details['error'] == 'onboarding_answers_incomplete') {
-          throw OnboardingAnswersIncomplete(strings(details['missing']));
-        }
-        if (details['error'] == 'onboarding_plan_infeasible') {
-          throw OnboardingPlanInfeasible(strings(details['change']));
-        }
-        // No saved draft with a path: the starting point is what is missing.
-        if (details['error'] == 'onboarding_draft_incomplete') {
-          throw const OnboardingAnswersIncomplete(['path']);
-        }
-      }
-      if (error.status == 503) throw const OnboardingPlanUnavailable();
-      rethrow;
+      _throwPlanError(error);
     } on TimeoutException {
       // The request may still have started a generation; the caller polls.
       final generation = await loadGeneration();

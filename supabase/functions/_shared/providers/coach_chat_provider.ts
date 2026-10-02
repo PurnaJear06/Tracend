@@ -13,6 +13,14 @@ import {
 import { deepseekFlashPeakPricePerMillionUsd, isApprovedDeepseekModel } from "./deepseek_models.ts";
 import { calculateCoachNumbers, formatCoachCalculations } from "../coach_calculations.ts";
 
+/** How long the athlete has trained, as onboarding asks it. */
+const trainingYearsLabels: Readonly<Record<string, string>> = {
+  under_1: "under a year",
+  "1_2": "1-2 years",
+  "3_5": "3-5 years",
+  over_5: "over 5 years",
+};
+
 export type CoachChatAttemptOutcome =
   | "valid"
   | "invalid"
@@ -635,6 +643,19 @@ export function formatContextAsMarkdown(
       s += `- movements to avoid (the athlete's choice; never suggest an exercise from these): ${
         avoided.join(", ")
       }\n`;
+    }
+    if (profile.training_years != null) {
+      s += `- training for: ${
+        trainingYearsLabels[str(profile.training_years)] ?? str(profile.training_years)
+      }\n`;
+    }
+    if (Array.isArray(profile.priority_muscles) && profile.priority_muscles.length) {
+      s += `- focus muscles (the athlete's choice; their plan gives these extra weekly sets): ${
+        profile.priority_muscles.map(str).join(", ")
+      }\n`;
+    }
+    if (Array.isArray(profile.strong_muscles) && profile.strong_muscles.length) {
+      s += `- strong muscles (the athlete's view): ${profile.strong_muscles.map(str).join(", ")}\n`;
     }
     push(s);
   }

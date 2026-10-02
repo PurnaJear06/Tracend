@@ -3,7 +3,7 @@ import type { OnboardingPlan, PlanExercise, PlanPolicies, PlanWorkout } from "./
 import { estimateWorkoutMinutes, nutritionBounds, type Split } from "./policy.ts";
 
 // The rules plan: a complete onboarding plan built only by deterministic code
-// from onboarding-policy-v1 and the catalog. It is used whenever a model is
+// from onboarding-policy-v2 and the catalog. It is used whenever a model is
 // not used (no AI consent, no evaluated provider, budget reached) or its plan
 // fails validation after one repair, so every athlete gets a valid plan.
 
@@ -177,6 +177,128 @@ function prescription(
   return { rep_min: 10, rep_max: 15, target_rpe: 8 - lighter, rest_seconds: 75 };
 }
 
+/** Weekly sets per target muscle (the catalog's first muscle). */
+export function weeklySetsByMuscle(
+  workouts: readonly PlanWorkout[],
+  catalog: readonly CatalogExercise[],
+): Map<string, number> {
+  const bySlug = new Map(catalog.map((exercise) => [exercise.slug, exercise]));
+  const totals = new Map<string, number>();
+  for (const workout of workouts) {
+    for (const exercise of workout.exercises) {
+      const target = bySlug.get(exercise.slug)?.muscles[0];
+      if (target) totals.set(target, (totals.get(target) ?? 0) + exercise.sets);
+    }
+  }
+  return totals;
+}
+
+/**
+ * Raises each focus muscle toward its weekly minimum, one step at a time:
+ * first by adding a set to an exercise that already targets it, then by adding
+ * an exercise for it to the session with the most room, then by swapping an
+ * accessory for another muscle for one aimed at it. Every step keeps the
+ * session set budget, the session length, the exercise count and the weekly
+ * maximum; when nothing fits, the muscle stays below its minimum and
+ * policiesFor lowers the minimum to what fits.
+ */
+function topUpPriorities(
+  workouts: PlanWorkout[],
+  policies: PlanPolicies,
+  allowed: readonly CatalogExercise[],
+  limit: number,
+): PlanWorkout[] {
+  const { training, catalog } = policies;
+  const bySlug = new Map(catalog.map((exercise) => [exercise.slug, exercise]));
+  const days: (Omit<PlanWorkout, "exercises"> & { exercises: PlanExercise[] })[] = workouts.map((
+    workout,
+  ) => ({ ...workout, exercises: [...workout.exercises] }));
+  const sessionSets = (day: Readonly<{ exercises: readonly PlanExercise[] }>) =>
+    day.exercises.reduce((total, exercise) => total + exercise.sets, 0);
+  const fits = (exercises: PlanExercise[]) =>
+    exercises.reduce((total, exercise) => total + exercise.sets, 0) <=
+      training.setBudgetPerSession &&
+    exercises.length <= training.maxExercisesPerSession &&
+    estimateWorkoutMinutes(exercises) <= limit;
+
+  for (const priority of training.priorityMinimums) {
+    let weekly = weeklySetsByMuscle(days, catalog).get(priority.muscle) ?? 0;
+    while (weekly < priority.sets && weekly < training.maxWeeklySetsPerMuscle) {
+      let added = false;
+      // One more set on an exercise already aimed at the muscle.
+      for (const day of days) {
+        const index = day.exercises.findIndex((exercise) =>
+          bySlug.get(exercise.slug)?.muscles[0] === priority.muscle &&
+          exercise.sets < training.setsPerExercise[1]
+        );
+        if (index < 0) continue;
+        const next = [...day.exercises];
+        next[index] = { ...next[index], sets: next[index].sets + 1 };
+        if (fits(next)) {
+          day.exercises = next;
+          added = true;
+          break;
+        }
+      }
+      if (!added) {
+        // A new exercise for the muscle, in the session with the most room.
+        const ordered = [...days].sort((a, b) => sessionSets(a) - sessionSets(b));
+        for (const day of ordered) {
+          const choice = allowed.find((exercise) =>
+            exercise.muscles[0] === priority.muscle &&
+            !day.exercises.some((item) => item.slug === exercise.slug)
+          );
+          if (!choice) continue;
+          const sets = Math.min(2, priority.sets - weekly);
+          const next = [...day.exercises, {
+            slug: choice.slug,
+            sets,
+            ...prescription(choice, policies),
+            notes: "",
+          }];
+          if (fits(next)) {
+            day.exercises = next;
+            added = true;
+            break;
+          }
+        }
+      }
+      if (!added) {
+        // A full session swaps one accessory aimed at a muscle that is not a
+        // focus for an exercise aimed at this one. Accessories never cover a
+        // required movement group, so coverage holds.
+        const focus = new Set(training.priorityMinimums.map((item) => item.muscle as string));
+        for (const day of days) {
+          const choice = allowed.find((exercise) =>
+            exercise.muscles[0] === priority.muscle &&
+            !day.exercises.some((item) => item.slug === exercise.slug)
+          );
+          const index = day.exercises.findIndex((exercise) => {
+            const entry = bySlug.get(exercise.slug);
+            return entry !== undefined && !entry.compound && !focus.has(entry.muscles[0]);
+          });
+          if (!choice || index < 0) continue;
+          const next = [...day.exercises];
+          next[index] = {
+            slug: choice.slug,
+            sets: day.exercises[index].sets,
+            ...prescription(choice, policies),
+            notes: "",
+          };
+          if (fits(next)) {
+            day.exercises = next;
+            added = true;
+            break;
+          }
+        }
+      }
+      if (!added) break;
+      weekly = weeklySetsByMuscle(days, catalog).get(priority.muscle) ?? 0;
+    }
+  }
+  return days;
+}
+
 export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
   const { answers, training, nutrition } = policies;
   const allowed = allowedExercises(
@@ -190,7 +312,7 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
   const weeklySets = new Map<string, number>();
   const limit = answers.sessionMinutes + training.sessionOverrunMinutes;
 
-  const workouts: PlanWorkout[] = days.map((day, index) => {
+  const built: PlanWorkout[] = days.map((day, index) => {
     const exercises: PlanExercise[] = [];
     let sessionSets = 0;
     const slotCount = Math.min(training.maxExercisesPerSession, day.slots.length);
@@ -250,6 +372,7 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
       exercises,
     };
   });
+  const workouts = topUpPriorities(built, policies, allowed, limit);
 
   const [low, high] = nutrition.calories;
   const calories = Math.round((low + high) / 2 / 10) * 10;
@@ -275,9 +398,11 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
   return {
     title: experienced ? "Structured continuation block" : "Foundation block",
     block_weeks: 6,
-    assessment: experienced
-      ? "Built by Tracend's rules from your schedule, equipment and goal. Your current plan was not compared exercise by exercise; tell the Coach what you want to keep."
-      : "Built by Tracend's rules from your schedule, equipment and goal, so the first weeks set a measurable baseline.",
+    assessment: `${
+      experienced
+        ? "Built by Tracend's rules from your schedule, equipment and goal. Your current plan was not compared exercise by exercise; tell the Coach what you want to keep."
+        : "Built by Tracend's rules from your schedule, equipment and goal, so the first weeks set a measurable baseline."
+    }${training.priorityMinimums.length ? ` Your focus muscles get extra weekly sets.` : ""}`,
     assumptions: [
       "Calories are an estimate from your height, weight, age and activity; weigh-ins over 2-3 weeks will confirm them.",
       ...(answers.limitations

@@ -42,14 +42,25 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void initState() {
     super.initState();
+    // A starting load from the plan fills the kg field until the athlete
+    // logs their own; saved sets replace it when they load.
     _sets = [
       for (final e in widget.workout.exercises)
-        [for (var i = 0; i < e.setCount; i++) _SetDraft()],
+        [
+          for (var i = 0; i < e.setCount; i++)
+            _SetDraft(load: _loadText(e.targetLoadKg)),
+        ],
     ];
     _exerciseStatuses = List.filled(widget.workout.exercises.length, 'unknown');
     _painFlags = List.filled(widget.workout.exercises.length, false);
     _restoreAndStart();
   }
+
+  static String _loadText(num? kg) => kg == null
+      ? ''
+      : kg % 1 == 0
+      ? '${kg.toInt()}'
+      : '$kg';
 
   @override
   void dispose() {

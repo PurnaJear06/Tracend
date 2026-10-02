@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
@@ -96,11 +99,22 @@ void main() {
     await _tapText(tester, 'Squats');
     await _tapText(tester, 'Overhead pressing');
     await _continue(tester);
+
+    // A beginner skips the training and top-set steps.
+    expect(find.text('Where should the plan focus?'), findsOneWidget);
+    expect(find.textContaining('Step 10 of 13'), findsOneWidget);
+    // The first row is "Bring up"; the second, "Already strong".
+    await tester.tap(find.widgetWithText(FilterChip, 'Chest').first);
+    await tester.pumpAndSettle();
+    await _continue(tester);
     expect(find.text('Review before building.'), findsOneWidget);
     expect(find.text('Mon, Wed, Thu, Fri · 60 min'), findsOneWidget);
     expect(find.text('Squats, Overhead pressing'), findsOneWidget);
+    expect(find.text('Bring up chest'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Build my plan'));
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Continue to your coach'),
+    );
     await tester.pump();
     await tester.pump();
     await tester.pumpAndSettle();
@@ -125,6 +139,10 @@ void main() {
     expect(payload['goal'], 'fat_loss');
     expect(payload['avoid_patterns'], ['squat', 'vertical_push']);
     expect(payload['health_import'], 'skipped');
+    expect(payload['priority_muscles'], ['chest']);
+    expect(payload.containsKey('training_years'), isFalse);
+    // No questions came back: the plan was built straight away.
+    expect(repository.askCalls, 1);
 
     final approve = find.widgetWithText(FilledButton, 'Approve plan');
     await tester.ensureVisible(approve);
@@ -207,7 +225,7 @@ void main() {
     );
     await _pump(tester, repository);
 
-    expect(find.textContaining('Step 6 of 11'), findsOneWidget);
+    expect(find.textContaining('Step 6 of 15'), findsOneWidget);
     expect(find.text('About you.'), findsOneWidget);
     expect(find.text('Current weight: 82 kg'), findsOneWidget);
     await tester.tap(find.byTooltip('Previous section'));
@@ -338,7 +356,9 @@ void main() {
       missing: const ['equipment_items'],
     );
     await _pump(tester, repository);
-    await tester.tap(find.widgetWithText(FilledButton, 'Build my plan'));
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Continue to your coach'),
+    );
     await tester.pumpAndSettle();
     expect(find.text('What can you train with?'), findsOneWidget);
     expect(find.text('Add your equipment to build your plan.'), findsOneWidget);
@@ -352,7 +372,9 @@ void main() {
         missing: const ['avoid_patterns'],
       );
       await _pump(tester, repository);
-      await tester.tap(find.widgetWithText(FilledButton, 'Build my plan'));
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Continue to your coach'),
+      );
       await tester.pumpAndSettle();
       expect(repository.savedPayload!.containsKey('avoid_patterns'), isFalse);
       expect(find.text('Food and limits.'), findsOneWidget);
@@ -373,7 +395,9 @@ void main() {
       infeasible: const ['avoid_patterns', 'equipment_items'],
     );
     await _pump(tester, repository);
-    await tester.tap(find.widgetWithText(FilledButton, 'Build my plan'));
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Continue to your coach'),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Food and limits.'), findsOneWidget);
     expect(
@@ -644,7 +668,9 @@ void main() {
         ..unavailable = true;
       await _pump(tester, repository);
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, 'Build my plan'));
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Continue to your coach'),
+      );
       await tester.pumpAndSettle();
       expect(
         find.text('The plan builder is unavailable. Try again in a minute.'),
@@ -683,10 +709,28 @@ void main() {
       'schedule',
       'equipment',
       'food',
+      'training',
+      'lifts',
+      'focus',
       'review',
     ]) {
       testWidgets('$section lays out at 2x text', (tester) async {
-        await large(tester, _FakeOnboardingRepository(draft: _draft(section)));
+        await large(
+          tester,
+          _FakeOnboardingRepository(
+            draft: _experiencedDraft(section, {
+              'current_lifts': [
+                {
+                  'slug': 'barbell-bench-press',
+                  'load_kg': 100,
+                  'reps': 5,
+                  'reps_left': 1,
+                },
+              ],
+              'priority_muscles': ['chest'],
+            }),
+          ),
+        );
         expect(tester.takeException(), isNull);
         await tester.drag(
           find.byType(Scrollable).first,
@@ -714,6 +758,276 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text("You're set."), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('Coach intake', () {
+    testWidgets(
+      'an experienced athlete reports training, a top set and a focus',
+      (tester) async {
+        final repository = _FakeOnboardingRepository(
+          draft: _experiencedDraft('food', {'training_years': null}),
+        );
+        await _pump(tester, repository);
+        await _continue(tester);
+
+        expect(find.text('Your training so far.'), findsOneWidget);
+        expect(find.textContaining('Step 10 of 15'), findsOneWidget);
+        await _continue(tester);
+        expect(find.text('Choose how long you have trained.'), findsOneWidget);
+        await _tapText(tester, 'Over 5 years');
+        await tester.enterText(
+          find.widgetWithText(
+            TextField,
+            'What has worked, and what has stalled',
+          ),
+          'Bench stuck at 80 kg',
+        );
+        await _continue(tester);
+
+        expect(find.text('Recent top sets.'), findsOneWidget);
+        await tester.tap(find.widgetWithText(SwitchListTile, 'Bench press'));
+        await tester.pumpAndSettle();
+        final heavier = find.byTooltip('Increase bench press weight');
+        await tester.ensureVisible(heavier);
+        await tester.tap(heavier);
+        await tester.pumpAndSettle();
+        await tester.tap(heavier);
+        await tester.pumpAndSettle();
+        await _tapText(tester, 'None');
+        await _continue(tester);
+
+        expect(find.text('Where should the plan focus?'), findsOneWidget);
+        final bringUp = find.widgetWithText(FilterChip, 'Back').first;
+        await tester.tap(bringUp);
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilterChip, 'Chest').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilterChip, 'Calves').first);
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('Focusing on everything is focusing on nothing'),
+          findsWidgets,
+        );
+        // A strong muscle cannot also be a focus.
+        await tester.tap(find.widgetWithText(FilterChip, 'Back').last);
+        await tester.pumpAndSettle();
+        await _continue(tester);
+
+        expect(find.text('Review before building.'), findsOneWidget);
+        expect(find.text('Bench press 65 kg × 5 to failure'), findsOneWidget);
+        expect(find.text('Bring up chest · strong back'), findsOneWidget);
+        final payload = repository.savedPayload!;
+        expect(payload['training_years'], 'over_5');
+        expect(payload['training_history'], 'Bench stuck at 80 kg');
+        expect(payload['current_lifts'], [
+          {
+            'slug': 'barbell-bench-press',
+            'load_kg': 65.0,
+            'reps': 5,
+            'reps_left': 0,
+          },
+        ]);
+        expect(payload['priority_muscles'], ['chest']);
+        expect(payload['strong_muscles'], ['back']);
+      },
+    );
+
+    testWidgets('the coach asks, and the answers go with the plan', (
+      tester,
+    ) async {
+      final repository =
+          _FakeOnboardingRepository(
+              draft: _experiencedDraft('review'),
+              generations: [_succeeded],
+            )
+            ..questions = const [
+              FollowUpQuestion(
+                category: 'stalled_lift',
+                question: 'How often do you bench now?',
+                choices: ['Once a week', 'Twice a week'],
+              ),
+              FollowUpQuestion(
+                category: 'recovery_between_sessions',
+                question: 'How do you feel the day after legs?',
+                choices: [],
+              ),
+            ];
+      await _pump(tester, repository);
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Continue to your coach'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('A few questions from your coach.'), findsOneWidget);
+      expect(repository.startCalls, 0);
+      await _tapText(tester, 'Twice a week');
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Your answer'),
+        'Sore for two days',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Build my plan'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your starting plan'), findsOneWidget);
+      final payload = repository.savedPayload!;
+      expect(payload['follow_ups_hash'], 'a' * 64);
+      expect(payload['follow_ups'], [
+        {
+          'category': 'stalled_lift',
+          'question': 'How often do you bench now?',
+          'answer': 'Twice a week',
+        },
+        {
+          'category': 'recovery_between_sessions',
+          'question': 'How do you feel the day after legs?',
+          'answer': 'Sore for two days',
+        },
+      ]);
+    });
+
+    testWidgets('skip builds the plan while the coach is still reading', (
+      tester,
+    ) async {
+      final repository = _FakeOnboardingRepository(
+        draft: _experiencedDraft('review'),
+        generations: [_succeeded],
+      )..questionsDelay = Completer<void>();
+      await _pump(tester, repository);
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Continue to your coach'),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Your coach is reading your answers'), findsOneWidget);
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Skip and build my plan'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Your starting plan'), findsOneWidget);
+      expect(repository.startCalls, 1);
+      expect(repository.savedPayload!.containsKey('follow_ups'), isFalse);
+      // The late answer changes nothing.
+      repository.questionsDelay!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Your starting plan'), findsOneWidget);
+    });
+
+    testWidgets(
+      'an edited answer drops the follow-up answers it no longer fits',
+      (tester) async {
+        final repository = _FakeOnboardingRepository(
+          draft: _experiencedDraft('review', {
+            'follow_ups_hash': 'b' * 64,
+            'follow_ups': [
+              {
+                'category': 'stalled_lift',
+                'question': 'How often do you bench now?',
+                'answer': 'Once a week',
+              },
+            ],
+          }),
+        );
+        await _pump(tester, repository);
+        final edit = find.byTooltip('Edit focus');
+        await tester.ensureVisible(edit);
+        await tester.tap(edit);
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilterChip, 'Chest').first);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.widgetWithText(FilledButton, 'Save and return to review'),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          repository.savedPayload!.containsKey('follow_ups_hash'),
+          isFalse,
+        );
+        expect(repository.savedPayload!['priority_muscles'], ['chest']);
+      },
+    );
+
+    testWidgets('Apple Health shows the usual months next to the last weeks', (
+      tester,
+    ) async {
+      final repository = _FakeOnboardingRepository(draft: _draft('health'));
+      final baseline = _FakeBaseline(
+        const HealthBaseline(
+          months: 11,
+          usualStrengthPerWeek: 3.4,
+          recentStrengthPerWeek: 1,
+          usualSleepMinutes: 410,
+        ),
+      );
+      await _pump(
+        tester,
+        repository,
+        health: _FakeHealth(
+          connectStatus: _connected,
+          history: HealthHistory([
+            for (var back = 20; back >= 1; back--)
+              HealthDay(
+                date: DateTime.now().subtract(Duration(days: back)),
+                presentMetrics: const {HealthMetric.steps},
+                steps: 8000,
+              ),
+          ]),
+        ),
+        healthBaseline: baseline,
+      );
+      await _tapText(tester, 'Connect Apple Health');
+      expect(baseline.loads, 1);
+      expect(
+        find.text('Strength: 3.4× a week usually · 1× a week lately'),
+        findsOneWidget,
+      );
+      expect(find.text('Sleep: 6 h 50 min usually'), findsOneWidget);
+    });
+
+    testWidgets('a short history says the plan uses the last weeks', (
+      tester,
+    ) async {
+      final repository = _FakeOnboardingRepository(draft: _draft('health'));
+      await _pump(
+        tester,
+        repository,
+        health: _FakeHealth(
+          connectStatus: _connected,
+          history: HealthHistory([
+            HealthDay(
+              date: DateTime.now().subtract(const Duration(days: 2)),
+              presentMetrics: const {HealthMetric.steps},
+              steps: 8000,
+            ),
+          ]),
+        ),
+        healthBaseline: _FakeBaseline(const HealthBaseline(months: 2)),
+      );
+      await _tapText(tester, 'Connect Apple Health');
+      expect(
+        find.textContaining('Fewer than 3 earlier months of data'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the proposal shows starting loads, the focus and usual months', (
+      tester,
+    ) async {
+      final repository = _FakeOnboardingRepository(
+        draft: _draft('proposal'),
+        generations: [_succeeded],
+      )..intakeProposal = true;
+      await _pump(tester, repository);
+      await tester.pumpAndSettle();
+      expect(find.text('Start at 82.5 kg'), findsOneWidget);
+      expect(find.text('Focus: chest 10+ sets a week.'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Your usual months (11): strength 3.4 times a week · sleep 7 h 5 min.',
+        ),
+        findsOneWidget,
+      );
     });
   });
 
@@ -858,7 +1172,9 @@ void main() {
         },
       );
       await _pump(tester, repository);
-      await tester.tap(find.widgetWithText(FilledButton, 'Build my plan'));
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Continue to your coach'),
+      );
       await tester.pumpAndSettle();
       expect(
         find.textContaining(
@@ -918,6 +1234,37 @@ const _succeeded = OnboardingGeneration(
   proposalStatus: 'pending',
 );
 
+OnboardingDraft _experiencedDraft(
+  String section, [
+  Map<String, Object?> extra = const {},
+]) => OnboardingDraft(
+  path: 'experienced',
+  currentSection: section,
+  payload: {
+    ..._draft(section).payload,
+    'experience': 'intermediate',
+    'current_plan': 'Upper/lower, four days',
+    'training_years': 'over_5',
+    ...extra,
+  },
+);
+
+class _FakeBaseline implements HealthBaselineSource {
+  _FakeBaseline(this.baseline);
+
+  final HealthBaseline? baseline;
+  int loads = 0;
+
+  @override
+  Future<HealthBaseline?> load() async {
+    loads++;
+    return baseline;
+  }
+
+  @override
+  Future<void> refreshIfDue() async {}
+}
+
 OnboardingDraft _draft(String section) => OnboardingDraft(
   path: 'beginner',
   currentSection: section,
@@ -946,6 +1293,7 @@ Future<void> _pump(
   Future<void> Function()? onSignOut,
   int? currentYear,
   HealthRepository? health,
+  HealthBaselineSource? healthBaseline,
   double width = 390,
 }) async {
   tester.view.physicalSize = Size(width, 844);
@@ -960,6 +1308,7 @@ Future<void> _pump(
         onCompleted: onCompleted ?? () {},
         aiConsent: consent,
         health: health,
+        healthBaseline: healthBaseline,
         onSignOut: onSignOut,
         pollInterval: Duration.zero,
         currentYear: currentYear,
@@ -1061,6 +1410,26 @@ class _FakeOnboardingRepository implements OnboardingRepository {
     return _next() ?? _running;
   }
 
+  /// The coach's questions; none by default, so Review goes straight to the
+  /// plan.
+  List<FollowUpQuestion> questions = const [];
+  String questionsHash = 'a' * 64;
+  int askCalls = 0;
+
+  /// When set, the questions wait for it (the coach still reading).
+  Completer<void>? questionsDelay;
+
+  @override
+  Future<OnboardingQuestions> askQuestions() async {
+    askCalls++;
+    await questionsDelay?.future;
+    return OnboardingQuestions(hash: questionsHash, questions: questions);
+  }
+
+  /// The proposal carries the coach intake: a starting load, the focus and
+  /// the usual months.
+  bool intakeProposal = false;
+
   @override
   Future<OnboardingGeneration?> loadGeneration() async => _next();
 
@@ -1084,6 +1453,18 @@ class _FakeOnboardingRepository implements OnboardingRepository {
             'calorie_range_kcal': [1580, 1890],
             'floor_applied': false,
             'health': ?calculationHealth,
+            if (intakeProposal) ...{
+              'priority_minimums': [
+                {'muscle': 'chest', 'sets': 10},
+              ],
+              'health_history': {
+                'months': 11,
+                'first_month': '2025-11-01',
+                'last_month': '2026-09-01',
+                'usual_strength_per_week': 3.4,
+                'usual_sleep_minutes': 425,
+              },
+            },
           },
           'weekly_structure': [
             {
@@ -1101,6 +1482,17 @@ class _FakeOnboardingRepository implements OnboardingRepository {
                   'rest_seconds': 120,
                   'notes': '',
                 },
+                if (intakeProposal)
+                  {
+                    'name': 'Barbell bench press',
+                    'sets': 4,
+                    'rep_min': 5,
+                    'rep_max': 8,
+                    'target_rpe': 8,
+                    'rest_seconds': 150,
+                    'notes': '',
+                    'start_load_kg': 82.5,
+                  },
               ],
             },
           ],
