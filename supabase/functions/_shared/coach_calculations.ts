@@ -209,6 +209,28 @@ function weightTrend(points: readonly WeightPoint[], today: number, window: 28 |
   };
 }
 
+/**
+ * The 28-day least-squares weight trend in kg a week ending on `through`
+ * (YYYY-MM-DD), or null with fewer than weightTrendMinimumDays readings across
+ * weightTrendMinimumSpanDays. Used where only daily readings are at hand
+ * (the onboarding Apple Health summary).
+ */
+export function weightTrendKgPerWeek(
+  readings: readonly Readonly<{ date: string; kg: number }>[],
+  through: string,
+): number | null {
+  const end = dayIndex(through);
+  if (end === null) return null;
+  const points = readings.flatMap((reading) => {
+    const day = dayIndex(reading.date);
+    return day === null || day > end || !(reading.kg > 0)
+      ? []
+      : [{ day, date: reading.date, kg: reading.kg }];
+  });
+  const trend = weightTrend(points, end, 28);
+  return trend ? roundTo(trend.kgPerWeek, 2) : null;
+}
+
 function calculateWeight(ctx: Record<string, unknown>, today: number): WeightCalculation | null {
   const points = weightPoints(ctx, today);
   if (!points.length) return null;

@@ -1,3 +1,4 @@
+import { type AvoidablePattern, avoidablePatternLabels } from "../onboarding/catalog.ts";
 import {
   coachChatAnswerLimits,
   type CoachChatAnswerV1,
@@ -622,6 +623,18 @@ export function formatContextAsMarkdown(
     }
     if (profile.nutrition_notes != null) {
       s += `- diet notes (athlete's words): ${str(profile.nutrition_notes)}\n`;
+    }
+    if (profile.equipment_note != null) {
+      s += `- equipment note (athlete's words): ${str(profile.equipment_note)}\n`;
+    }
+    if (Array.isArray(profile.movements_to_avoid) && profile.movements_to_avoid.length) {
+      const avoided = profile.movements_to_avoid.map((pattern) =>
+        avoidablePatternLabels[str(pattern) as AvoidablePattern] ??
+          str(pattern).replaceAll("_", " ")
+      );
+      s += `- movements to avoid (the athlete's choice; never suggest an exercise from these): ${
+        avoided.join(", ")
+      }\n`;
     }
     push(s);
   }

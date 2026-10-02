@@ -17,6 +17,14 @@ import {
 } from "../_shared/onboarding/generate.ts";
 import type { OnboardingProposalPayload } from "../_shared/onboarding/plan_contract.ts";
 import { onboardingPolicyVersion } from "../_shared/onboarding/policy.ts";
+import {
+  type HealthDay,
+  type HealthSummary,
+  healthWindow,
+  type HealthWorkout,
+  localDate,
+  summarizeHealth,
+} from "../_shared/onboarding/health_summary.ts";
 import { sha256 } from "../_shared/onboarding/snapshot.ts";
 import type { OnboardingModelResolution } from "../_shared/providers/onboarding_plan_provider.ts";
 
@@ -71,6 +79,13 @@ export interface OnboardingStore {
   loadDraft(): Promise<{ path: unknown; payload: Record<string, unknown> } | null>;
   claim(snapshotHash: string): Promise<GenerationClaim>;
   loadCatalog(): Promise<CatalogExercise[]>;
+  /** The athlete's IANA time zone (user_accounts.timezone). */
+  timezone(): Promise<string>;
+  /** Apple Health daily summaries and workouts with local dates in [from, through]. */
+  loadHealth(
+    from: string,
+    through: string,
+  ): Promise<{ days: HealthDay[]; workouts: HealthWorkout[] }>;
   consent(): Promise<AiCoachingConsent>;
   budgetAvailable(): Promise<boolean>;
   recordUsage(usage: GenerationUsage): Promise<void>;
@@ -95,6 +110,7 @@ export type HandlerDeps = Readonly<{
   store: OnboardingStore;
   resolution: () => OnboardingModelResolution;
   currentYear: number;
+  now: () => Date;
   /** Keeps the background work alive after the response (EdgeRuntime.waitUntil). */
   background: (work: Promise<void>) => void;
   observer: Observer;
@@ -113,8 +129,9 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
     return reply(422, { error: "onboarding_answers_incomplete", missing: parsed.missing });
   }
   const catalog = await deps.store.loadCatalog();
+  const health = await loadHealthSummary(deps);
   try {
-    validRulesPlan(policiesFor(parsed.answers, catalog));
+    validRulesPlan(policiesFor(parsed.answers, catalog, health));
   } catch (error) {
     if (!(error instanceof OnboardingPlanInfeasibleError)) throw error;
     return reply(422, {
@@ -128,6 +145,9 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
     policy_version: onboardingPolicyVersion,
     catalog_version: catalogVersion,
     answers: answersSnapshot(parsed.answers),
+    // Part of the hash: connecting Apple Health builds a new plan, the same
+    // data reuses the existing one.
+    health,
   };
   const snapshotHash = await sha256(snapshot);
   const claim = await deps.store.claim(snapshotHash);
@@ -139,7 +159,15 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
   };
   if (!claim.started) return reply(claim.status === "succeeded" ? 200 : 202, body);
   deps.background(
-    runGeneration(deps, claim.generation_id, snapshotHash, snapshot, parsed.answers, catalog),
+    runGeneration(
+      deps,
+      claim.generation_id,
+      snapshotHash,
+      snapshot,
+      parsed.answers,
+      catalog,
+      health,
+    ),
   );
   return reply(202, body);
 }
@@ -158,6 +186,17 @@ export function answersToChange(rule: string, answers: OnboardingAnswers): strin
   return answers.avoidPatterns.length ? ["avoid_patterns", "equipment_items"] : ["equipment_items"];
 }
 
+/**
+ * The 28 complete days before the athlete's local today, summarised; null
+ * without Apple Health data (ALGORITHMS §9).
+ */
+async function loadHealthSummary(deps: HandlerDeps): Promise<HealthSummary | null> {
+  const today = localDate(deps.now(), await deps.store.timezone());
+  const { from, through } = healthWindow(today);
+  const { days, workouts } = await deps.store.loadHealth(from, through);
+  return summarizeHealth(days, workouts, today);
+}
+
 async function runGeneration(
   deps: HandlerDeps,
   generationId: string,
@@ -165,6 +204,7 @@ async function runGeneration(
   snapshot: Record<string, unknown>,
   answers: OnboardingAnswers,
   catalog: CatalogExercise[],
+  health: HealthSummary | null,
 ): Promise<void> {
   const { store, observer } = deps;
   try {
@@ -180,6 +220,9 @@ async function runGeneration(
       catalog,
       resolution,
       { consentGranted, budgetAvailable },
+      fetch,
+      undefined,
+      health,
     );
     if (result.usage) {
       try {

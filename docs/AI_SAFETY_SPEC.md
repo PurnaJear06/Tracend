@@ -230,9 +230,22 @@ Since 2026-10 (`onboarding-plan`, policy `onboarding-policy-v1`):
     validator, the rules plan and `persist_onboarding_proposal_v3` (v2 delegates to it) all
     enforce them.
 - **What deterministic code sets, not the model:** names from the catalog, workout order and
-  length, a confidence cap, and fixed notes (the movements left out, the calorie ceiling, low
-  carbohydrate). Confidence is low when sex is unspecified or the calorie floor or ceiling
-  applies, and medium otherwise.
+  length, a confidence cap, and fixed notes (the movements left out, the calorie ceiling, short
+  sleep, an Apple Health weight far from the answer, low carbohydrate, steps far from the
+  daily-activity answer). Tracend's notes come first and the list keeps its four-item limit.
+  Confidence is low when sex is unspecified or the calorie floor or ceiling applies, and medium
+  otherwise.
+- **Apple Health** (2026-10): the plan uses a deterministic 28-day summary (ALGORITHMS §9) of the
+  athlete's synced data: average steps, active energy and sleep, workouts found, and the latest
+  weight and trend. It never moves the calorie or protein ranges. Only short sleep changes a
+  limit: the RPE ceiling drops half a point (`startLighter`), in the policy, so the model and the
+  rules plan both follow it. No workouts found is reported as missing information, never as
+  inactivity, because HealthKit hides whether read access was denied. Resting heart rate, HRV and
+  breathing rate are not sent: without a personal baseline they cannot guide a starting plan. The
+  summary reaches the model only with `onboarding_plan` consent, as a data block, and is stored in
+  the onboarding snapshot and the proposal's calculation (evidence `APPLE_HEALTH_SUMMARY_28D`).
+- **No deload promise:** the app repeats one weekly template, so the prompt forbids promising a
+  deload or a different week, and the proposal no longer stores `deload_week`.
 - **When the model is not used:**
   - A plan that fails validation gets one targeted repair.
   - Anything else becomes the **rules plan**, built by the same policy without a model. That also
@@ -246,7 +259,10 @@ Since 2026-10 (`onboarding-plan`, policy `onboarding-policy-v1`):
   - Every billed call counts toward the AI budget, including empty or cut-off answers and the
     repair attempt.
 - **Approval:** `respond_to_onboarding_proposal_v2` inserts exactly the approved workouts and
-  exercises, and activates the goal, profile and onboarding weight, in one transaction.
+  exercises, and activates the goal, profile and onboarding weight, in one transaction, dated with
+  the athlete's local date at approval (`user_accounts.timezone`, set by the app through
+  `set_my_timezone`). The profile keeps the movements to avoid and the equipment note, which the
+  Coach reads and is told never to contradict.
 
 ## 7. Eligibility and Escalation
 
@@ -328,7 +344,10 @@ who declined, and the server enforces the same rule for every caller (2026-09-30
 `has_ai_coaching_consent` reads the newest `ai_coaching` record, and only a grant of the current
 notice version counts. Since 2026-10 the notice is server data, current per purpose
 (`ai_notice_current` for `coach_chat`, `daily_coaching` and `onboarding_plan`), and a grant counts
-for a purpose only when it names the notice that is current for that purpose. `coach-chat` answers 403 `ai_consent_required` without it, and 503
+for a purpose only when it names the notice that is current for that purpose. `ai-coaching-v4`
+(2026-10-02) is current for all three; it adds the onboarding Apple Health summary and movements
+to avoid. Publish any later notice for every purpose: the app shows the notice current for the
+most purposes, and a grant covers only that one version. `coach-chat` answers 403 `ai_consent_required` without it, and 503
 `ai_consent_unavailable` when the check fails. `coach-decide` then uses the deterministic provider,
 so no data reaches the AI provider.
 Under ADR 0006, Groq Qwen was an owner-only, time-bounded test provider and has been superseded. The

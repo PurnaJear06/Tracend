@@ -15,7 +15,7 @@ select is(
 
 insert into public.consent_records (
   user_id, consent_type, notice_version, action, source, created_at)
-values ('b6b6b6b6-b6b6-4b6b-8b6b-b6b6b6b6b6b6', 'ai_coaching', 'ai-coaching-v1',
+values ('b6b6b6b6-b6b6-4b6b-8b6b-b6b6b6b6b6b6', 'ai_coaching', 'ai-coaching-v4',
   'granted', 'ios_app', now() - interval '2 hours');
 
 select is(
@@ -32,7 +32,7 @@ select is(
 
 insert into public.consent_records (
   user_id, consent_type, notice_version, action, source, created_at)
-values ('b6b6b6b6-b6b6-4b6b-8b6b-b6b6b6b6b6b6', 'ai_coaching', 'ai-coaching-v1',
+values ('b6b6b6b6-b6b6-4b6b-8b6b-b6b6b6b6b6b6', 'ai_coaching', 'ai-coaching-v4',
   'withdrawn', 'ios_app', now() - interval '1 hour');
 
 select is(

@@ -96,8 +96,11 @@ AI consent is per purpose (2026-10):
     `onboarding_generations` and `ai_usage_events`.
 ## 4. HealthKit
 
-- Request only steps, active energy, sleep, workouts, weight, resting heart rate, and HRV needed for
-  enabled coaching.
+- Request only steps, active energy, sleep, workouts, weight, resting heart rate, HRV and
+  breathing rate needed for enabled coaching.
+- Onboarding may ask for Apple Health access as an optional step; skipping it never blocks a plan.
+  The onboarding plan receives only a 28-day summary (average steps, active energy and sleep,
+  workouts found, latest weight and trend), never raw samples, heart rate, HRV or breathing rate.
 - Request access near the relevant feature rather than at unexplained launch time.
 - Provide accurate iOS purpose strings for every read/write capability; MVP is read-oriented unless
   a documented requirement adds writing.

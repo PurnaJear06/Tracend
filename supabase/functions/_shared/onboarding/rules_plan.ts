@@ -159,11 +159,13 @@ function prescription(
   const { answers, training } = policies;
   const strength = answers.goal === "strength";
   const beginner = answers.experience === "beginner";
+  // Short sleep starts the block half a point easier (trainingPolicy).
+  const lighter = training.startLighter ? 0.5 : 0;
   if (exercise.compound) {
     return {
       rep_min: strength ? 4 : beginner ? 8 : 6,
       rep_max: strength ? 6 : beginner ? 12 : 10,
-      target_rpe: beginner ? 7.5 : 8,
+      target_rpe: (beginner ? 7.5 : 8) - lighter,
       // A session of 45 minutes or less keeps rests at two minutes, so it can
       // still cover its movement patterns.
       rest_seconds: Math.min(
@@ -172,7 +174,7 @@ function prescription(
       ),
     };
   }
-  return { rep_min: 10, rep_max: 15, target_rpe: 8, rest_seconds: 75 };
+  return { rep_min: 10, rep_max: 15, target_rpe: 8 - lighter, rest_seconds: 75 };
 }
 
 export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {

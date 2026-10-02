@@ -36,18 +36,22 @@ select ok(has_column_privilege('authenticated', 'public.user_profiles', 'session
 
 -- AI notice per purpose -----------------------------------------------------
 
+-- A notice may cover some purposes only (v4 covers all three since
+-- 20261002101000_onboarding_health_profile.sql, so this test publishes its own).
+select private.publish_ai_notice('ai-test-coach', 'DeepSeek', array['coach_chat','daily_coaching'],
+  'Coach and daily decisions only');
 insert into public.consent_records(user_id, consent_type, notice_version, action, source)
-values ('e1000000-0000-4000-8000-000000000001', 'ai_coaching', 'ai-coaching-v1', 'granted', 'ios_app');
+values ('e1000000-0000-4000-8000-000000000001', 'ai_coaching', 'ai-test-coach', 'granted', 'ios_app');
 select ok(public.has_ai_coaching_consent('e1000000-0000-4000-8000-000000000001'),
-  'a v1 grant still allows the Coach');
+  'a grant of the Coach notice allows the Coach');
 select ok(not public.has_ai_coaching_consent('e1000000-0000-4000-8000-000000000001', 'onboarding_plan'),
-  'a v1 grant does not cover the onboarding plan');
-select is(public.get_current_ai_notice()->>'version', 'ai-coaching-v1',
+  'it does not cover the onboarding plan, which has its own notice');
+select is(public.get_current_ai_notice()->>'version', 'ai-test-coach',
   'the app is shown the notice current for the most purposes');
 
 select throws_ok($$select private.publish_ai_notice('ai-coaching-bad', 'X', array['everything'], 'Body')$$,
   '23514', null, 'a notice with an unknown purpose is refused');
-select is((select version from public.ai_notice_current where purpose = 'coach_chat'), 'ai-coaching-v1',
+select is((select version from public.ai_notice_current where purpose = 'coach_chat'), 'ai-test-coach',
   'a refused publish changes nothing');
 
 -- Onboarding answers --------------------------------------------------------
