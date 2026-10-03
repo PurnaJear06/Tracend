@@ -9,7 +9,9 @@ import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/train/train_screen.dart';
-import 'package:tracend/features/train/workout_repository.dart';
+
+import 'train_fixtures.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 
 const _environment = AppEnvironment(
   name: 'test',
@@ -81,43 +83,51 @@ void main() {
     },
   );
 
-  // Train with real week-rail data: four sessions (the honest floor for a
-  // ratio verdict) plus a computed brief carrying ACWR/strain/monotony, so
-  // the verdict, band chip, day columns, mix advice, and ratio footnote all
-  // lay out under the largest accessibility scale. Bounded pump: the chart's
-  // grow-in reveal is a bounded animation.
-  testWidgets(
-    'Train computed week rail renders without overflow at 320pt × 2.0',
-    (tester) async {
-      tester.view.physicalSize = const Size(320, 844);
-      tester.view.devicePixelRatio = 1;
-      tester.platformDispatcher.textScaleFactorTestValue = 2.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+  // Train with a full 1.6 hub: the day boxes, readiness line, hero with the
+  // muscle map, exercise list, week card, and every Train sheet must lay out
+  // at the largest accessibility scale on the narrowest phone.
+  testWidgets('Train and its sheets render without overflow at 320pt × 2.0', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-      final now = DateTime.now();
-      final monday = DateTime(
-        now.year,
-        now.month,
-        now.day,
-      ).subtract(Duration(days: now.weekday - 1));
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData(
-            brightness: Brightness.dark,
-            extensions: const [TracendColors.dark],
-          ),
-          home: TrainScreen(
-            repository: _WeekRailHubRepository(monday),
-            brief: _ComputedBriefRepository(),
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.dark,
+        home: Scaffold(
+          body: TrainScreen(
+            repository: TrainFixtureRepository(),
+            brief: TrainBriefRepository(computed: trainComputed()),
+            now: trainNow,
           ),
         ),
-      );
+      ),
+    );
+    await tester.pumpAndSettle();
+    _expectNoLayoutException(tester, 'Train');
+
+    Future<void> openAndClose(Finder target, String name) async {
+      await tester.ensureVisible(target);
       await tester.pumpAndSettle();
-      _expectNoLayoutException(tester, 'Train computed');
-    },
-  );
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+      _expectNoLayoutException(tester, name);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+    }
+
+    await openAndClose(find.text('Recovery is excellent.'), 'Readiness');
+    await openAndClose(find.text('6 exercises, about 48 min'), 'Overview');
+    await openAndClose(find.text('Bench press'), 'Exercise');
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -4000));
+    await tester.pumpAndSettle();
+    await openAndClose(find.text('Training load'), 'Training load');
+  });
 }
 
 class _ComputedBriefRepository implements DailyBriefRepository {
@@ -180,44 +190,6 @@ class _FixtureHealthRepository implements HealthRepository {
 /// Hub payload with four real sessions in the current week so the week rail
 /// charts columns (not just sockets) and passes the ≥4-session floor for a
 /// ratio verdict at accessibility scales.
-class _WeekRailHubRepository extends FixtureWorkoutRepository {
-  _WeekRailHubRepository(this.monday);
-
-  final DateTime monday;
-
-  @override
-  Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
-      TrainingHubData(
-        planTitle: 'Approved training plan',
-        workouts: const [PlannedWorkout.fixture],
-        recentSessions: [
-          TrainingSessionSummary(
-            name: 'Push day',
-            date: monday,
-            durationSeconds: 2700,
-          ),
-          TrainingSessionSummary(
-            name: 'Pull day',
-            date: monday.add(const Duration(days: 1)),
-            durationSeconds: 3300,
-          ),
-          TrainingSessionSummary(
-            name: 'Leg day',
-            date: monday.add(const Duration(days: 2)),
-            durationSeconds: 1800,
-          ),
-          TrainingSessionSummary(
-            name: 'Push day',
-            date: monday.add(const Duration(days: 3)),
-            durationSeconds: 3000,
-          ),
-        ],
-        completedSessions: 1,
-        plannedSessions: 4,
-        progression: const [],
-      );
-}
-
 void _expectNoLayoutException(WidgetTester tester, String tab) {
   final exception = tester.takeException();
   final detail = exception is FlutterError

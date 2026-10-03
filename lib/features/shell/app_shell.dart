@@ -1,3 +1,8 @@
+import 'package:flutter/cupertino.dart';
+import 'package:tracend/features/account/account_deletion_repository.dart';
+import 'package:tracend/features/account/account_screen.dart';
+import 'package:tracend/features/account/notification_repository.dart';
+import 'package:tracend/features/account/privacy_export_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -87,6 +92,29 @@ class _AppShellState extends State<AppShell> {
         : const FixtureDailyBriefRepository();
   }
 
+  /// Account opened from a screen without its own route to it (Train's
+  /// "Connect Apple Health"). Today's avatar opens the same screen.
+  void _openAccount() => Navigator.of(context).push<void>(
+    CupertinoPageRoute(
+      builder: (_) => AccountScreen(
+        environment: widget.environment,
+        onSignOut: widget.onSignOut,
+        health: _health,
+        coach: _coach,
+        notifications: widget.environment.hasSupabaseConfiguration
+            ? SupabaseNotificationRepository(Supabase.instance.client)
+            : const FixtureNotificationRepository(),
+        exports: widget.environment.hasSupabaseConfiguration
+            ? SupabasePrivacyExportRepository(Supabase.instance.client)
+            : const FixturePrivacyExportRepository(),
+        deletion: widget.environment.hasSupabaseConfiguration
+            ? SupabaseAccountDeletionRepository(Supabase.instance.client)
+            : const FixtureAccountDeletionRepository(),
+        aiConsent: widget.aiConsent,
+      ),
+    ),
+  );
+
   void _selectTab(int index) {
     if (index == _selectedIndex) return;
     HapticFeedback.selectionClick();
@@ -115,6 +143,8 @@ class _AppShellState extends State<AppShell> {
         repository: _workouts,
         brief: _brief,
         coach: _coach,
+        health: _health,
+        onOpenAccount: _openAccount,
       ),
       CoachScreen(
         key: const ValueKey('tab_coach'),
