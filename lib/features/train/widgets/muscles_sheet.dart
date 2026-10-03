@@ -113,8 +113,7 @@ class _MusclesSheetBodyState extends State<MusclesSheetBody> {
                   entry: sets[i],
                   exercises: [
                     for (final exercise in exercises)
-                      if (exercise.exerciseSlug != null &&
-                          exercise.primaryMuscles.contains(sets[i].group))
+                      if (exercise.primaryMuscles.contains(sets[i].group))
                         exercise.name,
                   ],
                   selected: _selected == sets[i].group,
