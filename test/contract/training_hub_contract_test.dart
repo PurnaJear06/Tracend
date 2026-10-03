@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tracend/features/train/muscle_groups.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 
 String _readFixture(String name) {
@@ -314,6 +315,110 @@ void main() {
         // A day without athlete-reported effort never gets an intensity.
         if (recorded && day['effort_reported'] != true) expect(level, isNull);
       }
+    });
+  });
+
+  group('Training Hub parser — TrainingHubData.fromHubJson', () {
+    test('a 1.6 hub keeps the plan dates, links, provenance and day load', () {
+      final hub = TrainingHubData.fromHubJson(
+        _loadFixtureJson('training_hub_v1_6.json'),
+      );
+      expect(hub.localToday, DateTime(2026, 10, 2));
+      final plan = hub.plan!;
+      expect(plan.title, 'Strength foundation');
+      expect(plan.blockWeeks, 6);
+      expect(plan.sessionsPerWeek, 4);
+      expect(plan.effectiveDate, DateTime(2026, 9, 16));
+      expect(plan.approvedOn, DateTime(2026, 9, 16));
+      expect(plan.progressionRule, startsWith('When every set reaches'));
+      expect(hub.todayWorkout, isNull);
+
+      final exercises = hub.workouts.single.exercises;
+      expect(exercises[0].exerciseSlug, 'barbell-bench-press');
+      expect(exercises[0].primaryMuscles, [
+        MuscleGroup.chest,
+        MuscleGroup.triceps,
+      ]);
+      expect(exercises[1].primaryMuscles, [
+        MuscleGroup.back,
+        MuscleGroup.biceps,
+      ]);
+      expect(exercises[2].exerciseSlug, isNull);
+      expect(exercises[2].primaryMuscles, isEmpty);
+
+      final sessions = hub.recentSessions;
+      expect(sessions.first.id, '8a000000-0000-4000-8000-000000000002');
+      expect(sessions.first.effort, 8);
+      expect(sessions.first.completionSource, CompletionSource.manual);
+      expect(sessions.first.effortSource, EffortSource.athlete);
+      expect(sessions[1].completionSource, CompletionSource.healthkit);
+      expect(sessions[1].effortSource, EffortSource.healthkitDefault);
+      expect(sessions[2].completionSource, isNull);
+      expect(sessions[2].effortSource, EffortSource.legacyDefault);
+
+      expect(hub.progression.single.latestDate, DateTime(2026, 9, 25));
+      expect(hub.load!.acwr, 1.07);
+      expect(hub.load!.trainingMonotony, 1.6);
+
+      expect(hub.dailyLoad, hasLength(28));
+      expect(hub.dailyLoad.last.date, DateTime(2026, 10, 2));
+      expect(hub.dailyLoad.last.level, DayLoadLevel.moderate);
+      expect(hub.dailyLoad.last.effortReported, isTrue);
+      final defaultDay = hub.dailyLoad.firstWhere(
+        (day) => day.date == DateTime(2026, 9, 7),
+      );
+      expect(defaultDay.recorded, isTrue);
+      expect(defaultDay.level, isNull);
+      expect(defaultDay.minutes, 44);
+      expect(defaultDay.strain, 35.2);
+      expect(hub.dailyLoad.first.level, DayLoadLevel.rest);
+    });
+
+    test('a cached 1.5 hub parses with every 1.6 field absent', () {
+      final hub = TrainingHubData.fromHubJson(
+        _loadFixtureJson('training_hub_v1_5.json'),
+      );
+      expect(hub.planTitle, 'Upper/Lower Split');
+      expect(hub.localToday, isNull);
+      expect(hub.plan!.effectiveDate, isNull);
+      expect(hub.plan!.blockWeeks, isNull);
+      expect(hub.plan!.progressionRule, isNull);
+      expect(hub.dailyLoad, isEmpty);
+      expect(hub.workouts, hasLength(2));
+      for (final workout in hub.workouts) {
+        for (final exercise in workout.exercises) {
+          expect(exercise.exerciseSlug, isNull);
+          expect(exercise.primaryMuscles, isEmpty);
+        }
+      }
+      expect(hub.recentSessions.first.id, 'session-1');
+      expect(hub.recentSessions.first.effort, 8);
+      expect(hub.recentSessions.first.completionSource, isNull);
+      expect(hub.recentSessions.first.effortSource, isNull);
+      expect(hub.progression.first.latestDate, isNull);
+      expect(hub.load!.acwr, 1.15);
+      expect(hub.isDayCompleted(DateTime(2026, 7, 18)), isTrue);
+    });
+
+    test('a muscle outside the catalog vocabulary is dropped, not guessed', () {
+      final workout = PlannedWorkout.fromHubJson({
+        'id': 'w',
+        'name': 'W',
+        'objective': 'O',
+        'estimated_minutes': 30,
+        'exercises': [
+          {
+            'order': 1,
+            'name': 'Mystery lift',
+            'set_count': 3,
+            'rep_min': 8,
+            'rep_max': 10,
+            'exercise_slug': 'mystery-lift',
+            'primary_muscles': ['chest', 'forearms', 'chest'],
+          },
+        ],
+      });
+      expect(workout.exercises.single.primaryMuscles, [MuscleGroup.chest]);
     });
   });
 

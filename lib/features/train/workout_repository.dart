@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/features/train/muscle_groups.dart';
 
 class PlannedExercise {
   const PlannedExercise({
@@ -15,6 +16,8 @@ class PlannedExercise {
     this.restSeconds = 90,
     this.notes = '',
     this.targetLoadKg,
+    this.exerciseSlug,
+    this.primaryMuscles = const [],
   });
   final int order;
   final String name;
@@ -27,6 +30,14 @@ class PlannedExercise {
 
   /// The starting load Tracend set from a reported top set; null when none.
   final num? targetLoadKg;
+
+  /// The catalog slug (hub 1.6); null for exercises not linked to the
+  /// catalog and for every exercise in a 1.5 payload.
+  final String? exerciseSlug;
+
+  /// The catalog's primary muscles for [exerciseSlug] (hub 1.6). Empty when
+  /// the exercise is unlinked: muscles are never inferred from the name.
+  final List<MuscleGroup> primaryMuscles;
 }
 
 class PlannedWorkout {
@@ -72,9 +83,21 @@ class PlannedWorkout {
             restSeconds: (exercise['rest_seconds'] as num? ?? 90).toInt(),
             notes: exercise['notes'] as String? ?? '',
             targetLoadKg: exercise['target_load_kg'] as num?,
+            exerciseSlug: exercise['exercise_slug'] as String?,
+            primaryMuscles: _muscleGroups(exercise['primary_muscles']),
           );
         }).toList(),
       );
+
+  static List<MuscleGroup> _muscleGroups(Object? raw) {
+    if (raw is! List) return const [];
+    final groups = <MuscleGroup>[];
+    for (final key in raw) {
+      final group = MuscleGroup.fromKey(key);
+      if (group != null && !groups.contains(group)) groups.add(group);
+    }
+    return groups;
+  }
 
   static const fixture = PlannedWorkout(
     id: 'fixture-push',
@@ -118,12 +141,47 @@ class PlannedWorkout {
   );
 }
 
+/// Where a completed session's completion came from (hub 1.6).
+enum CompletionSource {
+  manual,
+  healthkit;
+
+  static CompletionSource? fromKey(Object? key) => switch (key) {
+    'manual' => manual,
+    'healthkit' => healthkit,
+    _ => null,
+  };
+}
+
+/// Where a completed session's effort rating came from (hub 1.6).
+enum EffortSource {
+  /// The athlete rated the workout.
+  athlete,
+
+  /// The app's fixed 8 from builds before `complete_workout_v2`.
+  legacyDefault,
+
+  /// The fixed 5 written when Apple Health completed the workout.
+  healthkitDefault;
+
+  static EffortSource? fromKey(Object? key) => switch (key) {
+    'athlete' => athlete,
+    'legacy_default' => legacyDefault,
+    'healthkit_default' => healthkitDefault,
+    _ => null,
+  };
+}
+
 class TrainingSessionSummary {
   const TrainingSessionSummary({
     required this.name,
     required this.date,
     this.durationSeconds,
     this.workoutId,
+    this.id,
+    this.effort,
+    this.completionSource,
+    this.effortSource,
   });
   final String name;
   final DateTime date;
@@ -132,6 +190,18 @@ class TrainingSessionSummary {
   /// Planned workout id from the hub (`recent_sessions[].workout_id`).
   /// Null on older payloads; the session row is then display-only.
   final String? workoutId;
+
+  /// The session id (`recent_sessions[].id`).
+  final String? id;
+
+  /// The whole-workout effort, 0–10; read with [effortSource].
+  final num? effort;
+
+  /// Null in a 1.5 payload and for sessions with no audit evidence.
+  final CompletionSource? completionSource;
+
+  /// Null in a 1.5 payload.
+  final EffortSource? effortSource;
 }
 
 class ExerciseProgression {
@@ -140,11 +210,94 @@ class ExerciseProgression {
     required this.sessions,
     this.bestLoadKg,
     this.bestRepetitions,
+    this.latestDate,
   });
   final String exercise;
   final int sessions;
   final num? bestLoadKg;
   final int? bestRepetitions;
+
+  /// The latest completed session with this exercise; null when absent.
+  final DateTime? latestDate;
+}
+
+/// The approved plan's header from `active_plan`.
+class ActivePlanSummary {
+  const ActivePlanSummary({
+    required this.title,
+    this.blockWeeks,
+    this.sessionsPerWeek,
+    this.effectiveDate,
+    this.approvedOn,
+    this.progressionRule,
+  });
+  final String title;
+  final int? blockWeeks;
+  final int? sessionsPerWeek;
+
+  /// The local day the plan took effect (hub 1.6); null in a 1.5 payload.
+  final DateTime? effectiveDate;
+
+  /// The local day the athlete approved the plan (hub 1.6).
+  final DateTime? approvedOn;
+
+  /// The plan's progression rule; null for older plans, which hide it.
+  final String? progressionRule;
+}
+
+/// One day's intensity class (ALGORITHMS §4 "Day Level").
+enum DayLoadLevel {
+  rest,
+  easy,
+  moderate,
+  hard;
+
+  static DayLoadLevel? fromKey(Object? key) => switch (key) {
+    'rest' => rest,
+    'easy' => easy,
+    'moderate' => moderate,
+    'hard' => hard,
+    _ => null,
+  };
+}
+
+/// One local day of `daily_load` (hub 1.6).
+class DailyLoadDay {
+  const DailyLoadDay({
+    required this.date,
+    required this.recorded,
+    required this.strain,
+    required this.minutes,
+    required this.sessions,
+    required this.effortReported,
+    this.level,
+    this.personalReference = false,
+  });
+  final DateTime date;
+
+  /// At least one completed session that day.
+  final bool recorded;
+  final double strain;
+  final int minutes;
+  final int sessions;
+
+  /// Every session that day carries an athlete-reported effort.
+  final bool effortReported;
+
+  /// Null for a trained day whose effort was a default: "Calibrating".
+  final DayLoadLevel? level;
+
+  /// The class came from the athlete's own percentiles, not the fixed
+  /// cut-offs.
+  final bool personalReference;
+}
+
+/// The hub's `computed` block: the deterministic load numbers for today.
+class HubLoadMetrics {
+  const HubLoadMetrics({this.acwr, this.trainingMonotony, this.todayStrain});
+  final double? acwr;
+  final double? trainingMonotony;
+  final double? todayStrain;
 }
 
 class HealthkitCompletionCandidate {
@@ -171,7 +324,105 @@ class TrainingHubData {
     required this.plannedSessions,
     required this.progression,
     this.completedDays = const {},
+    this.plan,
+    this.localToday,
+    this.todayWorkout,
+    this.dailyLoad = const [],
+    this.load,
   });
+
+  /// Parses `get_my_training_hub`. A cached 1.5 payload parses too: every
+  /// 1.6 field is optional and reads as absent.
+  factory TrainingHubData.fromHubJson(Map<String, dynamic> value) {
+    final active = _map(value['active_plan']);
+    final adherence = _map(value['adherence']);
+    final computed = _map(value['computed']);
+    final todayWorkout = value['today_workout'];
+    return TrainingHubData(
+      planTitle: active['title'] as String? ?? 'Approved plan',
+      plan: active.isEmpty
+          ? null
+          : ActivePlanSummary(
+              title: active['title'] as String? ?? 'Approved plan',
+              blockWeeks: (active['block_weeks'] as num?)?.toInt(),
+              sessionsPerWeek: (active['sessions_per_week'] as num?)?.toInt(),
+              effectiveDate: _date(active['effective_date']),
+              approvedOn: _date(active['approved_on']),
+              progressionRule: _text(active['progression_rule']),
+            ),
+      localToday: _date(value['local_today']),
+      workouts: (value['workouts'] as List? ?? const [])
+          .map((item) => PlannedWorkout.fromHubJson(_map(item)))
+          .toList(),
+      todayWorkout: todayWorkout is Map
+          ? PlannedWorkout.fromHubJson(_map(todayWorkout))
+          : null,
+      recentSessions: (value['recent_sessions'] as List? ?? const []).map((
+        item,
+      ) {
+        final row = _map(item);
+        return TrainingSessionSummary(
+          name: row['name'] as String,
+          date: DateTime.parse(row['local_date'] as String),
+          durationSeconds: (row['duration_seconds'] as num?)?.toInt(),
+          workoutId: row['workout_id'] as String?,
+          id: row['id'] as String?,
+          effort: row['effort'] as num?,
+          completionSource: CompletionSource.fromKey(row['completion_source']),
+          effortSource: EffortSource.fromKey(row['effort_source']),
+        );
+      }).toList(),
+      completedSessions: (adherence['completed_sessions'] as num? ?? 0).toInt(),
+      plannedSessions: (adherence['planned_sessions'] as num? ?? 0).toInt(),
+      progression: (value['progression'] as List? ?? const []).map((item) {
+        final row = _map(item);
+        return ExerciseProgression(
+          exercise: row['exercise'] as String,
+          sessions: (row['sessions'] as num).toInt(),
+          bestLoadKg: row['best_load_kg'] as num?,
+          bestRepetitions: (row['best_repetitions'] as num?)?.toInt(),
+          latestDate: _date(row['latest_date']),
+        );
+      }).toList(),
+      completedDays: (value['completed_day_set'] as List? ?? const [])
+          .map((d) => DateTime.parse(d as String))
+          .toSet(),
+      dailyLoad: (value['daily_load'] as List? ?? const []).map((item) {
+        final row = _map(item);
+        final recorded = row['recorded'] as bool? ?? false;
+        return DailyLoadDay(
+          date: DateTime.parse(row['local_date'] as String),
+          recorded: recorded,
+          strain: (row['strain'] as num? ?? 0).toDouble(),
+          minutes: (row['minutes'] as num? ?? 0).toInt(),
+          sessions: (row['sessions'] as num? ?? 0).toInt(),
+          effortReported: row['effort_reported'] as bool? ?? false,
+          level: recorded
+              ? DayLoadLevel.fromKey(row['level'])
+              : DayLoadLevel.rest,
+          personalReference: row['reference'] == 'personal',
+        );
+      }).toList(),
+      load: computed.isEmpty
+          ? null
+          : HubLoadMetrics(
+              acwr: (computed['acwr'] as num?)?.toDouble(),
+              trainingMonotony: (computed['training_monotony'] as num?)
+                  ?.toDouble(),
+              todayStrain: (computed['today_strain'] as num?)?.toDouble(),
+            ),
+    );
+  }
+
+  static Map<String, dynamic> _map(Object? value) =>
+      value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+
+  static DateTime? _date(Object? value) =>
+      value is String ? DateTime.tryParse(value) : null;
+
+  static String? _text(Object? value) =>
+      value is String && value.trim().isNotEmpty ? value : null;
+
   final String planTitle;
   final List<PlannedWorkout> workouts;
   final List<TrainingSessionSummary> recentSessions;
@@ -179,6 +430,21 @@ class TrainingHubData {
   final int plannedSessions;
   final List<ExerciseProgression> progression;
   final Set<DateTime> completedDays;
+
+  /// The plan header; null when the hub has no active plan.
+  final ActivePlanSummary? plan;
+
+  /// The athlete's local date on the server (hub 1.6).
+  final DateTime? localToday;
+
+  /// Today's planned workout from the hub, when one is scheduled.
+  final PlannedWorkout? todayWorkout;
+
+  /// The 28 local days ending on [localToday] (hub 1.6); empty in 1.5.
+  final List<DailyLoadDay> dailyLoad;
+
+  /// The hub's computed load numbers for today; null when absent.
+  final HubLoadMetrics? load;
 
   bool isDayCompleted(DateTime date) => completedDays.any(
     (d) => d.year == date.year && d.month == date.month && d.day == date.day,
@@ -302,57 +568,16 @@ class SupabaseWorkoutRepository
       'workout_draft_${_client.auth.currentUser!.id}_$workoutId';
 
   @override
-  Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async {
-    final value = Map<String, dynamic>.from(
-      await _client.rpc(
-            'get_my_training_hub',
-            params: {'period_days': periodDays},
-          )
-          as Map,
-    );
-    final active = value['active_plan'] is Map
-        ? Map<String, dynamic>.from(value['active_plan'] as Map)
-        : const <String, dynamic>{};
-    final workouts = (value['workouts'] as List? ?? const [])
-        .map(
-          (item) => PlannedWorkout.fromHubJson(
-            Map<String, dynamic>.from(item as Map),
-          ),
-        )
-        .toList();
-    final adherence = value['adherence'] is Map
-        ? Map<String, dynamic>.from(value['adherence'] as Map)
-        : const <String, dynamic>{};
-    return TrainingHubData(
-      planTitle: active['title'] as String? ?? 'Approved plan',
-      workouts: workouts,
-      recentSessions: (value['recent_sessions'] as List? ?? const []).map((
-        item,
-      ) {
-        final row = Map<String, dynamic>.from(item as Map);
-        return TrainingSessionSummary(
-          name: row['name'] as String,
-          date: DateTime.parse(row['local_date'] as String),
-          durationSeconds: (row['duration_seconds'] as num?)?.toInt(),
-          workoutId: row['workout_id'] as String?,
-        );
-      }).toList(),
-      completedSessions: (adherence['completed_sessions'] as num? ?? 0).toInt(),
-      plannedSessions: (adherence['planned_sessions'] as num? ?? 0).toInt(),
-      progression: (value['progression'] as List? ?? const []).map((item) {
-        final row = Map<String, dynamic>.from(item as Map);
-        return ExerciseProgression(
-          exercise: row['exercise'] as String,
-          sessions: (row['sessions'] as num).toInt(),
-          bestLoadKg: row['best_load_kg'] as num?,
-          bestRepetitions: (row['best_repetitions'] as num?)?.toInt(),
-        );
-      }).toList(),
-      completedDays: (value['completed_day_set'] as List? ?? const [])
-          .map((d) => DateTime.parse(d as String))
-          .toSet(),
-    );
-  }
+  Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
+      TrainingHubData.fromHubJson(
+        Map<String, dynamic>.from(
+          await _client.rpc(
+                'get_my_training_hub',
+                params: {'period_days': periodDays},
+              )
+              as Map,
+        ),
+      );
 
   HealthkitCompletionCandidate _parseHealthkitCandidate(
     Map<String, dynamic> row,

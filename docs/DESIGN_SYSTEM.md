@@ -287,6 +287,37 @@ one quiet mono strip — the single sanctioned jargon site on Train. Rows stack 
 idiom) under large Dynamic Type; the mix-advice line always stacks above the stats row —
 the side-by-side variant bled off the card at phone widths (owner QA 2026-09-04).
 
+### `MuscleMap` and `MuscleMapPair`
+
+Train's muscle map (redesign PR 4 data layer, 2026-10-03), in
+`lib/features/train/widgets/muscle_map.dart`. An athletic figure in a 200×420 design space, drawn
+from real muscle shapes (left half mirrored at x 100) on a base-colour silhouette, so the thin gaps
+between muscles are the silhouette showing through. Only the catalog groups light: chest, back
+(front trap slope, trap diamond, infraspinatus, teres, lats, erectors), shoulders (deltoid, rear
+deltoid), biceps, triceps (horseshoe), core (three ab blocks, lower ab, front and back obliques),
+quads (three heads), hamstrings (two heads), glutes, calves. Head, neck, forearms, hands,
+serratus, adductor, tibialis, knees, Achilles and feet stay neutral.
+
+- **Tone.** A group is `main` when its sets reach 60% of the top group's sets, else `also`
+  (`muscleSetsFor`). Main is a lime gradient (`#C8F05A` → `#A9D23A`) with a soft glow; also is
+  lime at 45% over the off colour. Lit muscles carry a fine diagonal hatch as the non-colour cue.
+  Unlinked exercises (no slug) light nothing; muscles are never guessed from names.
+- **Colours** are constructor input (`MuscleMapPalette`): off `#34363A` / base `#26272A` dark,
+  off `#D6D6D0` / base `#E6E6E1` light. One lighting overlay (light from the upper left, darker
+  right edge) gives volume.
+- **Turn.** A perspective `rotateY`; the back face shows past 90°, six darker silhouette slices
+  give the body thickness mid-turn, and the floor shadow narrows with |cos a|. A horizontal drag
+  turns it live and springs to front or back by position and velocity, with a selection haptic.
+  The side is controlled by the screen's Front/Back control (`side`, `onSideChanged`); a tap calls
+  `onTap`. The first appearance sways once (±25°) while the worked muscles light in turn.
+- **Reduce Motion.** Front and back crossfade; no turn, sway or stagger. A swipe still switches
+  sides.
+- **`MuscleMapPair`** shows front and back side by side, not turnable, for focus mode and the
+  muscles sheet. A `selected` group pulses (held still under Reduce Motion) and `onMuscleTap`
+  hit-tests the muscle shapes.
+- **Accessibility.** One label, "Muscles worked: Chest, Back, Shoulders. Showing the front."; the
+  shapes are excluded from semantics. The muscle chips remain the text equivalent.
+
 ### `DecisionSurface`
 
 Contains one direct headline, one reason, timestamp, confidence wording, primary action, and **See

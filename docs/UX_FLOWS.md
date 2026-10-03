@@ -17,6 +17,29 @@ hero (facts + coach insight + Start/View), today's exercises as one merged list 
 and the planned/recorded effort bar per row — the same movement no longer appears twice), one
 execution card (adherence count + progression rows or its honest empty copy), and recent sessions.
 
+Train redesign data rules (2026-10-03, `lib/features/train/train_view_models.dart`), read by the
+new Train screen:
+
+- **Plan pill.** "Week N of M" counts 7-day weeks from `active_plan.effective_date` to
+  `local_today`; after the block it reads "Week N" alone. A cached 1.5 hub (no dates) or a plan that
+  has not started shows no pill.
+- **Readiness line.** One sentence about state, never advice: Excellent ≥80 "Recovery is
+  excellent.", Good ≥65 "Recovered. Good to train.", Moderate ≥50 "Recovery is moderate.", Low ≥35
+  "Recovery is low today.", Poor "Recovery is poor today.", no score "Building your baseline.",
+  Apple Health not connected "Connect Apple Health to see recovery".
+- **Training load sheet.** The verdict comes first, from the ACWR bands: "Lighter than normal for
+  you" (< 0.8), "About normal for you" (0.8–1.3), "Heavier than normal for you" (to 1.5), "Much
+  heavier than normal for you" (above 1.5); the "You" marker sits on a 0.5–1.8 scale. Day bars are
+  the last 7 days of `daily_load`: easy, moderate or hard from the server's day level, a socket for
+  rest, and "Calibrating" when the level is null (default effort). While any day in the 28-day
+  window holds a default effort, the row reads "…, calibrating" and the sheet explains why. With no
+  ACWR, or fewer than four sessions in the window, the sheet reads "Your load reading builds as you
+  train" with no ratio or marker. One advice line, chosen only from the ACWR band and the monotony
+  rule (> 2.0 means the days are too similar). "How this is calculated" gives the strain rule, the
+  ratio with its 0.8–1.3 normal range, how a day is classed (fixed cut-offs until 8 rated days,
+  then the athlete's own last 4 weeks) and the monotony line. Footnote: "Calculated from your logged
+  workouts. No AI estimates."
+
 Today's Action Stage contains one instruction, one reason, and one CTA with a sync chip
 that refreshes Apple Health (when connected), the daily brief, and today's coaching
 decision together, followed by the readiness readouts (Chunk 6): a full-width recovery
