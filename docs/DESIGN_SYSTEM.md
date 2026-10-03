@@ -476,7 +476,11 @@ serratus, adductor, tibialis, knees, Achilles and feet stay neutral.
 - **Tone.** A group is `main` when its sets reach 60% of the top group's sets, else `also`
   (`muscleSetsFor`). Main is a lime gradient (`#C8F05A` → `#A9D23A`) with a soft glow; also is
   lime at 45% over the off colour. Lit muscles carry a fine diagonal hatch as the non-colour cue.
-  Unlinked exercises (no slug) light nothing; muscles are never guessed from names.
+  Muscles come from the catalog entry or, for older plans' names, the reviewed
+  `exercise_muscle_references` list; an exercise on neither lights nothing, and nothing is
+  inferred at run time. The Train card shows a workout's map only when exercises with known
+  muscles carry at least 75% of its planned sets
+  (`muscleMapCoversWorkout`), so a partial map never stands in for the whole session.
 - **Colours** are constructor input (`MuscleMapPalette`): off `#34363A` / base `#26272A` dark,
   off `#D6D6D0` / base `#E6E6E1` light. One lighting overlay (light from the upper left, darker
   right edge) gives volume.

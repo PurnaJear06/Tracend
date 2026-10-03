@@ -28,8 +28,8 @@ class MusclesSheetBody extends StatefulWidget {
   final PlannedWorkout workout;
 
   static const footnote =
-      'Only exercises linked to the exercise catalog count toward these '
-      'muscles. Muscles are never guessed from an exercise’s name.';
+      'Muscles come from the exercise catalog or Tracend’s reviewed '
+      'exercise list. An exercise on neither counts toward none.';
 
   @override
   State<MusclesSheetBody> createState() => _MusclesSheetBodyState();
@@ -50,7 +50,7 @@ class _MusclesSheetBodyState extends State<MusclesSheetBody> {
     final exercises = widget.workout.exercises;
     final sets = muscleSetsFor(exercises);
     final linked = exercises
-        .where((exercise) => exercise.exerciseSlug != null)
+        .where((exercise) => exercise.primaryMuscles.isNotEmpty)
         .length;
     if (sets.isEmpty) {
       return Padding(
@@ -61,8 +61,8 @@ class _MusclesSheetBodyState extends State<MusclesSheetBody> {
             Text('Not enough data yet', style: textTheme.titleSmall),
             const SizedBox(height: TracendSpacing.xxs),
             Text(
-              'None of this workout’s exercises is linked to the exercise '
-              'catalog yet, so no muscles are shown.',
+              'None of this workout’s exercises has known muscles yet, so '
+              'no muscles are shown.',
               style: textTheme.bodyMedium,
             ),
           ],
@@ -113,8 +113,7 @@ class _MusclesSheetBodyState extends State<MusclesSheetBody> {
                   entry: sets[i],
                   exercises: [
                     for (final exercise in exercises)
-                      if (exercise.exerciseSlug != null &&
-                          exercise.primaryMuscles.contains(sets[i].group))
+                      if (exercise.primaryMuscles.contains(sets[i].group))
                         exercise.name,
                   ],
                   selected: _selected == sets[i].group,
@@ -127,7 +126,7 @@ class _MusclesSheetBodyState extends State<MusclesSheetBody> {
         const SizedBox(height: TracendSpacing.sm),
         Text(
           '${MusclesSheetBody.footnote} $linked of ${exercises.length} '
-          'exercises are linked.',
+          'exercises have muscles.',
           style: textTheme.bodySmall,
         ),
       ],

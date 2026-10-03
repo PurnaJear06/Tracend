@@ -223,6 +223,48 @@ void main() {
       },
     );
 
+    testWidgets('a mostly unlinked workout shows no partial map', (
+      tester,
+    ) async {
+      PlannedExercise ex(int order, String name, {String? slug}) =>
+          PlannedExercise(
+            order: order,
+            name: name,
+            setCount: 3,
+            repMin: 8,
+            repMax: 12,
+            targetRpe: 8,
+            exerciseSlug: slug,
+            primaryMuscles: slug == null
+                ? const []
+                : const [MuscleGroup.shoulders],
+          );
+      final pull = PlannedWorkout(
+        id: 'w-pull',
+        name: 'Pull day',
+        objective: 'Back and biceps.',
+        estimatedMinutes: 60,
+        weekday: 5,
+        exercises: [
+          ex(1, 'Pull-Ups or Lat Pulldown'),
+          ex(2, 'Chest-Supported Row'),
+          ex(3, 'Face Pull', slug: 'face-pull'),
+          ex(4, 'Hammer Curl'),
+        ],
+      );
+      await _pumpTrain(
+        tester,
+        repository: TrainFixtureRepository(hub: trainHub(workouts: [pull])),
+      );
+      expect(find.text('Pull day'), findsOneWidget);
+      expect(find.byType(MuscleMap), findsNothing);
+      expect(find.text('Shoulders'), findsNothing);
+      expect(
+        find.text('Muscle map appears with your next plan.'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('Start workout plays the heavy haptic and opens logging', (
       tester,
     ) async {
@@ -592,7 +634,7 @@ void main() {
       expect(find.byType(MusclesSheetBody), findsOneWidget);
       expect(find.text('8 sets'), findsOneWidget);
       expect(
-        find.textContaining('5 of 6 exercises are linked'),
+        find.textContaining('5 of 6 exercises have muscles'),
         findsOneWidget,
       );
       MuscleMapPair pair() => tester.widget(find.byType(MuscleMapPair));
@@ -607,6 +649,55 @@ void main() {
       pair().onMuscleTap!(MuscleGroup.back);
       await tester.pump(const Duration(milliseconds: 400));
       expect(pair().selected, isNull);
+    });
+
+    testWidgets('reviewed exercises without a slug are listed in rows', (
+      tester,
+    ) async {
+      PlannedExercise ex(
+        int order,
+        String name,
+        List<MuscleGroup> muscles, {
+        String? slug,
+      }) => PlannedExercise(
+        order: order,
+        name: name,
+        setCount: 3,
+        repMin: 8,
+        repMax: 12,
+        targetRpe: 8,
+        exerciseSlug: slug,
+        primaryMuscles: muscles,
+      );
+      final pull = PlannedWorkout(
+        id: 'w-pull',
+        name: 'Pull day',
+        objective: 'Back and shoulders.',
+        estimatedMinutes: 45,
+        weekday: 5,
+        exercises: [
+          ex(1, 'Reverse Pec Deck', const [MuscleGroup.shoulders]),
+          ex(2, 'Face Pull', const [
+            MuscleGroup.shoulders,
+            MuscleGroup.back,
+          ], slug: 'face-pull'),
+        ],
+      );
+      await _pumpTrain(
+        tester,
+        repository: TrainFixtureRepository(hub: trainHub(workouts: [pull])),
+      );
+      await tester.tap(find.byType(MuscleMap));
+      await tester.pumpAndSettle();
+      expect(find.text('Reverse Pec Deck, Face Pull'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(RegExp('^Shoulders, 6 sets, .*Reverse Pec Deck')),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('2 of 2 exercises have muscles'),
+        findsOneWidget,
+      );
     });
   });
 
