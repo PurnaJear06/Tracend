@@ -1,13 +1,23 @@
+import 'dart:async';
+
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
+import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/progress/progress_screen.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
+import 'package:tracend/features/progress/widgets/training_evidence_widgets.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
+import 'package:tracend/shared/widgets/tracend_skeleton.dart';
+
+import 'widgets/haptics_recorder.dart';
 
 Future<XFile?> _photo(ImageSource source) async =>
     XFile.fromData(Uint8List.fromList(const [1, 2, 3]), name: 'pose.jpg');
@@ -73,8 +83,22 @@ void main() {
     expect(find.text('\u22120.2'), findsOneWidget);
     await tester.tap(row);
     await tester.pumpAndSettle();
-    expect(find.text('Sat 22 Aug'), findsOneWidget);
-    expect(find.text('Weight'), findsOneWidget);
+    final header = find.byType(TracendSheetHeader);
+    expect(
+      find.descendant(of: header, matching: find.text('Sat 22 Aug')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: header, matching: find.text('Entered by you')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text('Weight'),
+      ),
+      findsOneWidget,
+    );
     expect(find.textContaining('manual'), findsNothing);
   });
 
@@ -290,7 +314,297 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('review and measurement sheets fit 320pt at 2x text', (
+    tester,
+  ) async {
+    _largeTextPhone(tester);
+    await tester.pumpWidget(_app(_Repository(withTrend: true)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Record measurement'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.text('Save measurement'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byType(TracendSheetCloseButton));
+    await tester.pumpAndSettle();
+
+    await _reveal(tester, find.text('Open weekly review'));
+    await tester.tap(find.text('Open weekly review'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(
+      find.text(
+        'Calculated from your logs · no AI. Missing data is shown, not '
+        'guessed.',
+      ),
+      findsOneWidget,
+    );
+    for (var i = 0; i < 8; i++) {
+      await tester.drag(find.byType(Scrollable).last, const Offset(0, -300));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+    expect(find.text('Mark reviewed'), findsOneWidget);
+  });
+
+  group('new best on lift tiles', () {
+    final hub = _liftHub();
+    final keys = liftHistoryKeys(hub);
+
+    test('keys fall back to the lift name without a plan match', () {
+      expect(keys, {'Bench press': 'Bench press', 'Back squat': 'Back squat'});
+    });
+
+    test('only a best set in the latest session, after an earlier one', () {
+      final result = ExerciseHistoryResult(
+        exercises: {
+          'Bench press': _history(
+            'Bench press',
+            last: DateTime(2026, 8, 22),
+            best: DateTime(2026, 8, 22),
+          ),
+          // The record is older than the latest session.
+          'Back squat': _history(
+            'Back squat',
+            last: DateTime(2026, 8, 20),
+            best: DateTime(2026, 8, 6),
+          ),
+        },
+      );
+      expect(liftNewBests(hub, keys, result), {'Bench press'});
+    });
+
+    test('a first session, another session or unknown history is not new', () {
+      ExerciseHistoryResult only(ExerciseHistory history) =>
+          ExerciseHistoryResult(exercises: {'Bench press': history});
+      expect(
+        liftNewBests(
+          hub,
+          keys,
+          only(
+            _history(
+              'Bench press',
+              last: DateTime(2026, 8, 22),
+              best: DateTime(2026, 8, 22),
+              sessions: 1,
+            ),
+          ),
+        ),
+        isEmpty,
+      );
+      // History describes a later session than the hub's latest one.
+      expect(
+        liftNewBests(
+          hub,
+          keys,
+          only(
+            _history(
+              'Bench press',
+              last: DateTime(2026, 8, 24),
+              best: DateTime(2026, 8, 24),
+            ),
+          ),
+        ),
+        isEmpty,
+      );
+      expect(
+        liftNewBests(hub, keys, const ExerciseHistoryResult(exercises: {})),
+        isEmpty,
+      );
+    });
+
+    testWidgets('the tile shows the lime New best chip', (tester) async {
+      final training = _HistoryHub(
+        ExerciseHistoryResult(
+          exercises: {
+            'Bench press': _history(
+              'Bench press',
+              last: DateTime(2026, 8, 22),
+              best: DateTime(2026, 8, 22),
+            ),
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        _app(_Repository(withTrend: true), training: training),
+      );
+      await tester.pumpAndSettle();
+      await _reveal(tester, find.text('Back squat'));
+      expect(training.requested, ['Bench press', 'Back squat']);
+      expect(find.text('New best'), findsOneWidget);
+      final chip = tester.widget<DecoratedBox>(
+        find
+            .ancestor(
+              of: find.text('New best'),
+              matching: find.byType(DecoratedBox),
+            )
+            .first,
+      );
+      expect(
+        (chip.decoration as BoxDecoration).color,
+        TracendTheme.dark.extension<TracendColors>()!.accentSignal,
+      );
+    });
+
+    testWidgets('history that cannot load shows no New best', (tester) async {
+      final training = _HistoryHub(
+        const ExerciseHistoryResult(exercises: {}),
+        fails: true,
+      );
+      await tester.pumpWidget(
+        _app(_Repository(withTrend: true), training: training),
+      );
+      await tester.pumpAndSettle();
+      await _reveal(tester, find.text('Bench press'));
+      expect(find.text('New best'), findsNothing);
+      expect(find.text('80 kg'), findsOneWidget);
+    });
+  });
+
+  testWidgets('the first load shows skeletons, not a spinner', (tester) async {
+    final gate = Completer<void>();
+    await tester.pumpWidget(_app(_SlowRepository(gate)));
+    await tester.pump();
+    expect(find.byType(TracendSkeleton), findsWidgets);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.byType(TracendSkeleton), findsNothing);
+  });
+
+  testWidgets('a saved weigh-in plays success and shows a toast', (
+    tester,
+  ) async {
+    final haptics = recordHaptics(tester);
+    final repository = _SavingRepository();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Record measurement'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(TracendSheetHeader),
+        matching: find.text('Record measurement'),
+      ),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Weight *'),
+      '78.4',
+    );
+    await tester.ensureVisible(find.text('Save measurement'));
+    await tester.tap(find.text('Save measurement'));
+    await tester.pumpAndSettle();
+    expect(repository.saved?.weightKg, 78.4);
+    expect(haptics, ['HapticFeedbackType.successNotification']);
+    expect(find.text('Weigh-in saved'), findsOneWidget);
+  });
+
+  testWidgets('a failed save stays on the page, not only in a toast', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(_SavingRepository(fail: true)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Record measurement'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Weight *'),
+      '78.4',
+    );
+    await tester.ensureVisible(find.text('Save measurement'));
+    await tester.tap(find.text('Save measurement'));
+    await tester.pumpAndSettle();
+    const message =
+        'Could not save measurement. Check your connection and try again.';
+    expect(find.text(message), findsOneWidget);
+    await tester.tap(find.byTooltip('Dismiss'));
+    await tester.pumpAndSettle();
+    expect(find.text(message), findsNothing);
+  });
+
+  testWidgets('deleting a photo set asks with a destructive confirm', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final haptics = recordHaptics(tester);
+    await tester.pumpWidget(
+      _app(_Repository(withTrend: true, withPhotos: true)),
+    );
+    await tester.pumpAndSettle();
+    await _reveal(tester, find.text('View past sets (2)'));
+    await tester.tap(find.text('View past sets (2)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Delete photo set').first);
+    await tester.pumpAndSettle();
+    expect(find.byType(CupertinoAlertDialog), findsOneWidget);
+    expect(find.text('Delete this photo set?'), findsOneWidget);
+    expect(haptics, ['HapticFeedbackType.warningNotification']);
+    await tester.tap(find.text('Delete set'));
+    await tester.pumpAndSettle();
+    expect(find.text('Photo set deleted'), findsOneWidget);
+  });
+
+  testWidgets('pull to refresh reloads Progress', (tester) async {
+    final repository = _CountingRepository();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+    expect(repository.loads, 1);
+    await tester.fling(find.text('Progress'), const Offset(0, 300), 1000);
+    await tester.pumpAndSettle();
+    expect(repository.loads, 2);
+  });
 }
+
+ExerciseHistory _history(
+  String key, {
+  required DateTime last,
+  required DateTime best,
+  int sessions = 3,
+}) => ExerciseHistory(
+  key: key,
+  kind: ExerciseHistoryKind.load,
+  lastSession: ExerciseLastSession(localDate: last),
+  bestSet: ExerciseBestSet(
+    kind: ExerciseHistoryKind.load,
+    loadKg: 80,
+    repetitions: 5,
+    localDate: best,
+  ),
+  topSets: [
+    for (var i = 0; i < sessions; i++)
+      ExerciseTopSet(localDate: last.subtract(Duration(days: 7 * i))),
+  ],
+);
+
+TrainingHubData _liftHub() => TrainingHubData(
+  planTitle: 'Approved training plan',
+  workouts: const [],
+  recentSessions: const [],
+  completedSessions: 3,
+  plannedSessions: 4,
+  progression: [
+    ExerciseProgression(
+      exercise: 'Bench press',
+      sessions: 3,
+      bestLoadKg: 80,
+      bestRepetitions: 5,
+      latestDate: DateTime(2026, 8, 22),
+    ),
+    ExerciseProgression(
+      exercise: 'Back squat',
+      sessions: 3,
+      bestLoadKg: 100,
+      bestRepetitions: 5,
+      latestDate: DateTime(2026, 8, 20),
+    ),
+  ],
+);
 
 void _largeTextPhone(WidgetTester tester) {
   tester.view.physicalSize = const Size(320, 844);
@@ -321,6 +635,68 @@ class _FlakyUploadRepository extends _Repository {
   }) async {
     if (++_attempts == failOnUpload) throw StateError('network');
     uploads.add((setId, pose));
+  }
+}
+
+/// A hub that also answers exercise history, as the Supabase repository
+/// does; every other workout call is unused here.
+class _HistoryHub implements TrainingHubRepository, WorkoutRepository {
+  _HistoryHub(this.history, {this.fails = false});
+  final ExerciseHistoryResult history;
+  final bool fails;
+  List<String>? requested;
+
+  @override
+  Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
+      _liftHub();
+
+  @override
+  Future<ExerciseHistoryResult> loadExerciseHistory(
+    List<String> keys, {
+    int sessions = 8,
+  }) async {
+    requested = keys;
+    if (fails) throw StateError('offline');
+    return history;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _CountingRepository extends _Repository {
+  _CountingRepository() : super(withTrend: true);
+  int loads = 0;
+
+  @override
+  Future<List<BodyMeasurement>> loadMeasurements() {
+    loads++;
+    return super.loadMeasurements();
+  }
+}
+
+/// Measurements wait on [gate], so the first load stays in progress.
+class _SlowRepository extends _Repository {
+  _SlowRepository(this.gate) : super(withTrend: true);
+  final Completer<void> gate;
+
+  @override
+  Future<List<BodyMeasurement>> loadMeasurements() async {
+    await gate.future;
+    return super.loadMeasurements();
+  }
+}
+
+/// Saving a measurement fails, or records what was saved.
+class _SavingRepository extends _Repository {
+  _SavingRepository({this.fail = false}) : super(withTrend: true);
+  final bool fail;
+  BodyMeasurement? saved;
+
+  @override
+  Future<void> saveMeasurement(BodyMeasurement measurement) async {
+    if (fail) throw StateError('offline');
+    saved = measurement;
   }
 }
 

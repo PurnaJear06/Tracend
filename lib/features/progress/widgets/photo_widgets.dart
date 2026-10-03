@@ -5,6 +5,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/progress/widgets/physique_check_widgets.dart';
+import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
@@ -80,7 +81,6 @@ class PhotoProgressCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tracendColors;
     final theme = Theme.of(context).textTheme;
     final latest = photoSets.isEmpty ? null : photoSets.first;
     final provider = photoCheckProvider;
@@ -91,10 +91,7 @@ class PhotoProgressCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              TracendRowIcon(
-                icon: CupertinoIcons.lock_shield_fill,
-                color: colors.stateStable,
-              ),
+              const TracendRowIcon(icon: CupertinoIcons.lock_shield_fill),
               const SizedBox(width: TracendSpacing.sm),
               Expanded(
                 child: Column(
@@ -191,8 +188,9 @@ class PhotoProgressCard extends StatelessWidget {
   }
 }
 
-/// Guided capture: front, side, back, lower body. Each pose uploads as soon
-/// as it is chosen; errors stay inline because snackbars sit behind sheets.
+/// Guided capture, shown in a sheet titled "Progress photos": front, side,
+/// back, lower body. Each pose uploads as soon as it is chosen; errors stay
+/// inline because a toast never carries the only copy of an error.
 class PhotoCaptureSheet extends StatefulWidget {
   const PhotoCaptureSheet({
     required this.captured,
@@ -233,72 +231,60 @@ class _PhotoCaptureSheetState extends State<PhotoCaptureSheet> {
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     final theme = Theme.of(context).textTheme;
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(
-          TracendSpacing.gutter,
-          0,
-          TracendSpacing.gutter,
-          TracendSpacing.lg,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Same spot, same light, same time of day makes changes easy to '
+          'see. ${_captured.length} of ${progressPhotoPoses.length} done.',
+          style: theme.bodyMedium,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        const SizedBox(height: TracendSpacing.md),
+        TracendGroupedList(
           children: [
-            Text('Progress photos', style: theme.headlineSmall),
-            const SizedBox(height: TracendSpacing.xxs),
-            Text(
-              'Same spot, same light, same time of day makes changes easy to '
-              'see. ${_captured.length} of ${progressPhotoPoses.length} done.',
-              style: theme.bodyMedium,
-            ),
-            const SizedBox(height: TracendSpacing.md),
-            TracendGroupedList(
-              children: [
-                for (final item in progressPhotoPoses)
-                  PosePhotoRow(
-                    label: item.label,
-                    guidance: item.guidance,
-                    isCaptured: _captured.contains(item.pose),
-                    isBusy: _busyPose == item.pose,
-                    onCamera: _busyPose == null
-                        ? () => _capture(item.pose, ImageSource.camera)
-                        : null,
-                    onGallery: _busyPose == null
-                        ? () => _capture(item.pose, ImageSource.gallery)
-                        : null,
-                  ),
-              ],
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: TracendSpacing.sm),
-              Row(
-                children: [
-                  Icon(
-                    CupertinoIcons.exclamationmark_triangle,
-                    size: 18,
-                    color: colors.stateAttention,
-                  ),
-                  const SizedBox(width: TracendSpacing.xs),
-                  Expanded(child: Text(_error!, style: theme.bodyMedium)),
-                ],
+            for (final item in progressPhotoPoses)
+              PosePhotoRow(
+                label: item.label,
+                guidance: item.guidance,
+                isCaptured: _captured.contains(item.pose),
+                isBusy: _busyPose == item.pose,
+                onCamera: _busyPose == null
+                    ? () => _capture(item.pose, ImageSource.camera)
+                    : null,
+                onGallery: _busyPose == null
+                    ? () => _capture(item.pose, ImageSource.gallery)
+                    : null,
               ),
-            ],
-            const SizedBox(height: TracendSpacing.md),
-            SizedBox(
-              width: double.infinity,
-              child: _complete
-                  ? FilledButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Done'),
-                    )
-                  : OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Finish later'),
-                    ),
-            ),
           ],
         ),
-      ),
+        if (_error != null) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          Row(
+            children: [
+              Icon(
+                CupertinoIcons.exclamationmark_triangle,
+                size: 18,
+                color: colors.stateAttention,
+              ),
+              const SizedBox(width: TracendSpacing.xs),
+              Expanded(child: Text(_error!, style: theme.bodyMedium)),
+            ],
+          ),
+        ],
+        const SizedBox(height: TracendSpacing.md),
+        SizedBox(
+          width: double.infinity,
+          child: _complete
+              ? FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done'),
+                )
+              : OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Finish later'),
+                ),
+        ),
+      ],
     );
   }
 }
@@ -329,10 +315,7 @@ class PosePhotoRow extends StatelessWidget {
       title: label,
       subtitle: guidance,
       leading: isBusy
-          ? const SizedBox.square(
-              dimension: 22,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
+          ? TracendLoader(size: 22, semanticLabel: 'Saving $label')
           : Icon(
               isCaptured
                   ? CupertinoIcons.checkmark_circle_fill
@@ -359,7 +342,8 @@ class PosePhotoRow extends StatelessWidget {
   }
 }
 
-/// Stored sets, newest first, each with view and delete.
+/// Stored sets, newest first, each with view and delete, shown in a sheet
+/// titled "Past photo sets".
 class PhotoSetsSheet extends StatelessWidget {
   const PhotoSetsSheet({
     required this.photoSets,
@@ -375,104 +359,59 @@ class PhotoSetsSheet extends StatelessWidget {
   final DateTime? now;
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    child: SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-        TracendSpacing.gutter,
-        0,
-        TracendSpacing.gutter,
-        TracendSpacing.lg,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Past photo sets',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: TracendSpacing.md),
-          TracendGroupedList(
+  Widget build(BuildContext context) => TracendGroupedList(
+    children: [
+      for (final set in photoSets)
+        TracendListRow(
+          title: friendlyDate(set.date, now: now),
+          subtitle: set.status == 'complete'
+              ? '${set.objectKeys.length} photos'
+              : '${set.objectKeys.length} of '
+                    '${progressPhotoPoses.length} photos · unfinished',
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              for (final set in photoSets)
-                TracendListRow(
-                  title: friendlyDate(set.date, now: now),
-                  subtitle: set.status == 'complete'
-                      ? '${set.objectKeys.length} photos'
-                      : '${set.objectKeys.length} of '
-                            '${progressPhotoPoses.length} photos · unfinished',
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextButton(
-                        onPressed: set.objectKeys.isEmpty
-                            ? null
-                            : () => onView(set),
-                        child: const Text('View'),
-                      ),
-                      IconButton(
-                        onPressed: () => onDelete(set),
-                        tooltip: 'Delete photo set',
-                        icon: const Icon(CupertinoIcons.delete),
-                      ),
-                    ],
-                  ),
-                ),
+              TextButton(
+                onPressed: set.objectKeys.isEmpty ? null : () => onView(set),
+                child: const Text('View'),
+              ),
+              IconButton(
+                onPressed: () => onDelete(set),
+                tooltip: 'Delete photo set',
+                icon: const Icon(CupertinoIcons.delete),
+              ),
             ],
           ),
-        ],
-      ),
-    ),
+        ),
+    ],
   );
 }
 
-/// Private viewer with short-lived signed URLs (60-second expiry).
+/// Private viewer with short-lived signed URLs (60-second expiry), shown in
+/// a sheet titled "Private photo set".
 class PrivatePhotoViewer extends StatelessWidget {
   const PrivatePhotoViewer({required this.urls, super.key});
 
   final List<String> urls;
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(
-        TracendSpacing.gutter,
-        0,
-        TracendSpacing.gutter,
-        TracendSpacing.lg,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Private photo set',
-            style: Theme.of(context).textTheme.headlineSmall,
+  Widget build(BuildContext context) => SizedBox(
+    height: 300,
+    child: ListView.separated(
+      scrollDirection: Axis.horizontal,
+      itemCount: urls.length,
+      separatorBuilder: (_, _) => const SizedBox(width: TracendSpacing.sm),
+      itemBuilder: (_, i) => ClipRRect(
+        borderRadius: BorderRadius.circular(TracendRadii.card),
+        child: AspectRatio(
+          aspectRatio: 3 / 4,
+          child: Image.network(
+            urls[i],
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) =>
+                const Center(child: Text('Photo unavailable')),
           ),
-          const SizedBox(height: TracendSpacing.xxs),
-          const Text('Only you can open these. The link expires in a minute.'),
-          const SizedBox(height: TracendSpacing.md),
-          SizedBox(
-            height: 300,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: urls.length,
-              separatorBuilder: (_, _) =>
-                  const SizedBox(width: TracendSpacing.sm),
-              itemBuilder: (_, i) => ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: AspectRatio(
-                  aspectRatio: 3 / 4,
-                  child: Image.network(
-                    urls[i],
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
-                        const Center(child: Text('Photo unavailable')),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     ),
   );

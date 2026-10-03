@@ -444,24 +444,40 @@ The active schedule places **Next meal** first with local time, planned foods, q
 and **Log meal**. Macro totals come next, labeled **From confirmed meals**, and count confirmed
 consumption only.
 
-Below them, **Today's meals** is one vertical day timeline in time order. It merges the schedule and
-the logged meals: a confirmed meal logged from a slot replaces that slot's planned row. Every row
-has a time, a marker, and a state word, so color is never the only signal:
-- Logged meals read **Lunch · 691 kcal**, then **logged** and their foods from `meal_items`, then a
-  protein / carbs / fat split bar, with a **⋯** menu that holds **Delete meal**.
-- A draft shows **needs review** and a **Review foods** action.
+The totals card shows calories, protein, carbs and fat in sentence case, with numbers in the
+numeric face. Protein, carbs and fat each carry a small colour key that matches the meal split bars;
+the words, not the colours, name them.
+
+Below them, **Today's meals** is one vertical day timeline in time order, in one card with hairline
+separators. It merges the schedule and the logged meals: a confirmed meal logged from a slot
+replaces that slot's planned row. Every row has a time, a marker, and a state word, so color is
+never the only signal:
+- Logged meals read **Lunch · 691 kcal**, then **Logged** and their foods from `meal_items`, then a
+  protein / carbs / fat split bar, with a **⋯** control that opens an action sheet holding **Delete
+  meal**.
+- A draft shows **Needs review** and a **Review foods** action.
 - Unlogged slots show **Due now**, **Planned**, **Optional**, or **Not logged** with their planned
   foods and a **Log** action.
 
-One **Log a meal** button follows the timeline. It opens a sheet that first picks the meal type
-(preselected by time of day: Breakfast before 10:30, Lunch before 15:00, Snack before 17:30, then
-Dinner) and then **Take a photo**, **Choose from Photo Library**, or **Enter manually**. A photo
-meal is saved under the chosen type. The coach's nutrition guidance sits at the end of the screen,
-with its confidence in words.
+One **Log a meal** button follows the timeline. It opens the **Log a meal** sheet, which first picks
+the meal type with chips (preselected by time of day: Breakfast before 10:30, Lunch before 15:00,
+Snack before 17:30, then Dinner) and then offers **Take a photo**, **Choose from Photo Library**, or
+**Enter manually** as one grouped list. A photo meal is saved under the chosen type. The coach's
+nutrition guidance sits at the end of the screen under a sentence-case **Coach** label, with its
+confidence in words.
 
-Nutrition opens on Today and provides previous/next-day controls. Previous dates visibly identify a
-saved daily log and reload confirmed totals and meals; the next-day control stops at Today. A day
+Nutrition uses the large title with the selected day as its subtitle, and pull to refresh reloads
+the day and the coach's guidance. Below the title, a week strip shows the week's date range with
+previous and next week chevrons, then seven day boxes. Today carries the lime ring; the selected
+day sits on a surface box; days after today are disabled; the next-week chevron stops at the
+current week. Changing the day plays the `selection` haptic. Previous dates visibly identify a
+saved daily log and reload confirmed totals and meals. While a day loads, skeletons stand in for
+the totals and the timeline: another day's data never shows under the selected day. A day
 boundary never implies deletion.
+
+Feedback: confirming a meal (manual entry or reviewed candidates) plays the `success` haptic and
+shows a **Meal logged** toast; a deleted meal shows **Meal deleted**. Failures stay on the page in
+words, never only in a toast.
 
 `Nutrition → Capture or enter manually → Analyze → Review candidates → Resolve catalog → Confirm meal → Totals`
 
@@ -488,10 +504,14 @@ AI observation                 Confirmed meal
 - Meal forms dismiss the keyboard by dragging, tapping outside a field, or an explicit **Hide
   keyboard** control. This control is required for iOS numeric keyboards that do not provide a
   native Done key.
-- Each timeline meal's **⋯** menu holds a labeled **Delete meal** action. Deletion requires a
-  destructive confirmation explaining that the meal leaves daily totals.
+- Each timeline meal's **⋯** control opens an action sheet with a labeled **Delete meal** action.
+  Deletion then requires a destructive confirmation (**Delete this meal?**, Cancel as the default)
+  explaining that the meal leaves the day's totals.
+- **Enter meal** and **Review candidates** are sheets. Each candidate shows its serving, calories
+  and confidence in sentence case (**Medium confidence**).
 - Failure offers **Retry**, **Enter manually**, and **Delete photo**.
-- While a photo is analyzed, a progress line appears under **Log a meal**. A failure is shown in
+- While a photo is analyzed, the brand loader and **Analyzing meal photo…** appear under **Log a
+  meal**. A failure is shown in
   the same place, never only at the top of the screen, out of view. A refused camera or photo
   permission names the iOS setting to change. Four outcomes say what happened in plain words: a
   library photo iOS could not load (`invalid_image`, usually an iCloud photo that did not
@@ -519,16 +539,32 @@ dated comparable observations.
 The screen reads top to bottom as one answer, then detail:
 1. A **4W · 12W · 6M** segmented control (default 12W) that scopes the weight change, chart, and
    workout count. The header **+** records a measurement.
-2. The weight hero (`WeightHeroCard`): latest weigh-in and its date, change since the first weigh-in
-   in the period, the weekly rate, a plain-word trend steadiness, and the chart. With no weigh-in it
-   asks for the first one; with one in the period it asks for another before drawing a trend.
+2. The weight hero (`WeightHeroCard`): a sentence-case **Weight** label, the latest weigh-in in the
+   numeric face and its date, change since the first weigh-in in the period, the weekly rate, a
+   plain-word trend steadiness, and the chart. The change chip takes the lime signal only when it
+   moves toward the active goal (`fat_loss` down, `muscle_gain` up); the arrow and the spoken
+   "toward your goal" carry the same meaning. With no weigh-in it asks for the first one; with one
+   in the period it asks for another before drawing a trend.
 3. **This week:** the weekly review card (§11).
 4. **Recent weigh-ins:** the newest three in one grouped list, each with its change from the one
-   before; **See all** opens every weigh-in. A row opens the read-only detail.
+   before; **See all** opens every weigh-in in a sheet. A row opens the read-only detail sheet.
 5. **Strength:** workouts done of planned in the period, then a horizontal row of best confirmed
-   lifts.
+   lifts (**Best · 6 workouts**). A lift tile shows a lime **New best** chip only when
+   `get_my_exercise_history` dates the lift's all-time best set to its latest completed session,
+   that session is the one the hub reports as the lift's latest, and an earlier session existed to
+   beat. Ties keep the earlier date, so repeating a record is never new; unknown history shows no
+   chip.
 6. **Progress photos:** one card with the last set's date, **Take progress photos**, and **View past
    sets**.
+
+Progress uses the large title, and pull to refresh reloads the page and the physique check. The
+first load shows skeletons in the shape of the hero and sections; a period change keeps the last
+answer on screen, dimmed, until the new one arrives. Record measurement, all weigh-ins, the
+weigh-in detail, the weekly review, photo capture, past sets and the private viewer are sheets.
+A saved weigh-in plays the `success` haptic and shows **Weigh-in saved**; a requested review and a
+deleted photo set also confirm with a toast. A failed action shows a dismissible notice in words
+beside the control that started it (the top of the page, the weekly review card, or the photo
+card), never only in a toast.
 
 ### Coach conversation
 
@@ -574,7 +610,9 @@ and lower body with framing guidance, a check per finished pose, and how many ar
 explicitly opens the camera or library for a pose; the native camera is never launched without this
 in-app context. Errors stay inline in the sheet, and **Finish later** keeps a partial set open.
 Completed and partial sets are listed under **View past sets** with labeled view and delete
-controls. Viewing uses short-lived authorization.
+controls. Deleting a set asks first with a destructive confirmation (**Delete this photo set?**,
+Cancel as the default). Viewing uses short-lived authorization. Storage consent is an alert with
+**I agree and continue** and Cancel.
 
 **Physique check (2026-10, owner-only experiment).** Only for accounts the `physique-check`
 function serves; everyone else sees no change and the card still says photos are never sent to AI.

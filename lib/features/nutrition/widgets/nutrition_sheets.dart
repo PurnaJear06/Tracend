@@ -2,7 +2,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
+import 'package:tracend/features/nutrition/widgets/nutrition_insight_card.dart';
 import 'package:tracend/shared/formatting.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
+import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 class ManualMealResult {
@@ -54,8 +57,9 @@ class LogMealChoice {
   final LogMealMethod method;
 }
 
-/// One entry point for every way to log a meal. The meal type is chosen
-/// first so a photo meal is saved under the right meal.
+/// One entry point for every way to log a meal, shown in a sheet titled
+/// "Log a meal". The meal type is chosen first so a photo meal is saved
+/// under the right meal.
 class LogMealSheet extends StatefulWidget {
   const LogMealSheet({
     required this.initialMealType,
@@ -80,118 +84,94 @@ class _LogMealSheetState extends State<LogMealSheet> {
       Navigator.pop(context, LogMealChoice(_mealType, method));
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context).textTheme;
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(
-          TracendSpacing.gutter,
-          0,
-          TracendSpacing.gutter,
-          TracendSpacing.lg,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Log a meal', style: theme.headlineSmall),
-            const SizedBox(height: TracendSpacing.md),
-            Wrap(
-              spacing: TracendSpacing.xs,
-              runSpacing: TracendSpacing.xs,
-              children: [
-                for (final type in mealTypes)
-                  ChoiceChip(
-                    label: Text(mealTypeLabel(type)),
-                    selected: _mealType == type,
-                    materialTapTargetSize: MaterialTapTargetSize.padded,
-                    onSelected: (_) => setState(() => _mealType = type),
-                  ),
-              ],
-            ),
-            const SizedBox(height: TracendSpacing.md),
-            if (widget.photosAvailable) ...[
-              _MethodTile(
-                icon: CupertinoIcons.camera_fill,
-                title: 'Take a photo',
-                detail: 'Tracend suggests the foods; you check them.',
-                onTap: () => _choose(LogMealMethod.camera),
-              ),
-              const SizedBox(height: TracendSpacing.xs),
-              _MethodTile(
-                icon: CupertinoIcons.photo_on_rectangle,
-                title: 'Choose from Photo Library',
-                detail: 'Use a photo you already took.',
-                onTap: () => _choose(LogMealMethod.library),
-              ),
-            ] else
-              _MethodTile(
-                icon: CupertinoIcons.camera_viewfinder,
-                title: 'Review sample analysis',
-                detail: 'A built-in example. Nothing counts until you confirm.',
-                onTap: () => _choose(LogMealMethod.sample),
-              ),
-            const SizedBox(height: TracendSpacing.xs),
-            _MethodTile(
-              icon: CupertinoIcons.pencil,
-              title: 'Enter manually',
-              detail: 'Type the food, serving, and nutrition.',
-              onTap: () => _choose(LogMealMethod.manual),
-            ),
-          ],
-        ),
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      MealTypeChips(
+        selected: _mealType,
+        onSelected: (type) => setState(() => _mealType = type),
       ),
-    );
-  }
+      const SizedBox(height: TracendSpacing.md),
+      TracendGroupedList(
+        children: [
+          if (widget.photosAvailable) ...[
+            TracendListRow(
+              leading: const TracendRowIcon(icon: CupertinoIcons.camera_fill),
+              title: 'Take a photo',
+              subtitle: 'Tracend suggests the foods; you check them.',
+              onTap: () => _choose(LogMealMethod.camera),
+            ),
+            TracendListRow(
+              leading: const TracendRowIcon(
+                icon: CupertinoIcons.photo_on_rectangle,
+              ),
+              title: 'Choose from Photo Library',
+              subtitle: 'Use a photo you already took.',
+              onTap: () => _choose(LogMealMethod.library),
+            ),
+          ] else
+            TracendListRow(
+              leading: const TracendRowIcon(
+                icon: CupertinoIcons.camera_viewfinder,
+              ),
+              title: 'Review sample analysis',
+              subtitle: 'A built-in example. Nothing counts until you confirm.',
+              onTap: () => _choose(LogMealMethod.sample),
+            ),
+          TracendListRow(
+            leading: const TracendRowIcon(icon: CupertinoIcons.pencil),
+            title: 'Enter manually',
+            subtitle: 'Type the food, serving, and nutrition.',
+            onTap: () => _choose(LogMealMethod.manual),
+          ),
+        ],
+      ),
+    ],
+  );
 }
 
-class _MethodTile extends StatelessWidget {
-  const _MethodTile({
-    required this.icon,
-    required this.title,
-    required this.detail,
-    required this.onTap,
+/// The four meal types as one row of choice chips, labeled "Meal" for
+/// VoiceOver.
+class MealTypeChips extends StatelessWidget {
+  const MealTypeChips({
+    required this.selected,
+    required this.onSelected,
+    super.key,
   });
 
-  final IconData icon;
-  final String title;
-  final String detail;
-  final VoidCallback onTap;
+  final String selected;
+  final ValueChanged<String> onSelected;
 
   @override
-  Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    return Material(
-      color: colors.surfaceRaised,
-      borderRadius: BorderRadius.circular(TracendRadii.control),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(TracendRadii.control),
-        child: Padding(
-          padding: const EdgeInsets.all(TracendSpacing.md),
-          child: Row(
-            children: [
-              Icon(icon, color: colors.actionPrimary),
-              const SizedBox(width: TracendSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: Theme.of(context).textTheme.titleMedium),
-                    Text(detail, style: Theme.of(context).textTheme.bodyMedium),
-                  ],
-                ),
-              ),
-              Icon(
-                CupertinoIcons.chevron_forward,
-                size: 14,
-                color: colors.textSecondary,
-              ),
-            ],
-          ),
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'Meal',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: context.tracendColors.textSecondary,
         ),
       ),
-    );
-  }
+      const SizedBox(height: TracendSpacing.xs),
+      Wrap(
+        spacing: TracendSpacing.xs,
+        runSpacing: TracendSpacing.xs,
+        children: [
+          for (final type in mealTypes)
+            ChoiceChip(
+              label: Text(mealTypeLabel(type)),
+              selected: selected == type,
+              showCheckmark: false,
+              materialTapTargetSize: MaterialTapTargetSize.padded,
+              onSelected: (_) {
+                if (type != selected) TracendHaptics.selection();
+                onSelected(type);
+              },
+            ),
+        ],
+      ),
+    ],
+  );
 }
 
 class ManualMealSheet extends StatefulWidget {
@@ -251,94 +231,74 @@ class _ManualMealSheetState extends State<ManualMealSheet> {
     );
   }
 
+  /// Shown in a sheet titled "Enter meal" with `scrollable: false`: the
+  /// form brings its own scroll view so a drag dismisses the keyboard.
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.fromLTRB(
-      TracendSpacing.gutter,
-      TracendSpacing.lg,
-      TracendSpacing.gutter,
-      MediaQuery.viewInsetsOf(context).bottom + TracendSpacing.lg,
-    ),
-    child: SingleChildScrollView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Enter meal',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                ),
-                const HideKeyboardButton(),
-              ],
-            ),
-            const SizedBox(height: TracendSpacing.xs),
-            Text(
-              'It counts toward your totals as soon as you confirm it.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: TracendSpacing.md),
-            DropdownButtonFormField<String>(
-              initialValue: _mealType,
-              decoration: const InputDecoration(labelText: 'Meal type'),
-              items: [
-                for (final value in mealTypes)
-                  DropdownMenuItem(
-                    value: value,
-                    child: Text(mealTypeLabel(value)),
-                  ),
-              ],
-              onChanged: (value) => setState(() => _mealType = value!),
-            ),
-            TextFormField(
-              controller: _name,
-              decoration: const InputDecoration(labelText: 'Food name'),
-              validator: _required,
-              onTapOutside: dismissKeyboard,
-            ),
-            TextFormField(
-              controller: _serving,
-              decoration: const InputDecoration(labelText: 'Serving'),
-              validator: _required,
-              onTapOutside: dismissKeyboard,
-            ),
-            TextFormField(
-              controller: _calories,
-              decoration: const InputDecoration(labelText: 'Calories'),
-              keyboardType: TextInputType.number,
-              validator: _number,
-              onTapOutside: dismissKeyboard,
-            ),
-            TextFormField(
-              controller: _protein,
-              decoration: const InputDecoration(labelText: 'Protein (g)'),
-              keyboardType: TextInputType.number,
-              validator: _number,
-              onTapOutside: dismissKeyboard,
-            ),
-            TextFormField(
-              controller: _carbs,
-              decoration: const InputDecoration(labelText: 'Carbohydrate (g)'),
-              keyboardType: TextInputType.number,
-              validator: _number,
-              onTapOutside: dismissKeyboard,
-            ),
-            TextFormField(
-              controller: _fat,
-              decoration: const InputDecoration(labelText: 'Fat (g)'),
-              keyboardType: TextInputType.number,
-              validator: _number,
-              onTapOutside: dismissKeyboard,
-            ),
-            const SizedBox(height: TracendSpacing.lg),
-            FilledButton(onPressed: _submit, child: const Text('Confirm meal')),
-          ],
-        ),
+  Widget build(BuildContext context) => SingleChildScrollView(
+    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+    child: Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Align(
+            alignment: Alignment.centerRight,
+            child: HideKeyboardButton(),
+          ),
+          MealTypeChips(
+            selected: _mealType,
+            onSelected: (type) => setState(() => _mealType = type),
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          const SizedBox(height: TracendSpacing.xs),
+          TextFormField(
+            controller: _name,
+            decoration: const InputDecoration(labelText: 'Food name'),
+            validator: _required,
+            onTapOutside: dismissKeyboard,
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          TextFormField(
+            controller: _serving,
+            decoration: const InputDecoration(labelText: 'Serving'),
+            validator: _required,
+            onTapOutside: dismissKeyboard,
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          TextFormField(
+            controller: _calories,
+            decoration: const InputDecoration(labelText: 'Calories'),
+            keyboardType: TextInputType.number,
+            validator: _number,
+            onTapOutside: dismissKeyboard,
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          TextFormField(
+            controller: _protein,
+            decoration: const InputDecoration(labelText: 'Protein (g)'),
+            keyboardType: TextInputType.number,
+            validator: _number,
+            onTapOutside: dismissKeyboard,
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          TextFormField(
+            controller: _carbs,
+            decoration: const InputDecoration(labelText: 'Carbohydrate (g)'),
+            keyboardType: TextInputType.number,
+            validator: _number,
+            onTapOutside: dismissKeyboard,
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          TextFormField(
+            controller: _fat,
+            decoration: const InputDecoration(labelText: 'Fat (g)'),
+            keyboardType: TextInputType.number,
+            validator: _number,
+            onTapOutside: dismissKeyboard,
+          ),
+          const SizedBox(height: TracendSpacing.lg),
+          FilledButton(onPressed: _submit, child: const Text('Confirm meal')),
+        ],
       ),
     ),
   );
@@ -371,58 +331,48 @@ class _CandidateSheetState extends State<CandidateSheet> {
     );
   }
 
+  /// Shown in a sheet titled "Review candidates" with `scrollable: false`:
+  /// the list brings its own scroll view so a drag dismisses the keyboard.
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.all(TracendSpacing.gutter),
-    child: SizedBox(
-      height: MediaQuery.sizeOf(context).height * 0.72,
-      child: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Review candidates',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                  ),
-                  const HideKeyboardButton(),
-                ],
-              ),
-              const SizedBox(height: TracendSpacing.xs),
-              const Text(
-                'These are estimates from your photo. Check portions, oil, sauces, and hidden ingredients, then confirm only what you ate.',
-              ),
-              const SizedBox(height: TracendSpacing.md),
-              for (final item in widget.candidates) ...[
-                CandidateEditor(
-                  candidate: item,
-                  selected: _selected.contains(item.id),
-                  onSelected: (selected) => setState(() {
-                    if (selected) {
-                      _selected.add(item.id);
-                    } else {
-                      _selected.remove(item.id);
-                    }
-                  }),
-                  onChanged: (candidate) => _edited[item.id] = candidate,
-                ),
-                const SizedBox(height: TracendSpacing.sm),
-              ],
-              const SizedBox(height: TracendSpacing.md),
-              FilledButton(
-                onPressed: _selected.isEmpty ? null : _submit,
-                child: const Text('Confirm selected foods'),
-              ),
-            ],
+  Widget build(BuildContext context) => Form(
+    key: _formKey,
+    child: SingleChildScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Align(
+            alignment: Alignment.centerRight,
+            child: HideKeyboardButton(),
           ),
-        ),
+          Text(
+            'These are estimates from your photo. Check portions, oil, '
+            'sauces, and hidden ingredients, then confirm only what you ate.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: TracendSpacing.md),
+          for (final item in widget.candidates) ...[
+            CandidateEditor(
+              candidate: item,
+              selected: _selected.contains(item.id),
+              onSelected: (selected) => setState(() {
+                if (selected) {
+                  _selected.add(item.id);
+                } else {
+                  _selected.remove(item.id);
+                }
+              }),
+              onChanged: (candidate) => _edited[item.id] = candidate,
+            ),
+            const SizedBox(height: TracendSpacing.xs),
+          ],
+          const SizedBox(height: TracendSpacing.md),
+          FilledButton(
+            onPressed: _selected.isEmpty ? null : _submit,
+            child: const Text('Confirm selected foods'),
+          ),
+        ],
       ),
     ),
   );
@@ -516,7 +466,8 @@ class _CandidateEditorState extends State<CandidateEditor> {
           value: widget.selected,
           title: Text(_name.text),
           subtitle: Text(
-            '${_serving.text} · ${_calories.text} kcal · ${widget.candidate.confidence} confidence',
+            '${_serving.text} · ${_calories.text} kcal · '
+            '${confidenceLabel(widget.candidate.confidence)}',
           ),
           onChanged: (value) => widget.onSelected(value ?? false),
         ),
@@ -533,6 +484,7 @@ class _CandidateEditorState extends State<CandidateEditor> {
           ),
         ),
         if (_expanded) ...[
+          const SizedBox(height: TracendSpacing.xs),
           TextFormField(
             controller: _name,
             decoration: const InputDecoration(labelText: 'Food name'),
@@ -543,6 +495,7 @@ class _CandidateEditorState extends State<CandidateEditor> {
               setState(() {});
             },
           ),
+          const SizedBox(height: TracendSpacing.xs),
           TextFormField(
             controller: _serving,
             decoration: const InputDecoration(labelText: 'Serving'),
@@ -553,6 +506,7 @@ class _CandidateEditorState extends State<CandidateEditor> {
               setState(() {});
             },
           ),
+          const SizedBox(height: TracendSpacing.xs),
           Row(
             children: [
               Expanded(child: _numberField(_calories, 'Calories')),
@@ -560,6 +514,7 @@ class _CandidateEditorState extends State<CandidateEditor> {
               Expanded(child: _numberField(_protein, 'Protein (g)')),
             ],
           ),
+          const SizedBox(height: TracendSpacing.xs),
           Row(
             children: [
               Expanded(child: _numberField(_carbs, 'Carbs (g)')),

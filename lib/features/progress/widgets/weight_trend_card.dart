@@ -7,6 +7,7 @@ import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/evidence_trend_chart.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
 
 /// Which way the weight should move for a goal: -1 down, 1 up, 0 neither.
 int goalWeightDirection(String? goal) => switch (goal) {
@@ -33,8 +34,9 @@ String trendSteadinessLabel(double r2) {
 ///   (`ComputedMetrics.scores.weightTrend28d`, else `weightTrend7d`) × 7;
 ///   nothing is fitted on the device
 /// - the chart keeps [EvidenceTrendChart]'s raw-dot and overlay rules
-/// - color marks movement toward the active goal; the arrow and the words
-///   carry the same meaning, so color is never the only signal
+/// - the change chip takes the lime signal only when it moves toward the
+///   active goal (`fat_loss` down, `muscle_gain` up); the arrow and the
+///   spoken label carry the same meaning, so color is never the only signal
 class WeightHeroCard extends StatelessWidget {
   const WeightHeroCard({
     required this.measurements,
@@ -62,6 +64,7 @@ class WeightHeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tracendColors;
     final theme = Theme.of(context).textTheme;
     final latest = measurements.isEmpty ? null : measurements.last;
     final weight = latest?.weightKg ?? fallbackWeightKg;
@@ -121,11 +124,26 @@ class WeightHeroCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _Header(onInfo: () => _showExplainer(context)),
-          Text(
-            '${weight.toStringAsFixed(1)} kg',
-            style: theme.displaySmall?.copyWith(
-              fontSize: 40,
-              fontFeatures: const [FontFeature.tabularFigures()],
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: weight.toStringAsFixed(1),
+                  style: TracendTheme.numeric(
+                    colors,
+                    fontSize: 44,
+                    fontWeight: FontWeight.w800,
+                  ).copyWith(height: 1.05, letterSpacing: -0.8),
+                ),
+                TextSpan(
+                  text: ' kg',
+                  style: TracendTheme.numeric(
+                    colors,
+                    fontSize: 20,
+                    color: colors.textSecondary,
+                  ),
+                ),
+              ],
             ),
           ),
           if (latest != null) ...[
@@ -190,39 +208,23 @@ class WeightHeroCard extends StatelessWidget {
     );
   }
 
-  void _showExplainer(BuildContext context) => showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    builder: (context) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          TracendSpacing.gutter,
-          0,
-          TracendSpacing.gutter,
-          TracendSpacing.lg,
+  void _showExplainer(BuildContext context) => showTracendSheet<void>(
+    context,
+    title: 'How this is calculated',
+    builder: (context) => const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Each dot is a weigh-in you recorded, shown exactly as entered. '
+          'The lines and the weekly rate are calculated from your '
+          'weigh-ins. Nothing here is estimated by AI.',
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'How this is calculated',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: TracendSpacing.sm),
-            const Text(
-              'Each dot is a weigh-in you recorded, shown exactly as entered. '
-              'The lines and the weekly rate are calculated from your '
-              'weigh-ins. Nothing here is estimated by AI.',
-            ),
-            const SizedBox(height: TracendSpacing.sm),
-            const Text(
-              'A dashed line means your weight has moved around too much from '
-              'day to day to trust the longer-term direction yet.',
-            ),
-          ],
+        SizedBox(height: TracendSpacing.sm),
+        Text(
+          'A dashed line means your weight has moved around too much from '
+          'day to day to trust the longer-term direction yet.',
         ),
-      ),
+      ],
     ),
   );
 }
@@ -234,7 +236,14 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      Expanded(child: Text('WEIGHT', style: TracendTheme.labelCaps(context))),
+      Expanded(
+        child: Text(
+          'Weight',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: context.tracendColors.textSecondary,
+          ),
+        ),
+      ),
       IconButton(
         onPressed: onInfo,
         tooltip: 'How this is calculated',
@@ -265,7 +274,7 @@ class _ChangeChip extends StatelessWidget {
     final rounded = double.parse(change.toStringAsFixed(1));
     final direction = rounded.sign.toInt();
     final towardGoal = direction != 0 && direction == goalDirection;
-    final color = towardGoal ? colors.stateStable : colors.textPrimary;
+    final color = towardGoal ? colors.accentSignalInk : colors.textPrimary;
     final arrow = switch (direction) {
       -1 => CupertinoIcons.arrow_down_right,
       1 => CupertinoIcons.arrow_up_right,
@@ -284,8 +293,7 @@ class _ChangeChip extends StatelessWidget {
       label: towardGoal ? '$spoken, toward your goal' : spoken,
       excludeSemantics: true,
       child: _ChipShell(
-        color: color,
-        tinted: towardGoal,
+        fill: towardGoal ? colors.accentSignalTint : null,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -294,10 +302,7 @@ class _ChangeChip extends StatelessWidget {
             Flexible(
               child: Text(
                 text,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: color,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+                style: TracendTheme.numeric(colors, color: color),
               ),
             ),
           ],
@@ -316,56 +321,36 @@ class _FactChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     return _ChipShell(
-      color: colors.textSecondary,
-      tinted: false,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 14, color: colors.textSecondary),
           const SizedBox(width: TracendSpacing.xxs),
-          Flexible(
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: colors.textPrimary,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-          ),
+          Flexible(child: Text(label, style: TracendTheme.numeric(colors))),
         ],
       ),
     );
   }
 }
 
+/// A pill for one fact about the trend; [fill] defaults to `surfaceRaised`.
 class _ChipShell extends StatelessWidget {
-  const _ChipShell({
-    required this.color,
-    required this.tinted,
-    required this.child,
-  });
-  final Color color;
-  final bool tinted;
+  const _ChipShell({required this.child, this.fill});
+  final Color? fill;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: tinted ? color.withValues(alpha: 0.12) : colors.surfaceRaised,
-        borderRadius: BorderRadius.circular(TracendRadii.control),
-        border: Border.all(
-          color: tinted ? color.withValues(alpha: 0.28) : colors.borderHairline,
-        ),
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: fill ?? context.tracendColors.surfaceRaised,
+      borderRadius: BorderRadius.circular(TracendRadii.pill),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: TracendSpacing.sm,
+        vertical: TracendSpacing.xs,
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: TracendSpacing.sm,
-          vertical: TracendSpacing.xs,
-        ),
-        child: child,
-      ),
-    );
-  }
+      child: child,
+    ),
+  );
 }

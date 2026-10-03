@@ -1,6 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/shared/formatting.dart';
+import 'package:tracend/shared/widgets/pressable.dart';
+import 'package:tracend/shared/widgets/tracend_haptics.dart';
 
 /// Normalizes a [DateTime] to midnight so date sets compare by day only.
 DateTime normalizedDate(DateTime date) =>
@@ -12,14 +16,19 @@ DateTime mondayOf(DateTime date) {
   return normalized.subtract(Duration(days: normalized.weekday - 1));
 }
 
-/// Week pill strip (plan §5.1/§5.2): seven day pills for the week containing
-/// [selectedDate], with real chevron week navigation owned by the caller.
+/// Week strip: seven day boxes for the week containing [selectedDate], with
+/// real chevron week navigation owned by the caller. The chevrons sit with
+/// the week's date range above the days, so each day keeps a full-width
+/// touch target.
+///
+/// The selected day sits on a `surface` box; today carries the lime ring,
+/// the signal for "now". Changing the day plays the `selection` haptic.
 ///
 /// Binding contract:
 /// - [daysWithData] — normalized dates with completed data (check marker)
 /// - [plannedDates] — normalized dates with a planned item (dot marker)
 /// - [markedDate] — single highlighted date (e.g. reconciliation confirm)
-/// - [isDateEnabled] — false disables the pill (no no-op taps on future days)
+/// - [isDateEnabled] — false disables the day (no no-op taps on future days)
 /// - chevrons render only when their callback is provided: a missing chevron
 ///   is the honest "no further navigation" state
 class DatePillStrip extends StatelessWidget {
@@ -32,6 +41,7 @@ class DatePillStrip extends StatelessWidget {
     this.onPreviousWeek,
     this.onNextWeek,
     this.markedDate,
+    this.today,
     super.key,
   });
 
@@ -43,6 +53,13 @@ class DatePillStrip extends StatelessWidget {
   final VoidCallback? onPreviousWeek;
   final VoidCallback? onNextWeek;
   final DateTime? markedDate;
+
+  /// The day that carries the lime "today" ring; the device date when null.
+  final DateTime? today;
+
+  /// Day boxes keep their text inside the box at large text sizes; the full
+  /// date is always spoken.
+  static const maxTextScale = 1.35;
 
   static const _letterLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
   static const _weekdayNames = [
@@ -65,53 +82,69 @@ class DatePillStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final monday = mondayOf(selectedDate);
     final dates = [for (var i = 0; i < 7; i++) monday.add(Duration(days: i))];
-    return Row(
+    final now = today ?? DateTime.now();
+    final hasChevrons = onPreviousWeek != null || onNextWeek != null;
+    final days = Row(
       children: [
-        if (onPreviousWeek != null)
-          _WeekChevron(
-            key: const ValueKey('date-strip-previous'),
-            icon: CupertinoIcons.chevron_left,
-            tooltip: 'Previous week',
-            onPressed: onPreviousWeek!,
-          ),
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (var i = 0; i < dates.length; i++)
-                  Padding(
-                    padding: EdgeInsets.only(
-                      left: i == 0 && onPreviousWeek != null
-                          ? TracendSpacing.xxs
-                          : 0,
-                      right: i < dates.length - 1 ? TracendSpacing.xxs : 0,
-                    ),
-                    child: _DatePill(
-                      key: ValueKey('date-pill-${_iso(dates[i])}'),
-                      date: dates[i],
-                      letter: _letterLabels[i],
-                      weekdayName: _weekdayNames[i],
-                      selected: _matches(selectedDate, dates[i]),
-                      enabled: isDateEnabled?.call(dates[i]) ?? true,
-                      completed: daysWithData.any((d) => _matches(d, dates[i])),
-                      planned: plannedDates.any((d) => _matches(d, dates[i])),
-                      marked: _matches(markedDate, dates[i]),
-                      onTap: () => onSelectedDate(dates[i]),
-                    ),
-                  ),
-              ],
+        for (var i = 0; i < dates.length; i++)
+          Expanded(
+            child: _DatePill(
+              key: ValueKey('date-pill-${_iso(dates[i])}'),
+              date: dates[i],
+              letter: _letterLabels[i],
+              weekdayName: _weekdayNames[i],
+              selected: _matches(selectedDate, dates[i]),
+              isToday: _matches(now, dates[i]),
+              enabled: isDateEnabled?.call(dates[i]) ?? true,
+              completed: daysWithData.any((d) => _matches(d, dates[i])),
+              planned: plannedDates.any((d) => _matches(d, dates[i])),
+              marked: _matches(markedDate, dates[i]),
+              onTap: () => onSelectedDate(dates[i]),
             ),
           ),
-        ),
-        if (onNextWeek != null)
-          _WeekChevron(
-            key: const ValueKey('date-strip-next'),
-            icon: CupertinoIcons.chevron_right,
-            tooltip: 'Next week',
-            onPressed: onNextWeek!,
-          ),
       ],
+    );
+    // Pressable draws on a Material; the strip may sit straight on a page.
+    if (!hasChevrons) {
+      return Material(type: MaterialType.transparency, child: days);
+    }
+    final colors = context.tracendColors;
+    return Material(
+      type: MaterialType.transparency,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 2),
+                  child: Text(
+                    '${shortDate(dates.first, now: now)} – '
+                    '${shortDate(dates.last, now: now)}',
+                    style: TracendTheme.dataUtility(colors),
+                  ),
+                ),
+              ),
+              if (onPreviousWeek != null)
+                _WeekChevron(
+                  key: const ValueKey('date-strip-previous'),
+                  icon: CupertinoIcons.chevron_left,
+                  tooltip: 'Previous week',
+                  onPressed: onPreviousWeek!,
+                ),
+              if (onNextWeek != null)
+                _WeekChevron(
+                  key: const ValueKey('date-strip-next'),
+                  icon: CupertinoIcons.chevron_right,
+                  tooltip: 'Next week',
+                  onPressed: onNextWeek!,
+                ),
+            ],
+          ),
+          days,
+        ],
+      ),
     );
   }
 
@@ -151,6 +184,7 @@ class _DatePill extends StatelessWidget {
     required this.letter,
     required this.weekdayName,
     required this.selected,
+    required this.isToday,
     required this.enabled,
     required this.completed,
     required this.planned,
@@ -163,103 +197,109 @@ class _DatePill extends StatelessWidget {
   final String letter;
   final String weekdayName;
   final bool selected;
+  final bool isToday;
   final bool enabled;
   final bool completed;
   final bool planned;
   final bool marked;
   final VoidCallback onTap;
 
+  static const _radius = 16.0;
+
+  void _select() {
+    if (!selected) TracendHaptics.selection();
+    onTap();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    final accent = selected ? colors.actionPrimary : colors.textSecondary;
-    return Semantics(
-      button: true,
-      selected: selected,
-      enabled: enabled,
-      label:
-          '$weekdayName ${date.day}'
-          '${selected ? ', selected' : ''}'
-          '${marked ? ', highlighted' : ''}'
-          '${completed
-              ? ', completed'
-              : planned
-              ? ', planned'
-              : ''}',
-      child: Material(
-        color: selected
-            ? colors.actionPrimary.withValues(alpha: 0.14)
-            : colors.surface,
-        borderRadius: BorderRadius.circular(999),
-        child: InkWell(
-          onTap: enabled ? onTap : null,
-          borderRadius: BorderRadius.circular(999),
-          child: Container(
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
-            padding: const EdgeInsets.symmetric(
-              horizontal: TracendSpacing.xs,
-              vertical: TracendSpacing.xxs,
-            ),
+    final theme = Theme.of(context).textTheme;
+    final numberColor = !enabled
+        ? colors.textTertiary
+        : selected || isToday
+        ? colors.textPrimary
+        : colors.textSecondary;
+    final status = marked
+        ? Icon(CupertinoIcons.link, size: 12, color: colors.textPrimary)
+        : completed
+        ? Icon(
+            CupertinoIcons.checkmark_circle_fill,
+            size: 13,
+            color: colors.stateStable,
+          )
+        : planned
+        ? Container(
+            width: 5,
+            height: 5,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: selected
-                    ? colors.actionPrimary.withValues(alpha: 0.5)
-                    : colors.borderHairline,
-              ),
+              shape: BoxShape.circle,
+              color: isToday ? colors.accentSignalRing : colors.textTertiary,
+            ),
+          )
+        : null;
+    final label = [
+      '$weekdayName ${date.day}',
+      if (isToday) 'today',
+      if (selected) 'selected',
+      if (marked) 'highlighted',
+      if (completed) 'completed' else if (planned) 'planned',
+    ].join(', ');
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: DatePillStrip.maxTextScale,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        enabled: enabled,
+        label: label,
+        onTap: enabled ? _select : null,
+        excludeSemantics: true,
+        child: Pressable(
+          onTap: enabled ? _select : null,
+          borderRadius: BorderRadius.circular(_radius),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 64),
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            foregroundDecoration: isToday
+                ? BoxDecoration(
+                    borderRadius: BorderRadius.circular(_radius),
+                    border: Border.all(
+                      color: colors.accentSignalRing,
+                      width: 1.5,
+                    ),
+                  )
+                : null,
+            decoration: BoxDecoration(
+              color: selected ? colors.surface : null,
+              borderRadius: BorderRadius.circular(_radius),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   letter,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontSize: 10,
-                    letterSpacing: 0.8,
-                    color: enabled ? accent : colors.textSecondary,
+                  style: theme.labelSmall?.copyWith(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: enabled ? colors.textSecondary : colors.textTertiary,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '${date.day}',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontFamily: TracendFonts.numericFamily,
-                    fontSize: 14,
-                    color: enabled
-                        ? selected
-                              ? colors.textPrimary
-                              : colors.textSecondary
-                        : colors.textSecondary.withValues(alpha: 0.5),
-                    fontFeatures: const [FontFeature.tabularFigures()],
+                const SizedBox(height: 3),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '${date.day}',
+                    style: TracendTheme.numeric(
+                      colors,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: numberColor,
+                    ).copyWith(height: 1),
                   ),
                 ),
-                const SizedBox(height: 2),
-                SizedBox(
-                  height: 10,
-                  child: marked
-                      ? Icon(
-                          CupertinoIcons.link,
-                          size: 10,
-                          color: colors.actionPrimary,
-                        )
-                      : completed
-                      ? Icon(
-                          CupertinoIcons.check_mark_circled_solid,
-                          size: 10,
-                          color: colors.stateStable,
-                        )
-                      : planned
-                      ? Container(
-                          width: 4,
-                          height: 4,
-                          margin: const EdgeInsets.symmetric(vertical: 3),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: colors.textSecondary,
-                          ),
-                        )
-                      : null,
-                ),
+                const SizedBox(height: 3),
+                SizedBox(height: 14, child: Center(child: status)),
               ],
             ),
           ),
