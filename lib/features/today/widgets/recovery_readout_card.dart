@@ -3,24 +3,23 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
-import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 
-/// Full-width recovery readout (Chunk 6). Replaces the centered
-/// `RecoveryRing` and the cramped recovery tile of the old readiness strip:
-/// one wide card with the tabular score, a band chip, and five driver rows
-/// with z-score bars.
+/// What is behind today's recovery score (the score itself sits in the
+/// Today hero). Each driver is a plain row, such as "Heart rate variability:
+/// normal for you, 58 ms". The z-scores, the weights and the rules are kept
+/// behind the ⓘ "How this is calculated" disclosure (UX_FLOWS.md §5).
 ///
-/// State table:
-/// - full: score + band chip + driver rows (bar fill clamps z to ±2,
-///   semantics announce the true z-score)
-/// - score null: '--' + honest empty copy; driver rows only with a breakdown
-/// - driver missing: row reports 'No data' — a missing component is never
-///   rendered as an at-baseline '+0.0'
-/// - driver missing but value proven valid (sleep with a non-null quality):
-///   row shows the measurement + 'Building baseline' — real reading,
-///   immature baseline, honest about both
-/// - cold_start / low confidence: 'Building baseline' caption under the score
+/// Row states:
+/// - usable: the comparison word from the z-score (see [driverComparison])
+///   plus today's measured value when the brief carries it (brief ≥ 1.4)
+/// - missing component: "not enough data yet" — never an at-baseline
+///   reading
+/// - sleep missing but proven valid (non-null sleep quality, the backend's
+///   1–960-minute gate): the measurement with "baseline still building"
+///
+/// Renders nothing when the brief has no recovery breakdown.
 class RecoveryReadoutCard extends StatelessWidget {
   const RecoveryReadoutCard({required this.computed, super.key});
 
@@ -28,419 +27,444 @@ class RecoveryReadoutCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    final score = computed.scores.recovery;
     final breakdown = computed.scores.recoveryBreakdown;
-    final confidence = computed.dataConfidence;
-    final lowConfidence = confidence == 'cold_start' || confidence == 'low';
-    return PremiumGradientCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const _CardTag(label: 'RECOVERY'),
-              const Spacer(),
-              if (score != null)
-                _BandChip(
-                  label: _bandLabel(score),
-                  color: _bandColor(colors, score),
-                ),
-            ],
-          ),
-          const SizedBox(height: TracendSpacing.sm),
-          Semantics(
-            label: score != null
-                ? 'Recovery score $score out of 100'
-                : 'Recovery score unavailable',
-            excludeSemantics: true,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                if (score != null)
-                  MicroMotionCountUp(
-                    value: score,
-                    builder: (context, value) =>
-                        Text('$value', style: _scoreStyle(context)),
-                  )
-                else
-                  Text('--', style: _scoreStyle(context)),
-                const SizedBox(width: TracendSpacing.xxs),
-                Text(
-                  '/ 100',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    fontFamily: TracendFonts.numericFamily,
-                    color: colors.textSecondary,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: TracendSpacing.xxs),
-          Text(
-            score == null
-                ? 'Not enough data for a recovery score. Sync Apple Health and check in to build your baseline.'
-                : lowConfidence
-                ? 'Building baseline'
-                : 'Derived from HRV, resting HR, sleep, respiratory rate, and prior strain.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
-          ),
-          if (breakdown != null) ...[
-            const SizedBox(height: TracendSpacing.md),
-            _DriverRows(
-              breakdown: breakdown,
-              todayRaw: computed.todayRaw,
-              sleepQualityProven: computed.scores.sleepQuality != null,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  TextStyle _scoreStyle(BuildContext context) =>
-      Theme.of(context).textTheme.displaySmall!.copyWith(
-        fontFamily: TracendFonts.numericFamily,
-        fontSize: 44,
-        height: 1.0,
-        letterSpacing: -1.5,
-        fontWeight: FontWeight.w600,
-        fontFeatures: const [FontFeature.tabularFigures()],
-      );
-
-  String _bandLabel(int score) {
-    if (score >= 80) return 'Excellent';
-    if (score >= 65) return 'Good';
-    if (score >= 50) return 'Moderate';
-    if (score >= 35) return 'Low';
-    return 'Poor';
-  }
-
-  Color _bandColor(TracendColors colors, int score) {
-    if (score >= 65) return colors.stateStable;
-    if (score >= 50) return colors.accentAmber;
-    return colors.stateAttention;
-  }
-}
-
-class _CardTag extends StatelessWidget {
-  const _CardTag({required this.label});
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = context.tracendColors.actionPrimary;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(CupertinoIcons.heart_fill, size: 13, color: color),
-        const SizedBox(width: TracendSpacing.xxs),
-        Text(label, style: TracendTheme.labelCaps(context, color: color)),
-      ],
-    );
-  }
-}
-
-class _BandChip extends StatelessWidget {
-  const _BandChip({required this.label, required this.color});
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: TracendSpacing.xs + 2,
-        vertical: TracendSpacing.xxs,
-      ),
-      child: Text(
-        label,
-        style: Theme.of(
-          context,
-        ).textTheme.labelMedium?.copyWith(fontSize: 11, color: color),
-      ),
-    ),
-  );
-}
-
-class _DriverRows extends StatelessWidget {
-  const _DriverRows({
-    required this.breakdown,
-    required this.todayRaw,
-    required this.sleepQualityProven,
-  });
-
-  final RecoveryBreakdown breakdown;
-
-  /// Today's measured values (brief ≥ 1.4). When present, each row shows
-  /// the raw measurement next to the z-score so a driver reads as
-  /// "38 ms · +1.2" — a deviation from baseline, not a broken unit.
-  /// Null on older payloads: rows fall back to the z-score alone.
-  final TodayRaw? todayRaw;
-
-  /// Whether today's sleep passed the backend's validity gate. A non-null
-  /// sleep quality proves sleep_minutes was measured and within 1–960
-  /// minutes, so a simultaneously 'missing' sleep driver row means the
-  /// value is real but its baseline is immature — the row then shows the
-  /// measurement with a 'Building baseline' note instead of 'No data'.
-  final bool sleepQualityProven;
-
-  @override
-  Widget build(BuildContext context) {
+    if (breakdown == null) return const SizedBox.shrink();
     final colors = context.tracendColors;
-    final missing = breakdown.missingComponents.toSet();
-    final drivers = [
-      ('HRV', 'hrv_sdnn', breakdown.hrvZ, colors.actionPrimary),
-      ('RHR', 'resting_hr', breakdown.rhrZ, colors.stateStable),
-      (
-        'Sleep',
-        'sleep_minutes',
-        breakdown.sleepZ,
-        colors.actionPrimary.withValues(alpha: 0.55),
-      ),
-      ('Resp', 'resp_rate', breakdown.respRateZ, colors.accentAmber),
-      ('Strain', 'prev_strain', breakdown.prevStrainZ, colors.stateAttention),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Recovery drivers',
-          style: Theme.of(
-            context,
-          ).textTheme.labelMedium?.copyWith(color: colors.textSecondary),
-        ),
-        const SizedBox(height: TracendSpacing.xs),
-        for (var i = 0; i < drivers.length; i++) ...[
-          if (i > 0) const SizedBox(height: TracendSpacing.xs + 2),
-          _DriverRow(
-            label: drivers[i].$1,
-            zScore: drivers[i].$3,
-            color: drivers[i].$4,
-            missing: missing.contains(drivers[i].$2),
-            rawValue: _rawLabel(drivers[i].$2),
-            // Gated to sleep only: for other metrics a present-but-out-of-range
-            // value can also be unusable, and only sleep quality certifies
-            // sleep validity.
-            buildingBaseline:
-                drivers[i].$2 == 'sleep_minutes' &&
-                missing.contains(drivers[i].$2) &&
-                todayRaw?.sleepMinutes != null &&
-                sleepQualityProven,
-          ),
-        ],
-      ],
+    final drivers = recoveryDrivers(
+      breakdown: breakdown,
+      todayRaw: computed.todayRaw,
+      sleepQualityProven: computed.scores.sleepQuality != null,
     );
-  }
-
-  /// Human raw value for one component, or null when unavailable (older
-  /// brief, or the component genuinely has no value today).
-  String? _rawLabel(String componentKey) {
-    final raw = todayRaw;
-    if (raw == null) return null;
-    final value = switch (componentKey) {
-      'hrv_sdnn' => raw.hrvMs,
-      'resting_hr' => raw.restingHrBpm,
-      'sleep_minutes' => raw.sleepMinutes?.toDouble(),
-      'resp_rate' => raw.respRateBpm,
-      'prev_strain' => raw.dailyStrain,
-      _ => null,
-    };
-    if (value == null) return null;
-    if (componentKey == 'sleep_minutes') {
-      return '${value.round()} min';
-    }
-    if (componentKey == 'hrv_sdnn') {
-      return '${value.round()} ms';
-    }
-    if (componentKey == 'prev_strain') {
-      return value.toStringAsFixed(1);
-    }
-    return '${value.round()} bpm';
+    return PremiumGradientCard(
+      padding: const EdgeInsets.fromLTRB(
+        TracendSpacing.md,
+        TracendSpacing.xs,
+        TracendSpacing.md,
+        0,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < drivers.length; i++) ...[
+            if (i > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 42),
+                child: Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: colors.borderHairline,
+                ),
+              ),
+            _DriverRow(driver: drivers[i]),
+          ],
+          Divider(height: 1, thickness: 1, color: colors.borderHairline),
+          _HowCalculated(drivers: drivers),
+        ],
+      ),
+    );
   }
 }
 
-/// One recovery-driver row: label, horizontal z-score bar, signed z value.
-/// The bar fill clamps the z-score to ±2 for layout; the semantics label and
-/// the trailing value report the true (unclamped) z-score — the announced
-/// value is the data, never the display clamp. The hairline notch marks the
-/// baseline (z = 0).
-///
-/// When [missing] is true the component did not contribute to the score
-/// (value or baseline unavailable). The row reports 'No data' instead of an
-/// at-baseline '+0.0', which would falsely imply a measured, neutral reading.
-///
-/// When [buildingBaseline] is true the component's value is real and valid —
-/// verified for sleep by a non-null sleep quality, the backend's 1–960-minute
-/// gate — but the baseline is too immature to compare against (fewer than 3
-/// observations or zero spread). The row shows the measurement with a
-/// 'Building baseline' note: honest about the reading, honest about the
-/// missing comparison.
-class _DriverRow extends StatelessWidget {
-  const _DriverRow({
+/// One recovery driver ready to render.
+@immutable
+class RecoveryDriver {
+  const RecoveryDriver({
     required this.label,
+    required this.icon,
     required this.zScore,
-    required this.color,
-    this.missing = false,
+    required this.usable,
+    required this.weightPercent,
+    this.comparison,
     this.rawValue,
     this.buildingBaseline = false,
   });
 
   final String label;
-  final double zScore;
-  final Color color;
-  final bool missing;
+  final IconData icon;
 
-  /// Today's measured value with its unit ('38 ms'), or null when the
-  /// brief predates today_raw or the component was not measured.
+  /// The true z-score from the brief; meaningful only when [usable].
+  final double zScore;
+
+  /// False when the component did not count towards today's score.
+  final bool usable;
+  final int weightPercent;
+
+  /// "normal for you", "higher than usual", …; null when not [usable].
+  final String? comparison;
+
+  /// Today's measurement with its unit ("58 ms"), when the brief has it.
   final String? rawValue;
 
-  /// Value measured and valid but its baseline still immature — see class
-  /// doc. Only ever true for sleep, and only when [missing] is true.
+  /// A valid sleep reading whose baseline is still too young to compare.
   final bool buildingBaseline;
+
+  /// The plain sentence after the label: "normal for you, 58 ms".
+  String get detail {
+    if (!usable) {
+      return buildingBaseline && rawValue != null
+          ? '$rawValue, baseline still building'
+          : 'not enough data yet';
+    }
+    return rawValue == null ? comparison! : '$comparison, $rawValue';
+  }
+
+  /// "+0.5", "-1.2", or "Not used today".
+  String get zText => usable
+      ? '${zScore >= 0 ? '+' : ''}${zScore.toStringAsFixed(1)}'
+      : 'Not used today';
+}
+
+/// The comparison word for a driver's z-score. [inverted] is true for
+/// resting heart rate and breathing rate, whose z-scores are negated in the
+/// recovery composite (ALGORITHMS.md §1), so a positive z there means a
+/// lower reading. Within one spread of the baseline reads "normal for you";
+/// two spreads or more reads "much".
+String driverComparison(
+  double z, {
+  required bool inverted,
+  String more = 'higher',
+  String less = 'lower',
+}) {
+  final magnitude = z.abs();
+  if (magnitude < 1) return 'normal for you';
+  final up = inverted ? z < 0 : z > 0;
+  final word = up ? more : less;
+  return magnitude >= 2 ? 'much $word than usual' : '$word than usual';
+}
+
+/// Builds the five driver rows in the recovery composite's weight order.
+List<RecoveryDriver> recoveryDrivers({
+  required RecoveryBreakdown breakdown,
+  required TodayRaw? todayRaw,
+  required bool sleepQualityProven,
+}) {
+  final missing = breakdown.missingComponents.toSet();
+  RecoveryDriver driver({
+    required String key,
+    required String label,
+    required IconData icon,
+    required double z,
+    required int weight,
+    required bool inverted,
+    String more = 'higher',
+    String less = 'lower',
+  }) {
+    final usable = !missing.contains(key);
+    final raw = _rawLabel(key, todayRaw);
+    return RecoveryDriver(
+      label: label,
+      icon: icon,
+      zScore: z,
+      usable: usable,
+      weightPercent: weight,
+      comparison: usable
+          ? driverComparison(z, inverted: inverted, more: more, less: less)
+          : null,
+      // A raw value only accompanies a usable reading, or the one gated
+      // sleep exception below; a missing component never shows a number.
+      rawValue: usable || key == 'sleep_minutes' ? raw : null,
+      buildingBaseline:
+          key == 'sleep_minutes' &&
+          !usable &&
+          raw != null &&
+          sleepQualityProven,
+    );
+  }
+
+  return [
+    driver(
+      key: 'hrv_sdnn',
+      label: 'Heart rate variability',
+      icon: CupertinoIcons.waveform_path_ecg,
+      z: breakdown.hrvZ,
+      weight: 55,
+      inverted: false,
+    ),
+    driver(
+      key: 'resting_hr',
+      label: 'Resting heart rate',
+      icon: CupertinoIcons.heart_fill,
+      z: breakdown.rhrZ,
+      weight: 20,
+      inverted: true,
+    ),
+    driver(
+      key: 'sleep_minutes',
+      label: 'Sleep',
+      icon: CupertinoIcons.moon_fill,
+      z: breakdown.sleepZ,
+      weight: 15,
+      inverted: false,
+      more: 'more',
+      less: 'less',
+    ),
+    driver(
+      key: 'resp_rate',
+      label: 'Breathing rate',
+      icon: CupertinoIcons.wind,
+      z: breakdown.respRateZ,
+      weight: 5,
+      inverted: true,
+    ),
+    driver(
+      key: 'prev_strain',
+      label: 'Recent training',
+      icon: CupertinoIcons.flame_fill,
+      z: breakdown.prevStrainZ,
+      weight: 5,
+      inverted: false,
+      more: 'more',
+      less: 'less',
+    ),
+  ];
+}
+
+/// Today's measured value with its unit, or null when the brief predates
+/// `today_raw` or the component was not measured today.
+String? _rawLabel(String key, TodayRaw? raw) {
+  if (raw == null) return null;
+  return switch (key) {
+    'hrv_sdnn' => raw.hrvMs == null ? null : '${raw.hrvMs!.round()} ms',
+    'resting_hr' =>
+      raw.restingHrBpm == null ? null : '${raw.restingHrBpm!.round()} bpm',
+    'sleep_minutes' =>
+      raw.sleepMinutes == null ? null : _formatMinutes(raw.sleepMinutes!),
+    'resp_rate' =>
+      raw.respRateBpm == null
+          ? null
+          : '${raw.respRateBpm!.round()} breaths a minute',
+    'prev_strain' =>
+      raw.dailyStrain == null
+          ? null
+          : 'strain ${raw.dailyStrain!.toStringAsFixed(1)} today',
+    _ => null,
+  };
+}
+
+String _formatMinutes(int minutes) {
+  final hours = minutes ~/ 60;
+  final rest = minutes % 60;
+  if (hours == 0) return '$rest min';
+  return rest == 0 ? '$hours h' : '$hours h $rest min';
+}
+
+class _DriverRow extends StatelessWidget {
+  const _DriverRow({required this.driver});
+
+  final RecoveryDriver driver;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    final filled = (zScore.clamp(-2.0, 2.0) + 2.0) / 4.0;
-    final zText = missing
-        ? 'No data'
-        : '${zScore >= 0 ? '+' : ''}${zScore.toStringAsFixed(1)}';
-    final raw = rawValue;
-    // Raw value only ever accompanies a real z-score; a missing component
-    // reports 'No data' alone — unless the value is proven valid and only
-    // the baseline is immature, in which case it renders with the note.
-    final detail = missing
-        ? (buildingBaseline && raw != null ? raw : zText)
-        : raw == null
-        ? zText
-        : '$raw · $zText';
-    final semanticsLabel = missing
-        ? (buildingBaseline && raw != null
-              ? '$label driver, $raw, building baseline'
-              : '$label driver, no data')
-        : raw == null
-        ? '$label driver, z-score $zText'
-        : '$label driver, $raw, z-score $zText';
-
+    final textTheme = Theme.of(context).textTheme;
     return Semantics(
-      label: semanticsLabel,
+      label: '${driver.label}: ${driver.detail}',
       excludeSemantics: true,
-      child: Row(
-        children: [
-          SizedBox(
-            width: 56,
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                fontSize: 11,
-                letterSpacing: 0.6,
-                color: colors.textSecondary,
-              ),
-            ),
-          ),
-          Expanded(
-            child: SizedBox(
-              height: 6,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: Stack(
-                  alignment: Alignment.centerLeft,
-                  children: [
-                    Container(
-                      color: colors.borderSubtle.withValues(alpha: 0.35),
-                    ),
-                    if (!missing) ...[
-                      Positioned.fill(
-                        child: Align(
-                          child: Container(
-                            width: 1,
-                            color: colors.borderHairline,
-                          ),
-                        ),
-                      ),
-                      AnimatedFractionallySizedBox(
-                        duration: TracendMotion.standard,
-                        curve: TracendMotion.curve,
-                        widthFactor: filled,
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: color,
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 52),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: TracendSpacing.xs),
+          child: Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: colors.surfaceRaised,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  driver.icon,
+                  size: 15,
+                  color: driver.usable || driver.buildingBaseline
+                      ? colors.textSecondary
+                      : colors.textTertiary,
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: TracendSpacing.xs),
-          SizedBox(
-            // Wide enough for '411 min · +0.8'; the z-only rows of older
-            // briefs simply leave slack on the left.
-            width: 108,
-            child: buildingBaseline && missing && raw != null
-                ? Column(
-                    // The 'raw · note' pair does not fit one 108pt mono line,
-                    // so stack the measurement over the note, right-aligned.
-                    crossAxisAlignment: CrossAxisAlignment.end,
+              const SizedBox(width: TracendSpacing.sm),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
                     children: [
-                      Text(
-                        raw,
-                        textAlign: TextAlign.right,
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              fontFamily: TracendFonts.numericFamily,
-                              fontSize: 11,
-                              color: colors.textPrimary,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                            ),
-                      ),
-                      const SizedBox(height: TracendSpacing.xxs),
-                      Text(
-                        'Building baseline',
-                        textAlign: TextAlign.right,
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              fontSize: 9,
-                              color: colors.textSecondary,
-                            ),
+                      TextSpan(text: driver.label, style: textTheme.titleSmall),
+                      TextSpan(
+                        text: ': ${driver.detail}',
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colors.textSecondary,
+                        ),
                       ),
                     ],
-                  )
-                : Text(
-                    detail,
-                    textAlign: TextAlign.right,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontFamily: TracendFonts.numericFamily,
-                      fontSize: 11,
-                      color: missing
-                          ? colors.textSecondary
-                          : zScore >= 0
-                          ? colors.stateStable
-                          : colors.stateAttention,
-                      fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The ⓘ "How this is calculated" disclosure: the method in plain words,
+/// then each driver's true z-score and weight. Closed by default.
+class _HowCalculated extends StatefulWidget {
+  const _HowCalculated({required this.drivers});
+
+  final List<RecoveryDriver> drivers;
+
+  @override
+  State<_HowCalculated> createState() => _HowCalculatedState();
+}
+
+class _HowCalculatedState extends State<_HowCalculated> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    final textTheme = Theme.of(context).textTheme;
+    // Full motion grows the panel open; Reduce Motion and static show it at
+    // once (an AnimatedSize with a zero duration cannot lay out).
+    final duration = TracendMotionScope.movement(
+      context,
+      TracendMotion.standard,
+    );
+    final panel = _open
+        ? Padding(
+            padding: const EdgeInsets.only(bottom: TracendSpacing.md),
+            child: _Method(drivers: widget.drivers),
+          )
+        : const SizedBox(width: double.infinity);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          button: true,
+          expanded: _open,
+          label: 'How this is calculated',
+          excludeSemantics: true,
+          onTap: _toggle,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _toggle,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: Row(
+                children: [
+                  Icon(
+                    CupertinoIcons.info_circle,
+                    size: 18,
+                    color: colors.textSecondary,
+                  ),
+                  const SizedBox(width: TracendSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      'How this is calculated',
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: colors.textSecondary,
+                      ),
                     ),
                   ),
+                  AnimatedRotation(
+                    turns: _open ? 0.5 : 0,
+                    duration: duration,
+                    curve: TracendMotion.curve,
+                    child: Icon(
+                      CupertinoIcons.chevron_down,
+                      size: 15,
+                      color: colors.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ],
-      ),
+        ),
+        if (duration == Duration.zero)
+          panel
+        else
+          AnimatedSize(
+            duration: duration,
+            curve: TracendMotion.curve,
+            alignment: Alignment.topCenter,
+            child: panel,
+          ),
+      ],
+    );
+  }
+
+  void _toggle() => setState(() => _open = !_open);
+}
+
+class _Method extends StatelessWidget {
+  const _Method({required this.drivers});
+
+  final List<RecoveryDriver> drivers;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    final textTheme = Theme.of(context).textTheme;
+    final body = textTheme.bodySmall?.copyWith(color: colors.textSecondary);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Each reading is compared with your own baseline, a running '
+          'average of your recent days. The number below is how far today '
+          'sits from it, in typical day-to-day swings (a z-score). Within one '
+          'swing reads "normal for you". The score weighs the readings as '
+          'shown, and leaves out any reading without enough history.',
+          style: body,
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+        for (final driver in drivers)
+          Semantics(
+            label: driver.usable
+                ? '${driver.label}, z-score ${driver.zText}, '
+                      'weight ${driver.weightPercent} percent'
+                : '${driver.label}, not used today',
+            excludeSemantics: true,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      '${driver.label} · ${driver.weightPercent}%',
+                      style: body,
+                    ),
+                  ),
+                  const SizedBox(width: TracendSpacing.sm),
+                  Flexible(
+                    flex: 2,
+                    child: Text(
+                      driver.zText,
+                      textAlign: TextAlign.end,
+                      style: TracendTheme.numeric(
+                        colors,
+                        fontSize: 13,
+                        color: driver.usable
+                            ? colors.textPrimary
+                            : colors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: TracendSpacing.sm),
+        Text(
+          'Calculated from your Apple Health data and logged workouts. '
+          'No AI.',
+          style: body,
+        ),
+      ],
     );
   }
 }
