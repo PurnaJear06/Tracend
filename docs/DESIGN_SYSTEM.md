@@ -139,7 +139,8 @@ Documented exception: Coach chat bubbles use an asymmetric 18pt bubble (4pt on t
 - The only shadows are the small lift under the selected segment of a segmented control and the
   soft lift under the toast, which separates it from the glass bar beneath it.
 - **Glass** (`TracendGlass`: the `glass` fill over a 20σ blur with a `glassEdge` hairline) is chrome
-  only: the tab bar, the toast and the collapsed large-title bar. The sheet scrim is blurred too
+  only: the tab bar, the toast, the collapsed large-title bar and the minimised rest pill during a
+  workout. The sheet scrim is blurred too
   (6σ), growing with the sheet. Nothing else uses `BackdropFilter`.
 - Glass is built only while visible (the inline bar exists only once collapsed) and sits in a
   `RepaintBoundary`. `reduceTransparency` swaps it for an opaque `sheet` fill.
@@ -388,8 +389,12 @@ Otherwise it stays neutral, and the arrow and spoken label carry the direction.
 
 #### `WorkoutSetRow` and `MealCandidateEditor`
 
-- `WorkoutSetRow`: one-handed set number, load, reps, RPE, completion and pain access, with the
-  right keyboard, the previous set as an unconfirmed reference, and offline support.
+- Workout logging (focus mode): one exercise per page with large Archivo kg × reps steppers, a
+  **Done set** pill, set dots, a **Last time** / **Your best** strip and a small `MuscleMapPair`.
+  Logged sets list under it (`SetRow`) with undo, a set-effort button (1–10 `RpePicker` with plain
+  hints, blank allowed), a **New best** stamp or **First log** tag. Rest takes the screen as a lime
+  ring with ±15 and Skip, and swipes down into a glass pill; editing is never blocked. Starting
+  values come from today's earlier set, then last time, then the plan, and say which.
 - `MealCandidateEditor`: separates AI-observed foods from confirmed catalog items; every candidate
   shows an editable amount, preparation assumption, confidence and open questions. Totals update
   only after confirmation.
