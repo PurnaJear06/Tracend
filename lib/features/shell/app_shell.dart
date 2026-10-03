@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -160,28 +159,28 @@ class _FloatingTabBar extends StatelessWidget {
   static const _items = [
     (
       label: 'Today',
-      icon: CupertinoIcons.today,
-      selectedIcon: CupertinoIcons.today_fill,
+      icon: Icons.wb_sunny_outlined,
+      selectedIcon: Icons.wb_sunny_rounded,
     ),
     (
       label: 'Train',
-      icon: CupertinoIcons.bolt,
-      selectedIcon: CupertinoIcons.bolt_fill,
+      icon: Icons.fitness_center_rounded,
+      selectedIcon: Icons.fitness_center_rounded,
     ),
     (
       label: 'Coach',
-      icon: CupertinoIcons.bubble_left_bubble_right,
-      selectedIcon: CupertinoIcons.bubble_left_bubble_right_fill,
+      icon: Icons.chat_bubble_outline_rounded,
+      selectedIcon: Icons.chat_bubble_rounded,
     ),
     (
       label: 'Nutrition',
-      icon: CupertinoIcons.chart_pie,
-      selectedIcon: CupertinoIcons.chart_pie_fill,
+      icon: Icons.restaurant_rounded,
+      selectedIcon: Icons.restaurant_rounded,
     ),
     (
       label: 'Progress',
-      icon: CupertinoIcons.chart_bar,
-      selectedIcon: CupertinoIcons.chart_bar_fill,
+      icon: Icons.trending_up_rounded,
+      selectedIcon: Icons.trending_up_rounded,
     ),
   ];
 
@@ -190,25 +189,26 @@ class _FloatingTabBar extends StatelessWidget {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final bottom = MediaQuery.paddingOf(context).bottom;
     return Padding(
-      padding: EdgeInsets.fromLTRB(12, 0, 12, bottom > 0 ? 8 : 12),
+      padding: EdgeInsets.fromLTRB(12, 0, 12, bottom > 0 ? 6 : 12),
       child: Center(
         heightFactor: 1,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 620),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(TracendRadii.navigation),
+              borderRadius: BorderRadius.circular(32),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.12),
-                  blurRadius: 28,
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 30,
                   offset: const Offset(0, 12),
                 ),
               ],
             ),
             child: TracendGlass(
+              borderRadius: 32,
               child: SizedBox(
-                height: 70,
+                height: 64,
                 child: Row(
                   children: [
                     for (var index = 0; index < _items.length; index++)
@@ -231,7 +231,7 @@ class _FloatingTabBar extends StatelessWidget {
   }
 }
 
-class _TabItem extends StatelessWidget {
+class _TabItem extends StatefulWidget {
   const _TabItem({
     required this.item,
     required this.selected,
@@ -245,71 +245,70 @@ class _TabItem extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_TabItem> createState() => _TabItemState();
+}
+
+class _TabItemState extends State<_TabItem> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed != value) setState(() => _pressed = value);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
+    final item = widget.item;
+    final selected = widget.selected;
+    final duration = widget.reduceMotion ? Duration.zero : TracendMotion.quick;
     return Semantics(
       key: ValueKey('tab-${item.label.toLowerCase()}'),
       selected: selected,
       button: true,
       label: '${item.label} tab',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(TracendRadii.navigation),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 2),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AnimatedContainer(
-                  duration: reduceMotion ? Duration.zero : TracendMotion.quick,
-                  curve: TracendMotion.curve,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? colors.actionPrimary.withValues(alpha: 0.14)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: AnimatedSwitcher(
-                    duration: reduceMotion
-                        ? Duration.zero
-                        : TracendMotion.quick,
-                    child: Icon(
-                      selected ? item.selectedIcon : item.icon,
-                      key: ValueKey(selected),
-                      size: 22,
-                      color: selected
-                          ? colors.actionPrimary
-                          : colors.textSecondary,
-                    ),
-                  ),
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => _setPressed(true),
+        onTapCancel: () => _setPressed(false),
+        onTapUp: (_) => _setPressed(false),
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _pressed ? 0.92 : 1,
+          duration: duration,
+          curve: TracendMotion.curve,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedSwitcher(
+                duration: duration,
+                child: Icon(
+                  selected ? item.selectedIcon : item.icon,
+                  key: ValueKey(selected),
+                  size: 23,
+                  color: selected
+                      ? colors.accentSignalInk
+                      : colors.textSecondary,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  item.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.fade,
-                  // iOS tab bars keep labels near-fixed under Dynamic Type;
-                  // clamp so the label never overflows the 70pt capsule.
-                  textScaler: MediaQuery.textScalerOf(
-                    context,
-                  ).clamp(maxScaleFactor: 1.3),
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontSize: 11,
-                    height: 1,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: selected
-                        ? colors.actionPrimary
-                        : colors.textSecondary,
-                  ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                item.label,
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                // iOS tab bars keep labels near-fixed under Dynamic Type;
+                // clamp so the label never overflows the 64pt capsule.
+                textScaler: MediaQuery.textScalerOf(
+                  context,
+                ).clamp(maxScaleFactor: 1.3),
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  fontSize: 11,
+                  height: 1,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? colors.textPrimary : colors.textSecondary,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
