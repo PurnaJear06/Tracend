@@ -187,34 +187,41 @@ void main() {
       );
     });
 
-    testWidgets('unlinked exercises light no muscles and hide the map', (
-      tester,
-    ) async {
-      final unlinked = PlannedWorkout(
-        id: 'w-plain',
-        name: 'Plain day',
-        objective: 'No catalog links.',
-        estimatedMinutes: 30,
-        weekday: 5,
-        exercises: const [
-          PlannedExercise(
-            order: 1,
-            name: 'Mystery press',
-            setCount: 3,
-            repMin: 8,
-            repMax: 8,
-            targetRpe: 8,
+    testWidgets(
+      'unlinked exercises light no muscles and say when the map comes',
+      (tester) async {
+        final unlinked = PlannedWorkout(
+          id: 'w-plain',
+          name: 'Plain day',
+          objective: 'No catalog links.',
+          estimatedMinutes: 30,
+          weekday: 5,
+          exercises: const [
+            PlannedExercise(
+              order: 1,
+              name: 'Mystery press',
+              setCount: 3,
+              repMin: 8,
+              repMax: 8,
+              targetRpe: 8,
+            ),
+          ],
+        );
+        await _pumpTrain(
+          tester,
+          repository: TrainFixtureRepository(
+            hub: trainHub(workouts: [unlinked]),
           ),
-        ],
-      );
-      await _pumpTrain(
-        tester,
-        repository: TrainFixtureRepository(hub: trainHub(workouts: [unlinked])),
-      );
-      expect(find.text('Plain day'), findsOneWidget);
-      expect(find.byType(MuscleMap), findsNothing);
-      expect(find.text('Muscles worked'), findsNothing);
-    });
+        );
+        expect(find.text('Plain day'), findsOneWidget);
+        expect(find.byType(MuscleMap), findsNothing);
+        expect(find.text('Muscles worked'), findsNothing);
+        expect(
+          find.text('Muscle map appears with your next plan.'),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('Start workout plays the heavy haptic and opens logging', (
       tester,

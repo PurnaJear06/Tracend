@@ -86,9 +86,14 @@ decision. Unlinked exercises show no muscles; nothing is guessed.
   Nutrition's "From confirmed meals" tiles got more room. The rest-alert toggle no longer needs
   the server: a rest-only change saves on the device, and a failed reminder save rolls back only
   the daily and weekly choices (GPT review P2).
-- Muscle map missing on the owner's device: the hero hides the map when no planned exercise links
-  to the catalog, and the owner's plan predates the catalog. Waiting on the owner's read-only
-  name-match query before choosing a fix.
+- Muscle map missing on the owner's device: the owner's plan predates the catalog, so no planned
+  exercise had a slug. Per the plan, a separate SQL PR links exact catalog names (#80); a workout
+  with no linked exercise now says "Muscle map appears with your next plan." instead of nothing.
+- Second device round (owner): the launch intro has no skip (it is about a second) and gained a
+  scale-in with a soft overshoot, a lime bloom as the dot lands, a dot trail, a per-letter
+  wordmark and a zoom-through exit into the app. Today's food rings sweep in with a count-up, a
+  gradient stroke with a glow and a head dot, and a second lap past the target. Food stays on
+  Today, as it was before the redesign.
 
 ## PR 1: backend data
 

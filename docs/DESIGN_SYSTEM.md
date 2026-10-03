@@ -316,11 +316,12 @@ pills; a selected chip is a lime fill with `onAccentSignal` text.
 
 The Today verdict card leads with a 270° recovery dial: a 9%-of-size stroke on a `surfaceRaised`
 track, filled to the score in the band's state colour (`stateStable`, `accentAmber`,
-`stateAttention`; never lime, which is not a health signal), with a soft blurred copy of the arc
-under it and a white head where it ends. The score counts up inside in Archivo ExtraBold. The arc
+`stateAttention`; never lime, which is not a health signal), running from a deeper tone at the
+start to a brighter head (the same stroke as the food rings), with a soft blurred copy of the arc
+under it and a white dot at the head. The score counts up inside in Archivo ExtraBold. The arc
 sweeps in over 1.1 s once; under reduced motion it is drawn at its value. A faint radial wash of
-the band colour sits behind the dial (16% dark, 9% light), the card's only gradient. Beside the
-dial, today's vitals (Sleep, Resting HR, HRV) are hairline-separated lines with Archivo
+the band colour sits behind the dial (16% dark, 9% light), the card's only background gradient.
+Beside the dial, today's vitals (Sleep, Resting HR, HRV) are hairline-separated lines with Archivo
 SemiCondensed values; above 1.3× text they move under the dial.
 
 #### Today's workout card and food rings
@@ -330,8 +331,17 @@ Archivo, a lime disc with the training glyph, stat pills (`surfaceRaised`, numer
 and a full-width lime **View workout** pill (`accentSignal` / `onAccentSignal`). The training
 load line closes the card under a hairline. `MetabolicTargetCard` shows two ring tiles: calories
 in `accentSignalRing` (the primary progress ring) and protein in `stateStable`, the amount inside
-and "N left" below. The morning check-in is a lime-outlined call to action with a **Check in**
-pill until it is done.
+and "N left" below. Each ring is a 10pt stroke from 12 o'clock over a thin track of its own colour
+at 16%: a sweep gradient from a deeper tone at the start to a brighter head, round caps, a soft
+blurred glow under the arc (42% dark, 14% light) and a small white dot at the head. Past the
+target the ring closes and a second lap runs over it in a deeper shade, its head casting a small
+shadow so the overlap reads; it stops at two laps, and the text below says "reached". Motion: on
+first appearance each ring sweeps from empty to its value in 900 ms on a lightly under-damped
+spring (about 1.5% overshoot), protein 120 ms after calories, and the number inside counts up in
+step (it never reads past the value it is heading to). A later change, such as after a sync, runs from the shown
+value to the new one, not from zero. Below full motion (`TracendMotionScope`) the final state is
+drawn with no animation. The morning check-in is a lime-outlined call to action with a **Check
+in** pill until it is done.
 
 #### `RecoveryReadoutCard`
 
@@ -521,19 +531,30 @@ static (`test/flutter_test_config.dart`), and a test that checks motion sets a s
 
 ### Launch intro and brand loader
 
-- **Launch intro** (`TracendIntro`, 1.2s, only on a cold start while `Phase2Gate` restores the
-  stored session). Over the launch screen's graphite:
+- **Launch intro** (`TracendIntro`, 1.2s of motion and a 350ms hand-off, only on a cold start
+  while `Phase2Gate` restores the stored session). Over the launch screen's graphite:
+  - the mark starts at 0.9 scale and grows (ease-in-out) to a soft 1.03 overshoot as the dot
+    lands, then eases back to 1.0 (0–1160ms);
   - the lime arc draws itself (0–460ms, ease-in-out);
   - the dot rides the drawing head to the tip, rolls back with an ease-back overshoot and settles
-    onto the mark while growing from radius 22 to 36, with a light haptic as it lands (460–900ms);
+    onto the mark while growing from radius 22 to 36, with a light haptic as it lands (460–900ms).
+    While it moves it leaves a short trail (its last 100ms), thinning and fading toward the end
+    and screened over the mark, so it reads over the lime arc too;
   - the T sweeps in behind an edge tilted to the arc's rise (380–860ms);
-  - the "Tracend" wordmark fades up 10pt in `TracendFonts.displayFamily` (760–1160ms).
+  - a soft lime bloom (a radial gradient, at most 20% alpha) rises under the dot's resting place
+    as it lands (640–940ms) and relaxes to a faint glow that stays under the finished mark
+    (940–1200ms);
+  - the "Tracend" wordmark in `TracendFonts.displayFamily` rises letter by letter: each letter
+    lifts 8pt and fades in over 280ms, 35ms after the one before, while the tracking closes from
+    2.4pt wider to its set −0.6 (700–1190ms). Each letter keeps its kerned place in the word.
 
-  The intro then fades out in 320ms. It plays once per launch and never loops. A tap anywhere, or
-  the Skip pill, ends it at once. A gate that is still restoring keeps the finished mark with a
-  `TracendLoader`, and a ready app is never held past the motion. Signing in and out never replays
-  the intro: those refreshes show the loader alone. Under Reduce Motion the finished mark shows
-  and crossfades away in 200ms, with no haptic.
+  The intro then zooms through to the app (350ms, ease-out cubic): the mark and wordmark grow to
+  1.06 and fade, while the app beneath grows from 0.97 to 1.0 and fades in over the graphite.
+  There is no skip: the motion is barely a second. It plays once per launch and never loops. A
+  gate that is still restoring keeps the finished mark with a `TracendLoader`, which leaves with
+  the mark, and a ready app is never held past the motion. Signing in and out never replays the
+  intro: those refreshes show the loader alone. Under Reduce Motion the finished mark shows (with
+  its resting glow) and crossfades away in 200ms, with no zoom and no haptic.
 - **Brand loader** (`TracendLoader`, 28pt by default): the mark's arc in a faint text tint, with a
   6pt dot riding along it and back (1s each way, `Cubic(0.45, 0, 0.25, 1)`). The dot is lime on
   dark surfaces and `#7FA51A` on light ones. `semanticLabel` names what is loading. Under Reduce

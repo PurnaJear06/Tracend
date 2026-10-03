@@ -128,6 +128,9 @@ class WorkoutHero extends StatelessWidget {
                   _MuscleChips(sets: sets),
                   const SizedBox(height: TracendSpacing.sm),
                   Center(child: muscles.figure(context, width: 168)),
+                ] else if (workout.exercises.isNotEmpty) ...[
+                  const SizedBox(height: TracendSpacing.sm),
+                  const _MapPending(),
                 ],
               ],
               if (state == HeroDayState.done &&
@@ -275,6 +278,36 @@ class _Heading extends StatelessWidget {
           Text(meta, style: textTheme.bodyMedium),
         ],
       ),
+    );
+  }
+}
+
+/// Shown when none of the workout's exercises is linked to the exercise
+/// catalog (plans approved before it): the map is left out rather than
+/// guessed, and this says when it arrives.
+class _MapPending extends StatelessWidget {
+  const _MapPending();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    return Row(
+      children: [
+        Icon(
+          Icons.accessibility_new_rounded,
+          size: 16,
+          color: colors.textTertiary,
+        ),
+        const SizedBox(width: TracendSpacing.xs),
+        Expanded(
+          child: Text(
+            'Muscle map appears with your next plan.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+          ),
+        ),
+      ],
     );
   }
 }

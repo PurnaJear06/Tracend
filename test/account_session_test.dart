@@ -334,11 +334,11 @@ void main() {
           home: Phase2Gate(environment: _environment, client: server.client),
         ),
       );
-      expect(find.bySemanticsLabel('Skip intro'), findsOneWidget);
+      expect(find.bySemanticsLabel('Tracend'), findsOneWidget);
       expect(find.text('Restoring your session'), findsNothing);
       await tester.pumpAndSettle();
       expect(find.text('Connection needed'), findsOneWidget);
-      expect(find.text('Tracend'), findsNothing);
+      expect(find.bySemanticsLabel('Tracend'), findsNothing);
 
       // The retry waits on Auth: the loader shows, not the intro.
       final answer = Completer<http.Response>();
@@ -346,8 +346,7 @@ void main() {
       await tester.tap(find.text('Retry'));
       await tester.pump();
       expect(find.bySemanticsLabel('Restoring your session'), findsOneWidget);
-      expect(find.bySemanticsLabel('Skip intro'), findsNothing);
-      expect(find.text('Tracend'), findsNothing);
+      expect(find.bySemanticsLabel('Tracend'), findsNothing);
 
       answer.completeError(http.ClientException('offline'));
       await tester.pumpAndSettle();

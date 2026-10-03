@@ -465,12 +465,33 @@ class _DialPainter extends CustomPainter {
         ..color = fill.withValues(alpha: 0.35)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
     );
-    canvas.drawArc(rect, _start, sweep, false, base..color = fill);
-    // A bright head where the arc ends, like a needle.
-    final angle = _start + sweep;
+    // A deeper tone at the start brightening to the head, like the food
+    // rings: a butt-ended gradient arc with round caps drawn as discs, so
+    // the gradient never wraps onto a cap.
     final radius = rect.width / 2;
-    final head =
+    Offset at(double angle) =>
         rect.center + Offset(math.cos(angle), math.sin(angle)) * radius;
+    final deep = Color.lerp(fill, const Color(0xFF000000), 0.22)!;
+    final bright = Color.lerp(fill, const Color(0xFFFFFFFF), 0.12)!;
+    canvas
+      ..drawCircle(at(_start), stroke / 2, Paint()..color = deep)
+      ..drawArc(
+        rect,
+        _start,
+        sweep,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke
+          ..shader = SweepGradient(
+            colors: [deep, bright],
+            stops: [0, sweep / (math.pi * 2)],
+            transform: const GradientRotation(_start),
+          ).createShader(rect),
+      );
+    // A bright head where the arc ends, like a needle.
+    final head = at(_start + sweep);
+    canvas.drawCircle(head, stroke / 2, Paint()..color = bright);
     canvas.drawCircle(
       head,
       stroke * 0.28,

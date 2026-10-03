@@ -19,6 +19,7 @@ import 'package:tracend/features/today/widgets/today_hero.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/widgets/tracend_skeleton.dart';
 
 Widget _wrap(Widget child) {
@@ -398,6 +399,69 @@ void main() {
 
       expect(find.text('2,400 of 2,300 kcal eaten'), findsOneWidget);
       expect(find.text('Protein target reached'), findsOneWidget);
+    });
+
+    testWidgets('over target draws a second lap, capped at two', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          const MetabolicTargetCard(
+            consumed: {'calories': 2900, 'protein_g': 400},
+            targets: targets,
+            onLog: null,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('2,900'), findsOneWidget);
+      expect(find.text('400'), findsOneWidget);
+      expect(find.text('Target reached'), findsOneWidget);
+      expect(find.text('Protein target reached'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(
+          '2,900 of 2,300 kilocalories eaten. Target reached',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('at full motion the rings sweep in and count up, and a '
+        'change runs from the old value', (tester) async {
+      Widget card(double calories) => _wrap(
+        TracendMotionScope(
+          level: TracendMotionLevel.full,
+          child: MetabolicTargetCard(
+            consumed: {'calories': calories, 'protein_g': 120},
+            targets: targets,
+            onLog: null,
+          ),
+        ),
+      );
+      int shownCalories() => int.parse(
+        tester
+            .widgetList<Text>(find.byType(Text))
+            .map((text) => text.data ?? '')
+            .firstWhere((data) => RegExp(r'^[\d,]+$').hasMatch(data))
+            .replaceAll(',', ''),
+      );
+
+      await tester.pumpWidget(card(1240));
+      expect(shownCalories(), 0);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(shownCalories(), inExclusiveRange(0, 1240));
+      await tester.pumpAndSettle();
+      expect(shownCalories(), 1240);
+      expect(find.text('120'), findsOneWidget);
+
+      await tester.pumpWidget(card(1500));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(shownCalories(), inExclusiveRange(1240, 1500));
+      await tester.pumpAndSettle();
+      expect(shownCalories(), 1500);
+      expect(find.text('800 kcal left'), findsOneWidget);
     });
 
     testWidgets('no targets shows what was eaten, no fabricated target', (
