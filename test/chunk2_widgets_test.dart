@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
@@ -6,10 +5,6 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_insight_card.dart';
-import 'package:tracend/features/train/train_screen.dart';
-import 'package:tracend/features/train/widgets/prescription_cards.dart';
-import 'package:tracend/features/train/widgets/workout_hero.dart';
-import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/widgets/date_pill_strip.dart';
 import 'package:tracend/shared/widgets/targets_grid.dart';
 
@@ -119,11 +114,6 @@ void main() {
     });
   });
 
-  // IntensityBar group removed (2026-09-04 Train redesign): the widget is
-  // retired — prescription stats and the planned/recorded effort bar are
-  // merged into ExerciseListCard rows. The 'logged RPE' and 'RPE N'
-  // assertions live on in the TrainScreen recorded-RPE tests below.
-
   group('TargetsGrid', () {
     testWidgets('shows consumed vs target with remaining protein', (
       tester,
@@ -213,169 +203,6 @@ void main() {
     });
   });
 
-  group('TrainScreen recorded RPE', () {
-    Future<void> scrollToExercises(WidgetTester tester) async {
-      // 2026-09-04 Train redesign: the merged exercise list sits below the
-      // week rail and hero, and SliverList builds lazily — scroll until the
-      // unique RPE 9 row is built (rows above it follow), then settle the
-      // entrance staggers of sections mounted mid-scroll.
-      await tester.scrollUntilVisible(
-        find.textContaining('RPE 9'),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
-    }
-
-    testWidgets(
-      'completed day shows averaged logged RPE, filtering out-of-range values',
-      (tester) async {
-        final repository = _RecordedRpeRepository();
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: ThemeData(
-              brightness: Brightness.dark,
-              extensions: const [TracendColors.dark],
-            ),
-            home: TrainScreen(repository: repository),
-          ),
-        );
-        await tester.pumpAndSettle();
-        expect(find.text('Completed'), findsOneWidget);
-        await scrollToExercises(tester);
-        expect(find.textContaining('logged 8.5'), findsOneWidget);
-        expect(find.textContaining('logged 7.0'), findsOneWidget);
-      },
-    );
-
-    testWidgets('incomplete day shows planned RPE without logged markers', (
-      tester,
-    ) async {
-      final repository = _RecordedRpeRepository(completed: false);
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData(
-            brightness: Brightness.dark,
-            extensions: const [TracendColors.dark],
-          ),
-          home: TrainScreen(repository: repository),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await scrollToExercises(tester);
-      // 'logged 8.5'-style stat chips never appear on an incomplete day.
-      // (Looser matchers false-hit the Execution card's empty-state copy
-      // about "comparable logged sets".)
-      expect(find.textContaining(RegExp('logged [0-9]')), findsNothing);
-      expect(find.textContaining('RPE 8'), findsWidgets);
-    });
-  });
-
-  group('RecentSessionsCard', () {
-    testWidgets('openable session shows chevron', (tester) async {
-      final workout = PlannedWorkout.fixture;
-      await tester.pumpWidget(
-        _wrap(
-          RecentSessionsCard(
-            sessions: [
-              TrainingSessionSummary(
-                name: 'Push day',
-                date: DateTime(2026, 8, 20),
-                durationSeconds: 3600,
-                workoutId: workout.id,
-              ),
-            ],
-            workoutForId: (id) => id == workout.id ? workout : null,
-            repository: FixtureWorkoutRepository(),
-          ),
-        ),
-      );
-      expect(find.text('Push day'), findsOneWidget);
-      expect(find.byIcon(CupertinoIcons.chevron_right), findsOneWidget);
-    });
-
-    testWidgets('session without workout_id is display-only (no chevron)', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _wrap(
-          RecentSessionsCard(
-            sessions: [
-              TrainingSessionSummary(
-                name: 'Old session',
-                date: DateTime(2026, 8, 18),
-                durationSeconds: 2400,
-                workoutId: null,
-              ),
-            ],
-            workoutForId: (_) => null,
-            repository: FixtureWorkoutRepository(),
-          ),
-        ),
-      );
-      expect(find.text('Old session'), findsOneWidget);
-      expect(find.byIcon(CupertinoIcons.chevron_right), findsNothing);
-    });
-
-    testWidgets('session with unresolvable workout_id is display-only', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _wrap(
-          RecentSessionsCard(
-            sessions: [
-              TrainingSessionSummary(
-                name: 'Orphan session',
-                date: DateTime(2026, 8, 17),
-                durationSeconds: 1800,
-                workoutId: 'nonexistent-id',
-              ),
-            ],
-            workoutForId: (_) => null,
-            repository: FixtureWorkoutRepository(),
-          ),
-        ),
-      );
-      expect(find.text('Orphan session'), findsOneWidget);
-      expect(find.byIcon(CupertinoIcons.chevron_right), findsNothing);
-    });
-  });
-
-  group('WorkoutHero coach insight', () {
-    testWidgets('hides insight line when coachInsight is null', (tester) async {
-      await tester.pumpWidget(
-        _wrap(
-          WorkoutHero(
-            workout: PlannedWorkout.fixture,
-            source: FixtureWorkoutRepository(),
-            coachInsight: null,
-          ),
-        ),
-      );
-      expect(find.text('COACH INSIGHT'), findsNothing);
-      expect(find.text('Push day'), findsOneWidget);
-    });
-
-    testWidgets('shows insight line when coachInsight is provided', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _wrap(
-          WorkoutHero(
-            workout: PlannedWorkout.fixture,
-            source: FixtureWorkoutRepository(),
-            coachInsight: 'Recovery looks solid. Push as planned.',
-          ),
-        ),
-      );
-      expect(find.text('COACH INSIGHT'), findsOneWidget);
-      expect(
-        find.text('Recovery looks solid. Push as planned.'),
-        findsOneWidget,
-      );
-    });
-  });
-
   group('NutritionScreen insight card visibility', () {
     testWidgets('hides NutritionInsightCard when coach returns null', (
       tester,
@@ -419,90 +246,6 @@ void main() {
       expect(find.text('Keep intake unchanged'), findsOneWidget);
     });
   });
-}
-
-/// Hub repository whose today workout is completed and whose session draft
-/// carries per-set RPE values, including out-of-range values that
-/// `_loadRecordedRpe` must filter out before averaging.
-class _RecordedRpeRepository extends FixtureWorkoutRepository {
-  _RecordedRpeRepository({this.completed = true});
-  final bool completed;
-
-  @override
-  Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
-      TrainingHubData(
-        planTitle: 'Approved training plan',
-        workouts: [PlannedWorkout.fixture],
-        recentSessions: [],
-        completedSessions: completed ? 1 : 0,
-        plannedSessions: 4,
-        progression: [],
-        completedDays: completed ? {DateTime.now()} : const {},
-      );
-
-  @override
-  Future<PlannedWorkout> loadTodayWorkout() async => PlannedWorkout.fixture;
-
-  @override
-  Future<String?> loadDraft(String workoutId) async => null;
-
-  @override
-  Future<Map<String, dynamic>?> loadSession(
-    PlannedWorkout workout, {
-    DateTime? localDate,
-  }) async => {
-    'exercises': [
-      {
-        'order': 1,
-        'sets': [
-          {'rpe': 8},
-          {'rpe': 9},
-          {'rpe': 15},
-        ],
-      },
-      {
-        'order': 2,
-        'sets': [
-          {'rpe': 7},
-          {'rpe': 0},
-        ],
-      },
-      {
-        'order': 3,
-        'sets': [
-          {'rpe': null},
-        ],
-      },
-    ],
-  };
-
-  @override
-  Future<void> saveDraft(String workoutId, String json) async {}
-
-  @override
-  Future<void> clearDraft(String workoutId) async {}
-
-  @override
-  Future<String> start(
-    PlannedWorkout workout,
-    String idempotencyKey, {
-    DateTime? localDate,
-  }) async => 'session-1';
-
-  @override
-  Future<void> sync(
-    String sessionId,
-    int revision,
-    Map<String, dynamic> draft,
-  ) async {}
-
-  @override
-  Future<void> complete(
-    String sessionId,
-    int revision,
-    int durationSeconds,
-    Map<String, dynamic> draft,
-  ) async {}
 }
 
 class _DecisionCoachRepository implements CoachRepository {

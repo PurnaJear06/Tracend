@@ -6,16 +6,53 @@ Train uses the 4/8-point spacing rhythm and 44-point interactive rows. Active lo
 Syncing, Offline, or Needs attention; resumes entered sets after reopen; and requires explicit skip
 actions. Historical corrections and HealthKit conflicts use review cards with confirmation actions.
 
-The Train tab (2026-09-04 redesign) opens with the week rail — one fused card where the day slots
-select the day and the 7-day training-minutes chart below speaks the same visual grammar as Today's
-trend (indigo day columns, accent-NOW latest session day, dim sockets, amber dots for planned-but-
-untrained days). Its verdict is one plain sentence with a band chip (Low load / Optimal / High load);
-the raw ratio and day load sit in one quiet mono strip — the only place jargon lives on Train.
-Honesty gates: fewer than four sessions renders "Building baseline" and never a ratio verdict;
-sessions without a duration stay present without inventing magnitude. Below the rail: the workout
-hero (facts + coach insight + Start/View), today's exercises as one merged list (prescription stats
-and the planned/recorded effort bar per row — the same movement no longer appears twice), one
-execution card (adherence count + progression rows or its honest empty copy), and recent sessions.
+The Train tab (2026-10-03 redesign, `lib/features/train/train_screen.dart`) reads top to bottom:
+
+- **Header.** The large title "Train", today's date ("Friday 2 October") and the plan pill ("Week 3
+  of 6"). The pill opens the plan sheet: title, block weeks and sessions a week, week pips, the plan
+  rule when the plan has one, and "You approved this plan on 15 September. Changes always need your
+  approval." At large text the pill moves under the title.
+- **Day boxes.** Seven boxes for the week: a check for a done day, a dot for a planned day, a lime
+  ring for today and a raised fill for the selected day. A tap plays the selection haptic and slides
+  the day's content in from the side it came from (a crossfade under Reduce Motion). A horizontal
+  swipe pages back up to three weeks (VoiceOver: "Previous week" and "Next week" actions); "Week of
+  21 September" with a **This week** button shows while another week is open.
+- **Readiness line.** Today's recovery sentence (data rules below) with Today's decision verdict as
+  "Today: …" when the latest decision is for today. It opens **Recovery today**: sleep, heart rate
+  variability (its ln baseline shown as `exp(ewma)`, "usually 55 ms"), resting heart rate and
+  training load, each in plain words ("Normal for you", "More than usual", "Building your
+  baseline", "Not enough data yet"). Without Apple Health it reads "Connect Apple Health to see
+  recovery" and explains where to connect, with **Open Account** when the host passes one.
+- **Needs your attention.** Apple Health repairs and workout matches share one group above the hero.
+  A repair asks with a native confirm (**Confirm correction** / **Not now**); a match offers
+  **Confirm match**, **Not the same workout** and, for another day, **Switch to that day**. Results
+  are toasts.
+- **Workout hero.** A kicker ("Today", a weekday, "Done on Tuesday", "Tuesday, not logged"), the
+  name, "6 exercises, about 48 min" (a done day shows its logged minutes), the worked muscles as
+  chips and on the turnable `MuscleMap` with a Front/Back control. The title area opens the
+  **workout overview** sheet (objective, warm-up, exercises, cooldown, then **Start workout** or
+  **View summary**); the map opens the **muscles sheet** (front and back side by side, a row per
+  muscle with its sets and exercises, rows and muscles selecting each other, and the note that only
+  catalog-linked exercises count). The one action is **Start workout** (heavy haptic), **Log this
+  workout** for a past day with nothing logged, or **View summary** for a done day, whose sheet shows
+  time, sets logged of planned, the athlete's own effort ("Not rated" for app defaults) and each
+  exercise as logged. "Auto-completed from Apple Health" shows only when `completion_source` is
+  `healthkit`. A rest day names the week's next workout with "See Sunday's workout".
+- **Exercises.** One grouped list; every row opens the exercise sheet: today's target (load, sets ×
+  reps, rest, reps in reserve), **Last time** and **Your best** from `get_my_exercise_history`, the
+  heaviest set of each logged session as a chart (two sessions minimum, else "Not enough data yet";
+  planned values are never charted) and a tip labelled **From your plan** (the exercise note) or
+  **Plan rule** (the plan's progression rule). A first-ever exercise reads "First time. Pick a
+  weight you can lift for every rep with good form." Offline without a saved copy it reads "Last
+  time loads when you're online."; a saved copy says it is from this phone.
+- **This week.** "2 of 4 done" with pips, then **Training load** (opens the load sheet below) and
+  **History** ("6 workouts in 4 weeks", a sheet with friendly dates; a row opens its summary when its
+  workout is known).
+- **States.** Skeletons while the hub loads; "Your plan could not load" with the beta diagnostic and
+  **Try again**; after a failed refresh the loaded plan stays with "Offline. Showing your plan from
+  earlier."; "No active plan" with **Check again**; a cached 1.5 hub shows no pill and an
+  unclassified load. Pull to refresh reloads the hub, the readiness line and the Apple Health
+  candidate.
 
 Train redesign data rules (2026-10-03, `lib/features/train/train_view_models.dart`), read by the
 new Train screen:
@@ -403,7 +440,7 @@ ideas use the separate **Suggested next actions** heading.
 When Apple Health records a workout on a day the user has a scheduled Tracend workout but no
 completed session, Train presents a prompt card instead of the normal **Start workout** button:
 
-- Status chip: **Apple Health detected workout** with `heart_fill` icon.
+- Kicker: **Apple Health detected workout** with `heart_fill` icon.
 - Workout name.
 - Explanation: _Apple Health recorded a [N] min workout [today / yesterday / on Mon D]. Did you
   complete [workout name]?_
@@ -423,9 +460,9 @@ explicit user approval. The auto-completed session records
 evidence'` in its notes and writes an `audit_events` row with
 `action_code='workout.auto_completed'`.
 
-The weekday strip shows a green checkmark circle for completed days and a gray dot for planned-only
-days. The workout hero card displays a "Completed" pill and "View workout" (outlined) button for
-days with a completed session.
+The prompt sits inside the workout hero in place of **Start workout**, under the kicker **Apple
+Health detected workout**. The day boxes show a check for completed days and a dot for planned
+days; a completed day's hero reads "Done on Tuesday" with **View summary**.
 
 ## 8. Nutrition and Meal Confirmation
 
