@@ -152,15 +152,19 @@ class SupabaseNotificationRepository implements NotificationRepository {
     NotificationRepository device = const MethodChannelNotificationRepository(),
   }) : this._(SupabaseNotificationPreferenceStore(client), device);
 
-  const SupabaseNotificationRepository.withStore({
+  SupabaseNotificationRepository.withStore({
     required NotificationPreferenceStore store,
     required NotificationRepository device,
   }) : this._(store, device);
 
-  const SupabaseNotificationRepository._(this._store, this._device);
+  SupabaseNotificationRepository._(this._store, this._device);
 
   final NotificationPreferenceStore _store;
   final NotificationRepository _device;
+
+  /// The background permission sync, so a reminder save that follows it
+  /// waits and is never overwritten by it.
+  Future<void> _permissionSync = Future<void>.value();
 
   @override
   Future<NotificationPreferences> load() async {
@@ -202,11 +206,13 @@ class SupabaseNotificationRepository implements NotificationRepository {
     if (dailyCheckIn == previous.dailyCheckIn &&
         weeklyReview == previous.weeklyReview) {
       if (updated.authorizationStatus != previous.authorizationStatus) {
-        unawaited(_syncPermission(updated));
+        _permissionSync = _syncPermission(updated);
+        unawaited(_permissionSync);
       }
       return updated;
     }
     try {
+      await _permissionSync;
       await _store.save(updated);
       return updated;
     } catch (e) {
@@ -221,10 +227,23 @@ class SupabaseNotificationRepository implements NotificationRepository {
   }
 
   /// Records a permission change made by the rest toggle (iOS asked for the
-  /// first time). Best effort: the next reminder save sends it again.
+  /// first time). The reminder choices saved on the server are kept: after a
+  /// reinstall or a permission reset the device reports both reminders off,
+  /// and that must not overwrite what the athlete chose. Best effort: the
+  /// next reminder save sends the status again.
   Future<void> _syncPermission(NotificationPreferences preferences) async {
     try {
-      await _store.save(preferences);
+      final saved = await _store.load();
+      await _store.save(
+        saved == null
+            ? preferences
+            : NotificationPreferences(
+                authorizationStatus: preferences.authorizationStatus,
+                dailyCheckIn: saved.dailyCheckIn,
+                weeklyReview: saved.weeklyReview,
+                restTimerAlertsEnabled: preferences.restTimerAlertsEnabled,
+              ),
+      );
     } catch (e) {
       debugPrint('Non-critical error: notification permission not synced: $e');
     }

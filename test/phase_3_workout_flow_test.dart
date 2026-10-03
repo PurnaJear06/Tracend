@@ -425,7 +425,7 @@ void main() {
       await _tapLabel(tester, 'Finish workout');
       expect(find.text('How hard was this workout overall?'), findsOneWidget);
       expect(
-        find.text('1 set not logged will be saved as skipped.'),
+        find.text('1 set is not logged. It stays unlogged, not skipped.'),
         findsOneWidget,
       );
       await _tap(tester, _finishButton);
@@ -664,6 +664,69 @@ void main() {
     expect(find.text('1:00'), findsOneWidget);
     expect(find.text('Set 2 of 2'), findsOneWidget);
   });
+
+  for (final cleared in [true, false]) {
+    testWidgets(
+      cleared
+          ? 'a load cleared on purpose stays empty after reopening'
+          : 'an untouched empty load is suggested after reopening',
+      (tester) async {
+        final h = _Harness();
+        h.repository.saved = jsonEncode({
+          'workout_id': 'upper-a',
+          'session_id': 'server-session',
+          'idempotency_key': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          'revision': 3,
+          'actual_started_at': h.clock.now.toUtc().toIso8601String(),
+          'exercises': [
+            {
+              'order': 1,
+              'status': 'unknown',
+              'pain_flag': false,
+              'sets': [
+                {
+                  'number': 1,
+                  'load_kg': '60',
+                  'repetitions': '8',
+                  'rpe': '',
+                  'completed': true,
+                },
+                {
+                  'number': 2,
+                  'load_kg': '',
+                  'repetitions': '',
+                  'rpe': '',
+                  'completed': false,
+                },
+              ],
+            },
+          ],
+          if (cleared)
+            'cleared_loads': [
+              {'order': 1, 'number': 2},
+            ],
+        });
+        await _open(tester, h);
+        expect(find.text('Set 2 of 2'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('kg-0-1')),
+            matching: find.text('60'),
+          ),
+          cleared ? findsNothing : findsWidgets,
+        );
+        // The marker lives only in the phone's draft and survives the save.
+        expect(
+          h.repository.savedDraft['cleared_loads'],
+          cleared
+              ? [
+                  {'order': 1, 'number': 2},
+                ]
+              : isEmpty,
+        );
+      },
+    );
+  }
 
   testWidgets('offline sync keeps the draft and says Offline', (tester) async {
     final h = _Harness();

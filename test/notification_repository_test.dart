@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 
@@ -182,14 +184,98 @@ void main() {
       expect(device.preferences.restTimerAlertsEnabled, isTrue);
     },
   );
+
+  test('a permission granted by the rest toggle keeps the saved reminders '
+      '(reinstall or permission reset)', () async {
+    final device = _DeviceRepository(
+      const NotificationPreferences(
+        authorizationStatus: 'not_determined',
+        dailyCheckIn: false,
+        weeklyReview: false,
+      ),
+      grantOnConfigure: true,
+    );
+    final store = _PreferenceStore(
+      const NotificationPreferences(
+        authorizationStatus: 'denied',
+        dailyCheckIn: true,
+        weeklyReview: true,
+      ),
+    );
+    final repository = SupabaseNotificationRepository.withStore(
+      store: store,
+      device: device,
+    );
+
+    await repository.configure(
+      dailyCheckIn: false,
+      weeklyReview: false,
+      restTimerAlertsEnabled: true,
+    );
+    await pumpEventQueue();
+
+    expect(store.saves, hasLength(1));
+    expect(store.saves.single.authorizationStatus, 'authorized');
+    expect(store.saves.single.dailyCheckIn, isTrue);
+    expect(store.saves.single.weeklyReview, isTrue);
+  });
+
+  test('a reminder change waits for the permission sync and wins', () async {
+    final gate = Completer<void>();
+    final device = _DeviceRepository(
+      const NotificationPreferences(
+        authorizationStatus: 'not_determined',
+        dailyCheckIn: false,
+        weeklyReview: false,
+      ),
+      grantOnConfigure: true,
+    );
+    final store = _PreferenceStore(
+      const NotificationPreferences(
+        authorizationStatus: 'denied',
+        dailyCheckIn: true,
+        weeklyReview: false,
+      ),
+      firstSave: gate,
+    );
+    final repository = SupabaseNotificationRepository.withStore(
+      store: store,
+      device: device,
+    );
+
+    await repository.configure(
+      dailyCheckIn: false,
+      weeklyReview: false,
+      restTimerAlertsEnabled: true,
+    );
+    final reminder = repository.configure(
+      dailyCheckIn: false,
+      weeklyReview: true,
+      restTimerAlertsEnabled: true,
+    );
+    await pumpEventQueue();
+    expect(store.saves, isEmpty);
+
+    gate.complete();
+    await reminder;
+
+    expect(store.saves, hasLength(2));
+    expect(store.saves.last.dailyCheckIn, isFalse);
+    expect(store.saves.last.weeklyReview, isTrue);
+    expect(store.preferences!.weeklyReview, isTrue);
+  });
 }
 
 class _PreferenceStore implements NotificationPreferenceStore {
-  _PreferenceStore(this.preferences, {this.failSave = false});
+  _PreferenceStore(this.preferences, {this.failSave = false, this.firstSave});
 
-  final NotificationPreferences? preferences;
+  NotificationPreferences? preferences;
   final bool failSave;
+
+  /// Holds the first save open until completed, to order saves in a test.
+  final Completer<void>? firstSave;
   int saveCalls = 0;
+  final saves = <NotificationPreferences>[];
 
   @override
   Future<NotificationPreferences?> load() async => preferences;
@@ -197,7 +283,10 @@ class _PreferenceStore implements NotificationPreferenceStore {
   @override
   Future<void> save(NotificationPreferences preferences) async {
     saveCalls += 1;
+    if (saveCalls == 1 && firstSave != null) await firstSave!.future;
     if (failSave) throw StateError('offline');
+    saves.add(preferences);
+    this.preferences = preferences;
   }
 }
 

@@ -94,6 +94,11 @@ decision. Unlinked exercises show no muscles; nothing is guessed.
   wordmark and a zoom-through exit into the app. Today's food rings sweep in with a count-up, a
   gradient stroke with a glow and a head dot, and a second lap past the target. Food stays on
   Today, as it was before the redesign.
+- GPT review of b39a05a (3 × P2, fixed): a permission granted by the rest toggle now saves the
+  status with the reminder choices already on the server (a reinstall reports both off), and a
+  later reminder save waits for it; a load the athlete cleared stays cleared after Save and leave
+  or a relaunch (a phone-only `cleared_loads` list in the local draft, never sent to the server);
+  the finish sheet no longer says unlogged sets are saved as skipped (they stay unknown, PRD).
 
 ## PR 1: backend data
 

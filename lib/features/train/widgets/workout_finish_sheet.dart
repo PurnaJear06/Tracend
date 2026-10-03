@@ -160,8 +160,9 @@ class _WorkoutFinishFormState extends State<WorkoutFinishForm>
           const SizedBox(height: TracendSpacing.xs),
           Text(
             unlogged == 1
-                ? '1 set not logged will be saved as skipped.'
-                : '$unlogged sets not logged will be saved as skipped.',
+                ? '1 set is not logged. It stays unlogged, not skipped.'
+                : '$unlogged sets are not logged. They stay unlogged, not '
+                      'skipped.',
             style: text.bodyMedium?.copyWith(color: colors.textSecondary),
           ),
         ],

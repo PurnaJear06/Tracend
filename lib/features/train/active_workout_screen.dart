@@ -184,6 +184,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           DateTime.tryParse('${draft['actual_started_at'] ?? ''}')?.toLocal() ??
           _startedAt;
       _hydrate(draft['exercises']);
+      if (local != null && local['session_id'] == _sessionId) {
+        _restoreClearedLoads(local[_clearedLoadsKey]);
+      }
     }
     await _rest.restore(local?[RestTimer.draftKey]);
     if (_rest.timer != null) {
@@ -253,6 +256,33 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       final order = (map['order'] as num?)?.toInt();
       final index = _exercises.indexWhere((e) => e.exercise.order == order);
       if (index >= 0) _exercises[index].restore(map);
+    }
+  }
+
+  /// Sets whose load the athlete emptied on purpose, kept only in this
+  /// phone's draft (the server stores just an empty load), so a restored
+  /// workout never suggests a weight there again.
+  static const _clearedLoadsKey = 'cleared_loads';
+
+  List<Map<String, int>> _clearedLoads() => [
+    for (final draft in _exercises)
+      for (var j = 0; j < draft.sets.length; j++)
+        if (draft.sets[j].loadEdited && draft.sets[j].load.isEmpty)
+          {'order': draft.exercise.order, 'number': j + 1},
+  ];
+
+  void _restoreClearedLoads(Object? rows) {
+    if (rows is! List) return;
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final order = (row['order'] as num?)?.toInt();
+      final number = (row['number'] as num?)?.toInt();
+      final index = _exercises.indexWhere((e) => e.exercise.order == order);
+      if (index < 0 || number == null) continue;
+      final sets = _exercises[index].sets;
+      if (number < 1 || number > sets.length) continue;
+      final set = sets[number - 1];
+      if (set.load.isEmpty) set.loadEdited = true;
     }
   }
 
@@ -362,6 +392,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     ..._draft(),
     'actual_started_at': _startedAt.toUtc().toIso8601String(),
     RestTimer.draftKey: ?_rest.toDraft(),
+    _clearedLoadsKey: _clearedLoads(),
   };
 
   void _changed() {

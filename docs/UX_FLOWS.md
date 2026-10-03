@@ -606,7 +606,9 @@ discarded") and **Keep logging**.
 first." Otherwise a sheet asks "How hard was this workout overall?" on a required 1–10 scale with
 nothing preselected (1–2 very easy, 3–4 easy, 5–6 moderate, 7–8 hard, 9 very hard, 10 max).
 **Finish workout** without a number shows "Pick a number from 1 to 10 first." The sheet says "N
-sets not logged will be saved as skipped" and that this number sets the training load. Finishing
+sets are not logged. They stay unlogged, not skipped." (the server keeps an untouched exercise
+`unknown`, PRD; only an exercise marked skipped is saved as skipped) and that this number sets the
+training load. Finishing
 syncs the draft, then calls `complete_workout_v2` with the athlete's `session_effort`
 (`completeWithEffort`) and the duration capped at 3 hours.
 
