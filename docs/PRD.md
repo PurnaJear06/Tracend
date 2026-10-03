@@ -259,6 +259,10 @@ The MVP may provide local or push reminders for scheduled workouts, check-ins, m
 weekly review, and pending proposals. Notifications must not reveal sensitive health or physique
 details on the lock screen.
 
+During a workout, an optional local alert says "Rest timer finished" when a rest between sets ends
+while the phone is locked. It is off by default ("Rest timer alerts" in Account › Notifications);
+off or denied, the rest timer stays in the app only.
+
 ### 5.6 Feedback and auditability
 
 Users can rate a decision as useful, unclear, incorrect, or unsafe and add a note. Model runs,

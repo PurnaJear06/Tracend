@@ -87,6 +87,14 @@ secret/service-role key exist only in Supabase Edge Function secrets.
   authorization state, and append-only consent evidence through a validated RPC. Native
   `UserDefaults` retains the device's requested toggles; pending notification requests are delivery
   state, not the preference source, and are repaired from those toggles after reopen.
+- The same channel schedules the workout rest alert (`scheduleRestAlert`, `cancelRestAlert`,
+  identifier `tracend.rest-timer`). Its toggle stays on the device; the in-app rest timer keeps its
+  end time in the local workout draft and does not depend on the alert.
+- Workout logging reads `get_my_exercise_history` (last time, best set, recent top sets) and keeps
+  the last answer on the device for offline use. Finishing calls `complete_workout_v2` with the
+  athlete's session effort after saving the request locally; discarding calls `abandon_workout`,
+  and a discard made offline waits on the device and is sent before the next session load. New
+  bests, weight lifted, and the rest timer are computed on the device (ALGORITHMS §4).
 - `auth.users.id` is the canonical `user_id` for application-owned records.
 - Recent authentication is required before export, account deletion, or sensitive session changes.
 - Phase 8 export reauthenticates the owner, queues only an opaque export ID, builds user-readable

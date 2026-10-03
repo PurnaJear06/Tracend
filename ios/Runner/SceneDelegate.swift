@@ -6,6 +6,8 @@ class SceneDelegate: FlutterSceneDelegate {
   private let flutterEngine = FlutterEngine(name: "tracend")
   private let dailyPreferenceKey = "tracend.notifications.daily-check-in"
   private let weeklyPreferenceKey = "tracend.notifications.weekly-review"
+  private let restTimerPreferenceKey = "tracend.notifications.rest-timer"
+  private let notifications = TracendNotificationScheduler(center: SystemNotificationCenter())
 
   override func scene(
     _ scene: UIScene,
@@ -71,38 +73,50 @@ class SceneDelegate: FlutterSceneDelegate {
         guard
           let arguments = call.arguments as? [String: Any],
           let dailyCheckIn = arguments["daily_check_in"] as? Bool,
-          let weeklyReview = arguments["weekly_review"] as? Bool
+          let weeklyReview = arguments["weekly_review"] as? Bool,
+          let restTimerAlerts = arguments["rest_timer_alerts"] as? Bool
         else {
           result(FlutterError(code: "invalid_arguments", message: nil, details: nil))
           return
         }
-        self.configureReminders(
-          dailyCheckIn: dailyCheckIn,
-          weeklyReview: weeklyReview,
+        self.configurePreferences(
+          NotificationChoices(
+            dailyCheckIn: dailyCheckIn,
+            weeklyReview: weeklyReview,
+            restTimerAlerts: restTimerAlerts
+          ),
           result: result
         )
+      case "scheduleRestAlert":
+        guard
+          let arguments = call.arguments as? [String: Any],
+          let seconds = arguments["seconds"] as? Int,
+          (1...TracendNotificationScheduler.maxRestSeconds).contains(seconds)
+        else {
+          result(FlutterError(code: "invalid_arguments", message: nil, details: nil))
+          return
+        }
+        self.scheduleRestAlert(seconds: seconds, result: result)
+      case "cancelRestAlert":
+        self.notifications.cancelRestAlert()
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
     }
   }
 
-  private func configureReminders(
-    dailyCheckIn: Bool,
-    weeklyReview: Bool,
+  private func configurePreferences(
+    _ choices: NotificationChoices,
     result: @escaping FlutterResult
   ) {
     let center = UNUserNotificationCenter.current()
     center.getNotificationSettings { settings in
-      let needsPermission = dailyCheckIn || weeklyReview
+      let needsPermission = choices.anyEnabled
       if needsPermission && settings.authorizationStatus == .notDetermined {
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
           if granted {
-            self.replaceReminders(
-              dailyCheckIn: dailyCheckIn,
-              weeklyReview: weeklyReview,
-              result: result
-            )
+            self.applyPreferences(choices, result: result)
           } else {
             self.complete(
               result,
@@ -119,79 +133,46 @@ class SceneDelegate: FlutterSceneDelegate {
         )
         return
       }
-      self.replaceReminders(
-        dailyCheckIn: dailyCheckIn,
-        weeklyReview: weeklyReview,
-        result: result
-      )
+      self.applyPreferences(choices, result: result)
     }
   }
 
-  private func replaceReminders(
-    dailyCheckIn: Bool,
-    weeklyReview: Bool,
+  /// Replaces the daily and weekly reminders and saves all three choices.
+  /// Turning rest alerts off is followed by `cancelRestAlert` from Dart.
+  private func applyPreferences(
+    _ choices: NotificationChoices,
     result: @escaping FlutterResult
   ) {
-    let center = UNUserNotificationCenter.current()
-    let identifiers = ["tracend.daily-check-in", "tracend.weekly-review"]
-    center.removePendingNotificationRequests(withIdentifiers: identifiers)
-
-    let content = UNMutableNotificationContent()
-    content.title = "Tracend reminder"
-    content.body = "Open Tracend when convenient."
-    content.sound = .default
-
-    let group = DispatchGroup()
-    let errorLock = NSLock()
-    var schedulingError: Error?
-    if dailyCheckIn {
-      let trigger = UNCalendarNotificationTrigger(
-        dateMatching: DateComponents(hour: 19),
-        repeats: true
-      )
-      group.enter()
-      center.add(
-        UNNotificationRequest(
-          identifier: identifiers[0],
-          content: content,
-          trigger: trigger
-        )
-      ) { error in
-        errorLock.lock()
-        schedulingError = schedulingError ?? error
-        errorLock.unlock()
-        group.leave()
-      }
-    }
-    if weeklyReview {
-      let trigger = UNCalendarNotificationTrigger(
-        dateMatching: DateComponents(hour: 18, weekday: 1),
-        repeats: true
-      )
-      group.enter()
-      center.add(
-        UNNotificationRequest(
-          identifier: identifiers[1],
-          content: content,
-          trigger: trigger
-        )
-      ) { error in
-        errorLock.lock()
-        schedulingError = schedulingError ?? error
-        errorLock.unlock()
-        group.leave()
-      }
-    }
-    group.notify(queue: .main) {
-      if schedulingError != nil {
+    notifications.replaceReminders(
+      dailyCheckIn: choices.dailyCheckIn,
+      weeklyReview: choices.weeklyReview
+    ) { error in
+      if error != nil {
         result(FlutterError(code: "schedule_failed", message: nil, details: nil))
         return
       }
-      self.saveReminderPreferences(
-        dailyCheckIn: dailyCheckIn,
-        weeklyReview: weeklyReview
-      )
+      self.savePreferences(choices)
       self.notificationState(result: result)
+    }
+  }
+
+  /// Schedules the rest alert when the athlete turned rest alerts on and iOS
+  /// allows alerts. Returns whether an alert is now pending.
+  private func scheduleRestAlert(seconds: Int, result: @escaping FlutterResult) {
+    UNUserNotificationCenter.current().getNotificationSettings { settings in
+      let enabled = UserDefaults.standard.bool(forKey: self.restTimerPreferenceKey)
+      guard enabled && self.isAuthorized(settings.authorizationStatus) else {
+        self.notifications.cancelRestAlert()
+        self.complete(result, value: false)
+        return
+      }
+      self.notifications.scheduleRestAlert(seconds: seconds) { error in
+        result(
+          error == nil
+            ? true
+            : FlutterError(code: "schedule_failed", message: nil, details: nil)
+        )
+      }
     }
   }
 
@@ -200,63 +181,62 @@ class SceneDelegate: FlutterSceneDelegate {
     center.getNotificationSettings { settings in
       center.getPendingNotificationRequests { requests in
         let identifiers = Set(requests.map(\.identifier))
-        let pendingDaily = identifiers.contains("tracend.daily-check-in")
-        let pendingWeekly = identifiers.contains("tracend.weekly-review")
-        let preferences = self.reminderPreferences(
+        let pendingDaily = identifiers.contains(TracendNotificationID.dailyCheckIn)
+        let pendingWeekly = identifiers.contains(TracendNotificationID.weeklyReview)
+        let preferences = self.storedPreferences(
           pendingDaily: pendingDaily,
           pendingWeekly: pendingWeekly
         )
-        let authorized = [
-          UNAuthorizationStatus.authorized,
-          .provisional,
-          .ephemeral,
-        ].contains(settings.authorizationStatus)
-        if authorized
+        if self.isAuthorized(settings.authorizationStatus)
           && (preferences.dailyCheckIn != pendingDaily
             || preferences.weeklyReview != pendingWeekly)
         {
-          self.replaceReminders(
-            dailyCheckIn: preferences.dailyCheckIn,
-            weeklyReview: preferences.weeklyReview,
-            result: result
-          )
+          self.applyPreferences(preferences, result: result)
           return
         }
         self.complete(result, value: [
           "authorization_status": self.authorizationStatus(settings.authorizationStatus),
           "daily_check_in": preferences.dailyCheckIn,
           "weekly_review": preferences.weeklyReview,
+          "rest_timer_alerts": preferences.restTimerAlerts,
         ])
       }
     }
   }
 
-  private func reminderPreferences(
+  /// The saved choices. Before a reminder choice was saved, its pending
+  /// request stands in for it; rest alerts start off.
+  private func storedPreferences(
     pendingDaily: Bool,
     pendingWeekly: Bool
-  ) -> (dailyCheckIn: Bool, weeklyReview: Bool) {
+  ) -> NotificationChoices {
     let defaults = UserDefaults.standard
-    let hasDailyPreference = defaults.object(forKey: dailyPreferenceKey) != nil
-    let hasWeeklyPreference = defaults.object(forKey: weeklyPreferenceKey) != nil
-    let daily = hasDailyPreference
-      ? defaults.bool(forKey: dailyPreferenceKey)
-      : pendingDaily
-    let weekly = hasWeeklyPreference
-      ? defaults.bool(forKey: weeklyPreferenceKey)
-      : pendingWeekly
-    if !hasDailyPreference || !hasWeeklyPreference {
-      saveReminderPreferences(dailyCheckIn: daily, weeklyReview: weekly)
+    let hasAll = [dailyPreferenceKey, weeklyPreferenceKey, restTimerPreferenceKey]
+      .allSatisfy { defaults.object(forKey: $0) != nil }
+    let choices = NotificationChoices(
+      dailyCheckIn: defaults.object(forKey: dailyPreferenceKey) != nil
+        ? defaults.bool(forKey: dailyPreferenceKey)
+        : pendingDaily,
+      weeklyReview: defaults.object(forKey: weeklyPreferenceKey) != nil
+        ? defaults.bool(forKey: weeklyPreferenceKey)
+        : pendingWeekly,
+      restTimerAlerts: defaults.bool(forKey: restTimerPreferenceKey)
+    )
+    if !hasAll {
+      savePreferences(choices)
     }
-    return (daily, weekly)
+    return choices
   }
 
-  private func saveReminderPreferences(
-    dailyCheckIn: Bool,
-    weeklyReview: Bool
-  ) {
+  private func savePreferences(_ choices: NotificationChoices) {
     let defaults = UserDefaults.standard
-    defaults.set(dailyCheckIn, forKey: dailyPreferenceKey)
-    defaults.set(weeklyReview, forKey: weeklyPreferenceKey)
+    defaults.set(choices.dailyCheckIn, forKey: dailyPreferenceKey)
+    defaults.set(choices.weeklyReview, forKey: weeklyPreferenceKey)
+    defaults.set(choices.restTimerAlerts, forKey: restTimerPreferenceKey)
+  }
+
+  private func isAuthorized(_ status: UNAuthorizationStatus) -> Bool {
+    [UNAuthorizationStatus.authorized, .provisional, .ephemeral].contains(status)
   }
 
   private func authorizationStatus(_ status: UNAuthorizationStatus) -> String {
@@ -275,4 +255,13 @@ class SceneDelegate: FlutterSceneDelegate {
       result(value)
     }
   }
+}
+
+/// The three notification toggles the athlete controls.
+private struct NotificationChoices {
+  let dailyCheckIn: Bool
+  let weeklyReview: Bool
+  let restTimerAlerts: Bool
+
+  var anyEnabled: Bool { dailyCheckIn || weeklyReview || restTimerAlerts }
 }

@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/app/breadcrumbs.dart';
+import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/muscle_groups.dart';
 
 class PlannedExercise {
@@ -38,6 +41,13 @@ class PlannedExercise {
   /// The catalog's primary muscles for [exerciseSlug] (hub 1.6). Empty when
   /// the exercise is unlinked: muscles are never inferred from the name.
   final List<MuscleGroup> primaryMuscles;
+
+  /// The key `get_my_exercise_history` knows this exercise by: its catalog
+  /// slug, or its name when it has none.
+  String get historyKey {
+    final slug = exerciseSlug?.trim() ?? '';
+    return slug.isEmpty ? name.trim() : slug;
+  }
 }
 
 class PlannedWorkout {
@@ -543,6 +553,112 @@ abstract interface class WorkoutRepository {
     int durationSeconds,
     Map<String, dynamic> draft,
   );
+
+  /// Finishes the workout with the athlete's own [sessionEffort], a whole
+  /// number from 1 to 10 (`complete_workout_v2`, energy null). The request
+  /// is saved on the device before the call, so when the call fails it can
+  /// be sent again from [loadPendingFinish]; a repeat after the server
+  /// already finished it returns `replayed`. Clears the draft on success.
+  Future<WorkoutCompletion> completeWithEffort(
+    String sessionId,
+    int revision,
+    int durationSeconds,
+    Map<String, dynamic> draft, {
+    required int sessionEffort,
+  });
+
+  /// The finish request saved for [workoutId] that has not reached the
+  /// server yet, or null.
+  Future<PendingWorkoutFinish?> loadPendingFinish(String workoutId);
+
+  /// Discards an in-progress workout (`abandon_workout`) and its draft.
+  /// Offline, the discard waits on the device and is sent before the next
+  /// session load; the server answers a repeat with `replayed`.
+  Future<WorkoutDiscard> abandon(String sessionId, {required String workoutId});
+
+  /// Last time, best set and recent top sets for each key
+  /// ([PlannedExercise.historyKey]). Falls back to this device's last copy
+  /// when the server cannot be reached.
+  Future<ExerciseHistoryResult> loadExerciseHistory(
+    List<String> keys, {
+    int sessions = 8,
+  });
+}
+
+/// The answer to finishing a workout.
+class WorkoutCompletion {
+  const WorkoutCompletion({
+    required this.replayed,
+    this.completedSets,
+    this.totalSets,
+  });
+
+  factory WorkoutCompletion.fromJson(Object? json) {
+    final map = json is Map ? json : const {};
+    return WorkoutCompletion(
+      replayed: map['replayed'] == true,
+      completedSets: (map['completed_sets'] as num?)?.toInt(),
+      totalSets: (map['total_sets'] as num?)?.toInt(),
+    );
+  }
+
+  /// The server had already finished this workout; nothing changed.
+  final bool replayed;
+
+  /// Null on a replay, which reports no counts.
+  final int? completedSets;
+  final int? totalSets;
+}
+
+/// A finish the athlete confirmed that has not reached the server.
+class PendingWorkoutFinish {
+  PendingWorkoutFinish({
+    required this.sessionEffort,
+    required this.durationSeconds,
+  }) {
+    RangeError.checkValueInInterval(sessionEffort, 1, 10, 'sessionEffort');
+  }
+
+  static PendingWorkoutFinish? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final effort = json['session_effort'];
+    final duration = json['duration_seconds'];
+    if (effort is! int || effort < 1 || effort > 10 || duration is! int) {
+      return null;
+    }
+    return PendingWorkoutFinish(
+      sessionEffort: effort,
+      durationSeconds: duration,
+    );
+  }
+
+  final int sessionEffort;
+  final int durationSeconds;
+
+  Map<String, Object> toJson() => {
+    'session_effort': sessionEffort,
+    'duration_seconds': durationSeconds,
+  };
+}
+
+/// The answer to discarding a workout.
+class WorkoutDiscard {
+  const WorkoutDiscard({this.replayed = false, this.queued = false});
+
+  /// The server had already discarded it.
+  final bool replayed;
+
+  /// Offline: the discard is saved and sent before the next session load.
+  final bool queued;
+}
+
+/// The workout never reached the server (its id is still `pending-`), so it
+/// cannot be finished there yet. The finish request stays on the device.
+class WorkoutSessionPendingException implements Exception {
+  const WorkoutSessionPendingException();
+
+  @override
+  String toString() => 'The workout has not reached the server yet.';
 }
 
 String newIdempotencyKey() {
@@ -564,8 +680,13 @@ class SupabaseWorkoutRepository
   SupabaseWorkoutRepository(this._client, this._preferences);
   final SupabaseClient _client;
   final SharedPreferencesAsync _preferences;
+  String get _userId => _client.auth.currentUser!.id;
   String _draftKey(String workoutId) =>
-      'workout_draft_${_client.auth.currentUser!.id}_$workoutId';
+      '${WorkoutLocalKeys.draftPrefix(_userId)}$workoutId';
+  String _finishKey(String workoutId) =>
+      '${WorkoutLocalKeys.finishPrefix(_userId)}$workoutId';
+  String get _discardKey => WorkoutLocalKeys.discards(_userId);
+  String get _historyKey => WorkoutLocalKeys.exerciseHistory(_userId);
 
   @override
   Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
@@ -670,7 +791,7 @@ class SupabaseWorkoutRepository
         .select(
           'id,name,objective,estimated_minutes,preferred_weekday,'
           'training_plan_versions!inner(status),'
-          'planned_exercises(exercise_order,display_name_snapshot,set_count,rep_min,rep_max,target_rpe,rest_seconds,notes,target_load_kg)',
+          'planned_exercises(exercise_order,display_name_snapshot,set_count,rep_min,rep_max,target_rpe,rest_seconds,notes,target_load_kg,exercise_slug)',
         )
         .eq('training_plan_versions.status', 'active')
         .eq('preferred_weekday', weekday)
@@ -703,6 +824,7 @@ class SupabaseWorkoutRepository
               restSeconds: e['rest_seconds'] as int? ?? 90,
               notes: e['notes'] as String? ?? '',
               targetLoadKg: e['target_load_kg'] as num?,
+              exerciseSlug: e['exercise_slug'] as String?,
             ),
           )
           .toList(),
@@ -718,6 +840,7 @@ class SupabaseWorkoutRepository
     DateTime? localDate,
   }) async {
     final date = localDate ?? DateTime.now();
+    final waiting = await _replayDiscards();
     final value = await _client.rpc(
       'get_my_workout_session',
       params: {
@@ -725,15 +848,20 @@ class SupabaseWorkoutRepository
         'p_local_date': date.toIso8601String().substring(0, 10),
       },
     );
-    return value is Map ? Map<String, dynamic>.from(value) : null;
+    if (value is! Map) return null;
+    // A workout discarded offline is gone for the athlete even while the
+    // server still holds it in progress.
+    if (waiting.contains(value['session_id'])) return null;
+    return Map<String, dynamic>.from(value);
   }
 
   @override
   Future<void> saveDraft(String workoutId, String json) =>
       _preferences.setString(_draftKey(workoutId), json);
   @override
-  Future<void> clearDraft(String workoutId) =>
-      _preferences.remove(_draftKey(workoutId));
+  Future<void> clearDraft(String workoutId) => _preferences.clear(
+    allowList: {_draftKey(workoutId), _finishKey(workoutId)},
+  );
   @override
   Future<String> start(
     PlannedWorkout workout,
@@ -741,16 +869,19 @@ class SupabaseWorkoutRepository
     DateTime? localDate,
   }) async {
     final date = localDate ?? DateTime.now();
-    return await _client.rpc(
-          'start_workout',
-          params: {
-            'p_planned_workout_id': workout.id,
-            'p_local_date': date.toIso8601String().substring(0, 10),
-            'p_timezone': DateTime.now().timeZoneName,
-            'p_idempotency_key': idempotencyKey,
-          },
-        )
-        as String;
+    final sessionId =
+        await _client.rpc(
+              'start_workout',
+              params: {
+                'p_planned_workout_id': workout.id,
+                'p_local_date': date.toIso8601String().substring(0, 10),
+                'p_timezone': DateTime.now().timeZoneName,
+                'p_idempotency_key': idempotencyKey,
+              },
+            )
+            as String;
+    AppBreadcrumbs.workout('Workout started');
+    return sessionId;
   }
 
   @override
@@ -789,6 +920,213 @@ class SupabaseWorkoutRepository
     );
     final workoutId = draft['workout_id'] as String?;
     if (workoutId != null) await clearDraft(workoutId);
+    AppBreadcrumbs.workout(
+      'Workout finished',
+      data: {'effort_source': 'legacy_default'},
+    );
+  }
+
+  @override
+  Future<WorkoutCompletion> completeWithEffort(
+    String sessionId,
+    int revision,
+    int durationSeconds,
+    Map<String, dynamic> draft, {
+    required int sessionEffort,
+  }) async {
+    final finish = PendingWorkoutFinish(
+      sessionEffort: sessionEffort,
+      durationSeconds: durationSeconds,
+    );
+    final workoutId = draft['workout_id'] as String?;
+    if (workoutId != null) {
+      await _preferences.setString(
+        _finishKey(workoutId),
+        jsonEncode(finish.toJson()),
+      );
+    }
+    if (sessionId.startsWith('pending-')) {
+      throw const WorkoutSessionPendingException();
+    }
+    final completion = WorkoutCompletion.fromJson(
+      await _client.rpc(
+        'complete_workout_v2',
+        params: {
+          'session_id': sessionId,
+          'client_revision': revision,
+          'duration_seconds': durationSeconds,
+          'session_effort': sessionEffort,
+          'notes': draft['notes'] ?? '',
+          'session_energy': null,
+        },
+      ),
+    );
+    if (workoutId != null) await clearDraft(workoutId);
+    AppBreadcrumbs.workout(
+      'Workout finished',
+      data: {'effort_source': 'athlete', 'replayed': completion.replayed},
+    );
+    return completion;
+  }
+
+  @override
+  Future<PendingWorkoutFinish?> loadPendingFinish(String workoutId) async {
+    final stored = await _preferences.getString(_finishKey(workoutId));
+    if (stored == null) return null;
+    try {
+      return PendingWorkoutFinish.fromJson(jsonDecode(stored));
+    } on FormatException {
+      return null;
+    }
+  }
+
+  @override
+  Future<WorkoutDiscard> abandon(
+    String sessionId, {
+    required String workoutId,
+  }) async {
+    await clearDraft(workoutId);
+    if (sessionId.startsWith('pending-')) {
+      // The server never created it, so there is nothing to discard there.
+      AppBreadcrumbs.workout('Workout discarded', data: {'local_only': true});
+      return const WorkoutDiscard();
+    }
+    try {
+      final discard = await _sendDiscard(sessionId);
+      AppBreadcrumbs.workout(
+        'Workout discarded',
+        data: {'replayed': discard.replayed},
+      );
+      return discard;
+    } on PostgrestException {
+      rethrow;
+    } catch (e) {
+      debugPrint('Non-critical error: discard waits for a connection: $e');
+      final waiting = await _waitingDiscards();
+      await _preferences.setStringList(_discardKey, [
+        ...waiting.where((id) => id != sessionId),
+        sessionId,
+      ]);
+      AppBreadcrumbs.workout('Workout discarded', data: {'queued': true});
+      return const WorkoutDiscard(queued: true);
+    }
+  }
+
+  Future<WorkoutDiscard> _sendDiscard(String sessionId) async {
+    final value = await _client.rpc(
+      'abandon_workout',
+      params: {'p_session_id': sessionId},
+    );
+    return WorkoutDiscard(replayed: value is Map && value['replayed'] == true);
+  }
+
+  Future<List<String>> _waitingDiscards() async =>
+      await _preferences.getStringList(_discardKey) ?? const [];
+
+  /// Sends discards saved offline. A refusal (already finished, not found)
+  /// settles it too; a connection failure keeps it. Returns the ids still
+  /// waiting.
+  Future<Set<String>> _replayDiscards() async {
+    final waiting = await _waitingDiscards();
+    if (waiting.isEmpty) return const {};
+    final kept = <String>[];
+    for (final id in waiting) {
+      try {
+        await _sendDiscard(id);
+      } on PostgrestException catch (e) {
+        debugPrint('Non-critical error: saved discard refused: ${e.code}');
+      } catch (e) {
+        debugPrint('Non-critical error: saved discard still waiting: $e');
+        kept.add(id);
+      }
+    }
+    if (kept.isEmpty) {
+      await _preferences.remove(_discardKey);
+    } else {
+      await _preferences.setStringList(_discardKey, kept);
+    }
+    if (kept.length < waiting.length) {
+      AppBreadcrumbs.workout(
+        'Saved discards sent',
+        data: {'still_waiting': kept.isNotEmpty},
+      );
+    }
+    return kept.toSet();
+  }
+
+  /// The RPC accepts at most this many keys per call.
+  static const _historyKeysPerCall = 20;
+
+  /// Exercises kept in the offline copy of the history.
+  static const _historyCacheSize = 200;
+
+  @override
+  Future<ExerciseHistoryResult> loadExerciseHistory(
+    List<String> keys, {
+    int sessions = 8,
+  }) async {
+    final requested = exerciseHistoryKeys(keys);
+    if (requested.isEmpty) {
+      return const ExerciseHistoryResult(exercises: {});
+    }
+    final rows = <String, Map<String, dynamic>>{};
+    try {
+      for (var i = 0; i < requested.length; i += _historyKeysPerCall) {
+        final value = await _client.rpc(
+          'get_my_exercise_history',
+          params: {
+            'p_keys': requested.skip(i).take(_historyKeysPerCall).toList(),
+            'p_sessions': sessions,
+          },
+        );
+        final exercises = value is Map ? value['exercises'] : null;
+        for (final row in exercises is List ? exercises : const []) {
+          if (row is Map && row['key'] is String) {
+            rows[row['key'] as String] = Map<String, dynamic>.from(row);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Non-critical error: exercise history from device: $e');
+      final cached = await _cachedHistory();
+      return ExerciseHistoryResult.fromJson({
+        'exercises': [
+          for (final key in requested)
+            if (cached[key] != null) cached[key],
+        ],
+      }, fromCache: true);
+    }
+    await _saveHistory(rows);
+    return ExerciseHistoryResult.fromJson({'exercises': rows.values.toList()});
+  }
+
+  Future<Map<String, Object?>> _cachedHistory() async {
+    final stored = await _preferences.getString(_historyKey);
+    if (stored == null) return const {};
+    try {
+      final decoded = jsonDecode(stored);
+      return decoded is Map ? Map<String, Object?>.from(decoded) : const {};
+    } on FormatException {
+      return const {};
+    }
+  }
+
+  /// Merges fresh answers into the offline copy, newest last, dropping the
+  /// longest-unrequested exercises beyond [_historyCacheSize].
+  Future<void> _saveHistory(Map<String, Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
+    try {
+      final cache = Map<String, Object?>.of(await _cachedHistory())
+        ..removeWhere((key, _) => rows.containsKey(key))
+        ..addAll(rows);
+      final overflow = cache.length - _historyCacheSize;
+      if (overflow > 0) {
+        cache.keys.take(overflow).toList().forEach(cache.remove);
+      }
+      await _preferences.setString(_historyKey, jsonEncode(cache));
+    } catch (e) {
+      debugPrint('Non-critical error: exercise history not saved: $e');
+    }
   }
 
   Future<void> autoCompleteFromHealthKit(
@@ -862,6 +1200,66 @@ class FixtureWorkoutRepository
     int durationSeconds,
     Map<String, dynamic> draft,
   ) => clearDraft(draft['workout_id'] as String? ?? 'fixture');
+
+  @override
+  Future<WorkoutCompletion> completeWithEffort(
+    String sessionId,
+    int revision,
+    int durationSeconds,
+    Map<String, dynamic> draft, {
+    required int sessionEffort,
+  }) async {
+    RangeError.checkValueInInterval(sessionEffort, 1, 10, 'sessionEffort');
+    await clearDraft(draft['workout_id'] as String? ?? 'fixture');
+    return const WorkoutCompletion(replayed: false);
+  }
+
+  @override
+  Future<PendingWorkoutFinish?> loadPendingFinish(String workoutId) async =>
+      null;
+
+  @override
+  Future<WorkoutDiscard> abandon(
+    String sessionId, {
+    required String workoutId,
+  }) async {
+    await clearDraft(workoutId);
+    return const WorkoutDiscard();
+  }
+
+  /// Fixture mode has no past workouts: every exercise is a first log.
+  @override
+  Future<ExerciseHistoryResult> loadExerciseHistory(
+    List<String> keys, {
+    int sessions = 8,
+  }) async => ExerciseHistoryResult(
+    exercises: {
+      for (final key in exerciseHistoryKeys(keys))
+        key: ExerciseHistory(key: key),
+    },
+  );
+}
+
+/// The keys `get_my_exercise_history` accepts: trimmed, 1 to 120
+/// characters, each once, in the order given.
+List<String> exerciseHistoryKeys(Iterable<String> keys) => {
+  for (final key in keys)
+    if (key.trim().isNotEmpty && key.trim().length <= 120) key.trim(),
+}.toList();
+
+/// This device's workout storage for one athlete, so account deletion can
+/// remove all of it.
+abstract final class WorkoutLocalKeys {
+  static String draftPrefix(String userId) => 'workout_draft_${userId}_';
+  static String finishPrefix(String userId) => 'workout_finish_${userId}_';
+  static String discards(String userId) => 'workout_discards_$userId';
+  static String exerciseHistory(String userId) => 'exercise_history_$userId';
+
+  static bool owns(String userId, String key) =>
+      key.startsWith(draftPrefix(userId)) ||
+      key.startsWith(finishPrefix(userId)) ||
+      key == discards(userId) ||
+      key == exerciseHistory(userId);
 }
 
 Map<String, dynamic> decodeDraft(String value) =>

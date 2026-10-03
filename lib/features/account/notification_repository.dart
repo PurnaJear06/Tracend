@@ -1,17 +1,23 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/app/breadcrumbs.dart';
 
 class NotificationPreferences {
   const NotificationPreferences({
     required this.authorizationStatus,
     required this.dailyCheckIn,
     required this.weeklyReview,
+    this.restTimerAlertsEnabled = false,
   });
 
   final String authorizationStatus;
   final bool dailyCheckIn;
   final bool weeklyReview;
+
+  /// A lock-screen alert when a workout rest timer ends. Kept on this device
+  /// only: the server stores the two reminder choices, not this one.
+  final bool restTimerAlertsEnabled;
 
   bool get isAuthorized => const {
     'authorized',
@@ -25,28 +31,39 @@ abstract interface class NotificationRepository {
   Future<NotificationPreferences> configure({
     required bool dailyCheckIn,
     required bool weeklyReview,
+    required bool restTimerAlertsEnabled,
   });
 }
+
+/// The native channel for local notifications (`ios/Runner/SceneDelegate.swift`).
+const notificationChannel = MethodChannel('com.tracend.app/notifications');
 
 class MethodChannelNotificationRepository implements NotificationRepository {
   const MethodChannelNotificationRepository();
 
-  static const _channel = MethodChannel('com.tracend.app/notifications');
-
   @override
-  Future<NotificationPreferences> load() async =>
-      _decode(await _channel.invokeMapMethod<String, dynamic>('status'));
+  Future<NotificationPreferences> load() async => _decode(
+    await notificationChannel.invokeMapMethod<String, dynamic>('status'),
+  );
 
   @override
   Future<NotificationPreferences> configure({
     required bool dailyCheckIn,
     required bool weeklyReview,
-  }) async => _decode(
-    await _channel.invokeMapMethod<String, dynamic>('configure', {
-      'daily_check_in': dailyCheckIn,
-      'weekly_review': weeklyReview,
-    }),
-  );
+    required bool restTimerAlertsEnabled,
+  }) async {
+    final preferences = _decode(
+      await notificationChannel.invokeMapMethod<String, dynamic>('configure', {
+        'daily_check_in': dailyCheckIn,
+        'weekly_review': weeklyReview,
+        'rest_timer_alerts': restTimerAlertsEnabled,
+      }),
+    );
+    if (!preferences.restTimerAlertsEnabled) {
+      await const MethodChannelRestAlertScheduler().cancelRestAlert();
+    }
+    return preferences;
+  }
 
   NotificationPreferences _decode(Map<String, dynamic>? value) {
     if (value == null) {
@@ -55,14 +72,75 @@ class MethodChannelNotificationRepository implements NotificationRepository {
     final status = value['authorization_status'];
     final daily = value['daily_check_in'];
     final weekly = value['weekly_review'];
-    if (status is! String || daily is! bool || weekly is! bool) {
+    final rest = value['rest_timer_alerts'];
+    if (status is! String ||
+        daily is! bool ||
+        weekly is! bool ||
+        rest is! bool) {
       throw const FormatException('Invalid notification state');
     }
     return NotificationPreferences(
       authorizationStatus: status,
       dailyCheckIn: daily,
       weeklyReview: weekly,
+      restTimerAlertsEnabled: rest,
     );
+  }
+}
+
+/// The lock-screen alert at the end of a workout rest, identifier
+/// `tracend.rest-timer`, text "Rest timer finished". It is a convenience: the
+/// in-app timer works without it, so failures are logged and never thrown.
+abstract interface class RestAlertScheduler {
+  /// Schedules the alert [seconds] from now, replacing an earlier one.
+  /// Returns whether an alert is pending: false when rest alerts are off,
+  /// iOS does not allow alerts, or the platform failed.
+  Future<bool> scheduleRestAlert(int seconds);
+
+  /// Removes the alert, pending or shown. Safe to call when there is none.
+  Future<void> cancelRestAlert();
+}
+
+class MethodChannelRestAlertScheduler implements RestAlertScheduler {
+  const MethodChannelRestAlertScheduler();
+
+  /// The longest rest the native side accepts, in seconds.
+  static const maxSeconds = 3600;
+
+  @override
+  Future<bool> scheduleRestAlert(int seconds) async {
+    if (seconds < 1) {
+      await cancelRestAlert();
+      return false;
+    }
+    var scheduled = false;
+    try {
+      scheduled =
+          await notificationChannel.invokeMethod<bool>('scheduleRestAlert', {
+            'seconds': seconds > maxSeconds ? maxSeconds : seconds,
+          }) ==
+          true;
+    } on PlatformException catch (e) {
+      debugPrint('Non-critical error: rest alert not scheduled: ${e.code}');
+    } on MissingPluginException catch (e) {
+      debugPrint('Non-critical error: rest alert not scheduled: $e');
+    }
+    AppBreadcrumbs.workout(
+      'Rest alert scheduled',
+      data: {'scheduled': scheduled},
+    );
+    return scheduled;
+  }
+
+  @override
+  Future<void> cancelRestAlert() async {
+    try {
+      await notificationChannel.invokeMethod<void>('cancelRestAlert');
+    } on PlatformException catch (e) {
+      debugPrint('Non-critical error: rest alert not cancelled: ${e.code}');
+    } on MissingPluginException catch (e) {
+      debugPrint('Non-critical error: rest alert not cancelled: $e');
+    }
   }
 }
 
@@ -95,6 +173,7 @@ class SupabaseNotificationRepository implements NotificationRepository {
       return _device.configure(
         dailyCheckIn: saved.dailyCheckIn,
         weeklyReview: saved.weeklyReview,
+        restTimerAlertsEnabled: device.restTimerAlertsEnabled,
       );
     } catch (e) {
       debugPrint('Non-critical error: $e');
@@ -106,11 +185,13 @@ class SupabaseNotificationRepository implements NotificationRepository {
   Future<NotificationPreferences> configure({
     required bool dailyCheckIn,
     required bool weeklyReview,
+    required bool restTimerAlertsEnabled,
   }) async {
     final previous = await _device.load();
     final updated = await _device.configure(
       dailyCheckIn: dailyCheckIn,
       weeklyReview: weeklyReview,
+      restTimerAlertsEnabled: restTimerAlertsEnabled,
     );
     try {
       await _store.save(updated);
@@ -120,6 +201,7 @@ class SupabaseNotificationRepository implements NotificationRepository {
       await _device.configure(
         dailyCheckIn: previous.dailyCheckIn,
         weeklyReview: previous.weeklyReview,
+        restTimerAlertsEnabled: previous.restTimerAlertsEnabled,
       );
       rethrow;
     }
@@ -182,9 +264,11 @@ class FixtureNotificationRepository implements NotificationRepository {
   Future<NotificationPreferences> configure({
     required bool dailyCheckIn,
     required bool weeklyReview,
+    required bool restTimerAlertsEnabled,
   }) async => NotificationPreferences(
     authorizationStatus: 'authorized',
     dailyCheckIn: dailyCheckIn,
     weeklyReview: weeklyReview,
+    restTimerAlertsEnabled: restTimerAlertsEnabled,
   );
 }

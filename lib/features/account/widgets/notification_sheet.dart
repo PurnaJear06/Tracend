@@ -34,6 +34,7 @@ class _NotificationSheetState extends State<NotificationSheet> {
       final saved = await widget.repository.configure(
         dailyCheckIn: _daily,
         weeklyReview: _weekly,
+        restTimerAlertsEnabled: widget.initial.restTimerAlertsEnabled,
       );
       if (!mounted) return;
       Navigator.of(context).pop(saved);

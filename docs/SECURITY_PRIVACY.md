@@ -276,6 +276,15 @@ not delivery history or notification content. iOS stores only the two local bool
 repairs missing pending requests after reopen; no notification payload or delivery history is added
 to local preference storage.
 
+The workout rest alert (2026-10-03) is a third local notification type with the fixed identifier
+`tracend.rest-timer` and the title `Rest timer finished` only: no workout, exercise, load, or
+effort is ever in it. It is off until the athlete turns on "Rest timer alerts", a device-only
+choice kept in `UserDefaults` next to the two reminder toggles (the server stores no copy). It is
+scheduled only while that toggle is on and iOS allows alerts; scheduling again replaces the one
+alert, and skip, finish, discard, leaving the workout, turning the toggle off, and a rest that
+ended while the app was closed all cancel it. Reminder reconciliation removes only the daily and
+weekly identifiers and never removes all pending requests, so it cannot drop a running rest alert.
+
 ## 11. Retention
 
 Initial private-beta defaults:

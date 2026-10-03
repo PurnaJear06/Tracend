@@ -299,6 +299,19 @@ daily_strain = sum(session_effort * duration_seconds / 600) for all completed se
 Session effort = 0–10 RPE. Strain normalised per 10-minute block. The same 10800-second
 cap applies to every strain window (ACWR, monotony, prev-strain z).
 
+### Athlete-Reported Session Effort (2026-10-03)
+
+At finish the athlete answers "How hard was this workout overall?" on a whole-number 1–10 scale
+(1–2 very easy, 3–4 easy, 5–6 moderate, 7–8 hard, 9 very hard, 10 max). The answer is required,
+nothing is preselected, and there is no floor. The app sends it through `complete_workout_v2`
+with `session_energy` null; the server stores it with `session_effort_source = 'athlete'` and
+rejects anything that is not a whole number from 1 to 10. This replaces the fixed 8 (and energy 3)
+that every logged workout carried before.
+
+The finish request (effort and duration) is saved on the device before the call. When the call
+fails it is sent again with the same values; a repeat after the server already finished the
+workout returns `replayed: true` and changes nothing, so effort is written once.
+
 ### Effort Provenance (2026-10-03)
 
 `workout_sessions.session_effort_source` records where a session's effort came from:
@@ -310,11 +323,46 @@ cap applies to every strain window (ACWR, monotony, prev-strain z).
 | `healthkit_default` | `healthkit_auto_complete_workout`       | A fixed 5                      |
 
 Every session completed before 2026-10-03 is `legacy_default` or `healthkit_default` (backfilled
-from the `workout.completed` and `workout.auto_completed` audit codes). Strain, ACWR and monotony
-still sum every completed session, so for the first 28 days after the logging redesign ships the
-windows mix default and real efforts. The Train load sheet labels that period "Calibrating".
-Session effort is a rating of the whole workout and is never derived from per-set RPE
-(`exercise_sets.rpe`), which stays a separate, optional per-set field.
+from the `workout.completed` and `workout.auto_completed` audit codes).
+
+**Calibration window.** Strain, ACWR and monotony still sum every completed session, whatever its
+source. For the first 28 days after the logging build ships, the chronic window therefore mixes
+`legacy_default` sessions (effort 8, usually higher than a typical athlete rating) and
+`healthkit_default` sessions (effort 5) with real athlete ratings. A ratio in that period compares
+real recent weeks against a partly assumed baseline, so it reads as provisional. The Train load sheet
+labels the window "Calibrating: older workouts used a default effort" until every day in it with a
+session is `effort_reported`; the day level never uses a default-effort day (see Day Level).
+Installed builds that still call `complete_workout` keep writing `legacy_default` 8, so the window
+only closes for workouts finished on the new build.
+
+**Set RPE vs session effort.** They are two different measurements and neither is derived from the
+other:
+
+| Field                             | Scope         | Required       | Used for                                     |
+| --------------------------------- | ------------- | -------------- | -------------------------------------------- |
+| `exercise_sets.rpe`               | One set       | No             | Set history and display; never in any strain |
+| `workout_sessions.session_effort` | Whole workout | Yes, at finish | Session strain, ACWR, monotony, day level    |
+
+Averaging set RPE would skip warm-ups, rest, cardio and fatigue across the session, and blank sets
+would bias it; the session rating asks for the whole workout directly (Foster 1998). Set RPE stays
+editable on every set, blank allowed.
+
+### Workout Logging Calculations (on device, 2026-10-03)
+
+The logging screen computes these from the sets on the device; the server returns no volume.
+
+- **New best.** A completed set is a new best only if it beats both the historical `best_set` from
+  `get_my_exercise_history` and every completed set before it in the same exercise this workout,
+  by the exercise's `kind`: `load` (heavier, then more reps; only sets with a load above 0 rank),
+  `reps` (more reps) or `assistance` (less machine help, 0 is unassisted, then more reps). Sets
+  without reps never rank. With no history the exercise shows "First log" and no set is a new best;
+  with unknown history (offline, no saved copy) neither is shown. Un-ticking a set recomputes.
+- **Weight lifted.** `sum(load_kg × reps)` over completed sets with a logged load above 0, exactly
+  as entered (a dumbbell load is not doubled). Bodyweight sets and `assistance` exercises are
+  excluded. Rounded to 0.1 kg.
+- **Rest timer.** The end time is stored in the local workout draft, so a killed app resumes the
+  same rest; ±15 s moves the end, skip ends it, and a rest that ended while the app was closed is
+  cleared on resume.
 
 `workout_sessions.completion_source` is `manual` or `healthkit` (null for sessions with no audit
 evidence). The app reads it, never the session notes, to say a workout came from Apple Health.

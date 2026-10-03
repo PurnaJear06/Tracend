@@ -424,8 +424,7 @@ void main() {
 /// Hub repository whose today workout is completed and whose session draft
 /// carries per-set RPE values, including out-of-range values that
 /// `_loadRecordedRpe` must filter out before averaging.
-class _RecordedRpeRepository
-    implements WorkoutRepository, TrainingHubRepository {
+class _RecordedRpeRepository extends FixtureWorkoutRepository {
   _RecordedRpeRepository({this.completed = true});
   final bool completed;
 
