@@ -5,13 +5,13 @@
 **Lifecycle:** owner-only private beta; not approved for public production
 
 **Current priority (2026-10-03):** the app-wide graphite + lime redesign. The owner chose palette
-A from an HTML prototype and approved a ten-PR plan: backend data, then tokens, components and
-brand (device checkpoints after tokens and brand), workout logging with real session effort and a
-rest alert (device checkpoint), then Train, Today, Coach, Nutrition and Progress, and Account.
-Round 3 of the prototype is with the owner for the Train signature picks; PR 1 (backend data,
-additive SQL) is in review. Workstream state: [`docs/handoff/redesign.md`](./handoff/redesign.md).
-The installed app still sends a fixed session effort of 8, so training load is minutes times a
-constant until the logging PR ships.
+A and the round 3 signature picks (focus logging, muscle map on, big new-best moment, day boxes,
+white and lime icon) and asked for parallel delivery against a five-hour window. Delivery is now
+two integrated pull requests instead of ten: the foundation (backend data, workout logging and
+Train data layers, tokens, Archivo, shared widgets, tab bar, icon, launch and intro), then the six
+screens, built in parallel. Device checks drop to two: after the foundation, and after the screens
+with a real workout. Workstream state: [`docs/handoff/redesign.md`](./handoff/redesign.md). The
+installed app still sends a fixed session effort of 8 until the screens PR ships the new logging.
 
 **Previous priority:** UI polish, so the app reads as a finished consumer product rather than a
 beta full of logs. The owner approved the plan on 2026-10-01 and chose to start it before the full

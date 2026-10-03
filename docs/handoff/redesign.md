@@ -1,44 +1,73 @@
 # Redesign Handoff: Graphite + Lime, App-Wide
 
-**Status:** Phase 0 prototype round 3 is with the owner for signature picks. PR 1 (backend data)
-is in review.
+**Status:** foundation integrated on `claude/redesign-base` (PR to `main`); six screen agents are
+building on it in parallel.
 
 **Plan:** `/Users/purnajear/.claude/plans/hey-uh-in-my-tender-allen.md` (owner-approved
 2026-10-03). Owner-chosen direction: palette A, graphite + lime, from the prototype at
-https://claude.ai/artifact/CQuLCcrwPUH6bwHfd8rSMh (round 3 adds the signature switches).
+https://claude.ai/artifact/CQuLCcrwPUH6bwHfd8rSMh.
 
-**Worktree:** `/Volumes/Crucial X9/dev/.tracend-worktrees/redesign` (remove after the last merge).
+**Delivery change (owner, 2026-10-03):** the owner asked for the whole redesign inside about five
+hours, built by parallel agents with one orchestrator. The ten sequential PRs became two
+integrated PRs, and the three device checkpoints became two.
 
-## Status by PR
+**Worktrees** (remove each after the final merge): `/Volumes/Crucial X9/dev/.tracend-worktrees/`
+`redesign`, `rd-foundation`, `rd-widgets`, `rd-logging-data`, `rd-train-data`, `rd-brand`,
+`rd-base`, and `ui-logging`, `ui-train`, `ui-today`, `ui-coach`, `ui-nutrition-progress`,
+`ui-account`.
 
-| PR | Scope | Branch | State |
-| -- | ----- | ------ | ----- |
-| Phase 0 | Prototype round 3: signature options, rebuilt load sheet, launch motion, icon | (artifact) | Waiting for the owner's picks |
-| 1 | Backend data: exercise history, effort and completion provenance, hub 1.6, discard | `claude/redesign-backend` | In review |
-| 2a | Tokens, typography, theme | | Not started. 🔒 device checkpoint after |
-| 2b | Shared widgets: sheets, toasts, confirmations, haptics, skeleton, loader | | Not started |
-| 2c | App icon, launch screen, intro, brand loader | | Not started. 🔒 device checkpoint after |
-| 3 | Workout logging and the rest alert | | Not started. Install only after PR 1 is live. 🔒 device checkpoint after |
-| 4 | Train screen and load sheet | | Not started |
-| 5 | Today | | Not started |
-| 6 | Coach | | Not started |
-| 7 | Nutrition and Progress alignment | | Not started |
-| 8 | Account, onboarding, auth | | Not started |
+## Status
 
-## Phase 0 picks
+| Piece | Branch | State |
+| ----- | ------ | ----- |
+| Backend data (SQL) | `claude/redesign-backend` (#74) | 7/7 green; included in the foundation PR |
+| Workout logging data, rest alert channel | `claude/redesign-logging-data` (#75) | 7/7 on a scratch CI branch; in foundation |
+| Train data, load sheet model, muscle map | `claude/redesign-train-data` (#76) | 7/7 on a scratch CI branch; in foundation |
+| Icon, launch screen, intro, loader | `claude/redesign-brand` (#77) | 7/7 green; in foundation |
+| Tokens, Archivo, theme, tab bar, shared widgets | `claude/redesign-foundation` + `claude/redesign-widgets` | in foundation |
+| **Foundation** (all of the above) | `claude/redesign-base` | PR to `main`. 🔒 device check 1 after deploy |
+| Workout logging UI | `claude/redesign-ui-logging` | building |
+| Train | `claude/redesign-ui-train` | building |
+| Today | `claude/redesign-ui-today` | building |
+| Coach | `claude/redesign-ui-coach` | building |
+| Nutrition and Progress | `claude/redesign-ui-nutrition-progress` | building |
+| Account, onboarding, auth | `claude/redesign-ui-account` | building |
+| **Screens** (six branches integrated) | `claude/redesign-screens` | PR to `main` after the foundation. 🔒 device check 2: a real workout |
 
-Waiting for the owner. Options in round 3:
+## Phase 0 picks (owner, 2026-10-03)
 
-1. Logging style: focus mode (one exercise per screen) or the table.
-2. Muscle map: on or off. It turns in 3D (Front and Back control, tap to turn, no phone tilt) with
-   the muscle chips as its text equivalent; worked muscles use lime plus a hatch pattern.
-3. New best: big moment (burst, stamp, screenshot-worthy finish card) or quiet.
-4. Week: the week line or the day boxes.
-5. Rebuilt Training load sheet, launch motion, and icon (Lime, or White and lime).
+1. Logging style: **focus mode**.
+2. Muscle map: **on**. The owner liked the idea but called round 3 "not up to the mark"; the map
+   was redrawn as an athletic figure from real muscle shapes, with two lime tones from set counts
+   (main at 60% or more of the top group's sets), a 3D turn with body thickness, a drag to turn,
+   and a front-and-back pair in focus mode and the muscles sheet. It was reviewed from scratch
+   renders and goes straight into the app rather than another prototype round.
+3. New best: **big moment**.
+4. Week: **day boxes**.
+5. Icon: **white and lime** (chalk T, lime arc and dot, on graphite). The rebuilt load sheet and the
+   launch motion were not objected to and ship as prototyped.
 
-The muscle map needs planned exercises linked to the catalog. Older plans have no slug, so the
-owner runs a read-only count (dashboard SQL editor) before it is built. Unlinked exercises show no
-muscles; nothing is guessed.
+The muscle map needs planned exercises linked to the catalog. Older plans have no slug, so they
+light nothing until re-planned; the name to slug backfill still waits for the owner's count and
+decision. Unlinked exercises show no muscles; nothing is guessed.
+
+## Decisions made during the build
+
+- Brand: the Runner target now compiles `Assets.xcassets` so the icon can carry the iOS 18 dark and
+  tinted variants (ADR 0012). The launch screen stays storyboard-free: `UILaunchScreen` names a
+  graphite colour set and the 132 pt mark.
+- Rest alert toggle: stored on the device only (no server column, no migration).
+- New best: "earlier set" means a lower set number in the same exercise, so un-ticking recomputes
+  deterministically.
+- Load sheet: keeps the week rail's thin-history rule (fewer than 4 sessions in 28 days reads as a
+  new user even when a ratio exists).
+- Muscle map: a tap opens the muscles sheet; a drag or the Front and Back control turns the body.
+- Theme: the bottom sheet theme draws no drag handle; `showTracendSheet` draws its own.
+- Cards: `TracendCard` and `PremiumGradientCard` are flat surfaces with no border, shadow or glow.
+- Account deletion now also clears workout drafts, pending finishes, queued discards and the
+  exercise history copy.
+- Stacked PRs get no CI (CI runs on PRs into `main` and `feature/**`), so stacked work was checked
+  on scratch `feature/**` branches and then integrated.
 
 ## PR 1: backend data
 
