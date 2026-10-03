@@ -1,19 +1,18 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/features/coach/coach_labels.dart';
 
-class ReasoningChainCard extends StatefulWidget {
-  const ReasoningChainCard({required this.chain, super.key});
+/// The structured reasoning a Coach reply returned (`reasoning_chain`), shown
+/// inside the reply's evidence disclosure. These are the model's stated
+/// steps, never hidden chain-of-thought. Each step reads as a named line: the
+/// step in words ("Training experience") over its value. A step's
+/// `evidence_id` is an internal code and is not shown; the cited evidence is
+/// listed beside these steps.
+class ReasoningSteps extends StatelessWidget {
+  const ReasoningSteps({required this.chain, super.key});
 
   final List<Map<String, dynamic>> chain;
-
-  @override
-  State<ReasoningChainCard> createState() => _ReasoningChainCardState();
-}
-
-class _ReasoningChainCardState extends State<ReasoningChainCard> {
-  bool _expanded = false;
 
   static const _stepIcons = <String, IconData>{
     'goal': CupertinoIcons.flag,
@@ -24,59 +23,25 @@ class _ReasoningChainCardState extends State<ReasoningChainCard> {
     'conclusion': CupertinoIcons.lightbulb,
   };
 
+  /// The steps worth showing: those with a value.
+  static List<Map<String, dynamic>> visible(List<Map<String, dynamic>> chain) =>
+      [
+        for (final step in chain)
+          if ((step['value'] as String? ?? '').trim().isNotEmpty) step,
+      ];
+
   @override
   Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    if (widget.chain.isEmpty) return const SizedBox.shrink();
-
+    final steps = visible(chain);
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          onTap: () => setState(() => _expanded = !_expanded),
-          borderRadius: BorderRadius.circular(999),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: TracendPill(
-              label: _expanded ? 'Hide reasoning' : 'Show reasoning',
-              icon: _expanded
-                  ? CupertinoIcons.chevron_up
-                  : CupertinoIcons.chevron_down,
-              color: colors.textSecondary,
-              compact: true,
-            ),
-          ),
-        ),
-        if (_expanded) ...[
-          const SizedBox(height: TracendSpacing.xs),
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: colors.borderSubtle.withValues(alpha: 0.6),
-              ),
-              borderRadius: BorderRadius.circular(TracendRadii.control),
-            ),
-            child: Column(
-              children: [
-                for (var i = 0; i < widget.chain.length; i++) ...[
-                  if (i > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 28),
-                      child: Container(
-                        height: 1,
-                        color: colors.borderSubtle.withValues(alpha: 0.4),
-                      ),
-                    ),
-                  _ReasoningStep(
-                    step: widget.chain[i]['step'] as String? ?? 'step',
-                    value: widget.chain[i]['value'] as String? ?? '',
-                    evidenceId: widget.chain[i]['evidence_id'] as String?,
-                    icon:
-                        _stepIcons[widget.chain[i]['step']] ??
-                        CupertinoIcons.circle,
-                  ),
-                ],
-              ],
-            ),
+        for (final (index, step) in steps.indexed) ...[
+          if (index > 0) const SizedBox(height: TracendSpacing.sm),
+          _ReasoningStep(
+            label: coachReasoningStepLabel(step['step'] as String? ?? ''),
+            value: (step['value'] as String).trim(),
+            icon: _stepIcons[step['step']] ?? CupertinoIcons.circle,
           ),
         ],
       ],
@@ -86,49 +51,46 @@ class _ReasoningChainCardState extends State<ReasoningChainCard> {
 
 class _ReasoningStep extends StatelessWidget {
   const _ReasoningStep({
-    required this.step,
+    required this.label,
     required this.value,
     required this.icon,
-    this.evidenceId,
   });
 
-  final String step;
+  final String label;
   final String value;
   final IconData icon;
-  final String? evidenceId;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: TracendSpacing.sm,
-        vertical: TracendSpacing.xs,
-      ),
+    final textTheme = Theme.of(context).textTheme;
+    return MergeSemantics(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: colors.actionPrimary),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon, size: 16, color: colors.textSecondary),
+          ),
           const SizedBox(width: TracendSpacing.sm),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  step.replaceAll('_', ' '),
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: colors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(value, style: Theme.of(context).textTheme.bodyMedium),
-                if (evidenceId != null)
+                if (label.isNotEmpty)
                   Text(
-                    evidenceId!,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    label,
+                    style: textTheme.bodySmall?.copyWith(
                       color: colors.textSecondary,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
+                Text(
+                  value,
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colors.textPrimary,
+                  ),
+                ),
               ],
             ),
           ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/brand/tracend_mark.dart';
 
 Widget _host(Widget child, {bool reduceMotion = false}) => MaterialApp(
@@ -16,8 +17,13 @@ void main() {
   testWidgets('the loader says what is loading and keeps moving', (
     tester,
   ) async {
+    // The suite runs under a static motion scope; the loader moves only at
+    // full motion.
     await tester.pumpWidget(
-      _host(const TracendLoader(semanticLabel: 'Loading your plan')),
+      TracendMotionScope(
+        level: TracendMotionLevel.full,
+        child: _host(const TracendLoader(semanticLabel: 'Loading your plan')),
+      ),
     );
 
     expect(find.bySemanticsLabel('Loading your plan'), findsOneWidget);

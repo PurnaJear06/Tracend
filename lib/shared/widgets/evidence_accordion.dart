@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 
 /// Collapsible evidence surface with correct collapse semantics
 /// (plan §6.2, master-plan P1).
@@ -11,11 +12,13 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 ///   child once the animation is dismissed.
 /// - The chevron rotates with the same animation controller.
 /// - Motion uses the established [TracendMotion] tokens.
-/// - When `MediaQuery.disableAnimationsOf(context)` is true (Reduce Motion on
-///   the pinned Flutter SDK), expand/collapse is instant: the controller jumps
-///   to its end value and collapsed content is unmounted immediately.
+/// - Below full motion ([TracendMotionScope]: Reduce Motion or a static
+///   scope), expand/collapse is instant: the controller jumps to its end value
+///   and collapsed content is unmounted immediately.
 /// - The header is an accessible button that announces the title, subtitle,
-///   and expanded state.
+///   and expanded state, with a 44pt minimum height.
+/// - [compact] sets the title as a quiet secondary line, for a disclosure
+///   under a Coach reply rather than the heading of a card.
 class EvidenceAccordion extends StatefulWidget {
   const EvidenceAccordion({
     required this.title,
@@ -23,6 +26,7 @@ class EvidenceAccordion extends StatefulWidget {
     this.subtitle,
     this.leading,
     this.initiallyExpanded = false,
+    this.compact = false,
     super.key,
   });
 
@@ -31,6 +35,7 @@ class EvidenceAccordion extends StatefulWidget {
   final Widget? leading;
   final Widget child;
   final bool initiallyExpanded;
+  final bool compact;
 
   @override
   State<EvidenceAccordion> createState() => _EvidenceAccordionState();
@@ -44,7 +49,8 @@ class _EvidenceAccordionState extends State<EvidenceAccordion>
   late bool _expanded;
   late bool _contentMounted;
 
-  bool get _reduceMotion => MediaQuery.disableAnimationsOf(context);
+  bool get _reduceMotion =>
+      TracendMotionScope.of(context) != TracendMotionLevel.full;
 
   @override
   void initState() {
@@ -95,6 +101,13 @@ class _EvidenceAccordionState extends State<EvidenceAccordion>
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
+    final textTheme = Theme.of(context).textTheme;
+    final titleStyle = widget.compact
+        ? textTheme.bodyMedium?.copyWith(
+            color: colors.textSecondary,
+            fontWeight: FontWeight.w600,
+          )
+        : textTheme.titleMedium;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -125,18 +138,20 @@ class _EvidenceAccordionState extends State<EvidenceAccordion>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              widget.title,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            if (widget.subtitle != null)
+                            Text(widget.title, style: titleStyle),
+                            if (widget.subtitle != null) ...[
+                              const SizedBox(height: 2),
                               Text(
                                 widget.subtitle!,
-                                style: Theme.of(context).textTheme.bodyMedium,
+                                style: textTheme.bodyMedium?.copyWith(
+                                  color: colors.textSecondary,
+                                ),
                               ),
+                            ],
                           ],
                         ),
                       ),
+                      const SizedBox(width: TracendSpacing.xs),
                       RotationTransition(
                         turns: _turns,
                         child: Icon(

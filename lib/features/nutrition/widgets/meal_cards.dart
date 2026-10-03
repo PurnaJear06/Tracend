@@ -5,6 +5,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
+import 'package:tracend/shared/widgets/tracend_confirm.dart';
 
 /// One row of the day timeline: a logged meal, a draft awaiting review, or
 /// a schedule slot that has not been logged yet.
@@ -142,15 +143,23 @@ class NutritionTimeline extends StatelessWidget {
         TracendSpacing.xs,
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final entry in entries)
+          for (var i = 0; i < entries.length; i++) ...[
+            if (i > 0)
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: context.tracendColors.borderHairline,
+              ),
             _MealRow(
-              entry: entry,
+              entry: entries[i],
               enabled: enabled,
               onReview: onReview,
               onDelete: onDelete,
               onLog: onLog,
             ),
+          ],
         ],
       ),
     );
@@ -247,7 +256,12 @@ class _MealRow extends StatelessWidget {
     };
     final menu = meal == null
         ? null
-        : _MealMenu(meal: meal, enabled: enabled, onDelete: onDelete);
+        : _MealMenu(
+            meal: meal,
+            title: title,
+            enabled: enabled,
+            onDelete: onDelete,
+          );
 
     // Large text leaves no room for a time column or trailing actions: the
     // time joins the title line and the actions move under the row.
@@ -258,7 +272,7 @@ class _MealRow extends StatelessWidget {
     );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: TracendSpacing.xs),
+      padding: const EdgeInsets.symmetric(vertical: TracendSpacing.sm),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -295,15 +309,13 @@ class _MealRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 // The status word always opens the second line, so every row
-                // reads the same way: "logged · Banana · Black coffee".
+                // reads the same way: "Logged · Banana · Black coffee".
                 Text.rich(
                   TextSpan(
                     children: [
                       TextSpan(
-                        text: status.toLowerCase(),
-                        style: TracendTheme.dataUtility(
-                          colors,
-                        ).copyWith(fontSize: 12, color: statusColor),
+                        text: status,
+                        style: theme.labelMedium?.copyWith(color: statusColor),
                       ),
                       if (foods != null && foods.isNotEmpty)
                         TextSpan(text: '  ·  $foods'),
@@ -389,47 +401,47 @@ class MacroSplitBar extends StatelessWidget {
   }
 }
 
+/// The **⋯** control on a logged meal: an action sheet with **Delete
+/// meal**. The screen then asks for a destructive confirmation.
 class _MealMenu extends StatelessWidget {
   const _MealMenu({
     required this.meal,
+    required this.title,
     required this.enabled,
     required this.onDelete,
   });
 
   final MealEntry meal;
+  final String title;
   final bool enabled;
   final ValueChanged<MealEntry> onDelete;
 
+  Future<void> _open(BuildContext context) async {
+    final choice = await showTracendActionSheet<String>(
+      context,
+      title: title,
+      actions: const [
+        TracendSheetAction(
+          label: 'Delete meal',
+          value: 'delete',
+          destructive: true,
+        ),
+      ],
+    );
+    if (choice == 'delete') onDelete(meal);
+  }
+
   @override
-  Widget build(BuildContext context) => PopupMenuButton<String>(
+  Widget build(BuildContext context) => IconButton(
     key: ValueKey('meal-menu-${meal.id}'),
-    enabled: enabled,
+    onPressed: enabled ? () => _open(context) : null,
     tooltip: 'Meal options',
-    // onSelected runs after the menu closes, so the confirmation dialog it
-    // opens is not popped along with the menu.
-    onSelected: (_) => onDelete(meal),
+    constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
     icon: Icon(
       CupertinoIcons.ellipsis,
       size: 18,
       color: context.tracendColors.textSecondary,
     ),
-    itemBuilder: (context) => [
-      PopupMenuItem<String>(
-        key: ValueKey('delete-meal-${meal.id}'),
-        value: 'delete',
-        child: Row(
-          children: [
-            Icon(
-              CupertinoIcons.delete,
-              size: 18,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            const SizedBox(width: TracendSpacing.sm),
-            const Text('Delete meal'),
-          ],
-        ),
-      ),
-    ],
   );
 }
 

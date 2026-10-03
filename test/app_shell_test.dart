@@ -70,9 +70,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Open account'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('PRIVACY AND DATA'), 240);
+    await tester.scrollUntilVisible(find.text('Privacy'), 240);
 
-    expect(find.text('PRIVACY AND DATA'), findsOneWidget);
+    expect(find.text('Privacy'), findsOneWidget);
   });
 
   testWidgets(
@@ -86,8 +86,10 @@ void main() {
       await tester.pumpWidget(const TracendApp(environment: _environment));
       await tester.pumpAndSettle();
 
-      expect(find.byType(TracendGlass), findsNWidgets(2));
-      expect(find.byType(BackdropFilter), findsNWidgets(2));
+      // Only the tab capsule: Today's confidence pill no longer uses glass
+      // (glass is chrome only, DESIGN_SYSTEM.md §3.4).
+      expect(find.byType(TracendGlass), findsOneWidget);
+      expect(find.byType(BackdropFilter), findsOneWidget);
     },
   );
 }

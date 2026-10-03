@@ -139,7 +139,8 @@ Documented exception: Coach chat bubbles use an asymmetric 18pt bubble (4pt on t
 - The only shadows are the small lift under the selected segment of a segmented control and the
   soft lift under the toast, which separates it from the glass bar beneath it.
 - **Glass** (`TracendGlass`: the `glass` fill over a 20σ blur with a `glassEdge` hairline) is chrome
-  only: the tab bar, the toast and the collapsed large-title bar. The sheet scrim is blurred too
+  only: the tab bar, the toast, the collapsed large-title bar and the minimised rest pill during a
+  workout. The sheet scrim is blurred too
   (6σ), growing with the sheet. Nothing else uses `BackdropFilter`.
 - Glass is built only while visible (the inline bar exists only once collapsed) and sits in a
   `RepaintBoundary`. `reduceTransparency` swaps it for an opaque `sheet` fill.
@@ -206,8 +207,8 @@ restoration after interruption are mandatory.
 
 Account uses the grouped-list grammar (§5.1): an identity block (display name from the signed-in
 email local-part, a compact **Private beta** pill, the current goal only when the active-goal RPC
-returns one, and an **Edit** affordance), then grouped lists under sentence-case section labels,
-with sign-out separated at the foot.
+returns one; **Profile and goals** is the edit entry, with no separate Edit button), then grouped
+lists under sentence-case section labels, with sign-out separated at the foot.
 
 ## 5. Components
 
@@ -311,18 +312,47 @@ pills; a selected chip is a lime fill with `onAccentSignal` text.
 
 ### 5.2 Data components
 
+#### `TodayHero` (recovery dial)
+
+The Today verdict card leads with a 270° recovery dial: a 9%-of-size stroke on a `surfaceRaised`
+track, filled to the score in the band's state colour (`stateStable`, `accentAmber`,
+`stateAttention`; never lime, which is not a health signal), running from a deeper tone at the
+start to a brighter head (the same stroke as the food rings), with a soft blurred copy of the arc
+under it and a white dot at the head. The score counts up inside in Archivo ExtraBold. The arc
+sweeps in over 1.1 s once; under reduced motion it is drawn at its value. A faint radial wash of
+the band colour sits behind the dial (16% dark, 9% light), the card's only background gradient.
+Beside the dial, today's vitals (Sleep, Resting HR, HRV) are hairline-separated lines with Archivo
+SemiCondensed values; above 1.3× text they move under the dial.
+
+#### Today's workout card and food rings
+
+`SessionPlanCard` is the Today training card: lime-ink "Today's workout" kicker, the name at 26pt
+Archivo, a lime disc with the training glyph, stat pills (`surfaceRaised`, numeric value + unit)
+and a full-width lime **View workout** pill (`accentSignal` / `onAccentSignal`). The training
+load line closes the card under a hairline. `MetabolicTargetCard` shows two ring tiles: calories
+in `accentSignalRing` (the primary progress ring) and protein in `stateStable`, the amount inside
+and "N left" below. Each ring is a 10pt stroke from 12 o'clock over a thin track of its own colour
+at 16%: a sweep gradient from a deeper tone at the start to a brighter head, round caps, a soft
+blurred glow under the arc (42% dark, 14% light) and a small white dot at the head. Past the
+target the ring closes and a second lap runs over it in a deeper shade, its head casting a small
+shadow so the overlap reads; it stops at two laps, and the text below says "reached". Motion: on
+first appearance each ring sweeps from empty to its value in 900 ms on a lightly under-damped
+spring (about 1.5% overshoot), protein 120 ms after calories, and the number inside counts up in
+step (it never reads past the value it is heading to). A later change, such as after a sync, runs from the shown
+value to the new one, not from zero. Below full motion (`TracendMotionScope`) the final state is
+drawn with no animation. The morning check-in is a lime-outlined call to action with a **Check
+in** pill until it is done.
+
 #### `RecoveryReadoutCard`
 
-Full-width recovery readout on Today: tabular score with `/ 100`, a band chip
-(Excellent/Good/Moderate/Low/Poor), and five driver rows (HRV, RHR, Sleep, Resp, Strain) with
-horizontal z-score bars and signed z values. Bar fill clamps z to ±2 for layout; labels and
-semantics always report the true z-score. Cold start shows `--` with honest next-step copy; low
-confidence adds "Building baseline". Unusable drivers (no value today or no usable baseline) render
-a No data row instead of a zero bar, and a fully unusable recovery shows `--` rather than a
-fabricated score. One gated exception: a sleep row whose value is proven valid (non-null sleep
-quality, the backend's 1–960-minute gate) but whose baseline is immature (< 3 observations) shows
-the measurement with a "Building baseline" note instead of No data. Training load (ACWR) is not
-part of this card; it renders as a display-only row inside `SessionPlanCard`.
+Today's recovery drivers, in their own section under the 7-day trend (the score lives in the
+Today verdict card above). Five plain rows in words, such as "Heart rate variability: normal for you,
+58 ms"; resting heart rate and breathing rate are worded from the measurement because their
+z-scores are inverted. A driver without a usable value or baseline reads "not enough data yet",
+never a zero. One gated exception: a sleep row whose value is proven valid but whose baseline is
+immature (< 3 observations) shows the measurement with "baseline still building". The z-scores,
+weights and method sit behind ⓘ **How this is calculated** (UX_FLOWS change 1). Training load is
+not part of this card; Today shows it as a row ("Training load: about normal").
 
 #### `SleepArchitectureCard`
 
@@ -337,13 +367,13 @@ repeated here; the recovery readout carries them. Every data element exposes a s
 #### `TrajectoryTrend`
 
 Today's data moment: a real 7-day column chart from `daily_health_summaries` for one metric
-(priority HRV → sleep → resting HR; first with ≥4 recorded days in the window wins). The window is
-the 7 days ending at the latest stored day. A recorded day grows a rounded column toward its value
-(the latest recorded day carries the signal); an unrecorded day leaves a dim socket on the
-baseline. Hairline rails bound the series' own min/max, a day-tick row shows month rollover, and a
-calibration strip reports the range, the recorded-day count and the as-of stamp. Missing days are
-never interpolated; fewer than four recorded days renders the "Building baseline" card. Direction
-is reported neutrally: up or down is fact, not good or bad.
+(priority heart rate variability → sleep → resting heart rate; first with ≥4 recorded days in the
+window wins). The window is the 7 days ending at the latest stored day. Recorded days are graphite
+columns; the latest recorded day is lime with a single ring pulse. An unrecorded day leaves a dim
+socket. Day labels are 12pt; the caption gives the range, the recorded-day count and the as-of
+date. Missing days are never interpolated; fewer than four recorded days says so in words.
+Direction is neutral fact ("Up 11 ms since 18 Aug"), never good or bad. Full motion grows the
+columns; Reduce Motion fades in; a static scope draws still.
 
 #### `EvidenceTrendChart` and weight charts
 
@@ -355,25 +385,27 @@ Computed trend overlays are only labeled regression segments from the server OLS
 distinguished from the dots by a legend, and dashed and labeled "low confidence" when the 28-day R²
 is under 0.3 or missing. The 7-day line carries no R² and is never confidence-gated.
 
-#### `WeekRailCard`
+#### `DayBoxesStrip` and the training load sheet
 
-Train's week instrument: day slots select the day, and the chart below speaks `TrajectoryTrend`'s
-grammar. A session day grows a column sized by real training minutes (summed
-`recent_sessions[].duration_seconds / 60`); a session-less day leaves a dim socket; a
-planned-but-untrained day carries a small caution dot. The verdict uses the app-wide ACWR
-convention: Low load < 0.8 caution · Optimal 0.8–1.3 good · High load > 1.3 low (above 1.5 the
-copy escalates, never a fourth label). Fewer than four sessions in the 28-day payload renders
-"Building baseline", never a ratio verdict. A session without a duration never invents height;
-the chart speaks training minutes, never "strain".
+Train's week (the owner picked day boxes over the week line): seven tappable days with a check for
+a finished day, a dot for a planned one and a lime ring for today. A change of day plays the
+selection haptic and slides the content in from that side (a crossfade under Reduce Motion); a
+swipe or a VoiceOver action pages back up to three weeks. The labels stop growing at 1.3× text, as
+the tab bar's do, and VoiceOver reads the full words. **This week** shows done pips and a
+**Training load** row that opens the load sheet: the verdict first, a low / normal / high scale
+whose marker springs into place, one bar per day shaded easy, moderate or hard (a socket for rest,
+"Calibrating" for default effort), one advice line from the ACWR band and monotony rules, and
+**How this is calculated** with the ratio. Fewer than four sessions in 28 days reads as building,
+never a ratio verdict.
 
 #### `WeightHeroCard`
 
 The Progress hero: latest weigh-in, the change across the selected period, the server's weekly
 rate (`weightTrend28d`, else `weightTrend7d`, × 7), a plain word for the 28-day R² (**Steady
 trend** ≥ 0.6, **Some day-to-day variation** ≥ 0.3, **Too noisy to call yet** below), and the
-`EvidenceTrendChart`. The change is tinted good only when it moves toward the active goal
-(`fat_loss` down, `muscle_gain` up); otherwise it stays neutral, and the arrow and spoken label
-carry the direction.
+`EvidenceTrendChart`. The change chip takes the lime signal only when it moves toward the active
+goal (`fat_loss` down, `muscle_gain` up): it marks progress on the athlete's own goal, not health.
+Otherwise it stays neutral, and the arrow and spoken label carry the direction.
 
 #### `DecisionSurface`, `CoachPerspectiveCard`, `EvidenceRow`, `ProposalDiff`
 
@@ -388,8 +420,12 @@ carry the direction.
 
 #### `WorkoutSetRow` and `MealCandidateEditor`
 
-- `WorkoutSetRow`: one-handed set number, load, reps, RPE, completion and pain access, with the
-  right keyboard, the previous set as an unconfirmed reference, and offline support.
+- Workout logging (focus mode): one exercise per page with large Archivo kg × reps steppers, a
+  **Done set** pill, set dots, a **Last time** / **Your best** strip and a small `MuscleMapPair`.
+  Logged sets list under it (`SetRow`) with undo, a set-effort button (1–10 `RpePicker` with plain
+  hints, blank allowed), a **New best** stamp or **First log** tag. Rest takes the screen as a lime
+  ring with ±15 and Skip, and swipes down into a glass pill; editing is never blocked. Starting
+  values come from today's earlier set, then last time, then the plan, and say which.
 - `MealCandidateEditor`: separates AI-observed foods from confirmed catalog items; every candidate
   shows an editable amount, preparation assumption, confidence and open questions. Totals update
   only after confirmation.
@@ -406,14 +442,18 @@ carry the direction.
 
 #### `CoachMessage` and `NutritionTimeline`
 
-Coach messages use a restrained bubble, selectable text and an expandable evidence drawer. A reply
-renders a small Markdown subset (bold, italic, bullet and numbered lists; headings as bold lines; a
-link as its label followed by its destination in plain text). The athlete's own messages show
-exactly as typed. A labeled reply that stands in for a failed model answer is a variant of the same
-bubble: **Data summary · not an AI answer** (attention border, no provider pill) or **Safety note ·
-not an AI answer** (neutral border), with a muted, selectable beta diagnostic line on a live reply
-and **Retry** when the reply ends the conversation. The pill text, not the color, carries the
-meaning.
+The athlete's own messages are filled `surfaceRaised` bubbles (18pt corners, 4pt on the tail),
+shown exactly as typed. Coach replies are borderless, selectable text on the canvas, rendering a
+small Markdown subset (bold, italic, bullet and numbered lists; headings as bold lines; a link as
+its label followed by its destination in plain text). An AI reply carries a small **AI answer ·
+DeepSeek** label, named through the shared provider display-name map (an unknown provider reads
+**AI answer**, never a raw id). A labeled reply that stands in for a failed model answer carries a
+chip instead: **Data summary · not an AI answer** (caution tone) or **Safety note · not an AI
+answer** (neutral tone), never with a provider label. The disclosure **Evidence used and data
+gaps** holds the evidence sources and data gaps in words, the reasoning steps without evidence ids,
+and the beta diagnostic as small secondary text. A failed send is one inline message under the
+question (plain words, then the raw diagnostic) with **Retry**, plus a toast. The chip text, not the
+color, carries the meaning.
 
 `NutritionTimeline` lists meals in time order, each with a tabular time, a status glyph (good check
 logged, caution spark draft, caution ring due, neutral ring planned, faint ring optional, dash not
@@ -491,19 +531,30 @@ static (`test/flutter_test_config.dart`), and a test that checks motion sets a s
 
 ### Launch intro and brand loader
 
-- **Launch intro** (`TracendIntro`, 1.2s, only on a cold start while `Phase2Gate` restores the
-  stored session). Over the launch screen's graphite:
+- **Launch intro** (`TracendIntro`, 1.2s of motion and a 350ms hand-off, only on a cold start
+  while `Phase2Gate` restores the stored session). Over the launch screen's graphite:
+  - the mark starts at 0.9 scale and grows (ease-in-out) to a soft 1.03 overshoot as the dot
+    lands, then eases back to 1.0 (0–1160ms);
   - the lime arc draws itself (0–460ms, ease-in-out);
   - the dot rides the drawing head to the tip, rolls back with an ease-back overshoot and settles
-    onto the mark while growing from radius 22 to 36, with a light haptic as it lands (460–900ms);
+    onto the mark while growing from radius 22 to 36, with a light haptic as it lands (460–900ms).
+    While it moves it leaves a short trail (its last 100ms), thinning and fading toward the end
+    and screened over the mark, so it reads over the lime arc too;
   - the T sweeps in behind an edge tilted to the arc's rise (380–860ms);
-  - the "Tracend" wordmark fades up 10pt in `TracendFonts.displayFamily` (760–1160ms).
+  - a soft lime bloom (a radial gradient, at most 20% alpha) rises under the dot's resting place
+    as it lands (640–940ms) and relaxes to a faint glow that stays under the finished mark
+    (940–1200ms);
+  - the "Tracend" wordmark in `TracendFonts.displayFamily` rises letter by letter: each letter
+    lifts 8pt and fades in over 280ms, 35ms after the one before, while the tracking closes from
+    2.4pt wider to its set −0.6 (700–1190ms). Each letter keeps its kerned place in the word.
 
-  The intro then fades out in 320ms. It plays once per launch and never loops. A tap anywhere, or
-  the Skip pill, ends it at once. A gate that is still restoring keeps the finished mark with a
-  `TracendLoader`, and a ready app is never held past the motion. Signing in and out never replays
-  the intro: those refreshes show the loader alone. Under Reduce Motion the finished mark shows
-  and crossfades away in 200ms, with no haptic.
+  The intro then zooms through to the app (350ms, ease-out cubic): the mark and wordmark grow to
+  1.06 and fade, while the app beneath grows from 0.97 to 1.0 and fades in over the graphite.
+  There is no skip: the motion is barely a second. It plays once per launch and never loops. A
+  gate that is still restoring keeps the finished mark with a `TracendLoader`, which leaves with
+  the mark, and a ready app is never held past the motion. Signing in and out never replays the
+  intro: those refreshes show the loader alone. Under Reduce Motion the finished mark shows (with
+  its resting glow) and crossfades away in 200ms, with no zoom and no haptic.
 - **Brand loader** (`TracendLoader`, 28pt by default): the mark's arc in a faint text tint, with a
   6pt dot riding along it and back (1s each way, `Cubic(0.45, 0, 0.25, 1)`). The dot is lime on
   dark surfaces and `#7FA51A` on light ones. `semanticLabel` names what is loading. Under Reduce

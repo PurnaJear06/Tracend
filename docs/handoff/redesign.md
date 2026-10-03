@@ -1,7 +1,7 @@
 # Redesign Handoff: Graphite + Lime, App-Wide
 
-**Status:** foundation integrated on `claude/redesign-base` (PR to `main`); six screen agents are
-building on it in parallel.
+**Status:** the foundation merged and deployed as #78 (`12f5bbb`) and is the owner's device check
+1. The six screens are integrated on `claude/redesign-screens` (PR to `main`).
 
 **Plan:** `/Users/purnajear/.claude/plans/hey-uh-in-my-tender-allen.md` (owner-approved
 2026-10-03). Owner-chosen direction: palette A, graphite + lime, from the prototype at
@@ -13,7 +13,7 @@ integrated PRs, and the three device checkpoints became two.
 
 **Worktrees** (remove each after the final merge): `/Volumes/Crucial X9/dev/.tracend-worktrees/`
 `redesign`, `rd-foundation`, `rd-widgets`, `rd-logging-data`, `rd-train-data`, `rd-brand`,
-`rd-base`, and `ui-logging`, `ui-train`, `ui-today`, `ui-coach`, `ui-nutrition-progress`,
+`rd-base`, `rd-screens`, `rd-slug`, and `ui-logging`, `ui-train`, `ui-today`, `ui-coach`, `ui-nutrition-progress`,
 `ui-account`.
 
 ## Status
@@ -25,14 +25,15 @@ integrated PRs, and the three device checkpoints became two.
 | Train data, load sheet model, muscle map | `claude/redesign-train-data` (#76) | 7/7 on a scratch CI branch; in foundation |
 | Icon, launch screen, intro, loader | `claude/redesign-brand` (#77) | 7/7 green; in foundation |
 | Tokens, Archivo, theme, tab bar, shared widgets | `claude/redesign-foundation` + `claude/redesign-widgets` | in foundation |
-| **Foundation** (all of the above) | `claude/redesign-base` | PR to `main`. 🔒 device check 1 after deploy |
-| Workout logging UI | `claude/redesign-ui-logging` | building |
-| Train | `claude/redesign-ui-train` | building |
-| Today | `claude/redesign-ui-today` | building |
-| Coach | `claude/redesign-ui-coach` | building |
-| Nutrition and Progress | `claude/redesign-ui-nutrition-progress` | building |
-| Account, onboarding, auth | `claude/redesign-ui-account` | building |
-| **Screens** (six branches integrated) | `claude/redesign-screens` | PR to `main` after the foundation. 🔒 device check 2: a real workout |
+| **Foundation** (all of the above) | `claude/redesign-base` (#78) | Merged and deployed (`12f5bbb`); migration applied. 🔒 device check 1 |
+| Workout logging UI | `claude/redesign-ui-logging` | integrated into screens |
+| Train | `claude/redesign-ui-train` | integrated into screens |
+| Today | `claude/redesign-ui-today` | integrated into screens |
+| Coach | `claude/redesign-ui-coach` | integrated into screens |
+| Nutrition and Progress | `claude/redesign-ui-nutrition-progress` | integrated into screens |
+| Account, onboarding, auth | `claude/redesign-ui-account` | integrated into screens |
+| **Screens** (six branches integrated) | `claude/redesign-screens` (#79) | Owner merges, then installs from `main` for device check 2: a real workout |
+| Catalog links for older plans (SQL) | `claude/plan-exercise-links` (#80) | Merged 2026-10-03 |
 
 ## Phase 0 picks (owner, 2026-10-03)
 
@@ -70,10 +71,38 @@ nothing is guessed.
 - Discard queue: only the final refusals (22023 finished, P0002 not found) settle a saved discard;
   any other server error keeps it waiting, like a lost connection (GPT review).
 - Readiness line Good band reads "Recovery is good.": state only, never advice (GPT review).
+- Integration fixes: large titles shrink to one line instead of breaking a word; a section label's
+  value or action moves under it from 1.3× text; at large text a confirm is a full-width action
+  sheet (the fixed 270pt alert broke words); the loader and muscle map follow the motion scope;
+  one shared AI provider name map (`lib/shared/ai_provider_names.dart`); pushed screens get a
+  centred inline bar; the shell wires Today to the Train tab and Train to Health and Account.
+- The legacy `complete()` client path is removed; the app finishes only with the athlete's effort.
+  The server keeps `complete_workout` for older installed builds.
+- Train keeps the hub loaded this session when offline; persisting the hub across launches is not
+  built.
 - Account deletion now also clears workout drafts, pending finishes, queued discards and the
   exercise history copy.
 - Stacked PRs get no CI (CI runs on PRs into `main` and `feature/**`), so stacked work was checked
   on scratch `feature/**` branches and then integrated.
+- Device check of #79 (build 317), owner feedback: Today read as a health report, not a training
+  app. Rebuilt it with a recovery dial and vitals, a check-in call to action, a bold workout card
+  with a lime action, and food rings; food and the coach note now come before the evidence.
+  Nutrition's "From confirmed meals" tiles got more room. The rest-alert toggle no longer needs
+  the server: a rest-only change saves on the device, and a failed reminder save rolls back only
+  the daily and weekly choices (GPT review P2).
+- Muscle map missing on the owner's device: the owner's plan predates the catalog, so no planned
+  exercise had a slug. Per the plan, a separate SQL PR links exact catalog names (#80); a workout
+  with no linked exercise now says "Muscle map appears with your next plan." instead of nothing.
+- Second device round (owner): the launch intro has no skip (it is about a second) and gained a
+  scale-in with a soft overshoot, a lime bloom as the dot lands, a dot trail, a per-letter
+  wordmark and a zoom-through exit into the app. Today's food rings sweep in with a count-up, a
+  gradient stroke with a glow and a head dot, and a second lap past the target. Food stays on
+  Today, as it was before the redesign.
+- GPT review of b39a05a (3 × P2, fixed): a permission granted by the rest toggle now saves the
+  status with the reminder choices already on the server (a reinstall reports both off), and a
+  later reminder save waits for it; a load the athlete cleared stays cleared after Save and leave
+  or a relaunch (a phone-only `cleared_loads` list in the local draft, never sent to the server);
+  the finish sheet no longer says unlogged sets are saved as skipped (they stay unknown, PRD).
 
 ## PR 1: backend data
 

@@ -12,13 +12,18 @@ import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/widgets/meal_cards.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_insight_card.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_sheets.dart';
+import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/date_pill_strip.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 import 'package:tracend/shared/widgets/targets_grid.dart';
-import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
+import 'package:tracend/shared/widgets/tracend_confirm.dart';
+import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
+import 'package:tracend/shared/widgets/tracend_skeleton.dart';
+import 'package:tracend/shared/widgets/tracend_toast.dart';
 
 /// Opens the camera or the photo library and returns the chosen photo, or
 /// null when the user cancels.
@@ -95,6 +100,10 @@ class _NutritionScreenState extends State<NutritionScreen> {
   NutritionSummary? _summary;
   List<MealEntry> _meals = const [];
   NutritionSchedule? _schedule;
+
+  /// The day the shown totals and meals belong to; null before the first
+  /// load succeeds. Another day's data is never shown under [_date].
+  DateTime? _loadedDate;
   late Future<CoachDecision?> _decision;
 
   @override
@@ -127,6 +136,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
         _summary = values[1] as NutritionSummary;
         _meals = values[2] as List<MealEntry>;
         _schedule = values[3] as NutritionSchedule;
+        _loadedDate = _date;
       });
     } catch (e) {
       debugPrint('Non-critical error: $e');
@@ -153,6 +163,22 @@ class _NutritionScreenState extends State<NutritionScreen> {
     await _refresh();
   }
 
+  /// Pull to refresh: the day's data and the coach's latest guidance.
+  Future<void> _pullToRefresh() async {
+    setState(() {
+      _decision = widget.coach.loadLatest();
+    });
+    await _refresh();
+  }
+
+  bool get _showsLoadedDay {
+    final loaded = _loadedDate;
+    return loaded != null &&
+        loaded.year == _date.year &&
+        loaded.month == _date.month &&
+        loaded.day == _date.day;
+  }
+
   bool get _isToday {
     final today = DateTime.now();
     return _date.year == today.year &&
@@ -168,16 +194,17 @@ class _NutritionScreenState extends State<NutritionScreen> {
     ScheduledMeal? scheduled,
     String? mealType,
   }) async {
-    final input = await showModalBottomSheet<ManualMealResult>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
+    final input = await showTracendSheet<ManualMealResult>(
+      context,
+      title: 'Enter meal',
+      subtitle: 'It counts toward your totals as soon as you confirm it.',
+      scrollable: false,
       builder: (_) => ManualMealSheet(
         initialMealType: mealType ?? defaultMealType(DateTime.now()),
       ),
     );
     if (input == null) return;
-    await _run(() {
+    await _run(successMessage: 'Meal logged', () {
       final repository = widget.repository;
       if (scheduled != null && repository is ScheduledMealLogger) {
         return (repository as ScheduledMealLogger).saveScheduledMeal(
@@ -289,14 +316,17 @@ class _NutritionScreenState extends State<NutritionScreen> {
       final candidates = await widget.repository.loadCandidates(mealId);
       if (!mounted) return;
       setState(() => _working = false);
-      final selected = await showModalBottomSheet<List<MealCandidate>>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
+      final selected = await showTracendSheet<List<MealCandidate>>(
+        context,
+        title: 'Review candidates',
+        scrollable: false,
         builder: (_) => CandidateSheet(candidates: candidates),
       );
       if (selected == null || selected.isEmpty) return;
-      await _run(() => widget.repository.confirmCandidates(mealId, selected));
+      await _run(
+        () => widget.repository.confirmCandidates(mealId, selected),
+        successMessage: 'Meal logged',
+      );
     } catch (e) {
       debugPrint('Non-critical error: $e');
       const message =
@@ -315,8 +345,12 @@ class _NutritionScreenState extends State<NutritionScreen> {
     }
   }
 
+  /// Saves through [action], then reloads the day. A confirmed meal plays
+  /// the `success` haptic; [successMessage] shows as a toast.
   Future<void> _run(
     Future<void> Function() action, {
+    required String successMessage,
+    bool confirmsMeal = true,
     String failureMessage =
         'Meal was not saved. Your confirmed totals are unchanged.',
   }) async {
@@ -326,6 +360,16 @@ class _NutritionScreenState extends State<NutritionScreen> {
     });
     try {
       await action();
+      if (confirmsMeal) unawaited(TracendHaptics.success());
+      if (mounted) {
+        TracendToast.show(
+          context,
+          successMessage,
+          icon: confirmsMeal
+              ? CupertinoIcons.checkmark_alt
+              : CupertinoIcons.delete,
+        );
+      }
       await _refresh();
     } catch (e) {
       debugPrint('Non-critical error: $e');
@@ -338,31 +382,20 @@ class _NutritionScreenState extends State<NutritionScreen> {
   }
 
   Future<void> _deleteMeal(MealEntry meal) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete this meal?'),
-        content: const Text(
-          'The meal and its nutrition values will be removed from today’s totals. This action is recorded for account security.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Delete meal'),
-          ),
-        ],
-      ),
+    final confirmed = await showTracendConfirm(
+      context,
+      title: 'Delete this meal?',
+      message:
+          'The meal and its nutrition values will be removed from the day’s '
+          'totals. This action is recorded for account security.',
+      confirmLabel: 'Delete meal',
+      destructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed || !mounted) return;
     await _run(
       () => widget.repository.deleteMeal(meal.id),
+      successMessage: 'Meal deleted',
+      confirmsMeal: false,
       failureMessage:
           'Meal was not deleted. Your confirmed totals are unchanged.',
     );
@@ -370,11 +403,9 @@ class _NutritionScreenState extends State<NutritionScreen> {
 
   Future<void> _openLogMeal() async {
     final photos = widget.repository is MealPhotoRepository;
-    final choice = await showModalBottomSheet<LogMealChoice>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
+    final choice = await showTracendSheet<LogMealChoice>(
+      context,
+      title: 'Log a meal',
       builder: (_) => LogMealSheet(
         initialMealType: defaultMealType(DateTime.now()),
         photosAvailable: photos,
@@ -395,9 +426,9 @@ class _NutritionScreenState extends State<NutritionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tracendColors;
     final theme = Theme.of(context).textTheme;
-    final nextMeal = _isToday ? _schedule?.nextMeal : null;
+    final showData = _showsLoadedDay;
+    final nextMeal = _isToday && showData ? _schedule?.nextMeal : null;
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
     final timeline = buildNutritionTimeline(
@@ -407,6 +438,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
     return TracendScrollView(
       title: 'Nutrition',
       subtitle: _dateLabel,
+      onRefresh: _pullToRefresh,
       children: [
         DatePillStrip(
           selectedDate: _date,
@@ -418,68 +450,38 @@ class _NutritionScreenState extends State<NutritionScreen> {
               ? null
               : () => _selectDate(mondayOf(_date).add(const Duration(days: 7))),
         ),
-        SizedBox(
-          height: TracendSpacing.md,
-          child: _loading
-              ? const Center(child: LinearProgressIndicator(minHeight: 2))
-              : null,
-        ),
+        const SizedBox(height: TracendSpacing.md),
         if (_error != null) ...[
           _NoticeCard(message: _error!),
-          const SizedBox(height: TracendSpacing.md),
+          const SizedBox(height: TracendSpacing.xs),
         ],
-        if (nextMeal != null) ...[
-          MicroMotionEntrance(
-            child: PremiumGradientCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TracendPill(
-                    label:
-                        '${nextMeal.status == 'due' ? 'Due now' : 'Next meal'} · ${nextMeal.time}',
-                    icon: CupertinoIcons.clock_fill,
-                    color: nextMeal.status == 'due'
-                        ? colors.stateAttention
-                        : colors.accentAmber,
-                  ),
-                  const SizedBox(height: TracendSpacing.sm),
-                  Text(nextMeal.label, style: theme.displaySmall),
-                  const SizedBox(height: TracendSpacing.xs),
-                  Text(
-                    nextMeal.foods
-                        .map((food) => '${food['name']} · ${food['quantity']}')
-                        .join('\n'),
-                    style: theme.bodyMedium,
-                  ),
-                  const SizedBox(height: TracendSpacing.md),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _working
-                          ? null
-                          : () => _openManualMeal(scheduled: nextMeal),
-                      icon: const Icon(CupertinoIcons.check_mark_circled_solid),
-                      label: const Text('Log meal'),
-                    ),
-                  ),
-                ],
+        if (!showData && _loading)
+          const _NutritionSkeleton()
+        else if (showData) ...[
+          if (nextMeal != null) ...[
+            MicroMotionEntrance(
+              child: _NextMealCard(
+                meal: nextMeal,
+                onLog: _working
+                    ? null
+                    : () => _openManualMeal(scheduled: nextMeal),
               ),
             ),
+            const SizedBox(height: TracendSpacing.xs),
+          ],
+          MicroMotionEntrance(
+            delay: MicroMotion.stagger(1),
+            child: TargetsGrid(summary: _summary, targets: _targets),
           ),
-          const SizedBox(height: TracendSpacing.md),
+          SectionLabel(_isToday ? 'Today’s meals' : 'Meals'),
+          NutritionTimeline(
+            entries: timeline,
+            enabled: !_working,
+            onReview: (meal) => _openCandidateReview(meal.id),
+            onDelete: _deleteMeal,
+            onLog: (slot) => _openManualMeal(scheduled: slot),
+          ),
         ],
-        MicroMotionEntrance(
-          delay: MicroMotion.stagger(1),
-          child: TargetsGrid(summary: _summary, targets: _targets),
-        ),
-        SectionLabel(_isToday ? 'Today’s meals' : 'Meals'),
-        NutritionTimeline(
-          entries: timeline,
-          enabled: !_working,
-          onReview: (meal) => _openCandidateReview(meal.id),
-          onDelete: _deleteMeal,
-          onLog: (slot) => _openManualMeal(scheduled: slot),
-        ),
         const SizedBox(height: TracendSpacing.sm),
         SizedBox(
           width: double.infinity,
@@ -488,19 +490,25 @@ class _NutritionScreenState extends State<NutritionScreen> {
               ? FilledButton(
                   key: const ValueKey('log-a-meal'),
                   onPressed: _working ? null : _openLogMeal,
-                  child: _LogMealLabel(working: _working),
+                  child: _LogMealLabel(working: _working && !_analyzingPhoto),
                 )
               : OutlinedButton(
                   key: const ValueKey('log-a-meal'),
                   onPressed: _working ? null : _openLogMeal,
-                  child: _LogMealLabel(working: _working),
+                  child: _LogMealLabel(working: _working && !_analyzingPhoto),
                 ),
         ),
         if (_analyzingPhoto) ...[
           const SizedBox(height: TracendSpacing.sm),
-          const LinearProgressIndicator(minHeight: 3),
-          const SizedBox(height: TracendSpacing.xxs),
-          Text('Analyzing meal photo…', style: theme.bodySmall),
+          Row(
+            children: [
+              const ExcludeSemantics(child: TracendLoader(size: 22)),
+              const SizedBox(width: TracendSpacing.xs),
+              Expanded(
+                child: Text('Analyzing meal photo…', style: theme.bodyMedium),
+              ),
+            ],
+          ),
         ],
         if (_photoError != null) ...[
           const SizedBox(height: TracendSpacing.sm),
@@ -522,6 +530,73 @@ class _NutritionScreenState extends State<NutritionScreen> {
   }
 }
 
+/// The schedule's next meal: its time and status, the planned foods, and
+/// the screen's primary action, **Log meal**.
+class _NextMealCard extends StatelessWidget {
+  const _NextMealCard({required this.meal, required this.onLog});
+
+  final ScheduledMeal meal;
+  final VoidCallback? onLog;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context).textTheme;
+    final due = meal.status == 'due';
+    return PremiumGradientCard(
+      padding: const EdgeInsets.all(TracendSpacing.gutter),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          StatusChip(
+            label: '${due ? 'Due now' : 'Next meal'} · ${meal.time}',
+            icon: CupertinoIcons.clock_fill,
+            tone: due ? StatusTone.caution : StatusTone.neutral,
+          ),
+          const SizedBox(height: TracendSpacing.sm),
+          Text(meal.label, style: theme.headlineMedium),
+          const SizedBox(height: TracendSpacing.xs),
+          Text(
+            meal.foods
+                .map((food) => '${food['name']} · ${food['quantity']}')
+                .join('\n'),
+            style: theme.bodyMedium,
+          ),
+          const SizedBox(height: TracendSpacing.md),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onLog,
+              icon: const Icon(CupertinoIcons.check_mark_circled_solid),
+              label: const Text('Log meal'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Stands in for the totals card and the meal list while a day loads.
+class _NutritionSkeleton extends StatelessWidget {
+  const _NutritionSkeleton();
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Loading nutrition',
+    container: true,
+    child: const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TracendSkeleton.block(height: 236),
+        SizedBox(height: TracendSpacing.lg),
+        TracendSkeleton.line(widthFactor: 0.4, height: 20),
+        SizedBox(height: TracendSpacing.sm),
+        TracendSkeleton.block(height: 168),
+      ],
+    ),
+  );
+}
+
 class _LogMealLabel extends StatelessWidget {
   const _LogMealLabel({required this.working});
   final bool working;
@@ -531,7 +606,7 @@ class _LogMealLabel extends StatelessWidget {
     mainAxisSize: MainAxisSize.min,
     children: [
       working
-          ? const TracendLoadingIndicator(size: 18)
+          ? const ExcludeSemantics(child: TracendLoader(size: 20))
           : const Icon(CupertinoIcons.plus, size: 18),
       const SizedBox(width: TracendSpacing.xs),
       const Flexible(child: Text('Log a meal')),

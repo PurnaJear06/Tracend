@@ -73,7 +73,9 @@ Nutrition Coach, and Head Coach are UI perspectives produced by the controlled w
    documented email/password Supabase Auth mode may be used until Apple Developer Program
    capabilities are available.
 2. User confirms they are 18 or older.
-3. User reads and accepts the private-beta terms and privacy notice.
+3. User reads and accepts the private-beta terms and privacy notice. Until the hosted notices
+   exist, the onboarding checkboxes are not linked to any text; that is acceptable for the
+   owner-only beta and blocks any wider release (SECURITY_PRIVACY.md §15).
 4. User separately chooses whether to connect HealthKit and whether to upload meal or progress
    photos.
 5. The app remains usable with reduced capability when optional permissions are denied.
@@ -213,7 +215,12 @@ the prior version and audit record.
   Supabase authenticated user.
 - Data API, RPC, and Edge Functions must never trust a client-supplied user ID for authorization.
 - Account provides profile and goal review, connection status, notification and privacy controls,
-  sanitized user-scoped AI usage, export, deletion, and sign out.
+  sanitized user-scoped AI usage, export, deletion, and sign out. Since the 2026-10 redesign it is
+  one inset-grouped settings page: Plan (Profile and goals), Health (Apple Health status in plain
+  words), Appearance (System, Dark or Light), Notifications (the two reminders and Rest timer
+  alerts), AI coach (AI coaching, this month's usage against the server's warning and stop limits,
+  Coach conversations) and Privacy (Export data, Consent history, Delete account). There is no
+  in-app haptics toggle; the iOS setting governs haptics.
 - The mobile app never accepts, stores, or displays an AI-provider API key. Provider credentials are
   owner-managed server secrets.
 - Account export and deletion must be available from Settings.

@@ -2,8 +2,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
+import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
+import 'package:tracend/shared/widgets/pressable.dart';
 
 const _confidenceLabels = {
   'low': 'Low confidence',
@@ -50,49 +52,46 @@ class PhysiqueSummaryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     final theme = Theme.of(context).textTheme;
-    return Semantics(
-      button: true,
-      child: InkWell(
-        onTap: onOpen,
-        borderRadius: BorderRadius.circular(TracendRadii.control),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: TracendSpacing.xs),
-            child: Row(
-              children: [
-                Icon(
-                  CupertinoIcons.sparkles,
-                  size: 18,
-                  color: colors.accentSignalInk,
-                ),
-                const SizedBox(width: TracendSpacing.xs),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        physiqueFocusSummary(analysis),
-                        style: theme.titleSmall,
+    return Pressable(
+      onTap: onOpen,
+      borderRadius: BorderRadius.circular(TracendRadii.control),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: TracendSpacing.xs),
+          child: Row(
+            children: [
+              Icon(
+                CupertinoIcons.sparkles,
+                size: 18,
+                color: colors.accentSignalInk,
+              ),
+              const SizedBox(width: TracendSpacing.xs),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      physiqueFocusSummary(analysis),
+                      style: theme.titleSmall,
+                    ),
+                    Text(
+                      'Physique check · '
+                      '${friendlyDate(analysis.createdAt, now: now)}',
+                      style: theme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
                       ),
-                      Text(
-                        'Physique check · '
-                        '${friendlyDate(analysis.createdAt, now: now)}',
-                        style: theme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: TracendSpacing.xs),
-                Icon(
-                  CupertinoIcons.chevron_forward,
-                  size: 14,
-                  color: colors.textSecondary,
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: TracendSpacing.xs),
+              Icon(
+                CupertinoIcons.chevron_forward,
+                size: 16,
+                color: colors.textTertiary,
+              ),
+            ],
           ),
         ),
       ),
@@ -336,31 +335,26 @@ class _PhysiqueCheckSheetState extends State<PhysiqueCheckSheet> {
     }
   }
 
+  /// Shown in an untitled sheet with `scrollable: false`: each phase draws
+  /// its own heading, and the sheet scrolls its body itself.
   @override
-  Widget build(BuildContext context) => SafeArea(
-    child: SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-        TracendSpacing.gutter,
-        0,
-        TracendSpacing.gutter,
-        TracendSpacing.lg,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: switch (_phase) {
-          _Phase.loading => const [_Waiting()],
-          _Phase.consent => _consent(context),
-          _Phase.running => const [
-            _Waiting(
-              title: 'Checking your photos…',
-              detail: 'Usually under 30 seconds.',
-            ),
-          ],
-          _Phase.result => _result(context),
-          _Phase.failed => _failed(context),
-          _Phase.saved => _savedFocus(context),
-        },
-      ),
+  Widget build(BuildContext context) => SingleChildScrollView(
+    padding: const EdgeInsets.only(top: TracendSpacing.xs),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: switch (_phase) {
+        _Phase.loading => const [_Waiting()],
+        _Phase.consent => _consent(context),
+        _Phase.running => const [
+          _Waiting(
+            title: 'Checking your photos…',
+            detail: 'Usually under 30 seconds.',
+          ),
+        ],
+        _Phase.result => _result(context),
+        _Phase.failed => _failed(context),
+        _Phase.saved => _savedFocus(context),
+      },
     ),
   );
 
@@ -553,7 +547,7 @@ class _Waiting extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: TracendSpacing.xl),
       child: Column(
         children: [
-          const CircularProgressIndicator(),
+          TracendLoader(size: 36, semanticLabel: title ?? 'Loading'),
           if (title != null) ...[
             const SizedBox(height: TracendSpacing.md),
             Text(title!, textAlign: TextAlign.center, style: theme.titleMedium),

@@ -4,9 +4,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/account_deletion_repository.dart';
 import 'package:tracend/features/account/privacy_export_repository.dart';
+import 'package:tracend/shared/widgets/tracend_confirm.dart';
 
-/// Permanent account deletion sheet: password + exact `DELETE` confirmation
-/// (UX_FLOWS.md §13). Returns the outcome once this device is signed out: the
+/// Permanent account deletion, the body of a Tracend sheet: the account
+/// password, the exact word `DELETE`, then a destructive confirm before the
+/// request leaves the phone (UX_FLOWS.md §13). Pops the outcome once the
 /// server confirmed the deletion, or Auth refused the session.
 class AccountDeletionSheet extends StatefulWidget {
   const AccountDeletionSheet({required this.repository, super.key});
@@ -38,6 +40,17 @@ class _AccountDeletionSheetState extends State<AccountDeletionSheet> {
       setState(() => _error = 'Enter your password and type DELETE exactly.');
       return;
     }
+    setState(() => _error = null);
+    final confirmed = await showTracendConfirm(
+      context,
+      title: 'Delete your account?',
+      message:
+          'Your plans, logs, health summaries, meals, photos and coaching '
+          'data are removed for good. This cannot be undone.',
+      confirmLabel: 'Delete account',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
     await _settle(
       () => widget.repository.delete(
         accountPassword: _password.text,
@@ -84,93 +97,81 @@ class _AccountDeletionSheetState extends State<AccountDeletionSheet> {
   }
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    child: SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
-        TracendSpacing.gutter,
-        TracendSpacing.sm,
-        TracendSpacing.gutter,
-        MediaQuery.viewInsetsOf(context).bottom + TracendSpacing.xl,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final danger = context.tracendColors.stateDanger;
+    final error = _error == null
+        ? null
+        : Semantics(
+            liveRegion: true,
+            child: Text(
+              _error!,
+              style: textTheme.bodyMedium?.copyWith(color: danger),
+            ),
+          );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'This permanently removes your sign-in, plans, logs, health summaries, meals, photos, reviews, exports and coaching data. It cannot be undone.',
+          style: textTheme.bodyMedium,
+        ),
+        const SizedBox(height: TracendSpacing.md),
+        if (_unconfirmed) ...[
           Text(
-            'Permanently delete account',
-            style: Theme.of(context).textTheme.headlineMedium,
+            'Deletion has not been confirmed yet. It may still be finishing on the server.',
+            style: textTheme.bodyLarge,
           ),
-          const SizedBox(height: TracendSpacing.xs),
-          Text(
-            'This permanently removes your sign-in, plans, logs, health summaries, meals, photos, reviews, exports, and derived coaching data. This cannot be undone.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: TracendSpacing.md),
-          if (_unconfirmed) ...[
-            Text(
-              'Deletion has not been confirmed yet. It may still be finishing on the server.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: TracendSpacing.sm),
-              Text(
-                _error!,
-                style: TextStyle(color: context.tracendColors.stateDanger),
-              ),
-            ],
-            const SizedBox(height: TracendSpacing.md),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: _working
-                    ? null
-                    : () => _settle(widget.repository.confirm),
-                child: Text(_working ? 'Checking...' : 'Check again'),
-              ),
-            ),
-          ] else ...[
-            TextField(
-              controller: _password,
-              obscureText: true,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(labelText: 'Account password'),
-            ),
+          if (error != null) ...[
             const SizedBox(height: TracendSpacing.sm),
-            TextField(
-              controller: _confirmation,
-              textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(labelText: 'Type DELETE'),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: TracendSpacing.sm),
-              Text(
-                _error!,
-                style: TextStyle(color: context.tracendColors.stateDanger),
-              ),
-            ],
-            const SizedBox(height: TracendSpacing.md),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: context.tracendColors.stateDanger,
-                ),
-                onPressed: _working ? null : _delete,
-                child: Text(
-                  _working
-                      ? 'Deleting account...'
-                      : 'Permanently delete account',
-                ),
-              ),
-            ),
+            error,
           ],
+          const SizedBox(height: TracendSpacing.lg),
+          FilledButton(
+            onPressed: _working
+                ? null
+                : () => _settle(widget.repository.confirm),
+            child: Text(_working ? 'Checking…' : 'Check again'),
+          ),
+        ] else ...[
+          TextField(
+            controller: _password,
+            obscureText: true,
+            autofillHints: const [AutofillHints.password],
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(labelText: 'Account password'),
+          ),
+          const SizedBox(height: TracendSpacing.sm),
+          TextField(
+            controller: _confirmation,
+            autocorrect: false,
+            textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(labelText: 'Type DELETE'),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: TracendSpacing.sm),
+            error,
+          ],
+          const SizedBox(height: TracendSpacing.lg),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: danger,
+              foregroundColor: context.tracendColors.actionOnPrimary,
+            ),
+            onPressed: _working ? null : _delete,
+            child: Text(
+              _working ? 'Deleting account…' : 'Permanently delete account',
+            ),
+          ),
         ],
-      ),
-    ),
-  );
+      ],
+    );
+  }
 }
 
-/// Encrypted export sheet: account password + separate 12-character export
-/// password; download unlocks only when the export is ready (UX_FLOWS.md §13).
+/// Encrypted export, the body of a Tracend sheet: the account password and a
+/// separate export password of 12 or more characters; the download unlocks
+/// only when the export is ready (UX_FLOWS.md §13).
 class PrivacyExportSheet extends StatefulWidget {
   const PrivacyExportSheet({required this.repository, super.key});
 
@@ -275,80 +276,72 @@ class _PrivacyExportSheetState extends State<PrivacyExportSheet> {
   }
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    child: SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
-        TracendSpacing.gutter,
-        TracendSpacing.sm,
-        TracendSpacing.gutter,
-        MediaQuery.viewInsetsOf(context).bottom + TracendSpacing.xl,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final export = _export;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Your records as readable JSON and CSV files, plus your private meal and progress photos, in one encrypted file. It expires after seven days or three downloads.',
+          style: textTheme.bodyMedium,
+        ),
+        const SizedBox(height: TracendSpacing.md),
+        if (export != null && export.isReady) ...[
           Text(
-            'Encrypted account export',
-            style: Theme.of(context).textTheme.headlineMedium,
+            'Ready · ${export.downloadCount} of 3 downloads used',
+            style: textTheme.titleSmall,
           ),
-          const SizedBox(height: TracendSpacing.xs),
-          Text(
-            'Includes your readable JSON and CSV records plus private meal and progress media. The file expires after seven days or three downloads.',
-            style: Theme.of(context).textTheme.bodyMedium,
+          const SizedBox(height: TracendSpacing.md),
+          FilledButton.icon(
+            onPressed: _working ? null : _download,
+            icon: const Icon(CupertinoIcons.arrow_down_doc_fill),
+            label: const Text('Open secure download'),
           ),
-          if (_export?.isReady ?? false) ...[
-            const SizedBox(height: TracendSpacing.md),
-            Text('Ready · ${_export!.downloadCount} of 3 downloads used'),
-            const SizedBox(height: TracendSpacing.md),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _working ? null : _download,
-                icon: const Icon(CupertinoIcons.arrow_down_doc_fill),
-                label: const Text('Open secure download'),
-              ),
+        ] else ...[
+          TextField(
+            controller: _accountPassword,
+            obscureText: true,
+            autofillHints: const [AutofillHints.password],
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(labelText: 'Account password'),
+          ),
+          const SizedBox(height: TracendSpacing.sm),
+          TextField(
+            controller: _exportPassword,
+            obscureText: true,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              labelText: 'New export password',
+              helperText:
+                  'At least 12 characters. Keep it safe: Tracend cannot recover it.',
+              helperMaxLines: 3,
             ),
-          ] else ...[
-            const SizedBox(height: TracendSpacing.md),
-            TextField(
-              controller: _accountPassword,
-              obscureText: true,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(labelText: 'Account password'),
+            onSubmitted: (_) => _working ? null : _prepare(),
+          ),
+          const SizedBox(height: TracendSpacing.lg),
+          FilledButton(
+            onPressed: _working ? null : _prepare,
+            child: Text(
+              _working
+                  ? 'Preparing encrypted export…'
+                  : 'Authenticate and prepare',
             ),
-            const SizedBox(height: TracendSpacing.sm),
-            TextField(
-              controller: _exportPassword,
-              obscureText: true,
-              textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(
-                labelText: 'New export password',
-                helperText:
-                    'At least 12 characters. Store it safely; Tracend cannot recover it.',
-              ),
-              onSubmitted: (_) => _working ? null : _prepare(),
-            ),
-            const SizedBox(height: TracendSpacing.md),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: _working ? null : _prepare,
-                child: Text(
-                  _working
-                      ? 'Preparing encrypted export...'
-                      : 'Authenticate and prepare',
-                ),
-              ),
-            ),
-          ],
-          if (_error != null) ...[
-            const SizedBox(height: TracendSpacing.sm),
-            Text(
-              _error!,
-              style: TextStyle(color: context.tracendColors.stateDanger),
-            ),
-          ],
+          ),
         ],
-      ),
-    ),
-  );
+        if (_error != null) ...[
+          const SizedBox(height: TracendSpacing.sm),
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              _error!,
+              style: textTheme.bodyMedium?.copyWith(
+                color: context.tracendColors.stateDanger,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 }

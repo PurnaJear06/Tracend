@@ -3,108 +3,208 @@ import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/account/notification_repository.dart';
+import 'package:tracend/features/train/exercise_history.dart';
+import 'package:tracend/features/train/rest_timer.dart';
+import 'package:tracend/features/train/widgets/focus_exercise_page.dart';
+import 'package:tracend/features/train/widgets/rest_timer_view.dart';
+import 'package:tracend/features/train/widgets/rpe_picker.dart';
+import 'package:tracend/features/train/widgets/workout_finish_sheet.dart';
+import 'package:tracend/features/train/widgets/workout_summary_sheet.dart';
+import 'package:tracend/features/train/workout_draft.dart';
+import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/widgets/pressable.dart';
+import 'package:tracend/shared/widgets/tracend_confirm.dart';
+import 'package:tracend/shared/widgets/tracend_haptics.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/tracend_skeleton.dart';
+import 'package:tracend/shared/widgets/tracend_toast.dart';
 
+/// Logs a workout in focus mode: one exercise per page, a rest timer that
+/// takes over between sets and shrinks to a pill, and a finish that asks how
+/// hard the whole workout was before saving it (UX_FLOWS.md §6).
 class ActiveWorkoutScreen extends StatefulWidget {
   const ActiveWorkoutScreen({
     required this.workout,
     required this.repository,
     this.sessionDate,
+    this.restAlerts = const MethodChannelRestAlertScheduler(),
+    this.notifications = const MethodChannelNotificationRepository(),
+    this.clock = DateTime.now,
     super.key,
   });
+
   final PlannedWorkout workout;
   final WorkoutRepository repository;
   final DateTime? sessionDate;
+
+  /// The lock-screen alert at the end of a rest. It is only scheduled when
+  /// the athlete turned "Rest timer alerts" on in [notifications].
+  final RestAlertScheduler restAlerts;
+  final NotificationRepository notifications;
+
+  /// The time source for the elapsed time and the rest timer.
+  final DateTime Function() clock;
+
+  /// The longest workout the server records (3 hours).
+  static const maxSessionSeconds = 10800;
+
   @override
   State<ActiveWorkoutScreen> createState() => _ActiveWorkoutScreenState();
 }
 
-class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
-  static const _maxSessionSeconds = 10800;
+enum _Sync { saving, saved, offline, attention }
 
-  late final List<List<_SetDraft>> _sets;
-  late final List<String> _exerciseStatuses;
-  late final List<bool> _painFlags;
+enum _Leave { save, discard }
+
+typedef _Next = ({String full, String short});
+
+/// Schedules the lock-screen alert only while the athlete's toggle is on;
+/// cancelling always goes through, so no alert outlives its rest.
+class _GatedRestAlerts implements RestAlertScheduler {
+  _GatedRestAlerts(this._inner);
+
+  final RestAlertScheduler _inner;
+  bool enabled = false;
+
+  @override
+  Future<bool> scheduleRestAlert(int seconds) async =>
+      enabled && await _inner.scheduleRestAlert(seconds);
+
+  @override
+  Future<void> cancelRestAlert() => _inner.cancelRestAlert();
+}
+
+class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
+  late final List<ExerciseDraft> _exercises = [
+    for (final exercise in widget.workout.exercises) ExerciseDraft(exercise),
+  ];
+  late final _GatedRestAlerts _alerts = _GatedRestAlerts(widget.restAlerts);
+  late final RestTimerController _rest = RestTimerController(
+    alerts: _alerts,
+    clock: widget.clock,
+  );
+  final PageController _pages = PageController();
+
   String? _sessionId;
-  late String _idempotencyKey;
+  String _idempotencyKey = newIdempotencyKey();
   int _revision = 0;
-  bool _syncing = false;
-  bool _offline = false;
-  bool _isViewingCompleted = false;
-  bool _sessionExpired = false;
-  DateTime _startedAt = DateTime.now();
-  int _elapsedSeconds = 0;
+  late DateTime _startedAt = widget.clock();
+  bool _ready = false;
+  _Sync _sync = _Sync.saving;
+
+  /// The workout is finished or discarded: nothing is saved any more.
+  bool _closed = false;
+
+  bool _viewingCompleted = false;
+  bool _completedFromHealth = false;
+  int? _completedDuration;
+
+  ExerciseHistoryResult? _history;
+  HistoryStatus _historyStatus = HistoryStatus.loading;
+
+  /// The rest shows full screen; false when it is shrunk to the pill.
+  bool _restExpanded = true;
+
+  /// What follows the rest, in full for the ring and the toast, and short
+  /// for the pill.
+  _Next? _restNext;
+
+  /// The set the running rest follows, for its effort picker.
+  (int, int)? _restAfter;
+  bool _restEffortDismissed = false;
+
+  int _momentToken = 0;
+  int? _momentExercise;
+  NewBestMoment? _moment;
+
+  PendingWorkoutFinish? _pendingFinish;
+  bool _finishing = false;
+  String? _finishError;
+  String? _finishDiagnostic;
+
   Timer? _saveTimer;
-  Timer? _elapsedTimer;
+  Timer? _ticker;
+
+  /// The elapsed seconds and rest seconds on screen at the last tick.
+  (int, int?)? _shownSeconds;
 
   @override
   void initState() {
     super.initState();
-    // A starting load from the plan fills the kg field until the athlete
-    // logs their own; saved sets replace it when they load.
-    _sets = [
-      for (final e in widget.workout.exercises)
-        [
-          for (var i = 0; i < e.setCount; i++)
-            _SetDraft(load: _loadText(e.targetLoadKg)),
-        ],
-    ];
-    _exerciseStatuses = List.filled(widget.workout.exercises.length, 'unknown');
-    _painFlags = List.filled(widget.workout.exercises.length, false);
-    _restoreAndStart();
+    _restore();
   }
-
-  static String _loadText(num? kg) => kg == null
-      ? ''
-      : kg % 1 == 0
-      ? '${kg.toInt()}'
-      : '$kg';
 
   @override
   void dispose() {
     _saveTimer?.cancel();
-    _elapsedTimer?.cancel();
+    _ticker?.cancel();
+    _pages.dispose();
     super.dispose();
   }
 
-  Future<void> _restoreAndStart() async {
-    final server = await widget.repository.loadSession(
-      widget.workout,
-      localDate: widget.sessionDate,
-    );
+  // Restore and start ---------------------------------------------------------
+
+  Future<void> _restore() async {
+    unawaited(_loadAlertPreference());
+    Map<String, dynamic>? server;
+    try {
+      server = await widget.repository.loadSession(
+        widget.workout,
+        localDate: widget.sessionDate,
+      );
+    } catch (e) {
+      debugPrint('Non-critical error: workout session not loaded: $e');
+      _sync = _Sync.offline;
+    }
     if (server != null && server['state'] == 'completed') {
-      _sessionId = server['session_id'] as String;
-      _isViewingCompleted = true;
-      final exercises = server['exercises'] as List?;
-      if (exercises != null && exercises.isNotEmpty && exercises.first is Map) {
-        _hydrateSets(exercises);
-      } else {
-        _populateFromPlan();
-      }
+      _sessionId = server['session_id'] as String?;
+      _viewingCompleted = true;
+      _completedFromHealth = server['completion_source'] == 'healthkit';
+      _completedDuration = (server['duration_seconds'] as num?)?.toInt();
+      _hydrate(server['exercises']);
+      _ready = true;
       if (mounted) setState(() {});
+      unawaited(_loadHistory());
       return;
     }
     final saved = await widget.repository.loadDraft(widget.workout.id);
-    Map<String, dynamic>? d;
-    if (server != null && server['state'] == 'in_progress') {
-      d = server;
-    } else if (saved != null) {
-      d = decodeDraft(saved);
-    }
-    if (d != null) {
-      _sessionId = d['session_id'] as String?;
-      _idempotencyKey = d['idempotency_key'] as String? ?? newIdempotencyKey();
-      _revision = (d['revision'] as num?)?.toInt() ?? 0;
+    final local = saved == null ? null : _decode(saved);
+    final draft = _newer(server, local);
+    if (draft != null) {
+      _sessionId = draft['session_id'] as String?;
+      _idempotencyKey = draft['idempotency_key'] as String? ?? _idempotencyKey;
+      _revision = (draft['revision'] as num?)?.toInt() ?? 0;
       _startedAt =
-          DateTime.tryParse('${d['actual_started_at'] ?? ''}') ??
-          DateTime.now();
-      final exercises = d['exercises'] as List? ?? const [];
-      _hydrateSets(exercises);
-    } else {
-      _idempotencyKey = newIdempotencyKey();
+          DateTime.tryParse('${draft['actual_started_at'] ?? ''}')?.toLocal() ??
+          _startedAt;
+      _hydrate(draft['exercises']);
+      if (local != null && local['session_id'] == _sessionId) {
+        _restoreClearedLoads(local[_clearedLoadsKey]);
+      }
     }
+    await _rest.restore(local?[RestTimer.draftKey]);
+    if (_rest.timer != null) {
+      _restExpanded = false;
+      _restNext = _nextAfterCurrent();
+    }
+    _pendingFinish = await widget.repository.loadPendingFinish(
+      widget.workout.id,
+    );
+    _ready = true;
+    final first = _firstOpenExercise();
+    if (mounted) setState(() {});
+    if (first > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_pages.hasClients) _pages.jumpToPage(first);
+      });
+    }
+    unawaited(_loadHistory());
     try {
       _sessionId ??= await widget.repository.start(
         widget.workout,
@@ -112,57 +212,159 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         localDate: widget.sessionDate,
       );
     } catch (e) {
-      debugPrint('Non-critical error: $e');
-      _offline = true;
+      debugPrint('Non-critical error: workout start waits: $e');
       _sessionId ??= 'pending-$_idempotencyKey';
+      _sync = _Sync.offline;
     }
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     await _save();
-    _elapsedTimer?.cancel();
-    _elapsedTimer = Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => _tickElapsed(),
+  }
+
+  static Map<String, dynamic>? _decode(String saved) {
+    try {
+      return decodeDraft(saved);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// The server's copy of an in-progress workout, unless this phone holds
+  /// newer edits of the same session that have not synced yet.
+  static Map<String, dynamic>? _newer(
+    Map<String, dynamic>? server,
+    Map<String, dynamic>? local,
+  ) {
+    final live = server != null && server['state'] == 'in_progress'
+        ? server
+        : null;
+    if (live == null) return local;
+    if (local == null || local['session_id'] != live['session_id']) {
+      return live;
+    }
+    final localRevision = (local['revision'] as num?)?.toInt() ?? 0;
+    final serverRevision = (live['revision'] as num?)?.toInt() ?? 0;
+    return localRevision > serverRevision
+        ? {...local, 'actual_started_at': live['actual_started_at']}
+        : live;
+  }
+
+  void _hydrate(Object? exercises) {
+    if (exercises is! List) return;
+    for (final row in exercises) {
+      if (row is! Map) continue;
+      final map = Map<String, dynamic>.from(row);
+      final order = (map['order'] as num?)?.toInt();
+      final index = _exercises.indexWhere((e) => e.exercise.order == order);
+      if (index >= 0) _exercises[index].restore(map);
+    }
+  }
+
+  /// Sets whose load the athlete emptied on purpose, kept only in this
+  /// phone's draft (the server stores just an empty load), so a restored
+  /// workout never suggests a weight there again.
+  static const _clearedLoadsKey = 'cleared_loads';
+
+  List<Map<String, int>> _clearedLoads() => [
+    for (final draft in _exercises)
+      for (var j = 0; j < draft.sets.length; j++)
+        if (draft.sets[j].loadEdited && draft.sets[j].load.isEmpty)
+          {'order': draft.exercise.order, 'number': j + 1},
+  ];
+
+  void _restoreClearedLoads(Object? rows) {
+    if (rows is! List) return;
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final order = (row['order'] as num?)?.toInt();
+      final number = (row['number'] as num?)?.toInt();
+      final index = _exercises.indexWhere((e) => e.exercise.order == order);
+      if (index < 0 || number == null) continue;
+      final sets = _exercises[index].sets;
+      if (number < 1 || number > sets.length) continue;
+      final set = sets[number - 1];
+      if (set.load.isEmpty) set.loadEdited = true;
+    }
+  }
+
+  Future<void> _loadAlertPreference() async {
+    try {
+      final preferences = await widget.notifications.load();
+      _alerts.enabled =
+          preferences.restTimerAlertsEnabled && preferences.isAuthorized;
+    } catch (e) {
+      debugPrint('Non-critical error: rest alerts stay in the app: $e');
+      _alerts.enabled = false;
+    }
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      final result = await widget.repository.loadExerciseHistory([
+        for (final exercise in widget.workout.exercises) exercise.historyKey,
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _history = result;
+        _historyStatus = HistoryStatus.ready;
+      });
+    } catch (e) {
+      debugPrint('Non-critical error: exercise history not loaded: $e');
+      if (mounted) setState(() => _historyStatus = HistoryStatus.unavailable);
+    }
+  }
+
+  ExerciseHistory? _historyOf(int exercise) =>
+      _history?[_exercises[exercise].exercise.historyKey];
+
+  int _firstOpenExercise() {
+    final index = _exercises.indexWhere(
+      (e) => !e.skipped && e.currentSetIndex != null,
     );
-    if (mounted) setState(() {});
+    return index < 0 ? 0 : index;
   }
 
-  void _tickElapsed() {
-    if (!mounted) return;
-    final elapsed = DateTime.now().difference(_startedAt).inSeconds;
-    final expired = elapsed >= _maxSessionSeconds;
-    _elapsedSeconds = elapsed;
-    if (expired && !_sessionExpired) {
-      _sessionExpired = true;
-      if (mounted) setState(() {});
+  // Time -----------------------------------------------------------------------
+
+  int get _elapsedSeconds {
+    final seconds = widget.clock().difference(_startedAt).inSeconds;
+    return seconds < 0 ? 0 : seconds;
+  }
+
+  bool get _overCap => _elapsedSeconds >= ActiveWorkoutScreen.maxSessionSeconds;
+
+  /// Redraws only when a shown second changes: the elapsed time or the
+  /// rest left.
+  void _tick() {
+    if (!mounted || _closed) return;
+    final now = widget.clock();
+    final timer = _rest.timer;
+    if (timer != null && timer.isExpired(now)) {
+      unawaited(_restEnded());
     }
+    final shown = (_elapsedSeconds, _rest.timer?.remainingSeconds(now));
+    if (shown == _shownSeconds) return;
+    setState(() => _shownSeconds = shown);
   }
 
-  String _elapsedText() {
-    final mins = _elapsedSeconds ~/ 60;
-    final hrs = mins ~/ 60;
-    final rem = mins % 60;
-    final capped = _sessionExpired ? ' (capped at 3h)' : '';
-    return hrs > 0
-        ? 'Elapsed ${hrs}h ${rem}m$capped'
-        : 'Elapsed ${rem}m$capped';
+  static String _clockText(int seconds) {
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600) ~/ 60;
+    final rest = (seconds % 60).toString().padLeft(2, '0');
+    return hours > 0
+        ? '$hours:${minutes.toString().padLeft(2, '0')}:$rest'
+        : '$minutes:$rest';
   }
 
-  void _hydrateSets(List exercises) {
-    for (var i = 0; i < exercises.length && i < _sets.length; i++) {
-      final exercise = Map<String, dynamic>.from(exercises[i] as Map);
-      _exerciseStatuses[i] = exercise['status'] as String? ?? 'unknown';
-      _painFlags[i] = exercise['pain_flag'] == true;
-      final rows = exercise['sets'] as List? ?? const [];
-      for (var j = 0; j < rows.length && j < _sets[i].length; j++) {
-        _sets[i][j] = _SetDraft.fromMap(
-          Map<String, dynamic>.from(rows[j] as Map),
-        );
-      }
-    }
+  static String _spokenClock(int seconds) {
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600) ~/ 60;
+    return [
+      if (hours > 0) '$hours ${hours == 1 ? 'hour' : 'hours'}',
+      '$minutes ${minutes == 1 ? 'minute' : 'minutes'}',
+    ].join(' ');
   }
 
-  void _populateFromPlan() {
-    _idempotencyKey = newIdempotencyKey();
-  }
+  // Draft and sync -------------------------------------------------------------
 
   Map<String, dynamic> _draft() => {
     'workout_id': widget.workout.id,
@@ -170,19 +372,29 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     'idempotency_key': _idempotencyKey,
     'revision': _revision,
     'exercises': [
-      for (var i = 0; i < _sets.length; i++)
+      for (final draft in _exercises)
         {
-          'order': widget.workout.exercises[i].order,
-          'status': _exerciseStatuses[i],
-          'pain_flag': _painFlags[i],
-          'rest_seconds': widget.workout.exercises[i].restSeconds,
+          'order': draft.exercise.order,
+          'status': draft.status,
+          'pain_flag': draft.pain,
+          'rest_seconds': draft.exercise.restSeconds,
           'sets': [
-            for (var j = 0; j < _sets[i].length; j++)
-              {'number': j + 1, ..._sets[i][j].toMap()},
+            for (var j = 0; j < draft.sets.length; j++)
+              {'number': j + 1, ...draft.sets[j].toMap()},
           ],
         },
     ],
   };
+
+  /// The draft kept on this phone: the synced draft plus the start time and
+  /// the running rest, which only the device needs.
+  Map<String, dynamic> _localDraft() => {
+    ..._draft(),
+    'actual_started_at': _startedAt.toUtc().toIso8601String(),
+    RestTimer.draftKey: ?_rest.toDraft(),
+    _clearedLoadsKey: _clearedLoads(),
+  };
+
   void _changed() {
     _revision++;
     _saveTimer?.cancel();
@@ -191,386 +403,922 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Future<void> _save() async {
-    final draft = _draft();
-    await widget.repository.saveDraft(widget.workout.id, jsonEncode(draft));
-    final id = _sessionId;
-    if (id == null || id.startsWith('pending-')) return;
-    setState(() => _syncing = true);
-    try {
-      await widget.repository.sync(id, _revision, draft);
-      _offline = false;
-    } catch (e) {
-      debugPrint('Non-critical error: $e');
-      _offline = true;
-    } finally {
-      if (mounted) setState(() => _syncing = false);
+    if (_closed || _viewingCompleted) return;
+    await widget.repository.saveDraft(
+      widget.workout.id,
+      jsonEncode(_localDraft()),
+    );
+    var id = _sessionId;
+    if (id == null) return;
+    if (id.startsWith('pending-')) {
+      try {
+        id = await widget.repository.start(
+          widget.workout,
+          _idempotencyKey,
+          localDate: widget.sessionDate,
+        );
+        _sessionId = id;
+      } catch (e) {
+        debugPrint('Non-critical error: workout start still waits: $e');
+        if (mounted) setState(() => _sync = _Sync.offline);
+        return;
+      }
     }
+    if (mounted) setState(() => _sync = _Sync.saving);
+    _Sync result;
+    try {
+      await widget.repository.sync(id, _revision, _draft());
+      result = _Sync.saved;
+    } on PostgrestException catch (e) {
+      debugPrint('Non-critical error: workout sync refused: ${e.code}');
+      result = _Sync.attention;
+    } catch (e) {
+      debugPrint('Non-critical error: workout sync waits: $e');
+      result = _Sync.offline;
+    }
+    if (mounted) setState(() => _sync = result);
   }
 
-  Future<void> _complete() async {
-    if (_isViewingCompleted) {
+  // Sets ------------------------------------------------------------------------
+
+  void _doneSet(int exercise, String load, String reps) {
+    final draft = _exercises[exercise];
+    final index = draft.currentSetIndex;
+    if (index == null) return;
+    draft.sets[index]
+      ..load = load
+      ..reps = reps
+      ..completed = true;
+    if (draft.skipped) draft.status = 'unknown';
+    if (draft.newBests(_historyOf(exercise)).contains(index)) {
+      TracendHaptics.medium();
+      _momentToken++;
+      _momentExercise = exercise;
+      _moment = NewBestMoment(set: index, token: _momentToken);
+    } else {
+      TracendHaptics.light();
+    }
+    final next = _nextLabel(exercise);
+    if (next != null && draft.exercise.restSeconds > 0) {
+      _restNext = next;
+      _restAfter = (exercise, index);
+      _restEffortDismissed = false;
+      _restExpanded = true;
+      unawaited(
+        _rest.start(draft.exercise.restSeconds).then((_) => _persistRest()),
+      );
+    }
+    _changed();
+  }
+
+  void _undoSet(int exercise, int set) {
+    _exercises[exercise].sets[set]
+      ..completed = false
+      ..rpe = '';
+    if (_momentExercise == exercise && _moment?.set == set) {
+      _moment = null;
+      _momentExercise = null;
+    }
+    if (_restAfter == (exercise, set)) _restAfter = null;
+    _changed();
+  }
+
+  void _setRpe(int exercise, int set, int? rpe) {
+    _exercises[exercise].sets[set].rpe = rpe == null ? '' : '$rpe';
+    _changed();
+  }
+
+  int _fillRpe(int exercise, int rpe) {
+    var filled = 0;
+    for (final set in _exercises[exercise].sets) {
+      if (set.completed && set.rpe.isEmpty) {
+        set.rpe = '$rpe';
+        filled++;
+      }
+    }
+    if (filled > 0) _changed();
+    return filled;
+  }
+
+  void _editCurrent(int exercise, {String? load, String? reps}) {
+    final draft = _exercises[exercise];
+    final index = draft.currentSetIndex;
+    if (index == null) return;
+    final set = draft.sets[index];
+    if (load != null) {
+      set
+        ..load = load
+        ..loadEdited = true;
+    }
+    if (reps != null) set.reps = reps;
+    _changed();
+  }
+
+  Future<void> _more(int exercise) async {
+    final draft = _exercises[exercise];
+    final skip = await showTracendActionSheet<bool>(
+      context,
+      title: draft.exercise.name,
+      message: draft.skipped
+          ? 'This exercise is marked as skipped.'
+          : 'Skipped exercises are saved as skipped, not as done.',
+      actions: [
+        TracendSheetAction(
+          label: draft.skipped ? 'Unmark skipped' : 'Mark as skipped',
+          value: !draft.skipped,
+        ),
+      ],
+      cancelLabel: 'Keep logging',
+    );
+    if (skip == null || !mounted) return;
+    draft.status = skip ? 'skipped' : 'unknown';
+    _changed();
+  }
+
+  /// What comes after the current set of [exercise]: its next set, else the
+  /// next exercise with sets to do; null when the workout has nothing left.
+  _Next? _nextLabel(int exercise) {
+    final draft = _exercises[exercise];
+    final set = draft.currentSetIndex;
+    if (set != null) {
+      return (
+        full: 'Set ${set + 1} of ${draft.exercise.name}',
+        short: 'Set ${set + 1}',
+      );
+    }
+    for (var i = 1; i < _exercises.length; i++) {
+      final other = _exercises[(exercise + i) % _exercises.length];
+      if (!other.skipped && other.currentSetIndex != null) {
+        return (full: other.exercise.name, short: other.exercise.name);
+      }
+    }
+    return null;
+  }
+
+  /// The next set to do in the workout, for a rest restored after a
+  /// relaunch.
+  _Next? _nextAfterCurrent() {
+    for (final draft in _exercises) {
+      final set = draft.currentSetIndex;
+      if (!draft.skipped && set != null) {
+        return set == 0
+            ? (full: draft.exercise.name, short: draft.exercise.name)
+            : (
+                full: 'Set ${set + 1} of ${draft.exercise.name}',
+                short: 'Set ${set + 1}',
+              );
+      }
+    }
+    return null;
+  }
+
+  // Rest -----------------------------------------------------------------------
+
+  Future<void> _persistRest() async {
+    if (!mounted || _closed) return;
+    setState(() {});
+    await widget.repository.saveDraft(
+      widget.workout.id,
+      jsonEncode(_localDraft()),
+    );
+  }
+
+  Future<void> _adjustRest(Duration delta) async {
+    await _rest.adjust(delta);
+    await _persistRest();
+  }
+
+  Future<void> _skipRest() async {
+    await _rest.skip();
+    await _persistRest();
+  }
+
+  Future<void> _restEnded() async {
+    if (_rest.timer == null) return;
+    await _rest.stop();
+    if (!mounted) return;
+    unawaited(TracendHaptics.success());
+    TracendToast.show(
+      context,
+      _restNext == null
+          ? 'Rest is over'
+          : 'Rest is over. Next: ${_restNext!.full}',
+      icon: CupertinoIcons.timer,
+    );
+    await _persistRest();
+  }
+
+  // Leave, discard, finish -----------------------------------------------------
+
+  int get _completedSets =>
+      _exercises.fold(0, (total, e) => total + e.completedCount);
+  int get _totalSets => _exercises.fold(0, (total, e) => total + e.sets.length);
+
+  Future<void> _confirmLeave() async {
+    if (_viewingCompleted || _closed) {
       Navigator.of(context).pop();
       return;
     }
-    await _save();
-    final id = _sessionId;
-    if (id == null || id.startsWith('pending-')) {
-      setState(() => _offline = true);
-      return;
-    }
-    try {
-      final rawSeconds = DateTime.now().difference(_startedAt).inSeconds;
-      final cappedSeconds = rawSeconds > _maxSessionSeconds
-          ? _maxSessionSeconds
-          : rawSeconds;
-      await widget.repository.complete(id, _revision, cappedSeconds, _draft());
-      if (mounted) {
-        Navigator.of(context).pop(true);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Workout completed')));
-      }
-    } catch (e) {
-      debugPrint('Non-critical error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Completion needs a connection. Your sets remain saved on this device.',
-            ),
-          ),
-        );
-      }
+    final done = _completedSets;
+    final choice = await showTracendActionSheet<_Leave>(
+      context,
+      title: 'Leave this workout?',
+      message: done == 0
+          ? 'Nothing is logged yet. You can start again later today.'
+          : '$done ${done == 1 ? 'set is' : 'sets are'} saved on your phone. '
+                'You can carry on later today.',
+      actions: const [
+        TracendSheetAction(
+          label: 'Save and leave',
+          value: _Leave.save,
+          isDefault: true,
+        ),
+        TracendSheetAction(
+          label: 'Discard workout',
+          value: _Leave.discard,
+          destructive: true,
+        ),
+      ],
+      cancelLabel: 'Keep logging',
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case _Leave.save:
+        await _saveAndLeave();
+      case _Leave.discard:
+        await _discard();
     }
   }
 
-  int get _completed => _sets.expand((e) => e).where((s) => s.completed).length;
-  int get _totalSets =>
-      _sets.fold<int>(0, (total, rows) => total + rows.length);
+  Future<void> _saveAndLeave() async {
+    await _rest.stop();
+    _saveTimer?.cancel();
+    await _save();
+    if (!mounted) return;
+    _closed = true;
+    // The toast lives in the root overlay, so it outlasts this screen.
+    TracendToast.show(
+      context,
+      'Workout paused',
+      icon: CupertinoIcons.pause_fill,
+    );
+    Navigator.of(context).pop(false);
+  }
+
+  Future<void> _discard() async {
+    final confirmed = await showTracendConfirm(
+      context,
+      title: 'Discard this workout?',
+      message: 'The sets you logged today are deleted. This cannot be undone.',
+      confirmLabel: 'Discard workout',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+    _saveTimer?.cancel();
+    _closed = true;
+    await _rest.stop();
+    try {
+      await widget.repository.abandon(
+        _sessionId ?? 'pending-$_idempotencyKey',
+        workoutId: widget.workout.id,
+      );
+    } catch (e) {
+      debugPrint('Non-critical error: discard refused: $e');
+      _closed = false;
+      await _save();
+      if (mounted) {
+        unawaited(TracendHaptics.warning());
+        TracendToast.show(
+          context,
+          'The workout could not be discarded. Try again.',
+          icon: CupertinoIcons.exclamationmark_triangle,
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    TracendToast.show(context, 'Workout discarded', icon: CupertinoIcons.trash);
+    Navigator.of(context).pop(false);
+  }
+
+  Future<void> _finish() async {
+    if (_viewingCompleted) {
+      Navigator.of(context).pop();
+      return;
+    }
+    if (_finishing) return;
+    if (_completedSets == 0) {
+      unawaited(TracendHaptics.warning());
+      TracendToast.show(
+        context,
+        'Tick at least one set first.',
+        icon: CupertinoIcons.info_circle,
+      );
+      return;
+    }
+    final effort = await showWorkoutFinishSheet(
+      context,
+      workoutName: widget.workout.name,
+      unloggedSets: _totalSets - _completedSets,
+    );
+    if (effort == null || !mounted) return;
+    final seconds = _elapsedSeconds;
+    await _finishWith(
+      effort,
+      seconds > ActiveWorkoutScreen.maxSessionSeconds
+          ? ActiveWorkoutScreen.maxSessionSeconds
+          : seconds,
+    );
+  }
+
+  Future<void> _finishWith(int effort, int durationSeconds) async {
+    setState(() {
+      _finishing = true;
+      _finishError = null;
+      _finishDiagnostic = null;
+    });
+    await _rest.stop();
+    _saveTimer?.cancel();
+    await _save();
+    try {
+      await widget.repository.completeWithEffort(
+        _sessionId ?? 'pending-$_idempotencyKey',
+        _revision,
+        durationSeconds,
+        _draft(),
+        sessionEffort: effort,
+      );
+    } catch (e) {
+      debugPrint('Non-critical error: workout finish waits: $e');
+      if (!mounted) return;
+      setState(() {
+        _finishing = false;
+        _pendingFinish = PendingWorkoutFinish(
+          sessionEffort: effort,
+          durationSeconds: durationSeconds,
+        );
+        if (e is PostgrestException) {
+          _finishError = 'Tracend could not finish this workout. Try again.';
+          _finishDiagnostic = e.message;
+        } else {
+          _finishError =
+              'Finishing needs a connection. Your sets and effort are saved '
+              'on this phone.';
+        }
+      });
+      unawaited(TracendHaptics.warning());
+      return;
+    }
+    _closed = true;
+    if (!mounted) return;
+    setState(() {
+      _finishing = false;
+      _pendingFinish = null;
+    });
+    unawaited(TracendHaptics.success());
+    await showWorkoutSummarySheet(context, _summary(effort, durationSeconds));
+    if (!mounted) return;
+    TracendToast.show(context, 'Workout saved');
+    Navigator.of(context).pop(true);
+  }
+
+  WorkoutSummary _summary(int effort, int durationSeconds) {
+    final bests = <WorkoutNewBest>[];
+    for (var i = 0; i < _exercises.length; i++) {
+      final draft = _exercises[i];
+      final history = _historyOf(i);
+      final indexes = draft.newBests(history);
+      if (indexes.isEmpty) continue;
+      // Each new best beats the one before it, so the last is the strongest.
+      final top = draft.sets[indexes.reduce((a, b) => a > b ? a : b)];
+      bests.add(
+        WorkoutNewBest(
+          exercise: draft.exercise.name,
+          lifted: describeSet(
+            loadKg: top.loadKg,
+            repetitions: top.repetitions,
+            assisted: draft.assisted,
+          ),
+          previous: describeBest(history?.bestSet),
+        ),
+      );
+    }
+    return WorkoutSummary(
+      workoutName: widget.workout.name,
+      date: widget.sessionDate ?? widget.clock(),
+      durationSeconds: durationSeconds,
+      completedSets: _completedSets,
+      weightLiftedKg: weightLiftedKg([
+        for (final draft in _exercises) draft.loggedExercise,
+      ]),
+      effort: effort,
+      newBests: bests,
+    );
+  }
+
+  // Build ----------------------------------------------------------------------
+
+  void _goToPage(int page) {
+    if (!_pages.hasClients) return;
+    final duration = TracendMotionScope.movement(
+      context,
+      TracendMotion.emphasized,
+    );
+    if (duration == Duration.zero) {
+      _pages.jumpToPage(page);
+    } else {
+      _pages.animateToPage(
+        page,
+        duration: duration,
+        curve: TracendMotion.curve,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    final progress = _totalSets == 0 ? 0.0 : _completed / _totalSets;
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.workout.name)),
-      body: SafeArea(
-        top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            TracendSpacing.gutter,
-            TracendSpacing.sm,
-            TracendSpacing.gutter,
-            120,
+    return PopScope<bool>(
+      canPop: _viewingCompleted || _closed,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _confirmLeave();
+      },
+      child: Scaffold(
+        backgroundColor: colors.canvas,
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              _header(context),
+              Expanded(child: _body(context)),
+            ],
           ),
-          children: [
-            if (_isViewingCompleted)
-              TracendCard(
-                radius: TracendRadii.decision,
-                padding: const EdgeInsets.all(TracendSpacing.gutter),
-                raised: true,
-                child: Row(
+        ),
+      ),
+    );
+  }
+
+  Widget _header(BuildContext context) {
+    final colors = context.tracendColors;
+    final text = Theme.of(context).textTheme;
+    final elapsed = _elapsedSeconds;
+    final String detail;
+    final String detailSpoken;
+    if (_viewingCompleted) {
+      final duration = _completedDuration;
+      detail = duration == null
+          ? 'Completed'
+          : 'Completed · ${(duration / 60).round()} min';
+      detailSpoken = detail;
+    } else {
+      detail = _ready ? _clockText(elapsed) : '0:00';
+      detailSpoken = 'Elapsed ${_spokenClock(elapsed)}';
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        TracendSpacing.sm,
+        TracendSpacing.xs,
+        TracendSpacing.md,
+        0,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Pressable(
+                onTap: _confirmLeave,
+                semanticLabel: _viewingCompleted ? 'Close' : 'Leave workout',
+                borderRadius: BorderRadius.circular(TracendRadii.pill),
+                child: SizedBox.square(
+                  dimension: 44,
+                  child: Icon(
+                    CupertinoIcons.chevron_down,
+                    size: 22,
+                    color: colors.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: TracendSpacing.xs),
+              Expanded(
+                child: Column(
                   children: [
-                    Icon(CupertinoIcons.info_circle, color: colors.stateStable),
-                    const SizedBox(width: TracendSpacing.sm),
-                    const Expanded(
+                    Semantics(
+                      header: true,
                       child: Text(
-                        'Auto-completed from Apple Health — no individual sets logged. The planned exercises are shown for reference.',
+                        widget.workout.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: text.labelSmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    Semantics(
+                      label: detailSpoken,
+                      excludeSemantics: true,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          detail,
+                          maxLines: 1,
+                          textAlign: TextAlign.center,
+                          style: _viewingCompleted
+                              ? text.titleMedium
+                              : TracendTheme.numeric(
+                                  colors,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                  color: _overCap
+                                      ? colors.accentAmber
+                                      : colors.textPrimary,
+                                ).copyWith(height: 1.1),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-            TracendCard(
-              radius: TracendRadii.decision,
-              padding: const EdgeInsets.all(TracendSpacing.gutter),
-              raised: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  StatusChip(
-                    label: _offline
-                        ? 'Saved on device · sync pending'
-                        : _syncing
-                        ? 'Saving changes…'
-                        : 'Saved and synced',
-                    icon: _offline
-                        ? CupertinoIcons.wifi_slash
-                        : CupertinoIcons.check_mark_circled_solid,
-                    tone: _offline
-                        ? StatusTone.caution
-                        : _syncing
-                        ? StatusTone.neutral
-                        : StatusTone.good,
-                  ),
-                  const SizedBox(height: TracendSpacing.lg),
-                  Text(
-                    '$_completed sets complete',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  const SizedBox(height: TracendSpacing.xs),
-                  Text(
-                    'Entries save automatically. Pain remains reachable before completion.',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: TracendSpacing.md),
-                  LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 6,
-                    borderRadius: BorderRadius.circular(6),
-                    color: colors.actionPrimary,
-                    backgroundColor: colors.borderSubtle,
-                  ),
-                  const SizedBox(height: TracendSpacing.sm),
-                  Text(
-                    '$_completed of $_totalSets working sets',
-                    style: Theme.of(context).textTheme.labelMedium,
-                  ),
-                  if (!_isViewingCompleted) ...[
-                    const SizedBox(height: TracendSpacing.sm),
-                    Text(
-                      _elapsedText(),
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: _sessionExpired
-                            ? colors.stateDanger
-                            : colors.stateStable,
-                      ),
-                    ),
-                  ],
+              const SizedBox(width: TracendSpacing.xs),
+              _finishPill(context),
+            ],
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          Padding(
+            padding: const EdgeInsets.only(left: TracendSpacing.xxs),
+            child: Row(
+              children: [
+                Expanded(child: _progress(context)),
+                if (!_viewingCompleted) ...[
+                  const SizedBox(width: TracendSpacing.sm),
+                  _syncStatus(context),
                 ],
+              ],
+            ),
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+        ],
+      ),
+    );
+  }
+
+  Widget _finishPill(BuildContext context) {
+    final colors = context.tracendColors;
+    final text = Theme.of(context).textTheme;
+    final label = _viewingCompleted
+        ? 'Done'
+        : _finishing
+        ? 'Saving'
+        : 'Finish';
+    return Pressable(
+      onTap: _ready && !_finishing ? _finish : null,
+      semanticLabel: _viewingCompleted
+          ? 'Done'
+          : _finishing
+          ? 'Saving workout'
+          : 'Finish workout',
+      borderRadius: BorderRadius.circular(TracendRadii.pill),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44, minWidth: 64),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.accentSignal,
+            borderRadius: BorderRadius.circular(TracendRadii.pill),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: TracendSpacing.md,
+              vertical: 10,
+            ),
+            child: Center(
+              widthFactor: 1,
+              child: Text(
+                label,
+                style: text.labelLarge?.copyWith(color: colors.onAccentSignal),
               ),
             ),
-            if (_sessionExpired && !_isViewingCompleted)
-              TracendCard(
-                radius: TracendRadii.decision,
-                padding: const EdgeInsets.all(TracendSpacing.gutter),
-                raised: true,
-                child: Row(
-                  children: [
-                    Icon(
-                      CupertinoIcons.exclamationmark_triangle_fill,
-                      color: colors.stateDanger,
-                    ),
-                    const SizedBox(width: TracendSpacing.sm),
-                    const Expanded(
-                      child: Text(
-                        'Session exceeded 3-hour limit. Duration capped at 180 minutes. Complete the workout to save your sets.',
-                      ),
-                    ),
-                  ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _progress(BuildContext context) {
+    final colors = context.tracendColors;
+    final total = _totalSets;
+    final done = _completedSets;
+    // Segments fill in order: the bar counts sets, not which set is which.
+    return Semantics(
+      label: '$done of $total sets done',
+      excludeSemantics: true,
+      child: SizedBox(
+        height: 4,
+        child: Row(
+          children: [
+            for (var i = 0; i < total; i++) ...[
+              if (i > 0) const SizedBox(width: 3),
+              Expanded(
+                child: AnimatedContainer(
+                  duration: TracendMotionScope.fade(
+                    context,
+                    TracendMotion.standard,
+                  ),
+                  decoration: BoxDecoration(
+                    color: i < done ? colors.stateStable : colors.surfaceRaised,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            for (var i = 0; i < widget.workout.exercises.length; i++) ...[
-              _ExerciseEditor(
-                exercise: widget.workout.exercises[i],
-                sets: _sets[i],
-                status: _exerciseStatuses[i],
-                painFlag: _painFlags[i],
-                readOnly: _isViewingCompleted,
-                onStatusChanged: (value) {
-                  _exerciseStatuses[i] = value;
-                  _changed();
-                },
-                onPainChanged: (value) {
-                  _painFlags[i] = value;
-                  _changed();
-                },
-                onChanged: _changed,
-              ),
             ],
-            const SizedBox(height: TracendSpacing.lg),
-            if (_isViewingCompleted)
-              FilledButton(onPressed: _complete, child: const Text('Done'))
-            else
-              FilledButton(
-                onPressed: _completed == 0 ? null : _complete,
-                child: const Text('Complete workout'),
-              ),
           ],
         ),
       ),
     );
   }
-}
 
-class _ExerciseEditor extends StatelessWidget {
-  const _ExerciseEditor({
-    required this.exercise,
-    required this.sets,
-    required this.status,
-    required this.painFlag,
-    this.readOnly = false,
-    required this.onStatusChanged,
-    required this.onPainChanged,
-    required this.onChanged,
-  });
-  final PlannedExercise exercise;
-  final List<_SetDraft> sets;
-  final String status;
-  final bool painFlag;
-  final bool readOnly;
-  final ValueChanged<String> onStatusChanged;
-  final ValueChanged<bool> onPainChanged;
-  final VoidCallback onChanged;
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      SectionLabel(
-        '${exercise.order.toString().padLeft(2, '0')} · ${exercise.name}',
+  Widget _syncStatus(BuildContext context) {
+    final colors = context.tracendColors;
+    final text = Theme.of(context).textTheme;
+    final (String word, IconData icon, Color color) = switch (_sync) {
+      _Sync.saving => (
+        'Syncing',
+        CupertinoIcons.arrow_2_circlepath,
+        colors.textSecondary,
       ),
-      Text(
-        '${exercise.setCount} × ${exercise.repMin}–${exercise.repMax} · RPE ${exercise.targetRpe} · Rest ${exercise.restSeconds}s',
-        style: Theme.of(context).textTheme.bodyMedium,
+      _Sync.saved => (
+        'Saved',
+        CupertinoIcons.checkmark_alt_circle_fill,
+        colors.stateStable,
       ),
-      const SizedBox(height: TracendSpacing.sm),
-      Wrap(
-        spacing: TracendSpacing.xs,
-        runSpacing: TracendSpacing.xs,
+      _Sync.offline => (
+        'Offline',
+        CupertinoIcons.wifi_slash,
+        colors.accentAmber,
+      ),
+      _Sync.attention => (
+        'Needs attention',
+        CupertinoIcons.exclamationmark_triangle_fill,
+        colors.stateAttention,
+      ),
+    };
+    final spoken = switch (_sync) {
+      _Sync.saving => 'Saving changes',
+      _Sync.saved => 'Saved and synced',
+      _Sync.offline => 'Offline. Saved on this phone',
+      _Sync.attention => 'Sync needs attention. Saved on this phone',
+    };
+    return Semantics(
+      label: spoken,
+      excludeSemantics: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          FilterChip(
-            label: const Text('Skipped intentionally'),
-            selected: status == 'skipped',
-            materialTapTargetSize: MaterialTapTargetSize.padded,
-            onSelected: readOnly
-                ? null
-                : (selected) =>
-                      onStatusChanged(selected ? 'skipped' : 'unknown'),
-          ),
-          FilterChip(
-            label: const Text('Pain or discomfort'),
-            selected: painFlag,
-            materialTapTargetSize: MaterialTapTargetSize.padded,
-            onSelected: readOnly ? null : onPainChanged,
-          ),
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(word, style: text.labelSmall?.copyWith(color: color)),
         ],
       ),
-      const SizedBox(height: TracendSpacing.sm),
-      TracendCard(
-        raised: true,
-        child: Column(
-          children: [
-            for (var i = 0; i < sets.length; i++) ...[
-              _SetRow(
-                number: i + 1,
-                draft: sets[i],
-                readOnly: readOnly,
-                onChanged: onChanged,
-              ),
-              if (i < sets.length - 1) const Divider(height: TracendSpacing.md),
+    );
+  }
+
+  Widget _body(BuildContext context) {
+    if (!_ready) {
+      return Semantics(
+        label: 'Loading workout',
+        child: const Padding(
+          padding: EdgeInsets.all(TracendSpacing.gutter),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TracendSkeleton.line(widthFactor: 0.3),
+              SizedBox(height: TracendSpacing.sm),
+              TracendSkeleton.line(widthFactor: 0.7, height: 30),
+              SizedBox(height: TracendSpacing.lg),
+              TracendSkeleton.block(height: 260),
             ],
+          ),
+        ),
+      );
+    }
+    final timer = _rest.timer;
+    final now = widget.clock();
+    final media = MediaQuery.of(context);
+    final level = TracendMotionScope.of(context);
+    return Stack(
+      children: [
+        Column(
+          children: [
+            ..._banners(context),
+            Expanded(
+              child: PageView.builder(
+                controller: _pages,
+                itemCount: _exercises.length,
+                onPageChanged: (_) => TracendHaptics.selection(),
+                itemBuilder: (context, i) => _exercisePage(i),
+              ),
+            ),
           ],
         ),
-      ),
-    ],
-  );
-}
-
-class _SetRow extends StatelessWidget {
-  const _SetRow({
-    required this.number,
-    required this.draft,
-    this.readOnly = false,
-    required this.onChanged,
-  });
-  final int number;
-  final _SetDraft draft;
-  final bool readOnly;
-  final VoidCallback onChanged;
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      SizedBox(
-        width: 28,
-        child: Text('$number', style: Theme.of(context).textTheme.titleMedium),
-      ),
-      Expanded(
-        child: TextFormField(
-          initialValue: draft.load,
-          readOnly: readOnly,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'kg'),
-          onChanged: readOnly
-              ? null
-              : (v) {
-                  draft.load = v;
-                  onChanged();
-                },
-        ),
-      ),
-      const SizedBox(width: 8),
-      SizedBox(
-        width: 64,
-        child: TextFormField(
-          initialValue: draft.rpe,
-          readOnly: readOnly,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'RPE'),
-          onChanged: readOnly
-              ? null
-              : (v) {
-                  draft.rpe = v;
-                  onChanged();
-                },
-        ),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: TextFormField(
-          initialValue: draft.reps,
-          readOnly: readOnly,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: 'reps'),
-          onChanged: readOnly
-              ? null
-              : (v) {
-                  draft.reps = v;
-                  onChanged();
-                },
-        ),
-      ),
-      const SizedBox(width: 8),
-      Semantics(
-        label: 'Complete set $number',
-        button: true,
-        child: IconButton.filledTonal(
-          onPressed: readOnly
-              ? null
-              : () {
-                  draft.completed = !draft.completed;
-                  onChanged();
-                },
-          icon: Icon(
-            draft.completed ? CupertinoIcons.check_mark : CupertinoIcons.circle,
+        Positioned.fill(
+          child: AnimatedSwitcher(
+            duration: TracendMotionScope.fade(
+              context,
+              TracendMotion.emphasized,
+            ),
+            reverseDuration: TracendMotionScope.fade(
+              context,
+              TracendMotion.standard,
+            ),
+            transitionBuilder: (child, animation) =>
+                level == TracendMotionLevel.full
+                ? SlideTransition(
+                    position: Tween(begin: const Offset(0, 1), end: Offset.zero)
+                        .animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: TracendMotion.curve,
+                          ),
+                        ),
+                    child: child,
+                  )
+                : FadeTransition(opacity: animation, child: child),
+            child: timer != null && _restExpanded
+                ? RestTimerOverlay(
+                    key: const ValueKey('rest-full'),
+                    remainingSeconds: timer.remainingSeconds(now),
+                    remainingShare: 1 - timer.progress(now),
+                    nextLabel: _restNext?.full ?? '',
+                    onMinus: () => _adjustRest(-RestTimer.step),
+                    onPlus: () => _adjustRest(RestTimer.step),
+                    onSkip: _skipRest,
+                    onHide: () => setState(() => _restExpanded = false),
+                    effort: _restEffort(),
+                  )
+                : const SizedBox.shrink(key: ValueKey('rest-none')),
           ),
-          tooltip: 'Complete set $number',
+        ),
+        Positioned(
+          left: TracendSpacing.sm,
+          right: TracendSpacing.sm,
+          bottom: media.padding.bottom + TracendSpacing.sm,
+          child: AnimatedSwitcher(
+            duration: TracendMotionScope.fade(context, TracendMotion.standard),
+            transitionBuilder: (child, animation) =>
+                level == TracendMotionLevel.full
+                ? SlideTransition(
+                    position:
+                        Tween(
+                          begin: const Offset(0, 1.4),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: TracendMotion.settle,
+                          ),
+                        ),
+                    child: FadeTransition(opacity: animation, child: child),
+                  )
+                : FadeTransition(opacity: animation, child: child),
+            child: timer != null && !_restExpanded
+                ? RestTimerPill(
+                    key: const ValueKey('rest-pill'),
+                    remainingSeconds: timer.remainingSeconds(now),
+                    remainingShare: 1 - timer.progress(now),
+                    nextLabel: _restNext?.short ?? '',
+                    onMinus: () => _adjustRest(-RestTimer.step),
+                    onPlus: () => _adjustRest(RestTimer.step),
+                    onSkip: _skipRest,
+                    onExpand: () => setState(() => _restExpanded = true),
+                  )
+                : const SizedBox.shrink(key: ValueKey('rest-pill-none')),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget? _restEffort() {
+    final after = _restAfter;
+    if (after == null || _restEffortDismissed) return null;
+    final (exercise, set) = after;
+    final row = _exercises[exercise].sets[set];
+    if (!row.completed) return null;
+    return RpePicker(
+      title: 'Effort for set ${set + 1}',
+      value: row.rpeValue,
+      onSelected: (value) => _setRpe(exercise, set, value),
+      onClear: () => _setRpe(exercise, set, null),
+      dismissLabel: 'Not now',
+      onDismiss: () => setState(() => _restEffortDismissed = true),
+    );
+  }
+
+  Widget _exercisePage(int i) {
+    final draft = _exercises[i];
+    final history = _historyOf(i);
+    final next = i + 1 < _exercises.length
+        ? _exercises[i + 1].exercise.name
+        : null;
+    return FocusExercisePage(
+      key: ValueKey('exercise-$i'),
+      index: i,
+      count: _exercises.length,
+      draft: draft,
+      history: history,
+      historyStatus: _historyStatus,
+      newBests: draft.newBests(history),
+      readOnly: _viewingCompleted,
+      nextExerciseName: next,
+      onNext: next == null ? null : () => _goToPage(i + 1),
+      moment: _momentExercise == i ? _moment : null,
+      onDone: (load, reps) => _doneSet(i, load, reps),
+      onLoadChanged: (value) => _editCurrent(i, load: value),
+      onRepsChanged: (value) => _editCurrent(i, reps: value),
+      onUndo: (set) => _undoSet(i, set),
+      onRpe: (set, rpe) => _setRpe(i, set, rpe),
+      onFillRpe: (rpe) => _fillRpe(i, rpe),
+      onPain: () {
+        _exercises[i].pain = !_exercises[i].pain;
+        _changed();
+      },
+      onMore: () => _more(i),
+    );
+  }
+
+  List<Widget> _banners(BuildContext context) {
+    final colors = context.tracendColors;
+    final text = Theme.of(context).textTheme;
+    Widget banner(List<Widget> children) => Padding(
+      padding: const EdgeInsets.fromLTRB(
+        TracendSpacing.gutter,
+        TracendSpacing.xs,
+        TracendSpacing.gutter,
+        0,
+      ),
+      child: TracendCard(
+        raised: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
         ),
       ),
-    ],
-  );
-}
-
-class _SetDraft {
-  _SetDraft({
-    this.load = '',
-    this.reps = '',
-    this.rpe = '',
-    this.completed = false,
-  });
-  String load;
-  String reps;
-  String rpe;
-  bool completed;
-  Map<String, dynamic> toMap() => {
-    'load_kg': load,
-    'repetitions': reps,
-    'rpe': rpe,
-    'completed': completed,
-  };
-  factory _SetDraft.fromMap(Map<String, dynamic> m) => _SetDraft(
-    load: '${m['load_kg'] ?? ''}',
-    reps: '${m['repetitions'] ?? ''}',
-    rpe: '${m['rpe'] ?? ''}',
-    completed: m['completed'] == true,
-  );
+    );
+    final pending = _pendingFinish;
+    return [
+      if (_viewingCompleted && _completedFromHealth)
+        banner([
+          const StatusChip(
+            label: 'Marked complete from Apple Health',
+            icon: CupertinoIcons.heart_fill,
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          Text(
+            'No sets were logged. The planned exercises are shown for '
+            'reference.',
+            style: text.bodyMedium,
+          ),
+        ]),
+      if (!_viewingCompleted && pending != null && !_finishing)
+        banner([
+          const StatusChip(
+            label: 'Finish not sent yet',
+            icon: CupertinoIcons.wifi_slash,
+            tone: StatusTone.caution,
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          Text(
+            _finishError ??
+                'You finished this workout, but it has not reached Tracend '
+                    'yet. Your sets and effort are saved on this phone.',
+            style: text.bodyMedium,
+          ),
+          if (_finishDiagnostic != null) ...[
+            const SizedBox(height: TracendSpacing.xxs),
+            Text(
+              _finishDiagnostic!,
+              style: text.bodySmall?.copyWith(color: colors.textSecondary),
+            ),
+          ],
+          const SizedBox(height: TracendSpacing.sm),
+          FilledButton(
+            onPressed: () =>
+                _finishWith(pending.sessionEffort, pending.durationSeconds),
+            child: const Text('Send finish'),
+          ),
+        ]),
+      if (!_viewingCompleted && _overCap)
+        banner([
+          const StatusChip(
+            label: 'Over 3 hours',
+            icon: CupertinoIcons.exclamationmark_triangle_fill,
+            tone: StatusTone.caution,
+          ),
+          const SizedBox(height: TracendSpacing.xs),
+          Text(
+            'This workout will save as 3 hours. Finish it to keep your sets.',
+            style: text.bodyMedium,
+          ),
+        ]),
+    ];
+  }
 }

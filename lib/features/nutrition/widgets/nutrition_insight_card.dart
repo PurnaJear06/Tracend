@@ -41,23 +41,26 @@ class NutritionInsightCard extends StatelessWidget {
               Icon(
                 CupertinoIcons.chat_bubble_text_fill,
                 size: 16,
-                color: colors.accentAmber,
+                color: colors.textSecondary,
               ),
               const SizedBox(width: TracendSpacing.xs),
               Expanded(
                 child: Text(
-                  'COACH',
+                  'Coach',
                   style: TracendTheme.labelCaps(
                     context,
-                    color: colors.accentAmber,
+                    color: colors.textSecondary,
                   ),
                 ),
               ),
-              Text(
-                confidenceLabel(decision.confidence),
-                style: TracendTheme.labelCaps(
-                  context,
-                  color: colors.textSecondary,
+              const SizedBox(width: TracendSpacing.xs),
+              Flexible(
+                child: Text(
+                  confidenceLabel(decision.confidence),
+                  textAlign: TextAlign.end,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
                 ),
               ),
             ],
@@ -65,9 +68,7 @@ class NutritionInsightCard extends StatelessWidget {
           const SizedBox(height: TracendSpacing.sm),
           Text(
             decision.nutritionAction,
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(letterSpacing: -0.4),
+            style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: TracendSpacing.xs),
           Text(

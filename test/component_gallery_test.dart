@@ -78,15 +78,18 @@ void main() {
       const ComponentGalleryApp(themeMode: ThemeMode.light),
     );
     await tester.scrollUntilVisible(
-      find.bySemanticsLabel(RegExp('7-day HRV trend, 18–24 Aug')),
+      find.bySemanticsLabel(
+        RegExp('7-day heart rate variability trend, 18–24 Aug'),
+      ),
       250,
       scrollable: find.byType(Scrollable).first,
     );
 
     expect(
       find.bySemanticsLabel(
-        '7-day HRV trend, 18–24 Aug: 42–53 ms, '
-        '53 ms latest on 24 Aug, 7 of 7 days recorded.',
+        '7-day heart rate variability trend, 18–24 Aug: range 42–53 ms, '
+        '53 ms latest on 24 Aug, 7 of 7 days recorded. '
+        'Up 11 ms since 18 Aug.',
       ),
       findsOneWidget,
     );

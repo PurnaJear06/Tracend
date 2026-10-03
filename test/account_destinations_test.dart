@@ -6,7 +6,7 @@ import 'package:tracend/features/account/account_screen.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 
 void main() {
-  testWidgets('Profile, AI usage, and consent destinations open', (
+  testWidgets('Profile, AI usage, and consent history destinations open', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -25,7 +25,8 @@ void main() {
 
     await tester.tap(find.text('Profile and goals'));
     await tester.pumpAndSettle();
-    expect(find.text('Your coaching foundation'), findsOneWidget);
+    expect(find.text('Profile and goals'), findsOneWidget);
+    expect(find.text('Training profile'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
 
@@ -35,19 +36,21 @@ void main() {
     );
     await tester.tap(find.text('AI service not configured'));
     await tester.pumpAndSettle();
-    expect(find.text('My AI usage'), findsOneWidget);
+    expect(find.text('AI usage'), findsOneWidget);
+    expect(find.text('This month'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.textContaining('Operational estimates'),
+      200,
+    );
     expect(find.textContaining('Operational estimates'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
 
-    await tester.scrollUntilVisible(
-      find.text('Privacy and AI processing'),
-      250,
-    );
-    await tester.tap(find.text('Privacy and AI processing'));
+    await tester.scrollUntilVisible(find.text('Consent history'), 250);
+    await tester.tap(find.text('Consent history'));
     await tester.pumpAndSettle();
-    expect(find.text('Consent ledger'), findsOneWidget);
-    expect(find.text('No consent records yet'), findsOneWidget);
+    expect(find.text('Consent history'), findsOneWidget);
+    expect(find.text('No consent choices yet'), findsOneWidget);
   });
 
   testWidgets('AI usage row shows an honest error state when the RPC fails', (
@@ -70,7 +73,7 @@ void main() {
 
     await tester.scrollUntilVisible(find.text('AI usage unavailable'), 250);
     expect(find.text('AI usage unavailable'), findsOneWidget);
-    expect(find.text('Open details to retry'), findsOneWidget);
+    expect(find.text('Open to try again'), findsOneWidget);
   });
 }
 

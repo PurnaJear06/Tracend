@@ -11,28 +11,28 @@ import 'package:tracend/features/account/widgets/account_sheets.dart';
 import 'package:tracend/features/account/widgets/account_widgets.dart';
 import 'package:tracend/features/account/widgets/ai_usage_screen.dart';
 import 'package:tracend/features/account/widgets/coach_threads_sheet.dart';
-import 'package:tracend/features/account/widgets/consent_ledger_screen.dart';
-import 'package:tracend/features/account/widgets/notification_sheet.dart';
+import 'package:tracend/features/account/widgets/consent_history_screen.dart';
+import 'package:tracend/features/account/widgets/notification_settings.dart';
 import 'package:tracend/features/account/widgets/profile_goals_screen.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_status_card.dart';
-import 'package:tracend/shared/widgets/premium_gradient_card.dart';
+import 'package:tracend/shared/formatting.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
+import 'package:tracend/shared/widgets/tracend_toast.dart';
 
-/// Account home, redesigned 2026-09-03 from the Stitch reference
-/// `design/stitch/account/` ("Account & Profile — Kinetic Precision"):
-/// identity block first (name from the email local-part, private-beta
-/// chip, current goal, edit affordance), then grouped hairline cards under
-/// label-caps sections — Plan, Connections, AI service, Privacy and data —
-/// with the sign-out control and the delete-account danger zone separated
-/// at the foot. Icon tiles are gone: the quiet settings surface keeps the
-/// 7-day trend the one aesthetic risk on the app.
+/// Account: one iOS inset-grouped settings page (UX_FLOWS.md §13).
 ///
-/// All data stays real: the goal line renders only when the active goal
-/// RPC returns one; every row keeps its destination, state copy, and
-/// honesty rules from UX_FLOWS.md §13.
+/// The identity block comes first (name from the email local-part, the
+/// private-beta pill, the current goal when the active-goal query returns
+/// one). Then grouped lists under sentence-case section labels: Plan, Health,
+/// Appearance, Notifications, AI coach and Privacy, with sign-out at the foot.
+/// Every value is real; rows without a destination show no chevron.
 class AccountScreen extends StatefulWidget {
   const AccountScreen({
     required this.environment,
@@ -62,24 +62,25 @@ class AccountScreen extends StatefulWidget {
 }
 
 class _AccountScreenState extends State<AccountScreen> {
-  late Future<NotificationPreferences> _notifications;
   late Future<Map<String, dynamic>> _aiUsage;
   late Future<Map<String, dynamic>> _profile;
+  late Future<HealthSyncStatus> _health;
 
   @override
   void initState() {
     super.initState();
-    _notifications = widget.notifications.load();
     _aiUsage = widget.coach.loadUsage();
     _profile = _loadIdentity();
+    _health = widget.health.loadStatus();
   }
 
-  /// Signed-in email local-part + active goal for the identity block.
-  /// Offline or unconfigured, this resolves to placeholder-free fallbacks:
-  /// the name falls back to 'Tracend member' (never a fabricated value),
-  /// the goal line simply doesn't render.
+  /// Signed-in email local-part and active goal for the identity block.
+  /// Offline or unconfigured, the name falls back to 'Tracend member' (never
+  /// a fabricated value) and the goal line does not render.
   Future<Map<String, dynamic>> _loadIdentity() async {
-    final email = Supabase.instance.client.auth.currentUser?.email;
+    final email = widget.environment.hasSupabaseConfiguration
+        ? Supabase.instance.client.auth.currentUser?.email
+        : null;
     final name = email == null || email.isEmpty
         ? 'Tracend member'
         : email.split('@').first;
@@ -103,25 +104,28 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   Widget build(BuildContext context) {
     final themeController = TracendThemeScope.maybeOf(context);
-    final colors = context.tracendColors;
+    final gutter = MediaQuery.sizeOf(context).width < 375
+        ? TracendSpacing.md
+        : TracendSpacing.gutter;
+    final configured = widget.environment.hasSupabaseConfiguration;
+    final aiConsent = widget.aiConsent;
     return Scaffold(
       appBar: AppBar(title: const Text('Account')),
       body: SafeArea(
         top: false,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            TracendSpacing.gutter,
-            TracendSpacing.md,
-            TracendSpacing.gutter,
+          padding: EdgeInsets.fromLTRB(
+            gutter,
+            TracendSpacing.xs,
+            gutter,
             TracendSpacing.xxl,
           ),
           children: [
             FutureBuilder<Map<String, dynamic>>(
               future: _profile,
               builder: (context, snapshot) {
-                // The identity block renders immediately with the signed-in
-                // name; the goal line appears only when the RPC confirms one
-                // (never fabricated, never stuck on a spinner).
+                // The identity renders at once with the fallback name; the
+                // goal line appears only when the query confirms one.
                 final name =
                     snapshot.data?['name'] as String? ?? 'Tracend member';
                 final goal = snapshot.data?['goal'] as Map<String, dynamic>?;
@@ -131,132 +135,104 @@ class _AccountScreenState extends State<AccountScreen> {
                 );
               },
             ),
-            const AccountSectionLabel('PLAN AND PROFILE'),
-            PremiumGradientCard(
-              padding: EdgeInsets.zero,
-              child: AccountRow(
-                title: 'Profile and goals',
-                detail: 'Goal, training profile, approved plan',
-                onTap: _openProfileGoals,
-              ),
-            ),
-            const AccountSectionLabel('CONNECTIONS'),
-            if (themeController != null) ...[
-              TracendCard(
-                padding: EdgeInsets.zero,
-                child: _ThemeSelector(controller: themeController),
-              ),
-              const SizedBox(height: TracendSpacing.sm),
-            ],
-            // Full card (not compact): the profile is the only home for
-            // Apple Health controls since the Chunk 6 Today redesign, so the
-            // sync chips, missing-signal detail, and "Last refreshed" stamp
-            // must stay visible here — they are the sync feedback.
-            HealthStatusCard(repository: widget.health),
-            const SizedBox(height: TracendSpacing.sm),
-            FutureBuilder<NotificationPreferences>(
-              future: _notifications,
-              builder: (context, snapshot) => TracendCard(
-                padding: EdgeInsets.zero,
-                child: AccountRow(
-                  title: 'Notifications',
-                  detail: _notificationDetail(snapshot.data),
-                  onTap: () => _openNotifications(snapshot.data),
+            const SectionLabel('Plan'),
+            TracendGroupedList(
+              children: [
+                TracendListRow(
+                  title: 'Profile and goals',
+                  subtitle: 'Goal, training profile and approved plan',
+                  leading: const TracendRowIcon(icon: CupertinoIcons.person),
+                  onTap: _openProfileGoals,
                 ),
-              ),
+              ],
             ),
-            const AccountSectionLabel('AI SERVICE'),
-            FutureBuilder<Map<String, dynamic>>(
-              future: _aiUsage,
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return TracendCard(
-                    padding: EdgeInsets.zero,
-                    child: AccountRow(
-                      title: 'AI usage unavailable',
-                      detail: 'Open details to retry',
-                      onTap: () => _openAiUsage(null),
-                    ),
-                  );
-                }
-                final usage = snapshot.data;
-                return TracendCard(
-                  padding: EdgeInsets.zero,
-                  child: AccountRow(
-                    title: _aiUsageTitle(usage),
-                    detail: _aiUsageDetail(usage),
-                    onTap: () => _openAiUsage(usage),
-                  ),
-                );
-              },
-            ),
-            if (widget.environment.hasSupabaseConfiguration &&
-                widget.coach is CoachChatRepository) ...[
-              const SizedBox(height: TracendSpacing.sm),
-              TracendCard(
-                padding: EdgeInsets.zero,
-                child: AccountRow(
-                  title: 'Coach conversations',
-                  detail: 'Review or delete saved threads',
-                  onTap: _openCoachThreads,
-                ),
-              ),
-              const SizedBox(height: TracendSpacing.sm),
-              Text(
-                'Provider credentials are managed securely on the server.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-            const AccountSectionLabel('PRIVACY AND DATA'),
-            TracendCard(
-              padding: EdgeInsets.zero,
-              child: Column(
+            const SectionLabel('Health'),
+            FutureBuilder<HealthSyncStatus>(
+              future: _health,
+              builder: (context, snapshot) => TracendGroupedList(
                 children: [
-                  if (widget.aiConsent case final aiConsent?) ...[
-                    ListenableBuilder(
-                      listenable: aiConsent,
-                      builder: (context, _) => AccountRow(
-                        title: 'AI coaching',
-                        detail: aiConsent.granted
-                            ? 'On · DeepSeek writes Coach answers'
-                            : 'Off',
-                        onTap: () =>
-                            showAiCoachingConsentSheet(context, aiConsent),
-                      ),
-                    ),
-                    Divider(
-                      height: 1,
-                      thickness: 0.5,
-                      color: colors.borderHairline,
-                    ),
-                  ],
-                  AccountRow(
-                    title: 'Privacy and AI processing',
-                    detail: 'Review consent by purpose',
-                    onTap: _openConsentLedger,
-                  ),
-                  Divider(
-                    height: 1,
-                    thickness: 0.5,
-                    color: colors.borderHairline,
-                  ),
-                  AccountRow(
-                    title: 'Export data',
-                    detail: 'Requires recent authentication',
-                    onTap: _openExport,
-                  ),
-                  Divider(
-                    height: 1,
-                    thickness: 0.5,
-                    color: colors.borderHairline,
-                  ),
-                  AccountRow(
-                    title: 'Delete account',
-                    detail: 'Permanent and audited',
-                    onTap: _openDeletion,
+                  TracendListRow(
+                    title: 'Apple Health',
+                    subtitle: snapshot.hasData
+                        ? appleHealthStatusText(snapshot.data!)
+                        : snapshot.hasError
+                        ? 'Status could not be read'
+                        : 'Checking…',
+                    leading: const TracendRowIcon(icon: CupertinoIcons.heart),
+                    onTap: _openHealth,
                   ),
                 ],
               ),
+            ),
+            if (themeController != null) ...[
+              const SectionLabel('Appearance'),
+              _AppearanceControl(controller: themeController),
+            ],
+            const SectionLabel('Notifications'),
+            NotificationSettings(repository: widget.notifications),
+            const SectionLabel('AI coach'),
+            ListenableBuilder(
+              listenable: Listenable.merge([?aiConsent]),
+              builder: (context, _) => FutureBuilder<Map<String, dynamic>>(
+                future: _aiUsage,
+                builder: (context, snapshot) => TracendGroupedList(
+                  children: [
+                    if (aiConsent != null)
+                      TracendListRow(
+                        title: 'AI coaching',
+                        subtitle: aiConsent.granted
+                            ? 'On · ${aiConsent.notice.providerLabel} writes Coach answers'
+                            : 'Off · plans and logging still work',
+                        leading: const TracendRowIcon(
+                          icon: CupertinoIcons.chat_bubble_text,
+                        ),
+                        onTap: () =>
+                            showAiCoachingConsentSheet(context, aiConsent),
+                      ),
+                    _usageRow(context, snapshot),
+                    if (configured && widget.coach is CoachChatRepository)
+                      TracendListRow(
+                        title: 'Coach conversations',
+                        subtitle: 'Review or delete saved conversations',
+                        leading: const TracendRowIcon(
+                          icon: CupertinoIcons.text_bubble,
+                        ),
+                        onTap: _openCoachThreads,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const AccountFootnote(
+              'Provider keys stay on Tracend’s server, never on this phone.',
+            ),
+            const SectionLabel('Privacy'),
+            TracendGroupedList(
+              children: [
+                TracendListRow(
+                  title: 'Export data',
+                  subtitle: 'An encrypted copy of everything you logged',
+                  leading: const TracendRowIcon(
+                    icon: CupertinoIcons.arrow_down_doc,
+                  ),
+                  onTap: _openExport,
+                ),
+                TracendListRow(
+                  title: 'Consent history',
+                  subtitle: 'Your privacy and AI choices, with dates',
+                  leading: const TracendRowIcon(icon: CupertinoIcons.lock),
+                  onTap: _openConsentHistory,
+                ),
+                TracendListRow(
+                  title: 'Delete account',
+                  subtitle: 'Permanent; asks for your password',
+                  leading: TracendRowIcon(
+                    icon: CupertinoIcons.delete,
+                    color: context.tracendColors.stateDanger,
+                  ),
+                  onTap: _openDeletion,
+                ),
+              ],
             ),
             const SizedBox(height: TracendSpacing.xl),
             OutlinedButton(
@@ -274,42 +250,41 @@ class _AccountScreenState extends State<AccountScreen> {
     );
   }
 
-  String _aiUsageTitle(Map<String, dynamic>? usage) {
+  TracendListRow _usageRow(
+    BuildContext context,
+    AsyncSnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    const icon = TracendRowIcon(icon: CupertinoIcons.chart_bar);
     if (!widget.environment.hasSupabaseConfiguration) {
-      return 'AI service not configured';
+      return TracendListRow(
+        title: 'AI service not configured',
+        subtitle: 'Approved plans and manual logging remain available',
+        leading: icon,
+        onTap: () => _openAiUsage(null),
+      );
     }
-    if (usage == null) return 'AI usage';
-    if (usage['blocked'] == true) return 'AI paused at monthly limit';
-    final runs = (usage['successful_runs'] as num?)?.toInt() ?? 0;
-    final cost = (usage['estimated_cost_usd'] as num?)?.toDouble() ?? 0;
-    return 'AI usage · $runs requests · \$${cost.toStringAsFixed(4)} estimate';
-  }
-
-  String _aiUsageDetail(Map<String, dynamic>? usage) {
-    if (!widget.environment.hasSupabaseConfiguration) {
-      return 'Approved plans and manual logging remain available';
+    if (snapshot.hasError) {
+      return TracendListRow(
+        title: 'AI usage unavailable',
+        subtitle: 'Open to try again',
+        leading: icon,
+        onTap: () => _openAiUsage(null),
+      );
     }
-    if (usage == null) return 'Checking usage...';
-    if (usage['blocked'] == true) {
-      return 'Manual logging and approved plans remain available';
+    final data = snapshot.data;
+    if (data == null) {
+      return const TracendListRow(
+        title: 'AI usage this month',
+        subtitle: 'Checking usage…',
+        leading: icon,
+      );
     }
-    final hardStop = (usage['hard_stop_usd'] as num?)?.toDouble();
-    if (usage['warning'] == true && hardStop != null) {
-      return 'Approaching the ${usdText(hardStop)} monthly hard stop';
-    }
-    final warningAt = (usage['warning_threshold_usd'] as num?)?.toDouble();
-    if (warningAt != null && hardStop != null) {
-      return 'Warning at ${usdText(warningAt)} · hard stop ${usdText(hardStop)}';
-    }
-    return 'Operational estimates · tap for detail';
-  }
-
-  Future<void> _openExport() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => PrivacyExportSheet(repository: widget.exports),
+    final usage = AiUsageSummary.fromJson(data);
+    return TracendListRow(
+      title: 'AI usage this month',
+      subtitle: usage.accountLine,
+      leading: icon,
+      onTap: () => _openAiUsage(data),
     );
   }
 
@@ -348,6 +323,22 @@ class _AccountScreenState extends State<AccountScreen> {
     return {'profile': values[0], 'goal': values[1], 'plan': values[2]};
   }
 
+  Future<void> _openHealth() async {
+    await showTracendSheet<void>(
+      context,
+      title: 'Apple Health',
+      subtitle: 'Read-only summaries for your plan and the Coach',
+      builder: (_) =>
+          HealthStatusCard(repository: widget.health, onSynced: _reloadHealth),
+    );
+    _reloadHealth();
+  }
+
+  void _reloadHealth() {
+    if (!mounted) return;
+    setState(() => _health = widget.health.loadStatus());
+  }
+
   Future<void> _openAiUsage(Map<String, dynamic>? initial) =>
       Navigator.of(context).push<void>(
         CupertinoPageRoute(
@@ -356,9 +347,9 @@ class _AccountScreenState extends State<AccountScreen> {
         ),
       );
 
-  Future<void> _openConsentLedger() => Navigator.of(context).push<void>(
+  Future<void> _openConsentHistory() => Navigator.of(context).push<void>(
     CupertinoPageRoute(
-      builder: (_) => ConsentLedgerScreen(load: _loadConsentRecords),
+      builder: (_) => ConsentHistoryScreen(load: _loadConsentRecords),
     ),
   );
 
@@ -376,72 +367,66 @@ class _AccountScreenState extends State<AccountScreen> {
         .toList();
   }
 
+  Future<void> _openExport() => showTracendSheet<void>(
+    context,
+    title: 'Export your data',
+    builder: (_) => PrivacyExportSheet(repository: widget.exports),
+  );
+
   Future<void> _openDeletion() async {
-    final outcome = await showModalBottomSheet<AccountDeletionOutcome>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
+    final outcome = await showTracendSheet<AccountDeletionOutcome>(
+      context,
+      title: 'Delete account',
       builder: (_) => AccountDeletionSheet(repository: widget.deletion),
     );
     if (outcome == null || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
+    // The toast sits in the root overlay, so it outlives this page.
+    TracendToast.show(
+      context,
+      outcome == AccountDeletionOutcome.deleted
+          ? 'Your account was deleted'
+          : 'Signed out. Sign in to see whether the account remains.',
+      icon: outcome == AccountDeletionOutcome.deleted
+          ? CupertinoIcons.checkmark_alt
+          : CupertinoIcons.info,
+    );
     await widget.onSignOut?.call();
     if (mounted) Navigator.of(context).pop();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          outcome == AccountDeletionOutcome.deleted
-              ? 'Your account was deleted.'
-              : 'You were signed out. Sign in to see whether the account remains.',
-        ),
-      ),
-    );
   }
 
   Future<void> _openCoachThreads() async {
     final repository = widget.coach;
     if (repository is! CoachChatRepository) return;
-    final chat = repository as CoachChatRepository;
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      useSafeArea: true,
-      builder: (_) => CoachThreadsSheet(chat: chat),
-    );
-  }
-
-  String _notificationDetail(NotificationPreferences? preferences) {
-    if (preferences == null) return 'Checking permission...';
-    if (!preferences.isAuthorized) return 'Off · private reminders only';
-    final count = [
-      preferences.dailyCheckIn,
-      preferences.weeklyReview,
-    ].where((enabled) => enabled).length;
-    return count == 0
-        ? 'Allowed · no reminders scheduled'
-        : '$count reminder types enabled';
-  }
-
-  Future<void> _openNotifications(NotificationPreferences? current) async {
-    final initial = current ?? await _notifications;
-    if (!mounted) return;
-    final saved = await showModalBottomSheet<NotificationPreferences>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
+    await showTracendSheet<void>(
+      context,
+      title: 'Coach conversations',
       builder: (_) =>
-          NotificationSheet(repository: widget.notifications, initial: initial),
+          CoachThreadsSheet(chat: repository as CoachChatRepository),
     );
-    if (saved != null && mounted) {
-      setState(() {
-        _notifications = Future.value(saved);
-      });
-    }
   }
 }
 
-/// Stitch identity block: display-headline name, private-beta chip, current
-/// goal line, and the edit affordance opening Profile and goals.
+/// Apple Health status in plain words: "Updated today at 14:05".
+String appleHealthStatusText(HealthSyncStatus status, {DateTime? now}) {
+  final synced = status.lastSuccessfulSync;
+  if (status.state == HealthConnectionState.unavailable) {
+    return 'Not available on this iPhone';
+  }
+  if (synced == null) return 'Not connected · manual logging works';
+  final local = synced.toLocal();
+  final day = friendlyDate(local, now: now);
+  final updated =
+      'Updated ${day == 'Today' || day == 'Yesterday' ? day.toLowerCase() : day} '
+      'at ${clockTime(local)}';
+  return switch (status.state) {
+    HealthConnectionState.stale => '$updated · needs a refresh',
+    HealthConnectionState.partial => '$updated · some signals missing',
+    _ => updated,
+  };
+}
+
+/// The identity block: the name, the private-beta pill and the current goal.
+/// Editing lives in Profile and goals, so there is no separate edit control.
 class _IdentityBlock extends StatelessWidget {
   const _IdentityBlock({required this.name, this.goal});
 
@@ -450,101 +435,64 @@ class _IdentityBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.headlineMedium,
-                    ),
-                  ),
-                  const SizedBox(width: TracendSpacing.sm),
-                  TracendPill(label: 'Private beta', compact: true),
-                ],
-              ),
-              if (goal != null) ...[
-                const SizedBox(height: TracendSpacing.xs),
-                Text(
-                  'Current goal · $goal',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(width: TracendSpacing.sm),
-        CupertinoButton(
-          padding: EdgeInsets.zero,
-          minimumSize: const Size(44, 44),
-          onPressed: () {},
-          child: Text(
-            'Edit',
-            style: Theme.of(
-              context,
-            ).textTheme.labelLarge?.copyWith(color: colors.actionPrimary),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ThemeSelector extends StatelessWidget {
-  const _ThemeSelector({required this.controller});
-
-  final TracendThemeController controller;
-
-  @override
-  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: TracendSpacing.md,
-        vertical: TracendSpacing.xs,
-      ),
-      child: Row(
+      padding: const EdgeInsets.only(top: TracendSpacing.xs, left: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Appearance',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Dark is the Tracend default',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ),
+          Text(
+            name,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.headlineMedium,
           ),
-          DropdownButton<ThemeMode>(
-            value: controller.mode,
-            underline: const SizedBox.shrink(),
-            items: const [
-              DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
-              DropdownMenuItem(value: ThemeMode.light, child: Text('Light')),
-              DropdownMenuItem(value: ThemeMode.system, child: Text('System')),
+          const SizedBox(height: TracendSpacing.xs),
+          Wrap(
+            spacing: TracendSpacing.xs,
+            runSpacing: TracendSpacing.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const StatusChip(
+                label: 'Private beta',
+                icon: CupertinoIcons.lock_shield,
+              ),
+              if (goal != null)
+                Text('Current goal: $goal', style: textTheme.bodyMedium),
             ],
-            onChanged: (value) {
-              if (value != null) controller.setMode(value);
-            },
           ),
         ],
       ),
     );
   }
+}
+
+/// System / Dark / Light, applied at once.
+class _AppearanceControl extends StatelessWidget {
+  const _AppearanceControl({required this.controller});
+
+  final TracendThemeController controller;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Semantics(
+        label: 'Appearance',
+        container: true,
+        child: TracendSegmentedControl<ThemeMode>(
+          segments: const [
+            (ThemeMode.system, 'System'),
+            (ThemeMode.dark, 'Dark'),
+            (ThemeMode.light, 'Light'),
+          ],
+          selected: controller.mode,
+          onChanged: controller.setMode,
+        ),
+      ),
+      const AccountFootnote(
+        'System follows your iPhone’s setting. Dark is the Tracend default.',
+      ),
+    ],
+  );
 }

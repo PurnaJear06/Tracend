@@ -5,12 +5,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/shared/ai_provider_names.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_proposal_view.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
+import 'package:tracend/shared/brand/tracend_mark.dart';
 
 void main() {
   testWidgets('owner auth validates fields before contacting Supabase', (
@@ -23,7 +25,8 @@ void main() {
       ),
     );
 
-    expect(find.text('Owner development access'), findsOneWidget);
+    expect(find.text('Sign in to Tracend'), findsOneWidget);
+    expect(find.text('Private beta: email sign-in'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pump();
 
@@ -36,6 +39,55 @@ void main() {
     await tester.tap(find.text('Create account'));
     await tester.pump();
     expect(find.widgetWithText(FilledButton, 'Create account'), findsOneWidget);
+    expect(find.text('Create your Tracend account'), findsOneWidget);
+  });
+
+  testWidgets(
+    'sign-in lays out at 320pt × 2 with the mark drawn dark on light',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 844);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.light,
+          home: OwnerAuthScreen(onAuthenticated: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final mark = tester.widget<TracendMark>(find.byType(TracendMark));
+      expect(mark.letterColor, isNot(TracendBrandColors.chalk));
+      expect(find.textContaining('Sign in with Apple'), findsNothing);
+    },
+  );
+
+  test('provider names come from the display-name map', () {
+    expect(aiProviderDisplayName('deepseek'), 'DeepSeek');
+    expect(aiProviderDisplayName('deepseek-chat'), 'DeepSeek');
+    expect(aiProviderDisplayName('deepseek-flash'), 'DeepSeek');
+    expect(aiProviderDisplayName('groq'), 'Qwen');
+    expect(aiProviderDisplayName('gemini-3.5-flash'), 'Gemini');
+    expect(aiProviderDisplayName('mock'), 'Test model');
+    // An unknown id is never shown raw.
+    expect(aiProviderDisplayName('acme-large'), isNull);
+    expect(aiProviderDisplayName('deepseeker'), isNull);
+    expect(aiProviderDisplayName(null), isNull);
+    expect(
+      OnboardingProposalView.provenanceLabel('deepseek-chat'),
+      'Proposed by AI (DeepSeek) · checked by Tracend',
+    );
+    expect(
+      OnboardingProposalView.provenanceLabel(null),
+      'Proposed by AI · checked by Tracend',
+    );
+    expect(
+      OnboardingProposalView.provenanceLabel('acme-large'),
+      'Proposed by AI · checked by Tracend',
+    );
   });
 
   testWidgets('a beginner answers every step and approves the exact plan', (
@@ -120,14 +172,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Your starting plan'), findsOneWidget);
+    // The provider stays named, through the display-name map.
     expect(
-      find.textContaining('Proposed by AI (deepseek-flash)'),
+      find.text('Proposed by AI (DeepSeek) · checked by Tracend'),
       findsOneWidget,
     );
     expect(find.text('Mon · Full body A'), findsOneWidget);
     expect(find.text('Goblet squat'), findsOneWidget);
     expect(find.text('2100 kcal a day'), findsOneWidget);
-    expect(find.textContaining('How this was calculated'), findsOneWidget);
+    // The formula sits behind its disclosure until asked for.
+    expect(find.text('How we calculated this'), findsOneWidget);
+    expect(find.textContaining('Resting energy'), findsNothing);
+    await _openCalculation(tester);
+    expect(find.textContaining('Resting energy'), findsOneWidget);
 
     final payload = repository.savedPayload!;
     expect(payload['training_weekdays'], [1, 3, 4, 5]);
@@ -794,7 +851,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(heavier);
         await tester.pumpAndSettle();
-        await _tapText(tester, 'None');
+        await _tapText(tester, '0');
         await _continue(tester);
 
         expect(find.text('Where should the plan focus?'), findsOneWidget);
@@ -1063,6 +1120,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Start at 82.5 kg'), findsOneWidget);
       expect(find.text('Focus: chest 10+ sets a week.'), findsOneWidget);
+      await _openCalculation(tester);
       expect(
         find.textContaining(
           'Your usual months (11): strength 3.4 times a week · sleep 7 h 5 min.',
@@ -1217,6 +1275,7 @@ void main() {
         find.widgetWithText(FilledButton, 'Continue to your coach'),
       );
       await tester.pumpAndSettle();
+      await _openCalculation(tester);
       expect(
         find.textContaining(
           'Apple Health, last 28 days: about 9,100 steps a day · 3 workouts a week · sleep 6 h 50 min · weight down 0.3 kg a week.',
@@ -1376,6 +1435,14 @@ Future<void> _tapText(WidgetTester tester, String text) async {
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
   await tester.tap(finder);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openCalculation(WidgetTester tester) async {
+  final disclosure = find.text('How we calculated this');
+  await tester.ensureVisible(disclosure);
+  await tester.pumpAndSettle();
+  await tester.tap(disclosure);
   await tester.pumpAndSettle();
 }
 

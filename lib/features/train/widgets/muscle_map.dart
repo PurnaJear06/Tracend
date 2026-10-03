@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:tracend/features/train/muscle_groups.dart';
 import 'package:tracend/features/train/train_view_models.dart';
 import 'package:tracend/features/train/widgets/muscle_map_geometry.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 
 export 'package:tracend/features/train/widgets/muscle_map_geometry.dart'
     show BodySide;
@@ -181,7 +182,7 @@ class _MuscleMapState extends State<MuscleMap> with TickerProviderStateMixin {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    _reduceMotion = TracendMotionScope.of(context) != TracendMotionLevel.full;
     if (_started) return;
     _started = true;
     if (_reduceMotion || !widget.introAnimation) {
@@ -448,7 +449,7 @@ class _MuscleMapPairState extends State<MuscleMapPair>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    _reduceMotion = TracendMotionScope.of(context) != TracendMotionLevel.full;
     _syncPulse();
   }
 

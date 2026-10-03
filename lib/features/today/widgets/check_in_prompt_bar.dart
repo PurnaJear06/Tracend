@@ -1,12 +1,12 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/shared/widgets/premium_gradient_card.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
+import 'package:tracend/shared/widgets/pressable.dart';
 
-/// Check-in prompt bar (Stitch `today.html`). Opens the real check-in sheet.
-/// Always present (plan §4.1 binding table); copy reflects whether today's
-/// check-in already exists.
+/// The morning check-in. Before today's check-in it is a call to action with
+/// a lime "Check in" pill; once done it shrinks to a quiet row that reopens
+/// the sheet to update it.
 class CheckInPromptBar extends StatelessWidget {
   const CheckInPromptBar({
     required this.onCheckIn,
@@ -20,62 +20,101 @@ class CheckInPromptBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onCheckIn,
-        borderRadius: BorderRadius.circular(TracendRadii.control + 4),
-        child: PremiumGradientCard(
-          padding: const EdgeInsets.symmetric(
-            horizontal: TracendSpacing.md,
-            vertical: TracendSpacing.sm,
+    if (completed) {
+      return TracendGroupedList(
+        children: [
+          TracendListRow(
+            leading: TracendRowIcon(
+              icon: CupertinoIcons.checkmark_alt,
+              color: colors.stateStable,
+            ),
+            title: 'Morning check-in',
+            subtitle: 'Done. Tap to update it.',
+            onTap: onCheckIn,
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.05),
-                  border: Border.all(color: colors.borderHairline),
-                ),
-                child: Icon(
-                  completed
-                      ? CupertinoIcons.check_mark
-                      : CupertinoIcons.chat_bubble,
-                  size: 15,
-                  color: completed ? colors.stateStable : colors.textSecondary,
-                ),
-              ),
-              const SizedBox(width: TracendSpacing.sm),
-              Expanded(
-                child: Text(
-                  completed
-                      ? 'Morning status recorded'
-                      : 'Update morning status?',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textPrimary,
-                    fontWeight: FontWeight.w300,
-                  ),
-                ),
-              ),
-              Text(
-                completed ? 'EDIT' : 'CHECK-IN',
-                style: TracendTheme.labelCaps(
-                  context,
-                  color: colors.actionPrimary,
-                ),
-              ),
-              const SizedBox(width: TracendSpacing.xxs),
-              Icon(
-                CupertinoIcons.arrow_right,
-                size: 16,
-                color: colors.textSecondary,
-              ),
-            ],
+        ],
+      );
+    }
+    final textTheme = Theme.of(context).textTheme;
+    // At the largest text sizes the pill moves under the copy.
+    final large = MediaQuery.textScalerOf(context).scale(1) > 1.3;
+    final badge = Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: colors.accentSignalTint,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        CupertinoIcons.sun_max_fill,
+        size: 20,
+        color: colors.accentSignalInk,
+      ),
+    );
+    final copy = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Morning check-in', style: textTheme.titleMedium),
+        const SizedBox(height: 2),
+        Text(
+          "About a minute. It sharpens today's advice.",
+          style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+        ),
+      ],
+    );
+    final pill = ExcludeSemantics(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: colors.accentSignal,
+          borderRadius: BorderRadius.circular(TracendRadii.pill),
+        ),
+        child: Text(
+          'Check in',
+          style: textTheme.labelLarge?.copyWith(
+            color: colors.onAccentSignal,
+            fontWeight: FontWeight.w700,
           ),
         ),
+      ),
+    );
+    return Pressable(
+      onTap: onCheckIn,
+      pressedScale: 0.98,
+      semanticLabel:
+          "Morning check-in. About a minute. It sharpens today's advice.",
+      borderRadius: BorderRadius.circular(TracendRadii.card),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(TracendRadii.card),
+          border: Border.all(color: colors.accentSignalRing, width: 1.5),
+        ),
+        child: large
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      badge,
+                      const SizedBox(width: TracendSpacing.sm),
+                      Expanded(child: copy),
+                    ],
+                  ),
+                  const SizedBox(height: TracendSpacing.sm),
+                  pill,
+                ],
+              )
+            : Row(
+                children: [
+                  badge,
+                  const SizedBox(width: TracendSpacing.sm),
+                  Expanded(child: copy),
+                  const SizedBox(width: TracendSpacing.xs),
+                  pill,
+                ],
+              ),
       ),
     );
   }

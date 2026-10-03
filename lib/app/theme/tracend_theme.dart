@@ -152,9 +152,11 @@ abstract final class TracendTheme {
         foregroundColor: colors.textPrimary,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
-        centerTitle: false,
+        // Pushed screens use the iOS inline bar: a centred 17pt title on a
+        // filled bar, so content never shows through it.
+        centerTitle: true,
         elevation: 0,
-        titleTextStyle: textTheme.titleLarge,
+        titleTextStyle: textTheme.titleMedium,
       ),
       cardTheme: CardThemeData(
         color: colors.surface,

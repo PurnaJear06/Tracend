@@ -2,8 +2,13 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
+import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/brand/tracend_mark.dart';
+import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
 
+/// Email sign-in for the private beta: the brand mark, "Sign in to Tracend",
+/// and one small line saying how this beta signs in. Sign in with Apple
+/// replaces it before external distribution (ADR 0002).
 class OwnerAuthScreen extends StatefulWidget {
   const OwnerAuthScreen({required this.onAuthenticated, super.key});
 
@@ -47,7 +52,7 @@ class _OwnerAuthScreenState extends State<OwnerAuthScreen> {
         );
         if (result.session == null) {
           setState(() {
-            _notice = 'Check your email to confirm this development account.';
+            _notice = 'Check your email to confirm your account.';
           });
           return;
         }
@@ -82,137 +87,165 @@ class _OwnerAuthScreenState extends State<OwnerAuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    final textTheme = Theme.of(context).textTheme;
+    final light = Theme.of(context).brightness == Brightness.light;
+    final gutter = MediaQuery.sizeOf(context).width < 375
+        ? TracendSpacing.md
+        : TracendSpacing.gutter;
     return Scaffold(
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(TracendSpacing.gutter),
+            padding: EdgeInsets.fromLTRB(
+              gutter,
+              TracendSpacing.xl,
+              gutter,
+              TracendSpacing.lg,
+            ),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Icon(
-                      CupertinoIcons.waveform_path_ecg,
-                      size: 44,
-                      color: context.tracendColors.actionPrimary,
-                      semanticLabel: 'Tracend',
-                    ),
-                    const SizedBox(height: TracendSpacing.lg),
-                    Text(
-                      'Your plan, explained by your data.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.displaySmall,
-                    ),
-                    const SizedBox(height: TracendSpacing.sm),
-                    Text(
-                      'Owner development access',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: TracendSpacing.xl),
-                    SegmentedButton<bool>(
-                      segments: const [
-                        ButtonSegment(value: false, label: Text('Sign in')),
-                        ButtonSegment(
-                          value: true,
-                          label: Text('Create account'),
-                        ),
-                      ],
-                      selected: {_createAccount},
-                      onSelectionChanged: _submitting
-                          ? null
-                          : (selection) => setState(() {
-                              _createAccount = selection.single;
-                              _error = null;
-                              _notice = null;
-                            }),
-                    ),
-                    const SizedBox(height: TracendSpacing.lg),
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        helperText:
-                            'Used only by Supabase Auth for this account.',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
-                      textInputAction: TextInputAction.next,
-                      validator: (value) {
-                        final email = value?.trim() ?? '';
-                        return email.contains('@')
-                            ? null
-                            : 'Enter a valid email address.';
-                      },
-                    ),
-                    const SizedBox(height: TracendSpacing.md),
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        helperText: 'Use at least 8 characters.',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          tooltip: _obscurePassword
-                              ? 'Show password'
-                              : 'Hide password',
-                          onPressed: () => setState(
-                            () => _obscurePassword = !_obscurePassword,
-                          ),
-                          icon: Icon(
-                            _obscurePassword
-                                ? CupertinoIcons.eye
-                                : CupertinoIcons.eye_slash,
-                          ),
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: AutofillGroup(
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: TracendMark(
+                          size: 72,
+                          letterColor: light
+                              ? colors.textPrimary
+                              : TracendBrandColors.chalk,
+                          semanticLabel: null,
                         ),
                       ),
-                      obscureText: _obscurePassword,
-                      autofillHints: [
-                        _createAccount
-                            ? AutofillHints.newPassword
-                            : AutofillHints.password,
-                      ],
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _submit(),
-                      validator: (value) => (value?.length ?? 0) >= 8
-                          ? null
-                          : 'Password must contain at least 8 characters.',
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: TracendSpacing.md),
+                      const SizedBox(height: TracendSpacing.lg),
                       Semantics(
-                        liveRegion: true,
+                        header: true,
                         child: Text(
-                          _error!,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: context.tracendColors.stateDanger,
-                              ),
+                          _createAccount
+                              ? 'Create your Tracend account'
+                              : 'Sign in to Tracend',
+                          textAlign: TextAlign.center,
+                          style: textTheme.headlineMedium,
                         ),
                       ),
+                      const SizedBox(height: TracendSpacing.xs),
+                      Text(
+                        'Your plan, explained by your data.',
+                        textAlign: TextAlign.center,
+                        style: textTheme.bodyLarge?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: TracendSpacing.xl),
+                      TracendSegmentedControl<bool>(
+                        segments: const [
+                          (false, 'Sign in'),
+                          (true, 'Create account'),
+                        ],
+                        selected: _createAccount,
+                        onChanged: (value) {
+                          if (_submitting) return;
+                          setState(() {
+                            _createAccount = value;
+                            _error = null;
+                            _notice = null;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: TracendSpacing.lg),
+                      TextFormField(
+                        controller: _emailController,
+                        decoration: const InputDecoration(labelText: 'Email'),
+                        keyboardType: TextInputType.emailAddress,
+                        autocorrect: false,
+                        autofillHints: const [AutofillHints.email],
+                        textInputAction: TextInputAction.next,
+                        validator: (value) {
+                          final email = value?.trim() ?? '';
+                          return email.contains('@')
+                              ? null
+                              : 'Enter a valid email address.';
+                        },
+                      ),
+                      const SizedBox(height: TracendSpacing.sm),
+                      TextFormField(
+                        controller: _passwordController,
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          helperText: _createAccount
+                              ? 'At least 8 characters.'
+                              : null,
+                          suffixIcon: IconButton(
+                            tooltip: _obscurePassword
+                                ? 'Show password'
+                                : 'Hide password',
+                            onPressed: () => setState(
+                              () => _obscurePassword = !_obscurePassword,
+                            ),
+                            icon: Icon(
+                              _obscurePassword
+                                  ? CupertinoIcons.eye
+                                  : CupertinoIcons.eye_slash,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                        obscureText: _obscurePassword,
+                        autofillHints: [
+                          _createAccount
+                              ? AutofillHints.newPassword
+                              : AutofillHints.password,
+                        ],
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => _submit(),
+                        validator: (value) => (value?.length ?? 0) >= 8
+                            ? null
+                            : 'Password must contain at least 8 characters.',
+                      ),
+                      if (_error != null) ...[
+                        const SizedBox(height: TracendSpacing.md),
+                        Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            _error!,
+                            style: textTheme.bodyMedium?.copyWith(
+                              color: colors.stateDanger,
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (_notice != null) ...[
+                        const SizedBox(height: TracendSpacing.md),
+                        Semantics(
+                          liveRegion: true,
+                          child: Text(_notice!, style: textTheme.bodyMedium),
+                        ),
+                      ],
+                      const SizedBox(height: TracendSpacing.lg),
+                      FilledButton(
+                        onPressed: _submitting ? null : _submit,
+                        child: _submitting
+                            ? TracendLoader(
+                                size: 24,
+                                semanticLabel: _createAccount
+                                    ? 'Creating your account'
+                                    : 'Signing in',
+                              )
+                            : Text(
+                                _createAccount ? 'Create account' : 'Sign in',
+                              ),
+                      ),
+                      const SizedBox(height: TracendSpacing.lg),
+                      Text(
+                        'Private beta: email sign-in',
+                        textAlign: TextAlign.center,
+                        style: textTheme.bodySmall,
+                      ),
                     ],
-                    if (_notice != null) ...[
-                      const SizedBox(height: TracendSpacing.md),
-                      Semantics(liveRegion: true, child: Text(_notice!)),
-                    ],
-                    const SizedBox(height: TracendSpacing.lg),
-                    FilledButton(
-                      onPressed: _submitting ? null : _submit,
-                      child: _submitting
-                          ? const TracendLoadingIndicator(size: 20)
-                          : Text(_createAccount ? 'Create account' : 'Sign in'),
-                    ),
-                    const SizedBox(height: TracendSpacing.md),
-                    Text(
-                      'Sign in with Apple remains deferred until external beta distribution.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.labelMedium,
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

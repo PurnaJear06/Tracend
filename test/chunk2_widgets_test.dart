@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
@@ -6,12 +5,10 @@ import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_insight_card.dart';
-import 'package:tracend/features/train/train_screen.dart';
-import 'package:tracend/features/train/widgets/prescription_cards.dart';
-import 'package:tracend/features/train/widgets/workout_hero.dart';
-import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/widgets/date_pill_strip.dart';
 import 'package:tracend/shared/widgets/targets_grid.dart';
+
+import 'widgets/haptics_recorder.dart';
 
 Widget _wrap(Widget child) {
   return MaterialApp(
@@ -112,17 +109,57 @@ void main() {
       expect(picked, DateTime(2026, 8, 20));
     });
 
+    testWidgets('today carries the lime ring and is announced', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _wrap(
+          DatePillStrip(
+            selectedDate: DateTime(2026, 8, 19),
+            today: DateTime(2026, 8, 20),
+            onSelectedDate: (_) {},
+          ),
+        ),
+      );
+      Container box(String day) => tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(ValueKey('date-pill-2026-08-$day')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final ring = box('20').foregroundDecoration as BoxDecoration?;
+      expect(ring?.border?.top.color, TracendColors.dark.accentSignalRing);
+      expect(box('19').foregroundDecoration, isNull);
+      expect(find.bySemanticsLabel('Thursday 20, today'), findsOneWidget);
+      expect(find.bySemanticsLabel('Wednesday 19, selected'), findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('changing the day plays the selection haptic', (tester) async {
+      final haptics = recordHaptics(tester);
+      await tester.pumpWidget(
+        _wrap(
+          DatePillStrip(
+            selectedDate: DateTime(2026, 8, 19),
+            onSelectedDate: (_) {},
+            onPreviousWeek: () {},
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('date-pill-2026-08-19')));
+      expect(haptics, isEmpty);
+      await tester.tap(find.byKey(const ValueKey('date-pill-2026-08-20')));
+      expect(haptics, ['HapticFeedbackType.selectionClick']);
+      expect(find.text('17 Aug – 23 Aug'), findsOneWidget);
+    });
+
     test('mondayOf normalizes to the week start', () {
       expect(mondayOf(DateTime(2026, 8, 19)), DateTime(2026, 8, 17));
       expect(mondayOf(DateTime(2026, 8, 17)), DateTime(2026, 8, 17));
       expect(mondayOf(DateTime(2026, 8, 23)), DateTime(2026, 8, 17));
     });
   });
-
-  // IntensityBar group removed (2026-09-04 Train redesign): the widget is
-  // retired — prescription stats and the planned/recorded effort bar are
-  // merged into ExerciseListCard rows. The 'logged RPE' and 'RPE N'
-  // assertions live on in the TrainScreen recorded-RPE tests below.
 
   group('TargetsGrid', () {
     testWidgets('shows consumed vs target with remaining protein', (
@@ -154,6 +191,11 @@ void main() {
       expect(find.text('172'), findsOneWidget);
       expect(find.text('48'), findsOneWidget);
       expect(find.text('74%'), findsOneWidget);
+      for (final label in ['Calories', 'Protein', 'Carbs', 'Fat']) {
+        expect(find.text(label), findsOneWidget);
+        expect(find.text(label.toUpperCase()), findsNothing);
+      }
+      expect(find.text('From confirmed meals'), findsOneWidget);
     });
 
     testWidgets('no targets shows honest note, no fabricated bars', (
@@ -198,6 +240,65 @@ void main() {
     });
   });
 
+  group('TargetsGrid layout', () {
+    const grid = TargetsGrid(
+      summary: NutritionSummary(
+        calories: 1720,
+        protein: 108,
+        carbohydrate: 1720,
+        fat: 48,
+        confirmedMeals: 3,
+      ),
+      targets: NutritionTargets(
+        calories: 2200,
+        protein: 160,
+        carbohydrate: 2400,
+        fat: 70,
+      ),
+    );
+
+    Future<void> pumpAt(
+      WidgetTester tester,
+      double width,
+      double textScale,
+    ) async {
+      tester.view.physicalSize = Size(width, 1600);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = textScale;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(
+        _wrap(
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: TracendSpacing.gutter),
+            child: grid,
+          ),
+        ),
+      );
+    }
+
+    testWidgets('Carbs and Fat share a row at 390pt', (tester) async {
+      await pumpAt(tester, 390, 1);
+      expect(tester.takeException(), isNull);
+      final carbs = tester.getTopLeft(find.text('Carbs'));
+      final fat = tester.getTopLeft(find.text('Fat'));
+      expect(fat.dy, carbs.dy);
+      expect(fat.dx, greaterThan(carbs.dx));
+    });
+
+    testWidgets('Carbs and Fat stack at 320pt × 2 instead of squeezing', (
+      tester,
+    ) async {
+      await pumpAt(tester, 320, 2);
+      expect(tester.takeException(), isNull);
+      final carbs = tester.getTopLeft(find.text('Carbs'));
+      final fat = tester.getTopLeft(find.text('Fat'));
+      expect(fat.dy, greaterThan(carbs.dy));
+      expect(fat.dx, carbs.dx);
+    });
+  });
+
   group('NutritionInsightCard', () {
     testWidgets('shows real decision fields and confidence', (tester) async {
       await tester.pumpWidget(
@@ -210,169 +311,6 @@ void main() {
       );
       expect(find.text('HIGH CONFIDENCE'.toUpperCase()), findsNothing);
       expect(find.text('High confidence'), findsOneWidget);
-    });
-  });
-
-  group('TrainScreen recorded RPE', () {
-    Future<void> scrollToExercises(WidgetTester tester) async {
-      // 2026-09-04 Train redesign: the merged exercise list sits below the
-      // week rail and hero, and SliverList builds lazily — scroll until the
-      // unique RPE 9 row is built (rows above it follow), then settle the
-      // entrance staggers of sections mounted mid-scroll.
-      await tester.scrollUntilVisible(
-        find.textContaining('RPE 9'),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
-    }
-
-    testWidgets(
-      'completed day shows averaged logged RPE, filtering out-of-range values',
-      (tester) async {
-        final repository = _RecordedRpeRepository();
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: ThemeData(
-              brightness: Brightness.dark,
-              extensions: const [TracendColors.dark],
-            ),
-            home: TrainScreen(repository: repository),
-          ),
-        );
-        await tester.pumpAndSettle();
-        expect(find.text('Completed'), findsOneWidget);
-        await scrollToExercises(tester);
-        expect(find.textContaining('logged 8.5'), findsOneWidget);
-        expect(find.textContaining('logged 7.0'), findsOneWidget);
-      },
-    );
-
-    testWidgets('incomplete day shows planned RPE without logged markers', (
-      tester,
-    ) async {
-      final repository = _RecordedRpeRepository(completed: false);
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData(
-            brightness: Brightness.dark,
-            extensions: const [TracendColors.dark],
-          ),
-          home: TrainScreen(repository: repository),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await scrollToExercises(tester);
-      // 'logged 8.5'-style stat chips never appear on an incomplete day.
-      // (Looser matchers false-hit the Execution card's empty-state copy
-      // about "comparable logged sets".)
-      expect(find.textContaining(RegExp('logged [0-9]')), findsNothing);
-      expect(find.textContaining('RPE 8'), findsWidgets);
-    });
-  });
-
-  group('RecentSessionsCard', () {
-    testWidgets('openable session shows chevron', (tester) async {
-      final workout = PlannedWorkout.fixture;
-      await tester.pumpWidget(
-        _wrap(
-          RecentSessionsCard(
-            sessions: [
-              TrainingSessionSummary(
-                name: 'Push day',
-                date: DateTime(2026, 8, 20),
-                durationSeconds: 3600,
-                workoutId: workout.id,
-              ),
-            ],
-            workoutForId: (id) => id == workout.id ? workout : null,
-            repository: FixtureWorkoutRepository(),
-          ),
-        ),
-      );
-      expect(find.text('Push day'), findsOneWidget);
-      expect(find.byIcon(CupertinoIcons.chevron_right), findsOneWidget);
-    });
-
-    testWidgets('session without workout_id is display-only (no chevron)', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _wrap(
-          RecentSessionsCard(
-            sessions: [
-              TrainingSessionSummary(
-                name: 'Old session',
-                date: DateTime(2026, 8, 18),
-                durationSeconds: 2400,
-                workoutId: null,
-              ),
-            ],
-            workoutForId: (_) => null,
-            repository: FixtureWorkoutRepository(),
-          ),
-        ),
-      );
-      expect(find.text('Old session'), findsOneWidget);
-      expect(find.byIcon(CupertinoIcons.chevron_right), findsNothing);
-    });
-
-    testWidgets('session with unresolvable workout_id is display-only', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _wrap(
-          RecentSessionsCard(
-            sessions: [
-              TrainingSessionSummary(
-                name: 'Orphan session',
-                date: DateTime(2026, 8, 17),
-                durationSeconds: 1800,
-                workoutId: 'nonexistent-id',
-              ),
-            ],
-            workoutForId: (_) => null,
-            repository: FixtureWorkoutRepository(),
-          ),
-        ),
-      );
-      expect(find.text('Orphan session'), findsOneWidget);
-      expect(find.byIcon(CupertinoIcons.chevron_right), findsNothing);
-    });
-  });
-
-  group('WorkoutHero coach insight', () {
-    testWidgets('hides insight line when coachInsight is null', (tester) async {
-      await tester.pumpWidget(
-        _wrap(
-          WorkoutHero(
-            workout: PlannedWorkout.fixture,
-            source: FixtureWorkoutRepository(),
-            coachInsight: null,
-          ),
-        ),
-      );
-      expect(find.text('COACH INSIGHT'), findsNothing);
-      expect(find.text('Push day'), findsOneWidget);
-    });
-
-    testWidgets('shows insight line when coachInsight is provided', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _wrap(
-          WorkoutHero(
-            workout: PlannedWorkout.fixture,
-            source: FixtureWorkoutRepository(),
-            coachInsight: 'Recovery looks solid. Push as planned.',
-          ),
-        ),
-      );
-      expect(find.text('COACH INSIGHT'), findsOneWidget);
-      expect(
-        find.text('Recovery looks solid. Push as planned.'),
-        findsOneWidget,
-      );
     });
   });
 
@@ -419,90 +357,6 @@ void main() {
       expect(find.text('Keep intake unchanged'), findsOneWidget);
     });
   });
-}
-
-/// Hub repository whose today workout is completed and whose session draft
-/// carries per-set RPE values, including out-of-range values that
-/// `_loadRecordedRpe` must filter out before averaging.
-class _RecordedRpeRepository extends FixtureWorkoutRepository {
-  _RecordedRpeRepository({this.completed = true});
-  final bool completed;
-
-  @override
-  Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
-      TrainingHubData(
-        planTitle: 'Approved training plan',
-        workouts: [PlannedWorkout.fixture],
-        recentSessions: [],
-        completedSessions: completed ? 1 : 0,
-        plannedSessions: 4,
-        progression: [],
-        completedDays: completed ? {DateTime.now()} : const {},
-      );
-
-  @override
-  Future<PlannedWorkout> loadTodayWorkout() async => PlannedWorkout.fixture;
-
-  @override
-  Future<String?> loadDraft(String workoutId) async => null;
-
-  @override
-  Future<Map<String, dynamic>?> loadSession(
-    PlannedWorkout workout, {
-    DateTime? localDate,
-  }) async => {
-    'exercises': [
-      {
-        'order': 1,
-        'sets': [
-          {'rpe': 8},
-          {'rpe': 9},
-          {'rpe': 15},
-        ],
-      },
-      {
-        'order': 2,
-        'sets': [
-          {'rpe': 7},
-          {'rpe': 0},
-        ],
-      },
-      {
-        'order': 3,
-        'sets': [
-          {'rpe': null},
-        ],
-      },
-    ],
-  };
-
-  @override
-  Future<void> saveDraft(String workoutId, String json) async {}
-
-  @override
-  Future<void> clearDraft(String workoutId) async {}
-
-  @override
-  Future<String> start(
-    PlannedWorkout workout,
-    String idempotencyKey, {
-    DateTime? localDate,
-  }) async => 'session-1';
-
-  @override
-  Future<void> sync(
-    String sessionId,
-    int revision,
-    Map<String, dynamic> draft,
-  ) async {}
-
-  @override
-  Future<void> complete(
-    String sessionId,
-    int revision,
-    int durationSeconds,
-    Map<String, dynamic> draft,
-  ) async {}
 }
 
 class _DecisionCoachRepository implements CoachRepository {

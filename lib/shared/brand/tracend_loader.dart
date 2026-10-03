@@ -2,6 +2,7 @@ import 'dart:ui' show PathMetric;
 
 import 'package:flutter/material.dart';
 import 'package:tracend/shared/brand/tracend_mark.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 
 /// The brand loading indicator: the mark's arc, with its dot riding along it
 /// and back. Under Reduce Motion the dot rests where it sits on the mark.
@@ -45,10 +46,15 @@ class _TracendLoaderState extends State<TracendLoader>
     curve: _curve,
   );
 
+  /// Reduce Motion or a reduced or static [TracendMotionScope] (as in
+  /// tests) rests the dot.
+  bool _still(BuildContext context) =>
+      TracendMotionScope.of(context) != TracendMotionLevel.full;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (MediaQuery.disableAnimationsOf(context)) {
+    if (_still(context)) {
       _travel.stop();
     } else if (!_travel.isAnimating) {
       _travel.repeat(reverse: true);
@@ -72,7 +78,7 @@ class _TracendLoaderState extends State<TracendLoader>
     final arcColor =
         widget.arcColor ??
         theme.colorScheme.onSurface.withValues(alpha: dark ? 0.22 : 0.18);
-    final still = MediaQuery.disableAnimationsOf(context);
+    final still = _still(context);
     return Semantics(
       label: widget.semanticLabel,
       child: ExcludeSemantics(

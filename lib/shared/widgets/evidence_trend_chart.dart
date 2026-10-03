@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/shared/formatting.dart';
 
@@ -202,13 +203,13 @@ class EvidenceTrendChart extends StatelessWidget {
               spacing: TracendSpacing.sm,
               runSpacing: TracendSpacing.xxs,
               children: [
-                Text(shortDate(ordered.first.date)),
+                Text(
+                  shortDate(ordered.first.date),
+                  style: TracendTheme.dataUtility(colors),
+                ),
                 Text(
                   '${_number(latest.value)} $unit · ${shortDate(latest.date)}',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: context.tracendColors.textPrimary,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
+                  style: TracendTheme.numeric(colors),
                 ),
               ],
             ),
@@ -235,7 +236,7 @@ class _TrendLegend extends StatelessWidget {
     final colors = context.tracendColors;
     final style = Theme.of(
       context,
-    ).textTheme.labelMedium?.copyWith(fontSize: 11);
+    ).textTheme.bodySmall?.copyWith(color: colors.textSecondary);
     return Wrap(
       spacing: TracendSpacing.md,
       runSpacing: TracendSpacing.xxs,
@@ -400,7 +401,7 @@ class _EvidenceTrendPainter extends CustomPainter {
           ..color = line.withValues(alpha: .42)
           ..strokeWidth = 1.5,
       );
-      _label(canvas, 'avg', Offset(plot.right - 24, y - 16));
+      _label(canvas, 'Avg', Offset(plot.right - 26, y - 17));
     }
 
     for (final overlay in overlays) {
@@ -468,7 +469,9 @@ class _EvidenceTrendPainter extends CustomPainter {
         text: value,
         style: TextStyle(
           color: text,
-          fontSize: 10,
+          fontFamily: TracendFonts.numericFamily,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),

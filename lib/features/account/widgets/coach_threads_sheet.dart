@@ -2,9 +2,14 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
+import 'package:tracend/shared/widgets/tracend_confirm.dart';
+import 'package:tracend/shared/widgets/tracend_toast.dart';
 
-/// Coach conversation list. Rows are display-only; the trailing delete
-/// control is the action (Chunk 4 decision — no dead chevron).
+/// Saved Coach conversations, the body of a Tracend sheet. Rows are
+/// display-only; the trailing delete control is the action, and it asks
+/// first because a deleted thread cannot come back.
 class CoachThreadsSheet extends StatefulWidget {
   const CoachThreadsSheet({required this.chat, super.key});
 
@@ -35,6 +40,14 @@ class _CoachThreadsSheetState extends State<CoachThreadsSheet> {
   }
 
   Future<void> _delete(CoachThread thread) async {
+    final confirmed = await showTracendConfirm(
+      context,
+      title: 'Delete this conversation?',
+      message: 'Its messages are removed for good.',
+      confirmLabel: 'Delete thread',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
     try {
       await widget.chat.deleteThread(thread.id);
     } catch (e) {
@@ -48,48 +61,63 @@ class _CoachThreadsSheetState extends State<CoachThreadsSheet> {
     setState(
       () => _threads = _threads?.where((item) => item.id != thread.id).toList(),
     );
+    TracendToast.show(context, 'Conversation deleted');
   }
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    child: Builder(
-      builder: (context) {
-        final threads = _threads;
-        return ListView(
-          padding: const EdgeInsets.all(TracendSpacing.gutter),
-          children: [
-            Text(
-              'Coach conversations',
-              style: Theme.of(context).textTheme.titleLarge,
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final threads = _threads;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Messages stay until you delete a conversation or your account.',
+          style: textTheme.bodyMedium,
+        ),
+        const SizedBox(height: TracendSpacing.md),
+        if (_error != null)
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              _error!,
+              style: textTheme.bodyMedium?.copyWith(
+                color: context.tracendColors.stateDanger,
+              ),
             ),
-            const SizedBox(height: TracendSpacing.xs),
-            const Text(
-              'Messages remain until you delete a thread or delete your account.',
+          )
+        else if (threads == null)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: TracendSpacing.lg),
+            child: Center(
+              child: TracendLoader(semanticLabel: 'Loading conversations'),
             ),
-            const SizedBox(height: TracendSpacing.md),
-            if (_error != null)
-              Text(
-                _error!,
-                style: TextStyle(color: context.tracendColors.stateDanger),
-              )
-            else if (threads == null)
-              const Center(child: CircularProgressIndicator())
-            else if (threads.isEmpty)
-              const Text('No saved conversations.')
-            else
+          )
+        else if (threads.isEmpty)
+          Text('No saved conversations.', style: textTheme.bodyLarge)
+        else
+          TracendGroupedList(
+            children: [
               for (final thread in threads)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(thread.title),
+                TracendListRow(
+                  title: thread.title,
                   trailing: IconButton(
                     tooltip: 'Delete conversation',
-                    icon: const Icon(CupertinoIcons.delete),
+                    constraints: const BoxConstraints.tightFor(
+                      width: 44,
+                      height: 44,
+                    ),
+                    icon: Icon(
+                      CupertinoIcons.delete,
+                      size: 20,
+                      color: context.tracendColors.stateDanger,
+                    ),
                     onPressed: () => _delete(thread),
                   ),
                 ),
-          ],
-        );
-      },
-    ),
-  );
+            ],
+          ),
+      ],
+    );
+  }
 }

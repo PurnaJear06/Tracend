@@ -45,8 +45,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('SLEEP ARCHITECTURE'), findsOneWidget);
-      expect(find.text('85 / 100'), findsOneWidget);
+      expect(find.text('Sleep quality'), findsOneWidget);
+      expect(find.text('85'), findsOneWidget);
+      expect(find.text('/ 100'), findsOneWidget);
+      expect(find.text('SLEEP ARCHITECTURE'), findsNothing);
       expect(find.text('Restorative'), findsWidgets);
     });
 
@@ -73,7 +75,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Sleep debt'), findsOneWidget);
-      expect(find.textContaining('1h 5m'), findsOneWidget);
+      expect(find.textContaining('1 h 5 min'), findsOneWidget);
     });
 
     testWidgets('shows sleep surplus badge for negative debt', (tester) async {
@@ -101,7 +103,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Sleep target met'), findsOneWidget);
-      expect(find.textContaining('0h 0m'), findsNothing);
+      expect(find.textContaining('0 min'), findsNothing);
     });
 
     testWidgets('does not repeat baselines from the recovery readout', (
@@ -122,7 +124,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('No data'), findsOneWidget);
+      expect(find.text('Not enough data yet'), findsOneWidget);
+      expect(
+        find.text('No sleep is recorded for last night yet.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('hides sub-scores when breakdown is null', (tester) async {
@@ -206,7 +212,7 @@ void main() {
       );
       expect(find.bySemanticsLabel('Duration 86 of 100'), findsOneWidget);
       expect(find.bySemanticsLabel('Efficiency 93 of 100'), findsOneWidget);
-      expect(find.bySemanticsLabel('Sleep debt: 1h 5m'), findsOneWidget);
+      expect(find.bySemanticsLabel('Sleep debt: 1 h 5 min'), findsOneWidget);
     });
 
     testWidgets('announces unavailable when sleep quality is null', (
@@ -218,7 +224,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.bySemanticsLabel('Sleep quality unavailable'),
+        find.bySemanticsLabel('Sleep quality: not enough data yet'),
         findsOneWidget,
       );
     });

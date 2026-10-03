@@ -4,6 +4,7 @@ import 'package:tracend/features/train/muscle_groups.dart';
 import 'package:tracend/features/train/train_view_models.dart';
 import 'package:tracend/features/train/widgets/muscle_map.dart';
 import 'package:tracend/features/train/widgets/muscle_map_geometry.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 
 const _muscles = {
   MuscleGroup.chest: MuscleTone.main,
@@ -26,35 +27,40 @@ class _HostState extends State<_Host> {
   BodySide side = BodySide.front;
 
   @override
-  Widget build(BuildContext context) => MediaQuery(
-    data: MediaQueryData(disableAnimations: widget.reduceMotion),
-    child: Directionality(
-      textDirection: TextDirection.ltr,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            MuscleMap(
-              muscles: _muscles,
-              side: side,
-              palette: MuscleMapPalette.dark,
-              width: 140,
-              onSideChanged: (next) {
-                widget.log.add(next);
-                setState(() => side = next);
-              },
-            ),
-            GestureDetector(
-              key: const ValueKey('toggle'),
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(
-                () => side = side == BodySide.front
-                    ? BodySide.back
-                    : BodySide.front,
+  // The suite runs under a static motion scope; these tests exercise the
+  // real motion, with Reduce Motion coming from MediaQuery as on a device.
+  Widget build(BuildContext context) => TracendMotionScope(
+    level: TracendMotionLevel.full,
+    child: MediaQuery(
+      data: MediaQueryData(disableAnimations: widget.reduceMotion),
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              MuscleMap(
+                muscles: _muscles,
+                side: side,
+                palette: MuscleMapPalette.dark,
+                width: 140,
+                onSideChanged: (next) {
+                  widget.log.add(next);
+                  setState(() => side = next);
+                },
               ),
-              child: const SizedBox(width: 40, height: 40),
-            ),
-          ],
+              GestureDetector(
+                key: const ValueKey('toggle'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(
+                  () => side = side == BodySide.front
+                      ? BodySide.back
+                      : BodySide.front,
+                ),
+                child: const SizedBox(width: 40, height: 40),
+              ),
+            ],
+          ),
         ),
       ),
     ),
@@ -299,14 +305,17 @@ void main() {
   testWidgets('the selected group pulses; Reduce Motion holds it still', (
     tester,
   ) async {
-    Widget pair({required bool reduce}) => MediaQuery(
-      data: MediaQueryData(disableAnimations: reduce),
-      child: const Directionality(
-        textDirection: TextDirection.ltr,
-        child: MuscleMapPair(
-          muscles: _muscles,
-          palette: MuscleMapPalette.dark,
-          selected: MuscleGroup.chest,
+    Widget pair({required bool reduce}) => TracendMotionScope(
+      level: TracendMotionLevel.full,
+      child: MediaQuery(
+        data: MediaQueryData(disableAnimations: reduce),
+        child: const Directionality(
+          textDirection: TextDirection.ltr,
+          child: MuscleMapPair(
+            muscles: _muscles,
+            palette: MuscleMapPalette.dark,
+            selected: MuscleGroup.chest,
+          ),
         ),
       ),
     );

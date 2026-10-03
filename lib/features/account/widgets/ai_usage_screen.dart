@@ -1,19 +1,89 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/widgets/account_widgets.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
-import 'package:tracend/shared/widgets/premium_gradient_card.dart';
+import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
-/// Sanitized, user-scoped AI usage detail screen (UX_FLOWS.md §13).
+/// This month's AI usage as the server reports it (`get_my_ai_usage` merged
+/// with `get_my_ai_budget_state` by [CoachRepository.loadUsage]). Every
+/// threshold and flag is a server value; nothing here is a hard-coded limit.
+@immutable
+class AiUsageSummary {
+  const AiUsageSummary({
+    required this.cost,
+    required this.successful,
+    required this.failed,
+    required this.today,
+    required this.blocked,
+    required this.warning,
+    this.warningAt,
+    this.hardStop,
+    this.dailyLimit,
+  });
+
+  factory AiUsageSummary.fromJson(Map<String, dynamic> usage) => AiUsageSummary(
+    cost: (usage['estimated_cost_usd'] as num?)?.toDouble() ?? 0,
+    successful: (usage['successful_runs'] as num?)?.toInt() ?? 0,
+    failed: (usage['failed_runs'] as num?)?.toInt() ?? 0,
+    today: (usage['today_requests'] as num?)?.toInt() ?? 0,
+    blocked: usage['blocked'] == true,
+    warning: usage['warning'] == true,
+    warningAt: (usage['warning_threshold_usd'] as num?)?.toDouble(),
+    hardStop: (usage['hard_stop_usd'] as num?)?.toDouble(),
+    dailyLimit: (usage['daily_limit'] as num?)?.toInt(),
+  );
+
+  final double cost;
+  final int successful;
+  final int failed;
+  final int today;
+  final bool blocked;
+  final bool warning;
+  final double? warningAt;
+  final double? hardStop;
+  final int? dailyLimit;
+
+  bool get hasBudget => hardStop != null;
+  bool get noRuns => successful == 0 && failed == 0 && cost == 0;
+
+  /// The service state in words.
+  String get serviceText => blocked
+      ? 'Paused at the monthly limit'
+      : warning
+      ? 'Approaching the monthly limit'
+      : hasBudget
+      ? 'Available'
+      : 'Estimates only';
+
+  /// One line that places this month's cost against the server limits, for
+  /// the Account row: "$0.42 of $2.00 · warning at $1.00".
+  String get accountLine {
+    final spent = usdText(cost);
+    final stop = hardStop;
+    final warn = warningAt;
+    if (blocked && stop != null) {
+      return '$spent · paused at the ${usdText(stop)} limit · plans and logging still work';
+    }
+    if (warning && stop != null) {
+      return '$spent · approaching the ${usdText(stop)} limit';
+    }
+    if (stop != null && warn != null) {
+      return '$spent of ${usdText(stop)} · warning at ${usdText(warn)}';
+    }
+    if (stop != null) return '$spent of ${usdText(stop)} monthly limit';
+    final runs = successful + failed;
+    return '$spent estimate · $runs ${runs == 1 ? 'request' : 'requests'}';
+  }
+}
+
+/// Sanitized, user-scoped AI usage detail (UX_FLOWS.md §13).
 ///
-/// Every value binds a real `get_my_ai_usage` / `get_my_ai_budget_state`
-/// field merged by [CoachRepository.loadUsage] — thresholds and limits are
-/// rendered from the RPC response, never hardcoded. Token counts, per-feature
-/// breakdowns, and period toggles do not exist in any RPC, so they are not
-/// shown. API keys, prompts, provider request identifiers, raw errors, and
-/// cross-user totals never appear here.
+/// Token counts, per-feature breakdowns and period toggles do not exist in
+/// any RPC, so they are not shown. API keys, prompts, provider request
+/// identifiers, raw errors and cross-user totals never appear here.
 class AiUsageScreen extends StatefulWidget {
   const AiUsageScreen({required this.coach, this.initialUsage, super.key});
 
@@ -53,7 +123,9 @@ class _AiUsageScreenState extends State<AiUsageScreen> {
         future: _usage,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: TracendLoader(semanticLabel: 'Loading AI usage'),
+            );
           }
           if (snapshot.hasError) {
             return AccountDetailMessage(
@@ -67,127 +139,208 @@ class _AiUsageScreenState extends State<AiUsageScreen> {
               ),
             );
           }
-          return _buildContent(context, snapshot.data ?? const {});
+          return _content(
+            context,
+            AiUsageSummary.fromJson(snapshot.data ?? const {}),
+          );
         },
       ),
     ),
   );
 
-  Widget _buildContent(BuildContext context, Map<String, dynamic> usage) {
-    final colors = context.tracendColors;
-    final cost = (usage['estimated_cost_usd'] as num?)?.toDouble() ?? 0;
-    final hardStop = (usage['hard_stop_usd'] as num?)?.toDouble();
-    final warningAt = (usage['warning_threshold_usd'] as num?)?.toDouble();
-    final dailyLimit = (usage['daily_limit'] as num?)?.toInt();
-    final today = (usage['today_requests'] as num?)?.toInt() ?? 0;
-    final successful = (usage['successful_runs'] as num?)?.toInt() ?? 0;
-    final failed = (usage['failed_runs'] as num?)?.toInt() ?? 0;
-    final blocked = usage['blocked'] == true;
-    final warning = usage['warning'] == true;
-    final hasBudget = hardStop != null;
-    final noRuns = successful == 0 && failed == 0 && cost == 0;
-
+  Widget _content(BuildContext context, AiUsageSummary usage) {
+    final textTheme = Theme.of(context).textTheme;
+    final width = MediaQuery.sizeOf(context).width;
+    final gutter = width < 375 ? TracendSpacing.md : TracendSpacing.gutter;
+    final stop = usage.hardStop;
+    final warn = usage.warningAt;
     final rows = <String, String>{
-      if (dailyLimit != null) 'Requests today': '$today of $dailyLimit',
-      'Successful this month': '$successful',
-      'Failed this month': '$failed',
-      if (warningAt != null) 'Warning threshold': usdText(warningAt),
-      if (hardStop != null) 'Monthly hard stop': usdText(hardStop),
-      'Service': blocked
-          ? 'Paused at safety limit'
-          : hasBudget
-          ? 'Available'
-          : 'Estimates only',
+      if (usage.dailyLimit != null)
+        'Requests today': '${usage.today} of ${usage.dailyLimit}',
+      'Successful this month': '${usage.successful}',
+      'Failed this month': '${usage.failed}',
+      if (warn != null) 'Warning at': usdText(warn),
+      if (stop != null) 'Monthly limit': usdText(stop),
+      'Service': usage.serviceText,
     };
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(
-        TracendSpacing.gutter,
-        TracendSpacing.md,
-        TracendSpacing.gutter,
-        TracendSpacing.xl,
+      padding: EdgeInsets.fromLTRB(
+        gutter,
+        TracendSpacing.xs,
+        gutter,
+        TracendSpacing.xxl,
       ),
       children: [
-        Text('My AI usage', style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: TracendSpacing.xs),
-        const Text(
-          'Sanitized usage from the server. Provider keys, prompts, and private health values never appear here.',
-        ),
-        const SizedBox(height: TracendSpacing.lg),
-        PremiumGradientCard(
+        TracendCard(
           padding: const EdgeInsets.all(TracendSpacing.gutter),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (blocked)
-                TracendPill(
-                  label: 'Paused at safety limit',
+              if (usage.blocked)
+                const StatusChip(
+                  label: 'Paused at the monthly limit',
                   icon: CupertinoIcons.pause_circle_fill,
-                  color: colors.stateDanger,
+                  tone: StatusTone.low,
                 )
-              else if (warning)
-                TracendPill(
-                  label: 'Approaching limit',
+              else if (usage.warning)
+                const StatusChip(
+                  label: 'Approaching the monthly limit',
                   icon: CupertinoIcons.exclamationmark_triangle_fill,
-                  color: colors.stateAttention,
+                  tone: StatusTone.caution,
                 )
-              else if (hasBudget)
-                TracendPill(
+              else if (usage.hasBudget)
+                const StatusChip(
                   label: 'Available',
                   icon: CupertinoIcons.check_mark_circled_solid,
-                  color: colors.stateStable,
+                  tone: StatusTone.good,
                 ),
-              if (hasBudget) const SizedBox(height: TracendSpacing.sm),
-              Text(
-                '\$${cost.toStringAsFixed(4)}',
-                style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-              const SizedBox(height: TracendSpacing.xxs),
-              Text(
-                hasBudget
-                    ? 'estimated this month · of ${usdText(hardStop)} hard stop'
-                    : 'estimated this month',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              if (hasBudget && hardStop > 0) ...[
-                const SizedBox(height: TracendSpacing.sm),
-                Semantics(
-                  label:
-                      'Monthly AI budget usage '
-                      '${(cost / hardStop * 100).clamp(0, 100).toStringAsFixed(0)} percent',
-                  child: LinearProgressIndicator(
-                    value: (cost / hardStop).clamp(0, 1),
+              if (usage.hasBudget) const SizedBox(height: TracendSpacing.md),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  usdText(usage.cost),
+                  style: TracendTheme.numeric(
+                    context.tracendColors,
+                    fontSize: 44,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
+              ),
+              Text(
+                stop == null
+                    ? 'Estimated this month'
+                    : 'Estimated this month, of ${usdText(stop)}',
+                style: textTheme.bodyMedium,
+              ),
+              if (stop != null && stop > 0) ...[
+                const SizedBox(height: TracendSpacing.md),
+                AiUsageMeter(
+                  cost: usage.cost,
+                  hardStop: stop,
+                  warningAt: warn,
+                  blocked: usage.blocked,
+                  warning: usage.warning,
+                ),
+                const SizedBox(height: TracendSpacing.xs),
+                Text(
+                  [
+                    if (warn != null) 'Warning at ${usdText(warn)}',
+                    'Stops at ${usdText(stop)}',
+                  ].join(' · '),
+                  style: textTheme.bodySmall,
+                ),
               ],
-              if (noRuns) ...[
+              if (usage.noRuns) ...[
                 const SizedBox(height: TracendSpacing.sm),
                 Text(
                   'No AI runs recorded this month.',
-                  style: Theme.of(context).textTheme.bodyMedium,
+                  style: textTheme.bodyMedium,
                 ),
               ],
             ],
           ),
         ),
-        const AccountSectionLabel('THIS MONTH'),
-        TracendCard(child: DetailRows(rows: rows)),
-        const SizedBox(height: TracendSpacing.sm),
-        const Text(
-          'Operational estimates from the AI service budget — not an invoice or a subscription charge.',
+        const SectionLabel('This month'),
+        AccountFactList(rows: rows),
+        const AccountFootnote(
+          'Operational estimates from the AI service budget, not an invoice '
+          'or a subscription charge. Provider keys, prompts and your health '
+          'values never appear here.',
         ),
-        const SizedBox(height: TracendSpacing.md),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _refresh,
-            icon: const Icon(CupertinoIcons.refresh, size: 18),
-            label: const Text('Refresh usage'),
-          ),
+        const SizedBox(height: TracendSpacing.lg),
+        OutlinedButton.icon(
+          onPressed: _refresh,
+          icon: const Icon(CupertinoIcons.refresh, size: 18),
+          label: const Text('Refresh usage'),
         ),
       ],
+    );
+  }
+}
+
+/// This month's cost on a track that ends at the server's monthly limit,
+/// with a tick at the warning threshold. Color follows the server's state
+/// (caution when warned, danger when paused) and the label says it in words.
+class AiUsageMeter extends StatelessWidget {
+  const AiUsageMeter({
+    required this.cost,
+    required this.hardStop,
+    required this.blocked,
+    required this.warning,
+    this.warningAt,
+    super.key,
+  });
+
+  final double cost;
+  final double hardStop;
+  final double? warningAt;
+  final bool blocked;
+  final bool warning;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    final fraction = (cost / hardStop).clamp(0.0, 1.0);
+    final tick = warningAt == null
+        ? null
+        : (warningAt! / hardStop).clamp(0.0, 1.0);
+    final fill = blocked
+        ? colors.stateDanger
+        : warning
+        ? colors.accentAmber
+        : colors.actionPrimary;
+    final percent = (fraction * 100).round();
+    return Semantics(
+      container: true,
+      label:
+          'AI usage this month: ${usdText(cost)} of ${usdText(hardStop)}, '
+          '$percent percent'
+          '${warningAt == null ? '' : '. Warning at ${usdText(warningAt!)}'}',
+      excludeSemantics: true,
+      child: SizedBox(
+        height: 16,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            return Stack(
+              alignment: Alignment.centerLeft,
+              children: [
+                Container(
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: colors.surfaceRaised,
+                    borderRadius: BorderRadius.circular(TracendRadii.pill),
+                  ),
+                ),
+                if (fraction > 0)
+                  Container(
+                    width: (width * fraction).clamp(8.0, width),
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: fill,
+                      borderRadius: BorderRadius.circular(TracendRadii.pill),
+                    ),
+                  ),
+                if (tick != null)
+                  Positioned(
+                    left: (width * tick - 1).clamp(0.0, width - 2),
+                    top: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 2,
+                      decoration: BoxDecoration(
+                        color: colors.textSecondary,
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 }

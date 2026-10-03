@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' show PathMetric;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
 
 /// The Tracend brand colours. They are fixed: the mark looks the same in
@@ -71,6 +72,7 @@ class TracendMarkFrame {
     required this.dotCenter,
     required this.dotRadius,
     required this.dotVisible,
+    this.dotTrail = const [],
   });
 
   static const settled = TracendMarkFrame(
@@ -92,6 +94,10 @@ class TracendMarkFrame {
   final double dotRadius;
   final bool dotVisible;
 
+  /// Where the dot just was, newest first: a short trail that fades and
+  /// thins toward its end. Empty when the dot is still.
+  final List<Offset> dotTrail;
+
   @override
   bool operator ==(Object other) =>
       other is TracendMarkFrame &&
@@ -99,11 +105,18 @@ class TracendMarkFrame {
       other.letterSwept == letterSwept &&
       other.dotCenter == dotCenter &&
       other.dotRadius == dotRadius &&
-      other.dotVisible == dotVisible;
+      other.dotVisible == dotVisible &&
+      listEquals(other.dotTrail, dotTrail);
 
   @override
-  int get hashCode =>
-      Object.hash(arcDrawn, letterSwept, dotCenter, dotRadius, dotVisible);
+  int get hashCode => Object.hash(
+    arcDrawn,
+    letterSwept,
+    dotCenter,
+    dotRadius,
+    dotVisible,
+    Object.hashAll(dotTrail),
+  );
 }
 
 /// Paints the mark, scaled to fit and centred in its size. [background]
@@ -142,6 +155,7 @@ class TracendMarkPainter extends CustomPainter {
       ..scale(scale);
     _paintLetter(canvas);
     _paintArc(canvas);
+    if (frame.dotVisible) _paintTrail(canvas);
     if (frame.dotVisible) {
       canvas.drawCircle(
         frame.dotCenter,
@@ -200,6 +214,28 @@ class TracendMarkPainter extends CustomPainter {
       ..drawPath(TracendMarkGeometry.swoosh, paint)
       ..restore()
       ..restore();
+  }
+
+  void _paintTrail(Canvas canvas) {
+    final trail = frame.dotTrail;
+    if (trail.isEmpty) return;
+    // Each ghost lightens rather than adds, so where they overlap the trail
+    // stays one smooth taper. The layer screens onto the mark: a faint lime
+    // streak on graphite, a brighter one over the lime arc.
+    canvas.saveLayer(_design, Paint()..blendMode = BlendMode.screen);
+    final count = trail.length;
+    for (var index = count - 1; index >= 0; index--) {
+      final fade = 1 - (index + 1) / (count + 1);
+      canvas.drawCircle(
+        trail[index],
+        frame.dotRadius * (0.4 + 0.6 * fade),
+        Paint()
+          ..blendMode = BlendMode.lighten
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6)
+          ..color = dotColor.withValues(alpha: 0.85 * fade * fade),
+      );
+    }
+    canvas.restore();
   }
 
   @override

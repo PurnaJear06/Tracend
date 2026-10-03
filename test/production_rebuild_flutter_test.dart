@@ -3,13 +3,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
+import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/train/train_screen.dart';
+import 'package:tracend/features/train/widgets/week_rail_card.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 
 void main() {
-  testWidgets('Train exposes the approved week and prescription details', (
+  testWidgets('Train exposes the approved workout and its exercises', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -19,33 +21,19 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Approved training plan'), findsOneWidget);
-    // 2026-09-04 Train redesign: 'PRESCRIPTION' became "Today's exercises"
-    // (SectionLabel uppercases — curly apostrophe included), and the
-    // exercise rows now sit below the week rail and hero, so scroll down.
-    // Scrolls to the unique RPE 9 row — RPE 8 appears three times, and
-    // scrollUntilVisible needs a single candidate.
+    expect(find.text('Push day'), findsOneWidget);
+    expect(find.text('Start workout'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.textContaining('RPE 9'),
+      find.text('Rope pressdown'),
       300,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.textContaining('RPE 8'), findsWidgets);
-    expect(find.text('Today’s exercises'), findsOneWidget);
-    expect(find.textContaining('rest'), findsWidgets);
-    await tester.scrollUntilVisible(
-      find.textContaining('Planned values are never charted'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    // Settle the entrance staggers of sections that mounted during the
-    // scroll — SliverList builds lazily, so their Future.delayed timers
-    // start mid-scroll and must fire before the test ends.
+    expect(find.text('Exercises'), findsOneWidget);
+    expect(find.text('Today’s exercises'), findsNothing);
+    expect(find.text('3 × 8 to 10'), findsOneWidget);
+    await tester.ensureVisible(find.text('This week', skipOffstage: false));
     await tester.pumpAndSettle();
-    expect(
-      find.textContaining('Planned values are never charted'),
-      findsOneWidget,
-    );
+    expect(find.text('Training load'), findsOneWidget);
   });
 
   testWidgets('Nutrition makes the scheduled next meal primary', (
@@ -70,14 +58,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: TracendTheme.dark,
-        home: CoachScreen(repository: repository),
+        home: CoachScreen(repository: repository, threadMemory: _NoMemory()),
       ),
     );
     await tester.pumpAndSettle();
-    expect(
-      find.text('7 of 8 sources available · 1 needs data'),
-      findsOneWidget,
-    );
+    expect(find.text('7 of 8 sources connected'), findsOneWidget);
     await tester.enterText(find.byType(TextField), 'What should I do next?');
     await tester.tap(find.byTooltip('Send message'));
     await tester.pumpAndSettle();
@@ -91,30 +76,7 @@ void main() {
     expect(hub.progression, isEmpty);
   });
 
-  testWidgets(
-    'Train shows HealthKit auto-complete prompt when candidate is present',
-    (tester) async {
-      final repository = _HealthkitCandidateRepository();
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: TracendTheme.light,
-          home: TrainScreen(repository: repository),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.pumpAndSettle();
-      expect(find.text('Apple Health detected workout'), findsOneWidget);
-      expect(find.text('Full body push'), findsOneWidget);
-      expect(
-        find.textContaining('Apple Health recorded a 60 min workout'),
-        findsOneWidget,
-      );
-      expect(find.text('Yes, mark complete'), findsOneWidget);
-      expect(find.text('Log manually'), findsOneWidget);
-    },
-  );
-
-  testWidgets('Train shows HealthKit prompt after tapping a past weekday', (
+  testWidgets('Train shows the Apple Health prompt in place of Start workout', (
     tester,
   ) async {
     final repository = _HealthkitCandidateRepository();
@@ -125,27 +87,51 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.text('Apple Health detected workout'), findsOneWidget);
+    expect(find.textContaining('Full body push'), findsOneWidget);
+    expect(
+      find.textContaining('Apple Health recorded a 60 min workout'),
+      findsOneWidget,
+    );
+    expect(find.text('Yes, mark complete'), findsOneWidget);
+    expect(find.text('Log manually'), findsOneWidget);
+    expect(find.text('Start workout'), findsNothing);
+  });
+
+  testWidgets('Train shows the Apple Health prompt after picking a past day', (
+    tester,
+  ) async {
+    final repository = _HealthkitCandidateRepository();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.light,
+        home: TrainScreen(repository: repository),
+      ),
+    );
     await tester.pumpAndSettle();
     final yesterday = DateTime.now().subtract(const Duration(days: 1));
     final key = ValueKey(
-      'date-pill-${yesterday.year.toString().padLeft(4, '0')}-'
+      'day-box-${yesterday.year.toString().padLeft(4, '0')}-'
       '${yesterday.month.toString().padLeft(2, '0')}-'
       '${yesterday.day.toString().padLeft(2, '0')}',
     );
     if (find.byKey(key).evaluate().isEmpty) {
-      await tester.tap(find.byKey(const ValueKey('date-strip-previous')));
+      await tester.fling(
+        find.byType(DayBoxesStrip),
+        const Offset(300, 0),
+        1500,
+      );
       await tester.pumpAndSettle();
     }
     await tester.tap(find.byKey(key));
     await tester.pumpAndSettle();
-    await tester.pumpAndSettle();
     expect(find.text('Apple Health detected workout'), findsOneWidget);
-    expect(find.text('Full body push'), findsOneWidget);
+    expect(find.textContaining('Full body push'), findsOneWidget);
     expect(find.text('Yes, mark complete'), findsOneWidget);
   });
 
   testWidgets(
-    'Train shows Start workout when no HealthKit candidate is present',
+    'Train shows Start workout when no Apple Health candidate is present',
     (tester) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -159,7 +145,7 @@ void main() {
     },
   );
 
-  testWidgets('Train shows View workout when day is completed', (tester) async {
+  testWidgets('Train shows View summary when the day is done', (tester) async {
     final repository = _CompletedDayRepository();
     await tester.pumpWidget(
       MaterialApp(
@@ -168,8 +154,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Completed'), findsOneWidget);
-    expect(find.text('View workout'), findsOneWidget);
+    expect(find.text('Done today'), findsOneWidget);
+    expect(find.text('View summary'), findsOneWidget);
     expect(find.text('Start workout'), findsNothing);
   });
 }
@@ -214,13 +200,6 @@ class _CompletedDayRepository extends FixtureWorkoutRepository
   Future<void> sync(
     String sessionId,
     int revision,
-    Map<String, dynamic> draft,
-  ) async {}
-  @override
-  Future<void> complete(
-    String sessionId,
-    int revision,
-    int durationSeconds,
     Map<String, dynamic> draft,
   ) async {}
 }
@@ -355,11 +334,13 @@ class _HealthkitCandidateRepository extends FixtureWorkoutRepository
     int revision,
     Map<String, dynamic> draft,
   ) async {}
+}
+
+/// No remembered thread, answered at once.
+class _NoMemory implements CoachThreadMemory {
   @override
-  Future<void> complete(
-    String sessionId,
-    int revision,
-    int durationSeconds,
-    Map<String, dynamic> draft,
-  ) async {}
+  Future<String?> lastThreadId() async => null;
+
+  @override
+  Future<void> remember(String threadId) async {}
 }

@@ -6,16 +6,54 @@ Train uses the 4/8-point spacing rhythm and 44-point interactive rows. Active lo
 Syncing, Offline, or Needs attention; resumes entered sets after reopen; and requires explicit skip
 actions. Historical corrections and HealthKit conflicts use review cards with confirmation actions.
 
-The Train tab (2026-09-04 redesign) opens with the week rail — one fused card where the day slots
-select the day and the 7-day training-minutes chart below speaks the same visual grammar as Today's
-trend (indigo day columns, accent-NOW latest session day, dim sockets, amber dots for planned-but-
-untrained days). Its verdict is one plain sentence with a band chip (Low load / Optimal / High load);
-the raw ratio and day load sit in one quiet mono strip — the only place jargon lives on Train.
-Honesty gates: fewer than four sessions renders "Building baseline" and never a ratio verdict;
-sessions without a duration stay present without inventing magnitude. Below the rail: the workout
-hero (facts + coach insight + Start/View), today's exercises as one merged list (prescription stats
-and the planned/recorded effort bar per row — the same movement no longer appears twice), one
-execution card (adherence count + progression rows or its honest empty copy), and recent sessions.
+The Train tab (2026-10-03 redesign, `lib/features/train/train_screen.dart`) reads top to bottom:
+
+- **Header.** The large title "Train", today's date ("Friday 2 October") and the plan pill ("Week 3
+  of 6"). The pill opens the plan sheet: title, block weeks and sessions a week, week pips, the plan
+  rule when the plan has one, and "You approved this plan on 15 September. Changes always need your
+  approval." At large text the pill moves under the title.
+- **Day boxes.** Seven boxes for the week: a check for a done day, a dot for a planned day, a lime
+  ring for today and a raised fill for the selected day. A tap plays the selection haptic and slides
+  the day's content in from the side it came from (a crossfade under Reduce Motion). A horizontal
+  swipe pages back up to three weeks (VoiceOver: "Previous week" and "Next week" actions); "Week of
+  21 September" with a **This week** button shows while another week is open.
+- **Readiness line.** Today's recovery sentence (data rules below) with Today's decision verdict as
+  "Today: …" when the latest decision is for today. It opens **Recovery today**: sleep, heart rate
+  variability (its ln baseline shown as `exp(ewma)`, "usually 55 ms"), resting heart rate and
+  training load, each in plain words ("Normal for you", "More than usual", "Building your
+  baseline", "Not enough data yet"). Without Apple Health it reads "Connect Apple Health to see
+  recovery" and explains where to connect, with **Open Account** when the host passes one.
+- **Needs your attention.** Apple Health repairs and workout matches share one group above the hero.
+  A repair asks with a native confirm (**Confirm correction** / **Not now**); a match offers
+  **Confirm match**, **Not the same workout** and, for another day, **Switch to that day**. Results
+  are toasts.
+- **Workout hero.** A kicker ("Today", a weekday, "Done on Tuesday", "Tuesday, not logged"), the
+  name, "6 exercises, about 48 min" (a done day shows its logged minutes), the worked muscles as
+  chips and on the turnable `MuscleMap` with a Front/Back control. The title area opens the
+  **workout overview** sheet (objective, warm-up, exercises, cooldown, then **Start workout** or
+  **View summary**); the map opens the **muscles sheet** (front and back side by side, a row per
+  muscle with its sets and exercises, rows and muscles selecting each other, and the note that only
+  catalog-linked exercises count). When no exercise in the workout is catalog-linked, the map and
+  chips are left out and the card says "Muscle map appears with your next plan." The one action is **Start workout** (heavy haptic), **Log this
+  workout** for a past day with nothing logged, or **View summary** for a done day, whose sheet shows
+  time, sets logged of planned, the athlete's own effort ("Not rated" for app defaults) and each
+  exercise as logged. "Auto-completed from Apple Health" shows only when `completion_source` is
+  `healthkit`. A rest day names the week's next workout with "See Sunday's workout".
+- **Exercises.** One grouped list; every row opens the exercise sheet: today's target (load, sets ×
+  reps, rest, reps in reserve), **Last time** and **Your best** from `get_my_exercise_history`, the
+  heaviest set of each logged session as a chart (two sessions minimum, else "Not enough data yet";
+  planned values are never charted) and a tip labelled **From your plan** (the exercise note) or
+  **Plan rule** (the plan's progression rule). A first-ever exercise reads "First time. Pick a
+  weight you can lift for every rep with good form." Offline without a saved copy it reads "Last
+  time loads when you're online."; a saved copy says it is from this phone.
+- **This week.** "2 of 4 done" with pips, then **Training load** (opens the load sheet below) and
+  **History** ("6 workouts in 4 weeks", a sheet with friendly dates; a row opens its summary when its
+  workout is known).
+- **States.** Skeletons while the hub loads; "Your plan could not load" with the beta diagnostic and
+  **Try again**; after a failed refresh the loaded plan stays with "Offline. Showing your plan from
+  earlier."; "No active plan" with **Check again**; a cached 1.5 hub shows no pill and an
+  unclassified load. Pull to refresh reloads the hub, the readiness line and the Apple Health
+  candidate.
 
 Train redesign data rules (2026-10-03, `lib/features/train/train_view_models.dart`), read by the
 new Train screen:
@@ -118,12 +156,12 @@ Progress
 └── Weekly and monthly reviews
 
 Account
-├── Profile and goals
-├── HealthKit and notifications
-├── AI service status and my usage
-├── Privacy and AI processing
-├── Export
-└── Delete account
+├── Plan: Profile and goals
+├── Health: Apple Health
+├── Appearance
+├── Notifications (reminders, rest timer alerts)
+├── AI coach: AI coaching, AI usage this month, Coach conversations
+└── Privacy: Export data, Consent history, Delete account
 ```
 
 ## 3. App Entry and Restoration
@@ -138,6 +176,11 @@ data is shown; neither route bypasses authentication.
 
 The first launch says: **Your plan, explained by your data.** It does not show pricing or request
 optional permissions before explaining their purpose.
+
+The sign-in screen (2026-10 redesign) shows the brand mark (drawn with a dark T on light
+surfaces), **Sign in to Tracend** (**Create your Tracend account** in that mode), the brand line,
+a **Sign in / Create account** segmented control, filled email and password fields and one pill
+button. The development copy is a single small line: **Private beta: email sign-in**.
 
 ### Returning user
 
@@ -162,7 +205,9 @@ optional permissions before explaining their purpose.
 2. Show the supported healthy-adult boundary.
 3. Ask only eligibility questions required by the PRD.
 4. If excluded, stop plan generation and show appropriate professional guidance.
-5. Accept terms and privacy notice.
+5. Accept terms and privacy notice. The two checkboxes are check rows in a grouped list. They
+   are **not linked** to any hosted text yet; that is acceptable only for the owner-only beta
+   and is a public-release blocker (SECURITY_PRIVACY.md §15). No legal text lives in the app.
 6. Choose whether to allow AI coaching. The disclosure names the provider (DeepSeek, operated by
    Hangzhou DeepSeek Artificial Intelligence Co., Ltd., on servers in China), the data it receives,
    and what works without it. **Allow AI coaching** and **Not now** are both valid answers.
@@ -212,7 +257,7 @@ Eligibility → AI coaching → Path → Goal
   ("Strength: 3.4× a week usually · 1× a week lately", "Sleep: 6 h 50 min usually"), or says the
   plan uses the last 4 weeks when there are fewer than three earlier months.
 - **The proposal** shows **Start at ‹kg›** on exercises Tracend set a starting load for, a
-  **Focus** line under Training, and the usual months in **How this was calculated**. Train
+  **Focus** line under Training, and the usual months in **How we calculated this**. Train
   pre-fills the kg field with the starting load.
 
 - **Apple Health** reads the last four weeks when the athlete taps **Connect Apple Health**, then
@@ -223,7 +268,7 @@ Eligibility → AI coaching → Path → Goal
   date, until the athlete moves it, and never over an answered weight) and shows average steps
   with a **Matches your steps** tag on the daily-activity answer they point to. The athlete's own
   answers are what count. Review shows what Apple Health contributed, and the proposal's **How
-  this was calculated** adds the summary the plan used.
+  we calculated this** adds the summary the plan used.
 - **Build my plan** starts a server generation and shows **Building your plan**. The app polls the
   generation, so the athlete can leave and come back:
   - a running generation keeps waiting;
@@ -244,7 +289,11 @@ Eligibility → AI coaching → Path → Goal
 - **Goal:** nothing is preselected; each goal has a one-line description.
 - **Inputs:** height, weight, target weight and session length are sliders with − and +
   buttons for exact values, read aloud with their unit. The birth-year number pad closes after
-  four digits or a tap outside. Choice cards show their selected state with a border and tint.
+  four digits or a tap outside. Choice cards (AI coaching, path, goal, daily activity) show their
+  selected state with a lime ring, a lime wash and a filled check. Fields are filled, buttons are
+  pills, and multi-select answers (days, equipment, movements, muscles) are pill chips. Sex and
+  the reps left on a top set are segmented controls; at large text sizes Sex becomes a list of
+  rows so no label breaks mid-word.
 - **Review** lists every answer (Apple Health, daily activity, equipment and its note, diet,
   movements to avoid, limitations, focus, and for an experienced athlete their training and top
   sets). Each row has
@@ -253,7 +302,10 @@ Eligibility → AI coaching → Path → Goal
 - **Building your plan** says it usually takes under a minute and can take up to two.
 - A draft from an older build continues at **About you**.
 - The header reads **Step N of M · ‹section›**: 15 steps for an experienced athlete, 13 for a
-  beginner, who skips Your training and Current lifts.
+  beginner, who skips Your training and Current lifts. Under it a thin segmented line has one
+  segment per step: done steps solid, the current step lime. The step text is what VoiceOver reads.
+- **Reject proposal** asks with a destructive confirm (**Reject plan** / **Keep reviewing**);
+  **Request changes** opens a sheet titled **What should change?**.
 
 The original target flow:
 
@@ -285,13 +337,16 @@ edited from Review. Generation never activates a plan.
 
 The 2026-10 proposal screen shows:
 
-- **Provenance:** **Proposed by AI (‹model›) · checked by Tracend**, or **Built by Tracend's rules**.
+- **Provenance:** **Proposed by AI (DeepSeek) · checked by Tracend**, or **Built by Tracend's
+  rules**. The provider name comes from the shared display-name map
+  (`lib/shared/ai_provider_names.dart`, matched by the model id's provider prefix), never the raw
+  model id; an id outside the map reads **Proposed by AI · checked by Tracend**.
 - **Confidence.**
 - **The assessment.**
 - **Training:** every training day with its exercises (sets × reps, RPE with the reps left in
   plain words, for example "RPE 7.5 (about 2–3 reps left)", rest).
-- **Nutrition:** the targets and **How this was calculated** (resting energy × activity plus
-  training, and the goal range).
+- **Nutrition:** the targets, with the formula (resting energy × activity plus training, and the
+  goal range) behind the collapsed **How we calculated this** disclosure.
 - **For an experienced athlete:** what was kept and what changed.
 - **The plan's reasoning:** why, benefit, downside, assumptions, and what is not known yet.
 
@@ -304,19 +359,26 @@ year, daily activity, equipment and its note, movements to avoid, limitations, d
 
 ```text
 ┌─────────────────────────────────────┐
-│ Today                     Account   │
-│                                     │
-│ RECOVERY              [Good]        │
-│ 72 / 100 · five driver rows         │
-│ 7-DAY TREND        HRV · ms         │
-│ ~~~~ real recorded days ~~~~        │
-│ TRAIN: Push · LOAD 1.05 Optimal     │
-│ [ Start workout ]  [ View analytics ]│
-│                                     │
-│ Check-in needed · 1 min             │
-│ Training perspective         ›      │
-│ Nutrition perspective        ›      │
-│                                     │
+│ Good morning                    (●) │  large title, date, account
+│ Saturday 3 October                  │
+│ ┌ Today ─────────────── [● Good] ┐  │
+│ │  ╭───╮   ☾ Sleep      6h 52 min │  │  recovery dial + today's vitals
+│ │ ( 72  )  ♥ Resting HR   51 bpm  │  │
+│ │  ╰───╯   ∿ HRV           58 ms  │  │
+│ │ Complete Upper body A.          │  │  readiness sentence + reason
+│ │ Recovery score · High confidence│  │
+│ │ ⟳ Sync · Today, 9:05 AM         │  │
+│ └─────────────────────────────────┘  │
+│ ☀ Morning check-in       [Check in] │  lime call to action until done
+│ ┌ Today's workout ──────────── (🏋) ┐│
+│ │ Upper body A                    ││
+│ │ [55 min] [5 exercises] [15 sets]││
+│ │ [▶ View workout          (lime)]││  → Train (or "Rest day")
+│ │ Training load: about normal     ││
+│ └─────────────────────────────────┘│
+│ Food   (calories ring) (protein ring)│
+│ Coach note · Last 7 days ·          │
+│ Recovery drivers · Sleep            │
 │ Today  Train  Coach Nutrition Progress │
 └─────────────────────────────────────┘
 ```
@@ -332,44 +394,123 @@ Hierarchy:
 If no valid decision exists, show the approved plan and explain whether a check-in, sync, or retry
 can improve guidance. AI availability never blocks the workout.
 
+Reading order (redesign PR 5, rebuilt 2026-10-03 after the owner's device check: the first
+version read as a health report, not a training app):
+
+1. **Large title**: a time-of-day greeting ("Good morning") with the full date, and the account
+   avatar (VoiceOver and tooltip: "Open account"). At the largest text sizes, where the greeting
+   would break mid-word on a 320pt screen, the title is "Today" and the greeting joins the date.
+   Pull to refresh runs the same sync as the hero's sync row.
+2. **"Today" verdict card**: a 270° recovery dial filled to the score in the band's colour (good,
+   caution or low; never lime) with the score counting up inside, the band chip (Excellent/Good →
+   good, Moderate → caution, Low/Poor → low), and beside the dial today's measured vitals (Sleep,
+   Resting HR, HRV) as big numbers; a vital that was not measured is left out. Below: the readiness
+   sentence (the brief's next action) and its reason, the confidence word as small text ("Recovery
+   score · High confidence", or "Building baseline"), and the sync row ("Sync · Today, 9:05 AM", a
+   friendly date, never an ISO date). At the largest text sizes the vitals sit under the dial. A
+   sync that could not refresh something leaves a caution line on the card until a sync succeeds;
+   the toast that reported it is never the only copy. The card has no button.
+3. **Morning check-in**: before today's check-in, a lime-outlined call to action with a **Check
+   in** pill; once saved, a quiet row ("Done. Tap to update it.").
+4. **Today's workout** card: the name in display type, the real time, exercise and set counts as
+   pills (a count the plan does not carry is left out), and a lime **View workout** button. The
+   card goes to Train when the shell wires it, otherwise it opens the workout. With no workout it
+   reads **Rest day** with an enabled **See your week** action. When the brief has an ACWR, a
+   display-only line closes the card: **Training load: about normal** (lighter than usual, about
+   normal, heavier than usual, much heavier than usual; ALGORITHMS.md "ACWR Bands") with "Last 7
+   days against your 4-week average · ratio 1.05".
+5. **Food**: a calories ring and a protein ring from confirmed meals, each with the amount eaten
+   inside and what is left below ("960 kcal left", "54 g left", or "reached"), then "1,240 of
+   2,300 kcal eaten" and **Log a meal** → Nutrition. Without an active target it shows what was
+   eaten and says no target is set.
+6. **Coach note**: the latest decision with a **Training / Food** segmented control over its two
+   perspectives, and "Medium confidence · decided today" from the decision itself.
+7. **Last 7 days**: the 7-day trend, Today's data moment, with **More trends in Progress**.
+8. **Recovery drivers** (below).
+9. **Sleep**: sleep quality, its band chip, four sub-scores and the debt or surplus.
+
+Loading shows skeletons in the shape of these sections (one VoiceOver label, "Loading Today"),
+never a spinner. Transient results (sync, check-in saved) are toasts.
+
 ### Quick check-in
 
-A focused sheet collects sleep quality, energy, soreness, hunger, mood, pain, availability, and an
-optional note. Pain reveals location/severity questions and may invoke the safety boundary. Save
-updates Today and recomputes only when necessary.
+A sheet collects sleep quality, energy, soreness, hunger, mood, pain, availability, and an optional
+note. Each 1–5 question is a vertical list of labelled answers, full-width rows of at least 48pt
+with a check on the chosen one, so it fits a 320pt screen at the largest text sizes:
+
+| Question      | Answers, shown top to bottom                                | Stored |
+| ------------- | ----------------------------------------------------------- | ------ |
+| Sleep quality | Very poor, Poor, OK, Good, Great                            | 1 → 5  |
+| Energy        | Very low, Low, OK, Good, Great                              | 1 → 5  |
+| Soreness      | Very sore, Sore, A bit sore, Good, Great, not sore          | 5 → 1  |
+| Hunger        | Not hungry, A little hungry, Normal, Hungry, Very hungry    | 1 → 5  |
+| Mood          | Very low, Low, OK, Good, Great                              | 1 → 5  |
+
+Soreness is reversed so the best answer always sits last: "Great, not sore" is stored as 1. Every
+question starts at 3, as before. Pain is **No pain** (0) or **Some pain**, which asks "How strong,
+from 1 to 10?" and will not save until a strength is chosen; it is stored as `pain_severity` 0–10.
+The note's counter appears only in its last 100 characters. **Save check-in** is pinned below the
+questions, so it is always on screen. The stored values and the `save_daily_check_in` payload are
+unchanged. Pain location questions and the safety boundary remain future work. Save updates Today
+and recomputes only when necessary.
 
 ### Evidence detail
 
-Readiness evidence is shown inline, not hidden behind a tap: the recovery readout lists
-each driver's true z-score next to its bar and shows No data for unusable components
-(a valid sleep reading whose baseline is still maturing shows the measurement with
-"Building baseline" instead), the sleep architecture card carries the quality score
-with its four sub-scores (Duration, Efficiency, Restorative, Consistency) and the
-debt/surplus pill (positive = debt, negative = surplus, 0 = target met), the 7-day
-trend plots only recorded days with its date range and recorded-day count, and the
-session plan card states the real ACWR and zone. Sync source and freshness live in
-the profile's Apple Health status card and beside the hero sync chip (last health sync
-time), in ordinary coaching language. Deterministic calculation and AI interpretation are
+Readiness evidence is shown inline, not hidden behind a tap. The recovery drivers are plain rows
+in the composite's weight order: "Heart rate variability: normal for you, 58 ms", then resting
+heart rate, sleep, breathing rate and recent training. The words come from the true z-score
+against the athlete's own baseline: within one spread reads "normal for you", one spread or more
+"higher/lower than usual" (sleep and training say "more/less"), two or more "much …". Resting
+heart rate and breathing rate read the measurement, not the z sign, because their z-scores are
+negated in the composite. An unusable component reads "not enough data yet" and never shows a
+number; a valid sleep reading whose baseline is still maturing shows the measurement with
+"baseline still building".
+
+The z-scores sit behind **ⓘ How this is calculated** (authority-doc change 1, 2026-10-03): it
+explains the baseline comparison in plain words, lists each driver's weight and true z-score ("Not
+used today" for an excluded component), and ends "Calculated from your Apple Health data and logged
+workouts. No AI." The disclosure is a VoiceOver button with an expanded state. The confidence word
+stays visible on the verdict card.
+
+**Evidence visualization.** The 7-day trend plots one metric (heart rate variability, then sleep,
+then resting heart rate; the first with four recorded days) as one column per calendar day:
+graphite columns, the latest recorded day in lime with a lime outline and the single idle pulse,
+and an empty socket for a day with no data. Columns are scaled between the series' own minimum and
+maximum, marked by hairline rails, and the caption states it: "Range 49–58 ms · 6 of 7 days
+recorded · As of 3 Oct, Apple Health". Day labels are 12pt day-of-month numbers, the latest in lime
+ink. The change since the first recorded day is neutral ("Up 6 ms since 27 Sep"). Fewer than four
+recorded days reads "Not enough data yet". VoiceOver reads one summary of the range, the latest
+value, the recorded-day count and the change. Full motion grows the columns west to east, Reduce
+Motion fades the chart in, and nothing moves under static motion.
+
+Sync source and freshness live in the profile's Apple Health status card and on the verdict card's
+sync row (last health sync time), in ordinary coaching language. Deterministic calculation and AI interpretation are
 labeled separately. Training and Nutrition remain perspectives in one controlled decision
 pipeline, not independent agents. The Coach tab provides direct user questions through the
 same workflow and never behaves like three separate autonomous chatbots. A live assistant
-message is labeled with its provider; a provider or validation failure never substitutes generic
-coaching text. Replies display bold, italic, and bullet or numbered lists, so they read as formatted
+message carries the small label **AI answer · DeepSeek**, naming the provider by its display name
+from the app's provider map (never a raw id such as `deepseek`; an unlisted provider reads **AI
+answer**). A provider or validation failure never substitutes generic coaching text. Replies display bold, italic, and bullet or numbered lists, so they read as formatted
 text rather than raw Markdown.
 
-When the model cannot answer, Coach shows a labeled reply in its place:
+When the model cannot answer, Coach shows a labeled reply in its place, always visible and never
+with a provider label:
 - "Data summary · not an AI answer": what the athlete's data shows.
 - "Safety note · not an AI answer": for a message that may concern a health risk.
 
-A live labeled reply also shows a beta diagnostic line (failure code and rule names); a stored one
-keeps only its label, because the diagnostic is not stored. Retry appears when the reply ends the
-conversation, and it keeps whatever the user is typing.
+A live labeled reply also shows a beta diagnostic line (failure code and rule names) as small
+secondary text, inside **Evidence used and data gaps** when the reply has one and under the reply
+otherwise; a stored one keeps only its label, because the diagnostic is not stored. Retry appears
+when the reply ends the conversation, and it keeps whatever the user is typing.
 
-Other failures (sign-in, database, limits, network) keep the visible inline alert and Snackbar. A
-timeout says the Coach took too long. During the private beta, other errors show their raw text,
-including the HTTP status and the server's stable code, so the owner can see where they come from
-(owner decision, 2026-09-27). The server never sends parser messages, provider bodies, prompts, or
-health context.
+Other failures (sign-in, database, limits, network) show one inline message under the question
+that failed, in place of the reply: what happened in plain words, then the raw diagnostic as a
+small second line, and **Retry**. A toast ("Coach couldn’t answer") marks the moment; it never
+carries the only copy of the error (redesign doc change 2, replacing the inline alert card and
+Snackbar). A timeout says the Coach took too long. During the private beta the diagnostic line
+shows the raw text, including the HTTP status and the server's stable code, so the owner can see
+where a failure comes from (owner decision, 2026-09-27). The server never sends parser messages,
+provider bodies, prompts, or health context.
 
 Today uses a real timeline for check-in, workout, meal, and review actions. The primary
 decision always uses **Do this next** and remains actionable when AI is offline. A missing
@@ -378,32 +519,123 @@ readiness signal becomes a direct recovery action (sync Apple Health or add a ch
 Coach shows an expandable **Your coaching context** card on a new conversation, before its first
 message; an ongoing conversation shows no cards above it. It lists approved
 plan, goal/profile, Apple Health, check-ins, confirmed nutrition, completed Tracend workouts,
-measurements, and conversation history with honest availability/count/latest-date metadata.
-Model-cited evidence and actual data gaps use **Evidence used and data gaps**; generated follow-up
-ideas use the separate **Suggested next actions** heading.
+measurements, and conversation history with honest availability/count/latest-date metadata. Its
+summary counts connected sources ("4 of 6 sources connected") and dates read as words ("latest
+yesterday", "latest Thu 24 Sep"), never ISO dates.
+Model-cited evidence and actual data gaps use **Evidence used and data gaps**: the cited evidence
+with its source in words ("Calculated from your health data"), the data gaps in words
+(`recovery_check_in` reads **Morning check-in**), the reasoning steps without their evidence ids,
+and the beta diagnostic. Generated follow-up ideas use the separate **Suggested next actions**
+heading.
 
 ## 6. Workout Execution
 
-`Train → Workout preview → Start → Exercise/set logging → Complete → Summary`
+`Train → Workout preview → Start → Focus logging → Finish (session effort) → Summary`
 
-- Preview shows objective, duration, exercises, warm-up, adjustment, and substitutions.
-- Keep current exercise and set controls within thumb reach.
-- Prefill prior load/reps only as an unconfirmed reference.
-- Set completion gives immediate feedback and one light haptic.
-- Rest timer never blocks editing or navigation.
-- Substitution requires a reason and shows whether the objective is preserved.
-- Pain is reachable without an overflow menu.
-- Autosave locally and expose offline/sync state without interruption.
-- Later corrections to a completed session create audited amendments.
-- Completing a workout pops back to the Train tab and refreshes the approved plan, adherence count,
-  and recent sessions without manual reload.
+Logging is a full-screen cover (`ActiveWorkoutScreen`, redesign PR 3, 2026-10-03) in focus mode:
+one exercise per page.
+
+**Header.** A chevron-down (leave), the workout name over the elapsed time (ticks every second;
+amber past 3 hours, when a banner says the workout saves as 3 hours), and the lime **Finish** pill.
+Under it, a segmented bar with one segment per set (done segments are good green) and the sync
+state as a small icon plus a word: **Saved** (good), **Syncing** (neutral), **Offline** (caution;
+the draft is on the phone) or **Needs attention** (low; the server refused the draft).
+
+**Focus page.** Swipe sideways between exercises (selection haptic); the screen opens on the first
+exercise with sets left.
+
+- "Exercise N of M", the name, "4 sets of 6–8 · RPE 8", the catalog muscles as text, and a small
+  front and back `MuscleMapPair` for a catalog-linked exercise. Unlinked exercises show no map and
+  no muscles; nothing is guessed from the name.
+- Set dots: done sets green, the current set lime.
+- The set card: "Set 2 of 4", the rest after it, and big kg × reps readouts with −/+ (2.5 kg, one
+  rep; kg can be emptied for no added weight) that can also be typed. The starting values are the
+  set's own entry, else the set done before it today, else the same set last time, else the plan's
+  starting load and lowest rep target, and a quiet caption names the source (**From your last
+  set**, **From last time**, **From your plan**). Nothing is logged until **Done set N**.
+- The strip under the readouts: **Last time** and **Your best** from `get_my_exercise_history`
+  (**Not enough data yet** for a missing half); a **First log** tag and "No earlier sets for this
+  exercise." the first time; "Last time and best need a connection." when neither the server nor
+  the phone's copy has the history; a skeleton line while it loads.
+- **Done set N** (60 pt) logs the kg and reps shown with a light haptic. When every set is done the
+  card reads "All N sets done" with **Next exercise**, or tells the athlete to tap Finish on the
+  last exercise.
+- **Logged**: each done set with its number, "62.5 kg × 8" (or "12 reps"), a **New best** or
+  **First log** mark, its effort (**RPE 8** or **Add effort**) and undo. Undo clears that set's
+  effort.
+- Tools: **Pain or discomfort** stays a visible chip (**Pain noted** in caution when on). **Fill
+  effort** and a ⋯ menu whose only action is **Mark as skipped** (an action sheet with **Keep
+  logging**). Logging a set on a skipped exercise unmarks it.
+
+**Set effort (RPE).** Optional on every set: a compact 1–10 picker with plain words (5 "5 or more
+reps left", 6 "4 reps left", 7 "3 reps left", 8 "2 reps left", 9 "1 rep left", 10 "Nothing left";
+1–4 "Very light"/"Light"). Blank is allowed (**Not now**, **Clear**). **Fill effort** gives one
+value to the logged sets of that exercise that have none, leaves the others alone, and says how
+many it filled; each set stays adjustable afterwards. Set effort is separate from session effort
+and never feeds it.
+
+**Rest.** Done set starts the exercise's rest (`rest_seconds`) when something follows it:
+
+- A full-screen lime ring with the time left, "Next: Set 3 of Bench press" (or the next
+  exercise), −15, +15, Skip, and the effort picker for the set just done. It covers the page, not
+  the header, so Finish and leave stay reachable.
+- A swipe down, a pull past the top or **Hide** shrinks it to a floating pill (ring, "Next: Set
+  3", ±15 at normal sizes, Skip) above the page; a tap on the pill opens the ring again. The rest
+  never blocks editing.
+- The end time is stored in the draft (`rest_timer`), so a relaunch brings the rest back as the
+  pill; an expired one is cleared.
+- The end plays the success haptic and the toast "Rest is over. Next: …".
+- The lock-screen alert ("Rest timer finished") is scheduled through `RestTimerController` only
+  when **Rest timer alerts** is on and allowed. Skip, the in-app end, finishing, discarding and
+  leaving all cancel it.
+
+**New best.** A done set is a new best only when it beats the history's best set and every
+earlier set of that exercise today, by the history's rule (`newBestSetIndexes`). The moment: a
+medium haptic, a lime burst from the Done button and a large "New best" stamp on the set card
+(about 2.8 s), then the small mark on the logged set. Reduce Motion fades the stamp in with no
+burst; without motion only the mark shows. Unknown history never announces one; a first-ever
+exercise shows **First log** instead. Undo recomputes it.
+
+**Leave.** The chevron, the system back and the edge swipe (`PopScope`) open an action sheet:
+"Leave this workout?" with how many sets are saved on the phone, **Save and leave** (the draft is
+kept; toast "Workout paused"), **Discard workout** (destructive, then a confirm "Discard this
+workout?" naming that the logged sets are deleted; calls `abandon_workout`, toast "Workout
+discarded") and **Keep logging**.
+
+**Finish.** With no set done, Finish plays the warning haptic and the toast "Tick at least one set
+first." Otherwise a sheet asks "How hard was this workout overall?" on a required 1–10 scale with
+nothing preselected (1–2 very easy, 3–4 easy, 5–6 moderate, 7–8 hard, 9 very hard, 10 max).
+**Finish workout** without a number shows "Pick a number from 1 to 10 first." The sheet says "N
+sets are not logged. They stay unlogged, not skipped." (the server keeps an untouched exercise
+`unknown`, PRD; only an exercise marked skipped is saved as skipped) and that this number sets the
+training load. Finishing
+syncs the draft, then calls `complete_workout_v2` with the athlete's `session_effort`
+(`completeWithEffort`) and the duration capped at 3 hours.
+
+- If the finish cannot reach the server, a banner "Finish not sent yet" keeps the effort and the
+  duration on the phone with **Send finish**; reopening the workout offers the same banner from
+  `loadPendingFinish`. A server refusal adds its message as small secondary text.
+- On success: the success haptic and the summary sheet: a check, "Workout complete", a card with
+  the date, the workout name, Time, Sets and **Weight lifted** counting up (`weightLiftedKg`, with
+  "Counts sets with added weight, as you logged them."), the new bests stamped on with their
+  previous best, and "How hard it felt". **Done** closes it, the toast "Workout saved" shows, and
+  the cover closes back to Train, which refreshes.
+
+**A finished workout** opens read-only: "Completed · 45 min", **Done**, and each exercise's logged
+sets. "Marked complete from Apple Health" shows only when the session's `completion_source` is
+`healthkit`.
+
+Other rules: prefill is only ever an unconfirmed starting point; autosave keeps a local draft
+(250 ms after a change) and syncs it, retrying a workout that started offline; substitution
+requires a reason and shows whether the objective is preserved; later corrections to a completed
+session create audited amendments.
 
 ## 7. HealthKit Quick-Complete
 
 When Apple Health records a workout on a day the user has a scheduled Tracend workout but no
 completed session, Train presents a prompt card instead of the normal **Start workout** button:
 
-- Status chip: **Apple Health detected workout** with `heart_fill` icon.
+- Kicker: **Apple Health detected workout** with `heart_fill` icon.
 - Workout name.
 - Explanation: _Apple Health recorded a [N] min workout [today / yesterday / on Mon D]. Did you
   complete [workout name]?_
@@ -423,9 +655,9 @@ explicit user approval. The auto-completed session records
 evidence'` in its notes and writes an `audit_events` row with
 `action_code='workout.auto_completed'`.
 
-The weekday strip shows a green checkmark circle for completed days and a gray dot for planned-only
-days. The workout hero card displays a "Completed" pill and "View workout" (outlined) button for
-days with a completed session.
+The prompt sits inside the workout hero in place of **Start workout**, under the kicker **Apple
+Health detected workout**. The day boxes show a check for completed days and a dot for planned
+days; a completed day's hero reads "Done on Tuesday" with **View summary**.
 
 ## 8. Nutrition and Meal Confirmation
 
@@ -433,24 +665,40 @@ The active schedule places **Next meal** first with local time, planned foods, q
 and **Log meal**. Macro totals come next, labeled **From confirmed meals**, and count confirmed
 consumption only.
 
-Below them, **Today's meals** is one vertical day timeline in time order. It merges the schedule and
-the logged meals: a confirmed meal logged from a slot replaces that slot's planned row. Every row
-has a time, a marker, and a state word, so color is never the only signal:
-- Logged meals read **Lunch · 691 kcal**, then **logged** and their foods from `meal_items`, then a
-  protein / carbs / fat split bar, with a **⋯** menu that holds **Delete meal**.
-- A draft shows **needs review** and a **Review foods** action.
+The totals card shows calories, protein, carbs and fat in sentence case, with numbers in the
+numeric face. Protein, carbs and fat each carry a small colour key that matches the meal split bars;
+the words, not the colours, name them.
+
+Below them, **Today's meals** is one vertical day timeline in time order, in one card with hairline
+separators. It merges the schedule and the logged meals: a confirmed meal logged from a slot
+replaces that slot's planned row. Every row has a time, a marker, and a state word, so color is
+never the only signal:
+- Logged meals read **Lunch · 691 kcal**, then **Logged** and their foods from `meal_items`, then a
+  protein / carbs / fat split bar, with a **⋯** control that opens an action sheet holding **Delete
+  meal**.
+- A draft shows **Needs review** and a **Review foods** action.
 - Unlogged slots show **Due now**, **Planned**, **Optional**, or **Not logged** with their planned
   foods and a **Log** action.
 
-One **Log a meal** button follows the timeline. It opens a sheet that first picks the meal type
-(preselected by time of day: Breakfast before 10:30, Lunch before 15:00, Snack before 17:30, then
-Dinner) and then **Take a photo**, **Choose from Photo Library**, or **Enter manually**. A photo
-meal is saved under the chosen type. The coach's nutrition guidance sits at the end of the screen,
-with its confidence in words.
+One **Log a meal** button follows the timeline. It opens the **Log a meal** sheet, which first picks
+the meal type with chips (preselected by time of day: Breakfast before 10:30, Lunch before 15:00,
+Snack before 17:30, then Dinner) and then offers **Take a photo**, **Choose from Photo Library**, or
+**Enter manually** as one grouped list. A photo meal is saved under the chosen type. The coach's
+nutrition guidance sits at the end of the screen under a sentence-case **Coach** label, with its
+confidence in words.
 
-Nutrition opens on Today and provides previous/next-day controls. Previous dates visibly identify a
-saved daily log and reload confirmed totals and meals; the next-day control stops at Today. A day
+Nutrition uses the large title with the selected day as its subtitle, and pull to refresh reloads
+the day and the coach's guidance. Below the title, a week strip shows the week's date range with
+previous and next week chevrons, then seven day boxes. Today carries the lime ring; the selected
+day sits on a surface box; days after today are disabled; the next-week chevron stops at the
+current week. Changing the day plays the `selection` haptic. Previous dates visibly identify a
+saved daily log and reload confirmed totals and meals. While a day loads, skeletons stand in for
+the totals and the timeline: another day's data never shows under the selected day. A day
 boundary never implies deletion.
+
+Feedback: confirming a meal (manual entry or reviewed candidates) plays the `success` haptic and
+shows a **Meal logged** toast; a deleted meal shows **Meal deleted**. Failures stay on the page in
+words, never only in a toast.
 
 `Nutrition → Capture or enter manually → Analyze → Review candidates → Resolve catalog → Confirm meal → Totals`
 
@@ -477,10 +725,14 @@ AI observation                 Confirmed meal
 - Meal forms dismiss the keyboard by dragging, tapping outside a field, or an explicit **Hide
   keyboard** control. This control is required for iOS numeric keyboards that do not provide a
   native Done key.
-- Each timeline meal's **⋯** menu holds a labeled **Delete meal** action. Deletion requires a
-  destructive confirmation explaining that the meal leaves daily totals.
+- Each timeline meal's **⋯** control opens an action sheet with a labeled **Delete meal** action.
+  Deletion then requires a destructive confirmation (**Delete this meal?**, Cancel as the default)
+  explaining that the meal leaves the day's totals.
+- **Enter meal** and **Review candidates** are sheets. Each candidate shows its serving, calories
+  and confidence in sentence case (**Medium confidence**).
 - Failure offers **Retry**, **Enter manually**, and **Delete photo**.
-- While a photo is analyzed, a progress line appears under **Log a meal**. A failure is shown in
+- While a photo is analyzed, the brand loader and **Analyzing meal photo…** appear under **Log a
+  meal**. A failure is shown in
   the same place, never only at the top of the screen, out of view. A refused camera or photo
   permission names the iOS setting to change. Four outcomes say what happened in plain words: a
   library photo iOS could not load (`invalid_image`, usually an iCloud photo that did not
@@ -508,16 +760,32 @@ dated comparable observations.
 The screen reads top to bottom as one answer, then detail:
 1. A **4W · 12W · 6M** segmented control (default 12W) that scopes the weight change, chart, and
    workout count. The header **+** records a measurement.
-2. The weight hero (`WeightHeroCard`): latest weigh-in and its date, change since the first weigh-in
-   in the period, the weekly rate, a plain-word trend steadiness, and the chart. With no weigh-in it
-   asks for the first one; with one in the period it asks for another before drawing a trend.
+2. The weight hero (`WeightHeroCard`): a sentence-case **Weight** label, the latest weigh-in in the
+   numeric face and its date, change since the first weigh-in in the period, the weekly rate, a
+   plain-word trend steadiness, and the chart. The change chip takes the lime signal only when it
+   moves toward the active goal (`fat_loss` down, `muscle_gain` up); the arrow and the spoken
+   "toward your goal" carry the same meaning. With no weigh-in it asks for the first one; with one
+   in the period it asks for another before drawing a trend.
 3. **This week:** the weekly review card (§11).
 4. **Recent weigh-ins:** the newest three in one grouped list, each with its change from the one
-   before; **See all** opens every weigh-in. A row opens the read-only detail.
+   before; **See all** opens every weigh-in in a sheet. A row opens the read-only detail sheet.
 5. **Strength:** workouts done of planned in the period, then a horizontal row of best confirmed
-   lifts.
+   lifts (**Best · 6 workouts**). A lift tile shows a lime **New best** chip only when
+   `get_my_exercise_history` dates the lift's all-time best set to its latest completed session,
+   that session is the one the hub reports as the lift's latest, and an earlier session existed to
+   beat. Ties keep the earlier date, so repeating a record is never new; unknown history shows no
+   chip.
 6. **Progress photos:** one card with the last set's date, **Take progress photos**, and **View past
    sets**.
+
+Progress uses the large title, and pull to refresh reloads the page and the physique check. The
+first load shows skeletons in the shape of the hero and sections; a period change keeps the last
+answer on screen, dimmed, until the new one arrives. Record measurement, all weigh-ins, the
+weigh-in detail, the weekly review, photo capture, past sets and the private viewer are sheets.
+A saved weigh-in plays the `success` haptic and shows **Weigh-in saved**; a requested review and a
+deleted photo set also confirm with a toast. A failed action shows a dismissible notice in words
+beside the control that started it (the top of the page, the weekly review card, or the photo
+card), never only in a toast.
 
 ### Coach conversation
 
@@ -528,6 +796,23 @@ pinned above every conversation (owner report, 2026-09-30):
 - A new conversation, from launch or from New, is saved only when its first message is sent.
 - Saved conversations lists only conversations that contain a message, newest first, and
   refreshes after every send.
+
+Layout (redesign, 2026-10-03):
+- **Header:** the iOS large title **Coach**. The saved-conversations button stays pinned at the
+  top right, where the inline title bar appears once the title scrolls away, so it is in reach at
+  the end of a long conversation.
+- **Saved conversations** is a sheet: **New conversation**, then one grouped list (title and
+  friendly date; the open one reads **Open now**). Swiping a conversation left asks **Delete this
+  conversation?** with **Delete conversation** as the destructive choice and Cancel as the default;
+  VoiceOver offers the same delete as an action. Deleting the open conversation starts a new one.
+  A delete that fails puts the row back and says so.
+- **Messages:** the athlete's own messages are filled bubbles on the right; Coach replies are
+  plain text on the canvas, with their labels, evidence disclosure and follow-ups below.
+- **Waiting:** "Coach is thinking" with three dots in the place the reply will appear; the dots
+  rest under Reduce Motion.
+- **Composer:** a filled pill field and a round lime send button, which turns lime once there is
+  something to send. Sending plays the light haptic. A rate-limit cooldown shows its countdown in
+  the field.
 
 The composer supports multiline input, keyboard-safe positioning,
 sending/typing/cancel states, selectable long answers, suggested questions, and expandable
@@ -546,7 +831,9 @@ and lower body with framing guidance, a check per finished pose, and how many ar
 explicitly opens the camera or library for a pose; the native camera is never launched without this
 in-app context. Errors stay inline in the sheet, and **Finish later** keeps a partial set open.
 Completed and partial sets are listed under **View past sets** with labeled view and delete
-controls. Viewing uses short-lived authorization.
+controls. Deleting a set asks first with a destructive confirmation (**Delete this photo set?**,
+Cancel as the default). Viewing uses short-lived authorization. Storage consent is an alert with
+**I agree and continue** and Cancel.
 
 **Physique check (2026-10, owner-only experiment).** Only for accounts the `physique-check`
 function serves; everyone else sees no change and the card still says photos are never sent to AI.
@@ -619,23 +906,43 @@ next focus, and a **Mark reviewed** acknowledgement action.
 
 ### Account and AI usage
 
-Account opens as a native detail destination from the Today account control. It shows the signed-in
-identity, current goal, HealthKit and notification status, privacy controls, export, deletion, and
-sign out.
+Account opens as a native detail destination from the Today account control. Since the 2026-10
+redesign it is one iOS inset-grouped settings page:
 
-**Notifications** opens a native bottom sheet with daily check-in at 7:00 PM and weekly review on
-Sunday at 6:00 PM. Permission is requested only after the owner enables a reminder and saves. The
-sheet discloses generic lock-screen copy before permission; denial points to iOS Settings and leaves
-the app usable. Saved choices survive app termination. If iOS loses a pending request while
-authorization remains active, Tracend recreates it from the local choice.
+- **Identity:** the name from the email local-part, a **Private beta** chip and **Current goal**
+  when the active-goal query returns one. There is no separate Edit control; **Profile and goals**
+  is the edit entry.
+- **Plan:** **Profile and goals** opens the read-only screen of that title (goal, training
+  profile, onboarding answers, approved plan) as grouped label/value rows.
+- **Health:** **Apple Health** with its status in plain words ("Updated today at 14:05",
+  "· needs a refresh", "· some signals missing", or "Not connected · manual logging works"). It
+  opens a sheet with the full status card and **Connect** or **Refresh Apple Health**.
+- **Appearance:** a **System / Dark / Light** segmented control that applies at once.
+- **Notifications:** switch rows that apply at once: **Daily check-in reminder** (every day at
+  7:00 PM), **Weekly review reminder** (Sunday at 6:00 PM) and **Rest timer alerts**. The footnote
+  says lock-screen text stays generic. The rest-timer row names its lock-screen text, "Rest timer
+  finished"; when iOS has not been asked yet, turning it on first shows that text in a confirm,
+  and only **Continue** leads to the iOS permission request. **Not now**, off or a denied
+  permission keeps the rest timer in the app only, and a denial points to iOS Settings. There is
+  no in-app haptics toggle; the iOS setting governs haptics.
+- **AI coach:** **AI coaching** (on with the provider name from the server notice, or off),
+  **AI usage this month**, and **Coach conversations** (a sheet; deleting a conversation asks
+  with a destructive confirm). The footnote says provider keys stay on the server.
+- **Privacy:** **Export data**, **Consent history** and **Delete account**, then **Sign out** at
+  the foot.
+
+Sheets use the Tracend sheet, confirmations the destructive confirm, transient results a toast,
+and loading the brand loader.
 
 **AI usage** shows only the authenticated user's sanitized current-period request count, token or
 image usage where meaningful, estimated cost, and service availability. It never reveals API keys,
 prompts, provider request identifiers, raw errors, or another user's aggregate. Values are
-operational estimates, not invoices or subscription quotas. Budget thresholds (warning, hard stop,
-daily limit) render from the server budget state rather than hardcoded copy, and Refresh usage
-refetches the live summary. When budget fields are unavailable the screen degrades to run counts
-and estimates without threshold claims.
+operational estimates, not invoices or subscription quotas. This month's cost is shown against
+the warning and stop limits **from the server budget state only** (never hard-coded), as a meter
+with a tick at the warning threshold and in the Account row ("$0.42 of $2.00 · warning at $1.00").
+Dollars show two decimals; a cost above zero that would round to nothing reads **<$0.01**, never
+**$0.00**. Refresh usage refetches the live summary. When budget fields are unavailable the screen
+degrades to run counts and estimates without threshold claims.
 
 Provider setup is not a mobile flow. If the owner has not configured a server-side provider secret,
 Account shows **AI service not configured** and explains that approved plans and manual logging
@@ -644,17 +951,20 @@ remain available.
 Privacy screens show consent by purpose, provider disclosure, photo retention controls, connected
 data, export, and deletion.
 
-**Privacy and AI processing** opens a read-only consent ledger: the latest append-only
-`consent_records` entry per purpose (terms, privacy, AI coaching, progress photo storage, progress
-photo AI, notifications) with its grant/withdrawal state, date, and notice version. Purposes without a record
-say so. The ledger never edits records; withdrawal happens through the flow that owns each purpose.
+**Consent history** (formerly the consent ledger) is read-only: the latest `consent_records` entry
+per purpose (terms, privacy, AI coaching, progress photo storage, progress photo AI,
+notifications). Each row leads with the choice and its date ("Granted 2 Sep 2026"); the notice
+version and where it was made ("Version ai-coaching-v1 · iOS app", or "Set up during testing" for
+owner-development records) are secondary text. Purposes without a record say "No choice recorded
+yet". The screen never edits records; withdrawal happens through the flow that owns each purpose.
 
 - Export and deletion require recent authentication.
 - Export asks for the account password and a separate 12-character export password, explains media
   inclusion and expiry, and exposes download only when ready. Tracend cannot recover that password.
-- Deletion explains complete irreversible scope, requires the password and exact `DELETE`, and
-  returns to signed-out state only after the server confirms it (its reply, or Auth reporting the
-  account gone).
+- Deletion explains complete irreversible scope, requires the password and exact `DELETE`, then
+  a destructive confirm (**Delete your account?** with **Delete account** and a bold **Cancel**)
+  before anything is sent, and returns to signed-out state only after the server confirms it (its
+  reply, or Auth reporting the account gone). A toast then says the account was deleted.
 - The wait is bounded: the app stops waiting for the reply after 60 seconds, then asks the server
   where the deletion stands a few more times. If it is still running, the sheet says it has not
   been confirmed yet and offers **Check again**. A failed deletion says the account remains.
