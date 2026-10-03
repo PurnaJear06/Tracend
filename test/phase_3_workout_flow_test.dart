@@ -7,6 +7,7 @@ import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
+import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 
 class _MemoryWorkoutRepository implements WorkoutRepository {
@@ -56,6 +57,39 @@ class _MemoryWorkoutRepository implements WorkoutRepository {
     syncCalls++;
     if (failSync) throw Exception('offline');
   }
+
+  @override
+  Future<WorkoutCompletion> completeWithEffort(
+    String sessionId,
+    int revision,
+    int durationSeconds,
+    Map<String, dynamic> draft, {
+    required int sessionEffort,
+  }) async {
+    completeCalls++;
+    lastDurationSeconds = durationSeconds;
+    saved = null;
+    return const WorkoutCompletion(replayed: false);
+  }
+
+  @override
+  Future<PendingWorkoutFinish?> loadPendingFinish(String workoutId) async =>
+      null;
+
+  @override
+  Future<WorkoutDiscard> abandon(
+    String sessionId, {
+    required String workoutId,
+  }) async {
+    saved = null;
+    return const WorkoutDiscard();
+  }
+
+  @override
+  Future<ExerciseHistoryResult> loadExerciseHistory(
+    List<String> keys, {
+    int sessions = 8,
+  }) async => const ExerciseHistoryResult(exercises: {});
 }
 
 Widget _app(Widget child) =>

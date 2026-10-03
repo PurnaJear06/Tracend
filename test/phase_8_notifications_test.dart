@@ -58,6 +58,7 @@ class _NotificationRepository implements NotificationRepository {
   Future<NotificationPreferences> configure({
     required bool dailyCheckIn,
     required bool weeklyReview,
+    required bool restTimerAlertsEnabled,
   }) async {
     this.dailyCheckIn = dailyCheckIn;
     this.weeklyReview = weeklyReview;

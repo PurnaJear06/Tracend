@@ -20,6 +20,7 @@ import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
+import 'package:tracend/features/train/workout_repository.dart';
 
 const _url = 'https://tracend-test.supabase.co';
 const _userId = '11111111-1111-4111-8111-111111111111';
@@ -127,6 +128,18 @@ void main() {
       '2026-10-01T00:00:00Z',
     );
     await preferences.setString('tracend_theme_mode', 'dark');
+    await preferences.setString(
+      '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1',
+      '{}',
+    );
+    await preferences.setString(
+      WorkoutLocalKeys.exerciseHistory(_userId),
+      '{}',
+    );
+    await preferences.setString(
+      WorkoutLocalKeys.exerciseHistory(_otherUserId),
+      '{}',
+    );
     SharedPreferences.setMockInitialValues({
       SharedPreferencesCoachThreadMemory.storageKey: 'thread-1',
       CheckInQueue.storageKeyFor(_userId): '{}',
@@ -151,6 +164,22 @@ void main() {
       isNotNull,
     );
     expect(await preferences.getString('tracend_theme_mode'), 'dark');
+    expect(
+      await preferences.getString(
+        '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1',
+      ),
+      isNull,
+    );
+    expect(
+      await preferences.getString(WorkoutLocalKeys.exerciseHistory(_userId)),
+      isNull,
+    );
+    expect(
+      await preferences.getString(
+        WorkoutLocalKeys.exerciseHistory(_otherUserId),
+      ),
+      isNotNull,
+    );
     final legacy = await SharedPreferences.getInstance();
     expect(
       legacy.getString(SharedPreferencesCoachThreadMemory.storageKey),
