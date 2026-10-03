@@ -384,19 +384,103 @@ ideas use the separate **Suggested next actions** heading.
 
 ## 6. Workout Execution
 
-`Train → Workout preview → Start → Exercise/set logging → Complete → Summary`
+`Train → Workout preview → Start → Focus logging → Finish (session effort) → Summary`
 
-- Preview shows objective, duration, exercises, warm-up, adjustment, and substitutions.
-- Keep current exercise and set controls within thumb reach.
-- Prefill prior load/reps only as an unconfirmed reference.
-- Set completion gives immediate feedback and one light haptic.
-- Rest timer never blocks editing or navigation.
-- Substitution requires a reason and shows whether the objective is preserved.
-- Pain is reachable without an overflow menu.
-- Autosave locally and expose offline/sync state without interruption.
-- Later corrections to a completed session create audited amendments.
-- Completing a workout pops back to the Train tab and refreshes the approved plan, adherence count,
-  and recent sessions without manual reload.
+Logging is a full-screen cover (`ActiveWorkoutScreen`, redesign PR 3, 2026-10-03) in focus mode:
+one exercise per page.
+
+**Header.** A chevron-down (leave), the workout name over the elapsed time (ticks every second;
+amber past 3 hours, when a banner says the workout saves as 3 hours), and the lime **Finish** pill.
+Under it, a segmented bar with one segment per set (done segments are good green) and the sync
+state as a small icon plus a word: **Saved** (good), **Syncing** (neutral), **Offline** (caution;
+the draft is on the phone) or **Needs attention** (low; the server refused the draft).
+
+**Focus page.** Swipe sideways between exercises (selection haptic); the screen opens on the first
+exercise with sets left.
+
+- "Exercise N of M", the name, "4 sets of 6–8 · RPE 8", the catalog muscles as text, and a small
+  front and back `MuscleMapPair` for a catalog-linked exercise. Unlinked exercises show no map and
+  no muscles; nothing is guessed from the name.
+- Set dots: done sets green, the current set lime.
+- The set card: "Set 2 of 4", the rest after it, and big kg × reps readouts with −/+ (2.5 kg, one
+  rep; kg can be emptied for no added weight) that can also be typed. The starting values are the
+  set's own entry, else the set done before it today, else the same set last time, else the plan's
+  starting load and lowest rep target, and a quiet caption names the source (**From your last
+  set**, **From last time**, **From your plan**). Nothing is logged until **Done set N**.
+- The strip under the readouts: **Last time** and **Your best** from `get_my_exercise_history`
+  (**Not enough data yet** for a missing half); a **First log** tag and "No earlier sets for this
+  exercise." the first time; "Last time and best need a connection." when neither the server nor
+  the phone's copy has the history; a skeleton line while it loads.
+- **Done set N** (60 pt) logs the kg and reps shown with a light haptic. When every set is done the
+  card reads "All N sets done" with **Next exercise**, or tells the athlete to tap Finish on the
+  last exercise.
+- **Logged**: each done set with its number, "62.5 kg × 8" (or "12 reps"), a **New best** or
+  **First log** mark, its effort (**RPE 8** or **Add effort**) and undo. Undo clears that set's
+  effort.
+- Tools: **Pain or discomfort** stays a visible chip (**Pain noted** in caution when on). **Fill
+  effort** and a ⋯ menu whose only action is **Mark as skipped** (an action sheet with **Keep
+  logging**). Logging a set on a skipped exercise unmarks it.
+
+**Set effort (RPE).** Optional on every set: a compact 1–10 picker with plain words (5 "5 or more
+reps left", 6 "4 reps left", 7 "3 reps left", 8 "2 reps left", 9 "1 rep left", 10 "Nothing left";
+1–4 "Very light"/"Light"). Blank is allowed (**Not now**, **Clear**). **Fill effort** gives one
+value to the logged sets of that exercise that have none, leaves the others alone, and says how
+many it filled; each set stays adjustable afterwards. Set effort is separate from session effort
+and never feeds it.
+
+**Rest.** Done set starts the exercise's rest (`rest_seconds`) when something follows it:
+
+- A full-screen lime ring with the time left, "Next: Set 3 of Bench press" (or the next
+  exercise), −15, +15, Skip, and the effort picker for the set just done. It covers the page, not
+  the header, so Finish and leave stay reachable.
+- A swipe down, a pull past the top or **Hide** shrinks it to a floating pill (ring, "Next: Set
+  3", ±15 at normal sizes, Skip) above the page; a tap on the pill opens the ring again. The rest
+  never blocks editing.
+- The end time is stored in the draft (`rest_timer`), so a relaunch brings the rest back as the
+  pill; an expired one is cleared.
+- The end plays the success haptic and the toast "Rest is over. Next: …".
+- The lock-screen alert ("Rest timer finished") is scheduled through `RestTimerController` only
+  when **Rest timer alerts** is on and allowed. Skip, the in-app end, finishing, discarding and
+  leaving all cancel it.
+
+**New best.** A done set is a new best only when it beats the history's best set and every
+earlier set of that exercise today, by the history's rule (`newBestSetIndexes`). The moment: a
+medium haptic, a lime burst from the Done button and a large "New best" stamp on the set card
+(about 2.8 s), then the small mark on the logged set. Reduce Motion fades the stamp in with no
+burst; without motion only the mark shows. Unknown history never announces one; a first-ever
+exercise shows **First log** instead. Undo recomputes it.
+
+**Leave.** The chevron, the system back and the edge swipe (`PopScope`) open an action sheet:
+"Leave this workout?" with how many sets are saved on the phone, **Save and leave** (the draft is
+kept; toast "Workout paused"), **Discard workout** (destructive, then a confirm "Discard this
+workout?" naming that the logged sets are deleted; calls `abandon_workout`, toast "Workout
+discarded") and **Keep logging**.
+
+**Finish.** With no set done, Finish plays the warning haptic and the toast "Tick at least one set
+first." Otherwise a sheet asks "How hard was this workout overall?" on a required 1–10 scale with
+nothing preselected (1–2 very easy, 3–4 easy, 5–6 moderate, 7–8 hard, 9 very hard, 10 max).
+**Finish workout** without a number shows "Pick a number from 1 to 10 first." The sheet says "N
+sets not logged will be saved as skipped" and that this number sets the training load. Finishing
+syncs the draft, then calls `complete_workout_v2` with the athlete's `session_effort`
+(`completeWithEffort`) and the duration capped at 3 hours.
+
+- If the finish cannot reach the server, a banner "Finish not sent yet" keeps the effort and the
+  duration on the phone with **Send finish**; reopening the workout offers the same banner from
+  `loadPendingFinish`. A server refusal adds its message as small secondary text.
+- On success: the success haptic and the summary sheet: a check, "Workout complete", a card with
+  the date, the workout name, Time, Sets and **Weight lifted** counting up (`weightLiftedKg`, with
+  "Counts sets with added weight, as you logged them."), the new bests stamped on with their
+  previous best, and "How hard it felt". **Done** closes it, the toast "Workout saved" shows, and
+  the cover closes back to Train, which refreshes.
+
+**A finished workout** opens read-only: "Completed · 45 min", **Done**, and each exercise's logged
+sets. "Marked complete from Apple Health" shows only when the session's `completion_source` is
+`healthkit`.
+
+Other rules: prefill is only ever an unconfirmed starting point; autosave keeps a local draft
+(250 ms after a change) and syncs it, retrying a workout that started offline; substitution
+requires a reason and shows whether the objective is preserved; later corrections to a completed
+session create audited amendments.
 
 ## 7. HealthKit Quick-Complete
 

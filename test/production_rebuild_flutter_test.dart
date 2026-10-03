@@ -216,13 +216,6 @@ class _CompletedDayRepository extends FixtureWorkoutRepository
     int revision,
     Map<String, dynamic> draft,
   ) async {}
-  @override
-  Future<void> complete(
-    String sessionId,
-    int revision,
-    int durationSeconds,
-    Map<String, dynamic> draft,
-  ) async {}
 }
 
 class _ChatRepository
@@ -353,13 +346,6 @@ class _HealthkitCandidateRepository extends FixtureWorkoutRepository
   Future<void> sync(
     String sessionId,
     int revision,
-    Map<String, dynamic> draft,
-  ) async {}
-  @override
-  Future<void> complete(
-    String sessionId,
-    int revision,
-    int durationSeconds,
     Map<String, dynamic> draft,
   ) async {}
 }

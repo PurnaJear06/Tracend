@@ -547,12 +547,6 @@ abstract interface class WorkoutRepository {
     DateTime? localDate,
   });
   Future<void> sync(String sessionId, int revision, Map<String, dynamic> draft);
-  Future<void> complete(
-    String sessionId,
-    int revision,
-    int durationSeconds,
-    Map<String, dynamic> draft,
-  );
 
   /// Finishes the workout with the athlete's own [sessionEffort], a whole
   /// number from 1 to 10 (`complete_workout_v2`, energy null). The request
@@ -901,32 +895,6 @@ class SupabaseWorkoutRepository
   }
 
   @override
-  Future<void> complete(
-    String sessionId,
-    int revision,
-    int durationSeconds,
-    Map<String, dynamic> draft,
-  ) async {
-    await _client.rpc(
-      'complete_workout',
-      params: {
-        'session_id': sessionId,
-        'client_revision': revision,
-        'duration_seconds': durationSeconds,
-        'session_energy': 3,
-        'session_effort': 8,
-        'notes': draft['notes'] ?? '',
-      },
-    );
-    final workoutId = draft['workout_id'] as String?;
-    if (workoutId != null) await clearDraft(workoutId);
-    AppBreadcrumbs.workout(
-      'Workout finished',
-      data: {'effort_source': 'legacy_default'},
-    );
-  }
-
-  @override
   Future<WorkoutCompletion> completeWithEffort(
     String sessionId,
     int revision,
@@ -1193,14 +1161,6 @@ class FixtureWorkoutRepository
     int revision,
     Map<String, dynamic> draft,
   ) async {}
-  @override
-  Future<void> complete(
-    String sessionId,
-    int revision,
-    int durationSeconds,
-    Map<String, dynamic> draft,
-  ) => clearDraft(draft['workout_id'] as String? ?? 'fixture');
-
   @override
   Future<WorkoutCompletion> completeWithEffort(
     String sessionId,
