@@ -48,8 +48,11 @@ integrated PRs, and the three device checkpoints became two.
    launch motion were not objected to and ship as prototyped.
 
 The muscle map needs planned exercises linked to the catalog. Older plans have no slug, so they
-light nothing until re-planned; the name to slug backfill still waits for the owner's count and
-decision. Unlinked exercises show no muscles; nothing is guessed.
+lit nothing. Migration `20261003120000_plan_exercise_catalog_links.sql` (owner decision 2026-10-03:
+"implement it as the plan said") links each planned exercise whose name is exactly a catalog name
+(exercise history key: lowercased, trimmed, spaces collapsed; a single match only) and gives its
+prescribed performances the same slug. Everything else stays unlinked and shows no muscles;
+nothing is guessed.
 
 ## Decisions made during the build
 
@@ -108,8 +111,8 @@ Deviation from the plan, on purpose: the day-level reference set uses only days 
 athlete reported, so the default efforts of the first 28 days never shape the personal
 percentiles. The plan's "28 days before, zero days excluded" rule is otherwise as written.
 
-Not in PR 1: the name → slug backfill for older planned exercises. It changes approved plan rows,
-so it waits for the owner's count and decision.
+Not in PR 1: the name → slug link for older planned exercises. It shipped separately in
+`20261003120000_plan_exercise_catalog_links.sql`; pgTAP `plan_exercise_catalog_links_test.sql`.
 
 Verification: pgTAP `train_redesign_data_test.sql` (65 checks) through CI, because the local
 Colima VM hung on start again; Dart contract fixtures `training_hub_v1_6.json` and
