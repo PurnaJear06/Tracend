@@ -4,6 +4,7 @@ import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/shared/formatting.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
@@ -51,11 +52,6 @@ class WeeklyReviewActionCard extends StatelessWidget {
         : pending
         ? 'Refresh status'
         : 'Generate review';
-    final accent = review != null && !review.acknowledged
-        ? colors.stateStable
-        : failed
-        ? colors.stateAttention
-        : colors.actionPrimary;
     final icon = review != null
         ? CupertinoIcons.doc_text_fill
         : pending
@@ -66,35 +62,24 @@ class WeeklyReviewActionCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(TracendRadii.control),
-                ),
-                child: Icon(icon, size: 20, color: accent),
+              TracendRowIcon(
+                icon: icon,
+                color: failed ? colors.stateAttention : null,
               ),
-              const SizedBox(width: TracendSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: theme.titleMedium),
-                    const SizedBox(height: TracendSpacing.xxs),
-                    Text(detail, style: theme.bodyMedium),
-                  ],
+              const Spacer(),
+              if (review != null && !review.acknowledged)
+                const StatusChip(
+                  label: 'New',
+                  icon: CupertinoIcons.circle_fill,
+                  tone: StatusTone.signal,
                 ),
-              ),
-              if (review != null && !review.acknowledged) ...[
-                const SizedBox(width: TracendSpacing.xs),
-                TracendPill(label: 'New', color: accent, compact: true),
-              ],
             ],
           ),
+          const SizedBox(height: TracendSpacing.sm),
+          Text(title, style: theme.titleMedium),
+          const SizedBox(height: TracendSpacing.xxs),
+          Text(detail, style: theme.bodyMedium),
           const SizedBox(height: TracendSpacing.sm),
           SizedBox(
             width: double.infinity,
@@ -108,118 +93,93 @@ class WeeklyReviewActionCard extends StatelessWidget {
   }
 }
 
-/// Weekly review sheet. Sections keep the order UX_FLOWS requires: outcome,
+/// Weekly review body, shown in a sheet titled "Weekly review" with the
+/// week as its subtitle. Sections keep the order UX_FLOWS requires: outcome,
 /// execution, recovery, evidence, unchanged items, missing data, next focus.
 class WeeklyReviewSheet extends StatelessWidget {
-  const WeeklyReviewSheet({required this.review, this.now, super.key});
+  const WeeklyReviewSheet({required this.review, super.key});
 
   final WeeklyProgressReview review;
-  final DateTime? now;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.85,
-      maxChildSize: 0.95,
-      builder: (context, controller) => SafeArea(
-        child: ListView(
-          controller: controller,
-          padding: const EdgeInsets.fromLTRB(
-            TracendSpacing.gutter,
-            0,
-            TracendSpacing.gutter,
-            TracendSpacing.lg,
-          ),
-          children: [
-            Text('Weekly review', style: theme.headlineSmall),
-            const SizedBox(height: TracendSpacing.xxs),
-            Text(
-              'Week of ${shortDate(review.week, now: now)}',
-              style: theme.bodyMedium,
-            ),
-            const SizedBox(height: TracendSpacing.sm),
-            Text(
-              'Calculated from your logs · no AI. Missing data is shown, '
-              'not guessed.',
-              style: theme.bodySmall,
-            ),
-            const SizedBox(height: TracendSpacing.lg),
-            _ReviewSection(
-              icon: CupertinoIcons.flag_fill,
-              title: 'Outcome',
-              body: _outcome(review.outcomeCode),
-            ),
-            _ReviewSection(
-              icon: CupertinoIcons.bolt_fill,
-              title: 'Workouts',
-              child: Row(
-                children: [
-                  _StatTile(
-                    value:
-                        '${review.completedWorkouts} of ${review.plannedSessions}',
-                    label: 'planned workouts',
-                  ),
-                  const SizedBox(width: TracendSpacing.xs),
-                  _StatTile(
-                    value: '${review.adherencePercent}%',
-                    label: 'on plan',
-                  ),
-                  const SizedBox(width: TracendSpacing.xs),
-                  _StatTile(
-                    value: '${review.completedSets}',
-                    label: 'working sets',
-                  ),
-                ],
-              ),
-            ),
-            _ReviewSection(
-              icon: CupertinoIcons.heart_fill,
-              title: 'Recovery',
-              body:
-                  '${_days(review.checkInDays, 'check-in')} and '
-                  '${_days(review.healthDays, 'Apple Health day')}. Energy '
-                  '${_metric(review.averageEnergy)}, soreness '
-                  '${_metric(review.averageSoreness)}.',
-            ),
-            _ReviewSection(
-              icon: CupertinoIcons.chart_bar_fill,
-              title: 'Food and body',
-              body:
-                  'Meals logged on ${_days(review.confirmedNutritionDays, 'day')}. '
-                  'Weighed in on ${_days(review.measurementDays, 'day')}.',
-            ),
-            const _ReviewSection(
-              icon: CupertinoIcons.lock_fill,
-              title: 'What stays the same',
-              body:
-                  'Your training plan and nutrition targets stay as they are. '
-                  'This review never changes them.',
-            ),
-            _ReviewSection(
-              icon: CupertinoIcons.question_circle_fill,
-              title: 'Missing data',
-              body: review.missingData.isEmpty
-                  ? 'Nothing important is missing.'
-                  : review.missingData.map(_missingLabel).join(' · '),
-            ),
-            _ReviewSection(
-              icon: CupertinoIcons.arrow_right_circle_fill,
-              title: 'Next week',
-              body: _nextFocus(review.nextFocusCode),
-            ),
-            const SizedBox(height: TracendSpacing.xs),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.pop(context, !review.acknowledged),
-                child: Text(review.acknowledged ? 'Done' : 'Mark reviewed'),
-              ),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Calculated from your logs · no AI. Missing data is shown, '
+          'not guessed.',
+          style: theme.bodySmall,
         ),
-      ),
+        const SizedBox(height: TracendSpacing.lg),
+        _ReviewSection(
+          icon: CupertinoIcons.flag_fill,
+          title: 'Outcome',
+          body: _outcome(review.outcomeCode),
+        ),
+        _ReviewSection(
+          icon: CupertinoIcons.bolt_fill,
+          title: 'Workouts',
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _StatTile(
+                value:
+                    '${review.completedWorkouts} of ${review.plannedSessions}',
+                label: 'planned workouts',
+              ),
+              const SizedBox(width: TracendSpacing.xs),
+              _StatTile(value: '${review.adherencePercent}%', label: 'on plan'),
+              const SizedBox(width: TracendSpacing.xs),
+              _StatTile(
+                value: '${review.completedSets}',
+                label: 'working sets',
+              ),
+            ],
+          ),
+        ),
+        _ReviewSection(
+          icon: CupertinoIcons.heart_fill,
+          title: 'Recovery',
+          body:
+              '${_days(review.checkInDays, 'check-in')} and '
+              '${_days(review.healthDays, 'Apple Health day')}. Energy '
+              '${_metric(review.averageEnergy)}, soreness '
+              '${_metric(review.averageSoreness)}.',
+        ),
+        _ReviewSection(
+          icon: CupertinoIcons.chart_bar_fill,
+          title: 'Food and body',
+          body:
+              'Meals logged on ${_days(review.confirmedNutritionDays, 'day')}. '
+              'Weighed in on ${_days(review.measurementDays, 'day')}.',
+        ),
+        const _ReviewSection(
+          icon: CupertinoIcons.lock_fill,
+          title: 'What stays the same',
+          body:
+              'Your training plan and nutrition targets stay as they are. '
+              'This review never changes them.',
+        ),
+        _ReviewSection(
+          icon: CupertinoIcons.question_circle_fill,
+          title: 'Missing data',
+          body: review.missingData.isEmpty
+              ? 'Nothing important is missing.'
+              : review.missingData.map(_missingLabel).join(' · '),
+        ),
+        _ReviewSection(
+          icon: CupertinoIcons.arrow_right_circle_fill,
+          title: 'Next week',
+          body: _nextFocus(review.nextFocusCode),
+        ),
+        const SizedBox(height: TracendSpacing.xs),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, !review.acknowledged),
+          child: Text(review.acknowledged ? 'Done' : 'Mark reviewed'),
+        ),
+      ],
     );
   }
 
@@ -284,7 +244,8 @@ class _ReviewSection extends StatelessWidget {
               children: [
                 Text(title, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: TracendSpacing.xxs),
-                if (body != null) Text(body!),
+                if (body != null)
+                  Text(body!, style: Theme.of(context).textTheme.bodyMedium),
                 ?child,
               ],
             ),
@@ -316,11 +277,13 @@ class _StatTile extends StatelessWidget {
             children: [
               Text(
                 value,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontFeatures: const [FontFeature.tabularFigures()],
+                style: TracendTheme.numeric(
+                  colors,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              Text(label, style: TracendTheme.labelCaps(context)),
+              Text(label, style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
         ),

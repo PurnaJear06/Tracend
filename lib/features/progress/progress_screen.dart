@@ -16,10 +16,17 @@ import 'package:tracend/features/progress/widgets/weekly_review_widgets.dart';
 import 'package:tracend/features/progress/widgets/weight_trend_card.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
+import 'package:tracend/shared/widgets/tracend_confirm.dart';
+import 'package:tracend/shared/widgets/tracend_haptics.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
+import 'package:tracend/shared/widgets/tracend_skeleton.dart';
+import 'package:tracend/shared/widgets/tracend_toast.dart';
 
 /// Period options; the selection covers weigh-ins and workouts alike.
 const progressPeriods = <(int, String)>[(28, '4W'), (84, '12W'), (182, '6M')];
@@ -79,6 +86,7 @@ typedef _ProgressData = ({
   WeeklyProgressReview? weeklyReview,
   WeeklyReviewJob? weeklyReviewJob,
   TrainingHubData? training,
+  Set<String> newBests,
 });
 
 /// Whether this account may run physique checks, and its newest result.
@@ -93,6 +101,12 @@ class _ProgressScreenState extends State<ProgressScreen> {
   late final Future<DailyBrief> _brief;
   late final Future<String?> _goal;
   late Future<_PhysiqueState> _physique;
+
+  /// A failed action, shown next to where it was started until dismissed or
+  /// the next action starts. Toasts only confirm what succeeded; an error is
+  /// never only a toast.
+  String? _problem;
+  _ProblemArea _problemArea = _ProblemArea.top;
 
   @override
   void initState() {
@@ -120,16 +134,62 @@ class _ProgressScreenState extends State<ProgressScreen> {
           widget.repository.loadLatestWeeklyReviewJob(),
           widget.training?.loadTrainingHub(periodDays: _periodDays) ??
               Future<TrainingHubData?>.value(),
-        ]).then(
-          (v) => (
+        ]).then((v) async {
+          final training = v[5] as TrainingHubData?;
+          return (
             measurements: v[0] as List<BodyMeasurement>,
             summary: v[1] as ProgressSummary,
             photoSets: v[2] as List<ProgressPhotoSet>,
             weeklyReview: v[3] as WeeklyProgressReview?,
             weeklyReviewJob: v[4] as WeeklyReviewJob?,
-            training: v[5] as TrainingHubData?,
-          ),
-        );
+            training: training,
+            newBests: await _loadNewBests(training),
+          );
+        });
+  }
+
+  /// Lifts whose latest workout set their all-time best, from
+  /// `get_my_exercise_history`. Without that history no tile says "New best".
+  Future<Set<String>> _loadNewBests(TrainingHubData? hub) async {
+    final repository = widget.training;
+    if (hub == null || hub.progression.isEmpty) return const {};
+    if (repository is! WorkoutRepository) return const {};
+    final keys = liftHistoryKeys(hub);
+    try {
+      final history = await (repository as WorkoutRepository)
+          .loadExerciseHistory(keys.values.toList());
+      return liftNewBests(hub, keys, history);
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      return const {};
+    }
+  }
+
+  Future<void> _pullToRefresh() async {
+    setState(() {
+      _problem = null;
+      _reload();
+      _physique = _loadPhysique();
+    });
+    // A failed reload shows the error card; the refresh only waits for it.
+    await _future.then<void>((_) {}, onError: (Object _) {});
+  }
+
+  void _showProblem(String message, _ProblemArea area) => setState(() {
+    _problem = message;
+    _problemArea = area;
+  });
+
+  /// The problem card when the latest failure belongs to [area].
+  List<Widget> _problemIn(_ProblemArea area, {bool below = false}) {
+    final problem = _problem;
+    if (problem == null || _problemArea != area) return const [];
+    final card = _ProblemCard(
+      message: problem,
+      onDismiss: () => setState(() => _problem = null),
+    );
+    const gap = SizedBox(height: TracendSpacing.xs);
+    return below ? [gap, card] : [card, gap];
   }
 
   /// Whether a check can run now, and the newest stored check. They load
@@ -150,20 +210,21 @@ class _ProgressScreenState extends State<ProgressScreen> {
   Widget build(BuildContext context) => FutureBuilder(
     future: _future,
     builder: (context, snapshot) {
+      final colors = context.tracendColors;
       final data = snapshot.data;
       final loading = snapshot.connectionState == ConnectionState.waiting;
       return TracendScrollView(
         title: 'Progress',
         subtitle: 'Your body and strength over time',
+        onRefresh: _pullToRefresh,
         trailing: IconButton.filledTonal(
           key: const ValueKey('record-measurement-header'),
           onPressed: _record,
           tooltip: 'Record measurement',
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           style: IconButton.styleFrom(
-            backgroundColor: context.tracendColors.actionPrimary.withValues(
-              alpha: 0.16,
-            ),
-            foregroundColor: context.tracendColors.actionPrimary,
+            backgroundColor: colors.surface,
+            foregroundColor: colors.textPrimary,
           ),
           icon: const Icon(CupertinoIcons.plus),
         ),
@@ -176,16 +237,21 @@ class _ProgressScreenState extends State<ProgressScreen> {
               _reload();
             }),
           ),
-          SizedBox(
-            height: TracendSpacing.md,
-            child: loading
-                ? const Center(child: LinearProgressIndicator(minHeight: 2))
-                : null,
-          ),
+          const SizedBox(height: TracendSpacing.md),
+          ..._problemIn(_ProblemArea.top),
           if (data != null)
-            ..._content(data)
+            // A period change keeps the last answer on screen, dimmed,
+            // until the new one arrives.
+            for (final section in _content(data))
+              AnimatedOpacity(
+                opacity: loading ? 0.5 : 1,
+                duration: TracendMotionScope.fade(context, TracendMotion.quick),
+                child: section,
+              )
           else if (snapshot.hasError)
-            _ErrorCard(onRetry: () => setState(_reload)),
+            _ErrorCard(onRetry: () => setState(_reload))
+          else
+            const _ProgressSkeleton(),
         ],
       );
     },
@@ -231,6 +297,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 ? () => setState(_reload)
                 : _requestWeeklyReview,
           ),
+          ..._problemIn(_ProblemArea.weeklyReview, below: true),
         ],
       ),
       if (data.measurements.isNotEmpty)
@@ -259,6 +326,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
           TrainingEvidenceSection(
             training: data.training,
             periodDays: _periodDays,
+            newBests: data.newBests,
           ),
         ],
       ),
@@ -290,6 +358,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
               );
             },
           ),
+          ..._problemIn(_ProblemArea.photos, below: true),
         ],
       ),
     ];
@@ -307,22 +376,22 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   Future<void> _openMeasurementDetail(BodyMeasurement measurement) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) =>
-          MeasurementDetailSheet(measurement: measurement, now: widget.now()),
+    final now = widget.now();
+    await showTracendSheet<void>(
+      context,
+      title: friendlyDate(measurement.date, now: now),
+      subtitle: measurementSourceLabel(measurement.source),
+      builder: (_) => MeasurementDetailSheet(measurement: measurement),
     );
   }
 
   Future<void> _openAllWeighIns(List<BodyMeasurement> measurements) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
-      builder: (_) => WeighInHistorySheet(
+    await showTracendSheet<void>(
+      context,
+      title: 'All weigh-ins',
+      subtitle: '${measurements.length} recorded',
+      detents: const [0.7, 0.95],
+      builder: (_) => WeighInList(
         measurements: measurements,
         onOpen: _openMeasurementDetail,
         now: widget.now(),
@@ -331,40 +400,39 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   Future<void> _requestWeeklyReview() async {
+    setState(() => _problem = null);
     try {
       await widget.repository.requestWeeklyReview();
       if (!mounted) return;
       setState(_reload);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Preparing your weekly review. Check back soon.'),
-        ),
+      TracendToast.show(
+        context,
+        'Preparing your weekly review. Check back soon.',
+        icon: CupertinoIcons.hourglass,
       );
     } on ProgressSessionException {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Your session expired. Sign out, then sign in again.'),
-        ),
+      _showProblem(
+        'Your session expired. Sign out, then sign in again.',
+        _ProblemArea.weeklyReview,
       );
     } catch (e) {
       debugPrint('Non-critical error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not start the weekly review. Try again.'),
-        ),
+      _showProblem(
+        'Could not start the weekly review. Try again.',
+        _ProblemArea.weeklyReview,
       );
     }
   }
 
   Future<void> _openWeeklyReview(WeeklyProgressReview review) async {
-    final acknowledge = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
-      builder: (_) => WeeklyReviewSheet(review: review, now: widget.now()),
+    final acknowledge = await showTracendSheet<bool>(
+      context,
+      title: 'Weekly review',
+      subtitle: 'Week of ${shortDate(review.week, now: widget.now())}',
+      detents: const [0.85, 0.95],
+      builder: (_) => WeeklyReviewSheet(review: review),
     );
     if (acknowledge != true || review.acknowledged) return;
     await widget.repository.acknowledgeWeeklyReview(review.id);
@@ -372,77 +440,59 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   Future<void> _record() async {
-    final result = await showModalBottomSheet<BodyMeasurement>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
+    final result = await showTracendSheet<BodyMeasurement>(
+      context,
+      title: 'Record measurement',
+      scrollable: false,
       builder: (_) => const MeasurementEntrySheet(),
     );
     if (result == null || !mounted) return;
+    setState(() => _problem = null);
     try {
       await widget.repository.saveMeasurement(result);
       if (!mounted) return;
       setState(_reload);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Weigh-in saved')));
+      unawaited(TracendHaptics.success());
+      TracendToast.show(context, 'Weigh-in saved');
     } catch (e) {
       debugPrint('Non-critical error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Could not save measurement. Check your connection and try again.',
-          ),
-        ),
+      _showProblem(
+        'Could not save measurement. Check your connection and try again.',
+        _ProblemArea.top,
       );
     }
   }
 
   Future<void> _ensureConsent() async {
     if (_hasConsent) return;
-    final accepted = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Save private progress photos?'),
-        content: const Text(
+    final accepted = await showTracendConfirm(
+      context,
+      title: 'Save private progress photos?',
+      message:
           'Your photos are stored privately and only you can open them. '
           'They are never sent to an AI model.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('I agree and continue'),
-          ),
-        ],
-      ),
+      confirmLabel: 'I agree and continue',
     );
-    if (accepted != true || !mounted) return;
+    if (!accepted || !mounted) return;
     try {
       await widget.repository.grantPhotoStorageConsent();
       _hasConsent = true;
     } catch (e) {
       debugPrint('Non-critical error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not save consent. Try again.')),
-        );
+        _showProblem('Could not save consent. Try again.', _ProblemArea.photos);
       }
     }
   }
 
   Future<void> _openPhotoCapture() async {
+    setState(() => _problem = null);
     await _ensureConsent();
     if (!_hasConsent || !mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
+    await showTracendSheet<void>(
+      context,
+      title: 'Progress photos',
       builder: (_) => PhotoCaptureSheet(
         captured: _activeSet == null ? const {} : {..._capturedPoses},
         onCapture: _capturePose,
@@ -498,11 +548,10 @@ class _ProgressScreenState extends State<ProgressScreen> {
     String? photoSetId,
     PhysiqueAnalysis? analysis,
   }) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
+    // The sheet's title changes with the check's phase, so it draws its own.
+    await showTracendSheet<void>(
+      context,
+      scrollable: false,
       builder: (_) => PhysiqueCheckSheet(
         repository: widget.physique,
         photoSetId: photoSetId,
@@ -516,11 +565,9 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   Future<void> _openPhotoSets(List<ProgressPhotoSet> sets) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
+    await showTracendSheet<void>(
+      context,
+      title: 'Past photo sets',
       builder: (sheetContext) => PhotoSetsSheet(
         photoSets: sets,
         now: widget.now(),
@@ -534,53 +581,55 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   Future<void> _viewSet(ProgressPhotoSet set) async {
+    setState(() => _problem = null);
     try {
       final urls = await widget.repository.createPhotoReadUrls(set);
       if (!mounted) return;
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        showDragHandle: true,
+      await showTracendSheet<void>(
+        context,
+        title: 'Private photo set',
+        subtitle: 'Only you can open these. The link expires in a minute.',
         builder: (_) => PrivatePhotoViewer(urls: urls),
       );
     } catch (e) {
       debugPrint('Non-critical error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not open private photos. Try again.'),
-          ),
+        _showProblem(
+          'Could not open private photos. Try again.',
+          _ProblemArea.photos,
         );
       }
     }
   }
 
   Future<void> _deleteSet(ProgressPhotoSet set) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete this photo set?'),
-        content: const Text(
-          'The photos will be permanently removed. This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Delete set'),
-          ),
-        ],
-      ),
+    final confirmed = await showTracendConfirm(
+      context,
+      title: 'Delete this photo set?',
+      message: 'The photos will be permanently removed. This cannot be undone.',
+      confirmLabel: 'Delete set',
+      destructive: true,
     );
-    if (confirmed != true) return;
-    await widget.repository.deletePhotoSet(set);
+    if (!confirmed || !mounted) return;
+    setState(() => _problem = null);
+    try {
+      await widget.repository.deletePhotoSet(set);
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      if (mounted) {
+        _showProblem(
+          'Could not delete the photo set. Try again.',
+          _ProblemArea.photos,
+        );
+      }
+      return;
+    }
     if (!mounted) return;
+    TracendToast.show(
+      context,
+      'Photo set deleted',
+      icon: CupertinoIcons.delete,
+    );
     // The set's physique checks were deleted with it.
     setState(() {
       _reload();
@@ -588,6 +637,10 @@ class _ProgressScreenState extends State<ProgressScreen> {
     });
   }
 }
+
+/// Where a failed action's message shows: beside the control that started
+/// it, so it is in view.
+enum _ProblemArea { top, weeklyReview, photos }
 
 class _ErrorCard extends StatelessWidget {
   const _ErrorCard({required this.onRetry});
@@ -605,6 +658,87 @@ class _ErrorCard extends StatelessWidget {
           child: Text('Progress could not load. Check your connection.'),
         ),
         TextButton(onPressed: onRetry, child: const Text('Retry')),
+      ],
+    ),
+  );
+}
+
+/// A failed action, in words, with a way to put it away.
+class _ProblemCard extends StatelessWidget {
+  const _ProblemCard({required this.message, required this.onDismiss});
+
+  final String message;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    return Semantics(
+      liveRegion: true,
+      child: PremiumGradientCard(
+        padding: const EdgeInsets.fromLTRB(
+          TracendSpacing.md,
+          TracendSpacing.xxs,
+          TracendSpacing.xxs,
+          TracendSpacing.xxs,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              CupertinoIcons.exclamationmark_triangle,
+              size: 20,
+              color: colors.stateAttention,
+            ),
+            const SizedBox(width: TracendSpacing.sm),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: TracendSpacing.sm,
+                ),
+                child: Text(
+                  message,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: colors.textPrimary),
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: onDismiss,
+              tooltip: 'Dismiss',
+              icon: Icon(
+                CupertinoIcons.xmark,
+                size: 16,
+                color: colors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Stands in for the hero and the first sections on the first load.
+class _ProgressSkeleton extends StatelessWidget {
+  const _ProgressSkeleton();
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Loading Progress',
+    container: true,
+    child: const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TracendSkeleton.block(height: 300),
+        SizedBox(height: TracendSpacing.lg),
+        TracendSkeleton.line(widthFactor: 0.35, height: 20),
+        SizedBox(height: TracendSpacing.sm),
+        TracendSkeleton.block(height: 132),
+        SizedBox(height: TracendSpacing.lg),
+        TracendSkeleton.line(widthFactor: 0.5, height: 20),
+        SizedBox(height: TracendSpacing.sm),
+        TracendSkeleton.block(height: 180),
       ],
     ),
   );

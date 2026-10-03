@@ -13,6 +13,8 @@ import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/widgets/date_pill_strip.dart';
 import 'package:tracend/shared/widgets/targets_grid.dart';
 
+import 'widgets/haptics_recorder.dart';
+
 Widget _wrap(Widget child) {
   return MaterialApp(
     theme: ThemeData(
@@ -112,6 +114,51 @@ void main() {
       expect(picked, DateTime(2026, 8, 20));
     });
 
+    testWidgets('today carries the lime ring and is announced', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _wrap(
+          DatePillStrip(
+            selectedDate: DateTime(2026, 8, 19),
+            today: DateTime(2026, 8, 20),
+            onSelectedDate: (_) {},
+          ),
+        ),
+      );
+      Container box(String day) => tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(ValueKey('date-pill-2026-08-$day')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final ring = box('20').foregroundDecoration as BoxDecoration?;
+      expect(ring?.border?.top.color, TracendColors.dark.accentSignalRing);
+      expect(box('19').foregroundDecoration, isNull);
+      expect(find.bySemanticsLabel('Thursday 20, today'), findsOneWidget);
+      expect(find.bySemanticsLabel('Wednesday 19, selected'), findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('changing the day plays the selection haptic', (tester) async {
+      final haptics = recordHaptics(tester);
+      await tester.pumpWidget(
+        _wrap(
+          DatePillStrip(
+            selectedDate: DateTime(2026, 8, 19),
+            onSelectedDate: (_) {},
+            onPreviousWeek: () {},
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('date-pill-2026-08-19')));
+      expect(haptics, isEmpty);
+      await tester.tap(find.byKey(const ValueKey('date-pill-2026-08-20')));
+      expect(haptics, ['HapticFeedbackType.selectionClick']);
+      expect(find.text('17 Aug – 23 Aug'), findsOneWidget);
+    });
+
     test('mondayOf normalizes to the week start', () {
       expect(mondayOf(DateTime(2026, 8, 19)), DateTime(2026, 8, 17));
       expect(mondayOf(DateTime(2026, 8, 17)), DateTime(2026, 8, 17));
@@ -154,6 +201,11 @@ void main() {
       expect(find.text('172'), findsOneWidget);
       expect(find.text('48'), findsOneWidget);
       expect(find.text('74%'), findsOneWidget);
+      for (final label in ['Calories', 'Protein', 'Carbs', 'Fat']) {
+        expect(find.text(label), findsOneWidget);
+        expect(find.text(label.toUpperCase()), findsNothing);
+      }
+      expect(find.text('From confirmed meals'), findsOneWidget);
     });
 
     testWidgets('no targets shows honest note, no fabricated bars', (

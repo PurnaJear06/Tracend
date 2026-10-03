@@ -189,6 +189,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('Enter manually'), findsOneWidget);
+    await tester.ensureVisible(find.text('Enter manually'));
+    await tester.tap(find.text('Enter manually'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.text('Confirm meal'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Confirm meal'), findsOneWidget);
   });
 
   testWidgets('every timeline state is announced in words', (tester) async {
@@ -306,16 +314,16 @@ void main() {
     expect(find.text('Pre-workout · 612 kcal'), findsOneWidget);
     expect(find.text('Lunch · 612 kcal'), findsOneWidget);
     expect(
-      find.text('logged  ·  Chicken rice', findRichText: true),
+      find.text('Logged  ·  Chicken rice', findRichText: true),
       findsNWidgets(2),
     );
     expect(find.byType(MacroSplitBar), findsNWidgets(2));
     expect(
-      find.textContaining('needs review  ·', findRichText: true),
+      find.textContaining('Needs review  ·', findRichText: true),
       findsOneWidget,
     );
     expect(
-      find.text('planned  ·  Rice 150 g · Chicken 120 g', findRichText: true),
+      find.text('Planned  ·  Rice 150 g · Chicken 120 g', findRichText: true),
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('log-scheduled-dinner')), findsOneWidget);

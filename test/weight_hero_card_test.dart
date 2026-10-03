@@ -5,6 +5,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/progress/widgets/weight_trend_card.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
 
 final _now = DateTime(2026, 8, 25);
 
@@ -49,6 +50,18 @@ WeightHeroCard _card({
 Color? _changeColor(WidgetTester tester) =>
     tester.widget<Text>(find.textContaining('since 1 Aug')).style?.color;
 
+Color? _changeFill(WidgetTester tester) {
+  final box = tester.widget<DecoratedBox>(
+    find
+        .ancestor(
+          of: find.textContaining('since 1 Aug'),
+          matching: find.byType(DecoratedBox),
+        )
+        .first,
+  );
+  return (box.decoration as BoxDecoration).color;
+}
+
 void main() {
   testWidgets('shows the latest weigh-in, change, and weekly rate', (
     tester,
@@ -61,6 +74,8 @@ void main() {
     expect(find.text('1.0 kg since 1 Aug'), findsOneWidget);
     expect(find.text('−0.3 kg/week'), findsOneWidget);
     expect(find.text('Steady trend'), findsOneWidget);
+    expect(find.text('Weight'), findsOneWidget);
+    expect(find.text('WEIGHT'), findsNothing);
     expect(find.textContaining('kg/day'), findsNothing);
     expect(find.textContaining('R²'), findsNothing);
   });
@@ -81,11 +96,12 @@ void main() {
     expect(find.text('1.0 kg since 1 Aug'), findsOneWidget);
   });
 
-  testWidgets('colors the change only when it moves toward the goal', (
+  testWidgets('the change takes the lime signal only toward the goal', (
     tester,
   ) async {
     await tester.pumpWidget(_wrap(_card(goal: 'fat_loss')));
-    expect(_changeColor(tester), TracendColors.dark.stateStable);
+    expect(_changeColor(tester), TracendColors.dark.accentSignalInk);
+    expect(_changeFill(tester), TracendColors.dark.accentSignalTint);
     expect(
       find.bySemanticsLabel('Down 1.0 kg since 1 Aug, toward your goal'),
       findsOneWidget,
@@ -93,6 +109,7 @@ void main() {
 
     await tester.pumpWidget(_wrap(_card(goal: 'muscle_gain')));
     expect(_changeColor(tester), TracendColors.dark.textPrimary);
+    expect(_changeFill(tester), TracendColors.dark.surfaceRaised);
 
     await tester.pumpWidget(_wrap(_card(goal: 'strength')));
     expect(_changeColor(tester), TracendColors.dark.textPrimary);
@@ -110,6 +127,20 @@ void main() {
     await tester.pumpWidget(_wrap(_card(weighIns: const [])));
     expect(find.text('Add your first weigh-in'), findsOneWidget);
     expect(find.text('Record measurement'), findsOneWidget);
+  });
+
+  testWidgets('the explainer opens as a titled sheet', (tester) async {
+    await tester.pumpWidget(_wrap(_card()));
+    await tester.tap(find.byTooltip('How this is calculated'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(TracendSheetHeader),
+        matching: find.text('How this is calculated'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Nothing here is estimated by AI'), findsOne);
   });
 
   test('goal direction and steadiness wording', () {
