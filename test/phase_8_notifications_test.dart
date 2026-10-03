@@ -108,10 +108,10 @@ void main() {
 
       // Not now: nothing is asked and the timer stays in the app.
       await _toggle(tester, 'Rest timer alerts');
-      expect(find.byType(CupertinoAlertDialog), findsOneWidget);
+      expect(find.byType(CupertinoActionSheet), findsOneWidget);
       expect(
         find.descendant(
-          of: find.byType(CupertinoAlertDialog),
+          of: find.byType(CupertinoActionSheet),
           matching: find.textContaining('“Rest timer finished”'),
         ),
         findsOneWidget,
@@ -140,7 +140,7 @@ void main() {
       await _toggle(tester, 'Rest timer alerts');
       expect(repository.restTimerAlerts, isFalse);
       await _toggle(tester, 'Rest timer alerts');
-      expect(find.byType(CupertinoAlertDialog), findsNothing);
+      expect(find.byType(CupertinoActionSheet), findsNothing);
       expect(repository.restTimerAlerts, isTrue);
       expect(tester.takeException(), isNull);
     },
