@@ -16,7 +16,9 @@ are integrated in one PR. The installed app sends the fixed session effort of 8 
 PR ships the new logging. Older plans' exercises are linked to the catalog by exact name (#80, SQL
 only) so the Train muscle map can light them; #81 added reviewed muscles for the names the
 catalog lacks (build 329 installed). Today's food card is now the fuel rail: protein to go and
-the day's meals on a line, since Nutrition already holds the full ledger.
+the day's meals on a line, since Nutrition already holds the full ledger. Meal slot status
+(`due`, `upcoming`, `skipped`) now follows the athlete's time zone instead of UTC (SQL only, no
+reinstall).
 
 **Previous priority:** UI polish, so the app reads as a finished consumer product rather than a
 beta full of logs. The owner approved the plan on 2026-10-01 and chose to start it before the full
