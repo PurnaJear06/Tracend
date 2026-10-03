@@ -24,7 +24,7 @@ new Train screen:
   `local_today`; after the block it reads "Week N" alone. A cached 1.5 hub (no dates) or a plan that
   has not started shows no pill.
 - **Readiness line.** One sentence about state, never advice: Excellent ≥80 "Recovery is
-  excellent.", Good ≥65 "Recovered. Good to train.", Moderate ≥50 "Recovery is moderate.", Low ≥35
+  excellent.", Good ≥65 "Recovery is good.", Moderate ≥50 "Recovery is moderate.", Low ≥35
   "Recovery is low today.", Poor "Recovery is poor today.", no score "Building your baseline.",
   Apple Health not connected "Connect Apple Health to see recovery".
 - **Training load sheet.** The verdict comes first, from the ACWR bands: "Lighter than normal for

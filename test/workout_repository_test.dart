@@ -306,6 +306,30 @@ void main() {
       expect(server.names, ['abandon_workout', 'get_my_workout_session']);
     });
 
+    test('a passing server error keeps the discard waiting', () async {
+      server.refuse('abandon_workout', '57014');
+      final discard = await repository.abandon(
+        _sessionId,
+        workoutId: _workoutId,
+      );
+      expect(discard.queued, isTrue);
+
+      // Still failing on the next load: the discard is kept, not dropped.
+      server.answer('get_my_workout_session', {
+        'session_id': _sessionId,
+        'state': 'in_progress',
+      });
+      expect(await repository.loadSession(PlannedWorkout.fixture), isNull);
+
+      // A final refusal settles it.
+      server.refuse('abandon_workout', 'P0002');
+      server.answer('get_my_workout_session', null);
+      await repository.loadSession(PlannedWorkout.fixture);
+      server.calls.clear();
+      await repository.loadSession(PlannedWorkout.fixture);
+      expect(server.names, ['get_my_workout_session']);
+    });
+
     test(
       'offline, it waits and is sent before the next session load',
       () async {

@@ -95,7 +95,7 @@ class ReadinessLine {
     }
     if (score >= 65) {
       return const ReadinessLine._(
-        'Recovered. Good to train.',
+        'Recovery is good.',
         band: RecoveryBand.good,
       );
     }

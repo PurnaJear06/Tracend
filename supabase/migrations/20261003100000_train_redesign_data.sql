@@ -152,7 +152,8 @@ end $$;
 revoke all on function private.complete_workout_session(uuid, integer, integer, smallint, numeric, text, text)
   from public, anon, authenticated;
 
--- Installed builds send a fixed effort; record it as the default it is.
+-- Installed builds send a fixed effort of 8; record it as the default it is. Any other value
+-- would change strain under a default's label, so it is refused.
 create or replace function public.complete_workout(
   session_id uuid,
   client_revision integer,
@@ -163,6 +164,10 @@ create or replace function public.complete_workout(
 )
 returns jsonb language plpgsql security definer set search_path = '' as $$
 begin
+  if complete_workout.session_effort is distinct from 8 then
+    raise exception 'the legacy completion records the fixed default effort of 8; use complete_workout_v2'
+      using errcode = '22023';
+  end if;
   return private.complete_workout_session(complete_workout.session_id,
     complete_workout.client_revision, complete_workout.duration_seconds,
     complete_workout.session_energy, complete_workout.session_effort,
@@ -382,9 +387,14 @@ begin
         where p.status <> 'skipped'
           and (
             (r.slug is not null and p.exercise_slug = r.slug)
-            or (p.exercise_slug is null
+            -- A catalog exercise takes older unslugged rows by name only when they were
+            -- prescribed; a substitution or an extra never joins it because a name matches.
+            or (r.slug is not null and p.exercise_slug is null and p.performance_kind = 'prescribed'
                 and private.exercise_name_key(coalesce(p.performed_name, pe.display_name_snapshot))
-                    in (r.name_key, r.catalog_name_key))
+                    = r.catalog_name_key)
+            or (r.slug is null and p.exercise_slug is null
+                and private.exercise_name_key(coalesce(p.performed_name, pe.display_name_snapshot))
+                    = r.name_key)
           )
       ), kinds as (
         select key, case when assisted then 'assistance'

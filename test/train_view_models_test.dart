@@ -150,8 +150,8 @@ void main() {
     test('maps the five ALGORITHMS bands at their cut-offs', () {
       expect(line(100), 'Recovery is excellent.');
       expect(line(80), 'Recovery is excellent.');
-      expect(line(79), 'Recovered. Good to train.');
-      expect(line(65), 'Recovered. Good to train.');
+      expect(line(79), 'Recovery is good.');
+      expect(line(65), 'Recovery is good.');
       expect(line(64), 'Recovery is moderate.');
       expect(line(50), 'Recovery is moderate.');
       expect(line(49), 'Recovery is low today.');

@@ -319,7 +319,7 @@ workout returns `replayed: true` and changes nothing, so effort is written once.
 | Source              | Written by                              | Effort                         |
 | ------------------- | --------------------------------------- | ------------------------------ |
 | `athlete`           | `complete_workout_v2`                   | The athlete's 1–10 rating      |
-| `legacy_default`    | `complete_workout` (builds before v2)   | The app's fixed 8              |
+| `legacy_default`    | `complete_workout` (builds before v2)   | The app's fixed 8; other values refused |
 | `healthkit_default` | `healthkit_auto_complete_workout`       | A fixed 5                      |
 
 Every session completed before 2026-10-03 is `legacy_default` or `healthkit_default` (backfilled

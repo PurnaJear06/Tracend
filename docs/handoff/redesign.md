@@ -64,6 +64,9 @@ decision. Unlinked exercises show no muscles; nothing is guessed.
 - Muscle map: a tap opens the muscles sheet; a drag or the Front and Back control turns the body.
 - Theme: the bottom sheet theme draws no drag handle; `showTracendSheet` draws its own.
 - Cards: `TracendCard` and `PremiumGradientCard` are flat surfaces with no border, shadow or glow.
+- Discard queue: only the final refusals (22023 finished, P0002 not found) settle a saved discard;
+  any other server error keeps it waiting, like a lost connection (GPT review).
+- Readiness line Good band reads "Recovery is good.": state only, never advice (GPT review).
 - Account deletion now also clears workout drafts, pending finishes, queued discards and the
   exercise history copy.
 - Stacked PRs get no CI (CI runs on PRs into `main` and `feature/**`), so stacked work was checked
@@ -79,7 +82,7 @@ Migration `20261003100000_train_redesign_data.sql` (additive):
 - `complete_workout_v2(session_id, client_revision, duration_seconds, session_effort, notes,
   session_energy default null)`: the athlete's whole-number 1–10 rating, energy optional. The old
   `complete_workout` keeps working for installed builds and records its fixed 8 as
-  `legacy_default`. Both share `private.complete_workout_session`; a discarded session cannot be
+  `legacy_default` and refuses any other effort (22023, GPT review 2026-10-03). Both share `private.complete_workout_session`; a discarded session cannot be
   finished (55000).
 - `abandon_workout(p_session_id)`: open → `abandoned` with a `workout.abandoned` audit event; a
   repeat returns `replayed: true`; a completed session is refused (22023); another athlete's is
@@ -93,7 +96,8 @@ Migration `20261003100000_train_redesign_data.sql` (additive):
   rank: `load` (heaviest, then most reps, then earliest), `reps` (bodyweight: most reps) or
   `assistance` (catalog `assisted-` slugs, or names starting "assisted" without a slug: the logged
   load is machine help, so the least assistance wins and 0 is unassisted; sets with no logged
-  assistance are not ranked). Review fix, 2026-10-03: ranking every load descending would have
+  assistance are not ranked). A catalog key takes older unslugged rows by name only when they were
+  prescribed; substitutions and extras never join a catalog exercise by name (GPT review). Review fix, 2026-10-03: ranking every load descending would have
   called the most-assisted pull-up the best.
 - `get_my_training_hub` 1.6 adds `local_today`; `active_plan.effective_date` (falls back to the
   local approval day), `approved_on` and `progression_rule`; each exercise's `exercise_slug` and

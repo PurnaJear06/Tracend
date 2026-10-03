@@ -998,18 +998,30 @@ class SupabaseWorkoutRepository
         data: {'replayed': discard.replayed},
       );
       return discard;
-    } on PostgrestException {
-      rethrow;
+    } on PostgrestException catch (e) {
+      if (_isDiscardRefusal(e)) rethrow;
+      debugPrint('Non-critical error: discard waits for the server: ${e.code}');
+      return _queueDiscard(sessionId);
     } catch (e) {
       debugPrint('Non-critical error: discard waits for a connection: $e');
-      final waiting = await _waitingDiscards();
-      await _preferences.setStringList(_discardKey, [
-        ...waiting.where((id) => id != sessionId),
-        sessionId,
-      ]);
-      AppBreadcrumbs.workout('Workout discarded', data: {'queued': true});
-      return const WorkoutDiscard(queued: true);
+      return _queueDiscard(sessionId);
     }
+  }
+
+  /// `abandon_workout` refuses a finished session (22023) and one that is
+  /// not the athlete's (P0002). Those answers are final; any other server
+  /// error is treated like a lost connection, so the discard is kept.
+  static bool _isDiscardRefusal(PostgrestException e) =>
+      e.code == '22023' || e.code == 'P0002';
+
+  Future<WorkoutDiscard> _queueDiscard(String sessionId) async {
+    final waiting = await _waitingDiscards();
+    await _preferences.setStringList(_discardKey, [
+      ...waiting.where((id) => id != sessionId),
+      sessionId,
+    ]);
+    AppBreadcrumbs.workout('Workout discarded', data: {'queued': true});
+    return const WorkoutDiscard(queued: true);
   }
 
   Future<WorkoutDiscard> _sendDiscard(String sessionId) async {
@@ -1023,9 +1035,9 @@ class SupabaseWorkoutRepository
   Future<List<String>> _waitingDiscards() async =>
       await _preferences.getStringList(_discardKey) ?? const [];
 
-  /// Sends discards saved offline. A refusal (already finished, not found)
-  /// settles it too; a connection failure keeps it. Returns the ids still
-  /// waiting.
+  /// Sends discards saved offline. A final refusal (already finished, not
+  /// found) settles it too; a connection failure or any other server error
+  /// keeps it. Returns the ids still waiting.
   Future<Set<String>> _replayDiscards() async {
     final waiting = await _waitingDiscards();
     if (waiting.isEmpty) return const {};
@@ -1034,7 +1046,14 @@ class SupabaseWorkoutRepository
       try {
         await _sendDiscard(id);
       } on PostgrestException catch (e) {
-        debugPrint('Non-critical error: saved discard refused: ${e.code}');
+        if (_isDiscardRefusal(e)) {
+          debugPrint('Non-critical error: saved discard refused: ${e.code}');
+        } else {
+          debugPrint(
+            'Non-critical error: saved discard still waiting: ${e.code}',
+          );
+          kept.add(id);
+        }
       } catch (e) {
         debugPrint('Non-critical error: saved discard still waiting: $e');
         kept.add(id);

@@ -1,5 +1,5 @@
 begin;
-select plan(65);
+select plan(66);
 
 -- A: history, hub and the completion flows. B: another athlete (ownership and
 -- Apple Health completion). C: day-level load.
@@ -167,8 +167,8 @@ select is((select e->'last_session'->>'local_date' from h, jsonb_array_elements(
     where e->>'key' = 'barbell-bench-press'), (select (a_today - 5)::text from t),
   'last time is the latest completed session, not a discarded or open one');
 select is((select jsonb_array_length(e->'top_sets') from h, jsonb_array_elements(j->'exercises') e
-    where e->>'key' = 'barbell-bench-press'), 4,
-  'one heaviest set per completed session, including an older unslugged one by catalog name');
+    where e->>'key' = 'barbell-bench-press'), 3,
+  'one heaviest set per completed session; an unslugged extra never joins a catalog exercise by name');
 select is((select e->'top_sets'->2 from h, jsonb_array_elements(j->'exercises') e
     where e->>'key' = 'barbell-bench-press'),
   jsonb_build_object('local_date', (select a_today - 20 from t), 'load_kg', 62.50, 'repetitions', 6),
@@ -254,6 +254,8 @@ select is(public.complete_workout((select id from flow where name = 'v1'), 1, 24
 select is((select array[completion_source, session_effort_source] from public.workout_sessions
     where id = (select id from flow where name = 'v1')), array['manual', 'legacy_default'],
   'its fixed effort is recorded as the default it is');
+select throws_ok($$select public.complete_workout((select id from flow where name = 'v1'), 1, 2400, 3::smallint, 7, '')$$,
+  '22023', null, 'the legacy path refuses any effort but its fixed default');
 
 insert into flow select 'v2', public.start_workout('a7300000-0000-4000-8000-000000000002',
   (select a_today - 3 from t), 'Asia/Kolkata', gen_random_uuid());
