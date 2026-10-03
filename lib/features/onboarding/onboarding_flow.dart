@@ -10,8 +10,14 @@ import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/health_activity.dart';
 import 'package:tracend/features/onboarding/onboarding_proposal_view.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
-import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
+import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
+import 'package:tracend/shared/widgets/pressable.dart';
+import 'package:tracend/shared/widgets/tracend_confirm.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/tracend_segmented_control.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
 
 /// Weekday labels, ISO order (index 0 = Monday).
 const onboardingWeekdayLabels = [
@@ -1123,10 +1129,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     _sheetOpen = true;
     final String? note;
     try {
-      note = await showModalBottomSheet<String>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
+      note = await showTracendSheet<String>(
+        context,
+        title: 'What should change?',
+        subtitle: 'Sent with your next plan request.',
         builder: (_) => const _RevisionSheet(),
       );
     } finally {
@@ -1139,31 +1145,21 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   Future<void> _confirmReject() async {
     if (_sheetOpen || _saving) return;
     _sheetOpen = true;
-    final bool? confirmed;
+    final bool confirmed;
     try {
-      confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Reject this plan?'),
-          content: const Text(
+      confirmed = await showTracendConfirm(
+        context,
+        title: 'Reject this plan?',
+        message:
             'Nothing starts. Your answers stay saved, and you can build a new plan from them.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Keep reviewing'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Reject plan'),
-            ),
-          ],
-        ),
+        confirmLabel: 'Reject plan',
+        cancelLabel: 'Keep reviewing',
+        destructive: true,
       );
     } finally {
       _sheetOpen = false;
     }
-    if (confirmed == true && mounted) await _respond('reject');
+    if (confirmed && mounted) await _respond('reject');
   }
 
   /// Opens one step from Review; Continue there returns to Review.
@@ -1211,9 +1207,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         body: SafeArea(
           child: Center(
             child: _loading
-                ? Semantics(
-                    label: 'Loading your saved answers',
-                    child: const TracendLoadingIndicator(size: 32),
+                ? const TracendLoader(
+                    size: 36,
+                    semanticLabel: 'Loading your saved answers',
                   )
                 : Padding(
                     padding: const EdgeInsets.all(TracendSpacing.gutter),
@@ -1268,11 +1264,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                     style: Theme.of(context).textTheme.labelMedium,
                   ),
                   const SizedBox(height: TracendSpacing.xs),
-                  ExcludeSemantics(
-                    child: LinearProgressIndicator(
-                      value: _stepNumber / _visibleSteps.length,
-                    ),
-                  ),
+                  _StepLine(count: _visibleSteps.length, current: _stepNumber),
                 ],
               ),
             ),
@@ -1307,7 +1299,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                     FilledButton(
                       onPressed: _saving ? null : _continue,
                       child: _saving
-                          ? const TracendLoadingIndicator(size: 20)
+                          ? const TracendLoader(
+                              size: 24,
+                              semanticLabel: 'Saving',
+                            )
                           : Text(
                               _step == _reviewStep
                                   ? 'Continue to your coach'
@@ -1382,38 +1377,64 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   );
 
   Widget _eligibility() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       _heading(
         'First, confirm the boundary.',
         'Tracend supports healthy adults. It is not medical, pregnancy, rehabilitation, or eating-disorder care.',
       ),
-      CheckboxListTile(
-        contentPadding: EdgeInsets.zero,
-        value: _adult,
-        onChanged: (value) => setState(() => _adult = value ?? false),
-        title: const Text('I am 18 or older'),
+      TracendGroupedList(
+        children: [
+          _CheckRow(
+            title: 'I am 18 or older',
+            checked: _adult,
+            onChanged: (value) => setState(() => _adult = value),
+          ),
+          MergeSemantics(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: TracendListRow.minHeight,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: TracendListRow.horizontalPadding,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'I need clinical nutrition, pregnancy, acute injury, or rehabilitation support',
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                    ),
+                    const SizedBox(width: TracendSpacing.sm),
+                    Switch.adaptive(
+                      value: _needsClinicalSupport,
+                      onChanged: (value) =>
+                          setState(() => _needsClinicalSupport = value),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
-      SwitchListTile(
-        contentPadding: EdgeInsets.zero,
-        value: _needsClinicalSupport,
-        onChanged: (value) => setState(() => _needsClinicalSupport = value),
-        title: const Text(
-          'I need clinical nutrition, pregnancy, acute injury, or rehabilitation support',
-        ),
-      ),
-      const Divider(height: TracendSpacing.xl),
-      CheckboxListTile(
-        contentPadding: EdgeInsets.zero,
-        value: _terms,
-        onChanged: (value) => setState(() => _terms = value ?? false),
-        title: const Text('I accept the private-beta terms'),
-      ),
-      CheckboxListTile(
-        contentPadding: EdgeInsets.zero,
-        value: _privacy,
-        onChanged: (value) => setState(() => _privacy = value ?? false),
-        title: const Text('I have read the privacy notice'),
+      const SizedBox(height: TracendSpacing.lg),
+      TracendGroupedList(
+        children: [
+          _CheckRow(
+            title: 'I accept the private-beta terms',
+            checked: _terms,
+            onChanged: (value) => setState(() => _terms = value),
+          ),
+          _CheckRow(
+            title: 'I have read the privacy notice',
+            checked: _privacy,
+            onChanged: (value) => setState(() => _privacy = value),
+          ),
+        ],
       ),
     ],
   );
@@ -1431,7 +1452,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       const SizedBox(height: TracendSpacing.lg),
       _ChoiceCard(
         selected: _aiChoice == true,
-        icon: CupertinoIcons.sparkles,
+        icon: CupertinoIcons.chat_bubble_text,
         title: 'Allow AI coaching',
         body:
             'An AI model drafts your starting plan within Tracend\'s safety ranges and writes the Coach chat and daily decision.',
@@ -1489,22 +1510,15 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         'What should the plan prioritize?',
         'Choose one primary direction for the first block.',
       ),
-      RadioGroup<String>(
-        groupValue: _goal,
-        onChanged: (value) => setState(() => _goal = value ?? _goal),
-        child: Column(
-          children: _goals.entries
-              .map(
-                (entry) => RadioListTile<String>(
-                  contentPadding: EdgeInsets.zero,
-                  value: entry.key,
-                  title: Text(entry.value.$1),
-                  subtitle: Text(entry.value.$2),
-                ),
-              )
-              .toList(),
+      for (final entry in _goals.entries) ...[
+        _ChoiceCard(
+          selected: _goal == entry.key,
+          title: entry.value.$1,
+          body: entry.value.$2,
+          onTap: () => setState(() => _goal = entry.key),
         ),
-      ),
+        const SizedBox(height: TracendSpacing.xs),
+      ],
     ],
   );
 
@@ -1616,10 +1630,13 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         ],
         const SizedBox(height: TracendSpacing.md),
         if (!connected)
-          FilledButton.tonalIcon(
+          OutlinedButton.icon(
             onPressed: _healthBusy || _saving ? null : _connectHealth,
             icon: _healthBusy
-                ? const TracendLoadingIndicator(size: 18)
+                ? const TracendLoader(
+                    size: 20,
+                    semanticLabel: 'Reading Apple Health',
+                  )
                 : const Icon(CupertinoIcons.heart_fill),
             label: Text(
               _healthBusy
@@ -1654,18 +1671,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         'Your calorie and protein targets are calculated from these.',
       ),
       _label('Sex'),
-      Wrap(
-        spacing: TracendSpacing.xs,
-        runSpacing: TracendSpacing.xs,
-        children: _sexes.entries
-            .map(
-              (entry) => ChoiceChip(
-                label: Text(entry.value),
-                selected: _sex == entry.key,
-                onSelected: (_) => setState(() => _sex = entry.key),
-              ),
-            )
-            .toList(),
+      _SingleChoice<String>(
+        label: 'Sex',
+        options: [for (final entry in _sexes.entries) (entry.key, entry.value)],
+        // Nothing is selected until the athlete answers.
+        selected: _sex,
+        onChanged: (value) => setState(() => _sex = value),
       ),
       if (_sex == 'unspecified')
         Padding(
@@ -1692,7 +1703,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         decoration: InputDecoration(
           hintText: 'e.g. 1994',
           counterText: '',
-          border: const OutlineInputBorder(),
           errorText: _birthYear.text.length == 4 ? _birthYearError() : null,
         ),
       ),
@@ -1760,7 +1770,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       for (final entry in _activities.entries) ...[
         _ChoiceCard(
           selected: _dailyActivity == entry.key,
-          icon: CupertinoIcons.person_crop_circle,
           title: entry.value.$1,
           body: entry.value.$2,
           tag:
@@ -2073,7 +2082,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       return Column(
         children: [
           const SizedBox(height: TracendSpacing.xl),
-          const TracendLoadingIndicator(size: 32),
+          TracendLoader(
+            size: 36,
+            semanticLabel: building
+                ? 'Building your plan'
+                : 'Your coach is reading your answers',
+          ),
           const SizedBox(height: TracendSpacing.lg),
           Text(
             building
@@ -2151,7 +2165,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       helperText: helper,
       helperMaxLines: 2,
       counterText: '',
-      border: const OutlineInputBorder(),
     ),
   );
 
@@ -2353,7 +2366,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     return Column(
       children: [
         const SizedBox(height: TracendSpacing.xl),
-        const TracendLoadingIndicator(size: 32),
+        const TracendLoader(size: 36, semanticLabel: 'Building your plan'),
         const SizedBox(height: TracendSpacing.lg),
         Text(
           'Building your plan',
@@ -2456,65 +2469,50 @@ class _RevisionSheetState extends State<_RevisionSheet> {
   }
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.fromLTRB(
-      TracendSpacing.gutter,
-      TracendSpacing.gutter,
-      TracendSpacing.gutter,
-      TracendSpacing.gutter + MediaQuery.viewInsetsOf(context).bottom,
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'What should change?',
-          style: Theme.of(context).textTheme.titleLarge,
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      TextField(
+        controller: _note,
+        autofocus: true,
+        minLines: 2,
+        maxLines: 5,
+        maxLength: 500,
+        decoration: const InputDecoration(
+          hintText: 'Example: fewer exercises per session, no deadlifts',
         ),
-        const SizedBox(height: TracendSpacing.sm),
-        TextField(
-          controller: _note,
-          autofocus: true,
-          minLines: 2,
-          maxLines: 5,
-          maxLength: 500,
-          decoration: const InputDecoration(
-            hintText: 'Example: fewer exercises per session, no deadlifts',
-            border: OutlineInputBorder(),
-          ),
+      ),
+      const SizedBox(height: TracendSpacing.sm),
+      ValueListenableBuilder<TextEditingValue>(
+        valueListenable: _note,
+        builder: (context, value, _) => FilledButton(
+          // Changes need words; an empty request would rebuild the same plan.
+          onPressed: value.text.trim().isEmpty
+              ? null
+              : () => Navigator.of(context).pop(value.text.trim()),
+          child: const Text('Request changes'),
         ),
-        const SizedBox(height: TracendSpacing.sm),
-        ValueListenableBuilder<TextEditingValue>(
-          valueListenable: _note,
-          builder: (context, value, _) => FilledButton(
-            // Changes need words; an empty request would rebuild the same plan.
-            onPressed: value.text.trim().isEmpty
-                ? null
-                : () => Navigator.of(context).pop(value.text.trim()),
-            child: const Text('Request changes'),
-          ),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-      ],
-    ),
+      ),
+    ],
   );
 }
 
+/// One answer among several, as a pressable card. The selected card carries
+/// a lime ring, a lime wash and a filled check, so the state never rests on
+/// colour alone.
 class _ChoiceCard extends StatelessWidget {
   const _ChoiceCard({
     required this.selected,
-    required this.icon,
     required this.title,
     required this.body,
     required this.onTap,
+    this.icon,
     this.tag,
   });
 
   final bool selected;
-  final IconData icon;
+  final IconData? icon;
   final String title;
   final String body;
   final VoidCallback onTap;
@@ -2525,68 +2523,232 @@ class _ChoiceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(TracendRadii.card),
-      side: BorderSide(
-        color: selected ? colors.actionPrimary : colors.borderSubtle,
-        width: selected ? 2 : 1,
-      ),
-    );
+    final textTheme = Theme.of(context).textTheme;
+    final radius = BorderRadius.circular(TracendRadii.card);
     return Semantics(
+      container: true,
       selected: selected,
-      button: true,
-      child: Material(
-        color: selected
-            ? colors.actionPrimary.withValues(alpha: 0.08)
-            : colors.surface,
-        shape: shape,
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          customBorder: shape,
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(TracendSpacing.md),
-            child: Row(
-              children: [
-                Icon(icon, color: context.tracendColors.actionPrimary),
-                const SizedBox(width: TracendSpacing.sm),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Text(body, style: Theme.of(context).textTheme.bodyMedium),
-                      if (tag != null)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            top: TracendSpacing.xxs,
-                          ),
-                          child: Text(
-                            tag!,
-                            style: Theme.of(context).textTheme.labelMedium
-                                ?.copyWith(
-                                  color: context.tracendColors.actionPrimary,
-                                ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  selected
-                      ? CupertinoIcons.check_mark_circled_solid
-                      : CupertinoIcons.circle,
-                  color: selected
-                      ? context.tracendColors.actionPrimary
-                      : context.tracendColors.textSecondary,
-                ),
-              ],
+      inMutuallyExclusiveGroup: true,
+      child: Pressable(
+        onTap: onTap,
+        borderRadius: radius,
+        child: AnimatedContainer(
+          duration: TracendMotionScope.movement(context, TracendMotion.quick),
+          decoration: BoxDecoration(
+            color: selected ? colors.accentSignalTint : colors.surface,
+            borderRadius: radius,
+            border: Border.all(
+              color: selected ? colors.accentSignalRing : Colors.transparent,
+              width: 1.5,
             ),
           ),
+          padding: const EdgeInsets.all(TracendSpacing.md),
+          child: Row(
+            children: [
+              if (icon != null) ...[
+                TracendRowIcon(icon: icon!),
+                const SizedBox(width: TracendSpacing.sm),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: textTheme.titleSmall),
+                    const SizedBox(height: 2),
+                    Text(body, style: textTheme.bodyMedium),
+                    if (tag != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: TracendSpacing.xxs),
+                        child: Text(
+                          tag!,
+                          style: textTheme.labelMedium?.copyWith(
+                            color: colors.accentSignalInk,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: TracendSpacing.sm),
+              _CheckMark(checked: selected),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+/// The round check used by choice cards and check rows: a filled lime disc
+/// with a check when on, an empty ring when off.
+class _CheckMark extends StatelessWidget {
+  const _CheckMark({required this.checked});
+
+  final bool checked;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    return ExcludeSemantics(
+      child: AnimatedContainer(
+        duration: TracendMotionScope.movement(context, TracendMotion.quick),
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: checked ? colors.accentSignal : Colors.transparent,
+          border: checked
+              ? null
+              : Border.all(color: colors.textTertiary, width: 1.5),
+        ),
+        child: checked
+            ? Icon(
+                CupertinoIcons.checkmark_alt,
+                size: 16,
+                color: colors.onAccentSignal,
+              )
+            : null,
+      ),
+    );
+  }
+}
+
+/// One answer from a few short options: a segmented control, or a list of
+/// rows once large text would squeeze the segments.
+class _SingleChoice<T extends Object> extends StatelessWidget {
+  const _SingleChoice({
+    required this.label,
+    required this.options,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final String label;
+  final List<(T, String)> options;
+  final T? selected;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.textScalerOf(context).scale(1) <= 1.3) {
+      return Semantics(
+        label: label,
+        container: true,
+        child: TracendSegmentedControl<Object>(
+          segments: [for (final (value, text) in options) (value, text)],
+          // An unanswered question selects no segment.
+          selected: selected ?? const Object(),
+          onChanged: (value) => onChanged(value as T),
+        ),
+      );
+    }
+    return TracendGroupedList(
+      children: [
+        for (final (value, text) in options)
+          _CheckRow(
+            title: text,
+            checked: value == selected,
+            exclusive: true,
+            onChanged: (_) => onChanged(value),
+          ),
+      ],
+    );
+  }
+}
+
+/// A grouped-list row the athlete checks. The whole row is the target, and
+/// VoiceOver reads it as a checkbox with its state.
+class _CheckRow extends StatelessWidget {
+  const _CheckRow({
+    required this.title,
+    required this.checked,
+    required this.onChanged,
+    this.exclusive = false,
+  });
+
+  final String title;
+  final bool checked;
+  final ValueChanged<bool> onChanged;
+
+  /// One of a set where only one can be chosen (read as selected, not
+  /// checked).
+  final bool exclusive;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    checked: exclusive ? null : checked,
+    selected: exclusive ? checked : null,
+    inMutuallyExclusiveGroup: exclusive ? true : null,
+    button: true,
+    label: title,
+    excludeSemantics: true,
+    child: InkWell(
+      onTap: () => onChanged(!checked),
+      highlightColor: context.tracendColors.surfaceRaised,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: TracendListRow.minHeight),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: TracendListRow.horizontalPadding,
+            vertical: 10,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              ),
+              const SizedBox(width: TracendSpacing.sm),
+              _CheckMark(checked: checked),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Onboarding progress as a thin segmented line: one segment per visible
+/// step, done steps solid, the current step in lime. The step text above it
+/// carries the meaning for VoiceOver.
+class _StepLine extends StatelessWidget {
+  const _StepLine({required this.count, required this.current});
+
+  final int count;
+
+  /// 1-based position of the current step.
+  final int current;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    return ExcludeSemantics(
+      child: Row(
+        children: [
+          for (var i = 1; i <= count; i++) ...[
+            if (i > 1) const SizedBox(width: 3),
+            Expanded(
+              child: AnimatedContainer(
+                duration: TracendMotionScope.movement(
+                  context,
+                  TracendMotion.standard,
+                ),
+                height: 3,
+                decoration: BoxDecoration(
+                  color: i < current
+                      ? colors.textPrimary
+                      : i == current
+                      ? colors.accentSignalRing
+                      : colors.surfaceRaised,
+                  borderRadius: BorderRadius.circular(TracendRadii.pill),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -2787,19 +2949,18 @@ class _LiftCard extends StatelessWidget {
               onChanged: (value) =>
                   onChanged(lift.copyWith(reps: value.round())),
             ),
-            Text('Reps you could still have done'),
+            const Text('Reps you could still have done'),
             const SizedBox(height: TracendSpacing.xs),
-            Wrap(
-              spacing: TracendSpacing.xs,
-              runSpacing: TracendSpacing.xs,
-              children: [
-                for (var left = 0; left <= 4; left++)
-                  ChoiceChip(
-                    label: Text(left == 0 ? 'None' : '$left'),
-                    selected: lift.repsLeft == left,
-                    onSelected: (_) => onChanged(lift.copyWith(repsLeft: left)),
-                  ),
-              ],
+            Semantics(
+              label: '$name reps you could still have done',
+              container: true,
+              child: TracendSegmentedControl<int>(
+                segments: [
+                  for (var left = 0; left <= 4; left++) (left, '$left'),
+                ],
+                selected: lift.repsLeft,
+                onChanged: (left) => onChanged(lift.copyWith(repsLeft: left)),
+              ),
             ),
           ],
         ],
@@ -2875,7 +3036,6 @@ class _QuestionCardState extends State<_QuestionCard> {
                   ? 'Your answer'
                   : 'Or in your own words',
               counterText: '',
-              border: const OutlineInputBorder(),
             ),
           ),
         ],

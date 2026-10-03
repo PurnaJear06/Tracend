@@ -538,6 +538,8 @@ void main() {
       find.widgetWithText(FilledButton, 'Permanently delete account'),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete account'));
+    await tester.pumpAndSettle();
 
     expect(find.textContaining('not been confirmed yet'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Check again'), findsOneWidget);

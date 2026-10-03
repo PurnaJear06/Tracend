@@ -70,9 +70,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Open account'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('PRIVACY AND DATA'), 240);
+    await tester.scrollUntilVisible(find.text('Privacy'), 240);
 
-    expect(find.text('PRIVACY AND DATA'), findsOneWidget);
+    expect(find.text('Privacy'), findsOneWidget);
   });
 
   testWidgets(

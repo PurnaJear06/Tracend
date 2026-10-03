@@ -265,7 +265,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.recorded, [false]);
-    expect(find.text('Off'), findsOneWidget);
+    expect(find.text('Off · plans and logging still work'), findsOneWidget);
   });
 
   testWidgets('turning AI coaching off mid-send sends nothing to the Coach', (

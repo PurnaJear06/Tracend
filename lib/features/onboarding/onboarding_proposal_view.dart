@@ -1,9 +1,11 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/shared/ai_provider_names.dart';
 import 'package:tracend/features/onboarding/health_activity.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
+import 'package:tracend/shared/widgets/evidence_accordion.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
 /// The starting plan as proposed: every training day with its exercises, the
@@ -47,11 +49,9 @@ class OnboardingProposalView extends StatelessWidget {
           children: [
             StatusChip(
               label: fromModel
-                  ? 'Proposed by AI${proposal.model == null ? '' : ' (${proposal.model})'} · checked by Tracend'
+                  ? provenanceLabel(proposal.model)
                   : 'Built by Tracend\'s rules',
-              icon: fromModel
-                  ? CupertinoIcons.sparkles
-                  : CupertinoIcons.checkmark_shield,
+              icon: CupertinoIcons.checkmark_shield,
               tone: StatusTone.neutral,
             ),
             StatusChip(
@@ -95,15 +95,6 @@ class OnboardingProposalView extends StatelessWidget {
               Text(
                 '${proposal.proteinG} g protein · ${proposal.carbohydrateG} g carbs · ${proposal.fatG} g fat',
               ),
-              if (proposal.calculation != null) ...[
-                const Divider(height: TracendSpacing.xl),
-                Text('How this was calculated', style: text.labelLarge),
-                const SizedBox(height: TracendSpacing.xs),
-                Text(
-                  _calculation(proposal.calculation!),
-                  style: text.bodySmall,
-                ),
-              ],
               if (proposal.nutritionRationale.isNotEmpty) ...[
                 const SizedBox(height: TracendSpacing.xs),
                 Text(proposal.nutritionRationale, style: text.bodyMedium),
@@ -111,6 +102,16 @@ class OnboardingProposalView extends StatelessWidget {
             ],
           ),
         ),
+        if (proposal.calculation != null) ...[
+          const SizedBox(height: TracendSpacing.xs),
+          EvidenceAccordion(
+            title: 'How we calculated this',
+            child: Text(
+              _calculation(proposal.calculation!),
+              style: text.bodyMedium,
+            ),
+          ),
+        ],
         if (proposal.keptFromCurrentPlan.isNotEmpty) ...[
           const SectionLabel('Kept from your plan'),
           _Bullets(proposal.keptFromCurrentPlan),
@@ -169,6 +170,14 @@ class OnboardingProposalView extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  /// "Proposed by AI (DeepSeek) · checked by Tracend": the provider is named
+  /// through the shared display-name map; an unknown id shows just "AI",
+  /// never the raw id.
+  static String provenanceLabel(String? model) {
+    final provider = aiProviderDisplayName(model);
+    return 'Proposed by AI${provider == null ? '' : ' ($provider)'} · checked by Tracend';
   }
 
   /// RPE in plain words: reps left in reserve, 10 − RPE (RPE 7.5 → about
@@ -287,7 +296,8 @@ class _WorkoutCard extends StatelessWidget {
                     Text(
                       'Start at ${OnboardingProposalView._number(load)} kg',
                       style: text.bodySmall?.copyWith(
-                        color: context.tracendColors.actionPrimary,
+                        color: context.tracendColors.textPrimary,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   if (exercise.notes.isNotEmpty)

@@ -41,7 +41,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('ONBOARDING ANSWERS'), findsNothing);
-    expect(find.text('TRAINING PROFILE'), findsOneWidget);
+    expect(find.text('Onboarding answers'), findsNothing);
+    expect(find.text('Training profile'), findsOneWidget);
   });
 }
