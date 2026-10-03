@@ -59,9 +59,13 @@ Migration `20261003100000_train_redesign_data.sql` (additive):
 - `exercise_performances.exercise_slug`, kept by a trigger: the planned exercise's slug for a
   prescribed performance, none for substitutions and extras.
 - `get_my_exercise_history(p_keys, p_sessions default 8)` 1.0: 1–20 keys of 1–120 characters
-  (repeats answered once), sessions clamped to 1–12, violations 22023. Per key: `kind` (`load` or
-  `reps`), `last_session`, `best_set` (heaviest, then most reps, then earliest; most reps for
-  bodyweight) and `top_sets` (heaviest set per completed session, newest first).
+  (repeats answered once), sessions clamped to 1–12, violations 22023. Per key: `kind`, `last_session`,
+  `best_set` and `top_sets` (best set per completed session, newest first). `kind` says how sets
+  rank: `load` (heaviest, then most reps, then earliest), `reps` (bodyweight: most reps) or
+  `assistance` (catalog `assisted-` slugs, or names starting "assisted" without a slug: the logged
+  load is machine help, so the least assistance wins and 0 is unassisted; sets with no logged
+  assistance are not ranked). Review fix, 2026-10-03: ranking every load descending would have
+  called the most-assisted pull-up the best.
 - `get_my_training_hub` 1.6 adds `local_today`; `active_plan.effective_date` (falls back to the
   local approval day), `approved_on` and `progression_rule`; each exercise's `exercise_slug` and
   `primary_muscles`; `completion_source` and `effort_source` on recent sessions; and `daily_load`
@@ -74,7 +78,7 @@ percentiles. The plan's "28 days before, zero days excluded" rule is otherwise a
 Not in PR 1: the name → slug backfill for older planned exercises. It changes approved plan rows,
 so it waits for the owner's count and decision.
 
-Verification: pgTAP `train_redesign_data_test.sql` (63 checks) through CI, because the local
+Verification: pgTAP `train_redesign_data_test.sql` (65 checks) through CI, because the local
 Colima VM hung on start again; Dart contract fixtures `training_hub_v1_6.json` and
 `exercise_history_v1_0.json`; `db_contract_test.ts` updated for 1.6 and the history RPC. No app
 change, so no reinstall. After the deploy, confirm the live hub reports `schema_version` 1.6 with a

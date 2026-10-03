@@ -93,6 +93,46 @@
       ]
     },
     {
+      "key": "assisted-pull-up",
+      "kind": "assistance",
+      "last_session": {
+        "session_id": "8a000000-0000-4000-8000-000000000012",
+        "local_date": "2026-09-29",
+        "sets": [
+          {
+            "set_number": 1,
+            "load_kg": 30.0,
+            "repetitions": 8,
+            "rpe": null
+          },
+          {
+            "set_number": 2,
+            "load_kg": 30.0,
+            "repetitions": 7,
+            "rpe": null
+          }
+        ]
+      },
+      "best_set": {
+        "kind": "assistance",
+        "load_kg": 25.0,
+        "repetitions": 6,
+        "local_date": "2026-09-22"
+      },
+      "top_sets": [
+        {
+          "local_date": "2026-09-29",
+          "load_kg": 30.0,
+          "repetitions": 8
+        },
+        {
+          "local_date": "2026-09-22",
+          "load_kg": 25.0,
+          "repetitions": 6
+        }
+      ]
+    },
+    {
       "key": "Cable fly",
       "kind": null,
       "last_session": null,

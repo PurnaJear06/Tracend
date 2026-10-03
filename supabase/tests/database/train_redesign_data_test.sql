@@ -1,5 +1,5 @@
 begin;
-select plan(63);
+select plan(65);
 
 -- A: history, hub and the completion flows. B: another athlete (ownership and
 -- Apple Health completion). C: day-level load.
@@ -48,6 +48,8 @@ insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_o
    'a7300000-0000-4000-8000-000000000001', 2, 'Cable fly', 2, 10, 12, 60, null),
   ('a7400000-0000-4000-8000-000000000003', 'a7000000-0000-4000-8000-000000000001',
    'a7300000-0000-4000-8000-000000000001', 3, 'Push-up', 2, 10, 20, 60, 'push-up'),
+  ('a7400000-0000-4000-8000-000000000005', 'a7000000-0000-4000-8000-000000000001',
+   'a7300000-0000-4000-8000-000000000001', 4, 'Assisted pull-up', 2, 6, 10, 90, 'assisted-pull-up'),
   ('a7400000-0000-4000-8000-000000000004', 'a7000000-0000-4000-8000-000000000001',
    'a7300000-0000-4000-8000-000000000002', 1, 'Barbell bench press', 1, 5, 8, 120, 'barbell-bench-press');
 
@@ -109,6 +111,10 @@ select pg_temp.log_session('a7000000-0000-4000-8000-000000000001',
     {"order":2,"planned":"a7400000-0000-4000-8000-000000000002","sets":[[12,15]]},
     {"order":3,"planned":"a7400000-0000-4000-8000-000000000003","sets":[[15,null],[12,null]]}]');
 select pg_temp.log_session('a7000000-0000-4000-8000-000000000001',
+  'a7300000-0000-4000-8000-000000000001', (select a_today - 15 from t), 'completed', 8,
+  'legacy_default', 30,
+  '[{"order":4,"planned":"a7400000-0000-4000-8000-000000000005","sets":[[8,60],[6,40],[10,null]]}]');
+select pg_temp.log_session('a7000000-0000-4000-8000-000000000001',
   'a7300000-0000-4000-8000-000000000001', (select a_today - 10 from t), 'completed', 8,
   'legacy_default', 50,
   '[{"order":1,"planned":"a7400000-0000-4000-8000-000000000001","sets":[[8,62.5],[5,65],[5,70,false]]},
@@ -146,7 +152,7 @@ set local role authenticated;
 set local "request.jwt.claim.sub" = 'a7000000-0000-4000-8000-000000000001';
 
 insert into h select public.get_my_exercise_history(
-  array['barbell-bench-press', 'push-up', 'Cable fly', 'Nothing logged']);
+  array['barbell-bench-press', 'push-up', 'Cable fly', 'Nothing logged', 'assisted-pull-up']);
 
 select is((select j->>'schema_version' from h), '1.0', 'history schema 1.0');
 select is((select j->>'sessions_limit' from h), '8', 'eight sessions by default');
@@ -167,12 +173,19 @@ select is((select e->'top_sets'->2 from h, jsonb_array_elements(j->'exercises') 
     where e->>'key' = 'barbell-bench-press'),
   jsonb_build_object('local_date', (select a_today - 20 from t), 'load_kg', 62.50, 'repetitions', 6),
   'top sets run newest first');
-select is((select e->'best_set' - 'local_date' from h, jsonb_array_elements(j->'exercises') e
+select is((select (e->'best_set') - 'local_date' from h, jsonb_array_elements(j->'exercises') e
     where e->>'key' = 'push-up'),
   '{"kind":"reps","load_kg":null,"repetitions":18}'::jsonb,
   'a bodyweight exercise is ranked by reps');
 select is((select e->'best_set'->>'load_kg' from h, jsonb_array_elements(j->'exercises') e
     where e->>'key' = 'Cable fly'), '15.00', 'an exercise without a slug is found by name');
+select is((select e->>'kind' from h, jsonb_array_elements(j->'exercises') e
+    where e->>'key' = 'assisted-pull-up'), 'assistance',
+  'an assisted exercise is ranked by assistance');
+select is((select (e->'best_set') - 'local_date' from h, jsonb_array_elements(j->'exercises') e
+    where e->>'key' = 'assisted-pull-up'),
+  '{"kind":"assistance","load_kg":40.00,"repetitions":6}'::jsonb,
+  'less assistance is the better set; a set without a logged assistance is not ranked');
 select is((select e - 'key' from h, jsonb_array_elements(j->'exercises') e
     where e->>'key' = 'Nothing logged'),
   '{"kind":null,"best_set":null,"top_sets":[],"last_session":null}'::jsonb,

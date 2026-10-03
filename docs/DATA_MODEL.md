@@ -300,7 +300,8 @@ substitution/skip reason, pain flag, ratings, and note.
 `exercise_slug` is the catalog identity of a prescribed performance, copied from its planned
 exercise by a trigger and cleared when the performance becomes a substitution or an extra
 exercise. `get_my_exercise_history` keys history by slug; performances without one (older plans,
-substitutions, extras) are keyed by their lowercased, trimmed name.
+substitutions, extras) are keyed by their lowercased, trimmed name. Assisted exercises (catalog
+`assisted-` slugs) rank their logged load as assistance, so less is better.
 
 ### `exercise_sets`
 

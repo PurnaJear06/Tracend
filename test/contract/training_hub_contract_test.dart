@@ -326,7 +326,7 @@ void main() {
       expect(json['sessions_limit'], inInclusiveRange(1, 12));
       for (final row in (json['exercises'] as List).toMapList()) {
         expect(row['key'], isA<String>());
-        expect(row['kind'], anyOf(isNull, 'load', 'reps'));
+        expect(row['kind'], anyOf(isNull, 'load', 'reps', 'assistance'));
         expect(row['top_sets'], isA<List>());
         if (row['kind'] == null) {
           expect(row['last_session'], isNull);
@@ -338,6 +338,14 @@ void main() {
         expect(best['kind'], row['kind']);
         expect(best['repetitions'], isA<int>());
         if (row['kind'] == 'reps') expect(best['load_kg'], isNull);
+        // Assistance is help from the machine: less is better, so the best
+        // set has the least assistance of any ranked set.
+        if (row['kind'] == 'assistance') {
+          final tops = (row['top_sets'] as List).toMapList();
+          for (final top in tops) {
+            expect((best['load_kg'] as num) <= (top['load_kg'] as num), isTrue);
+          }
+        }
         final last = row['last_session'] as Map;
         expect(
           () => DateTime.parse(last['local_date'] as String),

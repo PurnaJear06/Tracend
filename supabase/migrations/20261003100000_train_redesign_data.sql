@@ -335,6 +335,12 @@ grant execute on function public.abandon_workout(uuid) to authenticated;
 -- catalog name. A name key matches performances without a slug by name only,
 -- so two different catalog exercises never merge. Completed sessions and
 -- completed sets only.
+--
+-- kind says how a set is ranked: 'load' (more weight is better), 'reps'
+-- (bodyweight: more reps is better) or 'assistance' (an assisted exercise,
+-- where the logged load is help from the machine, so less is better and 0 is
+-- unassisted). Assisted exercises are the catalog's 'assisted-' slugs and, for
+-- keys without a slug, names starting with "assisted".
 create function public.get_my_exercise_history(p_keys text[], p_sessions integer default 8)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare keys text[]; session_limit integer;
@@ -358,11 +364,13 @@ begin
     'exercises', coalesce((
       with requested as (
         select k as key, c.slug, private.exercise_name_key(k) as name_key,
-          private.exercise_name_key(c.name) as catalog_name_key
+          private.exercise_name_key(c.name) as catalog_name_key,
+          coalesce(c.slug like 'assisted-%',
+            private.exercise_name_key(k) like 'assisted %') as assisted
         from unnest(keys) k
         left join public.exercise_catalog c on c.slug = k
       ), matched as (
-        select r.key, s.id as session_id, s.local_date, s.completed_at,
+        select r.key, r.assisted, s.id as session_id, s.local_date, s.completed_at,
           p.exercise_order, es.set_number, es.load_kg, es.repetitions, es.rpe
         from requested r
         join public.exercise_performances p on p.user_id = auth.uid()
@@ -379,18 +387,23 @@ begin
                     in (r.name_key, r.catalog_name_key))
           )
       ), kinds as (
-        select key, case when bool_or(load_kg > 0) then 'load' else 'reps' end as kind
-        from matched group by key
+        select key, case when assisted then 'assistance'
+            when bool_or(load_kg > 0) then 'load' else 'reps' end as kind
+        from matched group by key, assisted
       ), ranked as (
         select m.*, k.kind,
           row_number() over (partition by m.key, m.session_id
             order by case when k.kind = 'load' then m.load_kg end desc nulls last,
+                     case when k.kind = 'assistance' then m.load_kg end asc nulls last,
                      m.repetitions desc, m.set_number) as in_session_rank,
           row_number() over (partition by m.key
             order by case when k.kind = 'load' then m.load_kg end desc nulls last,
+                     case when k.kind = 'assistance' then m.load_kg end asc nulls last,
                      m.repetitions desc, m.local_date, m.completed_at) as overall_rank
         from matched m join kinds k on k.key = m.key
-        where k.kind = 'reps' or m.load_kg > 0
+        where k.kind = 'reps'
+          or (k.kind = 'load' and m.load_kg > 0)
+          or (k.kind = 'assistance' and m.load_kg is not null)
       ), latest as (
         select distinct on (key) key, session_id, local_date
         from matched
