@@ -13,7 +13,7 @@ import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/widgets/check_in_prompt_bar.dart';
 import 'package:tracend/features/today/widgets/coach_perspective_card.dart';
-import 'package:tracend/features/today/widgets/metabolic_target_card.dart';
+import 'package:tracend/features/today/widgets/fuel_rail_card.dart';
 import 'package:tracend/features/today/widgets/session_plan_card.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
@@ -352,116 +352,256 @@ void main() {
     });
   });
 
-  group('MetabolicTargetCard', () {
+  group('FuelDay', () {
+    ScheduledMeal slot(
+      String id,
+      String label,
+      String time, {
+      String? status,
+    }) => ScheduledMeal(
+      id: id,
+      slotKey: id,
+      label: label,
+      time: time,
+      foods: const [],
+      status: status ?? 'upcoming',
+      optional: false,
+      reminderEnabled: false,
+    );
+    MealEntry meal(String type, int hour, double protein, {String? slotId}) =>
+        MealEntry(
+          id: 'm-$type-$hour',
+          type: type,
+          status: 'confirmed',
+          source: 'manual',
+          loggedAt: DateTime(2026, 10, 3, hour, 10),
+          scheduleItemId: slotId,
+          items: [
+            MealItem(
+              name: 'Food',
+              calories: 400,
+              protein: protein,
+              carbohydrate: 40,
+              fat: 10,
+            ),
+          ],
+        );
+    final plan = NutritionSchedule(
+      title: 'Plan',
+      items: [
+        slot('b', 'Breakfast', '08:00'),
+        slot('l', 'Lunch', '13:30'),
+        slot('s', 'Snack', '16:30'),
+        slot('d', 'Dinner', '20:30'),
+      ],
+    );
+
+    test('splits the protein left evenly over the meals still ahead', () {
+      final day = FuelDay.from(
+        proteinEaten: 58,
+        proteinTarget: 150,
+        schedule: plan,
+        loggedMeals: [meal('breakfast', 8, 58, slotId: 'b')],
+        now: DateTime(2026, 10, 3, 13, 5),
+      );
+      expect(day.proteinLeft, 92);
+      expect(day.mealsLeft, 3);
+      expect(day.perMeal!.round(), 31);
+      expect(
+        [for (final m in day.meals) m.label],
+        ['Breakfast', 'Lunch', 'Snack', 'Dinner'],
+      );
+      expect(day.meals.first.state, FuelMealState.logged);
+      expect(day.meals.first.protein, 58);
+      expect(day.meals[1].state, FuelMealState.planned);
+    });
+
+    test('a slot an hour past with nothing logged is missed, not ahead', () {
+      final day = FuelDay.from(
+        proteinEaten: 0,
+        proteinTarget: 150,
+        schedule: plan,
+        loggedMeals: const [],
+        now: DateTime(2026, 10, 3, 9, 30),
+      );
+      expect(day.meals.first.state, FuelMealState.missed);
+      expect(day.mealsLeft, 3);
+      expect(day.perMeal, 50);
+    });
+
+    test('an off-plan meal stands at its logged time under its type', () {
+      final day = FuelDay.from(
+        proteinEaten: 20,
+        proteinTarget: 150,
+        schedule: const NutritionSchedule(title: '', items: []),
+        loggedMeals: [meal('snack', 11, 20)],
+        now: DateTime(2026, 10, 3, 12),
+      );
+      expect(day.hasPlan, isFalse);
+      expect(day.meals.single.label, 'Snack');
+      expect(day.meals.single.minute, 11 * 60 + 10);
+      expect(day.perMeal, isNull);
+    });
+
+    test('drafts do not count, and the rail widens for a late meal', () {
+      final day = FuelDay.from(
+        proteinEaten: 0,
+        proteinTarget: 150,
+        schedule: NutritionSchedule(
+          title: 'Plan',
+          items: [slot('x', 'Late snack', '23:15')],
+        ),
+        loggedMeals: [
+          MealEntry(
+            id: 'draft',
+            type: 'lunch',
+            status: 'draft',
+            source: 'photo_analysis',
+            loggedAt: DateTime(2026, 10, 3, 12),
+          ),
+        ],
+        now: DateTime(2026, 10, 3, 12),
+      );
+      expect(day.meals.single.label, 'Late snack');
+      expect(day.startMinute, 6 * 60);
+      expect(day.endMinute, 24 * 60);
+    });
+  });
+
+  group('FuelRailCard', () {
     const targets = NutritionTargets(
       calories: 2300,
       protein: 150,
       carbohydrate: 240,
       fat: 70,
     );
+    final day = FuelDay(
+      meals: const [
+        FuelRailMeal(
+          label: 'Breakfast',
+          minute: 8 * 60 + 10,
+          state: FuelMealState.logged,
+          protein: 58,
+        ),
+        FuelRailMeal(
+          label: 'Lunch',
+          minute: 13 * 60 + 30,
+          state: FuelMealState.planned,
+          protein: 92 / 3,
+        ),
+        FuelRailMeal(
+          label: 'Snack',
+          minute: 16 * 60 + 30,
+          state: FuelMealState.planned,
+          protein: 92 / 3,
+        ),
+        FuelRailMeal(
+          label: 'Dinner',
+          minute: 20 * 60 + 30,
+          state: FuelMealState.planned,
+          protein: 92 / 3,
+        ),
+      ],
+      nowMinute: 13 * 60 + 5,
+      proteinLeft: 92,
+      mealsLeft: 3,
+      planLoaded: true,
+      hasPlan: true,
+    );
 
-    testWidgets('shows eaten against target and protein left', (tester) async {
+    testWidgets('leads with protein to go and how to spread it', (
+      tester,
+    ) async {
       var logged = 0;
       await tester.pumpWidget(
         _wrap(
-          MetabolicTargetCard(
-            consumed: const {'calories': 1240, 'protein_g': 120},
+          FuelRailCard(
+            consumed: const {'calories': 1240, 'protein_g': 58},
             targets: targets,
+            day: day,
             onLog: () => logged++,
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('1,240 of 2,300 kcal eaten'), findsOneWidget);
-      expect(find.text('Protein'), findsOneWidget);
-      expect(find.text('120'), findsOneWidget);
-      expect(find.text('1,060 kcal left'), findsOneWidget);
-      expect(find.text('30 g left'), findsOneWidget);
-      expect(find.text('120g PRO'), findsNothing);
+      expect(find.bySemanticsLabel('92 g protein to go'), findsOneWidget);
+      expect(find.text('3 meals left, about 31 g each'), findsOneWidget);
+      expect(find.text('1,240 of 2,300 kcal'), findsOneWidget);
+      expect(find.text('Breakfast'), findsOneWidget);
+      expect(find.text('58 g'), findsOneWidget);
+      expect(find.text('~31 g'), findsWidgets);
+      expect(
+        find.bySemanticsLabel(
+          RegExp(
+            r'^Meals today\. Breakfast, logged, 58 grams protein\. '
+            r'Lunch at 13:30, planned, about 31 grams protein',
+          ),
+        ),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Log a meal'));
       expect(logged, 1);
     });
 
-    testWidgets('a met protein target says so instead of 0 g left', (
-      tester,
-    ) async {
+    testWidgets('a met protein target says so', (tester) async {
       await tester.pumpWidget(
         _wrap(
-          const MetabolicTargetCard(
-            consumed: {'calories': 2400, 'protein_g': 160},
+          FuelRailCard(
+            consumed: const {'calories': 2400, 'protein_g': 160},
             targets: targets,
+            day: day,
             onLog: null,
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('2,400 of 2,300 kcal eaten'), findsOneWidget);
       expect(find.text('Protein target reached'), findsOneWidget);
+      expect(find.text('160 of 150 g protein eaten'), findsOneWidget);
+      expect(find.text('2,400 of 2,300 kcal'), findsOneWidget);
     });
 
-    testWidgets('over target draws a second lap, capped at two', (
+    testWidgets('says when there is no plan, or the plan did not load', (
       tester,
     ) async {
+      FuelDay bare({required bool loaded}) => FuelDay(
+        meals: const [],
+        nowMinute: 600,
+        proteinLeft: 150,
+        mealsLeft: 0,
+        planLoaded: loaded,
+        hasPlan: false,
+      );
       await tester.pumpWidget(
         _wrap(
-          const MetabolicTargetCard(
-            consumed: {'calories': 2900, 'protein_g': 400},
+          FuelRailCard(
+            consumed: null,
             targets: targets,
+            day: bare(loaded: true),
             onLog: null,
           ),
         ),
       );
       await tester.pumpAndSettle();
+      expect(find.text('No meal plan is set for today.'), findsOneWidget);
+      expect(find.text('Log a meal'), findsNothing);
 
-      expect(tester.takeException(), isNull);
-      expect(find.text('2,900'), findsOneWidget);
-      expect(find.text('400'), findsOneWidget);
-      expect(find.text('Target reached'), findsOneWidget);
-      expect(find.text('Protein target reached'), findsOneWidget);
-      expect(
-        find.bySemanticsLabel(
-          '2,900 of 2,300 kilocalories eaten. Target reached',
+      await tester.pumpWidget(
+        _wrap(
+          FuelRailCard(
+            consumed: null,
+            targets: targets,
+            day: bare(loaded: false),
+            onLog: null,
+          ),
         ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Your meal plan didn’t load. Pull to refresh.'),
         findsOneWidget,
       );
-    });
-
-    testWidgets('at full motion the rings sweep in and count up, and a '
-        'change runs from the old value', (tester) async {
-      Widget card(double calories) => _wrap(
-        TracendMotionScope(
-          level: TracendMotionLevel.full,
-          child: MetabolicTargetCard(
-            consumed: {'calories': calories, 'protein_g': 120},
-            targets: targets,
-            onLog: null,
-          ),
-        ),
-      );
-      int shownCalories() => int.parse(
-        tester
-            .widgetList<Text>(find.byType(Text))
-            .map((text) => text.data ?? '')
-            .firstWhere((data) => RegExp(r'^[\d,]+$').hasMatch(data))
-            .replaceAll(',', ''),
-      );
-
-      await tester.pumpWidget(card(1240));
-      expect(shownCalories(), 0);
-      await tester.pump(const Duration(milliseconds: 150));
-      expect(shownCalories(), inExclusiveRange(0, 1240));
-      await tester.pumpAndSettle();
-      expect(shownCalories(), 1240);
-      expect(find.text('120'), findsOneWidget);
-
-      await tester.pumpWidget(card(1500));
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(shownCalories(), inExclusiveRange(1240, 1500));
-      await tester.pumpAndSettle();
-      expect(shownCalories(), 1500);
-      expect(find.text('800 kcal left'), findsOneWidget);
     });
 
     testWidgets('no targets shows what was eaten, no fabricated target', (
@@ -469,9 +609,10 @@ void main() {
     ) async {
       await tester.pumpWidget(
         _wrap(
-          const MetabolicTargetCard(
-            consumed: {'calories': 1500, 'protein_g': 126},
+          FuelRailCard(
+            consumed: const {'calories': 1500, 'protein_g': 126},
             targets: null,
+            day: day,
             onLog: _noop,
           ),
         ),
@@ -482,19 +623,37 @@ void main() {
       expect(find.text('No nutrition target is set yet.'), findsOneWidget);
     });
 
-    testWidgets('hides Log a meal when not wired', (tester) async {
+    testWidgets('at full motion the headline counts up and the rail draws in', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _wrap(
-          const MetabolicTargetCard(
-            consumed: null,
-            targets: targets,
-            onLog: null,
+          TracendMotionScope(
+            level: TracendMotionLevel.full,
+            child: FuelRailCard(
+              consumed: const {'calories': 1240, 'protein_g': 58},
+              targets: targets,
+              day: day,
+              onLog: null,
+            ),
           ),
         ),
       );
+      String shown() => tester
+          .widget<RichText>(
+            find.descendant(
+              of: find.bySemanticsLabel('92 g protein to go'),
+              matching: find.byType(RichText),
+            ),
+          )
+          .text
+          .toPlainText();
+      expect(shown(), '0 g protein to go');
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(shown(), isNot('0 g protein to go'));
       await tester.pumpAndSettle();
-
-      expect(find.text('Log a meal'), findsNothing);
+      expect(shown(), '92 g protein to go');
+      expect(tester.takeException(), isNull);
     });
 
     test('groups thousands', () {

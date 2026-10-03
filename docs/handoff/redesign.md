@@ -98,6 +98,12 @@ nothing is guessed.
   wordmark and a zoom-through exit into the app. Today's food rings sweep in with a count-up, a
   gradient stroke with a glow and a head dot, and a second lap past the target. Food stays on
   Today, as it was before the redesign.
+- Owner, after build 329: the Today food rings repeated Nutrition and read as filler. Of three
+  mockups (next plate, fuel rail, food folded into the hero) the owner chose the fuel rail:
+  `FuelRailCard` leads with protein to go, splits it evenly over the meal-plan slots still ahead,
+  and draws the day as a line with logged, planned and missed meals and a "now" needle. Today
+  loads the meal plan and today's confirmed meals for it (`FuelDay.from`, plain arithmetic); a
+  slot stays ahead until an hour past its time, computed on the phone.
 - Owner device check of build 325: on a pull day only Face Pull matched a catalog name, so the
   card lit shoulders alone for a back-and-biceps session. The Train card now shows the map only
   when linked exercises carry at least three quarters of the planned sets

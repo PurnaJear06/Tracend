@@ -329,18 +329,19 @@ SemiCondensed values; above 1.3× text they move under the dial.
 `SessionPlanCard` is the Today training card: lime-ink "Today's workout" kicker, the name at 26pt
 Archivo, a lime disc with the training glyph, stat pills (`surfaceRaised`, numeric value + unit)
 and a full-width lime **View workout** pill (`accentSignal` / `onAccentSignal`). The training
-load line closes the card under a hairline. `MetabolicTargetCard` shows two ring tiles: calories
-in `accentSignalRing` (the primary progress ring) and protein in `stateStable`, the amount inside
-and "N left" below. Each ring is a 10pt stroke from 12 o'clock over a thin track of its own colour
-at 16%: a sweep gradient from a deeper tone at the start to a brighter head, round caps, a soft
-blurred glow under the arc (42% dark, 14% light) and a small white dot at the head. Past the
-target the ring closes and a second lap runs over it in a deeper shade, its head casting a small
-shadow so the overlap reads; it stops at two laps, and the text below says "reached". Motion: on
-first appearance each ring sweeps from empty to its value in 900 ms on a lightly under-damped
-spring (about 1.5% overshoot), protein 120 ms after calories, and the number inside counts up in
-step (it never reads past the value it is heading to). A later change, such as after a sync, runs from the shown
-value to the new one, not from zero. Below full motion (`TracendMotionScope`) the final state is
-drawn with no animation. The morning check-in is a lime-outlined call to action with a **Check
+load line closes the card under a hairline. `FuelRailCard` is Today's food card: the grams of protein
+left at 34pt Archivo in `accentSignalInk` with the rest of the line in `titleMedium`, then the
+fuel rail. The rail is a 3pt line in `textSecondary` at 22%, filled up to now with a gradient of
+`accentSignalRing` (35% to full); a `textPrimary` needle with a head dot and a "now" label marks
+the time. Logged meals are 12pt bars in `accentSignalRing`, 8 to 30pt tall by protein; planned
+slots are dashed outlines of the same size, the next one in `accentSignalRing` and later ones in
+`textSecondary` at 55%; missed slots are hollow dots on the line. Labels (11pt name over grams)
+sit under each meal; a name that would overlap the one before is dropped, keeping the grams when
+they fit, and the rail's semantics name every meal. A hairline separates "N of M kcal" from a
+compact **Log a meal** outlined pill (stacked from 1.3× text). Motion: the line fills to now
+(the first half of 1.3 s), bars rise in turn on an ease-out-back (80 ms apart), the needle drops
+in, the labels fade up, and the headline counts up over 900 ms. Below full motion
+(`TracendMotionScope`) the final state is drawn with no animation. The morning check-in is a lime-outlined call to action with a **Check
 in** pill until it is done.
 
 #### `RecoveryReadoutCard`

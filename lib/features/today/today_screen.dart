@@ -20,7 +20,7 @@ import 'package:tracend/features/today/check_in_sheet.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/widgets/check_in_prompt_bar.dart';
 import 'package:tracend/features/today/widgets/coach_perspective_card.dart';
-import 'package:tracend/features/today/widgets/metabolic_target_card.dart';
+import 'package:tracend/features/today/widgets/fuel_rail_card.dart';
 import 'package:tracend/features/today/widgets/recovery_readout_card.dart';
 import 'package:tracend/features/today/widgets/session_plan_card.dart';
 import 'package:tracend/features/today/widgets/sleep_architecture_card.dart';
@@ -31,6 +31,9 @@ import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 import 'package:tracend/shared/widgets/tracend_skeleton.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
 import 'package:tracend/shared/widgets/trajectory_trend.dart';
+
+/// Today's meal plan (null when it failed to load) and confirmed meals.
+typedef TodayMeals = ({NutritionSchedule? schedule, List<MealEntry> meals});
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({
@@ -90,6 +93,7 @@ class _TodayScreenState extends State<TodayScreen> {
   late Future<HealthHistory> _healthHistory;
   late Future<DailyBrief> _brief;
   late Future<NutritionTargets?> _targets;
+  late Future<TodayMeals> _meals;
   late Future<CoachDecision?> _latestDecision;
   bool _syncing = false;
 
@@ -130,6 +134,7 @@ class _TodayScreenState extends State<TodayScreen> {
     widget.aiConsent?.addListener(_consentChanged);
     _reloadHealth();
     _targets = widget.nutrition.loadTargets();
+    _meals = _loadMeals();
     _brief = widget.brief.load(DateTime.now());
     _latestDecision = widget.coach.loadLatest();
     _autoSyncHealthIfNeeded();
@@ -197,6 +202,23 @@ class _TodayScreenState extends State<TodayScreen> {
     );
   }
 
+  /// Today's meal plan and confirmed meals for the fuel rail. A failure
+  /// leaves the schedule null so the card says the plan did not load.
+  Future<TodayMeals> _loadMeals() async {
+    final nutrition = widget.nutrition;
+    final now = DateTime.now();
+    try {
+      final meals = await nutrition.loadMeals(now);
+      final schedule = nutrition is NutritionScheduleRepository
+          ? await (nutrition as NutritionScheduleRepository).loadSchedule(now)
+          : const NutritionSchedule(title: '', items: []);
+      return (schedule: schedule, meals: meals);
+    } catch (error) {
+      debugPrint('Today: meals failed: $error');
+      return (schedule: null, meals: const <MealEntry>[]);
+    }
+  }
+
   void _reloadHealth() {
     _healthHistory = widget.health.loadHistory();
   }
@@ -206,6 +228,7 @@ class _TodayScreenState extends State<TodayScreen> {
     setState(() {
       _brief = widget.brief.load(DateTime.now());
       _targets = widget.nutrition.loadTargets();
+      _meals = _loadMeals();
     });
   }
 
@@ -439,6 +462,7 @@ class _TodayScreenState extends State<TodayScreen> {
                 return _BriefContent(
                   brief: brief,
                   targets: _targets,
+                  meals: _meals,
                   latestDecision: _latestDecision,
                   aiAllowed: _aiAllowed,
                   healthHistory: _healthHistory,
@@ -589,6 +613,7 @@ class _BriefContent extends StatelessWidget {
   const _BriefContent({
     required this.brief,
     required this.targets,
+    required this.meals,
     required this.latestDecision,
     required this.aiAllowed,
     required this.healthHistory,
@@ -604,6 +629,7 @@ class _BriefContent extends StatelessWidget {
 
   final DailyBrief brief;
   final Future<NutritionTargets?> targets;
+  final Future<TodayMeals> meals;
   final Future<CoachDecision?> latestDecision;
   final bool aiAllowed;
   final Future<HealthHistory> healthHistory;
@@ -656,10 +682,28 @@ class _BriefContent extends StatelessWidget {
               const SectionLabel('Food'),
               FutureBuilder<NutritionTargets?>(
                 future: targets,
-                builder: (context, snapshot) => MetabolicTargetCard(
-                  consumed: brief.nutrition,
-                  targets: snapshot.data,
-                  onLog: onOpenNutrition,
+                builder: (context, targetSnapshot) => FutureBuilder<TodayMeals>(
+                  future: meals,
+                  builder: (context, mealSnapshot) {
+                    final today = mealSnapshot.data;
+                    final targets = targetSnapshot.data;
+                    return FuelRailCard(
+                      consumed: brief.nutrition,
+                      targets: targets,
+                      day: today == null
+                          ? null
+                          : FuelDay.from(
+                              proteinEaten:
+                                  ((brief.nutrition?['protein_g'] as num?) ?? 0)
+                                      .toDouble(),
+                              proteinTarget: targets?.protein,
+                              schedule: today.schedule,
+                              loggedMeals: today.meals,
+                              now: DateTime.now(),
+                            ),
+                      onLog: onOpenNutrition,
+                    );
+                  },
                 ),
               ),
             ],
