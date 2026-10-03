@@ -87,6 +87,14 @@ secret/service-role key exist only in Supabase Edge Function secrets.
   authorization state, and append-only consent evidence through a validated RPC. Native
   `UserDefaults` retains the device's requested toggles; pending notification requests are delivery
   state, not the preference source, and are repaired from those toggles after reopen.
+- The same channel schedules the workout rest alert (`scheduleRestAlert`, `cancelRestAlert`,
+  identifier `tracend.rest-timer`). Its toggle stays on the device; the in-app rest timer keeps its
+  end time in the local workout draft and does not depend on the alert.
+- Workout logging reads `get_my_exercise_history` (last time, best set, recent top sets) and keeps
+  the last answer on the device for offline use. Finishing calls `complete_workout_v2` with the
+  athlete's session effort after saving the request locally; discarding calls `abandon_workout`,
+  and a discard made offline waits on the device and is sent before the next session load. New
+  bests, weight lifted, and the rest timer are computed on the device (ALGORITHMS §4).
 - `auth.users.id` is the canonical `user_id` for application-owned records.
 - Recent authentication is required before export, account deletion, or sensitive session changes.
 - Phase 8 export reauthenticates the owner, queues only an opaque export ID, builds user-readable
@@ -287,6 +295,11 @@ reviewed answers. `onboarding-propose-plan`, the Phase-2 mock, stays for install
 authenticated read-model RPCs. They derive identity from `auth.uid()`, use only active approved
 versions and confirmed execution, and return bounded structured data for the iPhone client.
 
+Workout logging RPCs (2026-10-03): `start_workout`, `sync_workout_draft`, `complete_workout_v2`
+(the athlete's 1–10 session effort; `complete_workout` remains for installed builds and records its
+fixed effort as a default), `abandon_workout`, and `get_my_exercise_history(keys, sessions)` (last
+time, best set and heaviest set per completed session for at most 20 exercises and 12 sessions).
+
 Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS. Since v8
 (2026-09-27) every question follows one path regardless of its wording:
 
@@ -367,7 +380,8 @@ An empty response never proves permission denial.
 3. **Yes, mark complete** calls the authenticated `healthkit_auto_complete_workout` RPC, which:
    - authorizes user ownership of the planned workout in the active plan;
    - guards idempotently against duplicate completion;
-   - creates a `workout_sessions` row with `state='completed'` and duration from HealthKit;
+   - creates a `workout_sessions` row with `state='completed'` and duration from HealthKit,
+     `completion_source='healthkit'` and `session_effort_source='healthkit_default'`;
    - writes an `audit_events` row with `action_code='workout.auto_completed'`.
 4. The hub reloads and the completed session counts toward adherence.
 5. **Log manually** opens the standard workout execution flow.

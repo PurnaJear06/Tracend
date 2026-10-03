@@ -129,7 +129,7 @@ Deno.test({
     // Schema version field is mandatory
     assertExists(data.schema_version, "Must have schema_version");
     const version = data.schema_version as string;
-    assert(version === "1.3", `Expected schema_version 1.3, got ${version}`);
+    assert(version === "1.6", `Expected schema_version 1.6, got ${version}`);
 
     // Key arrays
     assertExists(data.workouts, "Must have workouts");
@@ -137,6 +137,50 @@ Deno.test({
 
     assertExists(data.completed_day_set, "Must have completed_day_set");
     assert(Array.isArray(data.completed_day_set), "completed_day_set must be a list");
+
+    assert(Array.isArray(data.daily_load), "daily_load must be a list");
+    assertEquals(data.daily_load.length, 28, "daily_load covers 28 days");
+    assertEquals(
+      data.daily_load[27].local_date,
+      data.local_today,
+      "daily_load ends on the athlete's local today",
+    );
+
+    await supabase.auth.signOut();
+  },
+});
+
+// ── get_my_exercise_history shape ────────────────────────────────────
+
+Deno.test({
+  name: "get_my_exercise_history answers every key, even without history",
+  ignore: SKIP_NO_DB,
+  fn: async () => {
+    const supabase = await createTestClient();
+
+    const { data: userData } = await supabase.auth.signUp({
+      email: `contract-history-${Date.now()}@test.tracend.bot`,
+      password: "test-contract-password-123",
+    });
+    if (!userData?.user?.id) return;
+
+    const { data, error } = await supabase.rpc("get_my_exercise_history", {
+      p_keys: ["barbell-bench-press", "Cable fly"],
+      p_sessions: 8,
+    });
+    assertFalse(!!error, `get_my_exercise_history failed: ${error?.message}`);
+    assertEquals(data.schema_version, "1.0");
+    assertEquals(data.sessions_limit, 8);
+    assertEquals(data.exercises.length, 2);
+    for (const row of data.exercises) {
+      assertEquals(row.kind, null, "a new athlete has no history");
+      assertEquals(row.top_sets, []);
+    }
+
+    const { error: tooMany } = await supabase.rpc("get_my_exercise_history", {
+      p_keys: Array.from({ length: 21 }, (_, i) => `key ${i}`),
+    });
+    assertExists(tooMany, "more than 20 keys is refused");
 
     await supabase.auth.signOut();
   },

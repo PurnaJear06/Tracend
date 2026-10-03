@@ -62,7 +62,6 @@ class ProfileGoalsScreen extends StatelessWidget {
               ),
               const AccountSectionLabel('GOAL'),
               PremiumGradientCard(
-                glow: true,
                 child: DetailRows(
                   rows: {
                     'Primary goal': friendlyEnum(goal['goal_type']),

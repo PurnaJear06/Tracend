@@ -115,7 +115,6 @@ class _AiUsageScreenState extends State<AiUsageScreen> {
         ),
         const SizedBox(height: TracendSpacing.lg),
         PremiumGradientCard(
-          glow: true,
           padding: const EdgeInsets.all(TracendSpacing.gutter),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

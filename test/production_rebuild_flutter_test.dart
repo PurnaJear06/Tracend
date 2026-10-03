@@ -31,7 +31,7 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.textContaining('RPE 8'), findsWidgets);
-    expect(find.text('TODAY’S EXERCISES'), findsOneWidget);
+    expect(find.text('Today’s exercises'), findsOneWidget);
     expect(find.textContaining('rest'), findsWidgets);
     await tester.scrollUntilVisible(
       find.textContaining('Planned values are never charted'),
@@ -174,11 +174,8 @@ void main() {
   });
 }
 
-class _CompletedDayRepository
-    implements
-        WorkoutRepository,
-        TrainingHubRepository,
-        HealthkitCandidateRepository {
+class _CompletedDayRepository extends FixtureWorkoutRepository
+    implements HealthkitCandidateRepository {
   @override
   Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
       TrainingHubData(
@@ -311,11 +308,8 @@ class _ChatRepository
   Future<void> deleteThread(String threadId) async {}
 }
 
-class _HealthkitCandidateRepository
-    implements
-        WorkoutRepository,
-        TrainingHubRepository,
-        HealthkitCandidateRepository {
+class _HealthkitCandidateRepository extends FixtureWorkoutRepository
+    implements HealthkitCandidateRepository {
   @override
   Future<TrainingHubData> loadTrainingHub({int periodDays = 28}) async =>
       const TrainingHubData(

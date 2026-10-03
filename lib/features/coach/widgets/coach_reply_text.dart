@@ -254,7 +254,7 @@ class CoachReplyText extends StatelessWidget {
           style: TextStyle(
             fontWeight: span.bold ? FontWeight.w600 : null,
             fontStyle: span.italic ? FontStyle.italic : null,
-            fontFamily: span.code ? TracendFonts.monoFamily : null,
+            fontFamily: span.code ? TracendFonts.numericFamily : null,
           ),
         ),
     ],

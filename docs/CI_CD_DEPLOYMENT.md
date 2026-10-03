@@ -124,7 +124,12 @@ Examples:
 owner's iPhone. Before installing, `scripts/verify-app-bundle.sh` checks that the bundle holds
 `AssetManifest.bin`, `FontManifest.json`, and every font file the manifest lists, including both
 icon fonts. A bundle without them still installs and launches, but draws every icon as a "?" box.
-CI runs the same check on its unsigned build.
+CI runs the same check on its unsigned build. It also checks the compiled asset catalog for the
+app icon (any, dark and tinted) and the launch screen artwork.
+
+iOS caches an app's launch screen. After a build changes the launch screen, the old one can keep
+showing until the app is deleted from the iPhone and installed again; deleting it also removes its
+local data, such as the signed-in session.
 
 On 2026-09-29, build 185 reached the iPhone without any of its assets:
 

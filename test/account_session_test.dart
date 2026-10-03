@@ -20,6 +20,7 @@ import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
+import 'package:tracend/features/train/workout_repository.dart';
 
 const _url = 'https://tracend-test.supabase.co';
 const _userId = '11111111-1111-4111-8111-111111111111';
@@ -127,6 +128,18 @@ void main() {
       '2026-10-01T00:00:00Z',
     );
     await preferences.setString('tracend_theme_mode', 'dark');
+    await preferences.setString(
+      '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1',
+      '{}',
+    );
+    await preferences.setString(
+      WorkoutLocalKeys.exerciseHistory(_userId),
+      '{}',
+    );
+    await preferences.setString(
+      WorkoutLocalKeys.exerciseHistory(_otherUserId),
+      '{}',
+    );
     SharedPreferences.setMockInitialValues({
       SharedPreferencesCoachThreadMemory.storageKey: 'thread-1',
       CheckInQueue.storageKeyFor(_userId): '{}',
@@ -151,6 +164,22 @@ void main() {
       isNotNull,
     );
     expect(await preferences.getString('tracend_theme_mode'), 'dark');
+    expect(
+      await preferences.getString(
+        '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1',
+      ),
+      isNull,
+    );
+    expect(
+      await preferences.getString(WorkoutLocalKeys.exerciseHistory(_userId)),
+      isNull,
+    );
+    expect(
+      await preferences.getString(
+        WorkoutLocalKeys.exerciseHistory(_otherUserId),
+      ),
+      isNotNull,
+    );
     final legacy = await SharedPreferences.getInstance();
     expect(
       legacy.getString(SharedPreferencesCoachThreadMemory.storageKey),
@@ -286,6 +315,43 @@ void main() {
         await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
         isNotNull,
       );
+    });
+
+    testWidgets('the intro plays on a cold start only, never on a retry', (
+      tester,
+    ) async {
+      final server = _Server();
+      server.routes['GET /auth/v1/user'] = () =>
+          Future.error(http.ClientException('offline'));
+      await _storeSession(
+        server.client,
+        DateTime.now().add(const Duration(minutes: 50)),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.light,
+          home: Phase2Gate(environment: _environment, client: server.client),
+        ),
+      );
+      expect(find.bySemanticsLabel('Skip intro'), findsOneWidget);
+      expect(find.text('Restoring your session'), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text('Connection needed'), findsOneWidget);
+      expect(find.text('Tracend'), findsNothing);
+
+      // The retry waits on Auth: the loader shows, not the intro.
+      final answer = Completer<http.Response>();
+      server.routes['GET /auth/v1/user'] = () => answer.future;
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+      expect(find.bySemanticsLabel('Restoring your session'), findsOneWidget);
+      expect(find.bySemanticsLabel('Skip intro'), findsNothing);
+      expect(find.text('Tracend'), findsNothing);
+
+      answer.completeError(http.ClientException('offline'));
+      await tester.pumpAndSettle();
+      expect(find.text('Connection needed'), findsOneWidget);
     });
   });
 

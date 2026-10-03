@@ -5,6 +5,7 @@ import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
+import 'package:tracend/features/train/workout_repository.dart';
 
 /// Auth's codes for a session that can never be used again: its user was
 /// deleted, it was revoked, or its refresh token is gone.
@@ -61,7 +62,12 @@ class LocalAccountData {
           userId,
         );
         final owned = (await _preferences.getKeys())
-            .where((key) => key.startsWith(healthPrefix) || key == historyMonth)
+            .where(
+              (key) =>
+                  key.startsWith(healthPrefix) ||
+                  key == historyMonth ||
+                  WorkoutLocalKeys.owns(userId, key),
+            )
             .toSet();
         if (owned.isNotEmpty) await _preferences.clear(allowList: owned);
       }

@@ -1,0 +1,418 @@
+{
+  "schema_version": "1.6",
+  "period_days": 28,
+  "local_today": "2026-10-02",
+  "active_plan": {
+    "id": "7c1f0000-0000-4000-8000-000000000001",
+    "plan_id": "7c1f0000-0000-4000-8000-000000000002",
+    "title": "Strength foundation",
+    "version_number": 1,
+    "block_weeks": 6,
+    "sessions_per_week": 4,
+    "rationale": "Four full sessions a week around your schedule.",
+    "effective_date": "2026-09-16",
+    "approved_on": "2026-09-16",
+    "progression_rule": "When every set reaches the top of its rep range, add the smallest weight step next time."
+  },
+  "workouts": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "order": 1,
+      "weekday": 4,
+      "name": "Upper body A",
+      "objective": "Press and pull for upper body strength",
+      "estimated_minutes": 48,
+      "warm_up": "Five minutes of easy movement, then two light sets of the first lift",
+      "cooldown_cardio": "Ten minutes of easy walking",
+      "exercises": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440101",
+          "order": 1,
+          "name": "Barbell bench press",
+          "set_count": 3,
+          "rep_min": 6,
+          "rep_max": 8,
+          "target_rpe": 8,
+          "rest_seconds": 120,
+          "notes": "",
+          "target_load_kg": 72.5,
+          "exercise_slug": "barbell-bench-press",
+          "primary_muscles": [
+            "chest",
+            "triceps"
+          ]
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440102",
+          "order": 2,
+          "name": "Barbell row",
+          "set_count": 3,
+          "rep_min": 8,
+          "rep_max": 10,
+          "target_rpe": 8,
+          "rest_seconds": 90,
+          "notes": "",
+          "target_load_kg": 62.5,
+          "exercise_slug": "barbell-row",
+          "primary_muscles": [
+            "back",
+            "biceps"
+          ]
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440103",
+          "order": 3,
+          "name": "Cable fly",
+          "set_count": 2,
+          "rep_min": 10,
+          "rep_max": 12,
+          "target_rpe": 8,
+          "rest_seconds": 60,
+          "notes": "Slow on the way back",
+          "target_load_kg": null,
+          "exercise_slug": null,
+          "primary_muscles": []
+        }
+      ]
+    }
+  ],
+  "today_workout": null,
+  "recent_sessions": [
+    {
+      "id": "8a000000-0000-4000-8000-000000000002",
+      "workout_id": "550e8400-e29b-41d4-a716-446655440002",
+      "name": "Lower body A",
+      "local_date": "2026-09-30",
+      "duration_seconds": 3120,
+      "effort": 8,
+      "energy": null,
+      "completion_source": "manual",
+      "effort_source": "athlete"
+    },
+    {
+      "id": "8a000000-0000-4000-8000-000000000003",
+      "workout_id": "550e8400-e29b-41d4-a716-446655440001",
+      "name": "Upper body A",
+      "local_date": "2026-09-13",
+      "duration_seconds": 1800,
+      "effort": 5,
+      "energy": null,
+      "completion_source": "healthkit",
+      "effort_source": "healthkit_default"
+    },
+    {
+      "id": "8a000000-0000-4000-8000-000000000004",
+      "workout_id": "550e8400-e29b-41d4-a716-446655440001",
+      "name": "Upper body A",
+      "local_date": "2026-09-01",
+      "duration_seconds": 3000,
+      "effort": 8,
+      "energy": 3,
+      "completion_source": null,
+      "effort_source": "legacy_default"
+    }
+  ],
+  "adherence": {
+    "completed_sessions": 12,
+    "planned_sessions": 16
+  },
+  "progression": [
+    {
+      "exercise": "Barbell bench press",
+      "sessions": 4,
+      "best_load_kg": 72.5,
+      "best_repetitions": 8,
+      "latest_date": "2026-09-25"
+    }
+  ],
+  "completed_day_set": [
+    "2026-09-30"
+  ],
+  "computed": {
+    "acwr": 1.07,
+    "training_monotony": 1.6,
+    "today_strain": 0
+  },
+  "daily_load": [
+    {
+      "local_date": "2026-09-05",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-06",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-07",
+      "recorded": true,
+      "strain": 35.2,
+      "minutes": 44,
+      "sessions": 1,
+      "effort_reported": false,
+      "level": null,
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-08",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-09",
+      "recorded": true,
+      "strain": 40.0,
+      "minutes": 50,
+      "sessions": 1,
+      "effort_reported": false,
+      "level": null,
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-10",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-11",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-12",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-13",
+      "recorded": true,
+      "strain": 15.0,
+      "minutes": 30,
+      "sessions": 1,
+      "effort_reported": false,
+      "level": null,
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-14",
+      "recorded": true,
+      "strain": 37.6,
+      "minutes": 47,
+      "sessions": 1,
+      "effort_reported": false,
+      "level": null,
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-15",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-16",
+      "recorded": true,
+      "strain": 44.0,
+      "minutes": 55,
+      "sessions": 1,
+      "effort_reported": false,
+      "level": null,
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-17",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-18",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-19",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-20",
+      "recorded": true,
+      "strain": 32.0,
+      "minutes": 40,
+      "sessions": 1,
+      "effort_reported": false,
+      "level": null,
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-21",
+      "recorded": true,
+      "strain": 40.0,
+      "minutes": 50,
+      "sessions": 1,
+      "effort_reported": false,
+      "level": null,
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-22",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-23",
+      "recorded": true,
+      "strain": 36.0,
+      "minutes": 45,
+      "sessions": 1,
+      "effort_reported": false,
+      "level": null,
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-24",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-25",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-26",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-27",
+      "recorded": true,
+      "strain": 28.8,
+      "minutes": 48,
+      "sessions": 1,
+      "effort_reported": false,
+      "level": null,
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-28",
+      "recorded": true,
+      "strain": 40.0,
+      "minutes": 50,
+      "sessions": 1,
+      "effort_reported": false,
+      "level": null,
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-29",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-09-30",
+      "recorded": true,
+      "strain": 41.6,
+      "minutes": 52,
+      "sessions": 1,
+      "effort_reported": true,
+      "level": "hard",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-10-01",
+      "recorded": false,
+      "strain": 0.0,
+      "minutes": 0,
+      "sessions": 0,
+      "effort_reported": false,
+      "level": "rest",
+      "reference": "fixed"
+    },
+    {
+      "local_date": "2026-10-02",
+      "recorded": true,
+      "strain": 32.2,
+      "minutes": 46,
+      "sessions": 1,
+      "effort_reported": true,
+      "level": "moderate",
+      "reference": "fixed"
+    }
+  ]
+}

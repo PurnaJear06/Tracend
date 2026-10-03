@@ -60,8 +60,6 @@ class WorkoutHero extends StatelessWidget {
       (sum, item) => sum + item.setCount,
     );
     return PremiumGradientCard(
-      glow: true,
-      glowColor: colors.stateStable,
       padding: const EdgeInsets.all(TracendSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -187,7 +185,7 @@ class _Fact extends StatelessWidget {
           Text(
             value,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontFamily: TracendFonts.monoFamily,
+              fontFamily: TracendFonts.numericFamily,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),

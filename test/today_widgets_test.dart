@@ -131,7 +131,7 @@ void main() {
       expect(find.text('View analytics'), findsNothing);
     });
 
-    testWidgets('headline uses the 32pt displaySmall decision token', (
+    testWidgets('headline uses the 34pt displaySmall decision token', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -152,9 +152,9 @@ void main() {
       await tester.pumpAndSettle();
 
       final headline = tester.widget<Text>(find.text('Complete Push day.'));
-      expect(headline.style?.fontSize, 32);
+      expect(headline.style?.fontSize, 34);
       expect(headline.style?.letterSpacing, -0.8);
-      expect(headline.style?.fontWeight, FontWeight.w700);
+      expect(headline.style?.fontWeight, FontWeight.w800);
     });
 
     testWidgets('View analytics is a secondary text affordance', (

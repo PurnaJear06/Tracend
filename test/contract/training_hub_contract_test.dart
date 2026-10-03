@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tracend/features/train/muscle_groups.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 
 String _readFixture(String name) {
@@ -228,6 +229,234 @@ void main() {
       expect(parsed.exercises.first.targetLoadKg, 82.5);
       for (final exercise in exercises.skip(1)) {
         expect(exercise['target_load_kg'], anyOf(isNull, isA<num>()));
+      }
+    });
+  });
+
+  group('Training Hub contract — get_my_training_hub v1.6', () {
+    const fixture = 'training_hub_v1_6.json';
+
+    test('v1.6 keeps every v1.5 field, so installed builds still parse it', () {
+      final json = _loadFixtureJson(fixture);
+      expect(json['schema_version'], '1.6');
+      final workouts = (json['workouts'] as List).toMapList();
+      final parsed = PlannedWorkout.fromHubJson(workouts.first);
+      expect(parsed.exercises.first.targetLoadKg, 72.5);
+      expect(json['recent_sessions'], isA<List>());
+      expect(json['completed_day_set'], isA<List>());
+    });
+
+    test('the plan reports its dates and progression rule', () {
+      final plan = _loadFixtureJson(fixture)['active_plan'] as Map;
+      expect(
+        () => DateTime.parse(plan['effective_date'] as String),
+        returnsNormally,
+      );
+      expect(
+        () => DateTime.parse(plan['approved_on'] as String),
+        returnsNormally,
+      );
+      expect(plan['progression_rule'], anyOf(isNull, isA<String>()));
+    });
+
+    test('exercises report a nullable slug and their catalog muscles', () {
+      final json = _loadFixtureJson(fixture);
+      final workouts = (json['workouts'] as List).toMapList();
+      const muscles = {
+        'quads',
+        'glutes',
+        'hamstrings',
+        'chest',
+        'back',
+        'shoulders',
+        'biceps',
+        'triceps',
+        'core',
+        'calves',
+      };
+      for (final workout in workouts) {
+        for (final exercise in (workout['exercises'] as List).toMapList()) {
+          expect(exercise['exercise_slug'], anyOf(isNull, isA<String>()));
+          final list = exercise['primary_muscles'] as List;
+          expect(list.every(muscles.contains), isTrue);
+          if (exercise['exercise_slug'] == null) expect(list, isEmpty);
+        }
+      }
+    });
+
+    test('recent sessions report completion and effort sources', () {
+      final sessions = (_loadFixtureJson(fixture)['recent_sessions'] as List)
+          .toMapList();
+      for (final row in sessions) {
+        expect(row['completion_source'], anyOf(isNull, 'manual', 'healthkit'));
+        expect(
+          row['effort_source'],
+          anyOf(isNull, 'athlete', 'legacy_default', 'healthkit_default'),
+        );
+      }
+    });
+
+    test('daily_load has 28 consecutive days ending on local_today', () {
+      final json = _loadFixtureJson(fixture);
+      final days = (json['daily_load'] as List).toMapList();
+      expect(days, hasLength(28));
+      expect(days.last['local_date'], json['local_today']);
+      for (var i = 1; i < days.length; i++) {
+        final previous = DateTime.parse(days[i - 1]['local_date'] as String);
+        final current = DateTime.parse(days[i]['local_date'] as String);
+        expect(current.difference(previous).inDays, 1);
+      }
+      for (final day in days) {
+        final recorded = day['recorded'] as bool;
+        final level = day['level'];
+        expect(level, anyOf(isNull, 'rest', 'easy', 'moderate', 'hard'));
+        expect(day['reference'], anyOf('personal', 'fixed'));
+        if (!recorded) expect(level, 'rest');
+        // A day without athlete-reported effort never gets an intensity.
+        if (recorded && day['effort_reported'] != true) expect(level, isNull);
+      }
+    });
+  });
+
+  group('Training Hub parser — TrainingHubData.fromHubJson', () {
+    test('a 1.6 hub keeps the plan dates, links, provenance and day load', () {
+      final hub = TrainingHubData.fromHubJson(
+        _loadFixtureJson('training_hub_v1_6.json'),
+      );
+      expect(hub.localToday, DateTime(2026, 10, 2));
+      final plan = hub.plan!;
+      expect(plan.title, 'Strength foundation');
+      expect(plan.blockWeeks, 6);
+      expect(plan.sessionsPerWeek, 4);
+      expect(plan.effectiveDate, DateTime(2026, 9, 16));
+      expect(plan.approvedOn, DateTime(2026, 9, 16));
+      expect(plan.progressionRule, startsWith('When every set reaches'));
+      expect(hub.todayWorkout, isNull);
+
+      final exercises = hub.workouts.single.exercises;
+      expect(exercises[0].exerciseSlug, 'barbell-bench-press');
+      expect(exercises[0].primaryMuscles, [
+        MuscleGroup.chest,
+        MuscleGroup.triceps,
+      ]);
+      expect(exercises[1].primaryMuscles, [
+        MuscleGroup.back,
+        MuscleGroup.biceps,
+      ]);
+      expect(exercises[2].exerciseSlug, isNull);
+      expect(exercises[2].primaryMuscles, isEmpty);
+
+      final sessions = hub.recentSessions;
+      expect(sessions.first.id, '8a000000-0000-4000-8000-000000000002');
+      expect(sessions.first.effort, 8);
+      expect(sessions.first.completionSource, CompletionSource.manual);
+      expect(sessions.first.effortSource, EffortSource.athlete);
+      expect(sessions[1].completionSource, CompletionSource.healthkit);
+      expect(sessions[1].effortSource, EffortSource.healthkitDefault);
+      expect(sessions[2].completionSource, isNull);
+      expect(sessions[2].effortSource, EffortSource.legacyDefault);
+
+      expect(hub.progression.single.latestDate, DateTime(2026, 9, 25));
+      expect(hub.load!.acwr, 1.07);
+      expect(hub.load!.trainingMonotony, 1.6);
+
+      expect(hub.dailyLoad, hasLength(28));
+      expect(hub.dailyLoad.last.date, DateTime(2026, 10, 2));
+      expect(hub.dailyLoad.last.level, DayLoadLevel.moderate);
+      expect(hub.dailyLoad.last.effortReported, isTrue);
+      final defaultDay = hub.dailyLoad.firstWhere(
+        (day) => day.date == DateTime(2026, 9, 7),
+      );
+      expect(defaultDay.recorded, isTrue);
+      expect(defaultDay.level, isNull);
+      expect(defaultDay.minutes, 44);
+      expect(defaultDay.strain, 35.2);
+      expect(hub.dailyLoad.first.level, DayLoadLevel.rest);
+    });
+
+    test('a cached 1.5 hub parses with every 1.6 field absent', () {
+      final hub = TrainingHubData.fromHubJson(
+        _loadFixtureJson('training_hub_v1_5.json'),
+      );
+      expect(hub.planTitle, 'Upper/Lower Split');
+      expect(hub.localToday, isNull);
+      expect(hub.plan!.effectiveDate, isNull);
+      expect(hub.plan!.blockWeeks, isNull);
+      expect(hub.plan!.progressionRule, isNull);
+      expect(hub.dailyLoad, isEmpty);
+      expect(hub.workouts, hasLength(2));
+      for (final workout in hub.workouts) {
+        for (final exercise in workout.exercises) {
+          expect(exercise.exerciseSlug, isNull);
+          expect(exercise.primaryMuscles, isEmpty);
+        }
+      }
+      expect(hub.recentSessions.first.id, 'session-1');
+      expect(hub.recentSessions.first.effort, 8);
+      expect(hub.recentSessions.first.completionSource, isNull);
+      expect(hub.recentSessions.first.effortSource, isNull);
+      expect(hub.progression.first.latestDate, isNull);
+      expect(hub.load!.acwr, 1.15);
+      expect(hub.isDayCompleted(DateTime(2026, 7, 18)), isTrue);
+    });
+
+    test('a muscle outside the catalog vocabulary is dropped, not guessed', () {
+      final workout = PlannedWorkout.fromHubJson({
+        'id': 'w',
+        'name': 'W',
+        'objective': 'O',
+        'estimated_minutes': 30,
+        'exercises': [
+          {
+            'order': 1,
+            'name': 'Mystery lift',
+            'set_count': 3,
+            'rep_min': 8,
+            'rep_max': 10,
+            'exercise_slug': 'mystery-lift',
+            'primary_muscles': ['chest', 'forearms', 'chest'],
+          },
+        ],
+      });
+      expect(workout.exercises.single.primaryMuscles, [MuscleGroup.chest]);
+    });
+  });
+
+  group('Exercise history contract — get_my_exercise_history v1.0', () {
+    const fixture = 'exercise_history_v1_0.json';
+
+    test('each exercise has a kind, last session, best set and top sets', () {
+      final json = _loadFixtureJson(fixture);
+      expect(json['schema_version'], '1.0');
+      expect(json['sessions_limit'], inInclusiveRange(1, 12));
+      for (final row in (json['exercises'] as List).toMapList()) {
+        expect(row['key'], isA<String>());
+        expect(row['kind'], anyOf(isNull, 'load', 'reps', 'assistance'));
+        expect(row['top_sets'], isA<List>());
+        if (row['kind'] == null) {
+          expect(row['last_session'], isNull);
+          expect(row['best_set'], isNull);
+          expect(row['top_sets'], isEmpty);
+          continue;
+        }
+        final best = row['best_set'] as Map;
+        expect(best['kind'], row['kind']);
+        expect(best['repetitions'], isA<int>());
+        if (row['kind'] == 'reps') expect(best['load_kg'], isNull);
+        // Assistance is help from the machine: less is better, so the best
+        // set has the least assistance of any ranked set.
+        if (row['kind'] == 'assistance') {
+          final tops = (row['top_sets'] as List).toMapList();
+          for (final top in tops) {
+            expect((best['load_kg'] as num) <= (top['load_kg'] as num), isTrue);
+          }
+        }
+        final last = row['last_session'] as Map;
+        expect(
+          () => DateTime.parse(last['local_date'] as String),
+          returnsNormally,
+        );
+        expect(last['sets'], isNotEmpty);
       }
     });
   });

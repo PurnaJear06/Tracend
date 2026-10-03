@@ -33,8 +33,6 @@ class SleepArchitectureCard extends StatelessWidget {
         computed.dataConfidence == 'low';
 
     return PremiumGradientCard(
-      glow: hasData,
-      glowColor: colors.actionPrimary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -89,7 +87,7 @@ class SleepArchitectureCard extends StatelessWidget {
 
   TextStyle _scoreStyle(BuildContext context) =>
       Theme.of(context).textTheme.displaySmall!.copyWith(
-        fontFamily: TracendFonts.monoFamily,
+        fontFamily: TracendFonts.numericFamily,
         fontSize: 36,
         height: 1.0,
         letterSpacing: -1,
@@ -218,7 +216,7 @@ class _SubScoreRow extends StatelessWidget {
               Text(
                 score.round().toString(),
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontFamily: TracendFonts.monoFamily,
+                  fontFamily: TracendFonts.numericFamily,
                   color: colors.textPrimary,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),

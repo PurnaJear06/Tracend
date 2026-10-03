@@ -55,7 +55,7 @@ class _ExerciseRow extends StatelessWidget {
               child: Text(
                 '${exercise.order}'.padLeft(2, '0'),
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontFamily: TracendFonts.monoFamily,
+                  fontFamily: TracendFonts.numericFamily,
                   fontSize: 11,
                   color: colors.textSecondary,
                   fontFeatures: const [FontFeature.tabularFigures()],
@@ -108,7 +108,7 @@ class _ExerciseStat extends StatelessWidget {
   Widget build(BuildContext context) => Text(
     text,
     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-      fontFamily: TracendFonts.monoFamily,
+      fontFamily: TracendFonts.numericFamily,
       fontSize: 11,
       color: context.tracendColors.textSecondary,
       fontFeatures: const [FontFeature.tabularFigures()],
@@ -175,7 +175,7 @@ class AdherenceCard extends StatelessWidget {
               Text(
                 '$completedSessions',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontFamily: TracendFonts.monoFamily,
+                  fontFamily: TracendFonts.numericFamily,
                   fontSize: 26,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
@@ -289,7 +289,7 @@ class _ProgressionRow extends StatelessWidget {
                 ? '${item.bestRepetitions ?? '—'} reps'
                 : '${item.bestLoadKg} kg',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontFamily: TracendFonts.monoFamily,
+              fontFamily: TracendFonts.numericFamily,
               color: colors.stateStable,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
@@ -384,7 +384,7 @@ class _RecentSessionRow extends StatelessWidget {
                 Text(
                   dateLabel,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontFamily: TracendFonts.monoFamily,
+                    fontFamily: TracendFonts.numericFamily,
                     fontSize: 11,
                     color: colors.textSecondary,
                     fontFeatures: const [FontFeature.tabularFigures()],
@@ -397,7 +397,7 @@ class _RecentSessionRow extends StatelessWidget {
             Text(
               duration,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                fontFamily: TracendFonts.monoFamily,
+                fontFamily: TracendFonts.numericFamily,
                 fontSize: 11,
                 color: colors.textSecondary,
                 fontFeatures: const [FontFeature.tabularFigures()],

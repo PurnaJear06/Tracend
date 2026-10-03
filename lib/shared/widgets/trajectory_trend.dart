@@ -173,11 +173,9 @@ class _TrajectoryTrendState extends State<TrajectoryTrend>
         '${series.points.length} of 7 days recorded.';
 
     return PremiumGradientCard(
-      glow: true,
       // Teal (the card's own tag color), not the default indigo: the
       // recovery readout above already carries the indigo glow, and two
       // same-glow evidence cards fought for the same visual voice.
-      glowColor: colors.stateStable,
       child: Semantics(
         label: semantics,
         child: ExcludeSemantics(
@@ -194,7 +192,7 @@ class _TrajectoryTrendState extends State<TrajectoryTrend>
                       '$label · ${trendMetricUnit(series.metric)}',
                       textAlign: TextAlign.right,
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontFamily: TracendFonts.monoFamily,
+                        fontFamily: TracendFonts.numericFamily,
                         fontSize: 11,
                         color: colors.textSecondary,
                         fontFeatures: const [FontFeature.tabularFigures()],
@@ -210,7 +208,7 @@ class _TrajectoryTrendState extends State<TrajectoryTrend>
                   Text(
                     _formatValue(series.metric, last),
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontFamily: TracendFonts.monoFamily,
+                      fontFamily: TracendFonts.numericFamily,
                       fontSize: 28,
                       letterSpacing: -0.8,
                       fontFeatures: const [FontFeature.tabularFigures()],
@@ -278,14 +276,14 @@ class _TrajectoryTrendState extends State<TrajectoryTrend>
                               height: 10,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: colors.accentNow,
+                                color: colors.accentSignalInk,
                                 border: Border.all(
                                   color: colors.canvas,
                                   width: 2,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: colors.accentNow.withValues(
+                                    color: colors.accentSignalInk.withValues(
                                       alpha: 0.6,
                                     ),
                                     blurRadius: 8,
@@ -331,7 +329,7 @@ class _TrendPlot extends StatelessWidget {
         painter: _TrendPainter(
           series: series,
           column: colors.actionPrimary,
-          terminal: colors.accentNow,
+          terminal: colors.accentSignalInk,
           rail: colors.borderSubtle,
           socket: colors.borderSubtle,
           progress: 1,
@@ -345,7 +343,7 @@ class _TrendPlot extends StatelessWidget {
         painter: _TrendPainter(
           series: series,
           column: colors.actionPrimary,
-          terminal: colors.accentNow,
+          terminal: colors.accentSignalInk,
           rail: colors.borderSubtle,
           socket: colors.borderSubtle,
           progress: Curves.easeOutCubic.transform(controller.value),
@@ -593,7 +591,7 @@ class _TrendDelta extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              fontFamily: TracendFonts.monoFamily,
+              fontFamily: TracendFonts.numericFamily,
               fontSize: 11,
               color: colors.textSecondary,
               fontFeatures: const [FontFeature.tabularFigures()],
@@ -629,7 +627,7 @@ class _DayTicks extends StatelessWidget {
         final width = constraints.maxWidth;
         const inset = 16.0;
         final dayTextStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
-          fontFamily: TracendFonts.monoFamily,
+          fontFamily: TracendFonts.numericFamily,
           fontSize: 9,
           fontFeatures: const [FontFeature.tabularFigures()],
         );
@@ -700,7 +698,7 @@ class _CalibrationStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = context.tracendColors.textSecondary;
     final style = Theme.of(context).textTheme.labelMedium?.copyWith(
-      fontFamily: TracendFonts.monoFamily,
+      fontFamily: TracendFonts.numericFamily,
       fontSize: 9,
       color: color,
       fontFeatures: const [FontFeature.tabularFigures()],

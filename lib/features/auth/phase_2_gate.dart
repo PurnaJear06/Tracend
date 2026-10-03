@@ -13,6 +13,8 @@ import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/shell/app_shell.dart';
+import 'package:tracend/shared/brand/tracend_intro.dart';
+import 'package:tracend/shared/brand/tracend_loader.dart';
 
 class Phase2Gate extends StatefulWidget {
   const Phase2Gate({
@@ -184,13 +186,13 @@ class _Phase2GateState extends State<Phase2Gate> {
             'This build supports owner email/password authentication only.',
       );
     }
-    if (_loading) {
-      return const _GateMessage(
-        title: 'Restoring your session',
-        message: 'Checking your private account state…',
-        loading: true,
-      );
-    }
+    // The intro plays once, on this cold start, while the stored session is
+    // restored; later refreshes (sign-in, sign-out) show the loader alone.
+    return TracendIntro(ready: !_loading, child: _sessionContent());
+  }
+
+  Widget _sessionContent() {
+    if (_loading) return const _GateLoading();
     if (_error != null) {
       return _GateMessage(
         title: 'Connection needed',
@@ -233,17 +235,28 @@ class _Phase2GateState extends State<Phase2Gate> {
   }
 }
 
+class _GateLoading extends StatelessWidget {
+  const _GateLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: TracendLoader(size: 36, semanticLabel: 'Restoring your session'),
+      ),
+    );
+  }
+}
+
 class _GateMessage extends StatelessWidget {
   const _GateMessage({
     required this.title,
     required this.message,
-    this.loading = false,
     this.onRetry,
   });
 
   final String title;
   final String message;
-  final bool loading;
   final VoidCallback? onRetry;
 
   @override
@@ -256,10 +269,6 @@ class _GateMessage extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (loading) ...[
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 24),
-                ],
                 Text(title, style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(height: 8),
                 Text(message, textAlign: TextAlign.center),
