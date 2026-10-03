@@ -9,3 +9,5 @@ becomes active only when that dashboard names it and the owner approves its scop
 - `progress/` — superseded dashboard snapshots
 - `plans/` — completed or abandoned implementation plans
 - `handoffs/` — superseded workstream handoff logs
+- `DESIGN_SYSTEM-precision-pro.md` — the "Precision Pro" visual direction, superseded by "Graphite +
+  signal lime" on 2026-10-03

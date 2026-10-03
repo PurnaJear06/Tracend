@@ -106,6 +106,7 @@ class WorkoutDetailScreen extends StatelessWidget {
                   StatusChip(
                     label: 'Autosave is ready',
                     icon: CupertinoIcons.arrow_2_circlepath,
+                    tone: StatusTone.neutral,
                   ),
                   SizedBox(height: TracendSpacing.md),
                   Text(

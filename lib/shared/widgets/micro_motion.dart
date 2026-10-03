@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
-/// Motion helpers for the "Precision Pro" system (DESIGN_SYSTEM.md §6).
+/// Motion helpers (DESIGN_SYSTEM.md §6).
 ///
 /// All motion is motivated (entrance, feedback, state change), gated on
 /// Reduce Motion via `MediaQuery.disableAnimationsOf` (the Reduce Motion

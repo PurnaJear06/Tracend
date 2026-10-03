@@ -1,32 +1,48 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 
-/// Rows of one kind share a single surface with hairline dividers
-/// (DESIGN_SYSTEM.md §4, grouped lists). Use this instead of a card per row.
+/// Inset grouped list (DESIGN_SYSTEM.md §5.1): rows of one kind share a single
+/// `surface` with hairline separators. A separator starts past the leading
+/// icon of the row below it, as on iOS. Use this instead of a card per row.
 class TracendGroupedList extends StatelessWidget {
   const TracendGroupedList({required this.children, super.key});
 
   final List<Widget> children;
 
+  static double _indentBefore(Widget row) {
+    if (row is TracendListRow && row.leading != null) {
+      return TracendListRow.horizontalPadding +
+          TracendRowIcon.size +
+          TracendListRow.leadingGap;
+    }
+    return TracendListRow.horizontalPadding;
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    return PremiumGradientCard(
-      padding: const EdgeInsets.symmetric(vertical: TracendSpacing.xxs),
+    return Material(
+      color: colors.surface,
+      borderRadius: BorderRadius.circular(TracendRadii.card),
+      clipBehavior: Clip.antiAlias,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var i = 0; i < children.length; i++) ...[
-            children[i],
-            if (i < children.length - 1)
-              Divider(
-                height: 1,
-                thickness: 1,
-                indent: TracendSpacing.md,
-                endIndent: TracendSpacing.md,
-                color: colors.borderHairline,
+            if (i > 0)
+              Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: _indentBefore(children[i]),
+                ),
+                child: Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: colors.borderHairline,
+                ),
               ),
+            children[i],
           ],
         ],
       ),
@@ -34,9 +50,9 @@ class TracendGroupedList extends StatelessWidget {
   }
 }
 
-/// One row inside a [TracendGroupedList]. At least 52pt tall; shows a
-/// chevron only when it is tappable, so no row looks interactive when it
-/// is not.
+/// One row inside a [TracendGroupedList]. At least 60pt tall; shows a
+/// chevron and a pressed fill only when it is tappable, so no row looks
+/// interactive when it is not.
 class TracendListRow extends StatelessWidget {
   const TracendListRow({
     required this.title,
@@ -50,27 +66,33 @@ class TracendListRow extends StatelessWidget {
 
   final String title;
   final String? subtitle;
+
+  /// Usually a [TracendRowIcon]; separators are inset to its width.
   final Widget? leading;
   final Widget? trailing;
   final VoidCallback? onTap;
   final String? semanticLabel;
+
+  static const horizontalPadding = 14.0;
+  static const leadingGap = TracendSpacing.sm;
+  static const minHeight = 60.0;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     final theme = Theme.of(context).textTheme;
     final row = ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 52),
+      constraints: const BoxConstraints(minHeight: minHeight),
       child: Padding(
         padding: const EdgeInsets.symmetric(
-          horizontal: TracendSpacing.md,
-          vertical: TracendSpacing.sm,
+          horizontal: horizontalPadding,
+          vertical: 10,
         ),
         child: Row(
           children: [
             if (leading != null) ...[
               leading!,
-              const SizedBox(width: TracendSpacing.sm),
+              const SizedBox(width: leadingGap),
             ],
             Expanded(
               child: Column(
@@ -79,18 +101,13 @@ class TracendListRow extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: theme.titleMedium?.copyWith(
+                    style: theme.titleSmall?.copyWith(
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                   if (subtitle != null) ...[
                     const SizedBox(height: 2),
-                    Text(
-                      subtitle!,
-                      style: theme.bodyMedium?.copyWith(
-                        color: colors.textSecondary,
-                      ),
-                    ),
+                    Text(subtitle!, style: theme.bodySmall),
                   ],
                 ],
               ),
@@ -103,8 +120,8 @@ class TracendListRow extends StatelessWidget {
               const SizedBox(width: TracendSpacing.xs),
               Icon(
                 CupertinoIcons.chevron_forward,
-                size: 14,
-                color: colors.textSecondary,
+                size: 16,
+                color: colors.textTertiary,
               ),
             ],
           ],
@@ -122,7 +139,7 @@ class TracendListRow extends StatelessWidget {
       excludeSemantics: semanticLabel != null,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(TracendRadii.control),
+        highlightColor: colors.surfaceRaised,
         child: row,
       ),
     );
@@ -136,18 +153,20 @@ class TracendRowIcon extends StatelessWidget {
   final IconData icon;
   final Color? color;
 
+  static const size = 30.0;
+
   @override
   Widget build(BuildContext context) {
-    final accent = color ?? context.tracendColors.textSecondary;
+    final colors = context.tracendColors;
     return Container(
-      width: 36,
-      height: 36,
+      width: size,
+      height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(TracendRadii.control),
+        color: color?.withValues(alpha: 0.14) ?? colors.surfaceRaised,
+        borderRadius: BorderRadius.circular(10),
       ),
-      child: Icon(icon, size: 18, color: accent),
+      child: Icon(icon, size: 16, color: color ?? colors.textSecondary),
     );
   }
 }
