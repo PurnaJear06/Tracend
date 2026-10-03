@@ -94,6 +94,24 @@ Future<bool> showTracendConfirm(
   String cancelLabel = 'Cancel',
   bool destructive = false,
 }) async {
+  // The alert is a fixed 270pt wide, so large text would break its words.
+  // At large sizes the same question is asked as a full-width action sheet.
+  if (MediaQuery.textScalerOf(context).scale(1) > 1.5) {
+    final choice = await showTracendActionSheet<bool>(
+      context,
+      title: title,
+      message: message,
+      cancelLabel: cancelLabel,
+      actions: [
+        TracendSheetAction(
+          label: confirmLabel,
+          value: true,
+          destructive: destructive,
+        ),
+      ],
+    );
+    return choice ?? false;
+  }
   if (destructive) unawaited(TracendHaptics.warning());
   final confirmed = await showCupertinoDialog<bool>(
     context: context,

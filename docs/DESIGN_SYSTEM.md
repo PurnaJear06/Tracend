@@ -371,9 +371,9 @@ the chart speaks training minutes, never "strain".
 The Progress hero: latest weigh-in, the change across the selected period, the server's weekly
 rate (`weightTrend28d`, else `weightTrend7d`, × 7), a plain word for the 28-day R² (**Steady
 trend** ≥ 0.6, **Some day-to-day variation** ≥ 0.3, **Too noisy to call yet** below), and the
-`EvidenceTrendChart`. The change is tinted good only when it moves toward the active goal
-(`fat_loss` down, `muscle_gain` up); otherwise it stays neutral, and the arrow and spoken label
-carry the direction.
+`EvidenceTrendChart`. The change chip takes the lime signal only when it moves toward the active
+goal (`fat_loss` down, `muscle_gain` up): it marks progress on the athlete's own goal, not health.
+Otherwise it stays neutral, and the arrow and spoken label carry the direction.
 
 #### `DecisionSurface`, `CoachPerspectiveCard`, `EvidenceRow`, `ProposalDiff`
 
@@ -406,14 +406,18 @@ carry the direction.
 
 #### `CoachMessage` and `NutritionTimeline`
 
-Coach messages use a restrained bubble, selectable text and an expandable evidence drawer. A reply
-renders a small Markdown subset (bold, italic, bullet and numbered lists; headings as bold lines; a
-link as its label followed by its destination in plain text). The athlete's own messages show
-exactly as typed. A labeled reply that stands in for a failed model answer is a variant of the same
-bubble: **Data summary · not an AI answer** (attention border, no provider pill) or **Safety note ·
-not an AI answer** (neutral border), with a muted, selectable beta diagnostic line on a live reply
-and **Retry** when the reply ends the conversation. The pill text, not the color, carries the
-meaning.
+The athlete's own messages are filled `surfaceRaised` bubbles (18pt corners, 4pt on the tail),
+shown exactly as typed. Coach replies are borderless, selectable text on the canvas, rendering a
+small Markdown subset (bold, italic, bullet and numbered lists; headings as bold lines; a link as
+its label followed by its destination in plain text). An AI reply carries a small **AI answer ·
+DeepSeek** label, named through the shared provider display-name map (an unknown provider reads
+**AI answer**, never a raw id). A labeled reply that stands in for a failed model answer carries a
+chip instead: **Data summary · not an AI answer** (caution tone) or **Safety note · not an AI
+answer** (neutral tone), never with a provider label. The disclosure **Evidence used and data
+gaps** holds the evidence sources and data gaps in words, the reasoning steps without evidence ids,
+and the beta diagnostic as small secondary text. A failed send is one inline message under the
+question (plain words, then the raw diagnostic) with **Retry**, plus a toast. The chip text, not the
+color, carries the meaning.
 
 `NutritionTimeline` lists meals in time order, each with a tabular time, a status glyph (good check
 logged, caution spark draft, caution ring due, neutral ring planned, faint ring optional, dash not

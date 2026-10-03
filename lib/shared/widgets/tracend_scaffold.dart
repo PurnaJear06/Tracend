@@ -99,10 +99,17 @@ class _TracendScrollViewState extends State<TracendScrollView> {
             children: [
               Semantics(
                 header: true,
-                child: Text(
-                  widget.title,
-                  key: _titleKey,
-                  style: textTheme.displaySmall,
+                // One line that shrinks to fit, as iOS large titles do, so a
+                // long word never breaks mid-word at large text sizes.
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    widget.title,
+                    key: _titleKey,
+                    maxLines: 1,
+                    style: textTheme.displaySmall,
+                  ),
                 ),
               ),
               if (widget.subtitle != null) ...[
@@ -338,6 +345,12 @@ class SectionLabel extends StatelessWidget {
   final String? actionLabel;
   final VoidCallback? onAction;
 
+  /// At large text sizes a trailing value or action would squeeze the
+  /// label, so they move under it.
+  bool _stacked(BuildContext context) =>
+      (value != null || actionLabel != null) &&
+      MediaQuery.textScalerOf(context).scale(1) > 1.5;
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -349,35 +362,55 @@ class SectionLabel extends StatelessWidget {
         left: 2,
         right: hasAction ? 0 : 2,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          Expanded(
-            child: Semantics(
-              header: true,
-              child: Text(label, style: textTheme.titleLarge),
-            ),
-          ),
-          if (value != null) ...[
-            const SizedBox(width: TracendSpacing.sm),
-            Text(value!, style: textTheme.bodySmall),
-          ],
-          if (hasAction) ...[
-            const SizedBox(width: TracendSpacing.xs),
-            TextButton(
-              onPressed: onAction,
-              style: TextButton.styleFrom(
-                minimumSize: const Size(44, 44),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: TracendSpacing.xs,
+      child: _stacked(context)
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  header: true,
+                  child: Text(label, style: textTheme.titleLarge),
                 ),
-              ),
-              child: Text(actionLabel!),
+                if (value != null) Text(value!, style: textTheme.bodySmall),
+                if (hasAction)
+                  TextButton(
+                    onPressed: onAction,
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(44, 44),
+                      padding: EdgeInsets.zero,
+                    ),
+                    child: Text(actionLabel!),
+                  ),
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Expanded(
+                  child: Semantics(
+                    header: true,
+                    child: Text(label, style: textTheme.titleLarge),
+                  ),
+                ),
+                if (value != null) ...[
+                  const SizedBox(width: TracendSpacing.sm),
+                  Text(value!, style: textTheme.bodySmall),
+                ],
+                if (hasAction) ...[
+                  const SizedBox(width: TracendSpacing.xs),
+                  TextButton(
+                    onPressed: onAction,
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(44, 44),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: TracendSpacing.xs,
+                      ),
+                    ),
+                    child: Text(actionLabel!),
+                  ),
+                ],
+              ],
             ),
-          ],
-        ],
-      ),
     );
   }
 }
