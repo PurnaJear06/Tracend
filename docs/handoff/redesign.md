@@ -1,7 +1,7 @@
 # Redesign Handoff: Graphite + Lime, App-Wide
 
-**Status:** foundation integrated on `claude/redesign-base` (PR to `main`); six screen agents are
-building on it in parallel.
+**Status:** the foundation merged and deployed as #78 (`12f5bbb`) and is the owner's device check
+1. The six screens are integrated on `claude/redesign-screens` (PR to `main`).
 
 **Plan:** `/Users/purnajear/.claude/plans/hey-uh-in-my-tender-allen.md` (owner-approved
 2026-10-03). Owner-chosen direction: palette A, graphite + lime, from the prototype at
@@ -25,14 +25,14 @@ integrated PRs, and the three device checkpoints became two.
 | Train data, load sheet model, muscle map | `claude/redesign-train-data` (#76) | 7/7 on a scratch CI branch; in foundation |
 | Icon, launch screen, intro, loader | `claude/redesign-brand` (#77) | 7/7 green; in foundation |
 | Tokens, Archivo, theme, tab bar, shared widgets | `claude/redesign-foundation` + `claude/redesign-widgets` | in foundation |
-| **Foundation** (all of the above) | `claude/redesign-base` | PR to `main`. 🔒 device check 1 after deploy |
-| Workout logging UI | `claude/redesign-ui-logging` | building |
-| Train | `claude/redesign-ui-train` | building |
-| Today | `claude/redesign-ui-today` | building |
-| Coach | `claude/redesign-ui-coach` | building |
-| Nutrition and Progress | `claude/redesign-ui-nutrition-progress` | building |
-| Account, onboarding, auth | `claude/redesign-ui-account` | building |
-| **Screens** (six branches integrated) | `claude/redesign-screens` | PR to `main` after the foundation. 🔒 device check 2: a real workout |
+| **Foundation** (all of the above) | `claude/redesign-base` (#78) | Merged and deployed (`12f5bbb`); migration applied. 🔒 device check 1 |
+| Workout logging UI | `claude/redesign-ui-logging` | integrated into screens |
+| Train | `claude/redesign-ui-train` | integrated into screens |
+| Today | `claude/redesign-ui-today` | integrated into screens |
+| Coach | `claude/redesign-ui-coach` | integrated into screens |
+| Nutrition and Progress | `claude/redesign-ui-nutrition-progress` | integrated into screens |
+| Account, onboarding, auth | `claude/redesign-ui-account` | integrated into screens |
+| **Screens** (six branches integrated) | `claude/redesign-screens` | PR to `main`. 🔒 device check 2: a real workout |
 
 ## Phase 0 picks (owner, 2026-10-03)
 
@@ -67,6 +67,15 @@ decision. Unlinked exercises show no muscles; nothing is guessed.
 - Discard queue: only the final refusals (22023 finished, P0002 not found) settle a saved discard;
   any other server error keeps it waiting, like a lost connection (GPT review).
 - Readiness line Good band reads "Recovery is good.": state only, never advice (GPT review).
+- Integration fixes: large titles shrink to one line instead of breaking a word; a section label's
+  value or action moves under it from 1.3× text; at large text a confirm is a full-width action
+  sheet (the fixed 270pt alert broke words); the loader and muscle map follow the motion scope;
+  one shared AI provider name map (`lib/shared/ai_provider_names.dart`); pushed screens get a
+  centred inline bar; the shell wires Today to the Train tab and Train to Health and Account.
+- The legacy `complete()` client path is removed; the app finishes only with the athlete's effort.
+  The server keeps `complete_workout` for older installed builds.
+- Train keeps the hub loaded this session when offline; persisting the hub across launches is not
+  built.
 - Account deletion now also clears workout drafts, pending finishes, queued discards and the
   exercise history copy.
 - Stacked PRs get no CI (CI runs on PRs into `main` and `feature/**`), so stacked work was checked

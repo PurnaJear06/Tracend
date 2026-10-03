@@ -354,16 +354,18 @@ Computed trend overlays are only labeled regression segments from the server OLS
 distinguished from the dots by a legend, and dashed and labeled "low confidence" when the 28-day R²
 is under 0.3 or missing. The 7-day line carries no R² and is never confidence-gated.
 
-#### `WeekRailCard`
+#### `DayBoxesStrip` and the training load sheet
 
-Train's week instrument: day slots select the day, and the chart below speaks `TrajectoryTrend`'s
-grammar. A session day grows a column sized by real training minutes (summed
-`recent_sessions[].duration_seconds / 60`); a session-less day leaves a dim socket; a
-planned-but-untrained day carries a small caution dot. The verdict uses the app-wide ACWR
-convention: Low load < 0.8 caution · Optimal 0.8–1.3 good · High load > 1.3 low (above 1.5 the
-copy escalates, never a fourth label). Fewer than four sessions in the 28-day payload renders
-"Building baseline", never a ratio verdict. A session without a duration never invents height;
-the chart speaks training minutes, never "strain".
+Train's week (the owner picked day boxes over the week line): seven tappable days with a check for
+a finished day, a dot for a planned one and a lime ring for today. A change of day plays the
+selection haptic and slides the content in from that side (a crossfade under Reduce Motion); a
+swipe or a VoiceOver action pages back up to three weeks. The labels stop growing at 1.3× text, as
+the tab bar's do, and VoiceOver reads the full words. **This week** shows done pips and a
+**Training load** row that opens the load sheet: the verdict first, a low / normal / high scale
+whose marker springs into place, one bar per day shaded easy, moderate or hard (a socket for rest,
+"Calibrating" for default effort), one advice line from the ACWR band and monotony rules, and
+**How this is calculated** with the ratio. Fewer than four sessions in 28 days reads as building,
+never a ratio verdict.
 
 #### `WeightHeroCard`
 
