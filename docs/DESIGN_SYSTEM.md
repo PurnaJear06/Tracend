@@ -206,8 +206,8 @@ restoration after interruption are mandatory.
 
 Account uses the grouped-list grammar (§5.1): an identity block (display name from the signed-in
 email local-part, a compact **Private beta** pill, the current goal only when the active-goal RPC
-returns one, and an **Edit** affordance), then grouped lists under sentence-case section labels,
-with sign-out separated at the foot.
+returns one; **Profile and goals** is the edit entry, with no separate Edit button), then grouped
+lists under sentence-case section labels, with sign-out separated at the foot.
 
 ## 5. Components
 

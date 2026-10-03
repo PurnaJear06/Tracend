@@ -2,23 +2,10 @@
 /// word the athlete would use, never as the raw id (DESIGN_SYSTEM.md §9).
 library;
 
+import 'package:tracend/shared/ai_provider_names.dart';
 import 'package:tracend/shared/formatting.dart';
 
-/// The name a person knows an AI provider by, keyed by the server's
-/// `model_provider` id. The owner switches providers by budget, so the label
-/// always comes from this map and is never written into a widget. An id that
-/// is not listed has no display name; the reply then reads "AI answer" alone
-/// rather than showing the raw id.
-const aiProviderDisplayNames = <String, String>{
-  'deepseek': 'DeepSeek',
-  'groq': 'Qwen',
-  'gemini': 'Gemini',
-  'mock': 'Test model',
-};
-
-/// "DeepSeek" for `deepseek`; null for a missing or unlisted id.
-String? aiProviderDisplayName(String? id) =>
-    id == null ? null : aiProviderDisplayNames[id.trim().toLowerCase()];
+export 'package:tracend/shared/ai_provider_names.dart';
 
 /// The small label under an AI reply: "AI answer · DeepSeek", or "AI answer"
 /// when the provider has no display name.
