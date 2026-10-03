@@ -240,6 +240,65 @@ void main() {
     });
   });
 
+  group('TargetsGrid layout', () {
+    const grid = TargetsGrid(
+      summary: NutritionSummary(
+        calories: 1720,
+        protein: 108,
+        carbohydrate: 1720,
+        fat: 48,
+        confirmedMeals: 3,
+      ),
+      targets: NutritionTargets(
+        calories: 2200,
+        protein: 160,
+        carbohydrate: 2400,
+        fat: 70,
+      ),
+    );
+
+    Future<void> pumpAt(
+      WidgetTester tester,
+      double width,
+      double textScale,
+    ) async {
+      tester.view.physicalSize = Size(width, 1600);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = textScale;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(
+        _wrap(
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: TracendSpacing.gutter),
+            child: grid,
+          ),
+        ),
+      );
+    }
+
+    testWidgets('Carbs and Fat share a row at 390pt', (tester) async {
+      await pumpAt(tester, 390, 1);
+      expect(tester.takeException(), isNull);
+      final carbs = tester.getTopLeft(find.text('Carbs'));
+      final fat = tester.getTopLeft(find.text('Fat'));
+      expect(fat.dy, carbs.dy);
+      expect(fat.dx, greaterThan(carbs.dx));
+    });
+
+    testWidgets('Carbs and Fat stack at 320pt × 2 instead of squeezing', (
+      tester,
+    ) async {
+      await pumpAt(tester, 320, 2);
+      expect(tester.takeException(), isNull);
+      final carbs = tester.getTopLeft(find.text('Carbs'));
+      final fat = tester.getTopLeft(find.text('Fat'));
+      expect(fat.dy, greaterThan(carbs.dy));
+      expect(fat.dx, carbs.dx);
+    });
+  });
+
   group('NutritionInsightCard', () {
     testWidgets('shows real decision fields and confidence', (tester) async {
       await tester.pumpWidget(

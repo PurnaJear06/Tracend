@@ -13,6 +13,9 @@ import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 ///   ([NutritionSummary])
 /// - flat cells on `surfaceRaised`; numbers in the numeric family with
 ///   tabular figures; `X / Yg` readable text
+/// - cells keep [_cellPadding] inside and [_cellGap] between them; Carbs and
+///   Fat share a row only while each has room for its numbers, and stack
+///   at narrow widths or large text so no cell is squeezed
 ///
 /// State table:
 /// - full: consumed/target per macro + progress bars + remaining
@@ -66,6 +69,27 @@ class TargetsGrid extends StatelessWidget {
       targets.protein,
     );
 
+    final carbsCell = _HalfCell(
+      label: 'Carbs',
+      swatch: colors.stateStable,
+      consumed: _round(carbohydrate),
+      target: '/ ${_round(targets.carbohydrate)}g',
+      fraction: _fraction(carbohydrate, targets.carbohydrate),
+      barColor: colors.stateStable,
+      semanticsLabel:
+          'Carbohydrate ${_round(carbohydrate)} of '
+          '${_round(targets.carbohydrate)} grams',
+    );
+    final fatCell = _HalfCell(
+      label: 'Fat',
+      swatch: colors.accentAmber,
+      consumed: _round(fat),
+      target: '/ ${_round(targets.fat)}g',
+      fraction: _fraction(fat, targets.fat),
+      barColor: colors.accentAmber,
+      semanticsLabel: 'Fat ${_round(fat)} of ${_round(targets.fat)} grams',
+    );
+
     return PremiumGradientCard(
       padding: const EdgeInsets.all(TracendSpacing.sm),
       child: Column(
@@ -89,7 +113,7 @@ class TargetsGrid extends StatelessWidget {
             semanticsLabel:
                 'Energy ${_round(calories)} of ${_round(targets.calories)} kilocalories',
           ),
-          const SizedBox(height: TracendSpacing.xxs),
+          const SizedBox(height: _cellGap),
           _WideCell(
             label: 'Protein',
             swatch: colors.actionPrimary,
@@ -102,42 +126,44 @@ class TargetsGrid extends StatelessWidget {
                 'Protein ${_round(protein)} of ${_round(targets.protein)} grams, '
                 '${_round(proteinRemaining)} grams remaining',
           ),
-          const SizedBox(height: TracendSpacing.xxs),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _HalfCell(
-                  label: 'Carbs',
-                  swatch: colors.stateStable,
-                  consumed: _round(carbohydrate),
-                  target: '/ ${_round(targets.carbohydrate)}g',
-                  fraction: _fraction(carbohydrate, targets.carbohydrate),
-                  barColor: colors.stateStable,
-                  semanticsLabel:
-                      'Carbohydrate ${_round(carbohydrate)} of '
-                      '${_round(targets.carbohydrate)} grams',
-                ),
-              ),
-              const SizedBox(width: TracendSpacing.xxs),
-              Expanded(
-                child: _HalfCell(
-                  label: 'Fat',
-                  swatch: colors.accentAmber,
-                  consumed: _round(fat),
-                  target: '/ ${_round(targets.fat)}g',
-                  fraction: _fraction(fat, targets.fat),
-                  barColor: colors.accentAmber,
-                  semanticsLabel:
-                      'Fat ${_round(fat)} of ${_round(targets.fat)} grams',
-                ),
-              ),
-            ],
+          const SizedBox(height: _cellGap),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final scale = MediaQuery.textScalerOf(context).scale(1);
+              if (constraints.maxWidth < _pairMinWidth * scale) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    carbsCell,
+                    const SizedBox(height: _cellGap),
+                    fatCell,
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: carbsCell),
+                  const SizedBox(width: _cellGap),
+                  Expanded(child: fatCell),
+                ],
+              );
+            },
           ),
         ],
       ),
     );
   }
+
+  /// Space inside each cell.
+  static const _cellPadding = TracendSpacing.md;
+
+  /// Space between cells.
+  static const _cellGap = TracendSpacing.xs;
+
+  /// The narrowest row, at 1× text, where Carbs and Fat each keep room for
+  /// a four-digit amount and its target on one line.
+  static const _pairMinWidth = 300.0;
 
   static String _round(num? value) => (value ?? 0).round().toString();
 
@@ -242,7 +268,7 @@ class _WideCell extends StatelessWidget {
     return Semantics(
       label: semanticsLabel,
       child: Container(
-        padding: const EdgeInsets.all(TracendSpacing.sm),
+        padding: const EdgeInsets.all(TargetsGrid._cellPadding),
         decoration: BoxDecoration(
           color: colors.surfaceRaised,
           borderRadius: BorderRadius.circular(TracendRadii.control),
@@ -268,10 +294,11 @@ class _WideCell extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: TracendSpacing.xxs),
+            const SizedBox(height: TracendSpacing.xs),
             Wrap(
               crossAxisAlignment: WrapCrossAlignment.end,
               spacing: TracendSpacing.xxs,
+              runSpacing: TracendSpacing.xxs,
               children: [
                 Text(
                   consumed,
@@ -321,7 +348,7 @@ class _HalfCell extends StatelessWidget {
     return Semantics(
       label: semanticsLabel,
       child: Container(
-        padding: const EdgeInsets.all(TracendSpacing.sm),
+        padding: const EdgeInsets.all(TargetsGrid._cellPadding),
         decoration: BoxDecoration(
           color: colors.surfaceRaised,
           borderRadius: BorderRadius.circular(TracendRadii.control),
@@ -330,10 +357,11 @@ class _HalfCell extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _CellLabel(label: label, color: swatch),
-            const SizedBox(height: TracendSpacing.xxs),
+            const SizedBox(height: TracendSpacing.xs),
             Wrap(
               crossAxisAlignment: WrapCrossAlignment.end,
               spacing: TracendSpacing.xxs,
+              runSpacing: TracendSpacing.xxs,
               children: [
                 Text(
                   consumed,

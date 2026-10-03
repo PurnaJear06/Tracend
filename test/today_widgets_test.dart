@@ -93,7 +93,11 @@ void main() {
 
       expect(find.text('Today'), findsOneWidget);
       expect(find.text('72'), findsOneWidget);
-      expect(find.text('/ 100'), findsOneWidget);
+      expect(find.text('Recovery'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Recovery score 72 out of 100'),
+        findsOneWidget,
+      );
       expect(find.text('Good'), findsOneWidget);
       expect(find.text('Recovery score · High confidence'), findsOneWidget);
       expect(find.text('Complete Push day.'), findsOneWidget);
@@ -167,7 +171,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('/ 100'), findsNothing);
+      expect(find.text('Recovery'), findsNothing);
       expect(find.text('Keep the approved plan.'), findsOneWidget);
     });
 
@@ -237,7 +241,10 @@ void main() {
 
       expect(find.text("Today's workout"), findsOneWidget);
       expect(find.text('Push day'), findsOneWidget);
-      expect(find.text('2 exercises · 7 sets · about 60 min'), findsOneWidget);
+      expect(find.text('60 min'), findsOneWidget);
+      expect(find.text('2 exercises'), findsOneWidget);
+      expect(find.text('7 sets'), findsOneWidget);
+      expect(find.text('View workout'), findsOneWidget);
       await tester.tap(find.text('Push day'));
       expect(opened, 1);
     });
@@ -258,7 +265,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('1 exercise · 1 set'), findsOneWidget);
+      expect(find.text('1 exercise'), findsOneWidget);
+      expect(find.text('1 set'), findsOneWidget);
+      expect(find.textContaining('min'), findsNothing);
     });
 
     testWidgets('no workout is a rest day with an enabled week action', (
@@ -364,7 +373,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('1,240 of 2,300 kcal eaten'), findsOneWidget);
-      expect(find.text('Protein 120 g'), findsOneWidget);
+      expect(find.text('Protein'), findsOneWidget);
+      expect(find.text('120'), findsOneWidget);
+      expect(find.text('1,060 kcal left'), findsOneWidget);
       expect(find.text('30 g left'), findsOneWidget);
       expect(find.text('120g PRO'), findsNothing);
       await tester.tap(find.text('Log a meal'));

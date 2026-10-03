@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -181,6 +183,10 @@ class SupabaseNotificationRepository implements NotificationRepository {
     }
   }
 
+  /// Applies the choices on the device, then saves the two reminder choices
+  /// on the server when one of them changed. The rest alert is device-only,
+  /// so a rest-only change never waits for the server, and a failed server
+  /// save rolls back the reminders but keeps the rest choice as applied.
   @override
   Future<NotificationPreferences> configure({
     required bool dailyCheckIn,
@@ -193,6 +199,13 @@ class SupabaseNotificationRepository implements NotificationRepository {
       weeklyReview: weeklyReview,
       restTimerAlertsEnabled: restTimerAlertsEnabled,
     );
+    if (dailyCheckIn == previous.dailyCheckIn &&
+        weeklyReview == previous.weeklyReview) {
+      if (updated.authorizationStatus != previous.authorizationStatus) {
+        unawaited(_syncPermission(updated));
+      }
+      return updated;
+    }
     try {
       await _store.save(updated);
       return updated;
@@ -201,9 +214,19 @@ class SupabaseNotificationRepository implements NotificationRepository {
       await _device.configure(
         dailyCheckIn: previous.dailyCheckIn,
         weeklyReview: previous.weeklyReview,
-        restTimerAlertsEnabled: previous.restTimerAlertsEnabled,
+        restTimerAlertsEnabled: updated.restTimerAlertsEnabled,
       );
       rethrow;
+    }
+  }
+
+  /// Records a permission change made by the rest toggle (iOS asked for the
+  /// first time). Best effort: the next reminder save sends it again.
+  Future<void> _syncPermission(NotificationPreferences preferences) async {
+    try {
+      await _store.save(preferences);
+    } catch (e) {
+      debugPrint('Non-critical error: notification permission not synced: $e');
     }
   }
 }

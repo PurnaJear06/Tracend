@@ -583,8 +583,8 @@ class _BriefSkeleton extends StatelessWidget {
 }
 
 /// The loaded brief, in reading order (UX_FLOWS.md §5): the verdict, the
-/// check-in and today's workout, then the evidence (recovery drivers, the
-/// 7-day trend, sleep), food, and the coach note.
+/// check-in and today's workout, food and the coach note, then the evidence
+/// (the 7-day trend, recovery drivers, sleep).
 class _BriefContent extends StatelessWidget {
   const _BriefContent({
     required this.brief,
@@ -649,16 +649,34 @@ class _BriefContent extends StatelessWidget {
             onOpenWeek: onOpenWeek,
           ),
         ),
-        if (computed?.scores.recoveryBreakdown != null)
-          enter(
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SectionLabel('Recovery drivers'),
-                RecoveryReadoutCard(computed: computed!),
-              ],
-            ),
+        enter(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SectionLabel('Food'),
+              FutureBuilder<NutritionTargets?>(
+                future: targets,
+                builder: (context, snapshot) => MetabolicTargetCard(
+                  consumed: brief.nutrition,
+                  targets: snapshot.data,
+                  onLog: onOpenNutrition,
+                ),
+              ),
+            ],
           ),
+        ),
+        enter(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SectionLabel('Coach note'),
+              _CoachPerspectiveSection(
+                latestDecision: latestDecision,
+                aiAllowed: aiAllowed,
+              ),
+            ],
+          ),
+        ),
         enter(
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -710,6 +728,16 @@ class _BriefContent extends StatelessWidget {
             ],
           ),
         ),
+        if (computed?.scores.recoveryBreakdown != null)
+          enter(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SectionLabel('Recovery drivers'),
+                RecoveryReadoutCard(computed: computed!),
+              ],
+            ),
+          ),
         if (computed != null)
           enter(
             Column(
@@ -720,34 +748,6 @@ class _BriefContent extends StatelessWidget {
               ],
             ),
           ),
-        enter(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SectionLabel('Food'),
-              FutureBuilder<NutritionTargets?>(
-                future: targets,
-                builder: (context, snapshot) => MetabolicTargetCard(
-                  consumed: brief.nutrition,
-                  targets: snapshot.data,
-                  onLog: onOpenNutrition,
-                ),
-              ),
-            ],
-          ),
-        ),
-        enter(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SectionLabel('Coach note'),
-              _CoachPerspectiveSection(
-                latestDecision: latestDecision,
-                aiAllowed: aiAllowed,
-              ),
-            ],
-          ),
-        ),
       ],
     );
   }

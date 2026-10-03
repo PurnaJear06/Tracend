@@ -80,6 +80,15 @@ decision. Unlinked exercises show no muscles; nothing is guessed.
   exercise history copy.
 - Stacked PRs get no CI (CI runs on PRs into `main` and `feature/**`), so stacked work was checked
   on scratch `feature/**` branches and then integrated.
+- Device check of #79 (build 317), owner feedback: Today read as a health report, not a training
+  app. Rebuilt it with a recovery dial and vitals, a check-in call to action, a bold workout card
+  with a lime action, and food rings; food and the coach note now come before the evidence.
+  Nutrition's "From confirmed meals" tiles got more room. The rest-alert toggle no longer needs
+  the server: a rest-only change saves on the device, and a failed reminder save rolls back only
+  the daily and weekly choices (GPT review P2).
+- Muscle map missing on the owner's device: the hero hides the map when no planned exercise links
+  to the catalog, and the owner's plan predates the catalog. Waiting on the owner's read-only
+  name-match query before choosing a fix.
 
 ## PR 1: backend data
 

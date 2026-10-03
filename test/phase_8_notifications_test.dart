@@ -165,22 +165,71 @@ void main() {
       isFalse,
     );
   });
+
+  testWidgets(
+    'rest alerts turn on while reminders cannot reach the server, and a '
+    'failed reminder save leaves them on',
+    (tester) async {
+      final device = _NotificationRepository(status: 'authorized');
+      final repository = SupabaseNotificationRepository.withStore(
+        store: _OfflineStore(),
+        device: device,
+      );
+      await _pumpAccount(tester, repository);
+
+      await _toggle(tester, 'Rest timer alerts');
+      expect(find.byType(CupertinoActionSheet), findsNothing);
+      expect(device.restTimerAlerts, isTrue);
+      expect(
+        tester.widget<Switch>(_switchFor('Rest timer alerts')).value,
+        isTrue,
+      );
+      expect(find.textContaining('could not be updated'), findsNothing);
+
+      await _toggle(tester, 'Daily check-in reminder');
+      expect(
+        find.text('Notifications could not be updated. Try again.'),
+        findsOneWidget,
+      );
+      expect(device.dailyCheckIn, isFalse);
+      expect(device.restTimerAlerts, isTrue);
+      expect(
+        tester.widget<Switch>(_switchFor('Daily check-in reminder')).value,
+        isFalse,
+      );
+      expect(
+        tester.widget<Switch>(_switchFor('Rest timer alerts')).value,
+        isTrue,
+      );
+    },
+  );
+}
+
+class _OfflineStore implements NotificationPreferenceStore {
+  @override
+  Future<NotificationPreferences?> load() async => throw StateError('offline');
+
+  @override
+  Future<void> save(NotificationPreferences preferences) async =>
+      throw StateError('offline');
 }
 
 class _NotificationRepository implements NotificationRepository {
-  _NotificationRepository({this.deny = false});
+  _NotificationRepository({this.deny = false, this.status = 'not_determined'});
 
   final bool deny;
+  final String status;
   int calls = 0;
   bool dailyCheckIn = false;
   bool weeklyReview = false;
   bool restTimerAlerts = false;
 
   @override
-  Future<NotificationPreferences> load() async => const NotificationPreferences(
-    authorizationStatus: 'not_determined',
-    dailyCheckIn: false,
-    weeklyReview: false,
+  Future<NotificationPreferences> load() async => NotificationPreferences(
+    authorizationStatus: status,
+    dailyCheckIn: dailyCheckIn,
+    weeklyReview: weeklyReview,
+    restTimerAlertsEnabled: restTimerAlerts,
   );
 
   @override

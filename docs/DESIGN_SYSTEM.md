@@ -312,10 +312,31 @@ pills; a selected chip is a lime fill with `onAccentSignal` text.
 
 ### 5.2 Data components
 
+#### `TodayHero` (recovery dial)
+
+The Today verdict card leads with a 270° recovery dial: a 9%-of-size stroke on a `surfaceRaised`
+track, filled to the score in the band's state colour (`stateStable`, `accentAmber`,
+`stateAttention`; never lime, which is not a health signal), with a soft blurred copy of the arc
+under it and a white head where it ends. The score counts up inside in Archivo ExtraBold. The arc
+sweeps in over 1.1 s once; under reduced motion it is drawn at its value. A faint radial wash of
+the band colour sits behind the dial (16% dark, 9% light), the card's only gradient. Beside the
+dial, today's vitals (Sleep, Resting HR, HRV) are hairline-separated lines with Archivo
+SemiCondensed values; above 1.3× text they move under the dial.
+
+#### Today's workout card and food rings
+
+`SessionPlanCard` is the Today training card: lime-ink "Today's workout" kicker, the name at 26pt
+Archivo, a lime disc with the training glyph, stat pills (`surfaceRaised`, numeric value + unit)
+and a full-width lime **View workout** pill (`accentSignal` / `onAccentSignal`). The training
+load line closes the card under a hairline. `MetabolicTargetCard` shows two ring tiles: calories
+in `accentSignalRing` (the primary progress ring) and protein in `stateStable`, the amount inside
+and "N left" below. The morning check-in is a lime-outlined call to action with a **Check in**
+pill until it is done.
+
 #### `RecoveryReadoutCard`
 
-Today's recovery drivers, in their own section under the workout (the score lives in the Today
-verdict card above). Five plain rows in words, such as "Heart rate variability: normal for you,
+Today's recovery drivers, in their own section under the 7-day trend (the score lives in the
+Today verdict card above). Five plain rows in words, such as "Heart rate variability: normal for you,
 58 ms"; resting heart rate and breathing rate are worded from the measurement because their
 z-scores are inverted. A driver without a usable value or baseline reads "not enough data yet",
 never a zero. One gated exception: a sleep row whose value is proven valid but whose baseline is
