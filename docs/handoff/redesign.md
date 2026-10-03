@@ -13,7 +13,7 @@ integrated PRs, and the three device checkpoints became two.
 
 **Worktrees** (remove each after the final merge): `/Volumes/Crucial X9/dev/.tracend-worktrees/`
 `redesign`, `rd-foundation`, `rd-widgets`, `rd-logging-data`, `rd-train-data`, `rd-brand`,
-`rd-base`, and `ui-logging`, `ui-train`, `ui-today`, `ui-coach`, `ui-nutrition-progress`,
+`rd-base`, `rd-screens`, `rd-slug`, and `ui-logging`, `ui-train`, `ui-today`, `ui-coach`, `ui-nutrition-progress`,
 `ui-account`.
 
 ## Status
@@ -32,7 +32,8 @@ integrated PRs, and the three device checkpoints became two.
 | Coach | `claude/redesign-ui-coach` | integrated into screens |
 | Nutrition and Progress | `claude/redesign-ui-nutrition-progress` | integrated into screens |
 | Account, onboarding, auth | `claude/redesign-ui-account` | integrated into screens |
-| **Screens** (six branches integrated) | `claude/redesign-screens` | PR to `main`. 🔒 device check 2: a real workout |
+| **Screens** (six branches integrated) | `claude/redesign-screens` (#79) | Owner merges, then installs from `main` for device check 2: a real workout |
+| Catalog links for older plans (SQL) | `claude/plan-exercise-links` (#80) | Merged 2026-10-03 |
 
 ## Phase 0 picks (owner, 2026-10-03)
 
@@ -48,8 +49,11 @@ integrated PRs, and the three device checkpoints became two.
    launch motion were not objected to and ship as prototyped.
 
 The muscle map needs planned exercises linked to the catalog. Older plans have no slug, so they
-light nothing until re-planned; the name to slug backfill still waits for the owner's count and
-decision. Unlinked exercises show no muscles; nothing is guessed.
+lit nothing. Migration `20261003120000_plan_exercise_catalog_links.sql` (owner decision 2026-10-03:
+"implement it as the plan said") links each planned exercise whose name is exactly a catalog name
+(exercise history key: lowercased, trimmed, spaces collapsed; a single match only) and gives its
+prescribed performances the same slug. Everything else stays unlinked and shows no muscles;
+nothing is guessed.
 
 ## Decisions made during the build
 
@@ -136,8 +140,8 @@ Deviation from the plan, on purpose: the day-level reference set uses only days 
 athlete reported, so the default efforts of the first 28 days never shape the personal
 percentiles. The plan's "28 days before, zero days excluded" rule is otherwise as written.
 
-Not in PR 1: the name → slug backfill for older planned exercises. It changes approved plan rows,
-so it waits for the owner's count and decision.
+Not in PR 1: the name → slug link for older planned exercises. It shipped separately in
+`20261003120000_plan_exercise_catalog_links.sql`; pgTAP `plan_exercise_catalog_links_test.sql`.
 
 Verification: pgTAP `train_redesign_data_test.sql` (65 checks) through CI, because the local
 Colima VM hung on start again; Dart contract fixtures `training_hub_v1_6.json` and

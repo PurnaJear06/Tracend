@@ -13,7 +13,8 @@ screens, built in parallel. Device checks drop to two: after the foundation, and
 with a real workout. Workstream state: [`docs/handoff/redesign.md`](./handoff/redesign.md). The
 foundation (#78) merged and deployed on 2026-10-03 (`12f5bbb`, migration applied); the six screens
 are integrated in one PR. The installed app sends the fixed session effort of 8 until the screens
-PR ships the new logging.
+PR ships the new logging. Older plans' exercises are linked to the catalog by exact name (#80, SQL
+only) so the Train muscle map can light them.
 
 **Previous priority:** UI polish, so the app reads as a finished consumer product rather than a
 beta full of logs. The owner approved the plan on 2026-10-01 and chose to start it before the full
