@@ -287,6 +287,43 @@ void main() {
         isNotNull,
       );
     });
+
+    testWidgets('the intro plays on a cold start only, never on a retry', (
+      tester,
+    ) async {
+      final server = _Server();
+      server.routes['GET /auth/v1/user'] = () =>
+          Future.error(http.ClientException('offline'));
+      await _storeSession(
+        server.client,
+        DateTime.now().add(const Duration(minutes: 50)),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.light,
+          home: Phase2Gate(environment: _environment, client: server.client),
+        ),
+      );
+      expect(find.bySemanticsLabel('Skip intro'), findsOneWidget);
+      expect(find.text('Restoring your session'), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text('Connection needed'), findsOneWidget);
+      expect(find.text('Tracend'), findsNothing);
+
+      // The retry waits on Auth: the loader shows, not the intro.
+      final answer = Completer<http.Response>();
+      server.routes['GET /auth/v1/user'] = () => answer.future;
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+      expect(find.bySemanticsLabel('Restoring your session'), findsOneWidget);
+      expect(find.bySemanticsLabel('Skip intro'), findsNothing);
+      expect(find.text('Tracend'), findsNothing);
+
+      answer.completeError(http.ClientException('offline'));
+      await tester.pumpAndSettle();
+      expect(find.text('Connection needed'), findsOneWidget);
+    });
   });
 
   group('deleting the account', () {

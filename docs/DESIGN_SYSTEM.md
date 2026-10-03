@@ -173,6 +173,39 @@ Material treatments (Phase 5 v2, "Precision Pro"):
 - Glassmorphism and glow remain prohibited as ambient decoration; the sanctioned glass sites
   above are the complete list.
 
+### 3.5 Brand mark, app icon and launch screen
+
+The mark is a chalk T with a lime trajectory arc and a dot resting on the arc. It is drawn in code,
+in `lib/shared/brand/tracend_mark.dart` (1024 × 1024 design space), and every raster comes from
+that one source.
+
+| Brand colour  | Hex       | Use                                |
+| ------------- | --------- | ---------------------------------- |
+| Graphite      | `#0C0D0E` | Icon and launch background         |
+| Chalk         | `#F4F4F1` | The T                              |
+| Lime          | `#C8F05A` | The arc and its dot                |
+| Lime on light | `#7FA51A` | The loader's dot on light surfaces |
+
+These are `TracendBrandColors`, fixed constants rather than theme tokens: the mark looks the same
+in light and dark mode.
+
+- **`TracendMark(size:)`** draws the finished mark. It is an image named "Tracend" for VoiceOver;
+  pass `semanticLabel: null` when visible text already says Tracend. On a light surface pass a dark
+  `letterColor`, because the chalk T is drawn for graphite.
+- **App icon** (`ios/Runner/Assets.xcassets/AppIcon.appiconset`): the mark on opaque graphite with
+  no alpha channel, plus the iOS 18 variants. The dark icon is the same mark on a transparent
+  background, so iOS lays its own dark backdrop. The tinted icon is grayscale on black, with a white
+  T and a light-gray arc, which iOS tints by brightness.
+- **Launch screen**: the Info.plist `UILaunchScreen` shows the `LaunchBackground` colour (graphite)
+  with the `LaunchImage` (the 132-point mark) centred. It has no storyboard. The intro draws its
+  mark at the same size and position, so the static frame hands over to the motion without a jump.
+- **Regenerating**: run `./tool/render_app_icon.sh`. `test/brand/app_icon_test.dart` renders the
+  1024 masters and the 3x launch image from the painter, `sips` scales every other size that the
+  catalogs' `Contents.json` lists, and the test then checks each size and the alpha rules. Never
+  edit the PNGs by hand.
+- `scripts/verify-app-bundle.sh` refuses a build whose compiled `Assets.car` lacks the icon (any,
+  dark and tinted, at 120 px and 1024 px) or the launch artwork.
+
 ## 4. Navigation
 
 The primary iOS tab bar has five labeled destinations:
@@ -401,8 +434,8 @@ Motion explains hierarchy and causality. It does not decorate idle screens.
   shows named progress and permits leaving.
 - Reduced Motion removes path morphing, parallax, and stagger while preserving immediate state
   change.
-- Haptics are limited to set completion, successful confirmation, accepted proposal, and
-  safety-critical warning.
+- Haptics are limited to set completion, successful confirmation, accepted proposal,
+  safety-critical warning, and the one light tap when the launch intro's dot settles.
 
 Implemented motion (all gated on `MediaQuery.disableAnimationsOf`, all motivated):
 
@@ -417,6 +450,23 @@ Implemented motion (all gated on `MediaQuery.disableAnimationsOf`, all motivated
   static. Tabular figures keep digits from jittering during the transition.
 - Tab capsule selection morphs in 160ms; tab labels clamp to 1.3× text scale (iOS tab bars keep
   labels near-fixed under Dynamic Type) so they never overflow the 70pt bar.
+- **Launch intro** (`TracendIntro`, 1.2s, only on a cold start while `Phase2Gate` restores the
+  stored session). Over the launch screen's graphite:
+  - the lime arc draws itself (0–460ms, ease-in-out);
+  - the dot rides the drawing head to the tip, rolls back with an ease-back overshoot and settles
+    onto the mark while growing from radius 22 to 36, with a light haptic as it lands (460–900ms);
+  - the T sweeps in behind an edge tilted to the arc's rise (380–860ms);
+  - the "Tracend" wordmark fades up 10pt in `TracendFonts.displayFamily` (760–1160ms).
+
+  The intro then fades out in 320ms. It plays once per launch and never loops. A tap anywhere, or
+  the Skip pill, ends it at once. A gate that is still restoring keeps the finished mark with a
+  `TracendLoader`, and a ready app is never held past the motion. Signing in and out never replays
+  the intro: those refreshes show the loader alone. Under Reduce Motion the finished mark shows
+  and crossfades away in 200ms, with no haptic.
+- **Brand loader** (`TracendLoader`, 28pt by default): the mark's arc in a faint text tint, with a
+  6pt dot riding along it and back (1s each way, `Cubic(0.45, 0, 0.25, 1)`). The dot is lime on
+  dark surfaces and `#7FA51A` on light ones. `semanticLabel` names what is loading. Under Reduce
+  Motion the dot rests where it sits on the mark.
 
 ## 7. States and Feedback
 
