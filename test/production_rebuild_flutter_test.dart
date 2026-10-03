@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
+import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/train/train_screen.dart';
@@ -70,14 +71,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: TracendTheme.dark,
-        home: CoachScreen(repository: repository),
+        home: CoachScreen(repository: repository, threadMemory: _NoMemory()),
       ),
     );
     await tester.pumpAndSettle();
-    expect(
-      find.text('7 of 8 sources available · 1 needs data'),
-      findsOneWidget,
-    );
+    expect(find.text('7 of 8 sources connected'), findsOneWidget);
     await tester.enterText(find.byType(TextField), 'What should I do next?');
     await tester.tap(find.byTooltip('Send message'));
     await tester.pumpAndSettle();
@@ -362,4 +360,13 @@ class _HealthkitCandidateRepository extends FixtureWorkoutRepository
     int durationSeconds,
     Map<String, dynamic> draft,
   ) async {}
+}
+
+/// No remembered thread, answered at once.
+class _NoMemory implements CoachThreadMemory {
+  @override
+  Future<String?> lastThreadId() async => null;
+
+  @override
+  Future<void> remember(String threadId) async {}
 }

@@ -7,7 +7,9 @@ import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
-import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/features/coach/widgets/coach_message_bubble.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
+import 'package:tracend/shared/widgets/tracend_toast.dart';
 
 Widget _app(CoachRepository repository, CoachThreadMemory memory) =>
     MaterialApp(
@@ -140,7 +142,7 @@ void main() {
     expect(repository.threadLoads, 2);
     await _openSheet(tester);
     expect(
-      find.widgetWithText(ListTile, 'How long until I reach 72 kg?'),
+      find.widgetWithText(TracendListRow, 'How long until I reach 72 kg?'),
       findsOneWidget,
     );
   });
@@ -161,7 +163,7 @@ void main() {
     expect(find.text('First question'), findsOneWidget);
 
     await _openSheet(tester);
-    await tester.tap(find.text('New'));
+    await tester.tap(find.text('New conversation'));
     await tester.pumpAndSettle();
 
     expect(find.text('First question'), findsNothing);
@@ -193,6 +195,10 @@ void main() {
     await _send(tester, 'How is my weight going?');
 
     expect(find.text('Data summary · not an AI answer'), findsOneWidget);
+    expect(find.textContaining('AI answer ·'), findsNothing);
+    // The diagnostic sits with the evidence, as a small secondary line.
+    await tester.tap(find.text('Evidence used and data gaps'));
+    await tester.pumpAndSettle();
     expect(
       find.text(
         'Beta diagnostic: provider_response_invalid · first attempt: '
@@ -200,7 +206,6 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.textContaining('AI response'), findsNothing);
 
     await tester.tap(find.text('Retry'));
     await tester.pumpAndSettle();
@@ -211,7 +216,8 @@ void main() {
     ]);
     expect(repository.created, 1);
     expect(find.text('Here is my full take.'), findsOneWidget);
-    expect(find.text('deepseek AI response'), findsOneWidget);
+    expect(find.text('AI answer · DeepSeek'), findsOneWidget);
+    expect(find.textContaining('deepseek'), findsNothing);
     expect(find.text('Retry'), findsNothing);
   });
 
@@ -235,6 +241,7 @@ void main() {
 
     expect(find.text('Safety note · not an AI answer'), findsOneWidget);
     expect(find.text('Data summary · not an AI answer'), findsNothing);
+    expect(find.textContaining('AI answer ·'), findsNothing);
     expect(find.text('Evidence used and data gaps'), findsNothing);
     expect(find.text('Beta diagnostic: provider_timeout'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
@@ -264,7 +271,7 @@ void main() {
     expect(find.text('Retry'), findsNothing);
 
     await _openSheet(tester);
-    await tester.tap(find.widgetWithText(ListTile, 'Later'));
+    await tester.tap(find.widgetWithText(TracendListRow, 'Later'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Retry'));
     await tester.pumpAndSettle();
@@ -273,14 +280,17 @@ void main() {
     expect(repository.created, 0);
   });
 
-  testWidgets('a real failure keeps the raw error text and still refreshes '
-      'the list', (tester) async {
+  testWidgets('a real failure is one inline message under the failed '
+      'question, with the raw text as its second line, plus a toast', (
+    tester,
+  ) async {
     await _tall(tester);
     final repository = _HistoryRepository(
       replies: [
         Exception(
           'FunctionException(status: 503, details: {code: provider_http_error})',
         ),
+        _answer('a2', 'Back again.'),
       ],
     );
     await tester.pumpWidget(_app(repository, _Memory()));
@@ -290,9 +300,37 @@ void main() {
 
     const raw =
         'FunctionException(status: 503, details: {code: provider_http_error})';
-    expect(find.widgetWithText(SnackBar, raw), findsOneWidget);
-    expect(find.widgetWithText(TracendCard, raw), findsOneWidget);
+    final inline = find.byType(CoachTurnError);
+    expect(inline, findsOneWidget);
+    expect(
+      find.descendant(
+        of: inline,
+        matching: find.text(
+          'Coach couldn’t answer. Your approved plan is unchanged.',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: inline, matching: find.text(raw)), findsOne);
+    // Under the question it failed to answer.
+    expect(
+      tester.getTopLeft(inline).dy,
+      greaterThan(tester.getBottomLeft(find.text('Hello')).dy),
+    );
+    // The toast replaces the SnackBar; it is never the only copy.
+    expect(find.text('Coach couldn’t answer'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
     expect(repository.threadLoads, 2);
+
+    await tester.pumpAndSettle(TracendToast.visibleFor);
+    expect(find.text('Coach couldn’t answer'), findsNothing);
+    expect(inline, findsOneWidget);
+
+    await tester.tap(find.descendant(of: inline, matching: find.text('Retry')));
+    await tester.pumpAndSettle();
+    expect(repository.sent.map((sent) => sent.$2), ['Hello', 'Hello']);
+    expect(find.byType(CoachTurnError), findsNothing);
+    expect(find.text('Back again.'), findsOneWidget);
   });
 
   testWidgets('a reply that arrives after switching conversations is not '
@@ -311,7 +349,7 @@ void main() {
 
     await _send(tester, 'A slow question');
     await _openSheet(tester);
-    await tester.tap(find.text('New'));
+    await tester.tap(find.text('New conversation'));
     await tester.pumpAndSettle();
     late.complete(_answer('late', 'A late answer'));
     await tester.pumpAndSettle();
@@ -336,7 +374,7 @@ void main() {
 
     await _send(tester, 'First question');
     await _openSheet(tester);
-    await tester.tap(find.text('New'));
+    await tester.tap(find.text('New conversation'));
     await tester.pumpAndSettle();
     creating.complete('thread-1');
     await tester.pumpAndSettle();
@@ -354,8 +392,14 @@ void main() {
     expect(memory.remembered, ['thread-2']);
 
     await _openSheet(tester);
-    expect(find.widgetWithText(ListTile, 'First question'), findsOneWidget);
-    expect(find.widgetWithText(ListTile, 'Second question'), findsOneWidget);
+    expect(
+      find.widgetWithText(TracendListRow, 'First question'),
+      findsOneWidget,
+    );
+    expect(
+      find.widgetWithText(TracendListRow, 'Second question'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a new conversation is listed as soon as its thread exists', (
@@ -371,7 +415,7 @@ void main() {
     await _openSheet(tester);
 
     expect(
-      find.widgetWithText(ListTile, 'How long until I reach 72 kg?'),
+      find.widgetWithText(TracendListRow, 'How long until I reach 72 kg?'),
       findsOneWidget,
     );
     reply.complete(_answer('a1', 'About 18 weeks at your current trend.'));
@@ -403,8 +447,8 @@ void main() {
     await tester.pumpAndSettle();
     await _openSheet(tester);
 
-    expect(find.widgetWithText(ListTile, 'Newest title'), findsOneWidget);
-    expect(find.widgetWithText(ListTile, 'Stale title'), findsNothing);
+    expect(find.widgetWithText(TracendListRow, 'Newest title'), findsOneWidget);
+    expect(find.widgetWithText(TracendListRow, 'Stale title'), findsNothing);
   });
 
   testWidgets('a list requested before a new conversation existed does not '
@@ -425,7 +469,7 @@ void main() {
 
     await _send(tester, 'Follow-up in the first chat');
     await _openSheet(tester);
-    await tester.tap(find.text('New'));
+    await tester.tap(find.text('New conversation'));
     await tester.pumpAndSettle();
     await _send(tester, 'A brand new question');
     beforeNewThread.complete([_thread('t1', 'First chat')]);
@@ -433,10 +477,10 @@ void main() {
     await _openSheet(tester);
 
     expect(
-      find.widgetWithText(ListTile, 'A brand new question'),
+      find.widgetWithText(TracendListRow, 'A brand new question'),
       findsOneWidget,
     );
-    expect(find.widgetWithText(ListTile, 'First chat'), findsOneWidget);
+    expect(find.widgetWithText(TracendListRow, 'First chat'), findsOneWidget);
     secondReply.complete(_answer('a2', 'Two'));
     await tester.pumpAndSettle();
   });
@@ -475,6 +519,123 @@ void main() {
     loading.complete([_user('u1', 'First question')]);
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(find.byType(TextField)).enabled, isTrue);
+  });
+
+  group('deleting a saved conversation', () {
+    Future<_HistoryRepository> openSheet(WidgetTester tester) async {
+      await _tall(tester);
+      final repository = _HistoryRepository(
+        threads: [_thread('t1', 'Open chat'), _thread('t2', 'Old chat')],
+        messages: {
+          't1': [_user('u1', 'Open question')],
+          't2': [_user('u2', 'Old question')],
+        },
+      );
+      await tester.pumpWidget(_app(repository, _Memory('t1')));
+      await tester.pumpAndSettle();
+      await _openSheet(tester);
+      return repository;
+    }
+
+    Future<void> swipe(WidgetTester tester, String title) async {
+      await tester.drag(
+        find.widgetWithText(TracendListRow, title),
+        const Offset(-500, 0),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('asks first; Cancel keeps it', (tester) async {
+      final repository = await openSheet(tester);
+
+      await swipe(tester, 'Old chat');
+      expect(find.text('Delete this conversation?'), findsOneWidget);
+      expect(find.text('Delete conversation'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(repository.deleted, isEmpty);
+      expect(find.widgetWithText(TracendListRow, 'Old chat'), findsOneWidget);
+    });
+
+    testWidgets('Delete conversation removes it and says so', (tester) async {
+      final repository = await openSheet(tester);
+
+      await swipe(tester, 'Old chat');
+      await tester.tap(find.text('Delete conversation'));
+      await tester.pumpAndSettle();
+
+      expect(repository.deleted, ['t2']);
+      expect(find.widgetWithText(TracendListRow, 'Old chat'), findsNothing);
+      expect(find.text('Conversation deleted'), findsOneWidget);
+      // The open conversation is untouched.
+      expect(find.text('Open question'), findsOneWidget);
+      await tester.pumpAndSettle(TracendToast.visibleFor);
+    });
+
+    testWidgets('deleting the open conversation starts a new one', (
+      tester,
+    ) async {
+      final repository = await openSheet(tester);
+
+      await swipe(tester, 'Open chat');
+      await tester.tap(find.text('Delete conversation'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(400, 40));
+      await tester.pumpAndSettle();
+
+      expect(repository.deleted, ['t1']);
+      expect(find.text('Open question'), findsNothing);
+      expect(find.textContaining('Ask about training'), findsOneWidget);
+      await tester.pumpAndSettle(TracendToast.visibleFor);
+    });
+
+    testWidgets('a failed delete puts the conversation back', (tester) async {
+      final repository = await openSheet(tester);
+      repository.deleteError = Exception('network down');
+
+      await swipe(tester, 'Old chat');
+      await tester.tap(find.text('Delete conversation'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(TracendListRow, 'Old chat'), findsOneWidget);
+      expect(find.text('Couldn’t delete the conversation'), findsOneWidget);
+      await tester.pumpAndSettle(TracendToast.visibleFor);
+      await tester.tapAt(const Offset(400, 40));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('The conversation could not be deleted.'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  testWidgets('while a reply is on its way the Coach is thinking, and the '
+      'send plays the light haptic', (tester) async {
+    await _tall(tester);
+    final haptics = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') {
+          haptics.add(call.arguments as String);
+        }
+        return null;
+      },
+    );
+    final reply = Completer<CoachMessage>();
+    final repository = _HistoryRepository(replies: [reply]);
+    await tester.pumpWidget(_app(repository, _Memory()));
+    await tester.pumpAndSettle();
+
+    await _send(tester, 'How was my week?');
+
+    expect(haptics, ['HapticFeedbackType.lightImpact']);
+    expect(find.text('Coach is thinking'), findsOneWidget);
+    reply.complete(_answer('a1', 'A steady week.'));
+    await tester.pumpAndSettle();
+    expect(find.text('Coach is thinking'), findsNothing);
+    expect(find.text('A steady week.'), findsOneWidget);
   });
 }
 
@@ -553,8 +714,17 @@ class _HistoryRepository implements CoachRepository, CoachChatRepository {
     return Future.value(reply as CoachMessage);
   }
 
+  final deleted = <String>[];
+
+  /// When set, deleteThread fails with it.
+  Object? deleteError;
+
   @override
-  Future<void> deleteThread(String threadId) async {}
+  Future<void> deleteThread(String threadId) async {
+    if (deleteError case final error?) throw error;
+    deleted.add(threadId);
+    _threads.removeWhere((thread) => thread.id == threadId);
+  }
 
   @override
   Future<CoachDecision?> loadLatest() async => null;

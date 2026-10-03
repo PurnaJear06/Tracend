@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/shared/widgets/evidence_accordion.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 
 Widget _wrap(Widget child) {
   return MaterialApp(
@@ -11,7 +12,11 @@ Widget _wrap(Widget child) {
       brightness: Brightness.dark,
       extensions: const [TracendColors.dark],
     ),
-    home: Scaffold(body: SingleChildScrollView(child: child)),
+    // Full motion, so the height animation runs; Reduce Motion still wins.
+    home: TracendMotionScope(
+      level: TracendMotionLevel.full,
+      child: Scaffold(body: SingleChildScrollView(child: child)),
+    ),
   );
 }
 

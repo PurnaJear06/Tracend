@@ -4,11 +4,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
+import 'package:tracend/features/coach/coach_thread_memory.dart';
+import 'package:tracend/features/coach/widgets/coach_message_bubble.dart';
+import 'package:tracend/shared/widgets/tracend_toast.dart';
 
 Widget _app(CoachRepository repository) => MaterialApp(
   theme: TracendTheme.dark,
-  home: Scaffold(body: CoachScreen(repository: repository)),
+  home: Scaffold(
+    body: CoachScreen(repository: repository, threadMemory: _NoMemory()),
+  ),
 );
+
+class _NoMemory implements CoachThreadMemory {
+  @override
+  Future<String?> lastThreadId() async => null;
+
+  @override
+  Future<void> remember(String threadId) async {}
+}
 
 Future<void> _tall(WidgetTester tester) async {
   tester.view.physicalSize = const Size(800, 2400);
@@ -26,16 +39,16 @@ void main() {
     await tester.pumpWidget(_app(_ChatRepository()));
     await tester.pumpAndSettle();
     expect(find.text('Your coaching context'), findsOneWidget);
-    expect(
-      find.text('7 of 8 sources available · 1 needs data'),
-      findsOneWidget,
-    );
+    expect(find.text('7 of 8 sources connected'), findsOneWidget);
     // Collapsed by default: source rows are not mounted yet.
     expect(find.text('Apple Health summaries'), findsNothing);
     await tester.tap(find.text('Your coaching context'));
     await tester.pumpAndSettle();
     expect(find.text('Apple Health summaries'), findsOneWidget);
-    expect(find.textContaining('latest 2026-07-10'), findsOneWidget);
+    // Dates read as words, never as the stored ISO date.
+    expect(find.textContaining('latest Fri 10 Jul'), findsOneWidget);
+    expect(find.textContaining('2026-07-10'), findsNothing);
+    expect(find.text('No confirmed records yet'), findsOneWidget);
   });
 
   testWidgets('an ongoing conversation has no pinned cards above it', (
@@ -71,8 +84,12 @@ void main() {
     await tester.tap(find.text('Evidence used and data gaps'));
     await tester.pumpAndSettle();
     expect(find.text('Recovery is within baseline'), findsOneWidget);
-    expect(find.text('feature_snapshot'), findsOneWidget);
-    expect(find.textContaining('Missing: workout_execution'), findsOneWidget);
+    // Sources and data gaps read as words, never as stored codes.
+    expect(find.text('Calculated from your health data'), findsOneWidget);
+    expect(find.text('feature_snapshot'), findsNothing);
+    expect(find.text('Data gaps'), findsOneWidget);
+    expect(find.text('Logged workouts'), findsOneWidget);
+    expect(find.textContaining('workout_execution'), findsNothing);
   });
 
   testWidgets('suggested follow-ups invoke the real send callback', (
@@ -103,10 +120,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Coach couldn’t complete that response. Please try again.'),
-      findsWidgets,
+      find.widgetWithText(
+        CoachTurnError,
+        'Coach couldn’t complete that response. Please try again.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.widgetWithText(
+        CoachTurnError,
+        'Beta diagnostic: provider_response_invalid',
+      ),
+      findsOneWidget,
     );
     expect(find.textContaining('Unexpected end of JSON input'), findsNothing);
+    await tester.pumpAndSettle(TracendToast.visibleFor);
   });
 }
 
