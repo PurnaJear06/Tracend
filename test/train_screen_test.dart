@@ -223,6 +223,48 @@ void main() {
       },
     );
 
+    testWidgets('a mostly unlinked workout shows no partial map', (
+      tester,
+    ) async {
+      PlannedExercise ex(int order, String name, {String? slug}) =>
+          PlannedExercise(
+            order: order,
+            name: name,
+            setCount: 3,
+            repMin: 8,
+            repMax: 12,
+            targetRpe: 8,
+            exerciseSlug: slug,
+            primaryMuscles: slug == null
+                ? const []
+                : const [MuscleGroup.shoulders],
+          );
+      final pull = PlannedWorkout(
+        id: 'w-pull',
+        name: 'Pull day',
+        objective: 'Back and biceps.',
+        estimatedMinutes: 60,
+        weekday: 5,
+        exercises: [
+          ex(1, 'Pull-Ups or Lat Pulldown'),
+          ex(2, 'Chest-Supported Row'),
+          ex(3, 'Face Pull', slug: 'face-pull'),
+          ex(4, 'Hammer Curl'),
+        ],
+      );
+      await _pumpTrain(
+        tester,
+        repository: TrainFixtureRepository(hub: trainHub(workouts: [pull])),
+      );
+      expect(find.text('Pull day'), findsOneWidget);
+      expect(find.byType(MuscleMap), findsNothing);
+      expect(find.text('Shoulders'), findsNothing);
+      expect(
+        find.text('Muscle map appears with your next plan.'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('Start workout plays the heavy haptic and opens logging', (
       tester,
     ) async {

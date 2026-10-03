@@ -436,4 +436,42 @@ void main() {
       );
     });
   });
+
+  group('muscleMapCoversWorkout', () {
+    PlannedExercise ex(int sets, {required bool linked}) => PlannedExercise(
+      order: 1,
+      name: 'Exercise',
+      setCount: sets,
+      repMin: 8,
+      repMax: 10,
+      targetRpe: 8,
+      exerciseSlug: linked ? 'face-pull' : null,
+      primaryMuscles: linked ? const [MuscleGroup.shoulders] : const [],
+    );
+
+    test('one linked exercise on an eight-exercise day is not enough', () {
+      expect(
+        muscleMapCoversWorkout([
+          ex(3, linked: true),
+          for (var i = 0; i < 7; i++) ex(3, linked: false),
+        ]),
+        isFalse,
+      );
+    });
+
+    test('three quarters of the sets linked is enough', () {
+      expect(
+        muscleMapCoversWorkout([ex(9, linked: true), ex(3, linked: false)]),
+        isTrue,
+      );
+      expect(
+        muscleMapCoversWorkout([ex(8, linked: true), ex(4, linked: false)]),
+        isFalse,
+      );
+    });
+
+    test('a workout with no sets has no map', () {
+      expect(muscleMapCoversWorkout(const []), isFalse);
+    });
+  });
 }

@@ -33,8 +33,9 @@ The Train tab (2026-10-03 redesign, `lib/features/train/train_screen.dart`) read
   **workout overview** sheet (objective, warm-up, exercises, cooldown, then **Start workout** or
   **View summary**); the map opens the **muscles sheet** (front and back side by side, a row per
   muscle with its sets and exercises, rows and muscles selecting each other, and the note that only
-  catalog-linked exercises count). When no exercise in the workout is catalog-linked, the map and
-  chips are left out and the card says "Muscle map appears with your next plan." The one action is **Start workout** (heavy haptic), **Log this
+  catalog-linked exercises count). When catalog-linked exercises carry less than three quarters of
+  the workout's planned sets, the map and chips are left out (a partial map would misdescribe the
+  session) and the card says "Muscle map appears with your next plan." The one action is **Start workout** (heavy haptic), **Log this
   workout** for a past day with nothing logged, or **View summary** for a done day, whose sheet shows
   time, sets logged of planned, the athlete's own effort ("Not rated" for app defaults) and each
   exercise as logged. "Auto-completed from Apple Health" shows only when `completion_source` is

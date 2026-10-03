@@ -502,6 +502,26 @@ List<MuscleSets> muscleSetsFor(Iterable<PlannedExercise> exercises) {
   ];
 }
 
+/// The share of a workout's planned sets that must come from catalog-linked
+/// exercises before its muscle map is shown. Below it the map would show a
+/// fraction of the session as if it were all of it (one linked face pull
+/// lighting only shoulders on a back day), so it is left out.
+const muscleMapMinLinkedShare = 0.75;
+
+/// Whether the workout's linked exercises carry enough of its sets for the
+/// muscle map to describe the session ([muscleMapMinLinkedShare]).
+bool muscleMapCoversWorkout(Iterable<PlannedExercise> exercises) {
+  var total = 0;
+  var linked = 0;
+  for (final exercise in exercises) {
+    total += exercise.setCount;
+    if (exercise.exerciseSlug != null && exercise.primaryMuscles.isNotEmpty) {
+      linked += exercise.setCount;
+    }
+  }
+  return total > 0 && linked >= total * muscleMapMinLinkedShare;
+}
+
 /// The map's input: each worked group's tone.
 Map<MuscleGroup, MuscleTone> muscleTones(List<MuscleSets> sets) => {
   for (final entry in sets) entry.group: entry.tone,

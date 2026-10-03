@@ -72,7 +72,9 @@ class WorkoutHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    final sets = muscleSetsFor(workout.exercises);
+    final sets = muscleMapCoversWorkout(workout.exercises)
+        ? muscleSetsFor(workout.exercises)
+        : const <MuscleSets>[];
     final candidate = state == HeroDayState.done ? null : healthkitCandidate;
     return Container(
       padding: const EdgeInsets.all(18),
@@ -282,9 +284,10 @@ class _Heading extends StatelessWidget {
   }
 }
 
-/// Shown when none of the workout's exercises is linked to the exercise
-/// catalog (plans approved before it): the map is left out rather than
-/// guessed, and this says when it arrives.
+/// Shown when too few of the workout's sets come from catalog-linked
+/// exercises ([muscleMapCoversWorkout]; plans approved before the catalog):
+/// a partial map would misdescribe the session, so it is left out rather
+/// than guessed, and this says when it arrives.
 class _MapPending extends StatelessWidget {
   const _MapPending();
 

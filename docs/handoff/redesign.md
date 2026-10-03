@@ -98,6 +98,11 @@ nothing is guessed.
   wordmark and a zoom-through exit into the app. Today's food rings sweep in with a count-up, a
   gradient stroke with a glow and a head dot, and a second lap past the target. Food stays on
   Today, as it was before the redesign.
+- Owner device check of build 325: on a pull day only Face Pull matched a catalog name, so the
+  card lit shoulders alone for a back-and-biceps session. The Train card now shows the map only
+  when linked exercises carry at least three quarters of the planned sets
+  (`muscleMapCoversWorkout`); otherwise it says "Muscle map appears with your next plan." A
+  single exercise's map in focus logging is unchanged.
 - GPT review of b39a05a (3 × P2, fixed): a permission granted by the rest toggle now saves the
   status with the reminder choices already on the server (a reinstall reports both off), and a
   later reminder save waits for it; a load the athlete cleared stays cleared after Save and leave
