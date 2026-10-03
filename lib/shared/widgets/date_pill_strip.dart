@@ -223,7 +223,7 @@ class _DatePill extends StatelessWidget {
                 Text(
                   '${date.day}',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontFamily: TracendFonts.monoFamily,
+                    fontFamily: TracendFonts.numericFamily,
                     fontSize: 14,
                     color: enabled
                         ? selected

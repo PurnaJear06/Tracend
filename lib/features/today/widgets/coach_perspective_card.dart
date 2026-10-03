@@ -82,7 +82,7 @@ class _CoachPerspectiveCardState extends State<CoachPerspectiveCard> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontFamily: TracendFonts.monoFamily,
+                        fontFamily: TracendFonts.numericFamily,
                         fontSize: 11,
                         letterSpacing: 0.2,
                         color: colors.textSecondary,

@@ -34,7 +34,6 @@ class RecoveryReadoutCard extends StatelessWidget {
     final confidence = computed.dataConfidence;
     final lowConfidence = confidence == 'cold_start' || confidence == 'low';
     return PremiumGradientCard(
-      glow: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -71,7 +70,7 @@ class RecoveryReadoutCard extends StatelessWidget {
                 Text(
                   '/ 100',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    fontFamily: TracendFonts.monoFamily,
+                    fontFamily: TracendFonts.numericFamily,
                     color: colors.textSecondary,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
@@ -105,7 +104,7 @@ class RecoveryReadoutCard extends StatelessWidget {
 
   TextStyle _scoreStyle(BuildContext context) =>
       Theme.of(context).textTheme.displaySmall!.copyWith(
-        fontFamily: TracendFonts.monoFamily,
+        fontFamily: TracendFonts.numericFamily,
         fontSize: 44,
         height: 1.0,
         letterSpacing: -1.5,
@@ -405,7 +404,7 @@ class _DriverRow extends StatelessWidget {
                         textAlign: TextAlign.right,
                         style: Theme.of(context).textTheme.labelMedium
                             ?.copyWith(
-                              fontFamily: TracendFonts.monoFamily,
+                              fontFamily: TracendFonts.numericFamily,
                               fontSize: 11,
                               color: colors.textPrimary,
                               fontFeatures: const [
@@ -429,7 +428,7 @@ class _DriverRow extends StatelessWidget {
                     detail,
                     textAlign: TextAlign.right,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontFamily: TracendFonts.monoFamily,
+                      fontFamily: TracendFonts.numericFamily,
                       fontSize: 11,
                       color: missing
                           ? colors.textSecondary

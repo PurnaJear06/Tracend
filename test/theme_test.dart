@@ -38,45 +38,47 @@ void main() {
 
   test('dark graphics tokens meet the 3:1 graphics threshold on canvas', () {
     final dark = TracendColors.dark;
-    expect(_contrast(dark.actionPrimary, dark.canvas), greaterThanOrEqualTo(3));
-    expect(_contrast(dark.stateStable, dark.canvas), greaterThanOrEqualTo(3));
-    expect(_contrast(dark.accentAmber, dark.canvas), greaterThanOrEqualTo(3));
-    expect(_contrast(dark.accentNow, dark.canvas), greaterThanOrEqualTo(3));
-    expect(
-      _contrast(dark.stateAttention, dark.canvas),
-      greaterThanOrEqualTo(3),
-    );
-    expect(_contrast(dark.stateDanger, dark.canvas), greaterThanOrEqualTo(3));
+    for (final c in [
+      dark.actionPrimary,
+      dark.stateStable,
+      dark.accentAmber,
+      dark.accentSignalInk,
+      dark.accentSignalRing,
+      dark.stateAttention,
+      dark.stateDanger,
+    ]) {
+      expect(_contrast(c, dark.canvas), greaterThanOrEqualTo(3));
+      expect(_contrast(c, dark.surface), greaterThanOrEqualTo(3));
+    }
   });
 
-  test('light theme keeps the Phase-4 baseline palette', () {
-    const light = TracendColors.light;
-    expect(light.canvas, const Color(0xFFF3F6F8));
-    expect(light.surface, const Color(0xFFFFFFFF));
-    expect(light.textPrimary, const Color(0xFF10151D));
-    expect(light.textSecondary, const Color(0xFF556170));
-    expect(light.actionPrimary, const Color(0xFF4A57E8));
-    expect(light.stateStable, const Color(0xFF00796B));
+  test('palette A: graphite and signal lime', () {
+    expect(TracendColors.dark.canvas, const Color(0xFF0C0D0E));
+    expect(TracendColors.dark.surface, const Color(0xFF18191B));
+    expect(TracendColors.dark.accentSignal, const Color(0xFFC8F05A));
+    expect(TracendColors.light.canvas, const Color(0xFFF4F4F1));
+    expect(TracendColors.light.accentSignalInk, const Color(0xFF4E6A00));
   });
 
-  test('light accent tokens meet the 3:1 graphics threshold on canvas', () {
-    const light = TracendColors.light;
-    expect(_contrast(light.accentAmber, light.canvas), greaterThanOrEqualTo(3));
-    expect(_contrast(light.accentNow, light.canvas), greaterThanOrEqualTo(3));
-  });
-
-  test('light graphics tokens meet the 3:1 graphics threshold on canvas', () {
-    const light = TracendColors.light;
-    expect(
-      _contrast(light.actionPrimary, light.canvas),
-      greaterThanOrEqualTo(3),
-    );
-    expect(_contrast(light.stateStable, light.canvas), greaterThanOrEqualTo(3));
-    expect(
-      _contrast(light.stateAttention, light.canvas),
-      greaterThanOrEqualTo(3),
-    );
-    expect(_contrast(light.stateDanger, light.canvas), greaterThanOrEqualTo(3));
+  test('lime text is only ever ink-safe: lime fills carry dark ink', () {
+    for (final colors in [TracendColors.light, TracendColors.dark]) {
+      expect(
+        _contrast(colors.onAccentSignal, colors.accentSignal),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        _contrast(colors.accentSignalInk, colors.surface),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        _contrast(colors.actionOnPrimary, colors.actionPrimary),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        _contrast(colors.onStateGood, colors.stateStable),
+        greaterThanOrEqualTo(4.5),
+      );
+    }
   });
 
   test('primary text meets AA on canvas in both themes', () {
@@ -97,24 +99,32 @@ void main() {
     }
   });
 
-  test('dark theme uses the Precision Pro Stitch palette', () {
-    const dark = TracendColors.dark;
-    expect(dark.canvas, const Color(0xFF080B10));
-    expect(dark.surface, const Color(0xFF111827));
-    expect(dark.surfaceRaised, const Color(0xFF1A222F));
-    expect(dark.textSecondary, const Color(0xFF8894A8));
-    expect(dark.actionPrimary, const Color(0xFF8A94F5));
-    expect(dark.stateStable, const Color(0xFF45C4B5));
-    expect(dark.borderHairline, const Color(0xFF2D3748));
-    expect(dark.accentAmber, const Color(0xFFE2A45C));
-    expect(dark.accentNow, const Color(0xFFBCE85D));
+  test('light graphics tokens meet the 3:1 graphics threshold', () {
+    const light = TracendColors.light;
+    for (final c in [
+      light.actionPrimary,
+      light.stateStable,
+      light.accentAmber,
+      light.accentSignalInk,
+      light.accentSignalRing,
+      light.stateAttention,
+      light.stateDanger,
+    ]) {
+      expect(_contrast(c, light.canvas), greaterThanOrEqualTo(3));
+      expect(_contrast(c, light.surface), greaterThanOrEqualTo(3));
+    }
   });
 
-  test('shape lock: radii scale is 12/24/28', () {
-    expect(TracendRadii.control, 12.0);
-    expect(TracendRadii.card, 24.0);
-    expect(TracendRadii.decision, 28.0);
-  });
+  test(
+    'shape lock: inputs 12, cards 20, sheets 28, buttons and chips pill',
+    () {
+      expect(TracendRadii.control, 12.0);
+      expect(TracendRadii.card, 20.0);
+      expect(TracendRadii.decision, 28.0);
+      expect(TracendRadii.sheet, 28.0);
+      expect(TracendRadii.pill, 999.0);
+    },
+  );
 }
 
 double _contrast(Color foreground, Color background) {

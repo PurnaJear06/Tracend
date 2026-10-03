@@ -11,9 +11,7 @@ void main() {
       MaterialApp(
         theme: TracendTheme.dark,
         home: const Scaffold(
-          body: Center(
-            child: PremiumGradientCard(glow: true, child: Text('evidence')),
-          ),
+          body: Center(child: PremiumGradientCard(child: Text('evidence'))),
         ),
       ),
     );

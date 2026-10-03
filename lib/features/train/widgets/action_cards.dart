@@ -197,8 +197,6 @@ class HealthkitCompleteCard extends StatelessWidget {
           'on ${months[candidate.localDate.month - 1]} ${candidate.localDate.day}';
     }
     return PremiumGradientCard(
-      glow: true,
-      glowColor: context.tracendColors.stateStable,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

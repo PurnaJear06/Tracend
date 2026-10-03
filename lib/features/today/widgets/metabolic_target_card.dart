@@ -54,7 +54,7 @@ class MetabolicTargetCard extends StatelessWidget {
             Text(
               '${_consumedCalories.round()} kcal logged',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontFamily: TracendFonts.monoFamily,
+                fontFamily: TracendFonts.numericFamily,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
@@ -77,8 +77,6 @@ class MetabolicTargetCard extends StatelessWidget {
     );
 
     return PremiumGradientCard(
-      glow: true,
-      glowColor: colors.accentAmber,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -102,7 +100,7 @@ class MetabolicTargetCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.titleLarge
                                 ?.copyWith(
-                                  fontFamily: TracendFonts.monoFamily,
+                                  fontFamily: TracendFonts.numericFamily,
                                   fontSize: 30,
                                   letterSpacing: -0.6,
                                   fontFeatures: const [
@@ -116,7 +114,7 @@ class MetabolicTargetCard extends StatelessWidget {
                           'kcal',
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(
-                                fontFamily: TracendFonts.monoFamily,
+                                fontFamily: TracendFonts.numericFamily,
                                 fontSize: 13,
                               ),
                         ),
@@ -167,7 +165,7 @@ class MetabolicTargetCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelMedium
                             ?.copyWith(
-                              fontFamily: TracendFonts.monoFamily,
+                              fontFamily: TracendFonts.numericFamily,
                               fontSize: 11,
                               color: colors.textSecondary,
                               fontFeatures: const [
@@ -187,7 +185,7 @@ class MetabolicTargetCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.end,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontFamily: TracendFonts.monoFamily,
+                    fontFamily: TracendFonts.numericFamily,
                     fontSize: 11,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),

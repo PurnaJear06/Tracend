@@ -68,7 +68,6 @@ class WeightHeroCard extends StatelessWidget {
 
     if (weight == null) {
       return PremiumGradientCard(
-        glow: true,
         padding: const EdgeInsets.all(TracendSpacing.gutter),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,7 +116,6 @@ class WeightHeroCard extends StatelessWidget {
         : null;
 
     return PremiumGradientCard(
-      glow: true,
       padding: const EdgeInsets.all(TracendSpacing.gutter),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

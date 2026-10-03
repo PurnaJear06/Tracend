@@ -84,7 +84,7 @@ class _GaugeHeader extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(
-                            fontFamily: TracendFonts.monoFamily,
+                            fontFamily: TracendFonts.numericFamily,
                             color: acwr != null
                                 ? colors.textPrimary
                                 : colors.textSecondary,
@@ -107,7 +107,7 @@ class _GaugeHeader extends StatelessWidget {
                         'Strain ${displayStrain!}',
                         style: Theme.of(context).textTheme.labelMedium
                             ?.copyWith(
-                              fontFamily: TracendFonts.monoFamily,
+                              fontFamily: TracendFonts.numericFamily,
                               color: colors.actionPrimary,
                               fontSize: 10,
                               fontFeatures: const [
@@ -202,7 +202,7 @@ class _AcwrBar extends StatelessWidget {
                         style: Theme.of(context).textTheme.labelMedium
                             ?.copyWith(
                               fontSize: 8,
-                              fontFamily: TracendFonts.monoFamily,
+                              fontFamily: TracendFonts.numericFamily,
                               color: colors.textSecondary,
                               fontFeatures: const [
                                 FontFeature.tabularFigures(),
@@ -260,7 +260,7 @@ class _ZoneLabel extends StatelessWidget {
         Text(
           '${zone.start.toStringAsFixed(1)}\u2013${zone.end.toStringAsFixed(1)}',
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            fontFamily: TracendFonts.monoFamily,
+            fontFamily: TracendFonts.numericFamily,
             color: colors.textSecondary,
             fontFeatures: const [FontFeature.tabularFigures()],
           ),
@@ -293,7 +293,7 @@ class _MonotonyRow extends StatelessWidget {
         Text(
           'Monotony: ${monotony.toStringAsFixed(1)}',
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            fontFamily: TracendFonts.monoFamily,
+            fontFamily: TracendFonts.numericFamily,
             color: colors.textPrimary,
             fontFeatures: const [FontFeature.tabularFigures()],
           ),

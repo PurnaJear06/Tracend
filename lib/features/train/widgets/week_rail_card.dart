@@ -225,8 +225,6 @@ class _WeekRailCardState extends State<WeekRailCard>
     );
 
     return PremiumGradientCard(
-      glow: true,
-      glowColor: colors.stateStable,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -306,7 +304,7 @@ class _RailTag extends StatelessWidget {
     final unit = Text(
       'training minutes',
       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-        fontFamily: TracendFonts.monoFamily,
+        fontFamily: TracendFonts.numericFamily,
         fontSize: 11,
         color: context.tracendColors.textSecondary,
         fontFeatures: const [FontFeature.tabularFigures()],
@@ -558,7 +556,7 @@ class _DaySlot extends StatelessWidget {
                   child: Text(
                     '${date.day}',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontFamily: TracendFonts.monoFamily,
+                      fontFamily: TracendFonts.numericFamily,
                       fontSize: 14,
                       color: selected
                           ? colors.textPrimary
@@ -674,7 +672,7 @@ class _LoadPlot extends StatelessWidget {
                     terminal: terminal,
                     plannedDates: plannedDates,
                     column: colors.actionPrimary,
-                    terminalColor: colors.accentNow,
+                    terminalColor: colors.accentSignalInk,
                     rail: colors.borderSubtle,
                     socket: colors.borderSubtle,
                     miss: colors.accentAmber,
@@ -695,11 +693,11 @@ class _LoadPlot extends StatelessWidget {
                     height: 10,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: colors.accentNow,
+                      color: colors.accentSignalInk,
                       border: Border.all(color: colors.canvas, width: 2),
                       boxShadow: [
                         BoxShadow(
-                          color: colors.accentNow.withValues(alpha: 0.6),
+                          color: colors.accentSignalInk.withValues(alpha: 0.6),
                           blurRadius: 8,
                         ),
                       ],
@@ -880,7 +878,7 @@ class _DayTicks extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = context.tracendColors.textSecondary;
     final style = Theme.of(context).textTheme.labelMedium?.copyWith(
-      fontFamily: TracendFonts.monoFamily,
+      fontFamily: TracendFonts.numericFamily,
       fontSize: 9,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
@@ -941,7 +939,7 @@ class _CalibrationStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.labelMedium?.copyWith(
-      fontFamily: TracendFonts.monoFamily,
+      fontFamily: TracendFonts.numericFamily,
       fontSize: 9,
       color: context.tracendColors.textSecondary,
       fontFeatures: const [FontFeature.tabularFigures()],
@@ -1077,7 +1075,7 @@ class _StatsLine extends StatelessWidget {
   Widget build(BuildContext context) => Text(
     stats,
     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-      fontFamily: TracendFonts.monoFamily,
+      fontFamily: TracendFonts.numericFamily,
       fontSize: 10.5,
       color: context.tracendColors.textSecondary,
       fontFeatures: const [FontFeature.tabularFigures()],
