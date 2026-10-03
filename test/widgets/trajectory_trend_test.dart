@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/health/health_models.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/widgets/trajectory_trend.dart';
 
 Widget _wrap(Widget child, {bool reduceMotion = false}) {
@@ -164,17 +165,20 @@ void main() {
       // Bounded pumps: the NOW-dot pulse is an intentional infinite loop.
       await tester.pump(const Duration(seconds: 2));
 
-      expect(find.text('7-DAY TREND'), findsOneWidget);
-      expect(find.text('HRV · ms'), findsOneWidget);
+      expect(find.text('Heart rate variability'), findsOneWidget);
       expect(find.text('53 ms'), findsOneWidget);
-      expect(find.text('+11 ms vs first day'), findsOneWidget);
-      // Day ticks: month on first/last and rollover, bare number between.
-      expect(find.text('18 Aug'), findsOneWidget);
-      expect(find.text('19'), findsOneWidget);
-      expect(find.text('24 Aug'), findsOneWidget);
-      // Calibration strip: range, recorded count, as-of stamp.
-      expect(find.text('42–53 ms · 7 of 7 days'), findsOneWidget);
-      expect(find.text('as of 24 Aug · Apple Health'), findsOneWidget);
+      expect(find.textContaining('Up 11 ms since 18 Aug'), findsOneWidget);
+      // One day-of-month label per slot.
+      for (final day in ['18', '19', '20', '21', '22', '23', '24']) {
+        expect(find.text(day), findsOneWidget);
+      }
+      // Caption: range, recorded count, as-of stamp.
+      expect(
+        find.text(
+          'Range 42–53 ms · 7 of 7 days recorded · As of 24 Aug, Apple Health',
+        ),
+        findsOneWidget,
+      );
       expect(find.byType(CustomPaint), findsWidgets);
     });
 
@@ -208,7 +212,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Building baseline'), findsOneWidget);
+      expect(find.text('Not enough data yet'), findsOneWidget);
       expect(
         find.text(
           'A 7-day trend appears once at least four days of health data '
@@ -216,7 +220,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.text('7-DAY TREND'), findsNothing);
+      expect(find.byKey(const ValueKey('trend-plot')), findsNothing);
     });
 
     testWidgets('shows the cold-start state for an empty history', (
@@ -227,7 +231,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Building baseline'), findsOneWidget);
+      expect(find.text('Not enough data yet'), findsOneWidget);
     });
 
     testWidgets('renders statically under Reduce Motion', (tester) async {
@@ -237,7 +241,7 @@ void main() {
       // pumpAndSettle completes only when nothing animates idle.
       await tester.pumpAndSettle();
 
-      expect(find.text('7-DAY TREND'), findsOneWidget);
+      expect(find.text('Heart rate variability'), findsOneWidget);
       expect(find.text('53 ms'), findsOneWidget);
     });
 
@@ -251,8 +255,9 @@ void main() {
       expect(
         find.bySemanticsLabel(
           RegExp(
-            '7-day HRV trend, 18–24 Aug: 42–53 ms, '
-            '53 ms latest on 24 Aug, 7 of 7 days recorded',
+            '7-day heart rate variability trend, 18–24 Aug: range 42–53 ms, '
+            '53 ms latest on 24 Aug, 7 of 7 days recorded. '
+            'Up 11 ms since 18 Aug',
           ),
         ),
         findsOneWidget,
@@ -269,8 +274,8 @@ void main() {
       await tester.pumpWidget(_wrap(TrajectoryTrend(history: flat)));
       await tester.pump(const Duration(seconds: 2));
 
-      expect(find.text('no change · 7 days'), findsOneWidget);
-      expect(find.text('58–58 ms · 4 of 7 days'), findsOneWidget);
+      expect(find.textContaining('No change since 21 Aug'), findsOneWidget);
+      expect(find.textContaining('Range 58–58 ms · 4 of 7 days'), findsOne);
     });
 
     testWidgets('marks sparse gaps in the day ticks and strip', (tester) async {
@@ -286,8 +291,76 @@ void main() {
       await tester.pumpWidget(_wrap(TrajectoryTrend(history: sparse)));
       await tester.pump(const Duration(seconds: 2));
 
-      expect(find.text('42–53 ms · 4 of 7 days'), findsOneWidget);
-      expect(find.text('as of 24 Aug · Apple Health'), findsOneWidget);
+      expect(
+        find.text(
+          'Range 42–53 ms · 4 of 7 days recorded · As of 24 Aug, Apple Health',
+        ),
+        findsOneWidget,
+      );
+      // Unrecorded days keep their slot label and draw no column.
+      expect(find.text('20'), findsOneWidget);
+    });
+
+    testWidgets('full motion grows the columns and pulses the latest ring', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        TracendMotionScope(
+          level: TracendMotionLevel.full,
+          child: _wrap(TrajectoryTrend(history: fullHistory)),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 3));
+
+      // The ring pulse is the app's one idle loop.
+      expect(tester.hasRunningAnimations, isTrue);
+      expect(
+        find.descendant(
+          of: find.byType(TrajectoryTrend),
+          matching: find.byType(FadeTransition),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('Reduce Motion crossfades the chart in and holds still', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        TracendMotionScope(
+          level: TracendMotionLevel.reduced,
+          child: _wrap(TrajectoryTrend(history: fullHistory)),
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byType(TrajectoryTrend),
+          matching: find.byType(FadeTransition),
+        ),
+        findsOneWidget,
+      );
+      await tester.pumpAndSettle();
+      expect(tester.hasRunningAnimations, isFalse);
+    });
+
+    testWidgets('sleep reads in hours and minutes', (tester) async {
+      final sleep = _history([
+        (null, 412, null),
+        (null, 380, null),
+        (null, 455, null),
+        (null, 430, null),
+      ]);
+      await tester.pumpWidget(_wrap(TrajectoryTrend(history: sleep)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sleep'), findsOneWidget);
+      expect(find.text('7 h 10 min'), findsOneWidget);
+      expect(find.textContaining('Up 18 min since 21 Aug'), findsOneWidget);
+      expect(
+        find.textContaining('Range 6 h 20 min–7 h 35 min'),
+        findsOneWidget,
+      );
     });
   });
 }

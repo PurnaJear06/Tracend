@@ -1,12 +1,9 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
-import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/shared/widgets/premium_gradient_card.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
 
-/// Check-in prompt bar (Stitch `today.html`). Opens the real check-in sheet.
-/// Always present (plan §4.1 binding table); copy reflects whether today's
-/// check-in already exists.
+/// The morning check-in row. Opens the check-in sheet; the copy says
+/// whether today's check-in already exists.
 class CheckInPromptBar extends StatelessWidget {
   const CheckInPromptBar({
     required this.onCheckIn,
@@ -20,63 +17,22 @@ class CheckInPromptBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onCheckIn,
-        borderRadius: BorderRadius.circular(TracendRadii.control + 4),
-        child: PremiumGradientCard(
-          padding: const EdgeInsets.symmetric(
-            horizontal: TracendSpacing.md,
-            vertical: TracendSpacing.sm,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.05),
-                  border: Border.all(color: colors.borderHairline),
-                ),
-                child: Icon(
-                  completed
-                      ? CupertinoIcons.check_mark
-                      : CupertinoIcons.chat_bubble,
-                  size: 15,
-                  color: completed ? colors.stateStable : colors.textSecondary,
-                ),
-              ),
-              const SizedBox(width: TracendSpacing.sm),
-              Expanded(
-                child: Text(
-                  completed
-                      ? 'Morning status recorded'
-                      : 'Update morning status?',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textPrimary,
-                    fontWeight: FontWeight.w300,
-                  ),
-                ),
-              ),
-              Text(
-                completed ? 'EDIT' : 'CHECK-IN',
-                style: TracendTheme.labelCaps(
-                  context,
-                  color: colors.actionPrimary,
-                ),
-              ),
-              const SizedBox(width: TracendSpacing.xxs),
-              Icon(
-                CupertinoIcons.arrow_right,
-                size: 16,
-                color: colors.textSecondary,
-              ),
-            ],
-          ),
+    return TracendGroupedList(
+      children: [
+        TracendListRow(
+          leading: completed
+              ? TracendRowIcon(
+                  icon: CupertinoIcons.checkmark_alt,
+                  color: colors.stateStable,
+                )
+              : const TracendRowIcon(icon: CupertinoIcons.sun_max_fill),
+          title: 'Morning check-in',
+          subtitle: completed
+              ? 'Done. Tap to update it.'
+              : 'About a minute. It sharpens today\'s advice.',
+          onTap: onCheckIn,
         ),
-      ),
+      ],
     );
   }
 }

@@ -5,17 +5,17 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
 
-/// Metabolic Target readout (Stitch `today.html` nutrition module).
+/// Today's food against the active targets, under the "Food" section label.
 ///
-/// Binding contract (plan §4.1): headline = target kcal, progress bar =
-/// consumed/target, protein line = consumed protein + remaining protein.
-/// Consumed comes from `brief.nutrition` (`get_my_daily_nutrition`); targets
-/// come from the active `nutrition_target_sets` row.
+/// Binding: eaten comes from `brief.nutrition` (`get_my_daily_nutrition`,
+/// confirmed meals only); targets come from the active
+/// `nutrition_target_sets` row.
 ///
 /// State table:
-/// - full: target headline + consumed bar + protein remaining
-/// - no targets: consumed only, honest "No target set" note (no fabricated bar)
-/// - no consumed: targets only, empty bar (cold start)
+/// - targets: "1,240 of 2,300 kcal eaten", a progress bar, "Protein 120 g"
+///   and the protein left in grams
+/// - no targets: what was eaten, with an honest "no target" note and no bar
+/// - "Log a meal" opens Nutrition; left out when not wired
 class MetabolicTargetCard extends StatelessWidget {
   const MetabolicTargetCard({
     required this.consumed,
@@ -30,224 +30,121 @@ class MetabolicTargetCard extends StatelessWidget {
   /// Active nutrition targets. Null when no target set is active.
   final NutritionTargets? targets;
 
-  /// Opens the Nutrition tab to log a meal. Null hides the LOG button (no
-  /// no-op affordance when the shell doesn't wire tab switching).
+  /// Opens the Nutrition tab to log a meal.
   final VoidCallback? onLog;
 
-  double get _consumedCalories =>
-      ((consumed?['calories'] as num?) ?? 0).toDouble();
-  double get _consumedProtein =>
-      ((consumed?['protein_g'] as num?) ?? 0).toDouble();
+  double get _calories => ((consumed?['calories'] as num?) ?? 0).toDouble();
+  double get _protein => ((consumed?['protein_g'] as num?) ?? 0).toDouble();
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
+    final textTheme = Theme.of(context).textTheme;
     final targets = this.targets;
-
-    if (targets == null) {
-      return PremiumGradientCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _MetabolicTag(),
-            const SizedBox(height: TracendSpacing.sm),
-            Text(
-              '${_consumedCalories.round()} kcal logged',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontFamily: TracendFonts.numericFamily,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-            const SizedBox(height: TracendSpacing.xxs),
-            Text(
-              'No active nutrition target is set.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ],
-        ),
-      );
-    }
-
-    final calorieFraction = targets.calories <= 0
-        ? 0.0
-        : (_consumedCalories / targets.calories).clamp(0.0, 1.0);
-    final proteinRemaining = (targets.protein - _consumedProtein).clamp(
-      0.0,
-      targets.protein,
+    final eaten = groupedThousands(_calories.round());
+    final numberStyle = textTheme.headlineSmall?.copyWith(
+      fontFamily: TracendFonts.numericFamily,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+    final secondary = textTheme.bodySmall?.copyWith(
+      color: colors.textSecondary,
     );
 
-    return PremiumGradientCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _MetabolicTag(),
-                    const SizedBox(height: TracendSpacing.sm),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            targets.calories.round().toString(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(
-                                  fontFamily: TracendFonts.numericFamily,
-                                  fontSize: 30,
-                                  letterSpacing: -0.6,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
-                                ),
-                          ),
-                        ),
-                        const SizedBox(width: TracendSpacing.xxs),
-                        Text(
-                          'kcal',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                fontFamily: TracendFonts.numericFamily,
-                                fontSize: 13,
-                              ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (onLog != null) _LogButton(onLog: onLog!),
-            ],
-          ),
-          const SizedBox(height: TracendSpacing.md),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
+    final List<Widget> body;
+    if (targets == null) {
+      body = [
+        Text('$eaten kcal eaten', style: numberStyle),
+        const SizedBox(height: TracendSpacing.xxs),
+        Text('No nutrition target is set yet.', style: secondary),
+      ];
+    } else {
+      final target = groupedThousands(targets.calories.round());
+      final fraction = targets.calories <= 0
+          ? 0.0
+          : (_calories / targets.calories).clamp(0.0, 1.0);
+      final proteinLeft = (targets.protein - _protein).clamp(
+        0.0,
+        targets.protein,
+      );
+      body = [
+        Semantics(
+          label: '$eaten of $target kilocalories eaten',
+          excludeSemantics: true,
+          child: Text('$eaten of $target kcal eaten', style: numberStyle),
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+        ExcludeSemantics(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(TracendRadii.pill),
             child: SizedBox(
-              height: 5,
+              height: 8,
               child: Stack(
                 children: [
-                  Container(color: colors.borderSubtle.withValues(alpha: 0.4)),
+                  Container(color: colors.surfaceRaised),
                   FractionallySizedBox(
-                    widthFactor: calorieFraction,
-                    child: Container(color: colors.accentAmber),
+                    widthFactor: fraction,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colors.actionPrimary,
+                        borderRadius: BorderRadius.circular(TracendRadii.pill),
+                      ),
+                      child: const SizedBox.expand(),
+                    ),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: TracendSpacing.sm),
-          Row(
-            children: [
-              Flexible(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: colors.accentAmber,
-                      ),
-                    ),
-                    const SizedBox(width: TracendSpacing.xxs),
-                    Flexible(
-                      child: Text(
-                        '${_consumedProtein.round()}g PRO',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              fontFamily: TracendFonts.numericFamily,
-                              fontSize: 11,
-                              color: colors.textSecondary,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                            ),
-                      ),
-                    ),
-                  ],
-                ),
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+        Wrap(
+          spacing: TracendSpacing.md,
+          runSpacing: TracendSpacing.xxs,
+          children: [
+            Text(
+              'Protein ${_protein.round()} g',
+              style: TracendTheme.numeric(colors, fontSize: 15),
+            ),
+            Text(
+              proteinLeft <= 0
+                  ? 'Protein target reached'
+                  : '${proteinLeft.round()} g left',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colors.textSecondary,
               ),
-              const SizedBox(width: TracendSpacing.xs),
-              Flexible(
-                child: Text(
-                  '${proteinRemaining.round()}g REMAINING',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontFamily: TracendFonts.numericFamily,
-                    fontSize: 11,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
+        ),
+      ];
+    }
+
+    final onLog = this.onLog;
+    return PremiumGradientCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ...body,
+          if (onLog != null) ...[
+            const SizedBox(height: TracendSpacing.md),
+            OutlinedButton.icon(
+              onPressed: onLog,
+              icon: const Icon(CupertinoIcons.plus, size: 18),
+              label: const Text('Log a meal'),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _MetabolicTag extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(CupertinoIcons.flame_fill, size: 13, color: colors.accentAmber),
-        const SizedBox(width: TracendSpacing.xxs),
-        Flexible(
-          child: Text(
-            'METABOLIC TARGET',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TracendTheme.labelCaps(context, color: colors.accentAmber),
-          ),
-        ),
-      ],
-    );
+/// "1,240" for 1240. Whole numbers only; the sign is kept.
+String groupedThousands(int value) {
+  final digits = value.abs().toString();
+  final buffer = StringBuffer(value < 0 ? '-' : '');
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
+    buffer.write(digits[i]);
   }
-}
-
-class _LogButton extends StatelessWidget {
-  const _LogButton({required this.onLog});
-  final VoidCallback onLog;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onLog,
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          padding: const EdgeInsets.symmetric(horizontal: TracendSpacing.sm),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
-            border: Border.all(color: colors.borderHairline),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            'LOG',
-            style: TracendTheme.labelCaps(context, color: colors.textSecondary),
-          ),
-        ),
-      ),
-    );
-  }
+  return buffer.toString();
 }

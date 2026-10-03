@@ -1,22 +1,24 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
+import 'package:tracend/shared/widgets/tracend_scaffold.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 
-/// Full-width sleep quality readout, sibling to `RecoveryReadoutCard`:
-/// card tag + band chip, tabular mono score with a count-up, reflowing
-/// sub-score rows (label + value on one line, 0-100 bar beneath — no fixed
-/// columns, so accessibility text scales reflow instead of crowding), and a
-/// debt/surplus pill. Baseline values are not repeated here — the recovery
-/// readout's driver rows already carry them one card up.
+/// Last night's sleep quality on Today, under the "Sleep" section label:
+/// the score with a count-up and a band chip, four reflowing sub-score rows
+/// (label and value on one line, a 0–100 bar beneath, no fixed columns) and
+/// the sleep debt or surplus. Baselines are not repeated here; the recovery
+/// drivers already carry them.
 ///
 /// State table:
-/// - full: score + band chip + sub-score rows + debt pill
-/// - score null: 'No data' + honest empty copy
-/// - cold_start / low confidence: 'Building baseline' caption under the score
-/// - debt pill: positive = debt, negative = surplus, 0 = target met
+/// - full: score + band chip + sub-score rows + debt chip
+/// - score null: "Not enough data yet" with honest copy
+/// - cold_start / low confidence: "Building baseline" under the score
+/// - debt: positive = debt, negative = surplus, 0 = target met
 class SleepArchitectureCard extends StatelessWidget {
   const SleepArchitectureCard({required this.computed, super.key});
 
@@ -25,9 +27,9 @@ class SleepArchitectureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
+    final textTheme = Theme.of(context).textTheme;
     final scores = computed.scores;
     final quality = scores.sleepQuality;
-    final hasData = quality != null;
     final lowConfidence =
         computed.dataConfidence == 'cold_start' ||
         computed.dataConfidence == 'low';
@@ -36,48 +38,73 @@ class SleepArchitectureCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const _CardTag(label: 'SLEEP ARCHITECTURE'),
-              const Spacer(),
-              if (hasData)
-                _BandChip(
-                  label: _bandLabel(quality),
-                  color: _bandColor(colors, quality),
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: TracendSpacing.xs,
+              runSpacing: TracendSpacing.xs,
+              children: [
+                Text(
+                  'Sleep quality',
+                  style: textTheme.titleSmall?.copyWith(
+                    color: colors.textSecondary,
+                  ),
                 ),
-            ],
+                if (quality != null) _band(quality),
+              ],
+            ),
           ),
-          const SizedBox(height: TracendSpacing.sm),
+          const SizedBox(height: TracendSpacing.xxs),
           Semantics(
-            label: hasData
+            label: quality != null
                 ? 'Sleep quality $quality out of 100'
-                : 'Sleep quality unavailable',
+                : 'Sleep quality: not enough data yet',
             excludeSemantics: true,
-            child: hasData
-                ? MicroMotionCountUp(
-                    value: quality,
-                    builder: (context, value) =>
-                        Text('$value / 100', style: _scoreStyle(context)),
+            child: quality != null
+                ? FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        MicroMotionCountUp(
+                          value: quality,
+                          builder: (context, value) =>
+                              Text('$value', style: _scoreStyle(context)),
+                        ),
+                        const SizedBox(width: TracendSpacing.xxs),
+                        Text(
+                          '/ 100',
+                          style: textTheme.titleMedium?.copyWith(
+                            fontFamily: TracendFonts.numericFamily,
+                            color: colors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   )
-                : Text('No data', style: _scoreStyle(context)),
+                : Text('Not enough data yet', style: textTheme.titleMedium),
           ),
           const SizedBox(height: TracendSpacing.xxs),
           Text(
-            !hasData
-                ? 'No sleep recorded for today yet.'
+            quality == null
+                ? 'No sleep is recorded for last night yet.'
                 : lowConfidence
                 ? 'Building baseline'
-                : 'Derived from tonight\'s duration, efficiency, restorative stages, and 7-day consistency.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+                : 'From last night\'s duration, efficiency and restorative '
+                      'stages, and your 7-day consistency.',
+            style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
           ),
           if (scores.sleepBreakdown != null) ...[
             const SizedBox(height: TracendSpacing.md),
             _SleepSubScores(breakdown: scores.sleepBreakdown!),
           ],
           if (scores.sleepDebtMinutes != null) ...[
-            const SizedBox(height: TracendSpacing.sm),
+            const SizedBox(height: TracendSpacing.md),
             _SleepDebt(debtMinutes: scores.sleepDebtMinutes!),
           ],
         ],
@@ -85,72 +112,29 @@ class SleepArchitectureCard extends StatelessWidget {
     );
   }
 
-  TextStyle _scoreStyle(BuildContext context) =>
-      Theme.of(context).textTheme.displaySmall!.copyWith(
-        fontFamily: TracendFonts.numericFamily,
-        fontSize: 36,
-        height: 1.0,
-        letterSpacing: -1,
-        fontWeight: FontWeight.w600,
-        fontFeatures: const [FontFeature.tabularFigures()],
-      );
+  TextStyle? _scoreStyle(BuildContext context) => Theme.of(context)
+      .textTheme
+      .displayMedium
+      ?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
 
-  String _bandLabel(int quality) {
-    if (quality >= 80) return 'Restorative';
-    if (quality >= 60) return 'Adequate';
-    if (quality >= 40) return 'Light';
-    return 'Disrupted';
-  }
-
-  Color _bandColor(TracendColors colors, int quality) {
-    if (quality >= 80) return colors.stateStable;
-    if (quality >= 60) return colors.accentAmber;
-    return colors.stateAttention;
-  }
-}
-
-class _CardTag extends StatelessWidget {
-  const _CardTag({required this.label});
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = context.tracendColors.actionPrimary;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.bedtime_rounded, size: 13, color: color),
-        const SizedBox(width: TracendSpacing.xxs),
-        Text(label, style: TracendTheme.labelCaps(context, color: color)),
-      ],
+  Widget _band(int quality) {
+    final (label, tone, icon) = quality >= 80
+        ? ('Restorative', StatusTone.good, CupertinoIcons.checkmark_circle_fill)
+        : quality >= 60
+        ? ('Adequate', StatusTone.caution, CupertinoIcons.minus_circle_fill)
+        : quality >= 40
+        ? ('Light', StatusTone.low, CupertinoIcons.exclamationmark_circle_fill)
+        : (
+            'Disrupted',
+            StatusTone.low,
+            CupertinoIcons.exclamationmark_circle_fill,
+          );
+    return Semantics(
+      label: 'Sleep band: $label',
+      excludeSemantics: true,
+      child: StatusChip(label: label, icon: icon, tone: tone),
     );
   }
-}
-
-class _BandChip extends StatelessWidget {
-  const _BandChip({required this.label, required this.color});
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: TracendSpacing.xs + 2,
-        vertical: TracendSpacing.xxs,
-      ),
-      child: Text(
-        label,
-        style: Theme.of(
-          context,
-        ).textTheme.labelMedium?.copyWith(fontSize: 11, color: color),
-      ),
-    ),
-  );
 }
 
 class _SleepSubScores extends StatelessWidget {
@@ -179,8 +163,8 @@ class _SleepSubScores extends StatelessWidget {
   }
 }
 
-/// One sub-score: label and rounded value on the first line, 0-100 bar
-/// beneath. No fixed-width columns — at accessibility text scales the label
+/// One sub-score: label and rounded value on the first line, a 0–100 bar
+/// beneath. No fixed-width columns, so at accessibility text sizes the label
 /// wraps and the value stays reachable.
 class _SubScoreRow extends StatelessWidget {
   const _SubScoreRow({required this.label, required this.score});
@@ -205,39 +189,48 @@ class _SubScoreRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
             children: [
-              Text(
-                label,
-                style: Theme.of(
-                  context,
-                ).textTheme.labelMedium?.copyWith(color: colors.textSecondary),
+              Expanded(
+                child: Text(
+                  label,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: TracendSpacing.xs),
               Text(
                 score.round().toString(),
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontFamily: TracendFonts.numericFamily,
-                  color: colors.textPrimary,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+                style: TracendTheme.numeric(colors, fontSize: 13),
               ),
             ],
           ),
           const SizedBox(height: TracendSpacing.xxs),
           ClipRRect(
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: BorderRadius.circular(TracendRadii.pill),
             child: SizedBox(
               height: 6,
               child: Stack(
                 alignment: Alignment.centerLeft,
                 children: [
-                  Container(color: colors.borderSubtle.withValues(alpha: 0.3)),
+                  Container(color: colors.surfaceRaised),
                   AnimatedFractionallySizedBox(
-                    duration: TracendMotion.standard,
+                    duration: TracendMotionScope.movement(
+                      context,
+                      TracendMotion.standard,
+                    ),
                     curve: TracendMotion.curve,
                     widthFactor: pct,
                     alignment: Alignment.centerLeft,
-                    child: Container(color: barColor),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: barColor,
+                        borderRadius: BorderRadius.circular(TracendRadii.pill),
+                      ),
+                      child: const SizedBox.expand(),
+                    ),
                   ),
                 ],
               ),
@@ -256,53 +249,34 @@ class _SleepDebt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tracendColors;
     // SQL convention (daily_computed_metrics): sleep_debt_minutes =
-    // 480 - round(avg_7d_sleep_minutes), so a POSITIVE value is debt (avg
+    // 480 - round(avg_7d_sleep_minutes), so a POSITIVE value is debt (average
     // sleep under the 8-hour target) and a negative value is surplus.
-    final hasDebt = debtMinutes > 0;
-    final hours = debtMinutes.abs() ~/ 60;
-    final mins = debtMinutes.abs() % 60;
-    final label = hasDebt
-        ? 'Sleep debt: ${hours}h ${mins}m'
+    final amount = _formatMinutes(debtMinutes.abs());
+    final (label, tone, icon) = debtMinutes > 0
+        ? (
+            'Sleep debt: $amount',
+            StatusTone.caution,
+            CupertinoIcons.arrow_down_right,
+          )
         : debtMinutes < 0
-        ? 'Sleep surplus: ${hours}h ${mins}m'
-        : 'Sleep target met';
-    final icon = debtMinutes > 0
-        ? Icons.trending_down_rounded
-        : debtMinutes < 0
-        ? Icons.trending_up_rounded
-        : Icons.trending_flat_rounded;
-    final color = debtMinutes > 0 ? colors.stateAttention : colors.stateStable;
-
+        ? (
+            'Sleep surplus: $amount',
+            StatusTone.good,
+            CupertinoIcons.arrow_up_right,
+          )
+        : ('Sleep target met', StatusTone.good, CupertinoIcons.checkmark_alt);
     return Semantics(
       label: label,
       excludeSemantics: true,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: TracendSpacing.xs + 2,
-            vertical: TracendSpacing.xxs,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: color),
-              const SizedBox(width: TracendSpacing.xxs),
-              Text(
-                label,
-                style: Theme.of(
-                  context,
-                ).textTheme.labelMedium?.copyWith(fontSize: 11, color: color),
-              ),
-            ],
-          ),
-        ),
-      ),
+      child: StatusChip(label: label, icon: icon, tone: tone),
     );
+  }
+
+  String _formatMinutes(int minutes) {
+    final hours = minutes ~/ 60;
+    final rest = minutes % 60;
+    if (hours == 0) return '$rest min';
+    return rest == 0 ? '$hours h' : '$hours h $rest min';
   }
 }

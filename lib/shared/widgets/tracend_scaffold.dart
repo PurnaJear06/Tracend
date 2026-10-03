@@ -349,7 +349,7 @@ class SectionLabel extends StatelessWidget {
   /// label, so they move under it.
   bool _stacked(BuildContext context) =>
       (value != null || actionLabel != null) &&
-      MediaQuery.textScalerOf(context).scale(1) > 1.5;
+      MediaQuery.textScalerOf(context).scale(1) > 1.3;
 
   @override
   Widget build(BuildContext context) {

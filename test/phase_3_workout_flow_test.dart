@@ -943,19 +943,16 @@ void main() {
         home: const TodayScreen(environment: environment),
       ),
     );
-    await tester.scrollUntilVisible(
-      find.text('Morning status recorded'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-      maxScrolls: 100,
-    );
-    await tester.ensureVisible(find.text('Morning status recorded'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Morning status recorded'));
+    await tester.ensureVisible(find.text('Morning check-in'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Morning check-in'));
     await tester.pumpAndSettle();
     expect(find.text('Daily check-in'), findsOneWidget);
     expect(find.text('Sleep quality'), findsOneWidget);
+    expect(find.bySemanticsLabel('Energy: OK'), findsOneWidget);
     expect(find.text('Available to train today'), findsOneWidget);
-    expect(find.text('Save check-in'), findsOneWidget);
+    // Pinned below the questions, so it is on screen without scrolling.
+    expect(find.text('Save check-in').hitTestable(), findsOneWidget);
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:ui' show Tristate;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
@@ -42,239 +44,14 @@ const _breakdown = RecoveryBreakdown(
   prevStrainZ: -0.3,
 );
 
+Future<void> _open(WidgetTester tester) async {
+  await tester.tap(find.text('How this is calculated'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('RecoveryReadoutCard', () {
-    testWidgets('shows score, band chip, and derivation caption', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _wrap(RecoveryReadoutCard(computed: _metrics(recovery: 72))),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('72'), findsOneWidget);
-      expect(find.text('/ 100'), findsOneWidget);
-      expect(find.text('Good'), findsOneWidget);
-      expect(
-        find.text(
-          'Derived from HRV, resting HR, sleep, respiratory rate, and prior strain.',
-        ),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('shows Excellent band for >= 80', (tester) async {
-      await tester.pumpWidget(
-        _wrap(RecoveryReadoutCard(computed: _metrics(recovery: 85))),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Excellent'), findsOneWidget);
-    });
-
-    testWidgets('shows Moderate band for 50-64', (tester) async {
-      await tester.pumpWidget(
-        _wrap(RecoveryReadoutCard(computed: _metrics(recovery: 55))),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Moderate'), findsOneWidget);
-    });
-
-    testWidgets('shows Low band for 35-49', (tester) async {
-      await tester.pumpWidget(
-        _wrap(RecoveryReadoutCard(computed: _metrics(recovery: 40))),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Low'), findsOneWidget);
-    });
-
-    testWidgets('shows Poor band for < 35', (tester) async {
-      await tester.pumpWidget(
-        _wrap(RecoveryReadoutCard(computed: _metrics(recovery: 20))),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Poor'), findsOneWidget);
-    });
-
-    testWidgets('null score shows -- and honest empty copy', (tester) async {
-      await tester.pumpWidget(_wrap(RecoveryReadoutCard(computed: _metrics())));
-      await tester.pumpAndSettle();
-
-      expect(find.text('--'), findsOneWidget);
-      expect(
-        find.text(
-          'Not enough data for a recovery score. Sync Apple Health and check '
-          'in to build your baseline.',
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('Good'), findsNothing);
-    });
-
-    testWidgets('shows Building baseline on cold start', (tester) async {
-      await tester.pumpWidget(
-        _wrap(
-          RecoveryReadoutCard(
-            computed: _metrics(recovery: 72, dataConfidence: 'cold_start'),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Building baseline'), findsOneWidget);
-    });
-
-    testWidgets('shows Building baseline on low confidence', (tester) async {
-      await tester.pumpWidget(
-        _wrap(
-          RecoveryReadoutCard(
-            computed: _metrics(recovery: 72, dataConfidence: 'low'),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Building baseline'), findsOneWidget);
-    });
-
-    testWidgets('shows driver rows with signed z values', (tester) async {
-      await tester.pumpWidget(
-        _wrap(
-          RecoveryReadoutCard(
-            computed: _metrics(recovery: 72, breakdown: _breakdown),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Recovery drivers'), findsOneWidget);
-      expect(find.text('HRV'), findsOneWidget);
-      expect(find.text('RHR'), findsOneWidget);
-      expect(find.text('Sleep'), findsOneWidget);
-      expect(find.text('Resp'), findsOneWidget);
-      expect(find.text('Strain'), findsOneWidget);
-      expect(find.text('+0.5'), findsOneWidget);
-      expect(find.text('-0.2'), findsOneWidget);
-      expect(find.text('+0.8'), findsOneWidget);
-      expect(find.text('+0.1'), findsOneWidget);
-      expect(find.text('-0.3'), findsOneWidget);
-    });
-
-    testWidgets('no driver rows when breakdown is null', (tester) async {
-      await tester.pumpWidget(
-        _wrap(RecoveryReadoutCard(computed: _metrics(recovery: 72))),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Recovery drivers'), findsNothing);
-    });
-
-    testWidgets('driver row announces the true z-score', (tester) async {
-      await tester.pumpWidget(
-        _wrap(
-          RecoveryReadoutCard(
-            computed: _metrics(recovery: 72, breakdown: _breakdown),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.bySemanticsLabel('HRV driver, z-score +0.5'), findsOneWidget);
-      expect(
-        find.bySemanticsLabel('Strain driver, z-score -0.3'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('missing components show No data, never a fake +0.0', (
-      tester,
-    ) async {
-      const partial = RecoveryBreakdown(
-        hrvZ: 0.3,
-        rhrZ: 1.0,
-        sleepZ: 0,
-        respRateZ: 0,
-        prevStrainZ: -0.5,
-        missingComponents: ['sleep_minutes', 'resp_rate'],
-      );
-      await tester.pumpWidget(
-        _wrap(
-          RecoveryReadoutCard(
-            computed: _metrics(recovery: 68, breakdown: partial),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('No data'), findsNWidgets(2));
-      expect(find.text('+0.3'), findsOneWidget);
-      expect(find.text('+1.0'), findsOneWidget);
-      expect(find.text('-0.5'), findsOneWidget);
-      expect(find.text('+0.0'), findsNothing);
-      expect(find.bySemanticsLabel('Sleep driver, no data'), findsOneWidget);
-      expect(find.bySemanticsLabel('Resp driver, no data'), findsOneWidget);
-      expect(find.bySemanticsLabel('HRV driver, z-score +0.3'), findsOneWidget);
-    });
-
-    testWidgets('all components missing renders five No data rows', (
-      tester,
-    ) async {
-      const empty = RecoveryBreakdown(
-        hrvZ: 0,
-        rhrZ: 0,
-        sleepZ: 0,
-        respRateZ: 0,
-        prevStrainZ: 0,
-        missingComponents: [
-          'hrv_sdnn',
-          'resting_hr',
-          'sleep_minutes',
-          'resp_rate',
-          'prev_strain',
-        ],
-      );
-      await tester.pumpWidget(
-        _wrap(RecoveryReadoutCard(computed: _metrics(breakdown: empty))),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('--'), findsOneWidget);
-      expect(find.text('No data'), findsNWidgets(5));
-      expect(find.text('+0.0'), findsNothing);
-    });
-
-    testWidgets('score announces itself out of 100', (tester) async {
-      await tester.pumpWidget(
-        _wrap(RecoveryReadoutCard(computed: _metrics(recovery: 72))),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        find.bySemanticsLabel('Recovery score 72 out of 100'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('score counts up when the value changes', (tester) async {
-      await tester.pumpWidget(
-        _wrap(RecoveryReadoutCard(computed: _metrics(recovery: 40))),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('40'), findsOneWidget);
-
-      await tester.pumpWidget(
-        _wrap(RecoveryReadoutCard(computed: _metrics(recovery: 72))),
-      );
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(tester.hasRunningAnimations, isTrue);
-      await tester.pumpAndSettle();
-      expect(find.text('72'), findsOneWidget);
-    });
-
-    testWidgets('driver rows pair raw values with z (brief >= 1.4)', (
+    testWidgets('drivers read as plain rows with today\'s values', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -284,7 +61,7 @@ void main() {
               recovery: 72,
               breakdown: _breakdown,
               todayRaw: const TodayRaw(
-                hrvMs: 38,
+                hrvMs: 58,
                 restingHrBpm: 52,
                 sleepMinutes: 411,
                 respRateBpm: 14.2,
@@ -296,22 +73,102 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('38 ms · +0.5'), findsOneWidget);
-      expect(find.text('52 bpm · -0.2'), findsOneWidget);
-      expect(find.text('411 min · +0.8'), findsOneWidget);
-      expect(find.text('14 bpm · +0.1'), findsOneWidget);
-      expect(find.text('42.0 · -0.3'), findsOneWidget);
       expect(
-        find.bySemanticsLabel('HRV driver, 38 ms, z-score +0.5'),
+        find.text('Heart rate variability: normal for you, 58 ms'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Resting heart rate: normal for you, 52 bpm'),
+        findsOneWidget,
+      );
+      expect(find.text('Sleep: normal for you, 6 h 51 min'), findsOneWidget);
+      expect(
+        find.text('Breathing rate: normal for you, 14 breaths a minute'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Recent training: normal for you, strain 42.0 today'),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel('Heart rate variability: normal for you, 58 ms'),
         findsOneWidget,
       );
     });
 
-    testWidgets('unmeasured components stay No data even with today_raw', (
-      tester,
-    ) async {
-      // The owner's watch-off day: sleep and resp measured nowhere, so
-      // today_raw carries nulls for them and the rows report No data.
+    testWidgets('z-scores stay behind How this is calculated', (tester) async {
+      await tester.pumpWidget(
+        _wrap(RecoveryReadoutCard(computed: _metrics(breakdown: _breakdown))),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('+0.5'), findsNothing);
+      final disclosure = tester.getSemantics(
+        find.bySemanticsLabel('How this is calculated'),
+      );
+      expect(disclosure.flagsCollection.isExpanded, Tristate.isFalse);
+
+      await _open(tester);
+
+      expect(find.text('+0.5'), findsOneWidget);
+      expect(find.text('-0.2'), findsOneWidget);
+      expect(find.text('+0.8'), findsOneWidget);
+      expect(find.text('+0.1'), findsOneWidget);
+      expect(find.text('-0.3'), findsOneWidget);
+      expect(find.text('Heart rate variability · 55%'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(
+          'Heart rate variability, z-score +0.5, weight 55 percent',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Calculated from your Apple Health data and logged workouts. No AI.',
+        ),
+        findsOneWidget,
+      );
+
+      await _open(tester);
+      expect(find.text('+0.5'), findsNothing);
+    });
+
+    testWidgets('renders nothing without a breakdown', (tester) async {
+      await tester.pumpWidget(
+        _wrap(RecoveryReadoutCard(computed: _metrics(recovery: 72))),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('How this is calculated'), findsNothing);
+      expect(find.textContaining('Heart rate variability'), findsNothing);
+    });
+
+    testWidgets('missing components read not enough data yet', (tester) async {
+      const partial = RecoveryBreakdown(
+        hrvZ: 0.3,
+        rhrZ: 1.0,
+        sleepZ: 0,
+        respRateZ: 0,
+        prevStrainZ: -0.5,
+        missingComponents: ['sleep_minutes', 'resp_rate'],
+      );
+      await tester.pumpWidget(
+        _wrap(RecoveryReadoutCard(computed: _metrics(breakdown: partial))),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sleep: not enough data yet'), findsOneWidget);
+      expect(find.text('Breathing rate: not enough data yet'), findsOneWidget);
+      expect(find.text('Resting heart rate: lower than usual'), findsOneWidget);
+
+      await _open(tester);
+      expect(find.text('Not used today'), findsNWidgets(2));
+      expect(find.text('+0.0'), findsNothing);
+      expect(find.bySemanticsLabel('Sleep, not used today'), findsOneWidget);
+    });
+
+    testWidgets('unmeasured components never show a number', (tester) async {
+      // The owner's watch-off day: sleep and breathing measured nowhere.
       const partial = RecoveryBreakdown(
         hrvZ: -1.2,
         rhrZ: 0.5,
@@ -333,18 +190,24 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('38 ms · -1.2'), findsOneWidget);
-      expect(find.text('52 bpm · +0.5'), findsOneWidget);
-      expect(find.text('No data'), findsNWidgets(3));
+      expect(
+        find.text('Heart rate variability: lower than usual, 38 ms'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Resting heart rate: normal for you, 52 bpm'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('not enough data yet'), findsNWidgets(3));
     });
 
     testWidgets(
       'regression: screenshot 2026-09-10 — valid sleep, immature baseline',
       (tester) async {
-        // The owner's morning: sleep measured (144 min, passed the backend's
-        // 1-960 gate, sleep quality computed) but the sleep baseline lacks 3
-        // observations, so the sleep driver is 'missing' from recovery. The
-        // row must show the reading + 'Building baseline', never 'No data'.
+        // Sleep measured (144 min, passed the backend's 1–960 gate, sleep
+        // quality computed) but the sleep baseline lacks 3 observations, so
+        // the driver is missing from recovery. The row shows the reading with
+        // an honest note, never "not enough data".
         const partial = RecoveryBreakdown(
           hrvZ: 0.3,
           rhrZ: 1.9,
@@ -360,7 +223,6 @@ void main() {
                 recovery: 85,
                 breakdown: partial,
                 sleepQuality: 50,
-                dataConfidence: 'medium',
                 todayRaw: const TodayRaw(
                   hrvMs: 77,
                   restingHrBpm: 52,
@@ -374,29 +236,24 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Sleep row: the measurement with the honest note, not 'No data'.
-        expect(find.text('144 min'), findsOneWidget);
-        expect(find.text('Building baseline'), findsOneWidget);
-        expect(find.text('No data'), findsNothing);
         expect(
-          find.bySemanticsLabel('Sleep driver, 144 min, building baseline'),
+          find.text('Sleep: 2 h 24 min, baseline still building'),
           findsOneWidget,
         );
-        // Other rows unaffected: real z-scores render as before.
-        expect(find.text('77 ms · +0.3'), findsOneWidget);
-        expect(find.text('52 bpm · +1.9'), findsOneWidget);
-        expect(find.text('17 bpm · -0.6'), findsOneWidget);
+        expect(find.text('Sleep: not enough data yet'), findsNothing);
+        expect(
+          find.text('Resting heart rate: lower than usual, 52 bpm'),
+          findsOneWidget,
+        );
       },
     );
 
-    testWidgets('valid sleep value stays No data when quality is null', (
+    testWidgets('a valid sleep value stays missing when quality is null', (
       tester,
     ) async {
-      // sleepQuality null means the backend never certified today's sleep
-      // through its 1-960 gate — the row must not claim Building baseline.
       const partial = RecoveryBreakdown(
         hrvZ: 0.3,
-        rhrZ: 0.5,
+        rhrZ: 0,
         sleepZ: 0,
         respRateZ: 0,
         prevStrainZ: 0,
@@ -406,34 +263,55 @@ void main() {
         _wrap(
           RecoveryReadoutCard(
             computed: _metrics(
-              recovery: 60,
               breakdown: partial,
-              todayRaw: const TodayRaw(hrvMs: 40, sleepMinutes: 144),
+              todayRaw: const TodayRaw(sleepMinutes: 144),
             ),
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('No data'), findsOneWidget);
-      expect(find.bySemanticsLabel('Sleep driver, no data'), findsOneWidget);
-      expect(find.text('144 min'), findsNothing);
+      expect(find.text('Sleep: not enough data yet'), findsOneWidget);
+      expect(find.textContaining('2 h 24 min'), findsNothing);
     });
 
-    testWidgets('older briefs without today_raw keep z-only rows', (
+    testWidgets('older briefs without today_raw keep the words alone', (
       tester,
     ) async {
       await tester.pumpWidget(
-        _wrap(
-          RecoveryReadoutCard(
-            computed: _metrics(recovery: 72, breakdown: _breakdown),
-          ),
-        ),
+        _wrap(RecoveryReadoutCard(computed: _metrics(breakdown: _breakdown))),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('+0.5'), findsOneWidget);
-      expect(find.text('38 ms'), findsNothing);
+      expect(
+        find.text('Heart rate variability: normal for you'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('driverComparison', () {
+    test('within one spread is normal for you', () {
+      expect(driverComparison(0.99, inverted: false), 'normal for you');
+      expect(driverComparison(-0.99, inverted: true), 'normal for you');
+    });
+
+    test('reports direction, and much from two spreads', () {
+      expect(driverComparison(1.2, inverted: false), 'higher than usual');
+      expect(driverComparison(-2.1, inverted: false), 'much lower than usual');
+    });
+
+    test('inverted drivers read the measurement, not the z sign', () {
+      // A positive resting-heart-rate z means a LOWER heart rate.
+      expect(driverComparison(1.5, inverted: true), 'lower than usual');
+      expect(driverComparison(-1.5, inverted: true), 'higher than usual');
+    });
+
+    test('sleep and training speak in more and less', () {
+      expect(
+        driverComparison(-1.4, inverted: false, more: 'more', less: 'less'),
+        'less than usual',
+      );
     });
   });
 }

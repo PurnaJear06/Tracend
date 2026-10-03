@@ -107,6 +107,7 @@ class _AppShellState extends State<AppShell> {
         nutrition: _nutrition,
         onOpenProgress: () => _selectTab(4),
         onOpenNutrition: () => _selectTab(3),
+        onOpenTrain: () => _selectTab(1),
         aiConsent: widget.aiConsent,
       ),
       TrainScreen(

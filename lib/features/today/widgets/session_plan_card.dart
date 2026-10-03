@@ -1,127 +1,125 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/shared/widgets/premium_gradient_card.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
+import 'package:tracend/shared/widgets/pressable.dart';
 
-/// Session Plan readout (Stitch `today.html` training module). Binds to the
-/// brief's `today_workout` map — name, objective, movement/set counts folded
-/// from the real `exercises` array (same pattern as train_screen.dart) — plus
-/// an optional display-only load row carrying the real ACWR from
-/// `ComputedScores.acwr` (Chunk 6; hidden when null, never fabricated).
+/// Today's workout, as rows in one grouped list: the brief's `today_workout`
+/// (name, exercise and set counts folded from the real `exercises` array,
+/// and the estimated time) and, when the brief has one, a display-only
+/// training load row from the real ACWR (`ComputedScores.acwr`; hidden when
+/// null, never fabricated).
 ///
 /// State table:
-/// - full: name + objective + `N MVMT · M SETS · ~X MIN`, chevron opens detail
-/// - acwr present: load row `LOAD · 1.05 · Optimal` (0.8–1.3 optimal zone)
-/// - null workout: "No session planned" (honest, no fabricated counts)
+/// - workout: a tappable row that opens the workout ([onOpen])
+/// - no workout: "Rest day" with an enabled secondary action to see the
+///   week ([onOpenWeek]; left out when not wired)
+/// - ACWR present: "Training load: about normal" with the ratio as detail
 class SessionPlanCard extends StatelessWidget {
   const SessionPlanCard({
     required this.workout,
     required this.onOpen,
     this.acwr,
+    this.onOpenWeek,
     super.key,
   });
 
   final Map<String, dynamic>? workout;
   final VoidCallback onOpen;
 
-  /// Acute:Chronic Workload Ratio from computed scores. Null hides the row.
+  /// Acute:chronic workload ratio from computed scores. Null hides the row.
   final double? acwr;
+
+  /// Opens the week in Train from the rest-day state.
+  final VoidCallback? onOpenWeek;
+
+  @override
+  Widget build(BuildContext context) {
+    final workout = this.workout;
+    final acwr = this.acwr;
+    return TracendGroupedList(
+      children: [
+        if (workout == null)
+          _RestDay(onOpenWeek: onOpenWeek)
+        else
+          _WorkoutRow(workout: workout, onOpen: onOpen),
+        if (acwr != null) _LoadRow(acwr: acwr),
+      ],
+    );
+  }
+}
+
+class _WorkoutRow extends StatelessWidget {
+  const _WorkoutRow({required this.workout, required this.onOpen});
+
+  final Map<String, dynamic> workout;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
-    if (workout == null) {
-      return PremiumGradientCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _CardTag(label: 'SESSION PLAN', color: colors.stateStable),
-            const SizedBox(height: TracendSpacing.sm),
-            Text(
-              'No session planned',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: TracendSpacing.xxs),
-            Text(
-              'Your approved plan has no workout assigned today.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ],
-        ),
-      );
-    }
-
-    final exercises = (workout!['exercises'] as List? ?? const []).length;
-    final sets = (workout!['exercises'] as List? ?? const []).fold<int>(
-      0,
-      (sum, item) =>
-          sum +
-          ((item is Map ? item['set_count'] as num? : null)?.toInt() ?? 0),
-    );
-    final minutes = (workout!['estimated_minutes'] as num?)?.toInt();
-
-    return PremiumGradientCard(
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onOpen,
-          borderRadius: BorderRadius.circular(TracendRadii.card),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final textTheme = Theme.of(context).textTheme;
+    final name = workout['name'] as String? ?? 'Training session';
+    final detail = workoutSummary(workout);
+    return Pressable(
+      onTap: onOpen,
+      pressedScale: 0.98,
+      semanticLabel: "Today's workout: $name. $detail. Opens the workout.",
+      borderRadius: BorderRadius.circular(TracendRadii.card),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 76),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: TracendListRow.horizontalPadding,
+            vertical: TracendSpacing.sm,
+          ),
+          child: Row(
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _CardTag(
-                          label: 'SESSION PLAN',
-                          color: colors.stateStable,
-                        ),
-                        const SizedBox(height: TracendSpacing.sm),
-                        Text(
-                          workout!['name'] as String? ?? 'Training session',
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(fontSize: 22, letterSpacing: -0.4),
-                        ),
-                      ],
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: colors.accentSignalTint,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  CupertinoIcons.bolt_fill,
+                  size: 20,
+                  color: colors.accentSignalInk,
+                ),
+              ),
+              const SizedBox(width: TracendSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Today's workout",
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
                     ),
-                  ),
-                  Icon(
-                    CupertinoIcons.chevron_right,
-                    size: 18,
-                    color: colors.textSecondary,
-                  ),
-                ],
-              ),
-              const SizedBox(height: TracendSpacing.xs),
-              Text(
-                workout!['objective'] as String? ??
-                    'Complete the approved working sets.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: TracendSpacing.sm),
-              Wrap(
-                spacing: TracendSpacing.sm,
-                runSpacing: TracendSpacing.xxs,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  _StatChip(text: '$exercises MVMT'),
-                  _Dot(),
-                  _StatChip(text: '$sets SETS'),
-                  if (minutes != null) ...[
-                    _Dot(),
-                    _StatChip(text: '~$minutes MIN'),
+                    const SizedBox(height: 2),
+                    Text(name, style: textTheme.titleMedium),
+                    if (detail.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        detail,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-              if (acwr != null) ...[
-                const SizedBox(height: TracendSpacing.sm),
-                _LoadRow(acwr: acwr!),
-              ],
+              const SizedBox(width: TracendSpacing.xs),
+              Icon(
+                CupertinoIcons.chevron_forward,
+                size: 16,
+                color: colors.textTertiary,
+              ),
             ],
           ),
         ),
@@ -130,58 +128,62 @@ class SessionPlanCard extends StatelessWidget {
   }
 }
 
-class _CardTag extends StatelessWidget {
-  const _CardTag({required this.label, required this.color});
-  final String label;
-  final Color color;
+/// "2 exercises · 7 sets · about 60 min" from the real workout map; any
+/// part the plan does not carry is left out rather than guessed.
+String workoutSummary(Map<String, dynamic> workout) {
+  final exercises = workout['exercises'] as List? ?? const [];
+  final sets = exercises.fold<int>(
+    0,
+    (sum, item) =>
+        sum + ((item is Map ? item['set_count'] as num? : null)?.toInt() ?? 0),
+  );
+  final minutes = (workout['estimated_minutes'] as num?)?.toInt();
+  return [
+    if (exercises.isNotEmpty)
+      '${exercises.length} ${exercises.length == 1 ? 'exercise' : 'exercises'}',
+    if (sets > 0) '$sets ${sets == 1 ? 'set' : 'sets'}',
+    if (minutes != null) 'about $minutes min',
+  ].join(' · ');
+}
+
+class _RestDay extends StatelessWidget {
+  const _RestDay({required this.onOpenWeek});
+
+  final VoidCallback? onOpenWeek;
 
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Icon(CupertinoIcons.flag_fill, size: 13, color: color),
-      const SizedBox(width: TracendSpacing.xxs),
-      Flexible(
-        child: Text(
-          label,
-          style: TracendTheme.labelCaps(context, color: color),
+  Widget build(BuildContext context) {
+    final onOpenWeek = this.onOpenWeek;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const TracendListRow(
+          leading: TracendRowIcon(icon: CupertinoIcons.moon_fill),
+          title: 'Rest day',
+          subtitle: 'Your approved plan has no workout today.',
         ),
-      ),
-    ],
-  );
+        if (onOpenWeek != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              TracendListRow.horizontalPadding,
+              0,
+              TracendListRow.horizontalPadding,
+              TracendSpacing.sm,
+            ),
+            child: OutlinedButton(
+              onPressed: onOpenWeek,
+              child: const Text('See your week'),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
-class _StatChip extends StatelessWidget {
-  const _StatChip({required this.text});
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Text(
-    text,
-    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-      fontFamily: TracendFonts.numericFamily,
-      fontSize: 12,
-      color: context.tracendColors.textSecondary,
-      fontFeatures: const [FontFeature.tabularFigures()],
-    ),
-  );
-}
-
-class _Dot extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 3,
-    height: 3,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      color: context.tracendColors.borderHairline,
-    ),
-  );
-}
-
-/// Display-only training load row: real ACWR value + zone. Zone thresholds
-/// match the sports-science convention used elsewhere in the app:
-/// 0.8–1.3 optimal, below = low load, above = high load.
+/// Display-only training load row from the real ACWR, with the app-wide
+/// bands (ALGORITHMS.md "ACWR Bands", `LoadBand.forAcwr`): under 0.8 lighter
+/// than usual, 0.8–1.3 about normal, above 1.3 heavier than usual, and above
+/// 1.5 much heavier.
 class _LoadRow extends StatelessWidget {
   const _LoadRow({required this.acwr});
 
@@ -189,56 +191,21 @@ class _LoadRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    final (zone, color) = acwr >= 0.8 && acwr <= 1.3
-        ? ('Optimal', colors.stateStable)
-        : acwr < 0.8
-        ? ('Low load', colors.accentAmber)
-        : ('High load', colors.stateAttention);
-
-    return Semantics(
-      label: 'Training load, ACWR ${acwr.toStringAsFixed(2)}, $zone',
-      excludeSemantics: true,
-      // container: the row sits inside the card's InkWell semantic boundary;
-      // without an explicit container the label would merge into the button
-      // node and VoiceOver would not read the row as its own element.
-      container: true,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: TracendSpacing.sm,
-          vertical: TracendSpacing.xs,
-        ),
-        decoration: BoxDecoration(
-          color: colors.surface.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(TracendRadii.control),
-        ),
-        child: Row(
-          children: [
-            Text(
-              'LOAD',
-              style: TracendTheme.labelCaps(
-                context,
-                color: colors.textSecondary,
-              ),
-            ),
-            const Spacer(),
-            Text(
-              acwr.toStringAsFixed(2),
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                fontFamily: TracendFonts.numericFamily,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-            const SizedBox(width: TracendSpacing.xs),
-            Text(
-              zone,
-              style: Theme.of(
-                context,
-              ).textTheme.labelMedium?.copyWith(fontSize: 11, color: color),
-            ),
-          ],
-        ),
-      ),
+    final words = trainingLoadWords(acwr);
+    final ratio = acwr.toStringAsFixed(2);
+    return TracendListRow(
+      leading: const TracendRowIcon(icon: CupertinoIcons.speedometer),
+      title: 'Training load: $words',
+      subtitle: 'Last 7 days against your 4-week average · ratio $ratio',
+      semanticLabel: 'Training load: $words. Ratio $ratio.',
     );
   }
+}
+
+/// Plain words for an ACWR value.
+String trainingLoadWords(double acwr) {
+  if (acwr < 0.8) return 'lighter than usual';
+  if (acwr <= 1.3) return 'about normal';
+  if (acwr <= 1.5) return 'heavier than usual';
+  return 'much heavier than usual';
 }

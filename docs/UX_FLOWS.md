@@ -321,19 +321,23 @@ year, daily activity, equipment and its note, movements to avoid, limitations, d
 
 ```text
 ┌─────────────────────────────────────┐
-│ Today                     Account   │
-│                                     │
-│ RECOVERY              [Good]        │
-│ 72 / 100 · five driver rows         │
-│ 7-DAY TREND        HRV · ms         │
-│ ~~~~ real recorded days ~~~~        │
-│ TRAIN: Push · LOAD 1.05 Optimal     │
-│ [ Start workout ]  [ View analytics ]│
-│                                     │
-│ Check-in needed · 1 min             │
-│ Training perspective         ›      │
-│ Nutrition perspective        ›      │
-│                                     │
+│ Good morning                    (●) │  large title, date, account
+│ Saturday 3 October                  │
+│ ┌ Today ─────────────── [● Good] ┐  │
+│ │ 72 / 100                        │  │  recovery score, band chip
+│ │ Recovery score · High confidence│  │
+│ │ Complete Upper body A.          │  │  readiness sentence + reason
+│ │ ⟳ Sync · Today, 9:05 AM         │  │
+│ └─────────────────────────────────┘  │
+│ ✓ Morning check-in              ›   │
+│ ⚡ Today's workout: Upper body A ›   │  → Train (or "Rest day")
+│   Training load: about normal       │
+│ Recovery drivers                    │
+│   Heart rate variability: normal    │
+│   for you, 58 ms   … ⓘ How this is  │
+│   calculated                        │
+│ Last 7 days   ▁▃▅▂_▆█ (lime latest) │
+│ Sleep · Food · Coach note           │
 │ Today  Train  Coach Nutrition Progress │
 └─────────────────────────────────────┘
 ```
@@ -349,24 +353,91 @@ Hierarchy:
 If no valid decision exists, show the approved plan and explain whether a check-in, sync, or retry
 can improve guidance. AI availability never blocks the workout.
 
+Reading order (redesign PR 5, 2026-10-03):
+
+1. **Large title**: a time-of-day greeting ("Good morning") with the full date, and the account
+   avatar (VoiceOver and tooltip: "Open account"). At the largest text sizes, where the greeting
+   would break mid-word on a 320pt screen, the title is "Today" and the greeting joins the date.
+   Pull to refresh runs the same sync as the hero's sync row.
+2. **"Today" verdict card**: the recovery score in Archivo with a band chip (Excellent/Good →
+   good, Moderate → caution, Low/Poor → low), the confidence word as small text ("Recovery score ·
+   High confidence", or "Building baseline"), the readiness sentence (the brief's next action) and
+   its reason, and the sync row ("Sync · Today, 9:05 AM", a friendly date, never an ISO date). A
+   sync that could not refresh something leaves a caution line on the card until a sync succeeds;
+   the toast that reported it is never the only copy. The card has no button: nothing on Today is a
+   disabled primary action.
+3. **Morning check-in** row ("Done. Tap to update it." once saved), then **Today's workout**: the
+   workout's name with "5 exercises · 15 sets · about 55 min" from the real plan. The row goes to
+   Train when the shell wires it, otherwise it opens the workout. With no workout the row reads
+   **Rest day** with an enabled **See your week** action. When the brief has an ACWR, a
+   display-only row says **Training load: about normal** (lighter than usual, about normal,
+   heavier than usual, much heavier than usual; ALGORITHMS.md "ACWR Bands") with "Last 7 days
+   against your 4-week average · ratio 1.05".
+4. **Recovery drivers** (below).
+5. **Last 7 days**: the 7-day trend, Today's data moment, with **More trends in Progress**.
+6. **Sleep**: sleep quality, its band chip, four sub-scores and the debt or surplus.
+7. **Food**: "1,240 of 2,300 kcal eaten" from confirmed meals, a progress bar, "Protein 120 g" and
+   the protein left in grams ("Protein target reached" at zero), and **Log a meal** → Nutrition.
+   Without an active target it shows what was eaten and says no target is set.
+8. **Coach note**: the latest decision with a **Training / Food** segmented control over its two
+   perspectives, and "Medium confidence · decided today" from the decision itself.
+
+Loading shows skeletons in the shape of these sections (one VoiceOver label, "Loading Today"),
+never a spinner. Transient results (sync, check-in saved) are toasts.
+
 ### Quick check-in
 
-A focused sheet collects sleep quality, energy, soreness, hunger, mood, pain, availability, and an
-optional note. Pain reveals location/severity questions and may invoke the safety boundary. Save
-updates Today and recomputes only when necessary.
+A sheet collects sleep quality, energy, soreness, hunger, mood, pain, availability, and an optional
+note. Each 1–5 question is a vertical list of labelled answers, full-width rows of at least 48pt
+with a check on the chosen one, so it fits a 320pt screen at the largest text sizes:
+
+| Question      | Answers, shown top to bottom                                | Stored |
+| ------------- | ----------------------------------------------------------- | ------ |
+| Sleep quality | Very poor, Poor, OK, Good, Great                            | 1 → 5  |
+| Energy        | Very low, Low, OK, Good, Great                              | 1 → 5  |
+| Soreness      | Very sore, Sore, A bit sore, Good, Great, not sore          | 5 → 1  |
+| Hunger        | Not hungry, A little hungry, Normal, Hungry, Very hungry    | 1 → 5  |
+| Mood          | Very low, Low, OK, Good, Great                              | 1 → 5  |
+
+Soreness is reversed so the best answer always sits last: "Great, not sore" is stored as 1. Every
+question starts at 3, as before. Pain is **No pain** (0) or **Some pain**, which asks "How strong,
+from 1 to 10?" and will not save until a strength is chosen; it is stored as `pain_severity` 0–10.
+The note's counter appears only in its last 100 characters. **Save check-in** is pinned below the
+questions, so it is always on screen. The stored values and the `save_daily_check_in` payload are
+unchanged. Pain location questions and the safety boundary remain future work. Save updates Today
+and recomputes only when necessary.
 
 ### Evidence detail
 
-Readiness evidence is shown inline, not hidden behind a tap: the recovery readout lists
-each driver's true z-score next to its bar and shows No data for unusable components
-(a valid sleep reading whose baseline is still maturing shows the measurement with
-"Building baseline" instead), the sleep architecture card carries the quality score
-with its four sub-scores (Duration, Efficiency, Restorative, Consistency) and the
-debt/surplus pill (positive = debt, negative = surplus, 0 = target met), the 7-day
-trend plots only recorded days with its date range and recorded-day count, and the
-session plan card states the real ACWR and zone. Sync source and freshness live in
-the profile's Apple Health status card and beside the hero sync chip (last health sync
-time), in ordinary coaching language. Deterministic calculation and AI interpretation are
+Readiness evidence is shown inline, not hidden behind a tap. The recovery drivers are plain rows
+in the composite's weight order: "Heart rate variability: normal for you, 58 ms", then resting
+heart rate, sleep, breathing rate and recent training. The words come from the true z-score
+against the athlete's own baseline: within one spread reads "normal for you", one spread or more
+"higher/lower than usual" (sleep and training say "more/less"), two or more "much …". Resting
+heart rate and breathing rate read the measurement, not the z sign, because their z-scores are
+negated in the composite. An unusable component reads "not enough data yet" and never shows a
+number; a valid sleep reading whose baseline is still maturing shows the measurement with
+"baseline still building".
+
+The z-scores sit behind **ⓘ How this is calculated** (authority-doc change 1, 2026-10-03): it
+explains the baseline comparison in plain words, lists each driver's weight and true z-score ("Not
+used today" for an excluded component), and ends "Calculated from your Apple Health data and logged
+workouts. No AI." The disclosure is a VoiceOver button with an expanded state. The confidence word
+stays visible on the verdict card.
+
+**Evidence visualization.** The 7-day trend plots one metric (heart rate variability, then sleep,
+then resting heart rate; the first with four recorded days) as one column per calendar day:
+graphite columns, the latest recorded day in lime with a lime outline and the single idle pulse,
+and an empty socket for a day with no data. Columns are scaled between the series' own minimum and
+maximum, marked by hairline rails, and the caption states it: "Range 49–58 ms · 6 of 7 days
+recorded · As of 3 Oct, Apple Health". Day labels are 12pt day-of-month numbers, the latest in lime
+ink. The change since the first recorded day is neutral ("Up 6 ms since 27 Sep"). Fewer than four
+recorded days reads "Not enough data yet". VoiceOver reads one summary of the range, the latest
+value, the recorded-day count and the change. Full motion grows the columns west to east, Reduce
+Motion fades the chart in, and nothing moves under static motion.
+
+Sync source and freshness live in the profile's Apple Health status card and on the verdict card's
+sync row (last health sync time), in ordinary coaching language. Deterministic calculation and AI interpretation are
 labeled separately. Training and Nutrition remain perspectives in one controlled decision
 pipeline, not independent agents. The Coach tab provides direct user questions through the
 same workflow and never behaves like three separate autonomous chatbots. A live assistant

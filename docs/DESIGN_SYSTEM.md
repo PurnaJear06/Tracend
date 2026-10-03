@@ -314,16 +314,14 @@ pills; a selected chip is a lime fill with `onAccentSignal` text.
 
 #### `RecoveryReadoutCard`
 
-Full-width recovery readout on Today: tabular score with `/ 100`, a band chip
-(Excellent/Good/Moderate/Low/Poor), and five driver rows (HRV, RHR, Sleep, Resp, Strain) with
-horizontal z-score bars and signed z values. Bar fill clamps z to ±2 for layout; labels and
-semantics always report the true z-score. Cold start shows `--` with honest next-step copy; low
-confidence adds "Building baseline". Unusable drivers (no value today or no usable baseline) render
-a No data row instead of a zero bar, and a fully unusable recovery shows `--` rather than a
-fabricated score. One gated exception: a sleep row whose value is proven valid (non-null sleep
-quality, the backend's 1–960-minute gate) but whose baseline is immature (< 3 observations) shows
-the measurement with a "Building baseline" note instead of No data. Training load (ACWR) is not
-part of this card; it renders as a display-only row inside `SessionPlanCard`.
+Today's recovery drivers, in their own section under the workout (the score lives in the Today
+verdict card above). Five plain rows in words, such as "Heart rate variability: normal for you,
+58 ms"; resting heart rate and breathing rate are worded from the measurement because their
+z-scores are inverted. A driver without a usable value or baseline reads "not enough data yet",
+never a zero. One gated exception: a sleep row whose value is proven valid but whose baseline is
+immature (< 3 observations) shows the measurement with "baseline still building". The z-scores,
+weights and method sit behind ⓘ **How this is calculated** (UX_FLOWS change 1). Training load is
+not part of this card; Today shows it as a row ("Training load: about normal").
 
 #### `SleepArchitectureCard`
 
@@ -338,13 +336,13 @@ repeated here; the recovery readout carries them. Every data element exposes a s
 #### `TrajectoryTrend`
 
 Today's data moment: a real 7-day column chart from `daily_health_summaries` for one metric
-(priority HRV → sleep → resting HR; first with ≥4 recorded days in the window wins). The window is
-the 7 days ending at the latest stored day. A recorded day grows a rounded column toward its value
-(the latest recorded day carries the signal); an unrecorded day leaves a dim socket on the
-baseline. Hairline rails bound the series' own min/max, a day-tick row shows month rollover, and a
-calibration strip reports the range, the recorded-day count and the as-of stamp. Missing days are
-never interpolated; fewer than four recorded days renders the "Building baseline" card. Direction
-is reported neutrally: up or down is fact, not good or bad.
+(priority heart rate variability → sleep → resting heart rate; first with ≥4 recorded days in the
+window wins). The window is the 7 days ending at the latest stored day. Recorded days are graphite
+columns; the latest recorded day is lime with a single ring pulse. An unrecorded day leaves a dim
+socket. Day labels are 12pt; the caption gives the range, the recorded-day count and the as-of
+date. Missing days are never interpolated; fewer than four recorded days says so in words.
+Direction is neutral fact ("Up 11 ms since 18 Aug"), never good or bad. Full motion grows the
+columns; Reduce Motion fades in; a static scope draws still.
 
 #### `EvidenceTrendChart` and weight charts
 
