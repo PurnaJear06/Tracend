@@ -32,13 +32,13 @@ values ('a8500000-0000-4000-8000-000000000001', 'a8000000-0000-4000-8000-0000000
   'a8200000-0000-4000-8000-000000000001', 'a8300000-0000-4000-8000-000000000001',
   '2026-09-26', 'UTC', 'completed', gen_random_uuid(), '2026-09-26 10:00:00+00', 3600, 8);
 insert into public.exercise_performances(id, user_id, workout_session_id, planned_exercise_id,
-  exercise_order, status, performance_kind, performed_name) values
+  exercise_order, status, performance_kind, performed_name, substitution_reason) values
   ('a8600000-0000-4000-8000-000000000001', 'a8000000-0000-4000-8000-000000000001',
    'a8500000-0000-4000-8000-000000000001', 'a8400000-0000-4000-8000-000000000002', 1,
-   'performed', 'prescribed', 'Cable Lateral Raise'),
+   'performed', 'prescribed', 'Cable Lateral Raise', null),
   ('a8600000-0000-4000-8000-000000000002', 'a8000000-0000-4000-8000-000000000001',
    'a8500000-0000-4000-8000-000000000001', 'a8400000-0000-4000-8000-000000000002', 2,
-   'performed', 'substitution', 'Machine lateral raise');
+   'performed', 'substituted', 'Machine lateral raise', 'Cable taken');
 
 select is(
   (select count(*) from (
