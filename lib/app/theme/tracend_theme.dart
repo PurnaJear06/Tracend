@@ -310,7 +310,7 @@ abstract final class TracendTheme {
         modalBarrierColor: colors.scrim,
         elevation: 0,
         modalElevation: 0,
-        showDragHandle: true,
+        showDragHandle: false,
         dragHandleColor: colors.borderSubtle,
         dragHandleSize: const Size(36, 5),
         clipBehavior: Clip.antiAlias,
