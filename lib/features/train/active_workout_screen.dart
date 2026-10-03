@@ -297,6 +297,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                     icon: _offline
                         ? CupertinoIcons.wifi_slash
                         : CupertinoIcons.check_mark_circled_solid,
+                    tone: _offline
+                        ? StatusTone.caution
+                        : _syncing
+                        ? StatusTone.neutral
+                        : StatusTone.good,
                   ),
                   const SizedBox(height: TracendSpacing.lg),
                   Text(

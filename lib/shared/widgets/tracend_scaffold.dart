@@ -1,13 +1,22 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/shared/widgets/tracend_glass.dart';
+import 'package:tracend/shared/widgets/tracend_motion.dart';
 
-class TracendScrollView extends StatelessWidget {
+/// The page frame for top-level tabs (DESIGN_SYSTEM.md §5.1, large title).
+///
+/// The iOS large title scrolls with the content. Once it passes under the
+/// status bar, a glass inline bar with the same title fades in; scrolling
+/// back up fades it out. Pass [onRefresh] to add pull to refresh, which
+/// should rerun the screen's existing reload.
+class TracendScrollView extends StatefulWidget {
   const TracendScrollView({
     required this.title,
     required this.children,
     this.subtitle,
     this.trailing,
+    this.onRefresh,
     super.key,
   });
 
@@ -16,62 +25,207 @@ class TracendScrollView extends StatelessWidget {
   final Widget? trailing;
   final List<Widget> children;
 
+  /// Called by pull to refresh; the spinner stays until the future completes.
+  final Future<void> Function()? onRefresh;
+
+  /// Height of the inline bar below the status bar.
+  static const inlineBarHeight = 44.0;
+
+  @override
+  State<TracendScrollView> createState() => _TracendScrollViewState();
+}
+
+class _TracendScrollViewState extends State<TracendScrollView> {
+  final _frameKey = GlobalKey();
+  final _titleKey = GlobalKey();
+  bool _collapsed = false;
+  bool _checkScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // A restored scroll offset can start the page already scrolled.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateCollapsed());
+  }
+
+  bool _handleScroll(ScrollNotification notification) {
+    // Positions are read after the frame lays the new offset out; during the
+    // notification they still describe the previous frame.
+    if (notification.depth == 0 && !_checkScheduled) {
+      _checkScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _checkScheduled = false;
+        _updateCollapsed();
+      });
+    }
+    return false;
+  }
+
+  void _updateCollapsed() {
+    if (!mounted) return;
+    final frame = _frameKey.currentContext?.findRenderObject() as RenderBox?;
+    final title = _titleKey.currentContext?.findRenderObject() as RenderBox?;
+    if (frame == null || !frame.hasSize) return;
+    // The bar takes over once most of the large title has slid under it.
+    final threshold =
+        MediaQuery.paddingOf(context).top +
+        TracendScrollView.inlineBarHeight / 2;
+    final bool collapsed;
+    if (title == null || !title.attached || !title.hasSize) {
+      // The header is built first, so a missing title has scrolled away.
+      collapsed = true;
+    } else {
+      final titleBottom = title
+          .localToGlobal(Offset(0, title.size.height), ancestor: frame)
+          .dy;
+      collapsed = titleBottom <= threshold;
+    }
+    if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
+    final safeTop = MediaQuery.paddingOf(context).top;
     final gutter = size.width < 375 ? TracendSpacing.md : TracendSpacing.gutter;
-    return SafeArea(
-      bottom: false,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: CustomScrollView(
-            key: PageStorageKey(title),
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            slivers: [
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                  gutter,
-                  TracendSpacing.md,
-                  gutter,
-                  176,
-                ),
-                sliver: SliverList.list(
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                title,
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.headlineMedium,
-                              ),
-                              if (subtitle != null) ...[
-                                const SizedBox(height: TracendSpacing.xxs),
-                                Text(
-                                  subtitle!,
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        ?trailing,
-                      ],
-                    ),
-                    const SizedBox(height: TracendSpacing.lg),
-                    ...children,
-                  ],
+    final textTheme = Theme.of(context).textTheme;
+    final onRefresh = widget.onRefresh;
+    final header = Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                header: true,
+                child: Text(
+                  widget.title,
+                  key: _titleKey,
+                  style: textTheme.displaySmall,
                 ),
               ),
+              if (widget.subtitle != null) ...[
+                const SizedBox(height: TracendSpacing.xxs),
+                Text(widget.subtitle!, style: textTheme.bodyMedium),
+              ],
             ],
+          ),
+        ),
+        if (widget.trailing != null) ...[
+          const SizedBox(width: TracendSpacing.sm),
+          widget.trailing!,
+        ],
+      ],
+    );
+    return Stack(
+      key: _frameKey,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(top: safeTop),
+          child: MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _handleScroll,
+                  child: CustomScrollView(
+                    key: PageStorageKey(widget.title),
+                    // Content scrolls up under the status bar and the glass
+                    // inline bar instead of being cut off at the safe area.
+                    clipBehavior: Clip.none,
+                    physics: const BouncingScrollPhysics(
+                      parent: AlwaysScrollableScrollPhysics(),
+                    ),
+                    slivers: [
+                      if (onRefresh != null)
+                        CupertinoSliverRefreshControl(onRefresh: onRefresh),
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          gutter,
+                          TracendSpacing.xs,
+                          gutter,
+                          176,
+                        ),
+                        sliver: SliverList.list(
+                          children: [
+                            header,
+                            const SizedBox(height: TracendSpacing.lg),
+                            ...widget.children,
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          // The bar only repeats the title, so taps reach the content below.
+          child: IgnorePointer(
+            child: AnimatedSwitcher(
+              duration: TracendMotionScope.fade(context, TracendMotion.quick),
+              child: _collapsed
+                  ? _InlineTitleBar(
+                      key: const ValueKey('inline-title'),
+                      title: widget.title,
+                      safeTop: safeTop,
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InlineTitleBar extends StatelessWidget {
+  const _InlineTitleBar({
+    required this.title,
+    required this.safeTop,
+    super.key,
+  });
+
+  final String title;
+  final double safeTop;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    // The large title stays the page's header for VoiceOver; this bar only
+    // repeats it visually.
+    return ExcludeSemantics(
+      child: TracendGlass(
+        borderRadius: 0,
+        border: Border(bottom: BorderSide(color: colors.borderHairline)),
+        child: SizedBox(
+          height: safeTop + TracendScrollView.inlineBarHeight,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              TracendSpacing.xl * 2,
+              safeTop,
+              TracendSpacing.xl * 2,
+              0,
+            ),
+            child: Center(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textScaler: MediaQuery.textScalerOf(
+                  context,
+                ).clamp(maxScaleFactor: 1.35),
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
           ),
         ),
       ),
@@ -79,6 +233,8 @@ class TracendScrollView extends StatelessWidget {
   }
 }
 
+/// A flat content card (DESIGN_SYSTEM.md §3.4): a `surface` fill, or the
+/// `surfaceRaised` fill when [raised], with no border, gradient or shadow.
 class TracendCard extends StatelessWidget {
   const TracendCard({
     required this.child,
@@ -101,25 +257,7 @@ class TracendCard extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: raised ? colors.surfaceRaised : colors.surface,
-          border: Border.all(
-            color: raised
-                ? colors.borderSubtle.withValues(alpha: 0.72)
-                : colors.borderSubtle,
-          ),
           borderRadius: BorderRadius.circular(radius),
-          boxShadow: raised
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(
-                      alpha: Theme.of(context).brightness == Brightness.dark
-                          ? 0.20
-                          : 0.055,
-                    ),
-                    blurRadius: 24,
-                    offset: const Offset(0, 10),
-                  ),
-                ]
-              : null,
         ),
         child: Padding(padding: padding, child: child),
       ),
@@ -179,10 +317,22 @@ class TracendPill extends StatelessWidget {
   }
 }
 
+/// A section title inside a page: sentence case, 20pt Archivo, with an
+/// optional trailing [value] ("16 sets") or text action ("See all").
+/// Write [label] as it should read; it is never uppercased.
 class SectionLabel extends StatelessWidget {
-  const SectionLabel(this.label, {this.actionLabel, this.onAction, super.key});
+  const SectionLabel(
+    this.label, {
+    this.value,
+    this.actionLabel,
+    this.onAction,
+    super.key,
+  });
 
   final String label;
+
+  /// Quiet trailing context, such as a count.
+  final String? value;
 
   /// Optional trailing text action, such as "See all".
   final String? actionLabel;
@@ -190,75 +340,118 @@ class SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // labelCaps restyle (owner-approved 2026-09-04, DESIGN_SYSTEM §3.2:
-    // "every caps label renders through TracendTheme.labelCaps") — text
-    // content unchanged, style-only, so all tabs inherit the standard.
-    final text = Text(
-      label.toUpperCase(),
-      style: TracendTheme.labelCaps(context),
-    );
-    if (actionLabel == null || onAction == null) {
-      return Padding(
-        padding: const EdgeInsets.only(
-          top: TracendSpacing.lg,
-          bottom: TracendSpacing.sm,
-        ),
-        child: text,
-      );
-    }
+    final textTheme = Theme.of(context).textTheme;
+    final hasAction = actionLabel != null && onAction != null;
     return Padding(
-      padding: const EdgeInsets.only(
-        top: TracendSpacing.sm,
-        bottom: TracendSpacing.xxs,
+      padding: EdgeInsets.only(
+        top: hasAction ? TracendSpacing.sm : TracendSpacing.lg,
+        bottom: hasAction ? TracendSpacing.xxs : TracendSpacing.sm,
+        left: 2,
+        right: hasAction ? 0 : 2,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
         children: [
-          Expanded(child: text),
-          TextButton(
-            onPressed: onAction,
-            style: TextButton.styleFrom(
-              minimumSize: const Size(44, 44),
-              padding: const EdgeInsets.symmetric(
-                horizontal: TracendSpacing.xs,
-              ),
+          Expanded(
+            child: Semantics(
+              header: true,
+              child: Text(label, style: textTheme.titleLarge),
             ),
-            child: Text(actionLabel!),
           ),
+          if (value != null) ...[
+            const SizedBox(width: TracendSpacing.sm),
+            Text(value!, style: textTheme.bodySmall),
+          ],
+          if (hasAction) ...[
+            const SizedBox(width: TracendSpacing.xs),
+            TextButton(
+              onPressed: onAction,
+              style: TextButton.styleFrom(
+                minimumSize: const Size(44, 44),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: TracendSpacing.xs,
+                ),
+              ),
+              child: Text(actionLabel!),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
+/// The meaning a [StatusChip] carries. Lime ([signal]) marks brand and
+/// selection only; it never means "good".
+enum StatusTone {
+  /// Done, healthy, synced.
+  good,
+
+  /// Needs a look soon: pending, partial, a conflict to review.
+  caution,
+
+  /// Needs attention now: failed, below the floor.
+  low,
+
+  /// Information with no judgement.
+  neutral,
+
+  /// Brand and action signal: new, now, selected.
+  signal,
+}
+
+/// A small status pill: a tone-colored icon on a tone wash, with the label
+/// in primary text so it stays readable in every tone.
 class StatusChip extends StatelessWidget {
-  const StatusChip({required this.label, required this.icon, super.key});
+  const StatusChip({
+    required this.label,
+    required this.icon,
+    this.tone = StatusTone.neutral,
+    super.key,
+  });
 
   final String label;
   final IconData icon;
+  final StatusTone tone;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
+    final (Color fill, Color iconColor) = switch (tone) {
+      StatusTone.good => (colors.stateGoodTint, colors.stateStable),
+      StatusTone.caution => (
+        colors.accentAmber.withValues(alpha: 0.14),
+        colors.accentAmber,
+      ),
+      StatusTone.low => (
+        colors.stateAttention.withValues(alpha: 0.14),
+        colors.stateAttention,
+      ),
+      StatusTone.neutral => (colors.surfaceRaised, colors.textSecondary),
+      StatusTone.signal => (colors.accentSignalTint, colors.accentSignalInk),
+    };
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: colors.stateStable.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
+        color: fill,
+        borderRadius: BorderRadius.circular(TracendRadii.pill),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: TracendSpacing.sm,
-          vertical: TracendSpacing.xs,
+          vertical: 6,
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: colors.stateStable),
-            const SizedBox(width: TracendSpacing.xs),
-            Expanded(
+            Icon(icon, size: 16, color: iconColor),
+            const SizedBox(width: 6),
+            Flexible(
               child: Text(
                 label,
                 style: Theme.of(
                   context,
-                ).textTheme.labelMedium?.copyWith(color: colors.stateStable),
+                ).textTheme.labelMedium?.copyWith(color: colors.textPrimary),
               ),
             ),
           ],

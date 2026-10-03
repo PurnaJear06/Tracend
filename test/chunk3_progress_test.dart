@@ -281,7 +281,14 @@ void main() {
     await tester.tap(find.text('I agree and continue'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('Progress photos'), findsOneWidget);
+    // The page's "Progress photos" section label stays behind the sheet.
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text('Progress photos'),
+      ),
+      findsOneWidget,
+    );
   });
 }
 

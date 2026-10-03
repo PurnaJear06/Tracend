@@ -25,6 +25,7 @@ class WorkoutRepairCard extends StatelessWidget {
         const StatusChip(
           label: 'Workout record needs review',
           icon: CupertinoIcons.exclamationmark_triangle,
+          tone: StatusTone.caution,
         ),
         const SizedBox(height: TracendSpacing.sm),
         Text(
@@ -107,6 +108,9 @@ class ReconciliationCard extends StatelessWidget {
           icon: item.status == 'conflict'
               ? CupertinoIcons.exclamationmark_triangle
               : CupertinoIcons.link,
+          tone: item.status == 'conflict'
+              ? StatusTone.caution
+              : StatusTone.neutral,
         ),
         const SizedBox(height: TracendSpacing.sm),
         Text(item.workoutName, style: Theme.of(context).textTheme.titleLarge),
@@ -203,6 +207,7 @@ class HealthkitCompleteCard extends StatelessWidget {
           const StatusChip(
             label: 'Apple Health detected workout',
             icon: CupertinoIcons.heart_fill,
+            tone: StatusTone.neutral,
           ),
           const SizedBox(height: TracendSpacing.sm),
           Text(

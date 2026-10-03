@@ -52,10 +52,14 @@ class OnboardingProposalView extends StatelessWidget {
               icon: fromModel
                   ? CupertinoIcons.sparkles
                   : CupertinoIcons.checkmark_shield,
+              tone: StatusTone.neutral,
             ),
             StatusChip(
               label: '${_confidence(proposal.confidence)} confidence',
               icon: CupertinoIcons.doc_text_search,
+              tone: proposal.confidence == 'low'
+                  ? StatusTone.caution
+                  : StatusTone.neutral,
             ),
           ],
         ),
