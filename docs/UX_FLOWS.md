@@ -377,7 +377,8 @@ year, daily activity, equipment and its note, movements to avoid, limitations, d
 │ │ [▶ View workout          (lime)]││  → Train (or "Rest day")
 │ │ Training load: about normal     ││
 │ └─────────────────────────────────┘│
-│ Food   (calories ring) (protein ring)│
+│ Food  92 g protein to go            │
+│  ▮ ▮──now┊ ┊ ┊   fuel rail          │  logged / planned / missed meals
 │ Coach note · Last 7 days ·          │
 │ Recovery drivers · Sleep            │
 │ Today  Train  Coach Nutrition Progress │
@@ -420,10 +421,16 @@ version read as a health report, not a training app):
    display-only line closes the card: **Training load: about normal** (lighter than usual, about
    normal, heavier than usual, much heavier than usual; ALGORITHMS.md "ACWR Bands") with "Last 7
    days against your 4-week average · ratio 1.05".
-5. **Food**: a calories ring and a protein ring from confirmed meals, each with the amount eaten
-   inside and what is left below ("960 kcal left", "54 g left", or "reached"), then "1,240 of
-   2,300 kcal eaten" and **Log a meal** → Nutrition. Without an active target it shows what was
-   eaten and says no target is set.
+5. **Food** (the fuel rail): Nutrition is the full ledger, so Today says only what is left and
+   how to spread it. The headline is protein still to eat ("92 g protein to go") and the line
+   under it splits that evenly over the meal-plan slots still ahead ("3 meals left, about 31 g
+   each"). Under it the day runs as a line from 6:00 to 22:00 (wider for an earlier or later
+   meal), filled up to a "now" needle: confirmed meals stand on it as filled bars at their logged
+   time, sized by protein; planned slots as dashed bars sized by their share; a slot more than an
+   hour past with nothing logged as a hollow dot. "1,240 of 2,300 kcal" and **Log a meal** →
+   Nutrition close the card. A met target reads "Protein target reached"; without a plan, or when
+   the plan fails to load, the line under the headline says so; without an active target it shows
+   what was eaten and says no target is set.
 6. **Coach note**: the latest decision with a **Training / Food** segmented control over its two
    perspectives, and "Medium confidence · decided today" from the decision itself.
 7. **Last 7 days**: the 7-day trend, Today's data moment, with **More trends in Progress**.
