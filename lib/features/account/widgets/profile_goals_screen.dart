@@ -2,11 +2,12 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/widgets/account_widgets.dart';
-import 'package:tracend/shared/widgets/premium_gradient_card.dart';
+import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
-/// Read-only view of the confirmed facts that shape the plan and every
-/// Coach context snapshot. Plan-changing edits stay approval-gated.
+/// Read-only view of the confirmed facts that shape the plan and what the
+/// Coach knows. Plan-changing edits stay approval-gated.
 class ProfileGoalsScreen extends StatelessWidget {
   const ProfileGoalsScreen({required this.data, super.key});
 
@@ -21,7 +22,9 @@ class ProfileGoalsScreen extends StatelessWidget {
         future: data,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: TracendLoader(semanticLabel: 'Loading your profile'),
+            );
           }
           if (snapshot.hasError) {
             return const AccountDetailMessage(
@@ -44,67 +47,62 @@ class ProfileGoalsScreen extends StatelessWidget {
           final planName = plan['training_plans'] is Map
               ? (plan['training_plans'] as Map)['title']?.toString()
               : null;
+          final gutter = MediaQuery.sizeOf(context).width < 375
+              ? TracendSpacing.md
+              : TracendSpacing.gutter;
           return ListView(
-            padding: const EdgeInsets.fromLTRB(
-              TracendSpacing.gutter,
-              TracendSpacing.md,
-              TracendSpacing.gutter,
-              TracendSpacing.xl,
+            padding: EdgeInsets.fromLTRB(
+              gutter,
+              TracendSpacing.xs,
+              gutter,
+              TracendSpacing.xxl,
             ),
             children: [
-              Text(
-                'Your coaching foundation',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              const SizedBox(height: TracendSpacing.xs),
-              const Text(
-                'These confirmed facts shape your plan and every Coach context snapshot.',
-              ),
-              const AccountSectionLabel('GOAL'),
-              PremiumGradientCard(
-                child: DetailRows(
-                  rows: {
-                    'Primary goal': friendlyEnum(goal['goal_type']),
-                    'Status': friendlyEnum(goal['status']),
-                    'Active since': dateText(goal['activated_at']),
-                  },
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: TracendListRow.horizontalPadding,
+                ),
+                child: Text(
+                  'These confirmed facts shape your plan and what the Coach knows about you.',
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
-              const AccountSectionLabel('TRAINING PROFILE'),
-              TracendCard(
-                child: DetailRows(
-                  rows: {
-                    'Experience': friendlyEnum(profile['experience_level']),
-                    'Height': profile['height_cm'] == null
-                        ? 'Not recorded'
-                        : '${profile['height_cm']} cm',
-                    'Training days': trainingDaysText(profile['training_days']),
-                    'Session length': profile['session_minutes'] == null
-                        ? 'Not recorded'
-                        : '${profile['session_minutes']} min',
-                  },
-                ),
+              const SectionLabel('Goal'),
+              AccountFactList(
+                rows: {
+                  'Primary goal': friendlyEnum(goal['goal_type']),
+                  'Status': friendlyEnum(goal['status']),
+                  'Active since': dateText(goal['activated_at']),
+                },
+              ),
+              const SectionLabel('Training profile'),
+              AccountFactList(
+                rows: {
+                  'Experience': friendlyEnum(profile['experience_level']),
+                  'Height': profile['height_cm'] == null
+                      ? 'Not recorded'
+                      : '${profile['height_cm']} cm',
+                  'Training days': trainingDaysText(profile['training_days']),
+                  'Session length': profile['session_minutes'] == null
+                      ? 'Not recorded'
+                      : '${profile['session_minutes']} min',
+                },
               ),
               if (profile['sex'] != null) ...[
-                const AccountSectionLabel('ONBOARDING ANSWERS'),
-                TracendCard(
-                  child: DetailRows(rows: onboardingAnswerRows(profile)),
-                ),
+                const SectionLabel('Onboarding answers'),
+                AccountFactList(rows: onboardingAnswerRows(profile)),
               ],
-              const AccountSectionLabel('APPROVED PLAN'),
-              TracendCard(
-                child: DetailRows(
-                  rows: {
-                    'Plan': planName ?? 'No active plan',
-                    'Version': plan['version_number'] == null
-                        ? '—'
-                        : 'v${plan['version_number']}',
-                    'Approved': dateText(plan['approved_at']),
-                  },
-                ),
+              const SectionLabel('Approved plan'),
+              AccountFactList(
+                rows: {
+                  'Plan': planName ?? 'No active plan',
+                  'Version': plan['version_number'] == null
+                      ? 'Not recorded'
+                      : 'Version ${plan['version_number']}',
+                  'Approved': dateText(plan['approved_at']),
+                },
               ),
-              const SizedBox(height: TracendSpacing.sm),
-              const Text(
+              const AccountFootnote(
                 'These come from the onboarding answers you approved. Nothing about your plan changes without your approval.',
               ),
             ],

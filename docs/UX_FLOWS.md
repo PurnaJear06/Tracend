@@ -118,12 +118,12 @@ Progress
 └── Weekly and monthly reviews
 
 Account
-├── Profile and goals
-├── HealthKit and notifications
-├── AI service status and my usage
-├── Privacy and AI processing
-├── Export
-└── Delete account
+├── Plan: Profile and goals
+├── Health: Apple Health
+├── Appearance
+├── Notifications (reminders, rest timer alerts)
+├── AI coach: AI coaching, AI usage this month, Coach conversations
+└── Privacy: Export data, Consent history, Delete account
 ```
 
 ## 3. App Entry and Restoration
@@ -138,6 +138,11 @@ data is shown; neither route bypasses authentication.
 
 The first launch says: **Your plan, explained by your data.** It does not show pricing or request
 optional permissions before explaining their purpose.
+
+The sign-in screen (2026-10 redesign) shows the brand mark (drawn with a dark T on light
+surfaces), **Sign in to Tracend** (**Create your Tracend account** in that mode), the brand line,
+a **Sign in / Create account** segmented control, filled email and password fields and one pill
+button. The development copy is a single small line: **Private beta: email sign-in**.
 
 ### Returning user
 
@@ -162,7 +167,9 @@ optional permissions before explaining their purpose.
 2. Show the supported healthy-adult boundary.
 3. Ask only eligibility questions required by the PRD.
 4. If excluded, stop plan generation and show appropriate professional guidance.
-5. Accept terms and privacy notice.
+5. Accept terms and privacy notice. The two checkboxes are check rows in a grouped list. They
+   are **not linked** to any hosted text yet; that is acceptable only for the owner-only beta
+   and is a public-release blocker (SECURITY_PRIVACY.md §15). No legal text lives in the app.
 6. Choose whether to allow AI coaching. The disclosure names the provider (DeepSeek, operated by
    Hangzhou DeepSeek Artificial Intelligence Co., Ltd., on servers in China), the data it receives,
    and what works without it. **Allow AI coaching** and **Not now** are both valid answers.
@@ -212,7 +219,7 @@ Eligibility → AI coaching → Path → Goal
   ("Strength: 3.4× a week usually · 1× a week lately", "Sleep: 6 h 50 min usually"), or says the
   plan uses the last 4 weeks when there are fewer than three earlier months.
 - **The proposal** shows **Start at ‹kg›** on exercises Tracend set a starting load for, a
-  **Focus** line under Training, and the usual months in **How this was calculated**. Train
+  **Focus** line under Training, and the usual months in **How we calculated this**. Train
   pre-fills the kg field with the starting load.
 
 - **Apple Health** reads the last four weeks when the athlete taps **Connect Apple Health**, then
@@ -223,7 +230,7 @@ Eligibility → AI coaching → Path → Goal
   date, until the athlete moves it, and never over an answered weight) and shows average steps
   with a **Matches your steps** tag on the daily-activity answer they point to. The athlete's own
   answers are what count. Review shows what Apple Health contributed, and the proposal's **How
-  this was calculated** adds the summary the plan used.
+  we calculated this** adds the summary the plan used.
 - **Build my plan** starts a server generation and shows **Building your plan**. The app polls the
   generation, so the athlete can leave and come back:
   - a running generation keeps waiting;
@@ -244,7 +251,11 @@ Eligibility → AI coaching → Path → Goal
 - **Goal:** nothing is preselected; each goal has a one-line description.
 - **Inputs:** height, weight, target weight and session length are sliders with − and +
   buttons for exact values, read aloud with their unit. The birth-year number pad closes after
-  four digits or a tap outside. Choice cards show their selected state with a border and tint.
+  four digits or a tap outside. Choice cards (AI coaching, path, goal, daily activity) show their
+  selected state with a lime ring, a lime wash and a filled check. Fields are filled, buttons are
+  pills, and multi-select answers (days, equipment, movements, muscles) are pill chips. Sex and
+  the reps left on a top set are segmented controls; at large text sizes Sex becomes a list of
+  rows so no label breaks mid-word.
 - **Review** lists every answer (Apple Health, daily activity, equipment and its note, diet,
   movements to avoid, limitations, focus, and for an experienced athlete their training and top
   sets). Each row has
@@ -253,7 +264,10 @@ Eligibility → AI coaching → Path → Goal
 - **Building your plan** says it usually takes under a minute and can take up to two.
 - A draft from an older build continues at **About you**.
 - The header reads **Step N of M · ‹section›**: 15 steps for an experienced athlete, 13 for a
-  beginner, who skips Your training and Current lifts.
+  beginner, who skips Your training and Current lifts. Under it a thin segmented line has one
+  segment per step: done steps solid, the current step lime. The step text is what VoiceOver reads.
+- **Reject proposal** asks with a destructive confirm (**Reject plan** / **Keep reviewing**);
+  **Request changes** opens a sheet titled **What should change?**.
 
 The original target flow:
 
@@ -285,13 +299,16 @@ edited from Review. Generation never activates a plan.
 
 The 2026-10 proposal screen shows:
 
-- **Provenance:** **Proposed by AI (‹model›) · checked by Tracend**, or **Built by Tracend's rules**.
+- **Provenance:** **Proposed by AI (DeepSeek) · checked by Tracend**, or **Built by Tracend's
+  rules**. The provider name comes from the shared display-name map
+  (`lib/shared/ai_provider_names.dart`, matched by the model id's provider prefix), never the raw
+  model id; an id outside the map reads **Proposed by AI · checked by Tracend**.
 - **Confidence.**
 - **The assessment.**
 - **Training:** every training day with its exercises (sets × reps, RPE with the reps left in
   plain words, for example "RPE 7.5 (about 2–3 reps left)", rest).
-- **Nutrition:** the targets and **How this was calculated** (resting energy × activity plus
-  training, and the goal range).
+- **Nutrition:** the targets, with the formula (resting energy × activity plus training, and the
+  goal range) behind the collapsed **How we calculated this** disclosure.
 - **For an experienced athlete:** what was kept and what changed.
 - **The plan's reasoning:** why, benefit, downside, assumptions, and what is not known yet.
 
@@ -619,23 +636,43 @@ next focus, and a **Mark reviewed** acknowledgement action.
 
 ### Account and AI usage
 
-Account opens as a native detail destination from the Today account control. It shows the signed-in
-identity, current goal, HealthKit and notification status, privacy controls, export, deletion, and
-sign out.
+Account opens as a native detail destination from the Today account control. Since the 2026-10
+redesign it is one iOS inset-grouped settings page:
 
-**Notifications** opens a native bottom sheet with daily check-in at 7:00 PM and weekly review on
-Sunday at 6:00 PM. Permission is requested only after the owner enables a reminder and saves. The
-sheet discloses generic lock-screen copy before permission; denial points to iOS Settings and leaves
-the app usable. Saved choices survive app termination. If iOS loses a pending request while
-authorization remains active, Tracend recreates it from the local choice.
+- **Identity:** the name from the email local-part, a **Private beta** chip and **Current goal**
+  when the active-goal query returns one. There is no separate Edit control; **Profile and goals**
+  is the edit entry.
+- **Plan:** **Profile and goals** opens the read-only screen of that title (goal, training
+  profile, onboarding answers, approved plan) as grouped label/value rows.
+- **Health:** **Apple Health** with its status in plain words ("Updated today at 14:05",
+  "· needs a refresh", "· some signals missing", or "Not connected · manual logging works"). It
+  opens a sheet with the full status card and **Connect** or **Refresh Apple Health**.
+- **Appearance:** a **System / Dark / Light** segmented control that applies at once.
+- **Notifications:** switch rows that apply at once: **Daily check-in reminder** (every day at
+  7:00 PM), **Weekly review reminder** (Sunday at 6:00 PM) and **Rest timer alerts**. The footnote
+  says lock-screen text stays generic. The rest-timer row names its lock-screen text, "Rest timer
+  finished"; when iOS has not been asked yet, turning it on first shows that text in a confirm,
+  and only **Continue** leads to the iOS permission request. **Not now**, off or a denied
+  permission keeps the rest timer in the app only, and a denial points to iOS Settings. There is
+  no in-app haptics toggle; the iOS setting governs haptics.
+- **AI coach:** **AI coaching** (on with the provider name from the server notice, or off),
+  **AI usage this month**, and **Coach conversations** (a sheet; deleting a conversation asks
+  with a destructive confirm). The footnote says provider keys stay on the server.
+- **Privacy:** **Export data**, **Consent history** and **Delete account**, then **Sign out** at
+  the foot.
+
+Sheets use the Tracend sheet, confirmations the destructive confirm, transient results a toast,
+and loading the brand loader.
 
 **AI usage** shows only the authenticated user's sanitized current-period request count, token or
 image usage where meaningful, estimated cost, and service availability. It never reveals API keys,
 prompts, provider request identifiers, raw errors, or another user's aggregate. Values are
-operational estimates, not invoices or subscription quotas. Budget thresholds (warning, hard stop,
-daily limit) render from the server budget state rather than hardcoded copy, and Refresh usage
-refetches the live summary. When budget fields are unavailable the screen degrades to run counts
-and estimates without threshold claims.
+operational estimates, not invoices or subscription quotas. This month's cost is shown against
+the warning and stop limits **from the server budget state only** (never hard-coded), as a meter
+with a tick at the warning threshold and in the Account row ("$0.42 of $2.00 · warning at $1.00").
+Dollars show two decimals; a cost above zero that would round to nothing reads **<$0.01**, never
+**$0.00**. Refresh usage refetches the live summary. When budget fields are unavailable the screen
+degrades to run counts and estimates without threshold claims.
 
 Provider setup is not a mobile flow. If the owner has not configured a server-side provider secret,
 Account shows **AI service not configured** and explains that approved plans and manual logging
@@ -644,17 +681,20 @@ remain available.
 Privacy screens show consent by purpose, provider disclosure, photo retention controls, connected
 data, export, and deletion.
 
-**Privacy and AI processing** opens a read-only consent ledger: the latest append-only
-`consent_records` entry per purpose (terms, privacy, AI coaching, progress photo storage, progress
-photo AI, notifications) with its grant/withdrawal state, date, and notice version. Purposes without a record
-say so. The ledger never edits records; withdrawal happens through the flow that owns each purpose.
+**Consent history** (formerly the consent ledger) is read-only: the latest `consent_records` entry
+per purpose (terms, privacy, AI coaching, progress photo storage, progress photo AI,
+notifications). Each row leads with the choice and its date ("Granted 2 Sep 2026"); the notice
+version and where it was made ("Version ai-coaching-v1 · iOS app", or "Set up during testing" for
+owner-development records) are secondary text. Purposes without a record say "No choice recorded
+yet". The screen never edits records; withdrawal happens through the flow that owns each purpose.
 
 - Export and deletion require recent authentication.
 - Export asks for the account password and a separate 12-character export password, explains media
   inclusion and expiry, and exposes download only when ready. Tracend cannot recover that password.
-- Deletion explains complete irreversible scope, requires the password and exact `DELETE`, and
-  returns to signed-out state only after the server confirms it (its reply, or Auth reporting the
-  account gone).
+- Deletion explains complete irreversible scope, requires the password and exact `DELETE`, then
+  a destructive confirm (**Delete your account?** with **Delete account** and a bold **Cancel**)
+  before anything is sent, and returns to signed-out state only after the server confirms it (its
+  reply, or Auth reporting the account gone). A toast then says the account was deleted.
 - The wait is bounded: the app stops waiting for the reply after 60 seconds, then asks the server
   where the deletion stands a few more times. If it is still running, the sheet says it has not
   been confirmed yet and offers **Check again**. A failed deletion says the account remains.

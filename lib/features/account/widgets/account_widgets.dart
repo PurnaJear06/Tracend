@@ -1,74 +1,86 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/shared/widgets/grouped_list.dart';
 
-/// One navigation or status row inside a grouped Account card.
-///
-/// Stitch account reference grammar: hairline-separated full-width rows —
-/// title (Archivo 17pt) with a secondary detail line, no icon tiles;
-/// the quiet settings surface lets Today's trend stay the aesthetic risk.
-///
-/// The chevron renders only when [onTap] is provided — rows without a
-/// destination are display-only facts (no dead affordances).
-class AccountRow extends StatelessWidget {
-  const AccountRow({
-    required this.title,
-    required this.detail,
-    this.onTap,
-    super.key,
-  });
+/// Read-only facts as one inset grouped list (DESIGN_SYSTEM.md §5.1): the
+/// label on the left and the value on the right, as in iOS Settings. At large
+/// text sizes or on a narrow phone the value moves under its label instead of
+/// squeezing into a column.
+class AccountFactList extends StatelessWidget {
+  const AccountFactList({required this.rows, super.key});
 
-  final String title;
-  final String detail;
-  final VoidCallback? onTap;
+  final Map<String, String> rows;
+
+  @override
+  Widget build(BuildContext context) => TracendGroupedList(
+    children: [
+      for (final entry in rows.entries)
+        AccountFactRow(label: entry.key, value: entry.value),
+    ],
+  );
+}
+
+/// One label and value inside an [AccountFactList]. VoiceOver reads it as one
+/// element ("Height, 182 cm").
+class AccountFactRow extends StatelessWidget {
+  const AccountFactRow({required this.label, required this.value, super.key});
+
+  final String label;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
     final colors = context.tracendColors;
+    final labelText = Text(label, style: textTheme.bodyLarge);
+    final valueStyle = textTheme.bodyLarge?.copyWith(
+      color: colors.textSecondary,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
     return Semantics(
-      button: onTap != null,
-      label: '$title. $detail.',
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(TracendRadii.control),
+      container: true,
+      label: '$label, $value',
+      excludeSemantics: true,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 52),
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: TracendSpacing.md,
+            horizontal: TracendListRow.horizontalPadding,
             vertical: TracendSpacing.sm,
           ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 44),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        detail,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: colors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (onTap != null) ...[
-                  const SizedBox(width: TracendSpacing.xs),
-                  Icon(
-                    CupertinoIcons.chevron_right,
-                    size: 15,
-                    color: colors.textSecondary,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final stacked =
+                  MediaQuery.textScalerOf(context).scale(1) > 1.3 ||
+                  constraints.maxWidth < 300;
+              if (stacked) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    labelText,
+                    const SizedBox(height: 2),
+                    Text(value, style: valueStyle),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: labelText),
+                  const SizedBox(width: TracendSpacing.sm),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: constraints.maxWidth * 0.55,
+                    ),
+                    child: Text(
+                      value,
+                      textAlign: TextAlign.end,
+                      style: valueStyle,
+                    ),
                   ),
                 ],
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -76,59 +88,31 @@ class AccountRow extends StatelessWidget {
   }
 }
 
-/// Label-caps section heading for the account flow (DESIGN_SYSTEM §3.2):
-/// every caps label renders through `TracendTheme.labelCaps` so tracking
-/// never drifts past 0.08em.
-class AccountSectionLabel extends StatelessWidget {
-  const AccountSectionLabel(this.label, {super.key});
+/// A footnote under a grouped list, in the iOS position: small secondary
+/// text inset to the list's rows.
+class AccountFootnote extends StatelessWidget {
+  const AccountFootnote(this.text, {this.color, super.key});
 
-  final String label;
+  final String text;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(
-      top: TracendSpacing.lg,
-      bottom: TracendSpacing.sm,
+    padding: const EdgeInsets.fromLTRB(
+      TracendListRow.horizontalPadding,
+      TracendSpacing.xs,
+      TracendListRow.horizontalPadding,
+      0,
     ),
-    child: Text(label, style: TracendTheme.labelCaps(context)),
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+    ),
   );
 }
 
-/// Label/value rows for read-only detail cards. Values use tabular figures
-/// so changing numbers never shift layout.
-class DetailRows extends StatelessWidget {
-  const DetailRows({required this.rows, super.key});
-
-  final Map<String, String> rows;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      for (var i = 0; i < rows.length; i++) ...[
-        if (i > 0) const Divider(height: TracendSpacing.lg),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: Text(rows.keys.elementAt(i))),
-            const SizedBox(width: TracendSpacing.sm),
-            Flexible(
-              child: Text(
-                rows.values.elementAt(i),
-                textAlign: TextAlign.end,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    ],
-  );
-}
-
-/// Centered icon + title + detail message for loading failures and honest
-/// empty states. The optional [action] slot carries a real retry control.
+/// Centered icon, title and detail for a load failure or an honest empty
+/// state. The optional [action] slot carries a real retry control.
 class AccountDetailMessage extends StatelessWidget {
   const AccountDetailMessage({
     required this.icon,
@@ -144,25 +128,48 @@ class AccountDetailMessage extends StatelessWidget {
   final Widget? action;
 
   @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(TracendSpacing.gutter),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 40),
-          const SizedBox(height: TracendSpacing.sm),
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: TracendSpacing.xs),
-          Text(detail, textAlign: TextAlign.center),
-          if (action != null) ...[
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(TracendSpacing.gutter),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ExcludeSemantics(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.surfaceRaised,
+                  shape: BoxShape.circle,
+                ),
+                child: SizedBox.square(
+                  dimension: 56,
+                  child: Icon(icon, size: 26, color: colors.textSecondary),
+                ),
+              ),
+            ),
             const SizedBox(height: TracendSpacing.md),
-            action!,
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: textTheme.titleLarge,
+            ),
+            const SizedBox(height: TracendSpacing.xs),
+            Text(
+              detail,
+              textAlign: TextAlign.center,
+              style: textTheme.bodyMedium,
+            ),
+            if (action != null) ...[
+              const SizedBox(height: TracendSpacing.lg),
+              action!,
+            ],
           ],
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// `snake_case` enum value → Title Case label.
@@ -179,13 +186,39 @@ String friendlyEnum(Object? value) => value == null
           )
           .join(' ');
 
-/// ISO timestamp → local `d/m/yyyy`, or `Not recorded`.
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/// A local calendar date with its year: "20 Aug 2026".
+String fullDate(DateTime date) {
+  final local = date.toLocal();
+  return '${local.day} ${_months[local.month - 1]} ${local.year}';
+}
+
+/// ISO timestamp → "20 Aug 2026", or `Not recorded`.
 String dateText(Object? value) {
   if (value == null) return 'Not recorded';
-  final date = DateTime.tryParse(value.toString())?.toLocal();
-  return date == null
-      ? 'Not recorded'
-      : '${date.day}/${date.month}/${date.year}';
+  final date = DateTime.tryParse(value.toString());
+  return date == null ? 'Not recorded' : fullDate(date);
+}
+
+/// 24-hour local time: "14:05".
+String clockTime(DateTime time) {
+  final local = time.toLocal();
+  return '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
 }
 
 /// ISO weekday list (1 = Monday) → `Mon, Wed, Fri` label.
@@ -203,8 +236,10 @@ String trainingDaysText(Object? value) {
   return value.map((item) => days[(item as num).toInt()] ?? '?').join(', ');
 }
 
-/// `$3` for whole-dollar values, `$2.50` for fractional ones — server
-/// thresholds are RPC-bound and may change, so never round blindly.
-String usdText(num value) => value == value.roundToDouble()
-    ? '\$${value.toStringAsFixed(0)}'
-    : '\$${value.toStringAsFixed(2)}';
+/// A server dollar value with two decimals: `$1.00`, `$0.42`. A cost above
+/// zero that would round to nothing reads `<$0.01`, never a misleading
+/// `$0.00`. This only formats; the value always comes from the server.
+String usdText(num value) {
+  if (value > 0 && value < 0.005) return '<\$0.01';
+  return '\$${value.toStringAsFixed(2)}';
+}

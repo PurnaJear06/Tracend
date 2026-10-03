@@ -75,7 +75,10 @@ Requirements:
 - Denying an optional permission preserves unaffected features.
 - Withdrawal stops new processing immediately and initiates purpose-specific deletion where
   required.
-- Consent records store notice version, choice, source, and time.
+- Consent records store notice version, choice, source, and time. **Account › Consent history**
+  shows each purpose's current choice with its date first and the notice version as secondary
+  text (since the 2026-10 redesign); records made during owner testing read "Set up during
+  testing".
 - HealthKit permission state is not inferred from an empty query result.
 - Provider names or categories, data sent, purpose, and relevant retention behavior are disclosed
   before AI photo processing.
@@ -284,6 +287,10 @@ scheduled only while that toggle is on and iOS allows alerts; scheduling again r
 alert, and skip, finish, discard, leaving the workout, turning the toggle off, and a rest that
 ended while the app was closed all cancel it. Reminder reconciliation removes only the daily and
 weekly identifiers and never removes all pending requests, so it cannot drop a running rest alert.
+The toggle in **Account › Notifications** names the lock-screen text ("Rest timer finished") in
+its row, and when iOS has not been asked yet, turning it on first shows that text in a confirm;
+only **Continue** leads to the iOS permission request. Off, **Not now** or a denied permission
+keeps the rest timer in the app only.
 
 ## 11. Retention
 
@@ -421,7 +428,11 @@ Before inviting testers:
 - cross-user authorization tests pass;
 - logs and crash reports pass sensitive-data inspection; a meal-photo failure reaches Sentry as
   its step and error code only, because the error message can contain the photo's storage path;
-- provider data controls are recorded and configured; and
+- provider data controls are recorded and configured;
+- **public-release blocker:** the onboarding Terms and Privacy checkboxes are not linked to any
+  hosted text yet (no notices are published). This is acceptable only for the owner-only private
+  beta; the hosted terms and privacy notice must exist and be linked from those checkboxes before
+  any other tester or a public release; and
 - the owner completes at least two weeks of dogfooding before broader invitations.
 
 Public App Store release, minors, medical workflows, advertising, and subscriptions require a new
