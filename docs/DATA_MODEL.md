@@ -260,7 +260,9 @@ expansion does not modify the approved version.
 Ordered prescriptions containing workout, catalog exercise and display snapshot, set count, rep
 range, target RPE or reps in reserve, optional load/progression rule, rest range, notes, and
 approved alternatives. `exercise_slug` (nullable, since 2026-10) references the catalog entry an onboarding plan
-chose. The generic seed and the imported plan have none. `target_load_kg` (nullable, 0–2000, since
+chose. The generic seed and the imported plan have none; since 2026-10-03 an older planned
+exercise whose name is exactly one catalog name (case and spacing ignored) is linked to it by
+migration, and any other name stays unlinked. `target_load_kg` (nullable, 0–2000, since
 the coach intake) is the starting load Tracend set from a reported barbell top set; the training
 hub (1.5) and daily brief (1.6) return it and the active workout pre-fills it.
 
