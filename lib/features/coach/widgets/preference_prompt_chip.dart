@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
+/// Asks before the Coach remembers something the athlete said, such as a
+/// food they avoid. Nothing is saved until Save is tapped (a durable user
+/// fact needs explicit approval).
 class PreferencePromptChip extends StatelessWidget {
   const PreferencePromptChip({
     required this.category,
@@ -22,45 +25,57 @@ class PreferencePromptChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
+    final textTheme = Theme.of(context).textTheme;
     return TracendCard(
-      padding: const EdgeInsets.all(TracendSpacing.sm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                CupertinoIcons.bookmark,
-                size: 16,
-                color: colors.stateStable,
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  CupertinoIcons.bookmark,
+                  size: 18,
+                  color: colors.textSecondary,
+                ),
               ),
               const SizedBox(width: TracendSpacing.xs),
               Expanded(
                 child: Text(
                   'Remember this $category preference?',
-                  style: Theme.of(context).textTheme.labelMedium,
+                  style: textTheme.titleSmall,
                 ),
               ),
             ],
           ),
           const SizedBox(height: TracendSpacing.xxs),
           Text(
-            '"$value"',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic),
+            '“$value”',
+            style: textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
           ),
-          const SizedBox(height: TracendSpacing.xs),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          const SizedBox(height: TracendSpacing.sm),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: TracendSpacing.xs,
+            runSpacing: TracendSpacing.xs,
             children: [
               if (onDismiss != null)
-                TextButton(onPressed: onDismiss, child: const Text('Dismiss')),
-              const SizedBox(width: TracendSpacing.xs),
-              FilledButton.tonalIcon(
+                TextButton(
+                  onPressed: onDismiss,
+                  style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
+                  child: const Text('Dismiss'),
+                ),
+              FilledButton(
                 onPressed: onConfirm,
-                icon: const Icon(CupertinoIcons.check_mark, size: 16),
-                label: const Text('Save'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(88, 44),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: TracendSpacing.md,
+                  ),
+                ),
+                child: const Text('Save'),
               ),
             ],
           ),

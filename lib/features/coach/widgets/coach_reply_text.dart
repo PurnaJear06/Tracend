@@ -225,10 +225,14 @@ class CoachReplyText extends StatelessWidget {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // The marker column grows with the text size, so
+                        // a bullet never runs into its line at large text.
                         SizedBox(
-                          width: block.kind == CoachReplyBlockKind.numbered
-                              ? 26
-                              : 16,
+                          width: MediaQuery.textScalerOf(context).scale(
+                            block.kind == CoachReplyBlockKind.numbered
+                                ? 26
+                                : 16,
+                          ),
                           child: Text(block.marker, style: style),
                         ),
                         Expanded(child: Text.rich(_spans(block), style: style)),

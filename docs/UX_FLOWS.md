@@ -353,23 +353,29 @@ time), in ordinary coaching language. Deterministic calculation and AI interpret
 labeled separately. Training and Nutrition remain perspectives in one controlled decision
 pipeline, not independent agents. The Coach tab provides direct user questions through the
 same workflow and never behaves like three separate autonomous chatbots. A live assistant
-message is labeled with its provider; a provider or validation failure never substitutes generic
-coaching text. Replies display bold, italic, and bullet or numbered lists, so they read as formatted
+message carries the small label **AI answer · DeepSeek**, naming the provider by its display name
+from the app's provider map (never a raw id such as `deepseek`; an unlisted provider reads **AI
+answer**). A provider or validation failure never substitutes generic coaching text. Replies display bold, italic, and bullet or numbered lists, so they read as formatted
 text rather than raw Markdown.
 
-When the model cannot answer, Coach shows a labeled reply in its place:
+When the model cannot answer, Coach shows a labeled reply in its place, always visible and never
+with a provider label:
 - "Data summary · not an AI answer": what the athlete's data shows.
 - "Safety note · not an AI answer": for a message that may concern a health risk.
 
-A live labeled reply also shows a beta diagnostic line (failure code and rule names); a stored one
-keeps only its label, because the diagnostic is not stored. Retry appears when the reply ends the
-conversation, and it keeps whatever the user is typing.
+A live labeled reply also shows a beta diagnostic line (failure code and rule names) as small
+secondary text, inside **Evidence used and data gaps** when the reply has one and under the reply
+otherwise; a stored one keeps only its label, because the diagnostic is not stored. Retry appears
+when the reply ends the conversation, and it keeps whatever the user is typing.
 
-Other failures (sign-in, database, limits, network) keep the visible inline alert and Snackbar. A
-timeout says the Coach took too long. During the private beta, other errors show their raw text,
-including the HTTP status and the server's stable code, so the owner can see where they come from
-(owner decision, 2026-09-27). The server never sends parser messages, provider bodies, prompts, or
-health context.
+Other failures (sign-in, database, limits, network) show one inline message under the question
+that failed, in place of the reply: what happened in plain words, then the raw diagnostic as a
+small second line, and **Retry**. A toast ("Coach couldn’t answer") marks the moment; it never
+carries the only copy of the error (redesign doc change 2, replacing the inline alert card and
+Snackbar). A timeout says the Coach took too long. During the private beta the diagnostic line
+shows the raw text, including the HTTP status and the server's stable code, so the owner can see
+where a failure comes from (owner decision, 2026-09-27). The server never sends parser messages,
+provider bodies, prompts, or health context.
 
 Today uses a real timeline for check-in, workout, meal, and review actions. The primary
 decision always uses **Do this next** and remains actionable when AI is offline. A missing
@@ -378,9 +384,14 @@ readiness signal becomes a direct recovery action (sync Apple Health or add a ch
 Coach shows an expandable **Your coaching context** card on a new conversation, before its first
 message; an ongoing conversation shows no cards above it. It lists approved
 plan, goal/profile, Apple Health, check-ins, confirmed nutrition, completed Tracend workouts,
-measurements, and conversation history with honest availability/count/latest-date metadata.
-Model-cited evidence and actual data gaps use **Evidence used and data gaps**; generated follow-up
-ideas use the separate **Suggested next actions** heading.
+measurements, and conversation history with honest availability/count/latest-date metadata. Its
+summary counts connected sources ("4 of 6 sources connected") and dates read as words ("latest
+yesterday", "latest Thu 24 Sep"), never ISO dates.
+Model-cited evidence and actual data gaps use **Evidence used and data gaps**: the cited evidence
+with its source in words ("Calculated from your health data"), the data gaps in words
+(`recovery_check_in` reads **Morning check-in**), the reasoning steps without their evidence ids,
+and the beta diagnostic. Generated follow-up ideas use the separate **Suggested next actions**
+heading.
 
 ## 6. Workout Execution
 
@@ -528,6 +539,23 @@ pinned above every conversation (owner report, 2026-09-30):
 - A new conversation, from launch or from New, is saved only when its first message is sent.
 - Saved conversations lists only conversations that contain a message, newest first, and
   refreshes after every send.
+
+Layout (redesign, 2026-10-03):
+- **Header:** the iOS large title **Coach**. The saved-conversations button stays pinned at the
+  top right, where the inline title bar appears once the title scrolls away, so it is in reach at
+  the end of a long conversation.
+- **Saved conversations** is a sheet: **New conversation**, then one grouped list (title and
+  friendly date; the open one reads **Open now**). Swiping a conversation left asks **Delete this
+  conversation?** with **Delete conversation** as the destructive choice and Cancel as the default;
+  VoiceOver offers the same delete as an action. Deleting the open conversation starts a new one.
+  A delete that fails puts the row back and says so.
+- **Messages:** the athlete's own messages are filled bubbles on the right; Coach replies are
+  plain text on the canvas, with their labels, evidence disclosure and follow-ups below.
+- **Waiting:** "Coach is thinking" with three dots in the place the reply will appear; the dots
+  rest under Reduce Motion.
+- **Composer:** a filled pill field and a round lime send button, which turns lime once there is
+  something to send. Sending plays the light haptic. A rate-limit cooldown shows its countdown in
+  the field.
 
 The composer supports multiline input, keyboard-safe positioning,
 sending/typing/cancel states, selectable long answers, suggested questions, and expandable
