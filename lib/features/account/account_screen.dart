@@ -133,7 +133,6 @@ class _AccountScreenState extends State<AccountScreen> {
             ),
             const AccountSectionLabel('PLAN AND PROFILE'),
             PremiumGradientCard(
-              glow: true,
               padding: EdgeInsets.zero,
               child: AccountRow(
                 title: 'Profile and goals',

@@ -68,6 +68,23 @@ Every core flow should answer without requiring chat:
 The interface progressively reveals detail. It never hides uncertainty, consent, AI estimation, or
 persistent plan changes.
 
+### Sheets, confirmations and toasts
+
+These rules apply to every flow; the components are specified in
+[DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) §5.1.
+
+- **Sheet** (`showTracendSheet`): a focused, self-contained task that can be abandoned, such as a
+  check-in, a detail view or a picker. It always closes with a swipe down, a tap outside or the
+  close button. A sheet holding unsaved input asks before discarding it.
+- **Confirmation** (`showTracendConfirm`): one consequential step, named by its outcome (**Discard
+  workout**, **Delete thread**). Deleting or discarding anything is always confirmed, with Cancel as
+  the default choice.
+- **Action sheet** (`showTracendActionSheet`): two or more related choices, such as leaving a
+  workout (save or discard), with a separate Cancel.
+- **Toast** (`TracendToast`): a short confirmation that something already happened ("Check-in
+  saved"). It never asks for a decision, never carries the only copy of an error, and never
+  announces a persistent plan or nutrition change (those are reviewed on dedicated screens, §10).
+
 ## 2. Information Architecture
 
 ```text

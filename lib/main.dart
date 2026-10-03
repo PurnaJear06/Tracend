@@ -57,12 +57,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   LicenseRegistry.addLicense(() async* {
-    final splineSans = await rootBundle.loadString(
-      'assets/fonts/OFL-SplineSans.txt',
-    );
-    yield LicenseEntryWithLineBreaks(const ['Spline Sans'], splineSans);
-    final ibmPlex = await rootBundle.loadString('assets/fonts/OFL-IBMPlex.txt');
-    yield LicenseEntryWithLineBreaks(const ['IBM Plex Mono'], ibmPlex);
+    final archivo = await rootBundle.loadString('assets/fonts/OFL-Archivo.txt');
+    yield LicenseEntryWithLineBreaks(const ['Archivo'], archivo);
   });
 
   const environment = AppEnvironment.fromCompileTime();

@@ -49,7 +49,7 @@ class TargetsGrid extends StatelessWidget {
                   ? 'No confirmed meals yet'
                   : '${summary.calories.round()} kcal logged',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontFamily: TracendFonts.monoFamily,
+                fontFamily: TracendFonts.numericFamily,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
@@ -73,8 +73,6 @@ class TargetsGrid extends StatelessWidget {
     );
 
     return PremiumGradientCard(
-      glow: glow,
-      glowColor: colors.accentAmber,
       padding: const EdgeInsets.all(TracendSpacing.sm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,7 +243,7 @@ class _WideCell extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.titleLarge
                                   ?.copyWith(
-                                    fontFamily: TracendFonts.monoFamily,
+                                    fontFamily: TracendFonts.numericFamily,
                                     fontSize: 26,
                                     letterSpacing: -0.5,
                                     fontFeatures: const [
@@ -262,7 +260,7 @@ class _WideCell extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.labelMedium
                                   ?.copyWith(
-                                    fontFamily: TracendFonts.monoFamily,
+                                    fontFamily: TracendFonts.numericFamily,
                                     fontSize: 12,
                                     color: colors.textSecondary,
                                     fontFeatures: const [
@@ -279,7 +277,7 @@ class _WideCell extends StatelessWidget {
                 Text(
                   trailing,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontFamily: TracendFonts.monoFamily,
+                    fontFamily: TracendFonts.numericFamily,
                     fontSize: 12,
                     color: highlighted
                         ? colors.actionPrimary
@@ -347,7 +345,7 @@ class _HalfCell extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontFamily: TracendFonts.monoFamily,
+                      fontFamily: TracendFonts.numericFamily,
                       fontSize: 20,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
@@ -360,7 +358,7 @@ class _HalfCell extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      fontFamily: TracendFonts.monoFamily,
+                      fontFamily: TracendFonts.numericFamily,
                       fontSize: 10,
                       color: colors.textSecondary,
                       fontFeatures: const [FontFeature.tabularFigures()],

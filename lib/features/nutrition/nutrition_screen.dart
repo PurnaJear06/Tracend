@@ -431,8 +431,6 @@ class _NutritionScreenState extends State<NutritionScreen> {
         if (nextMeal != null) ...[
           MicroMotionEntrance(
             child: PremiumGradientCard(
-              glow: true,
-              glowColor: colors.accentAmber,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -472,11 +470,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
         ],
         MicroMotionEntrance(
           delay: MicroMotion.stagger(1),
-          child: TargetsGrid(
-            summary: _summary,
-            targets: _targets,
-            glow: nextMeal == null,
-          ),
+          child: TargetsGrid(summary: _summary, targets: _targets),
         ),
         SectionLabel(_isToday ? 'Today’s meals' : 'Meals'),
         NutritionTimeline(

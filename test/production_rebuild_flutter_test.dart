@@ -31,7 +31,7 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.textContaining('RPE 8'), findsWidgets);
-    expect(find.text('TODAY’S EXERCISES'), findsOneWidget);
+    expect(find.text('Today’s exercises'), findsOneWidget);
     expect(find.textContaining('rest'), findsWidgets);
     await tester.scrollUntilVisible(
       find.textContaining('Planned values are never charted'),

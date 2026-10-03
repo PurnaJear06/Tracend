@@ -6,7 +6,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 /// One navigation or status row inside a grouped Account card.
 ///
 /// Stitch account reference grammar: hairline-separated full-width rows —
-/// title (Spline Sans 17pt) with a secondary detail line, no icon tiles;
+/// title (Archivo 17pt) with a secondary detail line, no icon tiles;
 /// the quiet settings surface lets Today's trend stay the aesthetic risk.
 ///
 /// The chevron renders only when [onTap] is provided — rows without a

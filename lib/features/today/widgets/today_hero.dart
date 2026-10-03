@@ -219,7 +219,7 @@ class _SyncChip extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontFamily: TracendFonts.monoFamily,
+                  fontFamily: TracendFonts.numericFamily,
                   fontSize: 11,
                   color: colors.textSecondary,
                 ),
@@ -256,7 +256,7 @@ class _ConfidencePill extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     final (label, dot) = switch (confidence) {
-      'high' => ('HIGH CONFIDENCE', colors.accentNow),
+      'high' => ('HIGH CONFIDENCE', colors.accentSignalInk),
       'medium' => ('MEDIUM CONFIDENCE', colors.actionPrimary),
       'low' => ('LOW CONFIDENCE', colors.accentAmber),
       _ => ('BUILDING BASELINE', colors.textSecondary),

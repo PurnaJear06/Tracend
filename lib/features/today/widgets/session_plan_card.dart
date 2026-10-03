@@ -62,8 +62,6 @@ class SessionPlanCard extends StatelessWidget {
     final minutes = (workout!['estimated_minutes'] as num?)?.toInt();
 
     return PremiumGradientCard(
-      glow: true,
-      glowColor: colors.stateStable,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -161,7 +159,7 @@ class _StatChip extends StatelessWidget {
   Widget build(BuildContext context) => Text(
     text,
     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-      fontFamily: TracendFonts.monoFamily,
+      fontFamily: TracendFonts.numericFamily,
       fontSize: 12,
       color: context.tracendColors.textSecondary,
       fontFeatures: const [FontFeature.tabularFigures()],
@@ -227,7 +225,7 @@ class _LoadRow extends StatelessWidget {
             Text(
               acwr.toStringAsFixed(2),
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                fontFamily: TracendFonts.monoFamily,
+                fontFamily: TracendFonts.numericFamily,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),

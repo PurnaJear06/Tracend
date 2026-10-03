@@ -64,7 +64,7 @@ class PhysiqueSummaryRow extends StatelessWidget {
                 Icon(
                   CupertinoIcons.sparkles,
                   size: 18,
-                  color: colors.accentNow,
+                  color: colors.accentSignalInk,
                 ),
                 const SizedBox(width: TracendSpacing.xs),
                 Expanded(

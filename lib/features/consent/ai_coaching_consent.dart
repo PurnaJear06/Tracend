@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/shared/widgets/tracend_sheet.dart';
 
 /// Version of the built-in AI coaching disclosure, shown only when the
 /// server's current notice cannot be loaded. The notice the athlete answers is
@@ -320,10 +321,10 @@ class AiCoachingConsentButtons extends StatelessWidget {
 Future<void> showAiCoachingConsentSheet(
   BuildContext context,
   AiCoachingConsentController controller,
-) => showModalBottomSheet<void>(
-  context: context,
-  isScrollControlled: true,
-  useSafeArea: true,
+) => showTracendSheet<void>(
+  context,
+  scrollable: false,
+  padding: EdgeInsets.zero,
   builder: (sheetContext) => _AiCoachingConsentSheet(controller: controller),
 );
 

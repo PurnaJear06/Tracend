@@ -810,7 +810,10 @@ void main() {
           findsWidgets,
         );
         // A strong muscle cannot also be a focus.
-        await tester.tap(find.widgetWithText(FilterChip, 'Back').last);
+        final strongBack = find.widgetWithText(FilterChip, 'Back').last;
+        await tester.ensureVisible(strongBack);
+        await tester.pumpAndSettle();
+        await tester.tap(strongBack);
         await tester.pumpAndSettle();
         await _continue(tester);
 
