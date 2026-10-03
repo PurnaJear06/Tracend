@@ -104,6 +104,15 @@ nothing is guessed.
   and draws the day as a line with logged, planned and missed meals and a "now" needle. Today
   loads the meal plan and today's confirmed meals for it (`FuelDay.from`, plain arithmetic); a
   slot stays ahead until an hour past its time, computed on the phone.
+- Meal slot status on the athlete's clock (SQL only, `20261004100000`): `get_my_nutrition_schedule`
+  judged `due`, `upcoming` and `skipped` with the database clock (UTC), so for the owner in IST a
+  13:30 lunch was due at 19:00 local, and from local midnight to 05:30 every slot of today read
+  `upcoming`. It now uses the request's time in `user_accounts.timezone` (UTC when unset or
+  unknown), and a window near midnight no longer wraps. This fixes Nutrition's due badge and
+  Today's `next_meal`. The fuel rail is unaffected: it trusts only `logged` and computes ahead and
+  missed on the phone. No meal notification reads the status (reminders are the check-in and
+  weekly review). pgTAP `meal_status_user_timezone_test.sql` (IST, a zone on another date than
+  UTC, an unknown zone). No reinstall.
 - Owner device check of build 325: on a pull day only Face Pull matched a catalog name, so the
   card lit shoulders alone for a back-and-biceps session. The Train card now shows the map only
   when linked exercises carry at least three quarters of the planned sets

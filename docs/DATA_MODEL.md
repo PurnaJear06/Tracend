@@ -542,6 +542,15 @@ optional state, and reminder preference. Activation supersedes the prior version
 writes an audit event. Confirmed meals may reference their schedule item; planned items never
 contribute to consumed totals.
 
+`get_my_nutrition_schedule(target_date)` gives each item a `status`: `logged` (a confirmed meal
+references it), `upcoming`, `due` (within `window_minutes` either side of `local_time`), then
+`optional` or `skipped`. A requested day before the athlete's today is `skipped`, a later one
+`upcoming`. Since 2026-10-04 (`20261004100000`) "now" and "today" are the request's time in
+`user_accounts.timezone` (an unset or unknown zone reads as UTC), not the database clock, and the
+window is compared as timestamps on the requested day, so it no longer wraps around midnight.
+`get_my_daily_brief.next_meal` is the first `due`, `upcoming` or `optional` item. Response 1.0 is
+unchanged.
+
 ## 9. Audit and Privacy Operations
 
 ### `audit_events`
