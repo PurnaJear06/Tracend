@@ -287,6 +287,11 @@ reviewed answers. `onboarding-propose-plan`, the Phase-2 mock, stays for install
 authenticated read-model RPCs. They derive identity from `auth.uid()`, use only active approved
 versions and confirmed execution, and return bounded structured data for the iPhone client.
 
+Workout logging RPCs (2026-10-03): `start_workout`, `sync_workout_draft`, `complete_workout_v2`
+(the athlete's 1–10 session effort; `complete_workout` remains for installed builds and records its
+fixed effort as a default), `abandon_workout`, and `get_my_exercise_history(keys, sessions)` (last
+time, best set and heaviest set per completed session for at most 20 exercises and 12 sessions).
+
 Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS. Since v8
 (2026-09-27) every question follows one path regardless of its wording:
 
@@ -367,7 +372,8 @@ An empty response never proves permission denial.
 3. **Yes, mark complete** calls the authenticated `healthkit_auto_complete_workout` RPC, which:
    - authorizes user ownership of the planned workout in the active plan;
    - guards idempotently against duplicate completion;
-   - creates a `workout_sessions` row with `state='completed'` and duration from HealthKit;
+   - creates a `workout_sessions` row with `state='completed'` and duration from HealthKit,
+     `completion_source='healthkit'` and `session_effort_source='healthkit_default'`;
    - writes an `audit_events` row with `action_code='workout.auto_completed'`.
 4. The hub reloads and the completed session counts toward adherence.
 5. **Log manually** opens the standard workout execution flow.

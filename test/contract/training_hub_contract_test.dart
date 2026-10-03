@@ -231,4 +231,120 @@ void main() {
       }
     });
   });
+
+  group('Training Hub contract — get_my_training_hub v1.6', () {
+    const fixture = 'training_hub_v1_6.json';
+
+    test('v1.6 keeps every v1.5 field, so installed builds still parse it', () {
+      final json = _loadFixtureJson(fixture);
+      expect(json['schema_version'], '1.6');
+      final workouts = (json['workouts'] as List).toMapList();
+      final parsed = PlannedWorkout.fromHubJson(workouts.first);
+      expect(parsed.exercises.first.targetLoadKg, 72.5);
+      expect(json['recent_sessions'], isA<List>());
+      expect(json['completed_day_set'], isA<List>());
+    });
+
+    test('the plan reports its dates and progression rule', () {
+      final plan = _loadFixtureJson(fixture)['active_plan'] as Map;
+      expect(
+        () => DateTime.parse(plan['effective_date'] as String),
+        returnsNormally,
+      );
+      expect(
+        () => DateTime.parse(plan['approved_on'] as String),
+        returnsNormally,
+      );
+      expect(plan['progression_rule'], anyOf(isNull, isA<String>()));
+    });
+
+    test('exercises report a nullable slug and their catalog muscles', () {
+      final json = _loadFixtureJson(fixture);
+      final workouts = (json['workouts'] as List).toMapList();
+      const muscles = {
+        'quads',
+        'glutes',
+        'hamstrings',
+        'chest',
+        'back',
+        'shoulders',
+        'biceps',
+        'triceps',
+        'core',
+        'calves',
+      };
+      for (final workout in workouts) {
+        for (final exercise in (workout['exercises'] as List).toMapList()) {
+          expect(exercise['exercise_slug'], anyOf(isNull, isA<String>()));
+          final list = exercise['primary_muscles'] as List;
+          expect(list.every(muscles.contains), isTrue);
+          if (exercise['exercise_slug'] == null) expect(list, isEmpty);
+        }
+      }
+    });
+
+    test('recent sessions report completion and effort sources', () {
+      final sessions = (_loadFixtureJson(fixture)['recent_sessions'] as List)
+          .toMapList();
+      for (final row in sessions) {
+        expect(row['completion_source'], anyOf(isNull, 'manual', 'healthkit'));
+        expect(
+          row['effort_source'],
+          anyOf(isNull, 'athlete', 'legacy_default', 'healthkit_default'),
+        );
+      }
+    });
+
+    test('daily_load has 28 consecutive days ending on local_today', () {
+      final json = _loadFixtureJson(fixture);
+      final days = (json['daily_load'] as List).toMapList();
+      expect(days, hasLength(28));
+      expect(days.last['local_date'], json['local_today']);
+      for (var i = 1; i < days.length; i++) {
+        final previous = DateTime.parse(days[i - 1]['local_date'] as String);
+        final current = DateTime.parse(days[i]['local_date'] as String);
+        expect(current.difference(previous).inDays, 1);
+      }
+      for (final day in days) {
+        final recorded = day['recorded'] as bool;
+        final level = day['level'];
+        expect(level, anyOf(isNull, 'rest', 'easy', 'moderate', 'hard'));
+        expect(day['reference'], anyOf('personal', 'fixed'));
+        if (!recorded) expect(level, 'rest');
+        // A day without athlete-reported effort never gets an intensity.
+        if (recorded && day['effort_reported'] != true) expect(level, isNull);
+      }
+    });
+  });
+
+  group('Exercise history contract — get_my_exercise_history v1.0', () {
+    const fixture = 'exercise_history_v1_0.json';
+
+    test('each exercise has a kind, last session, best set and top sets', () {
+      final json = _loadFixtureJson(fixture);
+      expect(json['schema_version'], '1.0');
+      expect(json['sessions_limit'], inInclusiveRange(1, 12));
+      for (final row in (json['exercises'] as List).toMapList()) {
+        expect(row['key'], isA<String>());
+        expect(row['kind'], anyOf(isNull, 'load', 'reps'));
+        expect(row['top_sets'], isA<List>());
+        if (row['kind'] == null) {
+          expect(row['last_session'], isNull);
+          expect(row['best_set'], isNull);
+          expect(row['top_sets'], isEmpty);
+          continue;
+        }
+        final best = row['best_set'] as Map;
+        expect(best['kind'], row['kind']);
+        expect(best['repetitions'], isA<int>());
+        if (row['kind'] == 'reps') expect(best['load_kg'], isNull);
+        final last = row['last_session'] as Map;
+        expect(
+          () => DateTime.parse(last['local_date'] as String),
+          returnsNormally,
+        );
+        expect(last['sets'], isNotEmpty);
+      }
+    });
+  });
 }

@@ -161,6 +161,13 @@ accepted as a permanent retry.
 - `healthkit_auto_complete_workout`: test authentication required, cross-user denial, duplicate
   completion idempotency (replayed), missing-HealthKit-data guard, inactive-plan guard, and audit
   event shape.
+- Train redesign data (`train_redesign_data_test.sql`): exercise slug on prescribed performances
+  and none on substitutions or extras; exercise history keys, completed-only sessions, best-set
+  kinds and tie-breaks, input bounds and cross-user denial; hub 1.6 plan dates, muscles,
+  provenance and 28-day `daily_load`; `complete_workout` vs `complete_workout_v2` provenance,
+  effort validation and replay; `abandon_workout` replay, completed-session rejection, ownership
+  and audit; day-level percentile ties, fixed cut-offs, rest and calibrating days, and strain parity
+  with `compute_daily_metrics`.
 - `get_healthkit_completion_candidate`: test authentication required, cross-user denial, returns
   candidate when HealthKit workout exists for the date and no completed session exists, returns null
   when no HealthKit data, returns null when session already completed for that date and planned

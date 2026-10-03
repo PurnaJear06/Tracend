@@ -299,6 +299,26 @@ daily_strain = sum(session_effort * duration_seconds / 600) for all completed se
 Session effort = 0–10 RPE. Strain normalised per 10-minute block. The same 10800-second
 cap applies to every strain window (ACWR, monotony, prev-strain z).
 
+### Effort Provenance (2026-10-03)
+
+`workout_sessions.session_effort_source` records where a session's effort came from:
+
+| Source              | Written by                              | Effort                         |
+| ------------------- | --------------------------------------- | ------------------------------ |
+| `athlete`           | `complete_workout_v2`                   | The athlete's 1–10 rating      |
+| `legacy_default`    | `complete_workout` (builds before v2)   | The app's fixed 8              |
+| `healthkit_default` | `healthkit_auto_complete_workout`       | A fixed 5                      |
+
+Every session completed before 2026-10-03 is `legacy_default` or `healthkit_default` (backfilled
+from the `workout.completed` and `workout.auto_completed` audit codes). Strain, ACWR and monotony
+still sum every completed session, so for the first 28 days after the logging redesign ships the
+windows mix default and real efforts. The Train load sheet labels that period "Calibrating".
+Session effort is a rating of the whole workout and is never derived from per-set RPE
+(`exercise_sets.rpe`), which stays a separate, optional per-set field.
+
+`workout_sessions.completion_source` is `manual` or `healthkit` (null for sessions with no audit
+evidence). The app reads it, never the session notes, to say a workout came from Apple Health.
+
 ### Acute:Chronic Workload Ratio (ACWR)
 
 ```text
@@ -341,6 +361,29 @@ stddev > 0 (2026-09-07). The zero-filled calendar week fixes the production symp
 5.57 reported on a window of identical loads: rest days are now real variance, and only a week
 where every acute day carries the same strain (all trained identically, no rest) stays null.
 Monotony is the inverse of the coefficient of variation.
+
+### Day Level (Train load sheet, 2026-10-03)
+
+`get_my_training_hub` 1.6 returns `daily_load`: the 28 local days ending on the athlete's local
+today, each with `strain` (the session-strain sum above), `minutes`, `sessions`, `recorded`,
+`effort_reported` and `level`.
+
+```text
+reference(d) = strain of days in [d-28, d-1] that were trained, had strain > 0,
+               and where every session's effort was athlete-reported
+if no session on d                      -> level = rest
+elif any session on d used a default    -> level = null ("Calibrating")
+elif count(reference(d)) >= 8:
+    p33, p67 = percentile_disc(0.33), percentile_disc(0.67) of reference(d)
+    strain <= p33 -> easy;  strain <= p67 -> moderate;  else hard      (ties go lower)
+else (fixed cut-offs):
+    strain < 20 -> easy;  strain <= 40 -> moderate;  else hard
+```
+
+For scale: 40 minutes at effort 5 is 20; 50 minutes at effort 8 is 40. Default-effort days stay
+out of the reference set so a constant default is never presented as personal intensity.
+`reference` reports which rule applied (`personal` or `fixed`). The classified day never counts in
+its own reference.
 
 ### Literature
 

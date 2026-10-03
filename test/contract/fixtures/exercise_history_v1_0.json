@@ -1,0 +1,103 @@
+{
+  "schema_version": "1.0",
+  "sessions_limit": 8,
+  "exercises": [
+    {
+      "key": "barbell-bench-press",
+      "kind": "load",
+      "last_session": {
+        "session_id": "8a000000-0000-4000-8000-000000000010",
+        "local_date": "2026-09-25",
+        "sets": [
+          {
+            "set_number": 1,
+            "load_kg": 70.0,
+            "repetitions": 8,
+            "rpe": 7.0
+          },
+          {
+            "set_number": 2,
+            "load_kg": 70.0,
+            "repetitions": 8,
+            "rpe": 8.0
+          },
+          {
+            "set_number": 3,
+            "load_kg": 70.0,
+            "repetitions": 7,
+            "rpe": null
+          }
+        ]
+      },
+      "best_set": {
+        "kind": "load",
+        "load_kg": 72.5,
+        "repetitions": 6,
+        "local_date": "2026-09-11"
+      },
+      "top_sets": [
+        {
+          "local_date": "2026-09-25",
+          "load_kg": 70.0,
+          "repetitions": 8
+        },
+        {
+          "local_date": "2026-09-18",
+          "load_kg": 70.0,
+          "repetitions": 7
+        },
+        {
+          "local_date": "2026-09-11",
+          "load_kg": 72.5,
+          "repetitions": 6
+        },
+        {
+          "local_date": "2026-09-04",
+          "load_kg": 67.5,
+          "repetitions": 8
+        }
+      ]
+    },
+    {
+      "key": "pull-up",
+      "kind": "reps",
+      "last_session": {
+        "session_id": "8a000000-0000-4000-8000-000000000011",
+        "local_date": "2026-09-29",
+        "sets": [
+          {
+            "set_number": 1,
+            "load_kg": null,
+            "repetitions": 8,
+            "rpe": null
+          }
+        ]
+      },
+      "best_set": {
+        "kind": "reps",
+        "load_kg": null,
+        "repetitions": 9,
+        "local_date": "2026-09-22"
+      },
+      "top_sets": [
+        {
+          "local_date": "2026-09-29",
+          "load_kg": null,
+          "repetitions": 8
+        },
+        {
+          "local_date": "2026-09-22",
+          "load_kg": null,
+          "repetitions": 9
+        }
+      ]
+    },
+    {
+      "key": "Cable fly",
+      "kind": null,
+      "last_session": null,
+      "best_set": null,
+      "top_sets": []
+    }
+  ]
+}

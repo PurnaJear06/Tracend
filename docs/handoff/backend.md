@@ -1,5 +1,8 @@
 # Backend Handoff — FLUTTER-8 Coach Reliability
 
+> 2026-10-03: the redesign's backend data (exercise history, effort and completion provenance,
+> hub 1.6, discard) is tracked in [`redesign.md`](./redesign.md).
+
 **Status:** PR #35, A1, and A2 are live; the owner's A2 device check is next.
 1. PR #35 `codex/coach-chat-validation-reliability` (merged 2026-09-28)
 2. A1 (#36) `claude/coach-full-context-a1` (merged 2026-09-28)

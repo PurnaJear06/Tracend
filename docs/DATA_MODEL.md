@@ -285,10 +285,22 @@ athlete's current month, at most 12 back. Owner-read RLS; exported and deleted w
 Scheduled or ad hoc executions with plan/version/workout references, local date, state, start/end
 times, duration, session effort/energy, completion reason, and notes.
 
+`state` is `in_progress`, `completed` or `abandoned`. `abandon_workout` discards an open session
+(audited as `workout.abandoned`); the rows stay, and every history, load and hub read counts
+completed sessions only. `completion_source` (`manual`, `healthkit`, or null when no audit evidence
+exists) and `session_effort_source` (`athlete`, `legacy_default`, `healthkit_default`) record
+provenance; see ALGORITHMS §4 "Effort Provenance". `complete_workout_v2` is the only writer of
+`athlete` effort.
+
 ### `exercise_performances`
 
 Performed or skipped exercises with prescription reference, selected exercise, order,
 substitution/skip reason, pain flag, ratings, and note.
+
+`exercise_slug` is the catalog identity of a prescribed performance, copied from its planned
+exercise by a trigger and cleared when the performance becomes a substitution or an extra
+exercise. `get_my_exercise_history` keys history by slug; performances without one (older plans,
+substitutions, extras) are keyed by their lowercased, trimmed name.
 
 ### `exercise_sets`
 
@@ -750,4 +762,5 @@ hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm.
 - `feature_snapshots.schema_version` IN ('1.0', '2.0')
 - `policy_evaluations.policy_version` IN ('daily-v1', 'eligibility-v1')
 - `daily_computed_metrics.schema_version` = '2.1'
-- RPC schema_version: `get_my_training_hub` 1.4, `get_my_daily_brief` 1.2
+- RPC schema_version: `get_my_training_hub` 1.4, `get_my_daily_brief` 1.2 (since raised: hub 1.6
+  on 2026-10-03, adding plan dates, exercise muscles, completion source and `daily_load`)

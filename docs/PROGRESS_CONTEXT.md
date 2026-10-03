@@ -1,10 +1,19 @@
 # Tracend Current State
 
-**As of:** 2026-10-02
+**As of:** 2026-10-03
 
 **Lifecycle:** owner-only private beta; not approved for public production
 
-**Current priority:** UI polish, so the app reads as a finished consumer product rather than a
+**Current priority (2026-10-03):** the app-wide graphite + lime redesign. The owner chose palette
+A from an HTML prototype and approved a ten-PR plan: backend data, then tokens, components and
+brand (device checkpoints after tokens and brand), workout logging with real session effort and a
+rest alert (device checkpoint), then Train, Today, Coach, Nutrition and Progress, and Account.
+Round 3 of the prototype is with the owner for the Train signature picks; PR 1 (backend data,
+additive SQL) is in review. Workstream state: [`docs/handoff/redesign.md`](./handoff/redesign.md).
+The installed app still sends a fixed session effort of 8, so training load is minutes times a
+constant until the logging PR ships.
+
+**Previous priority:** UI polish, so the app reads as a finished consumer product rather than a
 beta full of logs. The owner approved the plan on 2026-10-01 and chose to start it before the full
 owner-device acceptance checklist. Order: Progress (P1) → Nutrition (P2) → Today, Train, Coach,
 Account (P3–P6). Workstream state: [`docs/handoff/ui-polish.md`](./handoff/ui-polish.md).

@@ -80,7 +80,7 @@ select is((select array_agg(target_load_kg order by exercise_order)::text from p
   '{82.50,NULL}', 'the starting load is copied; the other exercise has none');
 select is((public.get_my_training_hub()->'workouts'->0->'exercises'->0->>'target_load_kg')::numeric,
   82.5, 'the training hub reports it');
-select is(public.get_my_training_hub()->>'schema_version', '1.5', 'hub schema 1.5');
+select is(public.get_my_training_hub()->>'schema_version', '1.6', 'hub schema 1.6');
 select is(public.get_my_daily_brief(current_date)->>'schema_version', '1.6', 'brief schema 1.6');
 reset role;
 select is((select array[training_years, priority_muscles::text, strong_muscles::text]
