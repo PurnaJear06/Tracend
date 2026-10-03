@@ -71,7 +71,7 @@ class MuscleMapPalette {
   Color get also => Color.alphaBlend(mainStart.withValues(alpha: 0.45), off);
 
   /// The darker slices that read as the body's thickness mid-turn.
-  Color get edge => Color.lerp(off, shadow, 0.18)!;
+  Color get edge => Color.lerp(base, shadow, 0.45)!;
 
   @override
   bool operator ==(Object other) =>
@@ -348,7 +348,7 @@ class _MuscleMapState extends State<MuscleMap> with TickerProviderStateMixin {
     final angle = _angle;
     final cosA = math.cos(angle);
     final sinA = math.sin(angle).abs();
-    final thickness = width * 0.075;
+    final thickness = width * 0.03;
     final showBack = cosA < 0;
     final reveal = _reveal();
 
@@ -378,7 +378,7 @@ class _MuscleMapState extends State<MuscleMap> with TickerProviderStateMixin {
               size: Size.infinite,
               painter: _SilhouettePainter(
                 color: widget.palette.edge,
-                opacity: math.min(1, sinA * 1.6),
+                opacity: math.min(1, sinA * 3),
               ),
             ),
           ),
@@ -582,7 +582,12 @@ class MuscleFacePainter extends CustomPainter {
 
     // Paint order: each shape, then its outline in the base colour, so the
     // separation lines show and a covered edge stays covered.
+    final recessedPaint = Paint()..color = palette.base;
     for (final part in figure.parts) {
+      if (part.recessed) {
+        canvas.drawPath(part.path, recessedPaint);
+        continue;
+      }
       canvas.drawPath(part.path, offPaint);
       final group = part.group;
       final p = group == null || !tones.containsKey(group)
