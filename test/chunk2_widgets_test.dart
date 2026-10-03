@@ -547,14 +547,6 @@ class _RecordedRpeRepository extends FixtureWorkoutRepository {
     int revision,
     Map<String, dynamic> draft,
   ) async {}
-
-  @override
-  Future<void> complete(
-    String sessionId,
-    int revision,
-    int durationSeconds,
-    Map<String, dynamic> draft,
-  ) async {}
 }
 
 class _DecisionCoachRepository implements CoachRepository {

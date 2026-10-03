@@ -229,18 +229,6 @@ void main() {
       expect(await repository.loadPendingFinish(_workoutId), isNull);
     });
 
-    test('the legacy finish still sends the fixed values', () async {
-      server.answer('complete_workout', {'replayed': false});
-
-      await repository.complete(_sessionId, 4, 600, _draft());
-
-      final (name, params) = server.calls.single;
-      expect(name, 'complete_workout');
-      expect(params['session_effort'], 8);
-      expect(params['session_energy'], 3);
-      expect(await repository.loadDraft(_workoutId), isNull);
-    });
-
     test('breadcrumbs name the step, never the effort', () async {
       server.answer('complete_workout_v2', {'replayed': false});
 
