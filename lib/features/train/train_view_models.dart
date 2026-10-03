@@ -475,12 +475,11 @@ class MuscleSets {
 }
 
 /// Sets per group: each exercise adds its sets to every group in its
-/// `primary_muscles`. Unlinked exercises add nothing. Sorted by sets, then
-/// the catalog order.
+/// `primary_muscles` (catalog or reviewed list). An exercise without muscles
+/// adds nothing. Sorted by sets, then the catalog order.
 List<MuscleSets> muscleSetsFor(Iterable<PlannedExercise> exercises) {
   final totals = <MuscleGroup, int>{};
   for (final exercise in exercises) {
-    if (exercise.exerciseSlug == null) continue;
     for (final group in exercise.primaryMuscles.toSet()) {
       totals[group] = (totals[group] ?? 0) + exercise.setCount;
     }
@@ -502,20 +501,20 @@ List<MuscleSets> muscleSetsFor(Iterable<PlannedExercise> exercises) {
   ];
 }
 
-/// The share of a workout's planned sets that must come from catalog-linked
-/// exercises before its muscle map is shown. Below it the map would show a
+/// The share of a workout's planned sets that must come from exercises with
+/// known muscles before its muscle map is shown. Below it the map would show a
 /// fraction of the session as if it were all of it (one linked face pull
 /// lighting only shoulders on a back day), so it is left out.
 const muscleMapMinLinkedShare = 0.75;
 
-/// Whether the workout's linked exercises carry enough of its sets for the
+/// Whether the workout's exercises with known muscles carry enough of its sets for the
 /// muscle map to describe the session ([muscleMapMinLinkedShare]).
 bool muscleMapCoversWorkout(Iterable<PlannedExercise> exercises) {
   var total = 0;
   var linked = 0;
   for (final exercise in exercises) {
     total += exercise.setCount;
-    if (exercise.exerciseSlug != null && exercise.primaryMuscles.isNotEmpty) {
+    if (exercise.primaryMuscles.isNotEmpty) {
       linked += exercise.setCount;
     }
   }

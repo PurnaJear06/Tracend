@@ -634,7 +634,7 @@ void main() {
       expect(find.byType(MusclesSheetBody), findsOneWidget);
       expect(find.text('8 sets'), findsOneWidget);
       expect(
-        find.textContaining('5 of 6 exercises are linked'),
+        find.textContaining('5 of 6 exercises have muscles'),
         findsOneWidget,
       );
       MuscleMapPair pair() => tester.widget(find.byType(MuscleMapPair));

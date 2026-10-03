@@ -38,8 +38,9 @@ class PlannedExercise {
   /// catalog and for every exercise in a 1.5 payload.
   final String? exerciseSlug;
 
-  /// The catalog's primary muscles for [exerciseSlug] (hub 1.6). Empty when
-  /// the exercise is unlinked: muscles are never inferred from the name.
+  /// The primary muscles (hub 1.6): the catalog entry's for a linked
+  /// exercise, otherwise those of Tracend's reviewed exercise list for this
+  /// name. Empty when the name is on neither: nothing is inferred.
   final List<MuscleGroup> primaryMuscles;
 
   /// The key `get_my_exercise_history` knows this exercise by: its catalog

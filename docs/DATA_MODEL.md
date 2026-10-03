@@ -229,6 +229,16 @@ Implemented 2026-10 (`catalog-v1`, 72 exercises):
 - **Not yet implemented:** laterality, contraindication tags, substitution groups and
   instructions.
 
+### `exercise_muscle_references`
+
+Reviewed primary muscles for planned exercise names that are not catalog entries (2026-10-04),
+for plans approved before the catalog. Columns: `name_key` (the exercise history key: lowercased,
+trimmed, spaces collapsed; primary key), `name`, `primary_muscles` (the catalog's muscle groups,
+1–4), `created_at`. Each row is reviewed by hand and added by migration; nothing writes it at run
+time. The training hub reads a planned exercise's muscles from its catalog entry, else from this
+list; it never gives such an exercise a slug, so exercise identity and history are unchanged and
+the catalog stays the onboarding allowlist. RLS forced, no client access.
+
 ### `training_plans`
 
 Plan lineage containing user, goal, title, block objective, source, and timestamps. The source

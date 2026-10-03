@@ -103,6 +103,11 @@ nothing is guessed.
   when linked exercises carry at least three quarters of the planned sets
   (`muscleMapCoversWorkout`); otherwise it says "Muscle map appears with your next plan." A
   single exercise's map in focus logging is unchanged.
+- Owner: "it should understand the exercises". The catalog stays the onboarding allowlist, so a
+  reviewed list `exercise_muscle_references` (migration `20261004090000`) gives the 34 unlinked
+  names in the owner's active plan their primary muscles by hand; the hub reads catalog muscles
+  first, then the list, by the history key, and never adds a slug. New free-text names need a
+  reviewed row in a migration. pgTAP `exercise_muscle_references_test.sql`.
 - GPT review of b39a05a (3 × P2, fixed): a permission granted by the rest toggle now saves the
   status with the reminder choices already on the server (a reinstall reports both off), and a
   later reminder save waits for it; a load the athlete cleared stays cleared after Save and leave

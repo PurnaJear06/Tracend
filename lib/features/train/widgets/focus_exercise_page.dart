@@ -192,9 +192,7 @@ class _FocusExercisePageState extends State<FocusExercisePage>
     final draft = widget.draft;
     final exercise = draft.exercise;
     final current = widget.readOnly ? null : draft.currentSetIndex;
-    final muscles = exercise.exerciseSlug == null
-        ? const <MuscleSets>[]
-        : muscleSetsFor([exercise]);
+    final muscles = muscleSetsFor([exercise]);
     final compact = MediaQuery.sizeOf(context).width < 360;
     // With large text the name gets the full width and the figures sit
     // under it, so a long word never breaks mid-word beside them.

@@ -32,9 +32,9 @@ The Train tab (2026-10-03 redesign, `lib/features/train/train_screen.dart`) read
   chips and on the turnable `MuscleMap` with a Front/Back control. The title area opens the
   **workout overview** sheet (objective, warm-up, exercises, cooldown, then **Start workout** or
   **View summary**); the map opens the **muscles sheet** (front and back side by side, a row per
-  muscle with its sets and exercises, rows and muscles selecting each other, and the note that only
-  catalog-linked exercises count). When catalog-linked exercises carry less than three quarters of
-  the workout's planned sets, the map and chips are left out (a partial map would misdescribe the
+  muscle with its sets and exercises, rows and muscles selecting each other, and the note that muscles
+  come from the exercise catalog or Tracend's reviewed exercise list). When exercises with known
+  muscles carry less than three quarters of the workout's planned sets, the map and chips are left out (a partial map would misdescribe the
   session) and the card says "Muscle map appears with your next plan." The one action is **Start workout** (heavy haptic), **Log this
   workout** for a past day with nothing logged, or **View summary** for a done day, whose sheet shows
   time, sets logged of planned, the athlete's own effort ("Not rated" for app defaults) and each
@@ -545,9 +545,9 @@ the draft is on the phone) or **Needs attention** (low; the server refused the d
 **Focus page.** Swipe sideways between exercises (selection haptic); the screen opens on the first
 exercise with sets left.
 
-- "Exercise N of M", the name, "4 sets of 6–8 · RPE 8", the catalog muscles as text, and a small
-  front and back `MuscleMapPair` for a catalog-linked exercise. Unlinked exercises show no map and
-  no muscles; nothing is guessed from the name.
+- "Exercise N of M", the name, "4 sets of 6–8 · RPE 8", the exercise's muscles as text, and a small
+  front and back `MuscleMapPair` when its muscles are known (catalog or reviewed list). Otherwise
+  there is no map and no muscles; nothing is inferred at run time.
 - Set dots: done sets green, the current set lime.
 - The set card: "Set 2 of 4", the rest after it, and big kg × reps readouts with −/+ (2.5 kg, one
   rep; kg can be emptied for no added weight) that can also be typed. The starting values are the

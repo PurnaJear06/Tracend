@@ -426,14 +426,24 @@ void main() {
       });
     });
 
-    test('unlinked exercises add nothing and nothing is guessed', () {
+    test('an exercise without muscles adds nothing; nothing is guessed', () {
       expect(
         muscleSetsFor([
           _exercise('Cable fly', 3, const []),
-          _exercise('Squat', 4, [MuscleGroup.quads], linked: false),
+          _exercise('Mystery press', 4, const [], linked: false),
         ]),
         isEmpty,
       );
+    });
+
+    test('reviewed-list muscles count without a catalog slug', () {
+      final sets = muscleSetsFor([
+        _exercise('Reverse Pec Deck', 4, [
+          MuscleGroup.shoulders,
+        ], linked: false),
+      ]);
+      expect(sets.single.group, MuscleGroup.shoulders);
+      expect(sets.single.sets, 4);
     });
   });
 
