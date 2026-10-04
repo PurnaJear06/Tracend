@@ -324,7 +324,9 @@ class HealthPreferenceKeys {
   HealthPreferenceKeys(String userId)
     : lastSync = '${prefix(userId)}last_successful_sync',
       availableTypes = '${prefix(userId)}available_types',
-      initialBackfillComplete = '${prefix(userId)}initial_backfill_complete',
+      // Versioned (2026-10-04): the night and morning HRV split needs a
+      // month of history, so every athlete reads 30 days once more.
+      initialBackfillComplete = '${prefix(userId)}hrv_split_backfill_complete',
       accessError = '${prefix(userId)}access_error';
 
   /// Every Apple Health key of one athlete starts with this.

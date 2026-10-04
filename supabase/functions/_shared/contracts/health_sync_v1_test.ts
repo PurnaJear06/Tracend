@@ -201,3 +201,61 @@ Deno.test("health sync requires explicit HRV metric and unit", () => {
     "invalid_health_summary",
   );
 });
+
+const hrvSummary = (extra: Record<string, unknown>) => ({
+  ...valid,
+  requested_types: ["steps", "hrv_sdnn"],
+  returned_types: ["steps", "hrv_sdnn"],
+  summaries: [{
+    ...valid.summaries[0],
+    ...extra,
+    present_types: ["steps", "hrv_sdnn"],
+    source_refs: [
+      valid.summaries[0].source_refs[0],
+      {
+        type: "hrv_sdnn",
+        source_id_hash: "a".repeat(64),
+        sample_id_hash: "e".repeat(64),
+      },
+    ],
+    completeness: "complete",
+  }],
+});
+
+Deno.test("health sync accepts night and morning HRV with the day's HRV", () => {
+  const parsed = parseHealthSyncRequest(hrvSummary({
+    hrv_value_ms: 41.5,
+    hrv_metric: "sdnn",
+    hrv_unit: "ms",
+    hrv_sleep_ms: 52.25,
+    hrv_morning_ms: 38,
+  }));
+  assertEquals(parsed.summaries[0].hrv_sleep_ms, 52.25);
+  assertEquals(parsed.summaries[0].hrv_morning_ms, 38);
+});
+
+Deno.test("health sync rejects night HRV without the day's HRV", () => {
+  assertThrows(
+    () =>
+      parseHealthSyncRequest({
+        ...valid,
+        summaries: [{ ...valid.summaries[0], hrv_sleep_ms: 52 }],
+      }),
+    Error,
+    "invalid_health_summary",
+  );
+});
+
+Deno.test("health sync rejects out-of-range morning HRV", () => {
+  assertThrows(
+    () =>
+      parseHealthSyncRequest(hrvSummary({
+        hrv_value_ms: 41.5,
+        hrv_metric: "sdnn",
+        hrv_unit: "ms",
+        hrv_morning_ms: 1200,
+      })),
+    Error,
+    "invalid_health_summary",
+  );
+});

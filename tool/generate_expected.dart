@@ -40,6 +40,8 @@ Map<String, Object?> _expectedFor(ReferenceResult result) {
     'sleep_z': _z3(day.zSleep),
     'resp_rate_z': _z3(day.zResp),
     'prev_strain_z': _z3(day.zPrevStrain),
+    'check_in_z': _z3(day.zCheckIn),
+    'recovery_mode': day.mode,
     'sleep_quality': day.sleepQuality?.round(),
     'duration_score': _sub1(day.subDurationScore),
     'efficiency_score': _sub1(day.subEfficiencyScore),

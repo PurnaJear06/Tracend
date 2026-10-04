@@ -45,8 +45,8 @@ insert into public.exercise_sets(user_id,exercise_performance_id,set_number,repe
 set local role authenticated;
 set local "request.jwt.claim.sub"='a8100000-0000-4000-8000-000000000081';
 
-select is(public.get_my_daily_brief('2026-10-07')->>'schema_version','1.7',
-  'brief schema 1.7');
+select is(public.get_my_daily_brief('2026-10-07')->>'schema_version','1.8',
+  'brief schema 1.8');
 select is(public.get_my_daily_brief('2026-10-07')->'plan'->>'title','Strength foundation',
   'the plan carries its title');
 select is((public.get_my_daily_brief('2026-10-07')->'plan'->>'week_number')::integer,3,

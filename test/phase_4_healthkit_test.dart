@@ -165,6 +165,91 @@ void main() {
     expect(summaries.single.sleepRemMinutes, 120);
   });
 
+  test('HRV splits into the night it was taken in and the morning awake', () {
+    final summaries = normalizeHealthSamples(
+      samples: [
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 6, 30, 23),
+          end: DateTime(2026, 7, 1, 7),
+          id: 'night',
+          sleepStage: SleepStage.asleep,
+        ),
+        // 23:30 is asleep: it belongs to the morning the night ends on.
+        _sample(
+          HealthMetric.hrvSdnn,
+          60,
+          DateTime(2026, 6, 30, 23, 30),
+          id: 'h1',
+        ),
+        _sample(HealthMetric.hrvSdnn, 70, DateTime(2026, 7, 1, 3), id: 'h2'),
+        _sample(HealthMetric.respRate, 14, DateTime(2026, 7, 1, 2), id: 'r1'),
+        // Awake before noon: a morning reading.
+        _sample(HealthMetric.hrvSdnn, 40, DateTime(2026, 7, 1, 9), id: 'h3'),
+        // Awake after noon: counts for the day only.
+        _sample(HealthMetric.hrvSdnn, 30, DateTime(2026, 7, 1, 15), id: 'h4'),
+      ],
+      requestedMetrics: HealthMetric.values.toSet(),
+      timezone: 'Asia/Kolkata',
+    );
+
+    expect(summaries, hasLength(1));
+    final day = summaries.single;
+    expect(day.localDate, DateTime(2026, 7, 1));
+    expect(day.hrvSleepMs, 65);
+    expect(day.hrvMorningMs, 40);
+    expect(day.hrvSdnnMs, 50);
+    expect(day.respRateBpm, 14);
+    final json = day.toJson(HealthMetric.values.toSet());
+    expect(json['hrv_sleep_ms'], 65);
+    expect(json['hrv_morning_ms'], 40);
+    expect(json['hrv_value_ms'], 50);
+  });
+
+  test('a nap is not a night; a morning reading needs no sleep', () {
+    final summaries = normalizeHealthSamples(
+      samples: [
+        _sample(
+          HealthMetric.sleep,
+          0,
+          DateTime(2026, 7, 1, 13),
+          end: DateTime(2026, 7, 1, 14),
+          id: 'nap',
+          sleepStage: SleepStage.asleep,
+        ),
+        _sample(
+          HealthMetric.hrvSdnn,
+          55,
+          DateTime(2026, 7, 1, 13, 30),
+          id: 'h1',
+        ),
+        _sample(HealthMetric.hrvSdnn, 42, DateTime(2026, 7, 1, 6), id: 'h2'),
+        // Before 04:00 awake is neither night nor morning.
+        _sample(HealthMetric.hrvSdnn, 35, DateTime(2026, 7, 1, 2), id: 'h3'),
+        // A nap's breathing reading is not a night's: left out.
+        _sample(
+          HealthMetric.respRate,
+          15,
+          DateTime(2026, 7, 1, 13, 20),
+          id: 'r1',
+        ),
+      ],
+      requestedMetrics: HealthMetric.values.toSet(),
+      timezone: 'Asia/Kolkata',
+    );
+
+    final day = summaries.single;
+    expect(day.hrvSleepMs, isNull);
+    expect(day.respRateBpm, isNull);
+    expect(day.presentMetrics.contains(HealthMetric.respRate), isFalse);
+    expect(day.hrvMorningMs, 42);
+    expect(day.hrvSdnnMs, closeTo(44, 0.01));
+    final json = day.toJson(HealthMetric.values.toSet());
+    expect(json.containsKey('hrv_sleep_ms'), isFalse);
+    expect(json['hrv_morning_ms'], 42);
+  });
+
   test('consecutive nights attribute to their own mornings', () {
     final summaries = normalizeHealthSamples(
       samples: [

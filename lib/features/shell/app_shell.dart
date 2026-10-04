@@ -99,7 +99,9 @@ class _AppShellState extends State<AppShell> {
         ? SupabasePhysiqueCheckRepository(Supabase.instance.client)
         : const FixturePhysiqueCheckRepository();
     _brief = widget.environment.hasSupabaseConfiguration
-        ? SupabaseDailyBriefRepository(Supabase.instance.client)
+        ? SharedDailyBriefRepository(
+            SupabaseDailyBriefRepository(Supabase.instance.client),
+          )
         : const FixtureDailyBriefRepository();
   }
 

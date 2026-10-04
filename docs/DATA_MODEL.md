@@ -196,6 +196,11 @@ One row per user, local date, and source scope containing:
 - weight when supplied by HealthKit;
 - resting heart rate;
 - HRV value, explicit metric, and unit;
+- night HRV (`hrv_sleep_ms`: the mean of readings taken during the night that ends on this date,
+  a sleep session of three hours or more) and morning HRV (`hrv_morning_ms`: readings taken
+  04:00–12:00 outside sleep), both subsets of the day's HRV (2026-10-04, `20261004160000`;
+  a check keeps them null without `hrv_value_ms`). HRV and breathing readings taken asleep
+  belong to the morning the night ends on; a nap's breathing readings are left out;
 - source/checksum metadata, completeness, and last-sync time.
 
 The Phase 4 source scope is `healthkit`. HRV is stored only as milliseconds with the explicit `sdnn`
@@ -634,7 +639,7 @@ One row per user per metric. Winsorized EWMA baselines computed from `daily_heal
 | -------------- | ------- | ------------------------------------------------- |
 | id             | uuid PK |                                                   |
 | user_id        | uuid FK | auth.users.id                                     |
-| metric_name    | text    | hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg |
+| metric_name    | text    | hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm, hrv_sleep_ms, hrv_morning_ms |
 | baseline_value | numeric | Current EWMA                                      |
 | spread         | numeric | MAD spread for z-score denominator                |
 | confidence     | text    | cold_start, low, medium, high                     |
@@ -722,11 +727,15 @@ Future-date guard (`20260906140000`): `compute_daily_metrics` never folds baseli
 
 Full formula definitions with literature citations in [ALGORITHMS.md](./ALGORITHMS.md).
 
-### Baseline Metrics (5 total)
+### Baseline Metrics (7 total)
 
-hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm.
+hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm, hrv_sleep_ms,
+hrv_morning_ms. Recovery scores night HRV against `hrv_sleep_ms` and morning HRV against
+`hrv_morning_ms` (ALGORITHMS.md §1, Recovery Modes).
 
 ### Recovery Score Weights
+
+Night score (the morning estimate's weights are in ALGORITHMS.md §1, Recovery Modes):
 
 | Component    | Weight | Direction                     |
 | ------------ | ------ | ----------------------------- |
@@ -796,3 +805,11 @@ hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm.
   requested day's latest session that is not `abandoned`: its `state` and, per `exercise_order`,
   the count of `completed` sets). The Today page draws its week, plan line and session strip from
   these; nothing is derived on the phone
+- `get_my_daily_brief` 1.8 (2026-10-04, `20261004160000`) changes no field; `computed` gains
+  `scores.recovery_mode` (`night` or `morning`), `scores.recovery_settled`,
+  `scores.recovery_breakdown.check_in_z` and `.weights`, and `today_raw.hrv_scored_ms` and
+  `.resting_hr_scored_bpm`; `missing_components` may list `check_in`; `baselines` adds
+  `hrv_sleep_ms` and `hrv_morning_ms`; the resting-HR baseline folds through yesterday.
+  `daily_computed_metrics.schema_version` is '2.3', and a recomputed day now stamps it.
+  `persist_health_sync` and `health_sync_v1` accept `hrv_sleep_ms` and `hrv_morning_ms`
+  (0–1000, never without `hrv_value_ms`)

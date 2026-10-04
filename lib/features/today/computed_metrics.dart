@@ -5,7 +5,9 @@ class RecoveryBreakdown {
     required this.sleepZ,
     required this.respRateZ,
     required this.prevStrainZ,
+    this.checkInZ = 0,
     this.missingComponents = const [],
+    this.weights = const {},
   });
   final double hrvZ;
   final double rhrZ;
@@ -13,10 +15,19 @@ class RecoveryBreakdown {
   final double respRateZ;
   final double prevStrainZ;
 
+  /// The morning check-in's distance from "OK", within ±2; it counts only
+  /// in a morning estimate. 0 on older payloads.
+  final double checkInZ;
+
   /// Component keys that did not contribute to the recovery score because
   /// the value or its baseline was unavailable ('hrv_sdnn', 'resting_hr',
-  /// 'sleep_minutes', 'resp_rate', 'prev_strain'). Absent on older payloads.
+  /// 'sleep_minutes', 'resp_rate', 'prev_strain', 'check_in'). Absent on
+  /// older payloads.
   final List<String> missingComponents;
+
+  /// Each component's weight in percent for today's mode, keyed like
+  /// [missingComponents]. Empty on payloads before scoring 2.3.
+  final Map<String, int> weights;
 
   factory RecoveryBreakdown.fromJson(Map<String, dynamic> json) {
     return RecoveryBreakdown(
@@ -25,9 +36,15 @@ class RecoveryBreakdown {
       sleepZ: (json['sleep_z'] as num).toDouble(),
       respRateZ: (json['resp_rate_z'] as num).toDouble(),
       prevStrainZ: (json['prev_strain_z'] as num).toDouble(),
+      checkInZ: (json['check_in_z'] as num?)?.toDouble() ?? 0,
       missingComponents: (json['missing_components'] as List? ?? const [])
           .map((item) => item.toString())
           .toList(),
+      weights: {
+        for (final entry in (json['weights'] as Map? ?? const {}).entries)
+          if (entry.value is num)
+            entry.key.toString(): (entry.value as num).toInt(),
+      },
     );
   }
 
@@ -39,7 +56,17 @@ class RecoveryBreakdown {
       sleepZ == other.sleepZ &&
       respRateZ == other.respRateZ &&
       prevStrainZ == other.prevStrainZ &&
-      _listEquals(missingComponents, other.missingComponents);
+      checkInZ == other.checkInZ &&
+      _listEquals(missingComponents, other.missingComponents) &&
+      _mapEquals(weights, other.weights);
+
+  static bool _mapEquals(Map<String, int> a, Map<String, int> b) {
+    if (a.length != b.length) return false;
+    for (final entry in a.entries) {
+      if (b[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
 
   static bool _listEquals(List<String> a, List<String> b) {
     if (a.length != b.length) return false;
@@ -56,7 +83,11 @@ class RecoveryBreakdown {
     sleepZ,
     respRateZ,
     prevStrainZ,
+    checkInZ,
     Object.hashAll(missingComponents),
+    Object.hashAllUnordered(
+      weights.entries.map((entry) => Object.hash(entry.key, entry.value)),
+    ),
   );
 }
 
@@ -157,12 +188,22 @@ class TodayRaw {
     this.sleepMinutes,
     this.respRateBpm,
     this.dailyStrain,
+    this.hrvScoredMs,
+    this.restingHrScoredBpm,
   });
   final double? hrvMs;
   final double? restingHrBpm;
   final int? sleepMinutes;
   final double? respRateBpm;
   final double? dailyStrain;
+
+  /// The HRV the score used: the night's in a night score, the morning's
+  /// in a morning estimate. Absent before scoring 2.3.
+  final double? hrvScoredMs;
+
+  /// The resting heart rate the score used: yesterday's final value.
+  /// Absent before scoring 2.3.
+  final double? restingHrScoredBpm;
 
   factory TodayRaw.fromJson(Map<String, dynamic> json) {
     return TodayRaw(
@@ -171,6 +212,8 @@ class TodayRaw {
       sleepMinutes: json['sleep_minutes'] as int?,
       respRateBpm: (json['resp_rate_bpm'] as num?)?.toDouble(),
       dailyStrain: (json['daily_strain'] as num?)?.toDouble(),
+      hrvScoredMs: (json['hrv_scored_ms'] as num?)?.toDouble(),
+      restingHrScoredBpm: (json['resting_hr_scored_bpm'] as num?)?.toDouble(),
     );
   }
 }
@@ -182,12 +225,21 @@ class ComputedBaselines {
     this.sleepMinutes,
     this.weightKg,
     this.respRate,
+    this.hrvSleep,
+    this.hrvMorning,
   });
+
+  /// The all-day HRV baseline (every reading of each day).
   final BaselineMetric? hrv;
   final BaselineMetric? restingHr;
   final BaselineMetric? sleepMinutes;
   final BaselineMetric? weightKg;
   final BaselineMetric? respRate;
+
+  /// Night HRV and morning HRV, each folded only from its own kind
+  /// (scoring 2.3). Recovery scores against these.
+  final BaselineMetric? hrvSleep;
+  final BaselineMetric? hrvMorning;
 
   factory ComputedBaselines.fromJson(Map<String, dynamic> json) {
     BaselineMetric? parse(String key) {
@@ -202,6 +254,8 @@ class ComputedBaselines {
       sleepMinutes: parse('sleep_minutes'),
       weightKg: parse('weight_kg'),
       respRate: parse('resp_rate_bpm'),
+      hrvSleep: parse('hrv_sleep_ms'),
+      hrvMorning: parse('hrv_morning_ms'),
     );
   }
 }
@@ -209,6 +263,8 @@ class ComputedBaselines {
 class ComputedScores {
   const ComputedScores({
     this.recovery,
+    this.recoveryMode,
+    this.recoverySettled,
     this.recoveryBreakdown,
     this.sleepQuality,
     this.sleepBreakdown,
@@ -222,6 +278,13 @@ class ComputedScores {
     this.macroAdherencePct,
   });
   final int? recovery;
+
+  /// 'night' when the watch was worn asleep, 'morning' for an estimate
+  /// from the morning's readings and check-in. Null before scoring 2.3.
+  final String? recoveryMode;
+
+  /// False while a morning estimate can still change (before 12:00).
+  final bool? recoverySettled;
   final RecoveryBreakdown? recoveryBreakdown;
   final int? sleepQuality;
   final SleepBreakdown? sleepBreakdown;
@@ -249,6 +312,8 @@ class ComputedScores {
 
     return ComputedScores(
       recovery: json['recovery'] as int?,
+      recoveryMode: json['recovery_mode'] as String?,
+      recoverySettled: json['recovery_settled'] as bool?,
       recoveryBreakdown: parseBreakdown('recovery_breakdown'),
       sleepQuality: json['sleep_quality'] as int?,
       sleepBreakdown: parseSleepBreakdown('sleep_breakdown'),

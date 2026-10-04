@@ -34,6 +34,7 @@ class RecoveryReadoutCard extends StatelessWidget {
       breakdown: breakdown,
       todayRaw: computed.todayRaw,
       sleepQualityProven: computed.scores.sleepQuality != null,
+      mode: computed.scores.recoveryMode,
     );
     return PremiumGradientCard(
       padding: const EdgeInsets.fromLTRB(
@@ -58,7 +59,10 @@ class RecoveryReadoutCard extends StatelessWidget {
             _DriverRow(driver: drivers[i]),
           ],
           Divider(height: 1, thickness: 1, color: colors.borderHairline),
-          _HowCalculated(drivers: drivers),
+          _HowCalculated(
+            drivers: drivers,
+            morning: computed.scores.recoveryMode == 'morning',
+          ),
         ],
       ),
     );
@@ -69,6 +73,7 @@ class RecoveryReadoutCard extends StatelessWidget {
 @immutable
 class RecoveryDriver {
   const RecoveryDriver({
+    required this.key,
     required this.label,
     required this.icon,
     required this.zScore,
@@ -79,6 +84,9 @@ class RecoveryDriver {
     this.buildingBaseline = false,
   });
 
+  /// The component key ('hrv_sdnn', 'resting_hr', 'sleep_minutes',
+  /// 'resp_rate', 'prev_strain', 'check_in').
+  final String key;
   final String label;
   final IconData icon;
 
@@ -132,34 +140,52 @@ String driverComparison(
   return magnitude >= 2 ? 'much $word than usual' : '$word than usual';
 }
 
-/// Builds the five driver rows in the recovery composite's weight order.
+/// The weights of a night score, for payloads that predate published
+/// weights (scoring < 2.3).
+const _nightWeights = {
+  'hrv_sdnn': 55,
+  'resting_hr': 20,
+  'sleep_minutes': 15,
+  'resp_rate': 5,
+  'prev_strain': 5,
+};
+
+/// Builds the driver rows in the composite's weight order. A night score
+/// has HRV, resting heart rate, sleep, breathing and recent training; a
+/// morning estimate ([mode] 'morning') has no breathing rate (the watch
+/// records it only asleep) and adds the morning check-in.
 List<RecoveryDriver> recoveryDrivers({
   required RecoveryBreakdown breakdown,
   required TodayRaw? todayRaw,
   required bool sleepQualityProven,
+  String? mode,
 }) {
   final missing = breakdown.missingComponents.toSet();
+  final morning = mode == 'morning';
+  final weights = breakdown.weights.isEmpty ? _nightWeights : breakdown.weights;
   RecoveryDriver driver({
     required String key,
     required String label,
     required IconData icon,
     required double z,
-    required int weight,
     required bool inverted,
     String more = 'higher',
     String less = 'lower',
   }) {
     final usable = !missing.contains(key);
-    final raw = _rawLabel(key, todayRaw);
+    final raw = _rawLabel(key, todayRaw, scored: mode != null);
     return RecoveryDriver(
+      key: key,
       label: label,
       icon: icon,
       zScore: z,
       usable: usable,
-      weightPercent: weight,
-      comparison: usable
-          ? driverComparison(z, inverted: inverted, more: more, less: less)
-          : null,
+      weightPercent: weights[key] ?? 0,
+      comparison: !usable
+          ? null
+          : key == 'check_in'
+          ? checkInComparison(z)
+          : driverComparison(z, inverted: inverted, more: more, less: less),
       // A raw value only accompanies a usable reading, or the one gated
       // sleep exception below; a missing component never shows a number.
       rawValue: usable || key == 'sleep_minutes' ? raw : null,
@@ -171,21 +197,31 @@ List<RecoveryDriver> recoveryDrivers({
     );
   }
 
-  return [
+  final drivers = [
     driver(
       key: 'hrv_sdnn',
-      label: 'Heart rate variability',
+      label: morning
+          ? 'Morning HRV'
+          : mode == 'night'
+          ? 'Overnight HRV'
+          : 'Heart rate variability',
       icon: CupertinoIcons.waveform_path_ecg,
       z: breakdown.hrvZ,
-      weight: 55,
       inverted: false,
     ),
+    if (morning)
+      driver(
+        key: 'check_in',
+        label: 'Morning check-in',
+        icon: CupertinoIcons.person_crop_circle,
+        z: breakdown.checkInZ,
+        inverted: false,
+      ),
     driver(
       key: 'resting_hr',
       label: 'Resting heart rate',
       icon: CupertinoIcons.heart_fill,
       z: breakdown.rhrZ,
-      weight: 20,
       inverted: true,
     ),
     driver(
@@ -193,40 +229,52 @@ List<RecoveryDriver> recoveryDrivers({
       label: 'Sleep',
       icon: CupertinoIcons.moon_fill,
       z: breakdown.sleepZ,
-      weight: 15,
       inverted: false,
       more: 'more',
       less: 'less',
     ),
-    driver(
-      key: 'resp_rate',
-      label: 'Breathing rate',
-      icon: CupertinoIcons.wind,
-      z: breakdown.respRateZ,
-      weight: 5,
-      inverted: true,
-    ),
+    if (!morning)
+      driver(
+        key: 'resp_rate',
+        label: 'Breathing rate',
+        icon: CupertinoIcons.wind,
+        z: breakdown.respRateZ,
+        inverted: true,
+      ),
     driver(
       key: 'prev_strain',
       label: 'Recent training',
       icon: CupertinoIcons.flame_fill,
       z: breakdown.prevStrainZ,
-      weight: 5,
       inverted: false,
       more: 'more',
       less: 'less',
     ),
   ];
+  return drivers;
+}
+
+/// The check-in in words: it compares with "OK", not with your usual.
+String checkInComparison(double z) {
+  if (z >= 1) return 'feeling good';
+  if (z <= -1) return 'feeling rough';
+  return 'feeling about OK';
 }
 
 /// Today's measured value with its unit, or null when the brief predates
 /// `today_raw` or the component was not measured today.
-String? _rawLabel(String key, TodayRaw? raw) {
+///
+/// With [scored] (scoring ≥ 2.3) HRV and resting heart rate are the values
+/// the score used: the night's or the morning's HRV, and yesterday's
+/// resting heart rate.
+String? _rawLabel(String key, TodayRaw? raw, {required bool scored}) {
   if (raw == null) return null;
+  final hrv = scored ? raw.hrvScoredMs : raw.hrvMs;
+  final rhr = scored ? raw.restingHrScoredBpm : raw.restingHrBpm;
   return switch (key) {
-    'hrv_sdnn' => raw.hrvMs == null ? null : '${raw.hrvMs!.round()} ms',
+    'hrv_sdnn' => hrv == null ? null : '${hrv.round()} ms',
     'resting_hr' =>
-      raw.restingHrBpm == null ? null : '${raw.restingHrBpm!.round()} bpm',
+      rhr == null ? null : '${rhr.round()} bpm${scored ? ' yesterday' : ''}',
     'sleep_minutes' =>
       raw.sleepMinutes == null ? null : _formatMinutes(raw.sleepMinutes!),
     'resp_rate' =>
@@ -309,9 +357,10 @@ class _DriverRow extends StatelessWidget {
 /// The ⓘ "How this is calculated" disclosure: the method in plain words,
 /// then each driver's true z-score and weight. Closed by default.
 class _HowCalculated extends StatefulWidget {
-  const _HowCalculated({required this.drivers});
+  const _HowCalculated({required this.drivers, required this.morning});
 
   final List<RecoveryDriver> drivers;
+  final bool morning;
 
   @override
   State<_HowCalculated> createState() => _HowCalculatedState();
@@ -333,7 +382,7 @@ class _HowCalculatedState extends State<_HowCalculated> {
     final panel = _open
         ? Padding(
             padding: const EdgeInsets.only(bottom: TracendSpacing.md),
-            child: _Method(drivers: widget.drivers),
+            child: _Method(drivers: widget.drivers, morning: widget.morning),
           )
         : const SizedBox(width: double.infinity);
     return Column(
@@ -398,9 +447,10 @@ class _HowCalculatedState extends State<_HowCalculated> {
 }
 
 class _Method extends StatelessWidget {
-  const _Method({required this.drivers});
+  const _Method({required this.drivers, required this.morning});
 
   final List<RecoveryDriver> drivers;
+  final bool morning;
 
   @override
   Widget build(BuildContext context) {
@@ -416,6 +466,19 @@ class _Method extends StatelessWidget {
           'sits from it, in typical day-to-day swings (a z-score). Within one '
           'swing reads "normal for you". The score weighs the readings as '
           'shown, and leaves out any reading without enough history.',
+          style: body,
+        ),
+        const SizedBox(height: TracendSpacing.xs),
+        Text(
+          morning
+              ? 'No night with your watch was recorded, so this is a morning '
+                    'estimate: the HRV your watch took between 4:00 and 12:00, '
+                    'compared only with your other mornings, plus your '
+                    'check-in. Readings after 12:00 never count, so it '
+                    'settles at noon. Wear your watch to bed for a full score.'
+              : 'Scored from last night: the HRV your watch took while you '
+                    'slept, compared only with your other nights. Readings '
+                    'taken while you are awake never count.',
           style: body,
         ),
         const SizedBox(height: TracendSpacing.sm),

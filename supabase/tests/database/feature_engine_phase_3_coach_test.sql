@@ -27,33 +27,42 @@ insert into public.daily_health_summaries(
   completeness,observed_through,last_synced_at,
   hrv_value_ms,hrv_metric,hrv_unit,resting_heart_rate_bpm,sleep_minutes,
   sleep_awake_minutes,sleep_deep_minutes,sleep_rem_minutes,sleep_light_minutes,
-  weight_kg,respiratory_rate_bpm)
+  weight_kg,respiratory_rate_bpm,hrv_sleep_ms)
 values
   ('aaaaaaaa-1111-4111-8111-111111111111', current_date-14, 'Asia/Kolkata',
    array['hrv_sdnn','resting_heart_rate','sleep'],'[]'::jsonb,repeat('0',64),
-   'partial',now(),now(), 65.0,'sdnn','ms', 52.0, 480, 20, 100, 110, 250, null, 13.0),
+   'partial',now(),now(), 65.0,'sdnn','ms', 52.0, 480, 20, 100, 110, 250, null, 13.0, 65.0),
   ('aaaaaaaa-1111-4111-8111-111111111111', current_date-13, 'Asia/Kolkata',
    array['hrv_sdnn','resting_heart_rate','sleep'],'[]'::jsonb,repeat('1',64),
-   'partial',now(),now(), 68.0,'sdnn','ms', 50.0, 490, 15, 105, 115, 255, null, 13.5),
+   'partial',now(),now(), 68.0,'sdnn','ms', 50.0, 490, 15, 105, 115, 255, null, 13.5, 68.0),
   ('aaaaaaaa-1111-4111-8111-111111111111', current_date-12, 'Asia/Kolkata',
    array['hrv_sdnn','resting_heart_rate','sleep'],'[]'::jsonb,repeat('2',64),
-   'partial',now(),now(), 62.0,'sdnn','ms', 54.0, 475, 25, 95, 105, 245, null, 14.0),
+   'partial',now(),now(), 62.0,'sdnn','ms', 54.0, 475, 25, 95, 105, 245, null, 14.0, 62.0),
   ('aaaaaaaa-1111-4111-8111-111111111111', current_date-11, 'Asia/Kolkata',
    array['hrv_sdnn','resting_heart_rate','sleep'],'[]'::jsonb,repeat('3',64),
-   'partial',now(),now(), 70.0,'sdnn','ms', 49.0, 500, 10, 110, 118, 262, null, 12.5),
+   'partial',now(),now(), 70.0,'sdnn','ms', 49.0, 500, 10, 110, 118, 262, null, 12.5, 70.0),
   ('aaaaaaaa-1111-4111-8111-111111111111', current_date-10, 'Asia/Kolkata',
    array['hrv_sdnn','resting_heart_rate','sleep'],'[]'::jsonb,repeat('4',64),
-   'partial',now(),now(), 66.0,'sdnn','ms', 53.0, 485, 22, 98, 112, 253, null, 13.2);
+   'partial',now(),now(), 66.0,'sdnn','ms', 53.0, 485, 22, 98, 112, 253, null, 13.2, 66.0);
 
 insert into public.daily_health_summaries(
   user_id,local_date,timezone,present_types,source_refs,source_checksum,
   completeness,observed_through,last_synced_at,
   hrv_value_ms,hrv_metric,hrv_unit,resting_heart_rate_bpm,sleep_minutes,
-  weight_kg,respiratory_rate_bpm)
+  weight_kg,respiratory_rate_bpm,hrv_sleep_ms)
 values
   ('aaaaaaaa-1111-4111-8111-111111111111', current_date, 'Asia/Kolkata',
    array['hrv_sdnn','resting_heart_rate','sleep','weight'],'[]'::jsonb,repeat('5',64),
-   'partial',now(),now(), 72.0,'sdnn','ms', 48.0, 510, 54.0, 13.0);
+   'partial',now(),now(), 72.0,'sdnn','ms', 48.0, 510, 54.0, 13.0, 72.0);
+
+-- Recovery scores yesterday's final resting HR (2026-10-04).
+insert into public.daily_health_summaries(
+  user_id,local_date,timezone,present_types,source_refs,source_checksum,
+  completeness,observed_through,last_synced_at,resting_heart_rate_bpm)
+values
+  ('aaaaaaaa-1111-4111-8111-111111111111', current_date-1, 'Asia/Kolkata',
+   array['resting_heart_rate'],'[]'::jsonb,repeat('c',64),'partial',now(),now(),
+   49.0);
 
 insert into public.daily_health_summaries(
   user_id,local_date,timezone,present_types,source_refs,source_checksum,

@@ -13,7 +13,8 @@ Widget _wrap(Widget child, {Brightness brightness = Brightness.dark}) {
       brightness: brightness,
       extensions: [isDark ? TracendColors.dark : TracendColors.light],
     ),
-    home: Scaffold(body: Center(child: child)),
+    // Today scrolls; the open method panel is taller than one screen.
+    home: Scaffold(body: SingleChildScrollView(child: child)),
   );
 }
 
@@ -23,10 +24,12 @@ ComputedMetrics _metrics({
   RecoveryBreakdown? breakdown,
   String dataConfidence = 'medium',
   TodayRaw? todayRaw,
+  String? recoveryMode,
 }) {
   return ComputedMetrics(
     scores: ComputedScores(
       recovery: recovery,
+      recoveryMode: recoveryMode,
       sleepQuality: sleepQuality,
       recoveryBreakdown: breakdown,
     ),
@@ -94,6 +97,62 @@ void main() {
         find.bySemanticsLabel('Heart rate variability: normal for you, 58 ms'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('a morning estimate reads its own rows and weights', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          RecoveryReadoutCard(
+            computed: _metrics(
+              recovery: 41,
+              recoveryMode: 'morning',
+              breakdown: const RecoveryBreakdown(
+                hrvZ: -0.9,
+                rhrZ: 0.2,
+                sleepZ: 0,
+                respRateZ: 0,
+                prevStrainZ: 0,
+                checkInZ: 1.25,
+                missingComponents: [
+                  'sleep_minutes',
+                  'resp_rate',
+                  'prev_strain',
+                ],
+                weights: {
+                  'hrv_sdnn': 40,
+                  'check_in': 25,
+                  'resting_hr': 20,
+                  'sleep_minutes': 10,
+                  'resp_rate': 0,
+                  'prev_strain': 5,
+                },
+              ),
+              todayRaw: const TodayRaw(
+                hrvMs: 52,
+                hrvScoredMs: 39,
+                restingHrBpm: 70,
+                restingHrScoredBpm: 61,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Morning HRV: normal for you, 39 ms'), findsOneWidget);
+      expect(find.text('Morning check-in: feeling good'), findsOneWidget);
+      expect(
+        find.text('Resting heart rate: normal for you, 61 bpm yesterday'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Breathing rate'), findsNothing);
+
+      await _open(tester);
+      expect(find.text('Morning HRV · 40%'), findsOneWidget);
+      expect(find.text('Morning check-in · 25%'), findsOneWidget);
+      expect(find.textContaining('settles at noon'), findsOneWidget);
     });
 
     testWidgets('z-scores stay behind How this is calculated', (tester) async {

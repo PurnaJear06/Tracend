@@ -22,6 +22,10 @@ reinstall).
 Today was rebuilt on 2026-10-04 around the owner's chosen prototype: a recovery tick ring split by
 driver, a morning check-in gate in place of the tab bar, Sleep/Load/Fuel tiles, a session strip that
 fills as sets are logged, and the week as recovery ticks (brief 1.7, migration first, then install).
+Recovery then gained two modes (owner report, 2026-10-04: "around 10, and it changes"): a night with
+the watch scores that night against nights; without one, a morning estimate scores the morning's
+HRV against mornings plus the check-in and settles at noon. Resting HR is yesterday's final value
+(brief 1.8, scoring 2.3, migration first, then install).
 
 **Previous priority:** UI polish, so the app reads as a finished consumer product rather than a
 beta full of logs. The owner approved the plan on 2026-10-01 and chose to start it before the full

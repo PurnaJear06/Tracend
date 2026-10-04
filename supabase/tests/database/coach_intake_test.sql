@@ -81,7 +81,7 @@ select is((select array_agg(target_load_kg order by exercise_order)::text from p
 select is((public.get_my_training_hub()->'workouts'->0->'exercises'->0->>'target_load_kg')::numeric,
   82.5, 'the training hub reports it');
 select is(public.get_my_training_hub()->>'schema_version', '1.6', 'hub schema 1.6');
-select is(public.get_my_daily_brief(current_date)->>'schema_version', '1.7', 'brief schema 1.7');
+select is(public.get_my_daily_brief(current_date)->>'schema_version', '1.8', 'brief schema 1.8');
 reset role;
 select is((select array[training_years, priority_muscles::text, strong_muscles::text]
     from public.user_profiles where user_id = 'f4000000-0000-4000-8000-000000000001'),
