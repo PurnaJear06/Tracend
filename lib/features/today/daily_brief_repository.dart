@@ -149,6 +149,29 @@ abstract interface class DailyBriefRepository {
   Future<DailyBrief> load(DateTime date);
 }
 
+/// One request per day while it is in flight. Today, Train and Progress are
+/// built together at launch and each loads today's brief; the brief
+/// recomputes and stores the athlete's baselines, so three simultaneous
+/// calls queued on the same rows and one hit the database's statement
+/// timeout (Sentry FLUTTER-H). A finished load is never reused: the next
+/// load, after a sync or a check-in, asks the server again.
+class SharedDailyBriefRepository implements DailyBriefRepository {
+  SharedDailyBriefRepository(this._inner);
+
+  final DailyBriefRepository _inner;
+  final _inFlight = <String, Future<DailyBrief>>{};
+
+  @override
+  Future<DailyBrief> load(DateTime date) {
+    final key = '${date.year}-${date.month}-${date.day}';
+    // A block body: whenComplete waits on a returned future, and remove()
+    // returns this very request.
+    return _inFlight[key] ??= _inner.load(date).whenComplete(() {
+      _inFlight.remove(key);
+    });
+  }
+}
+
 class SupabaseDailyBriefRepository implements DailyBriefRepository {
   const SupabaseDailyBriefRepository(this._client);
   final SupabaseClient _client;

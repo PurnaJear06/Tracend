@@ -8,14 +8,19 @@
 --   4. It settles at 12:00 local time: before noon recovery_settled is false,
 --      from noon (or on a past day) it is true. A night is settled at once.
 --   5. A watch-on night ignores the check-in and the morning readings.
+--   6. Today's resting HR (revised by Apple through the day) moves neither
+--      the score nor its baseline (review P1).
+--   7. Breathing from a nap never makes a night (review P2).
+--   8. A recomputed day stamps the scoring version (review P2).
 
 begin;
-select plan(14);
+select plan(18);
 
 insert into auth.users(id, role) values
   ('a7000000-0001-4001-8001-000000000001', 'authenticated'),
   ('a7000000-0002-4001-8001-000000000002', 'authenticated'),
-  ('a7000000-0003-4001-8001-000000000003', 'authenticated');
+  ('a7000000-0003-4001-8001-000000000003', 'authenticated'),
+  ('a7000000-0004-4001-8001-000000000004', 'authenticated');
 
 set local role service_role;
 
@@ -220,6 +225,67 @@ select ok(
      and (m->'today_raw'->>'hrv_scored_ms')::numeric = 70.0
    from night),
   '5b: 70 ms tonight sits at the 70 ms night baseline, not far above the mornings');
+
+-- 6. User 2 again: Apple writes a resting HR for today after noon.
+create temp table before_rhr on commit drop as
+select public.compute_daily_metrics(
+  'a7000000-0002-4001-8001-000000000002', current_date - 0, 'UTC') as m;
+
+update public.daily_health_summaries
+set resting_heart_rate_bpm = 95,
+    present_types = array['hrv_sdnn', 'resting_heart_rate']
+where user_id = 'a7000000-0002-4001-8001-000000000002'
+  and local_date = current_date;
+
+select is(
+  (select array[m->'scores'->>'recovery',
+                m->'scores'->'recovery_breakdown'->>'rhr_z']
+   from (select public.compute_daily_metrics(
+     'a7000000-0002-4001-8001-000000000002', current_date - 0, 'UTC') as m) a),
+  (select array[m->'scores'->>'recovery',
+                m->'scores'->'recovery_breakdown'->>'rhr_z']
+   from before_rhr),
+  '6: a 95 bpm resting HR written today moves neither the score nor the baseline');
+
+-- 7. User 4: no night HRV, a 40-minute nap with a breathing reading (as
+-- older app builds sent it), a morning reading and history to compare.
+insert into public.daily_health_summaries(
+  user_id, local_date, timezone, present_types, source_refs, source_checksum,
+  completeness, observed_through, last_synced_at,
+  hrv_value_ms, hrv_metric, hrv_unit, hrv_morning_ms, respiratory_rate_bpm,
+  sleep_minutes)
+select 'a7000000-0004-4001-8001-000000000004', current_date - d, 'Asia/Kolkata',
+  array['hrv_sdnn', 'resp_rate', 'sleep'], '[]'::jsonb,
+  md5('n' || d::text) || md5('n' || d::text), 'partial', now(), now(),
+  40 + d, 'sdnn', 'ms', 40 + d, 14 + d * 0.2, 40
+from generate_series(0, 4) d;
+
+create temp table nap on commit drop as
+select public.compute_daily_metrics(
+  'a7000000-0004-4001-8001-000000000004', current_date - 0, 'UTC') as m;
+
+select is((select m->'scores'->>'recovery_mode' from nap), 'morning',
+  '7: breathing from a 40-minute nap is not a night');
+
+select ok(
+  (select m->'scores'->'recovery_breakdown'->'missing_components' ? 'resp_rate'
+   from nap),
+  '7b: the nap''s breathing rate does not count in the morning estimate');
+
+-- 8. A day first stored by an older scoring version is restamped.
+insert into public.daily_computed_metrics(
+  user_id, local_date, data_confidence, schema_version)
+values ('a7000000-0004-4001-8001-000000000004', current_date - 2, 'low', '2.2');
+
+select public.compute_daily_metrics(
+  'a7000000-0004-4001-8001-000000000004', current_date - 2, 'UTC');
+
+select is(
+  (select schema_version from public.daily_computed_metrics
+   where user_id = 'a7000000-0004-4001-8001-000000000004'
+     and local_date = current_date - 2),
+  '2.3',
+  '8: a recomputed day carries the scoring version that computed it');
 
 select * from finish();
 rollback;

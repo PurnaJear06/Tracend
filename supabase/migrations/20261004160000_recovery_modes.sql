@@ -5,15 +5,18 @@
 -- morning to evening. Now (ALGORITHMS.md §1, Recovery Modes):
 --
 --   night    the watch was worn asleep (HRV taken asleep, or breathing
---            rate): HRV from that night against a baseline of nights,
+--            rate with 3h+ of sleep): HRV from that night against a
+--            baseline of nights,
 --            resting HR, sleep, breathing and recent training
 --   morning  no night recorded: HRV taken 04:00-12:00 awake against a
 --            baseline of mornings, resting HR, sleep, the morning check-in
 --            and recent training; readings after 12:00 never enter, so the
 --            estimate settles at noon and is at most medium confidence
 --
--- Resting HR is yesterday's final value in both modes: Apple measures it
--- awake and revises it through the day.
+-- Resting HR is yesterday's final value in both modes, against a baseline
+-- folded through yesterday: Apple measures it awake and revises it through
+-- the day, so today's must not move the score or its baseline. A recomputed
+-- day now also stamps the scoring version it was computed with.
 --
 -- Additive: two daily_health_summaries columns (the app sends them from
 -- this release; older builds leave them null and get morning estimates
@@ -349,6 +352,9 @@ begin
           and source_scope = 'healthkit'
           and local_date <= target_date
           and hrv_morning_ms between 5 and 250;
+      -- Resting HR folds through yesterday: recovery scores yesterday's
+      -- final value, and today's, which Apple revises through the day,
+      -- must not move the baseline it is compared with.
       when 'resting_hr_bpm' then
         select array_agg(resting_heart_rate_bpm order by local_date),
                array_agg(local_date order by local_date)
@@ -356,7 +362,7 @@ begin
         from public.daily_health_summaries
         where user_id = target_user_id
           and source_scope = 'healthkit'
-          and local_date <= target_date
+          and local_date < target_date
           and resting_heart_rate_bpm between 30 and 120;
         raw_arr := values_arr;
       when 'sleep_minutes' then
@@ -687,14 +693,16 @@ begin
   hrv_z := 0; rhr_z := 0; sleep_z := 0; resp_rate_z := 0; strain_z := 0;
 
   -- Recovery modes (2026-10-04). A night with the watch on (HRV taken
-  -- asleep, or breathing rate, which the watch records only asleep) scores
+  -- asleep, or breathing rate, which the watch records only asleep, with
+  -- three hours of sleep, so a nap is never a night) scores
   -- from that night. Without one, a morning estimate scores the HRV taken
   -- between 04:00 and 12:00 against a baseline of mornings, with the
   -- morning check-in in place of the missing night. Readings taken awake
   -- are never compared with readings taken asleep, and readings after
   -- 12:00 never enter, so the score stops moving at noon.
   if today_health.hrv_sleep_ms is not null
-     or today_health.respiratory_rate_bpm is not null then
+     or (today_health.respiratory_rate_bpm is not null
+         and today_health.sleep_minutes >= 180) then
     v_mode := 'night';
     v_hrv_value := today_health.hrv_sleep_ms;
     v_hrv_metric := 'hrv_sleep_ms';
@@ -769,8 +777,8 @@ begin
   end if;
 
   -- Respiratory rate (night 0.05). Lower than baseline is better. Recorded
-  -- only asleep, so a morning estimate never has it.
-  if today_health.respiratory_rate_bpm is not null
+  -- only asleep, so it never counts in a morning estimate.
+  if w_resp > 0 and today_health.respiratory_rate_bpm is not null
      and today_health.respiratory_rate_bpm between 8 and 25 then
     select baseline_value, spread, n_observations into baseline
     from public.user_baselines
@@ -1181,6 +1189,7 @@ begin
     scores_jsonb = excluded.scores_jsonb,
     baseline_snapshot_jsonb = excluded.baseline_snapshot_jsonb,
     eligibility_jsonb = excluded.eligibility_jsonb,
+    schema_version = excluded.schema_version,
     computed_at = excluded.computed_at;
 
   return jsonb_build_object(

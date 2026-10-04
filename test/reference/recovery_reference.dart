@@ -573,7 +573,12 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
   final hrvFold = lnFold((d) => d.hrvMs);
   final hrvSleepFold = lnFold((d) => d.hrvSleepMs);
   final hrvMorningFold = lnFold((d) => d.hrvMorningMs);
-  final rhrFold = foldObservations((d) => d.restingHrBpm, kBandRhrBpm);
+  // Resting HR folds through yesterday: the score uses yesterday's final
+  // value, and today's (revised through the day) must not move it.
+  final rhrFold = foldObservations(
+    (d) => d.restingHrBpm,
+    kBandRhrBpm,
+  ).where((o) => o.date.isBefore(target)).toList();
   final sleepFold = foldObservations((d) => d.sleepMinutes, kBandSleepMinutes);
   final respFold = foldObservations((d) => d.respRateBpm, kBandRespBpm);
 
@@ -650,8 +655,11 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
   var zCheckIn = 0.0;
 
   // Mode: a night with the watch on (HRV taken asleep, or breathing rate,
-  // recorded only asleep), else a morning estimate.
-  final night = today?.hrvSleepMs != null || today?.respRateBpm != null;
+  // recorded only asleep, with three hours of sleep so a nap never counts),
+  // else a morning estimate.
+  final night =
+      today?.hrvSleepMs != null ||
+      (today?.respRateBpm != null && (today?.sleepMinutes ?? 0) >= 180);
   final mode = night ? 'night' : 'morning';
   final wHrv = night ? kWeightHrv : kMorningWeightHrv;
   final wRhr = night ? kWeightRhr : kMorningWeightRhr;
@@ -696,7 +704,7 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
   // Resp rate (negated).
   final respToday = today?.respRateBpm;
   final respBaseline = baselines['resp_rate_bpm']!;
-  if (kBandRespBpm.contains(respToday) && respBaseline.usable) {
+  if (night && kBandRespBpm.contains(respToday) && respBaseline.usable) {
     zResp = -(respToday! - respBaseline.center) / respBaseline.spread;
     composite += wResp * zResp;
     weightTotal += wResp;

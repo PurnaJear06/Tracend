@@ -227,6 +227,13 @@ void main() {
         _sample(HealthMetric.hrvSdnn, 42, DateTime(2026, 7, 1, 6), id: 'h2'),
         // Before 04:00 awake is neither night nor morning.
         _sample(HealthMetric.hrvSdnn, 35, DateTime(2026, 7, 1, 2), id: 'h3'),
+        // A nap's breathing reading is not a night's: left out.
+        _sample(
+          HealthMetric.respRate,
+          15,
+          DateTime(2026, 7, 1, 13, 20),
+          id: 'r1',
+        ),
       ],
       requestedMetrics: HealthMetric.values.toSet(),
       timezone: 'Asia/Kolkata',
@@ -234,6 +241,8 @@ void main() {
 
     final day = summaries.single;
     expect(day.hrvSleepMs, isNull);
+    expect(day.respRateBpm, isNull);
+    expect(day.presentMetrics.contains(HealthMetric.respRate), isFalse);
     expect(day.hrvMorningMs, 42);
     expect(day.hrvSdnnMs, closeTo(44, 0.01));
     final json = day.toJson(HealthMetric.values.toSet());

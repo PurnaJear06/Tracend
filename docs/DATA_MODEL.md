@@ -200,7 +200,7 @@ One row per user, local date, and source scope containing:
   a sleep session of three hours or more) and morning HRV (`hrv_morning_ms`: readings taken
   04:00–12:00 outside sleep), both subsets of the day's HRV (2026-10-04, `20261004160000`;
   a check keeps them null without `hrv_value_ms`). HRV and breathing readings taken asleep
-  belong to the morning the night ends on;
+  belong to the morning the night ends on; a nap's breathing readings are left out;
 - source/checksum metadata, completeness, and last-sync time.
 
 The Phase 4 source scope is `healthkit`. HRV is stored only as milliseconds with the explicit `sdnn`
@@ -809,6 +809,7 @@ Night score (the morning estimate's weights are in ALGORITHMS.md §1, Recovery M
   `scores.recovery_mode` (`night` or `morning`), `scores.recovery_settled`,
   `scores.recovery_breakdown.check_in_z` and `.weights`, and `today_raw.hrv_scored_ms` and
   `.resting_hr_scored_bpm`; `missing_components` may list `check_in`; `baselines` adds
-  `hrv_sleep_ms` and `hrv_morning_ms`. `daily_computed_metrics.schema_version` is '2.3'.
+  `hrv_sleep_ms` and `hrv_morning_ms`; the resting-HR baseline folds through yesterday.
+  `daily_computed_metrics.schema_version` is '2.3', and a recomputed day now stamps it.
   `persist_health_sync` and `health_sync_v1` accept `hrv_sleep_ms` and `hrv_morning_ms`
   (0–1000, never without `hrv_value_ms`)

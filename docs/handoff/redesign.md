@@ -128,6 +128,13 @@ nothing is guessed.
   once (versioned backfill flag) so both baselines start full. The Train readiness sheet uses the
   same readings. pgTAP `recovery_modes_test.sql`; the parity fixtures gained
   `morning_estimate_day` and `night_scores_from_night`. Migration first, then install.
+  Review fixes in the same PR: the resting-HR baseline folds through yesterday (today's value moved
+  it after noon), nap breathing never makes a night (app drops it; server needs 3 h of sleep), and a
+  recomputed `daily_computed_metrics` row restamps `schema_version`. Sentry FLUTTER-H (build 336,
+  a statement timeout on `get_my_daily_brief` from Progress at launch): Today, Train and Progress
+  are built together and each loaded the brief, three recomputes of the same rows at once;
+  `SharedDailyBriefRepository` now shares one in-flight request per day (a finished load is never
+  reused). Locally one brief takes 40-70 ms with 90 days of data.
 - Meal slot status on the athlete's clock (SQL only, `20261004100000`): `get_my_nutrition_schedule`
   judged `due`, `upcoming` and `skipped` with the database clock (UTC), so for the owner in IST a
   13:30 lunch was due at 19:00 local, and from local midnight to 05:30 every slot of today read

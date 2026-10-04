@@ -400,6 +400,13 @@ List<DailyHealthSummary> normalizeHealthSamples({
             sample.metric == HealthMetric.respRate
         ? sessionAt(sample.start)
         : null;
+    // Breathing rate is a night measure (recovery scores it against
+    // nights); a nap's reading would read as a night, so it is left out.
+    if (sample.metric == HealthMetric.respRate &&
+        asleep != null &&
+        !asleep.isNight) {
+      continue;
+    }
     final day = asleep?.day ?? _localDay(sample.start);
     addSample(day, sample);
     if (sample.metric != HealthMetric.hrvSdnn) continue;

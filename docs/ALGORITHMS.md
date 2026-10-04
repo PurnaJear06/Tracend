@@ -59,13 +59,14 @@ now has two modes, chosen per day:
 
 | Mode      | When                                                          | HRV scored                                        | Composite weights |
 | --------- | ------------------------------------------------------------- | ------------------------------------------------- | ----------------- |
-| `night`   | The watch was worn asleep: HRV taken asleep, or breathing rate | Mean HRV taken during the night ending today, against a baseline of nights (`hrv_sleep_ms`) | HRV 0.55, RHR 0.20, sleep 0.15, resp 0.05, prev strain 0.05 |
+| `night`   | The watch was worn asleep: HRV taken asleep, or breathing rate with 3 h+ of sleep | Mean HRV taken during the night ending today, against a baseline of nights (`hrv_sleep_ms`) | HRV 0.55, RHR 0.20, sleep 0.15, resp 0.05, prev strain 0.05 |
 | `morning` | No night recorded                                              | Mean HRV taken 04:00–12:00 awake, against a baseline of mornings (`hrv_morning_ms`) | HRV 0.40, check-in 0.25, RHR 0.20, sleep 0.10, prev strain 0.05 |
 
 - **Night.** A sleep session (samples less than an hour apart) of three hours or more is a night;
   an HRV reading taken inside it belongs to the morning the night ends on, so a 23:30 reading
   counts for the next day like the sleep around it (breathing rate too). Shorter sessions are naps:
-  their readings are neither night nor morning.
+  their HRV is neither night nor morning and their breathing readings are left out, so a nap never
+  makes a night (the server also requires three hours of sleep before breathing alone does).
 - **Morning.** HRV readings taken between 04:00 and 12:00 local time outside any sleep. Readings
   after 12:00 never enter, so the estimate stops moving at noon (`recovery_settled`). The morning
   check-in stands in for the missing night: sleep quality, energy, soreness (reversed) and mood,
@@ -76,8 +77,9 @@ now has two modes, chosen per day:
   ln domain, band, floor and EWMA as HRV (§2) and is only ever compared with its own kind. The
   day's all-reading HRV (`hrv_sdnn_ms`) is kept for display and the coach context and is no longer
   scored.
-- **Resting HR** is yesterday's final value in both modes. Apple measures it awake and revises it
-  through the day, so today's value would move the score after every sync.
+- **Resting HR** is yesterday's final value in both modes, against a baseline folded through
+  yesterday. Apple measures it awake and revises it through the day, so today's value would move
+  the score, or its baseline, after every sync.
 - **Confidence.** A night keeps the rule below. A morning estimate is at most `medium`: `medium`
   with a morning HRV reading, `low` without one. `check_in` joins `missing_components` when a
   morning estimate has no check-in.
