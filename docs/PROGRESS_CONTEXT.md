@@ -19,6 +19,9 @@ catalog lacks (build 329 installed). Today's food card is now the fuel rail: pro
 the day's meals on a line, since Nutrition already holds the full ledger. Meal slot status
 (`due`, `upcoming`, `skipped`) now follows the athlete's time zone instead of UTC (SQL only, no
 reinstall).
+Competitive review of Bevel and the AI-trainer field (2026-10-04):
+[`docs/reviews/2026-10-04-competitive-review-bevel.md`](./reviews/2026-10-04-competitive-review-bevel.md).
+Its first finding: plan changes after onboarding are not built, so closing that loop is next after testing.
 
 **Previous priority:** UI polish, so the app reads as a finished consumer product rather than a
 beta full of logs. The owner approved the plan on 2026-10-01 and chose to start it before the full
