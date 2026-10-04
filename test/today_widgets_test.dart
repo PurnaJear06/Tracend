@@ -11,13 +11,16 @@ import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
-import 'package:tracend/features/today/widgets/check_in_prompt_bar.dart';
-import 'package:tracend/features/today/widgets/coach_perspective_card.dart';
+import 'package:tracend/features/today/check_in_gate.dart';
 import 'package:tracend/features/today/widgets/fuel_rail_card.dart';
-import 'package:tracend/features/today/widgets/session_plan_card.dart';
+import 'package:tracend/features/today/widgets/plan_progress_line.dart';
+import 'package:tracend/features/today/widgets/recovery_readout_card.dart';
+import 'package:tracend/features/today/widgets/recovery_tick_ring.dart';
 import 'package:tracend/features/today/widgets/today_hero.dart';
+import 'package:tracend/features/today/widgets/today_session_card.dart';
+import 'package:tracend/features/today/widgets/today_tiles.dart';
+import 'package:tracend/features/today/widgets/your_week_card.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
-import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/widgets/tracend_skeleton.dart';
@@ -42,6 +45,10 @@ DailyBrief _brief({
   Map<String, dynamic>? nutrition,
   ComputedMetrics? computed,
   Map<String, dynamic>? decision,
+  int? recoveryPrevious,
+  TodayPlan? plan,
+  List<TodayWeekDay> week = const [],
+  TodaySession? todaySession,
 }) => DailyBrief(
   localDate: '2026-08-23',
   workout: workout,
@@ -51,6 +58,10 @@ DailyBrief _brief({
   nutrition: nutrition,
   computed: computed,
   decision: decision,
+  recoveryPrevious: recoveryPrevious,
+  plan: plan,
+  week: week,
+  todaySession: todaySession,
 );
 
 ComputedMetrics _computed({
@@ -76,58 +87,145 @@ ComputedMetrics _computed({
 
 void main() {
   group('TodayHero', () {
-    testWidgets('shows the score, band chip, confidence and sentence', (
-      tester,
-    ) async {
+    const steady = RecoveryBreakdown(
+      hrvZ: 0.4,
+      rhrZ: 0,
+      sleepZ: 0,
+      respRateZ: 0,
+      prevStrainZ: 0,
+    );
+
+    testWidgets('shows the verdict, the ring score, band, change and '
+        'confidence', (tester) async {
       await tester.pumpWidget(
         _wrap(
           TodayHero(
             brief: _brief(
-              workout: const {'name': 'Push day'},
-              checkIn: const {'energy': 3},
-              computed: _computed(recovery: 72, dataConfidence: 'high'),
+              computed: _computed(
+                recovery: 72,
+                breakdown: steady,
+                dataConfidence: 'high',
+              ),
+              recoveryPrevious: 66,
             ),
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Today'), findsOneWidget);
+      expect(find.text('Well recovered'), findsOneWidget);
+      expect(
+        find.text('Everything that counted today is normal for you.'),
+        findsOneWidget,
+      );
       expect(find.text('72'), findsOneWidget);
-      expect(find.text('Recovery'), findsOneWidget);
-      expect(
-        find.bySemanticsLabel('Recovery score 72 out of 100'),
-        findsOneWidget,
-      );
       expect(find.text('Good'), findsOneWidget);
+      expect(find.text('+6 from yesterday'), findsOneWidget);
       expect(find.text('Recovery score · High confidence'), findsOneWidget);
-      expect(find.text('Complete Push day.'), findsOneWidget);
       expect(
-        find.bySemanticsLabel('Recovery score 72 out of 100'),
+        find.bySemanticsLabel(RegExp(r'^Recovery 72, Good\. \+6 from')),
         findsOneWidget,
       );
+      expect(find.byType(RecoveryTickRing), findsOneWidget);
       // The hero is a verdict, not an action surface.
       expect(find.byType(FilledButton), findsNothing);
     });
 
-    testWidgets('maps each score to its band', (tester) async {
-      for (final (score, band) in [
-        (85, 'Excellent'),
-        (70, 'Good'),
-        (55, 'Moderate'),
-        (40, 'Low'),
-        (20, 'Poor'),
+    testWidgets('maps each score to its band and verdict', (tester) async {
+      for (final (score, band, verdict) in [
+        (85, 'Excellent', 'Fully recovered'),
+        (70, 'Good', 'Well recovered'),
+        (55, 'Moderate', 'Partly recovered'),
+        (40, 'Low', 'Under-recovered'),
+        (20, 'Poor', 'Very under-recovered'),
       ]) {
         await tester.pumpWidget(
           _wrap(
             TodayHero(
-              brief: _brief(computed: _computed(recovery: score)),
+              brief: _brief(
+                computed: _computed(recovery: score, breakdown: steady),
+              ),
             ),
           ),
         );
         await tester.pumpAndSettle();
         expect(find.text(band), findsOneWidget, reason: '$score → $band');
+        expect(find.text(verdict), findsOneWidget, reason: '$score');
       }
+    });
+
+    testWidgets('names the driver that pulls the score down, and a chip '
+        'opens the drivers', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          TodayHero(
+            brief: _brief(
+              computed: _computed(
+                recovery: 61,
+                sleepQuality: 70,
+                breakdown: const RecoveryBreakdown(
+                  hrvZ: 0.3,
+                  rhrZ: 0,
+                  sleepZ: -1.4,
+                  respRateZ: 0,
+                  prevStrainZ: 0,
+                  missingComponents: ['resp_rate'],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Sleep less than usual. Everything else is normal for you.'),
+        findsOneWidget,
+      );
+      expect(find.text('Sleep short'), findsOneWidget);
+      expect(find.text('Breathing no data'), findsOneWidget);
+      expect(find.byType(RecoveryReadoutCard), findsNothing);
+
+      await tester.tap(find.text('Sleep short'));
+      await tester.pumpAndSettle();
+      expect(find.byType(RecoveryReadoutCard), findsOneWidget);
+      final ring = tester.widget<RecoveryTickRing>(
+        find.byType(RecoveryTickRing),
+      );
+      // Breathing did not count, so sleep is the third lit segment.
+      expect(ring.segments, hasLength(4));
+      expect(ring.focus, 2);
+    });
+
+    testWidgets('HRV and resting heart rate sit under the ring against your '
+        'normal', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          TodayHero(
+            brief: _brief(
+              computed: const ComputedMetrics(
+                scores: ComputedScores(
+                  recovery: 72,
+                  recoveryBreakdown: RecoveryBreakdown(
+                    hrvZ: 1.2,
+                    rhrZ: 0,
+                    sleepZ: 0,
+                    respRateZ: 0,
+                    prevStrainZ: 0,
+                  ),
+                ),
+                baselines: ComputedBaselines(),
+                dataConfidence: 'medium',
+                todayRaw: TodayRaw(hrvMs: 61, restingHrBpm: 52),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('HRV · higher than usual'), findsOneWidget);
+      expect(find.text('Resting HR · normal'), findsOneWidget);
     });
 
     testWidgets('a missing score reads -- with honest copy and no band', (
@@ -139,6 +237,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('--'), findsOneWidget);
+      expect(find.text('Recovery not scored yet'), findsOneWidget);
       expect(
         find.text(
           'Not enough data yet for a recovery score. Sync Apple Health and '
@@ -173,22 +272,18 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Recovery'), findsNothing);
-      expect(find.text('Keep the approved plan.'), findsOneWidget);
+      expect(find.byType(RecoveryTickRing), findsNothing);
+      expect(find.text('Your day'), findsOneWidget);
     });
 
-    testWidgets('the readiness sentence uses the Archivo headline token', (
-      tester,
-    ) async {
+    testWidgets('the verdict uses the Archivo display face', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: TracendTheme.dark,
           home: Scaffold(
             body: SingleChildScrollView(
               child: TodayHero(
-                brief: _brief(
-                  workout: const {'name': 'Push day'},
-                  checkIn: const {'energy': 3},
-                ),
+                brief: _brief(computed: _computed(recovery: 72)),
               ),
             ),
           ),
@@ -196,9 +291,61 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final headline = tester.widget<Text>(find.text('Complete Push day.'));
-      expect(headline.style?.fontSize, 24);
-      expect(headline.style?.fontFamily, TracendFonts.displayFamily);
+      final verdict = tester.widget<Text>(find.text('Well recovered'));
+      expect(verdict.style?.fontFamily, TracendFonts.displayFamily);
+      expect(verdict.style?.fontWeight, FontWeight.w700);
+    });
+
+    testWidgets('the check-in chip reads Checked in, or Check in when it is '
+        'offered', (tester) async {
+      var opened = 0;
+      await tester.pumpWidget(
+        _wrap(
+          TodayHero(
+            brief: _brief(),
+            checkedIn: true,
+            onCheckIn: () => opened++,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Checked in'));
+      expect(opened, 1);
+
+      await tester.pumpWidget(
+        _wrap(
+          TodayHero(
+            brief: _brief(),
+            offerCheckIn: true,
+            onCheckIn: () => opened++,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Check in'));
+      expect(opened, 2);
+    });
+
+    testWidgets('at full motion the score counts up as the ticks light', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          TracendMotionScope(
+            level: TracendMotionLevel.full,
+            child: TodayHero(
+              brief: _brief(
+                computed: _computed(recovery: 72, breakdown: steady),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('0'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('72'), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text('72'), findsOneWidget);
     });
 
     testWidgets('a sync issue stays on the card', (tester) async {
@@ -217,130 +364,304 @@ void main() {
     });
   });
 
-  group('SessionPlanCard', () {
-    testWidgets("shows today's workout with real counts and opens it", (
+  group('PlanProgressLine', () {
+    testWidgets('says the week of the block', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          const PlanProgressLine(
+            plan: TodayPlan(
+              title: 'Strength foundation',
+              weekNumber: 3,
+              blockWeeks: 20,
+            ),
+          ),
+        ),
+      );
+      expect(find.text('Strength foundation'), findsOneWidget);
+      expect(find.text('Week 3 of 20'), findsOneWidget);
+    });
+
+    testWidgets('past the block it says the block is done', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          const PlanProgressLine(
+            plan: TodayPlan(title: 'Base', weekNumber: 22, blockWeeks: 20),
+          ),
+        ),
+      );
+      expect(find.text('Week 22 · block of 20 done'), findsOneWidget);
+    });
+  });
+
+  group('TodaySessionCard', () {
+    const workout = {
+      'name': 'Upper body A',
+      'estimated_minutes': 48,
+      'exercises': [
+        {'order': 1, 'name': 'Bench press', 'set_count': 4},
+        {'order': 2, 'name': 'Barbell row', 'set_count': 3},
+      ],
+    };
+    CoachDecision decision({
+      String localDate = '2026-08-23',
+      List<String> adjustments = const [],
+    }) => CoachDecision(
+      id: 'd1',
+      localDate: localDate,
+      trainingAction: 'ADJUST_TODAY',
+      trainingSummary: 'Keep the session as planned.',
+      nutritionAction: 'MAINTAIN_TARGETS',
+      nutritionSummary: 'Keep approved nutrition targets.',
+      finalDecision: 'Train today.',
+      reason: 'Recovery is steady.',
+      confidence: 'medium',
+      evidence: const [],
+      missingData: const [],
+      riskFlags: const [],
+      createdAt: DateTime(2026, 8, 23),
+      trainingAdjustments: adjustments,
+    );
+    List<Color> blocks(WidgetTester tester) => [
+      for (final box in tester.widgetList<AnimatedContainer>(
+        find.descendant(
+          of: find.byType(TodaySessionCard),
+          matching: find.byType(AnimatedContainer),
+        ),
+      ))
+        (box.decoration! as BoxDecoration).color!,
+    ];
+
+    testWidgets('shows the session, one block per set, and opens it', (
       tester,
     ) async {
       var opened = 0;
       await tester.pumpWidget(
         _wrap(
-          SessionPlanCard(
-            workout: const {
-              'name': 'Push day',
-              'objective': 'Build pressing strength.',
-              'estimated_minutes': 60,
-              'exercises': [
-                {'set_count': 3},
-                {'set_count': 4},
-              ],
-            },
+          TodaySessionCard(
+            brief: _brief(workout: workout),
+            decision: null,
+            aiAllowed: true,
             onOpen: () => opened++,
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text("Today's workout"), findsOneWidget);
-      expect(find.text('Push day'), findsOneWidget);
-      expect(find.text('60 min'), findsOneWidget);
-      expect(find.text('2 exercises'), findsOneWidget);
-      expect(find.text('7 sets'), findsOneWidget);
-      expect(find.text('View workout'), findsOneWidget);
-      await tester.tap(find.text('Push day'));
-      expect(opened, 1);
+      expect(find.text("Today's session"), findsOneWidget);
+      expect(find.text('Upper body A'), findsOneWidget);
+      expect(find.text('2 exercises · 7 sets · about 48 min'), findsOneWidget);
+      expect(blocks(tester), hasLength(7));
+      expect(find.text('Bench press'), findsOneWidget);
+      await tester.tap(find.text('Open in Train'));
+      await tester.tap(find.text('Upper body A'));
+      expect(opened, 2);
     });
 
-    testWidgets('leaves out counts the plan does not carry', (tester) async {
+    testWidgets('logged sets fill their blocks and the count follows', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _wrap(
-          const SessionPlanCard(
-            workout: {
-              'name': 'Push day',
-              'exercises': [
-                {'set_count': 1},
-              ],
-            },
+          TodaySessionCard(
+            brief: _brief(
+              workout: workout,
+              todaySession: const TodaySession(
+                state: 'in_progress',
+                completedSets: {1: 4, 2: 1},
+              ),
+            ),
+            decision: null,
+            aiAllowed: true,
             onOpen: _noop,
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('1 exercise'), findsOneWidget);
-      expect(find.text('1 set'), findsOneWidget);
-      expect(find.textContaining('min'), findsNothing);
+      expect(find.text('5 of 7 sets logged'), findsOneWidget);
+      final lit = blocks(
+        tester,
+      ).where((color) => color == TracendColors.dark.accentSignalRing).length;
+      expect(lit, 5);
     });
 
-    testWidgets('no workout is a rest day with an enabled week action', (
-      tester,
-    ) async {
-      var week = 0;
+    testWidgets("today's coach adjustment is shown as advice", (tester) async {
       await tester.pumpWidget(
         _wrap(
-          SessionPlanCard(
-            workout: null,
+          TodaySessionCard(
+            brief: _brief(workout: workout),
+            decision: decision(adjustments: ['Drop the last bench set today.']),
+            aiAllowed: true,
             onOpen: _noop,
-            onOpenWeek: () => week++,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Coach · medium confidence'), findsOneWidget);
+      expect(find.text('Drop the last bench set today.'), findsOneWidget);
+      // Advice never changes the prescribed blocks.
+      expect(blocks(tester), hasLength(7));
+    });
+
+    testWidgets('a decision from another day is not shown', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          TodaySessionCard(
+            brief: _brief(workout: workout),
+            decision: decision(localDate: '2026-08-22'),
+            aiAllowed: true,
+            onOpen: _noop,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Keep the session as planned.'), findsNothing);
+      expect(
+        find.text('Tap Sync to generate an evidence-backed daily decision.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('with AI coaching off it says so', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          TodaySessionCard(
+            brief: _brief(workout: workout),
+            decision: null,
+            aiAllowed: false,
+            onOpen: _noop,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'AI coaching is off, so no daily decision is generated. Turn it on '
+          'in Account.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('no workout is a rest day that names the next session', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          TodaySessionCard(
+            brief: _brief(
+              week: [
+                for (var i = 0; i < 7; i++)
+                  TodayWeekDay(
+                    date: DateTime(2026, 8, 17 + i),
+                    trained: false,
+                    planned: i == 0 || i == 2,
+                  ),
+              ],
+            ),
+            decision: null,
+            aiAllowed: true,
+            onOpen: _noop,
           ),
         ),
       );
       await tester.pumpAndSettle();
 
       expect(find.text('Rest day'), findsOneWidget);
-      expect(find.textContaining('exercise'), findsNothing);
-      final action = find.widgetWithText(OutlinedButton, 'See your week');
-      expect(tester.widget<OutlinedButton>(action).onPressed, isNotNull);
-      await tester.tap(action);
-      expect(week, 1);
-      expect(find.byType(FilledButton), findsNothing);
+      expect(find.text('Open in Train'), findsNothing);
     });
 
-    testWidgets('the rest day leaves the action out when not wired', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _wrap(const SessionPlanCard(workout: null, onOpen: _noop)),
+    test('summaries leave out what the plan does not carry', () {
+      expect(
+        workoutSummary(const {
+          'exercises': [
+            {'set_count': 1},
+          ],
+        }),
+        '1 exercise · 1 set',
       );
-      await tester.pumpAndSettle();
-
-      expect(find.text('See your week'), findsNothing);
+      expect(workoutSummary(const {'name': 'Push day'}), '');
     });
+  });
 
-    testWidgets('says the training load in words, with the ratio', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _wrap(
-          const SessionPlanCard(
-            workout: {'name': 'Push day'},
-            acwr: 1.05,
-            onOpen: _noop,
+  group('TodayTiles', () {
+    const targets = NutritionTargets(
+      calories: 2300,
+      protein: 150,
+      carbohydrate: 240,
+      fat: 70,
+    );
+    final week = [
+      for (var i = 0; i < 7; i++)
+        TodayWeekDay(
+          date: DateTime(2026, 8, 17 + i),
+          strain: i < 6 ? (i + 1).toDouble() : null,
+          trained: i.isEven,
+          planned: true,
+        ),
+    ];
+    Widget tiles({double? acwr = 1.05}) => _wrap(
+      SizedBox(
+        width: 360,
+        child: TodayTiles(
+          computed: ComputedMetrics(
+            scores: ComputedScores(
+              acwr: acwr,
+              sleepQuality: 74,
+              sleepDebtMinutes: 72,
+            ),
+            baselines: const ComputedBaselines(),
+            dataConfidence: 'medium',
+            todayRaw: const TodayRaw(sleepMinutes: 408),
           ),
+          week: week,
+          today: DateTime(2026, 8, 23),
+          consumed: const {'calories': 1240, 'protein_g': 58},
+          targets: targets,
+          fuelDay: null,
+          sleepDay: null,
+          onLogMeal: _noop,
         ),
-      );
+      ),
+    );
+
+    testWidgets('sleep, load and fuel read at a glance', (tester) async {
+      await tester.pumpWidget(tiles());
       await tester.pumpAndSettle();
 
-      expect(find.text('Training load: about normal'), findsOneWidget);
-      expect(
-        find.text('Last 7 days against your 4-week average · ratio 1.05'),
-        findsOneWidget,
-      );
-      expect(
-        find.bySemanticsLabel('Training load: about normal. Ratio 1.05.'),
-        findsOneWidget,
-      );
-      expect(find.text('LOAD'), findsNothing);
+      expect(find.text('6h 48m'), findsOneWidget);
+      expect(find.text('1h 12m sleep debt'), findsOneWidget);
+      expect(find.text('Normal'), findsOneWidget);
+      expect(find.text('92 g'), findsOneWidget);
+      expect(find.text('protein to go'), findsOneWidget);
     });
 
-    testWidgets('hides the load row when ACWR is null', (tester) async {
-      await tester.pumpWidget(
-        _wrap(
-          const SessionPlanCard(workout: {'name': 'Push day'}, onOpen: _noop),
-        ),
-      );
+    testWidgets('a tile opens its card, one at a time', (tester) async {
+      await tester.pumpWidget(tiles());
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Training load'), findsNothing);
+      await tester.tap(find.text('Load'));
+      await tester.pumpAndSettle();
+      expect(find.text('Training load about normal'), findsOneWidget);
+      expect(find.textContaining('ratio 1.05'), findsOneWidget);
+
+      await tester.tap(find.text('Fuel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(FuelRailCard), findsOneWidget);
+      expect(find.text('Training load about normal'), findsNothing);
+
+      await tester.tap(find.text('Fuel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(FuelRailCard), findsNothing);
+    });
+
+    testWidgets('load without a ratio says it is building', (tester) async {
+      await tester.pumpWidget(tiles(acwr: null));
+      await tester.pumpAndSettle();
+      expect(find.text('Building'), findsOneWidget);
     });
 
     test('load words follow the app-wide ACWR bands', () {
@@ -349,6 +670,106 @@ void main() {
       expect(trainingLoadWords(1.3), 'about normal');
       expect(trainingLoadWords(1.42), 'heavier than usual');
       expect(trainingLoadWords(1.6), 'much heavier than usual');
+      expect(sleepDuration(408), '6h 48m');
+      expect(sleepDuration(45), '45m');
+      expect(sleepDuration(420), '7h');
+    });
+  });
+
+  group('YourWeekCard', () {
+    final week = [
+      TodayWeekDay(
+        date: DateTime(2026, 8, 17),
+        recovery: 64,
+        trained: true,
+        planned: true,
+      ),
+      TodayWeekDay(
+        date: DateTime(2026, 8, 18),
+        recovery: 48,
+        trained: false,
+        planned: true,
+      ),
+      TodayWeekDay(date: DateTime(2026, 8, 19), trained: false, planned: false),
+      TodayWeekDay(
+        date: DateTime(2026, 8, 20),
+        recovery: 71,
+        trained: false,
+        planned: true,
+      ),
+      for (var i = 4; i < 7; i++)
+        TodayWeekDay(
+          date: DateTime(2026, 8, 17 + i),
+          trained: false,
+          planned: i == 5,
+        ),
+    ];
+
+    testWidgets('counts sessions and averages only the scored days', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(YourWeekCard(week: week, today: DateTime(2026, 8, 20))),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 of 4 sessions done'), findsOneWidget);
+      expect(find.text('Recovery averaged 61 this week'), findsOneWidget);
+      expect(find.text('no\ndata'), findsOneWidget);
+      expect(
+        find.text('Today · recovery 71 · session planned'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('tapping a day names it', (tester) async {
+      await tester.pumpWidget(
+        _wrap(YourWeekCard(week: week, today: DateTime(2026, 8, 20))),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.bySemanticsLabel('Tuesday · recovery 48 · planned, not logged'),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Tuesday · recovery 48 · planned, not logged'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('CheckInGateBar', () {
+    testWidgets('checks in, or lets the athlete through', (tester) async {
+      var checkIns = 0;
+      var skips = 0;
+      await tester.pumpWidget(
+        _wrap(
+          CheckInGateBar(
+            onCheckIn: () => checkIns++,
+            onSkip: () => skips++,
+            floating: false,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Check in to start your day'), findsOneWidget);
+      await tester.tap(find.text('Check in to start your day'));
+      await tester.tap(find.text('Not today'));
+      expect(checkIns, 1);
+      expect(skips, 1);
+    });
+
+    test('the gate notifies only when it changes', () {
+      final gate = CheckInGate();
+      var changes = 0;
+      gate.addListener(() => changes++);
+      gate.update(required: true);
+      gate.update(required: true);
+      gate.update(required: false);
+      expect(changes, 2);
+      gate.dispose();
     });
   });
 
@@ -664,110 +1085,6 @@ void main() {
     });
   });
 
-  group('CoachPerspectiveCard', () {
-    final decision = CoachDecision(
-      id: 'd1',
-      localDate: '2026-08-23',
-      trainingAction: 'PROCEED_AS_PLANNED',
-      trainingSummary: 'Complete the scheduled session.',
-      nutritionAction: 'MAINTAIN_TARGETS',
-      nutritionSummary: 'Keep approved nutrition targets.',
-      finalDecision: 'Push day is on.',
-      reason: 'Recovery is steady.',
-      confidence: 'high',
-      evidence: const [],
-      missingData: const [],
-      riskFlags: const [],
-      createdAt: DateTime(2026, 8, 23),
-    );
-
-    testWidgets('shows the training perspective and the real confidence', (
-      tester,
-    ) async {
-      await tester.pumpWidget(_wrap(CoachPerspectiveCard(decision: decision)));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Push day is on.'), findsOneWidget);
-      expect(find.text('Complete the scheduled session.'), findsOneWidget);
-      expect(
-        find.text(
-          'High confidence · decided ${friendlyDate(DateTime(2026, 8, 23))}',
-        ),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('a decision made today is labelled today, not dated', (
-      tester,
-    ) async {
-      final now = DateTime.now();
-      final todayKey =
-          '${now.year.toString().padLeft(4, '0')}-'
-          '${now.month.toString().padLeft(2, '0')}-'
-          '${now.day.toString().padLeft(2, '0')}';
-      final fresh = CoachDecision(
-        id: 'd2',
-        localDate: todayKey,
-        trainingAction: 'PROCEED_AS_PLANNED',
-        trainingSummary: 'Complete the scheduled session.',
-        nutritionAction: 'MAINTAIN_TARGETS',
-        nutritionSummary: 'Keep approved nutrition targets.',
-        finalDecision: 'Push day is on.',
-        reason: 'Recovery is steady.',
-        confidence: 'medium',
-        evidence: const [],
-        missingData: const [],
-        riskFlags: const [],
-        createdAt: now,
-      );
-      await tester.pumpWidget(_wrap(CoachPerspectiveCard(decision: fresh)));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Medium confidence · decided today'), findsOneWidget);
-    });
-
-    testWidgets('the Food segment switches to the nutrition summary', (
-      tester,
-    ) async {
-      await tester.pumpWidget(_wrap(CoachPerspectiveCard(decision: decision)));
-      await tester.pumpAndSettle();
-
-      expect(find.text('T-COACH'), findsNothing);
-      await tester.tap(find.text('Food'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Keep approved nutrition targets.'), findsOneWidget);
-      expect(find.text('Complete the scheduled session.'), findsNothing);
-    });
-  });
-
-  group('CheckInPromptBar', () {
-    testWidgets('pending state prompts and opens the check-in', (tester) async {
-      var opened = false;
-      await tester.pumpWidget(
-        _wrap(CheckInPromptBar(onCheckIn: () => opened = true)),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Morning check-in'), findsOneWidget);
-      expect(
-        find.text("About a minute. It sharpens today's advice."),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('Morning check-in'));
-      expect(opened, isTrue);
-    });
-
-    testWidgets('completed state says it is done', (tester) async {
-      await tester.pumpWidget(
-        _wrap(CheckInPromptBar(onCheckIn: () {}, completed: true)),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Done. Tap to update it.'), findsOneWidget);
-    });
-  });
-
   group('TodayScreen', () {
     testWidgets('wraps each loaded section in a staggered entrance', (
       tester,
@@ -783,11 +1100,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // hero, check-in, workout, recovery drivers, 7-day trend, sleep,
-      // food, coach note
-      expect(find.byType(MicroMotionEntrance), findsNWidgets(8));
-      expect(find.text('PRECISION READOUTS'), findsNothing);
-      expect(find.text('Recovery drivers'), findsOneWidget);
+      // hero, tiles, today's session (this brief has no plan or week)
+      expect(find.byType(MicroMotionEntrance), findsNWidgets(3));
+      expect(find.byType(TodayHero), findsOneWidget);
+      expect(find.byType(TodayTiles), findsOneWidget);
+      expect(find.byType(TodaySessionCard), findsOneWidget);
+      expect(find.byType(YourWeekCard), findsNothing);
     });
 
     testWidgets('keeps the brief mounted across a check-in reload', (
@@ -813,7 +1131,7 @@ void main() {
       expect(find.text('40'), findsWidgets);
       final heroBefore = tester.element(find.byType(TodayHero));
 
-      await tester.tap(find.text('Morning check-in'));
+      await tester.tap(find.text('Checked in'));
       await tester.pumpAndSettle();
       expect(find.text('Save check-in'), findsOneWidget);
 
@@ -893,9 +1211,10 @@ void main() {
       expect(find.bySemanticsLabel(RegExp('Open account')), findsOneWidget);
     });
 
-    testWidgets('Food and More trends go to their tabs', (tester) async {
+    testWidgets('Log a meal in the Fuel tile goes to Nutrition', (
+      tester,
+    ) async {
       var nutrition = 0;
-      var progress = 0;
       await tester.pumpWidget(
         MaterialApp(
           theme: TracendTheme.dark,
@@ -904,21 +1223,103 @@ void main() {
               environment: _environment,
               brief: _ComputedBriefRepository(),
               onOpenNutrition: () => nutrition++,
-              onOpenProgress: () => progress++,
             ),
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      await tester.ensureVisible(find.text('More trends in Progress'));
+      await tester.ensureVisible(find.text('Fuel'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('More trends in Progress'));
+      await tester.tap(find.text('Fuel'));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Log a meal'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Log a meal'));
-      expect(progress, 1);
       expect(nutrition, 1);
+    });
+
+    testWidgets('the gate is required until today is checked in', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final gate = CheckInGate();
+      addTearDown(gate.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: Scaffold(
+            body: TodayScreen(
+              environment: _environment,
+              brief: _NoCheckInBriefRepository(),
+              checkInGate: gate,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(gate.required, isTrue);
+      // The gate bar lives in the shell, so Today offers no chip of its own.
+      expect(find.text('Check in'), findsNothing);
+
+      gate.checkIn();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save check-in'));
+      await tester.pumpAndSettle();
+      expect(gate.required, isFalse);
+      expect(find.text('Checked in'), findsOneWidget);
+    });
+
+    testWidgets('Not today lets the athlete through and keeps a Check in '
+        'chip', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final gate = CheckInGate();
+      addTearDown(gate.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: Scaffold(
+            body: TodayScreen(
+              environment: _environment,
+              brief: _NoCheckInBriefRepository(),
+              checkInGate: gate,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(gate.required, isTrue);
+
+      gate.skip();
+      await tester.pumpAndSettle();
+      expect(gate.required, isFalse);
+      expect(find.text('Check in'), findsOneWidget);
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getString('today_check_in_skipped_on'), '2026-08-23');
+    });
+
+    testWidgets('a day put off earlier stays open after a relaunch', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({
+        'today_check_in_skipped_on': '2026-08-23',
+      });
+      final gate = CheckInGate();
+      addTearDown(gate.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: Scaffold(
+            body: TodayScreen(
+              environment: _environment,
+              brief: _NoCheckInBriefRepository(),
+              checkInGate: gate,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(gate.required, isFalse);
     });
   });
 
@@ -940,6 +1341,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(find.text('Pull day'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Pull day'));
       await tester.pumpAndSettle();
 
@@ -968,6 +1371,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(find.text('Pull day'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Pull day'));
       await tester.pumpAndSettle();
 
@@ -1026,6 +1431,14 @@ class _ReloadBriefRepository implements DailyBriefRepository {
 }
 
 void _noop() {}
+
+class _NoCheckInBriefRepository implements DailyBriefRepository {
+  @override
+  Future<DailyBrief> load(DateTime date) async => _brief(
+    workout: const {'name': 'Push day'},
+    computed: _computed(recovery: 72, sleepQuality: 80),
+  );
+}
 
 class _PlannedBriefRepository implements DailyBriefRepository {
   @override

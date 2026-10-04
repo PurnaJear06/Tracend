@@ -104,6 +104,18 @@ nothing is guessed.
   and draws the day as a line with logged, planned and missed meals and a "now" needle. Today
   loads the meal plan and today's confirmed meals for it (`FuelDay.from`, plain arithmetic); a
   slot stays ahead until an hour past its time, computed on the phone.
+- Owner, 2026-10-04: Today's hero "is not proper". From three prototypes the owner chose a
+  recovery tick ring whose lit ticks are split by driver (lime fine, amber pulling down), a
+  check-in that gates the day (the tab bar gives way to "Check in to start your day" until it is
+  saved, with "Not today" always letting the athlete through), bento tiles (Sleep, Load, Fuel)
+  that open the old cards in place, "Today's session" as a strip of set blocks that fill as Train
+  logs them, with the coach's note as advice, and "Your week" as recovery tick stacks with session
+  marks. The vitals list, check-in bar, workout card, coach note card, 7-day trend and the drivers
+  and sleep sections fold into these; `SessionPlanCard`, `CheckInPromptBar` and
+  `CoachPerspectiveCard` are gone. Brief 1.7 (`20261004130000`) carries the week, plan week, today's
+  logged sets and yesterday's recovery; pgTAP `today_week_brief_test.sql`. The coach's
+  adjustments stay plain sentences, so Today shows them as text and never alters the prescribed
+  blocks; applying them to sets belongs to the plan-change loop (review G1).
 - Meal slot status on the athlete's clock (SQL only, `20261004100000`): `get_my_nutrition_schedule`
   judged `due`, `upcoming` and `skipped` with the database clock (UTC), so for the owner in IST a
   13:30 lunch was due at 19:00 local, and from local midnight to 05:30 every slot of today read

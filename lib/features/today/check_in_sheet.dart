@@ -14,17 +14,21 @@ import 'package:tracend/shared/widgets/tracend_toast.dart';
 /// Opens the daily check-in sheet. [sender] replaces the
 /// `save_daily_check_in` RPC (tests inject a recording fake); without it the
 /// sheet calls Supabase when the environment is configured.
-Future<void> showCheckInSheet(
+/// Resolves true when the check-in was saved, delivered or queued on this
+/// device, and false when the sheet was dismissed.
+Future<bool> showCheckInSheet(
   BuildContext context,
   AppEnvironment environment, {
   CheckInSend? sender,
-}) => showTracendSheet<void>(
-  context,
-  title: 'Daily check-in',
-  scrollable: false,
-  padding: EdgeInsets.zero,
-  builder: (_) => _CheckInSheet(environment: environment, sender: sender),
-);
+}) async =>
+    await showTracendSheet<bool>(
+      context,
+      title: 'Daily check-in',
+      scrollable: false,
+      padding: EdgeInsets.zero,
+      builder: (_) => _CheckInSheet(environment: environment, sender: sender),
+    ) ??
+    false;
 
 /// One labelled five-point question. The labels run from the first stored
 /// value to the last: `labels[0]` is stored as 1 and `labels[4]` as 5.
@@ -192,7 +196,7 @@ class _CheckInSheetState extends State<_CheckInSheet> {
         icon: CupertinoIcons.cloud_upload,
       );
     }
-    Navigator.pop(context);
+    Navigator.pop(context, true);
   }
 
   @override

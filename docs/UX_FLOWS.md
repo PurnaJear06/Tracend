@@ -361,27 +361,35 @@ year, daily activity, equipment and its note, movements to avoid, limitations, d
 ```text
 ┌─────────────────────────────────────┐
 │ Good morning                    (●) │  large title, date, account
-│ Saturday 3 October                  │
-│ ┌ Today ─────────────── [● Good] ┐  │
-│ │  ╭───╮   ☾ Sleep      6h 52 min │  │  recovery dial + today's vitals
-│ │ ( 72  )  ♥ Resting HR   51 bpm  │  │
-│ │  ╰───╯   ∿ HRV           58 ms  │  │
-│ │ Complete Upper body A.          │  │  readiness sentence + reason
-│ │ Recovery score · High confidence│  │
-│ │ ⟳ Sync · Today, 9:05 AM         │  │
-│ └─────────────────────────────────┘  │
-│ ☀ Morning check-in       [Check in] │  lime call to action until done
-│ ┌ Today's workout ──────────── (🏋) ┐│
-│ │ Upper body A                    ││
-│ │ [55 min] [5 exercises] [15 sets]││
-│ │ [▶ View workout          (lime)]││  → Train (or "Rest day")
-│ │ Training load: about normal     ││
-│ └─────────────────────────────────┘│
-│ Food  92 g protein to go            │
-│  ▮ ▮──now┊ ┊ ┊   fuel rail          │  logged / planned / missed meals
-│ Coach note · Last 7 days ·          │
-│ Recovery drivers · Sleep            │
-│ Today  Train  Coach Nutrition Progress │
+│ Sunday 4 October                    │
+│ Well recovered        [✓ Checked in]│  verdict + check-in chip
+│ Sleep less than usual. Everything   │  what pulls the score down
+│ else is normal for you.             │
+│        ╱ ' ' ' ' ' ' ' ╲            │  tick ring: lit ticks split by
+│       '    Recovery     '           │  driver (lime fine, amber down)
+│       '       71        '           │
+│       '    [ Good ]     '           │
+│        ╲ +6 from yesterday╱         │
+│ 61 ms                      52 bpm   │  HRV / resting HR vs normal
+│ (HRV) (Resting HR) (Sleep short)    │  driver chips → drivers card
+│ Strength foundation      Week 3 of 20│  plan progress
+│ ┌ Sleep ─────┐ ┌ Load ── Normal ┐   │  bento tiles; tap opens the
+│ │ 6h 48m     │ └────────────────┘   │  sleep card, the week's load
+│ │ 1h 12m debt│ ┌ Fuel ── 92 g ──┐   │  or the fuel rail
+│ │ ▬▬▬▬ stages│ └────────────────┘   │
+│ └────────────┘                      │
+│ ┌ Today's session ─────────────────┐│
+│ │ Upper body A    4 of 15 sets     ││  one block per set, lime when
+│ │ ▮▮▮▯ ▮▯▯ ▯▯▯ ▯▯▯ ▯▯              ││  logged in Train
+│ │ ⚙ Coach · drop the last bench set││  advice, never applied
+│ │ Open in Train ›                  ││
+│ └──────────────────────────────────┘│
+│ ┌ Your week ── 3 of 5 sessions ────┐│  recovery tick stacks + marks
+│ │ ┋ ┋ ┋ no ┋ ┋                     ││
+│ │ ● ● – ○  ● ○  –                  ││
+│ └──────────────────────────────────┘│
+│ [ Check in to start your day   (→) ]│  gate bar, until checked in;
+│              Not today              │  then the tab bar returns
 └─────────────────────────────────────┘
 ```
 
@@ -396,46 +404,57 @@ Hierarchy:
 If no valid decision exists, show the approved plan and explain whether a check-in, sync, or retry
 can improve guidance. AI availability never blocks the workout.
 
-Reading order (redesign PR 5, rebuilt 2026-10-03 after the owner's device check: the first
-version read as a health report, not a training app):
+Reading order (rebuilt 2026-10-04 from the owner's chosen prototype: one recovery ring that
+explains itself, then the day in tiles, the session and the week; the earlier dial, check-in bar,
+workout card, coach note, 7-day trend, drivers and sleep cards fold into these):
 
-1. **Large title**: a time-of-day greeting ("Good morning") with the full date, and the account
-   avatar (VoiceOver and tooltip: "Open account"). At the largest text sizes, where the greeting
-   would break mid-word on a 320pt screen, the title is "Today" and the greeting joins the date.
-   Pull to refresh runs the same sync as the hero's sync row.
-2. **"Today" verdict card**: a 270° recovery dial filled to the score in the band's colour (good,
-   caution or low; never lime) with the score counting up inside, the band chip (Excellent/Good →
-   good, Moderate → caution, Low/Poor → low), and beside the dial today's measured vitals (Sleep,
-   Resting HR, HRV) as big numbers; a vital that was not measured is left out. Below: the readiness
-   sentence (the brief's next action) and its reason, the confidence word as small text ("Recovery
-   score · High confidence", or "Building baseline"), and the sync row ("Sync · Today, 9:05 AM", a
-   friendly date, never an ISO date). At the largest text sizes the vitals sit under the dial. A
-   sync that could not refresh something leaves a caution line on the card until a sync succeeds;
-   the toast that reported it is never the only copy. The card has no button.
-3. **Morning check-in**: before today's check-in, a lime-outlined call to action with a **Check
-   in** pill; once saved, a quiet row ("Done. Tap to update it.").
-4. **Today's workout** card: the name in display type, the real time, exercise and set counts as
-   pills (a count the plan does not carry is left out), and a lime **View workout** button. The
-   card goes to Train when the shell wires it, otherwise it opens the workout. With no workout it
-   reads **Rest day** with an enabled **See your week** action. When the brief has an ACWR, a
-   display-only line closes the card: **Training load: about normal** (lighter than usual, about
-   normal, heavier than usual, much heavier than usual; ALGORITHMS.md "ACWR Bands") with "Last 7
-   days against your 4-week average · ratio 1.05".
-5. **Food** (the fuel rail): Nutrition is the full ledger, so Today says only what is left and
-   how to spread it. The headline is protein still to eat ("92 g protein to go") and the line
-   under it splits that evenly over the meal-plan slots still ahead ("3 meals left, about 31 g
-   each"). Under it the day runs as a line from 6:00 to 22:00 (wider for an earlier or later
-   meal), filled up to a "now" needle: confirmed meals stand on it as filled bars at their logged
-   time, sized by protein; planned slots as dashed bars sized by their share; a slot more than an
-   hour past with nothing logged as a hollow dot. "1,240 of 2,300 kcal" and **Log a meal** →
-   Nutrition close the card. A met target reads "Protein target reached"; without a plan, or when
-   the plan fails to load, the line under the headline says so; without an active target it shows
-   what was eaten and says no target is set.
-6. **Coach note**: the latest decision with a **Training / Food** segmented control over its two
-   perspectives, and "Medium confidence · decided today" from the decision itself.
-7. **Last 7 days**: the 7-day trend, Today's data moment, with **More trends in Progress**.
-8. **Recovery drivers** (below).
-9. **Sleep**: sleep quality, its band chip, four sub-scores and the debt or surplus.
+1. **Large title**: a time-of-day greeting with the full date and the account avatar ("Open
+   account"). At the largest text sizes the title is "Today" and the greeting joins the date. Pull
+   to refresh runs the same sync as the hero's sync row.
+2. **Hero**: the recovery band in words ("Fully / Well / Partly recovered", "Under-recovered",
+   "Very under-recovered"; "Recovery not scored yet" without a score) and one line naming any
+   driver a spread or more on the wrong side of normal ("Sleep less than usual. Everything else is
+   normal for you."). Beside the verdict, **Checked in** once today's check-in is saved (tap to
+   update it), or a lime-edged **Check in** chip after "Not today" or when Today has no gate.
+   - **Tick ring**: 112 ticks; the lit ticks run to the score and are split between the drivers
+     that counted, in proportion to their weights, lime when a driver is normal or better and
+     amber when it pulls the score down, with a one-tick gap between drivers and a taller head
+     tick with a dot. Inside: "Recovery", the score counting up, the band pill and "+6 from
+     yesterday" (left out when yesterday was not scored). Tapping the ring opens the drivers card
+     in place.
+   - **HRV and resting heart rate** under the ring, each against your normal ("HRV · higher than
+     usual"); a missing reading is left out.
+   - **Driver chips** (HRV, Resting HR, Sleep, Breathing, plus Training when it pulls down):
+     "Sleep short", "HRV low"; grey "… no data" when a driver did not count. A chip lights only
+     its driver's ticks and opens the drivers card (`RecoveryReadoutCard`, with "How this is
+     calculated").
+   - The confidence line and the sync row, and any sync issue, as before.
+3. **Plan progress**: the plan's title and "Week 3 of 20" with a thin bar; past the block, "Week
+   22 · block of 20 done".
+4. **Tiles**: Sleep (tall: duration, sleep debt or quality, a deep/REM share bar from Apple
+   Health), Load ("Normal", "Lighter", "Heavier", "Much heavier", or "Building"; this week's
+   strain bars) and Fuel (protein to go and a bar; without a target, what was eaten). Tapping a
+   tile opens its card under the tiles, one at a time: the sleep card, the week's load with its
+   ratio, or the fuel rail with **Log a meal** → Nutrition. All three stack from 1.3× text.
+5. **Today's session**: the workout name, its summary, and a strip with one block per prescribed
+   set grouped by exercise, filling lime as sets are logged in Train ("4 of 15 sets logged",
+   "Done · 15 sets logged"). The coach's note sits under it: today's first training adjustment,
+   else today's training summary, as advice in its own words; a decision from another day is not
+   shown, and with AI coaching off or no decision the panel says so. **Open in Train** (and the
+   header) goes to Train when the shell wires it, otherwise it opens the workout. With no workout
+   it reads **Rest day** and names the next planned session.
+6. **Your week**: "3 of 5 sessions done" and "Recovery averaged 62 this week" (scored days only),
+   then Monday to Sunday as stacks of ten ticks lit to each day's recovery (lime from 50, amber
+   below; "no data" without a score; later days empty) with a mark: filled dot trained, ring
+   planned and still ahead, hollow grey ring planned but not logged, dash rest. Tapping a day
+   names it below ("Tuesday · recovery 48 · planned, not logged").
+7. A closing line: "Calculated from Apple Health and your logs. No AI in the numbers."
+
+**Morning check-in gate** (owner, 2026-10-04): until today's check-in is saved, the tab bar gives
+way to one lime bar, **Check in to start your day** ("About a minute · sharpens today's call") with
+an arrow, and **Not today** under it. Saving the check-in (delivered or queued offline) or "Not
+today" brings the tab bar back for the rest of the day; both are remembered on the phone for that
+date. The gate never locks the plan: "Not today" always lets the athlete through.
 
 Loading shows skeletons in the shape of these sections (one VoiceOver label, "Loading Today"),
 never a spinner. Transient results (sync, check-in saved) are toasts.

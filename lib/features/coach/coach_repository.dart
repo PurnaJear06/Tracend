@@ -16,6 +16,7 @@ class CoachDecision {
     required this.missingData,
     required this.riskFlags,
     required this.createdAt,
+    this.trainingAdjustments = const [],
   });
 
   factory CoachDecision.fromJson(Map<String, dynamic> json) {
@@ -27,6 +28,9 @@ class CoachDecision {
       localDate: json['local_date'] as String,
       trainingAction: training['action'] as String,
       trainingSummary: training['summary'] as String,
+      trainingAdjustments: List<String>.from(
+        training['today_adjustments'] as List? ?? const [],
+      ),
       nutritionAction: nutrition['action'] as String,
       nutritionSummary: nutrition['summary'] as String,
       finalDecision: head['final_decision'] as String,
@@ -48,6 +52,10 @@ class CoachDecision {
   final String localDate;
   final String trainingAction;
   final String trainingSummary;
+
+  /// What the coach suggests changing today, in plain sentences; advice
+  /// only, never applied to the plan.
+  final List<String> trainingAdjustments;
   final String nutritionAction;
   final String nutritionSummary;
   final String finalDecision;

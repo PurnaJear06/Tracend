@@ -518,7 +518,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Morning check-in'), findsOneWidget);
+    expect(find.text('Checked in'), findsOneWidget);
     // Chunk 7: the Apple Health section (status card + evidence) moved to the
     // profile; Today keeps the sync button in the hero instead.
     expect(find.text('What matters today'), findsNothing);

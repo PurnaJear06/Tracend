@@ -786,3 +786,13 @@ hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm.
 - `daily_computed_metrics.schema_version` = '2.1'
 - RPC schema_version: `get_my_training_hub` 1.4, `get_my_daily_brief` 1.2 (since raised: hub 1.6
   on 2026-10-03, adding plan dates, exercise muscles, completion source and `daily_load`)
+- `get_my_daily_brief` 1.7 (2026-10-04, `20261004130000`) adds, without changing any 1.6 field:
+  `recovery_previous` (yesterday's stored `daily_computed_metrics.recovery_score`); `plan` (the
+  active plan's `title`, `version_number`, `block_weeks` and `week_number`, weeks since
+  `effective_date`, else the approval date, from 1 and not capped); `week` (Monday to Sunday of
+  the requested date's week: `local_date`, `recovery` and `strain` from `daily_computed_metrics`,
+  today's from the live computation, `trained` when a session that day is `completed`, and
+  `planned` when the active plan has a workout on that weekday); and `today_session` (the
+  requested day's latest session that is not `abandoned`: its `state` and, per `exercise_order`,
+  the count of `completed` sets). The Today page draws its week, plan line and session strip from
+  these; nothing is derived on the phone
