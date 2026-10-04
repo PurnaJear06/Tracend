@@ -1,17 +1,18 @@
-# Competitive review: Bevel and the AI-trainer field — 2026-10-04
+# Competitive review: how Bevel works, flow by flow, and the AI-trainer field — 2026-10-04
 
-**Scope:** the owner found Bevel (bevel.health) during the first week of device testing. It
-looks close to Tracend and polished. Questions: what Bevel really is; where Tracend is
-different, better or behind; what to learn and build; what else in the market is like Tracend;
-and how to build the gaps efficiently.
+**Scope:** the owner found Bevel (bevel.health) during the first week of device testing. They
+asked for a focus on *how things work*, not the core idea: how it takes food photos, how a
+workout is logged, how the home screen and coach behave. Each flow gets the steps in Bevel,
+the steps in Tracend today, and what to build. Positioning and the wider market follow in
+Part 2.
 
 **Method:** read-only. No product code was changed.
 
-- **Bevel dossier:** from the App Store listing, Bevel's help centre, privacy policy, press
-  coverage and independent reviews.
-- **Field profile:** 15 competitors, from primary sources where they could be reached.
-- **Tracend inventory:** verified against the code at `1da7ea2` (main after #83), with file
-  paths.
+- **Bevel's flows:** from its help centre (step-by-step articles), App Store listing (v3.2.2),
+  feature-by-version table, and reviews. Bevel was not installed. Its photo-review screens come
+  from a screen capture of an older build (ScreensDesign) and are marked as such.
+- **Tracend's flows:** traced through the code at `1da7ea2`, with tap counts estimated from the
+  code.
 - **Spot checks in this session:** the claims this review leans on were re-checked against
   primary sources:
   - the App Store listing (version, ratings, prices)
@@ -23,56 +24,345 @@ and how to build the gaps efficiently.
   - in Tracend's code: the missing plan-change path, the meal-photo consent gap, and the
     absent widget, Watch and Live Activity targets
 
-Bevel itself was not installed or used. Its features come from its own listing, help centre
-and reviews, not from hands-on testing. Claims that rest on one source, or that a competitor
-reported about itself, are marked in "Not verified".
-
 This review builds on the market section of
-[2026-09-04-full-project-review.md](./2026-09-04-full-project-review.md). Bevel has changed
-a lot since then: its core went free, it launched Pro and its AI coach, added training plans,
-and was sued by WHOOP.
+[2026-09-04-full-project-review.md](./2026-09-04-full-project-review.md).
 
 ## Verdict
 
-1. **Bevel is the closest app to Tracend in the market, but it does a different job.**
-   - **Bevel:** a very broad, free health *dashboard* (scores, food, strength, cycle, journal,
-     labs), with a paid AI chat coach on top.
-   - **Tracend:** a *trainer*. It writes your plan, makes one evidence-based decision each day,
-     and changes the plan only with your approval.
-   - Do not chase Bevel's breadth. A software app with about 20 people, $14M in funding and a
-     free core already owns "dashboard of everything" on iPhone.
-2. **Tracend's real differentiators are rarer than they look, and one is only half built.**
-   - **Built and genuinely unusual:**
-     - deterministic, explainable recovery, with drivers and an "How this is calculated" panel
-       that says "No AI";
-     - a null instead of an invented number;
-     - an AI that interprets but never calculates;
-     - AI-proposed meals that you confirm.
-   - **Only half built:** approval-gated plan changes with versions and an audit trail exist
-     for onboarding only. After onboarding the coach cannot propose a plan change: the server
-     rejects any daily decision that carries one. Closing that loop is the single most valuable
-     thing to build next. Nobody else has it, and it answers the market's main objection to AI
-     coaching: whether to trust it.
-3. **The market is moving towards Tracend's thesis.**
-   - **WHOOP:** its AI coach is publicly caught inventing data.
-   - **Future:** shut down its AI trainer in June 2026 and went back to human coaches.
-   - **Survey data:** only 10% of consumers prefer AI guidance to a human (Les Mills 2026,
-     10,000+ people).
-   - **Apple:** scaled back its AI health coach in February 2026.
+1. **Bevel's mechanics are worth studying; its breadth is not.** Its best ideas are about
+   speed and shortcuts:
+   - one "+" button that can log anything from anywhere;
+   - several ways to log food (photo, describe, barcode, label scan, favourites, history), and
+     the AI fills a cart you review;
+   - corrections in plain words ("I only ate half of that");
+   - prefill everywhere: auto-fill sets, update the routine from today's session, copy
+     yesterday;
+   - a timeline where tapping a time logs at that time;
+   - a status chip for sick or travelling.
 
-   "An AI coach you can audit and that never acts without you" is an open position.
-4. **Tracend is behind on table stakes that cost little to close**, because most of the
-   plumbing already exists:
-   - widgets
-   - barcode scanning, a food database and saved foods
-   - background HealthKit sync
-   - meal reminders
-   - mid-workout edits (add a set, substitute an exercise)
-   - showing the coach's evidence and today's adjustments on Today
-5. **Act on two risks before any account other than the owner's:**
-   - the meal-photo AI has no consent check;
-   - WHOOP's patents cover "physiological data → automated exercise and sleep
-     recommendations". Get an IP check before any commercial launch.
+   Most of these fit Tracend's "AI proposes, you confirm" rule exactly.
+2. **Tracend's flows are close on workouts and behind on food and shortcuts.**
+   - **Workout logging** is already strong: one tap per set when the prefill is right, last
+     time and best, rest timer, a new-best moment.
+   - **Food is slow:**
+     - Today's "Log a meal" only switches tabs.
+     - A planned meal opens an empty form.
+     - Changing a photo estimate's portion means retyping every number.
+     - A manual meal holds one food.
+     - There is no describe, barcode, favourites or copy option.
+     - A logged meal can't be edited.
+   - **Today's buttons** ("View workout", "Log a meal") switch tabs instead of starting the
+     action, and Today's cards barely open into more detail.
+3. **The cheapest wins are food speed and direct actions.** Most of them reuse what exists:
+   - `meal-analyze` can take text as well as a photo;
+   - `user_foods` exists for favourites;
+   - the confirm sheet exists for portion scaling.
+4. **The deepest gap is still the coaching loop.** The coach can propose plan changes only in
+   onboarding; after that, the server rejects a daily decision that carries one. Bevel lets its
+   AI draft a plan you review and schedule. Tracend's version, a diff you approve that becomes
+   a new version, is the moat and isn't built yet (Part 2).
+5. **Meal-photo consent is not a blocker now.** The owner is the only user. Add the consent
+   check before any second account.
+
+# Part 1 — How things work, flow by flow
+
+## Flow 1: logging food
+
+**Bevel**
+- **Entry points:**
+  - a global "+" button (Log Food → capture, barcode, describe, search, import)
+  - Nutrition → Timeline → +
+  - tapping a time on the Timeline, which sets the meal time
+  - the Nutrition widget
+  - the AI chat
+  - Camera Control on iPhone 16 and later opens Capture Food directly
+- **Ways in:**
+  - **Capture:** a meal photo; tips ask for about 45°, a fork or hand for scale, good light.
+  - **Import** a photo, with an optional description.
+  - **Barcode:** multi-scan and manual code; if a scan fails, photograph the label.
+  - **Describe** in words ("grilled chicken salad with avocado").
+  - **Search** a database of 6M+ foods.
+  - **My Foods:** Favourites, Recipes, Custom, History.
+- **AI review:**
+  - Analysis runs in the background; you can leave and come back with "Go to food log".
+  - Detected items appear as rows. Tap one for a serving-size stepper, editable ingredients,
+    swap via search, and a time.
+  - Then Add to log. Nothing is logged without confirmation.
+  - In chat, the AI fills a Food Cart → Review Cart → Add to log. Plain-word edits work ("this
+    burger without the bun", "I only ate half").
+- **After logging:**
+  - edit name, macros or ingredients;
+  - long-press to multi-select, then copy to other days, move, delete or make a recipe;
+  - swipe to delete;
+  - foods in the same hour group with a subtotal;
+  - a custom food can be made by photographing a nutrition label.
+- **Honest gating:** the Nutrition Score unlocks only after about a third of the day's calories
+  are logged.
+
+**Tracend today**
+- **Entry points:**
+  - **Nutrition → Log a meal:** a sheet with meal-type chips preselected by the clock, then
+    Take a photo, Photo Library or Enter manually.
+  - **Today's "Log a meal":** only switches to the Nutrition tab, so it costs one extra tap.
+  - **The next-meal card's "Log meal":** opens the *empty* manual form, not the planned foods.
+- **Photo path:**
+  1. Picker, then upload and analysis with a loader ("Analyzing meal photo…"). There is no
+     progress, no cancel and no client timeout.
+  2. "Review candidates": checkbox rows (name, serving, kcal, confidence), all ticked; "Edit
+     estimate" opens six plain text fields. **No portion stepper**, so half a portion means
+     retyping kcal and three macros.
+  3. Confirm: haptic and a "Meal logged" toast.
+  4. About 5–6 taps from the Nutrition tab, about 7 from Today.
+- **Failures:** clear messages (permission, too large, no food found, provider busy, budget),
+  but **no Retry button**. A 503 may leave a "Needs review" draft with no candidates.
+- **Manual:** six required fields and **one food per meal**.
+- **After logging:** delete only, with no edit. No barcode, search, favourites, recents,
+  copy-meal or quick-add calories.
+
+**What to build (AI proposes, you confirm, so it stays inside our rules)**
+
+| # | Change | Reuses | Cost |
+|---|---|---|---|
+| F1 | Today's "Log a meal" opens the log sheet directly, preselected to the next planned slot | `LogMealSheet` | S |
+| F2 | **Portion stepper** on each AI candidate (½, ¾, 1, 1¼, 1½, 2, or a slider) scaling kcal and macros together | `CandidateSheet` | S |
+| F3 | **Describe a meal**: a text box sent through the same analyse → candidates → confirm path | `meal-analyze` contract, a text provider | M |
+| F4 | **Retry and background analysis**: Retry on failure; leaving the sheet keeps the draft, which reappears as "Ready to review" | draft meals | S |
+| F5 | **Edit a logged meal** (name, serving, macros) and **multi-food manual meals** | `save_manual_meal` item array | S–M |
+| F6 | **Favourites and recents**: star a confirmed food; "Log again" from history; "Copy yesterday's breakfast" | `user_foods` table (exists, unused) | M |
+| F7 | **Planned meal → prefilled log**: the next-meal card opens with the planned foods listed. It needs macros on schedule foods, so first store kcal and macros per planned food, then add one-tap "Ate as planned" | schedule foods, `save_scheduled_manual_meal` | M |
+| F8 | **Barcode** (Open Food Facts) plus **nutrition-label photo** for packaged food, both feeding the same confirm sheet | confirm sheet | M |
+| F9 | Plain-word correction on the confirm sheet ("half the rice", "no sauce"), re-run as a new estimate the user confirms | F3 path | M |
+
+Skip Camera Control: the owner's iPhone 12 has no Camera Control button. A "+" shortcut and a
+widget (Flow 6) cover the same need.
+
+## Flow 2: logging a strength workout
+
+**Bevel**
+- **Routines:** built by hand, by photo of a written workout, from text, or generated from saved
+  preferences (experience, goal, equipment, warm-up, failure, drop sets, supersets, excluded
+  exercises).
+- **Start:** from Fitness → Routines or Today's Activity. Choose iPhone only (an HR strap or
+  AirPods Pro 3 as the heart-rate source) or iPhone + Watch.
+- **During the workout:**
+  - **Sets:** Play starts a set; a checkmark completes it. Tap any weight, rep or set number to
+    edit.
+  - **Exercises:** ⋯ to replace, delete or edit; add exercises at the bottom; reorder;
+    supersets.
+  - **Set types:** warm-up, cool-down, failure, drop set.
+  - **Plate calculator:** tap the weight; bar and plates are configurable.
+  - **Rest:** a default rest and interval haptics.
+  - **Settings:** Auto-Fill Sets (fill the rest from the last set) and set-by-set confirmation.
+  - **Live Sync:** the phone and Watch mirror each other.
+  - **Watch:** hands-free completion by Double Tap or the Action Button.
+  - **Effort:** RPE estimated from the Watch accelerometer, adjustable.
+- **Finish:** a summary, then **Update Routine** saves today's weights and reps as next time's
+  prefill (or Auto-Update). An activity screen splits cardio and muscular strain, PRs,
+  muscular load, per-set effort and HR zones.
+- **Weak spots reviewers name:** muscle attribution, e.g. upper back credited only 3%. No AMRAP
+  or EMOM; a freestyle workout needs an empty routine first.
+
+**Tracend today**
+- **Start:**
+  - **Today's "View workout":** only switches to Train.
+  - **Train's "Start workout":** one tap; the overview sheet also has Start.
+- **Focus page per exercise** (swipe between exercises):
+  - "Set N of M" and the rest length.
+  - Big kg × reps with ± steppers.
+  - **Prefill:** typed value → earlier set → last time → plan, with a caption saying which.
+  - Last time and Your best.
+  - **"Done set N"**: one tap when the prefill is right.
+  - A new-best stamp with haptics.
+  - Tap a logged set for RPE or undo.
+  - Pain chip, "Fill effort", Mark as skipped.
+- **Rest timer:** full-screen ring with −15, +15 and Skip, plus an RPE picker inside the rest
+  screen. It shrinks to a pill, survives relaunch, and has an optional lock-screen alert.
+- **Finish:**
+  - leave with Save and leave or Discard;
+  - **Finish requires a 1–10 session effort**;
+  - a summary with new bests;
+  - finishing offline queues it.
+- **Missing:**
+  - **automatic move to the next exercise** (you swipe or tap Next);
+  - **add or remove a set**, **swap or add an exercise**, per-set notes;
+  - set types, plate calculator;
+  - Watch, Live Activity.
+
+**What to build**
+
+| # | Change | Reuses | Cost |
+|---|---|---|---|
+| W1 | Today's workout button **opens the workout overview** (or starts it), instead of switching tabs | `startWorkout` | S |
+| W2 | **Auto-advance**: after the last set of an exercise and its rest, slide to the next exercise | `PageView` controller | S |
+| W3 | **Add or remove a set** mid-workout (logged as a deviation, not a plan change) | draft model | M |
+| W4 | **Swap an exercise** from the catalog with a reason; the server already supports substitution | slug trigger, truth repair | M |
+| W5 | **Warm-up set type**: warm-ups excluded from volume and bests | set row | S–M |
+| W6 | **Plate calculator** from the weight field (bar and plate settings in Account) | — | S |
+| W7 | **"Use today's loads next time"** at finish, Tracend's version of Update Routine. It becomes a load proposal the athlete approves (the G1 loop), not a silent overwrite | G1 | after G1 |
+| W8 | **Live Activity** for the rest timer and current set on the lock screen | rest timer state | M |
+| W9 | Watch logging | — | L, later |
+
+Keep session effort required. It feeds training load, and the PRD treats an unknown effort
+honestly instead of guessing.
+
+## Flow 3: the morning check (Today vs Bevel Home)
+
+**Bevel**
+- **Home cards:** Strain, Recovery, Sleep, Stress, Energy Bank, Nutrition, vitals and a
+  Timeline preview.
+- **Edit Home:** hide, add, drag to reorder, reset.
+- **Status chip:** the activity status sits top-left.
+- **Dates:** swipe left for past days; the day rolls over at wake-up time.
+- **Drill-downs:**
+  - Recovery → contributors (sleep, HRV, RHR, temperature, breathing, SpO₂) plus a guidance
+    line.
+  - Strain → a personal Target Strain moving with recovery, active vs passive, strain per
+    activity.
+  - View Insights → correlations labelled "not causal".
+  - Values are tagged above, normal or below a 60-day baseline; blue means better, orange means
+    worse.
+  - Missing overnight HRV or RHR means no score.
+- **Sickness detector:** prompts you to set a status when HR, HRV or sleep fall outside your
+  normal range.
+- **Weak spot:** reviewers say it gives numbers but rarely a prescription. It has no workout
+  suggestion for the target strain.
+
+**Tracend today**
+- **Order:** greeting, then the hero (recovery dial, verdict, vitals, sync), check-in bar,
+  workout card, fuel rail, coach note, last 7 days, recovery drivers, sleep.
+- **Drill-downs are minimal:**
+  - the hero only offers sync;
+  - the drivers card has an inline "How this is calculated";
+  - the sleep card is display-only;
+  - the coach note doesn't open the Coach.
+- **Check-in:** one scrolling form with five 1–5 scales, pain, available to train, and a note.
+  It works offline.
+- **Strength over Bevel:** the verdict and coach decision *are* a prescription.
+
+**What to build**
+
+| # | Change | Reuses | Cost |
+|---|---|---|---|
+| T1 | **Tick-ring hero** (owner prototype, 2026-10-04). The lit ticks split by recovery driver, lime when a driver is fine, amber when it pulls the score down, grey for no data; driver chips name them. Below: HRV and resting HR, three tiles (Sleep, Load, Fuel). The only bottom button is the morning **Check in**, shown until the day's check-in is done and then gone; it is never reused for other actions, since the tab bar handles navigation (owner, 2026-10-04). It folds the vitals list and check-in bar into the hero, so Today gets shorter | today hero, breakdown data | M |
+| T2 | **Tap to drill down**: tiles and driver chips open their detail (driver sheet, sleep sheet, load sheet); the coach note opens Coach chat with that decision as context | existing sheets | S–M |
+| T3 | **Activity status chip** (Active, Sick, Injured, Travelling, On a break, with a duration) in the hero. It lowers confidence and is passed to coach-decide | new small table | S–M |
+| T4 | **Above / normal / below baseline** words on every vital ("HRV 61 ms, above your normal") | baselines | S |
+| T5 | Swipe to past days on Today | brief by date | M |
+
+Avoid Bevel's and WHOOP's three-ring layout, the trade dress in their lawsuit. The single tick
+ring is distinct.
+
+## Flow 4: the coach (chat, check-ins, plans)
+
+**Bevel**
+- **Chat:** suggested prompts above the keyboard lead into guided flows ("Check-in with me").
+- **Screen Context:** attaches the screen you were viewing, so you can ask "what does this
+  mean?" about a metric.
+- **Other chat controls:**
+  - dictation;
+  - Fast, Thinking or Adaptive modes;
+  - four personalities plus free-text instructions;
+  - Ghost Mode for temporary chats.
+- **Actions:** when the AI acts, a dropdown says what it is doing.
+- **Check-ins:** created by asking ("send me a recovery summary at 8am") or by form (title,
+  instructions, frequency, time). They arrive as notifications that open a check-ins thread.
+- **Plans:** the AI drafts a plan → you review → you schedule. Drafts schedule nothing until
+  approved. A Training Calendar marks planned, skipped, done and rest. A scheduled item's ⋯
+  offers Edit, Log, Skip, Save as routine, Delete.
+
+**Tracend today**
+- **Entry:** the Coach tab only.
+- **New conversation:** a context card and three starter chips.
+- **Answers:** not streamed (thinking indicator, 45 s timeout); markdown with a provider label,
+  "Evidence used and data gaps", follow-up chips, preference chips you confirm.
+- **Errors and limits:** an error card with Retry; a rate-limit cooldown.
+- **Proactive messages:** none in chat, and no push. The daily decision appears on Today.
+- **Plan changes after onboarding:** not possible (Part 2, G1).
+
+**What to build**
+
+| # | Change | Reuses | Cost |
+|---|---|---|---|
+| C1 | **"Ask about this"** on Today cards and sheets: opens Coach with that card's numbers attached as context (Tracend's version of Screen Context) | chat context builder | S–M |
+| C2 | **Morning summary notification** when the brief is ready ("Recovery 71 · Upper body A as planned · 92 g protein to go"). Deterministic, no AI; local notification | brief, `TracendNotifications.swift` | S |
+| C3 | **Plan drafts you approve** (G1): the coach drafts a bounded change → diff → approve → new version | `change_proposals`, onboarding proposal view | M–L |
+| C4 | **Week calendar actions**: Move or Skip a workout from the week view, logged honestly | week view | M |
+| C5 | Streamed answers | coach-chat | M |
+| C6 | Tone preference (direct or encouraging), wording only, through confirmed preference chips | preference chips | S, only if asked |
+
+## Flow 5: timeline, journal, status
+
+- **Bevel:**
+  - **Timeline:** one day of sleep, workouts and food in time order; tap + at a time to log;
+    pins at the top ("1,500 kcal left").
+  - **Journal:** yes / neutral / no toggles, mood, caffeine, water, supplements, "Copy
+    yesterday", default entries. Insights need at least 5 yes and 5 no entries.
+- **Tracend:**
+  - **Timeline:** Nutrition's meal timeline plus Today's fuel rail.
+  - **Journal:** the check-in covers mood, energy, soreness, hunger and pain.
+- **Build:**
+  - **T3 activity status** (Flow 3).
+  - **"Same as yesterday"** on the check-in: prefill yesterday's answers, then adjust. S.
+  - Skip the journal, caffeine and water: breadth outside the trainer.
+
+## Flow 6: shortcuts outside the screen you're on
+
+- **Bevel:**
+  - **"+" button:** an in-app floating button with a customisable menu (Log Food, Log Activity,
+    View Routines, Ask Bevel, Hydration, and more).
+  - **Widgets:** about a dozen home-screen widgets (overview, nutrition with logging, macros)
+    plus lock-screen widgets.
+  - **Live Activity:** a strength workout Live Activity.
+  - **Watch:** complications and a Watch app.
+- **Tracend:** none. Every action starts from its own tab.
+- **Build:**
+
+| # | Change | Cost |
+|---|---|---|
+| S1 | **Quick-action "+"** in the tab bar (Log a meal, Start workout, Check in, Ask Coach) | S–M |
+| S2 | **Home-screen widget**: recovery, today's workout, protein to go; taps open the matching action | M |
+| S3 | Home-screen quick actions (long-press the app icon): Log a meal, Start workout | S |
+| S4 | Live Activity (W8), then Watch (W9) | M / L |
+
+## Flow 7: onboarding
+
+- **Bevel:**
+  - **Show, don't ask:** picking a goal immediately shows a sample of what the app will do
+    (a sample recovery score, a sample nutrition gauge).
+  - **Soft paywall** at the end.
+  - Scores take 2–6 weeks to calibrate.
+- **Tracend:**
+  - **Fifteen steps**, ending in an AI-proposed plan the athlete approves (stronger: a real
+    plan, not a demo).
+  - **What it lacks:** previews of what each step leads to.
+- **Build:** at the goal step, a small preview of the first week ("3 strength days, about 50
+  minutes, protein 150 g") that updates as the athlete answers. It uses the deterministic
+  calculators, so no AI is needed. M. Not urgent while the owner is the only user.
+
+## Build batches (PR-sized, fastest value first)
+
+Each batch is one PR, after the test week unless testing turns up a bug.
+
+1. **Batch 1, "Direct actions and faster food" (S–M, mostly Flutter):**
+   - F1 log sheet from Today, W1 workout from Today
+   - F2 portion stepper, F4 Retry and background review, F5 edit and multi-food meals
+   - W2 auto-advance, W6 plate calculator, T4 baseline words
+2. **Batch 2, "Today hero" (M):** T1 tick-ring hero, T2 drill-downs, C1 "Ask about this", T3
+   activity status.
+3. **Batch 3, "Close the loop" (M–L, the moat):**
+   - G2 (show today's adjustments on the workout)
+   - C3 / G1 plan drafts with diff and approval
+   - W7 loads as proposals
+4. **Batch 4, "Food sources" (M):**
+   - F3 describe a meal, F6 favourites, recents and copy
+   - F7 planned meals with macros and "Ate as planned"
+   - F8 barcode and label photo, F9 plain-word corrections
+5. **Batch 5, "Outside the app" (M):** S1 "+", S3 icon quick actions, C2 morning summary, S2
+   widget, W8 Live Activity.
+6. **Later:** W3 add or remove a set, W4 swap, W5 warm-ups; C4 move or skip; C5 streaming;
+   onboarding preview; Watch.
+
+# Part 2 — Positioning and the field
 
 ## Bevel at a glance (verified)
 
@@ -179,7 +469,7 @@ Each gap shows the cost (S, M or L), with notes on existing plumbing that makes 
 |---|---|---|---|
 | G1 | **No plan changes after onboarding** (the coach cannot propose; no diff or approval screen) | It is the differentiator, and it isn't live. A coach that can never change your plan isn't a trainer. | **M–L.** Reuse `change_proposals`, the onboarding proposal view, plan versions and audit events; this is also the planned calibration / re-plan PR |
 | G2 | **Today doesn't show the coach's adjustments or evidence** | The daily decision is the product, but Today shows only its text. "Reduce to 3 sets today" should appear on the workout. | **S–M.** The server already produces `today_adjustments` and evidence; parse and show them |
-| G3 | **Meal-photo AI has no consent check** (`meal-analyze`) | An Apple 5.1.2(i) and privacy blocker before any account other than the owner's | **S.** The per-purpose notice system exists; add a `meal_photo` purpose naming the provider |
+| G3 | **Meal-photo AI has no consent check** (`meal-analyze`) | Not a blocker while the owner is the only user (owner, 2026-10-04); required before any second account (Apple 5.1.2(i)) | **S.** The per-purpose notice system exists; add a `meal_photo` purpose naming the provider |
 | G4 | **No widget** | The category's main cause of churn is low usage; Today has to escape the app. Bevel, Athlytic and Fitbod all ship widgets. | **M.** A WidgetKit extension reading a small JSON the app writes (recovery, today's workout, protein to go) |
 | G5 | **No barcode, food database or saved foods** | Logging food is the most frequent action; photo alone is slow for packaged food | **M.** Barcode via a scanner plugin plus Open Food Facts (free); `user_foods` already exists for saved foods |
 | G6 | **No background HealthKit sync** | Scores go stale until the app opens. It is one of Bevel's top complaints too, so it's a chance to beat them. | **M.** HealthKit background delivery plus an observer query calling `health-sync` |
@@ -271,55 +561,15 @@ Each gap shows the cost (S, M or L), with notes on existing plumbing that makes 
 
 Not relevant during the MVP (no subscriptions).
 
-## Recommended plan (efficient order)
+## Recommended plan
 
-Rules carried through:
-- **No new features during the test week.** Fix only what testing surfaces.
-- **Reuse existing plumbing before building anything new.**
-- **Respect the MVP exclusions.**
+The build order is in Part 1, "Build batches". Two notes:
+- **Meal-photo consent (G3)** waits until a second account is planned; the owner is the only
+  user.
+- **Terms and Privacy links** remain a public-release blocker, not a test-week task.
 
-### Now, during the test week (blockers only)
-1. **G3 meal-photo consent.** Add a `meal_photo` AI-notice purpose naming the provider;
-   `meal-analyze` refuses without it. S.
-2. **Terms and Privacy links** in onboarding: the open public-release blocker. S.
-
-### Next, the first PR after testing: "close the coaching loop" (the moat)
-3. **G2 show the decision on Today.** Parse `today_adjustments` and the evidence; show "Coach:
-   3 sets instead of 4 today, because HRV is low for you" on the workout card, and apply it as
-   a suggestion in focus logging. S–M.
-4. **G1 in-season plan proposals.**
-   - **What can be proposed:** coach-decide (or a weekly deterministic rule) can propose a
-     bounded change:
-     - a deload week
-     - volume ± one set
-     - an exercise swap from the catalog
-     - calorie or protein target ± a step
-   - **Where it goes:** into `change_proposals`, shown as a diff screen (reuse
-     `onboarding_proposal_view.dart`). Approve creates a new plan version plus an audit event;
-     reject records the reason.
-   - **Two-week calibration:** this is also the planned calibration / re-plan PR.
-   - **Size:** M–L.
-5. **G8 strain readout and activity status.** S each; these feed G1's evidence.
-
-### Then, table stakes in one sweep
-6. **G9 meal reminders.** S.
-7. **G5 barcode** (Open Food Facts) **and saved foods** (`user_foods`). M.
-8. **G7 add or remove a set, and substitution UI.** M.
-9. **G6 background HealthKit delivery.** M.
-10. **G4 home-screen widget:** recovery, today's workout, protein to go. M.
-
-### Later
-11. **G10 progression engine:** deterministic, offered as G1 proposals.
-12. **G11 Live Activity**, then a Watch app.
-13. **Smaller items:** plan-version history, editable targets with approval, macro adherence
-    card, hypnogram, exercise videos, Sign in with Apple, a tone preference, muscle freshness.
-
-### Why this order is efficient
-- G2 and G1 reuse the decision payload, the proposal tables, the onboarding proposal view and
-  plan versioning that already exist. The moat ships for a fraction of a new feature's cost.
-- G3, G9 and G8 are each a few hours on existing systems.
-- The table-stakes sweep comes before any Watch work because each item is M and benefits every
-  session.
+The coaching loop (G1, G2) sits in Batch 3, after the quick Batch 1 and 2 wins the owner sees
+every day, because it is the larger build.
 
 ## Risks
 
@@ -331,7 +581,7 @@ Rules carried through:
   - **Get a real IP review before any commercial launch** (repeats 2026-09-04).
 - **Trade dress.** Avoid three-ring score layouts and WHOOP or Bevel visual idioms. Tracend's
   single 270° dial with graphite and lime is distinct; keep it that way.
-- **AI consent and provider disclosure.** Fix G3 before testers. Keep per-purpose notices for
+- **AI consent and provider disclosure.** Fix G3 before any second account. Keep per-purpose notices for
   every new AI use, including tone and proposals.
 - **Breadth temptation.** Bevel's feature list is long because its business is engagement
   with a dashboard. Tracend's is outcomes against a plan; every feature should serve the
