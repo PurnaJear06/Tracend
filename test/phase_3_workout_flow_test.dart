@@ -1007,9 +1007,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Morning check-in'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Morning check-in'));
+    // The fixture day is checked in; the chip reopens the check-in.
+    await tester.tap(find.text('Checked in'));
     await tester.pumpAndSettle();
     expect(find.text('Daily check-in'), findsOneWidget);
     expect(find.text('Sleep quality'), findsOneWidget);

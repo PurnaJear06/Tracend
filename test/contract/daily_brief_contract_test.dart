@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/features/today/computed_metrics.dart';
+import 'package:tracend/features/today/daily_brief_repository.dart';
 
 String _readFixture(String name) {
   final file = File('test/contract/fixtures/$name');
@@ -534,6 +535,44 @@ void main() {
         (workout['exercises'] as List).first as Map,
       );
       expect(exercise['target_load_kg'], 82.5);
+    });
+  });
+
+  group('Daily Brief contract — get_my_daily_brief v1.7 (Today week)', () {
+    const fixture = 'daily_brief_v1_7.json';
+
+    test('the week, plan, session and yesterday parse', () {
+      final json = _loadFixtureJson(fixture);
+      expect(json['schema_version'], '1.7');
+      final brief = DailyBrief.fromJson(json);
+      expect(brief.recoveryPrevious, 64);
+      expect(brief.plan?.title, 'Strength foundation');
+      expect(brief.plan?.weekNumber, 3);
+      expect(brief.plan?.blockWeeks, 20);
+      expect(brief.week, hasLength(7));
+      expect(brief.week.first.date.weekday, DateTime.monday);
+      expect(brief.week.first.trained, isTrue);
+      expect(brief.week[2].recovery, isNull);
+      expect(brief.todaySession?.state, 'in_progress');
+      expect(brief.todaySession?.completedSets, {1: 2, 2: 0});
+    });
+
+    test('every v1.6 field survives (additive bump only)', () {
+      final v16 = _loadFixtureJson('daily_brief_v1_6.json');
+      final v17 = _loadFixtureJson(fixture);
+      for (final key in v16.keys.where((key) => key != 'schema_version')) {
+        expect(v17.containsKey(key), isTrue, reason: key);
+      }
+    });
+
+    test('a v1.6 brief parses with no week, plan or session', () {
+      final brief = DailyBrief.fromJson(
+        _loadFixtureJson('daily_brief_v1_6.json'),
+      );
+      expect(brief.week, isEmpty);
+      expect(brief.plan, isNull);
+      expect(brief.todaySession, isNull);
+      expect(brief.recoveryPrevious, isNull);
     });
   });
 }

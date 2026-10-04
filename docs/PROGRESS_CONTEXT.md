@@ -19,6 +19,9 @@ catalog lacks (build 329 installed). Today's food card is now the fuel rail: pro
 the day's meals on a line, since Nutrition already holds the full ledger. Meal slot status
 (`due`, `upcoming`, `skipped`) now follows the athlete's time zone instead of UTC (SQL only, no
 reinstall).
+Today was rebuilt on 2026-10-04 around the owner's chosen prototype: a recovery tick ring split by
+driver, a morning check-in gate in place of the tab bar, Sleep/Load/Fuel tiles, a session strip that
+fills as sets are logged, and the week as recovery ticks (brief 1.7, migration first, then install).
 
 **Previous priority:** UI polish, so the app reads as a finished consumer product rather than a
 beta full of logs. The owner approved the plan on 2026-10-01 and chose to start it before the full

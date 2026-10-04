@@ -18,6 +18,7 @@ import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/progress/progress_screen.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
+import 'package:tracend/features/today/check_in_gate.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/train/train_screen.dart';
@@ -57,6 +58,16 @@ class _AppShellState extends State<AppShell> {
   late final ProgressRepository _progress;
   late final PhysiqueCheckRepository _physique;
   late final DailyBriefRepository _brief;
+
+  /// Today's morning check-in gate: while it is required, the tab bar gives
+  /// way to "Check in to start your day".
+  final _checkInGate = CheckInGate();
+
+  @override
+  void dispose() {
+    _checkInGate.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -133,10 +144,10 @@ class _AppShellState extends State<AppShell> {
         coach: _coach,
         brief: _brief,
         nutrition: _nutrition,
-        onOpenProgress: () => _selectTab(4),
         onOpenNutrition: () => _selectTab(3),
         onOpenTrain: () => _selectTab(1),
         aiConsent: widget.aiConsent,
+        checkInGate: _checkInGate,
       ),
       TrainScreen(
         key: const ValueKey('tab_train'),
@@ -170,9 +181,39 @@ class _AppShellState extends State<AppShell> {
     return Scaffold(
       extendBody: true,
       body: IndexedStack(index: _selectedIndex, children: destinations),
-      bottomNavigationBar: _FloatingTabBar(
-        selectedIndex: _selectedIndex,
-        onSelected: _selectTab,
+      bottomNavigationBar: ListenableBuilder(
+        listenable: _checkInGate,
+        builder: (context, _) {
+          final gated = _checkInGate.required && _selectedIndex == 0;
+          return AnimatedSwitcher(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : TracendMotion.emphasized,
+            switchInCurve: TracendMotion.curve,
+            switchOutCurve: TracendMotion.curve,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween(
+                  begin: const Offset(0, 0.35),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            child: gated
+                ? CheckInGateBar(
+                    key: const ValueKey('check-in-gate'),
+                    onCheckIn: _checkInGate.checkIn,
+                    onSkip: _checkInGate.skip,
+                  )
+                : _FloatingTabBar(
+                    key: const ValueKey('tab-bar'),
+                    selectedIndex: _selectedIndex,
+                    onSelected: _selectTab,
+                  ),
+          );
+        },
       ),
     );
   }
@@ -182,6 +223,7 @@ class _FloatingTabBar extends StatelessWidget {
   const _FloatingTabBar({
     required this.selectedIndex,
     required this.onSelected,
+    super.key,
   });
 
   final int selectedIndex;

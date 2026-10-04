@@ -29,7 +29,7 @@ void main() {
         findsOneWidget,
       );
     }
-    expect(find.text('Complete Push day.'), findsOneWidget);
+    expect(find.text('Push day'), findsWidgets);
   });
 
   testWidgets('switches tabs while preserving the primary shell', (

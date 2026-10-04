@@ -31,8 +31,8 @@ class _Brief implements DailyBriefRepository {
             'name': 'Upper body A with a long accessory finisher',
             'estimated_minutes': 55,
             'exercises': [
-              {'set_count': 3},
-              {'set_count': 4},
+              {'order': 1, 'name': 'Incline dumbbell press', 'set_count': 3},
+              {'order': 2, 'name': 'Chest-supported row', 'set_count': 4},
             ],
           },
     checkIn: rest ? null : const {'energy': 4},
@@ -68,6 +68,25 @@ class _Brief implements DailyBriefRepository {
         dailyStrain: 31,
       ),
     ),
+    recoveryPrevious: 64,
+    plan: const TodayPlan(
+      title: 'Strength foundation with a long name',
+      weekNumber: 3,
+      blockWeeks: 20,
+    ),
+    week: [
+      for (var i = 0; i < 7; i++)
+        TodayWeekDay(
+          date: DateTime(2026, 9, 28 + i),
+          recovery: i == 2 ? null : 50 + i * 4,
+          strain: i < 6 ? 4.0 + i : null,
+          trained: i.isEven && i < 5,
+          planned: i != 3,
+        ),
+    ],
+    todaySession: rest
+        ? null
+        : const TodaySession(state: 'in_progress', completedSets: {1: 2}),
   );
 }
 
@@ -141,7 +160,6 @@ void main() {
                 nutrition: const FixtureNutritionRepository(),
                 coach: const _Coach(),
                 onOpenNutrition: () {},
-                onOpenProgress: () {},
                 onOpenTrain: () {},
               ),
             ),
@@ -154,26 +172,36 @@ void main() {
         expect(find.text('Today'), findsWidgets);
         expect(find.textContaining('Good '), findsOneWidget);
 
-        // Open the method disclosure and switch the coach perspective.
-        await tester.ensureVisible(find.text('How this is calculated'));
+        // Open the drivers from a chip, every tile, and a day of the week.
+        await tester.ensureVisible(find.text('HRV low'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('How this is calculated'));
+        await tester.tap(find.text('HRV low'));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Food').last);
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Food').last);
-        await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull);
-
         expect(
           find.text('Heart rate variability: much lower than usual, 38 ms'),
           findsOneWidget,
         );
+        for (final tile in ['Sleep', 'Load', 'Fuel']) {
+          await tester.ensureVisible(find.text(tile).first);
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(tile).first);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull, reason: tile);
+        }
+        await tester.ensureVisible(find.text('Your week'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        expect(find.text('Week 3 of 20'), findsOneWidget);
         expect(
-          find.text('Training load: much heavier than usual'),
+          find.text('Drop one working set from each lift today.'),
           findsOneWidget,
         );
-        if (rest) expect(find.text('See your week'), findsOneWidget);
+        if (rest) {
+          expect(find.text('Rest day'), findsOneWidget);
+        } else {
+          expect(find.text('2 of 7 sets logged'), findsOneWidget);
+        }
       });
     }
   }

@@ -312,24 +312,59 @@ pills; a selected chip is a lime fill with `onAccentSignal` text.
 
 ### 5.2 Data components
 
-#### `TodayHero` (recovery dial)
+#### `TodayHero` (recovery tick ring)
 
-The Today verdict card leads with a 270° recovery dial: a 9%-of-size stroke on a `surfaceRaised`
-track, filled to the score in the band's state colour (`stateStable`, `accentAmber`,
-`stateAttention`; never lime, which is not a health signal), running from a deeper tone at the
-start to a brighter head (the same stroke as the food rings), with a soft blurred copy of the arc
-under it and a white dot at the head. The score counts up inside in Archivo ExtraBold. The arc
-sweeps in over 1.1 s once; under reduced motion it is drawn at its value. A faint radial wash of
-the band colour sits behind the dial (16% dark, 9% light), the card's only background gradient.
-Beside the dial, today's vitals (Sleep, Resting HR, HRV) are hairline-separated lines with Archivo
-SemiCondensed values; above 1.3× text they move under the dial.
+The hero leads with the verdict in `headlineMedium` Archivo w700 (tracking −0.6) and the
+driver line in `textSecondary`. `RecoveryTickRing` draws 112 radial ticks, 3pt wide with round
+caps: unlit ticks are 11pt in `textSecondary` at 20%; lit ticks run clockwise from 12 o'clock to
+the score, 19–26pt long (longest mid-segment), with a 32pt × 4.2pt head tick and a 3.2pt
+`textPrimary` dot just outside it. The lit ticks are split between the drivers that counted, in
+proportion to their composite weights, with a one-tick gap between drivers; each driver's ticks
+ramp from 42% to full opacity. Colour carries the driver's direction: `accentSignalRing` when it
+is normal or better, `accentAmber` when it pulls the score down (owner decision, 2026-10-04: the
+lime here marks a driver that is fine, the way the rest of the app marks progress; the band itself
+stays in the pill, and amber always means "this pulled you down"). A focused driver keeps its
+ticks and dims the rest to 14%. A hairline circle sits inside the ticks and a soft radial glow of
+`accentSignalRing` (14% dark, 10% light) sits behind the ring. Inside: "Recovery", the score in
+Archivo SemiCondensed w700 at 64pt, the band pill (Excellent/Good: `accentSignal` with
+`onAccentSignal`; Moderate: `accentAmber` at 22%; Low/Poor: `stateAttention` at 22%) and "+6 from
+yesterday". Motion: the ticks light in turn and the score counts up over 1.2 s (ease-out-cubic);
+below full motion the final state is drawn. Driver chips are 32pt pills with a 7pt dot in the
+driver's colour (grey `textTertiary` for "no data"); a selected chip takes an `accentSignalRing`
+border and `accentSignalTint` fill. The "Checked in" chip has a `borderSubtle` edge; the "Check in"
+chip a lime edge.
 
-#### Today's workout card and food rings
+#### Today tiles, session and week
 
-`SessionPlanCard` is the Today training card: lime-ink "Today's workout" kicker, the name at 26pt
-Archivo, a lime disc with the training glyph, stat pills (`surfaceRaised`, numeric value + unit)
-and a full-width lime **View workout** pill (`accentSignal` / `onAccentSignal`). The training
-load line closes the card under a hairline. `FuelRailCard` is Today's food card: the grams of protein
+`TodayTiles` is a bento: Sleep (23 flex) beside Load and Fuel (20 flex), `surface` tiles with a
+`borderHairline` edge and the card radius; a selected tile takes `surfaceRaised` and an
+`accentSignalRing` edge, and its card opens under the grid with a size animation (snapped below
+full motion). From 1.3× text the tiles stack. Sleep shows the duration in Archivo SemiCondensed
+24pt, the debt in `accentAmber`, and a 10pt deep/REM/rest share bar (`accentSignalRing`, at 50%,
+`textSecondary` at 35%). Load shows a word and seven 2pt-gap strain bars (today in
+`accentSignalRing`). Fuel shows protein to go and a 4pt bar.
+
+`TodaySessionCard` puts the workout name in `headlineSmall` w700 under a "Today's session" kicker,
+then a 40pt strip: one 6pt-radius block per prescribed set, 2pt apart within an exercise and 5pt
+between exercises, `accentSignalRing` when logged and `surfaceRaised` otherwise, with the exercise
+names in `labelSmall` under their groups. The coach's note is a panel in `accentSignalTint` (or
+`surfaceRaised` without a decision) with a slider glyph and "Coach · medium confidence" in
+`accentSignalInk`. **Open in Train** is a text button with a trailing chevron.
+
+`YourWeekCard` shows seven columns: ten 3pt ticks per day lit to the recovery score
+(`accentSignalRing` from 50, `accentAmber` below, ramped opacity), an 8pt mark (filled dot
+trained, ring planned and ahead, `textTertiary` ring missed, dash rest) and the day letter
+(today's in `accentSignalInk` w700); the selected day takes `surfaceRaised`, and its line sits in a
+`surfaceRaised` strip under the columns.
+
+`CheckInGateBar` replaces the tab bar until today's check-in: a 60pt `accentSignal` pill with
+"Check in to start your day" in `onAccentSignal` and a 44pt `onAccentSignal` disc holding a lime
+arrow, a soft lime shadow, and a **Not today** text button under it. The shell cross-fades and
+slides between the gate bar and the tab bar over `TracendMotion.emphasized`.
+
+#### Fuel rail
+
+`FuelRailCard` is Today's food card: the grams of protein
 left at 34pt Archivo in `accentSignalInk` with the rest of the line in `titleMedium`, then the
 fuel rail. The rail is a 3pt line in `textSecondary` at 22%, filled up to now with a gradient of
 `accentSignalRing` (35% to full); a `textPrimary` needle with a head dot and a "now" label marks
@@ -341,8 +376,8 @@ they fit, and the rail's semantics name every meal. A hairline separates "N of M
 compact **Log a meal** outlined pill (stacked from 1.3× text). Motion: the line fills to now
 (the first half of 1.3 s), bars rise in turn on an ease-out-back (80 ms apart), the needle drops
 in, the labels fade up, and the headline counts up over 900 ms. Below full motion
-(`TracendMotionScope`) the final state is drawn with no animation. The morning check-in is a lime-outlined call to action with a **Check
-in** pill until it is done.
+(`TracendMotionScope`) the final state is drawn with no animation. On Today it opens from the
+Fuel tile.
 
 #### `RecoveryReadoutCard`
 
@@ -408,12 +443,13 @@ trend** ≥ 0.6, **Some day-to-day variation** ≥ 0.3, **Too noisy to call yet*
 goal (`fat_loss` down, `muscle_gain` up): it marks progress on the athlete's own goal, not health.
 Otherwise it stays neutral, and the arrow and spoken label carry the direction.
 
-#### `DecisionSurface`, `CoachPerspectiveCard`, `EvidenceRow`, `ProposalDiff`
+#### `DecisionSurface`, coach note, `EvidenceRow`, `ProposalDiff`
 
 - `DecisionSurface`: one direct headline, one reason, timestamp, confidence wording, primary action
   and **See evidence**. It never hides a pending persistent change inside normal advice.
-- `CoachPerspectiveCard`: training and nutrition perspectives collapsed below the final decision;
-  opening one reveals evidence and limits, not simulated chat personas.
+- Coach note (Today's session card since 2026-10-04): today's training adjustment or summary as
+  advice in the coach's words, with its confidence; it never alters the prescribed sets and never
+  uses simulated chat personas.
 - `EvidenceRow`: label, value, unit, source, time window, freshness and status. Missing data reads
   **Not enough data** with a recovery action, never a fabricated zero.
 - `ProposalDiff`: current and proposed values, effective date, evidence, downside, uncertainty, and
