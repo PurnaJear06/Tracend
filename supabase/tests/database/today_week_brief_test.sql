@@ -30,9 +30,9 @@ select 'd8200000-0000-4000-8000-000000000082','a8100000-0000-4000-8000-000000000
        'e8200000-0000-4000-8000-000000000082'
 from public.planned_workouts w
 where w.user_id='a8100000-0000-4000-8000-000000000081' and w.preferred_weekday=3;
-insert into public.exercise_performances(id,user_id,workout_session_id,planned_exercise_id,exercise_order)
+insert into public.exercise_performances(id,user_id,workout_session_id,planned_exercise_id,exercise_order,status)
 select 'f8200000-0000-4000-8000-000000000082','a8100000-0000-4000-8000-000000000081',
-       'd8200000-0000-4000-8000-000000000082',e.id,1
+       'd8200000-0000-4000-8000-000000000082',e.id,1,'performed'
 from public.planned_exercises e
 join public.planned_workouts w on w.id=e.planned_workout_id
 where w.user_id='a8100000-0000-4000-8000-000000000081' and w.preferred_weekday=3
