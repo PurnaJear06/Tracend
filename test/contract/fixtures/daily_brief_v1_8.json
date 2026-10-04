@@ -1,0 +1,256 @@
+{
+  "schema_version": "1.8",
+  "local_date": "2026-10-04",
+  "today_workout": {
+    "id": "550e8400-e29b-41d4-a716-446655440002",
+    "name": "Push Day",
+    "objective": "Build upper body pressing strength and hypertrophy",
+    "weekday": 1,
+    "estimated_minutes": 60,
+    "warm_up": "Band pull-aparts, shoulder dislocates, light dumbbell presses",
+    "cooldown_cardio": "10 min incline walk",
+    "exercises": [
+      {
+        "order": 1,
+        "name": "Barbell Bench Press",
+        "set_count": 4,
+        "rep_min": 6,
+        "rep_max": 8,
+        "target_rpe": 8,
+        "rest_seconds": 120,
+        "notes": "Focus on controlled eccentric",
+        "target_load_kg": 82.5
+      }
+    ]
+  },
+  "next_meal": {
+    "id": "meal-lunch-002",
+    "order": 2,
+    "status": "due",
+    "meal_type": "lunch",
+    "name": "Grilled Chicken Bowl",
+    "target_calories": 600,
+    "target_protein_g": 50,
+    "target_carbohydrate_g": 60,
+    "target_fat_g": 20
+  },
+  "check_in": {
+    "sleep_quality": 3,
+    "energy": 4,
+    "soreness": 2,
+    "hunger": 3,
+    "mood": 4,
+    "pain_severity": 0,
+    "available_to_train": true,
+    "local_date": "2026-09-07"
+  },
+  "health": {
+    "local_date": "2026-09-07",
+    "last_synced_at": "2026-09-07T14:31:18+00:00",
+    "present_types": [
+      "hrv_sdnn",
+      "sleep"
+    ],
+    "completeness": "partial"
+  },
+  "nutrition": {
+    "daily_calories_remaining": 1800,
+    "daily_protein_remaining": 120,
+    "meals_today": 1,
+    "meals_plan": 4
+  },
+  "computed": {
+    "scores": {
+      "acwr": null,
+      "recovery": 41,
+      "daily_strain": 0.0,
+      "recovery_mode": "morning",
+      "sleep_quality": null,
+      "sleep_breakdown": null,
+      "recovery_settled": false,
+      "training_monotony": null,
+      "recovery_breakdown": {
+        "hrv_z": -0.931,
+        "rhr_z": -0.071,
+        "sleep_z": 0.0,
+        "weights": {
+          "check_in": 25,
+          "hrv_sdnn": 40,
+          "resp_rate": 0,
+          "resting_hr": 20,
+          "prev_strain": 5,
+          "sleep_minutes": 10
+        },
+        "check_in_z": 0.75,
+        "resp_rate_z": 0.0,
+        "prev_strain_z": 0.0,
+        "missing_components": [
+          "sleep_minutes",
+          "resp_rate",
+          "prev_strain"
+        ]
+      },
+      "sleep_debt_minutes": null,
+      "macro_adherence_pct": null,
+      "weight_trend_r2_28d": null,
+      "sleep_breakdown_missing": null,
+      "weight_trend_7d_kg_per_day": null,
+      "weight_trend_28d_kg_per_day": null
+    },
+    "baselines": {
+      "weight_kg": {
+        "ewma": 0.0,
+        "n_obs": 0,
+        "spread": 0.5,
+        "age_days": null,
+        "confidence": "cold_start",
+        "last_obs_date": null
+      },
+      "hrv_sdnn_ms": {
+        "ewma": 3.72,
+        "n_obs": 7,
+        "spread": 0.06,
+        "age_days": 0,
+        "confidence": "medium",
+        "last_obs_date": "2026-10-04"
+      },
+      "hrv_sleep_ms": {
+        "ewma": 0.0,
+        "n_obs": 0,
+        "spread": 0.05,
+        "age_days": null,
+        "confidence": "cold_start",
+        "last_obs_date": null
+      },
+      "resp_rate_bpm": {
+        "ewma": 0.0,
+        "n_obs": 0,
+        "spread": 0.5,
+        "age_days": null,
+        "confidence": "cold_start",
+        "last_obs_date": null
+      },
+      "sleep_minutes": {
+        "ewma": 0.0,
+        "n_obs": 0,
+        "spread": 15.0,
+        "age_days": null,
+        "confidence": "cold_start",
+        "last_obs_date": null
+      },
+      "hrv_morning_ms": {
+        "ewma": 3.72,
+        "n_obs": 7,
+        "spread": 0.06,
+        "age_days": 0,
+        "confidence": "medium",
+        "last_obs_date": "2026-10-04"
+      },
+      "resting_hr_bpm": {
+        "ewma": 60.86,
+        "n_obs": 6,
+        "spread": 2.0,
+        "age_days": 1,
+        "confidence": "low",
+        "last_obs_date": "2026-10-03"
+      }
+    },
+    "today_raw": {
+      "hrv_ms": 39.0,
+      "daily_strain": 0,
+      "hrv_scored_ms": 39.0,
+      "resp_rate_bpm": null,
+      "sleep_minutes": null,
+      "resting_hr_bpm": null,
+      "resting_hr_scored_bpm": 61.0
+    },
+    "data_confidence": "medium"
+  },
+  "latest_decision": {
+    "id": "dec-002",
+    "final_decision": "proceed_as_planned",
+    "reason": "HRV above baseline. Sleep short but quality score normal. Load ratio not yet computable (needs 14 strain days).",
+    "confidence": 0.85,
+    "created_at": "2026-09-07T06:00:00+05:30",
+    "evidence": [
+      "APPROVED_PLAN_ACTIVE",
+      "HEALTH_CONTEXT_AVAILABLE",
+      "RECOVERY_WITHIN_BASELINE"
+    ],
+    "missing_data": [
+      "sleep_stages",
+      "respiratory_rate"
+    ]
+  },
+  "recovery_previous": 38,
+  "plan": {
+    "title": "Strength foundation",
+    "version_number": 1,
+    "block_weeks": 20,
+    "week_number": 3
+  },
+  "week": [
+    {
+      "local_date": "2026-09-07",
+      "recovery": 55,
+      "strain": 3.5,
+      "trained": true,
+      "planned": true
+    },
+    {
+      "local_date": "2026-09-08",
+      "recovery": null,
+      "strain": null,
+      "trained": false,
+      "planned": true
+    },
+    {
+      "local_date": "2026-09-09",
+      "recovery": null,
+      "strain": null,
+      "trained": false,
+      "planned": false
+    },
+    {
+      "local_date": "2026-09-10",
+      "recovery": null,
+      "strain": null,
+      "trained": false,
+      "planned": false
+    },
+    {
+      "local_date": "2026-09-11",
+      "recovery": null,
+      "strain": null,
+      "trained": false,
+      "planned": true
+    },
+    {
+      "local_date": "2026-09-12",
+      "recovery": null,
+      "strain": null,
+      "trained": false,
+      "planned": true
+    },
+    {
+      "local_date": "2026-09-13",
+      "recovery": null,
+      "strain": null,
+      "trained": false,
+      "planned": false
+    }
+  ],
+  "today_session": {
+    "state": "in_progress",
+    "exercises": [
+      {
+        "order": 1,
+        "completed_sets": 2
+      },
+      {
+        "order": 2,
+        "completed_sets": 0
+      }
+    ]
+  }
+}

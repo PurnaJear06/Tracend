@@ -34,6 +34,10 @@ class ReadinessMeasure {
 /// the athlete's own baselines. A difference of one usual spread or more
 /// counts as above or below usual. The HRV baseline is stored as ln(ms), so
 /// its usual value is `exp(ewma)`.
+///
+/// HRV and resting heart rate are the readings recovery scored (scoring
+/// 2.3): last night's HRV against your nights, or this morning's against
+/// your mornings, and yesterday's resting heart rate.
 List<ReadinessMeasure> readinessMeasures(ComputedMetrics? computed) {
   final raw = computed?.todayRaw;
   final baselines = computed?.baselines;
@@ -60,9 +64,14 @@ List<ReadinessMeasure> readinessMeasures(ComputedMetrics? computed) {
   }
 
   final sleep = raw?.sleepMinutes;
-  final hrv = raw?.hrvMs;
-  final rhr = raw?.restingHrBpm;
-  final hrvBaseline = baselines?.hrv;
+  final mode = computed?.scores.recoveryMode;
+  final hrv = mode == null ? raw?.hrvMs : raw?.hrvScoredMs;
+  final rhr = mode == null ? raw?.restingHrBpm : raw?.restingHrScoredBpm;
+  final hrvBaseline = switch (mode) {
+    'night' => baselines?.hrvSleep,
+    'morning' => baselines?.hrvMorning,
+    _ => baselines?.hrv,
+  };
   return [
     ReadinessMeasure(
       label: 'Sleep',
@@ -81,7 +90,11 @@ List<ReadinessMeasure> readinessMeasures(ComputedMetrics? computed) {
             ),
     ),
     ReadinessMeasure(
-      label: 'Heart rate variability',
+      label: switch (mode) {
+        'night' => 'Overnight HRV',
+        'morning' => 'Morning HRV',
+        _ => 'Heart rate variability',
+      },
       icon: CupertinoIcons.waveform_path,
       value: hrv == null || hrv <= 0 ? null : '${hrv.round()} ms',
       note: hrv == null || hrv <= 0
@@ -98,7 +111,9 @@ List<ReadinessMeasure> readinessMeasures(ComputedMetrics? computed) {
             ),
     ),
     ReadinessMeasure(
-      label: 'Resting heart rate',
+      label: mode == null
+          ? 'Resting heart rate'
+          : 'Resting heart rate, yesterday',
       icon: CupertinoIcons.heart,
       value: rhr == null || rhr <= 0 ? null : '${rhr.round()} bpm',
       note: rhr == null || rhr <= 0

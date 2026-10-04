@@ -170,8 +170,8 @@ select ok(
 select is(
   (select count(*) from public.user_baselines
    where user_id='aaaaaaaa-1111-4111-8111-111111111111')::integer,
-  5,
-  '15: all five metrics have baselines (inc. resp_rate_bpm)'
+  7,
+  '15: all seven metrics have baselines (inc. resp_rate_bpm, night and morning HRV)'
 );
 
 -- 16: n_observations increments correctly after recompute
@@ -681,8 +681,8 @@ set local "request.jwt.claim.sub"='aaaaaaaa-1111-4111-8111-111111111111';
 select is(
   (select count(*) from public.user_baselines
    where user_id='aaaaaaaa-1111-4111-8111-111111111111')::integer,
-  5,
-  '61: authenticated user can read own baselines (all five present)'
+  7,
+  '61: authenticated user can read own baselines (all seven present)'
 );
 
 select ok(

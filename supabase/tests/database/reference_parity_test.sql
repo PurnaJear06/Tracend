@@ -51,9 +51,9 @@
 -- an exact compare uses the -9999 sentinel (outside every field's range).
 
 begin;
--- Rows: 15 unconditional per fixture × 13 fixtures, + 4 sub-score rows
--- for each of the 4 all-subs fixtures, + 12 anchors = 223.
-select plan(223);
+-- Rows: 17 unconditional per fixture × 15 fixtures, + 4 sub-score rows
+-- for each of the 4 all-subs fixtures, + 16 anchors = 287.
+select plan(287);
 
 -- The auth_user_create_account trigger auto-inserts the user_accounts
 -- row on the auth.users insert — no explicit account insert needed (and
@@ -121,7 +121,7 @@ begin
     insert into public.daily_health_summaries(
       user_id, local_date, timezone, present_types, source_refs,
       source_checksum, completeness, observed_through, last_synced_at,
-      hrv_value_ms, hrv_metric, hrv_unit,
+      hrv_value_ms, hrv_metric, hrv_unit, hrv_sleep_ms, hrv_morning_ms,
       resting_heart_rate_bpm, respiratory_rate_bpm,
       sleep_minutes, sleep_awake_minutes, sleep_deep_minutes, sleep_rem_minutes
     )
@@ -132,6 +132,8 @@ begin
       nullif(d->>'hrv_ms','')::numeric,
       case when d ? 'hrv_ms' then 'sdnn' end,
       case when d ? 'hrv_ms' then 'ms' end,
+      nullif(d->>'hrv_sleep_ms','')::numeric,
+      nullif(d->>'hrv_morning_ms','')::numeric,
       nullif(d->>'resting_hr_bpm','')::numeric,
       nullif(d->>'resp_rate_bpm','')::numeric,
       nullif(d->>'sleep_minutes','')::int,
@@ -154,6 +156,26 @@ begin
   end loop;
 end $$;
 
+-- The target day's morning check-in, when the fixture has one (hunger is
+-- not a recovery answer, so it is seeded at the middle).
+create function pg_temp.seed_check_in(
+  v_user uuid, v_fix jsonb
+) returns void language plpgsql as $$
+begin
+  if v_fix->'check_in' is null then return; end if;
+  insert into public.daily_check_ins(
+    user_id, local_date, timezone, revision, idempotency_key,
+    sleep_quality, energy, soreness, hunger, mood, available_to_train)
+  values (v_user, (v_fix->>'target_date')::date, 'Asia/Kolkata', 1,
+    gen_random_uuid(),
+    (v_fix->'check_in'->>'sleep_quality')::smallint,
+    (v_fix->'check_in'->>'energy')::smallint,
+    (v_fix->'check_in'->>'soreness')::smallint,
+    3,
+    (v_fix->'check_in'->>'mood')::smallint,
+    true);
+end $$;
+
 -- Seed one fixture (user id per fixture; fixtures run in their own
 -- transaction, so ids never collide across files).
 create function pg_temp.seed_fixture(v_fix jsonb, v_user uuid)
@@ -163,6 +185,7 @@ begin
   perform pg_temp.seed_health(v_user, v_fix);
   perform pg_temp.seed_sessions(v_user, v_fix);
   perform pg_temp.seed_weights(v_user, v_fix);
+  perform pg_temp.seed_check_in(v_user, v_fix);
 end $$;
 
 -- ─────────────────────────────────────────────────────────────────────────
@@ -263,6 +286,19 @@ begin
     format('%s: prev_strain_z (sql %s vs expected %s)', v_name,
       coalesce(v_b->>'prev_strain_z', 'absent'),
       coalesce(v_e->>'prev_strain_z', 'absent')));
+
+  -- Recovery mode and the check-in z (2026-10-04).
+  return next is(
+    v_s->>'recovery_mode',
+    v_e->>'recovery_mode',
+    v_name || ': recovery_mode');
+
+  return next ok(
+    abs(coalesce((v_b->>'check_in_z')::numeric, -9999)
+      - coalesce((v_e->>'check_in_z')::numeric, -9999)) <= 0.005,
+    format('%s: check_in_z (sql %s vs expected %s)', v_name,
+      coalesce(v_b->>'check_in_z', 'absent'),
+      coalesce(v_e->>'check_in_z', 'absent')));
 
   -- Sub-score exposure: the SQL emits the breakdown object (and the
   -- individual subs inside it) only when ALL FOUR subs are computable.
@@ -517,6 +553,50 @@ select is(
   )->'scores'->>'training_monotony'),
   '2.27',
   'anchor 11: monotony pinned 2.27 — zero-filled acute week has variance');
+
+-- Fixture 14: morning_estimate_day (no night with the watch).
+\set fixture_json `cat /fixtures/morning_estimate_day.json`
+select pg_temp.seed_fixture(:'fixture_json'::jsonb,
+  '5a5a5a5a-000e-4001-800e-00000000000e');
+select * from pg_temp.assert_expected(
+  :'fixture_json'::jsonb, '5a5a5a5a-000e-4001-800e-00000000000e',
+  'morning estimate');
+
+select is(
+  (public.compute_daily_metrics(
+    '5a5a5a5a-000e-4001-800e-00000000000e', '2026-10-04'::date, 'Asia/Kolkata'
+  )->'scores'->'recovery_breakdown'->>'check_in_z')::numeric,
+  -0.5,
+  'anchor 13: check-in z -0.5 (sleep 2, energy 3, soreness 4 -> 2, mood 3: mean 2.5 - 3)');
+
+select is(
+  (select n_observations from public.user_baselines
+   where user_id = '5a5a5a5a-000e-4001-800e-00000000000e'
+     and metric_name = 'hrv_morning_ms'),
+  11,
+  'anchor 14: the morning baseline folds the 11 mornings only');
+
+select is(
+  (select n_observations from public.user_baselines
+   where user_id = '5a5a5a5a-000e-4001-800e-00000000000e'
+     and metric_name = 'hrv_sleep_ms'),
+  3,
+  'anchor 15: the three nights fold into their own baseline, never the mornings');
+
+-- Fixture 15: night_scores_from_night (a poor check-in that must not count).
+\set fixture_json `cat /fixtures/night_scores_from_night.json`
+select pg_temp.seed_fixture(:'fixture_json'::jsonb,
+  '5a5a5a5a-000f-4001-800f-00000000000f');
+select * from pg_temp.assert_expected(
+  :'fixture_json'::jsonb, '5a5a5a5a-000f-4001-800f-00000000000f',
+  'night from night');
+
+select is(
+  (select n_observations from public.user_baselines
+   where user_id = '5a5a5a5a-000f-4001-800f-00000000000f'
+     and metric_name = 'hrv_sleep_ms'),
+  4,
+  'anchor 16: tonight is scored against the four nights, not the mornings');
 
 -- Cross-fixture invariant: recovery in range wherever non-null.
 select ok(

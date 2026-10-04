@@ -267,6 +267,12 @@ values
    array['sleep'], '[]'::jsonb, repeat('b6',32),
    'partial', now(), now(), 300, 20, 40, 30, 210);
 
+-- The HRV rows above model nights with the watch on: recovery scores
+-- night HRV against night HRV (2026-10-04 recovery modes).
+update public.daily_health_summaries
+set hrv_sleep_ms = hrv_value_ms
+where hrv_value_ms is not null;
+
 set local role service_role;
 
 -- ============================================================================
@@ -299,8 +305,8 @@ select is(
     public.compute_daily_metrics(
       'eeeeeeee-1111-4111-8111-111111111111', current_date, 'UTC'
     )->'scores'->'recovery_breakdown'->'missing_components'),
-  5,
-  '4: zero data -> all five components reported missing'
+  6,
+  '4: zero data -> all five components and the morning check-in reported missing'
 );
 
 select ok(
@@ -491,8 +497,8 @@ select is(
     public.compute_daily_metrics(
       'cccccccc-6666-4666-8666-666666666666', current_date, 'Asia/Kolkata'
     )->'scores'->'recovery_breakdown'->'missing_components'),
-  4,
-  '27: strain-only day reports exactly four missing components (prev_strain usable)'
+  5,
+  '27: strain-only day reports the four health components and the check-in missing (prev_strain usable)'
 );
 
 select ok(

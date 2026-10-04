@@ -22,12 +22,25 @@ import 'dart:math' as math;
 /// Logistic steepness for the recovery score (ALGORITHMS.md §1).
 const double kLogisticK = 1.6;
 
-/// Composite weights (ALGORITHMS.md §1). Sum = 1.0.
+/// Night-mode composite weights (ALGORITHMS.md §1). Sum = 1.0.
 const double kWeightHrv = 0.55;
 const double kWeightRhr = 0.20;
 const double kWeightSleep = 0.15;
 const double kWeightResp = 0.05;
 const double kWeightPrevStrain = 0.05;
+
+/// Morning-mode composite weights (ALGORITHMS.md §1, Recovery Modes): no
+/// night was recorded, so the morning check-in stands in and breathing
+/// rate (recorded only asleep) has no weight. Sum = 1.0.
+const double kMorningWeightHrv = 0.40;
+const double kMorningWeightCheckIn = 0.25;
+const double kMorningWeightRhr = 0.20;
+const double kMorningWeightSleep = 0.10;
+const double kMorningWeightPrevStrain = 0.05;
+
+/// The check-in z is the mean distance of its four answers from "OK" (3),
+/// kept within ±2.
+const double kCheckInZLimit = 2;
 
 /// Sleep sub-score weights (ALGORITHMS.md §3).
 const double kSleepWeightDuration = 0.50;
@@ -115,6 +128,8 @@ class HealthDay {
   HealthDay({
     required this.date,
     this.hrvMs,
+    this.hrvSleepMs,
+    this.hrvMorningMs,
     this.restingHrBpm,
     this.sleepMinutes,
     this.sleepAwakeMinutes,
@@ -129,6 +144,8 @@ class HealthDay {
     return HealthDay(
       date: _localDay(json['date'] as String),
       hrvMs: asDouble('hrv_ms'),
+      hrvSleepMs: asDouble('hrv_sleep_ms'),
+      hrvMorningMs: asDouble('hrv_morning_ms'),
       restingHrBpm: asDouble('resting_hr_bpm'),
       sleepMinutes: asDouble('sleep_minutes'),
       sleepAwakeMinutes: asDouble('sleep_awake_minutes'),
@@ -140,7 +157,15 @@ class HealthDay {
   }
 
   final DateTime date;
+
+  /// The day's HRV over every reading (display and coach context only).
   final double? hrvMs;
+
+  /// HRV taken asleep in the night ending this day (night mode).
+  final double? hrvSleepMs;
+
+  /// HRV taken 04:00–12:00 awake (morning mode).
+  final double? hrvMorningMs;
   final double? restingHrBpm;
   final double? sleepMinutes;
   final double? sleepAwakeMinutes;
@@ -181,6 +206,7 @@ class ReferenceScenario {
     required this.healthDays,
     this.sessions = const [],
     this.weightDays = const [],
+    this.checkIn,
   });
 
   factory ReferenceScenario.fromJson(Map<String, dynamic> json) {
@@ -200,6 +226,9 @@ class ReferenceScenario {
       healthDays: health,
       sessions: sessions,
       weightDays: weights,
+      checkIn: json['check_in'] == null
+          ? null
+          : CheckIn.fromJson(json['check_in'] as Map<String, dynamic>),
     );
   }
 
@@ -214,6 +243,37 @@ class ReferenceScenario {
 
   /// Manual body measurements (the weight band source), any order.
   final List<WeightEntry> weightDays;
+
+  /// The target day's morning check-in, when there is one.
+  final CheckIn? checkIn;
+}
+
+/// The morning check-in's four recovery answers, each 1–5. Soreness runs
+/// the other way: 5 is very sore.
+class CheckIn {
+  CheckIn({
+    required this.sleepQuality,
+    required this.energy,
+    required this.soreness,
+    required this.mood,
+  });
+
+  factory CheckIn.fromJson(Map<String, dynamic> json) => CheckIn(
+    sleepQuality: json['sleep_quality'] as int,
+    energy: json['energy'] as int,
+    soreness: json['soreness'] as int,
+    mood: json['mood'] as int,
+  );
+
+  final int sleepQuality;
+  final int energy;
+  final int soreness;
+  final int mood;
+
+  /// Mean distance from "OK" (3), soreness reversed, within ±2.
+  double get z => ((sleepQuality + energy + (6 - soreness) + mood) / 4 - 3)
+      .clamp(-kCheckInZLimit, kCheckInZLimit)
+      .toDouble();
 }
 
 /// One manual weight observation (body_measurements).
@@ -393,6 +453,8 @@ class RecoveryDay {
     required this.zSleep,
     required this.zResp,
     required this.zPrevStrain,
+    required this.zCheckIn,
+    required this.mode,
     required this.sleepQuality,
     required this.subDurationScore,
     required this.subEfficiencyScore,
@@ -415,6 +477,10 @@ class RecoveryDay {
   final double zSleep;
   final double zResp;
   final double zPrevStrain;
+  final double zCheckIn;
+
+  /// 'night' when the watch was worn asleep, else 'morning'.
+  final String mode;
 
   /// The 0–100 composite (null when no sub-score was computable).
   final double? sleepQuality;
@@ -499,10 +565,14 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
     ];
   }
 
-  final hrvFold = foldObservations(
-    (d) => d.hrvMs,
-    kBandHrvMs,
-  ).map((o) => (date: o.date, value: math.log(o.value))).toList();
+  List<({DateTime date, double value})> lnFold(double? Function(HealthDay) p) =>
+      foldObservations(
+        p,
+        kBandHrvMs,
+      ).map((o) => (date: o.date, value: math.log(o.value))).toList();
+  final hrvFold = lnFold((d) => d.hrvMs);
+  final hrvSleepFold = lnFold((d) => d.hrvSleepMs);
+  final hrvMorningFold = lnFold((d) => d.hrvMorningMs);
   final rhrFold = foldObservations((d) => d.restingHrBpm, kBandRhrBpm);
   final sleepFold = foldObservations((d) => d.sleepMinutes, kBandSleepMinutes);
   final respFold = foldObservations((d) => d.respRateBpm, kBandRespBpm);
@@ -543,6 +613,14 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
     observations: hrvFold,
     floorSpread: kFloorSpreadHrvLn,
   );
+  baselines['hrv_sleep_ms'] = foldBaseline(
+    observations: hrvSleepFold,
+    floorSpread: kFloorSpreadHrvLn,
+  );
+  baselines['hrv_morning_ms'] = foldBaseline(
+    observations: hrvMorningFold,
+    floorSpread: kFloorSpreadHrvLn,
+  );
   baselines['resting_hr_bpm'] = foldBaseline(
     observations: rhrFold,
     floorSpread: kFloorSpreadRhrBpm,
@@ -569,24 +647,37 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
   var zResp = 0.0;
   var zStrain = 0.0;
 
-  // HRV (ln domain today).
-  final hrvToday = today?.hrvMs;
-  final hrvBaseline = baselines['hrv_sdnn_ms']!;
+  var zCheckIn = 0.0;
+
+  // Mode: a night with the watch on (HRV taken asleep, or breathing rate,
+  // recorded only asleep), else a morning estimate.
+  final night = today?.hrvSleepMs != null || today?.respRateBpm != null;
+  final mode = night ? 'night' : 'morning';
+  final wHrv = night ? kWeightHrv : kMorningWeightHrv;
+  final wRhr = night ? kWeightRhr : kMorningWeightRhr;
+  final wSleep = night ? kWeightSleep : kMorningWeightSleep;
+  final wResp = night ? kWeightResp : 0.0;
+  final wStrain = night ? kWeightPrevStrain : kMorningWeightPrevStrain;
+
+  // HRV (ln domain), each kind against its own baseline.
+  final hrvToday = night ? today?.hrvSleepMs : today?.hrvMorningMs;
+  final hrvBaseline = baselines[night ? 'hrv_sleep_ms' : 'hrv_morning_ms']!;
   if (kBandHrvMs.contains(hrvToday) && hrvBaseline.usable) {
     zHrv = (math.log(hrvToday!) - hrvBaseline.center) / hrvBaseline.spread;
-    composite += kWeightHrv * zHrv;
-    weightTotal += kWeightHrv;
+    composite += wHrv * zHrv;
+    weightTotal += wHrv;
   } else {
     missing.add('hrv_sdnn');
   }
 
-  // RHR (negated).
-  final rhrToday = today?.restingHrBpm;
+  // RHR (negated): yesterday's final value.
+  final rhrYesterday =
+      byDate[target.subtract(const Duration(days: 1))]?.restingHrBpm;
   final rhrBaseline = baselines['resting_hr_bpm']!;
-  if (kBandRhrBpm.contains(rhrToday) && rhrBaseline.usable) {
-    zRhr = -(rhrToday! - rhrBaseline.center) / rhrBaseline.spread;
-    composite += kWeightRhr * zRhr;
-    weightTotal += kWeightRhr;
+  if (kBandRhrBpm.contains(rhrYesterday) && rhrBaseline.usable) {
+    zRhr = -(rhrYesterday! - rhrBaseline.center) / rhrBaseline.spread;
+    composite += wRhr * zRhr;
+    weightTotal += wRhr;
   } else {
     missing.add('resting_hr');
   }
@@ -596,8 +687,8 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
   final sleepBaseline = baselines['sleep_minutes']!;
   if (kBandSleepMinutes.contains(sleepToday) && sleepBaseline.usable) {
     zSleep = (sleepToday! - sleepBaseline.center) / sleepBaseline.spread;
-    composite += kWeightSleep * zSleep;
-    weightTotal += kWeightSleep;
+    composite += wSleep * zSleep;
+    weightTotal += wSleep;
   } else {
     missing.add('sleep_minutes');
   }
@@ -607,8 +698,8 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
   final respBaseline = baselines['resp_rate_bpm']!;
   if (kBandRespBpm.contains(respToday) && respBaseline.usable) {
     zResp = -(respToday! - respBaseline.center) / respBaseline.spread;
-    composite += kWeightResp * zResp;
-    weightTotal += kWeightResp;
+    composite += wResp * zResp;
+    weightTotal += wResp;
   } else {
     missing.add('resp_rate');
   }
@@ -656,13 +747,25 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
     final stddev28 = avg28 == null ? null : _stddevSamp(dayStrains);
     if (stddev28 != null && stddev28 > 0 && avg28 != null) {
       zStrain = (prev7Avg - avg28) / stddev28;
-      composite -= kWeightPrevStrain * zStrain;
-      weightTotal += kWeightPrevStrain;
+      composite -= wStrain * zStrain;
+      weightTotal += wStrain;
     } else {
       missing.add('prev_strain');
     }
   } else {
     missing.add('prev_strain');
+  }
+
+  // Morning check-in: a morning estimate only.
+  if (!night) {
+    final checkIn = scenario.checkIn;
+    if (checkIn != null) {
+      zCheckIn = checkIn.z;
+      composite += kMorningWeightCheckIn * zCheckIn;
+      weightTotal += kMorningWeightCheckIn;
+    } else {
+      missing.add('check_in');
+    }
   }
 
   double? recovery;
@@ -793,7 +896,9 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
   }
 
   // ── Data confidence ──
-  final healthMissing = missing.where((m) => m != 'prev_strain').length;
+  final healthMissing = missing
+      .where((m) => m != 'prev_strain' && m != 'check_in')
+      .length;
   final hasTodaySummary = scenario.healthDays.any(
     (d) => DateTime(
       d.date.year,
@@ -802,7 +907,10 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
     ).isAtSameMomentAs(target),
   );
   var confidence = 'high';
-  if (!hasTodaySummary || healthMissing >= 3) {
+  if (!night) {
+    // A morning estimate: medium with a morning HRV reading, else low.
+    confidence = missing.contains('hrv_sdnn') ? 'low' : 'medium';
+  } else if (!hasTodaySummary || healthMissing >= 3) {
     confidence = 'low';
   } else if (healthMissing > 0) {
     confidence = 'medium';
@@ -817,6 +925,8 @@ ReferenceResult computeReferenceDay(ReferenceScenario scenario) {
       zSleep: zSleep,
       zResp: zResp,
       zPrevStrain: zStrain,
+      zCheckIn: zCheckIn,
+      mode: mode,
       sleepQuality: sleepQuality,
       subDurationScore: sleepQuality == null ? null : durationScore,
       subEfficiencyScore: sleepQuality == null ? null : efficiency,

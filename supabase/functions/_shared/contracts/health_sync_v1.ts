@@ -28,6 +28,8 @@ export type HealthSummaryV1 = {
   hrv_value_ms?: number;
   hrv_metric?: "sdnn";
   hrv_unit?: "ms";
+  hrv_sleep_ms?: number;
+  hrv_morning_ms?: number;
   respiratory_rate_bpm?: number;
   present_types: HealthType[];
   source_refs: Array<{
@@ -102,6 +104,8 @@ const summaryKeys = new Set([
   "hrv_value_ms",
   "hrv_metric",
   "hrv_unit",
+  "hrv_sleep_ms",
+  "hrv_morning_ms",
   "respiratory_rate_bpm",
   "present_types",
   "source_refs",
@@ -235,6 +239,13 @@ export function parseHealthSyncRequest(value: unknown): HealthSyncRequestV1 {
       !validOptionalNumber(summary, "weight_kg", 20, 500) ||
       !validOptionalNumber(summary, "resting_heart_rate_bpm", 20, 250) ||
       !validOptionalNumber(summary, "hrv_value_ms", 0, 1000) ||
+      !validOptionalNumber(summary, "hrv_sleep_ms", 0, 1000) ||
+      !validOptionalNumber(summary, "hrv_morning_ms", 0, 1000) ||
+      // The night and morning averages are subsets of the day's HRV
+      // readings, so they never come without it.
+      ((summary.hrv_sleep_ms !== undefined ||
+        summary.hrv_morning_ms !== undefined) &&
+        summary.hrv_value_ms === undefined) ||
       !validOptionalNumber(summary, "respiratory_rate_bpm", 0, 100) ||
       (new Set([
         summary.hrv_value_ms !== undefined,

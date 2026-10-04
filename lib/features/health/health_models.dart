@@ -181,6 +181,8 @@ class DailyHealthSummary {
     this.weightKg,
     this.restingHeartRateBpm,
     this.hrvSdnnMs,
+    this.hrvSleepMs,
+    this.hrvMorningMs,
     this.respRateBpm,
   });
 
@@ -202,6 +204,16 @@ class DailyHealthSummary {
   final double? weightKg;
   final double? restingHeartRateBpm;
   final double? hrvSdnnMs;
+
+  /// The average of the HRV readings taken during the night that ends on
+  /// this day (a sleep session of three hours or more). Recovery's night
+  /// mode scores this, never readings taken while awake (ALGORITHMS.md §1).
+  final double? hrvSleepMs;
+
+  /// The average of the HRV readings taken between 04:00 and 12:00 outside
+  /// any sleep, for mornings after a night without the watch. Recovery's
+  /// morning mode scores this against a baseline of mornings only.
+  final double? hrvMorningMs;
   final double? respRateBpm;
 
   String get dateKey =>
@@ -229,6 +241,8 @@ class DailyHealthSummary {
       'hrv_value_ms': _rounded(hrvSdnnMs!),
       'hrv_metric': 'sdnn',
       'hrv_unit': 'ms',
+      if (hrvSleepMs != null) 'hrv_sleep_ms': _rounded(hrvSleepMs!),
+      if (hrvMorningMs != null) 'hrv_morning_ms': _rounded(hrvMorningMs!),
     },
     if (respRateBpm != null) 'respiratory_rate_bpm': _rounded(respRateBpm!),
     'present_types': presentMetrics.map((metric) => metric.code).toList()
@@ -335,6 +349,7 @@ List<DailyHealthSummary> normalizeHealthSamples({
           .where((sample) => sample.metric == HealthMetric.sleep)
           .toList()
         ..sort((left, right) => left.start.compareTo(right.start));
+  final sessions = <_SleepSession>[];
   if (sleepSamples.isNotEmpty) {
     var sessionStart = 0;
     var sessionEnd = sleepSamples.first.end;
@@ -347,6 +362,13 @@ List<DailyHealthSummary> normalizeHealthSamples({
         continue;
       }
       final day = _localDay(sessionEnd);
+      sessions.add(
+        _SleepSession(
+          start: sleepSamples[sessionStart].start,
+          end: sessionEnd,
+          day: day,
+        ),
+      );
       for (var j = sessionStart; j < i; j++) {
         addSample(day, sleepSamples[j]);
       }
@@ -355,10 +377,39 @@ List<DailyHealthSummary> normalizeHealthSamples({
     }
   }
 
-  // Every other metric keeps its start-day bucket.
+  _SleepSession? sessionAt(DateTime moment) {
+    for (final session in sessions) {
+      if (!moment.isBefore(session.start) && !moment.isAfter(session.end)) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  // HRV and breathing readings taken asleep belong to the night they were
+  // taken in, so a 23:30 reading counts towards the morning it ends on, the
+  // same as the sleep around it. HRV is also split by when it was taken:
+  // during a night (three hours or more of sleep), or between 04:00 and
+  // 12:00 awake. Recovery compares each only with its own kind.
+  final sleepHrv = <DateTime, List<double>>{};
+  final morningHrv = <DateTime, List<double>>{};
   for (final sample in unique.values) {
-    if (sample.metric != HealthMetric.sleep) {
-      addSample(_localDay(sample.start), sample);
+    if (sample.metric == HealthMetric.sleep) continue;
+    final asleep =
+        sample.metric == HealthMetric.hrvSdnn ||
+            sample.metric == HealthMetric.respRate
+        ? sessionAt(sample.start)
+        : null;
+    final day = asleep?.day ?? _localDay(sample.start);
+    addSample(day, sample);
+    if (sample.metric != HealthMetric.hrvSdnn) continue;
+    if (asleep != null) {
+      if (asleep.isNight) sleepHrv.putIfAbsent(day, () => []).add(sample.value);
+    } else {
+      final hour = sample.start.toLocal().hour;
+      if (hour >= 4 && hour < 12) {
+        morningHrv.putIfAbsent(day, () => []).add(sample.value);
+      }
     }
   }
 
@@ -417,6 +468,8 @@ List<DailyHealthSummary> normalizeHealthSamples({
         weightKg: _latest(points, HealthMetric.weight),
         restingHeartRateBpm: _average(points, HealthMetric.restingHeartRate),
         hrvSdnnMs: _average(points, HealthMetric.hrvSdnn),
+        hrvSleepMs: _mean(sleepHrv[entry.key]),
+        hrvMorningMs: _mean(morningHrv[entry.key]),
         respRateBpm: _average(points, HealthMetric.respRate),
       ),
     );
@@ -495,6 +548,27 @@ double? _average(List<RawHealthSample> samples, HealthMetric metric) {
       ? null
       : values.fold<double>(0, (total, sample) => total + sample.value) /
             values.length;
+}
+
+double? _mean(List<double>? values) => values == null || values.isEmpty
+    ? null
+    : values.reduce((total, value) => total + value) / values.length;
+
+/// One sleep session: samples less than an hour apart, attributed to the
+/// local day it ends on.
+class _SleepSession {
+  const _SleepSession({
+    required this.start,
+    required this.end,
+    required this.day,
+  });
+
+  final DateTime start;
+  final DateTime end;
+  final DateTime day;
+
+  /// Three hours or more: a night, not a nap.
+  bool get isNight => end.difference(start) >= const Duration(hours: 3);
 }
 
 String _hash(String value) => sha256.convert(utf8.encode(value)).toString();

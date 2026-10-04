@@ -72,9 +72,14 @@ ComputedMetrics _computed({
   double? acwr,
   double? dailyStrain,
   String dataConfidence = 'medium',
+  String? recoveryMode,
+  bool? recoverySettled,
+  TodayRaw? todayRaw,
 }) => ComputedMetrics(
   scores: ComputedScores(
     recovery: recovery,
+    recoveryMode: recoveryMode,
+    recoverySettled: recoverySettled,
     recoveryBreakdown: breakdown,
     sleepQuality: sleepQuality,
     macroAdherencePct: macroAdherencePct,
@@ -83,6 +88,7 @@ ComputedMetrics _computed({
   ),
   baselines: const ComputedBaselines(),
   dataConfidence: dataConfidence,
+  todayRaw: todayRaw,
 );
 
 void main() {
@@ -129,6 +135,163 @@ void main() {
       expect(find.byType(RecoveryTickRing), findsOneWidget);
       // The hero is a verdict, not an action surface.
       expect(find.byType(FilledButton), findsNothing);
+    });
+
+    testWidgets('a night score says it came from last night', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          TodayHero(
+            brief: _brief(
+              computed: _computed(
+                recovery: 72,
+                breakdown: steady,
+                dataConfidence: 'high',
+                recoveryMode: 'night',
+                recoverySettled: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('From last night · High confidence'), findsOneWidget);
+      expect(find.text('Breathing'), findsOneWidget);
+      expect(find.textContaining('Check-in'), findsNothing);
+    });
+
+    testWidgets('a morning estimate names itself, the check-in and noon', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          TodayHero(
+            brief: _brief(
+              computed: _computed(
+                recovery: 41,
+                breakdown: const RecoveryBreakdown(
+                  hrvZ: -0.9,
+                  rhrZ: -0.1,
+                  sleepZ: 0,
+                  respRateZ: 0,
+                  prevStrainZ: 0,
+                  checkInZ: -1.25,
+                  missingComponents: [
+                    'sleep_minutes',
+                    'resp_rate',
+                    'prev_strain',
+                  ],
+                  weights: {
+                    'hrv_sdnn': 40,
+                    'check_in': 25,
+                    'resting_hr': 20,
+                    'sleep_minutes': 10,
+                    'resp_rate': 0,
+                    'prev_strain': 5,
+                  },
+                ),
+                recoveryMode: 'morning',
+                recoverySettled: false,
+                todayRaw: const TodayRaw(
+                  hrvMs: 52,
+                  hrvScoredMs: 39,
+                  restingHrBpm: 70,
+                  restingHrScoredBpm: 61,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Morning estimate, no night recorded · Medium confidence · '
+          'Settles at 12:00',
+        ),
+        findsOneWidget,
+      );
+      // The check-in counts and pulls the score down; breathing is not part
+      // of a morning estimate.
+      expect(find.text('Check-in low'), findsOneWidget);
+      expect(find.textContaining('Breathing'), findsNothing);
+      // The side stats show the readings the score used, not the day's.
+      expect(
+        find.bySemanticsLabel(
+          RegExp('^Heart rate variability 39 milliseconds'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(RegExp('^Resting heart rate 61 beats')),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel(RegExp('variability 52')), findsNothing);
+      expect(find.byType(RecoveryTickRing), findsOneWidget);
+      final ring = tester.widget<RecoveryTickRing>(
+        find.byType(RecoveryTickRing),
+      );
+      // HRV, check-in and resting HR count: 40 + 25 + 20.
+      expect(ring.segments.map((segment) => segment.weight), [40, 25, 20]);
+    });
+
+    testWidgets('a low score with nothing far off says so, not "normal"', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          TodayHero(
+            brief: _brief(
+              computed: _computed(
+                recovery: 41,
+                breakdown: const RecoveryBreakdown(
+                  hrvZ: -0.9,
+                  rhrZ: -0.1,
+                  sleepZ: 0,
+                  respRateZ: 0,
+                  prevStrainZ: 0,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Under-recovered'), findsOneWidget);
+      expect(
+        find.text(
+          'Nothing is far off your normal, but more sits a little below it '
+          'than above.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a settled morning estimate drops the noon note', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          TodayHero(
+            brief: _brief(
+              computed: _computed(
+                recovery: 55,
+                breakdown: steady,
+                recoveryMode: 'morning',
+                recoverySettled: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Morning estimate, no night recorded · Medium confidence'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('maps each score to its band and verdict', (tester) async {

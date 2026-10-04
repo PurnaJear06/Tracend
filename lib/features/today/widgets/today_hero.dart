@@ -85,6 +85,8 @@ class _HeroDriver {
   final bool pullsDown;
   final String downWord;
 
+  String get key => driver.key;
+
   String get chipLabel {
     if (!driver.usable) return '$short no data';
     return pullsDown ? '$short $downWord' : short;
@@ -95,14 +97,15 @@ class _TodayHeroState extends State<TodayHero> {
   int? _focus;
   bool _open = false;
 
-  static const _shortNames = [
-    'HRV',
-    'Resting HR',
-    'Sleep',
-    'Breathing',
-    'Training',
-  ];
-  static const _downWords = ['low', 'high', 'short', 'high', 'heavy'];
+  /// Chip name and the word for "pulling the score down", per component.
+  static const _chipWords = {
+    'hrv_sdnn': ('HRV', 'low'),
+    'check_in': ('Check-in', 'low'),
+    'resting_hr': ('Resting HR', 'high'),
+    'sleep_minutes': ('Sleep', 'short'),
+    'resp_rate': ('Breathing', 'high'),
+    'prev_strain': ('Training', 'heavy'),
+  };
 
   List<_HeroDriver> _drivers(ComputedMetrics computed) {
     final breakdown = computed.scores.recoveryBreakdown;
@@ -111,19 +114,22 @@ class _TodayHeroState extends State<TodayHero> {
       breakdown: breakdown,
       todayRaw: computed.todayRaw,
       sleepQualityProven: computed.scores.sleepQuality != null,
+      mode: computed.scores.recoveryMode,
     );
     return [
-      for (var i = 0; i < drivers.length; i++)
+      for (final driver in drivers)
         _HeroDriver(
-          short: _shortNames[i],
-          driver: drivers[i],
+          short: _chipWords[driver.key]!.$1,
+          driver: driver,
           // Recent training counts against recovery (ALGORITHMS.md §1), so
           // more of it pulls the score down; the others pull it down when
           // they read a spread or more on the wrong side of normal.
           pullsDown:
-              drivers[i].usable &&
-              (i == 4 ? drivers[i].zScore >= 1 : drivers[i].zScore <= -1),
-          downWord: _downWords[i],
+              driver.usable &&
+              (driver.key == 'prev_strain'
+                  ? driver.zScore >= 1
+                  : driver.zScore <= -1),
+          downWord: _chipWords[driver.key]!.$2,
         ),
     ];
   }
@@ -234,8 +240,13 @@ class _TodayHeroState extends State<TodayHero> {
               spacing: 6,
               runSpacing: 6,
               children: [
+                // Training shows only when it weighs on the score; the
+                // check-in only once it counts (the Check in chip offers it).
                 for (var i = 0; i < drivers.length; i++)
-                  if (i < 4 || drivers[i].pullsDown)
+                  if ((drivers[i].key != 'prev_strain' ||
+                          drivers[i].pullsDown) &&
+                      (drivers[i].key != 'check_in' ||
+                          drivers[i].driver.usable))
                     _DriverChip(
                       label: drivers[i].chipLabel,
                       color: !drivers[i].driver.usable
@@ -261,11 +272,7 @@ class _TodayHeroState extends State<TodayHero> {
           ),
           const SizedBox(height: TracendSpacing.xs),
           Text(
-            score == null
-                ? 'Not enough data yet for a recovery score. Sync Apple '
-                      'Health and check in to build your baseline.'
-                : 'Recovery score · '
-                      '${confidenceLabel(computed.dataConfidence)}',
+            scoreSource(score, computed),
             style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
           ),
         ],
@@ -349,6 +356,24 @@ class _TodayHeroState extends State<TodayHero> {
   }
 }
 
+/// Where today's score comes from and how sure it is: "From last night ·
+/// High confidence", or "Morning estimate, no night recorded · Medium
+/// confidence · Settles at 12:00" until noon.
+String scoreSource(int? score, ComputedMetrics computed) {
+  if (score == null) {
+    return 'Not enough data yet for a recovery score. Sync Apple Health and '
+        'check in to build your baseline.';
+  }
+  final confidence = confidenceLabel(computed.dataConfidence);
+  return switch (computed.scores.recoveryMode) {
+    'night' => 'From last night · $confidence',
+    'morning' =>
+      'Morning estimate, no night recorded · $confidence'
+          '${computed.scores.recoverySettled == false ? ' · Settles at 12:00' : ''}',
+    _ => 'Recovery score · $confidence',
+  };
+}
+
 /// "High confidence", "Medium confidence", "Low confidence", or "Building
 /// baseline" for a cold start, from the brief's `data_confidence`.
 String confidenceLabel(String? confidence) => switch (confidence) {
@@ -403,7 +428,15 @@ String _reason(
     for (final d in drivers)
       if (d.pullsDown) '${d.driver.label} ${d.driver.comparison}',
   ];
-  if (down.isEmpty) return 'Everything that counted today is normal for you.';
+  if (down.isEmpty) {
+    // No reading is a full swing off, but under 50 more of them sit a
+    // little below normal than above it; saying "normal" would contradict
+    // an under-recovered verdict.
+    return score < 50
+        ? 'Nothing is far off your normal, but more sits a little below it '
+              'than above.'
+        : 'Everything that counted today is normal for you.';
+  }
   // "Sleep less than usual, resting heart rate higher than usual."
   final named = [
     down.first,
@@ -470,12 +503,16 @@ class _SideStats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final raw = computed.todayRaw;
-    final hrv = raw?.hrvMs;
-    final rhr = raw?.restingHrBpm;
+    // The values the score used (scoring 2.3): the night's or the morning's
+    // HRV and yesterday's resting heart rate.
+    final scored = computed.scores.recoveryMode != null;
+    final hrv = scored ? raw?.hrvScoredMs : raw?.hrvMs;
+    final rhr = scored ? raw?.restingHrScoredBpm : raw?.restingHrBpm;
     if (hrv == null && rhr == null) return const SizedBox.shrink();
-    String? word(int index) {
-      if (index >= drivers.length || !drivers[index].driver.usable) return null;
-      final comparison = drivers[index].driver.comparison!;
+    String? word(String key) {
+      final match = drivers.where((d) => d.key == key && d.driver.usable);
+      if (match.isEmpty) return null;
+      final comparison = match.first.driver.comparison!;
       return comparison == 'normal for you' ? 'normal' : comparison;
     }
 
@@ -489,7 +526,9 @@ class _SideStats extends StatelessWidget {
               child: _Stat(
                 value: '${hrv.round()}',
                 unit: 'ms',
-                label: word(0) == null ? 'HRV' : 'HRV · ${word(0)}',
+                label: word('hrv_sdnn') == null
+                    ? 'HRV'
+                    : 'HRV · ${word('hrv_sdnn')}',
                 spoken: 'Heart rate variability ${hrv.round()} milliseconds',
               ),
             )
@@ -500,9 +539,9 @@ class _SideStats extends StatelessWidget {
               child: _Stat(
                 value: '${rhr.round()}',
                 unit: 'bpm',
-                label: word(1) == null
+                label: word('resting_hr') == null
                     ? 'Resting HR'
-                    : 'Resting HR · ${word(1)}',
+                    : 'Resting HR · ${word('resting_hr')}',
                 spoken: 'Resting heart rate ${rhr.round()} beats a minute',
                 end: true,
               ),

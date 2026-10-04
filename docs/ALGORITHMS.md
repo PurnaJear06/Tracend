@@ -49,6 +49,48 @@ reported missing instead of joining at z = 0. Unusable components are excluded,
 (0 when unusable) so shipped clients keep parsing the shape they know. When no component is
 usable, `recovery_score` is NULL — never a fabricated number.
 
+### Recovery Modes (2026-10-04, scoring 2.3, brief 1.8)
+
+The score used to average every HRV reading of the day, including the ones the watch takes while
+the athlete is awake, and was recomputed on every Today load. A day without the watch overnight
+therefore scored scattered daytime readings against a baseline that mixed nights and days, and
+the number moved from morning to evening (owner report: "around 10, and it changes"). Recovery
+now has two modes, chosen per day:
+
+| Mode      | When                                                          | HRV scored                                        | Composite weights |
+| --------- | ------------------------------------------------------------- | ------------------------------------------------- | ----------------- |
+| `night`   | The watch was worn asleep: HRV taken asleep, or breathing rate | Mean HRV taken during the night ending today, against a baseline of nights (`hrv_sleep_ms`) | HRV 0.55, RHR 0.20, sleep 0.15, resp 0.05, prev strain 0.05 |
+| `morning` | No night recorded                                              | Mean HRV taken 04:00–12:00 awake, against a baseline of mornings (`hrv_morning_ms`) | HRV 0.40, check-in 0.25, RHR 0.20, sleep 0.10, prev strain 0.05 |
+
+- **Night.** A sleep session (samples less than an hour apart) of three hours or more is a night;
+  an HRV reading taken inside it belongs to the morning the night ends on, so a 23:30 reading
+  counts for the next day like the sleep around it (breathing rate too). Shorter sessions are naps:
+  their readings are neither night nor morning.
+- **Morning.** HRV readings taken between 04:00 and 12:00 local time outside any sleep. Readings
+  after 12:00 never enter, so the estimate stops moving at noon (`recovery_settled`). The morning
+  check-in stands in for the missing night: sleep quality, energy, soreness (reversed) and mood,
+  each 1–5 with 3 as "OK" (McLean et al. 2010); `check_in_z = clamp(mean − 3, −2, 2)`. Breathing
+  rate has no weight (the watch records it only asleep). A night score ignores the check-in.
+- **Separate baselines.** Readings taken asleep and awake are different measurements (posture,
+  activity and caffeine move awake readings), so each folds into its own baseline with the same
+  ln domain, band, floor and EWMA as HRV (§2) and is only ever compared with its own kind. The
+  day's all-reading HRV (`hrv_sdnn_ms`) is kept for display and the coach context and is no longer
+  scored.
+- **Resting HR** is yesterday's final value in both modes. Apple measures it awake and revises it
+  through the day, so today's value would move the score after every sync.
+- **Confidence.** A night keeps the rule below. A morning estimate is at most `medium`: `medium`
+  with a morning HRV reading, `low` without one. `check_in` joins `missing_components` when a
+  morning estimate has no check-in.
+- **Published.** `recovery_mode`, `recovery_settled`, `recovery_breakdown.check_in_z`,
+  `recovery_breakdown.weights` (percent per component for the day's mode) and
+  `today_raw.hrv_scored_ms` / `today_raw.resting_hr_scored_bpm` (the values the score used).
+
+This is the industry pattern. WHOOP, Oura, Bevel by default and Apple's own Readiness give no
+score without a night. Athlytic, the best-documented Apple Watch fallback, scores a morning HRV
+reading against readings taken the same way and keeps the score from following daytime samples.
+A one-minute Mindfulness (Breathe) session in the morning writes an HRV reading into the morning
+window.
+
 ### Raw Values Alongside z (2026-09-07, brief 1.4)
 
 Z-scores answer "how does today compare to *your* baseline" but hide what was actually
@@ -81,7 +123,8 @@ When z_composite = +3: ~99 (ceiling). When z_composite = -3: ~1 (floor).
 
 ### Data Confidence
 
-`data_confidence` counts the four HealthKit components (HRV, resting HR, sleep,
+A morning estimate (Recovery Modes, above) is `medium` with a morning HRV reading and `low`
+without one. For a night, `data_confidence` counts the four HealthKit components (HRV, resting HR, sleep,
 respiratory rate): none missing → `high`, one or two → `medium`, three or more or no
 stored summary for the day → `low`. Prior strain is reported missing but does not lower
 confidence by itself (rest days are normal).

@@ -116,6 +116,18 @@ nothing is guessed.
   logged sets and yesterday's recovery; pgTAP `today_week_brief_test.sql`. The coach's
   adjustments stay plain sentences, so Today shows them as text and never alters the prescribed
   blocks; applying them to sets belongs to the plan-change loop (review G1).
+- Owner, 2026-10-04 (build from #85): the ring read about 10 and changed from morning to evening.
+  The owner rarely wears the watch to sleep. Cause: recovery averaged every HRV reading of the
+  day, including the ones taken awake, recomputed on every Today load against a baseline mixing
+  nights and days; resting HR was today's, which Apple revises through the day. Breathing showed
+  no data because the watch records it only asleep (honest). Fix (`20261004160000`, scoring 2.3,
+  brief 1.8): recovery modes (ALGORITHMS.md §1). A night with the watch scores that night's HRV
+  against nights. Without one, a morning estimate scores the HRV taken 04:00–12:00 against
+  mornings, plus the check-in, settling at noon (at most medium confidence). Resting HR is
+  yesterday's final value. The app sends `hrv_sleep_ms` and `hrv_morning_ms` and re-reads 30 days
+  once (versioned backfill flag) so both baselines start full. The Train readiness sheet uses the
+  same readings. pgTAP `recovery_modes_test.sql`; the parity fixtures gained
+  `morning_estimate_day` and `night_scores_from_night`. Migration first, then install.
 - Meal slot status on the athlete's clock (SQL only, `20261004100000`): `get_my_nutrition_schedule`
   judged `due`, `upcoming` and `skipped` with the database clock (UTC), so for the owner in IST a
   13:30 lunch was due at 19:00 local, and from local midnight to 05:30 every slot of today read

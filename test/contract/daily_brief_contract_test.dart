@@ -575,4 +575,56 @@ void main() {
       expect(brief.recoveryPrevious, isNull);
     });
   });
+
+  group('Daily Brief contract — get_my_daily_brief v1.8 (recovery modes)', () {
+    const fixture = 'daily_brief_v1_8.json';
+
+    test('a morning estimate parses with its mode, weights and check-in', () {
+      final json = _loadFixtureJson(fixture);
+      expect(json['schema_version'], '1.8');
+      final computed = DailyBrief.fromJson(json).computed!;
+      expect(computed.scores.recoveryMode, 'morning');
+      expect(computed.scores.recoverySettled, isFalse);
+      final breakdown = computed.scores.recoveryBreakdown!;
+      expect(breakdown.checkInZ, 0.75);
+      expect(breakdown.weights, {
+        'hrv_sdnn': 40,
+        'check_in': 25,
+        'resting_hr': 20,
+        'sleep_minutes': 10,
+        'resp_rate': 0,
+        'prev_strain': 5,
+      });
+      expect(computed.todayRaw?.hrvScoredMs, 39);
+      expect(computed.todayRaw?.restingHrScoredBpm, 61);
+      expect(computed.baselines.hrvMorning?.nObs, 7);
+      expect(computed.dataConfidence, 'medium');
+    });
+
+    test('every v1.7 field survives (additive bump only)', () {
+      final v17 = _loadFixtureJson('daily_brief_v1_7.json');
+      final v18 = _loadFixtureJson(fixture);
+      for (final key in v17.keys.where((key) => key != 'schema_version')) {
+        expect(v18.containsKey(key), isTrue, reason: key);
+      }
+      final scores17 =
+          (v17['computed'] as Map)['scores'] as Map<String, dynamic>;
+      final scores18 =
+          (v18['computed'] as Map)['scores'] as Map<String, dynamic>;
+      for (final key in scores17.keys) {
+        expect(scores18.containsKey(key), isTrue, reason: 'scores.$key');
+      }
+    });
+
+    test('a v1.7 brief parses with no mode and no weights', () {
+      final computed = DailyBrief.fromJson(
+        _loadFixtureJson('daily_brief_v1_7.json'),
+      ).computed!;
+      expect(computed.scores.recoveryMode, isNull);
+      expect(computed.scores.recoverySettled, isNull);
+      expect(computed.scores.recoveryBreakdown!.weights, isEmpty);
+      expect(computed.scores.recoveryBreakdown!.checkInZ, 0);
+      expect(computed.todayRaw?.hrvScoredMs, isNull);
+    });
+  });
 }

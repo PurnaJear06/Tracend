@@ -248,7 +248,7 @@ values
 
 -- 2e users. J: HRV 400ms today (out of band, above 250) with a valid
 -- in-band history -> rejected at compute, reported missing. K: RHR 200
--- today (band 30-120) -> same. L: six in-band history nights plus one
+-- yesterday, the value recovery scores (band 30-120) -> same. L: six in-band history nights plus one
 -- 400ms night in history -> fold counts 6, not 7. M: weight 340 kg in
 -- body_measurements history (band 30-300) -> fold ignores it.
 insert into public.daily_health_summaries(
@@ -300,10 +300,10 @@ values
    'partial', now(), now(), 55.0),
   ('a11ce000-000b-4001-8001-00000000000b', current_date-1, 'Asia/Kolkata',
    array['resting_heart_rate'], '[]'::jsonb, repeat('41',32),
-   'partial', now(), now(), 56.0),
+   'partial', now(), now(), 200.0),
   ('a11ce000-000b-4001-8001-00000000000b', current_date, 'Asia/Kolkata',
    array['resting_heart_rate'], '[]'::jsonb, repeat('42',32),
-   'partial', now(), now(), 200.0);
+   'partial', now(), now(), 56.0);
 
 insert into public.daily_health_summaries(
   user_id, local_date, timezone, present_types, source_refs, source_checksum,
@@ -339,6 +339,12 @@ values
   ('a11ce000-000d-4001-8001-00000000000d', current_date-5, 'manual', 80.5),
   ('a11ce000-000d-4001-8001-00000000000d', current_date-4, 'manual', 340.0),
   ('a11ce000-000d-4001-8001-00000000000d', current_date-3, 'manual', 80.2);
+
+-- The HRV rows above model nights with the watch on: recovery scores
+-- night HRV against night HRV (2026-10-04 recovery modes).
+update public.daily_health_summaries
+set hrv_sleep_ms = hrv_value_ms
+where hrv_value_ms is not null;
 
 set local role service_role;
 
@@ -504,7 +510,7 @@ select ok(
   public.compute_daily_metrics(
     'a11ce000-000b-4001-8001-00000000000b', current_date, 'Asia/Kolkata'
   )->'scores'->'recovery_breakdown'->'missing_components' ? 'resting_hr',
-  '20: out-of-band rhr today (200bpm) reported missing');
+  '20: out-of-band rhr yesterday (200bpm), the scored value, reported missing');
 
 select public.compute_daily_metrics(
   'a11ce000-000c-4001-8001-00000000000c', current_date, 'Asia/Kolkata');
@@ -533,8 +539,8 @@ select is(
   (select schema_version from public.daily_computed_metrics
    where user_id = 'a11ce000-0001-4001-8001-000000000001'
      and local_date = current_date),
-  '2.2',
-  '23: persisted schema_version is 2.2');
+  '2.3',
+  '23: persisted schema_version is 2.3');
 
 select is(
   (select distinct engine_version from public.metric_baseline_history

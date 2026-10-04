@@ -423,12 +423,16 @@ workout card, coach note, 7-day trend, drivers and sleep cards fold into these):
      yesterday" (left out when yesterday was not scored). Tapping the ring opens the drivers card
      in place.
    - **HRV and resting heart rate** under the ring, each against your normal ("HRV · higher than
-     usual"); a missing reading is left out.
-   - **Driver chips** (HRV, Resting HR, Sleep, Breathing, plus Training when it pulls down):
+     usual"): the HRV the score used (last night's, or this morning's) and yesterday's resting
+     heart rate; a missing reading is left out.
+   - **Driver chips** (HRV, Resting HR, Sleep, Breathing, plus Training when it pulls down; a
+     morning estimate shows Check-in once it counts and no Breathing):
      "Sleep short", "HRV low"; grey "… no data" when a driver did not count. A chip lights only
      its driver's ticks and opens the drivers card (`RecoveryReadoutCard`, with "How this is
      calculated").
-   - The confidence line and the sync row, and any sync issue, as before.
+   - The source and confidence line: "From last night · High confidence", or "Morning estimate,
+     no night recorded · Medium confidence · Settles at 12:00" until noon (recovery modes,
+     ALGORITHMS.md §1). Then the sync row, and any sync issue, as before.
 3. **Plan progress**: the plan's title and "Week 3 of 20" with a thin bar; past the block, "Week
    22 · block of 20 done".
 4. **Tiles**: Sleep (tall: duration, sleep debt or quality, a deep/REM share bar from Apple
@@ -496,7 +500,11 @@ number; a valid sleep reading whose baseline is still maturing shows the measure
 The z-scores sit behind **ⓘ How this is calculated** (authority-doc change 1, 2026-10-03): it
 explains the baseline comparison in plain words, lists each driver's weight and true z-score ("Not
 used today" for an excluded component), and ends "Calculated from your Apple Health data and logged
-workouts. No AI." The disclosure is a VoiceOver button with an expanded state. The confidence word
+workouts. No AI." Under the method it says which mode scored today: last night's HRV against
+your nights, or a morning estimate from the HRV taken 4:00–12:00 against your mornings plus the
+check-in, settling at noon. A morning estimate's rows read "Morning HRV", "Morning check-in"
+("feeling good", "feeling about OK", "feeling rough") and "61 bpm yesterday", with no breathing
+row. The disclosure is a VoiceOver button with an expanded state. The confidence word
 stays visible on the verdict card.
 
 **Evidence visualization.** The 7-day trend plots one metric (heart rate variability, then sleep,
