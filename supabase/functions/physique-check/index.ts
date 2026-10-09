@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.49.8";
+import { AiBudget } from "../_shared/ai_budget.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { createLogger, extractCorrelationId } from "../_shared/logger.ts";
 import {
@@ -13,6 +14,7 @@ function supabaseStore(
   userClient: SupabaseClient,
   serviceClient: SupabaseClient,
   userId: string,
+  budget: AiBudget,
 ): PhysiqueStore {
   const number = (value: unknown) => value === null || value === undefined ? null : Number(value);
   return {
@@ -22,12 +24,7 @@ function supabaseStore(
       const notice = data as { version?: unknown; granted?: unknown } | null;
       return notice?.granted === true && typeof notice.version === "string" ? notice.version : null;
     },
-    async budgetAvailable() {
-      const { error } = await serviceClient.rpc("assert_owner_ai_budget", {
-        target_user_id: userId,
-      });
-      return !error;
-    },
+    budgetAvailable: () => budget.reserve("progress_vision"),
     async profileNotes() {
       const { data, error } = await serviceClient.from("user_profiles")
         .select("limitations_note,nutrition_note").eq("user_id", userId).maybeSingle();
@@ -108,7 +105,11 @@ function supabaseStore(
         run_estimated_cost_usd: usage.estimatedCostUsd,
         run_latency_ms: usage.latencyMs,
       });
-      if (error) throw error;
+      if (error) {
+        // Unrecorded, the call stays counted by its open reservation.
+        budget.keep();
+        throw error;
+      }
     },
   };
 }
@@ -126,10 +127,12 @@ Deno.serve(async (request) => {
   }
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (!body || typeof body !== "object") return reply(422, { error: "invalid_physique_request" });
+  const serviceClient = auth.serviceClient;
+  const budget = new AiBudget((fn, args) => serviceClient.rpc(fn, args), auth.userId);
   try {
     return await handlePhysiqueCheck({
       userId: auth.userId,
-      store: supabaseStore(auth.userClient, auth.serviceClient, auth.userId),
+      store: supabaseStore(auth.userClient, auth.serviceClient, auth.userId, budget),
       resolution: resolvePhysiqueVision(),
       allowedUsers: physiqueAllowedUsers(),
       observer: {
@@ -151,5 +154,7 @@ Deno.serve(async (request) => {
     });
     captureException(error, { functionName: "physique-check", correlationId });
     return reply(503, { error: "physique_check_failed" });
+  } finally {
+    await budget.release();
   }
 });

@@ -10,7 +10,9 @@ asked to fix in five PRs, merged in order; details stay in the owner's private r
 preference caller check, restore-drill log output) and PR 2 (invite-only sign-ups, recent sign-in
 from `amr`, full Storage purge on deletion, no export during deletion, Coach conversation delete
 fixed) and PR 3 (time zone writes, consent integrity, health sync bounds, upload quotas and an
-orphan sweep, row and size caps) are in review. Workstream state:
+orphan sweep, row and size caps) and PR 4a (AI budget reservations, a USD 10 global monthly stop,
+failed-call cost, list-price defaults) are in review. PR 4b (meal-photo AI notice) and PR 5
+(Keychain, CI pinning) follow. Workstream state:
 [`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
 
 **Current priority (2026-10-03):** the app-wide graphite + lime redesign. The owner chose palette

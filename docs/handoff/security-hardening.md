@@ -1,6 +1,6 @@
 # Security hardening batch (2026-10-09)
 
-**Status:** PR 1 (#88), PR 2 (#89) and PR 3 in review, each stacked on the one before; merge in order. A source review of `d26cf2c` raised leads that need fixing; the
+**Status:** PR 1 (#88), PR 2 (#89), PR 3 (#90) and PR 4a in review, each stacked on the one before; merge in order. PR 4 was split: 4a (AI spending, server only) and 4b (meal-photo notice, needs the new build). A source review of `d26cf2c` raised leads that need fixing; the
 details stay in the owner's private report, not in this public repository. The owner approved a
 five-PR plan on 2026-10-09 and chose: an invite list for new sign-ups, a one-time meal-photo AI
 notice enforced by the server, and session tokens in the iOS Keychain.
@@ -13,7 +13,8 @@ that waits behind another must be re-stamped before it merges.
 | 1 | `security/storage-keys-and-authz` | media key grammar and ownership, service-role key guard, Coach preference caller check, restore-drill log output | no change |
 | 2 | `security/account-boundary` | sign-up invites, recent sign-in for export and deletion, full Storage purge on deletion, Coach thread delete | no change |
 | 3 | `security/abuse-limits` | time zone writes, consent records, health sync bounds, upload quotas and orphan sweep, content caps | no change |
-| 4 | `security/ai-spend-and-consent` | AI budget reservations, failed-call cost, provider price defaults, meal-photo notice, AI notice v5 | needs the new build |
+| 4a | `security/ai-spend` | AI budget reservations, a global stop, failed-call cost, list-price defaults | no change |
+| 4b | `security/meal-photo-consent` | meal-photo AI notice, AI notice v5 | needs the new build |
 | 5 | `security/keychain-and-ci` | Keychain session storage, pinned actions, workflow permissions | needs the new build |
 
 ## PR 1: media keys and caller checks
@@ -132,3 +133,38 @@ raise that limit before you merge.
 
 **After the deploy (no reinstall):** open the app and let Health sync run, then pull to refresh;
 change nothing else. If a sync fails, the health-sync logs show the reason.
+
+## PR 4a: AI spending
+
+- Migration `20261009150000_ai_budget_reservations.sql`:
+  - `ai_budget_reservations` with `reserve_ai_budget` / `settle_ai_budget` (service role). One
+    advisory lock serialises reservations, so the per-account and global totals are exact.
+  - `private.ai_budget_limits` (global monthly stop, USD 10 at launch) and
+    `private.ai_usage_totals` (recorded usage plus open places).
+  - `assert_owner_ai_budget` and `get_my_ai_budget_state` count open places too (the latter gains
+    `schema_version`).
+  - `persist_failed_coach_chat_run_v2` records a failed chat's tokens and cost.
+- Edge:
+  - `_shared/ai_budget.ts` (`AiBudget`: reserve, keep, release).
+  - meal-analyze is split into `handler.ts` (tested) and `index.ts`. Usage is recorded before the
+    candidates are stored and on an unusable answer.
+  - coach-chat, coach-decide, physique-check and onboarding-plan reserve before calling a model.
+    Onboarding releases after its background generation ends.
+  - The Groq and Gemini meal providers refuse values outside the table checks and report usage on
+    an unusable answer. Gemini refuses to run without prices. Coach providers fall back to list
+    prices instead of 0.
+
+**Before merging PR 4a:**
+1. `./scripts/supabase.sh secrets list --project-ref qsfzzsjenopqqqhvpyaw`: no Coach price secret
+   (`DEEPSEEK_*`, `GROQ_*`, `GEMINI_*_COST_PER_MILLION_USD`) may be set to `0`, or that provider
+   stops. Unset is fine.
+2. Pick the global monthly stop. It launches at USD 10; to change it after the deploy, run
+   `update private.ai_budget_limits set global_monthly_usd = <amount>, updated_at = now();`.
+
+**After the deploy (no reinstall):**
+1. Use the Coach, analyze a meal photo and run a physique check.
+2. Check that no reservation stayed open:
+   `select purpose, settled_at is not null as settled, created_at from public.ai_budget_reservations order by created_at desc limit 10;`
+   Settled rows are expected; an open one is a call that may have been billed with no usage
+   recorded.
+3. The AI usage screen in Account still shows this month's figures.
