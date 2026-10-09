@@ -66,6 +66,24 @@ export type HealthWorkoutReferenceV1 = {
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+
+// Mirrored in persist_health_sync_v2 (migration 20261009140000_abuse_limits.sql);
+// a test keeps the two in step.
+export const healthSyncLimits = {
+  sourceRefsPerSummary: 20000,
+  futureDays: 2,
+  workoutDateSlackDays: 1,
+} as const;
+
+function isCalendarDate(value: unknown): value is string {
+  return typeof value === "string" && datePattern.test(value) &&
+    !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) &&
+    new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+}
+
+function shiftDate(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
 const hashPattern = /^[0-9a-f]{64}$/;
 const requestKeys = new Set([
   "schema_version",
@@ -154,15 +172,16 @@ function isUnique(values: readonly unknown[]): boolean {
   return new Set(values).size === values.length;
 }
 
-export function parseHealthSyncRequest(value: unknown): HealthSyncRequestV1 {
+export function parseHealthSyncRequest(
+  value: unknown,
+  now: Date = new Date(),
+): HealthSyncRequestV1 {
   if (
     !isRecord(value) || value.schema_version !== "1.0" ||
     typeof value.idempotency_key !== "string" ||
     !uuidPattern.test(value.idempotency_key) ||
-    typeof value.requested_start !== "string" ||
-    !datePattern.test(value.requested_start) ||
-    typeof value.requested_end !== "string" ||
-    !datePattern.test(value.requested_end) ||
+    !isCalendarDate(value.requested_start) ||
+    !isCalendarDate(value.requested_end) ||
     !Array.isArray(value.requested_types) ||
     !Array.isArray(value.returned_types) ||
     !Array.isArray(value.summaries) || value.summaries.length > 32 ||
@@ -197,8 +216,7 @@ export function parseHealthSyncRequest(value: unknown): HealthSyncRequestV1 {
     const presentTypes = summary.present_types;
     const sourceRefs = summary.source_refs;
     if (
-      typeof summary.local_date !== "string" ||
-      !datePattern.test(summary.local_date) ||
+      !isCalendarDate(summary.local_date) ||
       typeof summary.timezone !== "string" ||
       summary.timezone.length < 1 || summary.timezone.length > 64 ||
       presentTypes.length === 0 ||
@@ -207,7 +225,7 @@ export function parseHealthSyncRequest(value: unknown): HealthSyncRequestV1 {
       !presentTypes.every((type) => returnedTypes.includes(type)) ||
       typeof summary.source_checksum !== "string" ||
       !hashPattern.test(summary.source_checksum) ||
-      sourceRefs.length === 0 ||
+      sourceRefs.length === 0 || sourceRefs.length > healthSyncLimits.sourceRefsPerSummary ||
       (summary.completeness !== "complete" &&
         summary.completeness !== "partial") ||
       typeof summary.observed_through !== "string" ||
@@ -306,7 +324,7 @@ export function parseHealthSyncRequest(value: unknown): HealthSyncRequestV1 {
       !isNumber(workout.duration_seconds, 1, 86400) ||
       !Number.isInteger(workout.duration_seconds) ||
       !validOptionalNumber(workout, "energy_kcal", 0, 30000) ||
-      typeof workout.local_date !== "string" || !datePattern.test(workout.local_date)
+      !isCalendarDate(workout.local_date)
     ) throw new Error("invalid_health_workout");
     return workout as HealthWorkoutReferenceV1;
   });
@@ -315,9 +333,14 @@ export function parseHealthSyncRequest(value: unknown): HealthSyncRequestV1 {
   const end = Date.parse(`${requestedEnd}T00:00:00Z`);
   if (
     end < start || end - start > 31 * 86_400_000 ||
+    requestedEnd > shiftDate(now.toISOString().slice(0, 10), healthSyncLimits.futureDays) ||
     summaries.some((summary) =>
       summary.local_date < requestedStart ||
       summary.local_date > requestedEnd
+    ) ||
+    workouts.some((workout) =>
+      workout.local_date < shiftDate(requestedStart, -healthSyncLimits.workoutDateSlackDays) ||
+      workout.local_date > shiftDate(requestedEnd, healthSyncLimits.workoutDateSlackDays)
     )
   ) {
     throw new Error("invalid_health_sync_window");

@@ -229,6 +229,15 @@ AI consent is per purpose (2026-10):
 - Enforce ownership again in transactional RPC and privileged Edge Functions.
 - Use generic not-found/forbidden behavior that does not reveal another user's resource existence.
 - Rate-limit authentication, Edge Functions, media operations, AI jobs, export, and deletion.
+  Database caps (SQLSTATE 54000, `private.enforce_user_row_limit`): 100 consent records a day, 200
+  goals, 50 Coach conversations a day and 1,000 in all, 10 progress photo sets a day, and 120 health
+  syncs an hour. Uploads (restrictive policy `user_media_upload_quota`): 100 meal photos a day and
+  3,000 kept; 60 progress photos a day and 2,000 kept. Onboarding drafts are capped at 128 KB and
+  goal details at 16 KB. The meal-media-retention worker removes Storage objects that have no
+  database row after a day (exports after an hour).
+- Clients write only the columns they need: consent records take `user_id`, `consent_type`,
+  `notice_version`, `action` and `source` (never `created_at`), and the account time zone changes
+  only through `set_my_timezone`.
 - Require recent authentication for export, account deletion, or sensitive session changes.
   "Recent" is read from the JWT `amr` claim (`private.has_recent_sign_in`): a password, OTP or TOTP
   sign-in within 10 minutes. `iat` is not used, because a token refresh resets it while `amr`

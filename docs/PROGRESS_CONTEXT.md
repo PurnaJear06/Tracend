@@ -9,7 +9,8 @@ asked to fix in five PRs, merged in order; details stay in the owner's private r
 (media key grammar and ownership, a key guard on every service-role Storage call, the Coach
 preference caller check, restore-drill log output) and PR 2 (invite-only sign-ups, recent sign-in
 from `amr`, full Storage purge on deletion, no export during deletion, Coach conversation delete
-fixed) are in review. Workstream state:
+fixed) and PR 3 (time zone writes, consent integrity, health sync bounds, upload quotas and an
+orphan sweep, row and size caps) are in review. Workstream state:
 [`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
 
 **Current priority (2026-10-03):** the app-wide graphite + lime redesign. The owner chose palette

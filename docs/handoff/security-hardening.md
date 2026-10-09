@@ -1,6 +1,6 @@
 # Security hardening batch (2026-10-09)
 
-**Status:** PR 1 (#88) and PR 2 in review; PR 2 is stacked on PR 1, so merge #88 first. A source review of `d26cf2c` raised leads that need fixing; the
+**Status:** PR 1 (#88), PR 2 (#89) and PR 3 in review, each stacked on the one before; merge in order. A source review of `d26cf2c` raised leads that need fixing; the
 details stay in the owner's private report, not in this public repository. The owner approved a
 five-PR plan on 2026-10-09 and chose: an invite list for new sign-ups, a one-time meal-photo AI
 notice enforced by the server, and session tokens in the iOS Keychain.
@@ -86,3 +86,49 @@ confirm a Coach preference, and request a privacy export.
 3. Delete a Coach conversation.
 4. Invite someone with
    `insert into private.signup_invites(email, note) values (lower('<email>'), 'beta');`.
+
+## PR 3: abuse limits
+
+- Migration `20261009140000_abuse_limits.sql`:
+  - **Time zones:** clients lose the direct column grants (`set_my_timezone` stays). Stored names
+    Postgres doesn't know become `UTC`, and `private.safe_timezone` keeps one bad value from
+    stopping the weekly-review scheduler.
+  - **Consent records:** a column-level insert grant (no client `created_at`), a recency index, and
+    100 a day.
+  - **Row caps:** 200 goals, 50 Coach conversations a day and 1,000 in all, 10 photo sets a day
+    (`private.enforce_user_row_limit`, SQLSTATE 54000).
+  - **JSON size:** onboarding drafts up to 128 KB, goal details up to 16 KB (`NOT VALID`).
+  - **Health sync:** a replay skips the workouts. The window may end at most 2 days ahead, a
+    summary holds up to 20,000 source references, workouts fall within the window ±1 day, and
+    there are 120 syncs an hour. Reconciliation covers only the workouts in the payload (the
+    7-day refresh resends recent ones).
+  - **Uploads:** `user_media_upload_quota` allows 100 meal photos a day (3,000 kept) and 60
+    progress photos a day (2,000 kept).
+  - **Orphans:** `list_orphan_storage_objects` lists objects with no row. The retention worker
+    removes them, never sends an unsafe name, and reports `orphan_sweep` counts.
+- `health_sync_v1.ts` mirrors the limits (`healthSyncLimits`), with a test that compares them to
+  the migration.
+
+**Before merging PR 3**, check the limits against your real data (read-only):
+
+```sql
+select max(jsonb_array_length(source_refs)) from public.daily_health_summaries;
+select max(octet_length(payload::text)) from public.onboarding_drafts;
+select max(octet_length(details::text)) from public.user_goals;
+select user_id, count(*) from public.user_goals group by 1 order by 2 desc limit 3;
+select user_id, count(*) from public.coach_threads group by 1 order by 2 desc limit 3;
+select user_id, date_trunc('day', created_at) d, count(*) from public.consent_records
+  group by 1, 2 order by 3 desc limit 3;
+select user_id, date_trunc('hour', created_at) h, count(*) from public.health_sync_runs
+  group by 1, 2 order by 3 desc limit 3;
+select bucket_id, owner_id, count(*) from storage.objects group by 1, 2 order by 3 desc limit 5;
+select count(*) from public.user_accounts a
+  where not exists (select 1 from pg_timezone_names z where z.name = a.timezone);
+select jobname, schedule, active from cron.job;
+```
+
+Each limit should be at least 4× the largest value. Send me the maxima if any comes close, and I'll
+raise that limit before you merge.
+
+**After the deploy (no reinstall):** open the app and let Health sync run, then pull to refresh;
+change nothing else. If a sync fails, the health-sync logs show the reason.

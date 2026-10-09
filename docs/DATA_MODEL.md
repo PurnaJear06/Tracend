@@ -85,7 +85,9 @@ every account that existed on 2026-10-09 was seeded as claimed.
 One application-owned row keyed by `id = auth.users.id`, containing locale, timezone, unit system,
 account status, onboarding state, and timestamps. The app writes `timezone` (the device's IANA
 zone) through `set_my_timezone`, which accepts only names Postgres knows; before 2026-10 it stayed
-at the default `UTC`. Email remains in Supabase Auth unless a documented
+at the default `UTC`. Since 2026-10-09 clients cannot write the column directly, stored names
+Postgres doesn't know were reset to `UTC`, and the weekly-review scheduler reads it through
+`private.safe_timezone`. Email remains in Supabase Auth unless a documented
 product need requires a minimized application copy.
 
 ### `consent_records`

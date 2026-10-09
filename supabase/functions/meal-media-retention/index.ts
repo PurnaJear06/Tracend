@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.8";
-import { cleanExpiredMealMedia } from "../_shared/meal_media_retention.ts";
+import { cleanExpiredMealMedia, sweepOrphanObjects } from "../_shared/meal_media_retention.ts";
 import { cleanExpiredExports } from "../_shared/export_retention.ts";
 import { captureException } from "../_shared/sentry.ts";
 
@@ -74,8 +74,32 @@ Deno.serve(async (request) => {
         if (error) throw new Error("export_completion_failed");
       },
     });
+    const orphans = await sweepOrphanObjects({
+      list: async (batchSize) => {
+        const { data, error } = await serviceClient.rpc("list_orphan_storage_objects", {
+          batch_size: batchSize,
+        });
+        if (error) throw new Error("orphan_listing_failed");
+        return data ?? [];
+      },
+      remove: async (bucket, name) => {
+        const { error } = await serviceClient.storage.from(bucket).remove([name]);
+        return error === null;
+      },
+    });
+    if (orphans.unsafe > 0) {
+      captureException(new Error(`orphan_unsafe_keys_${orphans.unsafe}`), {
+        functionName: "meal-media-retention",
+        failureCode: "unsafe_storage_key",
+      });
+    }
     await serviceClient.rpc("cleanup_deletion_receipts");
-    return response(200, { schema_version: "1.0", ...result, export_retention: exports });
+    return response(200, {
+      schema_version: "1.0",
+      ...result,
+      export_retention: exports,
+      orphan_sweep: orphans,
+    });
   } catch {
     return response(500, { error: "retention_failed" });
   }
