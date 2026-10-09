@@ -142,6 +142,15 @@ AI consent is per purpose (2026-10):
 - Strip unnecessary EXIF, location, and device metadata before long-term storage or provider
   transfer.
 - Use opaque object identifiers; never expose storage keys as authorization.
+- A media row records only the exact key the app uploaded: `<uid>/meal/<request id>.<ext>` (bound
+  to the meal's idempotency key) or `<uid>/progress/<set id>/<pose>.<ext>`, and the RPC that
+  records it requires an uploaded object the caller owns (`private.is_owned_media_key`). Stored keys
+  stay inside their owner's folder with no `.`/`..` segment, `//`, `\`, `%` or control character
+  (`media_objects_object_key_safe`).
+- Service-role code ignores Storage RLS, so every key it reads from the database passes
+  `_shared/storage_keys.ts` (a safe key in the user's own folder) before any download or removal.
+  A key that fails is never sent to Storage: meal analysis answers `meal_not_found`, the export
+  lists it under `skipped_media`, and deletion and retention leave it and report a count to Sentry.
 
 ### Access
 
@@ -244,6 +253,8 @@ AI consent is per purpose (2026-10):
 - Cross-table foreign-key ownership is validated in constraints or transactional functions.
 - Storage paths and policies are user/purpose bound.
 - Edge Functions validate the JWT and requested resource even when using secret/service-role access.
+- An RPC granted to `authenticated` that takes a target user id refuses any id but the caller's
+  unless the caller is the service role (`persist_coach_preference`).
 - Queue messages carry opaque resource IDs and workers reauthorize ownership and consent at
   execution.
 - Weekly-review messages contain only schema version and an opaque job ID. The worker rechecks

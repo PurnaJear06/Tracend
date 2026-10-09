@@ -176,7 +176,9 @@ disclosed eligibility restrictions. Each entry records source, confirmation, and
 
 Confirmed training, food, schedule, communication, and notification preferences. Each preference has
 category, typed value, provenance, confirmation timestamp, and optional expiry. Model-inferred
-preferences cannot become confirmed automatically.
+preferences cannot become confirmed automatically. The app confirms a preference through
+`persist_coach_preference`, which refuses any athlete but the caller unless the caller is the
+service role.
 
 ## 4. Health and Check-ins
 
@@ -356,6 +358,10 @@ Private-object metadata containing user, purpose, opaque object key, type, byte 
 lifecycle status (`active`, `pending_deletion`, or `deleted`), capture time, retention deadline,
 explicit retention exemption, and deletion time. Retention workers claim due objects before deleting
 Storage bytes, then finalize or schedule a retry. Clients never use object keys as authorization.
+Keys follow the app's upload grammar (`<uid>/meal/<request id>.<ext>`,
+`<uid>/progress/<set id>/<pose>.<ext>`), and the constraint `media_objects_object_key_safe` keeps
+new keys inside the owner's folder with no dot segments or encoded characters (added `NOT VALID`,
+so rows written before 2026-10-09 are not rechecked).
 
 ### `meal_analyses`
 

@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.8";
 import { cleanExpiredMealMedia } from "../_shared/meal_media_retention.ts";
 import { cleanExpiredExports } from "../_shared/export_retention.ts";
+import { captureException } from "../_shared/sentry.ts";
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
@@ -49,6 +50,12 @@ Deno.serve(async (request) => {
         if (error) throw new Error("completion_failed");
       },
     });
+    if (result.unsafe > 0) {
+      captureException(new Error(`meal_media_unsafe_keys_${result.unsafe}`), {
+        functionName: "meal-media-retention",
+        failureCode: "unsafe_storage_key",
+      });
+    }
     const exports = await cleanExpiredExports({
       claim: async () => {
         const { data, error } = await serviceClient.rpc("expire_data_exports");

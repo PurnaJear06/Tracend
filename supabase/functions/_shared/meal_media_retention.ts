@@ -1,3 +1,5 @@
+import { isSafeStorageKey } from "./storage_keys.ts";
+
 export type RetentionCandidate = Readonly<{
   media_object_id: string;
   object_key: string;
@@ -13,6 +15,7 @@ export type RetentionResult = Readonly<{
   claimed: number;
   deleted: number;
   failed: number;
+  unsafe: number;
 }>;
 
 export async function cleanExpiredMealMedia(
@@ -26,13 +29,19 @@ export async function cleanExpiredMealMedia(
   const candidates = await dependencies.claim(batchSize);
   let deleted = 0;
   let failed = 0;
+  let unsafe = 0;
 
   for (const candidate of candidates) {
     let succeeded = false;
-    try {
-      succeeded = await dependencies.remove(candidate.object_key);
-    } catch {
-      succeeded = false;
+    // An unsafe key is never sent to Storage; it stays failed for review.
+    if (!isSafeStorageKey(candidate.object_key)) {
+      unsafe += 1;
+    } else {
+      try {
+        succeeded = await dependencies.remove(candidate.object_key);
+      } catch {
+        succeeded = false;
+      }
     }
 
     await dependencies.complete(candidate.media_object_id, succeeded);
@@ -43,5 +52,5 @@ export async function cleanExpiredMealMedia(
     }
   }
 
-  return { claimed: candidates.length, deleted, failed };
+  return { claimed: candidates.length, deleted, failed, unsafe };
 }

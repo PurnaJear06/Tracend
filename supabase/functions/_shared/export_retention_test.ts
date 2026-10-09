@@ -14,3 +14,17 @@ Deno.test("export retention clears successful objects and preserves failures for
   assertEquals(result, { claimed: 2, deleted: 1, failed: 1 });
   assertEquals(completions, [["one", true], ["two", false]]);
 });
+
+Deno.test("export retention never sends an unsafe path to Storage", async () => {
+  const removed: string[] = [];
+  const result = await cleanExpiredExports({
+    claim: () => Promise.resolve([{ storage_path: "user/../other/x" }, { storage_path: "user/y" }]),
+    remove: (path) => {
+      removed.push(path);
+      return Promise.resolve(true);
+    },
+    complete: () => Promise.resolve(),
+  });
+  assertEquals(result, { claimed: 2, deleted: 1, failed: 1 });
+  assertEquals(removed, ["user/y"]);
+});

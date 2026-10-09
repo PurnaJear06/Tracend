@@ -1,3 +1,5 @@
+import { isSafeStorageKey } from "./storage_keys.ts";
+
 export type ExportRetentionCandidate = Readonly<{ storage_path: string }>;
 
 export type ExportRetentionDependencies = Readonly<{
@@ -12,10 +14,12 @@ export async function cleanExpiredExports(dependencies: ExportRetentionDependenc
   let failed = 0;
   for (const candidate of candidates) {
     let succeeded = false;
-    try {
-      succeeded = await dependencies.remove(candidate.storage_path);
-    } catch {
-      succeeded = false;
+    if (isSafeStorageKey(candidate.storage_path)) {
+      try {
+        succeeded = await dependencies.remove(candidate.storage_path);
+      } catch {
+        succeeded = false;
+      }
     }
     await dependencies.complete(candidate.storage_path, succeeded);
     if (succeeded) deleted += 1;

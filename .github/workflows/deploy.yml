@@ -103,10 +103,32 @@ jobs:
             exit 1
           }
 
+          # On an error psql prints the failing statement, and for the data
+          # file that statement holds production rows. The deploy log is
+          # public, so restore output goes to a file that is always removed,
+          # and a failure shows only the step and the failing line number.
+          restore_psql() {
+            local step="$1"
+            shift
+            local log
+            log=$(mktemp)
+            if docker exec "$DB_CONTAINER" psql --quiet \
+              --variable VERBOSITY=terse --variable SHOW_CONTEXT=never \
+              "$@" >"$log" 2>&1; then
+              rm -f "$log"
+              return 0
+            fi
+            local where
+            where=$(grep -m1 -oE 'psql:/tmp/[a-z]+[.]sql:[0-9]+' "$log" || true)
+            rm -f "$log"
+            echo "::error::$step failed${where:+ at ${where#psql:}}. Output withheld: it can contain production rows."
+            exit 1
+          }
+
           # `public` belongs to the local postgres role, while Supabase-managed
           # schemas contain tables that role cannot modify. Clear each with its
           # owning administrative role before replaying the production snapshot.
-          docker exec "$DB_CONTAINER" psql \
+          restore_psql "Reset public schema" \
             --username postgres \
             --dbname postgres \
             --variable ON_ERROR_STOP=1 \
@@ -114,7 +136,7 @@ jobs:
             --command 'CREATE SCHEMA public' \
             --command 'GRANT ALL ON SCHEMA public TO postgres, anon, authenticated, service_role'
 
-          docker exec "$DB_CONTAINER" psql \
+          restore_psql "Clear managed schemas" \
             --username supabase_admin \
             --dbname postgres \
             --variable ON_ERROR_STOP=1 \
@@ -148,14 +170,14 @@ jobs:
 
           # The production schema is owned by postgres, but a few managed
           # storage tables only permit the internal admin to write their rows.
-          docker exec "$DB_CONTAINER" psql \
+          restore_psql "Schema restore" \
             --username postgres \
             --dbname postgres \
             --single-transaction \
             --variable ON_ERROR_STOP=1 \
             --file /tmp/schema.sql
 
-          docker exec "$DB_CONTAINER" psql \
+          restore_psql "Data restore" \
             --username supabase_admin \
             --dbname postgres \
             --single-transaction \

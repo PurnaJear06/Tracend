@@ -3,6 +3,7 @@ import { analyzeMealImage } from "../_shared/providers/gemini_meal_vision_provid
 import { analyzeGroqMealImage } from "../_shared/providers/groq_meal_vision_provider.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { captureException } from "../_shared/sentry.ts";
+import { isUserStorageKey } from "../_shared/storage_keys.ts";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -41,10 +42,12 @@ Deno.serve(async (request) => {
     return reply(404, { error: "meal_not_found" });
   }
   const media = meal.media_objects as unknown as Record<string, unknown>;
+  if (!isUserStorageKey(auth.userId, media.object_key)) {
+    log.warn("unsafe_meal_object_key");
+    return reply(404, { error: "meal_not_found" });
+  }
   const { data: image, error: downloadError } = await auth.serviceClient.storage.from("meal-images")
-    .download(
-      media.object_key as string,
-    );
+    .download(media.object_key);
   if (downloadError || !image) return reply(503, { error: "meal_image_unavailable" });
   try {
     const provider = Deno.env.get("MEAL_VISION_PROVIDER") === "groq" ? "groq" : "gemini";

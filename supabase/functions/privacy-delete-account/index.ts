@@ -1,4 +1,6 @@
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
+import { captureException } from "../_shared/sentry.ts";
+import { isUserStorageKey } from "../_shared/storage_keys.ts";
 
 export function isExactDeletionConfirmation(value: unknown): boolean {
   return value === "DELETE";
@@ -19,6 +21,16 @@ async function removeObjects(
     const result = await client.storage.from(bucket).remove(paths.slice(index, index + 100));
     if (result.error) throw new Error("storage_deletion_failed");
   }
+}
+
+// Splits stored keys into the ones safe to pass to Storage and a count of the
+// rest, which are never sent: a service-role remove ignores Storage RLS.
+export function deletableKeys(
+  userId: string,
+  keys: readonly unknown[],
+): { keys: string[]; unsafe: number } {
+  const safe = keys.filter((key): key is string => isUserStorageKey(userId, key));
+  return { keys: safe, unsafe: keys.filter((key) => typeof key === "string").length - safe.length };
 }
 
 export async function handleAccountDeletion(request: Request): Promise<Response> {
@@ -58,25 +70,33 @@ export async function handleAccountDeletion(request: Request): Promise<Response>
     const media = await auth.serviceClient.from("media_objects").select("purpose,object_key")
       .eq("user_id", auth.userId).neq("lifecycle_status", "deleted");
     if (media.error) throw new Error("media_lookup_failed");
-    const mealPaths: string[] = [];
-    const progressPaths: string[] = [];
-    for (const row of media.data ?? []) {
-      if (typeof row.object_key !== "string") continue;
-      if (row.purpose === "meal_analysis") mealPaths.push(row.object_key);
-      else progressPaths.push(row.object_key);
-    }
+    const rows = media.data ?? [];
+    const meals = deletableKeys(
+      auth.userId,
+      rows.filter((row) => row.purpose === "meal_analysis").map((row) => row.object_key),
+    );
+    const progress = deletableKeys(
+      auth.userId,
+      rows.filter((row) => row.purpose !== "meal_analysis").map((row) => row.object_key),
+    );
     const exports = await auth.serviceClient.from("data_exports").select("storage_path")
       .eq("user_id", auth.userId).not("storage_path", "is", null);
     if (exports.error) throw new Error("export_lookup_failed");
-    await removeObjects(auth.serviceClient, "meal-images", mealPaths);
-    await removeObjects(auth.serviceClient, "progress-photos", progressPaths);
-    await removeObjects(
-      auth.serviceClient,
-      "account-exports",
-      (exports.data ?? []).map((row) => row.storage_path).filter((path): path is string =>
-        typeof path === "string"
-      ),
+    const exportKeys = deletableKeys(
+      auth.userId,
+      (exports.data ?? []).map((row) => row.storage_path),
     );
+    const unsafe = meals.unsafe + progress.unsafe + exportKeys.unsafe;
+    if (unsafe > 0) {
+      captureException(new Error(`account_deletion_unsafe_keys_${unsafe}`), {
+        userId: auth.userId,
+        functionName: "privacy-delete-account",
+        failureCode: "unsafe_storage_key",
+      });
+    }
+    await removeObjects(auth.serviceClient, "meal-images", meals.keys);
+    await removeObjects(auth.serviceClient, "progress-photos", progress.keys);
+    await removeObjects(auth.serviceClient, "account-exports", exportKeys.keys);
     const removed = await auth.serviceClient.auth.admin.deleteUser(auth.userId);
     if (removed.error) throw new Error("auth_deletion_failed");
     await auth.serviceClient.rpc("complete_account_deletion", {

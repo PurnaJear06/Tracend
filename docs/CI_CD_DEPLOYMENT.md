@@ -87,6 +87,11 @@ matching Supabase's documented logical-backup flow. A backup is valid only when:
 - schema and data restore with `ON_ERROR_STOP=1` inside the isolated database; and
 - the restored database contains public tables.
 
+The deploy log is public, and on an error psql prints the failing statement, which for the data
+file holds production rows. Every restore psql call therefore runs through `restore_psql`: its
+output goes to a temporary file that is always removed, and a failure prints only the step and the
+failing `/tmp/<file>.sql:<line>`.
+
 Only an AES-256 encrypted archive is kept; its passphrase exists as the `BACKUP_ARCHIVE_PASSPHRASE`
 Actions secret. Plaintext dumps are removed from the runner after the encrypted archive is
 validated. The archive is stored in the separate **private** repository named by the `BACKUP_REPO`

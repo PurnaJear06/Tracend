@@ -6,6 +6,7 @@ import {
   resolvePhysiqueVision,
 } from "../_shared/providers/physique_vision_provider.ts";
 import { captureException } from "../_shared/sentry.ts";
+import { isUserStorageKey } from "../_shared/storage_keys.ts";
 import { handlePhysiqueCheck, type PhysiqueStore } from "./handler.ts";
 
 function supabaseStore(
@@ -52,6 +53,7 @@ function supabaseStore(
       };
     },
     async download(objectKey) {
+      if (!isUserStorageKey(userId, objectKey)) return null;
       const { data, error } = await serviceClient.storage.from("progress-photos")
         .download(objectKey);
       if (error || !data) return null;
