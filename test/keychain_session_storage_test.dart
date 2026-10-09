@@ -19,6 +19,33 @@ class _FakeSecureStore implements SecureStore {
   Future<void> delete(String key) async => values.remove(key);
 }
 
+class _FakePreferences implements SessionPreferences {
+  _FakePreferences(this.values);
+  final Map<String, String> values;
+  bool failMarker = false;
+  bool failRemove = false;
+
+  @override
+  String? getString(String key) => values[key];
+
+  @override
+  bool containsKey(String key) => values.containsKey(key);
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    if (failMarker && key == KeychainSessionStorage.markerKey) return false;
+    values[key] = value;
+    return true;
+  }
+
+  @override
+  Future<bool> remove(String key) async {
+    if (failRemove) return false;
+    values.remove(key);
+    return true;
+  }
+}
+
 const _key = 'sb-qsfzzsjenopqqqhvpyaw-auth-token';
 const _session = '{"access_token":"a","refresh_token":"r"}';
 
@@ -129,4 +156,85 @@ void main() {
       expect(preferences.getString(_key), '{"access_token":"b"}');
     },
   );
+
+  test(
+    'an unsaved marker keeps the old copy, so the next launch tries again',
+    () async {
+      final preferences = _FakePreferences({_key: _session})..failMarker = true;
+      final keychain = _FakeSecureStore();
+      final failures = <Object>[];
+      final storage = KeychainSessionStorage(
+        persistSessionKey: _key,
+        secureStore: keychain,
+        preferences: () async => preferences,
+        onMigrationFailed: (error, _) => failures.add(error),
+      );
+      await storage.initialize();
+
+      expect(preferences.values[_key], _session);
+      expect(await storage.accessToken(), _session);
+      expect(failures, hasLength(1));
+
+      preferences.failMarker = false;
+      final next = KeychainSessionStorage(
+        persistSessionKey: _key,
+        secureStore: keychain,
+        preferences: () async => preferences,
+      );
+      await next.initialize();
+      expect(await next.accessToken(), _session);
+      expect(preferences.values.containsKey(_key), isFalse);
+    },
+  );
+
+  test(
+    'a fresh install whose marker failed keeps new sessions on the next launch',
+    () async {
+      final preferences = _FakePreferences({})..failMarker = true;
+      final keychain = _FakeSecureStore();
+      final storage = KeychainSessionStorage(
+        persistSessionKey: _key,
+        secureStore: keychain,
+        preferences: () async => preferences,
+      );
+      await storage.initialize();
+      await storage.persistSession(_session);
+
+      preferences.failMarker = false;
+      final next = KeychainSessionStorage(
+        persistSessionKey: _key,
+        secureStore: keychain,
+        preferences: () async => preferences,
+      );
+      await next.initialize();
+      expect(await next.accessToken(), _session);
+    },
+  );
+
+  test('a failed removal is reported and retried on the next launch', () async {
+    final preferences = _FakePreferences({_key: _session})..failRemove = true;
+    final keychain = _FakeSecureStore();
+    final failures = <Object>[];
+    final storage = KeychainSessionStorage(
+      persistSessionKey: _key,
+      secureStore: keychain,
+      preferences: () async => preferences,
+      onMigrationFailed: (error, _) => failures.add(error),
+    );
+    await storage.initialize();
+    expect(await storage.accessToken(), _session);
+    expect(keychain.values[_key], _session);
+    expect(failures, hasLength(1));
+    expect(preferences.values[KeychainSessionStorage.markerKey], 'keychain');
+
+    preferences.failRemove = false;
+    final next = KeychainSessionStorage(
+      persistSessionKey: _key,
+      secureStore: keychain,
+      preferences: () async => preferences,
+    );
+    await next.initialize();
+    expect(preferences.values.containsKey(_key), isFalse);
+    expect(await next.accessToken(), _session);
+  });
 }

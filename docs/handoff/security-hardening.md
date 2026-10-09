@@ -206,11 +206,12 @@ again), and run a physique check (its notice is unchanged).
 ## PR 5: Keychain sessions and workflow supply chain (needs the new build)
 
 - App: `lib/app/keychain_session_storage.dart` keeps the Supabase session in the iOS Keychain
-  (`flutter_secure_storage` 10.3.4). The first launch moves the current session there, checks it
-  reads back, and then removes it from preferences, so you stay signed in. If the Keychain write
-  fails, that launch keeps the old copy, reports `session_keychain_migration_failed` to Sentry
-  (never the token), and the next launch tries again. A fresh install clears anything a deleted
-  install left in the Keychain.
+  (`flutter_secure_storage` 10.3.4). The first launch copies the current session there and checks
+  that it reads back. Only then does it save the marker, and only after the marker is saved does
+  it remove the old copy, checking each step's result. If any step fails, that launch keeps using
+  preferences (you stay signed in), reports `session_keychain_migration_failed` to Sentry (never
+  the token), and the next launch tries again. A failed removal is retried on every launch. A
+  fresh install clears anything a deleted install left in the Keychain.
 - Workflows: every action is pinned to a commit SHA. The default token is read-only, and only
   `tag-release` can write. Checkouts drop credentials. Secret-using jobs run in the `production`
   environment, and a hotfix runs only from `main`.
@@ -224,5 +225,6 @@ again), and run a physique check (its notice is unchanged).
    and confirm that it succeeds.
 3. Settings → Actions → General: set Workflow permissions to "Read repository contents", and turn
    on "Require actions to be pinned to a full-length commit SHA".
-4. Dependabot #87 (supabase_flutter 2.18.0) can merge before or after this PR; CI checks the
-   session storage against it.
+4. Merge order: #88 → #89 → #90 → #91 → #92, then Dependabot #87 (supabase_flutter 2.18.0),
+   then this PR once it is updated onto that `main` (its `pubspec.lock` changes overlap #87's) and
+   CI has passed again.
