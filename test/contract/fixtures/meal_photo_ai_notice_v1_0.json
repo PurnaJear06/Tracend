@@ -1,0 +1,8 @@
+{
+    "body": "Meal photo analysis is an AI estimate, not a measurement. When you analyze a meal photo, Tracend sends Groq a resized copy of that one photo. Groq runs the model qwen/qwen3.8-27b, which suggests the foods it sees with portions, calories and macros. Your name, email address, other photos and the rest of your data are not sent.\n\nGroq is run by Groq, Inc., a US company. Tracend has turned on Groq's Zero Data Retention, so Groq does not keep the photo or its answer after replying. Tracend keeps the photo privately in your account and deletes it after the review window unless you save it.\n\nNothing is logged until you review and confirm the foods. Without photo analysis you can still log meals yourself. You can turn it off at any time in Log a meal.",
+    "model": "qwen/qwen3.8-27b",
+    "granted": false,
+    "version": "meal-photo-ai-v1",
+    "provider_label": "Groq",
+    "schema_version": "1.0"
+}

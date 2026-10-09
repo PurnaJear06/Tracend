@@ -11,12 +11,14 @@ import {
 } from "../_shared/coach_chat_fallback.ts";
 import {
   classifyQuestion,
+  coachChatFailureUsage,
   CoachChatUnavailableError,
   generateCoachChat,
 } from "../_shared/providers/coach_chat_provider.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { captureException } from "../_shared/sentry.ts";
 import { aiCoachingConsent, coachChatConsentRefusal } from "../_shared/ai_consent.ts";
+import { AiBudget } from "../_shared/ai_budget.ts";
 
 export const coachChatResponseSchemaVersion = "1.1";
 // Request 1.1 (current app) gets response 1.2: answer_source on every message
@@ -248,7 +250,21 @@ export function buildSessionSummary(
   return parts.join(" ").slice(0, 400);
 }
 
+// Every budget reservation a request takes is released when it ends, however
+// it ends; a reservation kept open (`AiBudget.keep`) stays counted.
 Deno.serve(async (request) => {
+  const budget: { current?: AiBudget } = {};
+  try {
+    return await handleCoachChat(request, budget);
+  } finally {
+    await budget.current?.release();
+  }
+});
+
+async function handleCoachChat(
+  request: Request,
+  held: { current?: AiBudget },
+): Promise<Response> {
   const correlationId = extractCorrelationId(request);
   const log = createLogger(correlationId);
   const started = performance.now();
@@ -290,10 +306,9 @@ Deno.serve(async (request) => {
     }
     return reply(refusal.status, versionedResponse({ error: refusal.error }));
   }
-  const { error: budgetError } = await auth.serviceClient.rpc("assert_owner_ai_budget", {
-    target_user_id: auth.userId,
-  });
-  if (budgetError) {
+  const budget = new AiBudget((fn, args) => auth.serviceClient.rpc(fn, args), auth.userId);
+  held.current = budget;
+  if (!await budget.reserve("coach_chat")) {
     return reply(429, versionedResponse({ error: "ai_usage_limit" }));
   }
   const contextKind = classifyQuestion(input.question);
@@ -430,6 +445,25 @@ Deno.serve(async (request) => {
         inputUnits: String(generation.inputUnits),
         outputUnits: String(generation.outputUnits),
       });
+      // The answer was paid for even though it was not stored.
+      const { error: usageError } = await auth.serviceClient.rpc(
+        "persist_failed_coach_chat_run_v2",
+        {
+          target_user_id: auth.userId,
+          snapshot_id: prepared.feature_snapshot_id,
+          policy_id: prepared.policy_evaluation_id,
+          request_idempotency_key: input.idempotency_key,
+          run_latency_ms: Math.min(Math.round(performance.now() - chatStart), 120_000),
+          error_code: "persistence_rejected",
+          run_provider: generation.provider,
+          run_model: generation.model,
+          failure_rules: [],
+          run_input_units: generation.inputUnits,
+          run_output_units: generation.outputUnits,
+          run_estimated_cost_usd: generation.estimatedCostUsd,
+        },
+      );
+      if (usageError) budget.keep();
       return reply(
         422,
         versionedResponse({
@@ -547,21 +581,35 @@ Deno.serve(async (request) => {
     });
     // supabase-js reports RPC failures in `error` rather than throwing, so the
     // result is checked; an unrecorded failure is itself reported.
+    const failureUsage = coachChatFailureUsage(unavailable);
     const { error: failedRunError } = await auth.serviceClient.rpc(
-      "persist_failed_coach_chat_run",
+      "persist_failed_coach_chat_run_v2",
       {
         target_user_id: auth.userId,
         snapshot_id: prepared.feature_snapshot_id,
         policy_id: prepared.policy_evaluation_id,
         request_idempotency_key: input.idempotency_key,
-        run_latency_ms: Math.round(performance.now() - chatStart),
+        run_latency_ms: Math.min(Math.round(performance.now() - chatStart), 120_000),
         error_code: unavailable.failureReason,
         run_provider: unavailable.provider,
         run_model: unavailable.model,
         failure_rules: coachChatFailureRules(unavailable),
+        run_input_units: failureUsage.inputUnits,
+        run_output_units: failureUsage.outputUnits,
+        run_estimated_cost_usd: failureUsage.estimatedCostUsd,
       },
     );
+    // A timeout, or a failure that is not the provider's own answer, may have
+    // been billed with no usage reported: the reservation stays open and keeps
+    // counting at its ceiling. So does a failure that could not be recorded.
+    if (
+      !(error instanceof CoachChatUnavailableError) ||
+      unavailable.failureReason === "provider_timeout"
+    ) {
+      budget.keep();
+    }
     if (failedRunError) {
+      budget.keep();
       log.error("persist_failed_coach_chat_run failed", {
         error_code: failedRunError.code ?? "unknown",
       });
@@ -612,4 +660,4 @@ Deno.serve(async (request) => {
       ),
     );
   }
-});
+}

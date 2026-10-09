@@ -7,7 +7,7 @@ insert into auth.users(id, role) values
 -- Daily coaching follows its own notice -----------------------------------------
 
 insert into public.consent_records(user_id, consent_type, notice_version, action, source)
-values ('f1000000-0000-4000-8000-000000000001', 'ai_coaching', 'ai-coaching-v4', 'granted', 'ios_app');
+values ('f1000000-0000-4000-8000-000000000001', 'ai_coaching', 'ai-coaching-v5', 'granted', 'ios_app');
 select ok(public.has_ai_coaching_consent('f1000000-0000-4000-8000-000000000001', 'daily_coaching'),
   'a v4 grant allows daily coaching while v4 is its notice');
 select lives_ok($$select private.publish_ai_notice('ai-daily-v2', 'Another provider',

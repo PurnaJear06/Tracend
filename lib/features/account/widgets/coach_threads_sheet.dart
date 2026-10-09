@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
@@ -50,8 +53,9 @@ class _CoachThreadsSheetState extends State<CoachThreadsSheet> {
     if (!confirmed || !mounted) return;
     try {
       await widget.chat.deleteThread(thread.id);
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('Non-critical error: $e');
+      unawaited(Sentry.captureException(e, stackTrace: stackTrace));
       if (mounted) {
         setState(() => _error = 'The conversation could not be deleted.');
       }

@@ -64,7 +64,9 @@ class _OwnerAuthScreenState extends State<OwnerAuthScreen> {
       }
       widget.onAuthenticated();
     } on AuthException catch (error) {
-      setState(() => _error = _safeAuthMessage(error));
+      setState(
+        () => _error = authErrorMessage(error, createAccount: _createAccount),
+      );
     } catch (e) {
       debugPrint('Non-critical error: $e');
       setState(() {
@@ -74,15 +76,6 @@ class _OwnerAuthScreenState extends State<OwnerAuthScreen> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
-  }
-
-  String _safeAuthMessage(AuthException error) {
-    if (error.statusCode == '400') {
-      return _createAccount
-          ? 'This account could not be created. Check the email and password.'
-          : 'The email or password is incorrect.';
-    }
-    return 'Authentication is unavailable right now. Try again.';
   }
 
   @override
@@ -254,4 +247,21 @@ class _OwnerAuthScreenState extends State<OwnerAuthScreen> {
       ),
     );
   }
+}
+
+/// The message shown for a refused sign-in or sign-up. Sign-ups are
+/// invite-only: the database refuses an email that is not on the invite list,
+/// and Auth reports that as an unexpected failure (HTTP 500).
+@visibleForTesting
+String authErrorMessage(AuthException error, {required bool createAccount}) {
+  if (createAccount &&
+      (error.statusCode == '500' || error.code == 'unexpected_failure')) {
+    return "This email isn't on the invite list yet.";
+  }
+  if (error.statusCode == '400') {
+    return createAccount
+        ? 'This account could not be created. Check the email and password.'
+        : 'The email or password is incorrect.';
+  }
+  return 'Authentication is unavailable right now. Try again.';
 }

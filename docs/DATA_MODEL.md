@@ -74,12 +74,20 @@ Canonical account and identity root managed by Supabase Auth. Native Sign in wit
 linked here. Tracend does not store raw Apple identity tokens or implement a parallel
 access/refresh-token table.
 
+### `private.signup_invites`
+
+The beta invite list: lowercased email (primary key), note, created time, and who claimed it and
+when. Only the SQL editor reaches it. The sign-up trigger refuses an email that is not listed;
+every account that existed on 2026-10-09 was seeded as claimed.
+
 ### `user_accounts`
 
 One application-owned row keyed by `id = auth.users.id`, containing locale, timezone, unit system,
 account status, onboarding state, and timestamps. The app writes `timezone` (the device's IANA
 zone) through `set_my_timezone`, which accepts only names Postgres knows; before 2026-10 it stayed
-at the default `UTC`. Email remains in Supabase Auth unless a documented
+at the default `UTC`. Since 2026-10-09 clients cannot write the column directly, stored names
+Postgres doesn't know were reset to `UTC`, and the weekly-review scheduler reads it through
+`private.safe_timezone`. Email remains in Supabase Auth unless a documented
 product need requires a minimized application copy.
 
 ### `consent_records`
@@ -176,7 +184,9 @@ disclosed eligibility restrictions. Each entry records source, confirmation, and
 
 Confirmed training, food, schedule, communication, and notification preferences. Each preference has
 category, typed value, provenance, confirmation timestamp, and optional expiry. Model-inferred
-preferences cannot become confirmed automatically.
+preferences cannot become confirmed automatically. The app confirms a preference through
+`persist_coach_preference`, which refuses any athlete but the caller unless the caller is the
+service role.
 
 ## 4. Health and Check-ins
 
@@ -356,6 +366,10 @@ Private-object metadata containing user, purpose, opaque object key, type, byte 
 lifecycle status (`active`, `pending_deletion`, or `deleted`), capture time, retention deadline,
 explicit retention exemption, and deletion time. Retention workers claim due objects before deleting
 Storage bytes, then finalize or schedule a retry. Clients never use object keys as authorization.
+Keys follow the app's upload grammar (`<uid>/meal/<request id>.<ext>`,
+`<uid>/progress/<set id>/<pose>.<ext>`), and the constraint `media_objects_object_key_safe` keeps
+new keys inside the owner's folder with no dot segments or encoded characters (added `NOT VALID`,
+so rows written before 2026-10-09 are not rechecked).
 
 ### `meal_analyses`
 

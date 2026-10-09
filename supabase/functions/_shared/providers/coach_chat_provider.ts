@@ -39,6 +39,7 @@ export type CoachChatAttemptTelemetry = Readonly<{
   actual?: number;
   latencyMs: number;
   finishReason?: string | null;
+  promptTokens?: number;
   completionTokens: number;
 }>;
 
@@ -83,6 +84,60 @@ export type CoachChatFailureMetadata = Readonly<{
   repairPath?: string;
   attempts?: readonly CoachChatAttemptTelemetry[];
 }>;
+
+// USD per million tokens for each Coach provider: the configured secret, or
+// the provider's list price when it is unset, so no call is counted as free.
+export function coachChatPricePerMillionUsd(
+  provider: "mock" | "gemini" | "groq" | "deepseek",
+): Readonly<{ input: number; output: number }> {
+  const rate = (name: string, fallback: number) => {
+    const value = Number(Deno.env.get(name) ?? fallback);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+  };
+  switch (provider) {
+    case "deepseek":
+      return {
+        input: rate(
+          "DEEPSEEK_INPUT_COST_PER_MILLION_USD",
+          deepseekFlashPeakPricePerMillionUsd.input,
+        ),
+        output: rate(
+          "DEEPSEEK_OUTPUT_COST_PER_MILLION_USD",
+          deepseekFlashPeakPricePerMillionUsd.output,
+        ),
+      };
+    case "groq":
+      return {
+        input: rate("GROQ_INPUT_COST_PER_MILLION_USD", 0.6),
+        output: rate("GROQ_OUTPUT_COST_PER_MILLION_USD", 3),
+      };
+    case "gemini":
+      return {
+        input: rate("GEMINI_INPUT_COST_PER_MILLION_USD", 1.5),
+        output: rate("GEMINI_OUTPUT_COST_PER_MILLION_USD", 9),
+      };
+    case "mock":
+      return { input: 0, output: 0 };
+  }
+}
+
+// Tokens and estimated cost of every attempt a failed request made, so a
+// failure still counts toward the budget.
+export function coachChatFailureUsage(error: CoachChatUnavailableError): Readonly<{
+  inputUnits: number;
+  outputUnits: number;
+  estimatedCostUsd: number;
+}> {
+  const attempts = error.metadata.attempts ?? [];
+  const inputUnits = attempts.reduce((sum, attempt) => sum + (attempt.promptTokens ?? 0), 0);
+  const outputUnits = attempts.reduce((sum, attempt) => sum + attempt.completionTokens, 0);
+  const price = coachChatPricePerMillionUsd(error.provider);
+  return {
+    inputUnits,
+    outputUnits,
+    estimatedCostUsd: (inputUnits * price.input + outputUnits * price.output) / 1_000_000,
+  };
+}
 
 export function buildCoachChatAnswerSchema(permittedEvidence: readonly string[]) {
   const codes = [...new Set(permittedEvidence)];
@@ -1524,6 +1579,7 @@ export async function generateCoachChat(
             ...issue,
             latencyMs: result.latencyMs,
             finishReason: result.finishReason,
+            promptTokens: result.inputUnits,
             completionTokens: result.outputUnits,
           };
           throw new CoachChatUnavailableError(
@@ -1548,6 +1604,7 @@ export async function generateCoachChat(
             outcome: "valid",
             latencyMs: result.latencyMs,
             finishReason: result.finishReason,
+            promptTokens: result.inputUnits,
             completionTokens: result.outputUnits,
           },
         };
@@ -1623,21 +1680,14 @@ export async function generateCoachChat(
           );
         }
       }
-      const inputRateDs = Number(
-        Deno.env.get("DEEPSEEK_INPUT_COST_PER_MILLION_USD") ??
-          deepseekFlashPeakPricePerMillionUsd.input,
-      );
-      const outputRateDs = Number(
-        Deno.env.get("DEEPSEEK_OUTPUT_COST_PER_MILLION_USD") ??
-          deepseekFlashPeakPricePerMillionUsd.output,
-      );
+      const priceDs = coachChatPricePerMillionUsd("deepseek");
       return {
         answer,
         provider: "deepseek",
         model: deepseekModel,
         inputUnits,
         outputUnits,
-        estimatedCostUsd: (inputUnits * inputRateDs + outputUnits * outputRateDs) / 1_000_000,
+        estimatedCostUsd: (inputUnits * priceDs.input + outputUnits * priceDs.output) / 1_000_000,
         attempts,
       };
     }
@@ -1786,8 +1836,7 @@ export async function generateCoachChat(
         outputUnits += repaired.outputUnits;
         answer = parseCoachChatAnswer(JSON.parse(repaired.content), permitted);
       }
-      const inputRate = Number(Deno.env.get("GROQ_INPUT_COST_PER_MILLION_USD") ?? "0.6");
-      const outputRate = Number(Deno.env.get("GROQ_OUTPUT_COST_PER_MILLION_USD") ?? "3");
+      const { input: inputRate, output: outputRate } = coachChatPricePerMillionUsd("groq");
       return {
         answer,
         provider: "groq",
@@ -1877,8 +1926,7 @@ export async function generateCoachChat(
     const outputUnits = Number.isInteger(usage?.candidatesTokenCount)
       ? Number(usage?.candidatesTokenCount)
       : 0;
-    const inputRate = Number(Deno.env.get("GEMINI_INPUT_COST_PER_MILLION_USD") ?? "1.5");
-    const outputRate = Number(Deno.env.get("GEMINI_OUTPUT_COST_PER_MILLION_USD") ?? "9");
+    const { input: inputRate, output: outputRate } = coachChatPricePerMillionUsd("gemini");
     return {
       answer: parsed,
       provider: "gemini",

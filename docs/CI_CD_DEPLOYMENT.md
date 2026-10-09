@@ -87,6 +87,11 @@ matching Supabase's documented logical-backup flow. A backup is valid only when:
 - schema and data restore with `ON_ERROR_STOP=1` inside the isolated database; and
 - the restored database contains public tables.
 
+The deploy log is public, and on an error psql prints the failing statement, which for the data
+file holds production rows. Every restore psql call therefore runs through `restore_psql`: its
+output goes to a temporary file that is always removed, and a failure prints only the step and the
+failing `/tmp/<file>.sql:<line>`.
+
 Only an AES-256 encrypted archive is kept; its passphrase exists as the `BACKUP_ARCHIVE_PASSPHRASE`
 Actions secret. Plaintext dumps are removed from the runner after the encrypted archive is
 validated. The archive is stored in the separate **private** repository named by the `BACKUP_REPO`
@@ -164,3 +169,15 @@ The GitHub repository requires pull requests, one approving review, passing stat
 conversations, linear history protection against force-push/deletion, secret scanning, push
 protection, and Dependabot security updates. Administrators retain emergency bypass capability so a
 single-owner repository cannot be permanently deadlocked.
+
+## Workflow supply chain (2026-10-09)
+
+- Every `uses:` is pinned to a full commit SHA with the release in a comment
+  (`actions/checkout@<sha> # v5.1.0`). Dependabot's `github-actions` entry proposes new pins.
+- Each workflow's default token is read-only (`permissions: contents: read`). Only the
+  `tag-release` jobs, which push the release tag, get `contents: write`, and they are the only
+  checkouts that keep credentials (`persist-credentials: false` everywhere else).
+- Jobs that use production secrets run in the `production` environment, and a hotfix runs only
+  from `main`. Once the secrets move into that environment, a workflow on another branch cannot
+  read them.
+

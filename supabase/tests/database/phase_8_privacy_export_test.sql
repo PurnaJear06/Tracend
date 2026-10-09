@@ -30,7 +30,9 @@ select ok(
 set local role authenticated;
 select set_config('request.jwt.claims', json_build_object(
   'sub', '83333333-eeee-4333-8333-333333333333',
-  'role', 'authenticated', 'iat', extract(epoch from now())::bigint
+  'role', 'authenticated', 'iat', extract(epoch from now())::bigint,
+  'amr', json_build_array(json_build_object('method', 'password',
+    'timestamp', extract(epoch from now())::bigint))
 )::text, true);
 select lives_ok(
   $$select public.request_my_data_export()$$,
@@ -47,7 +49,9 @@ select is(
 set local role authenticated;
 select set_config('request.jwt.claims', json_build_object(
   'sub', '84444444-eeee-4444-8444-444444444444',
-  'role', 'authenticated', 'iat', extract(epoch from now())::bigint
+  'role', 'authenticated', 'iat', extract(epoch from now())::bigint,
+  'amr', json_build_array(json_build_object('method', 'password',
+    'timestamp', extract(epoch from now())::bigint))
 )::text, true);
 select is((select count(*) from public.data_exports), 0::bigint,
   'cross-user export rows are hidden by RLS');
@@ -55,7 +59,9 @@ select is((select count(*) from public.data_exports), 0::bigint,
 select set_config('request.jwt.claims', json_build_object(
   'sub', '84444444-eeee-4444-8444-444444444444',
   'role', 'authenticated',
-  'iat', extract(epoch from now() - interval '11 minutes')::bigint
+  'iat', extract(epoch from now() - interval '11 minutes')::bigint,
+  'amr', json_build_array(json_build_object('method', 'password',
+    'timestamp', extract(epoch from now() - interval '11 minutes')::bigint))
 )::text, true);
 select throws_ok(
   $$select public.request_my_data_export()$$,

@@ -3,6 +3,7 @@ import {
   buildCoachChatAnswerSchema,
   buildCoachChatUserMessage,
   classifyQuestion,
+  coachChatFailureUsage,
   coachChatTiming,
   CoachChatUnavailableError,
   compactContext,
@@ -1710,5 +1711,43 @@ Deno.test("the athlete profile shows the onboarding answers approval stores", ()
   const bodyweight = formatContextAsMarkdown({ profile_context: { equipment: [] } });
   if (!bodyweight.includes("- equipment: bodyweight only")) {
     throw new Error("empty equipment should read bodyweight only");
+  }
+});
+
+Deno.test("a failed Coach request counts every attempt's tokens at the list price", () => {
+  const previous = Deno.env.get("DEEPSEEK_INPUT_COST_PER_MILLION_USD");
+  Deno.env.delete("DEEPSEEK_INPUT_COST_PER_MILLION_USD");
+  try {
+    const usage = coachChatFailureUsage(
+      new CoachChatUnavailableError(
+        "deepseek",
+        "deepseek-flash",
+        "provider_response_invalid",
+        null,
+        {
+          attempts: [
+            {
+              attempt: "initial",
+              outcome: "invalid",
+              latencyMs: 1,
+              promptTokens: 1000,
+              completionTokens: 200,
+            },
+            {
+              attempt: "repair",
+              outcome: "invalid",
+              latencyMs: 1,
+              promptTokens: 500,
+              completionTokens: 100,
+            },
+          ],
+        },
+      ),
+    );
+    assertEquals(usage.inputUnits, 1500);
+    assertEquals(usage.outputUnits, 300);
+    assertEquals(usage.estimatedCostUsd > 0, true);
+  } finally {
+    if (previous !== undefined) Deno.env.set("DEEPSEEK_INPUT_COST_PER_MILLION_USD", previous);
   }
 });

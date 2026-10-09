@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { parseHealthSyncRequest } from "./health_sync_v1.ts";
+import { healthSyncLimits, parseHealthSyncRequest } from "./health_sync_v1.ts";
 
 const valid = {
   schema_version: "1.0",
@@ -257,5 +257,75 @@ Deno.test("health sync rejects out-of-range morning HRV", () => {
       })),
     Error,
     "invalid_health_summary",
+  );
+});
+
+const workout = {
+  sample_id_hash: "d".repeat(64),
+  source_id_hash: "e".repeat(64),
+  activity_type: "TRADITIONAL_STRENGTH_TRAINING",
+  started_at: "2026-07-01T04:00:00.000Z",
+  ended_at: "2026-07-01T05:25:00.000Z",
+  duration_seconds: 5100,
+  local_date: "2026-07-01",
+};
+
+Deno.test("health sync refuses a window that ends in the future", () => {
+  const now = new Date("2026-07-01T12:00:00Z");
+  parseHealthSyncRequest({ ...valid, requested_end: "2026-07-03" }, now);
+  assertThrows(
+    () => parseHealthSyncRequest({ ...valid, requested_end: "2026-07-04" }, now),
+    Error,
+    "invalid_health_sync_window",
+  );
+});
+
+Deno.test("health sync refuses dates that are not on the calendar", () => {
+  assertThrows(() => parseHealthSyncRequest({ ...valid, requested_start: "2026-02-31" }));
+  assertThrows(() =>
+    parseHealthSyncRequest({ ...valid, workouts: [{ ...workout, local_date: "2026-13-01" }] })
+  );
+});
+
+Deno.test("health sync refuses a workout outside the requested days", () => {
+  parseHealthSyncRequest({ ...valid, workouts: [{ ...workout, local_date: "2026-07-02" }] });
+  assertThrows(
+    () =>
+      parseHealthSyncRequest({ ...valid, workouts: [{ ...workout, local_date: "2020-01-01" }] }),
+    Error,
+    "invalid_health_sync_window",
+  );
+});
+
+Deno.test("health sync caps source references per summary", () => {
+  const reference = valid.summaries[0].source_refs[0];
+  const many = Array.from({ length: healthSyncLimits.sourceRefsPerSummary + 1 }, () => reference);
+  assertThrows(
+    () =>
+      parseHealthSyncRequest({
+        ...valid,
+        summaries: [{ ...valid.summaries[0], source_refs: many }],
+      }),
+    Error,
+    "invalid_health_summary",
+  );
+});
+
+Deno.test("health sync limits match the database", async () => {
+  const sql = await Deno.readTextFile(
+    new URL("../../../migrations/20261009140000_abuse_limits.sql", import.meta.url),
+  );
+  assertEquals(
+    sql.includes(
+      `jsonb_array_length(summary->'source_refs') > ${healthSyncLimits.sourceRefsPerSummary}`,
+    ),
+    true,
+  );
+  assertEquals(sql.includes(`request_end > current_date + ${healthSyncLimits.futureDays}`), true);
+  assertEquals(
+    sql.includes(
+      `between request_start - ${healthSyncLimits.workoutDateSlackDays} and request_end + ${healthSyncLimits.workoutDateSlackDays}`,
+    ),
+    true,
   );
 });

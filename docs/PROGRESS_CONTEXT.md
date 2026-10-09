@@ -1,8 +1,20 @@
 # Tracend Current State
 
-**As of:** 2026-10-03
+**As of:** 2026-10-09
 
 **Lifecycle:** owner-only private beta; not approved for public production
+
+**Security hardening (2026-10-09):** a source review of `d26cf2c` raised leads that the owner
+asked to fix in five PRs, merged in order; details stay in the owner's private report. PR 1
+(media key grammar and ownership, a key guard on every service-role Storage call, the Coach
+preference caller check, restore-drill log output) and PR 2 (invite-only sign-ups, recent sign-in
+from `amr`, full Storage purge on deletion, no export during deletion, Coach conversation delete
+fixed) and PR 3 (time zone writes, consent integrity, health sync bounds, upload quotas and an
+orphan sweep, row and size caps) and PR 4a (AI budget reservations, a USD 10 global monthly stop,
+failed-call cost, list-price defaults) and PR 4b (meal-photo AI notice enforced by meal-analyze,
+AI notice v5; needs the new build) and PR 5 (Keychain session storage, SHA-pinned actions,
+read-only workflow tokens) are in review. Workstream state:
+[`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
 
 **Current priority (2026-10-03):** the app-wide graphite + lime redesign. The owner chose palette
 A and the round 3 signature picks (focus logging, muscle map on, big new-best moment, day boxes,

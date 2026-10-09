@@ -138,6 +138,31 @@ requests per owner/day shared by Coach chat, daily decisions and meal photos
 (2026-09-30). The daily count was 10, which about 10 meal
 photos a day would use up; the USD 2 stop still bounds spend.
 
+**Budget reservations (2026-10-09):** every model call first takes a place with
+`reserve_ai_budget` and gives it back with `settle_ai_budget` once its usage is recorded or no
+call was made (`_shared/ai_budget.ts`). Open places count toward the limits at a per-purpose
+ceiling (coach chat USD 0.02, daily decision 0.01, meal photo 0.01, physique check 0.03,
+onboarding plan or questions 0.05) and as one request each, so parallel calls can no longer all
+pass a check that only saw finished calls. A call is admitted only if its own ceiling still fits
+under each stop, so the USD 2 and global stops are never crossed by an admitted call. A place is
+left open on purpose whenever billing cannot be ruled out: a timeout, a dropped connection or an
+unreadable answer with no usage reported (Coach chat, meal photos, physique checks, onboarding),
+an unrecorded usage row, or a failed live daily decision. It then keeps counting at its ceiling,
+so a failure can only overcount. Only a refusal (429) or an HTTP error rules billing out.
+- **Global stop:** `private.ai_budget_limits.global_monthly_usd` (USD 10 at launch) stops every
+  model call once the month's total across all accounts reaches it. Change it from the SQL editor:
+  `update private.ai_budget_limits set global_monthly_usd = 20, updated_at = now();`.
+- **Failed calls count:** a meal photo whose answer is unusable still records its usage, and so
+  does one whose candidates the database refuses. A failed Coach chat records the tokens of every
+  attempt at the list price (`persist_failed_coach_chat_run_v2`), as does an answer that could not
+  be stored.
+- **No call is free by default:** an unset price uses the list price (DeepSeek peak 0.30/1.20,
+  Groq Coach 0.6/3, Gemini 1.5/9), in coach-decide as in coach-chat; before this, coach-decide
+  logged DeepSeek decisions at USD 0. A price set to 0 or below stops the Coach provider, and
+  Gemini meal photos refuse to run without both prices.
+- The daily decision with no place left falls back to the deterministic provider, as without
+  consent; the plan stays usable.
+
 **Physique check (2026-10, owner-only):** the same Groq model with three photos at 2,048 input
 tokens each plus about 600 prompt tokens, and up to 800 output tokens: about USD 0.007 per check
 at the paid price, recorded as `progress_vision` and counted toward the 30-a-day limit. One check

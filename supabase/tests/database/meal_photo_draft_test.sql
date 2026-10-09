@@ -21,6 +21,10 @@ select ok(not has_function_privilege('authenticated',
   'public.persist_meal_photo_candidates(uuid,uuid,jsonb,text,text)', 'execute'),
   'authenticated cannot forge meal candidates');
 
+insert into storage.objects(bucket_id, name, owner_id) values
+  ('meal-images', '11111111-1111-7777-8777-111111111111/meal/11111117-1111-7777-8777-111111111111.jpg',
+   '11111111-1111-7777-8777-111111111111');
+
 set local role authenticated;
 set local "request.jwt.claim.sub" = '11111111-1111-7777-8777-111111111111';
 
@@ -28,7 +32,7 @@ create temporary table draft as
 select public.create_meal_photo_draft(
   current_date, 'Asia/Kolkata', 'breakfast',
   '11111117-1111-7777-8777-111111111111',
-  '11111111-1111-7777-8777-111111111111/meal/photo_001.jpg',
+  '11111111-1111-7777-8777-111111111111/meal/11111117-1111-7777-8777-111111111111.jpg',
   'image/jpeg', 1024000,
   'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 ) json;
@@ -43,13 +47,13 @@ select ok((select json->>'media_id' is not null from draft),
   'photo draft returns a media_id');
 
 select is((select json->>'object_path' from draft),
-  '11111111-1111-7777-8777-111111111111/meal/photo_001.jpg',
+  '11111111-1111-7777-8777-111111111111/meal/11111117-1111-7777-8777-111111111111.jpg',
   'object_path is echoed back');
 
 select lives_ok($$select public.create_meal_photo_draft(
   current_date, 'Asia/Kolkata', 'breakfast',
   '11111117-1111-7777-8777-111111111111',
-  '11111111-1111-7777-8777-111111111111/meal/photo_001.jpg',
+  '11111111-1111-7777-8777-111111111111/meal/11111117-1111-7777-8777-111111111111.jpg',
   'image/jpeg', 1024000,
   'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 )$$, 'draft creation is idempotent');

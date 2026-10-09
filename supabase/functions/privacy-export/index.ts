@@ -1,6 +1,7 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2.49.8";
 import { strToU8, zipSync } from "npm:fflate@0.8.2";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
+import { isUserStorageKey } from "../_shared/storage_keys.ts";
 const dataTables = [
   "user_accounts",
   "user_profiles",
@@ -120,14 +121,30 @@ async function collectRows(client: SupabaseClient, userId: string) {
   return output;
 }
 
-async function addMedia(
+type MediaStorage = Readonly<{
+  storage: {
+    from: (bucket: string) => {
+      download: (key: string) => Promise<{ data: Blob | null; error: unknown }>;
+    };
+  };
+}>;
+
+// Returns the ids of media rows whose key is not a safe key in the user's own
+// folder. They are listed in the manifest instead of downloaded.
+export async function addMedia(
   files: Record<string, Uint8Array>,
-  client: SupabaseClient,
+  client: MediaStorage,
   rows: Record<string, ReadonlyArray<Record<string, unknown>>>,
-) {
+  userId: string,
+): Promise<string[]> {
+  const skipped: string[] = [];
   const media = rows.media_objects ?? [];
   for (const object of media) {
     if (object.lifecycle_status === "deleted" || typeof object.object_key !== "string") continue;
+    if (!isUserStorageKey(userId, object.object_key)) {
+      skipped.push(String(object.id));
+      continue;
+    }
     const purpose = String(object.purpose ?? "unknown");
     const bucket = purpose === "meal_analysis" ? "meal-images" : "progress-photos";
     const { data, error } = await client.storage.from(bucket).download(object.object_key);
@@ -135,6 +152,7 @@ async function addMedia(
     const name = object.object_key.split("/").at(-1) ?? `${object.id}.bin`;
     files[`media/${purpose}/${object.id}-${name}`] = new Uint8Array(await data.arrayBuffer());
   }
+  return skipped;
 }
 
 async function buildExport(
@@ -144,6 +162,7 @@ async function buildExport(
 ) {
   const rows = await collectRows(client, userId);
   const files: Record<string, Uint8Array> = {};
+  const skippedMedia = await addMedia(files, client, rows, userId);
   const generatedAt = new Date().toISOString();
   files["manifest.json"] = strToU8(JSON.stringify(
     {
@@ -156,6 +175,7 @@ async function buildExport(
       tables: Object.fromEntries(
         Object.entries(rows).map(([name, values]) => [name, values.length]),
       ),
+      skipped_media: skippedMedia,
     },
     null,
     2,
@@ -164,7 +184,6 @@ async function buildExport(
   for (const [name, values] of Object.entries(rows)) {
     files[`data/csv/${name}.csv`] = strToU8(csv(values));
   }
-  await addMedia(files, client, rows);
   return zipSync(files, { level: 6 });
 }
 
@@ -225,10 +244,11 @@ export async function handlePrivacyExport(request: Request): Promise<Response> {
     ).eq("id", exportId).single();
     return reply(200, { schema_version: "1.0", export: existing.data });
   }
+  const path = `${auth.userId}/${exportId}.tracendexport`;
+  let uploaded = false;
   try {
     const zip = await buildExport(auth.serviceClient, auth.userId, auth.userEmail);
     const encrypted = await encrypt(zip, body.password);
-    const path = `${auth.userId}/${exportId}.tracendexport`;
     const upload = await auth.serviceClient.storage.from("account-exports").upload(
       path,
       encrypted,
@@ -238,6 +258,7 @@ export async function handlePrivacyExport(request: Request): Promise<Response> {
       },
     );
     if (upload.error) throw new Error("export_upload_failed");
+    uploaded = true;
     const completed = await auth.serviceClient.rpc("complete_data_export", {
       target_export_id: exportId,
       object_path: path,
@@ -252,6 +273,8 @@ export async function handlePrivacyExport(request: Request): Promise<Response> {
     const code = error instanceof Error && error.message.match(/^[a-z0-9_]+$/)
       ? error.message
       : "export_failed";
+    // An export that never became ready must not stay in Storage.
+    if (uploaded) await auth.serviceClient.storage.from("account-exports").remove([path]);
     await auth.serviceClient.rpc("fail_data_export", {
       target_export_id: exportId,
       failure_code: code,

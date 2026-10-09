@@ -1,4 +1,6 @@
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
+import { captureException } from "../_shared/sentry.ts";
+import { isUserStorageKey } from "../_shared/storage_keys.ts";
 
 export function isExactDeletionConfirmation(value: unknown): boolean {
   return value === "DELETE";
@@ -19,6 +21,17 @@ async function removeObjects(
     const result = await client.storage.from(bucket).remove(paths.slice(index, index + 100));
     if (result.error) throw new Error("storage_deletion_failed");
   }
+}
+
+// Splits stored keys into the ones safe to pass to Storage and a count of the
+// rest, which are never sent: a service-role remove ignores Storage RLS.
+export function deletableKeys(
+  userId: string,
+  keys: readonly unknown[],
+): { keys: string[]; unsafe: number } {
+  const safe = [...new Set(keys.filter((key): key is string => isUserStorageKey(userId, key)))];
+  const unsafe = keys.filter((key) => typeof key === "string" && !isUserStorageKey(userId, key));
+  return { keys: safe, unsafe: unsafe.length };
 }
 
 export async function handleAccountDeletion(request: Request): Promise<Response> {
@@ -58,25 +71,45 @@ export async function handleAccountDeletion(request: Request): Promise<Response>
     const media = await auth.serviceClient.from("media_objects").select("purpose,object_key")
       .eq("user_id", auth.userId).neq("lifecycle_status", "deleted");
     if (media.error) throw new Error("media_lookup_failed");
-    const mealPaths: string[] = [];
-    const progressPaths: string[] = [];
-    for (const row of media.data ?? []) {
-      if (typeof row.object_key !== "string") continue;
-      if (row.purpose === "meal_analysis") mealPaths.push(row.object_key);
-      else progressPaths.push(row.object_key);
-    }
+    const rows = media.data ?? [];
     const exports = await auth.serviceClient.from("data_exports").select("storage_path")
       .eq("user_id", auth.userId).not("storage_path", "is", null);
     if (exports.error) throw new Error("export_lookup_failed");
-    await removeObjects(auth.serviceClient, "meal-images", mealPaths);
-    await removeObjects(auth.serviceClient, "progress-photos", progressPaths);
-    await removeObjects(
-      auth.serviceClient,
-      "account-exports",
-      (exports.data ?? []).map((row) => row.storage_path).filter((path): path is string =>
-        typeof path === "string"
-      ),
-    );
+    // Uploads that never got a database row are in the user's folders too.
+    const listed = await auth.serviceClient.rpc("list_account_storage_objects", {
+      target_user_id: auth.userId,
+    });
+    if (listed.error) throw new Error("storage_listing_failed");
+    const objects = (listed.data ?? []) as { bucket_id: string; name: string }[];
+    const inBucket = (bucket: string) =>
+      objects.filter((object) => object.bucket_id === bucket).map((object) => object.name);
+    const meals = deletableKeys(auth.userId, [
+      ...rows.filter((row) => row.purpose === "meal_analysis").map((row) => row.object_key),
+      ...inBucket("meal-images"),
+    ]);
+    const progress = deletableKeys(auth.userId, [
+      ...rows.filter((row) => row.purpose !== "meal_analysis").map((row) => row.object_key),
+      ...inBucket("progress-photos"),
+    ]);
+    const exportKeys = deletableKeys(auth.userId, [
+      ...(exports.data ?? []).map((row) => row.storage_path),
+      ...inBucket("account-exports"),
+    ]);
+    // An object whose key cannot be passed to Storage safely would outlive the
+    // account, so nothing is deleted: the request fails and the owner removes
+    // that object by hand before the athlete retries.
+    const unsafe = meals.unsafe + progress.unsafe + exportKeys.unsafe;
+    if (unsafe > 0) {
+      captureException(new Error(`account_deletion_unsafe_keys_${unsafe}`), {
+        userId: auth.userId,
+        functionName: "privacy-delete-account",
+        failureCode: "unsafe_storage_key",
+      });
+      throw new Error("unsafe_storage_key");
+    }
+    await removeObjects(auth.serviceClient, "meal-images", meals.keys);
+    await removeObjects(auth.serviceClient, "progress-photos", progress.keys);
+    await removeObjects(auth.serviceClient, "account-exports", exportKeys.keys);
     const removed = await auth.serviceClient.auth.admin.deleteUser(auth.userId);
     if (removed.error) throw new Error("auth_deletion_failed");
     await auth.serviceClient.rpc("complete_account_deletion", {

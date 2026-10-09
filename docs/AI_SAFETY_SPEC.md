@@ -307,8 +307,14 @@ Provider (2026-09-29): server-side Groq `qwen/qwen3.8-27b`, successor of the ret
 `MEAL_VISION_ENABLED` and `MEAL_VISION_MODEL_EVALUATED` are both `true`; the owner sets the second
 only after checking the model on their own meal photos. Groq's Zero Data Retention setting must be
 on for the key's organization before the route is enabled. Meal photos are not covered by the AI
-coaching consent (which covers DeepSeek and states that photos are not sent); a separate
-meal-photo consent is required before anyone other than the owner uses photo analysis.
+coaching consent (which covers DeepSeek and states that photos are not sent). They have their own
+notice and consent (2026-10-09): `meal_photo_ai_notices` (current `meal-photo-ai-v1`, Groq,
+`qwen/qwen3.8-27b`) and consent type `meal_photo_ai`. The app shows the notice before the first
+photo is picked, and meal-analyze refuses (403 `meal_photo_ai_consent_required`) without a grant of
+the current version, and (503 `meal_photo_notice_outdated`) when that notice names a provider other
+than `MEAL_VISION_PROVIDER`. The athlete withdraws from **Log a meal** (**Turn off meal photo
+AI**, a `withdrawn` record), which stops new analysis at once. A provider or model change needs a new notice
+(`private.publish_meal_photo_ai_notice`) before the switch; every athlete is then asked again.
 
 ## 9. Physique Analysis
 

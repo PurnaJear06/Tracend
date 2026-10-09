@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.49.8";
 import { aiCoachingConsent, type ConsentRpc } from "../_shared/ai_consent.ts";
+import { AiBudget } from "../_shared/ai_budget.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import {
   type CatalogExercise,
@@ -22,7 +23,11 @@ import {
 
 type EdgeRuntimeGlobal = { EdgeRuntime?: { waitUntil(work: Promise<unknown>): void } };
 
-function supabaseStore(client: SupabaseClient, userId: string): OnboardingStore {
+function supabaseStore(
+  client: SupabaseClient,
+  userId: string,
+  budget: AiBudget,
+): OnboardingStore {
   return {
     async loadDraft() {
       const { data, error } = await client.from("onboarding_drafts")
@@ -150,7 +155,11 @@ function supabaseStore(client: SupabaseClient, userId: string): OnboardingStore 
         run_estimated_cost_usd: usage.estimatedCostUsd,
         run_latency_ms: usage.latencyMs,
       });
-      if (error) throw error;
+      if (error) {
+        // Unrecorded, the call stays counted by its open reservation.
+        budget.keep();
+        throw error;
+      }
     },
     consent() {
       return aiCoachingConsent(
@@ -159,10 +168,10 @@ function supabaseStore(client: SupabaseClient, userId: string): OnboardingStore 
         "onboarding_plan",
       );
     },
-    async budgetAvailable() {
-      const { error } = await client.rpc("assert_owner_ai_budget", { target_user_id: userId });
-      return !error;
-    },
+    // Questions and plans share this check; a place is held at the plan's
+    // (higher) ceiling either way.
+    budgetAvailable: () => budget.reserve("onboarding_plan"),
+    keepBudget: () => budget.keep(),
     async recordUsage(usage) {
       const { error } = await client.rpc("record_ai_usage_event", {
         target_user_id: userId,
@@ -174,7 +183,10 @@ function supabaseStore(client: SupabaseClient, userId: string): OnboardingStore 
         run_estimated_cost_usd: usage.estimatedCostUsd,
         run_latency_ms: usage.latencyMs,
       });
-      if (error) throw error;
+      if (error) {
+        budget.keep();
+        throw error;
+      }
     },
     async persist(generationId, snapshotHash, snapshot, proposal, metadata) {
       const { error } = await client.rpc("persist_onboarding_proposal_v3", {
@@ -230,14 +242,23 @@ Deno.serve(async (request) => {
     provider: typeof fields.provider === "string" ? fields.provider : undefined,
     model: typeof fields.model === "string" ? fields.model : undefined,
   });
+  const serviceClient = auth.serviceClient;
+  const budget = new AiBudget((fn, args) => serviceClient.rpc(fn, args), auth.userId);
+  // A plan is generated after the response; its reservation is released when
+  // that work ends, not when the response goes.
+  let backgrounded = false;
   try {
     return await handleOnboardingPlan({
       mode,
-      store: supabaseStore(auth.serviceClient, auth.userId),
+      store: supabaseStore(serviceClient, auth.userId, budget),
       resolution: () => resolveOnboardingModel(),
       currentYear: new Date().getUTCFullYear(),
       now: () => new Date(),
-      background: (work) => runtime ? runtime.waitUntil(work) : void work,
+      background: (work) => {
+        backgrounded = true;
+        const done = work.finally(() => budget.release());
+        if (runtime) runtime.waitUntil(done);
+      },
       observer: {
         info: (event, fields) => log.info(event, fields),
         warn: (event, fields) => {
@@ -259,5 +280,7 @@ Deno.serve(async (request) => {
     });
     captureException(error, { functionName: "onboarding-plan", correlationId });
     return reply(503, { error: "onboarding_plan_unavailable" });
+  } finally {
+    if (!backgrounded) await budget.release();
   }
 });

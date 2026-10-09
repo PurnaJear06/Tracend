@@ -766,6 +766,12 @@ AI observation                 Confirmed meal
 - **Enter meal** and **Review candidates** are sheets. Each candidate shows its serving, calories
   and confidence in sentence case (**Medium confidence**).
 - Failure offers **Retry**, **Enter manually**, and **Delete photo**.
+- Before the first photo is picked, a sheet shows the meal photo AI notice (**Analyze meal photos
+  with AI?**, the server's text, **Agree and continue**, **Not now**). **Not now** closes it
+  without opening the camera or library; agreeing records the grant and continues to the picker.
+  A new notice version asks again. While it is granted, **Log a meal** ends with **Turn off meal
+  photo AI**, which records a withdrawal (the server stops sending photos at once; the next photo
+  shows the notice again). Consent history lists **Meal photo AI analysis**.
 - While a photo is analyzed, the brand loader and **Analyzing meal photo…** appear under **Log a
   meal**. A failure is shown in
   the same place, never only at the top of the screen, out of view. A refused camera or photo

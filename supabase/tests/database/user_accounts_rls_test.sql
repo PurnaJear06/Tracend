@@ -1,6 +1,6 @@
 begin;
 
-select plan(8);
+select plan(9);
 
 insert into auth.users (id, role)
 values
@@ -28,13 +28,13 @@ select results_eq(
 );
 
 select lives_ok(
-  $$update public.user_accounts set timezone = 'Asia/Kolkata' where id = '11111111-1111-4111-8111-111111111111'$$,
+  $$update public.user_accounts set locale = 'en-IN' where id = '11111111-1111-4111-8111-111111111111'$$,
   'an authenticated user can update their account'
 );
 
 select is(
-  (select timezone from public.user_accounts where id = '11111111-1111-4111-8111-111111111111'),
-  'Asia/Kolkata',
+  (select locale from public.user_accounts where id = '11111111-1111-4111-8111-111111111111'),
+  'en-IN',
   'the own-account update persists'
 );
 
@@ -45,8 +45,15 @@ select is(
 );
 
 select is_empty(
-  $$update public.user_accounts set timezone = 'UTC' where id = '22222222-2222-4222-8222-222222222222' returning id$$,
+  $$update public.user_accounts set locale = 'en-US' where id = '22222222-2222-4222-8222-222222222222' returning id$$,
   'a cross-user update changes no row'
+);
+
+select throws_ok(
+  $$update public.user_accounts set timezone = 'Not/AZone' where id = '11111111-1111-4111-8111-111111111111'$$,
+  '42501',
+  null,
+  'the time zone changes only through set_my_timezone'
 );
 
 select throws_ok(

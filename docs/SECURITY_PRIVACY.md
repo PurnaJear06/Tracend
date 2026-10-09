@@ -142,6 +142,18 @@ AI consent is per purpose (2026-10):
 - Strip unnecessary EXIF, location, and device metadata before long-term storage or provider
   transfer.
 - Use opaque object identifiers; never expose storage keys as authorization.
+- A media row records only the exact key the app uploaded: `<uid>/meal/<request id>.<ext>` (bound
+  to the meal's idempotency key) or `<uid>/progress/<set id>/<pose>.<ext>`, and the RPC that
+  records it requires an uploaded object the caller owns (`private.is_owned_media_key`). Stored keys
+  stay inside their owner's folder with no `.`/`..` segment, `//`, `\`, `%` or control character
+  (`media_objects_object_key_safe`).
+- Service-role code ignores Storage RLS, so every key it reads from the database passes
+  `_shared/storage_keys.ts` (a safe key in the user's own folder) before any download or removal.
+  A key that fails is never sent to Storage: meal analysis answers `meal_not_found`, the export
+  lists it under `skipped_media`, and retention leaves it and reports a count to Sentry. Account
+  deletion stops before deleting anything and fails the request (Sentry
+  `account_deletion_unsafe_keys_<n>`), so it never reports success while a private object remains;
+  the owner removes that object in the dashboard and the athlete retries.
 
 ### Access
 
@@ -206,7 +218,10 @@ AI consent is per purpose (2026-10):
 - Supabase Auth validates the Apple identity exchange and manages JWT access/refresh sessions;
   Tracend must not issue a parallel token system.
 - Store Supabase sessions only through platform-protected storage supported by `supabase_flutter`;
-  never general preferences or logs.
+  never general preferences or logs. Since 2026-10-09 the session lives in the iOS Keychain
+  (`KeychainSessionStorage`, `first_unlock_this_device`, never synced or backed up). The first
+  launch of that build moves a session from preferences, checks it reads back, then deletes the
+  old copy; a fresh install clears anything a deleted install left in the Keychain.
 - Capture an Apple-provided name only on first authorization when present; do not require or infer a
   legal name.
 - Store secrets in environment-specific secret management, never source control, mobile bundles,
@@ -220,7 +235,23 @@ AI consent is per purpose (2026-10):
 - Enforce ownership again in transactional RPC and privileged Edge Functions.
 - Use generic not-found/forbidden behavior that does not reveal another user's resource existence.
 - Rate-limit authentication, Edge Functions, media operations, AI jobs, export, and deletion.
+  Database caps (SQLSTATE 54000, `private.enforce_user_row_limit`): 100 consent records a day, 200
+  goals, 50 Coach conversations a day and 1,000 in all, 10 progress photo sets a day, and 120 health
+  syncs an hour. Uploads (restrictive policy `user_media_upload_quota`): 100 meal photos a day and
+  3,000 kept; 60 progress photos a day and 2,000 kept. Onboarding drafts are capped at 128 KB and
+  goal details at 16 KB. The meal-media-retention worker removes Storage objects that have no
+  database row after a day (exports after an hour).
+- Clients write only the columns they need: consent records take `user_id`, `consent_type`,
+  `notice_version`, `action` and `source` (never `created_at`), and the account time zone changes
+  only through `set_my_timezone`.
 - Require recent authentication for export, account deletion, or sensitive session changes.
+  "Recent" is read from the JWT `amr` claim (`private.has_recent_sign_in`): a password, OTP or TOTP
+  sign-in within 10 minutes. `iat` is not used, because a token refresh resets it while `amr`
+  keeps the time of the sign-in that started the session.
+- Sign-ups are invite-only during the beta. `private.handle_new_auth_user` refuses an email that is
+  not in `private.signup_invites` (reachable only from the SQL editor), so the Auth insert rolls
+  back and no account or email is created; existing accounts were seeded on 2026-10-09. Invite
+  with `insert into private.signup_invites(email, note) values (lower('<email>'), 'beta');`.
 - `meal-media-retention` validates a dedicated `RETENTION_WORKER_SECRET` (not JWT). Store the same
   generated value in Edge Function secrets and Supabase Vault; Cron reads Vault. Never place it in
   Flutter, shell history, logs, or committed files.
@@ -244,6 +275,8 @@ AI consent is per purpose (2026-10):
 - Cross-table foreign-key ownership is validated in constraints or transactional functions.
 - Storage paths and policies are user/purpose bound.
 - Edge Functions validate the JWT and requested resource even when using secret/service-role access.
+- An RPC granted to `authenticated` that takes a target user id refuses any id but the caller's
+  unless the caller is the service role (`persist_coach_preference`).
 - Queue messages carry opaque resource IDs and workers reauthorize ownership and consent at
   execution.
 - Weekly-review messages contain only schema version and an opaque job ID. The worker rechecks
@@ -325,7 +358,9 @@ Owner-supplied historical context used for an administrative import remains in i
 permission-restricted `.tooling/private-imports/` files on the external SSD. Raw reports and import
 payloads are never committed or copied into handoff, progress, audit, or application logs.
 
-Meal-photo requests use private Storage bytes only after explicit photo consent. The provider
+Meal-photo requests use private Storage bytes only after explicit photo consent (the
+`meal_photo_ai` grant of the current meal photo notice, checked by meal-analyze before any
+download). The provider
 receives a minimized image and fixed instruction with no identity, object key, or unrelated history.
 Visible text in an image is untrusted input. Analysis candidates are unconfirmed restricted data and
 follow meal-media retention even when the provider or validation fails.
@@ -340,7 +375,8 @@ history.
 
 ### Export
 
-- Export is requested after recent authentication.
+- Export is requested after recent authentication, and neither starts nor completes while an
+  account deletion is pending. A package that fails after upload is removed from Storage.
 - The package contains user-readable JSON/CSV and media organized by purpose, with units,
   provenance, and timestamps.
 - It is encrypted, delivered through a short-lived authorization, and deleted within seven days.
@@ -354,7 +390,9 @@ history.
 ### Deletion
 
 - Fresh password authentication and the exact phrase `DELETE` are required.
-- Meal images, progress photos, and export packages are removed before the Auth user. Auth deletion
+- Meal images, progress photos, and export packages are removed before the Auth user: every object
+  recorded for the account plus every object in the account's folders
+  (`list_account_storage_objects`), so an upload that never got a database row goes too. Auth deletion
   cascades through user-owned PostgreSQL records; a content-free completion receipt remains for 180
   days.
 - Destructive verification uses synthetic accounts only. Failure never reports completion to the

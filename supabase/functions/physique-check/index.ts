@@ -1,17 +1,21 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.49.8";
+import { AiBudget } from "../_shared/ai_budget.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { createLogger, extractCorrelationId } from "../_shared/logger.ts";
 import {
   physiqueAllowedUsers,
+  PhysiqueVisionError,
   resolvePhysiqueVision,
 } from "../_shared/providers/physique_vision_provider.ts";
 import { captureException } from "../_shared/sentry.ts";
+import { isUserStorageKey } from "../_shared/storage_keys.ts";
 import { handlePhysiqueCheck, type PhysiqueStore } from "./handler.ts";
 
 function supabaseStore(
   userClient: SupabaseClient,
   serviceClient: SupabaseClient,
   userId: string,
+  budget: AiBudget,
 ): PhysiqueStore {
   const number = (value: unknown) => value === null || value === undefined ? null : Number(value);
   return {
@@ -21,12 +25,7 @@ function supabaseStore(
       const notice = data as { version?: unknown; granted?: unknown } | null;
       return notice?.granted === true && typeof notice.version === "string" ? notice.version : null;
     },
-    async budgetAvailable() {
-      const { error } = await serviceClient.rpc("assert_owner_ai_budget", {
-        target_user_id: userId,
-      });
-      return !error;
-    },
+    budgetAvailable: () => budget.reserve("progress_vision"),
     async profileNotes() {
       const { data, error } = await serviceClient.from("user_profiles")
         .select("limitations_note,nutrition_note").eq("user_id", userId).maybeSingle();
@@ -52,6 +51,7 @@ function supabaseStore(
       };
     },
     async download(objectKey) {
+      if (!isUserStorageKey(userId, objectKey)) return null;
       const { data, error } = await serviceClient.storage.from("progress-photos")
         .download(objectKey);
       if (error || !data) return null;
@@ -106,7 +106,11 @@ function supabaseStore(
         run_estimated_cost_usd: usage.estimatedCostUsd,
         run_latency_ms: usage.latencyMs,
       });
-      if (error) throw error;
+      if (error) {
+        // Unrecorded, the call stays counted by its open reservation.
+        budget.keep();
+        throw error;
+      }
     },
   };
 }
@@ -124,10 +128,12 @@ Deno.serve(async (request) => {
   }
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (!body || typeof body !== "object") return reply(422, { error: "invalid_physique_request" });
+  const serviceClient = auth.serviceClient;
+  const budget = new AiBudget((fn, args) => serviceClient.rpc(fn, args), auth.userId);
   try {
     return await handlePhysiqueCheck({
       userId: auth.userId,
-      store: supabaseStore(auth.userClient, auth.serviceClient, auth.userId),
+      store: supabaseStore(auth.userClient, auth.serviceClient, auth.userId, budget),
       resolution: resolvePhysiqueVision(),
       allowedUsers: physiqueAllowedUsers(),
       observer: {
@@ -143,11 +149,20 @@ Deno.serve(async (request) => {
       },
     }, body);
   } catch (error) {
+    // Only a refusal (429) or an HTTP error rules out billing. A timeout, a
+    // dropped connection or an unreadable answer may have been billed with no
+    // usage reported, so the reservation stays open and keeps counting.
+    const unbilled = error instanceof PhysiqueVisionError &&
+      (error.code === "physique_vision_busy" ||
+        error.code.startsWith("physique_vision_request_failed"));
+    if (!unbilled) budget.keep();
     // Codes and names only: never photos, prompts or the model's text.
     log.error("physique_check_failed", {
       error: error instanceof Error ? error.message.slice(0, 80) : "unknown",
     });
     captureException(error, { functionName: "physique-check", correlationId });
     return reply(503, { error: "physique_check_failed" });
+  } finally {
+    await budget.release();
   }
 });

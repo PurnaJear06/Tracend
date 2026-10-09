@@ -1,6 +1,6 @@
 import type { CoachModelProvider } from "./coach_model_provider.ts";
 import { DeepseekCoachModelProvider } from "./deepseek_coach_model_provider.ts";
-import { isApprovedDeepseekModel } from "./deepseek_models.ts";
+import { deepseekFlashPeakPricePerMillionUsd, isApprovedDeepseekModel } from "./deepseek_models.ts";
 import { GeminiCoachModelProvider } from "./gemini_coach_model_provider.ts";
 import { GroqCoachModelProvider } from "./groq_coach_model_provider.ts";
 import { MockCoachModelProvider } from "./mock_coach_model_provider.ts";
@@ -15,14 +15,17 @@ function required(environment: CoachProviderEnvironment, name: string): string {
   return value;
 }
 
-function nonnegativeNumber(
+// An unset price falls back to the provider's list price (the same rates
+// coach-chat uses), so no call is ever counted as free.
+function priceOrListPrice(
   environment: CoachProviderEnvironment,
   name: string,
+  listPrice: number,
 ): number {
   const raw = environment.get(name)?.trim();
-  if (!raw) return 0;
+  if (!raw) return listPrice;
   const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) {
+  if (!Number.isFinite(value) || value <= 0) {
     throw new Error("coach_provider_configuration_invalid");
   }
   return value;
@@ -47,13 +50,15 @@ export function createCoachModelProvider(
     return new GroqCoachModelProvider({
       apiKey: required(environment, "GROQ_API_KEY"),
       model,
-      inputCostPerMillionUsd: nonnegativeNumber(
+      inputCostPerMillionUsd: priceOrListPrice(
         environment,
         "GROQ_INPUT_COST_PER_MILLION_USD",
+        0.6,
       ),
-      outputCostPerMillionUsd: nonnegativeNumber(
+      outputCostPerMillionUsd: priceOrListPrice(
         environment,
         "GROQ_OUTPUT_COST_PER_MILLION_USD",
+        3,
       ),
     });
   }
@@ -65,13 +70,15 @@ export function createCoachModelProvider(
     return new DeepseekCoachModelProvider({
       apiKey: required(environment, "DEEPSEEK_API_KEY"),
       model,
-      inputCostPerMillionUsd: nonnegativeNumber(
+      inputCostPerMillionUsd: priceOrListPrice(
         environment,
         "DEEPSEEK_INPUT_COST_PER_MILLION_USD",
+        deepseekFlashPeakPricePerMillionUsd.input,
       ),
-      outputCostPerMillionUsd: nonnegativeNumber(
+      outputCostPerMillionUsd: priceOrListPrice(
         environment,
         "DEEPSEEK_OUTPUT_COST_PER_MILLION_USD",
+        deepseekFlashPeakPricePerMillionUsd.output,
       ),
     });
   }
@@ -83,10 +90,11 @@ export function createCoachModelProvider(
     apiKey: required(environment, "GEMINI_API_KEY"),
     model,
     paidDataTermsAccepted: environment.get("GEMINI_PAID_DATA_TERMS_ACCEPTED") === "true",
-    inputCostPerMillionUsd: nonnegativeNumber(environment, "GEMINI_INPUT_COST_PER_MILLION_USD"),
-    outputCostPerMillionUsd: nonnegativeNumber(
+    inputCostPerMillionUsd: priceOrListPrice(environment, "GEMINI_INPUT_COST_PER_MILLION_USD", 1.5),
+    outputCostPerMillionUsd: priceOrListPrice(
       environment,
       "GEMINI_OUTPUT_COST_PER_MILLION_USD",
+      9,
     ),
   });
 }

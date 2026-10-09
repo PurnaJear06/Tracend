@@ -1,3 +1,5 @@
+import { assertEquals, assertRejects } from "jsr:@std/assert@1";
+import { MealVisionBilledError } from "./gemini_meal_vision_provider.ts";
 import { analyzeGroqMealImage } from "./groq_meal_vision_provider.ts";
 
 const candidateReply = () =>
@@ -178,4 +180,41 @@ Deno.test("the prompt allows an empty answer instead of an invented food", async
   if (!prompt.includes("0-20 objects") || !prompt.includes("never invent a food")) {
     throw new Error(`Prompt still requires a candidate: ${prompt.slice(0, 120)}`);
   }
+});
+
+Deno.test("an unusable Groq answer still reports its usage", async () => {
+  const oversized = () =>
+    new Response(JSON.stringify({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            candidates: [{
+              name: "Feast",
+              serving_label: "1 table",
+              calories: 90000,
+              protein_g: 9,
+              carbohydrate_g: 24,
+              fat_g: 5,
+              confidence: "low",
+              assumptions: [],
+              question: "",
+            }],
+          }),
+        },
+      }],
+      usage: { prompt_tokens: 1200, completion_tokens: 300 },
+    }));
+  const error = await assertRejects(
+    () =>
+      analyzeGroqMealImage(
+        new Uint8Array([1, 2, 3]),
+        "image/jpeg",
+        () => Promise.resolve(oversized()),
+        environment({ MEAL_VISION_MODEL: "qwen/qwen3.8-27b" }),
+      ),
+    MealVisionBilledError,
+    "meal_vision_response_invalid",
+  );
+  assertEquals(error.usage.inputUnits, 1200);
+  assertEquals(error.usage.outputUnits, 300);
 });

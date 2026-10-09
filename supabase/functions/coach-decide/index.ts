@@ -3,6 +3,7 @@ import { parseCoachRequest } from "../_shared/contracts/coach_request_v1.ts";
 import type { CoachModelGeneration } from "../_shared/providers/coach_model_provider.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { aiCoachingConsent } from "../_shared/ai_consent.ts";
+import { AiBudget } from "../_shared/ai_budget.ts";
 import { dailyDecisionProvider } from "../_shared/providers/daily_decision_provider.ts";
 
 const SAFE_REASON = /^[a-z][a-z0-9_]{0,60}$/;
@@ -40,7 +41,21 @@ function failureReason(
   return error.message;
 }
 
+// A budget reservation taken for the live model is released when the request
+// ends, however it ends.
 Deno.serve(async (request) => {
+  const budget: { current?: AiBudget } = {};
+  try {
+    return await handleCoachDecide(request, budget);
+  } finally {
+    await budget.current?.release();
+  }
+});
+
+async function handleCoachDecide(
+  request: Request,
+  held: { current?: AiBudget },
+): Promise<Response> {
   if (request.method !== "POST") return reply(405, { error: "method_not_allowed" });
   let auth;
   try {
@@ -64,7 +79,6 @@ Deno.serve(async (request) => {
     auth.userId,
     "daily_coaching",
   );
-  const useModel = consent === "granted";
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
     "prepare_daily_coaching",
     {
@@ -83,6 +97,12 @@ Deno.serve(async (request) => {
       : reply(409, { error: "decision_pending" });
   }
 
+  // The live model also needs a place in the AI budget. Without one the day's
+  // decision comes from the deterministic provider, as without consent.
+  const budget = new AiBudget((fn, args) => auth.serviceClient.rpc(fn, args), auth.userId);
+  held.current = budget;
+  const useModel = consent === "granted" && await budget.reserve("daily_coaching");
+
   const started = performance.now();
   let generated: CoachModelGeneration | undefined;
   try {
@@ -98,7 +118,7 @@ Deno.serve(async (request) => {
     if (snapshotError || !snapshot || typeof snapshot.features !== "object") {
       throw new Error("feature_context_unavailable");
     }
-    generated = await dailyDecisionProvider(consent).generateDecision({
+    generated = await dailyDecisionProvider(useModel ? consent : "not_granted").generateDecision({
       decisionKind: "daily",
       featureSnapshotId: prepared.feature_snapshot_id,
       policyEvaluationId: prepared.policy_evaluation_id,
@@ -126,6 +146,9 @@ Deno.serve(async (request) => {
       },
     );
     if (error || !persisted) {
+      // A failed run is stored without its cost, so a live call's reservation
+      // stays open and keeps counting at its ceiling.
+      if (useModel) budget.keep();
       await auth.serviceClient.rpc("persist_failed_coaching_run_v2", {
         target_user_id: auth.userId,
         snapshot_id: prepared.feature_snapshot_id,
@@ -150,6 +173,7 @@ Deno.serve(async (request) => {
       (prepared.permitted_evidence as string[] | undefined) ?? [],
     );
     console.error(`coach-decide failed: ${reason}`);
+    if (useModel) budget.keep();
     await auth.serviceClient.rpc("persist_failed_coaching_run_v2", {
       target_user_id: auth.userId,
       snapshot_id: prepared.feature_snapshot_id,
@@ -178,4 +202,4 @@ Deno.serve(async (request) => {
     });
     return reply(503, { error: "coaching_unavailable" });
   }
-});
+}

@@ -8,17 +8,21 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   dry-run:
     name: Migration Dry-Run
     runs-on: ubuntu-latest
+    environment: production
+    if: github.ref == 'refs/heads/main'
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
         with:
           version: "2.101.0"
 
@@ -33,11 +37,14 @@ jobs:
     name: Deploy Migrations
     needs: dry-run
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
         with:
           version: "2.101.0"
 
@@ -52,6 +59,7 @@ jobs:
     name: Deploy Edge Functions
     needs: deploy-migrations
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -72,9 +80,11 @@ jobs:
           - privacy-delete-account
           - privacy-export
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
         with:
           version: "2.101.0"
 
@@ -103,11 +113,14 @@ jobs:
     name: Verify Live Functions
     needs: deploy-functions
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
         with:
           version: "2.101.0"
 
@@ -145,9 +158,11 @@ jobs:
     name: Tag Release
     needs: [smoke-test, verify-functions]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     timeout-minutes: 2
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 

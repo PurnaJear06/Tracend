@@ -1,0 +1,230 @@
+# Security hardening batch (2026-10-09)
+
+**Status:** PR 1 (#88), PR 2 (#89), PR 3 (#90), PR 4a (#91), PR 4b (#92) and PR 5 in review, each stacked on the one before; merge in order. PR 4 was split: 4a (AI spending, server only) and 4b (meal-photo notice, needs the new build). A source review of `d26cf2c` raised leads that need fixing; the
+details stay in the owner's private report, not in this public repository. The owner approved a
+five-PR plan on 2026-10-09 and chose: an invite list for new sign-ups, a one-time meal-photo AI
+notice enforced by the server, and session tokens in the iOS Keychain.
+
+Merge in order; each PR deploys on its own. Migration timestamps increase in merge order, so a PR
+that waits behind another must be re-stamped before it merges.
+
+| # | Branch | Scope | Installed app |
+|---|---|---|---|
+| 1 | `security/storage-keys-and-authz` | media key grammar and ownership, service-role key guard, Coach preference caller check, restore-drill log output | no change |
+| 2 | `security/account-boundary` | sign-up invites, recent sign-in for export and deletion, full Storage purge on deletion, Coach thread delete | server works with the old build; reinstall for the invite message and delete reporting |
+| 3 | `security/abuse-limits` | time zone writes, consent records, health sync bounds, upload quotas and orphan sweep, content caps | no change |
+| 4a | `security/ai-spend` | AI budget reservations, a global stop, failed-call cost, list-price defaults | no change |
+| 4b | `security/meal-photo-consent` | meal-photo AI notice, AI notice v5 | needs the new build |
+| 5 | `security/keychain-and-ci` | Keychain session storage, pinned actions, workflow permissions | needs the new build |
+
+## PR 1: media keys and caller checks
+
+- Migration `20261009120000_storage_object_key_hardening.sql`:
+  - `private.is_owned_media_key` accepts only the app's upload grammar.
+  - `create_meal_photo_draft` binds the key to the request id and requires an uploaded object the
+    caller owns (as `register_progress_photo` already did).
+  - `register_progress_photo` requires the exact key instead of a prefix.
+  - `media_objects_object_key_safe` (`NOT VALID`) keeps new keys inside the owner's folder.
+  - `persist_coach_preference` refuses any athlete but the caller unless the caller is the service
+    role.
+- `_shared/storage_keys.ts` guards every service-role Storage call: meal-analyze, physique-check,
+  privacy-export (unsafe keys listed under `skipped_media`), privacy-delete-account (an unsafe key
+  fails the deletion before anything is deleted, so it never reports success with a private object
+  left) and both retention workers (unsafe keys never sent, counted and reported to Sentry).
+- deploy.yml: restore-drill psql output goes to a removed temporary file; a failure prints only the
+  step and the failing line.
+
+**Owner steps before merging PR 1** (read-only, dashboard SQL editor; keep the results private):
+
+```sql
+-- 1. Media keys outside the app's upload grammar (expect none).
+select id, user_id, purpose, created_at from public.media_objects
+where object_key !~ ('^' || user_id || '/(meal/[0-9a-f-]{36}|progress/[0-9a-f-]{36}/(front|side|back|lower))\.(jpg|jpeg|png|heic)$');
+-- 2. Storage names with dot segments or encoded characters (expect none).
+select bucket_id, owner_id, created_at from storage.objects
+where name ~ '(^|/)\.\.?(/|$)|//|\\|%';
+-- 3. Coach preferences: every row should be one you confirmed.
+select user_id, category, key, provenance, created_at from public.user_preferences order by created_at;
+```
+
+If query 1 returns rows you recognise as your own older photos, say so before merging: the export
+and deletion still handle them (they only need a safe key in your folder), but a new draft will not
+accept that shape.
+
+**After the deploy:** `gh run list --workflow deploy.yml --status failure`, and delete any run that
+failed in "Restore schema + data into isolated database" (`gh run delete <id>`).
+
+**Device check (no reinstall):** analyze a meal photo, add a progress photo, run the physique check,
+confirm a Coach preference, and request a privacy export.
+
+## PR 2: account boundary
+
+- Migration `20261009130000_account_boundary.sql`:
+  - `private.signup_invites`, seeded from every existing account, so your account needs no step.
+    `private.handle_new_auth_user` refuses an email, phone or anonymous sign-up that is not
+    invited; the Auth insert rolls back and no email is sent. The app says "This email isn't on
+    the invite list yet."
+  - `private.has_recent_sign_in` reads the JWT `amr` claim. `request_my_data_export` and
+    `request_my_account_deletion` use it instead of `iat`. The app already signs in with your
+    password right before both, so nothing changes for you.
+  - An export neither starts nor completes while an account deletion is pending.
+  - `list_account_storage_objects` (service role) lists every object in an account's folders;
+    account deletion removes them along with the recorded keys.
+  - Coach context snapshots now cascade with their conversation, and `delete_coach_thread` also
+    removes the conversation's summaries, so deleting a conversation works again.
+- privacy-export removes a package that failed after upload. Failed conversation deletes are
+  reported to Sentry.
+
+**Owner steps before merging PR 2** (dashboard, read-only):
+1. `select email, created_at, last_sign_in_at from auth.users order by created_at;` and remove any
+   account you don't recognise.
+2. Authentication settings: anonymous sign-ins, phone and Apple off; "Confirm email" on; no other
+   before-user-created hook.
+
+**After the deploy:** the server changes work with the installed app, but the invite-only message
+and the Sentry report for a failed conversation delete arrive only with a new build, so install
+from merged main (`./scripts/install-device.sh`), then:
+1. `select email, claimed_by is not null as claimed from private.signup_invites;` shows your email.
+2. On the device, sign out and back in, then request a privacy export (it checks the new recent
+   sign-in rule). Don't test with account deletion.
+3. Delete a Coach conversation.
+4. Invite someone with
+   `insert into private.signup_invites(email, note) values (lower('<email>'), 'beta');`.
+
+## PR 3: abuse limits
+
+- Migration `20261009140000_abuse_limits.sql`:
+  - **Time zones:** clients lose the direct column grants (`set_my_timezone` stays). Stored names
+    Postgres doesn't know become `UTC`, and `private.safe_timezone` keeps one bad value from
+    stopping the weekly-review scheduler.
+  - **Consent records:** a column-level insert grant (no client `created_at`), a recency index, and
+    100 a day.
+  - **Row caps:** 200 goals, 50 Coach conversations a day and 1,000 in all, 10 photo sets a day
+    (`private.enforce_user_row_limit`, SQLSTATE 54000).
+  - **JSON size:** onboarding drafts up to 128 KB, goal details up to 16 KB (`NOT VALID`).
+  - **Health sync:** a replay skips the workouts. The window may end at most 2 days ahead, a
+    summary holds up to 20,000 source references, workouts fall within the window ±1 day, and
+    there are 120 syncs an hour. Reconciliation covers only the workouts in the payload (the
+    7-day refresh resends recent ones).
+  - **Uploads:** `user_media_upload_quota` allows 100 meal photos a day (3,000 kept) and 60
+    progress photos a day (2,000 kept).
+  - **Orphans:** `list_orphan_storage_objects` lists objects with no row. The retention worker
+    removes them, never sends an unsafe name, and reports `orphan_sweep` counts.
+- `health_sync_v1.ts` mirrors the limits (`healthSyncLimits`), with a test that compares them to
+  the migration.
+
+**Before merging PR 3**, check the limits against your real data (read-only):
+
+```sql
+select max(jsonb_array_length(source_refs)) from public.daily_health_summaries;
+select max(octet_length(payload::text)) from public.onboarding_drafts;
+select max(octet_length(details::text)) from public.user_goals;
+select user_id, count(*) from public.user_goals group by 1 order by 2 desc limit 3;
+select user_id, count(*) from public.coach_threads group by 1 order by 2 desc limit 3;
+select user_id, date_trunc('day', created_at) d, count(*) from public.consent_records
+  group by 1, 2 order by 3 desc limit 3;
+select user_id, date_trunc('hour', created_at) h, count(*) from public.health_sync_runs
+  group by 1, 2 order by 3 desc limit 3;
+select bucket_id, owner_id, count(*) from storage.objects group by 1, 2 order by 3 desc limit 5;
+select count(*) from public.user_accounts a
+  where not exists (select 1 from pg_timezone_names z where z.name = a.timezone);
+select jobname, schedule, active from cron.job;
+```
+
+Each limit should be at least 4× the largest value. Send me the maxima if any comes close, and I'll
+raise that limit before you merge.
+
+**After the deploy (no reinstall):** open the app and let Health sync run, then pull to refresh;
+change nothing else. If a sync fails, the health-sync logs show the reason.
+
+## PR 4a: AI spending
+
+- Migration `20261009150000_ai_budget_reservations.sql`:
+  - `ai_budget_reservations` with `reserve_ai_budget` / `settle_ai_budget` (service role). One
+    advisory lock serialises reservations, so the per-account and global totals are exact.
+  - `private.ai_budget_limits` (global monthly stop, USD 10 at launch) and
+    `private.ai_usage_totals` (recorded usage plus open places).
+  - `assert_owner_ai_budget` and `get_my_ai_budget_state` count open places too (the latter gains
+    `schema_version`).
+  - `persist_failed_coach_chat_run_v2` records a failed chat's tokens and cost.
+- Edge:
+  - `_shared/ai_budget.ts` (`AiBudget`: reserve, keep, release).
+  - meal-analyze is split into `handler.ts` (tested) and `index.ts`. Usage is recorded before the
+    candidates are stored and on an unusable answer.
+  - coach-chat, coach-decide, physique-check and onboarding-plan reserve before calling a model.
+    Onboarding releases after its background generation ends.
+  - The Groq and Gemini meal providers refuse values outside the table checks and report usage on
+    an unusable answer. Gemini refuses to run without prices. Coach providers fall back to list
+    prices instead of 0.
+
+**Before merging PR 4a:**
+1. `./scripts/supabase.sh secrets list --project-ref qsfzzsjenopqqqhvpyaw` shows only SHA-256
+   digests, so compare each Coach price secret's digest (`DEEPSEEK_*`, `GROQ_*`,
+   `GEMINI_*_COST_PER_MILLION_USD`) with `printf 0 | shasum -a 256` and `printf 0.0 | shasum -a 256`.
+   A match means that secret is `0`, which now stops the provider; unset it (an unset price uses
+   the list price). If a digest can't be matched to a value you know, unset or reset that secret.
+2. Pick the global monthly stop. It launches at USD 10; to change it after the deploy, run
+   `update private.ai_budget_limits set global_monthly_usd = <amount>, updated_at = now();`.
+
+**After the deploy (no reinstall):**
+1. Use the Coach, analyze a meal photo and run a physique check.
+2. Check that no reservation stayed open:
+   `select purpose, settled_at is not null as settled, created_at from public.ai_budget_reservations order by created_at desc limit 10;`
+   Settled rows are expected; an open one is a call that may have been billed with no usage
+   recorded.
+3. The AI usage screen in Account still shows this month's figures.
+
+## PR 4b: meal-photo notice and AI notice v5 (needs the new build)
+
+- Migrations:
+  - `20261009160000_meal_photo_ai_consent_type.sql` adds the consent type `meal_photo_ai` (alone,
+    as an enum value requires).
+  - `20261009160100_meal_photo_ai_notice.sql` adds:
+    - `meal_photo_ai_notices`, kept apart from the physique notices so neither voids the other;
+    - `meal-photo-ai-v1` (Groq, `qwen/qwen3.8-27b`, Zero Data Retention);
+    - `has_meal_photo_ai_consent` and `get_meal_photo_ai_consent` (service role), and
+      `get_my_meal_photo_ai_notice` (app, `schema_version`);
+    - AI notice `ai-coaching-v5`, which names everything the starting plan now sends.
+- meal-analyze checks the grant before reserving budget or downloading anything: 403
+  `meal_photo_ai_consent_required` without a grant, and 503 `meal_photo_notice_outdated` when the
+  notice names another provider.
+- App:
+  - `PhotoAiNotice` moves to `lib/features/consent/`, and the physique notice UI becomes the shared
+    `AiNoticePanel`.
+  - Nutrition shows the meal photo notice before the picker. "Not now" never opens it; agreeing
+    records the grant and continues. While granted, Log a meal offers "Turn off meal photo AI",
+    which records a withdrawal; consent history shows the meal photo choice.
+
+**Install right after the deploy.** Until the new build is installed, meal photo analysis on the
+old build fails (manual logging still works), and the Coach asks once to accept AI notice v5
+(chat and AI daily decisions pause until you accept; your plan keeps working).
+
+**Device check:** open the app (accept v5), take a meal photo (the notice appears once, then the
+analysis runs), take another (no notice), turn meal photo AI off in Log a meal (the next photo asks
+again), and run a physique check (its notice is unchanged).
+
+## PR 5: Keychain sessions and workflow supply chain (needs the new build)
+
+- App: `lib/app/keychain_session_storage.dart` keeps the Supabase session in the iOS Keychain
+  (`flutter_secure_storage` 10.3.4). The first launch copies the current session there and checks
+  that it reads back. Only then does it save the marker, and only after the marker is saved does
+  it remove the old copy, checking each step's result. If any step fails, that launch keeps using
+  preferences (you stay signed in), reports `session_keychain_migration_failed` to Sentry (never
+  the token), and the next launch tries again. A failed removal is retried on every launch. A
+  fresh install clears anything a deleted install left in the Keychain.
+- Workflows: every action is pinned to a commit SHA. The default token is read-only, and only
+  `tag-release` can write. Checkouts drop credentials. Secret-using jobs run in the `production`
+  environment, and a hotfix runs only from `main`.
+
+**Owner steps after merge:**
+1. Install from merged main and check that you are still signed in.
+2. GitHub, Settings → Environments → `production` (created by the first deploy): set "Deployment
+   branches" to `main` only, with no required reviewers (reviewers would stop the auto-deploy).
+   Move `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `BACKUP_ARCHIVE_PASSPHRASE` and
+   `BACKUP_REPO_DEPLOY_KEY` into it, then delete the repository-level copies. Run the next deploy
+   and confirm that it succeeds.
+3. Settings → Actions → General: set Workflow permissions to "Read repository contents", and turn
+   on "Require actions to be pinned to a full-length commit SHA".
+4. Merge order: #88 → #89 → #90 → #91 → #92, then Dependabot #87 (supabase_flutter 2.18.0),
+   then this PR once it is updated onto that `main` (its `pubspec.lock` changes overlap #87's) and
+   CI has passed again.

@@ -1,4 +1,9 @@
-import type { MealCandidate } from "./gemini_meal_vision_provider.ts";
+import {
+  boundedUnits,
+  hasMealValuesInBounds,
+  type MealCandidate,
+  MealVisionBilledError,
+} from "./gemini_meal_vision_provider.ts";
 
 // Groq's paid price for qwen/qwen3.8-27b, USD per million tokens. The estimate
 // uses it even on the free tier so the owner budget never undercounts. It is
@@ -86,54 +91,59 @@ export async function analyzeGroqMealImage(
       throw new Error(`meal_vision_request_failed:${response.status}:${code}`);
     }
     const payload = await response.json() as Record<string, unknown>;
-    const message = Array.isArray(payload.choices)
-      ? (payload.choices[0] as Record<string, unknown>)?.message as
-        | Record<string, unknown>
-        | undefined
-      : undefined;
-    if (typeof message?.content !== "string") throw new Error("meal_vision_response_invalid");
-    const parsed = JSON.parse(message.content) as Record<string, unknown>;
-    if (
-      // An empty list is a valid answer: no food in the photo.
-      !Array.isArray(parsed.candidates) ||
-      parsed.candidates.length > 20
-    ) {
-      throw new Error("meal_vision_response_invalid");
-    }
-    const candidates = parsed.candidates.map((value) => {
-      const item = value as Record<string, unknown>;
-      if (
-        typeof item.name !== "string" || item.name.length < 1 || item.name.length > 120 ||
-        typeof item.serving_label !== "string" || item.serving_label.length < 1 ||
-        item.serving_label.length > 80 ||
-        !["low", "medium", "high"].includes(String(item.confidence)) ||
-        !Array.isArray(item.assumptions) ||
-        item.assumptions.length > 8 || !item.assumptions.every((entry) =>
-          typeof entry === "string"
-        ) ||
-        typeof item.question !== "string" || item.question.length > 500
-      ) throw new Error("meal_vision_response_invalid");
-      for (const key of ["calories", "protein_g", "carbohydrate_g", "fat_g"] as const) {
-        if (
-          typeof item[key] !== "number" || !Number.isFinite(item[key]) || item[key] < 0
-        ) throw new Error("meal_vision_response_invalid");
-      }
-      return item as unknown as MealCandidate;
-    });
-    const usage = payload.usage as Record<string, unknown> | undefined;
-    const inputUnits = Number.isInteger(usage?.prompt_tokens) ? Number(usage?.prompt_tokens) : 0;
-    const outputUnits = Number.isInteger(usage?.completion_tokens)
-      ? Number(usage?.completion_tokens)
-      : 0;
-    return {
-      candidates,
+    const reported = payload.usage as Record<string, unknown> | undefined;
+    const inputUnits = boundedUnits(reported?.prompt_tokens, 1_000_000);
+    const outputUnits = boundedUnits(reported?.completion_tokens, 100_000);
+    const usage = {
       model,
       inputUnits,
       outputUnits,
       estimatedCostUsd: (inputUnits * qwen38InputUsdPerMillion +
         outputUnits * qwen38OutputUsdPerMillion) / 1_000_000,
     };
+    try {
+      return { ...usage, candidates: parseGroqCandidates(payload) };
+    } catch (error) {
+      throw new MealVisionBilledError(
+        error instanceof Error ? error.message : "meal_vision_response_invalid",
+        usage,
+      );
+    }
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function parseGroqCandidates(payload: Record<string, unknown>): MealCandidate[] {
+  const message = Array.isArray(payload.choices)
+    ? (payload.choices[0] as Record<string, unknown>)?.message as
+      | Record<string, unknown>
+      | undefined
+    : undefined;
+  if (typeof message?.content !== "string") throw new Error("meal_vision_response_invalid");
+  const parsed = JSON.parse(message.content) as Record<string, unknown>;
+  if (
+    // An empty list is a valid answer: no food in the photo.
+    !Array.isArray(parsed.candidates) ||
+    parsed.candidates.length > 20
+  ) {
+    throw new Error("meal_vision_response_invalid");
+  }
+  const candidates = parsed.candidates.map((value) => {
+    const item = value as Record<string, unknown>;
+    if (
+      typeof item.name !== "string" || item.name.length < 1 || item.name.length > 120 ||
+      typeof item.serving_label !== "string" || item.serving_label.length < 1 ||
+      item.serving_label.length > 80 ||
+      !["low", "medium", "high"].includes(String(item.confidence)) ||
+      !Array.isArray(item.assumptions) ||
+      item.assumptions.length > 8 || !item.assumptions.every((entry) =>
+        typeof entry === "string"
+      ) ||
+      typeof item.question !== "string" || item.question.length > 500
+    ) throw new Error("meal_vision_response_invalid");
+    if (!hasMealValuesInBounds(item)) throw new Error("meal_vision_response_invalid");
+    return item as unknown as MealCandidate;
+  });
+  return candidates;
 }

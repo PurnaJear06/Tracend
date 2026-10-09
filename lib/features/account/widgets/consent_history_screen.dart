@@ -62,6 +62,7 @@ class _ConsentHistoryScreenState extends State<ConsentHistoryScreen> {
     'ai_coaching': 'AI coaching',
     'progress_photo_storage': 'Progress photo storage',
     'progress_photo_ai': 'Progress photo AI analysis',
+    'meal_photo_ai': 'Meal photo AI analysis',
     'notifications': 'Notifications',
   };
 
