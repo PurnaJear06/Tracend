@@ -111,11 +111,61 @@ class _NutritionScreenState extends State<NutritionScreen> {
   DateTime? _loadedDate;
   late Future<CoachDecision?> _decision;
 
+  /// The meal photo notice as last loaded, for the Log a meal sheet's
+  /// "Turn off meal photo AI". Null until it loads, and on the fixture.
+  PhotoAiNotice? _mealPhotoNotice;
+
   @override
   void initState() {
     super.initState();
     _decision = widget.coach.loadLatest();
     _refresh();
+    _loadMealPhotoNotice();
+  }
+
+  Future<void> _loadMealPhotoNotice() async {
+    final repository = widget.repository;
+    if (repository is! MealPhotoRepository) return;
+    try {
+      final notice = await (repository as MealPhotoRepository)
+          .loadMealPhotoNotice();
+      if (mounted) setState(() => _mealPhotoNotice = notice);
+    } catch (e) {
+      // The sheet then offers no off switch; the photo flow loads it again.
+      debugPrint('Non-critical error: $e');
+    }
+  }
+
+  /// Records a withdrawal: the server stops sending meal photos at once, and
+  /// the next photo shows the notice again.
+  Future<void> _turnOffMealPhotoAi() async {
+    final repository = widget.repository;
+    final notice = _mealPhotoNotice;
+    if (repository is! MealPhotoRepository || notice == null) return;
+    try {
+      await (repository as MealPhotoRepository).recordMealPhotoConsent(
+        noticeVersion: notice.version,
+        granted: false,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Non-critical error: $error');
+      unawaited(Sentry.captureException(error, stackTrace: stackTrace));
+      if (mounted) {
+        TracendToast.show(
+          context,
+          'Meal photo AI is still on. Check the connection and try again.',
+          icon: CupertinoIcons.exclamationmark_circle,
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _mealPhotoNotice = notice.withGranted(false));
+    TracendToast.show(
+      context,
+      'Meal photo AI is off. Photos are no longer sent.',
+      icon: CupertinoIcons.checkmark_alt,
+    );
   }
 
   Future<void> _refresh() async {
@@ -314,6 +364,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
       );
       return false;
     }
+    if (mounted) setState(() => _mealPhotoNotice = notice);
     if (notice.granted) return true;
     if (!mounted) return false;
     final agreed = await showTracendSheet<bool>(
@@ -321,7 +372,9 @@ class _NutritionScreenState extends State<NutritionScreen> {
       builder: (_) =>
           _MealPhotoNoticeSheet(notice: notice, repository: repository),
     );
-    return agreed == true && mounted;
+    if (agreed != true || !mounted) return false;
+    setState(() => _mealPhotoNotice = notice.withGranted(true));
+    return true;
   }
 
   void _photoFailed(MealPhotoFailure failure, StackTrace stackTrace) {
@@ -440,6 +493,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
       builder: (_) => LogMealSheet(
         initialMealType: defaultMealType(DateTime.now()),
         photosAvailable: photos,
+        photoAiGranted: _mealPhotoNotice?.granted ?? false,
       ),
     );
     if (choice == null || !mounted) return;
@@ -452,6 +506,8 @@ class _NutritionScreenState extends State<NutritionScreen> {
         await _openManualMeal(mealType: choice.mealType);
       case LogMealMethod.sample:
         await _reviewFixture(choice.mealType);
+      case LogMealMethod.turnOffPhotoAi:
+        await _turnOffMealPhotoAi();
     }
   }
 

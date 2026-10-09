@@ -33,7 +33,7 @@ class _PhotoRepository extends FixtureNutritionRepository
     required String noticeVersion,
     required bool granted,
   }) async {
-    consents.add(noticeVersion);
+    consents.add('$noticeVersion:${granted ? 'granted' : 'withdrawn'}');
     this.granted = granted;
   }
 
@@ -272,7 +272,43 @@ void main() {
     await tester.tap(find.text('Agree and continue'));
     await tester.pumpAndSettle();
 
-    expect(repository.consents, ['meal-photo-ai-v1']);
+    expect(repository.consents, ['meal-photo-ai-v1:granted']);
     expect(repository.analyzed, 1);
+  });
+
+  testWidgets('meal photo AI can be turned off from Log a meal', (
+    tester,
+  ) async {
+    final repository = _PhotoRepository();
+    await tester.pumpWidget(_app(repository, _photo));
+    await tester.pumpAndSettle();
+
+    await _tap(tester, 'Turn off meal photo AI');
+    await tester.pumpAndSettle();
+    expect(repository.consents, ['meal-photo-ai-v1:withdrawn']);
+
+    // The next photo asks again before anything is picked.
+    await _tap(tester, 'Choose from Photo Library');
+    await tester.pumpAndSettle();
+    expect(find.text('Analyze meal photos with AI?'), findsOneWidget);
+    expect(repository.analyzed, 0);
+  });
+
+  testWidgets('the off switch is shown only while meal photo AI is on', (
+    tester,
+  ) async {
+    final repository = _PhotoRepository(granted: false);
+    await tester.pumpWidget(_app(repository, _photo));
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('log-a-meal'));
+    await tester.scrollUntilVisible(
+      button,
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('Turn off meal photo AI'), findsNothing);
   });
 }

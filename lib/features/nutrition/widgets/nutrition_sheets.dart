@@ -49,7 +49,7 @@ String defaultMealType(DateTime now) {
   return 'dinner';
 }
 
-enum LogMealMethod { camera, library, manual, sample }
+enum LogMealMethod { camera, library, manual, sample, turnOffPhotoAi }
 
 class LogMealChoice {
   const LogMealChoice(this.mealType, this.method);
@@ -64,6 +64,7 @@ class LogMealSheet extends StatefulWidget {
   const LogMealSheet({
     required this.initialMealType,
     required this.photosAvailable,
+    this.photoAiGranted = false,
     super.key,
   });
 
@@ -72,6 +73,10 @@ class LogMealSheet extends StatefulWidget {
   /// False on the fixture repository, which offers a sample analysis
   /// instead of the camera.
   final bool photosAvailable;
+
+  /// The athlete granted the meal photo AI notice, so the sheet offers to
+  /// turn it off.
+  final bool photoAiGranted;
 
   @override
   State<LogMealSheet> createState() => _LogMealSheetState();
@@ -126,6 +131,13 @@ class _LogMealSheetState extends State<LogMealSheet> {
           ),
         ],
       ),
+      if (widget.photosAvailable && widget.photoAiGranted) ...[
+        const SizedBox(height: TracendSpacing.sm),
+        TextButton(
+          onPressed: () => _choose(LogMealMethod.turnOffPhotoAi),
+          child: const Text('Turn off meal photo AI'),
+        ),
+      ],
     ],
   );
 }

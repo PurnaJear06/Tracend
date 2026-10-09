@@ -192,11 +192,13 @@ change nothing else. If a sync fails, the health-sync logs show the reason.
   - `PhotoAiNotice` moves to `lib/features/consent/`, and the physique notice UI becomes the shared
     `AiNoticePanel`.
   - Nutrition shows the meal photo notice before the picker. "Not now" never opens it; agreeing
-    records the grant and continues.
+    records the grant and continues. While granted, Log a meal offers "Turn off meal photo AI",
+    which records a withdrawal; consent history shows the meal photo choice.
 
 **Install right after the deploy.** Until the new build is installed, meal photo analysis on the
 old build fails (manual logging still works), and the Coach asks once to accept AI notice v5
 (chat and AI daily decisions pause until you accept; your plan keeps working).
 
 **Device check:** open the app (accept v5), take a meal photo (the notice appears once, then the
-analysis runs), take another (no notice), and run a physique check (its notice is unchanged).
+analysis runs), take another (no notice), turn meal photo AI off in Log a meal (the next photo asks
+again), and run a physique check (its notice is unchanged).
