@@ -77,26 +77,29 @@ declare
   athlete record;
   everyone record;
   reservation_id uuid;
+  ceiling numeric := private.ai_purpose_ceiling_usd(run_purpose);
 begin
-  if private.ai_purpose_ceiling_usd(run_purpose) is null then
+  if ceiling is null then
     raise exception 'invalid purpose' using errcode = '22023';
   end if;
   -- One lock for every reservation: checks and inserts run one at a time, so
   -- the per-athlete and global totals are exact. Calls are seconds apart.
   perform pg_advisory_xact_lock(hashtextextended('tracend.ai_budget', 0));
+  -- The new place counts too: a call is admitted only if its ceiling still
+  -- fits under the stop, so the stop is never crossed.
   select * into athlete from private.ai_usage_totals(target_user_id);
-  if athlete.monthly_cost >= 2 then
+  if athlete.monthly_cost + ceiling > 2 then
     raise exception 'monthly cost limit reached' using errcode = 'P0001';
   end if;
-  if athlete.today_requests >= 30 then
+  if athlete.today_requests + 1 > 30 then
     raise exception 'daily rate limit reached' using errcode = 'P0001';
   end if;
   select * into everyone from private.ai_usage_totals(null);
-  if everyone.monthly_cost >= (select global_monthly_usd from private.ai_budget_limits) then
+  if everyone.monthly_cost + ceiling > (select global_monthly_usd from private.ai_budget_limits) then
     raise exception 'global monthly cost limit reached' using errcode = 'P0001';
   end if;
   insert into public.ai_budget_reservations(user_id, purpose, reserved_cost_usd)
-  values (target_user_id, run_purpose, private.ai_purpose_ceiling_usd(run_purpose))
+  values (target_user_id, run_purpose, ceiling)
   returning id into reservation_id;
   return reservation_id;
 end $$;
@@ -113,15 +116,20 @@ end $$;
 revoke all on function public.settle_ai_budget(uuid) from public, anon, authenticated;
 grant execute on function public.settle_ai_budget(uuid) to service_role;
 
--- Same rules, now including open reservations. The deployed functions keep
--- calling this until their new versions (which reserve) are live.
+-- Same rules, now including open reservations and the global stop. The
+-- deployed functions keep calling this until their new versions (which
+-- reserve) are live, one function at a time.
 create or replace function public.assert_owner_ai_budget(target_user_id uuid)
 returns void language plpgsql security definer set search_path='' as $$
-declare athlete record;
+declare athlete record; everyone record;
 begin
   select * into athlete from private.ai_usage_totals(target_user_id);
   if athlete.monthly_cost>=2 then raise exception 'monthly cost limit reached' using errcode='P0001'; end if;
   if athlete.today_requests>=30 then raise exception 'daily rate limit reached' using errcode='P0001'; end if;
+  select * into everyone from private.ai_usage_totals(null);
+  if everyone.monthly_cost>=(select global_monthly_usd from private.ai_budget_limits) then
+    raise exception 'global monthly cost limit reached' using errcode='P0001';
+  end if;
 end $$;
 
 create or replace function public.get_my_ai_budget_state()

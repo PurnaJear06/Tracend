@@ -143,9 +143,12 @@ photos a day would use up; the USD 2 stop still bounds spend.
 call was made (`_shared/ai_budget.ts`). Open places count toward the limits at a per-purpose
 ceiling (coach chat USD 0.02, daily decision 0.01, meal photo 0.01, physique check 0.03,
 onboarding plan or questions 0.05) and as one request each, so parallel calls can no longer all
-pass a check that only saw finished calls. A place is left open on purpose when a call may have
-been billed with no usage known (an unrecorded usage row, a failed live daily decision, a meal
-photo request that timed out); it then keeps counting, so a failure can only overcount.
+pass a check that only saw finished calls. A call is admitted only if its own ceiling still fits
+under each stop, so the USD 2 and global stops are never crossed by an admitted call. A place is
+left open on purpose whenever billing cannot be ruled out: a timeout, a dropped connection or an
+unreadable answer with no usage reported (Coach chat, meal photos, physique checks, onboarding),
+an unrecorded usage row, or a failed live daily decision. It then keeps counting at its ceiling,
+so a failure can only overcount. Only a refusal (429) or an HTTP error rules billing out.
 - **Global stop:** `private.ai_budget_limits.global_monthly_usd` (USD 10 at launch) stops every
   model call once the month's total across all accounts reaches it. Change it from the SQL editor:
   `update private.ai_budget_limits set global_monthly_usd = 20, updated_at = now();`.

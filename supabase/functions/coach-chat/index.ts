@@ -599,8 +599,16 @@ async function handleCoachChat(
         run_estimated_cost_usd: failureUsage.estimatedCostUsd,
       },
     );
+    // A timeout, or a failure that is not the provider's own answer, may have
+    // been billed with no usage reported: the reservation stays open and keeps
+    // counting at its ceiling. So does a failure that could not be recorded.
+    if (
+      !(error instanceof CoachChatUnavailableError) ||
+      unavailable.failureReason === "provider_timeout"
+    ) {
+      budget.keep();
+    }
     if (failedRunError) {
-      // Unrecorded, the call stays counted by its open reservation.
       budget.keep();
       log.error("persist_failed_coach_chat_run failed", {
         error_code: failedRunError.code ?? "unknown",

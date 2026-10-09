@@ -4,6 +4,7 @@ import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { createLogger, extractCorrelationId } from "../_shared/logger.ts";
 import {
   physiqueAllowedUsers,
+  PhysiqueVisionError,
   resolvePhysiqueVision,
 } from "../_shared/providers/physique_vision_provider.ts";
 import { captureException } from "../_shared/sentry.ts";
@@ -148,6 +149,13 @@ Deno.serve(async (request) => {
       },
     }, body);
   } catch (error) {
+    // Only a refusal (429) or an HTTP error rules out billing. A timeout, a
+    // dropped connection or an unreadable answer may have been billed with no
+    // usage reported, so the reservation stays open and keeps counting.
+    const unbilled = error instanceof PhysiqueVisionError &&
+      (error.code === "physique_vision_busy" ||
+        error.code.startsWith("physique_vision_request_failed"));
+    if (!unbilled) budget.keep();
     // Codes and names only: never photos, prompts or the model's text.
     log.error("physique_check_failed", {
       error: error instanceof Error ? error.message.slice(0, 80) : "unknown",

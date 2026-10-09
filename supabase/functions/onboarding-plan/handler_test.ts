@@ -552,3 +552,31 @@ Deno.test("follow-up answers reach the plan only for the answers they were asked
   assertEquals(answers(0).follow_ups.length, 1);
   assertEquals(answers(1).follow_ups, []);
 });
+
+Deno.test("a plan call that timed out keeps its budget place; an answered one does not", async () => {
+  const outcomes = [
+    { outcome: "call_failed" as const, httpStatus: null, kept: 1 },
+    { outcome: "call_failed" as const, httpStatus: 503, kept: 0 },
+    { outcome: "valid" as const, httpStatus: null, kept: 0 },
+  ];
+  for (const { outcome, httpStatus, kept } of outcomes) {
+    let keeps = 0;
+    const fake = store({ keepBudget: () => keeps++ });
+    await run(fake.fake, {
+      generate: (answers, catalog, _resolution, gate) =>
+        generateOnboardingProposal(answers, catalog, { kind: "rules", reason: "stub" }, gate)
+          .then((result) => ({
+            ...result,
+            attempts: [{
+              attempt: "initial" as const,
+              outcome,
+              rule: null,
+              path: null,
+              latencyMs: 1,
+              httpStatus,
+            }],
+          })),
+    });
+    assertEquals(keeps, kept, `${outcome} ${httpStatus}`);
+  }
+});

@@ -158,9 +158,11 @@ change nothing else. If a sync fails, the health-sync logs show the reason.
     prices instead of 0.
 
 **Before merging PR 4a:**
-1. `./scripts/supabase.sh secrets list --project-ref qsfzzsjenopqqqhvpyaw`: no Coach price secret
-   (`DEEPSEEK_*`, `GROQ_*`, `GEMINI_*_COST_PER_MILLION_USD`) may be set to `0`, or that provider
-   stops. Unset is fine.
+1. `./scripts/supabase.sh secrets list --project-ref qsfzzsjenopqqqhvpyaw` shows only SHA-256
+   digests, so compare each Coach price secret's digest (`DEEPSEEK_*`, `GROQ_*`,
+   `GEMINI_*_COST_PER_MILLION_USD`) with `printf 0 | shasum -a 256` and `printf 0.0 | shasum -a 256`.
+   A match means that secret is `0`, which now stops the provider; unset it (an unset price uses
+   the list price). If a digest can't be matched to a value you know, unset or reset that secret.
 2. Pick the global monthly stop. It launches at USD 10; to change it after the deploy, run
    `update private.ai_budget_limits set global_monthly_usd = <amount>, updated_at = now();`.
 
