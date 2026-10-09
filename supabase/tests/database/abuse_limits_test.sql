@@ -1,5 +1,5 @@
 begin;
-select plan(19);
+select plan(20);
 
 insert into auth.users(id, role) values
   ('c1000000-0000-4000-8000-000000000001', 'authenticated'),
@@ -42,6 +42,8 @@ select throws_ok($$insert into public.coach_threads(user_id, title)
 select lives_ok($$insert into public.coach_threads(user_id, title)
   values ('c1000000-0000-4000-8000-000000000001', 'First')$$,
   'another athlete is not affected');
+select ok(exists(select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid()
+  and granted), 'a capped insert holds a lock until commit, so parallel inserts are counted');
 
 -- Bounded client JSON -------------------------------------------------------------------
 insert into public.onboarding_drafts(user_id) values ('c1000000-0000-4000-8000-000000000001');

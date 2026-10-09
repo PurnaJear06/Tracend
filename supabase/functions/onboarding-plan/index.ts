@@ -171,6 +171,7 @@ function supabaseStore(
     // Questions and plans share this check; a place is held at the plan's
     // (higher) ceiling either way.
     budgetAvailable: () => budget.reserve("onboarding_plan"),
+    keepBudget: () => budget.keep(),
     async recordUsage(usage) {
       const { error } = await client.rpc("record_ai_usage_event", {
         target_user_id: userId,

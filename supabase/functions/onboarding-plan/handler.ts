@@ -128,6 +128,8 @@ export interface OnboardingStore {
   recordQuestionUsage(usage: GenerationUsage): Promise<void>;
   consent(): Promise<AiCoachingConsent>;
   budgetAvailable(): Promise<boolean>;
+  /** Leaves the budget place open: a call may have been billed with no usage reported. */
+  keepBudget?(): void;
   recordUsage(usage: GenerationUsage): Promise<void>;
   /** "superseded" when a newer generation replaced this one meanwhile. */
   persist(
@@ -313,6 +315,7 @@ async function handleQuestions(
     await release();
     throw error;
   }
+  if (result.skippedReason === "provider_timeout") store.keepBudget?.();
   if (result.usage) {
     try {
       await store.recordQuestionUsage(result.usage);
@@ -414,6 +417,16 @@ async function runGeneration(
       health,
       history,
     );
+    // A call that failed with no HTTP answer (a timeout or a dropped
+    // connection) may still have been billed with no usage reported.
+    if (
+      result.fallbackReason === "provider_timeout" ||
+      result.attempts.some((attempt) =>
+        attempt.outcome === "call_failed" && attempt.httpStatus === null
+      )
+    ) {
+      store.keepBudget?.();
+    }
     if (result.usage) {
       try {
         await store.recordUsage(result.usage);

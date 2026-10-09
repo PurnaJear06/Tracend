@@ -74,12 +74,17 @@ $$;
 
 -- BEFORE INSERT trigger: TG_ARGV[0] is the limit and TG_ARGV[1] the window
 -- ('all' counts every row the user has). The table needs user_id and created_at.
+-- Inserts for one user and table wait for each other (a transaction lock), and
+-- each count runs after the lock in a fresh snapshot, so parallel requests
+-- cannot all see a count under the cap.
 create function private.enforce_user_row_limit()
 returns trigger language plpgsql security definer set search_path = '' as $$
 declare
   row_limit integer := TG_ARGV[0]::integer;
   existing integer;
 begin
+  perform pg_advisory_xact_lock(
+    hashtextextended('tracend.row_limit:' || TG_TABLE_NAME || ':' || new.user_id::text, 0));
   if TG_ARGV[1] = 'all' then
     execute format('select count(*) from %I.%I where user_id = $1', TG_TABLE_SCHEMA, TG_TABLE_NAME)
       into existing using new.user_id;
@@ -170,6 +175,9 @@ create or replace function public.persist_health_sync_v2(
 declare result jsonb; workout_result jsonb;
 begin
   if auth.role()<>'service_role' then raise exception 'service role required' using errcode='42501'; end if;
+  -- One sync per athlete at a time, so the hourly count and the replay check
+  -- see every earlier sync.
+  perform pg_advisory_xact_lock(hashtextextended('tracend.health_sync:'||target_user_id::text,0));
   if exists(select 1 from public.health_sync_runs
     where user_id=target_user_id and idempotency_key=sync_idempotency_key) then
     return public.persist_health_sync(target_user_id,sync_idempotency_key,request_start,request_end,
@@ -206,21 +214,24 @@ end $$;
 -- `authenticated`, which cannot use `private`, so this lives in `public`; it
 -- only reveals the caller's own quota.
 create function public.storage_upload_allowed(target_bucket text)
-returns boolean language sql stable security definer set search_path = '' as $$
-  select case target_bucket
-    when 'meal-images' then
-      (select count(*) from storage.objects where bucket_id = target_bucket
-        and owner_id = auth.uid()::text and created_at > now() - interval '24 hours') < 100
-      and (select count(*) from storage.objects where bucket_id = target_bucket
-        and owner_id = auth.uid()::text) < 3000
-    when 'progress-photos' then
-      (select count(*) from storage.objects where bucket_id = target_bucket
-        and owner_id = auth.uid()::text and created_at > now() - interval '24 hours') < 60
-      and (select count(*) from storage.objects where bucket_id = target_bucket
-        and owner_id = auth.uid()::text) < 2000
-    else true
-  end;
-$$;
+returns boolean language plpgsql volatile security definer set search_path = '' as $$
+declare
+  daily_limit integer;
+  kept_limit integer;
+begin
+  if target_bucket = 'meal-images' then daily_limit := 100; kept_limit := 3000;
+  elsif target_bucket = 'progress-photos' then daily_limit := 60; kept_limit := 2000;
+  else return true;
+  end if;
+  -- Uploads by one athlete to one bucket wait for each other until commit, and
+  -- the counts below run after the lock, so parallel uploads cannot all pass.
+  perform pg_advisory_xact_lock(
+    hashtextextended('tracend.upload_quota:' || target_bucket || ':' || coalesce(auth.uid()::text, ''), 0));
+  return (select count(*) from storage.objects where bucket_id = target_bucket
+      and owner_id = auth.uid()::text and created_at > now() - interval '24 hours') < daily_limit
+    and (select count(*) from storage.objects where bucket_id = target_bucket
+      and owner_id = auth.uid()::text) < kept_limit;
+end $$;
 revoke all on function public.storage_upload_allowed(text) from public, anon;
 grant execute on function public.storage_upload_allowed(text) to authenticated;
 

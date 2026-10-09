@@ -51,7 +51,7 @@ select private.publish_meal_photo_ai_notice(
   'privately in your account and deletes it after the review window unless you save it.'
   || E'\n\n' ||
   'Nothing is logged until you review and confirm the foods. Without photo analysis you can '
-  'still log meals yourself.'
+  'still log meals yourself. You can turn it off at any time in Log a meal.'
 );
 
 -- Consent counts only when the athlete's newest meal_photo_ai record grants
