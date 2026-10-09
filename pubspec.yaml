@@ -39,6 +39,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   crypto: 3.0.7
   cupertino_icons: 1.0.9
+  flutter_secure_storage: 10.3.4
   health: 13.3.2
   image_picker: 1.2.3
   sentry_flutter: 9.30.1

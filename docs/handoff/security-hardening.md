@@ -1,6 +1,6 @@
 # Security hardening batch (2026-10-09)
 
-**Status:** PR 1 (#88), PR 2 (#89), PR 3 (#90), PR 4a (#91) and PR 4b in review, each stacked on the one before; merge in order. PR 4 was split: 4a (AI spending, server only) and 4b (meal-photo notice, needs the new build). A source review of `d26cf2c` raised leads that need fixing; the
+**Status:** PR 1 (#88), PR 2 (#89), PR 3 (#90), PR 4a (#91), PR 4b (#92) and PR 5 in review, each stacked on the one before; merge in order. PR 4 was split: 4a (AI spending, server only) and 4b (meal-photo notice, needs the new build). A source review of `d26cf2c` raised leads that need fixing; the
 details stay in the owner's private report, not in this public repository. The owner approved a
 five-PR plan on 2026-10-09 and chose: an invite list for new sign-ups, a one-time meal-photo AI
 notice enforced by the server, and session tokens in the iOS Keychain.
@@ -195,3 +195,27 @@ old build fails (manual logging still works), and the Coach asks once to accept 
 
 **Device check:** open the app (accept v5), take a meal photo (the notice appears once, then the
 analysis runs), take another (no notice), and run a physique check (its notice is unchanged).
+
+## PR 5: Keychain sessions and workflow supply chain (needs the new build)
+
+- App: `lib/app/keychain_session_storage.dart` keeps the Supabase session in the iOS Keychain
+  (`flutter_secure_storage` 10.3.4). The first launch moves the current session there, checks it
+  reads back, and then removes it from preferences, so you stay signed in. If the Keychain write
+  fails, that launch keeps the old copy, reports `session_keychain_migration_failed` to Sentry
+  (never the token), and the next launch tries again. A fresh install clears anything a deleted
+  install left in the Keychain.
+- Workflows: every action is pinned to a commit SHA. The default token is read-only, and only
+  `tag-release` can write. Checkouts drop credentials. Secret-using jobs run in the `production`
+  environment, and a hotfix runs only from `main`.
+
+**Owner steps after merge:**
+1. Install from merged main and check that you are still signed in.
+2. GitHub, Settings → Environments → `production` (created by the first deploy): set "Deployment
+   branches" to `main` only, with no required reviewers (reviewers would stop the auto-deploy).
+   Move `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `BACKUP_ARCHIVE_PASSPHRASE` and
+   `BACKUP_REPO_DEPLOY_KEY` into it, then delete the repository-level copies. Run the next deploy
+   and confirm that it succeeds.
+3. Settings → Actions → General: set Workflow permissions to "Read repository contents", and turn
+   on "Require actions to be pinned to a full-length commit SHA".
+4. Dependabot #87 (supabase_flutter 2.18.0) can merge before or after this PR; CI checks the
+   session storage against it.

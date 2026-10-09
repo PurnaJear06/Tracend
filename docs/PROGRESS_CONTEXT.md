@@ -12,7 +12,8 @@ from `amr`, full Storage purge on deletion, no export during deletion, Coach con
 fixed) and PR 3 (time zone writes, consent integrity, health sync bounds, upload quotas and an
 orphan sweep, row and size caps) and PR 4a (AI budget reservations, a USD 10 global monthly stop,
 failed-call cost, list-price defaults) and PR 4b (meal-photo AI notice enforced by meal-analyze,
-AI notice v5; needs the new build) are in review. PR 5 (Keychain, CI pinning) follows. Workstream state:
+AI notice v5; needs the new build) and PR 5 (Keychain session storage, SHA-pinned actions,
+read-only workflow tokens) are in review. Workstream state:
 [`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
 
 **Current priority (2026-10-03):** the app-wide graphite + lime redesign. The owner chose palette

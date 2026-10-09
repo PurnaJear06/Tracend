@@ -169,3 +169,15 @@ The GitHub repository requires pull requests, one approving review, passing stat
 conversations, linear history protection against force-push/deletion, secret scanning, push
 protection, and Dependabot security updates. Administrators retain emergency bypass capability so a
 single-owner repository cannot be permanently deadlocked.
+
+## Workflow supply chain (2026-10-09)
+
+- Every `uses:` is pinned to a full commit SHA with the release in a comment
+  (`actions/checkout@<sha> # v5.1.0`). Dependabot's `github-actions` entry proposes new pins.
+- Each workflow's default token is read-only (`permissions: contents: read`). Only the
+  `tag-release` jobs, which push the release tag, get `contents: write`, and they are the only
+  checkouts that keep credentials (`persist-credentials: false` everywhere else).
+- Jobs that use production secrets run in the `production` environment, and a hotfix runs only
+  from `main`. Once the secrets move into that environment, a workflow on another branch cannot
+  read them.
+

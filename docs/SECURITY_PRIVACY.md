@@ -215,7 +215,10 @@ AI consent is per purpose (2026-10):
 - Supabase Auth validates the Apple identity exchange and manages JWT access/refresh sessions;
   Tracend must not issue a parallel token system.
 - Store Supabase sessions only through platform-protected storage supported by `supabase_flutter`;
-  never general preferences or logs.
+  never general preferences or logs. Since 2026-10-09 the session lives in the iOS Keychain
+  (`KeychainSessionStorage`, `first_unlock_this_device`, never synced or backed up). The first
+  launch of that build moves a session from preferences, checks it reads back, then deletes the
+  old copy; a fresh install clears anything a deleted install left in the Keychain.
 - Capture an Apple-provided name only on first authorization when present; do not require or infer a
   legal name.
 - Store secrets in environment-specific secret management, never source control, mobile bundles,
