@@ -26,6 +26,7 @@ const dal = {
 function harness(overrides: Partial<MealAnalyzeStore> = {}) {
   const events: string[] = [];
   const store: MealAnalyzeStore = {
+    consent: () => Promise.resolve({ granted: true, provider: "groq" }),
     reserveBudget: () => {
       events.push("reserve");
       return Promise.resolve(true);
@@ -138,4 +139,39 @@ Deno.test("no food found discards the draft and still counts", async () => {
   const response = await run(() => Promise.resolve({ ...usage, candidates: [] }));
   assertEquals(response.status, 422);
   assertEquals(events, ["reserve", "usage:200", "discard"]);
+});
+
+Deno.test("no grant means no budget, no download and no call", async () => {
+  const { events, run } = harness({
+    consent: () => Promise.resolve({ granted: false, provider: "groq" }),
+  });
+  const response = await run(() => {
+    events.push("call");
+    return Promise.resolve({ ...usage, candidates: [] });
+  });
+  assertEquals(response.status, 403);
+  assertEquals(await response.json(), { error: "meal_photo_ai_consent_required" });
+  assertEquals(events, []);
+});
+
+Deno.test("a notice for another provider sends nothing", async () => {
+  const { events, run } = harness({
+    consent: () => Promise.resolve({ granted: true, provider: "gemini" }),
+  });
+  const response = await run(() => {
+    events.push("call");
+    return Promise.resolve({ ...usage, candidates: [] });
+  });
+  assertEquals(response.status, 503);
+  assertEquals(events, []);
+});
+
+Deno.test("an unknown consent state sends nothing", async () => {
+  const { events, run } = harness({ consent: () => Promise.resolve(null) });
+  const response = await run(() => {
+    events.push("call");
+    return Promise.resolve({ ...usage, candidates: [] });
+  });
+  assertEquals(response.status, 503);
+  assertEquals(events, []);
 });

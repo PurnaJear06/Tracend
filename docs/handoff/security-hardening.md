@@ -1,6 +1,6 @@
 # Security hardening batch (2026-10-09)
 
-**Status:** PR 1 (#88), PR 2 (#89), PR 3 (#90) and PR 4a in review, each stacked on the one before; merge in order. PR 4 was split: 4a (AI spending, server only) and 4b (meal-photo notice, needs the new build). A source review of `d26cf2c` raised leads that need fixing; the
+**Status:** PR 1 (#88), PR 2 (#89), PR 3 (#90), PR 4a (#91) and PR 4b in review, each stacked on the one before; merge in order. PR 4 was split: 4a (AI spending, server only) and 4b (meal-photo notice, needs the new build). A source review of `d26cf2c` raised leads that need fixing; the
 details stay in the owner's private report, not in this public repository. The owner approved a
 five-PR plan on 2026-10-09 and chose: an invite list for new sign-ups, a one-time meal-photo AI
 notice enforced by the server, and session tokens in the iOS Keychain.
@@ -168,3 +168,30 @@ change nothing else. If a sync fails, the health-sync logs show the reason.
    Settled rows are expected; an open one is a call that may have been billed with no usage
    recorded.
 3. The AI usage screen in Account still shows this month's figures.
+
+## PR 4b: meal-photo notice and AI notice v5 (needs the new build)
+
+- Migrations:
+  - `20261009160000_meal_photo_ai_consent_type.sql` adds the consent type `meal_photo_ai` (alone,
+    as an enum value requires).
+  - `20261009160100_meal_photo_ai_notice.sql` adds:
+    - `meal_photo_ai_notices`, kept apart from the physique notices so neither voids the other;
+    - `meal-photo-ai-v1` (Groq, `qwen/qwen3.8-27b`, Zero Data Retention);
+    - `has_meal_photo_ai_consent` and `get_meal_photo_ai_consent` (service role), and
+      `get_my_meal_photo_ai_notice` (app, `schema_version`);
+    - AI notice `ai-coaching-v5`, which names everything the starting plan now sends.
+- meal-analyze checks the grant before reserving budget or downloading anything: 403
+  `meal_photo_ai_consent_required` without a grant, and 503 `meal_photo_notice_outdated` when the
+  notice names another provider.
+- App:
+  - `PhotoAiNotice` moves to `lib/features/consent/`, and the physique notice UI becomes the shared
+    `AiNoticePanel`.
+  - Nutrition shows the meal photo notice before the picker. "Not now" never opens it; agreeing
+    records the grant and continues.
+
+**Install right after the deploy.** Until the new build is installed, meal photo analysis on the
+old build fails (manual logging still works), and the Coach asks once to accept AI notice v5
+(chat and AI daily decisions pause until you accept; your plan keeps working).
+
+**Device check:** open the app (accept v5), take a meal photo (the notice appears once, then the
+analysis runs), take another (no notice), and run a physique check (its notice is unchanged).

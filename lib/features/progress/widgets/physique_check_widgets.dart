@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:tracend/features/consent/widgets/ai_notice_panel.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
@@ -358,30 +359,17 @@ class _PhysiqueCheckSheetState extends State<PhysiqueCheckSheet> {
     ),
   );
 
-  List<Widget> _consent(BuildContext context) {
-    final theme = Theme.of(context).textTheme;
-    final paragraphs = _notice?.paragraphs ?? const <String>[];
-    return [
-      Text('Check your photos with AI?', style: theme.headlineSmall),
-      const SizedBox(height: TracendSpacing.md),
-      for (var i = 0; i < paragraphs.length; i++) ...[
-        if (i > 0) const SizedBox(height: TracendSpacing.sm),
-        Text(paragraphs[i], style: theme.bodyLarge),
-      ],
-      const SizedBox(height: TracendSpacing.lg),
-      ..._inlineErrorRow(context),
-      FilledButton.icon(
-        onPressed: _busy ? null : _agree,
-        icon: const Icon(CupertinoIcons.sparkles),
-        label: const Text('Agree and check'),
-      ),
-      const SizedBox(height: TracendSpacing.xs),
-      TextButton(
-        onPressed: _busy ? null : () => Navigator.of(context).pop(),
-        child: const Text('Not now'),
-      ),
-    ];
-  }
+  List<Widget> _consent(BuildContext context) => [
+    AiNoticePanel(
+      title: 'Check your photos with AI?',
+      notice: _notice,
+      agreeLabel: 'Agree and check',
+      busy: _busy,
+      error: _inlineError,
+      onAgree: _agree,
+      onDecline: () => Navigator.of(context).pop(),
+    ),
+  ];
 
   List<Widget> _result(BuildContext context) {
     final colors = context.tracendColors;

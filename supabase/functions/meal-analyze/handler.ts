@@ -8,8 +8,10 @@ import { isUserStorageKey } from "../_shared/storage_keys.ts";
 
 // POST meal-analyze {"schema_version":"1.0","meal_id":…}: sends the photo of
 // one of the athlete's meal drafts to the meal vision provider and stores the
-// candidates for review. The call's usage is recorded whenever the provider
-// answered, before anything else can fail, so every billed call counts.
+// candidates for review. Nothing is sent without the athlete's grant of the
+// current meal photo notice, and never to a provider that notice does not
+// name. The call's usage is recorded whenever the provider answered, before
+// anything else can fail, so every billed call counts.
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -20,7 +22,11 @@ export type MealDraft = Readonly<{ objectKey: unknown; contentType: string }>;
 /** What is stored for review: the candidate without the model's notes. */
 export type StoredMealCandidate = Omit<MealCandidate, "assumptions" | "question">;
 
+export type MealPhotoConsent = Readonly<{ granted: boolean; provider: string | null }>;
+
 export interface MealAnalyzeStore {
+  /** The grant and the provider the current notice names; null when unknown. */
+  consent(): Promise<MealPhotoConsent | null>;
   /** Takes a place in the AI budget; false when a limit is reached. */
   reserveBudget(): Promise<boolean>;
   /** Leaves the place open: the call may have been billed with no usage known. */
@@ -73,6 +79,15 @@ export async function handleMealAnalyze(
     return reply(422, { error: "invalid_meal_request" });
   }
   const mealId = request.meal_id;
+  const consent = await store.consent();
+  if (!consent) return reply(503, { error: "meal_analysis_unavailable" });
+  if (!consent.granted) return reply(403, { error: "meal_photo_ai_consent_required" });
+  if (consent.provider !== dependencies.provider) {
+    // The notice the athlete granted names another provider: nothing is sent
+    // until a notice for this one is published and granted.
+    log.error("meal_photo_notice_outdated", { provider: dependencies.provider });
+    return reply(503, { error: "meal_photo_notice_outdated" });
+  }
   if (!await store.reserveBudget()) return reply(429, { error: "ai_usage_limit" });
   const draft = await store.loadDraft(mealId);
   if (!draft) return reply(404, { error: "meal_not_found" });

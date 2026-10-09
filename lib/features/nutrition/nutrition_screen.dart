@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:tracend/features/consent/widgets/ai_notice_panel.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
@@ -56,6 +57,10 @@ String mealPhotoFailureMessage(
     'No food was found in this photo. Try a clear photo of the plate, or enter the meal manually.',
   '429 meal_vision_busy' =>
     'Photo analysis is busy: the free tier handles about one photo a minute. Wait a minute and try again.',
+  // The notice changed between the check and the analysis; the next tap
+  // shows the new one.
+  '403 meal_photo_ai_consent_required' =>
+    'The meal photo notice has changed. Tap the photo button again to review it.',
   '429 ai_usage_limit' =>
     'You have reached today’s AI limit (30 requests) or this month’s \$2 limit. Enter the meal manually.',
   _ =>
@@ -253,6 +258,9 @@ class _NutritionScreenState extends State<NutritionScreen> {
       _photoError = null;
       _photoDiagnostic = null;
     });
+    if (!await _mealPhotoNoticeGranted(repository as MealPhotoRepository)) {
+      return;
+    }
     final XFile? photo;
     try {
       photo = await widget.pickPhoto(source);
@@ -291,6 +299,29 @@ class _NutritionScreenState extends State<NutritionScreen> {
         });
       }
     }
+  }
+
+  /// Shows the meal photo notice until its current version is granted, and
+  /// says whether it now is. No photo is picked or sent before that.
+  Future<bool> _mealPhotoNoticeGranted(MealPhotoRepository repository) async {
+    final PhotoAiNotice notice;
+    try {
+      notice = await repository.loadMealPhotoNotice();
+    } catch (error, stackTrace) {
+      _photoFailed(
+        MealPhotoFailure('notice', error.runtimeType.toString()),
+        stackTrace,
+      );
+      return false;
+    }
+    if (notice.granted) return true;
+    if (!mounted) return false;
+    final agreed = await showTracendSheet<bool>(
+      context,
+      builder: (_) =>
+          _MealPhotoNoticeSheet(notice: notice, repository: repository),
+    );
+    return agreed == true && mounted;
   }
 
   void _photoFailed(MealPhotoFailure failure, StackTrace stackTrace) {
@@ -655,4 +686,59 @@ class _NoticeCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The meal photo notice and the choice. Agreeing records the grant before
+/// the sheet closes with true; "Not now" closes it with false.
+class _MealPhotoNoticeSheet extends StatefulWidget {
+  const _MealPhotoNoticeSheet({required this.notice, required this.repository});
+
+  final PhotoAiNotice notice;
+  final MealPhotoRepository repository;
+
+  @override
+  State<_MealPhotoNoticeSheet> createState() => _MealPhotoNoticeSheetState();
+}
+
+class _MealPhotoNoticeSheetState extends State<_MealPhotoNoticeSheet> {
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _agree() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.repository.recordMealPhotoConsent(
+        noticeVersion: widget.notice.version,
+        granted: true,
+      );
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error =
+              'Your choice was not saved. Check the connection and try again.';
+        });
+      }
+      return;
+    }
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: TracendSpacing.xs),
+    child: AiNoticePanel(
+      title: 'Analyze meal photos with AI?',
+      notice: widget.notice,
+      agreeLabel: 'Agree and continue',
+      busy: _busy,
+      error: _error,
+      onAgree: _agree,
+      onDecline: () => Navigator.of(context).pop(false),
+    ),
+  );
 }

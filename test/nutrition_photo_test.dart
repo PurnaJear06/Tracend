@@ -10,12 +10,32 @@ import 'package:tracend/features/nutrition/nutrition_screen.dart';
 
 class _PhotoRepository extends FixtureNutritionRepository
     implements MealPhotoRepository {
-  _PhotoRepository({this.failure, this.gate});
+  _PhotoRepository({this.failure, this.gate, this.granted = true});
 
   final MealPhotoFailure? failure;
   final Completer<void>? gate;
+  bool granted;
   int analyzed = 0;
+  final consents = <String>[];
   String? mealType;
+
+  @override
+  Future<PhotoAiNotice> loadMealPhotoNotice() async => PhotoAiNotice(
+    version: 'meal-photo-ai-v1',
+    providerLabel: 'Groq',
+    model: 'qwen/qwen3.8-27b',
+    body: 'Tracend sends Groq a resized copy of that one photo.',
+    granted: granted,
+  );
+
+  @override
+  Future<void> recordMealPhotoConsent({
+    required String noticeVersion,
+    required bool granted,
+  }) async {
+    consents.add(noticeVersion);
+    this.granted = granted;
+  }
 
   @override
   Future<String> analyzeMealPhoto({
@@ -215,5 +235,44 @@ void main() {
       ),
       isNull,
     );
+  });
+
+  testWidgets('the meal photo notice comes before the picker', (tester) async {
+    final repository = _PhotoRepository(granted: false);
+    var picked = 0;
+    await tester.pumpWidget(
+      _app(repository, (source) {
+        picked++;
+        return _photo(source);
+      }),
+    );
+    await tester.pumpAndSettle();
+
+    await _tap(tester, 'Choose from Photo Library');
+    await tester.pumpAndSettle();
+    expect(find.text('Analyze meal photos with AI?'), findsOneWidget);
+    expect(picked, 0);
+
+    await tester.tap(find.text('Not now'));
+    await tester.pumpAndSettle();
+    expect(picked, 0);
+    expect(repository.analyzed, 0);
+    expect(repository.consents, isEmpty);
+  });
+
+  testWidgets('agreeing records the grant, then the photo is analyzed', (
+    tester,
+  ) async {
+    final repository = _PhotoRepository(granted: false);
+    await tester.pumpWidget(_app(repository, _photo));
+    await tester.pumpAndSettle();
+
+    await _tap(tester, 'Choose from Photo Library');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Agree and continue'));
+    await tester.pumpAndSettle();
+
+    expect(repository.consents, ['meal-photo-ai-v1']);
+    expect(repository.analyzed, 1);
   });
 }

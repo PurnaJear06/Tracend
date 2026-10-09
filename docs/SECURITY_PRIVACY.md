@@ -352,7 +352,9 @@ Owner-supplied historical context used for an administrative import remains in i
 permission-restricted `.tooling/private-imports/` files on the external SSD. Raw reports and import
 payloads are never committed or copied into handoff, progress, audit, or application logs.
 
-Meal-photo requests use private Storage bytes only after explicit photo consent. The provider
+Meal-photo requests use private Storage bytes only after explicit photo consent (the
+`meal_photo_ai` grant of the current meal photo notice, checked by meal-analyze before any
+download). The provider
 receives a minimized image and fixed instruction with no identity, object key, or unrelated history.
 Visible text in an image is untrusted input. Analysis candidates are unconfirmed restricted data and
 follow meal-media retention even when the provider or validation fails.

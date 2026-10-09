@@ -7,15 +7,15 @@ insert into auth.users(id, role) values
 
 -- One notice for every purpose ----------------------------------------------------------
 
-select is((select count(*) from public.ai_notice_current where version = 'ai-coaching-v4'),
-  3::bigint, 'v4 is current for the Coach chat, daily coaching and the onboarding plan');
-select is(public.get_current_ai_notice()->>'version', 'ai-coaching-v4',
-  'the notice every app shows, including builds already installed, is v4');
+select is((select count(*) from public.ai_notice_current where version = 'ai-coaching-v5'),
+  3::bigint, 'the current notice (v5) is current for the Coach chat, daily coaching and the onboarding plan');
+select is(public.get_current_ai_notice()->>'version', 'ai-coaching-v5',
+  'the notice every app shows, including builds already installed, is v5');
 select ok((public.get_current_ai_notice()->>'body') like '%Apple Health, it also sends a summary%',
   'it tells the athlete the starting plan uses an Apple Health summary');
 -- An installed app records a grant for the notice it was shown.
 insert into public.consent_records(user_id, consent_type, notice_version, action, source)
-values ('f3000000-0000-4000-8000-000000000001', 'ai_coaching', 'ai-coaching-v4', 'granted', 'ios_app');
+values ('f3000000-0000-4000-8000-000000000001', 'ai_coaching', 'ai-coaching-v5', 'granted', 'ios_app');
 select ok(public.has_ai_coaching_consent('f3000000-0000-4000-8000-000000000001', 'onboarding_plan')
     and public.has_ai_coaching_consent('f3000000-0000-4000-8000-000000000001', 'coach_chat')
     and public.has_ai_coaching_consent('f3000000-0000-4000-8000-000000000001', 'daily_coaching'),

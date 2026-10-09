@@ -36,6 +36,17 @@ Deno.serve(async (request) => {
       report: (error, mealId) =>
         captureException(error, { userId, functionName: "meal-analyze", correlationId, mealId }),
       store: {
+        async consent() {
+          const { data, error } = await serviceClient.rpc("get_meal_photo_ai_consent", {
+            target_user_id: userId,
+          });
+          if (error || !data || typeof data !== "object") return null;
+          const state = data as { granted?: unknown; provider?: unknown };
+          return {
+            granted: state.granted === true,
+            provider: typeof state.provider === "string" ? state.provider : null,
+          };
+        },
         reserveBudget: () => budget.reserve("meal_vision"),
         keepBudget: () => budget.keep(),
         async loadDraft(mealId) {

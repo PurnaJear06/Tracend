@@ -1,7 +1,10 @@
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/features/consent/photo_ai_notice.dart';
 import 'package:uuid/uuid.dart';
+
+export 'package:tracend/features/consent/photo_ai_notice.dart';
 
 class NutritionSummary {
   const NutritionSummary({
@@ -153,6 +156,16 @@ abstract interface class ScheduledMealLogger {
 }
 
 abstract interface class MealPhotoRepository {
+  /// The notice shown before the first analysis, and whether its current
+  /// version is granted. The server refuses analysis until it is.
+  Future<PhotoAiNotice> loadMealPhotoNotice();
+
+  /// Appends a `meal_photo_ai` grant, or a `withdrawn` row.
+  Future<void> recordMealPhotoConsent({
+    required String noticeVersion,
+    required bool granted,
+  });
+
   /// Uploads the photo, creates its draft meal, and runs the analysis.
   /// Throws a [MealPhotoFailure] naming the step that failed.
   Future<String> analyzeMealPhoto({
@@ -168,7 +181,7 @@ abstract interface class MealPhotoRepository {
 class MealPhotoFailure implements Exception {
   const MealPhotoFailure(this.step, this.code);
 
-  /// `picker`, `upload`, `draft`, `analysis`, or `app`.
+  /// `notice`, `picker`, `upload`, `draft`, `analysis`, or `app`.
   final String step;
   final String code;
 
@@ -278,6 +291,33 @@ class SupabaseNutritionRepository
   SupabaseNutritionRepository(this._client);
   static const _uuid = Uuid();
   final SupabaseClient _client;
+
+  @override
+  Future<PhotoAiNotice> loadMealPhotoNotice() async {
+    final notice = PhotoAiNotice.fromJson(
+      await _client.rpc('get_my_meal_photo_ai_notice'),
+    );
+    if (notice == null) {
+      throw const FormatException('The meal photo AI notice is unavailable.');
+    }
+    return notice;
+  }
+
+  @override
+  Future<void> recordMealPhotoConsent({
+    required String noticeVersion,
+    required bool granted,
+  }) async {
+    final user = _client.auth.currentUser;
+    if (user == null) throw StateError('Authentication required.');
+    await _client.from('consent_records').insert({
+      'user_id': user.id,
+      'consent_type': 'meal_photo_ai',
+      'notice_version': noticeVersion,
+      'action': granted ? 'granted' : 'withdrawn',
+      'source': 'ios_app',
+    });
+  }
 
   @override
   Future<String> analyzeMealPhoto({
