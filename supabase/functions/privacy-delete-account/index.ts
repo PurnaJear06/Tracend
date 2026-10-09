@@ -86,6 +86,9 @@ export async function handleAccountDeletion(request: Request): Promise<Response>
       auth.userId,
       (exports.data ?? []).map((row) => row.storage_path),
     );
+    // An object whose key cannot be passed to Storage safely would outlive the
+    // account, so nothing is deleted: the request fails and the owner removes
+    // that object by hand before the athlete retries.
     const unsafe = meals.unsafe + progress.unsafe + exportKeys.unsafe;
     if (unsafe > 0) {
       captureException(new Error(`account_deletion_unsafe_keys_${unsafe}`), {
@@ -93,6 +96,7 @@ export async function handleAccountDeletion(request: Request): Promise<Response>
         functionName: "privacy-delete-account",
         failureCode: "unsafe_storage_key",
       });
+      throw new Error("unsafe_storage_key");
     }
     await removeObjects(auth.serviceClient, "meal-images", meals.keys);
     await removeObjects(auth.serviceClient, "progress-photos", progress.keys);

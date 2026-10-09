@@ -27,8 +27,9 @@ that waits behind another must be re-stamped before it merges.
   - `persist_coach_preference` refuses any athlete but the caller unless the caller is the service
     role.
 - `_shared/storage_keys.ts` guards every service-role Storage call: meal-analyze, physique-check,
-  privacy-export (unsafe keys listed under `skipped_media`), privacy-delete-account and both
-  retention workers (unsafe keys never sent, counted and reported to Sentry).
+  privacy-export (unsafe keys listed under `skipped_media`), privacy-delete-account (an unsafe key
+  fails the deletion before anything is deleted, so it never reports success with a private object
+  left) and both retention workers (unsafe keys never sent, counted and reported to Sentry).
 - deploy.yml: restore-drill psql output goes to a removed temporary file; a failure prints only the
   step and the failing line.
 

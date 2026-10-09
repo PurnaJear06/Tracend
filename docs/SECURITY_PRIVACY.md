@@ -150,7 +150,10 @@ AI consent is per purpose (2026-10):
 - Service-role code ignores Storage RLS, so every key it reads from the database passes
   `_shared/storage_keys.ts` (a safe key in the user's own folder) before any download or removal.
   A key that fails is never sent to Storage: meal analysis answers `meal_not_found`, the export
-  lists it under `skipped_media`, and deletion and retention leave it and report a count to Sentry.
+  lists it under `skipped_media`, and retention leaves it and reports a count to Sentry. Account
+  deletion stops before deleting anything and fails the request (Sentry
+  `account_deletion_unsafe_keys_<n>`), so it never reports success while a private object remains;
+  the owner removes that object in the dashboard and the athlete retries.
 
 ### Access
 
