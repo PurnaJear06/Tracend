@@ -19,3 +19,11 @@ Deno.test("account deletion sends Storage only safe keys in the user's folder", 
     { keys: [`${user}/meal/a.jpg`], unsafe: 2 },
   );
 });
+
+Deno.test("a key listed twice is removed once", () => {
+  const user = "11111111-1111-4111-8111-111111111111";
+  assertEquals(
+    deletableKeys(user, [`${user}/meal/a.jpg`, `${user}/meal/a.jpg`]),
+    { keys: [`${user}/meal/a.jpg`], unsafe: 0 },
+  );
+});

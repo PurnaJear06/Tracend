@@ -244,10 +244,11 @@ export async function handlePrivacyExport(request: Request): Promise<Response> {
     ).eq("id", exportId).single();
     return reply(200, { schema_version: "1.0", export: existing.data });
   }
+  const path = `${auth.userId}/${exportId}.tracendexport`;
+  let uploaded = false;
   try {
     const zip = await buildExport(auth.serviceClient, auth.userId, auth.userEmail);
     const encrypted = await encrypt(zip, body.password);
-    const path = `${auth.userId}/${exportId}.tracendexport`;
     const upload = await auth.serviceClient.storage.from("account-exports").upload(
       path,
       encrypted,
@@ -257,6 +258,7 @@ export async function handlePrivacyExport(request: Request): Promise<Response> {
       },
     );
     if (upload.error) throw new Error("export_upload_failed");
+    uploaded = true;
     const completed = await auth.serviceClient.rpc("complete_data_export", {
       target_export_id: exportId,
       object_path: path,
@@ -271,6 +273,8 @@ export async function handlePrivacyExport(request: Request): Promise<Response> {
     const code = error instanceof Error && error.message.match(/^[a-z0-9_]+$/)
       ? error.message
       : "export_failed";
+    // An export that never became ready must not stay in Storage.
+    if (uploaded) await auth.serviceClient.storage.from("account-exports").remove([path]);
     await auth.serviceClient.rpc("fail_data_export", {
       target_export_id: exportId,
       failure_code: code,

@@ -1,6 +1,6 @@
 # Security hardening batch (2026-10-09)
 
-**Status:** PR 1 of 5 in review. A source review of `d26cf2c` raised leads that need fixing; the
+**Status:** PR 1 (#88) and PR 2 in review; PR 2 is stacked on PR 1, so merge #88 first. A source review of `d26cf2c` raised leads that need fixing; the
 details stay in the owner's private report, not in this public repository. The owner approved a
 five-PR plan on 2026-10-09 and chose: an invite list for new sign-ups, a one-time meal-photo AI
 notice enforced by the server, and session tokens in the iOS Keychain.
@@ -54,3 +54,35 @@ failed in "Restore schema + data into isolated database" (`gh run delete <id>`).
 
 **Device check (no reinstall):** analyze a meal photo, add a progress photo, run the physique check,
 confirm a Coach preference, and request a privacy export.
+
+## PR 2: account boundary
+
+- Migration `20261009130000_account_boundary.sql`:
+  - `private.signup_invites`, seeded from every existing account, so your account needs no step.
+    `private.handle_new_auth_user` refuses an email, phone or anonymous sign-up that is not
+    invited; the Auth insert rolls back and no email is sent. The app says "This email isn't on
+    the invite list yet."
+  - `private.has_recent_sign_in` reads the JWT `amr` claim. `request_my_data_export` and
+    `request_my_account_deletion` use it instead of `iat`. The app already signs in with your
+    password right before both, so nothing changes for you.
+  - An export neither starts nor completes while an account deletion is pending.
+  - `list_account_storage_objects` (service role) lists every object in an account's folders;
+    account deletion removes them along with the recorded keys.
+  - Coach context snapshots now cascade with their conversation, and `delete_coach_thread` also
+    removes the conversation's summaries, so deleting a conversation works again.
+- privacy-export removes a package that failed after upload. Failed conversation deletes are
+  reported to Sentry.
+
+**Owner steps before merging PR 2** (dashboard, read-only):
+1. `select email, created_at, last_sign_in_at from auth.users order by created_at;` and remove any
+   account you don't recognise.
+2. Authentication settings: anonymous sign-ins, phone and Apple off; "Confirm email" on; no other
+   before-user-created hook.
+
+**After the deploy:**
+1. `select email, claimed_by is not null as claimed from private.signup_invites;` shows your email.
+2. On the device, sign out and back in, then request a privacy export (it checks the new recent
+   sign-in rule). Don't test with account deletion.
+3. Delete a Coach conversation.
+4. Invite someone with
+   `insert into private.signup_invites(email, note) values (lower('<email>'), 'beta');`.

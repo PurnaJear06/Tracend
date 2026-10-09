@@ -7,7 +7,9 @@
 **Security hardening (2026-10-09):** a source review of `d26cf2c` raised leads that the owner
 asked to fix in five PRs, merged in order; details stay in the owner's private report. PR 1
 (media key grammar and ownership, a key guard on every service-role Storage call, the Coach
-preference caller check, restore-drill log output) is in review. Workstream state:
+preference caller check, restore-drill log output) and PR 2 (invite-only sign-ups, recent sign-in
+from `amr`, full Storage purge on deletion, no export during deletion, Coach conversation delete
+fixed) are in review. Workstream state:
 [`docs/handoff/security-hardening.md`](./handoff/security-hardening.md).
 
 **Current priority (2026-10-03):** the app-wide graphite + lime redesign. The owner chose palette

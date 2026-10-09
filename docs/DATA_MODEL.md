@@ -74,6 +74,12 @@ Canonical account and identity root managed by Supabase Auth. Native Sign in wit
 linked here. Tracend does not store raw Apple identity tokens or implement a parallel
 access/refresh-token table.
 
+### `private.signup_invites`
+
+The beta invite list: lowercased email (primary key), note, created time, and who claimed it and
+when. Only the SQL editor reaches it. The sign-up trigger refuses an email that is not listed;
+every account that existed on 2026-10-09 was seeded as claimed.
+
 ### `user_accounts`
 
 One application-owned row keyed by `id = auth.users.id`, containing locale, timezone, unit system,

@@ -230,6 +230,13 @@ AI consent is per purpose (2026-10):
 - Use generic not-found/forbidden behavior that does not reveal another user's resource existence.
 - Rate-limit authentication, Edge Functions, media operations, AI jobs, export, and deletion.
 - Require recent authentication for export, account deletion, or sensitive session changes.
+  "Recent" is read from the JWT `amr` claim (`private.has_recent_sign_in`): a password, OTP or TOTP
+  sign-in within 10 minutes. `iat` is not used, because a token refresh resets it while `amr`
+  keeps the time of the sign-in that started the session.
+- Sign-ups are invite-only during the beta. `private.handle_new_auth_user` refuses an email that is
+  not in `private.signup_invites` (reachable only from the SQL editor), so the Auth insert rolls
+  back and no account or email is created; existing accounts were seeded on 2026-10-09. Invite
+  with `insert into private.signup_invites(email, note) values (lower('<email>'), 'beta');`.
 - `meal-media-retention` validates a dedicated `RETENTION_WORKER_SECRET` (not JWT). Store the same
   generated value in Edge Function secrets and Supabase Vault; Cron reads Vault. Never place it in
   Flutter, shell history, logs, or committed files.
@@ -351,7 +358,8 @@ history.
 
 ### Export
 
-- Export is requested after recent authentication.
+- Export is requested after recent authentication, and neither starts nor completes while an
+  account deletion is pending. A package that fails after upload is removed from Storage.
 - The package contains user-readable JSON/CSV and media organized by purpose, with units,
   provenance, and timestamps.
 - It is encrypted, delivered through a short-lived authorization, and deleted within seven days.
@@ -365,7 +373,9 @@ history.
 ### Deletion
 
 - Fresh password authentication and the exact phrase `DELETE` are required.
-- Meal images, progress photos, and export packages are removed before the Auth user. Auth deletion
+- Meal images, progress photos, and export packages are removed before the Auth user: every object
+  recorded for the account plus every object in the account's folders
+  (`list_account_storage_objects`), so an upload that never got a database row goes too. Auth deletion
   cascades through user-owned PostgreSQL records; a content-free completion receipt remains for 180
   days.
 - Destructive verification uses synthetic accounts only. Failure never reports completion to the

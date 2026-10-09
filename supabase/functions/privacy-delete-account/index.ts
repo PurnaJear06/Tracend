@@ -29,8 +29,9 @@ export function deletableKeys(
   userId: string,
   keys: readonly unknown[],
 ): { keys: string[]; unsafe: number } {
-  const safe = keys.filter((key): key is string => isUserStorageKey(userId, key));
-  return { keys: safe, unsafe: keys.filter((key) => typeof key === "string").length - safe.length };
+  const safe = [...new Set(keys.filter((key): key is string => isUserStorageKey(userId, key)))];
+  const unsafe = keys.filter((key) => typeof key === "string" && !isUserStorageKey(userId, key));
+  return { keys: safe, unsafe: unsafe.length };
 }
 
 export async function handleAccountDeletion(request: Request): Promise<Response> {
@@ -71,21 +72,29 @@ export async function handleAccountDeletion(request: Request): Promise<Response>
       .eq("user_id", auth.userId).neq("lifecycle_status", "deleted");
     if (media.error) throw new Error("media_lookup_failed");
     const rows = media.data ?? [];
-    const meals = deletableKeys(
-      auth.userId,
-      rows.filter((row) => row.purpose === "meal_analysis").map((row) => row.object_key),
-    );
-    const progress = deletableKeys(
-      auth.userId,
-      rows.filter((row) => row.purpose !== "meal_analysis").map((row) => row.object_key),
-    );
     const exports = await auth.serviceClient.from("data_exports").select("storage_path")
       .eq("user_id", auth.userId).not("storage_path", "is", null);
     if (exports.error) throw new Error("export_lookup_failed");
-    const exportKeys = deletableKeys(
-      auth.userId,
-      (exports.data ?? []).map((row) => row.storage_path),
-    );
+    // Uploads that never got a database row are in the user's folders too.
+    const listed = await auth.serviceClient.rpc("list_account_storage_objects", {
+      target_user_id: auth.userId,
+    });
+    if (listed.error) throw new Error("storage_listing_failed");
+    const objects = (listed.data ?? []) as { bucket_id: string; name: string }[];
+    const inBucket = (bucket: string) =>
+      objects.filter((object) => object.bucket_id === bucket).map((object) => object.name);
+    const meals = deletableKeys(auth.userId, [
+      ...rows.filter((row) => row.purpose === "meal_analysis").map((row) => row.object_key),
+      ...inBucket("meal-images"),
+    ]);
+    const progress = deletableKeys(auth.userId, [
+      ...rows.filter((row) => row.purpose !== "meal_analysis").map((row) => row.object_key),
+      ...inBucket("progress-photos"),
+    ]);
+    const exportKeys = deletableKeys(auth.userId, [
+      ...(exports.data ?? []).map((row) => row.storage_path),
+      ...inBucket("account-exports"),
+    ]);
     const unsafe = meals.unsafe + progress.unsafe + exportKeys.unsafe;
     if (unsafe > 0) {
       captureException(new Error(`account_deletion_unsafe_keys_${unsafe}`), {
