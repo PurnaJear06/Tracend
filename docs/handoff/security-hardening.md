@@ -11,7 +11,7 @@ that waits behind another must be re-stamped before it merges.
 | # | Branch | Scope | Installed app |
 |---|---|---|---|
 | 1 | `security/storage-keys-and-authz` | media key grammar and ownership, service-role key guard, Coach preference caller check, restore-drill log output | no change |
-| 2 | `security/account-boundary` | sign-up invites, recent sign-in for export and deletion, full Storage purge on deletion, Coach thread delete | no change |
+| 2 | `security/account-boundary` | sign-up invites, recent sign-in for export and deletion, full Storage purge on deletion, Coach thread delete | server works with the old build; reinstall for the invite message and delete reporting |
 | 3 | `security/abuse-limits` | time zone writes, consent records, health sync bounds, upload quotas and orphan sweep, content caps | no change |
 | 4a | `security/ai-spend` | AI budget reservations, a global stop, failed-call cost, list-price defaults | no change |
 | 4b | `security/meal-photo-consent` | meal-photo AI notice, AI notice v5 | needs the new build |
@@ -28,8 +28,9 @@ that waits behind another must be re-stamped before it merges.
   - `persist_coach_preference` refuses any athlete but the caller unless the caller is the service
     role.
 - `_shared/storage_keys.ts` guards every service-role Storage call: meal-analyze, physique-check,
-  privacy-export (unsafe keys listed under `skipped_media`), privacy-delete-account and both
-  retention workers (unsafe keys never sent, counted and reported to Sentry).
+  privacy-export (unsafe keys listed under `skipped_media`), privacy-delete-account (an unsafe key
+  fails the deletion before anything is deleted, so it never reports success with a private object
+  left) and both retention workers (unsafe keys never sent, counted and reported to Sentry).
 - deploy.yml: restore-drill psql output goes to a removed temporary file; a failure prints only the
   step and the failing line.
 
@@ -80,7 +81,9 @@ confirm a Coach preference, and request a privacy export.
 2. Authentication settings: anonymous sign-ins, phone and Apple off; "Confirm email" on; no other
    before-user-created hook.
 
-**After the deploy:**
+**After the deploy:** the server changes work with the installed app, but the invite-only message
+and the Sentry report for a failed conversation delete arrive only with a new build, so install
+from merged main (`./scripts/install-device.sh`), then:
 1. `select email, claimed_by is not null as claimed from private.signup_invites;` shows your email.
 2. On the device, sign out and back in, then request a privacy export (it checks the new recent
    sign-in rule). Don't test with account deletion.
@@ -155,9 +158,11 @@ change nothing else. If a sync fails, the health-sync logs show the reason.
     prices instead of 0.
 
 **Before merging PR 4a:**
-1. `./scripts/supabase.sh secrets list --project-ref qsfzzsjenopqqqhvpyaw`: no Coach price secret
-   (`DEEPSEEK_*`, `GROQ_*`, `GEMINI_*_COST_PER_MILLION_USD`) may be set to `0`, or that provider
-   stops. Unset is fine.
+1. `./scripts/supabase.sh secrets list --project-ref qsfzzsjenopqqqhvpyaw` shows only SHA-256
+   digests, so compare each Coach price secret's digest (`DEEPSEEK_*`, `GROQ_*`,
+   `GEMINI_*_COST_PER_MILLION_USD`) with `printf 0 | shasum -a 256` and `printf 0.0 | shasum -a 256`.
+   A match means that secret is `0`, which now stops the provider; unset it (an unset price uses
+   the list price). If a digest can't be matched to a value you know, unset or reset that secret.
 2. Pick the global monthly stop. It launches at USD 10; to change it after the deploy, run
    `update private.ai_budget_limits set global_monthly_usd = <amount>, updated_at = now();`.
 

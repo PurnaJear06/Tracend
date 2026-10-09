@@ -1,9 +1,10 @@
 begin;
-select plan(16);
+select plan(18);
 
 insert into auth.users(id, role) values
   ('d1000000-0000-4000-8000-000000000001', 'authenticated'),
-  ('d1000000-0000-4000-8000-000000000002', 'authenticated');
+  ('d1000000-0000-4000-8000-000000000002', 'authenticated'),
+  ('d1000000-0000-4000-8000-000000000003', 'authenticated');
 
 select ok(not has_function_privilege('authenticated', 'public.reserve_ai_budget(uuid,text)', 'execute'),
   'clients cannot reserve budget');
@@ -50,6 +51,17 @@ set local role service_role;
 select throws_ok($$select public.reserve_ai_budget('d1000000-0000-4000-8000-000000000002', 'meal_vision')$$,
   'P0001', 'monthly cost limit reached', 'an open reservation counts toward the monthly stop');
 
+-- A place whose ceiling would cross the stop is refused.
+reset role;
+insert into public.ai_usage_events(user_id, purpose, provider, model, input_units, output_units,
+  estimated_cost_usd, latency_ms)
+values ('d1000000-0000-4000-8000-000000000003', 'meal_vision', 'groq', 'qwen/qwen3.8-27b', 1, 1, 1.995, 1);
+set local role service_role;
+select throws_ok($$select public.reserve_ai_budget('d1000000-0000-4000-8000-000000000003', 'meal_vision')$$,
+  'P0001', 'monthly cost limit reached', 'a call that could cross the monthly stop is refused');
+reset role;
+delete from public.ai_usage_events where user_id = 'd1000000-0000-4000-8000-000000000003';
+
 -- Global stop.
 reset role;
 update private.ai_budget_limits set global_monthly_usd = 2.5;
@@ -62,6 +74,8 @@ values ('d1000000-0000-4000-8000-000000000001', 'meal_vision', 'groq', 'qwen/qwe
 set local role service_role;
 select throws_ok($$select public.reserve_ai_budget('d1000000-0000-4000-8000-000000000002', 'meal_vision')$$,
   'P0001', 'global monthly cost limit reached', 'the stop across all accounts applies');
+select throws_ok($$select public.assert_owner_ai_budget('d1000000-0000-4000-8000-000000000002')$$,
+  'P0001', 'global monthly cost limit reached', 'the older check applies the global stop too');
 reset role;
 
 -- The athlete's own view.
