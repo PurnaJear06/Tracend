@@ -85,7 +85,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('owner development'), findsNothing);
-    expect(find.text('No choice recorded yet'), findsNWidgets(2));
+    expect(find.text('Meal photo AI analysis'), findsOneWidget);
+    expect(find.text('No choice recorded yet'), findsNWidgets(3));
     expect(find.textContaining('Append-only'), findsNothing);
   });
 
