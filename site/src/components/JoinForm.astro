@@ -1,0 +1,31 @@
+---
+/* The waitlist form. Behaviour lives in src/scripts/waitlist.js; the page works without
+   motion, and the result panel doubles as the invite (share) screen. */
+interface Props { id: string }
+const { id } = Astro.props;
+---
+<div class="join-wrap" data-join>
+  <form class="join" novalidate>
+    <label class="join-label sr-only" for={id}>Email</label>
+    <div class="join-row">
+      <input class="join-input" id={id} type="email" name="email" autocomplete="email" inputmode="email" spellcheck="false" placeholder="you@email.com" required aria-describedby={`${id}-meta ${id}-err`}>
+      <button class="join-btn" type="submit"><span class="join-btn-t">Join the beta</span><span class="ico"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></span></button>
+    </div>
+    <p class="join-err" id={`${id}-err`} role="alert" hidden></p>
+    <p class="join-meta" id={`${id}-meta`}>We&rsquo;ll email you once to confirm, then only about the beta. Unsubscribe in one tap. 18+. <a href="/privacy/">Privacy</a></p>
+    <div class="join-ts" data-ts></div>
+  </form>
+  <div class="join-ok" tabindex="-1" role="status" hidden>
+    <b>Check your inbox.</b>
+    <span>Tap the link we sent to <strong data-ok-email></strong> to confirm your place. It works for 7 days. Already confirmed? You&rsquo;re all set.</span>
+    <div class="share" data-share hidden>
+      <p class="share-h">Move up the list</p>
+      <p class="share-p">Share your link. Every friend who confirms moves you closer to the front.</p>
+      <div class="share-row">
+        <input class="share-link" type="text" readonly aria-label="Your invite link" data-ref-link>
+        <button class="share-btn" type="button" data-copy>Copy</button>
+        <button class="share-btn" type="button" data-native-share hidden>Share</button>
+      </div>
+    </div>
+  </div>
+</div>

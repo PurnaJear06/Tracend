@@ -1,0 +1,68 @@
+---
+import Doc from '../layouts/Doc.astro';
+---
+<Doc title="Confirm your email · Tracend" description="Confirm your place on the Tracend beta waitlist." noindex>
+  <h1 data-title>Confirming your email</h1>
+  <div class="doc-state" data-state="working" role="status"><p class="doc-lede">One moment.</p></div>
+  <div class="doc-state" data-state="confirmed" hidden>
+    <p class="doc-lede">You&rsquo;re on the list. We&rsquo;ll email you when your beta spot opens, and only about the beta.</p>
+    <div class="share" data-share hidden>
+      <p class="share-h">Move up the list</p>
+      <p class="share-p">Share your link. Every friend who confirms moves you closer to the front.</p>
+      <div class="share-row">
+        <input class="share-link" type="text" readonly aria-label="Your invite link" data-ref-link>
+        <button class="share-btn" type="button" data-copy>Copy</button>
+        <button class="share-btn" type="button" data-native-share hidden>Share</button>
+      </div>
+    </div>
+    <a class="doc-btn ghost" href="/">Back to Tracend</a>
+  </div>
+  <div class="doc-state" data-state="expired" hidden>
+    <p class="doc-lede">This link has expired. Join again with the same email and we&rsquo;ll send a fresh one.</p>
+    <a class="doc-btn" href="/#join">Join again</a>
+  </div>
+  <div class="doc-state" data-state="unsubscribed" hidden>
+    <p class="doc-lede">This email was unsubscribed, so we won&rsquo;t add it back from an old link. To rejoin, sign up again.</p>
+    <a class="doc-btn" href="/#join">Join the beta</a>
+  </div>
+  <div class="doc-state" data-state="invalid" hidden>
+    <p class="doc-lede">This link doesn&rsquo;t work. Use the newest email we sent, or join again to get a fresh link.</p>
+    <a class="doc-btn" href="/#join">Join the beta</a>
+  </div>
+  <div class="doc-state" data-state="error" hidden>
+    <p class="doc-lede">We couldn&rsquo;t reach Tracend just now. Check your connection, then try again.</p>
+    <button class="doc-btn" type="button" data-retry>Try again</button>
+  </div>
+</Doc>
+<script>
+  import { call, showShare } from '../scripts/waitlist.js';
+
+  const TITLES: Record<string, string> = {
+    working: 'Confirming your email', confirmed: 'You’re in.', expired: 'Link expired',
+    unsubscribed: 'Unsubscribed', invalid: 'Link not valid', error: 'Not confirmed yet',
+  };
+  const token = location.hash.slice(1);
+  /* the token never stays in the address bar or browser history */
+  history.replaceState(null, '', location.pathname);
+
+  function show(state: string) {
+    document.querySelectorAll<HTMLElement>('[data-state]').forEach((el) => { el.hidden = el.dataset.state !== state; });
+    document.querySelector('[data-title]')!.textContent = TITLES[state];
+    document.title = `${TITLES[state]} · Tracend`;
+  }
+
+  async function confirm() {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) { show('invalid'); return; }
+    show('working');
+    try {
+      const res = await call('waitlist-confirm', { token });
+      const status = res.ok ? res.body.status : 'error';
+      show(TITLES[status] ? status : 'error');
+      if (status === 'confirmed') showShare(document.querySelector('[data-share]'), res.body.referral_code);
+    } catch (e) {
+      show('error');
+    }
+  }
+  document.querySelector('[data-retry]')!.addEventListener('click', confirm);
+  confirm();
+</script>

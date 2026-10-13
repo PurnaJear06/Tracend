@@ -186,10 +186,15 @@ See `docs/CI_CD_DEPLOYMENT.md` for full design.
   configured together.
 - **Platform:** iOS only, owner's iPhone 12. No Android. `build ios --release --no-codesign`
   is the compilation gate.
-- **11 Edge Functions:** coach-chat, coach-decide, health-check, health-sync, meal-analyze,
+- **14 Edge Functions:** coach-chat, coach-decide, health-check, health-sync, meal-analyze,
   meal-media-retention, onboarding-plan, onboarding-propose-plan (Phase-2 mock, kept for older
   builds), physique-check (owner-only experiment, `PHYSIQUE_VISION_*`), privacy-delete-account,
-  privacy-export.
+  privacy-export, and the website waitlist's waitlist-join, waitlist-confirm and
+  waitlist-unsubscribe (no session; `verify_jwt = false`, see `docs/handoff/website.md`).
+- **Website:** `site/` (Astro, static) on Cloudflare Pages at https://tracend.pages.dev. Use
+  `./scripts/site.sh install | run dev | run build`. `deploy.yml` publishes it after the backend
+  (`site-deploy.yml`, also runnable by hand). Joining the waitlist never grants app access: the
+  owner invites with `private.invite_from_waitlist(n)`.
 - **Onboarding plan model** is set by `ONBOARDING_PLAN_PROVIDER` / `ONBOARDING_PLAN_MODEL`
   (default `mock` = Tracend's rules plan). The owner switches providers; see AI_SAFETY_SPEC §10 for
   the eval, secrets and `private.publish_ai_notice` steps.

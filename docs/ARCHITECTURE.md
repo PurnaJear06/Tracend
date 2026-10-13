@@ -274,7 +274,19 @@ onboarding-plan
 onboarding-propose-plan
 privacy-delete-account
 privacy-export
+waitlist-confirm
+waitlist-join
+waitlist-unsubscribe
 ```
+
+**Website waitlist (2026-10).** The static website (`site/`, Cloudflare Pages) calls three
+session-less functions. `waitlist-join` checks the address and a Cloudflare Turnstile token, then
+`public.waitlist_join` records the signup and returns whether to email; the function sends the
+confirmation over SMTP (port 465, provider set by secrets). The link token travels only in the URL
+fragment and is stored as a SHA-256 hash. `waitlist-confirm` and `waitlist-unsubscribe` take that
+token; unsubscribe also answers mail apps' one-tap requests (RFC 8058). The waitlist is separate
+from app accounts: the owner moves confirmed signups into `private.signup_invites` with
+`private.invite_from_waitlist(n)`.
 
 **Onboarding plan generation.** `onboarding-plan` (2026-10) builds the starting plan from the
 reviewed answers. `onboarding-propose-plan`, the Phase-2 mock, stays for installed older builds.

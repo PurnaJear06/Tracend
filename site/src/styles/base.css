@@ -1,0 +1,57 @@
+/* Page base: reset, accessibility helpers, the join form.
+   page.css sets the tokens (--bg, --ink, --ink-2, --line, --signal, --on-signal, --field). */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;overflow-x:clip}
+h1,h2,h3,h4,p,ol,ul,dl,dd,figure,blockquote{margin:0}
+ol,ul{padding:0;list-style:none}
+a{color:inherit}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;-webkit-tap-highlight-color:transparent}
+img,svg{display:block}
+.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.skip{position:absolute;left:16px;top:-60px;z-index:100;padding:10px 16px;border-radius:999px;background:var(--signal);color:var(--on-signal);font-weight:600;text-decoration:none}
+.skip:focus{top:16px}
+:focus-visible{outline:2px solid var(--signal);outline-offset:3px;border-radius:8px}
+
+/* Join form */
+.join{max-width:520px}
+.join-label{display:block;font-size:14px;margin-bottom:8px;color:var(--ink-2)}
+.join-row{display:flex;gap:8px}
+.join-input{flex:1 1 0;width:0;min-width:0;height:56px;padding:0 18px;border-radius:999px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:17px;
+  transition:border-color .16s ease,box-shadow .2s ease}
+.join-input::placeholder{color:var(--ink-2);opacity:.8}
+.join-input:focus-visible{outline:none;border-color:var(--signal);box-shadow:0 0 0 4px color-mix(in srgb,var(--signal) 22%,transparent)}
+.join-input[aria-invalid="true"]{border-color:#F07F6E}
+.join-btn{position:relative;flex:none;height:56px;padding:0 8px 0 24px;border:0;border-radius:999px;background:var(--signal);color:var(--on-signal);font-weight:700;font-size:16px;
+  display:inline-flex;align-items:center;gap:14px;white-space:nowrap;transition:transform .16s cubic-bezier(.16,1,.3,1),background-color .2s ease}
+.join-btn .ico{width:40px;height:40px;border-radius:50%;background:color-mix(in srgb,var(--on-signal) 12%,transparent);display:grid;place-items:center;transition:transform .32s cubic-bezier(.16,1,.3,1)}
+.join-btn .ico svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.join-btn:active{transform:scale(.97)}
+@media (hover:hover) and (pointer:fine){.join-btn:hover .ico{transform:translateX(3px)}}
+.join-meta{margin-top:12px;font-size:13px;line-height:1.45;color:var(--ink-2)}
+.join-err{margin-top:8px;font-size:14px;color:#F07F6E}
+.join-ok{display:grid;gap:6px}
+.join-ok[hidden],.join[hidden]{display:none}
+.join-ok:focus{outline:none}
+.join-ok b{font-size:22px;letter-spacing:-.01em}
+.join-ok>span{font-size:15px;line-height:1.5;color:var(--ink-2);max-width:46ch}
+.join-ok strong{color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.join-btn:disabled{cursor:progress;opacity:.75}
+.join-meta a{color:var(--ink);text-underline-offset:3px}
+.join-ts:empty{display:none}
+.join-ts{margin-top:12px}
+.share{margin-top:18px;padding-top:18px;border-top:1px solid var(--line);display:grid;gap:6px;max-width:520px}
+.share[hidden]{display:none}
+.share-h{font-family:var(--mono);font-size:12px;color:var(--signal)}
+.share-p{font-size:15px;line-height:1.5;color:var(--ink-2)}
+.share-row{display:flex;gap:8px;margin-top:8px}
+.share-link{flex:1 1 0;width:0;min-width:0;height:48px;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:15px}
+.share-link:focus-visible{outline:none;border-color:var(--signal)}
+.share-btn{flex:none;height:48px;min-width:84px;padding:0 18px;border:0;border-radius:999px;background:var(--ink);color:var(--bg);font-weight:700;font-size:15px;transition:transform .16s cubic-bezier(.16,1,.3,1)}
+.share-btn:active{transform:scale(.97)}
+.share-btn[hidden]{display:none}
+@media (max-width:420px){.join-row{flex-direction:column}.join-input{flex:none;width:100%}.join-btn{justify-content:space-between}}
+
+/* Reduced motion: every element visible and still */
+:root.rm *,:root.rm *::before,:root.rm *::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}

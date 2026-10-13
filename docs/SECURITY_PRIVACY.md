@@ -252,6 +252,12 @@ AI consent is per purpose (2026-10):
   not in `private.signup_invites` (reachable only from the SQL editor), so the Auth insert rolls
   back and no account or email is created; existing accounts were seeded on 2026-10-09. Invite
   with `insert into private.signup_invites(email, note) values (lower('<email>'), 'beta');`.
+- The website waitlist functions take no session. `waitlist-join` requires a Cloudflare Turnstile
+  token (checked server-side with `TURNSTILE_SECRET_KEY`), refuses common throwaway domains, and
+  the database allows 5 joins an hour per hashed IP. New and existing addresses get the same
+  answer. Confirm and unsubscribe links carry a 256-bit token in the URL fragment (never sent to a
+  server or kept in history); only its SHA-256 hash is stored. Responses allow only the site's
+  origin (`WAITLIST_SITE_URL`). A waitlist signup grants no app access.
 - `meal-media-retention` validates a dedicated `RETENTION_WORKER_SECRET` (not JWT). Store the same
   generated value in Edge Function secrets and Supabase Vault; Cron reads Vault. Never place it in
   Flutter, shell history, logs, or committed files.

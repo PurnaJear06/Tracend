@@ -412,6 +412,17 @@ verify_jwt = false
 # function; this endpoint never accepts a user session.
 verify_jwt = false
 
+# The website's waitlist. Visitors have no session: each request is checked by
+# Turnstile (join) or a single-use link token (confirm, unsubscribe).
+[functions.waitlist-join]
+verify_jwt = false
+
+[functions.waitlist-confirm]
+verify_jwt = false
+
+[functions.waitlist-unsubscribe]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

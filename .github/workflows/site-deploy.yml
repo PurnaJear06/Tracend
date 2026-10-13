@@ -1,0 +1,116 @@
+name: Website Deploy
+
+# Builds site/ and publishes it to Cloudflare Pages, then waits until the live
+# site serves this commit. deploy.yml calls it after the backend is live; run it
+# by hand (Actions > Website Deploy > Run workflow) to republish main.
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: Commit to publish
+        required: true
+        type: string
+  workflow_dispatch:
+
+concurrency:
+  group: website-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PAGES_PROJECT: tracend
+  SITE_URL: https://tracend.pages.dev
+
+jobs:
+  publish:
+    name: Publish Website
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.sha || github.sha }}
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Check settings
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+          CONTACT_EMAIL: ${{ vars.CONTACT_EMAIL }}
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN (secret)"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID (secret)"
+          [ -n "$TURNSTILE_SITE_KEY" ] || missing="$missing TURNSTILE_SITE_KEY (variable)"
+          [ -n "$CONTACT_EMAIL" ] || missing="$missing CONTACT_EMAIL (variable)"
+          if [ -n "$missing" ]; then
+            echo "::error::Set these in GitHub > Settings > Secrets and variables > Actions:$missing"
+            exit 1
+          fi
+
+      - name: Install
+        working-directory: site
+        run: npm ci
+
+      - name: Build
+        working-directory: site
+        env:
+          PUBLIC_WAITLIST_API: https://qsfzzsjenopqqqhvpyaw.supabase.co/functions/v1
+          PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+          PUBLIC_CONTACT_EMAIL: ${{ vars.CONTACT_EMAIL }}
+          PUBLIC_SITE_URL: ${{ env.SITE_URL }}
+          ASTRO_TELEMETRY_DISABLED: "1"
+          BUILD_SHA: ${{ inputs.sha || github.sha }}
+        run: |
+          npm run build
+          printf '%s\n' "$BUILD_SHA" > dist/version.txt
+
+      - name: Create the Pages project on first run
+        working-directory: site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if npx wrangler pages project list --json | grep -q "\"$PAGES_PROJECT\""; then
+            echo "Pages project $PAGES_PROJECT exists."
+          else
+            npx wrangler pages project create "$PAGES_PROJECT" --production-branch main
+          fi
+
+      - name: Publish
+        working-directory: site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BUILD_SHA: ${{ inputs.sha || github.sha }}
+        run: |
+          npx wrangler pages deploy dist \
+            --project-name "$PAGES_PROJECT" --branch main --commit-hash "$BUILD_SHA"
+
+      - name: Confirm the live site serves this commit
+        env:
+          BUILD_SHA: ${{ inputs.sha || github.sha }}
+        run: |
+          for i in $(seq 1 12); do
+            LIVE=$(curl -s --max-time 10 "$SITE_URL/version.txt?check=$i" || true)
+            if [ "$LIVE" = "$BUILD_SHA" ]; then
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$SITE_URL/")
+              [ "$STATUS" = "200" ] || { echo "::error::Home page answered $STATUS."; exit 1; }
+              echo "$SITE_URL serves $BUILD_SHA."
+              exit 0
+            fi
+            echo "Attempt $i: live version is '${LIVE:-none}', waiting..."
+            sleep 10
+          done
+          echo "::error::$SITE_URL is not serving $BUILD_SHA after two minutes."
+          exit 1

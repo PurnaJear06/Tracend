@@ -1,0 +1,48 @@
+---
+import Doc from '../layouts/Doc.astro';
+import { CONTACT_EMAIL } from '../config';
+---
+<Doc title="Privacy · Tracend" description="What the Tracend website and waitlist collect, why, and how to have it deleted.">
+  <h1>Privacy</h1>
+  <p class="doc-date">Last updated 13 October 2026</p>
+  <p class="doc-lede">This page covers the Tracend website and its beta waitlist. The short version: we keep your email to run the waitlist and tell you about the beta, nothing else, and you can leave or have it deleted any time.</p>
+
+  <h2>Who we are</h2>
+  <p>Tracend is an AI personal trainer for iPhone and Apple Watch, in private beta. For anything about your data, email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.</p>
+
+  <h2>What we collect when you join</h2>
+  <ul>
+    <li><strong>Your email address</strong>, and whether you have confirmed it, unsubscribed or been invited.</li>
+    <li><strong>Your consent:</strong> when you gave it and which wording you saw.</li>
+    <li><strong>Referrals:</strong> your invite code, and who invited you if you came from a friend&rsquo;s link.</li>
+    <li><strong>Where you came from:</strong> campaign tags in the link you used (for example <code>utm_source</code>) and your browser&rsquo;s time zone. We don&rsquo;t record your location.</li>
+    <li><strong>A scrambled form of your IP address</strong> (a salted hash), kept for 24 hours to stop repeated sign-ups from one network. We never store the address itself.</li>
+  </ul>
+  <p>The site sets no cookies of its own and runs no advertising or analytics trackers.</p>
+
+  <h2>Why</h2>
+  <p>To run the waitlist: confirm your email, invite people in order, and send you news about the Tracend beta. We rely on your consent, which you can withdraw at any time. We never sell your data or share it for advertising.</p>
+
+  <h2>Who processes it for us</h2>
+  <ul>
+    <li><strong>Supabase</strong> stores the waitlist, on servers in Singapore.</li>
+    <li><strong>Google</strong> sends our emails, through Gmail.</li>
+    <li><strong>Cloudflare</strong> hosts this website, which means it receives standard request data such as your IP address and browser, and runs Turnstile, the bot check on the join form, which looks at your browser and IP address to tell people from bots.</li>
+  </ul>
+  <p>Where your data leaves your country, these providers protect it under their data processing terms, including the EU Standard Contractual Clauses.</p>
+
+  <h2>How long we keep it</h2>
+  <p>While the waitlist and beta run. If you never confirm your email, we delete your signup 30 days after our last email. If you unsubscribe, we keep your signup marked unsubscribed so we never email you by mistake. Ask us and we delete it completely.</p>
+
+  <h2>Your rights</h2>
+  <p>You can ask to see, correct or delete your data, or withdraw consent, by emailing <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>. Every email we send has a one-tap unsubscribe link. You can also complain to your local data protection authority.</p>
+
+  <h2>Age</h2>
+  <p>Tracend is for adults. Don&rsquo;t join if you are under 18.</p>
+
+  <h2>The app</h2>
+  <p>Inside the app, your training, nutrition, sleep and progress photos stay private to your account. You can export everything or delete your account from the app at any time.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes, we update this page and the date at the top. If a change affects how we use your email, we tell you by email first.</p>
+</Doc>
