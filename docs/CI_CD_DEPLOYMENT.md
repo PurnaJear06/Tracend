@@ -18,12 +18,15 @@ Production changes follow one path:
 6. The deploy workflow dry-runs migrations and independently backs up production.
 7. The backup job rejects failed or empty dumps, verifies SHA-256 checksums, and restores the
    schema and data into an isolated local Supabase database.
-8. Only after the dry-run and restore drill pass may migrations deploy, followed by the ten Edge
+8. Only after the dry-run and restore drill pass may migrations deploy, followed by the Edge
    Functions one at a time.
 9. Each function deploy is confirmed live against the commit, and a final job checks every function
    again (see [Live-code verification](#live-code-verification)).
-10. The health smoke test and the live-code check must pass before the exact deployed commit
-    receives a release tag.
+10. The website (`site-deploy.yml`) is built from the same commit and published to Cloudflare
+    Pages only after the functions are live. It writes the commit to `/version.txt` and waits until
+    https://tracend.pages.dev serves it, so a published-but-stale site fails the run.
+11. The health smoke test, the live-code check and the website check must pass before the exact
+    deployed commit receives a release tag.
 
 The deploy concurrency group is `production-deploy` with cancellation disabled. Deployments queue;
 they do not interrupt one another.
@@ -58,7 +61,7 @@ an unchanged `UPDATED_AT`:
 
 - Change a secret that only new code accepts only after that code has passed the live-code check.
 - Afterwards, from the checkout of the deployed commit, run
-  `./scripts/verify-live-function.sh --all` and require every check to pass (eleven functions since the physique check, 2026-10). Repeat after any
+  `./scripts/verify-live-function.sh --all` and require every check to pass (fourteen functions since the website waitlist, 2026-10-13). Repeat after any
   later secret change. `UPDATED_AT` alone cannot prove the source stayed live.
 
 ## Required CI checks
@@ -73,6 +76,13 @@ Branch protection requires these pull-request checks:
 - `pgTAP (fresh DB + migrations + parity)`
 - `Secret Scan (gitleaks)`
 - `Migration Collision Check` (also validates release version metadata)
+
+`Website Build` (every page of `site/` builds) also runs on every pull request; the owner can add it
+to the required checks.
+
+Website deploy settings (GitHub > Settings > Secrets and variables > Actions): secrets
+`CLOUDFLARE_API_TOKEN` (Account > Cloudflare Pages > Edit) and `CLOUDFLARE_ACCOUNT_ID`, variables
+`TURNSTILE_SITE_KEY` and `CONTACT_EMAIL`. The run stops with the missing names if any is unset.
 
 CI uses the pinned versions in the workflow. Local development uses repository wrappers from
 `scripts/`.

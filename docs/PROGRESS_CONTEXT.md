@@ -1,8 +1,16 @@
 # Tracend Current State
 
-**As of:** 2026-10-09
+**As of:** 2026-10-13
 
 **Lifecycle:** owner-only private beta; not approved for public production
+
+**Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
+https://tracend.pages.dev) and a double opt-in waitlist on the production project (three
+session-less Edge Functions, migration `20261013100000_waitlist.sql`). Joining grants no app
+access; the owner invites confirmed signups with `private.invite_from_waitlist(n)`. `deploy.yml`
+now publishes the site after the functions and checks the live version. The owner's one-time
+Gmail, Cloudflare, GitHub and Supabase settings are in
+[`docs/handoff/website.md`](./handoff/website.md).
 
 **Security hardening (2026-10-09):** a source review of `d26cf2c` raised leads that the owner
 asked to fix in five PRs, merged in order; details stay in the owner's private report. PR 1

@@ -72,3 +72,9 @@ session-*.md
 .impeccable/live/deferred-svelte-component-accepts.json
 .impeccable/live/*.png
 # impeccable-ignore-end
+
+# Website (site/)
+site/dist/
+site/.astro/
+# Public local settings for the website (test keys only, no secrets)
+!site/.env.development

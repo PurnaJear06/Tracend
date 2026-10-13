@@ -1,0 +1,48 @@
+---
+import Doc from '../layouts/Doc.astro';
+---
+<Doc title="Unsubscribe · Tracend" description="Stop emails from the Tracend waitlist." noindex>
+  <h1 data-title>Unsubscribe</h1>
+  <div class="doc-state" data-state="ask">
+    <p class="doc-lede">Stop all emails about the Tracend beta. You can join again any time.</p>
+    <button class="doc-btn" type="button" data-go>Unsubscribe</button>
+  </div>
+  <div class="doc-state" data-state="unsubscribed" role="status" hidden>
+    <p class="doc-lede">You&rsquo;re unsubscribed. We won&rsquo;t email you again. Changed your mind? Join again from the home page.</p>
+    <a class="doc-btn ghost" href="/">Back to Tracend</a>
+  </div>
+  <div class="doc-state" data-state="invalid" hidden>
+    <p class="doc-lede">This link doesn&rsquo;t work. Use the unsubscribe link in the newest email we sent you.</p>
+  </div>
+  <div class="doc-state" data-state="error" hidden>
+    <p class="doc-lede">We couldn&rsquo;t reach Tracend just now. Check your connection, then try again.</p>
+    <button class="doc-btn" type="button" data-retry>Try again</button>
+  </div>
+</Doc>
+<script>
+  import { call } from '../scripts/waitlist.js';
+
+  const TITLES: Record<string, string> = { ask: 'Unsubscribe', unsubscribed: 'Unsubscribed', invalid: 'Link not valid', error: 'Not unsubscribed yet' };
+  const token = location.hash.slice(1);
+  history.replaceState(null, '', location.pathname);
+
+  function show(state: string) {
+    document.querySelectorAll<HTMLElement>('[data-state]').forEach((el) => { el.hidden = el.dataset.state !== state; });
+    document.querySelector('[data-title]')!.textContent = TITLES[state];
+    document.title = `${TITLES[state]} · Tracend`;
+  }
+  /* a button, not an automatic call: email scanners open links but don't press buttons */
+  async function go(btn: HTMLButtonElement) {
+    btn.disabled = true;
+    try {
+      const res = await call('waitlist-unsubscribe', { token });
+      show(res.ok && res.body.status === 'unsubscribed' ? 'unsubscribed' : res.ok ? 'invalid' : 'error');
+    } catch (e) {
+      show('error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) show('invalid');
+  document.querySelectorAll<HTMLButtonElement>('[data-go], [data-retry]').forEach((b) => b.addEventListener('click', () => go(b)));
+</script>

@@ -80,6 +80,19 @@ The beta invite list: lowercased email (primary key), note, created time, and wh
 when. Only the SQL editor reaches it. The sign-up trigger refuses an email that is not listed;
 every account that existed on 2026-10-09 was seeded as claimed.
 
+### `private.waitlist_signups`, `private.waitlist_attempts`, `private.waitlist_secret`
+
+The website waitlist (2026-10-13). A signup holds the lowercased email, status (`pending`,
+`confirmed`, `unsubscribed`), SHA-256 hashes of the confirm and unsubscribe link tokens, the
+confirm link's expiry (7 days), send count and time, an 8-character Crockford referral code and
+who referred it, the consent version and time, invite time, browser time zone and `utm_*` tags.
+Attempts keep an HMAC of the visitor's IP (salt in `waitlist_secret`) for one day, for the limit of
+5 joins an hour per network. No API role can read any of them; the Edge Functions use the
+service-role-only `public.waitlist_join`, `waitlist_confirm`, `waitlist_unsubscribe` and
+`waitlist_unsent`. A daily job (`tracend-waitlist-cleanup`) deletes signups never confirmed 30 days
+after their last email. The owner invites with `private.invite_from_waitlist(n)`: confirmed, not yet
+invited signups, most confirmed referrals first, then signup order, into `private.signup_invites`.
+
 ### `user_accounts`
 
 One application-owned row keyed by `id = auth.users.id`, containing locale, timezone, unit system,

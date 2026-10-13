@@ -5,6 +5,7 @@ The active workstreams are the app-wide graphite + lime redesign, [`redesign.md`
 [`backend.md`](./backend.md), the new-user onboarding plan, [`onboarding.md`](./onboarding.md),
 account session and deletion recovery, [`account-session.md`](./account-session.md), and the
 owner-only physique check, [`physique-check.md`](./physique-check.md), and the security hardening
-batch, [`security-hardening.md`](./security-hardening.md). Read
+batch, [`security-hardening.md`](./security-hardening.md), and the website and its waitlist,
+[`website.md`](./website.md). Read
 [`docs/PROGRESS_CONTEXT.md`](../PROGRESS_CONTEXT.md) for the overall current state. Superseded
 handoffs are archived in [`docs/archive/handoffs/`](../archive/handoffs/).

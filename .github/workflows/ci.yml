@@ -43,7 +43,7 @@ jobs:
         run: deno lint supabase/functions
 
       - name: Unit tests (no DB)
-        run: deno test --allow-env --allow-net --allow-read=supabase/migrations supabase/functions
+        run: deno test --allow-env --allow-net --allow-read=supabase/migrations,site/src/config.ts supabase/functions
 
       - name: Backup storage script tests
         run: bash scripts/test-store-backup.sh
@@ -155,6 +155,41 @@ jobs:
         run: >-
           pg_prove -h 127.0.0.1 -p 54322 -U postgres -d postgres
           supabase/tests/database/*_test.sql
+
+  website:
+    name: Website Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install (build dependencies only)
+        working-directory: site
+        run: npm ci --omit=dev
+
+      - name: Build every page
+        working-directory: site
+        env:
+          # Cloudflare's published Turnstile test key and placeholder addresses:
+          # this job proves the site builds; site-deploy.yml builds with real values.
+          PUBLIC_WAITLIST_API: https://qsfzzsjenopqqqhvpyaw.supabase.co/functions/v1
+          PUBLIC_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+          PUBLIC_CONTACT_EMAIL: hello@tracend.test
+          PUBLIC_SITE_URL: https://tracend.pages.dev
+          ASTRO_TELEMETRY_DISABLED: "1"
+        run: |
+          npm run build
+          for page in index privacy/index terms/index confirm/index unsubscribe/index 404; do
+            test -s "dist/$page.html" || { echo "::error::Missing dist/$page.html"; exit 1; }
+          done
 
   secret-scan:
     name: Secret Scan (gitleaks)

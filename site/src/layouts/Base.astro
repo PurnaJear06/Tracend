@@ -1,0 +1,39 @@
+---
+import '@fontsource-variable/archivo/wdth.css';
+import '@fontsource-variable/martian-mono/standard.css';
+import '../styles/base.css';
+import '../styles/app.css';
+import '../styles/page.css';
+import { SITE_URL } from '../config';
+
+interface Props { title: string; description: string; noindex?: boolean }
+const { title, description, noindex = false } = Astro.props;
+const url = SITE_URL + Astro.url.pathname;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <title>{title}</title>
+    <meta name="description" content={description}>
+    {noindex && <meta name="robots" content="noindex">}
+    <meta name="theme-color" content="#0B0C0D">
+    <link rel="canonical" href={url}>
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Tracend">
+    <meta property="og:url" content={url}>
+    <meta property="og:image" content={`${SITE_URL}/og.png`}>
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Tracend. Set a goal. Tracend plans the rest.">
+    <meta property="og:title" content={title}>
+    <meta property="og:description" content={description}>
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <script is:inline>(function(){var r=document.documentElement;r.classList.add('js');if(/reduce/.test(location.hash+location.search)||matchMedia('(prefers-reduced-motion: reduce)').matches)r.classList.add('rm');})();</script>
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>
