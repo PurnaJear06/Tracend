@@ -68,6 +68,12 @@ by changing the secrets, and update the processor list in `site/src/pages/privac
 
 ## Open
 
+- 2026-10-13: the deploy of #99 stopped at the backup restore drill (the drill did not reset the
+  `private` schema; fixed in the follow-up PR), so the migration and waitlist functions are not live
+  yet. The site at https://tracend.pages.dev was published by hand with `wrangler pages deploy`.
+- Joining showed nothing when Cloudflare asked for a tap: the form now says "One quick check: tap
+  the box below to finish joining."
+
 - The first live join needs the owner's own email: confirm the email arrives, the link confirms,
   and unsubscribe works.
 - Add `Website Build` to the required checks if wanted.

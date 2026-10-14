@@ -97,6 +97,12 @@ matching Supabase's documented logical-backup flow. A backup is valid only when:
 - schema and data restore with `ON_ERROR_STOP=1` inside the isolated database; and
 - the restored database contains public tables.
 
+The isolated database starts with every migration applied (`supabase start`), so the drill first
+drops the `public` and `private` schemas that the snapshot recreates. Before 2026-10-14 it dropped
+only `public`, and the first deploy after production gained `private` tables (2026-10-09) failed at
+`ALTER TABLE ONLY "private"."ai_budget_limits" ADD CONSTRAINT ... PRIMARY KEY` ("multiple primary
+keys"). A new schema created by a migration must be added to that reset.
+
 The deploy log is public, and on an error psql prints the failing statement, which for the data
 file holds production rows. Every restore psql call therefore runs through `restore_psql`: its
 output goes to a temporary file that is always removed, and a failure prints only the step and the

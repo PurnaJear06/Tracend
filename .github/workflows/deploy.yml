@@ -129,16 +129,20 @@ jobs:
             exit 1
           }
 
-          # `public` belongs to the local postgres role, while Supabase-managed
-          # schemas contain tables that role cannot modify. Clear each with its
-          # owning administrative role before replaying the production snapshot.
-          restore_psql "Reset public schema" \
+          # `public` and `private` belong to the local postgres role, while
+          # Supabase-managed schemas contain tables that role cannot modify.
+          # Clear each with its owning administrative role before replaying the
+          # production snapshot. `private` must go too: the snapshot recreates it,
+          # and its tables already exist here from the migrations `supabase start`
+          # applied (first seen 2026-10-13, once production had private tables).
+          restore_psql "Reset public and private schemas" \
             --username postgres \
             --dbname postgres \
             --variable ON_ERROR_STOP=1 \
             --command 'DROP SCHEMA public CASCADE' \
             --command 'CREATE SCHEMA public' \
-            --command 'GRANT ALL ON SCHEMA public TO postgres, anon, authenticated, service_role'
+            --command 'GRANT ALL ON SCHEMA public TO postgres, anon, authenticated, service_role' \
+            --command 'DROP SCHEMA IF EXISTS private CASCADE'
 
           restore_psql "Clear managed schemas" \
             --username supabase_admin \

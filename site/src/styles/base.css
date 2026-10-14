@@ -31,6 +31,7 @@ img,svg{display:block}
 @media (hover:hover) and (pointer:fine){.join-btn:hover .ico{transform:translateX(3px)}}
 .join-meta{margin-top:12px;font-size:13px;line-height:1.45;color:var(--ink-2)}
 .join-err{margin-top:8px;font-size:14px;color:#F07F6E}
+.join-note{margin-top:8px;font-size:14px;color:var(--ink)}
 .join-ok{display:grid;gap:6px}
 .join-ok[hidden],.join[hidden]{display:none}
 .join-ok:focus{outline:none}
