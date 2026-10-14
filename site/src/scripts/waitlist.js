@@ -60,6 +60,10 @@ function widget(form) {
         callback: (token) => settle('resolve', token),
         'error-callback': () => { settle('reject', new Error('turnstile_failed')); return true; },
         'timeout-callback': () => settle('reject', new Error('turnstile_failed')),
+        'unsupported-callback': () => settle('reject', new Error('turnstile_failed')),
+        /* Cloudflare sometimes asks a person to tap its box: say so instead of waiting silently */
+        'before-interactive-callback': () => form._interactive && form._interactive(true),
+        'after-interactive-callback': () => form._interactive && form._interactive(false),
       });
       return w;
     });
@@ -116,7 +120,9 @@ function mount(wrap) {
   const btn = form.querySelector('.join-btn');
   const label = btn.querySelector('.join-btn-t');
   const ok = wrap.querySelector('.join-ok');
+  const note = form.querySelector('.join-note');
   let busy = false;
+  form._interactive = (on) => { note.hidden = !on; };
 
   const fail = (text) => {
     err.textContent = text;
@@ -176,6 +182,7 @@ function mount(wrap) {
     } catch (x) {
       fail('We couldn’t reach Tracend. Check your connection and try again.');
     } finally {
+      note.hidden = true;
       setBusy(false);
     }
   });

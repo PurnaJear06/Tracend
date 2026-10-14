@@ -12,6 +12,7 @@ const { id } = Astro.props;
       <button class="join-btn" type="submit"><span class="join-btn-t">Join the beta</span><span class="ico"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></span></button>
     </div>
     <p class="join-err" id={`${id}-err`} role="alert" hidden></p>
+    <p class="join-note" role="status" hidden>One quick check: tap the box below to finish joining.</p>
     <p class="join-meta" id={`${id}-meta`}>We&rsquo;ll email you once to confirm, then only about the beta. Unsubscribe in one tap. 18+. <a href="/privacy/">Privacy</a></p>
     <div class="join-ts" data-ts></div>
   </form>
