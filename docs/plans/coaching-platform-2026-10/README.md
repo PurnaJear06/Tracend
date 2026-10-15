@@ -218,7 +218,9 @@ Rules:
 `sync_workout_draft(session_id, client_revision, draft)` keeps its signature. Each set object may
 carry `started_at`, `completed_at`, `rest_before_seconds`, `rir`, `timing_source`. A missing key
 keeps the stored value (older builds send none). Invalid values raise `22023`. Times more than 10
-minutes in the future or before the session's start are rejected. `get_my_workout_session` and
+minutes in the future or more than 10 minutes before the session's recorded start are rejected
+(the allowance absorbs small phone/server clock differences). If the server refuses timing, the app
+resends the draft without the timing keys, so logged sets are never blocked by a clock error. `get_my_workout_session` and
 `get_my_exercise_history` return the new fields (additive). `rpe` stays; the app stops asking for
 it only when `rir` is shown.
 
@@ -362,5 +364,13 @@ None yet.
   `lib/shared/ai_provider_names.dart`, `lib/features/consent/ai_coaching_consent.dart`,
   `lib/features/coach/coach_labels.dart`, `lib/features/onboarding/onboarding_proposal_view.dart`;
   notice bodies are rows the owner publishes (A7 drafts them).
+- 2026-10-15 (owner): the website keeps "Android in testing" and shows the physique check as live
+  (13 Oct notes stand); "For iPhone, best with Apple Watch" (never Watch-only); the glass tab bar's
+  sheen and fade are an allowed exception to the gradients-in-data-only rule; full-gym plans default
+  to lat pulldowns, with pull-ups returning as a variation in B2.
+- 2026-10-15: beta exit criterion. Health data must not go to DeepSeek once external testers join
+  (App Review 5.1.3; DeepSeek's API terms give no clear no-training/retention position). Phase 2
+  cutover moves every feature to Anthropic before the external TestFlight group opens; the privacy
+  processor list drops DeepSeek and Groq after the rollback window.
 - 2026-10-15: migration-order check added to the Migration Collision Check job
   (`scripts/check-migration-order.sh`).
