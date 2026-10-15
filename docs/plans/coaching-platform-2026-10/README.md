@@ -249,7 +249,7 @@ resends the draft without the timing keys, so logged sets are never blocked by a
 `get_my_exercise_history` return the new fields (additive). `rpe` stays; the app stops asking for
 it only when `rir` is shown.
 
-### Contract 3: Workout events and commands (Dart, C1 defines, D0/D1/C2 consume)
+### Contract 3: Workout events and commands (Dart, C1 defines, D0/D1/C2 consume), version 1.1
 
 ```dart
 sealed class WorkoutEvent { DateTime get at; }
@@ -261,7 +261,7 @@ final class ExerciseAdvanced extends WorkoutEvent { int exerciseOrder; String na
 final class WorkoutEnded extends WorkoutEvent { bool completed; }
 
 sealed class WorkoutCommand {}
-final class CompleteCurrentSet extends WorkoutCommand {}
+final class CompleteCurrentSet extends WorkoutCommand { int exerciseOrder; int setNumber; }   // v1.1 (D1)
 final class SkipRest extends WorkoutCommand {}
 final class AddRest extends WorkoutCommand { int seconds; }   // +30 from the Live Activity
 ```
@@ -494,3 +494,7 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
 - 2026-10-15: Iteration 2 = Phase 2. A3–A6 ship behind route settings, so production providers do
   not change until A7's cutover. A7 gets migration code 17 for the Phase 2 budget limits. The lead
   stamps board rows and PROGRESS lines at merge time (rule 11).
+- 2026-10-16: Contract 3 v1.1 (D1 review). `CompleteCurrentSet` names the set the Live Activity
+  showed (`exerciseOrder`, `setNumber`); the workout applies it only while that set is still the
+  current unticked one and no rest is running, so a double tap or a stale Done never ticks the
+  next set. Presses older than 8 s are dropped.
