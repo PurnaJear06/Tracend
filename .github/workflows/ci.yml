@@ -48,6 +48,9 @@ jobs:
       - name: Backup storage script tests
         run: bash scripts/test-store-backup.sh
 
+      - name: Restore privilege check script tests
+        run: bash scripts/test-restore-privileges.sh
+
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest

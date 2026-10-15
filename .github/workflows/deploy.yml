@@ -79,6 +79,11 @@ jobs:
           supabase db dump --linked --role-only -f "backup-${TIMESTAMP}-roles.sql"
           supabase db dump --linked -f "backup-${TIMESTAMP}-schema.sql"
           supabase db dump --linked --data-only --use-copy -f "backup-${TIMESTAMP}-data.sql"
+          # The data dump leaves out supabase_migrations, so record which
+          # migrations production has applied for the privilege comparison.
+          supabase migration list --linked >"$RUNNER_TEMP/migration-list.txt"
+          bash scripts/restore-privileges.sh versions "$RUNNER_TEMP/migration-list.txt" \
+            >"$RUNNER_TEMP/applied-migrations.txt"
 
       - name: Verify backup integrity
         run: |
@@ -95,7 +100,11 @@ jobs:
           sha256sum --check SHA256SUMS
 
       - name: Start isolated restore target
-        run: supabase start
+        run: |
+          supabase start
+          # `supabase start` applied every migration of this commit; keep its
+          # privileges to compare with the restored database.
+          bash scripts/restore-privileges.sh snapshot >"$RUNNER_TEMP/privileges-migrations.tsv"
 
       - name: Restore schema + data into isolated database
         run: |
@@ -235,6 +244,18 @@ jobs:
             exit 1
           }
           bash scripts/store-backup.sh "database-backup-${BACKUP_STAMP}.tar.gz.enc"
+
+      # `supabase db dump` drops GRANT and REVOKE lines that name a schema it
+      # excludes (auth, extensions, vault, ...), so a restore can silently give
+      # anon EXECUTE on a function the migrations revoked. This runs after the
+      # backup is stored: the backup is still useful, but the deploy stops.
+      # Output names objects only. When this commit adds migrations, the script
+      # resets the drill database to production's version for the comparison.
+      - name: Compare restored privileges with the migrations
+        run: |
+          bash scripts/restore-privileges.sh compare \
+            "$RUNNER_TEMP/privileges-migrations.tsv" \
+            "$RUNNER_TEMP/applied-migrations.txt"
 
   deploy-migrations:
     name: Deploy Migrations
