@@ -711,8 +711,10 @@ without quality gain opens review. Changes remain versioned and tested.
 
 ## 15. RAG and Multi-Agent Policy
 
-The MVP uses structured state and bounded summaries. Vector RAG is added only after the gates in
-[ARCHITECTURE.md](./ARCHITECTURE.md) pass. Retrieval cannot override confirmed facts or policy.
+The MVP uses structured state and bounded summaries. Vector RAG over user data is added only after
+the gates in [ARCHITECTURE.md](./ARCHITECTURE.md) pass. The research library of open sources and
+in-house summaries (decision D3, ARCHITECTURE.md section 11) is the one retrieval source allowed
+now. Retrieval cannot override confirmed facts or policy.
 
 Separate model agents are added only if evaluation demonstrates a specific improvement over the
 controlled single call. Safety and mutation approval always remain external to models.

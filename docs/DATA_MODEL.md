@@ -26,7 +26,8 @@ transactionally.
   integrity, and lifecycle metadata.
 - Canonical units are kilograms, centimeters, kilocalories, grams, minutes, beats per minute, and
   milliseconds.
-- Structured PostgreSQL fields are the MVP memory system. Vector embeddings are deferred.
+- Structured PostgreSQL fields are the MVP memory system. Vector embeddings of user data are
+  deferred; only the research library (section 12) holds embeddings, and it holds no user data.
 - **Forward-only migrations. Never edit an applied migration.**
 - **Every migration must be additive.** Rename, drop, or change column type requires the two-step
   pattern: (1) add new column + deploy code that reads it; (2) later migration drops old column.
@@ -699,7 +700,100 @@ are least-privilege by operation, and are tested with authenticated users, anony
 cross-user attempts. Edge Functions and transactional RPC add validation but never replace RLS on
 exposed data.
 
-## 12. Future Vector Memory
+## 12. Research Library and Future Vector Memory
+
+### Research library (decision D3, migration `20261015150041_research_library`)
+
+Open papers, guidelines, position stands and in-house summaries in our own words, for Coach answers
+and plan explanations. No user data; not exposed by the Data API (`private` schema); forced RLS
+with no policies; no grants to `anon`, `authenticated` or `service_role`. Edge Functions reach it
+only through service-role functions. Not part of privacy export or account deletion. `pgvector`
+lives in the `extensions` schema.
+
+#### `private.library_sources`
+
+| Field          | Type        | Description                                                         |
+| -------------- | ----------- | ------------------------------------------------------------------- |
+| id             | uuid PK     |                                                                     |
+| manifest_key   | text UNIQUE | Stable key from the ingestion manifest (`^[a-z0-9][a-z0-9_.-]{0,119}$`) |
+| title          | text        | 1–500 characters                                                    |
+| authors        | text[]      | Default empty                                                       |
+| year           | smallint    | 1900–2100, nullable                                                 |
+| doi            | text        | Nullable                                                            |
+| url            | text        | `https://` only, nullable                                           |
+| licence        | text        | Required: the licence the source is stored under                    |
+| region         | text[]      | Required, no default, at least one entry; each `global` or an ISO 3166-1 alpha-2 code (`IN`, `US`, `GB`, `AU`) |
+| topics         | text[]      | Topic tags used by search filters                                   |
+| evidence_level | text        | Nullable, free text set by ingestion                                |
+| kind           | text        | `paper`, `guideline`, `position_stand`, `summary`                   |
+| created_at     | timestamptz |                                                                     |
+
+#### `private.library_chunks`
+
+| Field       | Type                       | Description                                                  |
+| ----------- | -------------------------- | ------------------------------------------------------------ |
+| id          | uuid PK                    |                                                              |
+| source_id   | uuid FK                    | `library_sources.id`, on delete cascade                      |
+| ordinal     | integer                    | Position in the source, from 0; UNIQUE (source_id, ordinal) |
+| section     | text                       | Section name, nullable                                       |
+| header      | text                       | Context header written at ingestion (source and section)     |
+| body        | text                       | 1–8000 characters                                            |
+| token_count | integer                    | 1–2000                                                       |
+| embedding   | `extensions.vector(384)`   | gte-small, mean-pooled and normalised; null until embedded   |
+| embedding_model | text                   | Model that made the embedding (e.g. `gte-small`); set exactly when `embedding` is set, so a model change re-embeds selectively |
+| fts         | tsvector, generated stored | `to_tsvector('english', header || ' ' || body)`              |
+| created_at  | timestamptz                |                                                              |
+
+Indexes: HNSW on `embedding` (`vector_cosine_ops`), GIN on `fts`, and the unique
+`(source_id, ordinal)` btree, which also serves `source_id` lookups and the cascade.
+
+#### `private.library_ingest_runs`
+
+One row per ingestion run: `id`, `started_at`, `finished_at` (null exactly while `status` is
+`running`), `status` (`running`, `succeeded`, `failed`), `source_count`, `chunk_count`, `error`
+(at most 2000 characters).
+
+#### `public.search_library_v1(query_text, query_embedding, match_count, filters)`
+
+Contract 6. Security definer, empty `search_path`, executable by `service_role` only. Takes the 30
+best full-text matches (`websearch_to_tsquery('english', …)`, ranked by `ts_rank_cd`) and the 30
+nearest embeddings (cosine distance) and merges them by reciprocal rank fusion:
+`score = Σ 1 / (60 + rank)` over the lists a chunk appears in. Returns up to `match_count` rows
+(clamped to 1–8, null = 8), best first, each
+`{schema_version: 1, chunk_id, source_id, title, year, url, section, body, header, score}`.
+
+- Only the first 1000 characters of `query_text` are used. A null or blank `query_text`, or one
+  of stop words or negations (`-creatine`) only, skips full-text search; a null
+  `query_embedding` skips vector search; both skipped returns no rows.
+- `query_embedding` is declared as `public.library_embedding`, a domain over
+  `extensions.vector(384)`; callers pass the same JSON number array. Another size raises `22000`
+  ("expected 384 dimensions"). The domain exists because `supabase db dump` drops GRANT and REVOKE
+  lines that mention the `extensions` schema: with a plain `extensions.vector` parameter a
+  restored dump would leave the function executable by `anon` and `authenticated`.
+- Without filters the nearest embeddings come from the HNSW index; with a filter they are ranked
+  exactly over the matching sources' chunks (an HNSW scan stops after `ef_search` = 40
+  candidates, which a narrow filter could empty).
+- `filters` is null or an object with optional `region` and `topics` text arrays. A source matches
+  when its array overlaps the filter; an absent, null or empty array does not filter. Any other key
+  or a non-text-array value raises `22023`. Sources that apply everywhere carry `global` in
+  `region`, so a regional caller passes for example `["global", "IN"]`.
+
+#### Dump-safe function signatures (all schemas we own)
+
+`supabase db dump` (CLI 2.101.0) drops every GRANT and REVOKE line that names, after `ON`, a
+quoted identifier from its excluded-schema list (`information_schema`, `pg_*`, `_analytics`,
+`_realtime`, `_supavisor`, `auth`, `etl`, `extensions`, `pgbouncer`, `realtime`, `storage`,
+`supabase_functions`, `supabase_migrations`, `cron`, `dbdev`, `graphql`, `graphql_public`, `net`,
+`pgmq`, `pgsodium`, `pgsodium_masks`, `pgtle`, `repack`, `tiger`, `tiger_data`, `timescaledb_*`,
+`_timescaledb_*`, `topology`, `vault`). A function restored from such a dump keeps Supabase's
+default grants, so `anon` and `authenticated` could call it. Therefore no function in `public` or
+`private` may take an input argument whose type lives in one of those schemas (wrap the type in a
+domain in `public`, as `public.library_embedding` does), have an input argument or a name equal
+to one of those names, and no table, view or sequence there may be named like one.
+`supabase/tests/database/research_library_test.sql` asserts all four. Return types are not in a
+GRANT line and are allowed.
+
+### Future vector memory
 
 Only after the gates in [ARCHITECTURE.md](./ARCHITECTURE.md) pass, add user-owned `memory_documents`
 and `memory_chunks` with source record, consent basis, classification, validity dates, deletion

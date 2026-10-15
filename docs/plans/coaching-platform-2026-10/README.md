@@ -49,7 +49,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 1 | A2 | ai-gateway | Gateway module and adapters, not wired to features | — | P0 | review | |
 | 1 | C1 | workout-hr | Set start/end, actual rest, reps-left, workout events | 31 | P0 | review | #104 (draft) |
 | 1 | D0 | ios-widgets | Widget extension and rest-timer Live Activity (countdown only) | — | P0 | todo | |
-| 1 | E1 | research-library | pgvector, library tables, `search_library_v1`, doc rule change | 41 | P0 | todo | |
+| 1 | E1 | research-library | pgvector, library tables, `search_library_v1`, doc rule change | 41 | P0 | review | #109 |
 | 1 | W1 | website | Site copy fixes, privacy policy naming Anthropic, TestFlight checklist | — | P0 | todo | |
 | 1 | U1 | ui | Glass tab bar (owner request 2026-10-15) | — | P0 | review | |
 | 2 | A3 | ai-gateway | Meal photo on Haiku, physique on Sonnet | 13 | A1, A2 | todo | |
@@ -260,10 +260,13 @@ raw samples never leave the phone.
 `respond_to_day_adjustment_v1(local_date date, accept boolean)` records the answer with an audit
 event and returns the updated object.
 
-### Contract 6: Library search (E1)
+### Contract 6: Library search (E1), version 1.1
 
-`search_library_v1(query_text text, query_embedding vector(384), match_count int, filters jsonb)`
-is `security definer`, executable by `service_role` only. Hybrid: full-text top 30 and vector top
+`search_library_v1(query_text text, query_embedding public.library_embedding, match_count int, filters jsonb)`
+is `security definer`, executable by `service_role` only. `public.library_embedding` is a domain
+over `extensions.vector(384)`; callers pass the same JSON array of 384 numbers. v1.1 reason:
+`supabase db dump` strips GRANT/REVOKE lines that mention the `extensions` schema, so a function
+with a plain `vector` argument came back from a restore executable by `anon` and `authenticated`. Hybrid: full-text top 30 and vector top
 30 merged by reciprocal rank fusion (k = 60). Returns rows
 `{chunk_id, source_id, title, year, url, section, body, header, score}`. `filters` may hold
 `region` and `topics` (text arrays). `match_count` is capped at 8.
@@ -375,3 +378,7 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
   processor list drops DeepSeek and Groq after the rollback window.
 - 2026-10-15: migration-order check added to the Migration Collision Check job
   (`scripts/check-migration-order.sh`).
+- 2026-10-15: Contract 6 v1.1 (E1). `query_embedding` is the domain `public.library_embedding`
+  over `extensions.vector(384)`, because `supabase db dump` strips grants that mention
+  `extensions`. Library regions are `global` or ISO alpha-2 codes; regional callers pass
+  `['global', '<code>']`.
