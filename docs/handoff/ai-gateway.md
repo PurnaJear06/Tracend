@@ -18,6 +18,30 @@ A1, A2 (Phase 1); A3–A7 (Phase 2)
 
 No chunk of this stream has merged yet.
 
+**A1 (review, draft PR #103, migration `20261015120011_provider_neutral_ai.sql`):**
+
+- Every SQL provider list accepts `anthropic` and `openai_compatible` next to today's names:
+  `model_runs` and `ai_usage_events` provider checks, `ai_usage_events_model_check`,
+  `meal_photo_ai_notices_provider_check`, and the RPCs `persist_coach_chat_result`,
+  `persist_daily_coaching_result_v2`, `persist_failed_coaching_run_v2`,
+  `persist_failed_coach_chat_run` (`_v2` wraps it), `record_ai_usage_event`,
+  `persist_meal_photo_candidates`. Old vision providers keep pinned models; the new providers
+  accept any well-formed model id. No frozen function holds a provider list.
+- `ai_consent_notices.provider` and `photo_ai_notices.provider` (nullable; old notices null).
+  Publish with `private.publish_ai_notice(version, provider, provider_label, purposes, body)` and
+  `private.publish_photo_ai_notice(version, provider, provider_label, model, body)`.
+- `get_ai_consent_v2(target_user_id, consent_purpose)` → `{schema_version, granted, provider,
+  notice_version}`; TS `aiConsentWithProvider(rpc, userId, purpose)` → `{consent, provider,
+  noticeVersion}`. Purpose mapping: AI_SAFETY_SPEC §10.
+- `reserve_ai_budget_v2(target_user_id, run_purpose, ceiling_usd)`, ceiling in (0, 0.50]; TS
+  `AiBudget.reserve(purpose, ceilingUsd)`. Feature names map to today's purposes (COST_MODEL).
+- Until a notice naming the route's provider is published and granted, `get_ai_consent_v2` returns
+  `provider: null` for coaching and physique notices, so a gateway call would refuse. Cutover (A7)
+  publishes those notices.
+- Open: what `openai_compatible` means for consent (program doc, Contract requests); a
+  `library_context` model call would need its own usage purpose in `model_runs` or
+  `ai_usage_events` (today it is budgeted and consented as `coach_chat`).
+
 ## Next agent starts here
 
 Take the first `todo` chunk of this stream from the program board whose dependencies are merged.

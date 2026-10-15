@@ -45,7 +45,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 |---|---|---|---|---|---|---|---|
 | 0 | P0 | program | This doc, contracts, migration-order CI check | — | — | review | |
 | 1 | B0 | training-engine | Mock decision obeys the policy; rules plan ranks by equipment and experience | — | P0 | todo | |
-| 1 | A1 | ai-gateway | Provider-neutral SQL, provider on notices, consent v2, budget v2 | 11 | P0 | todo | |
+| 1 | A1 | ai-gateway | Provider-neutral SQL, provider on notices, consent v2, budget v2 | 11 | P0 | review | #103 |
 | 1 | A2 | ai-gateway | Gateway module and adapters, not wired to features | — | P0 | todo | |
 | 1 | C1 | workout-hr | Set start/end, actual rest, reps-left, workout events | 31 | P0 | todo | |
 | 1 | D0 | ios-widgets | Widget extension and rest-timer Live Activity (countdown only) | — | P0 | todo | |
@@ -349,7 +349,13 @@ Add the TestFlight checklist to `docs/BETA_OPERATIONS.md`. Follow `site/PRODUCT.
 
 ## Contract requests
 
-None yet.
+- A1 (2026-10-15), for the lead, Contract 1: `openai_compatible` names an API shape, not a
+  company. A notice whose provider is `openai_compatible` (for example labelled DeepSeek) also
+  matches a route to Groq or a router through the same adapter, so `consentProvider === route.provider`
+  alone cannot tell them apart. Options: notices for `openai_compatible` keep their company in
+  `provider` (`deepseek`, `groq`; the database accepts both) and the gateway maps a route's base URL
+  to that name before comparing; or the contract adds the notice's company to the check. The
+  database supports either; no change in A1.
 
 ## Decisions log
 
