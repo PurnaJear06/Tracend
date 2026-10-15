@@ -34,7 +34,7 @@ select ok((select a.attgenerated = 's'
   where a.attrelid = 'private.library_chunks'::regclass and a.attname = 'fts'),
   'the full-text column is generated and stored');
 select ok(exists (select 1 from pg_indexes where schemaname = 'private' and tablename = 'library_chunks'
-  and indexdef like '%USING hnsw (embedding extensions.vector_cosine_ops)%'),
+  and indexdef like '%USING hnsw (embedding %vector_cosine_ops)%'),
   'an HNSW cosine index covers the embeddings');
 select ok(exists (select 1 from pg_indexes where schemaname = 'private' and tablename = 'library_chunks'
   and indexdef like '%USING gin (fts)%'), 'a GIN index covers the full-text column');
@@ -58,7 +58,9 @@ select ok(not has_function_privilege('anon',
   'public.search_library_v1(text, extensions.vector, integer, jsonb)', 'execute'), 'visitors cannot search');
 select ok(not has_function_privilege('authenticated',
   'public.search_library_v1(text, extensions.vector, integer, jsonb)', 'execute'), 'app users cannot search');
-select ok(not exists (
+select ok((select proacl is not null from pg_proc
+  where oid = 'public.search_library_v1(text, extensions.vector, integer, jsonb)'::regprocedure)
+  and not exists (
   select 1 from pg_proc p, aclexplode(p.proacl) a
   where p.oid = 'public.search_library_v1(text, extensions.vector, integer, jsonb)'::regprocedure
     and a.grantee = 0 and a.privilege_type = 'EXECUTE'
@@ -136,7 +138,7 @@ select is((select section from hits where place = 1), 'Results', 'and the chunk 
 select is((select header from hits where place = 1), 'Strength source: results', 'and the context header');
 
 select is(
-  (select array_agg(k order by k) from jsonb_object_keys(
+  (select array_agg(k order by k collate "C") from jsonb_object_keys(
     (select to_jsonb(r) from public.search_library_v1('creatine', null, 1, null) r)) k),
   array['body', 'chunk_id', 'header', 'schema_version', 'score', 'section', 'source_id', 'title', 'url', 'year'],
   'the row has exactly the contract keys plus schema_version');

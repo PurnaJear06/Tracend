@@ -355,7 +355,8 @@ principles:
 - exercise-video form correction or rep counting;
 - subscriptions, payments, ads, trainer marketplace, and social features;
 - autonomous multi-agent operation; and
-- production vector RAG unless a later evaluation justifies it.
+- production vector RAG over user data unless a later evaluation justifies it (the research
+  library of open sources, decision D3, is in scope).
 
 ## 8. Success Metrics
 

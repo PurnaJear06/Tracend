@@ -15,7 +15,7 @@ Iteration 1 is Phase 0 + Phase 1. One line per stream; each stream edits only it
 - training-engine: B0 not started. Handoff: [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 not started. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
 - ios-widgets: D0 not started. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
-- research-library: E1 not started. Handoff: [`research-library.md`](./handoff/research-library.md).
+- research-library: E1 (pgvector, library tables, `search_library_v1`, D3 doc rule) in review. Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 not started. Handoff: [`website.md`](./handoff/website.md).
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
