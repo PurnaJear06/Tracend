@@ -376,6 +376,11 @@ const numberToken =
 const isoDateOrId =
   /^(\d{4}-\d{2}-\d{2}([T ][\d:.]+([+-]\d{2}:?\d{2}|Z)?)?|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
+// A quantity spelled out with a unit ("ten minutes", "fifteen percent"). Bare number words stay
+// allowed, because "the two signals" or "one session" quote no amount.
+const spelledQuantity =
+  /\b(?:(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[\s-](?:one|two|three|four|five|six|seven|eight|nine))?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|hundred|thousand|half)\s+(?:extra\s+|more\s+|fewer\s+|less\s+)?(?:percent|per\s+cent|sets?|reps?|repetitions?|minutes?|mins?|seconds?|secs?|hours?|kilos?|kilograms?|kg|pounds?|lbs?|calories|kcal|grams?|km|kilometres?|kilometers?|miles?|steps|beats)\b/i;
+
 function numbersIn(text: string): number[] {
   return [...text.matchAll(numberToken)].map((match) => Number(match[0].replaceAll(",", "")));
 }
@@ -415,7 +420,8 @@ export function decisionText(decision: CoachDecisionV1): string {
 /**
  * Why a contract-valid model decision may still not reach the athlete, or null. One general rule
  * set over the whole text: every number appears in the request's data or the evidence code
- * reference (7.0 and 7 are the same number; units and signs are ignored), no model or company is
+ * reference (7.0 and 7 are the same number; units and signs are ignored) and no amount is spelled
+ * out in words ("ten minutes"), no model or company is
  * named (D11), and every gap the policy named stays in missing_data.
  */
 export function groundingFault(
@@ -427,7 +433,10 @@ export function groundingFault(
     [request.featureContext, request.permittedEvidence, request.missingData],
     new Set(),
   );
-  if (numbersIn(text).some((number) => !supplied.has(number) && !referenceNumbers.has(number))) {
+  if (
+    numbersIn(text).some((number) => !supplied.has(number) && !referenceNumbers.has(number)) ||
+    spelledQuantity.test(text)
+  ) {
     return "ungrounded_number";
   }
   if (modelOrCompany.test(text)) return "names_model_or_company";

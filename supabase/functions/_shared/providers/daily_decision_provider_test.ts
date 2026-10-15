@@ -529,12 +529,17 @@ Deno.test("grounding: every number must come from the request data or the code r
       "Energy 2.0 today; 33% adherence over 1 session; 1,800 minutes of sleep debt.",
       "Your weight trend is -0.0714 kg/day over 7 days.",
       "No numbers at all.",
+      "Both of the two signals point the same way; keep one session easy.",
     ]
   ) assertEquals(fault(grounded), null, grounded);
   // Dates and ids supply no quantities, and a number is matched whole, never as a substring.
   for (
     const ungrounded of [
       "Trim volume by 15%.",
+      "Take ten minutes off the session.",
+      "Cut about fifteen percent of the volume.",
+      "Add two more sets of rows.",
+      "Rest twenty-five seconds longer.",
       "Rest for 9 minutes.",
       "Recovery is 3.",
       "Recovery is 340.",
