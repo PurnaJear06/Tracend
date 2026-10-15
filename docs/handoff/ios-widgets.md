@@ -16,8 +16,8 @@ D0 (Phase 1); D1 (Phase 2); D2 (Phase 3)
 
 ## State
 
-**D0 in review** (branch `claude/d0-rest-live-activity`, stacked on C1's
-`claude/c1-set-timing` / PR #104, not merged). What exists:
+**D0 merged** (PR #112; build 395 installed on the owner's iPhone 18). The owner's Lock Screen
+and Dynamic Island check is pending. What exists:
 
 - **Extension target** `TracendWidgets` (WidgetKit, `com.tracend.app.TracendWidgets`, team
   `CGLRSQ8G95`, iOS 17.0, Swift 5), embedded in Runner by an "Embed Foundation Extensions" phase
@@ -107,5 +107,5 @@ days like the app's.
 
 ## Next agent starts here
 
-D0 is in review on top of C1. Once both merge and the signed install passes, take D1 (Done /
-Skip / +30s).
+D0 and C1 are merged. Once the owner's Lock Screen check passes, take D1 (Done / Skip / +30s)
+in Phase 2.

@@ -1,7 +1,7 @@
 # Account Session and Deletion Handoff
 
 **Status:** the deletion recovery fix below shipped (2026-10-02). Invite and waitlist removal on
-deletion is in review (branch `claude/deletion-forgets-invite`); SQL only, no reinstall.
+deletion is live (#110); SQL only, no reinstall.
 
 ## Invite and waitlist rows on deletion (2026-10-15)
 
