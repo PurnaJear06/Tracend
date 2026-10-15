@@ -48,7 +48,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 1 | A1 | ai-gateway | Provider-neutral SQL, provider on notices, consent v2, budget v2 | 11 | P0 | live | #103 |
 | 1 | A2 | ai-gateway | Gateway module and adapters, not wired to features | — | P0 | live | #106 |
 | 1 | C1 | workout-hr | Set start/end, actual rest, reps-left, workout events | 31 | P0 | live | #104 |
-| 1 | D0 | ios-widgets | Widget extension and rest-timer Live Activity (countdown only) | — | P0 | todo | |
+| 1 | D0 | ios-widgets | Widget extension and rest-timer Live Activity (countdown only) | — | P0 | merged | #112 |
 | 1 | E1 | research-library | pgvector, library tables, `search_library_v1`, doc rule change | 41 | P0 | live | #109 |
 | 1 | W1 | website | Site copy fixes, privacy policy naming Anthropic, TestFlight checklist | — | P0 | merged | #108 |
 | 1 | U1 | ui | Glass tab bar (owner request 2026-10-15) | — | P0 | live | #107 |

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:tracend/features/account/notification_repository.dart';
+import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 
 /// A running rest between sets. The end time, not the remaining seconds, is
 /// what is kept, so the timer survives the app being killed: it is stored in
@@ -62,16 +65,23 @@ class RestTimer {
   );
 }
 
-/// Runs the rest timer and keeps the lock-screen alert in step with it:
-/// every way a rest ends early cancels the alert.
+/// Runs the rest timer and keeps the lock-screen alert and the Live Activity
+/// in step with it: every way a rest ends early cancels the alert and ends
+/// the activity. Activity calls are never awaited, so the in-app timer never
+/// waits on iOS, and each is sent before the alert is touched: channel
+/// messages arrive in the order they are sent, so a stop that follows a
+/// start can never reach iOS first.
 class RestTimerController {
   RestTimerController({
     required RestAlertScheduler alerts,
+    WorkoutActivityBridge activity = const MethodChannelWorkoutActivityBridge(),
     DateTime Function() clock = DateTime.now,
   }) : _alerts = alerts,
+       _activity = activity,
        _clock = clock;
 
   final RestAlertScheduler _alerts;
+  final WorkoutActivityBridge _activity;
   final DateTime Function() _clock;
   RestTimer? _timer;
 
@@ -82,10 +92,23 @@ class RestTimerController {
   Map<String, Object>? toDraft() => _timer?.toJson();
 
   /// Starts a rest of [seconds] (a set's `rest_seconds`), replacing any
-  /// running one. A rest of zero or less starts nothing.
-  Future<void> start(int seconds) async {
+  /// running one, and shows it as the Live Activity with the exercise and
+  /// what follows ([nextLabel]). A rest of zero or less starts nothing.
+  Future<void> start(
+    int seconds, {
+    String nextLabel = '',
+    String exerciseName = '',
+  }) async {
     if (seconds <= 0) return stop();
-    _timer = RestTimer.start(seconds, now: _clock());
+    final timer = RestTimer.start(seconds, now: _clock());
+    _timer = timer;
+    unawaited(
+      _activity.startRest(
+        endsAt: timer.endsAt,
+        nextLabel: nextLabel,
+        exerciseName: exerciseName,
+      ),
+    );
     await _alerts.scheduleRestAlert(seconds);
   }
 
@@ -97,24 +120,39 @@ class RestTimerController {
     final now = _clock();
     if (next.isExpired(now)) return stop();
     _timer = next;
+    unawaited(_activity.updateRest(endsAt: next.endsAt));
     await _alerts.scheduleRestAlert(next.remainingSeconds(now));
   }
 
   /// Skip: the rest ends now.
   Future<void> skip() => stop();
 
-  /// Ends the rest and its alert: finishing, discarding, or leaving the
-  /// workout, the in-app end of the rest, and an expired rest on resume.
+  /// Ends the rest, its alert and its Live Activity: finishing, discarding,
+  /// or leaving the workout, the in-app end of the rest, and an expired rest
+  /// on resume.
   Future<void> stop() async {
     _timer = null;
+    unawaited(_activity.end());
     await _alerts.cancelRestAlert();
   }
 
+  /// The workout screen went away while a rest was running without the
+  /// athlete ending it (the app returned to sign-in, for example). Nothing
+  /// runs the rest on screen any more, so its Live Activity ends; the
+  /// stored rest and its alert stay, and reopening the workout brings the
+  /// rest back in the app.
+  void detach() {
+    if (_timer != null) unawaited(_activity.end());
+  }
+
   /// Resumes the timer stored in the draft after a relaunch. A rest that has
-  /// already ended is cleared with its alert; a running one keeps its end.
+  /// already ended is cleared with its alert and activity; a running one
+  /// keeps its end, and the activity still showing from before the relaunch
+  /// is moved to that end.
   Future<void> restore(Object? stored) async {
     final timer = RestTimer.fromJson(stored);
     if (timer == null || timer.isExpired(_clock())) return stop();
     _timer = timer;
+    unawaited(_activity.updateRest(endsAt: timer.endsAt));
   }
 }

@@ -16,7 +16,8 @@ Iteration 1 is Phase 0 + Phase 1. One line per stream; each stream edits only it
   (Phase 2). Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105: mock decision obeys the policy; rules plan ranks by equipment and experience). Handoff: [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104: set timing, reps left, workout events; migration 31). Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
-- ios-widgets: D0 not started. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
+- ios-widgets: D0 merged (#112: TracendWidgets extension, rest-timer Live Activity countdown);
+  the owner's Lock Screen and Dynamic Island check is pending. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
 - research-library: E1 live (#109: pgvector, library tables, `search_library_v1`, D3 doc rule). Next: E2 ingestion. Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.

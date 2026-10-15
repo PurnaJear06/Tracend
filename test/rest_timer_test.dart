@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/train/rest_timer.dart';
 
+import 'live_activity/fake_workout_activity_bridge.dart';
+
 class _RecordingAlerts implements RestAlertScheduler {
   final scheduled = <int>[];
   int cancels = 0;
@@ -83,7 +85,11 @@ void main() {
     setUp(() {
       now = start;
       alerts = _RecordingAlerts();
-      controller = RestTimerController(alerts: alerts, clock: () => now);
+      controller = RestTimerController(
+        alerts: alerts,
+        activity: FakeWorkoutActivityBridge(),
+        clock: () => now,
+      );
     });
 
     test('start schedules the alert for the full rest', () async {
@@ -134,7 +140,11 @@ void main() {
       final stored = controller.toDraft();
 
       now = now.add(const Duration(seconds: 30));
-      final resumed = RestTimerController(alerts: alerts, clock: () => now);
+      final resumed = RestTimerController(
+        alerts: alerts,
+        activity: FakeWorkoutActivityBridge(),
+        clock: () => now,
+      );
       await resumed.restore(stored);
 
       expect(resumed.timer!.remainingSeconds(now), 60);

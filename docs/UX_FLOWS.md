@@ -644,6 +644,18 @@ finish** tries again.
 - The lock-screen alert ("Rest timer finished") is scheduled through `RestTimerController` only
   when **Rest timer alerts** is on and allowed. Skip, the in-app end, finishing, discarding and
   leaving all cancel it.
+- The rest also shows as a Live Activity on the Lock Screen and in the Dynamic Island, unless the
+  athlete turned Live Activities off in iOS Settings (Settings › Tracend › Live Activities): a
+  graphite card with "Rest", the exercise name, "Next: …" and a big lime countdown that keeps
+  running with the app closed; in the Dynamic Island a lime timer glyph and the countdown
+  (expanded: the exercise, the next set and a big countdown). It shows only the exercise name and
+  the next-set label, never a load, reps, effort or health value (SECURITY_PRIVACY.md §10). When
+  the end passes it reads "Rest done". ±15 moves it; skip, finishing, discarding and leaving end
+  it at once; a rest that ran out stays as "Rest done" for two minutes after its end, and the next
+  rest removes it at once. A relaunch with a running rest moves the activity to the stored end;
+  an expired one is ended. Sign-out and account deletion end it; if the screen is torn down
+  mid-rest any other way, only the activity ends and the rest stays in the draft. No buttons yet
+  (D1).
 
 **New best.** A done set is a new best only when it beats the history's best set and every
 earlier set of that exercise today, by the history's rule (`newBestSetIndexes`). The moment: a
