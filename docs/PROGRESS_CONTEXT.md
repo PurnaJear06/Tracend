@@ -17,6 +17,7 @@ Iteration 1 is Phase 0 + Phase 1. One line per stream; each stream edits only it
 - ios-widgets: D0 not started. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
 - research-library: E1 not started. Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 not started. Handoff: [`website.md`](./handoff/website.md).
+- ui: U1 glass tab bar in review.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
 **Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
