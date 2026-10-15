@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 
-Object? _fixture() => jsonDecode(
-  File('test/contract/fixtures/exercise_history_v1_0.json').readAsStringSync(),
+Object? _fixture([String version = '1_0']) => jsonDecode(
+  File(
+    'test/contract/fixtures/exercise_history_v$version.json',
+  ).readAsStringSync(),
 );
 
 void main() {
@@ -65,6 +67,39 @@ void main() {
 
     test('a key the answer does not hold is unknown, not a first log', () {
       expect(result['romanian-deadlift'], isNull);
+    });
+  });
+
+  group('get_my_exercise_history 1.1', () {
+    test('adds reps left and set timing to last time\'s sets', () {
+      final body = _fixture('1_1')! as Map;
+      expect(body['schema_version'], '1.1');
+      final exercises = body['exercises'] as List;
+      final sets = ((exercises.first as Map)['last_session'] as Map)['sets'];
+      for (final set in sets as List) {
+        expect((set as Map).keys.toSet(), {
+          'set_number',
+          'load_kg',
+          'repetitions',
+          'rpe',
+          'rir',
+          'started_at',
+          'completed_at',
+          'rest_before_seconds',
+          'timing_source',
+        });
+      }
+    });
+
+    test('the 1.0 reading is unchanged', () {
+      final result = ExerciseHistoryResult.fromJson(_fixture('1_1'));
+      final bench = result['barbell-bench-press']!;
+      expect(bench.kind, ExerciseHistoryKind.load);
+      expect(bench.lastSession!.localDate, DateTime(2026, 10, 14));
+      expect(bench.lastSession!.sets.map((set) => set.repetitions), [8, 7, 6]);
+      expect(bench.lastSession!.sets.first.rpe, 8);
+      expect(bench.bestSet!.loadKg, 72.5);
+      expect(result['Cable fly']!.isFirstLog, isTrue);
     });
   });
 

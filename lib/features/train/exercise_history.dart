@@ -1,5 +1,7 @@
-/// Typed reading of `get_my_exercise_history` 1.0. Every field is optional on
-/// the way in: a missing or mistyped value reads as unknown, never as zero.
+/// Typed reading of `get_my_exercise_history` 1.0 and 1.1 (1.1 adds set
+/// timing and reps left, which the logging screen does not read yet). Every
+/// field is optional on the way in: a missing or mistyped value reads as
+/// unknown, never as zero.
 library;
 
 /// How sets of an exercise are ranked (ALGORITHMS §4, DATA_MODEL).

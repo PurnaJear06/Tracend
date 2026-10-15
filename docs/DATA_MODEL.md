@@ -357,6 +357,37 @@ substitutions, extras) are keyed by their lowercased, trimmed name. Assisted exe
 Set number, type, repetitions, load, RPE, completion, and rest duration. Ordering is unique within
 an exercise performance.
 
+Set timing and reps left (2026-10-15, migration `20261015140031_set_timing.sql`, all nullable):
+
+| Column | Type | Rule |
+|---|---|---|
+| `started_at` | timestamptz | when the set began (see below) |
+| `completed_at` | timestamptz | when it was ticked; `>= started_at` |
+| `rest_before_seconds` | integer | rest taken from the previous tick to `started_at`, 0–3600 |
+| `rir` | smallint | reps in reserve 0–5 (5 means 5 or more) |
+| `timing_source` | text | `app` or `watch` |
+
+A set begins at the end of the rest before it (Skip, or the timer's end), else at the athlete's
+first edit of its kg or reps outside a rest. It has no start when it was ticked during its rest or
+without an edit, and no rest when the gap is longer than an hour. The app takes every time from the
+wall clock, so a rest that ran out while the phone slept ended at its stored end time. Undo clears
+a set's times and re-measures any rest counted from its tick.
+
+When the athlete picks reps left, the app also writes `rpe = 10 − rir`, the value the same answer
+meant on the earlier 1–10 picker, so RPE readers (Coach context) stay consistent.
+
+`sync_workout_draft` keeps a stored value when a set omits the key (installed builds send none),
+clears it on an explicit null, and refuses (22023) a malformed value, a time more than 10 minutes
+in the future or more than 10 minutes before the session's recorded start, and an end before the
+start. Set times from before the server's recorded start stay on the phone and are never sent (a
+workout started offline). A set sends only the keys it knows: one restored from a draft without
+them (saved by an older build) sends none until the athlete ticks, un-ticks or answers reps left on
+it, so it never clears times or reps left another device stored; un-ticking sends explicit nulls. If the server still refuses the times (a phone clock more than 10 minutes
+off), the app sends the same draft again without the five keys and syncs the rest of that workout
+without them; the reps left still arrive as the matching RPE. A workout whose final sync is
+refused is not finished. `get_my_workout_session` 1.1 and `get_my_exercise_history` 1.1 (last
+session's sets) return the five fields; the privacy export selects every column.
+
 ### `workout_amendments`
 
 Append-only corrections to completed records containing field, old/new value, reason, actor, and

@@ -8,7 +8,7 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/train_view_models.dart';
 import 'package:tracend/features/train/widgets/muscle_map.dart';
-import 'package:tracend/features/train/widgets/rpe_picker.dart';
+import 'package:tracend/features/train/widgets/rir_picker.dart';
 import 'package:tracend/features/train/widgets/set_row.dart';
 import 'package:tracend/features/train/workout_draft.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
@@ -51,7 +51,7 @@ String _restAfter(int seconds) {
 
 /// One exercise filling the screen in focus mode: big kg × reps with −/+,
 /// a big "Done set N", set dots, last time and best, the exercise's muscles,
-/// the sets already logged (with effort and undo), and the pain chip.
+/// the sets already logged (with reps left and undo), and the pain chip.
 class FocusExercisePage extends StatefulWidget {
   const FocusExercisePage({
     required this.index,
@@ -64,8 +64,8 @@ class FocusExercisePage extends StatefulWidget {
     required this.onLoadChanged,
     required this.onRepsChanged,
     required this.onUndo,
-    required this.onRpe,
-    required this.onFillRpe,
+    required this.onRir,
+    required this.onFillRir,
     required this.onPain,
     required this.onMore,
     this.nextExerciseName,
@@ -92,11 +92,12 @@ class FocusExercisePage extends StatefulWidget {
   final ValueChanged<String> onRepsChanged;
   final ValueChanged<int> onUndo;
 
-  /// Sets or clears (null) one set's effort.
-  final void Function(int set, int? rpe) onRpe;
+  /// Sets or clears (null) one set's reps left.
+  final void Function(int set, int? rir) onRir;
 
-  /// Gives every logged set without an effort [rpe]; returns how many.
-  final int Function(int rpe) onFillRpe;
+  /// Gives every logged set without reps left (or an older effort) [rir];
+  /// returns how many.
+  final int Function(int rir) onFillRir;
   final VoidCallback onPain;
   final VoidCallback onMore;
   final String? nextExerciseName;
@@ -115,7 +116,8 @@ class _FocusExercisePageState extends State<FocusExercisePage>
   /// Burst 0–900 ms, stamp in 0–560 ms, held, out 2400–2800 ms.
   late final AnimationController _moment;
 
-  /// The open effort picker: a set index, [_fill] for "Fill effort", or null.
+  /// The open reps-left picker: a set index, [_fill] for "Fill reps left",
+  /// or null.
   int? _picker;
   static const _fill = -1;
 
@@ -173,14 +175,15 @@ class _FocusExercisePageState extends State<FocusExercisePage>
     setState(() => _picker = _fill);
   }
 
-  void _fillWith(int rpe) {
-    final filled = widget.onFillRpe(rpe);
+  void _fillWith(int rir) {
+    final filled = widget.onFillRir(rir);
     setState(() => _picker = null);
     TracendToast.show(
       context,
       filled == 0
-          ? 'Every logged set already has an effort'
-          : 'Effort $rpe added to $filled ${filled == 1 ? 'set' : 'sets'}',
+          ? 'Every logged set already has reps left'
+          : 'Reps left ${rirLabel(rir)} added to $filled '
+                '${filled == 1 ? 'set' : 'sets'}',
       icon: CupertinoIcons.gauge,
     );
   }
@@ -309,7 +312,7 @@ class _FocusExercisePageState extends State<FocusExercisePage>
                       i == draft.sets.indexWhere((s) => s.completed)
                 ? SetMark.firstLog
                 : null,
-            rpe: draft.sets[i].rpeValue,
+            rir: draft.sets[i].shownRir,
             onEffort: widget.readOnly
                 ? null
                 : () => setState(() => _picker = _picker == i ? null : i),
@@ -348,22 +351,22 @@ class _FocusExercisePageState extends State<FocusExercisePage>
             if (picker != null) ...[
               const SizedBox(height: TracendSpacing.sm),
               if (picker == _fill)
-                RpePicker(
-                  title: 'Fill effort for sets without one',
+                RirPicker(
+                  title: 'Fill reps left for sets without it',
                   value: null,
                   onSelected: _fillWith,
                   dismissLabel: 'Cancel',
                   onDismiss: () => setState(() => _picker = null),
                 )
               else
-                RpePicker(
-                  title: 'Effort for set ${picker + 1}',
-                  value: draft.sets[picker].rpeValue,
+                RirPicker(
+                  title: 'Reps left on set ${picker + 1}',
+                  value: draft.sets[picker].shownRir,
                   onSelected: (value) {
-                    widget.onRpe(picker, value);
+                    widget.onRir(picker, value);
                     setState(() => _picker = null);
                   },
-                  onClear: () => widget.onRpe(picker, null),
+                  onClear: () => widget.onRir(picker, null),
                   dismissLabel: 'Not now',
                   onDismiss: () => setState(() => _picker = null),
                 ),
@@ -802,7 +805,7 @@ class _FocusExercisePageState extends State<FocusExercisePage>
                 onTap: widget.onPain,
               ),
               pill(
-                label: 'Fill effort',
+                label: 'Fill reps left',
                 icon: CupertinoIcons.gauge,
                 onTap: _openFill,
               ),
