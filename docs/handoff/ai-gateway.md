@@ -115,6 +115,36 @@ nothing outside the folder changed.
   cost, latency, HTTP status, stop); never prompt, image, reply or error text.
 - Tests: 65 offline tests with a fake fetch (`fakes.ts`); no network.
 
+## Phase 2 chunks
+
+Each chunk edits only its own section below, so parallel PRs do not conflict.
+
+### A3: meal photo and physique check on Claude
+
+Not started. The A3 builder replaces this paragraph with its state, files, tests and
+anything the next agent must know.
+
+### A4: onboarding plan and questions on Claude
+
+Not started. The A4 builder replaces this paragraph with its state, files, tests and
+anything the next agent must know.
+
+### A5: daily decision on Claude
+
+Not started. The A5 builder replaces this paragraph with its state, files, tests and
+anything the next agent must know.
+
+### A6: Coach chat, cache-friendly
+
+Not started. The A6 builder replaces this paragraph with its state, files, tests and
+anything the next agent must know.
+
+### A7: wording, budgets, cutover
+
+Not started. The A7 builder replaces this paragraph with its state, files, tests and
+anything the next agent must know.
+
 ## Next agent starts here
 
-Take the first `todo` chunk of this stream from the program board whose dependencies are merged.
+Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in
+the program doc.

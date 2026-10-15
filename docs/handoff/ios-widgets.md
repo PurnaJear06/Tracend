@@ -16,8 +16,8 @@ D0 (Phase 1); D1 (Phase 2); D2 (Phase 3)
 
 ## State
 
-**D0 merged** (PR #112; build 395 installed on the owner's iPhone 18). The owner's Lock Screen
-and Dynamic Island check is pending. What exists:
+**D0 live** (PR #112; build 395 on the owner's iPhone 18). The owner's Lock Screen and Dynamic
+Island check passed on 2026-10-15. What exists:
 
 - **Extension target** `TracendWidgets` (WidgetKit, `com.tracend.app.TracendWidgets`, team
   `CGLRSQ8G95`, iOS 17.0, Swift 5), embedded in Runner by an "Embed Foundation Extensions" phase
@@ -107,5 +107,4 @@ days like the app's.
 
 ## Next agent starts here
 
-D0 and C1 are merged. Once the owner's Lock Screen check passes, take D1 (Done / Skip / +30s)
-in Phase 2.
+Take D1 (Done / Skip / +30s), Phase 2; the brief is in the program doc.

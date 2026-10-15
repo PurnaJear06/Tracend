@@ -84,4 +84,4 @@ B0 is live (#105, 2026-10-15).
 
 ## Next agent starts here
 
-Take the first `todo` chunk of this stream from the program board whose dependencies are merged.
+B1 (catalog v2 and coaching-standard data), Phase 2. The brief is in the program doc.

@@ -7,7 +7,8 @@ sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
 
 **Current priority (2026-10-15): the coaching platform program.** Plan, contracts and board:
 [`docs/plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md).
-Iteration 1 is Phase 0 + Phase 1. One line per stream; each stream edits only its own line.
+Iteration 1 (Phase 0 + Phase 1) is merged and live. Iteration 2 (Phase 2: A3–A7, D1, C2, B1) is
+in progress. One line per stream; the lead updates these lines when a chunk merges.
 
 <!-- PROGRAM:coaching-platform-2026-10 -->
 - program: P0 (contracts, migration-order CI check) live (#102).
@@ -16,8 +17,8 @@ Iteration 1 is Phase 0 + Phase 1. One line per stream; each stream edits only it
   (Phase 2). Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105: mock decision obeys the policy; rules plan ranks by equipment and experience). Handoff: [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104: set timing, reps left, workout events; migration 31). Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
-- ios-widgets: D0 merged (#112: TracendWidgets extension, rest-timer Live Activity countdown);
-  the owner's Lock Screen and Dynamic Island check is pending. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
+- ios-widgets: D0 live (#112: TracendWidgets extension, rest-timer Live Activity countdown);
+  the owner's Lock Screen and Dynamic Island check passed on build 395 (2026-10-15). Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
 - research-library: E1 live (#109: pgvector, library tables, `search_library_v1`, D3 doc rule). Next: E2 ingestion. Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.

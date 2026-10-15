@@ -1,6 +1,7 @@
 # Coaching Platform Program (October 2026)
 
-**Status:** approved by the owner on 2026-10-15. Iteration 1 (Phase 0 + Phase 1) is in progress.
+**Status:** approved by the owner on 2026-10-15. Iteration 1 (Phase 0 + Phase 1) is merged and
+live; the owner's device check passed on 2026-10-15. Iteration 2 (Phase 2) is in progress.
 
 This is the single source of truth for every agent working on the program. Read it fully before
 touching code. If this document and an authority doc (`docs/*.md`) disagree, stop and report the
@@ -48,7 +49,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 1 | A1 | ai-gateway | Provider-neutral SQL, provider on notices, consent v2, budget v2 | 11 | P0 | live | #103 |
 | 1 | A2 | ai-gateway | Gateway module and adapters, not wired to features | — | P0 | live | #106 |
 | 1 | C1 | workout-hr | Set start/end, actual rest, reps-left, workout events | 31 | P0 | live | #104 |
-| 1 | D0 | ios-widgets | Widget extension and rest-timer Live Activity (countdown only) | — | P0 | merged | #112 |
+| 1 | D0 | ios-widgets | Widget extension and rest-timer Live Activity (countdown only) | — | P0 | live | #112 |
 | 1 | E1 | research-library | pgvector, library tables, `search_library_v1`, doc rule change | 41 | P0 | live | #109 |
 | 1 | W1 | website | Site copy fixes, privacy policy naming Anthropic, TestFlight checklist | — | P0 | merged | #108 |
 | 1 | U1 | ui | Glass tab bar (owner request 2026-10-15) | — | P0 | live | #107 |
@@ -56,7 +57,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 2 | A4 | ai-gateway | Onboarding plan and questions on Sonnet | — | A1, A2 | todo | |
 | 2 | A5 | ai-gateway | Daily decision on Sonnet | — | A1, A2, B0 | todo | |
 | 2 | A6 | ai-gateway | Coach chat, cache-friendly prompt | — | A1, A2 | todo | |
-| 2 | A7 | ai-gateway | Notices and app wording per D11 (no model names; remove DeepSeek/Groq/Qwen everywhere), evals, docs, cutover runbook | — | A3–A6 | todo | |
+| 2 | A7 | ai-gateway | Notices and app wording per D11 (no model names; remove DeepSeek/Groq/Qwen everywhere), budget limits, evals, docs, cutover runbook | 17 | A3–A6 | todo | |
 | 2 | D1 | ios-widgets | Live Activity with Done / Skip / +30s | — | C1, D0 | todo | |
 | 2 | C2 | workout-hr | Native heart-rate reader, per-set summaries | 32 | C1, D0 | todo | |
 | 2 | B1 | training-engine | Catalog v2 and coaching-standard rule data | 21 | B0 | todo | |
@@ -74,6 +75,9 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 4 | E5 | research-library | Plan explanations citing sources | — | E3, B3 | todo | |
 
 **Iteration 1 merge order:** P0 → B0 → A1 → C1 → A2 → E1 → D0 → W1.
+
+**Iteration 2 merge order:** P2 (kickoff docs) → B1 → A3 → A5 → A6 → D1 → A4 → C2 → A7. C2 is
+stacked on D1's branch (both change the Xcode project and the workout screen).
 
 ## Collision rules
 
@@ -101,9 +105,10 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 9. **Local database.** Only one local Supabase stack runs at a time. Builders test SQL through CI
    pgTAP on their branch; the lead serialises any local run.
 10. **No production actions.** No `db push`, no `functions deploy`, no secret changes, no merges.
-11. **Docs in the same PR:** the stream's handoff file, this board's row (status and PR), and the
-    stream's line inside the `PROGRAM:coaching-platform-2026-10` block of
-    `docs/PROGRESS_CONTEXT.md`. Edit only your own lines.
+11. **Docs in the same PR:** your chunk's own section of the stream's handoff file, and any
+    authority doc your chunk changes the behaviour of. From Iteration 2 the lead stamps this
+    board's row and the `PROGRAM:coaching-platform-2026-10` lines of `docs/PROGRESS_CONTEXT.md` on
+    your branch right before the merge, so parallel PRs never conflict on them.
 
 ### File owners (Phase 1)
 
@@ -122,6 +127,25 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 D0 and C1 both touch the workout screen's rest timer: C1 owns `lib/features/**`; D0 exposes a
 `WorkoutActivityBridge` and C1 calls it in Phase 2 (D1). In Phase 1 D0 starts and ends the Live
 Activity from `rest_timer.dart` through one call site that C1 reviews.
+
+### File owners (Phase 2)
+
+| Path | Owner |
+|---|---|
+| `meal-analyze/**`, `physique-check/**`, `_shared/physique/**`, `_shared/providers/{groq_meal_vision,gemini_meal_vision,physique_vision}_provider*.ts`, new `_evals/{meal_vision,physique}_*` | A3 |
+| `onboarding-plan/**`, `onboarding-propose-plan/**`, `_shared/providers/onboarding_plan_provider.ts`, `_shared/onboarding/questions.ts`, `_evals/onboarding_plan_eval.ts` | A4 |
+| `coach-decide/**`, `_shared/providers/{daily_decision,coach_model,create_coach_model,deepseek_coach_model,groq_coach_model,gemini_coach_model}_provider*.ts`, new `_evals/daily_decision_*` | A5 |
+| `coach-chat/**`, `_shared/providers/coach_chat_provider*.ts`, `_shared/coach_chat_fallback*.ts`, new `_shared/coach_context/**` (Contract 7 host), `_evals/{coach_chat_eval*,fixtures.ts,prompts.json}` | A6 |
+| `lib/shared/ai_provider_names.dart`, `lib/features/consent/**`, `lib/features/coach/coach_labels.dart`, `lib/features/onboarding/onboarding_proposal_view.dart` (wording only), `_shared/ai_budget*.ts`, `_shared/ai_consent*.ts`, AI authority-doc sections (AI_SAFETY_SPEC §10, COST_MODEL, ARCHITECTURE §3.7, SECURITY_PRIVACY processors, PRD §5.8) | A7 |
+| `ios/**` (project, Runner, extension), `lib/shared/live_activity/**`, `lib/features/train/**` | D1 |
+| `ios/Runner/Native/HeartRateReader.swift` (new; stacked on D1, so D1's project file is the base), `lib/features/health/**`, new `lib/features/workout_hr/**`, one listener call site in `lib/features/train/` that D1 reviews | C2 |
+| `_shared/onboarding/catalog*.ts` (catalog v2; existing exports keep their shape), new `_shared/training/standard/**` | B1 |
+| `_shared/ai/**` (gateway, routes, models), `_shared/providers/deepseek_models.ts`, `.github/workflows/**`, `scripts/**`, `supabase/config.toml` | lead only (file a contract request) |
+| Board rows and `PROGRAM:` lines in `docs/PROGRESS_CONTEXT.md` | lead (rule 11) |
+
+Everyone else reads `catalog.ts`, `coach_chat_fallback.ts` and `deepseek_models.ts` but does not edit
+them. Until A7, A3–A6 leave the AI authority-doc sections alone: production keeps today's providers
+until the cutover, so those sections stay true.
 
 ## Contracts (version 1)
 
@@ -344,6 +368,87 @@ next to AI processing (say what is processed and by whom), name Anthropic as an 
 the privacy page, iOS only (no "Android in testing"), the physique check shown as coming later.
 Add the TestFlight checklist to `docs/BETA_OPERATIONS.md`. Follow `site/PRODUCT.md` claim rules.
 
+## Chunk briefs: Iteration 2 (Phase 2)
+
+Every brief adds: read this doc, `CLAUDE.md`, `docs/PROGRESS_CONTEXT.md`, the stream's handoff, and
+the authority docs your chunk touches.
+
+**A3–A6 share these rules (switch one feature to the gateway).**
+- Call the gateway (Contract 1) when `route(feature)` returns a route. When it returns null, the
+  feature runs today's path unchanged: same provider, same request (a parity test proves it).
+  Production keeps today's providers until A7's cutover sets the `AI_<FEATURE>_*` settings, so
+  merging and deploying changes nothing for the athlete.
+- With a route, read consent through `get_ai_consent_v2` / `aiConsentWithProvider` and pass the
+  vendor as `consentVendor`. A mismatch sends nothing and takes the feature's existing
+  consent-needed path. Reserve with `reserve_ai_budget_v2` (the ceiling comes from the route and the
+  model price table) before the call; settle with `usage.costUsd` after.
+- Store the vendor and model that actually answered in the feature's existing provenance columns.
+- Stable system content first, with `cache: true` at the end of the stable prefix.
+- Map each `AiFailure` to the feature's existing error codes. No new athlete-facing text that names a
+  model (D11).
+- Evals: build the feature's eval on the existing `_evals/` pattern. Run the Claude route live with
+  `ANTHROPIC_API_KEY` from `.env` (export it through the shell; never print, log or commit it),
+  at most USD 2 per chunk. Compare with the latest recorded baseline for the feature (eval workflow
+  logs or the handoff); where none exists, record the Claude result as the baseline and say so.
+  Never send real athlete data or photos to an eval.
+
+**A3: meal photo on Haiku 5.5, physique check on Sonnet 5.5.** Features `meal_vision` and
+`physique_vision`. Reuse the meal-analyze consent-provider guard and the JPEG checks. Migration code
+13 only if a whitelist or provenance column still refuses `anthropic`. Eval images: only images
+already in the repo's fixtures or generated test images; no athlete photos.
+
+**A4: onboarding plan and questions on Sonnet 5.5.** Features `onboarding_plan` and
+`onboarding_questions`. The plan contract, policy and rules plan stay authoritative: the model's
+plan is validated by `plan_contract.ts` and falls back to the rules plan exactly as today. Eval on
+`_evals/onboarding_plan_eval.ts`.
+
+**A5: daily decision on Sonnet 5.5.** Feature `daily_decision`. The mock provider stays the default
+when nothing is configured, and the B0 rule holds: no output the active policy forbids reaches the
+athlete (the existing validator runs on every route). New `_evals/daily_decision_*` over the
+existing decision fixtures.
+
+**A6: Coach chat, cache-friendly.** Feature `coach_chat`. Reorder the prompt so the stable parts
+(rules, athlete file) form a cacheable prefix and the question comes last; `prepare_coach_chat_v8`
+stays frozen. Add the Contract 7 host in `_shared/coach_context/` with no contributors yet (E3, C3
+and B3 add them). The route chooses Haiku 5.5 or Sonnet 5.5 by settings; evaluate both and
+recommend one. Done when a repeated question shows cache reads in its `ai_call` log, and the eval
+meets the baseline.
+
+**A7: wording, budgets, cutover (after A3–A6 merge).** Apply D11 in the app (the four files in the
+decisions log): "AI answer" and a provenance line without a model name. Draft the new consent
+notices (coaching v6, meal photo v2, physique v2) for the owner to edit and publish. Migration code 17
+sets the Phase 2 budget limits the owner chooses. Update the AI authority-doc sections, run the
+final evals, and write the cutover runbook: the settings per feature, `verify-live-function.sh
+--all`, the 2-week rollback by settings (D1), and the order (notices published → settings set →
+checked → DeepSeek and Groq dropped from the privacy processor list after the rollback window).
+
+**D1: Live Activity buttons.** Done, Skip and +30s on the Lock Screen and in the Dynamic Island
+(iOS 17 interactive Live Activities with App Intents). Each button maps to a Contract 3 command
+(`CompleteCurrentSet`, `SkipRest`, `AddRest(30)`) through the workout controller's one command sink;
+the Live Activity never writes sets itself. Works while the app is in the background. No push, and
+an App Group only if the intents cannot reach the app without one (say why). Gates: `build ios
+--release --no-codesign`, widget and contract tests, then the lead's signed install and the owner's
+device check (a full workout run from the Lock Screen).
+
+**C2: per-set heart rate (stacked on D1).** `HeartRateReader.swift` reads Apple Watch heart-rate
+samples during a workout (HealthKit anchored query; about every 5 seconds while a Watch workout runs,
+sparser otherwise) and hands them to Dart. Dart computes Contract 4 summaries per set from
+`started_at`/`completed_at` plus the following 60 seconds, and saves them with
+`persist_set_heart_rate_v1` (migration code 32: table, RLS with `auth.uid()`, pgTAP, privacy export
+and deletion in the same PR). Summaries only; raw samples never leave the phone. D9: heart rate never
+changes a load or a prescription. Show at most a small per-set heart-rate line in the workout detail.
+Update SECURITY_PRIVACY §4 and DATA_MODEL for the summaries (Contract 4 is owner-approved). Done when
+a Watch session gives at least 80% coverage on the owner's device check.
+
+**B1: catalog v2 and coaching-standard data.** Each catalog exercise gains secondary muscles, joint
+stress (knee, back, shoulder), regressions and progressions, substitutes and a load step. New
+`_shared/training/standard/` holds rule data (rep ranges by goal, rest by exercise class, weekly sets
+per muscle, progression steps), each value with its source, written in our own words (D3: no paid
+course material). Existing catalog exports keep their shape, so today's plans do not change (B2 uses
+the new data). Migration code 21 only if the catalog is mirrored in SQL. Done when a test proves
+every substitute, regression and progression points at a real exercise, and every rule value has a
+source.
+
 ## Review loop (every chunk)
 
 1. Builder implements in its worktree and runs the stream's tests plus `./scripts/pre-deploy.sh`
@@ -382,3 +487,9 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
   over `extensions.vector(384)`, because `supabase db dump` strips grants that mention
   `extensions`. Library regions are `global` or ISO alpha-2 codes; regional callers pass
   `['global', '<code>']`.
+- 2026-10-15: Iteration 1 merged and live (#102–#114); the owner's device check of build 395 passed
+  (Lock Screen and Dynamic Island countdown). The authority docs were rewritten against `main`
+  (#115); open owner decisions are listed in `docs/PROGRESS_CONTEXT.md`.
+- 2026-10-15: Iteration 2 = Phase 2. A3–A6 ship behind route settings, so production providers do
+  not change until A7's cutover. A7 gets migration code 17 for the Phase 2 budget limits. The lead
+  stamps board rows and PROGRESS lines at merge time (rule 11).
