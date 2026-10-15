@@ -23,6 +23,23 @@ Iteration 1 is Phase 0 + Phase 1. One line per stream; each stream edits only it
 - ui: U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
+**Authority docs rewritten (2026-10-15):** the 13 authority docs were checked against `main` after
+Iteration 1. The addenda were folded in and the contradictions and stale facts were removed. Planned
+work is marked "Planned" and points at the program plan. No rule was changed. Rules that the code or
+a plan decision contradicts are kept as written and are waiting on the owner:
+- Sign in with Apple is required but not built.
+- "Rehabilitation excluded" vs D6 injury modifications.
+- "No Android" vs the site's "Android in testing".
+- Body-fat range: allowed in PRD and VISION, forbidden in AI_SAFETY_SPEC §9.
+- Heart-rate series "not copied" vs C2 and D10.
+- Glow ban vs the built glows.
+- Meal images: the rule says 30 days, but the code deletes them after about 7.
+- Whether a model-only change still needs a new consent notice under D11.
+
+Known gaps found:
+- `privacy-export` leaves out several tables (SECURITY_PRIVACY §15).
+- The app's terms and privacy checkboxes don't link to the site pages.
+
 **Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
 https://tracend.pages.dev) and a double opt-in waitlist on the production project (three
 session-less Edge Functions, migration `20261013100000_waitlist.sql`). Joining grants no app

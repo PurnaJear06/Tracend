@@ -1,19 +1,14 @@
 # Tracend Data Model
 
-## Personal Coaching Entities
-
-Exercise status is `unknown`, `performed`, or explicitly `skipped`; performance kind is
-`prescribed`, `substituted`, or `extra`. Sessions retain actual time, logging completeness and
-correction state. `health_workout_references`, `workout_reconciliations`, and immutable
-`coach_context_snapshots` preserve bounded provenance, owner decisions, and versioned prepared
-facts. Only one effective manual body measurement remains current per user/date; re-entry creates an
-immutable amendment and supersedes the prior row. Workout reconciliation candidate retrieval ranks
-one best unresolved candidate per session, while confirmation closes competing suggestions
-transactionally.
-
 **Status:** Authoritative logical data model\
 **Store:** Supabase PostgreSQL\
 **Convention:** `snake_case`, UUID primary keys, UTC timestamps
+
+The migrations in `supabase/migrations` are the source of truth; this document describes their
+final state. Entities that are part of the logical design but have no table yet are marked **Not
+built**. Work scheduled by the coaching platform program
+([`plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md)) is
+marked **Planned** with its phase and chunk.
 
 ## 1. Principles
 
@@ -27,7 +22,7 @@ transactionally.
 - Canonical units are kilograms, centimeters, kilocalories, grams, minutes, beats per minute, and
   milliseconds.
 - Structured PostgreSQL fields are the MVP memory system. Vector embeddings of user data are
-  deferred; only the research library (section 12) holds embeddings, and it holds no user data.
+  deferred; only the research library (section 13) holds embeddings, and it holds no user data.
 - **Forward-only migrations. Never edit an applied migration.**
 - **Every migration must be additive.** Rename, drop, or change column type requires the two-step
   pattern: (1) add new column + deploy code that reads it; (2) later migration drops old column.
@@ -45,130 +40,175 @@ Mutable user-owned tables generally include:
 
 ```text
 id uuid primary key
-user_id uuid not null
+user_id uuid not null references user_accounts(id) on delete cascade
 created_at timestamptz not null
 updated_at timestamptz not null
 row_version integer not null default 1
 ```
 
-Common enums:
+Most user-owned tables also carry `unique (id, user_id)` so child rows can reference a parent with
+a composite foreign key that proves the same owner.
+
+Postgres enums:
 
 ```text
-goal_type         fat_loss | muscle_gain | recomposition | strength | aesthetic
-plan_status       draft | proposed | active | superseded | archived
-proposal_status   pending | accepted | rejected | expired | withdrawn
-processing_status pending | processing | completed | failed | discarded
-confidence        low | medium | high
-decision_kind     onboarding | daily | weekly | on_demand
-policy_outcome    allow | maintain_only | daily_adjustment_only | request_data | escalate
-media_purpose     meal_analysis | progress_front | progress_side | progress_back
+account_status               active | deletion_pending | deleted
+unit_system                  metric | imperial
+onboarding_state             not_started | in_progress | completed
+onboarding_path              beginner | experienced
+experience_level             beginner | intermediate | advanced
+consent_type                 terms | privacy | progress_photo_storage | progress_photo_ai |
+                             notifications | ai_coaching | meal_photo_ai
+consent_action               granted | withdrawn
+goal_type                    fat_loss | muscle_gain | recomposition | strength | aesthetic
+goal_status                  draft | active | superseded
+version_status               draft | proposed | active | superseded | archived
+proposal_status              pending | accepted | rejected | revision_requested | expired
+proposal_response_action     accept | reject | request_revision
+workout_session_state        in_progress | completed | abandoned
+health_sync_status           completed | partial | failed
+health_summary_completeness  complete | partial
+policy_outcome               allow | maintain_only | daily_adjustment_only | request_data | escalate
+model_run_status             succeeded | failed
+meal_status                  draft | confirmed | discarded
+meal_source                  manual | fixture_analysis | photo_analysis
+weekly_review_job_status     queued | processing | retryable | completed | failed | cancelled
 ```
 
-Enums use database constraints or migration-controlled application enums. Client-provided arbitrary
-states are rejected.
+Other closed value sets use check constraints, for example media purpose (`meal_analysis`,
+`progress_front`, `progress_side`, `progress_back`, `progress_lower`) and confidence (`low`,
+`medium`, `high`). Client-provided arbitrary states are rejected.
 
 ## 3. Identity, Consent, and User State
 
 ### `auth.users` (Supabase managed)
 
-Canonical account and identity root managed by Supabase Auth. Native Sign in with Apple identity is
-linked here. Tracend does not store raw Apple identity tokens or implement a parallel
-access/refresh-token table.
+Canonical account and identity root managed by Supabase Auth. A Sign in with Apple identity would
+be linked here (not built; owner builds use email/password). Tracend does not store raw identity
+tokens or implement a parallel access/refresh-token table. Email stays in Supabase Auth.
 
 ### `private.signup_invites`
 
 The beta invite list: lowercased email (primary key), note, created time, and who claimed it and
-when. Only the SQL editor reaches it. The sign-up trigger refuses an email that is not listed;
-every account that existed on 2026-10-09 was seeded as claimed. Deleting the Auth user deletes the
-invite it claimed, an unclaimed invite for its current email, and the waitlist signups for both
-(`auth_user_forget_invite`, 2026-10-15).
+when. Only the SQL editor reaches it. The sign-up trigger (`private.handle_new_auth_user`) refuses
+an email that is not listed and claims the invite otherwise; every account that existed when the
+list was introduced was seeded as claimed. Deleting the Auth user deletes the invite it claimed,
+an unclaimed invite for its current email, and the waitlist signups for both (trigger
+`auth_user_forget_invite`).
 
 ### `private.waitlist_signups`, `private.waitlist_attempts`, `private.waitlist_secret`
 
-The website waitlist (2026-10-13). A signup holds the lowercased email, status (`pending`,
-`confirmed`, `unsubscribed`), SHA-256 hashes of the confirm and unsubscribe link tokens, the
-confirm link's expiry (7 days), send count and time, an 8-character Crockford referral code and
-who referred it, the consent version and time, invite time, browser time zone and `utm_*` tags.
-Attempts keep an HMAC of the visitor's IP (salt in `waitlist_secret`) for one day, for the limit of
-5 joins an hour per network. No API role can read any of them; the Edge Functions use the
-service-role-only `public.waitlist_join`, `waitlist_confirm`, `waitlist_unsubscribe` and
-`waitlist_unsent`. A daily job (`tracend-waitlist-cleanup`) deletes signups never confirmed 30 days
-after their last email. The owner invites with `private.invite_from_waitlist(n)`: confirmed, not yet
-invited signups, most confirmed referrals first, then signup order, into `private.signup_invites`.
+The website waitlist. A signup holds the lowercased email, status (`pending`, `confirmed`,
+`unsubscribed`), SHA-256 hashes of the confirm and unsubscribe link tokens, the confirm link's
+expiry (7 days), send count and time, an 8-character Crockford referral code and who referred it,
+the consent version and time, invite time, browser time zone and `utm_*` tags. Attempts keep an
+HMAC of the visitor's IP (salt in `waitlist_secret`) for one day, for the limit of 5 joins an hour
+per network. No API role can read any of them; the Edge Functions use the service-role-only
+`public.waitlist_join`, `waitlist_confirm`, `waitlist_unsubscribe` and `waitlist_unsent`. A daily
+job (`tracend-waitlist-cleanup`) deletes signups never confirmed 30 days after their last email.
+The owner invites with `private.invite_from_waitlist(n)`: confirmed, not yet invited signups, most
+confirmed referrals first, then signup order, into `private.signup_invites`.
 
 ### `user_accounts`
 
-One application-owned row keyed by `id = auth.users.id`, containing locale, timezone, unit system,
-account status, onboarding state, and timestamps. The app writes `timezone` (the device's IANA
-zone) through `set_my_timezone`, which accepts only names Postgres knows; before 2026-10 it stayed
-at the default `UTC`. Since 2026-10-09 clients cannot write the column directly, stored names
-Postgres doesn't know were reset to `UTC`, and the weekly-review scheduler reads it through
-`private.safe_timezone`. Email remains in Supabase Auth unless a documented
-product need requires a minimized application copy.
+One application-owned row keyed by `id = auth.users.id`: locale, `timezone` (IANA name, default
+`UTC`), unit system, account status, onboarding state, and timestamps. The app writes `timezone`
+only through `set_my_timezone`, which accepts only names Postgres knows; clients cannot write the
+column directly. Readers such as the weekly-review scheduler go through `private.safe_timezone`,
+and `private.local_date_for` gives the athlete's local date.
 
 ### `consent_records`
 
-Append-only records containing consent type, notice version, grant/withdrawal state, source, and
-timestamp. Types include terms, privacy, AI coaching (`ai_coaching`), HealthKit sync, meal-photo AI,
-progress-photo AI, and notifications. Current consent is the latest record per user and type.
+Append-only records: consent type, notice version, action (`granted` or `withdrawn`), source
+(`owner_development` or `ios_app`), and time. Current consent is the latest record per user and
+type. Clients may insert only `user_id`, `consent_type`, `notice_version`, `action` and `source`;
+`created_at` always takes its default. At most 100 records a day per user. HealthKit permission is
+held by iOS, not here.
 
 ### `ai_consent_notices` and `ai_notice_current`
 
-Global, read-only to athletes. Each published AI notice has a version, a provider label, the
-purposes it covers (`coach_chat`, `daily_coaching`, `onboarding_plan`), and its body. Notices are
-never edited. `ai_notice_current` names the current notice for each purpose, one row per purpose.
-`private.publish_ai_notice` inserts a notice and repoints its purposes in one transaction. An
-`ai_coaching` consent counts for a purpose only when its `notice_version` is that purpose's current
-version.
+Global, read-only to athletes. Each published notice has a version, a `provider_label`, the
+purposes it covers (`coach_chat`, `daily_coaching`, `onboarding_plan`), its body, and `provider`:
+the vendor that receives the data (`anthropic`, `deepseek`, `groq` or `gemini`; null on notices
+published before vendor ids existed). `provider` is never an API shape such as an
+OpenAI-compatible endpoint, since one shape reaches several vendors. Notices are never edited.
 
-Since 2026-10-15 a notice may also carry `provider`: the vendor that receives the data
-(`anthropic`, `deepseek`, `groq` or `gemini`), which the gateway compares with its route's vendor.
-It is never an API shape such as an OpenAI-compatible endpoint, since one shape reaches several
-vendors. It is null on notices published before; the five-argument `private.publish_ai_notice(version, provider,
-provider_label, purposes, body)` sets it and refuses (22023) a `provider_label` that does not name
-the provider's company (Anthropic, DeepSeek, Groq, Google; case ignored) or names another one.
-`get_ai_consent_v2` (service role) returns the grant, provider and version of the notice current
-for a purpose or gateway feature.
+`ai_notice_current` names the current notice for each purpose, one row per purpose.
+`private.publish_ai_notice(version, provider, provider_label, purposes, body)` inserts a notice and
+repoints its purposes in one transaction. It refuses (22023) a `provider_label` that does not name
+the provider's company (Anthropic, DeepSeek, Groq, Google; case ignored) or names another one. The
+older four-argument form still works and leaves `provider` null.
+
+An `ai_coaching` consent counts for a purpose only when its `notice_version` is that purpose's
+current version (`has_ai_coaching_consent`, service role). `get_ai_consent_v2(target_user_id,
+purpose)` (service role) returns `{schema_version, granted, provider, notice_version}` for the
+notice current for a purpose or gateway feature: Coach chat and library context map to the
+`coach_chat` notice, the daily decision to `daily_coaching`, onboarding plan and questions to
+`onboarding_plan`, meal vision to the meal photo notice and physique vision to the photo notice.
+A null `provider` makes the gateway refuse until a notice naming the route's vendor is granted.
 
 ### `user_profiles`
 
-One row per user containing adult-attestation timestamp, height, experience level, training
-schedule, available time, activity description, and onboarding state. Do not store unnecessary
-identity documents.
+One row per user: adult-attestation time, eligibility, experience level, height, training days
+(ISO weekdays), session minutes, and row version. Clients can write only the fields onboarding
+step 0 writes. Approval of an onboarding plan writes the rest, and only approval can (column
+grants):
 
-Since 2026-10, approval of an onboarding plan also writes the following, and only approval can
-(column grants):
-
-- `sex` (`male`, `female` or `unspecified`)
-- `birth_year`
-- `daily_activity`
-- `equipment` (chip values)
-- `limitations_note`
-- `nutrition_note`
-- `avoid_patterns` (movement patterns the athlete asked to avoid; read by the Coach) and
-  `equipment_note`, since 2026-10-02
+- `sex` (`male`, `female` or `unspecified`), `birth_year`, `daily_activity`;
+- `equipment` (chip values) and `equipment_note`;
+- `avoid_patterns` (movement patterns the athlete asked to avoid; read by the Coach);
+- `limitations_note` and `nutrition_note`;
 - `training_years` (`under_1`, `1_2`, `3_5`, `over_5`), `priority_muscles` (at most 2) and
-  `strong_muscles` (at most 3), catalog target muscles, since the coach intake (2026-10); the Coach
-  reads them
+  `strong_muscles` (at most 3), catalog target muscles that the Coach reads; and
+- the real `training_days`, `session_minutes`, `height_cm` and `experience_level`.
 
-At the same time it writes the real `training_days` (ISO weekdays), `session_minutes`,
-`height_cm` and `experience_level`. Clients can write only the fields onboarding step 0 writes.
-The onboarding `current_plan` text is deliberately not kept on the profile: the approved plan
-replaces it, and the onboarding feature snapshot keeps it for the audit trail. Approval dates the
-plan, nutrition targets and onboarding weight with the athlete's local date
-(`private.local_date_for`, from `user_accounts.timezone`).
+`set_my_priority_muscles` also writes `priority_muscles` from a physique check (section 7). The
+onboarding `current_plan` text is deliberately not kept on the profile: the approved plan replaces
+it, and the onboarding feature snapshot keeps it for the audit trail. Approval dates the plan,
+nutrition targets and onboarding weight with the athlete's local date. Identity documents are
+never stored.
+
+### `user_goals`
+
+Goals with type, priority (1–5), status (`draft`, `active`, `superseded`), a `details` object
+with the goal's specifics such as a target weight (at most 16 KB), and activation time. Exactly one active goal is primary. At most 200 goals per user.
+
+### `user_constraints` (Not built)
+
+The logical design holds equipment, schedule constraints, exercise limitations, dietary pattern,
+allergies, exclusions and disclosed eligibility restrictions, each with source, confirmation and
+optional expiry. Today equipment, movements to avoid, limitations and diet notes live on
+`user_profiles`.
+
+### `user_preferences`
+
+Confirmed food, training, schedule, communication, notification and lifestyle preferences. Each row
+stores `category`, `key` (1–120 characters), `value` (1–200 characters), `provenance`
+(`onboarding`, `chat_statement`, `repeated_signal`, `manual`), `confirmed_at` and `superseded_at`.
+Only one active row per user and key; a new value supersedes the old one. Model-inferred
+preferences cannot become confirmed automatically. Forced RLS, read-only for authenticated. The app
+confirms a preference through `persist_coach_preference`, which refuses any athlete but the caller
+unless the caller is the service role.
+
+### `notification_preferences`
+
+One owner-scoped row: daily check-in and weekly-review reminder toggles, the coarse iOS
+authorization status, and update time. The validated RPC (`save_my_notification_preferences`) also
+appends `notifications-v1` grant or withdrawal evidence to `consent_records`. Notification content
+and delivery history are not stored server-side.
+
+### `onboarding_drafts`
+
+One autosaved draft per user: the selected beginner or experienced path, current section, a
+bounded answer payload (at most 128 KB, including the follow-up answers `follow_ups` and
+`follow_ups_hash`), timestamps, and row version. Drafts are user-owned under RLS and remain
+separate from immutable feature snapshots and approved plans.
 
 ### `onboarding_generations`
 
-One row per onboarding plan generation, with columns:
-
-- the snapshot hash of the reviewed answers;
-- `status` (`running`, `succeeded`, `failed` or `superseded`);
-- the attempt number and a lease;
-- the resulting proposal;
-- a failure code.
-
-Rules:
+One row per onboarding plan generation: the snapshot hash of the reviewed answers, `status`
+(`running`, `succeeded`, `failed` or `superseded`), the attempt number, a lease, the resulting
+proposal (set exactly when `succeeded`), and a failure code.
 
 - **One running generation per user.**
 - **Claiming:** `claim_onboarding_generation` returns the running or finished generation for the
@@ -177,9 +217,9 @@ Rules:
 - **Expiry:** an expired lease reads as `failed`, and a pending proposal past its `expires_at`
   (7 days) reads as `expired` in `get_my_onboarding_generation`, which also returns
   `proposal_expires_at`. Answering an expired proposal stores `expired` and returns it.
-- **Movements to avoid:** the snapshot's `answers.avoid_patterns` (movement patterns) bind the
-  stored proposal; `persist_onboarding_proposal_v3` (and v2, which delegates to it) refuses an
-  exercise with an avoided pattern.
+- **Movements to avoid:** the snapshot's `answers.avoid_patterns` bind the stored proposal;
+  `persist_onboarding_proposal_v3` (and v2, which delegates to it) refuses an exercise with an
+  avoided pattern.
 - **Apple Health:** the snapshot's `health` holds the 28-day summary used for the plan (or null),
   and `health_history` the usual months (or null), so both are part of the snapshot hash:
   connecting Apple Health builds a new plan.
@@ -188,101 +228,113 @@ Rules:
 - **Telemetry:** `persist_onboarding_proposal_v3` adds the model call's thinking flag, latency,
   attempts, token counts and finish reason to the `onboarding.plan.generated` audit event.
 
+### `onboarding_questions`
 
-### `onboarding_drafts`
-
-One autosaved draft per user containing the selected beginner or experienced path, current section,
-a bounded structured answer payload, timestamps, and row version. Drafts are user-owned under RLS
-and remain separate from immutable feature snapshots and approved plans.
-
-### `user_goals`
-
-Versioned goals with type, priority, target direction, optional target value/date, aesthetic
-emphasis, source, status, and activation period. Exactly one active goal is primary.
-
-### `user_constraints`
-
-Equipment, schedule constraints, exercise limitations, dietary pattern, allergies, exclusions, and
-disclosed eligibility restrictions. Each entry records source, confirmation, and optional expiry.
-
-### `user_preferences`
-
-Confirmed training, food, schedule, communication, and notification preferences. Each preference has
-category, typed value, provenance, confirmation timestamp, and optional expiry. Model-inferred
-preferences cannot become confirmed automatically. The app confirms a preference through
-`persist_coach_preference`, which refuses any athlete but the caller unless the caller is the
-service role.
+The coach's follow-up questions for one set of onboarding answers: user, `questions_hash` (the
+answers and Apple Health data they were asked for), up to 3 questions (allowed topic, text, quick
+answers), the reason none were asked, and the call's telemetry. `status` is `running` while one
+request asks the model (until `lease_expires_at`), then `ready`. Written only by the
+`onboarding-plan` function (`claim_onboarding_questions`, `store_onboarding_questions`,
+`release_onboarding_questions`; service role); the athlete reads their own. The answers live in the
+onboarding draft.
 
 ## 4. Health and Check-ins
 
 ### `health_sync_runs`
 
-One device sync attempt with user, idempotency key, requested date window and types, returned types,
-accepted/rejected counts, status, completion time, and sanitized error code. An empty type does not
-prove permission denial.
+One device sync attempt: user, idempotency key, requested date window (at most 31 days) and types,
+returned types, accepted and rejected counts, status, completion time, and sanitized error code. An
+empty type does not prove permission denial. At most 120 syncs an hour per user.
 
 ### `daily_health_summaries`
 
-One row per user, local date, and source scope containing:
+One row per user, local date and source scope (`healthkit`):
 
 - steps and active energy;
-- sleep duration and supported stage totals;
-- workout count and duration;
+- sleep minutes and stage totals (awake, light, deep, REM);
+- workout count and minutes;
 - weight when supplied by HealthKit;
 - resting heart rate;
-- HRV value, explicit metric, and unit;
+- respiratory rate (`respiratory_rate_bpm`, 0–100);
+- HRV value (`hrv_value_ms`) with its explicit metric (`sdnn`) and unit (`ms`);
 - night HRV (`hrv_sleep_ms`: the mean of readings taken during the night that ends on this date,
   a sleep session of three hours or more) and morning HRV (`hrv_morning_ms`: readings taken
-  04:00–12:00 outside sleep), both subsets of the day's HRV (2026-10-04, `20261004160000`;
-  a check keeps them null without `hrv_value_ms`). HRV and breathing readings taken asleep
-  belong to the morning the night ends on; a nap's breathing readings are left out;
-- source/checksum metadata, completeness, and last-sync time.
+  04:00–12:00 outside sleep), both subsets of the day's HRV and null without `hrv_value_ms`. HRV
+  and breathing readings taken asleep belong to the morning the night ends on; a nap's breathing
+  readings are left out;
+- `present_types`, hashed source references and checksum, completeness, and sync times.
 
-The Phase 4 source scope is `healthkit`. HRV is stored only as milliseconds with the explicit `sdnn`
-metric. Summaries are idempotently upserted. Incompatible HRV definitions are never combined.
+Summaries are idempotently upserted by `persist_health_sync_v2` (frozen for the coaching platform
+program). Incompatible HRV definitions are never combined.
+
+**Sync semantics.**
+
+- Requested type codes: `steps`, `active_energy`, `sleep`, `workouts`, `weight`,
+  `resting_heart_rate`, `hrv_sdnn`, `resp_rate`. The `health_sync_v1` contract also carries
+  `hrv_sleep_ms` and `hrv_morning_ms` (0–1000, never without `hrv_value_ms`).
+- Sleep attribution: consecutive sleep samples at most 60 minutes apart form one session, and the
+  session belongs to the local day it ends (a 23:00→07:00 night lands whole on the morning's row).
+  Other metrics attribute by sample start day. Attribution is done on the phone
+  (`normalizeHealthSamples`); the Edge Function does no bucketing.
+- Sleep totals: `sleep_minutes` is the union of every asleep interval (unspecified, Core, Deep,
+  REM), and each stage column is the union within that stage. A night can mix categories, so
+  preferring one category would discard measured minutes and a plain sum would double-count
+  overlapping sources. An awake-only night is `0`, not null; the server's 1–960 scoring gate reads
+  0 as absence.
+- Sync window: today−7 for regular syncs (8 dates), today−8 for the first backfill (9 dates), wide
+  enough to capture a full night that starts the evening before the window's first date.
+
+### `health_workout_references`
+
+Bounded HealthKit workout facts for reconciliation: hashed sample and source ids, activity type,
+start, end, duration, optional energy, local date, and last sync time. Routes, heart-rate series and
+unrelated raw samples are not copied. Unique per user and sample hash.
+
+### `health_history_months`
+
+One row per user and completed calendar month, from the app (`save_health_history`): workouts,
+strength workouts, workout minutes, nights of sleep and their average, weigh-in days and their
+average, days with any data, and the first and last date with data. Only months before the
+athlete's current month, at most 12 back. Owner-read RLS; exported and deleted with the account.
 
 ### `daily_check_ins`
 
-Daily user-reported sleep quality, energy, soreness, hunger, mood, pain, training availability,
-adherence, and optional note. Rating scales are bounded. Edits preserve revision history. Red-flag
-responses reach deterministic safety policy before AI.
+Daily user-reported sleep quality, energy, soreness, hunger and mood (1–5), pain severity (0–10),
+availability to train, and an optional note (at most 1,000 characters). Red-flag responses reach
+deterministic safety policy before AI.
 
-One current revision exists per user and local date. User-scoped idempotency keys deduplicate
-retries while older revisions remain immutable history.
+One current revision exists per user and local date (`superseded_at` is null). User-scoped
+idempotency keys deduplicate retries while older revisions remain immutable history.
 
 ## 5. Training
 
 ### `exercise_catalog`
 
-Curated exercise definitions with stable slug, name, movement pattern, muscles, equipment,
-laterality, level, contraindication tags, substitution group, instructions, and catalog version.
-Catalog changes do not rewrite historical snapshots.
+Curated exercise definitions (`catalog-v1`, 72 exercises): slug (primary key), name, movement
+pattern, primary muscles (the first is the target), required equipment (empty means bodyweight),
+level (`beginner`, `intermediate`), compound flag, `status` (`active` or `retired`) with
+`retired_at`, and catalog version. The rows mirror
+`supabase/functions/_shared/onboarding/catalog.ts`, and a Deno test keeps the two equal. Exercises
+are retired, never deleted; generation uses only active ones. Catalog changes do not rewrite
+historical snapshots.
 
-Implemented 2026-10 (`catalog-v1`, 72 exercises):
+Not built: laterality, contraindication tags, substitution groups and instructions.
 
-- **Columns:** slug, name, movement pattern, primary muscles (the first is the target),
-  required equipment (empty means bodyweight), level, compound flag, `status`
-  (`active` or `retired`) with `retired_at`, and catalog version.
-- **Source:** the rows mirror `supabase/functions/_shared/onboarding/catalog.ts`, and a Deno
-  test keeps the two equal.
-- **Lifecycle:** exercises are retired, never deleted; generation uses only active ones.
-- **Not yet implemented:** laterality, contraindication tags, substitution groups and
-  instructions.
+> **Planned (Phase 2 / B1):** catalog v2 and coaching-standard rule data (migration code 21).
 
 ### `exercise_muscle_references`
 
-Reviewed primary muscles for planned exercise names that are not catalog entries (2026-10-04),
-for plans approved before the catalog. Columns: `name_key` (the exercise history key: lowercased,
-trimmed, spaces collapsed; primary key), `name`, `primary_muscles` (the catalog's muscle groups,
-1–4), `created_at`. Each row is reviewed by hand and added by migration; nothing writes it at run
-time. The training hub reads a planned exercise's muscles from its catalog entry, else from this
-list; it never gives such an exercise a slug, so exercise identity and history are unchanged and
-the catalog stays the onboarding allowlist. RLS forced, no client access.
+Reviewed primary muscles for planned exercise names that are not catalog entries, for plans
+approved before the catalog. Columns: `name_key` (the exercise history key: lowercased, trimmed,
+spaces collapsed; primary key), `name`, `primary_muscles` (the catalog's muscle groups, 1–4),
+`created_at`. Each row is reviewed by hand and added by migration; nothing writes it at run time.
+The training hub reads a planned exercise's muscles from its catalog entry, else from this list;
+it never gives such an exercise a slug, so exercise identity and history are unchanged and the
+catalog stays the onboarding allowlist. RLS forced, no client access.
 
 ### `training_plans`
 
-Plan lineage containing user, goal, title, block objective, source, and timestamps. The source
-is one of:
+Plan lineage: user, optional goal, title, source, and creation time. The source is one of:
 
 - `ai` or `rules`: an onboarding plan, by origin;
 - `mock_ai`: the Phase-2 onboarding plan;
@@ -293,49 +345,35 @@ generic seed.
 
 ### `training_plan_versions`
 
-Immutable versions containing plan, version number, status, block length, sessions per week,
-rationale, source decision, approval timestamp, and effective dates. A partial unique index allows
-one active version per user.
+Immutable versions: plan, version number, status, block weeks (1–24), sessions per week,
+prescription object, rationale, source proposal, approval time, and effective date. A partial
+unique index allows one active version per user. When an active version is inserted for a plan
+whose source is not `ai`, `rules` or `imported`, a trigger seeds the generic planned workouts
+deterministically; seeding does not modify the approved version.
 
 ### `planned_workouts`
 
-Ordered workout templates containing plan version, name, objective, preferred weekday, estimated
-duration, and warm-up/cool-down guidance.
-
-Phase 3 expands these rows deterministically only after a training-plan version becomes active;
-expansion does not modify the approved version.
+Ordered workout templates: plan version, order (1–7), name, objective, preferred weekday, estimated
+minutes, and warm-up and cool-down guidance.
 
 ### `planned_exercises`
 
-Ordered prescriptions containing workout, catalog exercise and display snapshot, set count, rep
-range, target RPE or reps in reserve, optional load/progression rule, rest range, notes, and
-approved alternatives. `exercise_slug` (nullable, since 2026-10) references the catalog entry an onboarding plan
-chose. The generic seed and the imported plan have none; since 2026-10-03 an older planned
-exercise whose name is exactly one catalog name (case and spacing ignored) is linked to it by
-migration, and any other name stays unlinked. `target_load_kg` (nullable, 0–2000, since
-the coach intake) is the starting load Tracend set from a reported barbell top set; the training
-hub (1.5) and daily brief (1.6) return it and the active workout pre-fills it.
+Ordered prescriptions: planned workout, order, display-name snapshot, set count, rep range, target
+RPE, rest seconds, and notes.
 
-### `onboarding_questions`
-
-The coach's follow-up questions for one set of onboarding answers: user, `questions_hash` (the
-answers and Apple Health data they were asked for), up to 3 questions (allowed topic, text, quick
-answers), the reason none were asked, and the call's telemetry. `status` is `running` while one
-request asks the model (until `lease_expires_at`), then `ready`. Written only by the
-`onboarding-plan` function (`claim_onboarding_questions`, `store_onboarding_questions`,
-`release_onboarding_questions`; service role); the athlete reads their own. The answers live in the onboarding draft (`follow_ups`, `follow_ups_hash`).
-
-### `health_history_months`
-
-One row per user and completed calendar month, from the app (`save_health_history`): workouts,
-strength workouts, workout minutes, nights of sleep and their average, weigh-in days and their
-average, days with any data, and the first and last date with data. Only months before the
-athlete's current month, at most 12 back. Owner-read RLS; exported and deleted with the account.
+- `exercise_slug` (nullable) references the catalog entry an onboarding plan chose. The generic
+  seed and the imported plan have none; an older planned exercise whose name is exactly one
+  catalog name (case and spacing ignored) was linked by migration, and any other name stays
+  unlinked.
+- `target_load_kg` (nullable, 0–2000) is the starting load Tracend set from a reported barbell top
+  set. The training hub and daily brief return it and the active workout pre-fills it.
 
 ### `workout_sessions`
 
-Scheduled or ad hoc executions with plan/version/workout references, local date, state, start/end
-times, duration, session effort/energy, completion reason, and notes.
+Executions of a planned workout: plan version, planned workout, local date and time zone, state,
+idempotency key and client revision, start and completion times, duration, session energy (1–5),
+session effort (1–10), notes, actual start and end, logging completeness (0–1), and correction
+status (`none`, `needs_review`, `corrected`). One open session per planned workout.
 
 `state` is `in_progress`, `completed` or `abandoned`. `abandon_workout` discards an open session
 (audited as `workout.abandoned`); the rows stay, and every history, load and hub read counts
@@ -346,8 +384,11 @@ provenance; see ALGORITHMS §4 "Effort Provenance". `complete_workout_v2` is the
 
 ### `exercise_performances`
 
-Performed or skipped exercises with prescription reference, selected exercise, order,
-substitution/skip reason, pain flag, ratings, and note.
+One row per exercise in a session: order, `status` (`unknown`, `performed` or explicitly
+`skipped`), `performance_kind` (`prescribed`, `substituted` or `extra`), the planned exercise
+(required unless `extra`), `performed_name` and `substitution_reason` (required for a
+substitution), `provenance` (`tracend`, `owner_correction`, `imported`), rest seconds, pain flag
+and note.
 
 `exercise_slug` is the catalog identity of a prescribed performance, copied from its planned
 exercise by a trigger and cleared when the performance becomes a substitution or an extra
@@ -357,10 +398,8 @@ substitutions, extras) are keyed by their lowercased, trimmed name. Assisted exe
 
 ### `exercise_sets`
 
-Set number, type, repetitions, load, RPE, completion, and rest duration. Ordering is unique within
-an exercise performance.
-
-Set timing and reps left (2026-10-15, migration `20261015140031_set_timing.sql`, all nullable):
+Set number (unique within its performance), repetitions, load, RPE, completion flag, and the set
+timing columns (all nullable):
 
 | Column | Type | Rule |
 |---|---|---|
@@ -379,338 +418,500 @@ a set's times and re-measures any rest counted from its tick.
 When the athlete picks reps left, the app also writes `rpe = 10 − rir`, the value the same answer
 meant on the earlier 1–10 picker, so RPE readers (Coach context) stay consistent.
 
-`sync_workout_draft` keeps a stored value when a set omits the key (installed builds send none),
-clears it on an explicit null, and refuses (22023) a malformed value, a time more than 10 minutes
-in the future or more than 10 minutes before the session's recorded start, and an end before the
-start. Set times from before the server's recorded start stay on the phone and are never sent (a
-workout started offline). A set sends only the keys it knows: one restored from a draft without
-them (saved by an older build) sends none until the athlete ticks, un-ticks or answers reps left on
-it, so it never clears times or reps left another device stored; un-ticking sends explicit nulls. If the server still refuses the times (a phone clock more than 10 minutes
+`sync_workout_draft` (program Contract 2) keeps a stored value when a set omits the key (installed
+builds send none), clears it on an explicit null, and refuses (22023) a malformed value, a time more
+than 10 minutes in the future or more than 10 minutes before the session's recorded start, and an
+end before the start. Set times from before the server's recorded start stay on the phone and are
+never sent (a workout started offline). A set sends only the keys it knows: one restored from a
+draft without them (saved by an older build) sends none until the athlete ticks, un-ticks or
+answers reps left on it, so it never clears times or reps left another device stored; un-ticking
+sends explicit nulls. If the server still refuses the times (a phone clock more than 10 minutes
 off), the app sends the same draft again without the five keys and syncs the rest of that workout
-without them; the reps left still arrive as the matching RPE. A workout whose final sync is
-refused is not finished. `get_my_workout_session` 1.1 and `get_my_exercise_history` 1.1 (last
-session's sets) return the five fields; the privacy export selects every column.
+without them; the reps left still arrive as the matching RPE. A workout whose final sync is refused
+is not finished. `get_my_workout_session` 1.1 and `get_my_exercise_history` 1.1 (last session's
+sets) return the five fields; the privacy export selects every column.
+
+> **Planned (Phase 2 / C2, Contract 4):** `public.exercise_set_heart_rate`, one row per set
+> (`exercise_set_id`, `start_bpm`, `peak_bpm`, `end_bpm`, `drop_30s_bpm`, `drop_60s_bpm`,
+> `coverage`, `sample_count`, `source`), written by `persist_set_heart_rate_v1`. Summaries only;
+> raw samples never leave the phone. **Phase 3 / C3:** heart-rate profile, zones, recovery and
+> sleeping heart rate in shadow mode (D10).
 
 ### `workout_amendments`
 
-Append-only corrections to completed records containing field, old/new value, reason, actor, and
-time. Completed workouts are not silently rewritten.
+Append-only corrections to completed sessions: field path, old and new value, reason, and time.
+Completed workouts are not silently rewritten.
+
+### `workout_reconciliations`
+
+Matches between a workout session and a HealthKit workout reference: status (`suggested`,
+`confirmed`, `rejected`, `conflict`), confidence (0–1), overlap seconds, duration difference, and
+confirmation time (set exactly when `confirmed`). Candidate retrieval ranks one best unresolved
+candidate per session; confirmation (`respond_workout_reconciliation`) closes competing
+suggestions in the same transaction.
 
 ## 6. Nutrition and Meals
 
 ### `nutrition_target_sets`
 
-Versioned calories, protein, carbohydrate, fat, optional fiber/water, distribution guidance,
-rationale, source decision, status, approval, and effective dates. Exactly one target set is active
-per user.
+Versioned calories, protein, carbohydrate and fat, rationale, source proposal, status, approval
+time, and effective date. Exactly one target set is active per user.
 
-### `food_catalog_items`
+### `nutrition_schedule_versions` and `nutrition_schedule_items`
 
-Normalized foods and products containing source, source ID, name, aliases, cuisine, preparation,
-nutrient basis, serving definition, calories/macros, data-quality version, licensing attribution,
-and status.
+Reviewed meal schedules are versioned independently of macro targets. Exactly one schedule version
+is active per owner. Ordered items store slot, label, local time, window minutes, planned foods,
+optional flag, and reminder preference. Activation supersedes the prior version transactionally and
+writes an audit event. Confirmed meals may reference their schedule item; planned items never
+contribute to consumed totals.
+
+`get_my_nutrition_schedule(target_date)` (1.0) gives each item a `status`: `logged` (a confirmed
+meal references it), `upcoming`, `due` (within `window_minutes` either side of `local_time`), then
+`optional` or `skipped`. A requested day before the athlete's today is `skipped`, a later one
+`upcoming`. "Now" and "today" are the request's time in `user_accounts.timezone` (an unset or
+unknown zone reads as UTC), and the window is compared as timestamps on the requested day, so it
+never wraps around midnight. `get_my_daily_brief.next_meal` is the first `due`, `upcoming` or
+`optional` item.
+
+### `food_catalog_items` (Not built)
+
+The logical design holds normalized foods and products with source, aliases, cuisine, preparation,
+nutrient basis, serving definition, calories and macros, data-quality version, licensing
+attribution, and status. Today meal items carry a name snapshot and their own nutrients.
 
 ### `user_foods`
 
-User-owned confirmed foods or recipes with serving definition, nutrients, catalog/ingredient
-references, source, and revision history. Personal entries are never promoted globally without
-review.
+User-owned confirmed foods: name, serving label, calories and macros, and revision. Personal
+entries are never promoted globally without review.
 
 ### `media_objects`
 
-Private-object metadata containing user, purpose, opaque object key, type, byte size, checksum,
-lifecycle status (`active`, `pending_deletion`, or `deleted`), capture time, retention deadline,
-explicit retention exemption, and deletion time. Retention workers claim due objects before deleting
-Storage bytes, then finalize or schedule a retry. Clients never use object keys as authorization.
+Private-object metadata: user, purpose, opaque object key, content type (`image/jpeg`,
+`image/png`, `image/heic`), byte size (at most 10 MB), checksum, lifecycle status (`active`,
+`pending_deletion`, `deleted`), retention deadline, retention exemption, and deletion time. Meal
+photos get a 7-day deadline at upload; progress photos are exempt (deleted with their set or the
+account). Retention workers claim due objects before deleting Storage bytes, then finalize or
+schedule a retry. Clients never use object keys as authorization.
+
 Keys follow the app's upload grammar (`<uid>/meal/<request id>.<ext>`,
-`<uid>/progress/<set id>/<pose>.<ext>`), and the constraint `media_objects_object_key_safe` keeps
-new keys inside the owner's folder with no dot segments or encoded characters (added `NOT VALID`,
-so rows written before 2026-10-09 are not rechecked).
+`<uid>/progress/<set id>/<pose>.<ext>`), and the RPC that records a key requires an uploaded object
+the caller owns (`private.is_owned_media_key`). The constraint `media_objects_object_key_safe`
+keeps keys inside the owner's folder with no dot segments, `//`, `\`, `%` or control characters
+(added `NOT VALID`, so older rows are not rechecked).
 
-### `meal_analyses`
+### `meal_photo_ai_notices`
 
-Asynchronous image jobs containing user, media object, provider/model/prompt references, status,
-confidence, failure code, and expiry. An analysis cannot contribute directly to nutrition totals.
+The meal photo AI notice the athlete grants before an analysis: version, `provider` (`deepseek`,
+`groq`, `gemini` or `anthropic`), provider label, model, body. The newest is current; published by
+`private.publish_meal_photo_ai_notice` (with the same label check as `publish_ai_notice`), never
+edited. A grant is a `consent_records` row of type `meal_photo_ai` naming the version
+(`has_meal_photo_ai_consent`, `get_meal_photo_ai_consent`, `get_my_meal_photo_ai_notice`).
+
+### Meal analysis
+
+There is no separate analysis-job table (`meal_analyses` is **Not built**): `meal-analyze` answers
+within the request. The draft meal holds the media object; the provider and model are recorded in
+`ai_usage_events` and in the `meal.photo.candidates_created` audit event.
 
 ### `meal_analysis_candidates`
 
-Unconfirmed provider observations containing food label, preparation assumption, estimated
-quantity/unit, calories/macros, confidence, rank, selection state, and clarification question. User
-corrections remain unconfirmed until transactional meal confirmation snapshots them into meal items.
+Unconfirmed provider observations for one meal: order, food label, serving label, calories and
+macros, confidence, and selection state. `persist_meal_photo_candidates` replaces them and accepts
+only approved provider and model pairs. User corrections remain unconfirmed until transactional
+confirmation snapshots them into meal items. An analysis never contributes directly to nutrition
+totals.
 
 ### `meals`
 
-Meal header containing local date/time, meal type, source, optional analysis, confirmation status,
-and note. Explicit record deletion removes the owned header and cascading items/candidates, emits a
-sanitized audit event, and makes linked non-exempt media immediately eligible for retention cleanup.
+Meal header: local date and time zone, meal type (`breakfast`, `lunch`, `dinner`, `snack`), source,
+status (`draft`, `confirmed`, `discarded`), idempotency key, optional media object, optional
+schedule item, note, and confirmation time. Explicit record deletion (`delete_my_meal`) removes the
+owned header and cascading items and candidates, emits a sanitized audit event, and makes linked
+non-exempt media immediately eligible for retention cleanup.
 
 ### `meal_items`
 
-Confirmed or manual items referencing catalog or user food, quantity, serving unit, calculated
-calories/macros, nutrient-source version, and confirmation time. Daily totals include only confirmed
-items.
+Confirmed items: optional user food, name snapshot, serving label, calories and macros, and
+confirmation time. Daily totals include only confirmed items.
 
 ## 7. Progress
 
 ### `body_measurements`
 
-Date, source, weight, optional waist/chest/hip/arm/thigh measurements, protocol, confirmation, and
-amendment metadata. Manual and HealthKit values retain provenance and are not silently overwritten.
+Date, source (`manual` or `healthkit`), weight, optional waist, chest, hip, arm and thigh, protocol
+version, confirmation time, and amendment metadata. Manual and HealthKit values keep provenance and
+are not silently overwritten. Measurements are written through an authenticated validated RPC
+(`save_body_measurement`).
 
-An incorrect setup fixture may be explicitly superseded with timestamp and a bounded correction
-reason. Progress calculations exclude superseded rows while exports retain them as correction
-history.
+Only one effective manual measurement is current per user and date. Re-entry creates an immutable
+amendment (`amended_from_id`) and supersedes the prior row (`superseded_at`, with a bounded
+`correction_reason`). Progress calculations exclude superseded rows while exports keep them as
+correction history.
 
 ### `progress_photo_sets`
 
-Periodic comparison sets containing date, capture-protocol version, timing context, processing
-consent, notes, and completion state.
+Comparison sets: capture date, capture-protocol version, timing context, processing consent, notes,
+and status (`draft`, `complete`). A consent-gated RPC creates a draft set. At most 10 new sets a day
+per user.
 
 ### `progress_photos`
 
-Links one private media object per front, side, or back pose to a photo set and stores
-framing/quality results. No public URL is stored.
+Links one private media object per pose (`front`, `side`, `back`, `lower`) to a photo set, with a
+quality status. Each pose is registered only after its owner-scoped Storage object exists, and the
+fourth pose completes the set. No public URL is stored. Reads use 60-second signed URLs; deletion
+removes Storage bytes before relational metadata.
 
 ### `physique_analyses`
 
-Versioned comparison result referencing baseline/current sets, provider metadata, qualitative
-observations, development priorities, confidence, limitations, and validation state. It is not a
-body-composition measurement or diagnosis.
+Versioned comparison result referencing baseline and current sets, with provider and model,
+confidence, limitations, and validation state. It is not a body-composition measurement or
+diagnosis.
 
-**Physique check (2026-10, owner-only).** Written only by `persist_physique_analysis` (service role)
+The owner-only physique check writes it only through `persist_physique_analysis` (service role)
 for one complete set (baseline = current). `result` holds the validated reply
 (`private.is_valid_physique_result`: 1–3 catalog muscles with confidence and reason, up to three
-observations, photo issues from a fixed list, limitations; no body-fat field or score can be stored),
-`notice_version` the photo AI notice it ran under, and `confirmed_muscles`/`confirmed_at` what the
-athlete chose with `set_my_priority_muscles` (at most two, only suggested muscles), which also writes
-`user_profiles.priority_muscles`. `body_fat_range` is never written. Deleting the set deletes its
-analyses first; both are in the privacy export.
+observations, photo issues from a fixed list, limitations; no body-fat field or score can be
+stored), `notice_version` the photo AI notice it ran under, and `confirmed_muscles`/`confirmed_at`
+what the athlete chose with `set_my_priority_muscles` (at most two, only suggested muscles), which
+also writes `user_profiles.priority_muscles`. `body_fat_range` is never written. Deleting the set
+deletes its analyses first (`delete_my_progress_photo_set`); both are in the privacy export.
 
 ### `photo_ai_notices`
 
-The progress-photo AI notice the athlete grants before a physique check: version, provider label,
-model, body. The newest is current; published by migration or `private.publish_photo_ai_notice`,
-never edited. A grant is a `consent_records` row of type `progress_photo_ai` naming the version
-(`has_photo_ai_consent`, `get_my_photo_ai_notice`). Since 2026-10-15 a notice may carry `provider`
-(same values as `ai_consent_notices.provider`; null on earlier notices), set by the five-argument
-`private.publish_photo_ai_notice(version, provider, provider_label, model, body)`. The meal photo
-notice table (`meal_photo_ai_notices`, consent type `meal_photo_ai`) works the same way and has always
-named its provider; it now also accepts `deepseek` and `anthropic`. All three publishers that name a
-provider apply the same label check as `private.publish_ai_notice`.
+The progress-photo AI notice the athlete grants before a physique check: version, `provider`
+(same values as `ai_consent_notices.provider`; null on earlier notices), provider label, model,
+body. The newest is current; published by migration or
+`private.publish_photo_ai_notice(version, provider, provider_label, model, body)` (with the same
+label check), never edited. A grant is a `consent_records` row of type `progress_photo_ai` naming
+the version (`has_photo_ai_consent`, `get_my_photo_ai_notice`).
 
 ### `progress_reviews`
 
-Weekly or milestone reviews referencing a feature snapshot and optional physique analysis, with
-adherence summary, observations, linked proposals, and user acknowledgement.
+Weekly reviews: review week, schema version, deterministic summary, the weekly feature snapshot
+it was built from, generation kind (`deterministic`), and acknowledgement time. The summary holds
+training, recovery, confirmed-nutrition and measurement coverage plus explicit missing data,
+unchanged-plan state and next focus. User and week uniqueness makes generation idempotent.
 
-**Phase 7 foundation (2026-07-02).** Manual measurements are written through an authenticated
-validated RPC, retain canonical units and source, and expose deterministic first-to-latest weight
-and waist deltas. Photo sets, pose links, and reviews are owner-scoped under forced RLS. The
-separate private `progress-photos` bucket uses purpose-bound owner paths; storage consent and
-AI-processing consent remain distinct.
+### `weekly_review_jobs`
 
-**Private media slice (2026-07-02).** A consent-gated RPC creates a draft set; each pose is
-registered only after its owner-scoped Storage object exists. Three poses complete the set. Reads
-use 60-second signed URLs; deletion removes Storage bytes before relational metadata.
-
-**Weekly review slice (2026-07-02).** Each persisted review references an immutable weekly feature
-snapshot and contains deterministic training, recovery, confirmed-nutrition, and measurement
-coverage plus explicit missing data, unchanged-plan state, next focus, and acknowledgement.
-User/week uniqueness makes generation idempotent. `weekly_review_jobs` owns queued, processing,
-retryable, completed, failed, and cancelled lifecycle state with a three-attempt bound; queue
-payloads contain only the opaque job ID.
-
-### `notification_preferences`
-
-One owner-scoped row stores daily check-in and weekly-review reminder toggles, the coarse iOS
-authorization status, and update time. The validated RPC also appends `notifications-v1` grant or
-withdrawal evidence to `consent_records`; notification content and delivery history are not stored
-server-side.
+Queue state for weekly reviews: review week (a Monday), status (`queued`, `processing`,
+`retryable`, `completed`, `failed`, `cancelled`), attempts (at most 3), queue message id,
+sanitized error code, and times. Queue payloads contain only the opaque job ID.
 
 ## 8. Coaching and Approval
 
 ### `coach_threads` and `coach_messages`
 
-Owner-scoped forced-RLS conversation state. Threads contain a bounded title, active/archived state,
-and recent-message timestamps. Messages contain role, selectable text, validated evidence
-references, missing-data labels, safety state, idempotency, and time. Thread deletion cascades
-messages and writes a content-free audit event. Account deletion remains the final retention bound.
-Messages also have a `search_vector` tsvector column for relevance-ranked full-text retrieval.
+Owner-scoped forced-RLS conversation state. Threads hold a bounded title, active or archived
+state, and last-message time. Messages hold role, text (at most 12,000 characters), validated
+evidence references, missing-data labels, safety state (`allowed`, `limited`, `refused`,
+`unavailable`), `answer_source` (`model` or `data_summary`), idempotency key, time, and a generated
+`search_vector` for relevance-ranked full-text retrieval. Thread deletion cascades messages and
+writes a content-free audit event. At most 50 new threads a day and 1,000 in all per user. Account
+deletion is the final retention bound.
+
+### `coach_context_snapshots`
+
+The prepared Coach context for one question or decision: thread, schema version, trigger kind
+(`chat`, `daily`, `weekly`, `plan_review`), coaching date, the context object, and its SHA-256
+checksum. Coach chat preparation writes it with the prepared athlete file.
+Deleting a thread deletes its snapshots.
 
 ### `coach_narrative_entries`
 
-Immutably versioned coaching timeline phases owned by the user. Each entry stores `phase` (phase
-label), `headline` (deterministic 1-sentence summary), `since`/`until` dates, `cause_snapshot_ids`
-(referencing context snapshots), and `superseded_by` (self-referencing version chain). At most one
-entry is ongoing (`until is null`). Forced RLS, read-only for authenticated.
-
-### `user_preferences`
-
-Confirmed food, training, schedule, communication, notification, and lifestyle preferences. Each row
-stores `category`, `key`, `value`, `provenance` (onboarding, chat_statement, repeated_signal,
-manual), `confirmed_at`, and `superseded_at`. Only one active row per user+key. Model-inferred
-preferences cannot become confirmed automatically. Forced RLS, read-only for authenticated.
+Versioned coaching timeline phases owned by the user: `phase`, `headline` (deterministic one-
+sentence summary), `since`/`until` dates, `cause_snapshot_ids`, and `superseded_by` (version
+chain). At most one entry is ongoing (`until is null`). Forced RLS, read-only for authenticated.
 
 ### `coach_session_summaries`
 
-Append-only deterministic daily journal entries. Each row contains `coaching_date`, `summary` (1-2
-sentences), `thread_id`, and `key_snapshot_ids`. Capped at 30 recent entries per user; oldest
-entries deleted on insertion. Forced RLS, read-only for authenticated.
+Append-only deterministic daily journal entries: `coaching_date`, `summary` (1–2 sentences),
+`thread_id`, and `key_snapshot_ids`. Only the 30 newest entries per user are kept. Forced RLS,
+read-only for authenticated.
 
 ### `feature_snapshots`
 
-Immutable, schema-versioned coaching input containing user, trigger, date window, feature-engine
-version, active plan/target references, computed features, coverage, freshness, conflicts,
-missing-data flags, and data hash. Schema v2.0 adds `baselines`, `scores` (recovery, sleep_quality,
-ACWR, monotony, weight_trend, macro_adherence), and `eligibility` gates to the features JSONB.
+Immutable, schema-versioned coaching input: user, trigger kind (`onboarding`, `daily`, `weekly`),
+schema version (`1.0` or `2.0`), feature-engine version, features, coverage, missing-data flags, and
+data hash (unique per user). Schema 2.0 adds `baselines`, `scores` (recovery, sleep quality, ACWR,
+monotony, weight trend, macro adherence) and `eligibility` gates to the features.
 
 ### `policy_evaluations`
 
-Immutable deterministic result containing feature snapshot, policy version, outcome, triggered rule
-codes, permitted/prohibited actions, escalation code, and time.
+Immutable deterministic result: feature snapshot, policy version (`daily-v1` or
+`eligibility-v1`), outcome, triggered rule codes, and permitted and prohibited actions.
 
 ### `model_runs`
 
-Operational record containing user, purpose, provider, model, prompt/schema versions, feature and
-policy references, provider request ID, status, usage, latency, cost estimate, validation result,
-retry lineage, and sanitized error. It never stores provider secrets. `provider` is one of `mock`,
-`gemini`, `groq`, `deepseek` or `anthropic` (since 2026-10-15), the vendor that received the data;
-`ai_usage_events.provider` takes the same names except `mock`. Model ids are pinned for the old
-vision vendors; usage through `anthropic` carries any well-formed model id
-(letters, digits and `. _ : / -`, at most 100).
+Operational record of a Coach chat or daily-decision call: user, purpose (`daily_coaching`,
+`coach_chat`), provider, model, prompt version, schema version, feature snapshot and policy
+references, idempotency key, status, validation result, usage, latency, cost estimate, and
+sanitized error. It never stores provider secrets. `provider` is the vendor that received the data:
+`mock`, `gemini`, `groq`, `deepseek` or `anthropic`.
 
-`ai_budget_reservations` holds a call's place in the AI budget until its usage is recorded
-(COST_MODEL). `reserve_ai_budget` holds the purpose's fixed ceiling; `reserve_ai_budget_v2` holds
-the caller's route ceiling (USD 0.001 to 0.50).
-
-Account usage summaries are computed from user-scoped `model_runs` through a restricted aggregate
-query or RPC; they are not a second source of truth and must omit prompts, provider request
+Account usage summaries are computed from user-scoped `model_runs` through a restricted RPC
+(`get_my_ai_usage`); they are not a second source of truth and omit prompts, provider request
 identifiers, and raw errors.
+
+### `ai_usage_events`
+
+Usage of the other AI features: purpose (`meal_vision`, `progress_vision`, `onboarding_plan`,
+`onboarding_questions`), provider (`gemini`, `groq`, `deepseek`, `anthropic`), model, token
+counts, cost estimate, and latency. Model ids are pinned for the vision vendors; onboarding
+purposes and `anthropic` accept any well-formed model id (at most 100 characters). Written by
+`record_ai_usage_event` (service role).
+
+### `ai_budget_reservations` and `private.ai_budget_limits`
+
+A reservation holds a call's place in the AI budget until its usage is recorded (COST_MODEL):
+purpose, reserved cost, and settlement time. `reserve_ai_budget` holds the purpose's fixed ceiling;
+`reserve_ai_budget_v2` holds the caller's route ceiling (USD 0.001 to 0.50) and maps gateway
+feature names onto the same purposes. `private.ai_budget_limits` is a single row with the global
+monthly stop.
 
 ### `coach_decisions`
 
-Immutable validated output containing decision kind/date, feature and policy references, successful
-model run, Training Coach section, Nutrition Coach section, Head Coach decision, evidence, missing
-data, risk flags, confidence, validity window, and feedback state.
+Immutable validated daily decision: kind (`daily`), local date, feature snapshot, policy evaluation,
+the model run, Training Coach, Nutrition Coach and Head Coach sections, evidence, confidence,
+missing data, risk flags, and validity window.
 
 ### `change_proposals`
 
-Bounded persistent proposal containing source decision, domain/action, current and proposed values
-or versions, evidence, rationale, expected benefit/downside, confidence, effective date, expiry, and
-status.
+Bounded persistent proposal: feature snapshot, schema version, proposed training and nutrition,
+evidence, rationale, expected benefit, downside, confidence, effective date, expiry, and status.
 
 Onboarding proposals have two schema versions:
 
 - **1.0:** the Phase-2 mock, with names only.
-- **2.0 (2026-10):** the exact `weekly_structure` (workouts with catalog exercises, sets, reps,
-  RPE and rest). It also records origin (`ai` or `rules`), provider, model, fallback reason, policy
-  and catalog versions, and the assessment, assumptions and missing information. It shows how the
+- **2.0:** the exact `weekly_structure` (workouts with catalog exercises, sets, reps, RPE and
+  rest). It also records origin (`ai` or `rules`), provider, model, fallback reason, policy and
+  catalog versions, and the assessment, assumptions and missing information. It shows how the
   calories were calculated.
 
 `private.is_valid_initial_proposal_v2` checks the 2.0 structure, and the catalog is checked when the
 proposal is stored and again when it is approved. v1 approval refuses 2.0 proposals.
 
+> **Planned (Phase 4 / B4, Contract 5):** same-day readiness adjustments
+> (`get_my_day_adjustment_v1`, `respond_to_day_adjustment_v1`), answered by the athlete with an
+> audit event (migration code 24).
+
 ### `change_responses`
 
-Append-only acceptance, rejection, or revision request (with an optional `revision_note`, ≤500
-characters, since 2026-10). Acceptance runs one transaction that locks
-the current proposal, creates the new plan/target version, supersedes the previous version, and
-writes an audit event.
+Append-only acceptance, rejection, or revision request, one per proposal, with an optional
+`revision_note` (at most 500 characters). Acceptance runs one transaction that locks the current
+proposal, creates the new plan and target versions, supersedes the previous versions, and writes an
+audit event.
 
-### `decision_feedback`
+### `decision_feedback` (Not built)
 
-User rating (`useful`, `unclear`, `incorrect`, or `unsafe`), optional score/note, and time. Unsafe
-feedback opens review but does not automatically change policy.
+The logical design holds a user rating (`useful`, `unclear`, `incorrect`, or `unsafe`), optional
+score and note, and time. Unsafe feedback opens review but does not automatically change policy.
 
-### `nutrition_schedule_versions` and `nutrition_schedule_items`
+## 9. Feature Engine
 
-Reviewed meal schedules are versioned independently of macro targets. Exactly one schedule version
-is active per owner. Ordered items store slot, local time, window, planned foods/quantities,
-optional state, and reminder preference. Activation supersedes the prior version transactionally and
-writes an audit event. Confirmed meals may reference their schedule item; planned items never
-contribute to consumed totals.
+Deterministic scores computed in PostgreSQL. Formulas and citations are in
+[ALGORITHMS.md](./ALGORITHMS.md).
 
-`get_my_nutrition_schedule(target_date)` gives each item a `status`: `logged` (a confirmed meal
-references it), `upcoming`, `due` (within `window_minutes` either side of `local_time`), then
-`optional` or `skipped`. A requested day before the athlete's today is `skipped`, a later one
-`upcoming`. Since 2026-10-04 (`20261004100000`) "now" and "today" are the request's time in
-`user_accounts.timezone` (an unset or unknown zone reads as UTC), not the database clock, and the
-window is compared as timestamps on the requested day, so it no longer wraps around midnight.
-`get_my_daily_brief.next_meal` is the first `due`, `upcoming` or `optional` item. Response 1.0 is
-unchanged.
+### `user_baselines`
 
-## 9. Audit and Privacy Operations
+One row per user and metric: winsorized EWMA baselines computed from `daily_health_summaries` by
+`compute_user_baselines`, upserted on each recompute.
+
+| Field                 | Type        | Description                                            |
+| --------------------- | ----------- | ------------------------------------------------------ |
+| id                    | uuid PK     |                                                        |
+| user_id               | uuid FK     | `user_accounts.id`                                     |
+| metric_name           | text        | `hrv_sdnn_ms`, `resting_hr_bpm`, `sleep_minutes`, `weight_kg`, `resp_rate_bpm`, `hrv_sleep_ms`, `hrv_morning_ms` |
+| baseline_value        | numeric     | Current EWMA                                           |
+| spread                | numeric     | MAD spread for the z-score denominator, ≥ 0            |
+| n_observations        | integer     | Valid observations processed                           |
+| confidence            | text        | `cold_start`, `low`, `medium`, `high`                  |
+| last_calculated_at    | timestamptz |                                                        |
+| last_observation_date | date        | Most recent summary date used                          |
+| engine_version        | text        | Default `baseline-v1`                                  |
+
+UNIQUE (user_id, metric_name). Forced RLS, read-only for authenticated. Confidence tiers: fewer
+than 3 observations `cold_start`, 3–6 `low`, 7–13 `medium`, 14 or more `high`.
+
+### `metric_baseline_history`
+
+Append-only per-observation trail written by `compute_user_baselines`: metric, baseline value,
+spread and observation count after the observation, observation date, raw value, whether it was
+winsorized (clamped to ±3 × spread) or rejected as an outlier (beyond 5 × spread), the λ used
+(3-day half-life for the first eight observations, then 14-day), `prior_baseline_id` (linked list),
+engine version, and creation time. Forced RLS, read-only for authenticated.
+
+### `daily_computed_metrics`
+
+One row per user and date, upserted by `compute_daily_metrics`.
+
+| Field                        | Type        | Description                                    |
+| ---------------------------- | ----------- | ---------------------------------------------- |
+| id                           | uuid PK     |                                                |
+| user_id                      | uuid FK     | `user_accounts.id`                             |
+| local_date                   | date        | Coaching day                                   |
+| recovery_score               | integer     | 0–100                                          |
+| sleep_quality_score          | integer     | 0–100                                          |
+| sleep_debt_minutes           | integer     | Nullable; positive = under target              |
+| daily_strain                 | numeric     | sRPE total                                     |
+| acwr                         | numeric     | Acute:chronic ratio, nullable                  |
+| training_monotony            | numeric     | 7-day mean / standard deviation, nullable      |
+| weight_trend_7d_kg_per_day   | numeric     | Nullable; OLS slope                            |
+| weight_trend_28d_kg_per_day  | numeric     | Nullable; OLS slope                            |
+| macro_adherence_pct          | numeric     | Nullable; 14-day mean capped at 200%           |
+| data_confidence              | text        | `cold_start`, `low`, `medium`, `high`          |
+| scores_jsonb                 | jsonb       | Full recovery, sleep, strain, adherence detail |
+| baseline_snapshot_jsonb      | jsonb       | Baselines at compute time                      |
+| eligibility_jsonb            | jsonb       | Change eligibility result                      |
+| computed_at                  | timestamptz |                                                |
+| schema_version               | text        | `2.3` on every computed row (column default `2.0`; older rows keep their value) |
+
+UNIQUE (user_id, local_date). Forced RLS, read-only for authenticated.
+
+### Functions
+
+All deterministic PostgreSQL functions; the security-definer ones are service-only.
+
+| Function                      | Signature                                         | Returns |
+| ----------------------------- | ------------------------------------------------- | ------- |
+| `compute_winsorized_ewma`     | (metric_values numeric[], n_obs integer)          | numeric |
+| `compute_user_baselines`      | (target_user_id uuid, target_date date)           | void    |
+| `compute_daily_metrics`       | (target_user_id uuid, target_date date, target_timezone text) | jsonb |
+| `evaluate_change_eligibility` | (target_user_id uuid, coaching_date date)         | jsonb   |
+| `recompute_stale_metrics`     | ()                                                | integer |
+
+`compute_daily_metrics` refreshes baselines and returns `{baselines, scores, today_raw,
+data_confidence}`. `scores` holds `recovery`, `recovery_mode` (`night` or `morning`),
+`recovery_settled`, `recovery_breakdown` (z-scores, weights and `missing_components`),
+`sleep_quality`, `sleep_breakdown`, `sleep_debt_minutes`, `daily_strain`, `acwr`,
+`training_monotony`, the 7- and 28-day weight trends with the 28-day R², and
+`macro_adherence_pct`. It is called by `prepare_daily_coaching`, Coach chat preparation
+(`prepare_coach_chat_v7`, which `prepare_coach_chat_v8` builds on), `get_my_daily_brief`, and the
+nightly `recompute_stale_metrics` Cron job (06:00 UTC).
+
+Future dates: it never folds baselines through, or persists a row for, a date later than
+`current_date + 1` (UTC+14 makes that the latest possible local today). A future brief gets a
+read-only payload: recovery null, z-keys zero, all components missing, stored baselines unchanged,
+`data_confidence` low.
+
+### Score weights
+
+Recovery, night score (the morning estimate's weights are in ALGORITHMS §1, Recovery Modes; night
+HRV is scored against `hrv_sleep_ms`, morning HRV against `hrv_morning_ms`):
+
+| Component    | Weight | Direction                     |
+| ------------ | ------ | ----------------------------- |
+| HRV (SDNN)   | 0.55   | Higher = better               |
+| RHR          | 0.20   | Lower = better                |
+| Sleep        | 0.15   | Higher = better               |
+| Resp rate    | 0.05   | Lower = better                |
+| Prev strain  | 0.05   | Lower 7-day mean = better     |
+
+Sleep quality:
+
+| Component    | Weight |
+| ------------ | ------ |
+| Duration     | 0.50   |
+| Efficiency   | 0.20   |
+| Restorative  | 0.20   |
+| Consistency  | 0.10   |
+
+### Read-model versions
+
+- `get_my_training_hub` 1.6: plan dates, exercise muscles, completion source and `daily_load`.
+- `get_my_daily_brief` 1.8:
+  - `recovery_previous` (yesterday's stored `recovery_score`);
+  - `plan` (the active plan's `title`, `version_number`, `block_weeks` and `week_number`, weeks
+    since `effective_date`, else the approval date, from 1 and not capped);
+  - `week` (Monday to Sunday of the requested date's week: `local_date`, `recovery` and `strain`
+    from `daily_computed_metrics`, today's from the live computation, `trained` when a session
+    that day is `completed`, and `planned` when the active plan has a workout on that weekday);
+  - `today_session` (the requested day's latest session that is not `abandoned`: its `state` and,
+    per `exercise_order`, the count of `completed` sets); and
+  - `computed` with `scores.recovery_mode`, `scores.recovery_settled`, the breakdown's
+    `check_in_z` and `weights`, `today_raw.hrv_scored_ms` and `.resting_hr_scored_bpm`, and
+    `baselines` including `hrv_sleep_ms` and `hrv_morning_ms`; `missing_components` may list
+    `check_in`.
+
+  The Today page draws its week, plan line and session strip from these; nothing is derived on the
+  phone.
+
+## 10. Audit and Privacy Operations
 
 ### `audit_events`
 
-Append-only actor, user scope, action code, opaque target, request correlation ID, outcome,
-sanitized metadata, and timestamp. Health values, notes, prompts, photo references, tokens, and
-secrets are prohibited in audit metadata.
+Append-only user scope, action code, target type and opaque target id, outcome (`succeeded` or
+`rejected`), sanitized metadata, and time. Health values, notes, prompts, photo references, tokens,
+and secrets are prohibited in audit metadata.
 
 `workout.auto_completed` records that the user confirmed a HealthKit-detected workout as complete;
 metadata includes the planned workout ID, date, duration, and source label.
 
 ### `data_exports`
 
-Export scope, state, processing times, encrypted package reference, expiry, download count, and
-failure code. Downloads require short-lived user authorization.
-
-Phase 8 permits one complete open export per owner, stores no encryption password or key, expires
-packages after seven days, and allows at most three downloads. The private Storage path is not
+Export scope (`complete`), status (`queued`, `processing`, `ready`, `failed`, `expired`), times,
+encrypted package path and size, expiry, download count (at most 3), queue message id, and failure
+code. One open export per owner. No encryption password or key is stored; packages expire after
+seven days. Downloads require short-lived user authorization, and the private Storage path is not
 included in authenticated grants.
 
 ### `deletion_requests`
 
-Opaque queued state, request/processing/completion times, and sanitized failure code. It
-intentionally has no Auth foreign key so a content-free completion receipt can survive user deletion
-for 180 days; it stores no email, health data, media path, prompt, or token.
+Opaque queued state (`queued`, `processing`, `completed`, `failed`), queue message id,
+request, start and completion times, and sanitized failure code. It intentionally has no Auth
+foreign key so a content-free completion receipt can survive user deletion for 180 days; it stores
+no email, health data, media path, prompt, or token. Deletion covers relational data, media, jobs,
+caches, backups, and supported provider state according to
+[SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md).
 
-Request, confirmation, schedule, processing state, completion evidence, and minimal tombstone.
-Deletion covers relational data, media, jobs, caches, backups, and supported provider state
-according to [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md).
-
-## 10. Relationships
+## 11. Relationships
 
 ```text
 auth.users / user_accounts
- ├── profile / goals / constraints / preferences / consent
- ├── health summaries / check-ins
+ ├── profile / goals / preferences / consent / notification preferences
+ ├── health summaries / workout references / history months / check-ins
  ├── training plans ─ plan versions ─ planned workouts ─ planned exercises
  ├── workout sessions ─ exercise performances ─ exercise sets
- ├── nutrition targets / meals ─ confirmed meal items
- ├── measurements / progress photo sets / physique analyses
- ├── feature snapshots ─ policy evaluations ─ coach decisions
- │                                            └── change proposals ─ responses
- └── model runs / media / audit / exports / deletion requests
+ │                   └── reconciliations ─ health workout references
+ ├── nutrition targets / schedules / meals ─ candidates / confirmed meal items
+ ├── measurements / progress photo sets ─ photos / physique analyses
+ ├── feature snapshots ─ policy evaluations ─ model runs ─ coach decisions
+ │                    └── change proposals ─ responses
+ ├── coach threads ─ messages / context snapshots / narrative / session summaries
+ └── usage / budget reservations / media / audit / exports / deletion requests
 ```
 
 Foreign keys, RLS policies, transactional functions, and Edge Function checks prevent cross-user
 references.
 
-## 11. Required Constraints and Indexes
+## 12. Required Constraints and Indexes
 
-- One active training-plan version and nutrition-target set per user.
+- One active training-plan version, nutrition-target set and nutrition schedule per user.
 - Unique `(user_id, idempotency_key)` for sync and mutating operations.
 - Unique daily summary scope and progress-photo pose.
 - Bounded rating scales and nonnegative nutrition/load values.
 - User/date indexes for summaries, sessions, meals, measurements, and decisions.
 - Expiry/status indexes for proposals, media, exports, and jobs.
 - Foreign-key ownership consistency across snapshots, model runs, decisions, and proposals.
+- Per-user row caps raise SQLSTATE 54000 (`private.enforce_user_row_limit`; SECURITY_PRIVACY §7).
 
 RLS is mandatory for every exposed user-owned table. Policies derive ownership from `auth.uid()`,
 are least-privilege by operation, and are tested with authenticated users, anonymous access, and
 cross-user attempts. Edge Functions and transactional RPC add validation but never replace RLS on
 exposed data.
 
-## 12. Research Library and Future Vector Memory
+## 13. Research Library and Future Vector Memory
 
-### Research library (decision D3, migration `20261015150041_research_library`)
+### Research library (D3, migration `20261015150041_research_library`)
 
 Open papers, guidelines, position stands and in-house summaries in our own words, for Coach answers
 and plan explanations. No user data; not exposed by the Data API (`private` schema); forced RLS
 with no policies; no grants to `anon`, `authenticated` or `service_role`. Edge Functions reach it
 only through service-role functions. Not part of privacy export or account deletion. `pgvector`
-lives in the `extensions` schema.
+lives in the `extensions` schema. The tables are empty until ingestion.
+
+> **Planned (Phase 3 / E2):** ingestion and the first 30 sources. **Phase 3 / E3 (code 43):** the
+> library inside Coach chat. **Phase 4 / E4 (code 44):** regional modules.
 
 #### `private.library_sources`
 
@@ -724,7 +925,7 @@ lives in the `extensions` schema.
 | doi            | text        | Nullable                                                            |
 | url            | text        | `https://` only, nullable                                           |
 | licence        | text        | Required: the licence the source is stored under                    |
-| region         | text[]      | Required, no default, at least one entry; each `global` or an ISO 3166-1 alpha-2 code (`IN`, `US`, `GB`, `AU`) |
+| region         | text[]      | Required, at least one entry; each `global` or an ISO 3166-1 alpha-2 code (`IN`, `US`, `GB`, `AU`) |
 | topics         | text[]      | Topic tags used by search filters                                   |
 | evidence_level | text        | Nullable, free text set by ingestion                                |
 | kind           | text        | `paper`, `guideline`, `position_stand`, `summary`                   |
@@ -732,19 +933,19 @@ lives in the `extensions` schema.
 
 #### `private.library_chunks`
 
-| Field       | Type                       | Description                                                  |
-| ----------- | -------------------------- | ------------------------------------------------------------ |
-| id          | uuid PK                    |                                                              |
-| source_id   | uuid FK                    | `library_sources.id`, on delete cascade                      |
-| ordinal     | integer                    | Position in the source, from 0; UNIQUE (source_id, ordinal) |
-| section     | text                       | Section name, nullable                                       |
-| header      | text                       | Context header written at ingestion (source and section)     |
-| body        | text                       | 1–8000 characters                                            |
-| token_count | integer                    | 1–2000                                                       |
-| embedding   | `extensions.vector(384)`   | gte-small, mean-pooled and normalised; null until embedded   |
-| embedding_model | text                   | Model that made the embedding (e.g. `gte-small`); set exactly when `embedding` is set, so a model change re-embeds selectively |
-| fts         | tsvector, generated stored | `to_tsvector('english', header || ' ' || body)`              |
-| created_at  | timestamptz                |                                                              |
+| Field           | Type                       | Description                                                  |
+| --------------- | -------------------------- | ------------------------------------------------------------ |
+| id              | uuid PK                    |                                                              |
+| source_id       | uuid FK                    | `library_sources.id`, on delete cascade                      |
+| ordinal         | integer                    | Position in the source, from 0; UNIQUE (source_id, ordinal) |
+| section         | text                       | Section name, nullable                                       |
+| header          | text                       | Context header written at ingestion (source and section)     |
+| body            | text                       | 1–8000 characters                                            |
+| token_count     | integer                    | 1–2000                                                       |
+| embedding       | `extensions.vector(384)`   | gte-small, mean-pooled and normalised; null until embedded   |
+| embedding_model | text                       | Model that made the embedding (e.g. `gte-small`); set exactly when `embedding` is set, so a model change re-embeds selectively |
+| fts             | tsvector, generated stored | `to_tsvector('english', header || ' ' || body)`              |
+| created_at      | timestamptz                |                                                              |
 
 Indexes: HNSW on `embedding` (`vector_cosine_ops`), GIN on `fts`, and the unique
 `(source_id, ordinal)` btree, which also serves `source_id` lookups and the cascade.
@@ -757,9 +958,9 @@ One row per ingestion run: `id`, `started_at`, `finished_at` (null exactly while
 
 #### `public.search_library_v1(query_text, query_embedding, match_count, filters)`
 
-Contract 6. Security definer, empty `search_path`, executable by `service_role` only. Takes the 30
-best full-text matches (`websearch_to_tsquery('english', …)`, ranked by `ts_rank_cd`) and the 30
-nearest embeddings (cosine distance) and merges them by reciprocal rank fusion:
+Contract 6 v1.1. Security definer, empty `search_path`, executable by `service_role` only. Takes
+the 30 best full-text matches (`websearch_to_tsquery('english', …)`, ranked by `ts_rank_cd`) and
+the 30 nearest embeddings (cosine distance) and merges them by reciprocal rank fusion:
 `score = Σ 1 / (60 + rank)` over the lists a chunk appears in. Returns up to `match_count` rows
 (clamped to 1–8, null = 8), best first, each
 `{schema_version: 1, chunk_id, source_id, title, year, url, section, body, header, score}`.
@@ -769,9 +970,7 @@ nearest embeddings (cosine distance) and merges them by reciprocal rank fusion:
   `query_embedding` skips vector search; both skipped returns no rows.
 - `query_embedding` is declared as `public.library_embedding`, a domain over
   `extensions.vector(384)`; callers pass the same JSON number array. Another size raises `22000`
-  ("expected 384 dimensions"). The domain exists because `supabase db dump` drops GRANT and REVOKE
-  lines that mention the `extensions` schema: with a plain `extensions.vector` parameter a
-  restored dump would leave the function executable by `anon` and `authenticated`.
+  ("expected 384 dimensions").
 - Without filters the nearest embeddings come from the HNSW index; with a filter they are ranked
   exactly over the matching sources' chunks (an HNSW scan stops after `ef_search` = 40
   candidates, which a narrow filter could empty).
@@ -793,7 +992,8 @@ default grants, so `anon` and `authenticated` could call it. Therefore no functi
 domain in `public`, as `public.library_embedding` does), have an input argument or a name equal
 to one of those names, and no table, view or sequence there may be named like one.
 `supabase/tests/database/research_library_test.sql` asserts all four. Return types are not in a
-GRANT line and are allowed.
+GRANT line and are allowed. The deploy's restore drill also compares privileges after a restore
+(CI_CD_DEPLOYMENT.md).
 
 ### Future vector memory
 
@@ -803,189 +1003,3 @@ state, embedding provider/model/version, content hash, and vector.
 
 Confirmed structured facts remain canonical. Retrieved text cannot override current goals,
 constraints, plans, or safety policy. Source deletion removes its embeddings.
-
-## 13. Feature Engine
-
-### `user_baselines`
-
-One row per user per metric. Winsorized EWMA baselines computed from `daily_health_summaries` by
-`compute_user_baselines`. Row per (user_id, metric_name). Upserted on each recompute.
-
-| Field          | Type    | Description                                       |
-| -------------- | ------- | ------------------------------------------------- |
-| id             | uuid PK |                                                   |
-| user_id        | uuid FK | auth.users.id                                     |
-| metric_name    | text    | hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm, hrv_sleep_ms, hrv_morning_ms |
-| baseline_value | numeric | Current EWMA                                      |
-| spread         | numeric | MAD spread for z-score denominator                |
-| confidence     | text    | cold_start, low, medium, high                     |
-| n_observations | integer | Count of valid observations processed             |
-| last_observation_date | date | Most recent daily_health_summary date used        |
-| created_at     | timestamptz |                                                |
-| updated_at     | timestamptz |                                                |
-
-UNIQUE (user_id, metric_name). UNIQUE (id, user_id). Forced RLS, read-only for authenticated.
-
-### `metric_baseline_history`
-
-Immutable per-observation audit trail. Append-only via `compute_user_baselines` RPC. One row per raw
-observation processed. Linked list via `prior_baseline_id`.
-
-| Field               | Type    | Description                                |
-| ------------------- | ------- | ------------------------------------------ |
-| id                  | uuid PK |                                            |
-| user_id             | uuid FK | auth.users.id                              |
-| metric_name         | text    |                                            |
-| observation_date    | date    | Source daily_health_summaries date         |
-| raw_value           | numeric | Pre-processing value                       |
-| z_score             | numeric | Post-Winsor z-score                        |
-| ewma_after          | numeric | EWMA after this observation                |
-| was_winsorized      | boolean | Clamped to ±3×spread boundary              |
-| was_outlier_rejected | boolean | Excluded as >5×spread hard outlier         |
-| lambda_used         | numeric | anti-anchoring λ (3-day → 14-day half-life)|
-| prior_baseline_id   | uuid FK | Self-referential linked list               |
-| created_at          | timestamptz |                                         |
-
-Forced RLS, read-only for authenticated.
-
-### Scoring Functions
-
-All PostgreSQL functions, deterministic, service-only SECURITY DEFINER.
-
-| Function                      | Signature                                    | Returns |
-| ----------------------------- | -------------------------------------------- | ------- |
-| `compute_winsorized_ewma`     | (values numeric[], n_obs int)                | numeric |
-| `compute_user_baselines`      | (user_id uuid, date date)                    | void    |
-| `compute_daily_metrics`       | (user_id uuid, date date, tz text)           | jsonb   |
-| `compute_recovery_score`      | internal to compute_daily_metrics            | numeric |
-| `compute_sleep_quality`       | internal to compute_daily_metrics            | numeric |
-| `evaluate_change_eligibility` | (user_id uuid, snapshot_id uuid, version text) | jsonb |
-
-### Orchestrator
-
-`compute_daily_metrics` calls all scorers, returns JSONB with keys: `recovery_score`,
-`recovery_breakdown`, `sleep_quality_score`, `acwr`, `training_monotony`, `weight_trend_7d`,
-`weight_trend_28d`, `macro_adherence_pct`, `data_confidence`, `eligibility`.
-
-Called by: `prepare_daily_coaching`, `prepare_coach_chat_v5`, health-sync post-sync trigger, nightly
-`recompute_stale_metrics` cron (06:00 UTC).
-
-### `daily_computed_metrics`
-
-One row per user per date. Persisted scoring output from `compute_daily_metrics`. Upserted on each compute run.
-
-| Field                        | Type    | Description                                      |
-| ---------------------------- | ------- | ------------------------------------------------ |
-| id                           | uuid PK |                                                  |
-| user_id                      | uuid FK | auth.users.id                                    |
-| local_date                   | date    | Coaching day                                     |
-| recovery_score               | integer | 0–100                                           |
-| sleep_quality_score          | integer | 0–100                                           |
-| sleep_debt_minutes           | integer | Nullable; positive = under target                |
-| daily_strain                 | numeric | sRPE total                                       |
-| acwr                         | numeric | Acute:chronic ratio, nullable                    |
-| training_monotony            | numeric | 7-day avg / stddev, nullable                     |
-| weight_trend_7d_kg_per_day   | numeric | Nullable; OLS slope                              |
-| weight_trend_28d_kg_per_day  | numeric | Nullable; OLS slope                              |
-| macro_adherence_pct          | numeric | Nullable; 14-day avg capped at 200%              |
-| data_confidence              | text    | cold_start, low, medium, high                    |
-| scores_jsonb                 | jsonb   | Full recovery/sleep/strain/adherence breakdown   |
-| baseline_snapshot_jsonb      | jsonb   | Baselines at compute time                        |
-| eligibility_jsonb            | jsonb   | Change eligibility result                        |
-| computed_at                  | timestamptz |                                               |
-| schema_version               | text    | '2.0'                                            |
-
-UNIQUE (user_id, local_date). Forced RLS, read-only for authenticated.
-
-Future-date guard (`20260906140000`): `compute_daily_metrics` never folds baselines through, or persists a row for, `target_date > current_date + 1` (max civil offset UTC+14, so `current_date + 1` is the latest possible local "today" anywhere; guards the Train weekday strip / week-rail future pages). Future briefs return the parse-stable read-only payload: recovery null, z-keys zero, all components missing, stored baselines unrefreshed, `data_confidence` low. Existing future-dated rows were deleted once in the same migration (derived data; recomputed on each brief).
-
-### Algorithm Reference
-
-Full formula definitions with literature citations in [ALGORITHMS.md](./ALGORITHMS.md).
-
-### Baseline Metrics (7 total)
-
-hrv_sdnn_ms, resting_hr_bpm, sleep_minutes, weight_kg, resp_rate_bpm, hrv_sleep_ms,
-hrv_morning_ms. Recovery scores night HRV against `hrv_sleep_ms` and morning HRV against
-`hrv_morning_ms` (ALGORITHMS.md §1, Recovery Modes).
-
-### Recovery Score Weights
-
-Night score (the morning estimate's weights are in ALGORITHMS.md §1, Recovery Modes):
-
-| Component    | Weight | Direction                     |
-| ------------ | ------ | ----------------------------- |
-| HRV (SDNN)   | 0.55   | Higher = better               |
-| RHR          | 0.20   | Lower = better                |
-| Sleep        | 0.15   | Higher = better               |
-| Resp Rate    | 0.05   | Lower = better (collected since 2026-09-06) |
-| Prev Strain  | 0.05   | Lower 7-day avg = better      |
-
-### Sleep Quality Weights
-
-| Component    | Weight |
-| ------------ | ------ |
-| Duration     | 0.50   |
-| Efficiency   | 0.20   |
-| Restorative  | 0.20   |
-| Consistency  | 0.10   |
-
-### Confidence Tiers
-
-- <3 observations → cold_start
-- 3–6 observations → low
-- 7–13 observations → medium
-- ≥14 observations → high
-
-### Schema Additions
-
-- `daily_health_summaries.respiratory_rate_bpm` (numeric, 0–100)
-- `daily_health_summaries.present_types` now includes `resp_rate`
-- `persist_health_sync` accepts `resp_rate` requests and persists `respiratory_rate_bpm`
-  (migration `20260906120000`); Edge contract `health_sync_v1` carries the type and key
-
-### Health Sync Semantics
-
-- Requested type codes: steps, active_energy, sleep, workouts, weight,
-  resting_heart_rate, hrv_sdnn, resp_rate.
-- Sleep attribution: consecutive sleep samples ≤ 60 min apart form one session, and the
-  session is attributed to the local day it ENDS (a 23:00→07:00 night lands whole on the
-  morning's row). All other metrics attribute by sample start day. Attribution is
-  client-side (`normalizeHealthSamples`); the Edge function performs no bucketing.
-- Sleep totals: `sleep_minutes` is the UNION of every asleep-category interval
-  (unspecified + Core + Deep + REM), and each stage column is the union within that
-  stage. A night can mix categories (a staged, scheduled stretch plus auto-detected
-  unspecified fragments), so a category preference discards measured minutes (fixed
-  2026-09-11: production stored 146 of 386 measured minutes) and a plain sum
-  double-counts overlapping sources. An awake-only night is `0`, not NULL — the
-  `health_sync_v1` contract couples the sleep type to a defined `sleep_minutes`, and the
-  server's 1–960 scoring gate reads 0 as absence.
-- Sync window: today−7 for regular syncs (8 dates), today−8 for the initial backfill
-  (9 dates) — wide enough that the fetch captures a full night whose start falls the
-  evening before the window's first date (HealthKit queries match by start instant).
-
-### Constraint Additions
-
-- `feature_snapshots.schema_version` IN ('1.0', '2.0')
-- `policy_evaluations.policy_version` IN ('daily-v1', 'eligibility-v1')
-- `daily_computed_metrics.schema_version` = '2.1'
-- RPC schema_version: `get_my_training_hub` 1.4, `get_my_daily_brief` 1.2 (since raised: hub 1.6
-  on 2026-10-03, adding plan dates, exercise muscles, completion source and `daily_load`)
-- `get_my_daily_brief` 1.7 (2026-10-04, `20261004130000`) adds, without changing any 1.6 field:
-  `recovery_previous` (yesterday's stored `daily_computed_metrics.recovery_score`); `plan` (the
-  active plan's `title`, `version_number`, `block_weeks` and `week_number`, weeks since
-  `effective_date`, else the approval date, from 1 and not capped); `week` (Monday to Sunday of
-  the requested date's week: `local_date`, `recovery` and `strain` from `daily_computed_metrics`,
-  today's from the live computation, `trained` when a session that day is `completed`, and
-  `planned` when the active plan has a workout on that weekday); and `today_session` (the
-  requested day's latest session that is not `abandoned`: its `state` and, per `exercise_order`,
-  the count of `completed` sets). The Today page draws its week, plan line and session strip from
-  these; nothing is derived on the phone
-- `get_my_daily_brief` 1.8 (2026-10-04, `20261004160000`) changes no field; `computed` gains
-  `scores.recovery_mode` (`night` or `morning`), `scores.recovery_settled`,
-  `scores.recovery_breakdown.check_in_z` and `.weights`, and `today_raw.hrv_scored_ms` and
-  `.resting_hr_scored_bpm`; `missing_components` may list `check_in`; `baselines` adds
-  `hrv_sleep_ms` and `hrv_morning_ms`; the resting-HR baseline folds through yesterday.
-  `daily_computed_metrics.schema_version` is '2.3', and a recomputed day now stamps it.
-  `persist_health_sync` and `health_sync_v1` accept `hrv_sleep_ms` and `hrv_morning_ms`
-  (0–1000, never without `hrv_value_ms`)

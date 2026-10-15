@@ -34,8 +34,10 @@ The private beta supports healthy adults aged 18 and over who:
 - use an iPhone and may use Apple Watch or other HealthKit-connected sources; and
 - want practical coaching without the price or scheduling constraints of a human trainer.
 
-The first and primary user is the owner during a five-to-six-month transformation. Friends and
-family may join later through a private TestFlight beta.
+The first and primary user is the owner during a five-to-six-month transformation. The audience is
+global (owner decision D5). A public waitlist on the Tracend website gathers people for a private
+TestFlight beta, which opens once all four phases of the coaching platform program are merged and
+device-checked (owner decision D7).
 
 ## 3. Core Experience
 
@@ -54,15 +56,16 @@ Tracend operates a continuous coaching loop:
 8. **Learn:** retain confirmed preferences, accepted decisions, outcomes, and longitudinal
    summaries.
 
-The user-facing Coach Room presents:
+Each daily decision has three parts, and the app shows each where the user acts on it:
 
-- **Training Coach:** today's training recommendation and relevant progression or recovery guidance;
-- **Nutrition Coach:** today's nutrition priority and adherence guidance; and
-- **Head Coach Decision:** one reconciled instruction, its evidence, confidence, missing data, and
+- **Training:** today's training recommendation and relevant progression or recovery guidance,
+  beside today's session;
+- **Nutrition:** today's nutrition priority and adherence guidance, in Nutrition; and
+- **Head Coach decision:** one reconciled instruction, its evidence, confidence, missing data, and
   any proposed changes.
 
 These are product perspectives within one controlled workflow, not autonomous agents negotiating
-with each other.
+with each other. Direct questions go to one unified Coach, not to separate personas.
 
 ## 4. Product Principles
 
@@ -150,7 +153,7 @@ The MVP is an iOS-first, private TestFlight product with:
 - meal-photo analysis followed by editing and confirmation;
 - manual weight and body measurements;
 - private standardized progress photos and cautious comparison;
-- daily Coach Room decisions;
+- daily coaching decisions;
 - evidence-backed, approval-gated plan changes; and
 - weekly progress reviews and decision history.
 

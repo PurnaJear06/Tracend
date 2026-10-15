@@ -1,128 +1,146 @@
 # Tracend Cost Model
 
-## Qwen Reasoning Routing
-
-Routine chat and daily formatting use non-reasoning Qwen. High reasoning is reserved for weekly
-review and plan analysis, then followed by a bounded structured formatting request. Existing owner
-USD request/month guards apply to the combined token usage of both calls.
-
 **Status:** Authoritative MVP budget assumptions\
-**Pricing snapshot:** 2026-06-28, USD before tax and currency conversion\
+**Prices:** USD before tax and currency conversion. Each table states its date and source.\
 **Review cadence:** Before paid upgrade, TestFlight expansion, provider/model change, or material
 usage change
 
-Pricing changes over time. Verify the linked official pricing pages before committing spend.
+Pricing changes over time. Verify the linked official pricing pages before committing spend. Any
+paid add-on or provider change updates this document and [ARCHITECTURE.md](./ARCHITECTURE.md)
+before purchase.
 
-## 1. Recommended Cost Posture
+## 1. AI Providers and Per-Feature Costs Today
 
-- Develop locally with Supabase CLI and Docker-compatible runtime.
-- Use one ongoing Supabase Free hosted project for owner dogfooding and the first few friends/family
-  while quotas, manual backups, and possible inactivity pausing are acceptable. Free is a plan, not
-  a time-limited trial.
-- Upgrade to one Supabase Pro project only when reliable non-pausing availability, automated daily
-  backups, larger quotas, or beta scale justify it.
-- Do not purchase a second hosted staging project initially; use local Supabase and synthetic
-  fixtures.
-- Enable Supabase Spend Cap when on Pro, and enable AI-provider project budgets before beta
-  invitations on every Supabase plan.
-- Keep custom domains, PITR, read replicas, larger compute, dedicated IPv4, and external
-  observability add-ons outside MVP unless a measured need appears.
+Which feature uses which provider, and the settings that choose it, are in
+[AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md) §10.2. In production today:
 
-## 2. Supabase Platform Cost
+| Feature | Provider and model | Typical call | Estimated cost per call | Reservation ceiling |
+| --- | --- | --- | --- | ---: |
+| Coach chat question | DeepSeek V4.1 Flash | ~15K input + ~800 output tokens | about USD 0.0055 (peak) | 0.02 |
+| Daily decision | DeepSeek V4.1 Flash | not measured here | — | 0.01 |
+| Onboarding plan | DeepSeek V4.1 Flash | ~4K input + 2–3K output, plus 4–7K reasoning with thinking on | about USD 0.01 (thinking on); about 0.004 (off) | 0.05 |
+| Onboarding follow-up questions | DeepSeek V4.1 Flash | ~2K input + up to 4K output (mostly reasoning) | at most about USD 0.005 | 0.02 |
+| Meal photo | Groq `qwen/qwen3.8-27b` | ~1,340 input + up to 1,000 output | about USD 0.004 at the paid price | 0.01 |
+| Physique check (owner only) | Groq `qwen/qwen3.8-27b` | 3 photos × 2,048 + ~600 prompt input, up to 800 output | about USD 0.007 at the paid price | 0.03 |
 
-Official references:
-[Supabase billing](https://supabase.com/docs/guides/platform/billing-on-supabase),
-[billing FAQ](https://supabase.com/docs/guides/platform/billing-faq), and
-[cost controls](https://supabase.com/docs/guides/platform/cost-control).
+Weekly reviews are generated deterministically inside PostgreSQL and incur no model-token cost.
+Queue/Cron work stays bounded to one deduplicated weekly job per active user plus at most three
+attempts.
 
-### Free
+### DeepSeek (Coach chat, daily decision, onboarding)
 
-Base cost: **$0/month**.
+`https://api.deepseek.com/v1/chat/completions` (OpenAI-compatible, JSON output, thinking mode,
+1M-token context). DeepSeek retired V4 Flash on 2026-09-10; its name `deepseek-v4-flash` is
+temporarily routed to DeepSeek-V4.1-Flash, whose own name is `deepseek-flash`. The Edge code
+accepts both (`_shared/providers/deepseek_models.ts`).
 
-Current included limits relevant to Tracend:
+V4.1 Flash list prices from 04:00 UTC on 2026-09-10, in USD per million tokens:
 
-- two active free projects across organizations owned/administered by the user;
-- 500 MB database per project;
-- 1 GB Storage;
-- 5 GB egress;
-- 50,000 monthly active users; and
-- 500,000 Edge Function invocations.
+- Off-peak: 0.003 cache-hit input, 0.15 cache-miss input, 0.60 output.
+- Peak (weekdays 01:00–04:00 and 06:00–10:00 UTC, which is 06:30–09:30 and 11:30–15:30 IST):
+  0.006, 0.30, 1.20.
 
-This is technically sufficient for development, owner dogfooding, and a small active friends/family
-beta. Free projects with low activity over a seven-day period may be paused, and free projects
-should be backed up manually using `supabase db dump` plus a separate Storage export. A paused
-project can be resumed, but the interruption makes Free unsuitable once testers depend on continuous
-availability.
+Cost estimates use the peak cache-miss price (0.30 input, 1.20 output), so the budget stops never
+undercount. The real cost of a chat question is lower off-peak (about USD 0.0027) and much lower
+on a same-day follow-up that hits the cache.
 
-### Pro
+- **Onboarding plan:** reasoning is billed as output and recorded on its own in the audit event.
+  A repaired plan adds one non-thinking call (about USD 0.004). A provider without a known price
+  must set the cost secrets, or the rules plan is used.
+- **Follow-up questions:** asked once per set of answers. A claim stops overlapping requests from
+  paying twice, and skipping waits for the running call rather than starting the plan beside it.
 
-Base subscription: **$25/month per organization**.
+### Groq (meal photos, physique check)
 
-One default-size project is normally covered by the included **$10 compute credit**. Current
-relevant included usage is:
+Groq's paid list price for `qwen/qwen3.8-27b` is USD 0.80 input and 4.00 output per million
+tokens, fixed in `groq_meal_vision_provider.ts`. The key is on Groq's free tier (no card on file),
+so a request over the limit is refused rather than billed. Usage events still carry an estimate at
+the paid price, so the budget never undercounts if the key moves to a paid tier.
 
-- 8 GB database disk per project;
-- 100 GB Storage;
-- 250 GB egress;
-- 100,000 monthly active users; and
-- 2 million Edge Function invocations.
+- **Meal photos:** the binding free-tier limit is **1,000 output tokens per minute** for this
+  model (Groq's 429 on the owner's key, 2026-09-30). Groq refuses a request whose
+  `max_completion_tokens` exceeds it before generating anything, so the request asks for at most
+  1,000 and sends no reasoning options. About one photo per minute fits; a second photo within the
+  minute may be refused with `meal_vision_request_failed:429:rate_limit_exceeded`.
+- **Physique check:** one check uses about 7,600 of the free tier's 8,000 tokens a minute, so a
+  second check (or the text-only correction) within the minute may be refused (429
+  `physique_check_busy`). Recorded as `progress_vision`.
+- Gemini paid-tier Flash was the more accurate meal alternative but needs a billing-enabled
+  project. DeepSeek image input was ruled out because DeepSeek may train on inputs by default and
+  stores them in China.
 
-Additional default-size projects start at roughly **$10/month each** after the organization's
-compute credit. Therefore:
+### Rollback and prior providers
 
-- one Pro private-beta project: approximately **$25/month**;
-- two default-size hosted projects in one Pro organization: approximately **$35/month**; and
-- usage above quotas or optional add-ons: extra.
+- **No call is free by default.** An unset price uses the list price (DeepSeek peak 0.30/1.20,
+  Groq Coach 0.6/3, Gemini 1.5/9) in coach-decide as in coach-chat. A price set to 0 or below stops
+  the Coach provider, and Gemini meal photos refuse to run without both prices.
+- The Gemini Free tier is suitable only for synthetic evaluation data. Gemini paid-service routing
+  requires a billing-enabled project and data-terms review before it can process restricted data.
+- The AI gateway (`_shared/ai/models.ts`) prices every call from one table; a model without a
+  price has no route. Its rollback routes keep today's prices: DeepSeek at the peak rates above
+  (cache hits 0.006), Groq qwen3.8 and Gemini 3.5 Flash with cached tokens at the full input
+  price, since no cache discount is verified for them.
 
-The Pro Spend Cap covers many variable items, including Storage, egress, Edge Function invocations,
-database disk, and MAU. It does not cover explicitly selected compute/add-ons.
+## 2. Budget Stops in Code
 
-## 3. Apple Cost
+Every limit below is enforced server-side in SQL and counts every account. Source: migrations
+`20261009150000_ai_budget_reservations.sql` and `20261015120011_provider_neutral_ai.sql`, and
+`_shared/ai_budget.ts`.
 
-An Apple free developer account can test directly on the owner's device from Xcode, so early local
-development can remain free. The
-[Apple Developer Program](https://developer.apple.com/programs/whats-included/) currently costs
-**$99 per membership year**, or local currency where available. Paid membership is required for
-TestFlight distribution and the production Apple capabilities used by the beta.
+| Limit | Value | Where |
+| --- | --- | --- |
+| Monthly warning, per athlete | USD 1 (shown, not enforced) | `get_my_ai_budget_state` |
+| Monthly hard stop, per athlete | USD 2 | `reserve_ai_budget`, `reserve_ai_budget_v2`, `assert_owner_ai_budget` |
+| Daily requests, per athlete | 30, shared by Coach chat, daily decisions, meal photos, physique checks and onboarding | same |
+| Global monthly stop, all accounts | USD 10 | `private.ai_budget_limits.global_monthly_usd` |
 
-Equivalent monthly planning value: **$8.25/month**, but Apple bills annually.
+- **Daily decisions:** `prepare_daily_coaching` applies the same 30, counting only runs that
+  called an AI model. A daily decision with no place left falls back to the deterministic
+  provider, as without consent; the plan stays usable.
+- **Global stop:** stops every model call once the month's total across all accounts reaches it.
+  Change it from the SQL editor:
+  `update private.ai_budget_limits set global_monthly_usd = 20, updated_at = now();`
+  (allowed range above 0 and at most 1,000).
 
-## 4. AI API Cost Assumptions
+**Reservations.** Every model call first takes a place with `reserve_ai_budget` and gives it back
+with `settle_ai_budget` once its usage is recorded or no call was made.
 
-ChatGPT Pro/Plus does **not** include API usage; API calls are billed separately. Current reference
-pricing is on the [OpenAI API pricing page](https://openai.com/api/pricing/).
+- Open places count toward the limits at a per-purpose ceiling (the last column of the table in
+  §1) and as one request each, so parallel calls cannot all pass a check that only saw finished
+  calls.
+- A call is admitted only if its own ceiling still fits under each stop, so the USD 2 and global
+  stops are never crossed by an admitted call.
+- A place is left open on purpose whenever billing cannot be ruled out: a timeout, a dropped
+  connection or an unreadable answer with no usage reported (Coach chat, meal photos, physique
+  checks, onboarding), an unrecorded usage row, or a failed live daily decision. It then keeps
+  counting at its ceiling, so a failure can only overcount. Only a refusal (429) or an HTTP error
+  rules billing out.
+- **Route ceilings:** `reserve_ai_budget_v2(target_user_id, run_purpose, ceiling_usd)` takes the
+  per-call ceiling from the caller's route instead of the fixed per-purpose table, so a Haiku and
+  a Sonnet route of the same feature hold what each can cost. The ceiling must be at least
+  USD 0.001 and at most USD 0.50, and is rounded up to six decimals. The same stops apply. It also
+  accepts the gateway's feature names and stores them under today's purposes (`daily_decision` as
+  `daily_coaching`, `physique_vision` as `progress_vision`, `library_context` as `coach_chat`).
+  `AiBudget.reserve(purpose, ceilingUsd)` calls it; without a ceiling it calls
+  `reserve_ai_budget`. No feature passes a ceiling yet.
 
-For planning only, assume:
+**Failed calls count.** A meal photo whose answer is unusable still records its usage, and so does
+one whose candidates the database refuses. A failed Coach chat records the tokens of every attempt
+at the list price (`persist_failed_coach_chat_run_v2`), as does an answer that could not be
+stored. Every billed onboarding call counts, including empty or cut-off answers and the repair.
 
-- economical structured model for daily decisions;
-- stronger model only for onboarding, weekly review, or ambiguous conflicts;
-- compact feature snapshots rather than raw history;
-- one normal daily decision per active user;
-- one weekly review per active user;
-- up to one meal-image analysis per day for a highly engaged user;
-- bounded retries and no duplicate analysis; and
-- normalized/compressed images at the lowest evaluated detail that preserves accuracy.
+## 3. Planned: Claude in Phase 2
 
-Phase 7 initially generates weekly reviews deterministically inside PostgreSQL, so they incur no
-model-token cost. Queue/Cron work remains bounded to one deduplicated weekly job per active user
-plus at most three attempts. The stronger-model estimate below applies only if a later evaluated
-interpretation step is explicitly enabled.
+> **Planned, not live.** See the
+> [program plan](./plans/coaching-platform-2026-10/README.md) (D1, chunks A3–A7).
 
-At the 2026-06-28 standard rates, GPT-5.4 mini is listed at $0.75 per million input tokens and $4.50
-per million output tokens; GPT-5.4 is $2.50 input and $15 output per million tokens. A
-representative text-only month is inexpensive:
-
-| Workload per user/month                   |         Illustrative tokens |   Approximate cost |
-| ----------------------------------------- | --------------------------: | -----------------: |
-| 30 daily decisions on mini                |  4k input + 700 output each |        about $0.19 |
-| 4 weekly reviews on stronger model        | 8k input + 1.2k output each |        about $0.15 |
-| onboarding, retries, occasional conflicts |                    variable | budget $0.10–$0.75 |
-
-DeepSeek V4.1 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
+Phase 2 moves every feature to Claude through the AI gateway: meal photos to Haiku 5.5, the
+physique check, onboarding plan and questions, and the daily decision to Sonnet 5.5, and Coach chat
+with a cache-friendly prompt (its model is chosen in A6). The old routes stay available by settings
+for two weeks after cutover.
 
 **Claude list prices (2026-10-15,** [pricing page](https://platform.claude.com/docs/en/about-claude/pricing)**),**
-USD per million tokens. The AI gateway (`_shared/ai/models.ts`) prices every call from this
-table; a model without a price has no route.
+USD per million tokens. The gateway's price table (`_shared/ai/models.ts`) uses these values.
 
 | Model                                  | Input | 5-min cache write | Cache read | Output |
 | -------------------------------------- | ----: | ----------------: | ---------: | -----: |
@@ -137,136 +155,83 @@ table; a model without a price has no route.
   (1-hour writes cost 2x input and are not used).
 - Thinking is billed as output on every provider. US-only inference (`inference_geo`) costs 1.1x
   and is not used.
-- Rollback routes keep their earlier prices: DeepSeek at the peak rates below (cache hits 0.006),
-  Groq qwen3.8 and Gemini 3.5 Flash with cached tokens at the full input price, since no cache
-  discount is verified for them.
 
-The Gemini Free tier is suitable only for synthetic evaluation data. Gemini paid-service routing
-requires billing-enabled project and data-terms review before it can process restricted data.
-Prior Gemini baseline: `gemini-3.5-flash` at USD 1.50/1M input and USD 9.00/1M output tokens
-(2026-07-04 paid standard rate). Coach used medium thinking, meal extraction used low, high was
-reserved for named difficult review fixtures. A USD 3 per-owner monthly warning and USD 5 hard stop
-were enforced server-side, with 30 Coach requests per owner/day. Lite models were not production
-routes.
+**Illustrative per-call costs**, using today's token sizes from §1, uncached. Thinking tokens and
+image token counts on Claude are not measured yet; the Phase 2 evals measure them.
 
-**Prior owner test (ADR 0006, 2026-07-11, superseded 2026-07-26):** Groq Qwen `qwen/qwen3.6-27b`
-was used server-side for owner dogfooding through beta. Now superseded pending evaluation.
+| Call | Haiku 5.5 | Sonnet 5.5 |
+| --- | ---: | ---: |
+| Coach chat question (15K input + 800 output) | about USD 0.002 | about USD 0.038 |
+| Onboarding plan (4K input + 2–3K output, before thinking) | — | about USD 0.03–0.04 |
+| Onboarding questions (2K input + up to 4K output) | — | at most about USD 0.044 |
+| Each 1K thinking tokens | USD 0.0005 | USD 0.01 |
 
-**Owner AI budget (2026-09-29):** USD 1 monthly warning, USD 2 server-side hard stop, and 30
-requests per owner/day shared by Coach chat, daily decisions and meal photos
-(`assert_owner_ai_budget`, `get_my_ai_budget_state`). The daily-decision preparation
-(`prepare_daily_coaching`) applies the same 30, counting only runs that called an AI model
-(2026-09-30). The daily count was 10, which about 10 meal
-photos a day would use up; the USD 2 stop still bounds spend.
+Consequences for the stops in §2:
 
-**Budget reservations (2026-10-09):** every model call first takes a place with
-`reserve_ai_budget` and gives it back with `settle_ai_budget` once its usage is recorded or no
-call was made (`_shared/ai_budget.ts`). Open places count toward the limits at a per-purpose
-ceiling (coach chat USD 0.02, daily decision 0.01, meal photo 0.01, physique check 0.03,
-onboarding plan or questions 0.05) and as one request each, so parallel calls can no longer all
-pass a check that only saw finished calls. A call is admitted only if its own ceiling still fits
-under each stop, so the USD 2 and global stops are never crossed by an admitted call. A place is
-left open on purpose whenever billing cannot be ruled out: a timeout, a dropped connection or an
-unreadable answer with no usage reported (Coach chat, meal photos, physique checks, onboarding),
-an unrecorded usage row, or a failed live daily decision. It then keeps counting at its ceiling,
-so a failure can only overcount. Only a refusal (429) or an HTTP error rules billing out.
-- **Route ceilings (2026-10-15, coaching platform A1):** `reserve_ai_budget_v2(target_user_id,
-  run_purpose, ceiling_usd)` takes the per-call ceiling from the caller's route instead of the fixed
-  per-purpose table, so a Haiku and a Sonnet route of the same feature hold what each can cost. The
-  ceiling must be at least USD 0.001 and at most USD 0.50, and is rounded up to the reservation's six
-  decimals.
-  The athlete's USD 2 month, 30 calls a day and the global stop apply exactly as in
-  `reserve_ai_budget`, which is unchanged. It also accepts the gateway's feature names and stores
-  them under today's purposes (`daily_decision` as `daily_coaching`, `physique_vision` as
-  `progress_vision`, `library_context` as `coach_chat`). `AiBudget.reserve(purpose, ceilingUsd)` in
-  `_shared/ai_budget.ts` calls it; without a ceiling it calls the original function.
-- **Global stop:** `private.ai_budget_limits.global_monthly_usd` (USD 10 at launch) stops every
-  model call once the month's total across all accounts reaches it. Change it from the SQL editor:
-  `update private.ai_budget_limits set global_monthly_usd = 20, updated_at = now();`.
-- **Failed calls count:** a meal photo whose answer is unusable still records its usage, and so
-  does one whose candidates the database refuses. A failed Coach chat records the tokens of every
-  attempt at the list price (`persist_failed_coach_chat_run_v2`), as does an answer that could not
-  be stored.
-- **No call is free by default:** an unset price uses the list price (DeepSeek peak 0.30/1.20,
-  Groq Coach 0.6/3, Gemini 1.5/9), in coach-decide as in coach-chat; before this, coach-decide
-  logged DeepSeek decisions at USD 0. A price set to 0 or below stops the Coach provider, and
-  Gemini meal photos refuse to run without both prices.
-- The daily decision with no place left falls back to the deterministic provider, as without
-  consent; the plan stays usable.
+- Several Sonnet calls cost more than today's fixed per-purpose ceilings (Coach chat 0.02,
+  onboarding questions 0.02, onboarding plan 0.05 with thinking). Phase 2 routes therefore reserve
+  with their own ceiling through `reserve_ai_budget_v2`.
+- At about USD 0.038 a question, the USD 2 monthly stop allows roughly 50 uncached Sonnet chat
+  questions per athlete, and the USD 10 global stop roughly 260 across all accounts. Caching the
+  stable athlete file lowers the input cost.
+- The program plan sets no new budget limits for Phase 2. Any change to the USD 2, 30-a-day or
+  global stops is an owner decision.
 
-**Physique check (2026-10, owner-only):** the same Groq model with three photos at 2,048 input
-tokens each plus about 600 prompt tokens, and up to 800 output tokens: about USD 0.007 per check
-at the paid price, recorded as `progress_vision` and counted toward the 30-a-day limit. One check
-uses about 7,600 of the free tier's 8,000 tokens a minute, so a second check (or the text-only
-correction) within the minute may be refused (429 `physique_check_busy`).
+## 4. Infrastructure Costs
 
-**Meal photos (2026-09-29):** Groq `qwen/qwen3.8-27b` (`MEAL_VISION_PROVIDER=groq`), the named
-successor of `qwen/qwen3.6-27b`, which Groq shut down on 2026-09-14. On Groq's free tier (no card
-on file) a request over the limit is refused rather than billed. The binding free-tier limit is
-**1,000 output tokens per minute** for this model (Groq's 429 on the owner's key, 2026-09-30). Groq
-refuses a request whose `max_completion_tokens` exceeds it before generating anything, so the
-request asks for at most 1,000 and leaves out the qwen3.6 route's reasoning options (with them the
-same request was refused; without them it succeeded). A test photo used about 1,340 input tokens.
-About one photo per minute fits; a second photo within the minute may be refused with
-`meal_vision_request_failed:429:rate_limit_exceeded`. Usage events still carry an estimate at Groq's paid
-qwen3.8 price (USD 0.80 input, 4.00 output per million tokens, fixed in
-`groq_meal_vision_provider.ts`), about USD 0.004 per photo, so the budget never undercounts if the
-key moves to a paid tier. Gemini paid-tier Flash was the
-more accurate alternative but needs a billing-enabled project; DeepSeek image input was ruled out
-because DeepSeek may train on inputs by default and stores them in China.
+### Recommended cost posture
 
-**Active production provider (2026-07-26):** DeepSeek via `COACH_MODEL_PROVIDER=deepseek`, at
-`https://api.deepseek.com/v1/chat/completions` (OpenAI-compatible, JSON output, thinking mode,
-1M-token context).
-- **Model:** DeepSeek retired V4 Flash on 2026-09-10. Its name `deepseek-v4-flash` is temporarily
-  routed to DeepSeek-V4.1-Flash, whose own name is `deepseek-flash`. The Edge code accepts both
-  (`_shared/providers/deepseek_models.ts`).
-- **V4.1 Flash list prices** from 04:00 UTC on 2026-09-10, in USD per million tokens:
-  - Off-peak: 0.003 cache-hit input, 0.15 cache-miss input, 0.60 output.
-  - Peak (weekdays 01:00–04:00 and 06:00–10:00 UTC, which is 06:30–09:30 and 11:30–15:30 IST):
-    0.006, 0.30, 1.20.
-- **Cost estimates** use the peak cache-miss price (0.30 input, 1.20 output), so the USD 1 warning
-  and USD 2 hard stop never undercount. Until 2026-09-28 they used the retired V4 Flash rate (0.14
-  input, 0.28 output), which undercounted V4.1 Flash output by up to 4.3×.
-- **Onboarding plan** (2026-10, `ONBOARDING_PLAN_*`):
-  - about 4K input and 2–3K output tokens, roughly USD 0.004 at the peak price, with thinking off;
-  - with thinking on (the default since 2026-10), reasoning adds roughly 4–7K output tokens, so
-    about USD 0.01 a plan; reasoning is billed as output and recorded on its own in the audit event;
-  - a repaired plan adds one non-thinking call (about USD 0.004);
-  - it is recorded in `ai_usage_events` as `onboarding_plan` and counts toward the USD 2 stop and
-    the 30-a-day limit;
-  - a provider without a known price must set the cost secrets, or the rules plan is used.
-- **Coach follow-up questions** (2026-10, before the onboarding plan): one call of about 2K input
-  and up to 4K output tokens (mostly reasoning), at most about USD 0.005; recorded as
-  `onboarding_questions`, counted toward the same limits, and asked once per set of answers (a
-  claim stops overlapping requests from paying twice; skipping waits for the running call rather
-  than starting the plan beside it).
-- **Per question:** a v8 question (~15K input + ~800 output tokens) is estimated at about
-  USD 0.0055. The real cost is lower off-peak (about USD 0.0027) and much lower on a same-day
-  follow-up that hits the cache.
+- Develop locally with Supabase CLI and Docker-compatible runtime.
+- Use one ongoing Supabase Free hosted project for owner dogfooding and the first few friends/family
+  while quotas, manual backups, and possible inactivity pausing are acceptable. Free is a plan, not
+  a time-limited trial.
+- Upgrade to one Supabase Pro project only when reliable non-pausing availability, automated daily
+  backups, larger quotas, or beta scale justify it.
+- Do not purchase a second hosted staging project initially; use local Supabase and synthetic
+  fixtures.
+- Enable Supabase Spend Cap when on Pro, and enable AI-provider project budgets before beta
+  invitations on every Supabase plan.
+- Keep custom domains, PITR, read replicas, larger compute, dedicated IPv4, and external
+  observability add-ons outside MVP unless a measured need appears.
 
-## 5. Expected Monthly Scenarios
+### Services
 
-| Stage                         | Supabase | AI planning envelope |                 Apple |            Expected cash cost |
-| ----------------------------- | -------: | -------------------: | --------------------: | ----------------------------: |
-| Local development             |       $0 |                $0–$5 | $0 until distribution |               **$0–$5/month** |
-| Owner TestFlight on Free      |       $0 |                $1–$5 |              $99/year |    **$1–$5/month + $99/year** |
-| Up to 10 active users on Free |       $0 |              $10–$40 |              $99/year |  **$10–$40/month + $99/year** |
-| 10 active users on Pro        |      $25 |              $10–$40 |              $99/year |  **$35–$65/month + $99/year** |
-| 25 active users on Pro        |      $25 |             $25–$100 |              $99/year | **$50–$125/month + $99/year** |
+| Service | Use | Cost |
+| --- | --- | --- |
+| Supabase | Database, Auth, Storage, Edge Functions (production project `qsfzzsjenopqqqhvpyaw`) | Free USD 0; Pro USD 25/month (below) |
+| Supabase `gte-small` embeddings | Research library (D4): 384-dimension embeddings run inside Edge Functions, stored with pgvector | No separate AI provider; counts as Edge Function use and database size. Tables exist (E1); ingestion is planned (E2). |
+| Apple Developer Program | TestFlight and production Apple capabilities | USD 99 per membership year (about USD 8.25/month). Today the app is signed by a free team. |
+| Cloudflare Pages | Website `tracend.pages.dev`, published by `site-deploy.yml` | Free |
+| Cloudflare Turnstile | Bot check on the waitlist form | No paid plan used |
+| Gmail SMTP | Waitlist emails (`_shared/smtp.ts`, `smtp.gmail.com`, port 465) | A Gmail account; about 500 messages a day. A custom domain moves this to a transactional provider. |
+| GitHub | Code, Actions CI and deploys; encrypted backups in a private repository | The main repository is public; no paid plan recorded |
 
-Monthly-equivalent totals including the annual Apple fee are approximately:
+### Supabase
 
-- owner on Free: **$9–$13/month equivalent**;
-- 10 active users on Free: **$18–$48/month equivalent**;
-- 10 active users on Pro: **$43–$73/month equivalent**; and
-- 25 active users: **$58–$133/month equivalent**.
+Official references:
+[Supabase billing](https://supabase.com/docs/guides/platform/billing-on-supabase),
+[billing FAQ](https://supabase.com/docs/guides/platform/billing-faq), and
+[cost controls](https://supabase.com/docs/guides/platform/cost-control). Limits below are from the
+2026-06-28 snapshot.
 
-For this private beta, Supabase compute, database, Storage, egress, Auth, and Edge Function use may
-remain inside Free limits at first and should remain inside one Pro project's included quotas later.
-AI image analysis is the main variable cost.
+**Free: $0/month.** Two active free projects across organizations owned/administered by the user;
+500 MB database per project; 1 GB Storage; 5 GB egress; 50,000 monthly active users; and 500,000
+Edge Function invocations. This is technically sufficient for development, owner dogfooding, and a
+small active friends/family beta. Free projects with low activity over a seven-day period may be
+paused, and free projects should be backed up manually using `supabase db dump` plus a separate
+Storage export. A paused project can be resumed, but the interruption makes Free unsuitable once
+testers depend on continuous availability.
 
-## 6. Storage Estimate
+**Pro: $25/month per organization.** One default-size project is normally covered by the included
+**$10 compute credit**. Included usage: 8 GB database disk per project; 100 GB Storage; 250 GB
+egress; 100,000 monthly active users; and 2 million Edge Function invocations. Additional
+default-size projects start at roughly **$10/month each** after the organization's compute credit:
+one Pro project is about **$25/month**, two default-size projects about **$35/month**, and usage
+above quotas or optional add-ons is extra. The Pro Spend Cap covers many variable items, including
+Storage, egress, Edge Function invocations, database disk, and MAU. It does not cover explicitly
+selected compute/add-ons.
+
+### Storage estimate
 
 Use compressed uploads and retention from [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md).
 
@@ -276,11 +241,27 @@ Illustrative 10-user beta:
 - meal photos retained for 30 days: 1 photo/day × 0.5 MB × 10 users × 30 days ≈ 150 MB; and
 - exports, thumbnails, and overhead: maintain a monitored buffer.
 
-This fits under the current 1 GB Free Storage allowance but uses roughly half of it before overhead,
-exports, or larger photos. It remains far below the current 100 GB Pro allowance. Monitor Free
-Storage and database size weekly; actual measurements replace estimates once uploads exist.
+This fits under the 1 GB Free Storage allowance but uses roughly half of it before overhead,
+exports, or larger photos. It remains far below the 100 GB Pro allowance. Monitor Free Storage and
+database size weekly; actual measurements replace estimates once uploads exist.
 
-## 7. Required Cost Controls
+### Expected monthly scenarios
+
+AI spend is capped by the global stop (USD 10 a month today, §2), whatever the number of users.
+
+| Stage                         | Supabase |    AI (capped) |                 Apple |                 Expected cash cost |
+| ----------------------------- | -------: | -------------: | --------------------: | ---------------------------------: |
+| Local development             |       $0 |          $0–$5 | $0 until distribution |                    **$0–$5/month** |
+| Owner TestFlight on Free      |       $0 |          $1–$5 |              $99/year |         **$1–$5/month + $99/year** |
+| Up to 10 active users on Free |       $0 |    up to $10   |              $99/year |      **up to $10/month + $99/year** |
+| 10–25 active users on Pro     |      $25 |    up to $10   |              $99/year | **$25–$35/month + $99/year**       |
+
+Raising the global stop raises the AI column by the same amount. For this private beta, Supabase
+compute, database, Storage, egress, Auth, and Edge Function use may remain inside Free limits at
+first and should remain inside one Pro project's included quotas later. AI calls, especially image
+analysis, are the main variable cost.
+
+## 5. Required Cost Controls
 
 - While on Free: weekly logical database dump, separate Storage export/inventory, pause-warning
   email monitoring, and 70% quota alerts/checks.
@@ -298,7 +279,7 @@ Storage and database size weekly; actual measurements replace estimates once upl
 - One open encrypted export per owner, three downloads, and seven-day retention; the existing daily
   retention call performs cleanup without another schedule.
 
-## 8. Upgrade Triggers
+## 6. Upgrade Triggers
 
 Increase spend only when metrics justify it:
 
@@ -307,6 +288,3 @@ Increase spend only when metrics justify it:
 - a second hosted environment is required for safe release operations;
 - AI quality evaluation proves a more expensive model materially improves safety/usefulness; or
 - beta growth makes manual monitoring insufficient.
-
-Any paid add-on or provider change updates this document and [ARCHITECTURE.md](./ARCHITECTURE.md)
-before purchase.

@@ -1,320 +1,156 @@
 # Tracend Implementation Roadmap
 
-## Personal Coaching System Sequence
-
-Deliver Workout Truth Repair, HealthKit reconciliation, Coach Context v2, Qwen weekly reasoning,
-approval-gated plan evolution, and owner-device dogfooding in that order. RAG over user data
-remains deferred pending measured structured-retrieval failure; the research library of open
-sources (decision D3) is in scope.
-
 **Status:** Execution order for the private-beta MVP\
+**As of:** 2026-10-15\
 **Constraint:** This roadmap does not expand [PRD.md](./PRD.md)\
-**Backend:** Supabase Auth, PostgreSQL, Storage, Edge Functions, Queues, and Cron **Coordination:**
-Current cross-chat state lives in [PROGRESS_CONTEXT.md](./PROGRESS_CONTEXT.md). Completed phase plans
-and superseded handoffs live under [`docs/archive/`](./archive/) and are not active instructions.
+**Program authority:** [`docs/plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md)
+holds the phases, chunks, contracts, file owners and board status. This roadmap summarises it. If
+they disagree, stop and report the conflict; do not choose silently.\
+**Coordination:** Live state is in [PROGRESS_CONTEXT.md](./PROGRESS_CONTEXT.md) and the
+per-stream files in [`docs/handoff/`](./handoff/). Completed phase plans and superseded handoffs
+live under [`docs/archive/`](./archive/) and are not active instructions.
 
 Build complete vertical slices instead of every screen, table, or AI component separately.
 
-## 1. Decisions Before Scaffolding
+## 1. Where We Are
 
-- minimum iOS version and device matrix;
-- Flutter/Dart and Supabase CLI version pinning;
-- app identifier, Apple team, and TestFlight environments;
-- Supabase project region nearest initial users — resolved: Southeast Asia (Singapore),
-  `ap-southeast-1`;
-- Free-first backup/export schedule and Pro upgrade triggers from [COST_MODEL.md](./COST_MODEL.md);
-- initial AI model candidates and provider budget controls;
-- licensed food catalog, region coverage, attribution, updates, and manual fallback;
-- photo retention defaults within [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md); and
-- custom-font license, size, Dynamic Type, and offline viability.
+Tracend is an owner-only private beta on the owner's iPhone. Production Auth sign-ups are switched
+off on top of an invite-only trigger. It is not approved for public production.
 
-Use short architecture decision records only for expensive-to-reverse choices.
+**July 2026: the MVP foundation.** The first roadmap's eight phases were built and deployed to
+the Singapore Supabase project in early July, with owner-device checks along the way: the Flutter
+and Supabase foundation, owner email/password auth and onboarding with explicit plan approval,
+workout logging and check-ins, HealthKit summaries, controlled coaching with a mock provider,
+manual meal logging with editable candidates, progress measurements and private photos, the weekly
+review, and privacy export, deletion and retention. A production rebuild followed (daily brief,
+training hub, persistent Coach threads, versioned meal schedules), then Coach context v4/v5,
+continuity memory and a cross-layer stability pass (Sentry, backup and rollback scripts,
+`health-check`, auth settings). DeepSeek became the live Coach provider on 2026-07-26 (ADR 0011).
+The deterministic feature engine (ADR 0010) merged in August.
 
-## 2. Phase 1 — Supabase Foundation and UI Shell
+**September 2026: correctness and release safety.** Baseline dynamics, AI-context honesty and an
+independent reference oracle for the scores; sleep aggregation fixes; the release foundation
+(`deploy.yml` with a CI gate, dry-run, encrypted backup and isolated restore drill); and the Coach
+chat reliability work (FLUTTER-8): every question gets the same full athlete file (v8), a labeled
+data summary replaces a failed reply, and the app reopens the last conversation. Functions deploy
+one at a time and each is checked live against the commit. AI coaching consent, meal-photo AI on
+Groq, and Coach calculators followed.
 
-Deliver:
+**October 2026 (1–14): product depth.** UI polish, then the owner-chosen graphite and lime
+redesign of every screen and a rebuilt Today with two recovery modes. Onboarding now builds an
+AI-proposed plan that deterministic code validates, with coach intake questions and an owner-only
+physique check. A five-PR security hardening pass (2026-10-09) added invite-only sign-ups,
+Keychain session storage and SHA-pinned workflow actions. Backups moved to a private repository.
+The public website and double opt-in waitlist launched on Cloudflare Pages (2026-10-13).
 
-- Flutter iOS scaffold with `supabase_flutter` and environment-specific project configuration;
-- Supabase CLI local project using a Docker-compatible runtime;
-- migration structure, generated database types, seed fixtures, and RLS test harness;
-- Auth/Data API/RPC/Edge Function client boundaries;
-- local mocks for Apple, HealthKit, Storage, Queue, and AI provider behavior;
-- semantic themes, typography, icons, navigation shell, and component gallery;
-- CI for formatting, analysis, tests, migration lint, RLS tests, Edge Functions, and Flutter build;
-  and
-- `AGENTS.md` containing verified commands and architecture rules.
+**2026-10-15: coaching platform program, Iteration 1.** The owner approved the program, and
+Phase 0 and Phase 1 merged the same day (section 2). The restore drill now also compares
+privileges and RLS flags with the migrations, and account deletion removes invite and waitlist
+rows.
 
-Exit gate: a clean checkout starts the local Supabase stack and Flutter app; no secret/service-role
-key appears in the client; design/accessibility smoke tests pass.
+## 2. Current Program: Coaching Platform (October 2026)
 
-## 3. Phase 2 — Supabase Auth, Onboarding, and Approval
+The plan is the single source of truth for phases, chunks, contracts, migration codes and file
+owners. Phases run in strict order; chunks inside a phase run in parallel. Its goals: one
+provider-neutral AI gateway (Claude now, any provider later by settings), coach-grade
+deterministic training rules, per-set timing and Apple Watch heart rate, a same-day re-plan
+approved by the athlete, a research library behind Coach answers, widgets and a workout Live
+Activity, and regional modules for a global audience. Rules decide every number; AI explains,
+proposes and words.
 
-`Configured Supabase Auth → eligibility/consent → onboarding → deterministic snapshot → mocked proposal → explicit approval → transactional activation`
+**Phase 0 (P0): done and live (#102).** The plan, contracts and the migration-order CI check.
 
-Owner development uses the ADR 0002 email/password mode until Apple Developer Program capabilities
-are available. Sign in with Apple remains the external private-beta route and must use the same
-downstream identity and session contracts.
+**Phase 1: done.** Every chunk is merged:
 
-Start with a mocked provider response using the final schema. Implement `auth.users` linkage,
-`user_accounts`, Account/profile states, RLS, consent, versioning, transactional RPC, audit, and
-cross-user tests before live AI.
+- B0 (#105, live): the mock decision obeys the policy; the rules plan ranks exercises by equipment
+  and experience.
+- A1 (#103, live): provider-neutral SQL, consent v2 and budget v2.
+- A2 (#106, live): the gateway module with Claude, OpenAI-compatible and Gemini adapters. No
+  feature uses it yet.
+- C1 (#104, live): set start and end, actual rest, reps left, and workout events.
+- D0 (#112, merged; build 395 installed): the `TracendWidgets` extension and the rest-timer Live
+  Activity countdown. The owner's Lock Screen and Dynamic Island check is pending.
+- E1 (#109, live): pgvector, library tables and `search_library_v1`.
+- W1 (#108, merged): site copy and privacy policy fixes and the TestFlight checklist. The site
+  publish waits for the owner to set the `CONTACT_EMAIL` repository variable.
+- U1 (#107, live): the glass tab bar. The owner did not like it, so a U2 design pass comes next,
+  with a prototype first.
 
-Exit gate: two isolated users complete both onboarding paths; anonymous/cross-user access fails;
-invalid output cannot activate a plan; exactly one approved version is active.
+**Phase 2: next.** Move every AI feature onto the gateway and Anthropic, and build on the Phase 1
+workout data:
 
-**Implementation status (2026-07-01):** implemented and locally verified with owner email/password
-auth, both onboarding paths, autosave, deterministic mock proposal generation, explicit response
-RPC, version activation, audit, and 39 pgTAP checks. Both Phase 2 migrations and
-`onboarding-propose-plan` version 1 are deployed to the linked hosted project. Physical-iPhone
-runtime verification remains before this phase is marked complete.
+- A3–A6: meal photo on Haiku and physique on Sonnet; onboarding plan and questions, the daily
+  decision, and Coach chat on Sonnet, with a cache-friendly Coach prompt.
+- A7: notices and app wording per D11 (no model names; remove DeepSeek, Groq and Qwen
+  everywhere), evals, docs and the cutover runbook.
+- D1: Live Activity buttons (Done, Skip, +30s). C2: a native heart-rate reader and per-set
+  summaries. B1: catalog v2 and coaching-standard rule data.
 
-## 4. Phase 3 — Workout and Check-In
+**Phase 3.** Templates by goal, days and experience (B2); progression from the sets actually
+logged, with targets on Train (B3); a screening gate (B6); a heart-rate profile, zones, recovery
+and sleeping heart rate in shadow mode (C3); Today and Lock Screen widgets (D2); library
+ingestion of the first 30 sources (E2) and the library inside Coach chat (E3).
 
-Deliver approved-plan reads under RLS, offline set logging, local autosave, idempotent sync,
-completion/amendment RPC, check-in, deterministic features, and Today states using fixture
-decisions.
+**Phase 4.** The same-day readiness adjustment with one-tap approval (B4); deloads, cardio dosing,
+joint rules, a pain check and red flags (B5); the watch-workout prompt and load signals (C4);
+regional modules (E4); and plan explanations that cite sources (E5).
 
-Exit gate: a session survives interruption/offline use without lost, duplicated, or cross-user sets.
+**After Phase 4.** The beta waits until all four phases are merged and device-checked; there is
+no fixed date (D7). D11 (no model names in anything the athlete or the public reads) is a beta exit
+criterion. Health data must not go to DeepSeek once external testers join, so the Phase 2 cutover
+moves every feature to Anthropic before the external TestFlight group opens.
 
-**Implementation status (2026-07-01):** the first complete local slice is implemented: approved-plan
-workout expansion/read, local set autosave, idempotent start/sync, transactional completion,
-immutable completed sessions, revisioned check-ins, RLS, and 22 Phase 3 pgTAP checks. Flutter
-analysis and 24 tests pass. The migration is deployed and matches the linked hosted project.
-Physical-iPhone interruption/reconnection verification remains before this phase is complete.
+## 3. Standing Sequencing Rules
 
-## 5. Phase 4 — HealthKit Summaries
+- Follow the plan's board order: strict between phases, parallel inside a phase, and each chunk
+  waits for the chunks named in its "Waits for" column.
+- Deterministic first. Start a feature with the deterministic rules path or a mock provider that
+  uses the final schema; turn on a live model only after its evaluation passes and all of its
+  server-side secrets are set together. Model output never activates a plan, confirms a meal, or
+  writes a durable fact.
+- The active plan stays usable when AI, HealthKit, or media processing fails.
+- Migrations are forward-only and additive, and old app builds keep working. `deploy.yml` applies
+  migrations before it deploys functions. Install a Flutter change only from the merged `main`
+  commit, and only after the deploy has applied any migration it needs.
+- Change an Edge secret that only new code accepts after that code is confirmed live.
+- Physical-iPhone installation from merged `main` and the owner's device check are the release gate
+  for app changes.
+- Destructive tests (account deletion) run only on synthetic accounts, never on the owner's.
+- Stay on the Supabase Free plan until reliability or automated daily backups make Pro worth it; do
+  not upgrade just because code exists ([COST_MODEL.md](./COST_MODEL.md)).
+- Do not add NestJS, Railway, a separate API server, a separate vector database, autonomous agents,
+  LangGraph, Redis, microservices, medical-report analysis, Android, subscriptions, social
+  features, or public-store infrastructure. `pgvector` is allowed for the research library only
+  (decision D3, 2026-10-15; program E1–E5). RAG over user data stays deferred until structured
+  retrieval is measured to fail. [ARCHITECTURE.md](./ARCHITECTURE.md) controls adoption.
+- Keep the licensed food catalog, Sign in with Apple, and external beta distribution deferred until
+  their gates are met. Sign in with Apple is the planned external-beta route (ADR 0002).
 
-Add contextual permissions, `HealthDataSource`, normalized summaries, authenticated `health-sync`
-Edge Function, idempotency, provenance, freshness, partial/unknown states, and manual fallback.
+## 4. Next Actions
 
-Exit gate: malformed/duplicate/cross-user sync fails safely and Today works without HealthKit.
+1. Owner: set the `CONTACT_EMAIL` repository variable so the website publishes and deploys tag
+   releases again ([CI_CD_DEPLOYMENT.md](./CI_CD_DEPLOYMENT.md)).
+2. Owner: the D0 Lock Screen and Dynamic Island check on the installed build.
+3. U2: a design pass, prototype first, for the owner to choose from before any build.
+4. Phase 2 chunks A3–A7, D1, C2 and B1, as the plan's board and chunk briefs define them.
 
-**Implementation status (2026-07-02): complete.** Implemented, locally verified, deployed to the
-linked hosted project, and exercised on the owner's physical iPhone. Flutter includes the read-only
-HealthKit adapter, deterministic daily normalization, Today/Account connection states, and manual
-fallback. The forward-only migration, service-only persistence RPC, authenticated Edge Function,
-RLS, validation, idempotency, and cross-user tests pass locally. Migration `20260701140000` matches
-local and remote, and `health-sync` version 1 is ACTIVE. The signed hosted-config build requested
-permission in context and completed authenticated partial sync: seven daily summaries accepted, none
-rejected. Today and Account reflect the same shared health status. Real-device revocation remains a
-non-blocking regression check.
+## 5. Decision Records
 
-**Readback correction (2026-07-04): complete locally.** Today now reads the stored daily summaries
-into dated evidence cards and real sleep/step trends, while partial status names categories found
-and absent without claiming denial. The Train placeholder performance curve and fictional
-week/schedule values are removed; the active plan is selected explicitly and today prefers its
-matching weekday. Device refresh/readback QA remains.
+Short records for choices that are expensive to reverse live in [`docs/adr/`](./adr/):
 
-## 6. Phase 5 — Controlled Coaching
-
-Implement Edge Function workflow: snapshot → deterministic policy → bounded context → one provider
-call → validation → decision persistence. Add evaluation, per-user cost/rate controls, and the
-sanitized user-scoped AI usage summary before live decisions.
-
-Exit gate: provider failure leaves plans usable; safety fixtures pass 100%; each decision cites its
-snapshot; AI/provider keys stay in Edge Function secrets.
-
-**Implementation status (2026-07-02): local complete; deployment/device QA pending.** The
-mock-provider-first controlled workflow now creates immutable daily snapshots and deterministic
-policy, invokes one typed provider, validates the whole response, records success/failure, and
-persists an owner-readable decision. Forced RLS, idempotency, daily rate limits, escalation,
-sanitized usage, Today/Coach reads, and provider-failure fallback are implemented. Deno passes 16/16
-and its local pgTAP/Flutter gates pass. Migration `20260702090000` and `coach-decide` version 1 are
-hosted; owner iPhone QA passed.
-
-## 7. Phase 6 — Nutrition and Meals
-
-Implement targets, licensed catalog, manual meals, private Supabase Storage meal bucket, Storage
-RLS, vision queue, candidate editor, transactional confirmation, retention Cron, and deletion.
-
-Exit gate: unconfirmed AI never affects totals; failure permits manual logging; another user cannot
-list/read meal objects.
-
-**Start checkpoint (2026-07-02): local implementation authorized.** Begin with manual meal logging,
-confirmed deterministic totals, fixture candidate editing, and the private Storage/RLS foundation.
-Keep unconfirmed candidates out of totals. Licensed catalog selection, live image AI, hosted
-deployment, and physical-iPhone QA remain deferred until their explicit decisions are available.
-
-**Initial local slice verified (2026-07-02).** Manual logging, confirmed-only totals,
-sample-candidate selection/confirmation, private Storage/RLS foundation, and safe failure states
-pass 38/38 Flutter tests and 122/122 full pgTAP checks. The unsigned iOS device build passes at 18.5
-MB. Migration `20260702110000` is hosted; manual entry, sample confirmation, deterministic totals,
-and restoration passed owner-iPhone QA. Catalog, live vision, retention automation, deletion, and
-editable candidate values remain later Phase 6 work.
-
-**Corrections/deletion/retention local slice verified (2026-07-02).** Candidate names, servings, and
-nutrition values are editable before atomic confirmation; owned meals have explicit audited
-deletion; and a service-only retention worker claims due non-exempt media, removes private Storage
-bytes, then finalizes or retries metadata safely. Flutter passes 40/40, Deno 18/18, pgTAP 141/141,
-and the unsigned iOS device build passes at 18.5 MB. Migration `20260702130000` is hosted;
-`meal-media-retention` version 3 is ACTIVE, its dedicated secret is held in Edge Function secrets
-and Vault, and daily Cron is active at 02:15 UTC. The hosted worker returned HTTP 200 and
-unauthenticated access returned 401. A signed 19.2 MB build is installed/launched on the owner's
-iPhone; correction and deletion device QA remain pending. Live photo AI and licensed food-catalog
-selection remain deferred decisions.
-
-**Draft-resume correction (2026-07-02).** Owner-device review found candidate editing discoverable
-only during new sample analysis while an existing draft timeline card was inert. Draft cards now
-expose **Review & edit draft** and restore the candidate editor. Flutter passes 41/41 and analysis
-is clean. The replacement signed 19.2 MB build is installed and launched on iPhone; owner
-verification of the resumed draft remains pending.
-
-**Keyboard correction (2026-07-02).** Owner-device QA found no dismissal route after candidate entry
-on the iOS numeric keyboard. Candidate and manual forms now support explicit **Hide keyboard**,
-tap-outside dismissal, and drag dismissal. Flutter passes 42/42 and analysis is clean. The
-replacement signed 19.2 MB build is installed and launched on iPhone. Owner QA passed draft resume,
-candidate editing, keyboard dismissal, confirmation, deletion, totals, and session restoration.
-Phase 6 is complete for the approved manual/sample scope; live photo AI and licensed catalog remain
-explicitly deferred.
-
-## 8. Phase 7 — Progress and Weekly Review
-
-Implement measurements, private progress bucket, separate consent/RLS, standardized capture,
-analysis queue, confidence-qualified comparison, deterministic trends, and Cron-triggered weekly
-review.
-
-Exit gate: photo access is scoped and short-lived; AI output is never presented as measurement or
-diagnosis.
-
-**Local foundation verified (2026-07-02).** Migration `20260702170000` adds forced-RLS measurements,
-progress photo sets/poses, progress reviews, separate storage/AI consent types, a private progress
-bucket, an authenticated write RPC, and deterministic weight/waist deltas. Flutter adds honest
-empty/baseline/trend states, manual entry, accessible trend summaries, standardized capture
-guidance, and an editorial weekly-review preview. Flutter passes 46/46, Deno 18/18, pgTAP 163/163,
-analysis, and the unsigned iOS build. Real photo transfer/access/deletion, queues/Cron, and live
-progress-photo AI remain deferred beyond this foundation.
-
-**Hosted foundation deployed (2026-07-02).** The reviewed dry-run listed only `20260702170000`;
-deployment succeeded and local/remote histories match. A signed hosted-config 19.3 MB build was
-installed on the owner's iPhone. CLI launch succeeded after the device was unlocked; foundation
-interaction QA passed. Photo transfer, signed reads, queues/Cron, and live photo AI remain
-unavailable.
-
-Forward repair `20260702173000` is hosted and requires two distinct measurement dates before a trend
-is available. Repeated same-day entries cannot create a false trend, and no stored measurement rows
-are changed.
-
-**Owner-device foundation QA passed (2026-07-02).** The hosted signed build successfully saves and
-restores measurements and exposes the intended baseline, weekly-review, and private-photo guidance
-states on the owner's iPhone.
-
-**Private media slice hosted (2026-07-02).** Migration `20260702200000` adds consent-gated set
-creation, upload-verified pose registration, completion, and idempotent deletion. Flutter adds
-guided camera capture, partial-set recovery, 60-second private viewing, and destructive deletion.
-Flutter passes 46/46, pgTAP 171/171, analysis, and a signed 19.7 MB build. The build is installed
-and launched on the owner's iPhone; capture, view, deletion, and pose-prompt QA passed. Gemini is
-planned but not called.
-
-**Weekly review slice locally verified (2026-07-02).** Forward migration `20260702223000` adds
-durable `pgmq` jobs, daily deduplicating scheduling, five-minute consumption, deterministic
-immutable weekly snapshots/reviews, eligibility recheck, bounded retry/terminal failure, owner
-acknowledgement, and sanitized audit. Flutter replaces the preview with queued/ready/error/evidence
-states. Flutter passes 49/49, full pgTAP passes 200/200, analysis is clean, and the unsigned 18.9 MB
-iOS build passes. The reviewed migration is hosted and local/remote histories match. A signed 19 MB
-app is installed on the owner's iPhone; launch and interaction QA remain pending while the device is
-locked.
-
-**Weekly review device repair (2026-07-03).** The first owner request was rejected before PostgreSQL
-because the persisted access token had expired; the refresh token remained valid. Flutter now
-refreshes expired sessions during account restoration and immediately before review generation, with
-a bounded reauthentication message if recovery fails. Flutter passes 50/50, analysis is clean, and
-the signed 19 MB hosted build is installed/launched on the iPhone; the refreshed session was
-verified persisted without exposing token contents.
-
-## 9. Phase 8 — Free-Tier Dogfooding and Beta Hardening
-
-Complete export, deletion, retention, notification privacy, telemetry, cost caps, manual
-database/Storage backup procedure, incident rehearsal, and device/accessibility testing.
-
-Run owner dogfooding on local/Free Supabase first. Invite a few friends/family on Free only if usage
-stays within quota, backups are operating, and possible inactivity pausing/downtime is acceptable.
-Upgrade to Pro when reliability or automated daily backups become important; do not upgrade merely
-because code exists.
-
-**Notification privacy slice locally verified (2026-07-03).** Flutter and a narrow iOS method
-channel expose daily check-in and weekly-review reminders, request permission only on save, schedule
-locally, and use generic lock-screen copy. Migration `20260703090000` stores only owner-scoped
-toggles/coarse authorization plus append-only consent evidence. Flutter passes 51/51, analysis is
-clean, pgTAP passes 210/210, and no notification SDK was added. Hosted migration and signed device
-QA require explicit deployment approval. The reviewed migration is now hosted with local/remote
-parity. A signed 19 MB build is installed and launched on the owner's iPhone; reminder interaction
-QA found that the UI could reset when iOS returned no pending requests after reopen. The client now
-reconciles the durable server preference into authorized iOS scheduling. Flutter passes 53/53; the
-hosted-config replacement is signed with the active Gmail development identity and
-installed/launched on iPhone for reopen QA. A second owner failure showed pending requests cannot
-serve as local preference storage. Native booleans now persist independently, repair delivery
-requests after reopen, and surface scheduling errors; the physical-device build and Flutter 53/53
-pass. The hosted-config replacement is signed, installed, and launched for final reopen QA.
-
-**Phase 8 privacy and operations complete (2026-07-03).** Owner QA confirms notification choices
-survive force-close/reopen. Forward migrations `20260703150000` and `20260703170000` add forced-RLS
-export/deletion state, opaque queues, recent-auth gates, private export Storage, bounded downloads,
-retryable retention, and minimal deletion receipts. `privacy-export` creates a media-inclusive
-readable ZIP encrypted with a non-persisted password-derived AES-256-GCM key;
-`privacy-delete-account` removes Storage before Auth deletion. Both migrations/functions are hosted,
-the existing daily worker handles export cleanup, pgTAP passes 236/236, Deno passes 22/22, and
-hosted synthetic export/decrypt/delete QA passes. `BETA_OPERATIONS.md` records Free backup,
-recovery, and incident procedures. Destructive device QA remains synthetic-only by design.
-
-**Post-Phase-8 provider readiness (2026-07-03).** The server-only Gemini structured-output adapter
-is wired behind environment selection, an off-by- default kill switch, and an explicit paid-service
-data-terms gate. Migration `20260703190000` stores validated provider/model/token/cost metadata
-through service-only RPCs; it and `coach-decide` version 7 are hosted. With no provider selection
-secret, mock remains active. Deno passes 28/28, pgTAP 247/247, Flutter 55/55, analysis, and the
-unsigned iPhone build. Live text still needs paid service, provider-control review, full evaluation
-parity, and activation.
-
-**Owner continuation import (2026-07-04).** After an encrypted owner-state backup, three forward
-migrations added a service-only validated import, imported-plan seed bypass, and timezone-safe
-local-date handling. The hosted transaction replaced setup fixtures with newly versioned
-owner-confirmed goal, plan, targets, workouts, and progress checkpoints; prior versions remain and
-the known fixture measurement is explicitly superseded. The iOS client performs one bounded
-9-date Apple Health backfill (today−8), then returns to 8-date overlap sync. pgTAP passes 264/264 and
-Flutter passes 56/56. DeepSeek was rejected for restricted data after official privacy review.
-
-## 10. Stability Hardening (2026-07-19)
-
-A 7-phase cross-layer audit applied security, testing, operational, and code-quality hardening while
-keeping the full pre-deploy gate green:
-
-| Phase | Scope                  | Outcome                                                                                                                                                        |
-| ----- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Security guards        | JWT enforcement, AI budget re-enabled, Dependabot, Gitleaks pre-commit, CI dep freshness                                                                       |
-| 2     | Backend tests          | 4 pgTAP files (74 assertions), 3 Deno test files (35 tests), 4 contract test additions                                                                         |
-| 3     | Operational safeguards | Session pooler, `backup-db.sh`, `rollback-function.sh`, `health-check` Edge Function, structured `_shared/logger.ts`                                           |
-| 4     | Code cleanup           | `_shared/auth.ts` deduplicating 7 Edge Functions, `TracendLoadingIndicator` widget, 38 catch-block diagnostics, coach screen timer refactor                    |
-| 5     | Observability (Sentry) | Flutter `sentry_flutter` + `beforeSend` scrubber (19 sensitive fields redacted), Edge Function `_shared/sentry.ts`, DSN wired into coach-chat and meal-analyze |
-| 6     | Auth hardening         | Password min 8 + upper/lower/digit, re-auth for password change, email confirmations, session timeouts deferred (Pro plan)                                     |
-| 7     | Documentation sync     | Updated testing strategy, progress context, AGENTS.md for backup/rollback/Sentry                                                                               |
-
-All gates pass: Deno 92 tests, Flutter 85 tests, iOS build 25.1 MB, Edge Functions deployed with
-Sentry wiring.
-
-## 11. Deferred Until Measured Need
-
-## 9.1 Production Rebuild
-
-The production rebuild replaces the generic Phase 8 shell with real read models and interaction
-contracts: deterministic daily brief, complete training hub, persistent Coach threads, versioned
-meal schedules, private meal-photo analysis, dark-default theme selection, and bounded AI budgets.
-Forward-only migrations deploy before `coach-chat` and `meal-analyze`; live Gemini remains off until
-paid terms and evaluation gates pass. Physical-iPhone installation and QA are the release gate.
-
-Do not add NestJS, Railway, a separate API server, a separate vector database, autonomous agents,
-LangGraph, Redis, microservices, medical reports, Android, subscriptions, social features, or
-public-store infrastructure. `pgvector` is allowed for the research library only (decision D3,
-2026-10-15; coaching platform program E1–E5). [ARCHITECTURE.md](./ARCHITECTURE.md) controls
-adoption.
-
-## 12. Next Action
-
-1. Redownload the owner `.tracendexport` to the external SSD and validate its decryption using
-   `BETA_OPERATIONS.md`; never test deletion on the owner.
-2. Complete the weekly Free database and private-Storage backup. The pinned CLI direct-host dump is
-   blocked by container DNS, so use a reviewed pooler/dashboard path rather than accepting a partial
-   backup.
-3. Before live Gemini text coaching, enable a paid-service project, document provider data controls,
-   run the full text evaluation suite, add provider usage/cost persistence and a kill switch, then
-   request deployment.
-4. Keep meal/progress vision, licensed catalog, Sign in with Apple, and external beta distribution
-   deferred until their existing gates are met.
+- ADR 0001: Flutter 3.41.7 and Dart 3.11.5 pinned, iOS 17.0 minimum, iPhone only.
+- ADR 0002: owner email/password auth for development; Sign in with Apple is the external beta
+  route.
+- ADR 0003: persistent, owner-scoped Coach threads under forced RLS.
+- ADR 0004: versioned meal schedules, separate from nutrition targets.
+- ADR 0005: paid Gemini routing behind budget gates; never activated.
+- ADR 0006: Groq Qwen owner-test routing; superseded as the Coach provider.
+- ADR 0007–0009: Coach context v4 and v5 and continuity memory. Context v8 (2026-09-27) later gave
+  every question the same full athlete file ([CONTEXT_BUDGET.md](./CONTEXT_BUDGET.md)).
+- ADR 0010: the deterministic feature engine.
+- ADR 0011: DeepSeek activated as the live Coach provider on 2026-07-26. An earlier review on
+  2026-07-04 had rejected DeepSeek for restricted data; ADR 0011 records the reversal.
+- ADR 0012: a compiled asset catalog for the app icon and launch screen.
+- Program decisions D1–D11 (2026-10-14/15) and the decisions log live in the plan. D1 moves the
+  default from DeepSeek and Groq to Claude, with the old routes kept as a settings-only rollback for
+  two weeks after cutover.
