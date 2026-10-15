@@ -16,7 +16,7 @@ C1 (Phase 1); C2 (Phase 2); C3 (Phase 3); C4 (Phase 4)
 
 ## State
 
-**C1 (set timing, reps left, workout events): in review** on `claude/c1-set-timing` (draft PR to
+**C1 (set timing, reps left, workout events): in review** on `claude/c1-set-timing` (draft PR #104 to
 `main`). Not merged, not deployed; needs migration first, then an app install.
 
 - Migration `20261015100031_set_timing.sql` (code 31): five nullable `exercise_sets` columns with
