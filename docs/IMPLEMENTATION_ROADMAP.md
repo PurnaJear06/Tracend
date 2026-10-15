@@ -3,8 +3,9 @@
 ## Personal Coaching System Sequence
 
 Deliver Workout Truth Repair, HealthKit reconciliation, Coach Context v2, Qwen weekly reasoning,
-approval-gated plan evolution, and owner-device dogfooding in that order. RAG remains deferred
-pending measured structured-retrieval failure.
+approval-gated plan evolution, and owner-device dogfooding in that order. RAG over user data
+remains deferred pending measured structured-retrieval failure; the research library of open
+sources (decision D3) is in scope.
 
 **Status:** Execution order for the private-beta MVP\
 **Constraint:** This roadmap does not expand [PRD.md](./PRD.md)\
@@ -299,9 +300,11 @@ meal schedules, private meal-photo analysis, dark-default theme selection, and b
 Forward-only migrations deploy before `coach-chat` and `meal-analyze`; live Gemini remains off until
 paid terms and evaluation gates pass. Physical-iPhone installation and QA are the release gate.
 
-Do not add NestJS, Railway, a separate API server, pgvector, autonomous agents, LangGraph, Redis,
-microservices, medical reports, Android, subscriptions, social features, or public-store
-infrastructure. [ARCHITECTURE.md](./ARCHITECTURE.md) controls adoption.
+Do not add NestJS, Railway, a separate API server, a separate vector database, autonomous agents,
+LangGraph, Redis, microservices, medical reports, Android, subscriptions, social features, or
+public-store infrastructure. `pgvector` is allowed for the research library only (decision D3,
+2026-10-15; coaching platform program E1–E5). [ARCHITECTURE.md](./ARCHITECTURE.md) controls
+adoption.
 
 ## 12. Next Action
 

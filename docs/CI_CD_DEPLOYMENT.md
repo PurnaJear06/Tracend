@@ -78,7 +78,7 @@ Branch protection requires these pull-request checks:
 - `Migration Collision Check` (also validates release version metadata). On a pull request it
   also runs `scripts/check-migration-order.sh`: every migration the branch adds must be newer than
   the base branch's newest, named `<14-digit version>_<snake_case>.sql`, and no migration already
-  on the base may be edited. `supabase db push` refuses an older version at deploy time, so an
+  on the base may be edited, renamed or deleted. `supabase db push` refuses an older version at deploy time, so an
   out-of-order branch is re-stamped before merge instead.
 
 `Website Build` (every page of `site/` builds) also runs on every pull request; the owner can add it

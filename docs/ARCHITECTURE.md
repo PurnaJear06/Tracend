@@ -5,7 +5,8 @@
 Structured PostgreSQL facts remain the coaching memory. Workout truth and bounded HealthKit workout
 references are reconciled deterministically, then a versioned Coach Context v2 snapshot supplies
 evidence IDs, freshness, coverage and conflicts to Qwen. Model output cannot replace calculations or
-activate persistent changes. Vector retrieval remains outside MVP until its evaluation gate is met.
+activate persistent changes. Vector retrieval over user data remains outside MVP until its
+evaluation gate is met; the research library (section 11) is the one allowed use of `pgvector`.
 
 **Status:** Authoritative MVP technical architecture\
 **Scope:** Private iOS TestFlight beta\
@@ -24,7 +25,8 @@ The architecture must:
 - allow evaluated AI-provider replacement behind a narrow adapter; and
 - permit the narrowly documented ADR 0006 Groq Qwen owner test without any client credential or
   direct provider access; and
-- defer vector RAG and autonomous agents until measured value exists.
+- defer vector RAG over user data and autonomous agents until measured value exists; a research
+  library of open sources (decision D3) grounds Coach wording without touching user data.
 
 Product behavior is defined in [PRD.md](./PRD.md), security in
 [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md), UX in [UX_FLOWS.md](./UX_FLOWS.md), and budget
@@ -102,8 +104,9 @@ secret/service-role key exist only in Supabase Edge Function secrets.
   non-persisted password-derived key, and stores it in private `account-exports`. Signed download
   authorization lasts 60 seconds and stops after three uses or seven days.
 - Account deletion uses a separate recent-authenticated opaque job. Private Storage bytes are
-  removed before canonical Auth deletion cascades through application data; only a content-free
-  completion receipt remains for 180 days. A request whose function stopped mid-run is claimable
+  removed before canonical Auth deletion cascades through application data; the same delete
+  removes the account's invite and waitlist rows (trigger `auth_user_forget_invite`), and only a
+  content-free completion receipt remains for 180 days. A request whose function stopped mid-run is claimable
   again after 10 minutes, and every step is safe to repeat. The app waits a bounded time and then
   reads the outcome from Auth (`user_not_found`) and the athlete's own `deletion_requests` row.
 - Session restore validates the stored session with Auth (`GET /auth/v1/user`) before any data
@@ -122,8 +125,9 @@ secret/service-role key exist only in Supabase Edge Function secrets.
   or Edge Functions.
 - Security-definer functions are exceptional, use a fixed safe `search_path`, validate authorization
   internally, expose minimal grants, and receive dedicated tests.
-- Structured PostgreSQL fields and bounded summaries are the MVP memory system. `pgvector` is not
-  enabled.
+- Structured PostgreSQL fields and bounded summaries are the MVP memory system. `pgvector` is
+  enabled (in the `extensions` schema) for the research library only (section 11); no user data is
+  embedded.
 
 ### 3.4 Edge Functions
 
@@ -311,6 +315,10 @@ Workout logging RPCs (2026-10-03): `start_workout`, `sync_workout_draft`, `compl
 (the athlete's 1–10 session effort; `complete_workout` remains for installed builds and records its
 fixed effort as a default), `abandon_workout`, and `get_my_exercise_history(keys, sessions)` (last
 time, best set and heaviest set per completed session for at most 20 exercises and 12 sessions).
+Since 2026-10-15 (coaching platform C1) each set also carries its start and end, the rest taken
+before it, reps left and who timed it (`sync_workout_draft`, `get_my_workout_session` 1.1,
+`get_my_exercise_history` 1.1), and the logging screen publishes workout events and takes the
+Live Activity's commands (`lib/features/train/workout_events.dart`, program Contract 3).
 
 Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS. Since v8
 (2026-09-27) every question follows one path regardless of its wording:
@@ -480,7 +488,25 @@ per-user quotas, anomaly alerts, and a server-side kill switch. See
 Goals, preferences, constraints, plans, confirmed meals, decisions, and weekly summaries remain
 relational data retrieved with explicit user-scoped queries.
 
-### Add vector retrieval only when all are true
+### Research library (decision D3, 2026-10-15)
+
+The one allowed vector store is a research library inside Postgres: open papers, guidelines,
+position stands and in-house summaries in our own words. Paid course material (K11, NASM, ACE) is
+never stored, and every source records its licence.
+
+- Tables `private.library_sources`, `private.library_chunks` and `private.library_ingest_runs` sit
+  in the `private` schema (not exposed by the Data API), with forced RLS and no API grants. They
+  hold no user data, so they are outside export and account deletion.
+- Embeddings are Supabase's built-in `gte-small` (384 dimensions, mean-pooled and normalised), run
+  inside Edge Functions (decision D4). No new processor receives any text.
+- `public.search_library_v1` (service role only, Contract 6) fuses the top 30 Postgres full-text
+  matches and the top 30 nearest embeddings (cosine distance; HNSW index without filters, exact
+  ranking over the matching sources with a region or topics filter) by reciprocal rank fusion
+  (k = 60) and returns at most 8 chunks.
+- Retrieved text is reference data. It never overrides Tracend rules, the athlete's data or the
+  safety policy, and rules still decide every number.
+
+### Add vector retrieval over user data only when all are true
 
 - meaningful unstructured history exists;
 - a defined evaluation needs retrieval beyond structured fields and recency windows;
@@ -496,7 +522,8 @@ relational data retrieved with explicit user-scoped queries.
 - latency/cost stay acceptable; and
 - safety policy remains outside model control.
 
-LangGraph, Redis, a separate API server, and a dedicated vector store are not MVP dependencies.
+LangGraph, Redis, a separate API server, and a dedicated vector store outside Postgres are not MVP
+dependencies.
 
 ## 12. Architectural Invariants
 

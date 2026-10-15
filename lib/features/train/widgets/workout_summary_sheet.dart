@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/features/train/widgets/rpe_picker.dart';
+import 'package:tracend/features/train/widgets/effort_scale.dart';
 import 'package:tracend/features/train/widgets/set_row.dart';
 import 'package:tracend/shared/brand/tracend_mark.dart';
 import 'package:tracend/shared/formatting.dart';

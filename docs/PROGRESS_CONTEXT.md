@@ -11,12 +11,16 @@ Iteration 1 is Phase 0 + Phase 1. One line per stream; each stream edits only it
 
 <!-- PROGRAM:coaching-platform-2026-10 -->
 - program: P0 (contracts, migration-order CI check) in review.
-- ai-gateway: A1, A2 not started. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
-- training-engine: B0 not started. Handoff: [`training-engine.md`](./handoff/training-engine.md).
-- workout-hr: C1 not started. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
+- ai-gateway: A1: provider-neutral SQL, consent v2 and budget v2 in review (PR #103). A2: gateway
+  module and Claude, OpenAI-compatible and Gemini adapters (`_shared/ai/`) in review, not used by
+  any feature yet. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
+- training-engine: B0 in review (mock decision obeys the policy; rules plan ranks by equipment and experience). Handoff: [`training-engine.md`](./handoff/training-engine.md).
+- workout-hr: C1 (set timing, reps left, workout events; migration 31) in review as draft PR
+  #104. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
 - ios-widgets: D0 not started. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
-- research-library: E1 not started. Handoff: [`research-library.md`](./handoff/research-library.md).
+- research-library: E1 (pgvector, library tables, `search_library_v1`, D3 doc rule) in review. Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 in review (privacy page rewrite per D11 with processor locations, "For iPhone, best with Apple Watch" copy, TestFlight checklist). Handoff: [`website.md`](./handoff/website.md).
+- ui: U1 glass tab bar in review.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
 **Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
@@ -26,6 +30,11 @@ access; the owner invites confirmed signups with `private.invite_from_waitlist(n
 now publishes the site after the functions and checks the live version. The owner's one-time
 Gmail, Cloudflare, GitHub and Supabase settings are in
 [`docs/handoff/website.md`](./handoff/website.md).
+
+**Deletion removes invite and waitlist rows (2026-10-15, in review):** deleting an account now
+also deletes its `private.signup_invites` row and its email's waitlist signup (trigger on the Auth
+delete; owner's choice), and the migration clears rows that earlier deletions left. SQL only, no
+reinstall. See [`docs/handoff/account-session.md`](./handoff/account-session.md).
 
 **Security hardening (2026-10-09):** a source review of `d26cf2c` raised leads that the owner
 asked to fix in five PRs, merged in order; details stay in the owner's private report. PR 1
