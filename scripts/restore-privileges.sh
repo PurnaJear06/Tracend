@@ -92,10 +92,14 @@ functions as (
       as object
   from pg_proc as p
   join schemas as s on s.oid = p.pronamespace
-  where not exists (
-    select 1 from pg_depend as d
-    where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'
-  )
+  -- No role can call an event trigger function directly, so its EXECUTE grant opens nothing.
+  -- Supabase's "enable RLS on new tables" option adds one (public.rls_auto_enable()) to a
+  -- project outside the migrations.
+  where p.prorettype <> 'event_trigger'::regtype
+    and not exists (
+      select 1 from pg_depend as d
+      where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'
+    )
 ),
 relations as (
   select c.oid, c.relkind, c.relrowsecurity, c.relforcerowsecurity,
