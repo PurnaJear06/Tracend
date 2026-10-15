@@ -16,8 +16,8 @@ C1 (Phase 1); C2 (Phase 2); C3 (Phase 3); C4 (Phase 4)
 
 ## State
 
-**C1 (set timing, reps left, workout events): in review** on `claude/c1-set-timing` (draft PR
-#104 to `main`). Not merged, not deployed; needs migration first, then an app install.
+**C1 (set timing, reps left, workout events): live** (#104, 2026-10-15). The migration is
+deployed; the phone uses it from the next install built from `main`.
 
 - Migration `20261015140031_set_timing.sql` (code 31): five nullable `exercise_sets` columns with
   checks (Contract 2); `sync_workout_draft` redefined from `20260711190000_workout_truth_repair.sql`

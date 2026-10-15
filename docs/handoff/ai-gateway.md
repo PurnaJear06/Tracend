@@ -16,9 +16,9 @@ A1, A2 (Phase 1); A3–A7 (Phase 2)
 
 ## State
 
-No chunk of this stream has merged yet.
+A1 (#103) and A2 (#106) are live (2026-10-15).
 
-**A1 (review, draft PR #103, migration `20261015120011_provider_neutral_ai.sql`):**
+**A1 (live, #103, migration `20261015120011_provider_neutral_ai.sql`):**
 
 - In SQL a provider is the vendor that receives the data (`anthropic`, `deepseek`, `groq`,
   `gemini`, `mock` for runs), never `openai_compatible` (lead decision, Contract 1 v2). Every SQL
@@ -51,7 +51,7 @@ No chunk of this stream has merged yet.
   label or an unknown provider is refused (22023). Vision through DeepSeek,
   or a Groq or Gemini model other than the pinned ones, still needs a migration (A3).
 
-### A2: gateway module (review, branch `claude/a2-ai-gateway`)
+### A2: gateway module (live, #106)
 
 `supabase/functions/_shared/ai/` implements Contract 1 version 2. No feature calls it yet;
 nothing outside the folder changed.
