@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.1",
+  "sessions_limit": 8,
+  "exercises": [
+    {
+      "key": "barbell-bench-press",
+      "kind": "load",
+      "last_session": {
+        "session_id": "8a000000-0000-4000-8000-000000000020",
+        "local_date": "2026-10-14",
+        "sets": [
+          {
+            "set_number": 1,
+            "load_kg": 72.5,
+            "repetitions": 8,
+            "rpe": 8.0,
+            "rir": 2,
+            "started_at": "2026-10-14T03:31:05.250+00:00",
+            "completed_at": "2026-10-14T03:31:41.900+00:00",
+            "rest_before_seconds": null,
+            "timing_source": "app"
+          },
+          {
+            "set_number": 2,
+            "load_kg": 72.5,
+            "repetitions": 7,
+            "rpe": 9.0,
+            "rir": 1,
+            "started_at": "2026-10-14T03:33:41.900+00:00",
+            "completed_at": "2026-10-14T03:34:20.100+00:00",
+            "rest_before_seconds": 120,
+            "timing_source": "app"
+          },
+          {
+            "set_number": 3,
+            "load_kg": 72.5,
+            "repetitions": 6,
+            "rpe": null,
+            "rir": null,
+            "started_at": null,
+            "completed_at": null,
+            "rest_before_seconds": null,
+            "timing_source": null
+          }
+        ]
+      },
+      "best_set": {
+        "kind": "load",
+        "load_kg": 72.5,
+        "repetitions": 8,
+        "local_date": "2026-10-14"
+      },
+      "top_sets": [
+        {
+          "local_date": "2026-10-14",
+          "load_kg": 72.5,
+          "repetitions": 8
+        }
+      ]
+    },
+    {
+      "key": "Cable fly",
+      "kind": null,
+      "last_session": null,
+      "best_set": null,
+      "top_sets": []
+    }
+  ]
+}

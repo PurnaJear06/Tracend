@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.1",
+  "session_id": "8b000000-0000-4000-8000-000000000001",
+  "state": "in_progress",
+  "revision": 6,
+  "idempotency_key": "8b000000-0000-4000-8000-000000000002",
+  "local_date": "2026-10-15",
+  "actual_started_at": "2026-10-15T03:30:00+00:00",
+  "actual_ended_at": null,
+  "duration_seconds": null,
+  "notes": "",
+  "completion_source": null,
+  "session_effort": null,
+  "session_effort_source": null,
+  "exercises": [
+    {
+      "performance_id": "8b000000-0000-4000-8000-000000000010",
+      "order": 1,
+      "status": "unknown",
+      "performance_kind": "prescribed",
+      "performed_name": "Barbell bench press",
+      "exercise_slug": "barbell-bench-press",
+      "substitution_reason": null,
+      "pain_flag": false,
+      "note": null,
+      "rest_seconds": 120,
+      "sets": [
+        {
+          "number": 1,
+          "repetitions": 8,
+          "load_kg": 72.5,
+          "rpe": 8.0,
+          "completed": true,
+          "started_at": "2026-10-15T03:31:05.25+00:00",
+          "completed_at": "2026-10-15T03:31:41.9+00:00",
+          "rest_before_seconds": null,
+          "rir": 2,
+          "timing_source": "app"
+        },
+        {
+          "number": 2,
+          "repetitions": 7,
+          "load_kg": 72.5,
+          "rpe": 9.0,
+          "completed": true,
+          "started_at": "2026-10-15T03:33:41.9+00:00",
+          "completed_at": "2026-10-15T03:34:20.1+00:00",
+          "rest_before_seconds": 120,
+          "rir": 1,
+          "timing_source": "app"
+        },
+        {
+          "number": 3,
+          "repetitions": null,
+          "load_kg": null,
+          "rpe": null,
+          "completed": false,
+          "started_at": null,
+          "completed_at": null,
+          "rest_before_seconds": null,
+          "rir": null,
+          "timing_source": null
+        }
+      ]
+    }
+  ]
+}

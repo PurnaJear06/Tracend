@@ -1,29 +1,28 @@
 import 'package:flutter/cupertino.dart';
-import 'package:tracend/features/account/account_deletion_repository.dart';
-import 'package:tracend/features/account/account_screen.dart';
-import 'package:tracend/features/account/notification_repository.dart';
-import 'package:tracend/features/account/privacy_export_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
-import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/features/coach/coach_screen.dart';
+import 'package:tracend/features/account/account_deletion_repository.dart';
+import 'package:tracend/features/account/account_screen.dart';
+import 'package:tracend/features/account/notification_repository.dart';
+import 'package:tracend/features/account/privacy_export_repository.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_repository.dart';
-import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
-import 'package:tracend/features/progress/progress_screen.dart';
+import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
+import 'package:tracend/features/progress/progress_screen.dart';
+import 'package:tracend/features/shell/floating_tab_bar.dart';
 import 'package:tracend/features/today/check_in_gate.dart';
-import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
-import 'package:tracend/shared/widgets/tracend_glass.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -181,209 +180,25 @@ class _AppShellState extends State<AppShell> {
     ];
 
     return Scaffold(
+      // The body runs under the bottom slot, and its bottom padding reports
+      // the slot's height, so scroll views end clear of the bar.
       extendBody: true,
       body: IndexedStack(index: _selectedIndex, children: destinations),
-      bottomNavigationBar: ListenableBuilder(
-        listenable: _checkInGate,
-        builder: (context, _) {
-          final gated = _checkInGate.required && _selectedIndex == 0;
-          return AnimatedSwitcher(
-            duration: MediaQuery.disableAnimationsOf(context)
-                ? Duration.zero
-                : TracendMotion.emphasized,
-            switchInCurve: TracendMotion.curve,
-            switchOutCurve: TracendMotion.curve,
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween(
-                  begin: const Offset(0, 0.35),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
-            ),
-            child: gated
+      bottomNavigationBar: FloatingBarFrame(
+        child: ListenableBuilder(
+          listenable: _checkInGate,
+          builder: (context, _) => FloatingBarSwitcher(
+            child: _checkInGate.required && _selectedIndex == 0
                 ? CheckInGateBar(
                     key: const ValueKey('check-in-gate'),
                     onCheckIn: _checkInGate.checkIn,
                     onSkip: _checkInGate.skip,
                   )
-                : _FloatingTabBar(
+                : FloatingTabBar(
                     key: const ValueKey('tab-bar'),
                     selectedIndex: _selectedIndex,
                     onSelected: _selectTab,
                   ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _FloatingTabBar extends StatelessWidget {
-  const _FloatingTabBar({
-    required this.selectedIndex,
-    required this.onSelected,
-    super.key,
-  });
-
-  final int selectedIndex;
-  final ValueChanged<int> onSelected;
-
-  static const _items = [
-    (
-      label: 'Today',
-      icon: Icons.wb_sunny_outlined,
-      selectedIcon: Icons.wb_sunny_rounded,
-    ),
-    (
-      label: 'Train',
-      icon: Icons.fitness_center_rounded,
-      selectedIcon: Icons.fitness_center_rounded,
-    ),
-    (
-      label: 'Coach',
-      icon: Icons.chat_bubble_outline_rounded,
-      selectedIcon: Icons.chat_bubble_rounded,
-    ),
-    (
-      label: 'Nutrition',
-      icon: Icons.restaurant_rounded,
-      selectedIcon: Icons.restaurant_rounded,
-    ),
-    (
-      label: 'Progress',
-      icon: Icons.trending_up_rounded,
-      selectedIcon: Icons.trending_up_rounded,
-    ),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final bottom = MediaQuery.paddingOf(context).bottom;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(12, 0, 12, bottom > 0 ? 6 : 12),
-      child: Center(
-        heightFactor: 1,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 620),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(32),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
-                  blurRadius: 30,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: TracendGlass(
-              borderRadius: 32,
-              child: SizedBox(
-                height: 64,
-                child: Row(
-                  children: [
-                    for (var index = 0; index < _items.length; index++)
-                      Expanded(
-                        child: _TabItem(
-                          item: _items[index],
-                          selected: selectedIndex == index,
-                          reduceMotion: reduceMotion,
-                          onTap: () => onSelected(index),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TabItem extends StatefulWidget {
-  const _TabItem({
-    required this.item,
-    required this.selected,
-    required this.reduceMotion,
-    required this.onTap,
-  });
-
-  final ({String label, IconData icon, IconData selectedIcon}) item;
-  final bool selected;
-  final bool reduceMotion;
-  final VoidCallback onTap;
-
-  @override
-  State<_TabItem> createState() => _TabItemState();
-}
-
-class _TabItemState extends State<_TabItem> {
-  bool _pressed = false;
-
-  void _setPressed(bool value) {
-    if (_pressed != value) setState(() => _pressed = value);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tracendColors;
-    final item = widget.item;
-    final selected = widget.selected;
-    final duration = widget.reduceMotion ? Duration.zero : TracendMotion.quick;
-    return Semantics(
-      key: ValueKey('tab-${item.label.toLowerCase()}'),
-      selected: selected,
-      button: true,
-      label: '${item.label} tab',
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (_) => _setPressed(true),
-        onTapCancel: () => _setPressed(false),
-        onTapUp: (_) => _setPressed(false),
-        onTap: widget.onTap,
-        child: AnimatedScale(
-          scale: _pressed ? 0.92 : 1,
-          duration: duration,
-          curve: TracendMotion.curve,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              AnimatedSwitcher(
-                duration: duration,
-                child: Icon(
-                  selected ? item.selectedIcon : item.icon,
-                  key: ValueKey(selected),
-                  size: 23,
-                  color: selected
-                      ? colors.accentSignalInk
-                      : colors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                item.label,
-                maxLines: 1,
-                overflow: TextOverflow.fade,
-                // iOS tab bars keep labels near-fixed under Dynamic Type;
-                // clamp so the label never overflows the 64pt capsule.
-                textScaler: MediaQuery.textScalerOf(
-                  context,
-                ).clamp(maxScaleFactor: 1.3),
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontSize: 11,
-                  height: 1,
-                  fontWeight: FontWeight.w600,
-                  color: selected ? colors.textPrimary : colors.textSecondary,
-                ),
-              ),
-            ],
           ),
         ),
       ),

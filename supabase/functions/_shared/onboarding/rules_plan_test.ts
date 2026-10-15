@@ -1,12 +1,18 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { dailyActivities, type Goal, goals, sexes } from "./answers.ts";
 import {
+  allowedExercises,
   type AvoidablePattern,
   avoidablePatterns,
   catalogBySlug,
+  type EquipmentItem,
   exerciseCatalogV1,
 } from "./catalog.ts";
-import { OnboardingPlanInfeasibleError, validRulesPlan } from "./generate.ts";
+import {
+  OnboardingPlanInfeasibleError,
+  policiesFor as generatePoliciesFor,
+  validRulesPlan,
+} from "./generate.ts";
 import { nutritionBounds } from "./policy.ts";
 import {
   buildOnboardingProposal,
@@ -251,4 +257,270 @@ Deno.test("several avoided movements: a valid plan without them, or a refusal", 
   }
   // Only all four upper-body patterns at once can leave an upper day empty.
   assert(refused > 0 && refused < 4 * 5);
+});
+
+const slugsByWorkout = (answers: Parameters<typeof policiesFor>[0]) =>
+  buildRulesPlan(policiesFor(answers)).workouts.map((workout) =>
+    workout.exercises.map((exercise) => exercise.slug)
+  );
+
+Deno.test("golden: an experienced lifter in a full gym gets barbell and dumbbell compounds", () => {
+  assertEquals(
+    slugsByWorkout(answersFor({ path: "experienced", experience: "intermediate" })),
+    [
+      [
+        "barbell-back-squat",
+        "barbell-bench-press",
+        "barbell-row",
+        "barbell-deadlift",
+        "cable-crunch",
+        "dumbbell-lateral-raise",
+      ],
+      [
+        "barbell-romanian-deadlift",
+        "barbell-overhead-press",
+        "lat-pulldown",
+        "barbell-reverse-lunge",
+        "cable-crunch",
+        "dumbbell-overhead-triceps-extension",
+      ],
+      [
+        "barbell-front-squat",
+        "dumbbell-bench-press",
+        "chest-supported-dumbbell-row",
+        "barbell-hip-thrust",
+        "barbell-curl",
+        "cable-crunch",
+      ],
+    ],
+  );
+});
+
+Deno.test("golden: a beginner in a full gym starts on dumbbells and machines, then a barbell", () => {
+  const plan = slugsByWorkout(answersFor({ path: "beginner", experience: "beginner" }));
+  // A barbell compound gives a reported barbell lift a starting load.
+  assert(
+    plan.flat().some((slug) => {
+      const exercise = catalogBySlug.get(slug)!;
+      return exercise.compound && exercise.equipment.includes("barbell");
+    }),
+  );
+  assertEquals(
+    plan,
+    [
+      [
+        "goblet-squat",
+        "dumbbell-bench-press",
+        "chest-supported-dumbbell-row",
+        "dumbbell-romanian-deadlift",
+        "cable-crunch",
+        "dumbbell-lateral-raise",
+      ],
+      [
+        "dumbbell-hip-thrust",
+        "dumbbell-shoulder-press",
+        "lat-pulldown",
+        "dumbbell-reverse-lunge",
+        "cable-crunch",
+        "dumbbell-overhead-triceps-extension",
+      ],
+      [
+        "leg-press",
+        "incline-dumbbell-press",
+        "one-arm-dumbbell-row",
+        "barbell-romanian-deadlift",
+        "dumbbell-curl",
+        "cable-crunch",
+      ],
+    ],
+  );
+});
+
+Deno.test("golden: dumbbells only load every main movement; bodyweight only for the trunk", () => {
+  const expected = [
+    [
+      "goblet-squat",
+      "dumbbell-floor-press",
+      "one-arm-dumbbell-row",
+      "dumbbell-romanian-deadlift",
+      "bird-dog",
+      "dumbbell-lateral-raise",
+    ],
+    [
+      "dumbbell-romanian-deadlift",
+      "dumbbell-shoulder-press",
+      "one-arm-dumbbell-row",
+      "dumbbell-reverse-lunge",
+      "dead-bug",
+      "dumbbell-overhead-triceps-extension",
+    ],
+    [
+      "goblet-squat",
+      "dumbbell-floor-press",
+      "one-arm-dumbbell-row",
+      "dumbbell-romanian-deadlift",
+      "dumbbell-curl",
+      "bird-dog",
+    ],
+  ];
+  for (const experience of ["beginner", "intermediate"] as const) {
+    assertEquals(
+      slugsByWorkout(answersFor({ experience, equipment: equipmentSets.dumbbells })),
+      expected,
+      experience,
+    );
+  }
+});
+
+Deno.test("golden: bodyweight only uses standard forms before regressions", () => {
+  assertEquals(
+    slugsByWorkout(answersFor({ equipment: equipmentSets.bodyweight })),
+    [
+      ["bodyweight-squat", "push-up", "towel-doorway-row", "glute-bridge", "bird-dog"],
+      [
+        "single-leg-hip-hinge",
+        "push-up",
+        "towel-doorway-row",
+        "reverse-lunge",
+        "dead-bug",
+        "standing-calf-raise",
+      ],
+      ["split-squat", "push-up", "towel-doorway-row", "glute-bridge", "bird-dog"],
+    ],
+  );
+});
+
+Deno.test("the database catalog (slug order, no roles) builds the same plan", () => {
+  const database = [...exerciseCatalogV1]
+    .sort((a, b) => a.slug < b.slug ? -1 : 1)
+    .map(({ role: _role, ...exercise }) => exercise);
+  for (const [equipmentName, equipment] of Object.entries(equipmentSets)) {
+    for (const experience of ["beginner", "intermediate"] as const) {
+      for (const days of [3, 4, 6]) {
+        const answers = answersFor({
+          experience,
+          equipment,
+          trainingWeekdays: weekdaysFor[days],
+          priorityMuscles: ["shoulders"],
+        });
+        assertEquals(
+          buildRulesPlan(generatePoliciesFor(answers, database)),
+          buildRulesPlan(policiesFor(answers)),
+          `${equipmentName} ${experience} ${days}d`,
+        );
+      }
+    }
+  }
+});
+
+Deno.test("without focus muscles, a loaded form free for the session beats bodyweight", () => {
+  const loads = (slug: string) =>
+    catalogBySlug.get(slug)!.equipment.some((item) => item !== "bench" && item !== "pull_up_bar");
+  for (const [equipmentName, equipment] of Object.entries(equipmentSets)) {
+    if (equipmentName === "bodyweight") continue;
+    for (const experience of ["beginner", "intermediate"] as const) {
+      for (const days of [1, 2, 3, 4, 5, 6]) {
+        for (const sessionMinutes of [30, 60, 120]) {
+          const policies = policiesFor(answersFor({
+            experience,
+            equipment,
+            trainingWeekdays: weekdaysFor[days],
+            sessionMinutes,
+          }));
+          const offered = allowedExercises(policies.catalog, equipment, experience);
+          for (const workout of buildRulesPlan(policies).workouts) {
+            for (const { slug } of workout.exercises) {
+              const { pattern } = catalogBySlug.get(slug)!;
+              // A loaded form already in this session cannot be repeated in it.
+              const loadedExists = offered.some((exercise) =>
+                exercise.pattern === pattern && loads(exercise.slug) &&
+                !workout.exercises.some((item) => item.slug === exercise.slug)
+              );
+              assert(
+                loads(slug) || !loadedExists,
+                `${equipmentName} ${experience} ${days}d ${sessionMinutes}min: ${slug}`,
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+});
+
+Deno.test("golden: a pull-up bar alone holds the body, so the trunk work still rotates", () => {
+  assertEquals(
+    slugsByWorkout(answersFor({ equipment: ["pull_up_bar"] })).map((workout) =>
+      workout.filter((slug) => catalogBySlug.get(slug)!.pattern === "core")
+    ),
+    [["hanging-knee-raise"], ["bird-dog"], ["dead-bug"]],
+  );
+});
+
+Deno.test("golden: a glute focus at 30 minutes, twice a week, keeps its glute sets", () => {
+  const glutes = (equipment: EquipmentItem[], experience: "beginner" | "intermediate") => {
+    const policies = policiesFor(answersFor({
+      experience,
+      equipment,
+      trainingWeekdays: weekdaysFor[2],
+      sessionMinutes: 30,
+      priorityMuscles: ["glutes"],
+    }));
+    return [
+      policies.training.priorityMinimums,
+      buildRulesPlan(policies).workouts.map((workout) =>
+        workout.exercises.map((exercise) => exercise.slug)
+      ),
+    ];
+  };
+  assertEquals(glutes(equipmentSets.dumbbells, "beginner"), [
+    [{ muscle: "glutes", sets: 6 }],
+    [
+      ["goblet-squat", "dumbbell-floor-press", "one-arm-dumbbell-row", "glute-bridge"],
+      ["glute-bridge", "dumbbell-shoulder-press", "one-arm-dumbbell-row", "dumbbell-reverse-lunge"],
+    ],
+  ]);
+  assertEquals(glutes(equipmentSets.gym, "intermediate"), [
+    [{ muscle: "glutes", sets: 6 }],
+    [
+      ["barbell-back-squat", "barbell-bench-press", "barbell-row", "barbell-hip-thrust"],
+      ["dumbbell-hip-thrust", "barbell-overhead-press", "lat-pulldown", "barbell-reverse-lunge"],
+    ],
+  ]);
+});
+
+// Muscles a main-movement slot can target, so the slot's choice decides whether
+// the focus gets sets. Arm, shoulder, trunk and calf accessories can still miss
+// out in a 30-minute session, where they do not fit at all.
+const mainMovementMuscles = ["quads", "glutes", "hamstrings", "chest", "back"] as const;
+
+Deno.test("a single main-movement focus always gets sets when an exercise for it is offered", () => {
+  let checked = 0;
+  for (const [equipmentName, equipment] of Object.entries(equipmentSets)) {
+    for (const experience of ["beginner", "intermediate"] as const) {
+      for (const days of [1, 2, 3, 4, 5, 6]) {
+        for (const sessionMinutes of [30, 45, 60, 90]) {
+          for (const muscle of mainMovementMuscles) {
+            const answers = answersFor({
+              experience,
+              equipment,
+              trainingWeekdays: weekdaysFor[days],
+              sessionMinutes,
+              priorityMuscles: [muscle],
+            });
+            const offered = allowedExercises(exerciseCatalogV1, equipment, experience)
+              .some((exercise) => exercise.muscles[0] === muscle);
+            const reached = policiesFor(answers).training.priorityMinimums
+              .find((item) => item.muscle === muscle)?.sets ?? 0;
+            assert(
+              reached > 0 || !offered,
+              `${equipmentName} ${experience} ${days}d ${sessionMinutes}min ${muscle}`,
+            );
+            checked++;
+          }
+        }
+      }
+    }
+  }
+  assertEquals(checked, 4 * 2 * 6 * 4 * mainMovementMuscles.length);
 });

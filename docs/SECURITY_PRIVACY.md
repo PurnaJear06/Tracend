@@ -49,9 +49,17 @@ purpose limitation, retention control, and audit coverage.
 ### Public
 
 - approved product copy, privacy notice, terms, nonsensitive exercise catalog content, and public
-  support information.
+  support information; and
+- research library sources and chunks (`private.library_*`, decision D3): open papers,
+  guidelines, position stands and in-house summaries in our own words, with their embeddings. Paid
+  course material is never stored. The library holds no user data, so it is outside export and
+  account deletion. It still sits in the `private` schema with forced RLS and no API grants, and
+  only the service-role `search_library_v1` reads it.
 
-Classification is inherited by derived data. A summary of health data remains restricted.
+Classification is inherited by derived data. A summary of health data remains restricted. A Coach
+question used as a library search query (or its `gte-small` embedding, computed inside the Edge
+Function) keeps the question's classification: it is used for that request only and is never
+written to the library or logged.
 
 ## 3. Consent and Transparency
 
@@ -402,6 +410,7 @@ history.
   queued.
 - A package permits three downloads through 60-second signed authorization. Daily retention deletes
   it after the limit or seven days and retries failures.
+- The research library is not exported: it holds no user data.
 
 ### Deletion
 
@@ -413,6 +422,7 @@ history.
   days.
 - Destructive verification uses synthetic accounts only. Failure never reports completion to the
   app.
+- The research library has nothing to delete for an account: it holds no user data.
 
 - Account deletion requires explicit confirmation and revokes active sessions promptly. Deleting
   from the app removes that athlete's local data (Apple Health sync state, an unsent check-in, the

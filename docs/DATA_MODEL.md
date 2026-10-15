@@ -26,7 +26,8 @@ transactionally.
   integrity, and lifecycle metadata.
 - Canonical units are kilograms, centimeters, kilocalories, grams, minutes, beats per minute, and
   milliseconds.
-- Structured PostgreSQL fields are the MVP memory system. Vector embeddings are deferred.
+- Structured PostgreSQL fields are the MVP memory system. Vector embeddings of user data are
+  deferred; only the research library (section 12) holds embeddings, and it holds no user data.
 - **Forward-only migrations. Never edit an applied migration.**
 - **Every migration must be additive.** Rename, drop, or change column type requires the two-step
   pattern: (1) add new column + deploy code that reads it; (2) later migration drops old column.
@@ -119,6 +120,15 @@ never edited. `ai_notice_current` names the current notice for each purpose, one
 `private.publish_ai_notice` inserts a notice and repoints its purposes in one transaction. An
 `ai_coaching` consent counts for a purpose only when its `notice_version` is that purpose's current
 version.
+
+Since 2026-10-15 a notice may also carry `provider`: the vendor that receives the data
+(`anthropic`, `deepseek`, `groq` or `gemini`), which the gateway compares with its route's vendor.
+It is never an API shape such as an OpenAI-compatible endpoint, since one shape reaches several
+vendors. It is null on notices published before; the five-argument `private.publish_ai_notice(version, provider,
+provider_label, purposes, body)` sets it and refuses (22023) a `provider_label` that does not name
+the provider's company (Anthropic, DeepSeek, Groq, Google; case ignored) or names another one.
+`get_ai_consent_v2` (service role) returns the grant, provider and version of the notice current
+for a purpose or gateway feature.
 
 ### `user_profiles`
 
@@ -350,6 +360,37 @@ substitutions, extras) are keyed by their lowercased, trimmed name. Assisted exe
 Set number, type, repetitions, load, RPE, completion, and rest duration. Ordering is unique within
 an exercise performance.
 
+Set timing and reps left (2026-10-15, migration `20261015140031_set_timing.sql`, all nullable):
+
+| Column | Type | Rule |
+|---|---|---|
+| `started_at` | timestamptz | when the set began (see below) |
+| `completed_at` | timestamptz | when it was ticked; `>= started_at` |
+| `rest_before_seconds` | integer | rest taken from the previous tick to `started_at`, 0–3600 |
+| `rir` | smallint | reps in reserve 0–5 (5 means 5 or more) |
+| `timing_source` | text | `app` or `watch` |
+
+A set begins at the end of the rest before it (Skip, or the timer's end), else at the athlete's
+first edit of its kg or reps outside a rest. It has no start when it was ticked during its rest or
+without an edit, and no rest when the gap is longer than an hour. The app takes every time from the
+wall clock, so a rest that ran out while the phone slept ended at its stored end time. Undo clears
+a set's times and re-measures any rest counted from its tick.
+
+When the athlete picks reps left, the app also writes `rpe = 10 − rir`, the value the same answer
+meant on the earlier 1–10 picker, so RPE readers (Coach context) stay consistent.
+
+`sync_workout_draft` keeps a stored value when a set omits the key (installed builds send none),
+clears it on an explicit null, and refuses (22023) a malformed value, a time more than 10 minutes
+in the future or more than 10 minutes before the session's recorded start, and an end before the
+start. Set times from before the server's recorded start stay on the phone and are never sent (a
+workout started offline). A set sends only the keys it knows: one restored from a draft without
+them (saved by an older build) sends none until the athlete ticks, un-ticks or answers reps left on
+it, so it never clears times or reps left another device stored; un-ticking sends explicit nulls. If the server still refuses the times (a phone clock more than 10 minutes
+off), the app sends the same draft again without the five keys and syncs the rest of that workout
+without them; the reps left still arrive as the matching RPE. A workout whose final sync is
+refused is not finished. `get_my_workout_session` 1.1 and `get_my_exercise_history` 1.1 (last
+session's sets) return the five fields; the privacy export selects every column.
+
 ### `workout_amendments`
 
 Append-only corrections to completed records containing field, old/new value, reason, actor, and
@@ -450,7 +491,12 @@ analyses first; both are in the privacy export.
 The progress-photo AI notice the athlete grants before a physique check: version, provider label,
 model, body. The newest is current; published by migration or `private.publish_photo_ai_notice`,
 never edited. A grant is a `consent_records` row of type `progress_photo_ai` naming the version
-(`has_photo_ai_consent`, `get_my_photo_ai_notice`).
+(`has_photo_ai_consent`, `get_my_photo_ai_notice`). Since 2026-10-15 a notice may carry `provider`
+(same values as `ai_consent_notices.provider`; null on earlier notices), set by the five-argument
+`private.publish_photo_ai_notice(version, provider, provider_label, model, body)`. The meal photo
+notice table (`meal_photo_ai_notices`, consent type `meal_photo_ai`) works the same way and has always
+named its provider; it now also accepts `deepseek` and `anthropic`. All three publishers that name a
+provider apply the same label check as `private.publish_ai_notice`.
 
 ### `progress_reviews`
 
@@ -527,7 +573,15 @@ codes, permitted/prohibited actions, escalation code, and time.
 
 Operational record containing user, purpose, provider, model, prompt/schema versions, feature and
 policy references, provider request ID, status, usage, latency, cost estimate, validation result,
-retry lineage, and sanitized error. It never stores provider secrets.
+retry lineage, and sanitized error. It never stores provider secrets. `provider` is one of `mock`,
+`gemini`, `groq`, `deepseek` or `anthropic` (since 2026-10-15), the vendor that received the data;
+`ai_usage_events.provider` takes the same names except `mock`. Model ids are pinned for the old
+vision vendors; usage through `anthropic` carries any well-formed model id
+(letters, digits and `. _ : / -`, at most 100).
+
+`ai_budget_reservations` holds a call's place in the AI budget until its usage is recorded
+(COST_MODEL). `reserve_ai_budget` holds the purpose's fixed ceiling; `reserve_ai_budget_v2` holds
+the caller's route ceiling (USD 0.001 to 0.50).
 
 Account usage summaries are computed from user-scoped `model_runs` through a restricted aggregate
 query or RPC; they are not a second source of truth and must omit prompts, provider request
@@ -648,7 +702,100 @@ are least-privilege by operation, and are tested with authenticated users, anony
 cross-user attempts. Edge Functions and transactional RPC add validation but never replace RLS on
 exposed data.
 
-## 12. Future Vector Memory
+## 12. Research Library and Future Vector Memory
+
+### Research library (decision D3, migration `20261015150041_research_library`)
+
+Open papers, guidelines, position stands and in-house summaries in our own words, for Coach answers
+and plan explanations. No user data; not exposed by the Data API (`private` schema); forced RLS
+with no policies; no grants to `anon`, `authenticated` or `service_role`. Edge Functions reach it
+only through service-role functions. Not part of privacy export or account deletion. `pgvector`
+lives in the `extensions` schema.
+
+#### `private.library_sources`
+
+| Field          | Type        | Description                                                         |
+| -------------- | ----------- | ------------------------------------------------------------------- |
+| id             | uuid PK     |                                                                     |
+| manifest_key   | text UNIQUE | Stable key from the ingestion manifest (`^[a-z0-9][a-z0-9_.-]{0,119}$`) |
+| title          | text        | 1–500 characters                                                    |
+| authors        | text[]      | Default empty                                                       |
+| year           | smallint    | 1900–2100, nullable                                                 |
+| doi            | text        | Nullable                                                            |
+| url            | text        | `https://` only, nullable                                           |
+| licence        | text        | Required: the licence the source is stored under                    |
+| region         | text[]      | Required, no default, at least one entry; each `global` or an ISO 3166-1 alpha-2 code (`IN`, `US`, `GB`, `AU`) |
+| topics         | text[]      | Topic tags used by search filters                                   |
+| evidence_level | text        | Nullable, free text set by ingestion                                |
+| kind           | text        | `paper`, `guideline`, `position_stand`, `summary`                   |
+| created_at     | timestamptz |                                                                     |
+
+#### `private.library_chunks`
+
+| Field       | Type                       | Description                                                  |
+| ----------- | -------------------------- | ------------------------------------------------------------ |
+| id          | uuid PK                    |                                                              |
+| source_id   | uuid FK                    | `library_sources.id`, on delete cascade                      |
+| ordinal     | integer                    | Position in the source, from 0; UNIQUE (source_id, ordinal) |
+| section     | text                       | Section name, nullable                                       |
+| header      | text                       | Context header written at ingestion (source and section)     |
+| body        | text                       | 1–8000 characters                                            |
+| token_count | integer                    | 1–2000                                                       |
+| embedding   | `extensions.vector(384)`   | gte-small, mean-pooled and normalised; null until embedded   |
+| embedding_model | text                   | Model that made the embedding (e.g. `gte-small`); set exactly when `embedding` is set, so a model change re-embeds selectively |
+| fts         | tsvector, generated stored | `to_tsvector('english', header || ' ' || body)`              |
+| created_at  | timestamptz                |                                                              |
+
+Indexes: HNSW on `embedding` (`vector_cosine_ops`), GIN on `fts`, and the unique
+`(source_id, ordinal)` btree, which also serves `source_id` lookups and the cascade.
+
+#### `private.library_ingest_runs`
+
+One row per ingestion run: `id`, `started_at`, `finished_at` (null exactly while `status` is
+`running`), `status` (`running`, `succeeded`, `failed`), `source_count`, `chunk_count`, `error`
+(at most 2000 characters).
+
+#### `public.search_library_v1(query_text, query_embedding, match_count, filters)`
+
+Contract 6. Security definer, empty `search_path`, executable by `service_role` only. Takes the 30
+best full-text matches (`websearch_to_tsquery('english', …)`, ranked by `ts_rank_cd`) and the 30
+nearest embeddings (cosine distance) and merges them by reciprocal rank fusion:
+`score = Σ 1 / (60 + rank)` over the lists a chunk appears in. Returns up to `match_count` rows
+(clamped to 1–8, null = 8), best first, each
+`{schema_version: 1, chunk_id, source_id, title, year, url, section, body, header, score}`.
+
+- Only the first 1000 characters of `query_text` are used. A null or blank `query_text`, or one
+  of stop words or negations (`-creatine`) only, skips full-text search; a null
+  `query_embedding` skips vector search; both skipped returns no rows.
+- `query_embedding` is declared as `public.library_embedding`, a domain over
+  `extensions.vector(384)`; callers pass the same JSON number array. Another size raises `22000`
+  ("expected 384 dimensions"). The domain exists because `supabase db dump` drops GRANT and REVOKE
+  lines that mention the `extensions` schema: with a plain `extensions.vector` parameter a
+  restored dump would leave the function executable by `anon` and `authenticated`.
+- Without filters the nearest embeddings come from the HNSW index; with a filter they are ranked
+  exactly over the matching sources' chunks (an HNSW scan stops after `ef_search` = 40
+  candidates, which a narrow filter could empty).
+- `filters` is null or an object with optional `region` and `topics` text arrays. A source matches
+  when its array overlaps the filter; an absent, null or empty array does not filter. Any other key
+  or a non-text-array value raises `22023`. Sources that apply everywhere carry `global` in
+  `region`, so a regional caller passes for example `["global", "IN"]`.
+
+#### Dump-safe function signatures (all schemas we own)
+
+`supabase db dump` (CLI 2.101.0) drops every GRANT and REVOKE line that names, after `ON`, a
+quoted identifier from its excluded-schema list (`information_schema`, `pg_*`, `_analytics`,
+`_realtime`, `_supavisor`, `auth`, `etl`, `extensions`, `pgbouncer`, `realtime`, `storage`,
+`supabase_functions`, `supabase_migrations`, `cron`, `dbdev`, `graphql`, `graphql_public`, `net`,
+`pgmq`, `pgsodium`, `pgsodium_masks`, `pgtle`, `repack`, `tiger`, `tiger_data`, `timescaledb_*`,
+`_timescaledb_*`, `topology`, `vault`). A function restored from such a dump keeps Supabase's
+default grants, so `anon` and `authenticated` could call it. Therefore no function in `public` or
+`private` may take an input argument whose type lives in one of those schemas (wrap the type in a
+domain in `public`, as `public.library_embedding` does), have an input argument or a name equal
+to one of those names, and no table, view or sequence there may be named like one.
+`supabase/tests/database/research_library_test.sql` asserts all four. Return types are not in a
+GRANT line and are allowed.
+
+### Future vector memory
 
 Only after the gates in [ARCHITECTURE.md](./ARCHITECTURE.md) pass, add user-owned `memory_documents`
 and `memory_chunks` with source record, consent basis, classification, validity dates, deletion
