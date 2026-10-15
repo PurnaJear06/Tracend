@@ -31,6 +31,11 @@ now publishes the site after the functions and checks the live version. The owne
 Gmail, Cloudflare, GitHub and Supabase settings are in
 [`docs/handoff/website.md`](./handoff/website.md).
 
+**Deletion removes invite and waitlist rows (2026-10-15, in review):** deleting an account now
+also deletes its `private.signup_invites` row and its email's waitlist signup (trigger on the Auth
+delete; owner's choice), and the migration clears rows that earlier deletions left. SQL only, no
+reinstall. See [`docs/handoff/account-session.md`](./handoff/account-session.md).
+
 **Security hardening (2026-10-09):** a source review of `d26cf2c` raised leads that the owner
 asked to fix in five PRs, merged in order; details stay in the owner's private report. PR 1
 (media key grammar and ownership, a key guard on every service-role Storage call, the Coach

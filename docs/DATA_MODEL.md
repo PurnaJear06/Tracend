@@ -79,7 +79,9 @@ access/refresh-token table.
 
 The beta invite list: lowercased email (primary key), note, created time, and who claimed it and
 when. Only the SQL editor reaches it. The sign-up trigger refuses an email that is not listed;
-every account that existed on 2026-10-09 was seeded as claimed.
+every account that existed on 2026-10-09 was seeded as claimed. Deleting the Auth user deletes the
+invite it claimed, an unclaimed invite for its current email, and the waitlist signups for both
+(`auth_user_forget_invite`, 2026-10-15).
 
 ### `private.waitlist_signups`, `private.waitlist_attempts`, `private.waitlist_secret`
 

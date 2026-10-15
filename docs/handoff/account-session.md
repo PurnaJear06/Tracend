@@ -1,7 +1,39 @@
 # Account Session and Deletion Handoff
 
-**Status:** fix in review (branch `claude/account-deletion-recovery`). Needs a reinstall after merge,
-and the migration deploys with it.
+**Status:** the deletion recovery fix below shipped (2026-10-02). Invite and waitlist removal on
+deletion is in review (branch `claude/deletion-forgets-invite`); SQL only, no reinstall.
+
+## Invite and waitlist rows on deletion (2026-10-15)
+
+- **Gap:** deleting an account left `private.signup_invites` (email, `claimed_by` = the deleted user
+  id, timestamps) and the email's `private.waitlist_signups` row. Neither has a foreign key to
+  `auth.users`, so the Auth delete's cascade never reached them.
+- **Owner decision (2026-10-15):** delete both, and clear what earlier deletions left. Coming back
+  takes a new waitlist signup and a new invite.
+- Migration `20261015160000_account_deletion_forgets_invite.sql`:
+  - `private.forget_account_invite(id, email)` deletes the invite the account claimed, an unclaimed
+    invite for its current email, and the waitlist signups for both emails. A signup the person
+    referred keeps its row; `referred_by` clears through the existing `on delete set null`.
+  - Trigger `auth_user_forget_invite` (after delete on `auth.users`) calls it, in the same
+    transaction as `auth.admin.deleteUser` or a dashboard delete, so a failure keeps the account
+    and the deletion can be retried. `privacy-delete-account` needs no change.
+  - `private.forget_deleted_account_invites()` ran once in the migration: invites claimed by an
+    account that no longer exists are removed with their waitlist rows, except one whose email
+    signed up again (the insert trigger kept the old claimer), which now names the live account.
+    Returns the count removed; rerunnable from the SQL editor.
+  - No grants or RLS change; all three functions are owner-only.
+- pgTAP: `supabase/tests/database/account_deletion_forgets_invite_test.sql` (full SQL deletion
+  path, other people's rows unchanged, an email changed after sign-up, the earlier-deletion cleanup,
+  grants).
+- Docs: SECURITY_PRIVACY §7 and §11, DATA_MODEL, ARCHITECTURE §3, `site/src/pages/privacy.astro`
+  (and the same wording on PR #108's rewrite).
+- Owner check after deploy, read-only in the SQL editor (no row should come back):
+
+  ```sql
+  select i.email from private.signup_invites i
+  where i.claimed_by is not null
+    and not exists (select 1 from auth.users u where u.id = i.claimed_by);
+  ```
 
 ## Owner report (2026-10-02, build 273, main a716afb)
 
