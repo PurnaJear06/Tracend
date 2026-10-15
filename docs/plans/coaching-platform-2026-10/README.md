@@ -34,6 +34,7 @@ without validation, the athlete's approval and an audit event (CLAUDE.md, Archit
 | D8 | Claude builds with sub-agents; the owner merges. |
 | D9 | Heart rate never sets the load. It raises or lowers confidence, informs rest, cardio dosing and recovery, and prompts a question. |
 | D10 | Sleeping heart rate starts in shadow mode: computed and stored, not used in the recovery score until a later reviewed change. |
+| D11 | Privacy and AI wording (owner, 2026-10-15): no model names anywhere the athlete or the public reads (app, notices, website, privacy policy). Remove every DeepSeek, Groq and Qwen mention. Name the receiving company only where disclosure is needed: one line in each AI consent notice and the privacy policy's processor list. Rewrite the notices and privacy pages for clarity. This is a beta exit criterion. |
 
 ## Phases and board
 
@@ -54,7 +55,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 2 | A4 | ai-gateway | Onboarding plan and questions on Sonnet | — | A1, A2 | todo | |
 | 2 | A5 | ai-gateway | Daily decision on Sonnet | — | A1, A2, B0 | todo | |
 | 2 | A6 | ai-gateway | Coach chat, cache-friendly prompt | — | A1, A2 | todo | |
-| 2 | A7 | ai-gateway | Notices, app label, evals, docs, cutover runbook | — | A3–A6 | todo | |
+| 2 | A7 | ai-gateway | Notices and app wording per D11 (no model names; remove DeepSeek/Groq/Qwen everywhere), evals, docs, cutover runbook | — | A3–A6 | todo | |
 | 2 | D1 | ios-widgets | Live Activity with Done / Skip / +30s | — | C1, D0 | todo | |
 | 2 | C2 | workout-hr | Native heart-rate reader, per-set summaries | 32 | C1, D0 | todo | |
 | 2 | B1 | training-engine | Catalog v2 and coaching-standard rule data | 21 | B0 | todo | |
@@ -126,20 +127,24 @@ Activity from `rest_timer.dart` through one call site that C1 reviews.
 A contract changes only by a new version entry here, approved by the lead. Builders implement the
 shape exactly.
 
-### Contract 1: AI gateway (`supabase/functions/_shared/ai/`)
+### Contract 1: AI gateway (`supabase/functions/_shared/ai/`), version 2
 
 ```ts
 type AiFeature =
   | "coach_chat" | "daily_decision" | "onboarding_plan" | "onboarding_questions"
   | "meal_vision" | "physique_vision" | "library_context";
-type AiProvider = "anthropic" | "openai_compatible" | "gemini";
+type AiProvider = "anthropic" | "openai_compatible" | "gemini";   // wire protocol
+// Who receives the data. Stored in SQL whitelists, notices and consent; a notice names a vendor.
+// "router" is for synthetic evals through an OpenAI-compatible router; no notice names it.
+type AiVendor = "anthropic" | "deepseek" | "groq" | "gemini" | "router";
 
 type AiRoute = Readonly<{
   feature: AiFeature;
   provider: AiProvider;
+  vendor: AiVendor;               // from the model table; DeepSeek/Groq hosts are pinned per vendor
   providerLabel: string;          // shown in notices, e.g. "Claude (Anthropic)"
   model: string;
-  baseUrl?: string;               // openai_compatible only (DeepSeek, Groq, routers)
+  baseUrl?: string;               // openai_compatible only; must match the vendor's host, any https host for "router"
   thinking: "off" | "adaptive";   // mapped per model; Sonnet 5.5 "off" = between_tools
   effort?: "low" | "medium" | "high";
   maxOutputTokens: number;
@@ -161,7 +166,7 @@ type AiRequest = Readonly<{
   system: AiContent[];            // stable first, so prefixes cache
   messages: { role: "user" | "assistant"; content: AiContent[] }[];
   output: { kind: "text" } | { kind: "json"; schema: Record<string, unknown> };
-  consentProvider: AiProvider | null;  // provider named by the athlete's accepted notice
+  consentVendor: AiVendor | null;     // vendor named by the athlete's accepted notice
   signal?: AbortSignal;
 }>;
 
@@ -188,7 +193,10 @@ function call(request: AiRequest, deps?: { fetch?: typeof fetch; now?: () => num
 Rules:
 - Never sends `temperature`, `top_p` or a forced `tool_choice` to Claude 5 models. Structured output
   uses `output_config.format` (JSON schema).
-- Refuses before sending when `consentProvider !== route.provider` (`consent_provider_mismatch`).
+- Refuses before sending when `consentVendor !== route.vendor` (`consent_provider_mismatch`).
+- Rollback parity: OpenAI-compatible and Gemini requests send what today's providers send
+  (per-model request defaults such as `temperature: 0.1`, the JSON schema restated in the system
+  prompt for JSON mode). Claude 5 requests never carry sampling parameters.
 - Budget is the caller's job (`AiBudget.reserve` before `call`, release or keep after), unchanged.
 - Logs one scrubbed `ai_call` line per call: feature, provider, model, outcome, token counts, cost,
   latency. Never prompt text, image data or reply text.
@@ -324,7 +332,8 @@ per Contract 6; pgTAP for ranking on a seeded fixture. Update `CLAUDE.md`, `ARCH
 `IMPLEMENTATION_ROADMAP.md` to replace the "no vector databases" rule with D3. Add `private` table
 reset to the restore drill if needed. No ingestion yet.
 
-**W1: website.** Fix the copy contradictions found on 2026-10-14: "progress photos are private"
+**W1: website.** Apply D11 to the site and privacy policy (no model names, Anthropic named once as
+the AI processor, plain-language rewrite). Fix the copy contradictions found on 2026-10-14: "progress photos are private"
 next to AI processing (say what is processed and by whom), name Anthropic as an AI processor in
 the privacy page, iOS only (no "Android in testing"), the physique check shown as coming later.
 Add the TestFlight checklist to `docs/BETA_OPERATIONS.md`. Follow `site/PRODUCT.md` claim rules.
@@ -352,5 +361,13 @@ Add the TestFlight checklist to `docs/BETA_OPERATIONS.md`. Follow `site/PRODUCT.
 ## Decisions log
 
 - 2026-10-15: program approved; Iteration 1 = Phase 0 + Phase 1.
+- 2026-10-15: Contract 1 v2. Consent compares a vendor id (`anthropic`, `deepseek`, `groq`,
+  `gemini`), not the wire protocol, so a DeepSeek notice can never pass a Groq route. SQL stores
+  vendor ids only (A1 adds `anthropic`; `openai_compatible` is never stored). Eval routers use
+  vendor `router`, which no notice names. Resolves A2's contract request.
+- 2026-10-15: D11 (no model names in user-facing text). App files that name providers today:
+  `lib/shared/ai_provider_names.dart`, `lib/features/consent/ai_coaching_consent.dart`,
+  `lib/features/coach/coach_labels.dart`, `lib/features/onboarding/onboarding_proposal_view.dart`;
+  notice bodies are rows the owner publishes (A7 drafts them).
 - 2026-10-15: migration-order check added to the Migration Collision Check job
   (`scripts/check-migration-order.sh`).
