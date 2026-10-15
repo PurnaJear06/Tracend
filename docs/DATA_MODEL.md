@@ -371,7 +371,9 @@ meant on the earlier 1–10 picker, so RPE readers (Coach context) stay consiste
 clears it on an explicit null, and refuses (22023) a malformed value, a time more than 10 minutes
 in the future or more than 10 minutes before the session's recorded start, and an end before the
 start. Set times from before the server's recorded start stay on the phone and are never sent (a
-workout started offline). If the server still refuses the times (a phone clock more than 10 minutes
+workout started offline). A set sends only the keys it knows: one restored from a draft without
+them (saved by an older build) sends none until the athlete ticks, un-ticks or answers reps left on
+it, so it never clears times or reps left another device stored; un-ticking sends explicit nulls. If the server still refuses the times (a phone clock more than 10 minutes
 off), the app sends the same draft again without the five keys and syncs the rest of that workout
 without them; the reps left still arrive as the matching RPE. A workout whose final sync is
 refused is not finished. `get_my_workout_session` 1.1 and `get_my_exercise_history` 1.1 (last

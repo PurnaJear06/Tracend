@@ -56,7 +56,11 @@ C1 (Phase 1); C2 (Phase 2); C3 (Phase 3); C4 (Phase 4)
   5+). The old picker already asked "How many reps were left?" and labelled each RPE with reps
   left, so the redesign's intent is kept and the question is answered directly. The app still writes
   `rpe = 10 − rir` (the same mapping), so the Coach's set RPE stays consistent; sets logged before
-  show their RPE. `rpe_picker.dart` became `effort_scale.dart` (session effort only).
+  show their RPE as reps left (`WorkoutSetDraft.shownRir`, display only, so Fill skips them).
+  `rpe_picker.dart` became `effort_scale.dart` (session effort only).
+- Review fix: a set sends only the Contract 2 keys it knows (`WorkoutSetDraft._known`, per key): a
+  set restored from a pre-C1 draft sends none until a tick, un-tick, reps-left answer or re-measured
+  rest sets one, so it never clears another device's values; un-tick still sends nulls.
 - Tests: `test/set_timing_test.dart` (rest maths, backgrounding, relaunch),
   `test/rir_picker_test.dart`, timing/event/command widget tests in
   `test/phase_3_workout_flow_test.dart`, contract fixtures `workout_session_v1_1.json` and

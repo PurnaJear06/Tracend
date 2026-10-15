@@ -596,8 +596,9 @@ exercise with sets left.
   card reads "All N sets done" with **Next exercise**, or tells the athlete to tap Finish on the
   last exercise.
 - **Logged**: each done set with its number, "62.5 kg × 8" (or "12 reps"), a **New best** or
-  **First log** mark, its reps left (**2 left**, **5+ left**, **RPE 8** for a set logged before
-  reps left were asked, or **Reps left** to add) and undo. Undo clears that set's reps left and its
+  **First log** mark, its reps left (**2 left**, **5+ left**, or **Reps left** to add; a set
+  logged before reps left were asked shows what its RPE meant, 10 − RPE, RPE 5 or below as **5+**,
+  without writing it) and undo. Undo clears that set's reps left and its
   end time.
 - Tools: **Pain or discomfort** stays a visible chip (**Pain noted** in caution when on). **Fill
   reps left** and a ⋯ menu whose only action is **Mark as skipped** (an action sheet with **Keep
@@ -608,8 +609,8 @@ one row of 0, 1, 2, 3, 4 and 5+ (VoiceOver reads "Nothing left", "1 rep left" �
 left"). It replaced the 1–10 set-effort picker on 2026-10-15 (C1): that picker already asked how
 many reps were left, so the athlete now answers it directly; the app still writes the RPE the same
 answer meant there (10 − reps left, 5+ as 5). Blank is allowed (**Not now**, **Clear**). **Fill
-reps left** gives one value to the logged sets of that exercise that have neither reps left nor an
-older effort, leaves the others alone, and says how many it filled; each set stays adjustable
+reps left** gives one value to the logged sets of that exercise that show **Reps left** (neither
+reps left nor an older RPE), leaves the others alone, and says how many it filled; each set stays adjustable
 afterwards. Reps left are separate from session effort and never feed it.
 
 **Set timing.** Nothing new on screen. Each set records when it started (the end of the rest before
