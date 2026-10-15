@@ -134,7 +134,107 @@ byte, so merging and deploying changes nothing. Edge Functions only: no SQL (A1'
 `provider`/`model` live in a free-text payload), no app change. `onboarding-propose-plan` is the
 mock proposal with no model call and is untouched.
 
-PLACEHOLDER_A4_BODY
+- **Two paths** (`onboardingGatewayRoute` in `_shared/providers/onboarding_plan_provider.ts`, wired
+  in `onboarding-plan/index.ts`):
+  - settings path: `route(feature)` is null, or its `AI_<FEATURE>_EVALUATED` is not `true`, or it is
+    the eval router (ignored and logged: no notice names it). Exactly today's behaviour:
+    `ONBOARDING_PLAN_*`, `has_ai_coaching_consent`, `reserve_ai_budget` at the fixed ceiling,
+    `callOnboardingModel`. An unevaluated route is identical to no route.
+  - gateway: a complete, evaluated route whose worst case the budget accepts. Plan and questions
+    have separate routes (`AI_ONBOARDING_PLAN_*`, `AI_ONBOARDING_QUESTIONS_*`).
+- **Consent:** `get_ai_consent_v2` for `onboarding_plan` / `onboarding_questions`; the notice must
+  name the route's vendor (`consentVendor`, checked again by the gateway). Otherwise nothing is
+  sent: the plan becomes the rules plan (`ai_consent_not_granted`) and the questions are skipped
+  and not stored.
+- **Plan** (`onboarding-plan/gateway.ts`, `generatePlanViaGateway`): the same rules prompt as the
+  settings path (`onboardingSystemPrompt`, `onboardingUserMessage`, so the policy text stays in one
+  place) plus one line forbidding model and company names (D11), as a cached system block; JSON
+  output through the gateway with a structure-only schema (`onboardingPlanJsonSchema`). Lengths,
+  ranges, slugs and every rule stay with `parseOnboardingPlan` / `validateOnboardingPlan`, and
+  the result still goes through `buildOnboardingProposal`; the athlete approves it as before. One
+  targeted repair, then the rules plan, exactly as today. The repair keeps the cached system
+  block and the user block and adds a second user block with the broken rule, its path and the
+  rejected candidate (untrusted data). A plan whose text names a model or company is a failed
+  attempt (`names_model_or_company`), so the repair or the rules plan answers (D11).
+- **Questions** (`generateQuestionsViaGateway`): one request, no repair; the schema is
+  `followUpJsonSchema` (in `_shared/onboarding/questions.ts`); `parseFollowUpQuestions` still
+  drops a reply that strays out of scope, and a question or choice naming a model or company is
+  dropped the same way (`questions_invalid`).
+- **Failure codes** are the settings path's: `provider_timeout`, `provider_rate_limited`,
+  `provider_http_error` (overloaded, network, other HTTP), `provider_response_truncated` /
+  `provider_response_invalid` (billed unreadable answer; earns the one repair), plus
+  `provider_refused`. Stored provenance: `training.provider` is the vendor (`anthropic`) and
+  `training.model` the model that answered; `ai_usage_events` gets the same with the real cost.
+- **Budget** (`gatewayCeilingUsd`): one reservation, `reserve_ai_budget_v2`, covers the first
+  attempt and one repair: for each attempt the whole prompt (UTF-8 bytes, which bound the tokens,
+  plus 1,000) at the dearer of the input and cache-write price, plus every output token the
+  route allows; the repair prompt adds up to 16,000 bytes of candidate. **Never clamped**: if the
+  worst case passes USD 0.50, or the model has no price, the route is unusable for that request.
+  Nothing is sent or reserved, the settings path answers, and `onboarding_plan_route_unusable` /
+  `onboarding_questions_route_unusable` is logged (warn). Sonnet 5.5 at 8,000 plan tokens reserves
+  USD 0.24 to 0.27 for both attempts (a question reserves 0.023; a plan costs 0.02 to 0.08); at
+  32,000 it is unusable (tested). Outcomes (tested with a
+  real `AiBudget` over a fake database):
+  - not sent (notice names another vendor, budget refused), 429, 503/529, other HTTP errors: the
+    place is released and no usage is recorded;
+  - an answer that arrived (valid, invalid, cut off, refusal): its usage is recorded at the real
+    cost (`usage.costUsd`), then the place is released;
+  - a timeout or a broken connection (cost unknown): `keep()`, so the place keeps counting at
+    its ceiling. If a billed first attempt is followed by a lost repair, the first attempt's usage
+    is recorded and the place is also kept (counted twice until it ages out, on purpose).
+- **Timeouts:** the plan honours `route.timeoutMs` for each attempt, bounded by a 120 s total
+  deadline (the 140 s generation lease and the 150 s background limit); a repair is sent only
+  with at least 10 s left. A longer route timeout is clamped and `onboarding_plan_timeout_clamped`
+  is logged. Questions are bounded by 40 s (the app waits 45 s); a longer route timeout is
+  clamped and `onboarding_questions_timeout_clamped` is logged.
+- **Tests** (Deno suite: 535 passed, 0 failed, 8 ignored):
+  - `onboarding-plan/gateway_test.ts` (55): parity, then the Claude request (cache mark, no
+    sampling parameters, structured output), reservation size, unusable route, consent and budget
+    refusals, repair and the second failure, D11 on plans and questions, every budget outcome for
+    plan and questions, the timeout clamps, and every eval athlete being feasible.
+  - **Parity:** `legacy_requests_golden.json` holds the request bodies of the settings path
+    (DeepSeek thinking on and off, Groq; plan with its repair, and questions) recorded from the
+    `origin/main` tree (610e320) by `legacy_golden_harness.ts`, run with `deno run --no-check`
+    against `git archive origin/main`. The tests replay them on this tree byte for byte with no
+    route, with an unevaluated route and with an incomplete route (18 tests). The golden embeds
+    the prompt text from `generate.ts`: if a later chunk changes that prompt, record it again
+    from `origin/main` the same way.
+- **Live eval** (`_evals/onboarding_plan_eval.ts`, `EVAL_PROVIDER=anthropic`; 13 synthetic
+  athletes, plan and follow-up questions each; Sonnet 5.5, thinking off, 8,000 plan tokens, 1,500
+  question tokens; 2026-10-16). Baseline for comparison: the only recorded one is the old
+  DeepSeek router run (12/12 valid, one repaired, p95 49 s, USD 0.11, 2026-10-02; 12 athletes, a
+  router that ignored thinking-off); there was never a direct DeepSeek run. These are the first
+  Claude numbers.
+  - Run 1 (this code): plans 12/13 valid (1 repaired), 1 fell back to the rules plan
+    (`weekly_muscle_volume_exceeded`, shoulders on the six-day PPL athlete, after the repair);
+    p50 15.4 s, p95 36.5 s; USD 0.507 for plans (about 0.04 each; a six-day plan 0.076). Questions
+    12/13 answered (30 questions; one reply dropped as `questions_invalid`, which is the scope
+    filter working), p95 3.8 s, USD 0.037 in all. All gates passed.
+  - Run 2 (same code plus a prompt line telling the model to total each muscle's weekly sets,
+    since removed): plans 11/13 valid (4 repaired), 2 fell back (the same athlete, and
+    `priority_volume_missing` on the returning athlete); the 90% gate failed. The line did not
+    help, so it was reverted. 13 athletes make one failure a 7.7-point swing, so read run 1 and
+    run 2 as the same code with run-to-run noise: plans pass 90% on about half of the runs. Total
+    spend for both runs and nothing else: USD 1.196.
+  - The failures are all weekly volume (`weekly_muscle_volume_exceeded`, `priority_volume_missing`)
+    on five or six day plans, which the repair fixes about half of the time. The repair message
+    names the rule and the path only. **Contract request (generate.ts / policy.ts, read-only
+    here):** put each muscle's weekly set limit and the sets it has so far into the repair
+    message, or a pre-computed per-muscle set budget into the system prompt, then rerun the eval.
+    The rules plan is the safety net either way.
+  - Cache reads were observed: the questions prompt (787 tokens) is read from cache on every
+    call after the first; a plan repair reads its 2.8k-token system block from cache.
+- **Cutover settings (A7):** `AI_ONBOARDING_PLAN_{PROVIDER=anthropic,MODEL=claude-sonnet-5-5,
+  MAX_OUTPUT_TOKENS=8000,TIMEOUT_MS=90000,EVALUATED=true}` and
+  `AI_ONBOARDING_QUESTIONS_{PROVIDER=anthropic,MODEL=claude-sonnet-5-5,MAX_OUTPUT_TOKENS=1500,
+  TIMEOUT_MS=30000,EVALUATED=true}`, `ANTHROPIC_API_KEY`, and a published notice naming
+  `anthropic` for the `onboarding_plan` purpose (it also covers `onboarding_questions`). Whether
+  run 1 is enough for `EVALUATED=true` is the owner's call. Rollback: unset
+  `AI_ONBOARDING_PLAN_PROVIDER` / `AI_ONBOARDING_QUESTIONS_PROVIDER`; the old `ONBOARDING_PLAN_*`
+  settings path runs again.
+- **Not verified:** `index.ts` wiring (store methods over `AiBudget` and `get_ai_consent_v2`) is
+  type-checked but has no test of its own; nothing ran against a database (no Colima); the real
+  notice flow needs A7's notices; thinking `adaptive` was not evaluated.
 
 ### A5: daily decision on Claude
 

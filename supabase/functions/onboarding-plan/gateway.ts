@@ -96,11 +96,6 @@ export const namesModelOrCompany = (text: string): boolean => modelOrCompany.tes
 
 const noNamesRule = "- Never name an AI model, an AI company or a provider in any text you write.";
 
-// The first live run (2026-10-16) broke the weekly volume limit on both six-day plans, shoulders
-// every time: a muscle that is the target of several sessions adds up across the week.
-const countVolumeRule =
-  "- Before you answer, add up the weekly sets of every target muscle across all workouts and cut sets from any muscle over its limit. A muscle that is the target in several sessions (shoulders on a five or six day plan) adds up fastest.";
-
 type Info = (event: string, fields: Record<string, unknown>) => void;
 
 export type GatewayDeps = Readonly<{
@@ -275,7 +270,7 @@ export function preparePlan(
   history: HealthHistory | null,
 ): PlanPreparation {
   const policies = policiesFor(answers, catalog, health, history);
-  const system = `${onboardingSystemPrompt(policies)}\n${countVolumeRule}\n${noNamesRule}`;
+  const system = `${onboardingSystemPrompt(policies)}\n${noNamesRule}`;
   const user = onboardingUserMessage(answers, catalog, health, history);
   const first = tokenBound(system, user, JSON.stringify(onboardingPlanJsonSchema));
   const ceilingUsd = gatewayCeilingUsd(gatewayRoute, [
