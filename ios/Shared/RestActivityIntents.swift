@@ -7,17 +7,20 @@ import Foundation
 /// `RestActivityButtons.handler` sends the press to the open workout. The
 /// activity never changes the workout itself.
 enum RestActivityButton: Equatable {
-  case done
+  /// Done for the set the card named: exercise order and set number.
+  case done(exerciseOrder: Int, setNumber: Int)
   case skip
   case addRest(seconds: Int)
 
   /// What "+30s" adds, in seconds.
   static let addRestSeconds = 30
 
-  /// The `press` call's arguments on `tracend/live_activity`.
+  /// The `press` call's arguments on `tracend/live_activity`, without the
+  /// press time, which the bridge stamps (`pressed_at_millis`).
   var channelArguments: [String: Any] {
     switch self {
-    case .done: return ["button": "done"]
+    case .done(let exerciseOrder, let setNumber):
+      return ["button": "done", "exercise_order": exerciseOrder, "set_number": setNumber]
     case .skip: return ["button": "skip"]
     case .addRest(let seconds): return ["button": "add_rest", "seconds": seconds]
     }
@@ -36,14 +39,29 @@ enum RestActivityButtons {
 }
 
 /// "Done set": ticks the set the activity names, with the kg and reps the
-/// app suggests.
+/// app suggests, but only if the app still has that set as the current one.
+/// The card builds the intent with the set it shows, so a stale or repeated
+/// press names a set the app no longer expects and ticks nothing.
 struct CompleteSetIntent: LiveActivityIntent {
   static let title: LocalizedStringResource = "Done set"
   static let description = IntentDescription("Logs the set Tracend's rest card names.")
   static let isDiscoverable = false
 
+  @Parameter(title: "Exercise order")
+  var exerciseOrder: Int
+
+  @Parameter(title: "Set number")
+  var setNumber: Int
+
+  init() {}
+
+  init(exerciseOrder: Int, setNumber: Int) {
+    self.exerciseOrder = exerciseOrder
+    self.setNumber = setNumber
+  }
+
   func perform() async throws -> some IntentResult {
-    await RestActivityButtons.press(.done)
+    await RestActivityButtons.press(.done(exerciseOrder: exerciseOrder, setNumber: setNumber))
     return .result()
   }
 }

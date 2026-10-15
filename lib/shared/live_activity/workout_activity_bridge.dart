@@ -12,30 +12,61 @@ const liveActivityChannel = MethodChannel('tracend/live_activity');
 /// `ios/Shared/RestActivityIntents.swift`). The activity never changes the
 /// workout itself: each press goes to the open workout, which decides.
 sealed class LiveActivityButton {
-  const LiveActivityButton();
+  const LiveActivityButton(this.pressedAt);
 
-  /// Reads a `press` call's arguments: `{"button": "done"}`,
-  /// `{"button": "skip"}` or `{"button": "add_rest", "seconds": 30}`.
-  /// Null for anything else, including seconds outside 1 to 300.
+  /// How long iOS waits for the workout to answer a press
+  /// (`WorkoutActivityBridge.pressTimeout`). After it the card already shows
+  /// "Open Tracend to continue", so a press this old is dropped, never applied.
+  static const pressTimeout = Duration(seconds: 8);
+
+  /// Reads a `press` call's arguments, which always carry the Swift-side
+  /// press time as `pressed_at_millis`: `{"button": "done", "exercise_order":
+  /// 1, "set_number": 3}`, `{"button": "skip"}` or `{"button": "add_rest",
+  /// "seconds": 30}`. Null for anything else: no press time, a Done without
+  /// the set the card named (an older payload is refused, never applied to
+  /// whatever set is current), or seconds outside 1 to 300.
   static LiveActivityButton? fromChannel(Object? arguments) {
     if (arguments is! Map) return null;
+    final millis = arguments['pressed_at_millis'];
+    if (millis is! int) return null;
+    final pressedAt = DateTime.fromMillisecondsSinceEpoch(millis);
     final seconds = arguments['seconds'];
+    final order = arguments['exercise_order'];
+    final number = arguments['set_number'];
     return switch (arguments['button']) {
-      'done' => const DoneSetButton(),
-      'skip' => const SkipRestButton(),
+      'done' when order is int && number is int && number >= 1 => DoneSetButton(
+        pressedAt,
+        exerciseOrder: order,
+        setNumber: number,
+      ),
+      'skip' => SkipRestButton(pressedAt),
       'add_rest' when seconds is int && seconds >= 1 && seconds <= 300 =>
-        AddRestButton(seconds),
+        AddRestButton(pressedAt, seconds),
       _ => null,
     };
   }
+
+  /// When the press happened, stamped on the Swift side.
+  final DateTime pressedAt;
+
+  /// The moment after which this press is too old to apply.
+  DateTime get expiresAt => pressedAt.add(pressTimeout);
 
   /// The name in breadcrumbs: which button, never a workout value.
   String get name;
 }
 
-/// "Done set": the rest is over and the athlete did the set it named.
+/// "Done set": the rest is over and the athlete did the set the card named.
+/// [exerciseOrder] and [setNumber] are that set, as the card showed it.
 final class DoneSetButton extends LiveActivityButton {
-  const DoneSetButton();
+  const DoneSetButton(
+    super.pressedAt, {
+    required this.exerciseOrder,
+    required this.setNumber,
+  });
+
+  final int exerciseOrder;
+  final int setNumber;
 
   @override
   String get name => 'done';
@@ -43,7 +74,7 @@ final class DoneSetButton extends LiveActivityButton {
 
 /// "Skip": the rest ends now.
 final class SkipRestButton extends LiveActivityButton {
-  const SkipRestButton();
+  const SkipRestButton(super.pressedAt);
 
   @override
   String get name => 'skip';
@@ -51,7 +82,7 @@ final class SkipRestButton extends LiveActivityButton {
 
 /// "+30s": the rest runs [seconds] longer.
 final class AddRestButton extends LiveActivityButton {
-  const AddRestButton(this.seconds);
+  const AddRestButton(super.pressedAt, this.seconds);
 
   final int seconds;
 
@@ -59,9 +90,12 @@ final class AddRestButton extends LiveActivityButton {
   String get name => 'add_rest';
 }
 
-/// Acts on a press and completes once the workout has acted on it.
+/// Acts on a press and completes with whether it was handled: true once the
+/// workout acted on it or knowingly ignored it as out of date (the card then
+/// shows the true state), false when it could not (the card then asks the
+/// athlete to open the app).
 typedef LiveActivityPressHandler =
-    Future<void> Function(LiveActivityButton button);
+    Future<bool> Function(LiveActivityButton button);
 
 /// The workout's Live Activity on the Lock Screen and in the Dynamic Island:
 /// a rest countdown that iOS runs from its end time, so it keeps going with
@@ -80,10 +114,15 @@ abstract interface class WorkoutActivityBridge {
   /// Shows a rest that ends at [endsAt], replacing any earlier one.
   /// [nextLabel] says what follows ("Set 3 of Bench press"); [exerciseName]
   /// names the exercise the rest belongs to. Empty labels show generic text.
+  /// [nextExerciseOrder] and [nextSetNumber] are the set the label names;
+  /// the card's Done button carries them back so only that set is ticked.
+  /// Without them the card has no Done button.
   Future<void> startRest({
     required DateTime endsAt,
     required String nextLabel,
     required String exerciseName,
+    int? nextExerciseOrder,
+    int? nextSetNumber,
   });
 
   /// Moves the end of the rest that is showing, and its next label when
@@ -112,10 +151,14 @@ class MethodChannelWorkoutActivityBridge implements WorkoutActivityBridge {
     required DateTime endsAt,
     required String nextLabel,
     required String exerciseName,
+    int? nextExerciseOrder,
+    int? nextSetNumber,
   }) => _invoke('startRest', {
     'ends_at_millis': endsAt.millisecondsSinceEpoch,
     'next_label': nextLabel,
     'exercise_name': exerciseName,
+    'next_exercise_order': ?nextExerciseOrder,
+    'next_set_number': ?nextSetNumber,
   });
 
   @override
@@ -146,9 +189,14 @@ class MethodChannelWorkoutActivityBridge implements WorkoutActivityBridge {
     await _invoke('detachButtons', null);
   }
 
-  /// iOS's `press`: answers true once an open workout acted on it, false
-  /// when none took it (the native side then asks the athlete to open the
-  /// app). Breadcrumbs name the button only.
+  /// The clock for the age of a press.
+  @visibleForTesting
+  static DateTime Function() clock = DateTime.now;
+
+  /// iOS's `press`: answers true once an open workout handled it, false
+  /// when none did (the native side then asks the athlete to open the
+  /// app). A press older than [LiveActivityButton.pressTimeout] is dropped
+  /// unapplied: iOS gave up on it long ago. Breadcrumbs name the button only.
   static Future<Object?> _handle(MethodCall call) async {
     if (call.method != 'press') {
       throw MissingPluginException('No ${call.method} on live activity');
@@ -159,10 +207,16 @@ class MethodChannelWorkoutActivityBridge implements WorkoutActivityBridge {
     }
     final onPress = _onPress;
     var taken = false;
+    if (clock().isAfter(button.expiresAt)) {
+      AppBreadcrumbs.workout(
+        'Rest live activity press',
+        data: {'button': button.name, 'taken': false, 'late': true},
+      );
+      return false;
+    }
     if (onPress != null) {
       try {
-        await onPress(button);
-        taken = true;
+        taken = await onPress(button);
       } catch (e) {
         debugPrint('Non-critical error: live activity press failed: $e');
       }

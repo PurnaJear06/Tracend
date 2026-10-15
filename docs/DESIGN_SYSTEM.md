@@ -213,8 +213,8 @@ in light and dark mode alike, so its text and lime keep the dark theme's contras
 - **Buttons:** while the rest runs, **+30s** and **Skip** (with a `forward.end.fill` glyph) share
   the row in two equal `raised` capsules with off-white 16pt semibold text; the countdown stays the
   only lime. Once the rest is over, one full-width lime **Done set** capsule with a check in
-  `onLime`, the single next thing to do. With no workout open, the row is "Open Tracend to
-  continue" in `textSecondary` with an `arrow.up.forward.app` glyph. VoiceOver reads "Add 30
+  `onLime`, the single next thing to do. With no workout open, or when the card names no set
+  for Done, the row is "Open Tracend to continue" in `textSecondary` with an `arrow.up.forward.app` glyph. VoiceOver reads "Add 30
   seconds", "Skip rest" and "Done, <next set>".
 - The countdown is `Text(timerInterval:)`, run by the system with the app closed. The activity
   shows no load, reps, effort or health value (UX_FLOWS.md §6).

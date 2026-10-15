@@ -16,8 +16,8 @@ import 'package:tracend/features/train/widgets/focus_exercise_page.dart';
 import 'package:tracend/features/train/widgets/rest_timer_view.dart';
 import 'package:tracend/features/train/widgets/set_row.dart';
 import 'package:tracend/features/train/workout_events.dart';
-import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 
 import 'live_activity/fake_workout_activity_bridge.dart';
@@ -262,7 +262,7 @@ class _Harness {
 
   final repository = _Repository();
   final alerts = _Alerts();
-  final activity = FakeWorkoutActivityBridge();
+  late final activity = FakeWorkoutActivityBridge(clock: clock.call);
   final clock = _Clock();
   final _Notifications notifications;
   Object? popped = 'not popped';
@@ -782,16 +782,16 @@ void main() {
 
       // +30s, then Skip, then Done for set 2, all from the Lock Screen.
       h.clock.advance(const Duration(seconds: 40));
-      expect(await h.activity.press(const AddRestButton(30)), isTrue);
+      expect(await h.activity.pressAdd(30), isTrue);
       expect(h.activity.calls.last.method, 'updateRest');
       expect(h.activity.showingUntil, t0.add(const Duration(seconds: 120)));
 
       h.clock.advance(const Duration(seconds: 20));
-      expect(await h.activity.press(const SkipRestButton()), isTrue);
+      expect(await h.activity.pressSkip(), isTrue);
       expect(h.activity.showingUntil, h.clock.now);
 
       h.clock.advance(const Duration(seconds: 45));
-      expect(await h.activity.press(const DoneSetButton()), isTrue);
+      expect(await h.activity.pressDone(), isTrue);
       final rest = h.activity.calls.last;
       expect(rest.method, 'startRest');
       expect(rest.exerciseName, 'Bench press');
@@ -803,14 +803,14 @@ void main() {
 
       // The rest runs out while the phone sleeps; Done ticks Push-up set 1.
       h.clock.advance(const Duration(minutes: 3));
-      expect(await h.activity.press(const DoneSetButton()), isTrue);
+      expect(await h.activity.pressDone(), isTrue);
       expect(h.repository.savedSet(1, 0)['completed'], isTrue);
       expect(h.repository.savedSet(1, 0)['rest_before_seconds'], 90);
       expect(h.activity.calls.last.nextLabel, 'Set 2 of Push-up');
 
       // The last set has no rest after it: the activity goes.
       h.clock.advance(const Duration(seconds: 75));
-      expect(await h.activity.press(const DoneSetButton()), isTrue);
+      expect(await h.activity.pressDone(), isTrue);
       expect(h.repository.savedSet(1, 1)['completed'], isTrue);
       expect(h.activity.methods.last, 'end');
       expect(h.activity.showingUntil, isNull);
@@ -826,7 +826,7 @@ void main() {
       await _tapText(tester, 'Done set 1');
 
       h.clock.advance(const Duration(minutes: 4));
-      expect(await h.activity.press(const SkipRestButton()), isTrue);
+      expect(await h.activity.pressSkip(), isTrue);
       expect(h.activity.methods.last, 'startRest');
 
       await _tapText(tester, 'Done set 2');
@@ -857,6 +857,152 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('a double press on Done ticks one set, not two', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      expect(await h.activity.pressSkip(), isTrue);
+
+      // The same card, tapped twice before the first tick shows.
+      final answers = await Future.wait([
+        h.activity.pressDone(),
+        h.activity.pressDone(),
+      ]);
+
+      expect(answers, [true, true]);
+      expect(h.repository.savedSet(0, 1)['completed'], isTrue);
+      expect(h.repository.savedSet(1, 0)['completed'], isFalse);
+      // The second press changed nothing and the card shows the new rest.
+      expect(h.activity.methods.last, 'updateRest');
+      expect(
+        h.activity.showingUntil,
+        h.clock.now.add(const Duration(seconds: 90)),
+      );
+      await _flushSave(tester);
+    });
+
+    testWidgets('a stale Done after an in-app tick ticks nothing', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      await _tapLabel(tester, 'Skip rest');
+      final stale = h.activity.card!;
+
+      // The athlete ticks the same set in the app, rests and skips again.
+      await _tapText(tester, 'Done set 2');
+      await _tapLabel(tester, 'Skip rest');
+      final showing = h.activity.showingUntil;
+
+      expect(
+        await h.activity.pressDone(
+          exerciseOrder: stale.exerciseOrder,
+          setNumber: stale.setNumber,
+        ),
+        isTrue,
+      );
+      expect(h.repository.savedSet(1, 0)['completed'], isFalse);
+      expect(h.activity.showingUntil, showing);
+      expect(h.activity.methods.last, isNot('end'));
+
+      // The card now names Push-up set 1; its Done still works.
+      expect(await h.activity.pressDone(), isTrue);
+      expect(h.repository.savedSet(1, 0)['completed'], isTrue);
+      await _flushSave(tester);
+    });
+
+    testWidgets('Done during a rest ticks nothing and redraws the card', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      final ends = h.activity.showingUntil;
+      final calls = h.activity.calls.length;
+
+      expect(await h.activity.pressDone(), isTrue);
+
+      expect(h.repository.savedSet(0, 1)['completed'], isFalse);
+      expect(h.activity.calls.length, calls + 1);
+      expect(h.activity.methods.last, 'updateRest');
+      expect(h.activity.showingUntil, ends);
+      await _flushSave(tester);
+    });
+
+    testWidgets('a press that waited past the timeout is dropped', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      expect(await h.activity.pressSkip(), isTrue);
+      final late = h.clock.now.subtract(
+        LiveActivityButton.pressTimeout + const Duration(seconds: 1),
+      );
+
+      expect(await h.activity.pressDone(at: late), isFalse);
+      expect(h.repository.savedSet(0, 1)['completed'], isFalse);
+
+      // Just inside the timeout it still counts.
+      final edge = h.clock.now.subtract(LiveActivityButton.pressTimeout);
+      expect(await h.activity.pressDone(at: edge), isTrue);
+      expect(h.repository.savedSet(0, 1)['completed'], isTrue);
+      await _flushSave(tester);
+    });
+
+    testWidgets('a Done reaches the server before the press answers', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      expect(await h.activity.pressSkip(), isTrue);
+
+      expect(await h.activity.pressDone(), isTrue);
+
+      // No timer has fired: the press itself sent the draft.
+      expect(h.repository.syncedSet(0, 1)['completed'], isTrue);
+      await _flushSave(tester);
+    });
+
+    testWidgets('a failed server send never blocks a logged set', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      expect(await h.activity.pressSkip(), isTrue);
+      h.repository.failSync = true;
+
+      expect(await h.activity.pressDone(), isTrue);
+
+      expect(h.repository.savedSet(0, 1)['completed'], isTrue);
+      expect(h.activity.methods.last, 'startRest');
+      await tester.pump();
+      expect(find.text('Offline'), findsOneWidget);
+      h.repository.failSync = false;
+      await _flushSave(tester);
+    });
+
+    testWidgets('Skip and +30s with no rest running change nothing', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      expect(await h.activity.pressSkip(), isTrue);
+      final calls = h.activity.calls.length;
+
+      expect(await h.activity.pressSkip(), isTrue);
+      expect(await h.activity.pressAdd(30), isTrue);
+
+      expect(h.activity.calls.length, calls);
+      await _flushSave(tester);
+    });
+
     testWidgets('once the workout is closed the buttons find no workout', (
       tester,
     ) async {
@@ -868,7 +1014,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(h.activity.onPress, isNull);
-      expect(await h.activity.press(const DoneSetButton()), isFalse);
+      expect(
+        await h.activity.pressDone(exerciseOrder: 1, setNumber: 2),
+        isFalse,
+      );
       expect(h.activity.showingUntil, isNull);
     });
   });
@@ -1367,7 +1516,9 @@ void main() {
       await _open(tester, h, events: hub);
       final t0 = h.clock.now;
 
-      hub.commands.add(const CompleteCurrentSet());
+      hub.commands.add(
+        const CompleteCurrentSet(exerciseOrder: 1, setNumber: 1),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(RestTimerOverlay), findsOneWidget);
 
@@ -1381,7 +1532,9 @@ void main() {
       expect(find.byType(RestTimerOverlay), findsNothing);
 
       h.clock.advance(const Duration(seconds: 30));
-      hub.commands.add(const CompleteCurrentSet());
+      hub.commands.add(
+        const CompleteCurrentSet(exerciseOrder: 1, setNumber: 2),
+      );
       await tester.pumpAndSettle();
       await _flushSave(tester);
       expect(h.repository.syncedSet(0, 1)['rest_before_seconds'], 60);
@@ -1395,7 +1548,9 @@ void main() {
       await _tapLabel(tester, 'Leave workout');
       await tester.tap(find.text('Save and leave'));
       await tester.pumpAndSettle();
-      hub.commands.add(const CompleteCurrentSet());
+      hub.commands.add(
+        const CompleteCurrentSet(exerciseOrder: 2, setNumber: 1),
+      );
       await tester.pumpAndSettle();
 
       expect(

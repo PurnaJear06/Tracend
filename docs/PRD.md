@@ -176,9 +176,7 @@ Island: a countdown with the exercise name and the next set's label only. An opt
 says "Rest timer finished" when rest ends while the phone is locked. It is off by default ("Rest
 timer alerts" in Account › Notifications); off or denied, the rest timer stays in the app.
 
-Done, Skip and +30s buttons on the Live Activity (D1) let the athlete run the workout from the
-Lock Screen: +30s and Skip during the rest, Done for the next set once it is over. Done logs the
-suggested kg and reps, which the athlete corrects in the app if needed.
+**Planned (Phase 2, D1):** Done, Skip and +30s buttons on the Live Activity.
 
 When Apple Health records a workout on a day the user has a scheduled Tracend workout but no
 completed session, Train offers a **mark complete from HealthKit** prompt. The user explicitly

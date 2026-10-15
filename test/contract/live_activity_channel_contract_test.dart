@@ -100,6 +100,24 @@ void main() {
     },
   );
 
+  test('startRest sends the set the card names only when given', () async {
+    await bridge.startRest(
+      endsAt: endsAt,
+      nextLabel: 'Set 3 of Bench press',
+      exerciseName: 'Bench press',
+      nextExerciseOrder: 2,
+      nextSetNumber: 3,
+    );
+
+    expect(native.calls.single.arguments, {
+      'ends_at_millis': endsAt.millisecondsSinceEpoch,
+      'next_label': 'Set 3 of Bench press',
+      'exercise_name': 'Bench press',
+      'next_exercise_order': 2,
+      'next_set_number': 3,
+    });
+  });
+
   test('updateRest sends the next label only when given', () async {
     await bridge.updateRest(endsAt: endsAt);
     await bridge.updateRest(endsAt: endsAt, nextLabel: 'Squat');
@@ -231,26 +249,52 @@ void main() {
   group('the buttons: iOS sends press, the open workout answers', () {
     const codec = StandardMethodCodec();
 
-    /// Plays iOS tapping a button: sends `press` with [arguments] and
-    /// returns the answer, or throws the error the app answered.
-    Future<Object?> press(Object? arguments) async {
+    /// When iOS stamped the press; the app's clock reads one second later.
+    final pressedAt = DateTime.utc(2026, 10, 15, 9);
+    final stamp = pressedAt.millisecondsSinceEpoch;
+    final restoreClock = MethodChannelWorkoutActivityBridge.clock;
+
+    /// Plays iOS tapping a button: sends `press` with [arguments] (stamped
+    /// with [pressedAt] unless it carries its own) and returns the answer, or
+    /// throws the error the app answered.
+    Future<Object?> press(Map<String, Object?>? arguments) async {
       final reply = await TestDefaultBinaryMessengerBinding
           .instance
           .defaultBinaryMessenger
           .handlePlatformMessage(
             liveActivityChannel.name,
-            codec.encodeMethodCall(MethodCall('press', arguments)),
+            codec.encodeMethodCall(
+              MethodCall(
+                'press',
+                arguments == null
+                    ? null
+                    : {'pressed_at_millis': stamp, ...arguments},
+              ),
+            ),
             (_) {},
           );
       return codec.decodeEnvelope(reply!);
     }
 
-    final presses = <LiveActivityButton>[];
-    Future<void> onPress(LiveActivityButton button) async =>
-        presses.add(button);
+    const done = {'button': 'done', 'exercise_order': 2, 'set_number': 3};
 
-    setUp(presses.clear);
-    tearDown(() => bridge.detachButtons(onPress));
+    final presses = <LiveActivityButton>[];
+    var answer = true;
+    Future<bool> onPress(LiveActivityButton button) async {
+      presses.add(button);
+      return answer;
+    }
+
+    setUp(() {
+      presses.clear();
+      answer = true;
+      MethodChannelWorkoutActivityBridge.clock = () =>
+          pressedAt.add(const Duration(seconds: 1));
+    });
+    tearDown(() {
+      MethodChannelWorkoutActivityBridge.clock = restoreClock;
+      return bridge.detachButtons(onPress);
+    });
 
     test('attach and detach tell iOS whether a workout takes them', () async {
       await bridge.attachButtons(onPress);
@@ -263,7 +307,7 @@ void main() {
     });
 
     test('a detach from an earlier handler leaves the current one', () async {
-      Future<void> earlier(LiveActivityButton button) async {}
+      Future<bool> earlier(LiveActivityButton button) async => true;
       await bridge.attachButtons(onPress);
       await bridge.detachButtons(earlier);
 
@@ -274,26 +318,35 @@ void main() {
     test('each button arrives as its press and answers true', () async {
       await bridge.attachButtons(onPress);
 
-      expect(await press({'button': 'done'}), isTrue);
+      expect(await press(done), isTrue);
       expect(await press({'button': 'skip'}), isTrue);
       expect(await press({'button': 'add_rest', 'seconds': 30}), isTrue);
 
-      expect(presses[0], isA<DoneSetButton>());
+      final first = presses[0] as DoneSetButton;
+      expect((first.exerciseOrder, first.setNumber), (2, 3));
+      expect(first.pressedAt.isAtSameMomentAs(pressedAt), isTrue);
       expect(presses[1], isA<SkipRestButton>());
       expect((presses[2] as AddRestButton).seconds, 30);
     });
 
+    test('the answer is the workout\'s: false when it could not act', () async {
+      await bridge.attachButtons(onPress);
+      answer = false;
+
+      expect(await press(done), isFalse);
+    });
+
     test('the answer waits for the workout to act', () async {
-      final acted = Completer<void>();
+      final acted = Completer<bool>();
       await bridge.attachButtons((_) => acted.future);
 
       var answered = false;
-      final answer = press({'button': 'skip'}).then((v) => answered = true);
+      final reply = press({'button': 'skip'}).then((v) => answered = true);
       await pumpEventQueue();
       expect(answered, isFalse);
 
-      acted.complete();
-      await answer;
+      acted.complete(true);
+      await reply;
       expect(answered, isTrue);
     });
 
@@ -301,25 +354,49 @@ void main() {
       await bridge.attachButtons(onPress);
       await bridge.detachButtons(onPress);
 
-      expect(await press({'button': 'done'}), isFalse);
+      expect(await press(done), isFalse);
       expect(presses, isEmpty);
     });
 
     test('a workout that fails to act answers false', () async {
       await bridge.attachButtons((_) async => throw StateError('closed'));
 
-      expect(await press({'button': 'done'}), isFalse);
+      expect(await press(done), isFalse);
     });
 
-    test('unknown buttons and bad seconds are refused', () async {
+    test('a press older than the timeout is dropped, not applied', () async {
+      await bridge.attachButtons(onPress);
+      MethodChannelWorkoutActivityBridge.clock = () => pressedAt.add(
+        LiveActivityButton.pressTimeout + const Duration(milliseconds: 1),
+      );
+
+      expect(await press(done), isFalse);
+      expect(await press({'button': 'skip'}), isFalse);
+      expect(presses, isEmpty);
+
+      MethodChannelWorkoutActivityBridge.clock = () =>
+          pressedAt.add(LiveActivityButton.pressTimeout);
+      expect(await press({'button': 'skip'}), isTrue);
+    });
+
+    test('unknown buttons, bad seconds and bad sets are refused', () async {
       await bridge.attachButtons(onPress);
 
-      for (final arguments in [
+      for (final arguments in <Map<String, Object?>?>[
         {'button': 'pause'},
         {'button': 'add_rest'},
         {'button': 'add_rest', 'seconds': 0},
         {'button': 'add_rest', 'seconds': 301},
         {'button': 'add_rest', 'seconds': '30'},
+        // An older payload: Done without the set the card named.
+        {'button': 'done'},
+        {'button': 'done', 'exercise_order': 2},
+        {'button': 'done', 'set_number': 3},
+        {'button': 'done', 'exercise_order': 2, 'set_number': 0},
+        {'button': 'done', 'exercise_order': '2', 'set_number': 3},
+        // No press time.
+        {'button': 'skip', 'pressed_at_millis': null},
+        {'button': 'skip', 'pressed_at_millis': '1'},
         null,
       ]) {
         await expectLater(

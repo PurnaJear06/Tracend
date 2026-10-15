@@ -214,12 +214,6 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   missing native calls are swallowed. `test/live_activity/rest_timer_live_activity_test.dart`
   covers start, adjust, skip, end, leaving the workout, and a rest that ended while the app was
   closed. The Lock Screen and Dynamic Island are checked on the owner's iPhone.
-- **Live Activity buttons (D1):** the channel contract test also plays iOS sending `press` (each
-  button, refused arguments, no workout open, the answer waiting for the workout) and
-  `attachButtons`/`detachButtons`. `test/live_activity/live_activity_commands_test.dart` maps each
-  button to its Contract 3 command and covers the command sink's answers.
-  `test/phase_3_workout_flow_test.dart` runs a whole workout from the buttons. The intents
-  themselves run only on the owner's iPhone.
 - **Research library (E1):** `research_library_test.sql` (66 assertions) covers pgvector, forced
   RLS with no API access, the indexes, `search_library_v1` grants, hybrid ranking by reciprocal
   rank fusion (k = 60), filters, `match_count` limits, the exact contract keys, and a rule that no

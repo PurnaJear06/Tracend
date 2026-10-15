@@ -101,17 +101,8 @@ activities left from an earlier launch. ActivityKit runs the countdown from the 
 (`Text(timerInterval:)`): no push, no App Group, no server. It is off when iOS Live Activities are
 off.
 
-Its Done, Skip and +30s buttons (D1) are iOS 17 `LiveActivityIntent`s
-(`ios/Shared/RestActivityIntents.swift`, both targets). iOS runs them in the app's process, waking
-it in the background; the bridge sends `press` to Dart, where the open workout screen
-(`attachButtons`) turns it into a Contract 3 command on its one command sink and answers once the
-rest, the activity calls and the local draft are done. The bridge waits for that answer (8 s at
-most) and for its queued activity calls before the intent returns. No App Group is needed: the
-intent and the Flutter engine share the app's process. With no workout attached (the app was
-closed), the activity shows "Open Tracend to continue". A new rest moves the running activity in
-place, so a Done from the Lock Screen needs no background request.
-
-> **Planned (coaching platform, Phase 3 / D2):** Today and Lock Screen widgets.
+> **Planned (coaching platform, Phase 2 / D1):** Done, Skip and +30s buttons on the Live Activity,
+> driven by Contract 3 commands. **Phase 3 / D2:** Today and Lock Screen widgets.
 
 ### 3.2 Supabase Auth
 

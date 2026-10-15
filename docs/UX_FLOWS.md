@@ -598,8 +598,9 @@ the app closed.
 - ±15 and +30s move it. When the rest is over (it ran out, Skip, or −15 past the end) it reads
   "Rest done" with the next set for two minutes, so that set can be ticked from the Lock Screen;
   the next rest replaces it in place, and a set with no rest after it removes it. While the app is
-  on screen it goes two minutes after the rest's end; while the app is away nothing can remove it
-  on time, so it stays until the app runs again (a button press counts). Finishing, discarding and
+  on screen it goes two minutes after the rest's end. ActivityKit cannot dismiss it without app
+  code, so while the app is away it stays until the app is on screen again, the next launch, or a
+  button press after those two minutes (which removes the card instead of acting). Finishing, discarding and
   leaving end it at once. A relaunch with a running rest moves the activity to the stored end; an
   expired one is ended. Sign-out and account deletion end it. If the screen is torn down mid-rest
   any other way, only the activity ends and the rest stays in the draft.
@@ -607,8 +608,11 @@ the app closed.
   none): **+30s** and **Skip** while the rest runs; **Done set** once it is over. Each press wakes
   the app in the background (iOS 17 App Intents) and goes through the workout's command sink
   (Contract 3): Done ticks the set the "Next" line names, with the kg and reps the screen suggests
-  (the card never shows a load, so the athlete corrects it in the app if needed); Skip ends the
-  rest now; +30s adds 30 seconds. The card never writes a set itself. A press that wakes the app
+  (the card never shows a load, so the athlete corrects it in the app if needed), and only if that
+  set is still the current one and no rest is running, so a double tap or a Done tapped after the
+  same set was ticked in the app ticks nothing; Skip ends the rest now; +30s adds 30 seconds. The
+  card never writes a set itself. A press waits for the set to reach the server copy (up to 5 s)
+  and is dropped if it is more than 8 s old. A press that wakes the app
   after its rest ran out unnoticed counts that rest as ended at its stored end, so Skip and +30s
   then change nothing.
 - If the app was closed (swiped away or ended by iOS) when a button is pressed, no workout can

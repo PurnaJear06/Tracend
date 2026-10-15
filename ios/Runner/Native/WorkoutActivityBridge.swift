@@ -15,7 +15,10 @@ import Foundation
 /// Its Done, Skip and +30s buttons are `LiveActivityIntent`s
 /// (`ios/Shared/RestActivityIntents.swift`) that iOS runs in this process,
 /// waking the app in the background; `press` hands each one to the open
-/// workout in Dart and waits until the activity is updated.
+/// workout in Dart and waits until the activity is updated. Each press is
+/// stamped with its time here (`pressed_at_millis`); Dart drops one older
+/// than `pressTimeout`, because by then the card already says "Open Tracend
+/// to continue" and applying it late would log the wrong time.
 enum WorkoutActivityBridge {
   static let channelName = "tracend/live_activity"
 
@@ -54,13 +57,17 @@ enum WorkoutActivityBridge {
           result(FlutterError(code: "invalid_arguments", message: nil, details: nil))
           return
         }
+        let nextExerciseOrder = (arguments["next_exercise_order"] as? NSNumber)?.intValue
+        let nextSetNumber = (arguments["next_set_number"] as? NSNumber)?.intValue
         enqueue {
           result(
             await startRest(
               RestActivityAttributes.ContentState(
                 endsAt: endsAt,
                 nextLabel: nextLabel,
-                exerciseName: exerciseName
+                exerciseName: exerciseName,
+                nextExerciseOrder: nextExerciseOrder,
+                nextSetNumber: nextSetNumber
               )
             )
           )
@@ -91,12 +98,16 @@ enum WorkoutActivityBridge {
   /// and drives the activity through the calls above; this waits until those
   /// calls are done, so iOS does not suspend the app halfway. With no
   /// workout open (the app was closed), the activity asks the athlete to
-  /// open the app instead.
+  /// open the app instead. A card left on the Lock Screen past its "Rest
+  /// done" time (`doneLinger`) is removed instead: ActivityKit has no timer
+  /// of its own, so this is the first moment the app can.
   @MainActor
   static func press(_ button: RestActivityButton) async {
+    let pressedAt = Date()
+    if await endLingered(now: pressedAt) { return }
     var taken = false
     if buttonsAttached, let channel {
-      taken = await send(button, on: channel)
+      taken = await send(button, pressedAt: pressedAt, on: channel)
     }
     if !taken {
       enqueue { await showNeedsApp() }
@@ -104,24 +115,29 @@ enum WorkoutActivityBridge {
     await drain()
   }
 
-  /// Sends `press` to Dart. True once the workout answered that it acted on
-  /// it; false on any other answer or after `pressTimeout`.
+  /// Sends `press` to Dart, stamped with `pressedAt`. True once the workout
+  /// answered that it handled it (acted, or ignored it as out of date);
+  /// false on any other answer or after `pressTimeout`.
   @MainActor
   private static func send(
     _ button: RestActivityButton,
+    pressedAt: Date,
     on channel: FlutterMethodChannel
   ) async -> Bool {
-    await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+    var arguments = button.channelArguments
+    arguments["pressed_at_millis"] = Int((pressedAt.timeIntervalSince1970 * 1000).rounded())
+    return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
       var answered = false
       let finish: (Bool) -> Void = { taken in
         guard !answered else { return }
         answered = true
         continuation.resume(returning: taken)
       }
-      channel.invokeMethod("press", arguments: button.channelArguments) { reply in
+      channel.invokeMethod("press", arguments: arguments) { reply in
         finish(reply as? Bool == true)
       }
-      DispatchQueue.main.asyncAfter(deadline: .now() + pressTimeout) { finish(false) }
+      let wait = max(0, pressedAt.addingTimeInterval(pressTimeout).timeIntervalSinceNow)
+      DispatchQueue.main.asyncAfter(deadline: .now() + wait) { finish(false) }
     }
   }
 
@@ -224,6 +240,20 @@ enum WorkoutActivityBridge {
     for activity in all where isRunning(activity) {
       await activity.end(activity.content, dismissalPolicy: .immediate)
     }
+  }
+
+  /// Ends, at once, every running rest activity whose "Rest done" time has
+  /// run past `doneLinger`. True when it ended any.
+  @MainActor
+  private static func endLingered(now: Date) async -> Bool {
+    var ended = false
+    for activity in all
+    where isRunning(activity)
+      && activity.content.state.endsAt.addingTimeInterval(doneLinger) <= now {
+      await activity.end(activity.content, dismissalPolicy: .immediate)
+      ended = true
+    }
+    return ended
   }
 
   /// Ends the running rest activities left from an earlier launch whose rest

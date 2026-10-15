@@ -8,6 +8,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 
 /// Something that happened in the active workout. [at] is when it happened,
@@ -101,9 +102,18 @@ sealed class WorkoutCommand {
   const WorkoutCommand();
 }
 
-/// Ticks the current set with the kg and reps the screen suggests.
+/// Ticks the set [exerciseOrder] / [setNumber] (1-based) with the kg and
+/// reps the screen suggests, but only while that set is still the current,
+/// unticked set of its exercise and no rest is running. The sender names the
+/// set it showed, so a stale or repeated command ticks nothing.
 final class CompleteCurrentSet extends WorkoutCommand {
-  const CompleteCurrentSet();
+  const CompleteCurrentSet({
+    required this.exerciseOrder,
+    required this.setNumber,
+  });
+
+  final int exerciseOrder;
+  final int setNumber;
 }
 
 /// Ends the running rest now.
@@ -121,7 +131,10 @@ final class AddRest extends WorkoutCommand {
 /// The command a Live Activity button sends: Done ticks the current set,
 /// Skip ends the rest, +30s adds to it.
 WorkoutCommand workoutCommandFor(LiveActivityButton button) => switch (button) {
-  DoneSetButton() => const CompleteCurrentSet(),
+  DoneSetButton(:final exerciseOrder, :final setNumber) => CompleteCurrentSet(
+    exerciseOrder: exerciseOrder,
+    setNumber: setNumber,
+  ),
   SkipRestButton() => const SkipRest(),
   AddRestButton(:final seconds) => AddRest(seconds),
 };
@@ -132,7 +145,8 @@ class WorkoutEventHub {
       StreamController<WorkoutEvent>.broadcast();
   final StreamController<_SentCommand> _commands =
       StreamController<_SentCommand>();
-  final Set<Completer<void>> _unhandled = {};
+  final Set<Completer<bool>> _unhandled = {};
+  Future<void> _turn = Future<void>.value();
 
   /// Events in the order they happened in the workout.
   Stream<WorkoutEvent> get events => _events.stream;
@@ -141,28 +155,43 @@ class WorkoutEventHub {
   /// dropped. [send] is the same sink with an answer.
   late final Sink<WorkoutCommand> commands = _CommandSink(this);
 
-  /// Sends [command] and completes once the logging screen has acted on it:
-  /// its rest, the Live Activity call and the draft on the phone are done.
-  /// A Live Activity button waits on it, because iOS may suspend the app as
-  /// soon as the button's intent returns. Completes at once after [close].
-  Future<void> send(WorkoutCommand command) {
-    if (_commands.isClosed) return Future<void>.value();
-    final handled = Completer<void>();
+  /// Sends [command] and completes once the logging screen has handled it,
+  /// with its answer: true when it acted on the command or knowingly ignored
+  /// it as out of date, false when it could not. A Live Activity button
+  /// waits on it, because iOS may suspend the app as soon as the button's
+  /// intent returns. A command still waiting at [expiresAt] is dropped
+  /// unhandled (false). Completes false at once after [close].
+  Future<bool> send(WorkoutCommand command, {DateTime? expiresAt}) {
+    if (_commands.isClosed) return Future<bool>.value(false);
+    final handled = Completer<bool>();
     _unhandled.add(handled);
-    _commands.add(_SentCommand(command, handled));
+    _commands.add(_SentCommand(command, handled, expiresAt));
     return handled.future;
   }
 
-  /// The logging screen takes the commands, in the order they were sent,
-  /// with [handler] (one handler only). A command counts as handled when
-  /// the future [handler] returns completes, with a value or an error.
+  /// The logging screen takes the commands with [handler] (one handler
+  /// only), one at a time in the order they were sent: a command starts when
+  /// the one before it has finished, so it sees the state that one left. One
+  /// whose `expiresAt` ([clock]) passed while it waited is dropped without
+  /// calling [handler]. The sender gets [handler]'s answer, or false when it
+  /// throws.
   StreamSubscription<void> handleCommands(
-    Future<void> Function(WorkoutCommand command) handler,
-  ) => _commands.stream.listen((sent) {
-    handler(sent.command).whenComplete(() {
+    Future<bool> Function(WorkoutCommand command) handler, {
+    DateTime Function() clock = DateTime.now,
+  }) => _commands.stream.listen((sent) {
+    _turn = _turn.then((_) async {
+      var answer = false;
+      final expiresAt = sent.expiresAt;
+      if (expiresAt == null || !clock().isAfter(expiresAt)) {
+        try {
+          answer = await handler(sent.command);
+        } catch (e) {
+          debugPrint('Non-critical error: workout command failed: $e');
+        }
+      }
       _unhandled.remove(sent.handled);
-      if (!sent.handled.isCompleted) sent.handled.complete();
-    }).ignore();
+      if (!sent.handled.isCompleted) sent.handled.complete(answer);
+    });
   });
 
   /// Publishes [event]; nothing after [close].
@@ -171,10 +200,10 @@ class WorkoutEventHub {
   }
 
   /// Ends both streams; the logging screen calls it when it goes away. A
-  /// command still waiting counts as handled.
+  /// command still waiting is answered false.
   void close() {
     for (final handled in _unhandled) {
-      handled.complete();
+      handled.complete(false);
     }
     _unhandled.clear();
     unawaited(_commands.close());
@@ -183,10 +212,11 @@ class WorkoutEventHub {
 }
 
 class _SentCommand {
-  const _SentCommand(this.command, this.handled);
+  const _SentCommand(this.command, this.handled, this.expiresAt);
 
   final WorkoutCommand command;
-  final Completer<void> handled;
+  final Completer<bool> handled;
+  final DateTime? expiresAt;
 }
 
 class _CommandSink implements Sink<WorkoutCommand> {

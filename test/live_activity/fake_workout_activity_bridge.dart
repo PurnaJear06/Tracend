@@ -6,12 +6,23 @@ typedef ActivityCall = ({
   DateTime? endsAt,
   String? nextLabel,
   String? exerciseName,
+  int? nextExerciseOrder,
+  int? nextSetNumber,
 });
 
 /// Records every call instead of showing a Live Activity, tracks the one
 /// activity the native side would show, and plays its buttons ([press]).
 class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
+  FakeWorkoutActivityBridge({this.clock = DateTime.now});
+
+  /// Stamps each press, as the Swift side does.
+  final DateTime Function() clock;
+
   final calls = <ActivityCall>[];
+
+  /// The set the card's Done button carries (from the last `startRest`),
+  /// or null when the card has none.
+  ({int exerciseOrder, int setNumber})? card;
 
   /// The end time of the activity that would be showing, or null.
   DateTime? showingUntil;
@@ -21,27 +32,51 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
   /// The open workout's handler for the buttons, or null.
   LiveActivityPressHandler? onPress;
 
-  /// Taps [button] as iOS would: true once an open workout acted on it.
+  /// Taps [button] as iOS would: true once an open workout handled it.
   Future<bool> press(LiveActivityButton button) async {
     final handler = onPress;
     if (handler == null) return false;
-    await handler(button);
-    return true;
+    return handler(button);
   }
+
+  /// Taps Done on the card as it shows now, or on the set named by
+  /// [exerciseOrder] and [setNumber] (a card drawn earlier). [at] is the
+  /// press time (default: now).
+  Future<bool> pressDone({int? exerciseOrder, int? setNumber, DateTime? at}) =>
+      press(
+        DoneSetButton(
+          at ?? clock(),
+          exerciseOrder: exerciseOrder ?? card!.exerciseOrder,
+          setNumber: setNumber ?? card!.setNumber,
+        ),
+      );
+
+  Future<bool> pressSkip({DateTime? at}) =>
+      press(SkipRestButton(at ?? clock()));
+
+  Future<bool> pressAdd(int seconds, {DateTime? at}) =>
+      press(AddRestButton(at ?? clock(), seconds));
 
   @override
   Future<void> startRest({
     required DateTime endsAt,
     required String nextLabel,
     required String exerciseName,
+    int? nextExerciseOrder,
+    int? nextSetNumber,
   }) async {
     calls.add((
       method: 'startRest',
       endsAt: endsAt,
       nextLabel: nextLabel,
       exerciseName: exerciseName,
+      nextExerciseOrder: nextExerciseOrder,
+      nextSetNumber: nextSetNumber,
     ));
     showingUntil = endsAt;
+    card = nextExerciseOrder == null || nextSetNumber == null
+        ? null
+        : (exerciseOrder: nextExerciseOrder, setNumber: nextSetNumber);
   }
 
   @override
@@ -51,6 +86,8 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       endsAt: endsAt,
       nextLabel: nextLabel,
       exerciseName: null,
+      nextExerciseOrder: null,
+      nextSetNumber: null,
     ));
     if (showingUntil != null) showingUntil = endsAt;
   }
@@ -62,8 +99,11 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       endsAt: null,
       nextLabel: null,
       exerciseName: null,
+      nextExerciseOrder: null,
+      nextSetNumber: null,
     ));
     showingUntil = null;
+    card = null;
   }
 
   @override

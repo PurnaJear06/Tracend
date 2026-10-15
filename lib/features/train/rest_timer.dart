@@ -75,8 +75,10 @@ class RestTimer {
 /// the workout closes. When the rest is over (it ran out, Skip, or -15 past
 /// the end) it reads "Rest done" with a Done button for [doneLinger], so
 /// the next set can be ticked from the Lock Screen; the next rest replaces
-/// it in place. While the app is away nothing can end it on time, so it
-/// stays until the app runs again ([tick]).
+/// it in place. ActivityKit cannot dismiss an activity by itself (only app
+/// code, or a push, can), so while the app is away nothing ends it on time:
+/// it goes at the first [tick] after the app runs again, at the next launch
+/// (the native sweep), or at the next button press once the time has passed.
 class RestTimerController {
   RestTimerController({
     required RestAlertScheduler alerts,
@@ -107,12 +109,15 @@ class RestTimerController {
 
   /// Starts a rest of [seconds] (a set's `rest_seconds`), replacing any
   /// running one, and shows it as the Live Activity with the exercise and
-  /// what follows ([nextLabel]). A rest of zero or less starts nothing and
-  /// ends the activity.
+  /// what follows ([nextLabel], which names the set [nextExerciseOrder] /
+  /// [nextSetNumber]: the card's Done button carries that set back). A rest
+  /// of zero or less starts nothing and ends the activity.
   Future<void> start(
     int seconds, {
     String nextLabel = '',
     String exerciseName = '',
+    int? nextExerciseOrder,
+    int? nextSetNumber,
   }) async {
     if (seconds <= 0) return stop();
     final timer = RestTimer.start(seconds, now: _clock());
@@ -123,6 +128,8 @@ class RestTimerController {
         endsAt: timer.endsAt,
         nextLabel: nextLabel,
         exerciseName: exerciseName,
+        nextExerciseOrder: nextExerciseOrder,
+        nextSetNumber: nextSetNumber,
       ),
     );
     await _alerts.scheduleRestAlert(seconds);
@@ -139,6 +146,14 @@ class RestTimerController {
     _timer = next;
     unawaited(_activity.updateRest(endsAt: next.endsAt));
     await _alerts.scheduleRestAlert(next.remainingSeconds(now));
+  }
+
+  /// Redraws the running rest's activity with its true end, which also
+  /// clears "Open Tracend to continue". Used after a button press that
+  /// changed nothing, so the card never shows a state the workout is not in.
+  void refresh() {
+    final timer = _timer;
+    if (timer != null) unawaited(_activity.updateRest(endsAt: timer.endsAt));
   }
 
   /// Skip: the rest ends now and the activity reads "Rest done".

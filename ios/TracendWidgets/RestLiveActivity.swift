@@ -61,6 +61,9 @@ struct RestPresentation {
   let endsAt: Date
   let isDone: Bool
   let needsApp: Bool
+  /// The set the Done button names; nil when the app did not say, and then
+  /// there is no Done button.
+  let nextSet: (exerciseOrder: Int, setNumber: Int)?
   let title: String
   let nextLabel: String
 
@@ -69,6 +72,11 @@ struct RestPresentation {
     endsAt = state.endsAt
     isDone = context.isStale || state.endsAt <= .now
     needsApp = state.needsApp
+    if let order = state.nextExerciseOrder, let number = state.nextSetNumber {
+      nextSet = (order, number)
+    } else {
+      nextSet = nil
+    }
     title = state.exerciseName.isEmpty ? "Between sets" : state.exerciseName
     nextLabel = state.nextLabel
   }
@@ -168,20 +176,26 @@ struct RestCountdown: View {
 
 /// The buttons: +30s and Skip side by side while the rest runs; one lime
 /// Done once it is over, the only lime fill, because it is the next thing to
-/// do. When a tap found no workout open, a line asks to open the app (a tap
-/// on the card does).
+/// do, and it names the set the card shows, so the app ticks that set only.
+/// When a tap found no workout open, or the card has no set to name, a line
+/// asks to open the app (a tap on the card does).
 struct RestActions: View {
   let rest: RestPresentation
   let height: CGFloat
 
   var body: some View {
-    if rest.needsApp {
+    if rest.needsApp || (rest.isDone && rest.nextSet == nil) {
       Label("Open Tracend to continue", systemImage: "arrow.up.forward.app")
         .font(.system(size: 15, weight: .semibold))
         .foregroundStyle(TracendStyle.textSecondary)
         .frame(maxWidth: .infinity, minHeight: height)
-    } else if rest.isDone {
-      Button(intent: CompleteSetIntent()) {
+    } else if rest.isDone, let nextSet = rest.nextSet {
+      Button(
+        intent: CompleteSetIntent(
+          exerciseOrder: nextSet.exerciseOrder,
+          setNumber: nextSet.setNumber
+        )
+      ) {
         RestButtonLabel(
           title: "Done set",
           symbol: "checkmark",
