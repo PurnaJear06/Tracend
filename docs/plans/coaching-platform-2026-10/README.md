@@ -126,20 +126,24 @@ Activity from `rest_timer.dart` through one call site that C1 reviews.
 A contract changes only by a new version entry here, approved by the lead. Builders implement the
 shape exactly.
 
-### Contract 1: AI gateway (`supabase/functions/_shared/ai/`)
+### Contract 1: AI gateway (`supabase/functions/_shared/ai/`), version 2
 
 ```ts
 type AiFeature =
   | "coach_chat" | "daily_decision" | "onboarding_plan" | "onboarding_questions"
   | "meal_vision" | "physique_vision" | "library_context";
-type AiProvider = "anthropic" | "openai_compatible" | "gemini";
+type AiProvider = "anthropic" | "openai_compatible" | "gemini";   // wire protocol
+// Who receives the data. Stored in SQL whitelists, notices and consent; a notice names a vendor.
+// "router" is for synthetic evals through an OpenAI-compatible router; no notice names it.
+type AiVendor = "anthropic" | "deepseek" | "groq" | "gemini" | "router";
 
 type AiRoute = Readonly<{
   feature: AiFeature;
   provider: AiProvider;
+  vendor: AiVendor;               // from the model table; DeepSeek/Groq hosts are pinned per vendor
   providerLabel: string;          // shown in notices, e.g. "Claude (Anthropic)"
   model: string;
-  baseUrl?: string;               // openai_compatible only (DeepSeek, Groq, routers)
+  baseUrl?: string;               // openai_compatible only; must match the vendor's host, any https host for "router"
   thinking: "off" | "adaptive";   // mapped per model; Sonnet 5.5 "off" = between_tools
   effort?: "low" | "medium" | "high";
   maxOutputTokens: number;
@@ -161,7 +165,7 @@ type AiRequest = Readonly<{
   system: AiContent[];            // stable first, so prefixes cache
   messages: { role: "user" | "assistant"; content: AiContent[] }[];
   output: { kind: "text" } | { kind: "json"; schema: Record<string, unknown> };
-  consentProvider: AiProvider | null;  // provider named by the athlete's accepted notice
+  consentVendor: AiVendor | null;     // vendor named by the athlete's accepted notice
   signal?: AbortSignal;
 }>;
 
@@ -188,7 +192,10 @@ function call(request: AiRequest, deps?: { fetch?: typeof fetch; now?: () => num
 Rules:
 - Never sends `temperature`, `top_p` or a forced `tool_choice` to Claude 5 models. Structured output
   uses `output_config.format` (JSON schema).
-- Refuses before sending when `consentProvider !== route.provider` (`consent_provider_mismatch`).
+- Refuses before sending when `consentVendor !== route.vendor` (`consent_provider_mismatch`).
+- Rollback parity: OpenAI-compatible and Gemini requests send what today's providers send
+  (per-model request defaults such as `temperature: 0.1`, the JSON schema restated in the system
+  prompt for JSON mode). Claude 5 requests never carry sampling parameters.
 - Budget is the caller's job (`AiBudget.reserve` before `call`, release or keep after), unchanged.
 - Logs one scrubbed `ai_call` line per call: feature, provider, model, outcome, token counts, cost,
   latency. Never prompt text, image data or reply text.
@@ -345,5 +352,9 @@ None yet.
 ## Decisions log
 
 - 2026-10-15: program approved; Iteration 1 = Phase 0 + Phase 1.
+- 2026-10-15: Contract 1 v2. Consent compares a vendor id (`anthropic`, `deepseek`, `groq`,
+  `gemini`), not the wire protocol, so a DeepSeek notice can never pass a Groq route. SQL stores
+  vendor ids only (A1 adds `anthropic`; `openai_compatible` is never stored). Eval routers use
+  vendor `router`, which no notice names. Resolves A2's contract request.
 - 2026-10-15: migration-order check added to the Migration Collision Check job
   (`scripts/check-migration-order.sh`).
