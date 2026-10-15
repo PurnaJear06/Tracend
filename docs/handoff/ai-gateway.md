@@ -205,7 +205,8 @@ mock proposal with no model call and is untouched.
   DeepSeek router run (12/12 valid, one repaired, p95 49 s, USD 0.11, 2026-10-02; 12 athletes, a
   router that ignored thinking-off); there was never a direct DeepSeek run. These are the first
   Claude numbers.
-  - Run 1 (this code): plans 12/13 valid (1 repaired), 1 fell back to the rules plan
+  - Run 1 (the shipped prompt; reverting run 2's extra line restored it, and the final head was
+    not re-run): plans 12/13 valid (1 repaired), 1 fell back to the rules plan
     (`weekly_muscle_volume_exceeded`, shoulders on the six-day PPL athlete, after the repair);
     p50 15.4 s, p95 36.5 s; USD 0.507 for plans (about 0.04 each; a six-day plan 0.076). Questions
     12/13 answered (30 questions; one reply dropped as `questions_invalid`, which is the scope
