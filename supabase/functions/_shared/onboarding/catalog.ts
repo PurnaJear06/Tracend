@@ -61,8 +61,8 @@ export type CatalogExercise = Readonly<{
   compound: boolean;
   /**
    * Ranking only. A variation ranks after the standard form of its pattern on
-   * the same equipment, and a regression after both; absent means the standard
-   * form. The database catalog does not store it, so the rules plan reads it
+   * the same equipment; a regression ranks after every other form of its
+   * pattern; absent means the standard form. The database catalog does not store it, so the rules plan reads it
    * from this list by slug.
    */
   role?: ExerciseRole;
@@ -508,6 +508,7 @@ export const exerciseCatalogV1: readonly CatalogExercise[] = Object.freeze([
     ["machines"],
     "beginner",
     true,
+    "regression",
   ),
   x("pec-deck", "Pec deck", "chest_fly", ["chest"], ["machines"], "beginner", false),
   x(

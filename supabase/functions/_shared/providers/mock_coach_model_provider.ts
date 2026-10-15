@@ -13,10 +13,15 @@ import type {
 // words a candidate decision for each piece of evidence, most pressing first,
 // and returns the first one the decision contract accepts under the request's
 // policy outcome. The contract is the only authority on what a policy permits
-// (request_data allows only gathering data, maintain_only no same-day change),
-// so the mock keeps no copy of those rules and its output is never rejected.
+// (request_data allows only gathering data, maintain_only no same-day change,
+// escalate only escalation), so the mock keeps no copy of those rules and its
+// output is never rejected.
 
 type DecisionBody = Omit<CoachDecisionV1, "schema_version" | "decision_kind" | "change_proposals">;
+
+// The gaps a daily decision may ask the athlete to fill (prepare_daily_coaching
+// names the first two; the app labels all three).
+const decisionGaps: readonly string[] = ["recovery_check_in", "health_context", "nutrition_data"];
 
 export class MockCoachModelProvider implements CoachModelProvider {
   generateDecision(request: CoachModelRequest): Promise<CoachModelGeneration> {
@@ -40,8 +45,37 @@ function mockDecision(request: CoachModelRequest): CoachDecisionV1 {
   });
   const has = (code: string) => request.permittedEvidence.includes(code);
 
+  // What a holding decision asks for: the gaps the policy named, or today's
+  // check-in when it named none.
+  const named = request.missingData.filter((code) => decisionGaps.includes(code));
+  const missing = named.length ? named : ["recovery_check_in"];
+
+  // Keeps the approved plan and asks for the missing data. Every policy short
+  // of escalation accepts it, so it is the answer when no candidate fits.
+  const hold = decision({
+    training: {
+      action: "GATHER_DATA",
+      summary: "Keep the approved plan available until the missing data arrives.",
+      today_adjustments: [],
+    },
+    nutrition: {
+      action: "MAINTAIN_TARGETS",
+      summary: "Keep the approved nutrition targets.",
+      today_adjustments: [],
+    },
+    head_coach: {
+      final_decision: "Keep the approved plan and add the missing data.",
+      reason: "There is not enough current evidence for a new coaching decision.",
+    },
+    evidence: [],
+    confidence: "low",
+    missing_data: missing,
+    risk_flags: [],
+  });
+
+  const candidates: CoachDecisionV1[] = [];
   if (request.policyOutcome === "escalate") {
-    return decision({
+    candidates.push(decision({
       training: {
         action: "ESCALATE",
         summary: "Stop training and seek appropriate medical guidance.",
@@ -66,33 +100,8 @@ function mockDecision(request: CoachModelRequest): CoachDecisionV1 {
       confidence: "high",
       missing_data: [],
       risk_flags: ["safety_escalation"],
-    });
+    }));
   }
-
-  // Keeps the approved plan and asks for a check-in. Every policy short of
-  // escalation accepts it, so it is the answer when no candidate fits.
-  const hold = decision({
-    training: {
-      action: "GATHER_DATA",
-      summary: "Keep the approved plan available while recovery data is missing.",
-      today_adjustments: [],
-    },
-    nutrition: {
-      action: "MAINTAIN_TARGETS",
-      summary: "Keep the approved nutrition targets.",
-      today_adjustments: [],
-    },
-    head_coach: {
-      final_decision: "Keep the approved plan and add a check-in.",
-      reason: "There is not enough current evidence for a new coaching decision.",
-    },
-    evidence: [],
-    confidence: "low",
-    missing_data: ["recovery_check_in"],
-    risk_flags: [],
-  });
-
-  const candidates: CoachDecisionV1[] = [];
   if (has("RECOVERY_BELOW_BASELINE")) {
     candidates.push(decision({
       training: {
@@ -200,8 +209,8 @@ function mockDecision(request: CoachModelRequest): CoachDecisionV1 {
       label: "Recovery indicators are within the recent baseline",
       source: "feature_snapshot",
     }] as const;
-    // Proceeding needs a policy that allows it; without today's check-in the
-    // plan stays and the check-in is asked for.
+    // Proceeding needs a policy that allows it; otherwise the plan stays and
+    // the missing data is asked for.
     candidates.push(
       decision({
         training: {
@@ -227,7 +236,7 @@ function mockDecision(request: CoachModelRequest): CoachDecisionV1 {
         training: {
           action: "GATHER_DATA",
           summary:
-            "Recovery is within the recent baseline. Add today's check-in to confirm the session.",
+            "Recovery is within the recent baseline. Add the missing data to confirm the session.",
           today_adjustments: [],
         },
         nutrition: {
@@ -236,12 +245,12 @@ function mockDecision(request: CoachModelRequest): CoachDecisionV1 {
           today_adjustments: [],
         },
         head_coach: {
-          final_decision: "Keep the approved plan and add today's check-in.",
-          reason: "Recovery is within the recent baseline, but today's check-in is missing.",
+          final_decision: "Keep the approved plan and add the missing data.",
+          reason: "Recovery is within the recent baseline, but today's policy needs more data.",
         },
         evidence,
         confidence: "low",
-        missing_data: ["recovery_check_in"],
+        missing_data: missing,
         risk_flags: [],
       }),
     );

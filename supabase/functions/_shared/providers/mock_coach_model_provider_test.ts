@@ -181,3 +181,33 @@ Deno.test("each policy gets the most specific action it permits", async () => {
   });
   assertEquals([decision.training.action, decision.evidence], ["ESCALATE", []]);
 });
+
+Deno.test("a holding decision asks for the data the policy named", async () => {
+  const provider = new MockCoachModelProvider();
+  const missing = async (
+    policyOutcome: PolicyOutcome,
+    permittedEvidence: string[],
+    missingData: string[],
+  ) =>
+    (await provider.generateDecision({
+      decisionKind: "daily",
+      featureSnapshotId: "snapshot-gaps",
+      policyEvaluationId: "policy-gaps",
+      policyOutcome,
+      permittedEvidence,
+      featureContext: {},
+      missingData,
+    })).decision.missing_data;
+  // A check-in exists (maintain_only) but Apple Health data does not.
+  assertEquals(await missing("maintain_only", [], ["health_context"]), ["health_context"]);
+  assertEquals(
+    await missing("request_data", ["RECOVERY_WITHIN_BASELINE"], [
+      "recovery_check_in",
+      "health_context",
+    ]),
+    ["recovery_check_in", "health_context"],
+  );
+  // Nothing named, or only codes the app cannot label: today's check-in.
+  assertEquals(await missing("maintain_only", [], []), ["recovery_check_in"]);
+  assertEquals(await missing("maintain_only", [], ["unlabelled_gap"]), ["recovery_check_in"]);
+});
