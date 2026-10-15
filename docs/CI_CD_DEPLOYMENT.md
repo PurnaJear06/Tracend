@@ -102,7 +102,9 @@ The isolated database starts with every migration applied (`supabase start`), so
 drops the `public` and `private` schemas that the snapshot recreates. Before 2026-10-14 it dropped
 only `public`, and the first deploy after production gained `private` tables (2026-10-09) failed at
 `ALTER TABLE ONLY "private"."ai_budget_limits" ADD CONSTRAINT ... PRIMARY KEY` ("multiple primary
-keys"). A new schema created by a migration must be added to that reset.
+keys"). A new schema created by a migration must be added to that reset. The recreated `public`
+gets the grants the old one had; until 2026-10-15 the drill granted ALL on it to anon and
+authenticated, which gave both CREATE there, and the privilege comparison flagged it.
 
 The deploy log is public, and on an error psql prints the failing statement, which for the data
 file holds production rows. Every restore psql call therefore runs through `restore_psql`: its
