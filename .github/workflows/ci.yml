@@ -220,7 +220,7 @@ jobs:
   migration-check:
     name: Migration Collision Check
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -236,6 +236,17 @@ jobs:
             exit 1
           fi
           echo "No duplicate migration timestamps found."
+
+      - name: Migration order check tests
+        run: bash scripts/test-check-migration-order.sh
+
+      - name: Check new migrations are newer than the base branch's
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          ./scripts/check-migration-order.sh "origin/${BASE_REF}"
 
       - name: Validate release version metadata
         run: |

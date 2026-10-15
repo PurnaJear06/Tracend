@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/features/train/widgets/rpe_picker.dart';
+import 'package:tracend/features/train/widgets/effort_scale.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';

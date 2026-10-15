@@ -120,6 +120,27 @@ representative text-only month is inexpensive:
 
 DeepSeek V4.1 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
 
+**Claude list prices (2026-10-15,** [pricing page](https://platform.claude.com/docs/en/about-claude/pricing)**),**
+USD per million tokens. The AI gateway (`_shared/ai/models.ts`) prices every call from this
+table; a model without a price has no route.
+
+| Model                                  | Input | 5-min cache write | Cache read | Output |
+| -------------------------------------- | ----: | ----------------: | ---------: | -----: |
+| Claude Haiku 5.5, prompt ≤ 100K tokens |  0.10 |             0.125 |       0.01 |   0.50 |
+| Claude Haiku 5.5, prompt > 100K tokens |  0.50 |             0.625 |       0.05 |   2.50 |
+| Claude Sonnet 5.5                      |  2.00 |              2.50 |       0.10 |  10.00 |
+| Claude Opus 5.5                        |  4.00 |              5.00 |       0.20 |  20.00 |
+
+- Haiku's prompt length counts every input token, cache reads and writes included; a request over
+  100K pays the higher card for all its tokens.
+- The gateway marks cache prefixes with the default 5-minute lifetime, so writes use that rate
+  (1-hour writes cost 2x input and are not used).
+- Thinking is billed as output on every provider. US-only inference (`inference_geo`) costs 1.1x
+  and is not used.
+- Rollback routes keep their earlier prices: DeepSeek at the peak rates below (cache hits 0.006),
+  Groq qwen3.8 and Gemini 3.5 Flash with cached tokens at the full input price, since no cache
+  discount is verified for them.
+
 The Gemini Free tier is suitable only for synthetic evaluation data. Gemini paid-service routing
 requires billing-enabled project and data-terms review before it can process restricted data.
 Prior Gemini baseline: `gemini-3.5-flash` at USD 1.50/1M input and USD 9.00/1M output tokens
@@ -149,6 +170,16 @@ left open on purpose whenever billing cannot be ruled out: a timeout, a dropped 
 unreadable answer with no usage reported (Coach chat, meal photos, physique checks, onboarding),
 an unrecorded usage row, or a failed live daily decision. It then keeps counting at its ceiling,
 so a failure can only overcount. Only a refusal (429) or an HTTP error rules billing out.
+- **Route ceilings (2026-10-15, coaching platform A1):** `reserve_ai_budget_v2(target_user_id,
+  run_purpose, ceiling_usd)` takes the per-call ceiling from the caller's route instead of the fixed
+  per-purpose table, so a Haiku and a Sonnet route of the same feature hold what each can cost. The
+  ceiling must be at least USD 0.001 and at most USD 0.50, and is rounded up to the reservation's six
+  decimals.
+  The athlete's USD 2 month, 30 calls a day and the global stop apply exactly as in
+  `reserve_ai_budget`, which is unchanged. It also accepts the gateway's feature names and stores
+  them under today's purposes (`daily_decision` as `daily_coaching`, `physique_vision` as
+  `progress_vision`, `library_context` as `coach_chat`). `AiBudget.reserve(purpose, ceilingUsd)` in
+  `_shared/ai_budget.ts` calls it; without a ceiling it calls the original function.
 - **Global stop:** `private.ai_budget_limits.global_monthly_usd` (USD 10 at launch) stops every
   model call once the month's total across all accounts reaches it. Change it from the SQL editor:
   `update private.ai_budget_limits set global_monthly_usd = 20, updated_at = now();`.

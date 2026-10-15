@@ -137,7 +137,8 @@ or effort, rest guidance, and substitutions.
 For each exercise, the user can record:
 
 - completed/skipped status;
-- set number, repetitions, load, and RPE;
+- set number, repetitions, load, and reps left (reps in reserve, 0 to 5+; older sets carry RPE);
+- when each set started and ended, and the rest taken before it (recorded by the app);
 - optional technique or pump rating;
 - pain flag and note;
 - substitution and reason; and
@@ -355,7 +356,8 @@ principles:
 - exercise-video form correction or rep counting;
 - subscriptions, payments, ads, trainer marketplace, and social features;
 - autonomous multi-agent operation; and
-- production vector RAG unless a later evaluation justifies it.
+- production vector RAG over user data unless a later evaluation justifies it (the research
+  library of open sources, decision D3, is in scope).
 
 ## 8. Success Metrics
 

@@ -31,6 +31,12 @@ class TracendScrollView extends StatefulWidget {
   /// Height of the inline bar below the status bar.
   static const inlineBarHeight = 44.0;
 
+  /// Space after the last item, on top of the bottom padding. Under the
+  /// shell that padding is the floating bar's whole slot (its `Scaffold`
+  /// extends the body under it), so the last card scrolls well clear of the
+  /// bar, and of Coach's one-line composer (about 62pt) that sits on it.
+  static const endClearance = TracendSpacing.xxl * 2;
+
   @override
   State<TracendScrollView> createState() => _TracendScrollViewState();
 }
@@ -86,7 +92,8 @@ class _TracendScrollViewState extends State<TracendScrollView> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final safeTop = MediaQuery.paddingOf(context).top;
+    final padding = MediaQuery.paddingOf(context);
+    final safeTop = padding.top;
     final gutter = size.width < 375 ? TracendSpacing.md : TracendSpacing.gutter;
     final textTheme = Theme.of(context).textTheme;
     final onRefresh = widget.onRefresh;
@@ -154,7 +161,7 @@ class _TracendScrollViewState extends State<TracendScrollView> {
                           gutter,
                           TracendSpacing.xs,
                           gutter,
-                          176,
+                          padding.bottom + TracendScrollView.endClearance,
                         ),
                         sliver: SliverList.list(
                           children: [
