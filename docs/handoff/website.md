@@ -1,6 +1,6 @@
 # Website and Waitlist Handoff
 
-**As of:** 2026-10-13
+**As of:** 2026-10-15
 
 ## State
 
@@ -14,6 +14,17 @@
   and `waitlist-unsubscribe` (migration `20261013100000_waitlist.sql`). Double opt-in: a signup
   counts once its email is confirmed. Invite links (`?ref=CODE`) move people up the list.
 - Joining grants no app access. App sign-ups stay invite-only (`private.signup_invites`).
+- 2026-10-15 (W1, coaching platform program): the privacy page covers the app as well as the
+  waitlist: what the app collects, AI features only with consent per feature, the processor list
+  (Supabase; Anthropic, DeepSeek and Groq for AI; Sentry; Cloudflare; Google), storage in
+  Singapore, retention, and controls (export, delete, AI off). Per decision D11 no model name
+  appears anywhere on the site, and AI companies are named only in that processor list. The site
+  is iOS only (no "Android in testing"); progress photos are "not sent to AI"; the physique check
+  (an owner-only test) shows "Coming later, not in the beta yet". `site/PRODUCT.md` carries the
+  updated claim rules. The TestFlight checklist is in `docs/BETA_OPERATIONS.md`.
+- When an AI feature moves company (Phase 2 cutover), the privacy page stays true as long as the
+  company is one of Anthropic, DeepSeek or Groq; a new company, or dropping one after the rollback
+  window, means editing the processor list and the date.
 
 ## Owner setup (once)
 
@@ -77,5 +88,4 @@ by changing the secrets, and update the processor list in `site/src/pages/privac
 - The first live join needs the owner's own email: confirm the email arrives, the link confirms,
   and unsubscribe works.
 - Add `Website Build` to the required checks if wanted.
-- CLAUDE.md says "No Android" while the site says Android is in testing (owner's choice); the
-  owner decides which spec wins.
+- Resolved 2026-10-15 (W1): the site no longer mentions Android; it matches CLAUDE.md (iOS only).

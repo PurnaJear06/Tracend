@@ -50,7 +50,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 1 | C1 | workout-hr | Set start/end, actual rest, reps-left, workout events | 31 | P0 | todo | |
 | 1 | D0 | ios-widgets | Widget extension and rest-timer Live Activity (countdown only) | — | P0 | todo | |
 | 1 | E1 | research-library | pgvector, library tables, `search_library_v1`, doc rule change | 41 | P0 | todo | |
-| 1 | W1 | website | Site copy fixes, privacy policy naming Anthropic, TestFlight checklist | — | P0 | todo | |
+| 1 | W1 | website | Site copy fixes, privacy policy naming Anthropic, TestFlight checklist | — | P0 | review | |
 | 2 | A3 | ai-gateway | Meal photo on Haiku, physique on Sonnet | 13 | A1, A2 | todo | |
 | 2 | A4 | ai-gateway | Onboarding plan and questions on Sonnet | — | A1, A2 | todo | |
 | 2 | A5 | ai-gateway | Daily decision on Sonnet | — | A1, A2, B0 | todo | |

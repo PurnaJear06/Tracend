@@ -45,8 +45,11 @@ is a waitlist signup from someone who understands that loop.
 - Coach answers questions using your own numbers.
 - Plans are approved by you and saved as versions; nothing in the plan changes without that.
 - The plan still works when the AI, Apple Health or the network is down.
-- Platforms: iPhone with Apple Watch today; Android and other smartwatches are "in testing" (never
-  "available" or a date) until they ship.
+- Platforms: iPhone with Apple Watch only. No Android or other smartwatch mention, not even "in
+  testing" (owner, 2026-10-15, coaching platform program W1).
+- AI and privacy: AI features send data only after the athlete agrees, to a company the app names
+  first; progress photos stay private to the account and are not sent to AI; AI can be turned off
+  and the plan keeps working.
 
 ## Feature coverage (check before any page change)
 
@@ -65,11 +68,12 @@ Shipped features from docs/PRD.md and docs/UX_FLOWS.md, and where the page shows
 | Muscle map for the plan's week | "Every workout, mapped to your body" |
 | Weight trend and body measurements (waist, chest, hip, arm, thigh) toward the goal, strength (workouts done, best lifts) | "It checks your progress" |
 | Weekly review, calculated from logs, no AI | "It checks your progress" |
-| Progress photos (private) and physique check setting focus muscles (owner, 2026-10-13: live, no "testing" label; keep "AI visual estimate, not a measurement") | "It checks your progress" |
+| Progress photos (private to the account, not sent to AI) | "It checks your progress"; join section trust line |
+| Physique check: an owner-only test, not available to athletes. Shown labelled "Coming later, not in the beta yet"; keep "AI visual estimate, not a measurement" (owner, 2026-10-15, W1; replaces the 2026-10-13 "live" note) | "It checks your progress", step 04 |
 | Coach chat with evidence and data gaps | "Ask your Coach anything" |
 | Plan changes need approval; versions kept | Bento line; "Other apps stop at the score" |
 | Plan works when AI, Apple Health or network is down | Bento line |
-| Export and delete your data; photos private | Join section trust line |
+| Export and delete your data; AI only after consent, turn AI off | Join section trust line; privacy page |
 
 ## Coming next (owner decision, 2026-10-13)
 
@@ -78,8 +82,16 @@ Shown only inside a section labelled "Coming next" with "Not in the beta yet", n
   the app, and you log sets (weight, reps) from the Dynamic Island or the Lock Screen.
 - An Apple Watch app for logging sets.
 
+One exception (2026-10-15, W1): the physique check stays in "It checks your progress" as step
+04, labelled "Coming later, not in the beta yet" in the step and on its screen, never with a date.
+
 ## Claims the site must not make
 
+- Any AI model name, anywhere (decision D11, 2026-10-15). AI companies (Anthropic, DeepSeek, Groq)
+  are named only in the privacy page's processor list; the app's consent notice names the company
+  for each feature.
+- Progress photos analyzed by AI, or the physique check as available, until it opens to athletes.
+- Android, other smartwatches, or anything "in testing" beyond iPhone and Apple Watch.
 - Per-muscle readiness or recovery (recovery is whole-body). The body map shows what you trained and
   what is planned.
 - Heart rate during sets, per-set response, streaks, or a 3D body model, until they ship. The body
