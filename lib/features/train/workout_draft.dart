@@ -22,6 +22,26 @@ String _text(Object? value) => switch (value) {
   _ => '',
 };
 
+/// Who recorded a set's times (`timing_source`).
+enum SetTimingSource {
+  app,
+  watch;
+
+  static SetTimingSource? parse(Object? value) => switch (value) {
+    'app' => app,
+    'watch' => watch,
+    _ => null,
+  };
+}
+
+DateTime? _time(Object? value) =>
+    value is String ? DateTime.tryParse(value) : null;
+
+int? _whole(Object? value, int max) =>
+    value is num && value == value.roundToDouble() && value >= 0 && value <= max
+    ? value.toInt()
+    : null;
+
 /// One set in the workout draft. Load, reps and effort are kept as the text
 /// the athlete entered; the server parses them on sync.
 class WorkoutSetDraft {
@@ -30,6 +50,11 @@ class WorkoutSetDraft {
     this.reps = '',
     this.rpe = '',
     this.completed = false,
+    this.startedAt,
+    this.completedAt,
+    this.restBeforeSeconds,
+    this.rir,
+    this.timingSource,
   });
 
   factory WorkoutSetDraft.fromMap(Map<String, dynamic> map) => WorkoutSetDraft(
@@ -37,14 +62,35 @@ class WorkoutSetDraft {
     reps: _text(map['repetitions']),
     rpe: _text(map['rpe']),
     completed: map['completed'] == true,
+    startedAt: _time(map['started_at']),
+    completedAt: _time(map['completed_at']),
+    restBeforeSeconds: _whole(map['rest_before_seconds'], 3600),
+    rir: _whole(map['rir'], maxRir),
+    timingSource: SetTimingSource.parse(map['timing_source']),
   );
+
+  /// The highest reps in reserve stored; it means "5 or more".
+  static const maxRir = 5;
 
   String load;
   String reps;
 
-  /// The set's effort (RPE), a whole number from 1 to 10, or blank.
+  /// The set's effort (RPE), a whole number from 1 to 10, or blank. The app
+  /// now asks for [rir] and writes the RPE the same answer meant before
+  /// (10 − reps left); older sets may have only this.
   String rpe;
   bool completed;
+
+  /// When the set began and when it was ticked (Contract 2).
+  DateTime? startedAt;
+  DateTime? completedAt;
+
+  /// The rest actually taken before this set, in seconds.
+  int? restBeforeSeconds;
+
+  /// Reps in reserve, 0 to [maxRir].
+  int? rir;
+  SetTimingSource? timingSource;
 
   /// The athlete changed the load on this screen. An emptied load then stays
   /// empty (no added weight) instead of showing a suggestion again.
@@ -54,15 +100,38 @@ class WorkoutSetDraft {
   int? get repetitions => num.tryParse(reps)?.toInt();
   int? get rpeValue => num.tryParse(rpe)?.round();
 
+  /// Sets or clears the reps left, with the matching RPE.
+  void setRir(int? value) {
+    rir = value;
+    rpe = value == null ? '' : '${10 - value}';
+  }
+
   LoggedSet get logged =>
       LoggedSet(completed: completed, loadKg: loadKg, repetitions: repetitions);
 
-  Map<String, dynamic> toMap() => {
-    'load_kg': load,
-    'repetitions': reps,
-    'rpe': rpe,
-    'completed': completed,
-  };
+  /// The set as the draft holds it. A time before [notBefore] is left out,
+  /// so the server keeps what it has: it refuses times from before the
+  /// session it holds began (a workout started offline), and one refused
+  /// time would hold back the whole draft.
+  Map<String, dynamic> toMap({DateTime? notBefore}) {
+    bool sendable(DateTime? time) =>
+        notBefore == null || time == null || !time.isBefore(notBefore);
+    final start = startedAt;
+    final end = completedAt;
+    return {
+      'load_kg': load,
+      'repetitions': reps,
+      'rpe': rpe,
+      'completed': completed,
+      if (sendable(start)) ...{
+        'started_at': start?.toUtc().toIso8601String(),
+        'rest_before_seconds': restBeforeSeconds,
+      },
+      if (sendable(end)) 'completed_at': end?.toUtc().toIso8601String(),
+      'rir': rir,
+      'timing_source': timingSource?.name,
+    };
+  }
 }
 
 /// One planned exercise and the sets logged against it.

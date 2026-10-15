@@ -459,8 +459,8 @@ Otherwise it stays neutral, and the arrow and spoken label carry the direction.
 
 - Workout logging (focus mode): one exercise per page with large Archivo kg × reps steppers, a
   **Done set** pill, set dots, a **Last time** / **Your best** strip and a small `MuscleMapPair`.
-  Logged sets list under it (`SetRow`) with undo, a set-effort button (1–10 `RpePicker` with plain
-  hints, blank allowed), a **New best** stamp or **First log** tag. Rest takes the screen as a lime
+  Logged sets list under it (`SetRow`) with undo, a reps-left button (`RirPicker`: one row of 0, 1,
+  2, 3, 4 and 5+, plain words for VoiceOver, blank allowed; older sets show their RPE), a **New best** stamp or **First log** tag. Rest takes the screen as a lime
   ring with ±15 and Skip, and swipes down into a glass pill; editing is never blocked. Starting
   values come from today's earlier set, then last time, then the plan, and say which.
 - `MealCandidateEditor`: separates AI-observed foods from confirmed catalog items; every candidate

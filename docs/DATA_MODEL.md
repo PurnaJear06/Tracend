@@ -348,6 +348,25 @@ substitutions, extras) are keyed by their lowercased, trimmed name. Assisted exe
 Set number, type, repetitions, load, RPE, completion, and rest duration. Ordering is unique within
 an exercise performance.
 
+Set timing and reps left (2026-10-15, migration `20261015100031_set_timing.sql`, all nullable):
+
+| Column | Type | Rule |
+|---|---|---|
+| `started_at` | timestamptz | when the set began: the end of the rest before it (Skip or the timer's end), else the athlete's first edit of its kg or reps outside a rest; unknown when the set was ticked during its rest or without an edit |
+| `completed_at` | timestamptz | when it was ticked; `>= started_at` |
+| `rest_before_seconds` | integer | rest actually taken, from the previous tick in the workout to `started_at`, 0–3600; a longer gap is unknown |
+| `rir` | smallint | reps in reserve 0–5 (5 means 5 or more) |
+| `timing_source` | text | `app` or `watch` |
+
+The app takes every time from the wall clock (a rest that ran out while the phone slept ended at its
+stored end time). When the athlete picks reps left, the app also writes `rpe = 10 − rir`, the value
+the same answer meant on the earlier 1–10 picker, so RPE readers (Coach context) stay consistent.
+`sync_workout_draft` keeps a stored value when a set omits the key (installed builds send none),
+clears it on an explicit null, and refuses (22023) a malformed value, a time more than 10 minutes in
+the future or more than 10 minutes before the session's recorded start, and an end before the
+start. `get_my_workout_session` 1.1 and `get_my_exercise_history` 1.1 (last session's sets) return
+the five fields; the privacy export selects every column.
+
 ### `workout_amendments`
 
 Append-only corrections to completed records containing field, old/new value, reason, actor, and

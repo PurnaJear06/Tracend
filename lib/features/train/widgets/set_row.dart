@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/train/widgets/rir_picker.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
 
@@ -91,13 +92,14 @@ class FirstLogTag extends StatelessWidget {
 }
 
 /// One done set in an exercise's log: its number, what was lifted, a mark
-/// for a new best or a first log, the set's effort and undo. Without
-/// [onUndo] the row is read-only (a finished workout).
+/// for a new best or a first log, the reps left and undo. Without [onUndo]
+/// the row is read-only (a finished workout).
 class LoggedSetRow extends StatelessWidget {
   const LoggedSetRow({
     required this.number,
     required this.description,
     this.mark,
+    this.rir,
     this.rpe,
     this.onEffort,
     this.onUndo,
@@ -109,6 +111,12 @@ class LoggedSetRow extends StatelessWidget {
   /// "60 kg × 8" or "12 reps".
   final String description;
   final SetMark? mark;
+
+  /// Reps in reserve, 0 to 5 (5 means 5 or more).
+  final int? rir;
+
+  /// The effort of a set logged before reps left were asked, shown only
+  /// when [rir] is unknown.
   final int? rpe;
   final VoidCallback? onEffort;
   final VoidCallback? onUndo;
@@ -118,7 +126,19 @@ class LoggedSetRow extends StatelessWidget {
     final colors = context.tracendColors;
     final text = Theme.of(context).textTheme;
     final compact = MediaQuery.textScalerOf(context).scale(1) > 1.4;
-    final effortLabel = rpe == null ? 'Add effort' : 'RPE $rpe';
+    final reserve = rir;
+    final legacy = rpe;
+    final effortLabel = reserve != null
+        ? '${rirLabel(reserve)} left'
+        : legacy != null
+        ? 'RPE $legacy'
+        : 'Reps left';
+    final effortSpoken = reserve != null
+        ? 'Reps left for set $number: ${rirHint(reserve)}, change'
+        : legacy != null
+        ? 'Effort for set $number: RPE $legacy, change'
+        : 'Add reps left for set $number';
+    final hasEffort = reserve != null || legacy != null;
     final markLabel = switch (mark) {
       SetMark.newBest => ', new best',
       SetMark.firstLog => ', first log',
@@ -147,9 +167,7 @@ class LoggedSetRow extends StatelessWidget {
       if (onEffort != null)
         Pressable(
           onTap: onEffort,
-          semanticLabel: rpe == null
-              ? 'Add effort for set $number'
-              : 'Effort for set $number: $rpe, change',
+          semanticLabel: effortSpoken,
           borderRadius: BorderRadius.circular(TracendRadii.pill),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
@@ -167,9 +185,9 @@ class LoggedSetRow extends StatelessWidget {
                   child: Text(
                     effortLabel,
                     style: text.labelMedium?.copyWith(
-                      color: rpe == null
-                          ? colors.textSecondary
-                          : colors.textPrimary,
+                      color: hasEffort
+                          ? colors.textPrimary
+                          : colors.textSecondary,
                     ),
                   ),
                 ),
@@ -177,7 +195,7 @@ class LoggedSetRow extends StatelessWidget {
             ),
           ),
         )
-      else if (rpe != null)
+      else if (hasEffort)
         Text(
           effortLabel,
           style: text.labelMedium?.copyWith(color: colors.textSecondary),

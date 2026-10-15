@@ -16,8 +16,52 @@ C1 (Phase 1); C2 (Phase 2); C3 (Phase 3); C4 (Phase 4)
 
 ## State
 
-No chunk of this stream has merged yet.
+**C1 (set timing, reps left, workout events): in review** on `claude/c1-set-timing` (draft PR to
+`main`). Not merged, not deployed; needs migration first, then an app install.
+
+- Migration `20261015100031_set_timing.sql` (code 31): five nullable `exercise_sets` columns with
+  checks (Contract 2); `sync_workout_draft` redefined from `20260711190000_workout_truth_repair.sql`
+  (the latest) with the same signature and behaviour plus the five optional set keys: a missing key
+  keeps the stored value, an explicit null clears it, malformed values and times more than 10
+  minutes in the future or more than 10 minutes before the session's recorded start raise 22023,
+  and so does an end before the start. Helpers `private.workout_set_time` and
+  `private.workout_set_whole_number`. `get_my_workout_session` gains `schema_version` 1.1 (it had
+  none) and the five set fields; `get_my_exercise_history` 1.1 adds them to the last session's
+  sets. `complete_workout_v2` untouched. Privacy export already selects every column, so it needs
+  no change. pgTAP `set_timing_test.sql`; `train_redesign_data_test.sql` and the Deno DB contract
+  test expect history 1.1.
+- Interpretation to confirm: the "before the session's start" rule allows the same 10 minutes as
+  the future rule, for a phone clock that differs from the server's. The app also never sends a
+  time from before the server's copy of the session began (a workout started offline: the server
+  stamps its start when the session reaches it), because one refused time would hold back the
+  whole draft; those times stay in the phone's draft.
+- App (`lib/features/train/`): `set_timing.dart` records starts, ends and rest from wall-clock
+  moments (rest end = Skip, or the timer's stored end even when the app notices late; a set ticked
+  during its rest gets no start; a gap over an hour is no rest). `workout_draft.dart` carries the
+  fields and sends them. `workout_events.dart` holds Contract 3 (`WorkoutEvent`s,
+  `WorkoutCommand`s and `WorkoutEventHub`); `ActiveWorkoutScreen(events:)` publishes the events and
+  obeys `CompleteCurrentSet`, `SkipRest`, `AddRest` (D1 wires the Live Activity to it). Skip and
+  every rest change publish `RestAdjusted` (Skip with `endsAt` = now); `ExerciseAdvanced` fires when
+  the exercise on screen changes; `WorkoutEnded` on finish (completed) and on discard or leave.
+  `SetStarted.at` is the set's real start, which can be earlier than its publication (a start is
+  known only once the set is edited or ticked).
+- UI decision (reps left vs RPE): the 1–10 set-effort picker is replaced by `RirPicker` (0–4, 5+).
+  The old picker already asked "How many reps were left?" and labelled each RPE with reps left, so
+  the redesign's intent is kept and the question is answered directly. The app still writes
+  `rpe = 10 − rir` (the same mapping), so the Coach's set RPE stays consistent; sets logged before
+  show their RPE. `rpe_picker.dart` became `effort_scale.dart` (session effort only).
+- Tests: `test/set_timing_test.dart` (rest maths, backgrounding, relaunch),
+  `test/rir_picker_test.dart`, timing/event/command widget tests in
+  `test/phase_3_workout_flow_test.dart`, contract fixtures `workout_session_v1_1.json` and
+  `exercise_history_v1_1.json`.
+
+Owner device check after install: log a few sets with rests (one Skip, one left to run out with the
+phone locked), pick reps left during a rest, finish; then ask for the set rows (or check
+`get_my_workout_session`) to confirm `started_at`, `completed_at`, `rest_before_seconds`, `rir`
+and `timing_source = app`.
 
 ## Next agent starts here
 
-Take the first `todo` chunk of this stream from the program board whose dependencies are merged.
+After C1 merges: C2 (native heart-rate reader, per-set summaries) waits for D0. Read set windows
+from `exercise_sets.started_at`/`completed_at` and listen to `WorkoutEventHub.events`; never write
+sets.

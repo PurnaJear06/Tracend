@@ -9,12 +9,14 @@ import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/rest_timer.dart';
+import 'package:tracend/features/train/set_timing.dart';
 import 'package:tracend/features/train/widgets/focus_exercise_page.dart';
 import 'package:tracend/features/train/widgets/rest_timer_view.dart';
-import 'package:tracend/features/train/widgets/rpe_picker.dart';
+import 'package:tracend/features/train/widgets/rir_picker.dart';
 import 'package:tracend/features/train/widgets/workout_finish_sheet.dart';
 import 'package:tracend/features/train/widgets/workout_summary_sheet.dart';
 import 'package:tracend/features/train/workout_draft.dart';
+import 'package:tracend/features/train/workout_events.dart';
 import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
@@ -27,7 +29,10 @@ import 'package:tracend/shared/widgets/tracend_toast.dart';
 
 /// Logs a workout in focus mode: one exercise per page, a rest timer that
 /// takes over between sets and shrinks to a pill, and a finish that asks how
-/// hard the whole workout was before saving it (UX_FLOWS.md §6).
+/// hard the whole workout was before saving it (UX_FLOWS.md §6). It records
+/// when each set began and ended and the rest taken (Contract 2), publishes
+/// the workout's events and takes the Live Activity's commands (Contract 3)
+/// through [events].
 class ActiveWorkoutScreen extends StatefulWidget {
   const ActiveWorkoutScreen({
     required this.workout,
@@ -36,6 +41,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
     this.restAlerts = const MethodChannelRestAlertScheduler(),
     this.notifications = const MethodChannelNotificationRepository(),
     this.clock = DateTime.now,
+    this.events,
     super.key,
   });
 
@@ -48,8 +54,12 @@ class ActiveWorkoutScreen extends StatefulWidget {
   final RestAlertScheduler restAlerts;
   final NotificationRepository notifications;
 
-  /// The time source for the elapsed time and the rest timer.
+  /// The time source for the elapsed time, the rest timer and set times.
   final DateTime Function() clock;
+
+  /// The workout's event stream and command sink. The screen makes its own
+  /// when none is given, and closes it when it goes away.
+  final WorkoutEventHub? events;
 
   /// The longest workout the server records (3 hours).
   static const maxSessionSeconds = 10800;
@@ -90,11 +100,21 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     clock: widget.clock,
   );
   final PageController _pages = PageController();
+  late final WorkoutEventHub _events = widget.events ?? WorkoutEventHub();
+  StreamSubscription<WorkoutCommand>? _commands;
+  final SetTimingRecorder _timing = SetTimingRecorder();
+
+  /// The exercise on screen.
+  int _page = 0;
 
   String? _sessionId;
   String _idempotencyKey = newIdempotencyKey();
   int _revision = 0;
   late DateTime _startedAt = widget.clock();
+
+  /// When the server's copy of this session began, when known. Set times
+  /// before it stay on this phone (see [WorkoutSetDraft.toMap]).
+  DateTime? _serverStartedAt;
   bool _ready = false;
   _Sync _sync = _Sync.saving;
 
@@ -115,7 +135,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// for the pill.
   _Next? _restNext;
 
-  /// The set the running rest follows, for its effort picker.
+  /// The set the running rest follows, for its reps-left picker.
   (int, int)? _restAfter;
   bool _restEffortDismissed = false;
 
@@ -137,6 +157,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void initState() {
     super.initState();
+    _commands = _events.incomingCommands.listen(_onCommand);
     _restore();
   }
 
@@ -144,6 +165,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   void dispose() {
     _saveTimer?.cancel();
     _ticker?.cancel();
+    unawaited(_commands?.cancel());
+    _events.close();
     _pages.dispose();
     super.dispose();
   }
@@ -184,20 +207,36 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           DateTime.tryParse('${draft['actual_started_at'] ?? ''}')?.toLocal() ??
           _startedAt;
       _hydrate(draft['exercises']);
+      if (server != null && server['session_id'] == _sessionId) {
+        _serverStartedAt = DateTime.tryParse(
+          '${server['actual_started_at'] ?? ''}',
+        );
+      }
       if (local != null && local['session_id'] == _sessionId) {
         _restoreClearedLoads(local[_clearedLoadsKey]);
+        _serverStartedAt ??= DateTime.tryParse(
+          '${local[_serverStartedKey] ?? ''}',
+        );
+        _timing.pendingStart = DateTime.tryParse(
+          '${local[SetTimingRecorder.draftKey] ?? ''}',
+        );
       }
     }
+    final storedRest = RestTimer.fromJson(local?[RestTimer.draftKey]);
     await _rest.restore(local?[RestTimer.draftKey]);
     if (_rest.timer != null) {
       _restExpanded = false;
       _restNext = _nextAfterCurrent();
+    } else if (storedRest != null) {
+      // The rest ran out while the app was away: it ended at its end time.
+      _timing.restEnded(storedRest.endsAt);
     }
     _pendingFinish = await widget.repository.loadPendingFinish(
       widget.workout.id,
     );
     _ready = true;
     final first = _firstOpenExercise();
+    _page = first;
     if (mounted) setState(() {});
     if (first > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -206,11 +245,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     }
     unawaited(_loadHistory());
     try {
-      _sessionId ??= await widget.repository.start(
-        widget.workout,
-        _idempotencyKey,
-        localDate: widget.sessionDate,
-      );
+      if (_sessionId == null) {
+        _sessionId = await widget.repository.start(
+          widget.workout,
+          _idempotencyKey,
+          localDate: widget.sessionDate,
+        );
+        _serverStartedAt ??= widget.clock();
+      }
     } catch (e) {
       debugPrint('Non-critical error: workout start waits: $e');
       _sessionId ??= 'pending-$_idempotencyKey';
@@ -263,6 +305,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// phone's draft (the server stores just an empty load), so a restored
   /// workout never suggests a weight there again.
   static const _clearedLoadsKey = 'cleared_loads';
+
+  /// The local draft field that holds [_serverStartedAt].
+  static const _serverStartedKey = 'server_started_at';
 
   List<Map<String, int>> _clearedLoads() => [
     for (final draft in _exercises)
@@ -366,7 +411,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   // Draft and sync -------------------------------------------------------------
 
-  Map<String, dynamic> _draft() => {
+  /// The draft. With [notBefore] (for the server), set times before it are
+  /// left out.
+  Map<String, dynamic> _draft({DateTime? notBefore}) => {
     'workout_id': widget.workout.id,
     'session_id': _sessionId,
     'idempotency_key': _idempotencyKey,
@@ -380,18 +427,23 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           'rest_seconds': draft.exercise.restSeconds,
           'sets': [
             for (var j = 0; j < draft.sets.length; j++)
-              {'number': j + 1, ...draft.sets[j].toMap()},
+              {'number': j + 1, ...draft.sets[j].toMap(notBefore: notBefore)},
           ],
         },
     ],
   };
 
-  /// The draft kept on this phone: the synced draft plus the start time and
-  /// the running rest, which only the device needs.
+  /// The draft kept on this phone: the synced draft plus the start time,
+  /// the running rest and the end of the last rest, which only the device
+  /// needs.
   Map<String, dynamic> _localDraft() => {
     ..._draft(),
     'actual_started_at': _startedAt.toUtc().toIso8601String(),
+    _serverStartedKey: ?_serverStartedAt?.toUtc().toIso8601String(),
     RestTimer.draftKey: ?_rest.toDraft(),
+    SetTimingRecorder.draftKey: ?_timing.pendingStart
+        ?.toUtc()
+        .toIso8601String(),
     _clearedLoadsKey: _clearedLoads(),
   };
 
@@ -418,6 +470,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           localDate: widget.sessionDate,
         );
         _sessionId = id;
+        _serverStartedAt = widget.clock();
       } catch (e) {
         debugPrint('Non-critical error: workout start still waits: $e');
         if (mounted) setState(() => _sync = _Sync.offline);
@@ -427,7 +480,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (mounted) setState(() => _sync = _Sync.saving);
     _Sync result;
     try {
-      await widget.repository.sync(id, _revision, _draft());
+      await widget.repository.sync(
+        id,
+        _revision,
+        _draft(notBefore: _serverStartedAt ?? _startedAt),
+      );
       result = _Sync.saved;
     } on PostgrestException catch (e) {
       debugPrint('Non-critical error: workout sync refused: ${e.code}');
@@ -441,14 +498,44 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   // Sets ------------------------------------------------------------------------
 
+  /// A rest whose end passed between ticks or while the app was away ended
+  /// at its stored end time.
+  void _expireRest(DateTime now) {
+    final timer = _rest.timer;
+    if (timer == null || !timer.isExpired(now)) return;
+    _timing.restEnded(timer.endsAt);
+    unawaited(_rest.stop());
+  }
+
+  bool _resting(DateTime now) {
+    final timer = _rest.timer;
+    return timer != null && !timer.isExpired(now);
+  }
+
+  /// The end times of every done set in the workout except [except].
+  Iterable<DateTime> _endsExcept(WorkoutSetDraft except) => [
+    for (final draft in _exercises)
+      for (final set in draft.sets)
+        if (!identical(set, except) && set.completed && set.completedAt != null)
+          set.completedAt!,
+  ];
+
   void _doneSet(int exercise, String load, String reps) {
     final draft = _exercises[exercise];
     final index = draft.currentSetIndex;
     if (index == null) return;
-    draft.sets[index]
+    final now = widget.clock();
+    _expireRest(now);
+    final set = draft.sets[index]
       ..load = load
       ..reps = reps
       ..completed = true;
+    final started = _timing.completed(
+      set,
+      now: now,
+      resting: _resting(now),
+      otherEnds: _endsExcept(set),
+    );
     if (draft.skipped) draft.status = 'unknown';
     if (draft.newBests(_historyOf(exercise)).contains(index)) {
       TracendHaptics.medium();
@@ -458,15 +545,42 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     } else {
       TracendHaptics.light();
     }
+    final order = draft.exercise.order;
+    if (started != null) {
+      _events.emit(
+        SetStarted(at: started, exerciseOrder: order, setNumber: index + 1),
+      );
+    }
+    _events.emit(
+      SetCompleted(
+        at: now,
+        exerciseOrder: order,
+        setNumber: index + 1,
+        reps: set.repetitions,
+        loadKg: set.loadKg?.toDouble(),
+        rir: set.rir,
+      ),
+    );
     final next = _nextLabel(exercise);
-    if (next != null && draft.exercise.restSeconds > 0) {
+    final restSeconds = draft.exercise.restSeconds;
+    if (next != null && restSeconds > 0) {
       _restNext = next;
       _restAfter = (exercise, index);
       _restEffortDismissed = false;
       _restExpanded = true;
-      unawaited(
-        _rest.start(draft.exercise.restSeconds).then((_) => _persistRest()),
-      );
+      _timing.restStarted();
+      unawaited(_rest.start(restSeconds).then((_) => _persistRest()));
+      final timer = _rest.timer;
+      if (timer != null) {
+        _events.emit(
+          RestStarted(
+            at: now,
+            seconds: restSeconds,
+            endsAt: timer.endsAt,
+            nextLabel: next.full,
+          ),
+        );
+      }
     }
     _changed();
   }
@@ -474,7 +588,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   void _undoSet(int exercise, int set) {
     _exercises[exercise].sets[set]
       ..completed = false
-      ..rpe = '';
+      ..completedAt = null
+      ..setRir(null);
     if (_momentExercise == exercise && _moment?.set == set) {
       _moment = null;
       _momentExercise = null;
@@ -483,16 +598,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _changed();
   }
 
-  void _setRpe(int exercise, int set, int? rpe) {
-    _exercises[exercise].sets[set].rpe = rpe == null ? '' : '$rpe';
+  void _setRir(int exercise, int set, int? rir) {
+    _exercises[exercise].sets[set].setRir(rir);
     _changed();
   }
 
-  int _fillRpe(int exercise, int rpe) {
+  int _fillRir(int exercise, int rir) {
     var filled = 0;
     for (final set in _exercises[exercise].sets) {
-      if (set.completed && set.rpe.isEmpty) {
-        set.rpe = '$rpe';
+      if (set.completed && set.rir == null && set.rpe.isEmpty) {
+        set.setRir(rir);
         filled++;
       }
     }
@@ -511,7 +626,52 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ..loadEdited = true;
     }
     if (reps != null) set.reps = reps;
+    final now = widget.clock();
+    _expireRest(now);
+    final started = _timing.touched(set, now: now, resting: _resting(now));
+    if (started != null) {
+      _events.emit(
+        SetStarted(
+          at: started,
+          exerciseOrder: draft.exercise.order,
+          setNumber: index + 1,
+        ),
+      );
+    }
     _changed();
+  }
+
+  /// The Live Activity's buttons. Ignored once the workout is closed.
+  void _onCommand(WorkoutCommand command) {
+    if (!mounted || !_ready || _closed || _viewingCompleted) return;
+    switch (command) {
+      case CompleteCurrentSet():
+        _completeCurrentSet();
+      case SkipRest():
+        unawaited(_skipRest());
+      case AddRest(:final seconds):
+        if (seconds > 0) unawaited(_adjustRest(Duration(seconds: seconds)));
+    }
+  }
+
+  /// Ticks the current set of the exercise on screen (else the first
+  /// exercise with sets left) with the kg and reps the screen suggests.
+  void _completeCurrentSet() {
+    bool open(int i) =>
+        !_exercises[i].skipped && _exercises[i].currentSetIndex != null;
+    final page = _page;
+    final exercise = page < _exercises.length && open(page)
+        ? page
+        : _exercises.indexWhere((e) => !e.skipped && e.currentSetIndex != null);
+    if (exercise < 0) return;
+    final draft = _exercises[exercise];
+    final suggestion = suggestSet(
+      draft,
+      draft.currentSetIndex!,
+      _historyOf(exercise),
+    );
+    if ((num.tryParse(suggestion.reps) ?? 0) <= 0) return;
+    _doneSet(exercise, suggestion.load, suggestion.reps);
   }
 
   Future<void> _more(int exercise) async {
@@ -584,17 +744,28 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Future<void> _adjustRest(Duration delta) async {
+    if (_rest.timer == null) return;
+    final now = widget.clock();
     await _rest.adjust(delta);
+    final timer = _rest.timer;
+    if (timer == null) _timing.restEnded(now);
+    _events.emit(RestAdjusted(at: now, endsAt: timer?.endsAt ?? now));
     await _persistRest();
   }
 
   Future<void> _skipRest() async {
+    if (_rest.timer == null) return;
+    final now = widget.clock();
+    _timing.restEnded(now);
     await _rest.skip();
+    _events.emit(RestAdjusted(at: now, endsAt: now));
     await _persistRest();
   }
 
   Future<void> _restEnded() async {
-    if (_rest.timer == null) return;
+    final timer = _rest.timer;
+    if (timer == null) return;
+    _timing.restEnded(timer.endsAt);
     await _rest.stop();
     if (!mounted) return;
     unawaited(TracendHaptics.success());
@@ -656,6 +827,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     await _save();
     if (!mounted) return;
     _closed = true;
+    _events.emit(WorkoutEnded(at: widget.clock(), completed: false));
     // The toast lives in the root overlay, so it outlasts this screen.
     TracendToast.show(
       context,
@@ -696,6 +868,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       }
       return;
     }
+    _events.emit(WorkoutEnded(at: widget.clock(), completed: false));
     if (!mounted) return;
     TracendToast.show(context, 'Workout discarded', icon: CupertinoIcons.trash);
     Navigator.of(context).pop(false);
@@ -770,6 +943,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       return;
     }
     _closed = true;
+    _events.emit(WorkoutEnded(at: widget.clock(), completed: true));
     if (!mounted) return;
     setState(() {
       _finishing = false;
@@ -1113,7 +1287,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               child: PageView.builder(
                 controller: _pages,
                 itemCount: _exercises.length,
-                onPageChanged: (_) => TracendHaptics.selection(),
+                onPageChanged: _pageChanged,
                 itemBuilder: (context, i) => _exercisePage(i),
               ),
             ),
@@ -1197,17 +1371,30 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
+  void _pageChanged(int page) {
+    TracendHaptics.selection();
+    _page = page;
+    final exercise = _exercises[page].exercise;
+    _events.emit(
+      ExerciseAdvanced(
+        at: widget.clock(),
+        exerciseOrder: exercise.order,
+        name: exercise.name,
+      ),
+    );
+  }
+
   Widget? _restEffort() {
     final after = _restAfter;
     if (after == null || _restEffortDismissed) return null;
     final (exercise, set) = after;
     final row = _exercises[exercise].sets[set];
     if (!row.completed) return null;
-    return RpePicker(
-      title: 'Effort for set ${set + 1}',
-      value: row.rpeValue,
-      onSelected: (value) => _setRpe(exercise, set, value),
-      onClear: () => _setRpe(exercise, set, null),
+    return RirPicker(
+      title: 'Reps left on set ${set + 1}',
+      value: row.rir,
+      onSelected: (value) => _setRir(exercise, set, value),
+      onClear: () => _setRir(exercise, set, null),
       dismissLabel: 'Not now',
       onDismiss: () => setState(() => _restEffortDismissed = true),
     );
@@ -1235,8 +1422,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       onLoadChanged: (value) => _editCurrent(i, load: value),
       onRepsChanged: (value) => _editCurrent(i, reps: value),
       onUndo: (set) => _undoSet(i, set),
-      onRpe: (set, rpe) => _setRpe(i, set, rpe),
-      onFillRpe: (rpe) => _fillRpe(i, rpe),
+      onRir: (set, rir) => _setRir(i, set, rir),
+      onFillRir: (rir) => _fillRir(i, rir),
       onPain: () {
         _exercises[i].pain = !_exercises[i].pain;
         _changed();

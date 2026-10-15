@@ -596,23 +596,32 @@ exercise with sets left.
   card reads "All N sets done" with **Next exercise**, or tells the athlete to tap Finish on the
   last exercise.
 - **Logged**: each done set with its number, "62.5 kg × 8" (or "12 reps"), a **New best** or
-  **First log** mark, its effort (**RPE 8** or **Add effort**) and undo. Undo clears that set's
-  effort.
+  **First log** mark, its reps left (**2 left**, **5+ left**, **RPE 8** for a set logged before
+  reps left were asked, or **Reps left** to add) and undo. Undo clears that set's reps left and its
+  end time.
 - Tools: **Pain or discomfort** stays a visible chip (**Pain noted** in caution when on). **Fill
-  effort** and a ⋯ menu whose only action is **Mark as skipped** (an action sheet with **Keep
+  reps left** and a ⋯ menu whose only action is **Mark as skipped** (an action sheet with **Keep
   logging**). Logging a set on a skipped exercise unmarks it.
 
-**Set effort (RPE).** Optional on every set: a compact 1–10 picker with plain words (5 "5 or more
-reps left", 6 "4 reps left", 7 "3 reps left", 8 "2 reps left", 9 "1 rep left", 10 "Nothing left";
-1–4 "Very light"/"Light"). Blank is allowed (**Not now**, **Clear**). **Fill effort** gives one
-value to the logged sets of that exercise that have none, leaves the others alone, and says how
-many it filled; each set stays adjustable afterwards. Set effort is separate from session effort
-and never feeds it.
+**Reps left (reps in reserve).** Optional on every set: "How many more reps could you do?" with one
+row of 0, 1, 2, 3, 4 and 5+ (VoiceOver reads "Nothing left", "1 rep left" … "5 or more reps
+left"). It replaced the 1–10 set-effort picker on 2026-10-15 (C1): that picker already asked how
+many reps were left, so the athlete now answers it directly; the app still writes the RPE the same
+answer meant there (10 − reps left, 5+ as 5). Blank is allowed (**Not now**, **Clear**). **Fill reps
+left** gives one value to the logged sets of that exercise that have neither reps left nor an
+older effort, leaves the others alone, and says how many it filled; each set stays adjustable
+afterwards. Reps left are separate from session effort and never feed it.
+
+**Set timing.** Nothing new on screen. Each set records when it started (the end of the rest before
+it, else the first edit of its kg or reps outside a rest; none when it is ticked during its rest),
+when it was ticked and the rest taken since the previous tick, all from the wall clock, so a rest
+that runs out while the phone sleeps ends at its stored end time. Times from before the server's
+copy of an offline-started session began stay on the phone.
 
 **Rest.** Done set starts the exercise's rest (`rest_seconds`) when something follows it:
 
 - A full-screen lime ring with the time left, "Next: Set 3 of Bench press" (or the next
-  exercise), −15, +15, Skip, and the effort picker for the set just done. It covers the page, not
+  exercise), −15, +15, Skip, and the reps-left picker for the set just done. It covers the page, not
   the header, so Finish and leave stay reachable.
 - A swipe down, a pull past the top or **Hide** shrinks it to a floating pill (ring, "Next: Set
   3", ±15 at normal sizes, Skip) above the page; a tap on the pill opens the ring again. The rest
