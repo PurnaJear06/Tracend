@@ -67,6 +67,11 @@ alter table public.photo_ai_notices add column provider text
   check (provider in ('deepseek','groq','gemini','anthropic'));
 
 -- The four-argument publishers keep working (provider null). These name it.
+-- Run by the owner from the SQL editor: provider_label is what the athlete reads
+-- and provider is what the gateway checks, so provider_label must name the same
+-- company as provider (provider 'anthropic' with label 'Claude (Anthropic)',
+-- never a label for another company). Nothing checks this; a mismatch would let
+-- the athlete agree to one company while the gateway sends to another.
 create function private.publish_ai_notice(
   notice_version text, notice_provider text, notice_provider_label text,
   notice_purposes text[], notice_body text
@@ -175,9 +180,10 @@ returns text language sql immutable set search_path = '' as $$
 $$;
 revoke all on function private.ai_budget_purpose(text) from public, anon, authenticated;
 
--- reserve_ai_budget with the per-call ceiling from the caller's route: above
--- zero and at most USD 0.50, rounded up to the reservation's six decimals so a
--- place never counts less than asked. The athlete's USD 2 month and 30 calls a
+-- reserve_ai_budget with the per-call ceiling from the caller's route: at
+-- least USD 0.001 (no model call costs less, and a near-zero place would let
+-- calls pass the stops almost uncounted) and at most USD 0.50, rounded up to
+-- the reservation's six decimals so a place never counts less than asked. The athlete's USD 2 month and 30 calls a
 -- day, and private.ai_budget_limits for every account, apply as before.
 create function public.reserve_ai_budget_v2(
   target_user_id uuid, run_purpose text, ceiling_usd numeric
@@ -192,7 +198,7 @@ begin
   if stored_purpose is null then
     raise exception 'invalid purpose' using errcode = '22023';
   end if;
-  if ceiling_usd is null or ceiling_usd <= 0 or ceiling_usd > 0.50 then
+  if ceiling_usd is null or ceiling_usd < 0.001 or ceiling_usd > 0.50 then
     raise exception 'invalid ceiling' using errcode = '22023';
   end if;
   ceiling := ceil(ceiling_usd * 1000000) / 1000000;

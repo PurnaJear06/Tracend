@@ -35,13 +35,17 @@ No chunk of this stream has merged yet.
 - `get_ai_consent_v2(target_user_id, consent_purpose)` → `{schema_version, granted, provider,
   notice_version}`; TS `aiConsentWithProvider(rpc, userId, purpose)` → `{consent, provider,
   noticeVersion}`, `provider` typed `AiVendor`. Purpose mapping: AI_SAFETY_SPEC §10.
-- `reserve_ai_budget_v2(target_user_id, run_purpose, ceiling_usd)`, ceiling in (0, 0.50]; TS
+- `reserve_ai_budget_v2(target_user_id, run_purpose, ceiling_usd)`, ceiling USD 0.001 to 0.50; TS
   `AiBudget.reserve(purpose, ceilingUsd)`. Feature names map to today's purposes (COST_MODEL).
 - Until a notice naming the route's provider is published and granted, `get_ai_consent_v2` returns
   `provider: null` for coaching and physique notices, so a gateway call would refuse. Cutover (A7)
   publishes those notices.
 - Open: a `library_context` model call would need its own usage purpose in `model_runs` or
-  `ai_usage_events` (today it is budgeted and consented as `coach_chat`). Vision through DeepSeek,
+  `ai_usage_events` (today it is budgeted and consented as `coach_chat`).
+- Follow-up for A3: `_shared/ai_consent.ts` declares its own `AiVendor` union, which duplicates the
+  gateway's (A2). A3 unifies them after A2 merges.
+- The five-argument publishers are owner-run SQL: `provider_label` must name the same company as
+  `provider`; nothing checks it (comment in the migration). Vision through DeepSeek,
   or a Groq or Gemini model other than the pinned ones, still needs a migration (A3).
 
 ## Next agent starts here

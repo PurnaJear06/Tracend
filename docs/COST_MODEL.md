@@ -152,7 +152,8 @@ so a failure can only overcount. Only a refusal (429) or an HTTP error rules bil
 - **Route ceilings (2026-10-15, coaching platform A1):** `reserve_ai_budget_v2(target_user_id,
   run_purpose, ceiling_usd)` takes the per-call ceiling from the caller's route instead of the fixed
   per-purpose table, so a Haiku and a Sonnet route of the same feature hold what each can cost. The
-  ceiling must be above 0 and at most USD 0.50, and is rounded up to the reservation's six decimals.
+  ceiling must be at least USD 0.001 and at most USD 0.50, and is rounded up to the reservation's six
+  decimals.
   The athlete's USD 2 month, 30 calls a day and the global stop apply exactly as in
   `reserve_ai_budget`, which is unchanged. It also accepts the gateway's feature names and stores
   them under today's purposes (`daily_decision` as `daily_coaching`, `physique_vision` as

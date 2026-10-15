@@ -1,5 +1,5 @@
 begin;
-select plan(74);
+select plan(79);
 
 -- a11...01 runs, usage and consent; 02 another athlete; 03-05 the budget.
 insert into auth.users(id, role) values
@@ -235,6 +235,17 @@ select ok(public.has_ai_coaching_consent('a1100000-0000-4000-8000-000000000001',
 select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000002', 'coach_chat')->'granted',
   'false'::jsonb, 'another athlete''s grant does not count');
 
+-- Withdrawals are dated after the grants: a transaction gives every row the same now().
+insert into public.consent_records(user_id, consent_type, notice_version, action, source, created_at)
+values ('a1100000-0000-4000-8000-000000000001', 'ai_coaching', 'ai-coaching-a1-test', 'withdrawn',
+  'ios_app', now() + interval '1 minute');
+select ok((select bool_and(not (public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', p)
+    ->>'granted')::boolean)
+  from unnest(array['coach_chat','library_context','daily_coaching','daily_decision',
+    'onboarding_plan','onboarding_questions']) p)
+  and not public.has_ai_coaching_consent('a1100000-0000-4000-8000-000000000001', 'coach_chat'),
+  'a withdrawal stops every coaching feature at once');
+
 select throws_ok($$select private.publish_ai_notice('ai-coaching-a1-bad', 'openai_compatible',
   'DeepSeek', array['coach_chat'], 'Test notice.')$$,
   '23514', null, 'a notice must name a vendor, not an API shape');
@@ -277,6 +288,13 @@ select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'meal
 select is(public.get_meal_photo_ai_consent('a1100000-0000-4000-8000-000000000001'),
   '{"granted": true, "provider": "anthropic"}'::jsonb,
   'meal-analyze''s consent check answers as before');
+insert into public.consent_records(user_id, consent_type, notice_version, action, source, created_at)
+values ('a1100000-0000-4000-8000-000000000001', 'meal_photo_ai', 'meal-photo-ai-a1', 'withdrawn',
+  'ios_app', now() + interval '1 minute');
+select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'meal_vision'),
+  '{"schema_version": "1.0", "granted": false, "provider": "anthropic",
+    "notice_version": "meal-photo-ai-a1"}'::jsonb,
+  'a meal photo withdrawal stops meal vision');
 
 -- Progress photo notice ---------------------------------------------------------------
 
@@ -297,6 +315,11 @@ select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'prog
   '{"schema_version": "1.0", "granted": true, "provider": "anthropic",
     "notice_version": "progress-photo-ai-a1"}'::jsonb,
   'a grant of the Claude progress photo notice counts');
+insert into public.consent_records(user_id, consent_type, notice_version, action, source, created_at)
+values ('a1100000-0000-4000-8000-000000000001', 'progress_photo_ai', 'progress-photo-ai-a1',
+  'withdrawn', 'ios_app', now() + interval '1 minute');
+select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'physique_vision')->'granted',
+  'false'::jsonb, 'a progress photo withdrawal stops physique vision');
 select lives_ok($$select private.publish_photo_ai_notice('progress-photo-ai-a1-old', 'Groq',
   'qwen/qwen3.8-27b', 'Old form.')$$,
   'the original progress photo publisher still works');
@@ -324,6 +347,8 @@ select is((select reserved_cost_usd from public.ai_budget_reservations
 select throws_ok($$select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003',
   'meal_vision', 0)$$, '22023', 'invalid ceiling', 'a zero ceiling is refused');
 select throws_ok($$select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003',
+  'meal_vision', 0.0009)$$, '22023', 'invalid ceiling', 'a ceiling below USD 0.001 is refused');
+select throws_ok($$select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003',
   'meal_vision', -0.01)$$, '22023', 'invalid ceiling', 'a negative ceiling is refused');
 select throws_ok($$select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003',
   'meal_vision', 0.51)$$, '22023', 'invalid ceiling', 'a ceiling above USD 0.50 is refused');
@@ -333,10 +358,14 @@ create temporary table held_2 as select public.reserve_ai_budget_v2('a1100000-00
 select is((select reserved_cost_usd from public.ai_budget_reservations
   where id = (select id from held_2)),
   0.500000::numeric(10,6), 'a USD 0.50 ceiling is the most one place holds');
-create temporary table held_3 as select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'coach_chat', 0.0000001) id;
+create temporary table held_3 as select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'coach_chat', 0.0012341) id;
 select is((select reserved_cost_usd from public.ai_budget_reservations
   where id = (select id from held_3)),
-  0.000001::numeric(10,6), 'a ceiling below a millionth rounds up, never down');
+  0.001235::numeric(10,6), 'a ceiling rounds up to six decimals, never down');
+create temporary table held_4 as select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'coach_chat', 0.001) id;
+select is((select reserved_cost_usd from public.ai_budget_reservations
+  where id = (select id from held_4)),
+  0.001000::numeric(10,6), 'a USD 0.001 ceiling is the least one place holds');
 create temporary table held_features as
   select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'physique_vision', 0.03) id
   union all

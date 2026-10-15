@@ -35,7 +35,7 @@ export class AiBudget {
 
   // Without a ceiling the place holds the purpose's fixed ceiling
   // (`reserve_ai_budget`). With one, it holds the route's per-call ceiling
-  // (`reserve_ai_budget_v2`: above 0 and at most USD 0.50, or refused).
+  // (`reserve_ai_budget_v2`: USD 0.001 to 0.50, or refused).
   reserve(purpose: AiBudgetPurpose): Promise<boolean>;
   reserve(purpose: AiBudgetPurpose | AiBudgetFeature, ceilingUsd: number): Promise<boolean>;
   async reserve(

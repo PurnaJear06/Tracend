@@ -544,7 +544,7 @@ vision vendors; usage through `anthropic` carries any well-formed model id
 
 `ai_budget_reservations` holds a call's place in the AI budget until its usage is recorded
 (COST_MODEL). `reserve_ai_budget` holds the purpose's fixed ceiling; `reserve_ai_budget_v2` holds
-the caller's route ceiling (above 0, at most USD 0.50).
+the caller's route ceiling (USD 0.001 to 0.50).
 
 Account usage summaries are computed from user-scoped `model_runs` through a restricted aggregate
 query or RPC; they are not a second source of truth and must omit prompts, provider request
