@@ -57,6 +57,27 @@ new_repo edited
 add_migration 20261013100000_waitlist.sql 'select 3;'
 expect "editing a base migration fails" 1
 
+new_repo deleted
+git -C "$repo" rm -q supabase/migrations/20261013100000_waitlist.sql
+git -C "$repo" commit -qm delete
+expect "deleting a base migration fails" 1
+
+new_repo renamed
+git -C "$repo" mv supabase/migrations/20261013100000_waitlist.sql \
+  supabase/migrations/20261016100000_waitlist.sql
+git -C "$repo" commit -qm rename
+expect "renaming a base migration fails" 1
+
+new_repo merged
+git -C "$repo" checkout -q main
+add_migration 20261015130041_library.sql 'select 4;'
+git -C "$repo" checkout -q feature
+add_migration 20261015140031_set_timing.sql 'select 2;'
+git -C "$repo" merge -q --no-edit main
+git -C "$repo" rm -q supabase/migrations/20261013100000_waitlist.sql
+git -C "$repo" commit -qm delete
+expect "deleting a base migration after merging the base fails" 1
+
 new_repo nothing
 expect "branch without migrations passes" 0
 
