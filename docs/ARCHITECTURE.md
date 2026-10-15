@@ -1,16 +1,20 @@
 # Tracend Architecture
 
-## Personal Coaching State Engine
-
-Structured PostgreSQL facts remain the coaching memory. Workout truth and bounded HealthKit workout
-references are reconciled deterministically, then a versioned Coach Context v2 snapshot supplies
-evidence IDs, freshness, coverage and conflicts to Qwen. Model output cannot replace calculations or
-activate persistent changes. Vector retrieval over user data remains outside MVP until its
-evaluation gate is met; the research library (section 11) is the one allowed use of `pgvector`.
-
 **Status:** Authoritative MVP technical architecture\
 **Scope:** Private iOS TestFlight beta\
 **Backend decision:** Supabase-managed backend
+
+Structured PostgreSQL facts are the coaching memory. Deterministic code reconciles workout truth
+with bounded HealthKit workout references and calculates every number. A versioned athlete file
+built from those facts supplies evidence IDs, freshness, coverage and conflicts to the configured
+model. Model output cannot replace calculations or activate persistent changes. Vector retrieval
+over user data stays outside the MVP until its gate is met (section 11); the research library is
+the one allowed use of `pgvector`.
+
+The current program plan is
+[`plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md). Its
+owner decisions (D1–D11) and contracts bind this document. Work that is planned but not built is
+marked "Planned" with its phase and chunk.
 
 ## 1. Architecture Goals
 
@@ -22,11 +26,10 @@ The architecture must:
 - isolate every user's sensitive data with mandatory Row Level Security;
 - support HealthKit and private photos without client-side provider secrets;
 - use Supabase-native capabilities before adding separate infrastructure;
-- allow evaluated AI-provider replacement behind a narrow adapter; and
-- permit the narrowly documented ADR 0006 Groq Qwen owner test without any client credential or
-  direct provider access; and
+- allow evaluated AI-provider replacement per feature through server-side settings alone, with no
+  client credential or direct provider access (D2); and
 - defer vector RAG over user data and autonomous agents until measured value exists; a research
-  library of open sources (decision D3) grounds Coach wording without touching user data.
+  library of open sources (D3) grounds Coach wording without touching user data.
 
 Product behavior is defined in [PRD.md](./PRD.md), security in
 [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md), UX in [UX_FLOWS.md](./UX_FLOWS.md), and budget
@@ -36,7 +39,7 @@ assumptions in [COST_MODEL.md](./COST_MODEL.md).
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│ Flutter iOS app                                              │
+│ Flutter iOS app + TracendWidgets extension                   │
 │ UI · local cache · HealthKit adapter · Supabase client       │
 └──────────────────────────┬───────────────────────────────────┘
                            │ TLS + Supabase user JWT
@@ -47,81 +50,77 @@ assumptions in [COST_MODEL.md](./COST_MODEL.md).
 └───────────────┬────────────────────────────┬─────────────────┘
                 │                            │ server-side only
 ┌───────────────▼──────────────┐   ┌─────────▼─────────────────┐
-│ Structured user data        │   │ AI provider API           │
+│ Structured user data        │   │ AI provider APIs          │
 │ versions · audit · policies │   │ text + vision             │
 └──────────────────────────────┘   └───────────────────────────┘
 ```
 
 HealthKit stays on the device. Flutter reads authorized types, normalizes required summaries, and
 sends idempotent payloads to an authenticated Edge Function. AI keys and the Supabase
-secret/service-role key exist only in Supabase Edge Function secrets.
+secret/service-role key exist only in Supabase Edge Function secrets. The static website (`site/`,
+Cloudflare Pages) talks only to the three session-less waitlist functions.
 
 ## 3. Technology Decisions
 
 ### 3.1 Mobile
 
-- Flutter targeting iOS first.
-- `supabase_flutter` handles Supabase Auth sessions and client access.
-- Native Sign in with Apple exchanges the Apple identity token and nonce with Supabase Auth for an
-  external private beta. Owner-only development may use Supabase email/password through the same
-  client auth boundary.
+- Flutter, iOS only.
+- `supabase_flutter` handles Supabase Auth sessions and client access. The session is stored in
+  the iOS Keychain (SECURITY_PRIVACY §7).
 - `HealthDataSource` wraps the pinned `health` Flutter plugin. The adapter is read-only for MVP and
   exposes only normalized internal sample types.
-- The approved plan and in-progress workout are cached locally for degraded/offline operation.
+- The approved plan and in-progress workout are cached locally for degraded and offline use.
 - Feature widgets use [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md), Dynamic Type, VoiceOver, Reduced
   Motion, safe areas, and state restoration.
 - The client may contain the Supabase project URL and publishable key. It must never contain
   secret/service-role keys or AI-provider keys.
 
+**Workout logging.** History and the open session are kept on the device for offline use; finish
+and discard requests are saved locally first and sent when the network returns. Each set records
+its timing, rest and reps left (program Contract 2). The workout controller publishes workout
+events and accepts commands (`lib/features/train/workout_events.dart`, Contract 3). New bests,
+weight lifted and the rest timer are computed on the device (ALGORITHMS §4). The RPCs are listed
+in section 6.
+
+**Local notifications.** Reminders and the rest alert (identifier `tracend.rest-timer`) use iOS
+`UserNotifications` through a narrow method channel, scheduled on the device. PostgreSQL stores
+only owner-scoped reminder booleans, the coarse iOS authorization state, and append-only consent
+evidence through a validated RPC. Native `UserDefaults` keeps the requested toggles (the rest-alert
+toggle is device-only); pending requests are delivery state and are repaired from the toggles after
+reopen. The in-app rest timer keeps its end time in the local workout draft and does not depend on
+the alert.
+
+**Widget extension and rest Live Activity.** The `TracendWidgets` WidgetKit extension
+(`com.tracend.app.TracendWidgets`, embedded in Runner) draws `RestActivityAttributes`
+(`ios/Shared/`, both targets): the rest's end time, the exercise name and the next-set label,
+nothing else (SECURITY_PRIVACY §10 exception). `RestTimerController` is its only driver, through
+`WorkoutActivityBridge` (`lib/shared/live_activity/`, channel `tracend/live_activity`: `startRest`,
+`updateRest`, `end`; native `ios/Runner/Native/WorkoutActivityBridge.swift`), never awaited.
+Sign-out, account deletion and a refused session call `end`, and the native side ends finished
+activities left from an earlier launch. ActivityKit runs the countdown from the end time
+(`Text(timerInterval:)`): no push, no App Group, no server. It is off when iOS Live Activities are
+off.
+
+> **Planned (coaching platform, Phase 2 / D1):** Done, Skip and +30s buttons on the Live Activity,
+> driven by Contract 3 commands. **Phase 3 / D2:** Today and Lock Screen widgets.
+
 ### 3.2 Supabase Auth
 
-- Supabase Auth is the identity and session authority.
-- Sign in with Apple is the external private-beta login provider. Until Apple Developer Program
-  capabilities are available, owner-only builds may enable the email/password development mode from
-  ADR 0002. Anonymous auth, hard-coded users, and client-side authentication bypasses are
-  prohibited.
-- The native Apple flow uses nonce validation and captures the name only when Apple supplies it on
-  first authorization.
-- Supabase access/refresh sessions are stored through platform-protected client storage; Tracend
+- Supabase Auth is the identity and session authority. `auth.users.id` is the canonical `user_id`
+  for application-owned records.
+- Sign in with Apple is the required external private-beta login provider, using native nonce
+  validation and capturing the name only when Apple supplies it on first authorization. It is not
+  built yet. Owner-only builds use the email/password development mode from ADR 0002 through the
+  same client auth boundary. Anonymous auth, hard-coded users and client-side authentication
+  bypasses are prohibited.
+- Sign-ups are invite-only: the Auth insert trigger refuses an email that is not in
+  `private.signup_invites` (SECURITY_PRIVACY §7).
+- Supabase access and refresh sessions are stored in platform-protected client storage; Tracend
   does not implement a parallel token issuer.
-- Phase 8 reminders use iOS `UserNotifications` through a narrow Flutter method channel. Scheduling
-  remains on-device; PostgreSQL stores only owner-scoped reminder booleans, the coarse iOS
-  authorization state, and append-only consent evidence through a validated RPC. Native
-  `UserDefaults` retains the device's requested toggles; pending notification requests are delivery
-  state, not the preference source, and are repaired from those toggles after reopen.
-- The same channel schedules the workout rest alert (`scheduleRestAlert`, `cancelRestAlert`,
-  identifier `tracend.rest-timer`). Its toggle stays on the device; the in-app rest timer keeps its
-  end time in the local workout draft and does not depend on the alert.
-- The rest also shows as a Live Activity (D0, 2026-10-15). The `TracendWidgets` WidgetKit
-  extension (`com.tracend.app.TracendWidgets`, embedded in Runner) draws `RestActivityAttributes`
-  (`ios/Shared/`, compiled into both targets): the end time, the exercise name and the next-set
-  label, nothing else (SECURITY_PRIVACY.md §10 exception). `RestTimerController` is its only
-  driver during a workout, through `WorkoutActivityBridge` (`lib/shared/live_activity/`, channel
-  `tracend/live_activity`: `startRest`, `updateRest`, `end`), sent before the rest alert is touched
-  and never awaited; the Contract 3 workout events do not drive it. Sign-out, account deletion
-  and a refused session call `end` from `Phase2Gate`, and the native side ends finished rest
-  activities left from an earlier launch. ActivityKit runs the countdown from the end time
-  (`Text(timerInterval:)`), so there is no push, no App Group and no server involvement; the
-  activity is local to the phone and off when iOS Live Activities are off.
-- Workout logging reads `get_my_exercise_history` (last time, best set, recent top sets) and keeps
-  the last answer on the device for offline use. Finishing calls `complete_workout_v2` with the
-  athlete's session effort after saving the request locally; discarding calls `abandon_workout`,
-  and a discard made offline waits on the device and is sent before the next session load. New
-  bests, weight lifted, and the rest timer are computed on the device (ALGORITHMS §4).
-- `auth.users.id` is the canonical `user_id` for application-owned records.
-- Recent authentication is required before export, account deletion, or sensitive session changes.
-- Phase 8 export reauthenticates the owner, queues only an opaque export ID, builds user-readable
-  JSON/CSV plus purpose-organized private media, encrypts the ZIP with AES-256-GCM from a
-  non-persisted password-derived key, and stores it in private `account-exports`. Signed download
-  authorization lasts 60 seconds and stops after three uses or seven days.
-- Account deletion uses a separate recent-authenticated opaque job. Private Storage bytes are
-  removed before canonical Auth deletion cascades through application data; the same delete
-  removes the account's invite and waitlist rows (trigger `auth_user_forget_invite`), and only a
-  content-free completion receipt remains for 180 days. A request whose function stopped mid-run is claimable
-  again after 10 minutes, and every step is safe to repeat. The app waits a bounded time and then
-  reads the outcome from Auth (`user_not_found`) and the athlete's own `deletion_requests` row.
 - Session restore validates the stored session with Auth (`GET /auth/v1/user`) before any data
   call; the Data API checks only a token's signature and expiry.
+- Recent authentication is required before export, account deletion, or sensitive session
+  changes.
 
 ### 3.3 PostgreSQL and Data API
 
@@ -136,6 +135,8 @@ secret/service-role key exist only in Supabase Edge Function secrets.
   or Edge Functions.
 - Security-definer functions are exceptional, use a fixed safe `search_path`, validate authorization
   internally, expose minimal grants, and receive dedicated tests.
+- The `private` schema is not exposed by the Data API. It holds owner-run helpers and tables such as
+  the invite list, the waitlist, AI budget limits and the research library.
 - Structured PostgreSQL fields and bounded summaries are the MVP memory system. `pgvector` is
   enabled (in the `extensions` schema) for the research library only (section 11); no user data is
   embedded.
@@ -148,77 +149,114 @@ Supabase Edge Functions are TypeScript/Deno server-side boundaries for:
 - onboarding assessment and initial plan proposal;
 - deterministic feature snapshot and safety-policy execution;
 - AI provider orchestration and response validation;
-- meal and progress-image analysis jobs;
+- meal-photo and progress-photo analysis;
 - export and deletion workflows;
-- privileged media authorization; and
+- privileged media authorization;
+- the website waitlist; and
 - rate limiting, cost policy, and sanitized operational telemetry.
 
-Functions are short-lived, idempotent, schema-versioned, and designed for cold starts. Long-running
-or retryable work is represented as queue messages rather than holding a client request open.
+Functions are short-lived, idempotent, schema-versioned, and designed for cold starts. Work that
+outlives a request is either a queue message (export, deletion, weekly review) or a durable job row
+finished in `EdgeRuntime.waitUntil` (onboarding plan generation). Meal-photo analysis and the
+physique check answer within the request.
 
 ### 3.5 Storage
 
-- Supabase Storage uses separate private buckets for meal images, progress photos, and temporary
-  exports.
+- Supabase Storage uses separate private buckets for meal images (`meal-images`), progress photos
+  (`progress-photos`), and temporary exports (`account-exports`).
 - RLS policies scope objects by authenticated user and purpose.
 - Upload restrictions enforce content type and maximum size; server-side processing verifies bytes,
   dimensions, checksum, and metadata.
 - Downloads use an authenticated request or short-lived signed URL. Object paths are never
-  authorization.
-- Storage lifecycle metadata remains in PostgreSQL because database backups do not contain Storage
+  authorization. Service-role code checks every key it reads from the database before any Storage
+  call (`_shared/storage_keys.ts`).
+- Storage lifecycle metadata stays in PostgreSQL because database backups do not contain Storage
   object bytes.
 
 ### 3.6 Queues and Cron
 
-- Supabase Queues (`pgmq`) handles durable meal analysis, progress analysis, weekly review, export,
-  deletion, and provider-retry work.
+- Supabase Queues (`pgmq`) carry account deletion (`account_deletions`), privacy export
+  (`privacy_exports`) and weekly review (`weekly_reviews`) work.
 - Queue payloads contain opaque resource IDs, not raw photos, prompts, tokens, or health records.
 - Workers reauthorize resource ownership and consent at execution time.
-- Supabase Cron (`pg_cron`) schedules weekly reviews, retention cleanup, stale-job recovery, and
-  cost/quality monitoring.
-- The existing daily retention worker also removes expired export packages; failed Storage deletion
-  retains the object reference for retry.
 - Concurrency, retry count, visibility timeout, dead-letter/archive behavior, and idempotency are
   defined per job type.
+- Supabase Cron (`pg_cron`) runs:
+  - `tracend-schedule-weekly-progress-reviews` (daily 03:30 UTC) and
+    `tracend-process-weekly-progress-reviews` (every five minutes);
+  - `tracend-recompute-daily-metrics` (daily 06:00 UTC, `recompute_stale_metrics`);
+  - `tracend-waitlist-cleanup` (daily 03:40 UTC); and
+  - the daily `meal-media-retention` worker, which authenticates with `RETENTION_WORKER_SECRET`
+    read from Vault. The same worker removes expired export packages and orphaned Storage objects;
+    a failed Storage deletion keeps the object reference for retry.
 
-The Phase 7 weekly-review worker is database-native: daily Cron deduplicates one job per active user
-and local review week, `pgmq` carries only the job ID and schema version, and a five-minute Cron
-consumer rechecks account eligibility before building the deterministic snapshot and review.
-Failures use bounded delayed retries and become terminal after three attempts. This path does not
-invoke a model or create a proposal.
+The weekly-review worker is database-native. Daily Cron deduplicates one job per active user and
+local review week, `pgmq` carries only the job ID and schema version, and the five-minute consumer
+rechecks account eligibility before building the deterministic snapshot and review. Failures use
+bounded delayed retries and become terminal after three attempts. This path does not invoke a
+model or create a proposal.
 
-### 3.7 AI provider
+### 3.7 AI providers
 
-- Edge Functions call providers through a small `CoachModelProvider` TypeScript interface.
-- DeepSeek V4.1 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
-- Provider/model identifiers remain environment configuration; the mock provider stays the default
-  until live-model gates pass. Coach-decide specifically defaults to the deterministic mock and
-  requires all server-side secrets (`COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`, provider API keys)
-  configured together as an all-or-nothing gate.
-- Calls use structured output, compact feature snapshots, request-level timeouts, and per-user
-  rate/cost gates.
-- Provider output never directly writes canonical user state. Validation and approval remain in
-  deterministic code and PostgreSQL transactions.
+Edge Functions make every AI call. Provider keys are Edge Function secrets. Each feature reads its
+own server-side settings, so the owner can switch a feature's provider or model without an app
+release (D2). Changing a setting creates a new version of every Edge Function; liveness is proved
+with `scripts/verify-live-function.sh --all` (CI_CD_DEPLOYMENT.md). An athlete's grant names the
+company that receives the data, so moving a feature to another company also needs a new notice
+(SECURITY_PRIVACY §3).
 
-Prior providers: Gemini `gemini-3.5-flash` (superseded) and Groq Qwen `qwen/qwen3.6-27b`
-(superseded pending evaluation). The deterministic mock remains the fallback if live models are
-unavailable.
+Today each feature has its own provider module in `_shared/providers/`:
+
+| Feature | Function | Settings | Providers in code | Unset or off |
+| --- | --- | --- | --- | --- |
+| Coach chat | `coach-chat` | `COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`, `<PROVIDER>_MODEL`, `<PROVIDER>_API_KEY` | `deepseek`, `gemini` (paid terms only), `groq` (pinned to `qwen/qwen3.6-27b`, which Groq has retired) | no model call; labeled data summary |
+| Daily decision | `coach-decide` | same as Coach chat | same, behind the `CoachModelProvider` interface | deterministic mock |
+| Onboarding plan and follow-up questions | `onboarding-plan` | `ONBOARDING_PLAN_PROVIDER`, `_MODEL`, `_MODEL_EVALUATED`, `_THINKING`, prices | `deepseek`, `groq`, `gemini` (OpenAI-compatible JSON mode) | rules plan, no questions |
+| Meal photo | `meal-analyze` | `MEAL_VISION_PROVIDER`, `MEAL_VISION_ENABLED`, `MEAL_VISION_MODEL_EVALUATED`, `MEAL_VISION_MODEL` | `groq` (`qwen/qwen3.8-27b`), `gemini` (paid terms only) | analysis unavailable |
+| Physique check | `physique-check` | `PHYSIQUE_VISION_ENABLED`, `_PROVIDER`, `_MODEL`, `_ALLOWED_USERS` | `groq` only | off |
+
+In production DeepSeek V4.1 Flash (`deepseek-flash`) serves Coach chat, the daily decision and the
+onboarding plan; Groq `qwen/qwen3.8-27b` serves meal photos and the owner-only physique check. The
+coach-decide gate is all-or-nothing: without every server-side setting configured together it uses
+the deterministic mock.
+
+The provider-neutral gateway (`supabase/functions/_shared/ai/`, program Contract 1 v2) is built but
+no feature uses it yet. `route(feature)` reads `AI_<FEATURE>_{PROVIDER, MODEL, BASE_URL, THINKING,
+EFFORT, MAX_OUTPUT_TOKENS, TIMEOUT_MS, EVALUATED}` and returns null when a route is incomplete, so
+the feature keeps its rules path. Adapters speak the Anthropic, OpenAI-compatible and Gemini wire
+protocols. Prices live in one table (`models.ts`). `call()` refuses before sending when the
+athlete's notice names another vendor (`consent_provider_mismatch`), never sends sampling
+parameters to Claude 5 models, and logs one scrubbed `ai_call` line per call (no prompt, image or
+reply text). Budget stays the caller's job (`AiBudget.reserve` before the call).
+
+For every route, calls use structured output, compact feature snapshots, request-level timeouts,
+and per-user rate and cost gates. Provider output never directly writes canonical user state;
+validation and approval remain in deterministic code and PostgreSQL transactions. The
+deterministic path stays available when a model is unavailable.
+
+> **Planned (coaching platform, Phase 2 / A3–A7, D1):** move every feature onto the gateway and to
+> Claude: meal photo on Haiku 5.5 and physique on Sonnet 5.5 (A3), onboarding plan and questions on
+> Sonnet 5.5 (A4), daily decision on Sonnet 5.5 (A5), Coach chat with a cache-friendly prompt
+> (A6), then notices, wording, evals and the cutover runbook (A7). The DeepSeek and Groq routes
+> stay as a settings-only rollback for two weeks after cutover.
 
 ## 4. Supabase Boundary Rules
 
 | Operation                               | Allowed boundary                                              |
 | --------------------------------------- | ------------------------------------------------------------- |
-| Read own profile/logs/approved plan     | Data API with RLS                                             |
+| Read own profile/logs/approved plan     | Data API with RLS or read-model RPC                           |
 | Read own sanitized AI usage summary     | User-scoped RPC or Edge Function aggregated from `model_runs` |
 | Draft check-in or in-progress workout   | Data API/RPC with RLS, idempotency, and constraints           |
 | HealthKit quick-complete                | Authenticated RPC with RLS + explicit user confirmation       |
 | HealthKit sync                          | Edge Function                                                 |
-| Activate or change plan/targets         | Edge Function + transactional RPC                             |
-| Confirm analyzed meal                   | Edge Function + transactional RPC                             |
+| Propose a plan or targets               | Edge Function (validation) + service-role transactional RPC   |
+| Approve a proposal (activate a version) | Authenticated transactional RPC                               |
+| Confirm analyzed meal                   | Authenticated transactional RPC                               |
 | Invoke AI provider                      | Edge Function only                                            |
 | Create/read restricted signed media URL | Edge Function or tightly scoped Storage RLS                   |
 | Export/delete account                   | Edge Function + Queue                                         |
 | Retention/weekly processing             | Cron + Queue + Edge Function/database function                |
+| Research library search                 | Service-role RPC from an Edge Function                        |
 
 The Flutter app never connects directly to PostgreSQL, bypasses RLS, invokes secret-key operations,
 or calculates authoritative plan mutations.
@@ -265,6 +303,11 @@ Versioned TypeScript and SQL functions calculate:
 - input freshness, completeness, and conflicts; and
 - eligibility for persistent training or nutrition changes.
 
+`compute_daily_metrics` produces the day's scores and is called by `prepare_daily_coaching`, Coach
+chat preparation, `get_my_daily_brief` and the nightly recompute (DATA_MODEL §9). Workout truth is
+reconciled with HealthKit workout references deterministically; a suggested match becomes final
+only when the athlete confirms it.
+
 The model receives prepared features and evidence identifiers, not unrestricted table access or raw
 history.
 
@@ -272,30 +315,37 @@ history.
 
 ### Supabase Auth
 
-- Native Sign in with Apple through Supabase Auth for external beta builds, or the explicitly
-  configured owner-development email/password mode from ADR 0002.
+- Email/password owner-development mode (ADR 0002). Native Sign in with Apple through Supabase Auth
+  is required for external beta builds and is not built yet.
 - Session refresh, sign-out, and supported device-session revocation.
 
-### Versioned Edge Functions
+### Edge Functions
+
+Fourteen functions, each in its own directory under `supabase/functions/` (`_shared`, `_tests` and
+`_evals` hold shared code, tests and evals):
 
 ```text
-coach-chat
-coach-decide
-health-check
-health-sync
-meal-analyze
-meal-media-retention
-onboarding-plan
-onboarding-propose-plan
-privacy-delete-account
-privacy-export
-waitlist-confirm
-waitlist-join
-waitlist-unsubscribe
+coach-chat               JWT    Coach answers
+coach-decide             JWT    daily decision
+health-check             none   liveness and version
+health-sync              JWT    HealthKit summaries and workouts
+meal-analyze             JWT    meal-photo candidates
+meal-media-retention     secret retention, export expiry, orphan sweep
+onboarding-plan          JWT    starting plan and follow-up questions
+onboarding-propose-plan  JWT    Phase-2 mock, kept for installed older builds
+physique-check           JWT    owner-only physique check
+privacy-delete-account   JWT    account deletion
+privacy-export           JWT    encrypted export
+waitlist-confirm         none   website double opt-in
+waitlist-join            none   website signup
+waitlist-unsubscribe     none   website unsubscribe
 ```
 
-**Website waitlist (2026-10).** The static website (`site/`, Cloudflare Pages) calls three
-session-less functions. `waitlist-join` checks the address and a Cloudflare Turnstile token, then
+Function request and response schemas are versioned, shared where practical, and validated at
+runtime. Function names are stable contracts; breaking changes require a new schema version and
+a migration path.
+
+**Website waitlist.** `waitlist-join` checks the address and a Cloudflare Turnstile token, then
 `public.waitlist_join` records the signup and returns whether to email; the function sends the
 confirmation over SMTP (port 465, provider set by secrets). The link token travels only in the URL
 fragment and is stored as a SHA-256 hash. `waitlist-confirm` and `waitlist-unsubscribe` take that
@@ -303,8 +353,8 @@ token; unsubscribe also answers mail apps' one-tap requests (RFC 8058). The wait
 from app accounts: the owner moves confirmed signups into `private.signup_invites` with
 `private.invite_from_waitlist(n)`.
 
-**Onboarding plan generation.** `onboarding-plan` (2026-10) builds the starting plan from the
-reviewed answers. `onboarding-propose-plan`, the Phase-2 mock, stays for installed older builds.
+**Onboarding plan generation.** `onboarding-plan` builds the starting plan from the reviewed
+answers:
 
 1. The function claims a durable generation (`claim_onboarding_generation`) and answers 202 at once.
 2. It keeps working in `EdgeRuntime.waitUntil`:
@@ -318,31 +368,22 @@ reviewed answers. `onboarding-propose-plan`, the Phase-2 mock, stays for install
 4. On approval, `respond_to_onboarding_proposal_v2` inserts exactly the proposed workouts. See
    AI_SAFETY_SPEC §6, "Initial plan".
 
-`get_my_training_hub(period)`, `get_my_nutrition_schedule(date)`, and `get_my_daily_brief(date)` are
-authenticated read-model RPCs. They derive identity from `auth.uid()`, use only active approved
-versions and confirmed execution, and return bounded structured data for the iPhone client.
+The same function asks up to three follow-up questions (`mode: "questions"`), stored in
+`onboarding_questions`.
 
-Workout logging RPCs (2026-10-03): `start_workout`, `sync_workout_draft`, `complete_workout_v2`
-(the athlete's 1–10 session effort; `complete_workout` remains for installed builds and records its
-fixed effort as a default), `abandon_workout`, and `get_my_exercise_history(keys, sessions)` (last
-time, best set and heaviest set per completed session for at most 20 exercises and 12 sessions).
-Since 2026-10-15 (coaching platform C1) each set also carries its start and end, the rest taken
-before it, reps left and who timed it (`sync_workout_draft`, `get_my_workout_session` 1.1,
-`get_my_exercise_history` 1.1), and the logging screen publishes workout events and takes the
-Live Activity's commands (`lib/features/train/workout_events.dart`, program Contract 3).
+**Coach chat.** Threads and messages are owner-scoped in PostgreSQL under forced RLS. Every
+question follows one path regardless of its wording:
 
-Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS. Since v8
-(2026-09-27) every question follows one path regardless of its wording:
-
-1. `prepare_coach_chat_v8` builds the same full athlete file for every question: the v7 base (goal,
-   profile, plan, targets, latest check-in and decisions, weekly review, fresh coaching-date scores,
-   permitted evidence, thread and cross-thread memory) plus `build_coach_athlete_context` (28-day
+1. `prepare_coach_chat_v8` builds the same full athlete file for every question: goal, profile,
+   plan, targets, latest check-in and decisions, weekly review, fresh coaching-date scores,
+   permitted evidence, thread and cross-thread memory, plus `build_coach_athlete_context` (28-day
    training log with sets and volume, 7/14/28-day totals, watch workouts, 28 days of watch data
    with averages, eight weeks of weights, 14 days of check-ins, 28 days of logged nutrition,
    today's meals, plan structure, proposals, reconciliations, data freshness), under a 90K
    whole-section size guard. Conversation memory is the ten newest messages of the thread and of
    other threads, each capped at 2,000 characters keeping its ending, never a labeled data
-   summary. A long thread keeps fewer, newest messages rather than failing preparation.
+   summary. A long thread keeps fewer, newest messages rather than failing preparation. The
+   prepared file is stored in `coach_context_snapshots`.
 2. `record_coach_chat_question` stores the question before the model runs. A preparation failure
    returns 422 with a finite `reason` and reaches Sentry.
 3. The Edge Function renders the file as markdown (required truth first, conversation history
@@ -359,30 +400,38 @@ Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS. 
 6. A request retried with the same idempotency key gets its first attempt's outcome from
    `coach_chat_turn` (answer, failure code, or still in progress) and never calls the model twice.
 
-The app (A2) sends request 1.1 and renders the labeled data summary. It lists conversations with
+The app sends request 1.1 and renders the labeled data summary. It lists conversations with
 `get_my_coach_threads()`, which returns only the caller's active threads that contain a message,
 newest first. It reopens the conversation last opened on the device and creates a thread on its
-first send, so opening Coach never stores an empty thread.
+first send, so opening Coach never stores an empty thread. Chat context coverage is reconciled
+independently of the daily-decision policy: a recent HealthKit summary is valid chat context even
+when the current calendar day has no complete HealthKit row. `get_my_coach_context_status()`
+exposes only owner-scoped source availability, counts, and latest dates.
 
-The daily Head Coach decision remains a separate immutable record, shown on Today; Coach no longer pins it above conversations (2026-09-30). `prepare_coach_chat_v2` reconciles context coverage independently from the same-day
-daily-decision policy: a recent HealthKit summary is valid chat context even when the current
-calendar day has no complete HealthKit row. `get_my_coach_context_status()` exposes only
-owner-scoped source availability, counts, and latest dates; it returns no health values or provider
-secrets.
+The daily Head Coach decision is a separate immutable record, shown on Today.
 
-Meal-image analysis uploads to private purpose-bound Storage, creates an unconfirmed draft, and
-invokes `meal-analyze`. Candidate food and portion data remain estimates until transactional
-confirmation snapshots the user's corrections into confirmed meal items.
+> **Planned (coaching platform, Phase 2 / A6, Contract 7):** a Coach context host that renders
+> contributors (library, heart-rate profile, progression) after the frozen athlete file, each
+> clipped to its budget and labelled as reference data. `prepare_coach_chat_v8` and
+> `build_coach_athlete_context` stay frozen for the whole program.
 
-Function request/response schemas are versioned, shared where practical, and validated at runtime.
-Function names are stable contracts; breaking changes require a new schema/version and migration
-path.
+### Read-model and transactional RPC
 
-### Transactional RPC
+`get_my_training_hub(period)` (1.6), `get_my_nutrition_schedule(date)` (1.0) and
+`get_my_daily_brief(date)` (1.8) are authenticated read models. They derive identity from
+`auth.uid()`, use only active approved versions and confirmed execution, and return bounded
+structured data for the iPhone client.
 
-RPC is used for narrow atomic operations such as activation of an approved plan version,
-acceptance/rejection of a proposal, completed-session amendment, and confirmed-meal persistence.
-Execute grants are explicit and RLS/ownership rules remain enforced.
+Workout logging uses `start_workout`, `sync_workout_draft`, `complete_workout_v2` (the athlete's
+1–10 session effort; `complete_workout` remains for installed builds and records a fixed default
+effort), `abandon_workout`, `get_my_workout_session` (1.1) and `get_my_exercise_history(keys,
+sessions)` (1.1: last time, best set and heaviest set per completed session for at most 20
+exercises and 12 sessions).
+
+Transactional RPC is used for narrow atomic operations such as approval of a proposal and
+activation of the new plan version, completed-session amendment, workout reconciliation and
+confirmed-meal persistence. Execute grants are explicit and RLS and ownership rules remain
+enforced.
 
 ## 7. Primary Data Flows
 
@@ -395,11 +444,10 @@ Execute grants are explicit and RLS/ownership rules remain enforced.
 5. A transaction upserts daily summaries and records the sync run.
 6. Feature snapshots consume only successfully normalized records.
 
-The first successful owner-device sync reads a bounded 9-date window (today−8) so recent project
-history can be restored; later syncs read eight dates (today−7). Only normalized daily summaries
-cross the device boundary, and the server contract rejects a window longer than 31 days.
-
-An empty response never proves permission denial.
+The first successful sync reads a 9-date window (today−8) so recent history can be restored; later
+syncs read eight dates (today−7). Only normalized daily summaries and bounded workout references
+cross the device boundary, and the server contract rejects a window longer than 31 days. An empty
+response never proves permission denial.
 
 ### HealthKit auto-completion
 
@@ -422,38 +470,69 @@ prompt never appears when a session is already completed.
 
 ### Meal analysis
 
-1. Authenticated user creates a purpose-bound object in the private meal bucket.
-2. Mobile uploads the compressed image under Storage RLS.
-3. An Edge Function validates metadata/consent and enqueues an opaque analysis job.
-4. Worker sends minimized image data or a short-lived reference to the provider.
-5. Structured candidates are validated and stored as unconfirmed observations.
-6. User edits candidates; `meal-confirm` resolves catalog items and calls transactional confirmation
-   RPC.
-7. Cron/Queue enforce meal-image retention.
+1. Mobile uploads the compressed image to the private `meal-images` bucket under Storage RLS, at
+   `<uid>/meal/<request id>.jpg`.
+2. `create_meal_photo_draft` records the media object (7-day retention deadline) and an unconfirmed
+   draft meal.
+3. Mobile calls `meal-analyze`, which answers within the request. It checks the current meal photo
+   notice grant (`get_meal_photo_ai_consent`) and the AI budget, checks the stored key, downloads
+   the image, and sends a minimized image with a fixed instruction to the provider.
+4. Structured candidates are validated and stored as unconfirmed `meal_analysis_candidates`
+   (`persist_meal_photo_candidates`), with usage in `ai_usage_events`.
+5. The athlete edits candidates; `confirm_analyzed_meal` snapshots the corrections into confirmed
+   meal items in one transaction.
+6. The daily retention worker deletes the image at its deadline.
 
-### Progress photos
+If any step after the upload fails, the app removes the uploaded object.
 
-Progress photos use separate consent, bucket, prefix, RLS policy, queue, retention, and signed-read
-path. Raw images never enter routine coaching prompts.
+### Progress photos and physique check
 
-The Phase 7 foundation hosts measurement and private-media metadata before any vision provider is
-enabled. Flutter may show capture guidance while transfer is unavailable, but real capture requires
-the private bucket policies plus an authorized upload/read/delete path. Deterministic progress
-summaries remain available when Storage, Queue, Cron, or AI is unavailable.
+Progress photos use their own consent, bucket, prefix, RLS policy, retention, and signed-read path.
+Raw images never enter routine coaching prompts. A consent-gated RPC creates a draft set, each pose
+is registered only after its owner-scoped object exists, and four poses (front, side, back, lower)
+complete the set. Reads
+use 60-second signed URLs; deletion removes Storage bytes before relational metadata.
+
+The physique check is live for allow-listed accounts only (the owner). `physique-check` sends the
+front, side and back photos of one complete set, with metadata stripped on the server, after
+checking the current photo AI notice grant and the AI budget. The validated suggestion is stored by
+`persist_physique_analysis`; only muscles the athlete confirms (`set_my_priority_muscles`) become
+their focus. Deterministic progress summaries remain available when Storage, Queue, Cron, or AI is
+unavailable.
+
+### Export
+
+Export reauthenticates the owner and queues only an opaque export ID. The worker builds
+user-readable JSON/CSV plus purpose-organized private media, encrypts the ZIP with AES-256-GCM from
+a non-persisted password-derived key, and stores it in the private `account-exports` bucket. Signed
+download authorization lasts 60 seconds and stops after three uses or seven days. No export starts
+or completes while an account deletion is pending.
+
+### Account deletion
+
+Deletion uses a separate recent-authenticated opaque job. Private Storage bytes (every recorded
+object plus every object in the account's folders) are removed before canonical Auth deletion
+cascades through application data. The same Auth delete removes the account's invite and waitlist
+rows (trigger `auth_user_forget_invite`). Only a content-free completion receipt remains, for 180
+days. A request whose function stopped mid-run is claimable again after 10 minutes, and every step
+is safe to repeat. The app waits a bounded time and then reads the outcome from Auth
+(`user_not_found`) and the athlete's own `deletion_requests` row.
 
 ## 8. Environments and Deployment
 
-- **local:** Supabase CLI + Docker-compatible runtime, local Edge Functions, mocked AI/HealthKit
-  fixtures, and Flutter simulator/device configuration. The local Supabase stack must not be exposed
-  publicly.
+- **local:** Supabase CLI and a Docker-compatible runtime, local Edge Functions, mocked AI and
+  HealthKit fixtures. Runtime testing uses the owner's physical iPhone; there is no simulator. The
+  local Supabase stack must not be exposed publicly.
 - **private-beta:** one hosted Supabase project (`qsfzzsjenopqqqhvpyaw`, Singapore,
-  `ap-southeast-1`), separate project secrets, private buckets, quota alerts/manual backups on Free,
+  `ap-southeast-1`), separate project secrets, private buckets, quota alerts and backups on Free,
   Spend Cap on Pro, and a TestFlight build.
 - **staging:** defer a second paid hosted project until beta complexity needs it; use local
   development and isolated synthetic fixtures first.
 
 No environment shares production user data or reusable secret keys. Production changes deploy
 through reviewed migrations and versioned function deployments, not ad hoc dashboard edits.
+Merging to `main` runs the deploy workflow: backup and restore drill, migrations, functions, then
+the website (CI_CD_DEPLOYMENT.md).
 
 ## 9. Failure and Degradation
 
@@ -483,14 +562,16 @@ Track without sensitive content:
 - Queue/Cron lifecycle; and
 - retention, export, deletion, and security events.
 
-The Account usage view reads a sanitized, authenticated per-user aggregation. It does not expose
+Sentry receives scrubbed errors from Flutter and Edge Functions (SECURITY_PRIVACY §10). The
+Account usage view reads a sanitized, authenticated per-user aggregation. It does not expose
 provider credentials, prompts, provider request IDs, raw errors, or cross-user totals. Provider
 secrets are configured only through environment-specific Supabase secret management.
 
-When using Pro, enable the Supabase Spend Cap before inviting testers. Free requires quota
-monitoring and manual database/Storage backups instead. AI providers require project-level budgets,
-per-user quotas, anomaly alerts, and a server-side kill switch. See
-[COST_MODEL.md](./COST_MODEL.md).
+Every AI call reserves its place in the budget before it runs (`reserve_ai_budget`,
+`ai_budget_reservations`) under per-purpose ceilings and a global monthly stop in
+`private.ai_budget_limits` (COST_MODEL.md). When using Pro, enable the Supabase Spend Cap before
+inviting testers. Free requires quota monitoring and backups instead. AI providers require
+project-level budgets, per-user quotas, anomaly alerts, and a server-side kill switch.
 
 ## 11. RAG and Multi-Agent Adoption Gates
 
@@ -499,7 +580,7 @@ per-user quotas, anomaly alerts, and a server-side kill switch. See
 Goals, preferences, constraints, plans, confirmed meals, decisions, and weekly summaries remain
 relational data retrieved with explicit user-scoped queries.
 
-### Research library (decision D3, 2026-10-15)
+### Research library (D3)
 
 The one allowed vector store is a research library inside Postgres: open papers, guidelines,
 position stands and in-house summaries in our own words. Paid course material (K11, NASM, ACE) is
@@ -509,13 +590,19 @@ never stored, and every source records its licence.
   in the `private` schema (not exposed by the Data API), with forced RLS and no API grants. They
   hold no user data, so they are outside export and account deletion.
 - Embeddings are Supabase's built-in `gte-small` (384 dimensions, mean-pooled and normalised), run
-  inside Edge Functions (decision D4). No new processor receives any text.
-- `public.search_library_v1` (service role only, Contract 6) fuses the top 30 Postgres full-text
-  matches and the top 30 nearest embeddings (cosine distance; HNSW index without filters, exact
-  ranking over the matching sources with a region or topics filter) by reciprocal rank fusion
-  (k = 60) and returns at most 8 chunks.
+  inside Edge Functions (D4). No new processor receives any text.
+- `public.search_library_v1` (service role only, Contract 6 v1.1) fuses the top 30 Postgres
+  full-text matches and the top 30 nearest embeddings (cosine distance; HNSW index without
+  filters, exact ranking over the matching sources with a region or topics filter) by reciprocal
+  rank fusion (k = 60) and returns at most 8 chunks.
 - Retrieved text is reference data. It never overrides Tracend rules, the athlete's data or the
   safety policy, and rules still decide every number.
+
+The tables and search are built; the library is empty.
+
+> **Planned (coaching platform):** ingestion and the first 30 sources (Phase 3 / E2), the library
+> inside Coach chat (Phase 3 / E3), regional modules chosen by the athlete's region (Phase 4 / E4,
+> D5), and plan explanations citing sources (Phase 4 / E5).
 
 ### Add vector retrieval over user data only when all are true
 

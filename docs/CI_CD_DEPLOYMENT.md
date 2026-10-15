@@ -2,7 +2,8 @@
 
 **Status:** Implemented
 
-**Last verified design update:** 2026-09-29
+**Last verified design update:** 2026-10-15 (the deploy of `90a3b96` passed the restore drill,
+including the privilege comparison that skips event trigger functions)
 
 **Production project:** `qsfzzsjenopqqqhvpyaw` (Singapore)
 
@@ -11,7 +12,9 @@
 Production changes follow one path:
 
 1. Open a pull request into `main`.
-2. Obtain the required review and pass every required CI check.
+2. Pass every required CI check. Branch protection also asks for one approving review, which a
+   single-account repository cannot give its own pull request, so the owner merges with the
+   administrator option after checking the results. Agents never merge.
 3. Merge the pull request.
 4. CI runs again on the resulting `main` commit.
 5. `deploy.yml` starts only after that exact `main` CI run succeeds.
@@ -27,6 +30,11 @@ Production changes follow one path:
     https://tracend.pages.dev serves it, so a published-but-stale site fails the run.
 11. The health smoke test, the live-code check and the website check must pass before the exact
     deployed commit receives a release tag.
+
+Until the owner sets the `CONTACT_EMAIL` repository variable, the website job fails at its
+settings check, `Tag Release` is skipped, and the Deploy run is marked failed. Migrations and
+functions still deploy and are verified live before that job, as on `90a3b96` (2026-10-15).
+See [Required CI checks](#required-ci-checks) for the website settings.
 
 The deploy concurrency group is `production-deploy` with cancellation disabled. Deployments queue;
 they do not interrupt one another.

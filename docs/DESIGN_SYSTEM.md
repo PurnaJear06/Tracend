@@ -29,8 +29,8 @@ and big honest numbers. The interface steps back so the athlete's plan, sets and
 It is not a motivational chatbot, a neon gym app, a generic wellness dashboard or a science-fiction
 control panel.
 
-Today's data moment remains the 7-day trend (`TrajectoryTrend`, §5.2). Other surfaces stay quiet
-so it keeps its meaning.
+Today's data moment is the recovery tick ring (`TodayHero`, §5.2). Other surfaces stay quiet so it
+keeps its meaning.
 
 ## 2. Color tokens
 
@@ -54,9 +54,10 @@ Raw color values never appear in feature widgets.
 | `onAccentSignal`   | `#141A05`     | `#141A05`     | Text and icons on a lime fill                            |
 | `accentSignalInk`  | `#4E6A00`     | `#C8F05A`     | Lime as text or an icon on canvas and surface            |
 | `accentSignalRing` | `#6B8F0E`     | `#C8F05A`     | Lime rings and strokes (3:1 or better)                   |
-| `accentSignalTint` | lime 16%      | lime 14%      | Wash behind selected or new-best content                 |
+| `accentSignalTint` | `#96BE28` 16% | lime 14%      | Wash behind selected or new-best content                 |
 | `stateStable`      | `#087A5A`     | `#4FD1A5`     | Good: recovered, done, synced                            |
 | `stateGoodTint`    | good 12%      | good 14%      | Wash behind good status                                  |
+| `onStateGood`      | `#FFFFFF`     | `#062419`     | Text and icons on a good fill                            |
 | `accentAmber`      | `#A86A00`     | `#F2B544`     | Caution: pending, partial, needs review                  |
 | `stateAttention`   | `#C24A3A`     | `#F07F6E`     | Low: needs attention                                     |
 | `stateDanger`      | `#B3392B`     | `#F07F6E`     | Destructive actions and errors                           |
@@ -66,6 +67,8 @@ Raw color values never appear in feature widgets.
 | `glassEdge`        | black 6%      | white 8%      | Chrome hairline                                          |
 | `glassHighlight`   | white 90%     | white 18%     | Specular top edge and sheen of the tab capsule (§4)      |
 | `shimmer`          | black 5%      | white 6%      | Skeleton highlight                                       |
+| `mapOff`           | `#D6D6D0`     | `#34363A`     | Muscle map: muscles not worked                           |
+| `mapBase`          | `#E6E6E1`     | `#26272A`     | Muscle map: silhouette and separation lines              |
 
 Rules:
 
@@ -128,7 +131,7 @@ Rules:
 | -------------------------------- | -------------- |
 | Inputs and small controls        | 12 (`control`) |
 | Cards and grouped lists          | 20 (`card`)    |
-| Sheets (top corners) and dialogs | 28 (`sheet`)   |
+| Sheets (top corners) and dialogs | 28 (`sheet`, `decision`) |
 | Buttons, chips, segmented, toast | pill (`pill`)  |
 | Row icon tiles                   | 10             |
 
@@ -143,8 +146,8 @@ Documented exception: Coach chat bubbles use an asymmetric 18pt bubble (4pt on t
   under the floating tab capsule (black 32% dark, 10% light, 28 blur, 10 down).
 - **Glass** (`TracendGlass`: the `glass` fill over a 20σ blur with a `glassEdge` hairline) is chrome
   only: the tab bar, the toast, the collapsed large-title bar and the minimised rest pill during a
-  workout. The sheet scrim is blurred too
-  (6σ), growing with the sheet. Nothing else uses `BackdropFilter`.
+  workout. The sheet scrim is blurred too (6σ, growing with the sheet), and so is the action-sheet
+  scrim (6σ). Nothing else uses `BackdropFilter`.
 - Glass is built only while visible (the inline bar exists only once collapsed) and sits in a
   `RepaintBoundary`. `reduceTransparency` swaps it for an opaque `sheet` fill.
 
@@ -181,19 +184,46 @@ in light and dark mode.
 - `scripts/verify-app-bundle.sh` refuses a build whose compiled `Assets.car` lacks the icon (any,
   dark and tinted, at 120 px and 1024 px) or the launch artwork.
 
+### 3.6 Rest Live Activity
+
+The rest timer's Live Activity (`ios/TracendWidgets/`, SwiftUI) is the one surface drawn outside
+Flutter. `TracendStyle.swift` mirrors the dark theme, because the activity always draws on graphite
+in light and dark mode alike, so its text and lime keep the dark theme's contrast:
+
+| Swift name      | Hex       | App token (dark)  | Use                                               |
+| --------------- | --------- | ----------------- | ------------------------------------------------- |
+| `graphite`      | `#18191B` | `surface`         | Lock Screen card background                       |
+| `textPrimary`   | `#F4F4F1` | `textPrimary`     | Status, exercise name, system action foreground   |
+| `textSecondary` | `#9C9D98` | `textSecondary`   | "Next: …"                                         |
+| `lime`          | `#C8F05A` | `accentSignal`    | Timer glyph, countdown, done check, island keyline |
+
+- **Numbers** use Archivo SemiCondensed ExtraBold, bundled with the extension, with monospaced
+  digits so the countdown never jitters; without the font file it falls back to the condensed
+  heavy system face. Other text is the system font.
+- **Lock Screen:** status on the left ("Rest" with a lime `timer` symbol, or "Rest done" with a lime
+  check, 13pt semibold), the exercise name in the number face at 20pt and "Next: …" at 15pt in
+  `textSecondary`; on the right a lime countdown at 44pt (a 34pt lime check when done). Padding is
+  20pt horizontal and 16pt vertical.
+- **Dynamic Island:** expanded shows the status (15pt), a 34pt countdown and the exercise (17pt)
+  over the next set; compact shows a lime `timer` glyph and a 16pt countdown; minimal shows a 12pt
+  countdown. Done replaces the countdown with a lime check.
+- The countdown is `Text(timerInterval:)`, run by the system with the app closed. The activity has
+  no buttons and shows no load, reps, effort or health value (UX_FLOWS.md §6).
+
 ## 4. Navigation
 
 The primary iOS tab bar has five labeled destinations:
 
-1. **Today** — decision, check-in, schedule, and pending action;
-2. **Train** — active plan, workout execution, and history;
-3. **Coach** — direct user questions, current decision explanation, evidence, and proposal review
-   entry points;
+1. **Today** — recovery, check-in, the day's tiles, today's session with the coach's note, and the
+   week;
+2. **Train** — active plan, readiness, workout execution, and history;
+3. **Coach** — direct user questions, the coaching context, and the evidence behind each reply;
 4. **Nutrition** — targets, confirmed meals, and meal capture;
-5. **Progress** — measurements, reviews, trends, and progress photos.
+5. **Progress** — measurements, weekly reviews, strength, and progress photos.
 
-Profile, current goal, connections, sanitized AI usage, privacy, export, and deletion live under the
-account control on Today. Account is a native grouped detail screen, not a sixth tab. It may show AI
+Profile, current goal, connections, sanitized AI usage, privacy, export, and deletion live in
+Account, opened from the account control on Today (and from Train when Apple Health is not
+connected). Account is a native grouped detail screen, not a sixth tab. It may show AI
 service status and user-scoped usage but never an API-key field. Coach is a top-level destination,
 but it remains one controlled coaching workflow. Do not represent Training Coach, Nutrition Coach,
 and Head Coach as separate autonomous chatbots; show them only as expandable perspectives inside a
@@ -210,7 +240,8 @@ after the iOS 26 tab bar):
   above the home indicator; landscape (21pt inset) gets 20pt. The sides are 20pt so the capsule's
   ends sit close to concentric with the display's corners. Home-button iPhones get 12pt all round.
   The margins read the view padding, which the keyboard does not consume, so the bar keeps its
-  place and width while the keyboard is up. The bar never sits in the home-indicator zone.
+  place and width while the keyboard is up. The bar never sits in the home-indicator zone and is
+  at most 620pt wide (iPad and landscape).
 - **Selection:** a lime-tinted pill (`accentSignalTint` fill, 1pt `accentSignalRing` edge at
   60% in dark and 100% in light, 3:1 or better against the glass over the canvas) sits 4pt inside
   the capsule behind the selected icon and label, and slides to the next tab over
@@ -258,8 +289,8 @@ reruns the screen's existing reload.
 
 The standard bottom sheet for a focused, dismissible sub-task.
 
-- It rises over a blurred scrim with its own 36×5 drag handle, and it closes on a swipe down, a scrim
-  tap or the round close button.
+- It rises over a blurred scrim with its own 36×5 drag handle, and it closes on a swipe down, a
+  scrim tap or the round close button.
 - With a title it gets the standard header (`TracendSheetHeader`): a 24pt Archivo 800 title, an
   optional subtitle and a 32pt round close button in a 44pt target.
 - It clears the home indicator and lifts with the keyboard. The body never pads for the keyboard
@@ -396,52 +427,52 @@ above glides instead of snapping. Reduce Motion swaps them in one frame.
 
 #### Fuel rail
 
-`FuelRailCard` is Today's food card: the grams of protein
-left at 34pt Archivo in `accentSignalInk` with the rest of the line in `titleMedium`, then the
-fuel rail. The rail is a 3pt line in `textSecondary` at 22%, filled up to now with a gradient of
-`accentSignalRing` (35% to full); a `textPrimary` needle with a head dot and a "now" label marks
-the time. Logged meals are 12pt bars in `accentSignalRing`, 8 to 30pt tall by protein; planned
-slots are dashed outlines of the same size, the next one in `accentSignalRing` and later ones in
-`textSecondary` at 55%; missed slots are hollow dots on the line. Labels (11pt name over grams)
-sit under each meal; a name that would overlap the one before is dropped, keeping the grams when
-they fit, and the rail's semantics name every meal. A hairline separates "N of M kcal" from a
-compact **Log a meal** outlined pill (stacked from 1.3× text). Motion: the line fills to now
-(the first half of 1.3 s), bars rise in turn on an ease-out-back (80 ms apart), the needle drops
-in, the labels fade up, and the headline counts up over 900 ms. Below full motion
-(`TracendMotionScope`) the final state is drawn with no animation. On Today it opens from the
-Fuel tile.
+`FuelRailCard` is Today's food card: the grams of protein left at 34pt Archivo in `accentSignalInk`
+with the rest of the line in `titleMedium`, then the fuel rail. The rail is a 3pt line in
+`textSecondary` at 22%, filled up to now with a gradient of `accentSignalRing` (35% to full); a
+`textPrimary` needle with a head dot and a "now" label marks the time. Logged meals are 12pt bars in
+`accentSignalRing`, 8 to 30pt tall by protein; planned slots are dashed outlines of the same size,
+the next one in `accentSignalRing` and later ones in `textSecondary` at 55%; missed slots are hollow
+dots on the line. Labels (11pt name over grams) sit under each meal; a name that would overlap the
+one before is dropped, keeping the grams when they fit, and the rail's semantics name every meal. A
+hairline separates "N of M kcal" from a compact **Log a meal** outlined pill (stacked from 1.3×
+text). Motion: the line fills to now (the first half of 1.3 s), bars rise in turn on an
+ease-out-back (about 100 ms apart), the needle drops in, the labels fade up, and the headline counts
+up over 900 ms. Below full motion (`TracendMotionScope`) the final state is drawn with no animation.
+On Today it opens from the Fuel tile.
 
 #### `RecoveryReadoutCard`
 
-Today's recovery drivers, in their own section under the 7-day trend (the score lives in the
-Today verdict card above). Five plain rows in words, such as "Heart rate variability: normal for you,
-58 ms"; resting heart rate and breathing rate are worded from the measurement because their
-z-scores are inverted. A driver without a usable value or baseline reads "not enough data yet",
-never a zero. One gated exception: a sleep row whose value is proven valid but whose baseline is
-immature (< 3 observations) shows the measurement with "baseline still building". The z-scores,
-weights and method sit behind ⓘ **How this is calculated** (UX_FLOWS change 1). Training load is
-not part of this card; Today shows it as a row ("Training load: about normal").
+Today's recovery drivers, revealed inside `TodayHero` when the athlete taps the ring or a driver
+chip (the score lives in the ring above). Five plain rows in words, such as "Heart rate variability:
+normal for you, 58 ms"; resting heart rate and breathing rate are worded from the measurement
+because their z-scores are inverted. A driver without a usable value or baseline reads "not enough
+data yet", never a zero. One gated exception: a sleep row whose value is proven valid but whose
+baseline is immature (< 3 observations) shows the measurement with "baseline still building". The
+z-scores, weights and method sit behind ⓘ **How this is calculated**. Training load is not part of
+this card; Today shows it in the Load tile and its detail ("Training load about normal").
 
 #### `SleepArchitectureCard`
 
-Full-width sleep quality readout on Today: a band chip (Restorative ≥80 / Adequate ≥60 / Light ≥40
-/ Disrupted), a tabular score with count-up (deliberately secondary to the recovery readout), and
-four reflowing sub-score rows (Duration, Efficiency, Restorative, Consistency) with 0–100 bars and
-no fixed-width columns. Cold start or low confidence adds "Building baseline"; a null quality
-renders "No data". Sleep debt renders as a semantic pill (`sleep_debt_minutes` is `480 − 7-day
-average`: positive is debt, negative is surplus, 0 reads "Sleep target met"). Baselines are not
-repeated here; the recovery readout carries them. Every data element exposes a semantics label.
+The Sleep tile's detail on Today (shown when computed sleep data exists): a band chip (Restorative
+≥80 / Adequate ≥60 / Light ≥40 / Disrupted), a tabular score with count-up (deliberately secondary
+to the recovery readout), and four reflowing sub-score rows (Duration, Efficiency, Restorative,
+Consistency) with 0–100 bars and no fixed-width columns. Cold start or low confidence adds "Building
+baseline"; a null quality reads "Not enough data yet" with "No sleep is recorded for last night
+yet.". Sleep debt renders as a semantic pill (`sleep_debt_minutes` is `480 − 7-day average`:
+positive is debt, negative is surplus, 0 reads "Sleep target met"). Baselines are not repeated here;
+the recovery readout carries them. Every data element exposes a semantics label.
 
-#### `TrajectoryTrend`
+#### `TrajectoryTrend` (gallery only)
 
-Today's data moment: a real 7-day column chart from `daily_health_summaries` for one metric
-(priority heart rate variability → sleep → resting heart rate; first with ≥4 recorded days in the
-window wins). The window is the 7 days ending at the latest stored day. Recorded days are graphite
-columns; the latest recorded day is lime with a single ring pulse. An unrecorded day leaves a dim
-socket. Day labels are 12pt; the caption gives the range, the recorded-day count and the as-of
-date. Missing days are never interpolated; fewer than four recorded days says so in words.
-Direction is neutral fact ("Up 11 ms since 18 Aug"), never good or bad. Full motion grows the
-columns; Reduce Motion fades in; a static scope draws still.
+Not on any screen today; it appears only in the component gallery. A real 7-day column chart from
+`daily_health_summaries` for one metric (priority heart rate variability → sleep → resting heart
+rate; first with ≥4 recorded days in the window wins). The window is the 7 days ending at the latest
+stored day. Recorded days are graphite columns; the latest recorded day is lime with a single ring
+pulse. An unrecorded day leaves a dim socket. Day labels are 12pt; the caption gives the range, the
+recorded-day count and the as-of date. Missing days are never interpolated; fewer than four recorded
+days reads "Not enough data yet". Direction is neutral fact ("Up 11 ms since 18 Aug"), never good or
+bad. Full motion grows the columns; Reduce Motion fades in; a static scope draws still.
 
 #### `EvidenceTrendChart` and weight charts
 
@@ -455,7 +486,8 @@ is under 0.3 or missing. The 7-day line carries no R² and is never confidence-g
 
 #### `DayBoxesStrip` and the training load sheet
 
-Train's week (the owner picked day boxes over the week line): seven tappable days with a check for
+Train's week (`lib/features/train/widgets/week_rail_card.dart`; the owner picked day boxes over the
+week line): seven tappable days with a check for
 a finished day, a dot for a planned one and a lime ring for today. A change of day plays the
 selection haptic and slides the content in from that side (a crossfade under Reduce Motion); a
 swipe or a VoiceOver action pages back up to three weeks. The labels stop growing at 1.3× text, as
@@ -475,54 +507,63 @@ trend** ≥ 0.6, **Some day-to-day variation** ≥ 0.3, **Too noisy to call yet*
 goal (`fat_loss` down, `muscle_gain` up): it marks progress on the athlete's own goal, not health.
 Otherwise it stays neutral, and the arrow and spoken label carry the direction.
 
-#### `DecisionSurface`, coach note, `EvidenceRow`, `ProposalDiff`
+#### Coach note, evidence and proposals
 
-- `DecisionSurface`: one direct headline, one reason, timestamp, confidence wording, primary action
-  and **See evidence**. It never hides a pending persistent change inside normal advice.
-- Coach note (Today's session card since 2026-10-04): today's training adjustment or summary as
-  advice in the coach's words, with its confidence; it never alters the prescribed sets and never
-  uses simulated chat personas.
-- `EvidenceRow`: label, value, unit, source, time window, freshness and status. Missing data reads
-  **Not enough data** with a recovery action, never a fabricated zero.
-- `ProposalDiff`: current and proposed values, effective date, evidence, downside, uncertainty, and
-  separate Accept, Reject and Request revision actions. Accept is never preselected.
+- **Coach note** (inside `TodaySessionCard`): today's training adjustment or summary as advice in
+  the coach's words, with its confidence; it never alters the prescribed sets and never uses
+  simulated chat personas. It never hides a pending persistent change inside normal advice.
+- **Evidence** is shown as plain rows in words (`RecoveryReadoutCard`, Train's **Recovery today**
+  sheet, the Coach's **Evidence used and data gaps**, built on `EvidenceAccordion`). Each value
+  carries its source, time window and freshness in words. Missing data reads **Not enough data
+  yet** with a recovery action, never a fabricated zero.
+- **Proposals** show current and proposed values, effective date, evidence, downside, uncertainty,
+  and separate Accept, Reject and Request revision actions. Accept is never preselected. No shared
+  proposal component exists yet; the onboarding proposal (`onboarding_proposal_view.dart`) is the
+  only proposal screen (UX_FLOWS.md §10).
 
-#### `WorkoutSetRow` and `MealCandidateEditor`
+#### Workout logging and `CandidateEditor`
 
-- Workout logging (focus mode): one exercise per page with large Archivo kg × reps steppers, a
-  **Done set** pill, set dots, a **Last time** / **Your best** strip and a small `MuscleMapPair`.
-  Logged sets list under it (`SetRow`) with undo, a reps-left button (`RirPicker`: one row of 0,
-  1, 2, 3, 4 and 5+, plain words for VoiceOver, blank allowed; older sets show their RPE as reps
-  left, 10 − RPE), a
-  **New best** stamp or **First log** tag. Rest takes the screen as a lime ring with ±15 and Skip,
-  and swipes down into a glass pill; editing is never blocked. Starting values come from today's
-  earlier set, then last time, then the plan, and say which.
-- `MealCandidateEditor`: separates AI-observed foods from confirmed catalog items; every candidate
-  shows an editable amount, preparation assumption, confidence and open questions. Totals update
-  only after confirmation.
+- Workout logging (focus mode, `focus_exercise_page.dart`): one exercise per page with large Archivo
+  kg × reps steppers, a **Done set** pill, set dots, a **Last time** / **Your best** strip and a
+  small `MuscleMapPair`. Logged sets list under it (`set_row.dart`) with undo, a reps-left button
+  (`RirPicker`: one row of 0, 1, 2, 3, 4 and 5+, plain words for VoiceOver, blank allowed; older
+  sets show their RPE as reps left, 10 − RPE), a **New best** stamp or **First log** tag. Rest takes
+  the screen as a lime ring with ±15 and Skip, and swipes down (or hides from its chevron) into a
+  glass pill; editing is never blocked. Starting values come from today's earlier set, then last
+  time, then the plan, and say which.
+- `CandidateEditor` (`nutrition_sheets.dart`): every AI-observed candidate shows its serving,
+  calories and confidence in words, and edits name, serving, calories, protein, carbs and fat
+  behind **Edit estimate**. Candidates stay visibly unconfirmed; totals update only after
+  **Confirm selected foods**. The editor separates AI-observed foods from confirmed catalog items,
+  and every candidate shows an editable amount, preparation assumption, confidence and open
+  questions. Not built yet: the catalog split, preparation assumptions and open questions.
 
-#### `MetricTrend` and `UsageSummary`
+#### Trends and AI usage
 
-- `MetricTrend`: a line for a time trend, a range band for uncertainty where applicable, explicit
-  units, direct labels for small sets and a text summary for VoiceOver. Never red versus green
-  alone. Planned values, fixtures and unrelated metrics never appear as an observed trend; two real
-  dated observations are the minimum.
-- `UsageSummary`: a named window, request count, token or image usage when meaningful, estimated
-  cost and service state, labeled **Estimate**. It never exposes keys, prompts, request identifiers
-  or raw provider errors.
+- **Every trend chart** uses explicit units, direct labels for small sets and a text summary for
+  VoiceOver, and a range band for uncertainty where applicable. Never red versus green alone.
+  Planned values, fixtures and unrelated metrics never appear as an observed trend; two real dated
+  observations are the minimum.
+- **AI usage** (`AiUsageScreen`, `AiUsageMeter`): a named window, request counts, token or image
+  usage only when an RPC provides it (none does today), estimated cost and service state, labeled
+  as an estimate (today by the footnote; there is no **Estimate** label yet). The meter has a tick
+  at the warning threshold; its colour follows the server's state (caution when warned, danger when paused) and a label says it in
+  words. It never exposes keys, prompts, request identifiers, raw provider errors, or provider or
+  model names.
 
-#### `CoachMessage` and `NutritionTimeline`
+#### `CoachMessageBubble` and `NutritionTimeline`
 
-The athlete's own messages are filled `surfaceRaised` bubbles (18pt corners, 4pt on the tail),
-shown exactly as typed. Coach replies are borderless, selectable text on the canvas, rendering a
-small Markdown subset (bold, italic, bullet and numbered lists; headings as bold lines; a link as
-its label followed by its destination in plain text). An AI reply carries a small **AI answer ·
-DeepSeek** label, named through the shared provider display-name map (an unknown provider reads
-**AI answer**, never a raw id). A labeled reply that stands in for a failed model answer carries a
-chip instead: **Data summary · not an AI answer** (caution tone) or **Safety note · not an AI
-answer** (neutral tone), never with a provider label. The disclosure **Evidence used and data
-gaps** holds the evidence sources and data gaps in words, the reasoning steps without evidence ids,
-and the beta diagnostic as small secondary text. A failed send is one inline message under the
+The athlete's own messages are filled `surfaceRaised` bubbles (18pt corners, 4pt on the tail), shown
+exactly as typed. Coach replies are borderless, selectable text on the canvas, rendering a small
+Markdown subset (bold, italic, bullet and numbered lists; headings as bold lines; a link as its
+label followed by its destination in plain text). An AI reply carries a small **AI answer** label
+with no provider or model name (owner decision D11). Until chunk A7 the build appends a display name
+from `lib/shared/ai_provider_names.dart` (**AI answer · DeepSeek**); an unknown provider already
+reads **AI answer**, and a raw id never shows. A labeled reply that stands in for a failed model
+answer carries a chip instead: **Data summary · not an AI answer** (caution tone) or **Safety note ·
+not an AI answer** (neutral tone), never with a provider label. The disclosure **Evidence used and
+data gaps** holds the evidence sources and data gaps in words, the reasoning steps without evidence
+ids, and the beta diagnostic as small secondary text. A failed send is one inline message under the
 question (plain words, then the raw diagnostic) with **Retry**, plus a toast. The chip text, not the
 color, carries the meaning.
 
@@ -552,9 +593,9 @@ serratus, adductor, tibialis, knees, Achilles and feet stay neutral.
   inferred at run time. The Train card shows a workout's map only when exercises with known
   muscles carry at least 75% of its planned sets
   (`muscleMapCoversWorkout`), so a partial map never stands in for the whole session.
-- **Colours** are constructor input (`MuscleMapPalette`): off `#34363A` / base `#26272A` dark,
-  off `#D6D6D0` / base `#E6E6E1` light. One lighting overlay (light from the upper left, darker
-  right edge) gives volume.
+- **Colours** are constructor input (`MuscleMapPalette`); Train builds it from the `mapOff` and
+  `mapBase` tokens (off `#34363A` / base `#26272A` dark, off `#D6D6D0` / base `#E6E6E1` light). One
+  lighting overlay (light from the upper left, darker right edge) gives volume.
 - **Turn.** A perspective `rotateY`; the back face shows past 90°, six darker silhouette slices
   give the body thickness mid-turn, and the floor shadow narrows with |cos a|. A horizontal drag
   turns it live and springs to front or back by position and velocity, with a selection haptic.
@@ -570,8 +611,9 @@ serratus, adductor, tibialis, knees, Achilles and feet stay neutral.
 
 ## 6. Motion and haptics
 
-Motion explains hierarchy and causality. Nothing animates idle except the skeleton sweep while
-loading and the single pulse on the 7-day trend's latest day.
+Motion explains hierarchy and causality. Nothing animates idle except loading indicators (the
+skeleton sweep, the brand loader, Coach's thinking dots) and the pulse on a selected muscle in
+`MuscleMapPair`. (`TrajectoryTrend`'s single latest-day pulse is gallery only.)
 
 | Token (`TracendMotion`) | Duration | Use                                                      |
 | ----------------------- | -------: | -------------------------------------------------------- |
@@ -652,7 +694,8 @@ permission-denied states.
 
 ## 8. Accessibility baseline
 
-- VoiceOver order matches visual order; charts and the 7-day trend expose concise summaries.
+- VoiceOver order matches visual order; charts, the recovery ring and the muscle map expose
+  concise summaries.
 - All controls have labels, hints where useful, and selected, disabled and expanded traits. Large
   titles, section labels and sheet titles are headers. Toasts are live regions.
 - Dynamic Type works through accessibility sizes without losing actions or values; screens are
@@ -685,11 +728,15 @@ Do not use:
 
 - generic activity rings, meaningless readiness scores, or dashboard walls;
 - lime as a status color: it never means "good", "safe" or "on track";
-- glow, neon edges, or colored shadows;
+- glow, neon edges, or colored shadows. The build has five glows that this rule does not list
+  as exceptions, pending an owner decision: the soft `accentSignalRing` radial glow behind the
+  recovery ring (§5.2), the soft lime glow around main muscles on the muscle map (§5.2), the lime
+  shadow under the check-in gate bar (`accentSignal` at 25%, 24 blur), the lime burst on a new best
+  (UX_FLOWS.md §6), and the launch intro's lime bloom (§6);
 - ALL-CAPS labels or wide letter-spaced caps (weekday letters are the exception);
 - borders, gradients or shadows on content cards;
-- glass or blur anywhere but the tab bar, the toast, the collapsed large-title bar and the sheet
-  scrim;
+- glass or blur anywhere but the chrome listed in §3.4 (the tab bar, the toast, the collapsed
+  large-title bar, the minimised rest pill, and the sheet and action-sheet scrims);
 - black-and-neon gym styling, chrome textures, flames, or aggressive bodybuilding motifs;
 - animated AI sparkles, robot imagery, or chat bubbles as the primary coaching interface;
 - ripples or Material splash feedback;

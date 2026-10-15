@@ -11,6 +11,12 @@ nothing enforces the budget end-to-end.
 This document is the contract. Any PR that adds data to the coach context pipeline must pass the
 budget test or explicitly increase the budget with justification.
 
+**Coming change (Phase 2, chunk A6):** the coaching platform program moves Coach chat onto the AI
+gateway with a cache-friendly prompt, and new context then arrives through contributors with their
+own character budgets (plan Contract 7). `prepare_coach_chat_v8` and `build_coach_athlete_context`
+are frozen for the program. Update this document in the A6 pull request. See
+[`docs/plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md).
+
 ## Budget Layering
 
 ```
@@ -98,7 +104,8 @@ What we're fixing here is industry-standard for production AI pipelines:
 
 - `supabase/functions/_shared/providers/coach_chat_provider.ts` — budgets and whole-section renderer
 - `supabase/migrations/20260927230000_coach_chat_v8_full_athlete_context.sql` — v8 90K guard and
-  conversation memory
+  conversation memory, first version. The current definition of `prepare_coach_chat_v8` is in
+  `20261002110000_coach_intake.sql`, the latest migration that replaces it (same 90K guard)
 - `supabase/migrations/20260928040000_coach_chat_long_threads.sql` — v1 18K guard (history trim)
 - `supabase/migrations/20260719090000_context_budget_guard.sql` — DB v5 40K guard
 - the latest additive `prepare_coach_chat_v*` migration — fresh fields and context version

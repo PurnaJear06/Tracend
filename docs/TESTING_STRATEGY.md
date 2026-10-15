@@ -1,13 +1,5 @@
 # Tracend Testing Strategy
 
-## Personal Coaching Evaluation Set
-
-Fixtures cover server-session resume, unknown versus skipped logging, HealthKit duration conflicts,
-illness, alternative exercises, incomplete evidence, plateau analysis, and unsupported evidence IDs.
-Safety and durable-change fixtures require a 100% pass rate. Evidence UI tests cover 320–430pt
-phones, light/dark mode, 200% text, reduced motion, compact Signal Rail layout, plain Health status,
-date-aware chart semantics, same-day measurement amendment, and reconciliation candidate ranking.
-
 **Status:** Authoritative MVP quality strategy\
 **Scope:** Flutter iOS app, Supabase Auth/PostgreSQL/Storage/Edge Functions/Queues/Cron, HealthKit,
 and controlled AI
@@ -15,6 +7,14 @@ and controlled AI
 This strategy verifies [PRD.md](./PRD.md), [ARCHITECTURE.md](./ARCHITECTURE.md),
 [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md), [SECURITY_PRIVACY.md](./SECURITY_PRIVACY.md), and
 [UX_FLOWS.md](./UX_FLOWS.md).
+
+## Personal Coaching Evaluation Set
+
+Fixtures cover server-session resume, unknown versus skipped logging, HealthKit duration conflicts,
+illness, alternative exercises, incomplete evidence, plateau analysis, and unsupported evidence IDs.
+Safety and durable-change fixtures require a 100% pass rate. Evidence UI tests cover 320–430pt
+phones, light/dark mode, 200% text, reduced motion, compact layouts, plain Health status,
+date-aware chart semantics, same-day measurement amendment, and reconciliation candidate ranking.
 
 ## 1. Quality Gates
 
@@ -48,13 +48,13 @@ accepted as a permanent retry.
   recovery score at known inputs, ACWR ratio, change eligibility gate outcomes, cross-user RLS on
   `user_baselines` and `metric_baseline_history`. File: `feature_engine_baseline_test.sql`.
 - **Reference parity (2026-09-08, Pass 5; hardened 2026-09-09):** the independent Dart reference
-  (`test/reference/recovery_reference.dart`, written from ALGORITHMS.md, not from SQL) and 13
-  shared oracle fixtures (`test/reference/fixtures/*.json`). Two assertion layers: (1) every
+  (`test/reference/recovery_reference.dart`, written from ALGORITHMS.md, not from SQL) and the
+  shared oracle fixtures (`test/reference/fixtures/*.json`, 15 on 2026-10-15). Two assertion layers: (1) every
   fixture carries an embedded `expected` oracle block (regenerate with
   `dart run tool/generate_expected.dart test/reference/fixtures --write --force` after changing
   fixture inputs) — the Dart self-tests compare every scored output (recovery, five z-scores,
   sleep quality, the four sub-scores, breakdown-missing, debt, strain, ACWR, monotony,
-  confidence, missing components) against it (13 oracle tests + 15 anchor tests), and
+  confidence, missing components) against it (one oracle test per fixture plus anchor tests), and
   `reference_parity_test.sql` runs the SAME fixtures through the production SQL asserting the
   same block field-by-field — so a sign flip or weight typo in EITHER implementation breaks a
   test; (2) independent hand-computed anchors (62, −0.294, 1.95, 2.27, 85.6, the x3
@@ -68,7 +68,9 @@ accepted as a permanent retry.
 ### Integration
 
 - PostgreSQL constraints, RLS policies, grants, transactions, idempotency, and version activation;
-- Supabase Auth native Sign in with Apple using fixtures and nonce/error cases;
+- Supabase Auth native Sign in with Apple using fixtures and nonce/error cases, once it is built.
+  It is the planned external-beta route (ADR 0002) and is not implemented yet; owner development
+  uses email/password;
 - HealthKit normalization for authorized, partial, stale, duplicate, unavailable, and empty
   responses;
 - sleep aggregation: the daily total and per-stage columns are the union of
@@ -176,6 +178,48 @@ accepted as a permanent retry.
   forced-RLS owner reads, deterministic evidence totals, zero generated proposals, acknowledgement
   ownership, and approved-plan availability while a job is delayed.
 
+### Coaching platform program (Iteration 1)
+
+The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add these suites:
+
+- **AI gateway (A2):** `supabase/functions/_shared/ai/*_test.ts` and `adapters/*_test.ts` run
+  offline with a fake fetch. They cover:
+  - Claude list prices and cost maths, including cache reads and writes and the Haiku 5.5
+    long-prompt rate;
+  - route settings per feature: a missing setting or key returns no route, and the key never
+    appears on the route;
+  - no sampling parameters, tools or forced tool choice sent to a Claude 5 model, and thinking
+    mapped per model;
+  - refusal, 429 with `retry-after`, 529 and 503, timeout and caller abort, network failure,
+    invalid JSON and schema mismatch;
+  - a consent for another vendor, or none, sends nothing, and an eval-router route never takes an
+    athlete's request;
+  - one scrubbed `ai_call` log line per call, without prompt, image, reply or key;
+  - rollback parity: DeepSeek, Groq and Gemini requests through the gateway match today's
+    providers;
+  - notice labels name companies only, never a model (D11).
+- **Provider-neutral database (A1):** `provider_neutral_ai_test.sql` (88 assertions) covers the
+  provider whitelists, usage events, coaching consent v2, the meal and progress photo notices,
+  and budget v2. `_shared/ai_consent_test.ts` and `_shared/ai_budget_test.ts` cover the new
+  helpers.
+- **Set timing (C1):** `set_timing_test.sql` (63 assertions) covers the new `exercise_sets`
+  columns, `sync_workout_draft` validation and missing keys, ownership, and the reads.
+  `test/set_timing_test.dart` covers rest maths, set start and end rules, app backgrounding and
+  relaunch, and drafts from older builds. `test/rir_picker_test.dart` covers the reps-left picker
+  (0 to 5+, 44pt cells, 320pt width at 2× text in light and dark). Contract fixtures
+  `workout_session_v1_1.json` and `exercise_history_v1_1.json` pin the reads.
+- **Rest Live Activity (D0):** `test/contract/live_activity_channel_contract_test.dart` plays the
+  native side of the `tracend/live_activity` method channel as
+  `ios/Runner/Native/WorkoutActivityBridge.swift` implements it, and proves refused, disabled or
+  missing native calls are swallowed. `test/live_activity/rest_timer_live_activity_test.dart`
+  covers start, adjust, skip, end, leaving the workout, and a rest that ended while the app was
+  closed. The Lock Screen and Dynamic Island are checked on the owner's iPhone.
+- **Research library (E1):** `research_library_test.sql` (66 assertions) covers pgvector, forced
+  RLS with no API access, the indexes, `search_library_v1` grants, hybrid ranking by reciprocal
+  rank fusion (k = 60), filters, `match_count` limits, the exact contract keys, and a rule that no
+  `public` or `private` function takes an argument whose type lives in a schema `supabase db dump`
+  excludes.
+
 ### Supabase boundaries
 
 For each exposed table, Storage policy, RPC, and Edge Function, test anonymous access, same-user
@@ -254,18 +298,41 @@ gracefully skipped.
 
 ### Pre-Deploy Gate (CI Equivalent)
 
-Run `./scripts/pre-deploy.sh` before every production `db push`. It executes:
+Run `./scripts/pre-deploy.sh` before handing a pull request to the owner. Use
+`--skip-colima --skip-reset` when the local database is unavailable, and rely on CI pgTAP. It
+executes:
 
 1. Colima + Supabase start → db reset (all migrations applied cleanly)
 2. pgTAP database tests
-3. Deno format + lint + test (including DB contract tests when Supabase is up)
+3. Deno format + lint + test (including DB contract tests when Supabase is up), then the backup
+   storage and restore-privilege script tests
 4. Flutter static analysis
 5. Flutter unit/widget/contract tests
 6. Flutter iOS release build
 7. Production migration dry-run
 
-The gate fails on the first error. A passing gate means the change is safe to deploy. See also
-`.github/workflows/ci.yml` for the automated version.
+The gate fails on the first error. `.github/workflows/ci.yml` runs the automated version on every
+pull request.
+
+Agents never run `supabase db push` or `supabase functions deploy`. Merging to `main` deploys
+through `deploy.yml` ([CI_CD_DEPLOYMENT.md](./CI_CD_DEPLOYMENT.md)). A manual CLI deploy happens
+only when GitHub Actions is down or the owner explicitly asks, and then only after this gate, a
+dry-run and a backup.
+
+### Release Pipeline Checks
+
+- **Migration order:** `scripts/check-migration-order.sh` runs in the Migration Collision Check job
+  on every pull request. Every migration the branch adds must be newer than the base branch's
+  newest and named `<14-digit version>_<snake_case>.sql`, and no migration already on the base may
+  be edited, renamed or deleted. `scripts/test-check-migration-order.sh` tests the script against
+  throwaway repositories in a directory with a space in its path.
+- **Restore drill privileges:** every deploy restores the production backup into an isolated
+  database, and `scripts/restore-privileges.sh` compares function EXECUTE, table, view, sequence
+  and schema privileges for `anon` and `authenticated`, and RLS flags, in `public` and `private`,
+  with the state the migrations create. Any difference stops the deploy. CI runs
+  `scripts/test-restore-privileges.sh` for the parsing, history and report logic.
+- **Backup storage:** `scripts/test-store-backup.sh` covers `scripts/store-backup.sh` in CI.
+- **App bundle:** CI runs `scripts/verify-app-bundle.sh` on its unsigned iOS build.
 
 ## 3. AI Evaluation
 
@@ -291,7 +358,8 @@ clarity, meal accuracy, latency, and estimated cost. Model, prompt, schema, retr
 orchestration changes require regression comparison to the baseline.
 
 DeepSeek V4.1 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
-Lite models are not production routes.
+Lite models are not production routes. Phase 2 of the coaching platform program moves each AI
+feature to the gateway and Anthropic; its evals are part of chunk A7.
 Meal evaluation covers mixed dishes, oil/sauces, hidden ingredients, portion uncertainty, prompt
 injection, candidate edit rate, latency, and cost. Safety-critical and schema fixtures require 100%;
 routing remains disabled when the gate fails.
@@ -366,9 +434,23 @@ measured vertical slice.
 
 ## 8. CI and TestFlight Gates
 
-CI runs formatting, strict Dart/TypeScript analysis, unit and integration tests, Supabase
-migration/RLS/grant validation, Edge Function schema tests, Flutter tests, AI evaluation smoke
-tests, secret scanning, and builds.
+`.github/workflows/ci.yml` runs eight jobs on every push and pull request to `main` and
+`feature/**`:
+
+| Job                                      | What it checks                                                                                             |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `Deno (fmt + lint + test)`               | Edge Function format, lint and tests (offline), plus the backup storage and restore-privilege script tests |
+| `Flutter Analyze`                        | Dart formatting and static analysis                                                                        |
+| `Flutter Test`                           | Flutter unit, widget and contract tests                                                                    |
+| `Flutter iOS Build (macOS)`              | Unsigned iOS release build and app bundle assets                                                           |
+| `pgTAP (fresh DB + migrations + parity)` | Every migration on a fresh database, then every `supabase/tests/database/*_test.sql` file                  |
+| `Website Build`                          | Every page of `site/` builds                                                                               |
+| `Secret Scan (gitleaks)`                 | Every commit in the history                                                                                |
+| `Migration Collision Check`              | Duplicate versions, the migration-order check and its tests, release version metadata                      |
+
+Branch protection requires seven of them; `Website Build` is not required. The live AI
+evaluations (`coach-eval.yml`, `onboarding-eval.yml`) run on demand or when a pull request gets
+their label; they are not required checks.
 
 Before TestFlight expansion:
 
@@ -380,21 +462,28 @@ Before TestFlight expansion:
 - crash, latency, cost, and proposal-rate telemetry is reviewed; and
 - known limitations and rollback owner are recorded.
 
-Exact commands belong in `AGENTS.md` only after scaffolding exists.
+Exact commands live in `CLAUDE.md`, which is canonical for process.
 
 ## 9. Operational Safeguards
 
 ### 9.1 Database Backup
 
-`scripts/backup-db.sh` produces a `pg_dump` via the Supabase session pooler into
-`.tooling/backups/YYYY-MM-DD/` with a SHA-256 manifest. Run before every production migration.
-Supports `--schema-only` for lightweight schema backups and `--data-only` for data-only dumps.
+Every deploy backs up production automatically: `deploy.yml` dumps roles, schema and data, verifies
+the checksums, runs the isolated restore drill, and stores an encrypted archive in the private
+backups repository before any migration runs ([CI_CD_DEPLOYMENT.md](./CI_CD_DEPLOYMENT.md)).
+
+`scripts/backup-db.sh` is the manual backup for a manual production mutation. It writes to
+`.tooling/backups/YYYY-MM-DD/` with a SHA-256 manifest. The default (and `--schema-only`) is a
+schema dump through `supabase db dump`; `--data-only` is a data dump through the Supabase session
+pooler and needs `PGPASSWORD`.
 
 ### 9.2 Edge Function Rollback
 
-`scripts/rollback-function.sh <name>` queries the function's deployment history via `git log`,
-checks out the prior committed version, and redeploys with `--use-api`. Used when a deployed Edge
-Function needs an immediate revert to the previous version.
+`scripts/rollback-function.sh <name>` finds the previous commit that changed the function's
+directory, checks that directory out from it, and redeploys with `--use-api`. `--dry-run` and
+`--list` change nothing. A rollback is a manual production deploy, so it follows the same rule as
+any manual deploy: only when GitHub Actions is down or the owner explicitly asks. The lasting fix
+goes through a pull request.
 
 ### 9.3 Health Check
 
@@ -404,7 +493,8 @@ a version string. Used by external monitors; does not expose internal details.
 ### 9.4 Structured Logging
 
 `supabase/functions/_shared/logger.ts` — JSON-structured logging with correlation ID propagation and
-`LOG_LEVEL` env-var control. Wired into `coach-chat` and `meal-analyze`. Sensitive fields (health
+`LOG_LEVEL` env-var control. Wired into `coach-chat`, `meal-analyze`, `onboarding-plan` and
+`physique-check`. Sensitive fields (health
 values, meal content, photo URLs, prompt text) are excluded by design.
 
 ## 10. Crash Reporting (Sentry)
@@ -423,7 +513,8 @@ DSN is the only identifier reaching the client; the project lives at `sentry.io`
 `meal_description`, `food_items`, `ingredients`, `photo_url`, `signed_url`, `image_url`,
 `object_key`, `prompt`, `prompt_text`, `question`, `answer_text`, `answer_payload`.
 
-Edge Functions report exceptions from the main `coach-chat` and `meal-analyze` catch blocks. Coach
+Edge Functions report exceptions through `captureException` in `coach-chat`, `meal-analyze`,
+`meal-media-retention`, `onboarding-plan`, `physique-check` and `privacy-delete-account`. Coach
 events add `runtime=edge`, provider, model, context kind, sanitized failure code, attempt, finish
 reason, and initial/repair validation-rule tags plus a bounded stack string. Successful and failed
 requests log one sanitized attempt summary with outcome, finite rule/path, limits/counts, latency,
@@ -434,6 +525,12 @@ affects the caller.
 
 ## 11. Auth Hardening
 
+Sign-ups are invite-only. Migration `20261009130000_account_boundary.sql` adds a trigger on the
+Auth user insert that refuses any email without a row in `private.signup_invites`
+(`signup is invite-only`); `account_boundary_test.sql` covers it. Production Auth sign-ups are also
+switched off (2026-10-15, per [PROGRESS_CONTEXT.md](./PROGRESS_CONTEXT.md)). Account deletion
+removes the account's invite row (`account_deletion_forgets_invite_test.sql`).
+
 Production Supabase Auth settings applied 2026-07-19:
 
 | Setting                               | Value                         |
@@ -441,8 +538,8 @@ Production Supabase Auth settings applied 2026-07-19:
 | Password minimum length               | 8                             |
 | Password character requirements       | lowercase + uppercase + digit |
 | Re-authentication for password change | Required                      |
-| Email confirmation for new signups    | Required                      |
+| Email confirmation for new sign-ups   | Required (invited sign-ups only) |
 | Session inactivity timeout            | Deferred (Pro plan)           |
 | Session timebox                       | Deferred (Pro plan)           |
 
-These do not affect existing sessions. New signups must meet the password requirements.
+These do not affect existing sessions. An invited sign-up must meet the password requirements.
