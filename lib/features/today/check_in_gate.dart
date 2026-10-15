@@ -46,14 +46,15 @@ class CheckInGateBar extends StatelessWidget {
   final VoidCallback onCheckIn;
   final VoidCallback onSkip;
 
-  /// True in the shell's bottom slot; false when shown inside Today.
+  /// True in the shell's bottom slot, which positions it with the tab bar
+  /// (`FloatingBarFrame`) and gives the pill its lime lift; false when shown
+  /// inline.
   final bool floating;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tracendColors;
     final textTheme = Theme.of(context).textTheme;
-    final bottom = MediaQuery.paddingOf(context).bottom;
     final pill = Pressable(
       onTap: onCheckIn,
       pressedScale: 0.98,
@@ -116,32 +117,19 @@ class CheckInGateBar extends StatelessWidget {
         ),
       ),
     );
-    return Padding(
-      padding: floating
-          ? EdgeInsets.fromLTRB(12, 0, 12, bottom > 0 ? 4 : 10)
-          : EdgeInsets.zero,
-      child: Center(
-        heightFactor: 1,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 620),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              pill,
-              TextButton(
-                onPressed: onSkip,
-                child: Text(
-                  'Not today',
-                  style: textTheme.labelLarge?.copyWith(
-                    color: colors.textSecondary,
-                  ),
-                ),
-              ),
-            ],
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        pill,
+        TextButton(
+          onPressed: onSkip,
+          child: Text(
+            'Not today',
+            style: textTheme.labelLarge?.copyWith(color: colors.textSecondary),
           ),
         ),
-      ),
+      ],
     );
   }
 }

@@ -64,6 +64,7 @@ Raw color values never appear in feature widgets.
 | `scrim`            | ink 28%       | black 45%     | Modal scrim (blurred, §3.4)                              |
 | `glass`            | white 74%     | `#1E1F21` 72% | Chrome fill over a blur (§3.4)                           |
 | `glassEdge`        | black 6%      | white 8%      | Chrome hairline                                          |
+| `glassHighlight`   | white 90%     | white 18%     | Specular top edge and sheen of the tab capsule (§4)      |
 | `shimmer`          | black 5%      | white 6%      | Skeleton highlight                                       |
 
 Rules:
@@ -75,7 +76,8 @@ Rules:
 - Body text meets WCAG AA 4.5:1; large text and meaningful graphics meet 3:1. `test/theme_test.dart`
   asserts it in both themes.
 - Color is never the only signal: state always has a word or an icon.
-- Gradients appear only inside data visuals where they encode direction.
+- Gradients appear only inside data visuals where they encode direction, and in two pieces of
+  chrome: the tab capsule's specular sheen and the canvas fade under the bottom bar (§4).
 
 ## 3. Type, shape and surfaces
 
@@ -136,8 +138,9 @@ Documented exception: Coach chat bubbles use an asymmetric 18pt bubble (4pt on t
 
 - Three levels: canvas, surface, sheet. Separation comes from tone. Cards have no border, no
   gradient and no shadow (`PremiumGradientCard` is a flat `surface`).
-- The only shadows are the small lift under the selected segment of a segmented control and the
-  soft lift under the toast, which separates it from the glass bar beneath it.
+- The only shadows are the small lift under the selected segment of a segmented control, the
+  soft lift under the toast, which separates it from the glass bar beneath it, and the soft lift
+  under the floating tab capsule (black 32% dark, 10% light, 28 blur, 10 down).
 - **Glass** (`TracendGlass`: the `glass` fill over a 20σ blur with a `glassEdge` hairline) is chrome
   only: the tab bar, the toast, the collapsed large-title bar and the minimised rest pill during a
   workout. The sheet scrim is blurred too
@@ -196,10 +199,29 @@ but it remains one controlled coaching workflow. Do not represent Training Coach
 and Head Coach as separate autonomous chatbots; show them only as expandable perspectives inside a
 unified Tracend Coach response.
 
-The five destinations sit in one safe-area-aware graphite glass capsule. The active icon is lime
-ink, selection plays the `selection` haptic, and the indicator moves in 160–240ms interruptible
-motion. Tab labels clamp to 1.3× text scale so they never overflow the bar. The bar never hides
-scroll content and preserves all tab state.
+The five destinations sit in one floating glass capsule (`FloatingTabBar`, owner 2026-10-15,
+after the iOS 26 tab bar):
+
+- **Shape:** 64pt tall, fully rounded (32pt ends), `TracendGlass` over a 20σ blur with the
+  `glassEdge` hairline, a `glassHighlight` sheen over the upper half and a brighter 1pt edge along
+  the straight top run, and the soft capsule lift (§3.4).
+- **Position** (`FloatingBarFrame.margins`): bottom margin = bottom safe inset − 10, at least 12.
+  On Face ID iPhones (34pt inset) that is 24pt, an 11pt clear gap above the home indicator; the
+  sides are 20pt so the capsule's ends sit close to concentric with the display's corners.
+  Home-button iPhones get 12pt all round. The bar never sits in the home-indicator zone.
+- **Selection:** a lime-tinted pill (`accentSignalTint` fill, `accentSignalRing` 22% edge) sits
+  4pt inside the capsule behind the selected icon and label, and slides to the next tab over
+  `TracendMotion.standard` (240ms, interruptible). Reduce Motion moves it in one frame and drops
+  the 0.92 press scale. The selected icon and label are `accentSignalInk`; the others
+  `textSecondary`. Selection plays the `selection` haptic.
+- **Fade:** behind the bar slot, the canvas fades in from clear to 85%, so content passing beside
+  and below the capsule softens instead of meeting it at a hard line.
+- **Content:** the shell's `Scaffold` extends its body under the bar slot, so the body's bottom
+  padding is the slot's full height. `TracendScrollView` ends its content by that padding plus
+  `endClearance` (96pt), which also clears Coach's one-line composer; no screen carries its own
+  number. The bar never hides scroll content and preserves all tab state.
+- **Accessibility:** each tab is a full fifth of the capsule (at least 44pt) with its `tab-<name>`
+  semantics, "<Name> tab" label and selected state; labels clamp to 1.3× text scale.
 
 Top-level screens use the iOS large title (`TracendScrollView`, §5.1). Pushed detail screens keep
 an inline title. Native back behavior, swipe-back, tab-state preservation, deep links, and
@@ -359,8 +381,9 @@ trained, ring planned and ahead, `textTertiary` ring missed, dash rest) and the 
 
 `CheckInGateBar` replaces the tab bar until today's check-in: a 60pt `accentSignal` pill with
 "Check in to start your day" in `onAccentSignal` and a 44pt `onAccentSignal` disc holding a lime
-arrow, a soft lime shadow, and a **Not today** text button under it. The shell cross-fades and
-slides between the gate bar and the tab bar over `TracendMotion.emphasized`.
+arrow, a soft lime shadow, and a **Not today** text button under it. It sits in the same
+`FloatingBarFrame` as the tab capsule (same margins and fade), so the two never jump. The shell
+cross-fades and slides between the gate bar and the tab bar over `TracendMotion.emphasized`.
 
 #### Fuel rail
 
