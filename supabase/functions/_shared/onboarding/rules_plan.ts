@@ -1,4 +1,11 @@
-import { allowedExercises, type CatalogExercise, type MovementPattern } from "./catalog.ts";
+import {
+  allowedExercises,
+  catalogBySlug,
+  type CatalogExercise,
+  type EquipmentItem,
+  type ExerciseRole,
+  type MovementPattern,
+} from "./catalog.ts";
 import type { OnboardingPlan, PlanExercise, PlanPolicies, PlanWorkout } from "./plan_contract.ts";
 import { estimateWorkoutMinutes, nutritionBounds, type Split } from "./policy.ts";
 
@@ -8,6 +15,68 @@ import { estimateWorkoutMinutes, nutritionBounds, type Split } from "./policy.ts
 // fails validation after one repair, so every athlete gets a valid plan.
 
 type Slot = readonly MovementPattern[];
+type Experience = PlanPolicies["answers"]["experience"];
+
+// Equipment that loads a movement, most preferred first. An experienced lifter
+// starts from the barbell; a beginner from dumbbells and machines, which take
+// less skill to load safely. A bench only supports a movement, so an exercise
+// that needs nothing else is bodyweight.
+const loadPreference: Readonly<Record<Experience, readonly EquipmentItem[]>> = {
+  intermediate: [
+    "barbell",
+    "dumbbells",
+    "pull_up_bar",
+    "machines",
+    "cables",
+    "kettlebells",
+    "bands",
+  ],
+  beginner: ["dumbbells", "machines", "cables", "barbell", "kettlebells", "bands", "pull_up_bar"],
+};
+
+function loadRank(exercise: CatalogExercise, experience: Experience): number {
+  const order = loadPreference[experience];
+  const ranks = exercise.equipment.map((item) => order.indexOf(item)).filter((rank) => rank >= 0);
+  return ranks.length ? Math.min(...ranks) : order.length;
+}
+
+function isBodyweight(exercise: CatalogExercise, experience: Experience): boolean {
+  return loadRank(exercise, experience) === loadPreference[experience].length;
+}
+
+// The database catalog carries no role, so it is read from catalog.ts by slug.
+function roleOf(exercise: CatalogExercise): ExerciseRole | undefined {
+  return catalogBySlug.get(exercise.slug)?.role;
+}
+
+function roleRank(exercise: CatalogExercise): number {
+  const role = roleOf(exercise);
+  return role === "regression" ? 2 : role === "variation" ? 1 : 0;
+}
+
+/**
+ * The athlete's exercises, best first: loaded before bodyweight, compound
+ * before isolation, preferred equipment for their experience, the standard
+ * form before a variation before a regression, then slug, so the database
+ * catalog (read in slug order) and catalog.ts rank the same way.
+ */
+export function rankExercises(
+  exercises: readonly CatalogExercise[],
+  experience: Experience,
+): CatalogExercise[] {
+  const key = (exercise: CatalogExercise) => [
+    isBodyweight(exercise, experience) ? 1 : 0,
+    exercise.compound ? 0 : 1,
+    loadRank(exercise, experience),
+    roleRank(exercise),
+  ];
+  return [...exercises].sort((a, b) => {
+    const [left, right] = [key(a), key(b)];
+    const index = left.findIndex((value, position) => value !== right[position]);
+    if (index >= 0) return left[index] - right[index];
+    return a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0;
+  });
+}
 
 // When a slot has nothing the athlete can do (equipment, or a movement they
 // avoid), its sibling pattern fills it, so a day keeps its balance.
@@ -301,12 +370,16 @@ function topUpPriorities(
 
 export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
   const { answers, training, nutrition } = policies;
-  const allowed = allowedExercises(
-    policies.catalog,
-    answers.equipment,
+  const allowed = rankExercises(
+    allowedExercises(
+      policies.catalog,
+      answers.equipment,
+      answers.experience,
+      answers.avoidPatterns,
+    ),
     answers.experience,
-    answers.avoidPatterns,
   );
+  const bodyweight = (exercise: CatalogExercise) => isBodyweight(exercise, answers.experience);
   const days = templates[training.split](answers.trainingWeekdays.length);
   const usedThisWeek = new Set<string>();
   const weeklySets = new Map<string, number>();
@@ -329,12 +402,19 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
           )
         );
       const own = fill(slot);
-      const candidates = own.length
-        ? own
-        : fill(slot.flatMap((pattern) => substitutes[pattern] ?? []));
-      const choice = candidates.find((exercise) => !usedThisWeek.has(exercise.slug)) ??
-        candidates[0];
-      if (!choice) continue;
+      const pool = own.length ? own : fill(slot.flatMap((pattern) => substitutes[pattern] ?? []));
+      // A loaded exercise for any of the slot's patterns comes before a
+      // bodyweight one; otherwise the slot's pattern order holds.
+      const candidates = pool.sort((a, b) => Number(bodyweight(a)) - Number(bodyweight(b)));
+      const top = candidates[0];
+      if (!top) continue;
+      // An exercise not used yet this week adds variety, but never by dropping
+      // from loaded to bodyweight or to a regression.
+      const choice = candidates.find((exercise) =>
+        !usedThisWeek.has(exercise.slug) &&
+        (exercise === top ||
+          bodyweight(exercise) === bodyweight(top) && roleOf(exercise) !== "regression")
+      ) ?? top;
       const target = choice.muscles[0];
       const room = Math.min(
         training.setBudgetPerSession - sessionSets,

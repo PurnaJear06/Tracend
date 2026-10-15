@@ -44,7 +44,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | Phase | Chunk | Stream | Goal | Migration code | Waits for | Status | PR |
 |---|---|---|---|---|---|---|---|
 | 0 | P0 | program | This doc, contracts, migration-order CI check | — | — | review | |
-| 1 | B0 | training-engine | Mock decision obeys the policy; rules plan ranks by equipment and experience | — | P0 | todo | |
+| 1 | B0 | training-engine | Mock decision obeys the policy; rules plan ranks by equipment and experience | — | P0 | review | |
 | 1 | A1 | ai-gateway | Provider-neutral SQL, provider on notices, consent v2, budget v2 | 11 | P0 | todo | |
 | 1 | A2 | ai-gateway | Gateway module and adapters, not wired to features | — | P0 | todo | |
 | 1 | C1 | workout-hr | Set start/end, actual rest, reps-left, workout events | 31 | P0 | todo | |
