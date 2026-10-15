@@ -205,15 +205,21 @@ after the iOS 26 tab bar):
 - **Shape:** 64pt tall, fully rounded (32pt ends), `TracendGlass` over a 20σ blur with the
   `glassEdge` hairline, a `glassHighlight` sheen over the upper half and a brighter 1pt edge along
   the straight top run, and the soft capsule lift (§3.4).
-- **Position** (`FloatingBarFrame.margins`): bottom margin = bottom safe inset − 10, at least 12.
-  On Face ID iPhones (34pt inset) that is 24pt, an 11pt clear gap above the home indicator; the
-  sides are 20pt so the capsule's ends sit close to concentric with the display's corners.
-  Home-button iPhones get 12pt all round. The bar never sits in the home-indicator zone.
-- **Selection:** a lime-tinted pill (`accentSignalTint` fill, `accentSignalRing` 22% edge) sits
-  4pt inside the capsule behind the selected icon and label, and slides to the next tab over
+- **Position** (`FloatingBarFrame.margins`): bottom margin = bottom view inset − 10, at least
+  20 whenever an inset exists. On Face ID iPhones (34pt inset) that is 24pt, an 11pt clear gap
+  above the home indicator; landscape (21pt inset) gets 20pt. The sides are 20pt so the capsule's
+  ends sit close to concentric with the display's corners. Home-button iPhones get 12pt all round.
+  The margins read the view padding, which the keyboard does not consume, so the bar keeps its
+  place and width while the keyboard is up. The bar never sits in the home-indicator zone.
+- **Selection:** a lime-tinted pill (`accentSignalTint` fill, 1pt `accentSignalRing` edge at
+  60% in dark and 100% in light, 3:1 or better against the glass over the canvas) sits 4pt inside
+  the capsule behind the selected icon and label, and slides to the next tab over
   `TracendMotion.standard` (240ms, interruptible). Reduce Motion moves it in one frame and drops
-  the 0.92 press scale. The selected icon and label are `accentSignalInk`; the others
-  `textSecondary`. Selection plays the `selection` haptic.
+  the 0.92 press scale. The selected icon is `accentSignalInk`; the selected label is
+  `textPrimary` w700, because lime ink falls under 4.5:1 when bright content sits behind the glass
+  (3.4:1 to 4.2:1 at worst). The pill's ring and the heavier label mark the selection without
+  color. Unselected icons and labels are `textSecondary` w600. Selection plays the `selection`
+  haptic.
 - **Fade:** behind the bar slot, the canvas fades in from clear to 85%, so content passing beside
   and below the capsule softens instead of meeting it at a hard line.
 - **Content:** the shell's `Scaffold` extends its body under the bar slot, so the body's bottom
@@ -382,8 +388,11 @@ trained, ring planned and ahead, `textTertiary` ring missed, dash rest) and the 
 `CheckInGateBar` replaces the tab bar until today's check-in: a 60pt `accentSignal` pill with
 "Check in to start your day" in `onAccentSignal` and a 44pt `onAccentSignal` disc holding a lime
 arrow, a soft lime shadow, and a **Not today** text button under it. It sits in the same
-`FloatingBarFrame` as the tab capsule (same margins and fade), so the two never jump. The shell
-cross-fades and slides between the gate bar and the tab bar over `TracendMotion.emphasized`.
+`FloatingBarFrame` as the tab capsule (same margins and fade). `FloatingBarSwitcher` swaps the two
+over `TracendMotion.emphasized`: both stay anchored to the frame's bottom edge (the outgoing bar
+fades and shrinks to 92% toward that edge, the incoming one grows from it), and the slot's height
+eases between the two bars over the same time, so neither bar leaves its bottom edge and content
+above glides instead of snapping. Reduce Motion swaps them in one frame.
 
 #### Fuel rail
 

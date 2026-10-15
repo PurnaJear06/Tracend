@@ -220,9 +220,18 @@ home-indicator zone. Owner chose an iOS 26 style floating glass capsule.
 - `TracendScrollView` ends content at the body's bottom padding (the bar slot's height, reported
   by the shell's `extendBody` Scaffold) plus `endClearance` (96pt), replacing the fixed 176.
 - New token `glassHighlight`.
-- Tests: `test/floating_tab_bar_test.dart` (inset and no-inset offsets, gate position, content
-  end, pill follows selection, Reduce Motion, semantics, 44pt targets, text clamp, one glass
-  layer).
+- Review fixes: `FloatingBarSwitcher` keeps both bars on the bottom edge during the swap and eases
+  the slot height (no jump); margins read the view padding, so the keyboard does not move the bar;
+  a 20pt bottom floor whenever an inset exists (landscape); the selected label is `textPrimary`
+  w700 and the pill ring is stronger, so selection reads without color.
+- **Owner decisions pending:** (1) the exception to "gradients only in data visuals" for the
+  capsule's sheen and the fade under the bar; (2) the extra soft shadow under the capsule (§3.4
+  allowed only the segmented control and toast lifts). Both are written into DESIGN_SYSTEM.md
+  and can be reverted if the owner declines them.
+- Tests: `test/floating_tab_bar_test.dart` (inset, no-inset, landscape and keyboard offsets,
+  gate position, frame-by-frame swap, content end, pill follows selection, Reduce Motion,
+  selection without color, semantics, 44pt targets, text clamp, one glass layer);
+  `test/app_shell_test.dart` checks the real shell uses the frame.
 - Device check: Flutter change, so install from the merged `main` commit.
 
 ## Deferred

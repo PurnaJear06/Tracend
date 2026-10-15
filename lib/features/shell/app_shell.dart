@@ -1,30 +1,28 @@
 import 'package:flutter/cupertino.dart';
-import 'package:tracend/features/account/account_deletion_repository.dart';
-import 'package:tracend/features/account/account_screen.dart';
-import 'package:tracend/features/account/notification_repository.dart';
-import 'package:tracend/features/account/privacy_export_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
-import 'package:tracend/app/theme/tracend_tokens.dart';
-import 'package:tracend/features/coach/coach_screen.dart';
+import 'package:tracend/features/account/account_deletion_repository.dart';
+import 'package:tracend/features/account/account_screen.dart';
+import 'package:tracend/features/account/notification_repository.dart';
+import 'package:tracend/features/account/privacy_export_repository.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_repository.dart';
-import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
-import 'package:tracend/features/progress/progress_screen.dart';
-import 'package:tracend/features/shell/floating_tab_bar.dart';
+import 'package:tracend/features/nutrition/nutrition_screen.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
+import 'package:tracend/features/progress/progress_screen.dart';
+import 'package:tracend/features/shell/floating_tab_bar.dart';
 import 'package:tracend/features/today/check_in_gate.dart';
-import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
-import 'package:tracend/shared/widgets/tracend_motion.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -189,38 +187,19 @@ class _AppShellState extends State<AppShell> {
       bottomNavigationBar: FloatingBarFrame(
         child: ListenableBuilder(
           listenable: _checkInGate,
-          builder: (context, _) {
-            final gated = _checkInGate.required && _selectedIndex == 0;
-            return AnimatedSwitcher(
-              duration: TracendMotionScope.movement(
-                context,
-                TracendMotion.emphasized,
-              ),
-              switchInCurve: TracendMotion.curve,
-              switchOutCurve: TracendMotion.curve,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween(
-                    begin: const Offset(0, 0.35),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
-              ),
-              child: gated
-                  ? CheckInGateBar(
-                      key: const ValueKey('check-in-gate'),
-                      onCheckIn: _checkInGate.checkIn,
-                      onSkip: _checkInGate.skip,
-                    )
-                  : FloatingTabBar(
-                      key: const ValueKey('tab-bar'),
-                      selectedIndex: _selectedIndex,
-                      onSelected: _selectTab,
-                    ),
-            );
-          },
+          builder: (context, _) => FloatingBarSwitcher(
+            child: _checkInGate.required && _selectedIndex == 0
+                ? CheckInGateBar(
+                    key: const ValueKey('check-in-gate'),
+                    onCheckIn: _checkInGate.checkIn,
+                    onSkip: _checkInGate.skip,
+                  )
+                : FloatingTabBar(
+                    key: const ValueKey('tab-bar'),
+                    selectedIndex: _selectedIndex,
+                    onSelected: _selectTab,
+                  ),
+          ),
         ),
       ),
     );

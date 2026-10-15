@@ -46,9 +46,8 @@ class CheckInGateBar extends StatelessWidget {
   final VoidCallback onCheckIn;
   final VoidCallback onSkip;
 
-  /// True in the shell's bottom slot, which positions it with the tab bar
-  /// (`FloatingBarFrame`) and gives the pill its lime lift; false when shown
-  /// inline.
+  /// Gives the pill its soft lime lift, for the shell's bottom slot. Where
+  /// the bar sits is the slot's job (`FloatingBarFrame`), not this flag's.
   final bool floating;
 
   @override
