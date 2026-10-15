@@ -342,7 +342,7 @@
       '<div class="pg-list pg-rv"><p><span>Workouts</span><b>4 of 4</b></p><p><span>Protein target</span><b>6 of 7 days</b></p><p><span>Sleep</span><b>6 h 38 m, 42 m short</b></p><p><span>Weight</span><b>&minus;0.3 kg</b></p><p><span>Waist</span><b>&minus;0.4 cm</b></p><p><span>Unchanged</span><b>Plan and targets</b></p></div>' +
       '<div class="pg-focus"><p class="k">Next week&rsquo;s focus</p><p class="v">Protect sleep before Monday&rsquo;s legs. Keep protein at 160 g.</p></div>' +
       '<span class="pg-pill" data-rev><span>Mark reviewed</span><span>Reviewed</span>' + TAP + '</span></section>';
-    var s3 = '<section class="scr" data-p="3"><div class="a-head"><h3>Physique check<span class="sub">Coming later. Not in the beta yet.</span></h3></div>' +
+    var s3 = '<section class="scr" data-p="3"><div class="a-head"><h3>Physique check<span class="sub">Photo set, 12 October</span></h3></div>' +
       '<span class="pg-est">AI visual estimate, not a measurement</span>' +
       '<div class="pg-photos"><div class="pg-ph"><svg data-v="front"></svg><span>Front</span><i class="scan"></i></div><div class="pg-ph"><svg data-v="front" style="transform:scaleX(.62)"></svg><span>Side</span><i class="scan"></i></div><div class="pg-ph"><svg data-v="back"></svg><span>Back</span><i class="scan"></i></div></div>' +
       '<div class="pg-res"><p data-pick><i class="bx">' + I.check + '</i><span><b>Upper back</b><small>Bring up &middot; medium confidence</small></span></p><p data-pick><i class="bx">' + I.check + '</i><span><b>Calves</b><small>Bring up &middot; medium confidence</small></span></p><p><i class="bx">' + I.check + '</i><span><b>Shoulders</b><small>Well developed &middot; high confidence</small></span></p></div>' +

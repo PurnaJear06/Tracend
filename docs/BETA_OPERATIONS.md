@@ -77,41 +77,64 @@ Work through this list in order once the paid Apple Developer Program is active.
    (`com.tracend.app` and each extension) in Certificates, Identifiers & Profiles with the HealthKit
    capability, and only the other capabilities the build uses. Let Xcode create the Apple
    Distribution certificate and App Store profiles.
-3. **Create the app record.** App Store Connect > Apps > New App: iOS, the Tracend name (it must be
-   free on the App Store), primary language, bundle ID `com.tracend.app`, a SKU. Set the privacy
-   policy URL to `https://tracend.pages.dev/privacy/` and a support URL.
-4. **Fill in App Privacy (nutrition labels)** to match `site/src/pages/privacy.astro`: email
-   address; health and fitness (Apple Health types, workouts, weight, measurements); photos (meal
-   and progress); other user content (Coach messages, meals, check-ins); user ID; crash and other
-   diagnostic data (Edge Function reports can carry the user ID). Purpose: app functionality. No
-   tracking, no third-party advertising.
-5. **Upload a build.** Raise the build number in `pubspec.yaml` (it must grow on every upload) and
-   build from a merged `main` commit with the `.env` values, as `install-device.sh` does. Upload
-   either from Xcode (Product > Archive > Distribute App > App Store Connect) or from CI with an App
-   Store Connect API key (issuer ID, key ID and `.p8` kept as GitHub secrets; workflows are the
-   lead's files). Answer the export compliance question once: the app uses HTTPS and AES-256-GCM
-   for export files, then record the answer in `Info.plist` (`ITSAppUsesNonExemptEncryption`) so
-   later builds skip it. Before uploading, run `./scripts/verify-app-bundle.sh` on the archived
-   `Runner.app` (inside the `.xcarchive` under `Products/Applications/`).
-6. **Test internally first.** Add the owner as an internal tester (no review needed) and install
+3. **Review `ios/Runner/Info.plist`** (in a PR by the owner of `ios/**`):
+   - Read every purpose string (Health, camera, photo library) against what the app does.
+   - The app reads Health and never writes to it (no write calls in `lib/`), so remove
+     `NSHealthUpdateUsageDescription` unless a build starts asking for write access.
+   - Set `ITSAppUsesNonExemptEncryption` to `NO`. The app itself only uses HTTPS; the export
+     file's AES-256-GCM encryption runs on the server, not in the app. This answers export
+     compliance for every build.
+4. **Create the app record.** App Store Connect > Apps > New App: iOS, the Tracend name (it must be
+   free on the App Store), primary language, bundle ID `com.tracend.app`, a SKU. Then:
+   - privacy policy URL `https://tracend.pages.dev/privacy/` and a support URL;
+   - the age rating questionnaire, answered so the rating is 18+ (Tracend is for adults).
+5. **Fill in App Privacy (nutrition labels)** to match `site/src/pages/privacy.astro`. Mark every
+   type "Linked to you", purpose App Functionality, not used for tracking:
+   - Contact Info: Email Address.
+   - Health & Fitness: Health (Apple Health data, weight, body measurements) and Fitness
+     (workouts, sets, training load), as two separate types.
+   - User Content: Photos or Videos (meal and progress photos); Other User Content (Coach
+     messages, meals, check-ins).
+   - Identifiers: User ID.
+   - Diagnostics: Crash Data, Performance Data (Sentry traces) and Other Diagnostic Data.
+6. **Build and upload.** Build from a merged `main` commit through the wrapper with the `.env`
+   dart-defines, as `scripts/install-device.sh` does, not from a bare Xcode archive:
+   `./scripts/flutter.sh build ipa --release` with `--build-name "$(./scripts/app-version.sh name)"`,
+   `--build-number "$(./scripts/app-version.sh number)"` (the git commit count, so it grows with
+   every merge) and `--dart-define` for `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and
+   `SENTRY_DSN`. Run `./scripts/verify-app-bundle.sh` on the built `Runner.app`
+   (`build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app` under the checkout's
+   build directory), then upload the `.ipa` with Apple's Transporter app, or from CI with an App
+   Store Connect API key (issuer ID, key ID and `.p8` as GitHub secrets; workflows are the lead's
+   files).
+7. **Check the upload email.** If App Store Connect reports ITMS-91053 (missing API declaration) or
+   ITMS-91061 (missing privacy manifest), add `ios/Runner/PrivacyInfo.xcprivacy` declaring the
+   required-reason APIs named in the email, update any SDK it names, and upload again.
+8. **Test internally first.** Add the owner as an internal tester (no review needed) and install
    the TestFlight build. Check sign-in, Apple Health permission, every AI consent notice, export
    and account deletion on that build.
-7. **Open the gate in Supabase.** Turn production sign-ups back on (Dashboard > Authentication >
-   Sign In / Providers > Allow new users to sign up). The invite-only trigger still refuses any
-   email that has no row in `private.signup_invites`, so add each tester before they sign up:
-   `select * from private.invite_from_waitlist(n);` for confirmed waitlist signups, or insert the
-   email into `private.signup_invites` with a note. Check that an email with no invite is still
-   refused.
-8. **Prepare Beta App Review.** In TestFlight > Test Information add the beta description, a
-   feedback email, and a reviewer account: invite a reviewer email (step 7), sign up once, load
-   synthetic data only, and give its email and password in the sign-in fields. In the review notes
-   say that Apple Health access is optional, and that the AI disclosure follows App Review
-   Guideline 5.1.2(i): before any AI feature shares data with a third-party AI company, the app
-   shows a notice naming that company and what is sent, asks for explicit permission, and works
-   without it.
-9. **Create the external group.** TestFlight > External Testing > add a group, add the build and
-   submit it for Beta App Review. The first build of each version is reviewed; later builds of the
-   same version usually are not. Then add testers by email, using the same emails that were
-   invited in step 7. Do not use a public link while sign-ups are invite-only.
-10. **Run it.** Builds expire after 90 days; upload a new one before then. Watch Sentry and the AI
+9. **Make Supabase Auth email work for outsiders.** Supabase's built-in email only reaches the
+   project team. In Dashboard > Authentication > Emails > SMTP Settings, set custom SMTP with the
+   Gmail account the waitlist already uses (`smtp.gmail.com`, port 465, the same app password).
+   Set the Site URL and the redirect URLs the app's auth links use (Authentication > URL
+   Configuration). Then sign up with an invited address outside the team and check that the
+   email arrives and its link works.
+10. **Open the gate in Supabase.** Turn production sign-ups back on (Dashboard > Authentication >
+    Sign In / Providers > Allow new users to sign up). The invite-only trigger still refuses any
+    email that has no row in `private.signup_invites`, so add each tester before they sign up:
+    `select * from private.invite_from_waitlist(n);` for confirmed waitlist signups, or insert the
+    email into `private.signup_invites` with a note. Check that an email with no invite is still
+    refused.
+11. **Prepare Beta App Review.** In TestFlight > Test Information add the beta description, a
+    feedback email, the privacy policy URL `https://tracend.pages.dev/privacy/`, and a reviewer
+    account: invite a reviewer email (step 10), sign up once, load synthetic data only, and give
+    its email and password in the sign-in fields. In the review notes say that Apple Health
+    access is optional, and that the AI disclosure follows App Review Guideline 5.1.2(i): before
+    any AI feature shares data with a third-party AI company, the app shows a notice naming that
+    company and what is sent, asks for explicit permission, and works without it.
+12. **Create the external group.** TestFlight > External Testing > add a group, add the build and
+    submit it for Beta App Review. The first build of each version is reviewed; later builds of
+    the same version usually are not. Then add testers by email, using the same emails that were
+    invited in step 10. Do not use a public link while sign-ups are invite-only.
+13. **Run it.** Builds expire after 90 days; upload a new one before then. Watch Sentry and the AI
     budget after each new group.

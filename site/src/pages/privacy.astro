@@ -8,11 +8,11 @@ import { CONTACT_EMAIL } from '../config';
   <p class="doc-lede">The short version: we use your data to coach you and to run the beta, nothing else. No AI feature receives your data until you agree, and the app names the company it uses before you do. We never sell your data or use it for ads. You can export everything or delete your account from the app at any time.</p>
 
   <h2>Who we are</h2>
-  <p>Tracend is a personal trainer app for iPhone and Apple Watch, in a private, invite-only beta. This page covers the app, this website and the beta waitlist. For anything about your data, email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.</p>
+  <p>Tracend is a personal trainer app for iPhone, best with Apple Watch, in a private, invite-only beta. This page covers the app, this website and the beta waitlist. For anything about your data, email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.</p>
 
   <h2>What we collect in the app</h2>
   <ul>
-    <li><strong>Your account:</strong> your email address and a password. We don&rsquo;t ask for your name.</li>
+    <li><strong>Your account:</strong> your email address and a password you choose. We don&rsquo;t store the password in readable form, and we don&rsquo;t ask for your name.</li>
     <li><strong>Your profile and goal:</strong> what you tell us when you set up, such as your goal, age, sex, height, weight, training days, equipment, current lifts, limits, movements to avoid and diet notes.</li>
     <li><strong>Your training:</strong> the plans you approve, and your workouts with sets, reps, loads and effort.</li>
     <li><strong>Apple Health data you allow:</strong> steps, active energy, sleep, workouts, weight, resting heart rate, heart rate variability (HRV) and breathing rate. You choose each type in iOS, and the app works without it.</li>
@@ -20,7 +20,7 @@ import { CONTACT_EMAIL } from '../config';
     <li><strong>Progress:</strong> weight, body measurements, morning check-ins and progress photos.</li>
     <li><strong>Coach:</strong> the messages you send the Coach and its replies.</li>
     <li><strong>Your choices:</strong> each consent you give or withdraw, when, and which notice you saw.</li>
-    <li><strong>Crash reports:</strong> technical details when the app or our servers hit an error.</li>
+    <li><strong>Crash and performance reports:</strong> technical details when the app or our servers hit an error or run slowly.</li>
   </ul>
 
   <h2>What we collect on this website</h2>
@@ -44,41 +44,46 @@ import { CONTACT_EMAIL } from '../config';
   <h2>AI features, only with your consent</h2>
   <p>Some features use an AI model run by another company. Before a feature sends anything, the app shows a notice that says what it sends, which company receives it and where that company processes it, and asks you to agree. If you say no, nothing is sent.</p>
   <ul>
-    <li><strong>Coach chat and the daily coaching note</strong> send your plan and workouts, check-ins, Apple Health summaries, meals and nutrition targets, body measurements, goals and preferences, and the messages you send the Coach.</li>
+    <li><strong>Coach chat and the daily decision</strong> send your plan and workouts, check-ins, Apple Health summaries, meals and nutrition targets, body measurements, goals and preferences, and the messages you send the Coach.</li>
     <li><strong>Your starting plan</strong> sends your setup answers and, if you connected Apple Health, summaries of your recent weeks and your usual months.</li>
     <li><strong>Meal photo estimates</strong> send a resized copy of the one photo you choose to analyze, and nothing else.</li>
+    <li><strong>The physique check:</strong> if you use it, the progress photos you choose are sent, after you agree to its notice, to the company that notice names, with your sex, height, latest weight, body measurements and goal. Photo details such as location are removed first.</li>
   </ul>
-  <p>No AI feature receives your name or email address. Your progress photos are not sent to AI. The physique check, which reads progress photos, is a test on the owner&rsquo;s own account only and is not available to anyone else; if it opens later, it will have its own notice and ask you first.</p>
-  <p>What an AI returns is a suggestion or an estimate. Your plan only changes when you approve it, and a meal only counts once you confirm it. We never opt your data into an AI company&rsquo;s model training.</p>
+  <p>Progress photos go to AI only through the physique check, and only after you agree. No AI feature receives your name or email address.</p>
+  <p>What an AI returns is a suggestion or an estimate. Your plan only changes when you approve it, a meal only counts once you confirm it, and a physique suggestion only becomes your focus if you choose it.</p>
+  <p>We don&rsquo;t sell your data or share it for model training. Each AI company&rsquo;s own terms decide whether it keeps a request and for how long; the feature&rsquo;s notice tells you before you agree.</p>
 
   <h2>Who processes your data for us</h2>
   <ul>
-    <li><strong>Supabase</strong> hosts the app&rsquo;s accounts, database, photos and server code, and stores the waitlist.</li>
-    <li><strong>Anthropic, DeepSeek and Groq</strong> run the AI models behind the features above, and only for features you agreed to. Each feature&rsquo;s notice names the company it uses.</li>
-    <li><strong>Sentry</strong> receives crash and error reports. Health values, meal details, photo links and Coach prompts are removed before a report is sent.</li>
+    <li><strong>Supabase</strong> (Singapore) hosts the app&rsquo;s accounts, database, photos and server code, and stores the waitlist.</li>
+    <li><strong>Anthropic</strong> (United States), <strong>DeepSeek</strong> (China) and <strong>Groq</strong> (United States) run the AI models behind the features above, and only for features you agreed to. Each feature&rsquo;s notice names the company it uses.</li>
+    <li><strong>Sentry</strong> (United States) receives crash, error and performance reports. A report can carry your account ID and device and app details, never your name or email. Health values, meal content, photo links and prompts are stripped before it is sent.</li>
+    <li><strong>GitHub</strong> runs our deployments and stores encrypted database backups (the newest 30).</li>
     <li><strong>Cloudflare</strong> hosts this website, which means it receives standard request data such as your IP address and browser, and runs Turnstile, the bot check on the join form, which looks at your browser and IP address to tell people from bots.</li>
     <li><strong>Google</strong> sends our waitlist emails, through Gmail.</li>
   </ul>
 
   <h2>Where it is stored</h2>
-  <p>Your account and everything you log are stored by Supabase on servers in Singapore, in private storage that only your account can reach. Progress photos open through links that expire after one minute. Data an AI feature sends is processed where that company runs its service, and the feature&rsquo;s notice says where. Where your data leaves your country, these providers protect it under their data processing terms, including the EU Standard Contractual Clauses.</p>
+  <p>Your account and everything you log are stored by Supabase on servers in Singapore, in private storage other accounts can&rsquo;t reach. Progress photos open through links that expire after one minute. Data an AI feature sends is processed in the country listed above for that company, and the feature&rsquo;s notice says so too. Where your data leaves your country, we rely on each provider&rsquo;s data processing terms, including the EU Standard Contractual Clauses where a provider offers them.</p>
 
   <h2>How long we keep it</h2>
   <ul>
     <li><strong>Your account and logs:</strong> until you delete them or your account.</li>
-    <li><strong>Meal photos:</strong> deleted within 30 days after you confirm the meal. If you discard a meal, its photo is deleted at the next cleanup.</li>
-    <li><strong>Progress photos:</strong> until you delete the photo set or your account.</li>
+    <li><strong>Meal photos:</strong> deleted about 7 days after you take them, or sooner if you discard the meal. The foods you confirm stay in your log.</li>
+    <li><strong>Progress photos:</strong> until you delete the photo set or your account. Physique check results go with their photo set.</li>
     <li><strong>Coach conversations:</strong> until you delete the conversation or your account.</li>
     <li><strong>Exports:</strong> deleted after three downloads or seven days, whichever comes first.</li>
-    <li><strong>Deleted accounts:</strong> we keep only a receipt with no content, for 180 days. Encrypted backups can hold a copy for a limited time.</li>
-    <li><strong>AI companies:</strong> how long each keeps a request depends on its terms. The feature&rsquo;s notice tells you before you agree.</li>
-    <li><strong>The waitlist:</strong> while the waitlist and beta run. If you never confirm your email, we delete your signup 30 days after our last email. If you unsubscribe, we keep your signup marked unsubscribed so we never email you by mistake. Ask us and we delete it completely.</li>
+    <li><strong>Server logs:</strong> up to 30 days.</li>
+    <li><strong>Backups:</strong> we keep the newest 30 encrypted database backups. After you delete your account, your data leaves them as newer backups replace older ones.</li>
+    <li><strong>Deleted accounts:</strong> we keep a receipt with no content for 180 days. When you delete your account we keep your email on the invite list so you can be let back in; email us and we remove it.</li>
+    <li><strong>AI companies:</strong> each company&rsquo;s own terms decide whether it keeps a request and for how long. The feature&rsquo;s notice tells you before you agree.</li>
+    <li><strong>The waitlist:</strong> while the waitlist and beta run. If you never confirm your email, we delete your signup 30 days after our last email. If you unsubscribe, we keep your signup marked unsubscribed so we never email you by mistake. Deleting your app account doesn&rsquo;t remove your waitlist signup. Ask us and we delete it completely.</li>
   </ul>
 
   <h2>Your controls</h2>
   <ul>
     <li><strong>Export:</strong> download everything you have logged, photos included, from the app. The file is locked with a password only you know.</li>
-    <li><strong>Delete:</strong> delete your account from the app. Your photos and data go with it.</li>
+    <li><strong>Delete:</strong> delete your account from the app. Your profile, logs, photos, Coach conversations and exports are deleted with it. We keep only the receipt and your email on the invite list, described above.</li>
     <li><strong>Turn AI off:</strong> turn off AI coaching in Account, or meal photo analysis in Log a meal. Sending stops at once. Your plan, logging, Apple Health sync and progress keep working without AI.</li>
     <li><strong>Apple Health:</strong> change what Tracend can read in the iOS Health settings at any time.</li>
     <li><strong>Consent history:</strong> see each choice you made, and when, in Account.</li>
