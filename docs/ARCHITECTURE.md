@@ -102,8 +102,9 @@ secret/service-role key exist only in Supabase Edge Function secrets.
   non-persisted password-derived key, and stores it in private `account-exports`. Signed download
   authorization lasts 60 seconds and stops after three uses or seven days.
 - Account deletion uses a separate recent-authenticated opaque job. Private Storage bytes are
-  removed before canonical Auth deletion cascades through application data; only a content-free
-  completion receipt remains for 180 days. A request whose function stopped mid-run is claimable
+  removed before canonical Auth deletion cascades through application data; the same delete
+  removes the account's invite and waitlist rows (trigger `auth_user_forget_invite`), and only a
+  content-free completion receipt remains for 180 days. A request whose function stopped mid-run is claimable
   again after 10 minutes, and every step is safe to repeat. The app waits a bounded time and then
   reads the outcome from Auth (`user_not_found`) and the athlete's own `deletion_requests` row.
 - Session restore validates the stored session with Auth (`GET /auth/v1/user`) before any data

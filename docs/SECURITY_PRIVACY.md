@@ -252,6 +252,14 @@ AI consent is per purpose (2026-10):
   not in `private.signup_invites` (reachable only from the SQL editor), so the Auth insert rolls
   back and no account or email is created; existing accounts were seeded on 2026-10-09. Invite
   with `insert into private.signup_invites(email, note) values (lower('<email>'), 'beta');`.
+- Deleting an account removes its email from the invite list and the waitlist. The
+  `auth_user_forget_invite` trigger runs in the same transaction as the Auth delete
+  (`privacy-delete-account`'s `auth.admin.deleteUser`, or the dashboard) and deletes the invite the
+  account claimed, an unclaimed invite for its current email, and the waitlist signups for both
+  emails. If it fails, the account stays and the deletion can be retried. A signup the person
+  referred keeps its row without the link to them. Coming back takes a new waitlist signup and a
+  new invite. Accounts deleted before 2026-10-15 were cleared by the same migration
+  (`private.forget_deleted_account_invites`, which the owner can rerun from the SQL editor).
 - The website waitlist functions take no session. `waitlist-join` requires a Cloudflare Turnstile
   token (checked server-side with `TURNSTILE_SECRET_KEY`), refuses common throwaway domains, and
   the database allows 5 joins an hour per hashed IP. New and existing addresses get the same
@@ -347,6 +355,8 @@ Initial private-beta defaults:
 - refresh sessions: deleted or tombstoned after expiry/revocation according to security policy;
 - application logs: 30 days by default;
 - sanitized security audit metadata: 180 days by default;
+- invite-list and waitlist rows: until account deletion (both removed with the account), a request
+  to the owner, or for an unconfirmed waitlist signup, 30 days after its last email;
 - Free Plan database: encrypted off-site logical export at least weekly during active beta and
   before migrations; Supabase does not provide the Pro daily-backup guarantee;
 - Pro Plan database: Supabase daily backups with the plan's current seven-day availability, plus an
