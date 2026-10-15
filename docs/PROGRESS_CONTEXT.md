@@ -36,6 +36,12 @@ also deletes its `private.signup_invites` row and its email's waitlist signup (t
 delete; owner's choice), and the migration clears rows that earlier deletions left. SQL only, no
 reinstall. See [`docs/handoff/account-session.md`](./handoff/account-session.md).
 
+**Restore drill privileges (2026-10-15):** the deploy's backup restore drill now compares function
+EXECUTE, table and schema privileges for anon and authenticated, and RLS flags, in `public` and
+`private` with the state the migrations create, and stops the deploy on a difference.
+`supabase db dump` drops GRANT and REVOKE lines that name excluded schemas, so a restore could
+silently re-open a revoked function. Details: [`docs/handoff/backend.md`](./handoff/backend.md).
+
 **Security hardening (2026-10-09):** a source review of `d26cf2c` raised leads that the owner
 asked to fix in five PRs, merged in order; details stay in the owner's private report. PR 1
 (media key grammar and ownership, a key guard on every service-role Storage call, the Coach

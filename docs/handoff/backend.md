@@ -471,6 +471,24 @@ privacy were recorded.
 - **Check after the first merge:** the new `database-backup-*.tar.gz.enc` appears in the private
   repository and the public repository's artifact list has no `database-backup` entry.
 
+## Restore drill compares privileges (2026-10-15)
+
+- **Found:** `supabase db dump` comments out every GRANT and REVOKE line that names a schema it
+  excludes (`auth`, `extensions`, `vault`, ...). A function whose signature uses such a type comes
+  back from a restore with EXECUTE for PUBLIC, anon and authenticated. The drill only counted
+  public tables, so it would pass. E1 (PR #109) hit this with a domain type.
+- **Done:** `scripts/restore-privileges.sh` (tests: `scripts/test-restore-privileges.sh`, run by
+  CI and `pre-deploy.sh`). The backup job snapshots function EXECUTE, table, view, sequence and
+  schema privileges for anon and authenticated, and RLS enabled/forced flags, in `public` and
+  `private`, right after `supabase start` and again after the restore. The last backup step
+  compares them and fails the deploy on any difference. If the commit adds migrations, it resets
+  the drill database to production's applied version (read with `supabase migration list
+  --linked` in the dump step) and compares with that. The log names objects only.
+  `docs/CI_CD_DEPLOYMENT.md` § Restored privileges has the details and what to do on a failure.
+- **Check after the first merge:** the deploy's backup job ends with "Restored privileges match the
+  migrations (N entries)". A difference on that first run would be production drift or a real
+  dump loss; the job prints the object names.
+
 ## Recorded follow-ups — out of scope
 
 - Add short per-request row evidence aliases (`E1…En`) mapped server-side; never expose UUIDs to the
