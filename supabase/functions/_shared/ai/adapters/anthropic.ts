@@ -13,7 +13,9 @@ export const anthropicVersion = "2023-06-01";
 /** The API allows at most four cache_control breakpoints per request. */
 const maxCacheBreakpoints = 4;
 
-// Structured outputs return 400 for these keywords; the gateway still checks them on the answer.
+// Structured outputs return 400 for these limits; the gateway still checks them on the answer.
+// `format` is removed too (Claude accepts only some formats), as are annotations it has no use
+// for.
 const droppedSchemaKeywords = new Set([
   "minLength",
   "maxLength",
@@ -22,36 +24,72 @@ const droppedSchemaKeywords = new Set([
   "exclusiveMinimum",
   "exclusiveMaximum",
   "maxItems",
+  "format",
+  "default",
+  "examples",
+  "$schema",
 ]);
 
-// Values that are data, not subschemas.
-const passedSchemaKeywords = new Set(["enum", "const", "required", "default", "examples"]);
+const isPrimitive = (value: unknown) => value === null || typeof value !== "object";
 
 /**
- * The schema as Claude accepts it: unsupported limits removed, every object closed
- * (additionalProperties other than false is rejected) and minItems kept only at 0 or 1.
+ * The schema as Claude's structured outputs accept it, or null when Claude cannot take it.
+ * Unsupported limits are removed (minItems is kept only at 0 or 1) and every object schema is
+ * closed with additionalProperties false. Refused: an open map (`additionalProperties` true or
+ * a schema) and an enum or const with an object or array value. The input has passed
+ * isSupportedSchema.
  */
-export function anthropicSchema(schema: unknown): unknown {
-  if (Array.isArray(schema)) return schema.map(anthropicSchema);
-  const node = record(schema);
-  if (!node) return schema;
+export function anthropicSchema(schema: Record<string, unknown>): Record<string, unknown> | null {
   const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(node)) {
+  for (const [key, value] of Object.entries(schema)) {
     if (droppedSchemaKeywords.has(key)) continue;
-    if (key === "minItems" && value !== 0 && value !== 1) continue;
-    if (passedSchemaKeywords.has(key)) {
-      result[key] = value;
-    } else if (key === "properties") {
-      const properties = record(value) ?? {};
-      result[key] = Object.fromEntries(
-        Object.entries(properties).map(([name, item]) => [name, anthropicSchema(item)]),
-      );
-    } else {
-      result[key] = anthropicSchema(value);
+    switch (key) {
+      case "minItems":
+        if (value === 0 || value === 1) result[key] = value;
+        break;
+      case "enum":
+        if (!Array.isArray(value) || !value.every(isPrimitive)) return null;
+        result[key] = value;
+        break;
+      case "const":
+        if (!isPrimitive(value)) return null;
+        result[key] = value;
+        break;
+      case "additionalProperties":
+        if (value !== false) return null;
+        break;
+      case "properties": {
+        const properties: Record<string, unknown> = {};
+        for (const [name, item] of Object.entries(record(value) ?? {})) {
+          const converted = anthropicSchema(record(item) ?? {});
+          if (!converted) return null;
+          properties[name] = converted;
+        }
+        result[key] = properties;
+        break;
+      }
+      case "items": {
+        const converted = anthropicSchema(record(value) ?? {});
+        if (!converted) return null;
+        result[key] = converted;
+        break;
+      }
+      case "anyOf": {
+        const options = (Array.isArray(value) ? value : []).map((item) =>
+          anthropicSchema(record(item) ?? {})
+        );
+        if (options.some((option) => option === null)) return null;
+        result[key] = options;
+        break;
+      }
+      default:
+        result[key] = value;
     }
   }
-  const types = Array.isArray(node.type) ? node.type : [node.type];
-  if (types.includes("object")) result.additionalProperties = false;
+  const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+  if (types.includes("object") || Object.hasOwn(schema, "properties")) {
+    result.additionalProperties = false;
+  }
   return result;
 }
 
@@ -85,13 +123,18 @@ export const anthropicAdapter: Adapter<AnthropicModel> = {
     if (request.system.length > 0) body.system = request.system.map(block);
     if (route.thinking === "adaptive") {
       body.thinking = { type: "adaptive" };
-    } else if (spec.thinkingOff !== "always_on") {
+    } else if (spec.thinkingOff !== null) {
       body.thinking = { type: spec.thinkingOff };
+    } else {
+      // route() refuses thinking "off" on a model that cannot turn it off.
+      return null;
     }
     const outputConfig: Record<string, unknown> = {};
     if (route.effort) outputConfig.effort = route.effort;
     if (request.output.kind === "json") {
-      outputConfig.format = { type: "json_schema", schema: anthropicSchema(request.output.schema) };
+      const schema = anthropicSchema(request.output.schema);
+      if (!schema) return null;
+      outputConfig.format = { type: "json_schema", schema };
     }
     if (Object.keys(outputConfig).length > 0) body.output_config = outputConfig;
 
@@ -108,10 +151,11 @@ export const anthropicAdapter: Adapter<AnthropicModel> = {
 
   read(payload) {
     const message = record(payload);
-    if (!message || !Array.isArray(message.content)) return null;
-    const usage = record(message.usage);
+    const usage = record(message?.usage);
+    const content = Array.isArray(message?.content) ? message?.content as unknown[] : null;
+    if (!message || (!content && !usage)) return null;
     // Thinking blocks are skipped: the answer is the text blocks only.
-    const text = message.content
+    const text = (content ?? [])
       .map((item) => {
         const part = record(item);
         return part?.type === "text" && typeof part.text === "string" ? part.text : "";
@@ -120,7 +164,10 @@ export const anthropicAdapter: Adapter<AnthropicModel> = {
     const stop = message.stop_reason;
     return {
       text,
-      finish: stop === "end_turn" || stop === "stop_sequence"
+      // A billed answer without a content list keeps its usage as "other".
+      finish: content === null
+        ? "other"
+        : stop === "end_turn" || stop === "stop_sequence"
         ? "end"
         : stop === "max_tokens"
         ? "max_tokens"

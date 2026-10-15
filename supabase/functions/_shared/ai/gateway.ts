@@ -10,7 +10,7 @@ import type { AiCallDeps, AiFailure, AiRequest, AiResult, AiUsage } from "./type
 
 // The one way features call an AI model (Contract 1). The caller owns consent lookup and the
 // budget (AiBudget.reserve before call, settle after); the gateway refuses a request whose
-// consented provider differs from the route's before anything is sent, sends one request,
+// consented vendor differs from the route's before anything is sent, sends one request,
 // maps the answer, prices it from models.ts and logs one scrubbed `ai_call` line.
 
 type Prepared = Readonly<{
@@ -35,22 +35,36 @@ function prepare(request: AiRequest, spec: ModelSpec, apiKey: string): Prepared 
   }
 }
 
+/** Decoded size of standard base64, or null when the text is not standard base64. */
+export function base64Bytes(base64: string): number | null {
+  if (base64.length === 0 || base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+    return null;
+  }
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  return (base64.length / 4) * 3 - padding;
+}
+
 /**
  * Requests every provider can take: the conversation ends with the athlete's turn (Claude 5
- * models reject an assistant prefill), images sit in user turns of a model that reads them, and
- * a JSON schema uses only keywords the gateway can check.
+ * models reject an assistant prefill), no text part is blank, images are valid base64 within
+ * the model's size limit in user turns, and a JSON schema uses only keywords the gateway can
+ * check.
  */
 function isSendable(request: AiRequest, spec: ModelSpec): boolean {
   const { messages, system, output } = request;
   if (messages.length === 0 || messages[messages.length - 1].role !== "user") return false;
-  if (system.some((part) => part.type !== "text")) return false;
+  if (system.some((part) => part.type !== "text" || part.text.trim() === "")) return false;
   for (const message of messages) {
     if (message.content.length === 0) return false;
     for (const part of message.content) {
-      if (part.type !== "image") continue;
+      if (part.type === "text") {
+        if (part.text.trim() === "") return false;
+        continue;
+      }
+      const bytes = base64Bytes(part.base64);
       if (
-        message.role !== "user" || !spec.images || part.mediaType !== "image/jpeg" ||
-        part.base64.length === 0
+        message.role !== "user" || part.mediaType !== "image/jpeg" || bytes === null ||
+        bytes > spec.maxImageBytes
       ) return false;
     }
   }
@@ -85,6 +99,7 @@ export async function call(request: AiRequest, deps: AiCallDeps = {}): Promise<A
     logAiCall({
       feature: route.feature,
       provider: route.provider,
+      vendor: route.vendor,
       model: route.model,
       outcome: result.ok ? "ok" : result.reason,
       usage: result.usage,
@@ -95,8 +110,9 @@ export async function call(request: AiRequest, deps: AiCallDeps = {}): Promise<A
     return result;
   };
 
-  // The athlete agreed to a named provider; nothing goes anywhere else.
-  if (request.consentProvider !== route.provider) {
+  // The athlete agreed to a named vendor; nothing goes anywhere else. No notice names the
+  // eval router, so an athlete's request never reaches it.
+  if (request.consentVendor !== route.vendor) {
     return finish(failure("consent_provider_mismatch", null));
   }
   const spec = modelSpec(route.provider, route.model);

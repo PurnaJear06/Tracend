@@ -1,12 +1,23 @@
 import type { GeminiModel } from "../models.ts";
 import type { AiContent } from "../types.ts";
-import { type Adapter, record, textOf, tokenCount } from "./adapter.ts";
+import { type Adapter, record, tokenCount } from "./adapter.ts";
 
-// Gemini generateContent, the request shape of providers/gemini_*_provider.ts. JSON output uses
-// responseJsonSchema; thinking maps to thinkingConfig.thinkingLevel. Cache flags are ignored
-// (Gemini caches implicitly). No temperature is sent.
+// Gemini generateContent, with the request fields of providers/gemini_*_provider.ts: the
+// model's sampling defaults (temperature 0.1) in generationConfig, JSON output through
+// responseJsonSchema, thinking as thinkingConfig.thinkingLevel. Each system block is its own
+// part. Cache flags are ignored (Gemini caches implicitly).
 
 export const geminiApiBase = "https://generativelanguage.googleapis.com/v1beta/models";
+
+const refusedFinishReasons = new Set([
+  "SAFETY",
+  "PROHIBITED_CONTENT",
+  "BLOCKLIST",
+  "SPII",
+  "RECITATION",
+  "IMAGE_SAFETY",
+  "IMAGE_PROHIBITED_CONTENT",
+]);
 
 const part = (item: AiContent): Record<string, unknown> =>
   item.type === "text"
@@ -17,6 +28,7 @@ export const geminiAdapter: Adapter<GeminiModel> = {
   build(request, spec, apiKey) {
     const { route } = request;
     const generationConfig: Record<string, unknown> = {
+      ...spec.generationDefaults,
       maxOutputTokens: route.maxOutputTokens,
       thinkingConfig: {
         thinkingLevel: route.thinking === "adaptive"
@@ -35,9 +47,7 @@ export const geminiAdapter: Adapter<GeminiModel> = {
       })),
       generationConfig,
     };
-    if (request.system.length > 0) {
-      body.systemInstruction = { parts: [{ text: textOf(request.system) }] };
-    }
+    if (request.system.length > 0) body.systemInstruction = { parts: request.system.map(part) };
     return {
       url: `${geminiApiBase}/${encodeURIComponent(route.model)}:generateContent`,
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
@@ -47,8 +57,9 @@ export const geminiAdapter: Adapter<GeminiModel> = {
 
   read(payload) {
     const reply = record(payload);
-    if (!reply) return null;
-    const usage = record(reply.usageMetadata);
+    const usage = record(reply?.usageMetadata);
+    const candidate = Array.isArray(reply?.candidates) ? record(reply.candidates[0]) : null;
+    if (!reply || (!candidate && !usage)) return null;
     const prompt = tokenCount(usage?.promptTokenCount);
     // Cached tokens are part of promptTokenCount; thinking tokens are billed as output.
     const cached = Math.min(prompt, tokenCount(usage?.cachedContentTokenCount));
@@ -60,12 +71,11 @@ export const geminiAdapter: Adapter<GeminiModel> = {
       cacheWriteTokens: 0,
     };
     const model = typeof reply.modelVersion === "string" ? reply.modelVersion : null;
-    const candidate = Array.isArray(reply.candidates) ? record(reply.candidates[0]) : null;
     if (!candidate) {
-      // A blocked prompt comes back with promptFeedback.blockReason and no candidate.
-      return record(reply.promptFeedback)?.blockReason
-        ? { text: "", finish: "refused", tokens, model }
-        : null;
+      // A blocked prompt comes back with promptFeedback.blockReason and no candidate; any other
+      // billed answer without a candidate keeps its usage as "other".
+      const blocked = Boolean(record(reply.promptFeedback)?.blockReason);
+      return { text: "", finish: blocked ? "refused" : "other", tokens, model };
     }
     const parts = record(candidate.content)?.parts;
     const text = Array.isArray(parts)
@@ -81,8 +91,7 @@ export const geminiAdapter: Adapter<GeminiModel> = {
         ? "end"
         : finish === "MAX_TOKENS"
         ? "max_tokens"
-        : finish === "SAFETY" || finish === "PROHIBITED_CONTENT" || finish === "BLOCKLIST" ||
-            finish === "SPII" || finish === "RECITATION"
+        : typeof finish === "string" && refusedFinishReasons.has(finish)
         ? "refused"
         : "other",
       tokens,

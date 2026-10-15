@@ -5,6 +5,7 @@ import { aiCallFields, logAiCall } from "./log.ts";
 const record = {
   feature: "meal_vision" as const,
   provider: "anthropic" as const,
+  vendor: "anthropic" as const,
   model: "claude-haiku-5-5",
   outcome: "ok" as const,
   usage: {
@@ -23,6 +24,7 @@ Deno.test("ai_call fields are the fixed set, with usage spelled out", () => {
   assertEquals(aiCallFields(record), {
     feature: "meal_vision",
     provider: "anthropic",
+    vendor: "anthropic",
     model: "claude-haiku-5-5",
     outcome: "ok",
     input_tokens: 1340,

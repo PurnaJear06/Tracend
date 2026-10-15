@@ -21,7 +21,10 @@ export type ProviderAnswer = Readonly<{
 export type Adapter<Spec> = Readonly<{
   /** null when this provider cannot express the request; nothing is sent. */
   build(request: AiRequest, spec: Spec, apiKey: string): ProviderCall | null;
-  /** null when the payload is not a readable answer. */
+  /**
+   * null when the payload is not an answer at all. A billed answer whose shape is wrong is
+   * finish "other" with the usage it reported.
+   */
   read(payload: unknown): ProviderAnswer | null;
 }>;
 
@@ -33,5 +36,9 @@ export const record = (value: unknown): Record<string, unknown> | null =>
     ? value as Record<string, unknown>
     : null;
 
+/**
+ * Text parts as one string for providers that take a single string. Blank lines keep stable and
+ * volatile blocks apart.
+ */
 export const textOf = (content: readonly AiContent[]): string =>
-  content.map((part) => part.type === "text" ? part.text : "").join("");
+  content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n\n");

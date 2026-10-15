@@ -349,14 +349,7 @@ Add the TestFlight checklist to `docs/BETA_OPERATIONS.md`. Follow `site/PRODUCT.
 
 ## Contract requests
 
-- **A2, Contract 1 consent granularity (2026-10-15):** `consentProvider` is an `AiProvider`, so a
-  notice naming DeepSeek and a route to Groq both read `openai_compatible` and pass the check. A2
-  narrows the risk without changing the shape: an `openai_compatible` model is tied in
-  `_shared/ai/models.ts` to its provider's host and label (`deepseek-flash` only on
-  `api.deepseek.com` as "DeepSeek", `qwen/qwen3.8-27b` only on `api.groq.com` as "Qwen (Groq)"),
-  and `route()` refuses any other base URL. Request for version 2: compare the notice's provider
-  label with `route.providerLabel` as well (for example a `consentLabel: string | null` beside
-  `consentProvider`), so the check names the company the athlete agreed to.
+None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
 
 ## Decisions log
 

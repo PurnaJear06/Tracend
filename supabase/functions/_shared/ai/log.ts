@@ -1,5 +1,5 @@
 import { createLogger } from "../logger.ts";
-import type { AiFailure, AiFeature, AiProvider, AiUsage } from "./types.ts";
+import type { AiFailure, AiFeature, AiProvider, AiUsage, AiVendor } from "./types.ts";
 
 // One `ai_call` line per gateway call. Every field is a fixed name, a number or an enum value
 // the gateway produced; prompt text, image data, reply text and provider error bodies never
@@ -8,6 +8,7 @@ import type { AiFailure, AiFeature, AiProvider, AiUsage } from "./types.ts";
 export type AiCallRecord = Readonly<{
   feature: AiFeature;
   provider: AiProvider;
+  vendor: AiVendor;
   model: string;
   outcome: "ok" | AiFailure;
   usage: AiUsage | null;
@@ -24,6 +25,7 @@ export function aiCallFields(record: AiCallRecord): Record<string, unknown> {
   return {
     feature: record.feature,
     provider: record.provider,
+    vendor: record.vendor,
     model: modelId(record.model),
     outcome: record.outcome,
     input_tokens: record.usage?.inputTokens ?? null,

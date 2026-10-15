@@ -18,7 +18,8 @@ Deno.test("route parses every setting for a Claude route", () => {
   assertEquals(result, {
     feature: "coach_chat",
     provider: "anthropic",
-    providerLabel: "Claude (Anthropic)",
+    vendor: "anthropic",
+    providerLabel: "Anthropic",
     model: "claude-haiku-5-5",
     thinking: "adaptive",
     effort: "low",
@@ -62,13 +63,16 @@ Deno.test("route rejects unknown or malformed settings", () => {
     { EFFORT: "xhigh" },
     { EVALUATED: "yes" },
     { MAX_OUTPUT_TOKENS: "0" },
-    { MAX_OUTPUT_TOKENS: "128001" },
+    { MAX_OUTPUT_TOKENS: "32001" },
     { MAX_OUTPUT_TOKENS: "1.5" },
     { MAX_OUTPUT_TOKENS: "-5" },
     { TIMEOUT_MS: "999" },
-    { TIMEOUT_MS: "600001" },
+    { TIMEOUT_MS: "150001" },
     { TIMEOUT_MS: "20s" },
     { BASE_URL: "https://api.anthropic.com" },
+    { VENDOR: "deepseek" },
+    { VENDOR: "anthropic" },
+    { VENDOR: "router" },
   ];
   for (const values of invalid) {
     assertEquals(routeWith("coach_chat", values), null, JSON.stringify(values));
@@ -85,6 +89,7 @@ Deno.test("an OpenAI-compatible route needs its feature key and a base URL on th
   };
   const result = routeWith("daily_decision", deepseek);
   assertEquals(result?.provider, "openai_compatible");
+  assertEquals(result?.vendor, "deepseek");
   assertEquals(result?.providerLabel, "DeepSeek");
   assertEquals(result?.baseUrl, "https://api.deepseek.com/v1");
   assertEquals(result ? routeApiKey(result) : null, syntheticKey);
@@ -114,7 +119,7 @@ Deno.test("an OpenAI-compatible route needs its feature key and a base URL on th
   }
 });
 
-Deno.test("route refuses thinking or effort the model cannot take", () => {
+Deno.test("route refuses thinking or effort the request could not carry", () => {
   const deepseek = {
     PROVIDER: "openai_compatible",
     MODEL: "deepseek-flash",
@@ -125,8 +130,13 @@ Deno.test("route refuses thinking or effort the model cannot take", () => {
     routeWith("coach_chat", { ...deepseek, THINKING: "adaptive" })?.thinking,
     "adaptive",
   );
-  assertEquals(routeWith("coach_chat", { ...deepseek, EFFORT: "high" })?.effort, "high");
-  assertEquals(routeWith("coach_chat", { ...deepseek, EFFORT: "low" }), null);
+  assertEquals(
+    routeWith("coach_chat", { ...deepseek, THINKING: "adaptive", EFFORT: "high" })?.effort,
+    "high",
+  );
+  // DeepSeek only carries an effort while thinking.
+  assertEquals(routeWith("coach_chat", { ...deepseek, EFFORT: "high" }), null);
+  assertEquals(routeWith("coach_chat", { ...deepseek, THINKING: "adaptive", EFFORT: "low" }), null);
 
   const groq = {
     PROVIDER: "openai_compatible",
@@ -134,9 +144,41 @@ Deno.test("route refuses thinking or effort the model cannot take", () => {
     BASE_URL: "https://api.groq.com/openai/v1",
     OPENAI_COMPATIBLE_API_KEY_MEAL_VISION: syntheticKey,
   };
-  assertEquals(routeWith("meal_vision", groq)?.providerLabel, "Qwen (Groq)");
+  assertEquals(routeWith("meal_vision", groq)?.providerLabel, "Groq");
+  assertEquals(routeWith("meal_vision", groq)?.vendor, "groq");
   assertEquals(routeWith("meal_vision", { ...groq, THINKING: "adaptive" }), null);
   assertEquals(routeWith("meal_vision", { ...groq, EFFORT: "low" }), null);
+
+  // Opus 5.5 cannot turn thinking off, so "off" (also the default) is refused.
+  assertEquals(routeWith("coach_chat", { MODEL: "claude-opus-5-5" }), null);
+  assertEquals(routeWith("coach_chat", { MODEL: "claude-opus-5-5", THINKING: "off" }), null);
+  assertEquals(
+    routeWith("coach_chat", { MODEL: "claude-opus-5-5", THINKING: "adaptive" })?.thinking,
+    "adaptive",
+  );
+  // Claude always carries the effort, thinking or not.
+  assertEquals(routeWith("coach_chat", { EFFORT: "low" })?.effort, "low");
+});
+
+Deno.test("an eval router route takes any https host and is vendor router", () => {
+  const router = {
+    PROVIDER: "openai_compatible",
+    MODEL: "deepseek-v4-flash",
+    VENDOR: "router",
+    BASE_URL: "https://router.example.com:8443/v1/",
+    OPENAI_COMPATIBLE_API_KEY_COACH_CHAT: syntheticKey,
+  };
+  const result = routeWith("coach_chat", router);
+  assertEquals(result?.vendor, "router");
+  assertEquals(result?.providerLabel, "Evaluation router");
+  assertEquals(result?.baseUrl, "https://router.example.com:8443/v1");
+  for (const baseUrl of ["http://router.example.com/v1", "https://u:p@router.example.com/v1"]) {
+    assertEquals(routeWith("coach_chat", { ...router, BASE_URL: baseUrl }), null, baseUrl);
+  }
+  // Only an OpenAI-compatible model can go through a router.
+  assertEquals(routeWith("coach_chat", { VENDOR: "router" }), null);
+  // Without VENDOR=router the same settings are pinned to DeepSeek's host.
+  assertEquals(routeWith("coach_chat", { ...router, VENDOR: "" }), null);
 });
 
 Deno.test("a Gemini route needs the paid data-terms flag and its key", () => {
@@ -146,7 +188,14 @@ Deno.test("a Gemini route needs the paid data-terms flag and its key", () => {
     GEMINI_API_KEY: syntheticKey,
     GEMINI_PAID_DATA_TERMS_ACCEPTED: "true",
   };
-  assertEquals(routeWith("coach_chat", gemini)?.providerLabel, "Gemini (Google)");
+  assertEquals(routeWith("coach_chat", gemini)?.providerLabel, "Google");
+  assertEquals(routeWith("coach_chat", gemini)?.vendor, "gemini");
+  // Gemini only carries an effort while thinking.
+  assertEquals(routeWith("coach_chat", { ...gemini, EFFORT: "high" }), null);
+  assertEquals(
+    routeWith("coach_chat", { ...gemini, THINKING: "adaptive", EFFORT: "high" })?.effort,
+    "high",
+  );
   assertEquals(
     routeWith("coach_chat", { ...gemini, GEMINI_PAID_DATA_TERMS_ACCEPTED: "false" }),
     null,

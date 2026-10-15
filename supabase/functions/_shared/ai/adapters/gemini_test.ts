@@ -38,7 +38,7 @@ const request = (route: AiRequest["route"], output: AiRequest["output"]): AiRequ
     },
   ],
   output,
-  consentProvider: "gemini",
+  consentVendor: "gemini",
 });
 
 Deno.test("Gemini: generateContent, key header, system instruction, roles and inline images", () => {
@@ -64,16 +64,18 @@ Deno.test("Gemini: generateContent, key header, system instruction, roles and in
       },
     ],
     generationConfig: {
+      temperature: 0.1,
       maxOutputTokens: 2000,
       thinkingConfig: { thinkingLevel: "low" },
       responseMimeType: "application/json",
       responseJsonSchema: schema,
     },
-    systemInstruction: { parts: [{ text: "Rules. Be brief." }] },
+    // Each system block is its own part, so blocks never run together.
+    systemInstruction: { parts: [{ text: "Rules. " }, { text: "Be brief." }] },
   });
 });
 
-Deno.test("Gemini thinking: off is low, adaptive follows effort (medium by default)", () => {
+Deno.test("Gemini thinking: off is low, adaptive follows effort (medium by default); temperature 0.1", () => {
   const level = (values: Record<string, string>) =>
     (build(request(gemini(values), { kind: "text" })).body.generationConfig as Record<
       string,
@@ -86,7 +88,7 @@ Deno.test("Gemini thinking: off is low, adaptive follows effort (medium by defau
     string,
     unknown
   >;
-  assertEquals("temperature" in config, false);
+  assertEquals(config.temperature, 0.1);
   assertEquals("responseMimeType" in config, false);
 });
 
@@ -113,11 +115,33 @@ Deno.test("an answer skips thought parts, bills thoughts as output and separates
   const finish = (reason: string) =>
     geminiAdapter.read({ candidates: [{ content: { parts: [] }, finishReason: reason }] })?.finish;
   assertEquals(finish("MAX_TOKENS"), "max_tokens");
-  assertEquals(finish("SAFETY"), "refused");
+  for (
+    const reason of [
+      "SAFETY",
+      "PROHIBITED_CONTENT",
+      "BLOCKLIST",
+      "SPII",
+      "RECITATION",
+      "IMAGE_SAFETY",
+      "IMAGE_PROHIBITED_CONTENT",
+    ]
+  ) {
+    assertEquals(finish(reason), "refused", reason);
+  }
   assertEquals(finish("MALFORMED_FUNCTION_CALL"), "other");
   assertEquals(
     geminiAdapter.read({ promptFeedback: { blockReason: "SAFETY" }, usageMetadata: {} })?.finish,
     "refused",
   );
   assertEquals(geminiAdapter.read({}), null);
+  // A billed answer without a candidate keeps its usage.
+  assertEquals(
+    geminiAdapter.read({ usageMetadata: { promptTokenCount: 30, candidatesTokenCount: 2 } }),
+    {
+      text: "",
+      finish: "other",
+      tokens: { inputTokens: 30, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      model: null,
+    },
+  );
 });

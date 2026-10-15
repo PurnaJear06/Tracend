@@ -1,5 +1,5 @@
 import { assertAlmostEquals, assertEquals } from "jsr:@std/assert@1";
-import { costUsd, models, modelSpec } from "./models.ts";
+import { costUsd, models, modelSpec, vendorLabels } from "./models.ts";
 
 const tokens = (input: number, output: number, cacheRead = 0, cacheWrite = 0) => ({
   inputTokens: input,
@@ -72,22 +72,44 @@ Deno.test("every model has finite, positive prices and only known efforts", () =
   }
 });
 
-Deno.test("thinking 'off' maps to each Claude model's lowest supported mode", () => {
+Deno.test("thinking 'off' maps to each Claude model's lowest mode; Opus 5.5 has none", () => {
   const off = (model: string) => {
     const spec = modelSpec("anthropic", model);
-    return spec?.provider === "anthropic" ? spec.thinkingOff : null;
+    return spec?.provider === "anthropic" ? spec.thinkingOff : undefined;
   };
   assertEquals(off("claude-haiku-5-5"), "disabled");
   assertEquals(off("claude-sonnet-5-5"), "between_tools");
-  assertEquals(off("claude-opus-5-5"), "always_on");
+  assertEquals(off("claude-opus-5-5"), null);
 });
 
 Deno.test("modelSpec matches provider and model, and nothing inherited", () => {
-  assertEquals(modelSpec("anthropic", "claude-haiku-5-5")?.label, "Claude (Anthropic)");
+  assertEquals(modelSpec("anthropic", "claude-haiku-5-5")?.vendor, "anthropic");
   assertEquals(modelSpec("openai_compatible", "claude-haiku-5-5"), null);
   assertEquals(modelSpec("anthropic", "deepseek-flash"), null);
   assertEquals(modelSpec("anthropic", "claude-haiku-4-5"), null);
   assertEquals(modelSpec("anthropic", "toString"), null);
-  assertEquals(modelSpec("openai_compatible", "deepseek-flash")?.label, "DeepSeek");
-  assertEquals(modelSpec("gemini", "gemini-3.5-flash")?.label, "Gemini (Google)");
+  assertEquals(modelSpec("openai_compatible", "deepseek-flash")?.vendor, "deepseek");
+  assertEquals(modelSpec("openai_compatible", "qwen/qwen3.8-27b")?.vendor, "groq");
+  assertEquals(modelSpec("gemini", "gemini-3.5-flash")?.vendor, "gemini");
+});
+
+Deno.test("notice labels name companies only, never a model (D11)", () => {
+  assertEquals(vendorLabels, {
+    anthropic: "Anthropic",
+    deepseek: "DeepSeek",
+    groq: "Groq",
+    gemini: "Google",
+    router: "Evaluation router",
+  });
+  const modelWords = /claude|haiku|sonnet|opus|qwen|flash|gemini|llama|gpt/i;
+  for (const label of Object.values(vendorLabels)) {
+    assertEquals(modelWords.test(label), false, label);
+  }
+});
+
+Deno.test("image limits: Claude keeps to 5 MB of base64, Groq and Gemini to today's 4 MiB", () => {
+  assertEquals(models["claude-sonnet-5-5"].maxImageBytes, 3_750_000);
+  assertEquals(models["qwen/qwen3.8-27b"].maxImageBytes, 4_194_304);
+  assertEquals(models["gemini-3.5-flash"].maxImageBytes, 4_194_304);
+  assertEquals(models["deepseek-flash"].maxImageBytes, 0);
 });

@@ -1,4 +1,4 @@
-import { modelSpec } from "./models.ts";
+import { type ModelSpec, modelSpec, vendorHosts, vendorLabels } from "./models.ts";
 import {
   type AiEffort,
   type AiFeature,
@@ -7,30 +7,38 @@ import {
   aiProviders,
   type AiRoute,
   type AiThinking,
+  type AiVendor,
 } from "./types.ts";
 
 // Per-feature AI settings, all server-side secrets:
 //
 //   AI_<FEATURE>_PROVIDER           required: anthropic | openai_compatible | gemini
 //   AI_<FEATURE>_MODEL              required: a model in models.ts for that provider
-//   AI_<FEATURE>_MAX_OUTPUT_TOKENS  required: 1–128000
-//   AI_<FEATURE>_TIMEOUT_MS         required: 1000–600000
-//   AI_<FEATURE>_BASE_URL           openai_compatible only, and required there: https API base,
-//                                   e.g. https://api.deepseek.com/v1 (host must match models.ts)
+//   AI_<FEATURE>_MAX_OUTPUT_TOKENS  required: 1–32000
+//   AI_<FEATURE>_TIMEOUT_MS         required: 1000–150000 (inside the Edge Function wall clock)
+//   AI_<FEATURE>_BASE_URL           openai_compatible only, and required there: the https API
+//                                   base on the vendor's host, e.g. https://api.deepseek.com/v1
 //   AI_<FEATURE>_THINKING           off (default) | adaptive
 //   AI_<FEATURE>_EFFORT             low | medium | high (unset = the model's default)
 //   AI_<FEATURE>_EVALUATED          true once the feature's eval passed | false (default)
+//   AI_<FEATURE>_VENDOR             unset (the model's vendor) | router
 //
-// Keys (required): ANTHROPIC_API_KEY, OPENAI_COMPATIBLE_API_KEY_<FEATURE>, GEMINI_API_KEY. Gemini also needs
-// GEMINI_PAID_DATA_TERMS_ACCEPTED=true (AI_SAFETY_SPEC §10). <FEATURE> is the feature in upper
-// case, e.g. AI_COACH_CHAT_MODEL.
+// Keys (required): ANTHROPIC_API_KEY, OPENAI_COMPATIBLE_API_KEY_<FEATURE>, GEMINI_API_KEY.
+// Gemini also needs GEMINI_PAID_DATA_TERMS_ACCEPTED=true (AI_SAFETY_SPEC §10). <FEATURE> is the
+// feature in upper case, e.g. AI_COACH_CHAT_MODEL.
 //
-// Any missing or invalid setting returns null: the feature takes its existing rules path.
+// VENDOR=router sends an OpenAI-compatible model's request to any https BASE_URL, for synthetic
+// evals through a router. The route's vendor is then "router", which no athlete notice names,
+// so call() never sends an athlete's data through it.
+//
+// Any missing or invalid setting returns null: the feature takes its existing rules path. So
+// does a setting that would be accepted and then ignored (an effort the request cannot carry,
+// thinking "off" on a model that cannot turn it off).
 
 export type Env = (name: string) => string | undefined;
 
-const maxOutputTokensLimit = 128_000;
-const timeoutLimitMs = 600_000;
+const maxOutputTokensLimit = 32_000;
+const timeoutLimitMs = 150_000;
 const thinkingSettings: readonly AiThinking[] = ["off", "adaptive"];
 const effortSettings: readonly AiEffort[] = ["low", "medium", "high"];
 
@@ -66,18 +74,30 @@ function providerKey(provider: AiProvider, feature: AiFeature, env: Env): string
   }
 }
 
-function parseBaseUrl(raw: string, hosts: readonly string[]): string | null {
+/** The API base, or null when it is not https on an allowed host (any host when hosts is null). */
+function parseBaseUrl(raw: string, hosts: readonly string[] | null): string | null {
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
     return null;
   }
-  if (
-    url.protocol !== "https:" || !hosts.includes(url.hostname) || url.username || url.password ||
-    url.search || url.hash || url.port
-  ) return null;
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+    return null;
+  }
+  if (hosts !== null && (!hosts.includes(url.hostname) || url.port)) return null;
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+}
+
+function thinkingAllowed(spec: ModelSpec, thinking: AiThinking): boolean {
+  switch (spec.provider) {
+    case "anthropic":
+      return thinking === "adaptive" || spec.thinkingOff !== null;
+    case "openai_compatible":
+      return spec.thinking[thinking] !== null;
+    case "gemini":
+      return true;
+  }
 }
 
 export function route(feature: AiFeature, env: Env = defaultEnv): AiRoute | null {
@@ -91,16 +111,20 @@ export function route(feature: AiFeature, env: Env = defaultEnv): AiRoute | null
   const spec = modelSpec(provider as AiProvider, model);
   if (!spec) return null;
 
+  const vendorSetting = setting("VENDOR");
+  if (vendorSetting !== undefined && vendorSetting !== "router") return null;
+  if (vendorSetting === "router" && spec.provider !== "openai_compatible") return null;
+  const vendor: AiVendor = vendorSetting === "router" ? "router" : spec.vendor;
+
   const thinking = setting("THINKING") ?? "off";
   if (!(thinkingSettings as readonly string[]).includes(thinking)) return null;
-  if (spec.provider === "openai_compatible" && spec.thinking[thinking as AiThinking] === null) {
-    return null;
-  }
+  if (!thinkingAllowed(spec, thinking as AiThinking)) return null;
 
   const effort = setting("EFFORT");
   if (effort !== undefined) {
     if (!(effortSettings as readonly string[]).includes(effort)) return null;
     if (!spec.efforts.includes(effort as AiEffort)) return null;
+    if (spec.effortNeedsThinking && thinking !== "adaptive") return null;
   }
 
   const maxOutputTokens = integerSetting(setting("MAX_OUTPUT_TOKENS"), 1, maxOutputTokensLimit);
@@ -114,7 +138,8 @@ export function route(feature: AiFeature, env: Env = defaultEnv): AiRoute | null
   let baseUrl: string | undefined;
   if (spec.provider === "openai_compatible") {
     if (!rawBaseUrl) return null;
-    const parsed = parseBaseUrl(rawBaseUrl, spec.hosts);
+    const hosts = vendor === "router" ? null : vendorHosts[spec.vendor] ?? [];
+    const parsed = parseBaseUrl(rawBaseUrl, hosts);
     if (!parsed) return null;
     baseUrl = parsed;
   } else if (rawBaseUrl !== undefined) {
@@ -127,7 +152,8 @@ export function route(feature: AiFeature, env: Env = defaultEnv): AiRoute | null
   const result: AiRoute = Object.freeze({
     feature,
     provider: spec.provider,
-    providerLabel: spec.label,
+    vendor,
+    providerLabel: vendorLabels[vendor],
     model,
     ...(baseUrl === undefined ? {} : { baseUrl }),
     thinking: thinking as AiThinking,

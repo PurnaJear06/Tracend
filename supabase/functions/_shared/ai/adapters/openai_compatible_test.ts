@@ -2,7 +2,7 @@ import { assertEquals } from "jsr:@std/assert@1";
 import { routeFor, syntheticKey } from "../fakes.ts";
 import { modelSpec, type OpenAiCompatibleModel } from "../models.ts";
 import type { AiRequest } from "../types.ts";
-import { openAiCompatibleAdapter } from "./openai_compatible.ts";
+import { jsonSchemaInstruction, openAiCompatibleAdapter } from "./openai_compatible.ts";
 
 const deepseek = (values: Record<string, string> = {}) =>
   routeFor("daily_decision", {
@@ -30,18 +30,19 @@ const build = (req: AiRequest) => {
 
 const textRequest = (route: AiRequest["route"], output: AiRequest["output"]): AiRequest => ({
   route,
-  system: [{ type: "text", text: "Rules. ", cache: true }, { type: "text", text: "Return JSON." }],
+  system: [{ type: "text", text: "Rules.", cache: true }, { type: "text", text: "Athlete file." }],
   messages: [
     { role: "user", content: [{ type: "text", text: "Earlier question" }] },
     { role: "assistant", content: [{ type: "text", text: "Earlier answer" }] },
     { role: "user", content: [{ type: "text", text: "Today?" }] },
   ],
   output,
-  consentProvider: "openai_compatible",
+  consentVendor: "deepseek",
 });
 
 Deno.test("DeepSeek: chat completions, bearer key, JSON mode, thinking disabled for off", () => {
-  const call = build(textRequest(deepseek(), { kind: "json", schema: { type: "object" } }));
+  const schema = { type: "object", properties: { action: { type: "string" } } };
+  const call = build(textRequest(deepseek(), { kind: "json", schema }));
   assertEquals(call.url, "https://api.deepseek.com/v1/chat/completions");
   assertEquals(call.headers, {
     "Content-Type": "application/json",
@@ -51,8 +52,13 @@ Deno.test("DeepSeek: chat completions, bearer key, JSON mode, thinking disabled 
     model: "deepseek-flash",
     max_tokens: 2000,
     thinking: { type: "disabled" },
+    temperature: 0.1,
     messages: [
-      { role: "system", content: "Rules. Return JSON." },
+      {
+        role: "system",
+        content:
+          'Rules.\n\nAthlete file.\n\nReturn only valid JSON matching this schema: {"type":"object","properties":{"action":{"type":"string"}}}',
+      },
       { role: "user", content: "Earlier question" },
       { role: "assistant", content: "Earlier answer" },
       { role: "user", content: "Today?" },
@@ -62,11 +68,31 @@ Deno.test("DeepSeek: chat completions, bearer key, JSON mode, thinking disabled 
 });
 
 Deno.test("DeepSeek adaptive thinking sends the request the live Coach uses", () => {
-  const body = build(textRequest(deepseek({ THINKING: "adaptive" }), { kind: "text" })).body;
-  assertEquals(body.thinking, { type: "enabled" });
-  assertEquals(body.reasoning_effort, "high");
-  assertEquals("response_format" in body, false);
-  assertEquals("temperature" in body, false);
+  for (
+    const values of [{ THINKING: "adaptive" }, { THINKING: "adaptive", EFFORT: "high" }] as Record<
+      string,
+      string
+    >[]
+  ) {
+    const body = build(textRequest(deepseek(values), { kind: "text" })).body;
+    assertEquals(body.thinking, { type: "enabled" });
+    assertEquals(body.reasoning_effort, "high");
+    assertEquals("response_format" in body, false);
+    assertEquals("temperature" in body, false);
+    // Text output adds no schema line.
+    assertEquals((body.messages as { content: string }[])[0].content, "Rules.\n\nAthlete file.");
+  }
+});
+
+Deno.test("text parts of one turn are joined with a blank line", () => {
+  const body = build({
+    ...textRequest(deepseek(), { kind: "text" }),
+    messages: [{
+      role: "user",
+      content: [{ type: "text", text: "Stable part." }, { type: "text", text: "Question?" }],
+    }],
+  }).body;
+  assertEquals((body.messages as { content: string }[])[1].content, "Stable part.\n\nQuestion?");
 });
 
 Deno.test("Groq: max_completion_tokens, images as data URLs, no reasoning options", () => {
@@ -81,12 +107,13 @@ Deno.test("Groq: max_completion_tokens, images as data URLs, no reasoning option
       ],
     }],
     output: { kind: "json", schema: { type: "object" } },
-    consentProvider: "openai_compatible",
+    consentVendor: "groq",
   }).body;
   assertEquals(body, {
     model: "qwen/qwen3.8-27b",
     max_completion_tokens: 2000,
-    messages: [{
+    temperature: 0.1,
+    messages: [{ role: "system", content: jsonSchemaInstruction({ type: "object" }) }, {
       role: "user",
       content: [
         { type: "text", text: "Identify the meal." },
@@ -129,4 +156,17 @@ Deno.test("an answer maps content, finish reason and usage, cache hits apart", (
   assertEquals(openAiCompatibleAdapter.read(reply("content_filter", {}))?.finish, "refused");
   assertEquals(openAiCompatibleAdapter.read(reply("tool_calls", {}))?.finish, "other");
   assertEquals(openAiCompatibleAdapter.read({ choices: [] }), null);
+  // A billed answer without a message keeps its usage.
+  assertEquals(
+    openAiCompatibleAdapter.read({
+      choices: [],
+      usage: { prompt_tokens: 9, completion_tokens: 4 },
+    }),
+    {
+      text: "",
+      finish: "other",
+      tokens: { inputTokens: 9, outputTokens: 4, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      model: null,
+    },
+  );
 });

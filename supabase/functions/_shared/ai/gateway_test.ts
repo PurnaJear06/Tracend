@@ -8,7 +8,7 @@ import {
   type Sent,
   syntheticKey,
 } from "./fakes.ts";
-import { call } from "./gateway.ts";
+import { base64Bytes, call } from "./gateway.ts";
 import type { AiRequest, AiResult } from "./types.ts";
 
 const secretPrompt = "PROMPT-MARKER athlete slept 4h";
@@ -28,7 +28,7 @@ function request(extra: Partial<AiRequest> = {}, values: Record<string, string> 
     system: [{ type: "text", text: "Tracend rules.", cache: true }],
     messages: [{ role: "user", content: [{ type: "text", text: secretPrompt }] }],
     output: { kind: "text" },
-    consentProvider: "anthropic",
+    consentVendor: "anthropic",
     ...extra,
   };
 }
@@ -191,13 +191,44 @@ Deno.test("a network failure is network; an unreadable 200 is provider_error", a
   assertEquals(unreadable, { ok: false, reason: "provider_error", usage: null });
 });
 
-Deno.test("a consent for another provider, or none, sends nothing", async () => {
-  for (const consentProvider of [null, "openai_compatible", "gemini"] as const) {
+Deno.test("a consent for another vendor, or none, sends nothing", async () => {
+  for (const consentVendor of [null, "deepseek", "groq", "gemini", "router"] as const) {
     const fake = claude();
-    const result = await quiet(() => call(request({ consentProvider }), { fetch: fake.fetch }));
+    const result = await quiet(() => call(request({ consentVendor }), { fetch: fake.fetch }));
     assertEquals(result, { ok: false, reason: "consent_provider_mismatch", usage: null });
-    assertEquals(fake.sent.length, 0, String(consentProvider));
+    assertEquals(fake.sent.length, 0, String(consentVendor));
   }
+});
+
+Deno.test("an eval router route never takes an athlete's request", async () => {
+  const router = routeFor("coach_chat", {
+    PROVIDER: "openai_compatible",
+    MODEL: "deepseek-v4-flash",
+    VENDOR: "router",
+    BASE_URL: "https://router.example.com/v1",
+    OPENAI_COMPATIBLE_API_KEY_COACH_CHAT: syntheticKey,
+  });
+  // No notice names the router, so every vendor an athlete can consent to is refused.
+  for (const consentVendor of [null, "anthropic", "deepseek", "groq", "gemini"] as const) {
+    const fake = claude();
+    const result = await quiet(() =>
+      call(request({ route: router, consentVendor }), { fetch: fake.fetch })
+    );
+    assertEquals(result, { ok: false, reason: "consent_provider_mismatch", usage: null });
+    assertEquals(fake.sent.length, 0, String(consentVendor));
+  }
+  // A synthetic eval names the router itself and reaches the router's host.
+  const fake = fakeFetch(() =>
+    jsonResponse({
+      choices: [{ message: { content: "Synthetic answer." }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+    })
+  );
+  const result = await quiet(() =>
+    call(request({ route: router, consentVendor: "router" }), { fetch: fake.fetch })
+  );
+  assertEquals(result.ok, true);
+  assertEquals(fake.sent[0].url, "https://router.example.com/v1/chat/completions");
 });
 
 Deno.test("requests no provider can take are refused before sending", async () => {
@@ -222,12 +253,28 @@ Deno.test("requests no provider can take are refused before sending", async () =
     { messages: [{ role: "user", content: [] }] },
     { system: [image] },
     { messages: [{ role: "assistant", content: [image] }, { role: "user", content: [image] }] },
+    // DeepSeek reads no images.
     {
       route: deepseek,
-      consentProvider: "openai_compatible",
+      consentVendor: "deepseek",
       messages: [{ role: "user", content: [image] }],
     },
     { output: { kind: "json", schema: { $ref: "#/x" } } },
+    // Claude cannot take an open map schema.
+    { output: { kind: "json", schema: { type: "object", additionalProperties: true } } },
+    // Blank text parts.
+    { system: [{ type: "text", text: "  " }] },
+    { messages: [{ role: "user", content: [{ type: "text", text: "" }] }] },
+    {
+      messages: [{
+        role: "user",
+        content: [{ type: "text", text: "Meal?" }, { type: "text", text: "\n" }],
+      }],
+    },
+    // Not base64, or larger than Claude's 5 MB of base64.
+    { messages: [{ role: "user", content: [{ ...image, base64: "not base64!" }] }] },
+    { messages: [{ role: "user", content: [{ ...image, base64: "abc" }] }] },
+    { messages: [{ role: "user", content: [{ ...image, base64: "A".repeat(5_000_004) }] }] },
   ];
   for (const extra of refused) {
     const fake = claude();
@@ -263,7 +310,7 @@ Deno.test("DeepSeek through the gateway prices cache hits at the cache rate", as
       system: [{ type: "text", text: "Return JSON." }],
       messages: [{ role: "user", content: [{ type: "text", text: secretPrompt }] }],
       output: { kind: "json", schema: decisionSchema },
-      consentProvider: "openai_compatible",
+      consentVendor: "deepseek",
     }, { fetch: fake.fetch })
   );
   assertEquals(fake.sent[0].url, "https://api.deepseek.com/v1/chat/completions");
@@ -299,7 +346,7 @@ Deno.test("Gemini through the gateway", async () => {
         }],
       }],
       output: { kind: "text" },
-      consentProvider: "gemini",
+      consentVendor: "gemini",
     }, { fetch: fake.fetch })
   );
   assertEquals(fake.sent[0].headers["x-goog-api-key"], syntheticKey);
@@ -308,6 +355,49 @@ Deno.test("Gemini through the gateway", async () => {
   assertEquals(result.model, "gemini-3.5-flash");
   // 1,300 × 1.50 + 150 × 9 = 3,300 µUSD.
   assertAlmostEquals(result.usage.costUsd, 0.0033, 1e-12);
+});
+
+Deno.test("an image at Claude's 5 MB base64 limit is sent", async () => {
+  const fake = claude();
+  const result = await quiet(() =>
+    call(
+      request({
+        messages: [{
+          role: "user",
+          content: [
+            { type: "image", mediaType: "image/jpeg", base64: "A".repeat(5_000_000) },
+            { type: "text", text: "Meal?" },
+          ],
+        }],
+      }),
+      { fetch: fake.fetch },
+    )
+  );
+  assertEquals(result.ok, true);
+  assertEquals(fake.sent.length, 1);
+});
+
+Deno.test("base64Bytes decodes standard base64 sizes only", () => {
+  assertEquals(base64Bytes("c3ludGhldGlj"), 9);
+  assertEquals(base64Bytes("YQ=="), 1);
+  assertEquals(base64Bytes("YWI="), 2);
+  assertEquals(base64Bytes(""), null);
+  assertEquals(base64Bytes("YQ"), null);
+  assertEquals(base64Bytes("YQ-_"), null);
+});
+
+Deno.test("a billed 200 with a broken shape is provider_error with its usage", async () => {
+  const result = await quiet(() =>
+    call(request(), {
+      fetch: fakeFetch(() =>
+        jsonResponse({ usage: { input_tokens: 400, output_tokens: 20 }, content: null })
+      ).fetch,
+    })
+  );
+  assertEquals(!result.ok && result.reason, "provider_error");
+  assertEquals(!result.ok && result.usage?.inputTokens, 400);
+  // Sonnet 5.5: 400 × 2 + 20 × 10 = 1,000 µUSD.
+  assertAlmostEquals(!result.ok && result.usage ? result.usage.costUsd : 0, 0.001, 1e-12);
 });
 
 Deno.test("every call logs one ai_call line without prompt, image, reply or key", async () => {
@@ -328,6 +418,7 @@ Deno.test("every call logs one ai_call line without prompt, image, reply or key"
   assertEquals(line.msg, "ai_call");
   assertEquals(line.feature, "coach_chat");
   assertEquals(line.provider, "anthropic");
+  assertEquals(line.vendor, "anthropic");
   assertEquals(line.model, "claude-sonnet-5-5");
   assertEquals(line.outcome, "ok");
   assertEquals(line.input_tokens, 1000);
@@ -350,7 +441,7 @@ Deno.test("every call logs one ai_call line without prompt, image, reply or key"
         fetch: fakeFetch(() => jsonResponse({ error: { message: secretPrompt } }, 400)).fetch,
       })
     ),
-    await captureLogs(() => call(request({ consentProvider: null }), { fetch: claude().fetch })),
+    await captureLogs(() => call(request({ consentVendor: null }), { fetch: claude().fetch })),
   ];
   assertEquals(failures.map((run) => JSON.parse(run.lines[0]).outcome), [
     "invalid_output",
