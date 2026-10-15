@@ -118,6 +118,15 @@ never edited. `ai_notice_current` names the current notice for each purpose, one
 `ai_coaching` consent counts for a purpose only when its `notice_version` is that purpose's current
 version.
 
+Since 2026-10-15 a notice may also carry `provider`: the vendor that receives the data
+(`anthropic`, `deepseek`, `groq` or `gemini`), which the gateway compares with its route's vendor.
+It is never an API shape such as an OpenAI-compatible endpoint, since one shape reaches several
+vendors. It is null on notices published before; the five-argument `private.publish_ai_notice(version, provider,
+provider_label, purposes, body)` sets it and refuses (22023) a `provider_label` that does not name
+the provider's company (Anthropic, DeepSeek, Groq, Google; case ignored) or names another one.
+`get_ai_consent_v2` (service role) returns the grant, provider and version of the notice current
+for a purpose or gateway feature.
+
 ### `user_profiles`
 
 One row per user containing adult-attestation timestamp, height, experience level, training
@@ -448,7 +457,12 @@ analyses first; both are in the privacy export.
 The progress-photo AI notice the athlete grants before a physique check: version, provider label,
 model, body. The newest is current; published by migration or `private.publish_photo_ai_notice`,
 never edited. A grant is a `consent_records` row of type `progress_photo_ai` naming the version
-(`has_photo_ai_consent`, `get_my_photo_ai_notice`).
+(`has_photo_ai_consent`, `get_my_photo_ai_notice`). Since 2026-10-15 a notice may carry `provider`
+(same values as `ai_consent_notices.provider`; null on earlier notices), set by the five-argument
+`private.publish_photo_ai_notice(version, provider, provider_label, model, body)`. The meal photo
+notice table (`meal_photo_ai_notices`, consent type `meal_photo_ai`) works the same way and has always
+named its provider; it now also accepts `deepseek` and `anthropic`. All three publishers that name a
+provider apply the same label check as `private.publish_ai_notice`.
 
 ### `progress_reviews`
 
@@ -525,7 +539,15 @@ codes, permitted/prohibited actions, escalation code, and time.
 
 Operational record containing user, purpose, provider, model, prompt/schema versions, feature and
 policy references, provider request ID, status, usage, latency, cost estimate, validation result,
-retry lineage, and sanitized error. It never stores provider secrets.
+retry lineage, and sanitized error. It never stores provider secrets. `provider` is one of `mock`,
+`gemini`, `groq`, `deepseek` or `anthropic` (since 2026-10-15), the vendor that received the data;
+`ai_usage_events.provider` takes the same names except `mock`. Model ids are pinned for the old
+vision vendors; usage through `anthropic` carries any well-formed model id
+(letters, digits and `. _ : / -`, at most 100).
+
+`ai_budget_reservations` holds a call's place in the AI budget until its usage is recorded
+(COST_MODEL). `reserve_ai_budget` holds the purpose's fixed ceiling; `reserve_ai_budget_v2` holds
+the caller's route ceiling (USD 0.001 to 0.50).
 
 Account usage summaries are computed from user-scoped `model_runs` through a restricted aggregate
 query or RPC; they are not a second source of truth and must omit prompts, provider request
