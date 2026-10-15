@@ -294,7 +294,7 @@ Golden tests for full gym, dumbbells only, and bodyweight only. Edge Functions o
 
 **A1: provider-neutral database.** One migration (code 11).
 - Every SQL provider whitelist (persist RPCs and check constraints that name `deepseek`, `groq`,
-  `gemini`) accepts `anthropic` and `openai_compatible` in addition to today's values.
+  `gemini`) accepts the vendor id `anthropic` in addition to today's values (Contract 1 v2).
 - `ai_consent_notices` gains `provider` (nullable for old rows); `photo_ai_notices` and
   `meal_photo_ai_notices` accept `anthropic`.
 - `get_ai_consent_v2(target_user_id, purpose)` returns `{granted, provider, notice_version}` for the
