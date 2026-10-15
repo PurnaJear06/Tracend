@@ -14,6 +14,10 @@ enum TracendStyle {
   static let textSecondary = Color(hex: 0x9C9D98)
   /// `accentSignal`: the one thing that is now, the running rest.
   static let lime = Color(hex: 0xC8F05A)
+  /// `surfaceRaised` (dark): the +30s and Skip buttons.
+  static let raised = Color(hex: 0x232427)
+  /// `onAccentSignal`: text and icons on a lime fill (the Done button).
+  static let onLime = Color(hex: 0x141A05)
 
   /// Archivo SemiCondensed ExtraBold, the app's number face, bundled with the
   /// extension and listed in its `UIAppFonts`. The file's internal font name

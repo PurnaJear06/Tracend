@@ -21,5 +21,30 @@ struct RestActivityAttributes: ActivityAttributes {
 
     /// The exercise the rest belongs to. Empty when the app did not say.
     var exerciseName: String
+
+    /// A button was tapped while no workout was open in the app (it had been
+    /// closed): the buttons give way to "Open Tracend to continue" until the
+    /// app moves or replaces the rest.
+    var needsApp: Bool
+
+    init(endsAt: Date, nextLabel: String, exerciseName: String, needsApp: Bool = false) {
+      self.endsAt = endsAt
+      self.nextLabel = nextLabel
+      self.exerciseName = exerciseName
+      self.needsApp = needsApp
+    }
+
+    private enum CodingKeys: String, CodingKey {
+      case endsAt, nextLabel, exerciseName, needsApp
+    }
+
+    /// A state stored by an earlier build has no `needsApp`.
+    init(from decoder: Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      endsAt = try container.decode(Date.self, forKey: .endsAt)
+      nextLabel = try container.decode(String.self, forKey: .nextLabel)
+      exerciseName = try container.decode(String.self, forKey: .exerciseName)
+      needsApp = try container.decodeIfPresent(Bool.self, forKey: .needsApp) ?? false
+    }
   }
 }

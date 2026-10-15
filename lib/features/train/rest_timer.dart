@@ -66,11 +66,17 @@ class RestTimer {
 }
 
 /// Runs the rest timer and keeps the lock-screen alert and the Live Activity
-/// in step with it: every way a rest ends early cancels the alert and ends
-/// the activity. Activity calls are never awaited, so the in-app timer never
-/// waits on iOS, and each is sent before the alert is touched: channel
+/// in step with it. Activity calls are never awaited, so the in-app timer
+/// never waits on iOS, and each is sent before the alert is touched: channel
 /// messages arrive in the order they are sent, so a stop that follows a
 /// start can never reach iOS first.
+///
+/// The activity shows a rest from its start until the next set is ticked or
+/// the workout closes. When the rest is over (it ran out, Skip, or -15 past
+/// the end) it reads "Rest done" with a Done button for [doneLinger], so
+/// the next set can be ticked from the Lock Screen; the next rest replaces
+/// it in place. While the app is away nothing can end it on time, so it
+/// stays until the app runs again ([tick]).
 class RestTimerController {
   RestTimerController({
     required RestAlertScheduler alerts,
@@ -80,10 +86,18 @@ class RestTimerController {
        _activity = activity,
        _clock = clock;
 
+  /// How long "Rest done" shows after the rest is over
+  /// (SECURITY_PRIVACY.md §10).
+  static const doneLinger = Duration(minutes: 2);
+
   final RestAlertScheduler _alerts;
   final WorkoutActivityBridge _activity;
   final DateTime Function() _clock;
   RestTimer? _timer;
+
+  /// When the "Rest done" activity goes, while no rest runs; null when none
+  /// shows.
+  DateTime? _doneUntil;
 
   /// The running timer, or null when no rest is running.
   RestTimer? get timer => _timer;
@@ -93,7 +107,8 @@ class RestTimerController {
 
   /// Starts a rest of [seconds] (a set's `rest_seconds`), replacing any
   /// running one, and shows it as the Live Activity with the exercise and
-  /// what follows ([nextLabel]). A rest of zero or less starts nothing.
+  /// what follows ([nextLabel]). A rest of zero or less starts nothing and
+  /// ends the activity.
   Future<void> start(
     int seconds, {
     String nextLabel = '',
@@ -102,6 +117,7 @@ class RestTimerController {
     if (seconds <= 0) return stop();
     final timer = RestTimer.start(seconds, now: _clock());
     _timer = timer;
+    _doneUntil = null;
     unawaited(
       _activity.startRest(
         endsAt: timer.endsAt,
@@ -112,37 +128,60 @@ class RestTimerController {
     await _alerts.scheduleRestAlert(seconds);
   }
 
-  /// The ±15 s buttons. Taking the rest to its end finishes it.
+  /// The ±15 s buttons, and +30 s from the Live Activity. Taking the rest
+  /// to its end finishes it now.
   Future<void> adjust(Duration delta) async {
     final timer = _timer;
     if (timer == null) return;
     final next = timer.adjusted(delta);
     final now = _clock();
-    if (next.isExpired(now)) return stop();
+    if (next.isExpired(now)) return _over(now);
     _timer = next;
     unawaited(_activity.updateRest(endsAt: next.endsAt));
     await _alerts.scheduleRestAlert(next.remainingSeconds(now));
   }
 
-  /// Skip: the rest ends now.
-  Future<void> skip() => stop();
+  /// Skip: the rest ends now and the activity reads "Rest done".
+  Future<void> skip() => _over(_clock());
+
+  /// The rest ran to its end (seen by the in-app timer, or late after the
+  /// app was away). The activity already reads "Rest done" from its end
+  /// time, so nothing is sent to it; it goes [doneLinger] after the end.
+  Future<void> ranOut() async {
+    final timer = _timer;
+    if (timer == null) return;
+    _timer = null;
+    _doneUntil = timer.endsAt.add(doneLinger);
+    await _alerts.cancelRestAlert();
+  }
+
+  /// Ends the "Rest done" activity once [doneLinger] has passed. The
+  /// workout screen calls it every second while the app is on screen.
+  void tick() {
+    final until = _doneUntil;
+    if (_timer != null || until == null || _clock().isBefore(until)) return;
+    _doneUntil = null;
+    unawaited(_activity.end());
+  }
 
   /// Ends the rest, its alert and its Live Activity: finishing, discarding,
-  /// or leaving the workout, the in-app end of the rest, and an expired rest
-  /// on resume.
+  /// or leaving the workout, a set with no rest after it, and an expired
+  /// rest on resume.
   Future<void> stop() async {
     _timer = null;
+    _doneUntil = null;
     unawaited(_activity.end());
     await _alerts.cancelRestAlert();
   }
 
-  /// The workout screen went away while a rest was running without the
-  /// athlete ending it (the app returned to sign-in, for example). Nothing
-  /// runs the rest on screen any more, so its Live Activity ends; the
-  /// stored rest and its alert stay, and reopening the workout brings the
-  /// rest back in the app.
+  /// The workout screen went away without the athlete ending the workout
+  /// (the app returned to sign-in, for example). Nothing runs the rest on
+  /// screen any more, so its Live Activity ends; the stored rest and its
+  /// alert stay, and reopening the workout brings the rest back in the app.
   void detach() {
-    if (_timer != null) unawaited(_activity.end());
+    if (_timer == null && _doneUntil == null) return;
+    _doneUntil = null;
+    unawaited(_activity.end());
   }
 
   /// Resumes the timer stored in the draft after a relaunch. A rest that has
@@ -153,6 +192,16 @@ class RestTimerController {
     final timer = RestTimer.fromJson(stored);
     if (timer == null || timer.isExpired(_clock())) return stop();
     _timer = timer;
+    _doneUntil = null;
     unawaited(_activity.updateRest(endsAt: timer.endsAt));
+  }
+
+  /// The rest ends at [now]: the activity reads "Rest done" from now on.
+  Future<void> _over(DateTime now) async {
+    if (_timer == null) return;
+    _timer = null;
+    _doneUntil = now.add(doneLinger);
+    unawaited(_activity.updateRest(endsAt: now));
+    await _alerts.cancelRestAlert();
   }
 }

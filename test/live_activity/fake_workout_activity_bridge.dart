@@ -8,8 +8,8 @@ typedef ActivityCall = ({
   String? exerciseName,
 });
 
-/// Records every call instead of showing a Live Activity, and tracks the
-/// one activity the native side would show.
+/// Records every call instead of showing a Live Activity, tracks the one
+/// activity the native side would show, and plays its buttons ([press]).
 class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
   final calls = <ActivityCall>[];
 
@@ -17,6 +17,17 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
   DateTime? showingUntil;
 
   List<String> get methods => [for (final call in calls) call.method];
+
+  /// The open workout's handler for the buttons, or null.
+  LiveActivityPressHandler? onPress;
+
+  /// Taps [button] as iOS would: true once an open workout acted on it.
+  Future<bool> press(LiveActivityButton button) async {
+    final handler = onPress;
+    if (handler == null) return false;
+    await handler(button);
+    return true;
+  }
 
   @override
   Future<void> startRest({
@@ -53,5 +64,15 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       exerciseName: null,
     ));
     showingUntil = null;
+  }
+
+  @override
+  Future<void> attachButtons(LiveActivityPressHandler onPress) async {
+    this.onPress = onPress;
+  }
+
+  @override
+  Future<void> detachButtons(LiveActivityPressHandler onPress) async {
+    if (this.onPress == onPress) this.onPress = null;
   }
 }

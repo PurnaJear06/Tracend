@@ -16,6 +16,7 @@ import 'package:tracend/features/train/widgets/focus_exercise_page.dart';
 import 'package:tracend/features/train/widgets/rest_timer_view.dart';
 import 'package:tracend/features/train/widgets/set_row.dart';
 import 'package:tracend/features/train/workout_events.dart';
+import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 
@@ -760,9 +761,116 @@ void main() {
       isTrue,
     );
 
+    // Skip turns it to "Rest done" now, so the next set's Done can follow.
     await _tapLabel(tester, 'Skip rest');
-    expect(h.activity.methods.last, 'end');
-    expect(h.activity.showingUntil, isNull);
+    expect(h.activity.methods.last, 'updateRest');
+    expect(h.activity.showingUntil, h.clock.now);
+  });
+
+  group('the Live Activity buttons', () {
+    DateTime? time(Object? value) =>
+        value is String ? DateTime.parse(value).toLocal() : null;
+
+    testWidgets('a whole workout runs from the Lock Screen', (tester) async {
+      final h = _Harness();
+      await _open(tester, h);
+      final t0 = h.clock.now;
+      expect(h.activity.onPress, isNotNull);
+
+      // Set 1 is ticked in the app; its rest starts the activity.
+      await _tapText(tester, 'Done set 1');
+
+      // +30s, then Skip, then Done for set 2, all from the Lock Screen.
+      h.clock.advance(const Duration(seconds: 40));
+      expect(await h.activity.press(const AddRestButton(30)), isTrue);
+      expect(h.activity.calls.last.method, 'updateRest');
+      expect(h.activity.showingUntil, t0.add(const Duration(seconds: 120)));
+
+      h.clock.advance(const Duration(seconds: 20));
+      expect(await h.activity.press(const SkipRestButton()), isTrue);
+      expect(h.activity.showingUntil, h.clock.now);
+
+      h.clock.advance(const Duration(seconds: 45));
+      expect(await h.activity.press(const DoneSetButton()), isTrue);
+      final rest = h.activity.calls.last;
+      expect(rest.method, 'startRest');
+      expect(rest.exerciseName, 'Bench press');
+      expect(rest.nextLabel, 'Push-up');
+
+      // Each press returned only after the draft on the phone had it.
+      expect(h.repository.savedSet(0, 1)['completed'], isTrue);
+      expect(h.repository.savedSet(0, 1)['rest_before_seconds'], 60);
+
+      // The rest runs out while the phone sleeps; Done ticks Push-up set 1.
+      h.clock.advance(const Duration(minutes: 3));
+      expect(await h.activity.press(const DoneSetButton()), isTrue);
+      expect(h.repository.savedSet(1, 0)['completed'], isTrue);
+      expect(h.repository.savedSet(1, 0)['rest_before_seconds'], 90);
+      expect(h.activity.calls.last.nextLabel, 'Set 2 of Push-up');
+
+      // The last set has no rest after it: the activity goes.
+      h.clock.advance(const Duration(seconds: 75));
+      expect(await h.activity.press(const DoneSetButton()), isTrue);
+      expect(h.repository.savedSet(1, 1)['completed'], isTrue);
+      expect(h.activity.methods.last, 'end');
+      expect(h.activity.showingUntil, isNull);
+      await _flushSave(tester);
+    });
+
+    testWidgets('Skip after the rest ran out unnoticed keeps its real end', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      final t0 = h.clock.now;
+      await _tapText(tester, 'Done set 1');
+
+      h.clock.advance(const Duration(minutes: 4));
+      expect(await h.activity.press(const SkipRestButton()), isTrue);
+      expect(h.activity.methods.last, 'startRest');
+
+      await _tapText(tester, 'Done set 2');
+      await _flushSave(tester);
+      expect(
+        time(h.repository.syncedSet(0, 1)['started_at']),
+        t0.add(const Duration(seconds: 90)),
+      );
+    });
+
+    testWidgets('"Rest done" goes two minutes after the rest in the app', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      await _tapLabel(tester, 'Skip rest');
+
+      h.clock.advance(const Duration(seconds: 119));
+      await tester.pump(const Duration(seconds: 1));
+      expect(h.activity.methods.last, 'updateRest');
+
+      h.clock.advance(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 1));
+      expect(h.activity.methods.last, 'end');
+      await _tapLabel(tester, 'Leave workout');
+      await tester.tap(find.text('Save and leave'));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('once the workout is closed the buttons find no workout', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      await _tapLabel(tester, 'Leave workout');
+      await tester.tap(find.text('Save and leave'));
+      await tester.pumpAndSettle();
+
+      expect(h.activity.onPress, isNull);
+      expect(await h.activity.press(const DoneSetButton()), isFalse);
+      expect(h.activity.showingUntil, isNull);
+    });
   });
 
   testWidgets('the screen torn down mid-rest ends only the Live Activity', (

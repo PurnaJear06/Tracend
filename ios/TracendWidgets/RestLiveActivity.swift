@@ -1,11 +1,14 @@
 import ActivityKit
+import AppIntents
 import SwiftUI
 import WidgetKit
 
 /// The rest between sets on the Lock Screen and in the Dynamic Island. The
 /// countdown is `Text(timerInterval:)`, which the system runs from the end
 /// time with the app closed; once the end passes the content is stale and
-/// every presentation reads "Rest done". No buttons yet (D1).
+/// every presentation reads "Rest done". The Lock Screen and the expanded
+/// Dynamic Island carry the buttons: +30s and Skip while the rest runs, Done
+/// once it is over.
 struct RestLiveActivity: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: RestActivityAttributes.self) { context in
@@ -27,9 +30,12 @@ struct RestLiveActivity: Widget {
             .padding(.trailing, 6)
         }
         DynamicIslandExpandedRegion(.bottom) {
-          RestLabels(rest: rest, titleSize: 17, detailSize: 15)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 6)
+          VStack(alignment: .leading, spacing: 10) {
+            RestLabels(rest: rest, titleSize: 17, detailSize: 15)
+            RestActions(rest: rest, height: 40)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 6)
         }
       } compactLeading: {
         Image(systemName: "timer")
@@ -54,6 +60,7 @@ struct RestLiveActivity: Widget {
 struct RestPresentation {
   let endsAt: Date
   let isDone: Bool
+  let needsApp: Bool
   let title: String
   let nextLabel: String
 
@@ -61,6 +68,7 @@ struct RestPresentation {
     let state = context.state
     endsAt = state.endsAt
     isDone = context.isStale || state.endsAt <= .now
+    needsApp = state.needsApp
     title = state.exerciseName.isEmpty ? "Between sets" : state.exerciseName
     nextLabel = state.nextLabel
   }
@@ -69,23 +77,26 @@ struct RestPresentation {
 }
 
 /// The Lock Screen and banner card: the status, exercise and next set on the
-/// left, the big lime countdown on the right.
+/// left, the big lime countdown on the right, the buttons underneath.
 struct RestLockScreenView: View {
   let rest: RestPresentation
 
   var body: some View {
-    HStack(alignment: .center, spacing: 16) {
-      VStack(alignment: .leading, spacing: 4) {
-        RestStatusLabel(rest: rest)
-          .font(.system(size: 13, weight: .semibold))
-        RestLabels(rest: rest, titleSize: 20, detailSize: 15)
+    VStack(spacing: 12) {
+      HStack(alignment: .center, spacing: 16) {
+        VStack(alignment: .leading, spacing: 4) {
+          RestStatusLabel(rest: rest)
+            .font(.system(size: 13, weight: .semibold))
+          RestLabels(rest: rest, titleSize: 20, detailSize: 15)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        RestCountdown(rest: rest, size: 44, doneSymbolSize: 34)
+          .frame(maxWidth: 132, alignment: .trailing)
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      RestCountdown(rest: rest, size: 44, doneSymbolSize: 34)
-        .frame(maxWidth: 132, alignment: .trailing)
+      RestActions(rest: rest, height: 44)
     }
     .padding(.horizontal, 20)
-    .padding(.vertical, 16)
+    .padding(.vertical, 14)
   }
 }
 
@@ -152,5 +163,86 @@ struct RestCountdown: View {
       .multilineTextAlignment(.trailing)
       .lineLimit(1)
     }
+  }
+}
+
+/// The buttons: +30s and Skip side by side while the rest runs; one lime
+/// Done once it is over, the only lime fill, because it is the next thing to
+/// do. When a tap found no workout open, a line asks to open the app (a tap
+/// on the card does).
+struct RestActions: View {
+  let rest: RestPresentation
+  let height: CGFloat
+
+  var body: some View {
+    if rest.needsApp {
+      Label("Open Tracend to continue", systemImage: "arrow.up.forward.app")
+        .font(.system(size: 15, weight: .semibold))
+        .foregroundStyle(TracendStyle.textSecondary)
+        .frame(maxWidth: .infinity, minHeight: height)
+    } else if rest.isDone {
+      Button(intent: CompleteSetIntent()) {
+        RestButtonLabel(
+          title: "Done set",
+          symbol: "checkmark",
+          height: height,
+          fill: TracendStyle.lime,
+          ink: TracendStyle.onLime
+        )
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(rest.nextLabel.isEmpty ? "Done set" : "Done, \(rest.nextLabel)")
+    } else {
+      HStack(spacing: 10) {
+        Button(intent: AddRestIntent()) {
+          RestButtonLabel(
+            title: "+\(RestActivityButton.addRestSeconds)s",
+            symbol: nil,
+            height: height,
+            fill: TracendStyle.raised,
+            ink: TracendStyle.textPrimary
+          )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add \(RestActivityButton.addRestSeconds) seconds")
+        Button(intent: SkipRestIntent()) {
+          RestButtonLabel(
+            title: "Skip",
+            symbol: "forward.end.fill",
+            height: height,
+            fill: TracendStyle.raised,
+            ink: TracendStyle.textPrimary
+          )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Skip rest")
+      }
+    }
+  }
+}
+
+/// A full-width capsule with a word and an optional symbol.
+struct RestButtonLabel: View {
+  let title: String
+  let symbol: String?
+  let height: CGFloat
+  let fill: Color
+  let ink: Color
+
+  var body: some View {
+    HStack(spacing: 6) {
+      if let symbol {
+        Image(systemName: symbol)
+          .font(.system(size: 14, weight: .bold))
+          .accessibilityHidden(true)
+      }
+      Text(title)
+        .font(.system(size: 16, weight: .semibold))
+        .monospacedDigit()
+    }
+    .foregroundStyle(ink)
+    .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
+    .background(Capsule().fill(fill))
+    .contentShape(Capsule())
   }
 }

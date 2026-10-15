@@ -98,14 +98,25 @@ void main() {
     expect(activity.showingUntil, controller.timer!.endsAt);
   });
 
-  test('-15 past the end ends it', () async {
+  test('-15 past the end turns it to "Rest done" now', () async {
     await controller.start(90);
     now = now.add(const Duration(seconds: 80));
 
     await controller.adjust(-RestTimer.step);
 
-    expect(activity.methods, ['startRest', 'end']);
+    expect(activity.methods, ['startRest', 'updateRest']);
+    expect(activity.calls.last.endsAt, now);
     expect(controller.timer, isNull);
+  });
+
+  test('+30 from the Live Activity moves the end', () async {
+    await controller.start(90);
+    now = now.add(const Duration(seconds: 50));
+
+    await controller.adjust(const Duration(seconds: 30));
+
+    expect(activity.calls.last.method, 'updateRest');
+    expect(activity.calls.last.endsAt, start.add(const Duration(seconds: 120)));
   });
 
   test('adjusting without a running rest does nothing', () async {
@@ -114,21 +125,64 @@ void main() {
     expect(activity.calls, isEmpty);
   });
 
-  test('skip ends it', () async {
+  test('skip turns it to "Rest done" now, so Done can follow', () async {
     await controller.start(90);
+    now = now.add(const Duration(seconds: 30));
     await controller.skip();
 
-    expect(activity.methods, ['startRest', 'end']);
-    expect(activity.showingUntil, isNull);
+    expect(activity.methods, ['startRest', 'updateRest']);
+    expect(activity.showingUntil, now);
+    expect(controller.timer, isNull);
   });
 
-  test('the in-app end of the rest ends it', () async {
+  test(
+    'a rest that ran out sends nothing: it already reads "Rest done"',
+    () async {
+      await controller.start(90);
+      now = now.add(const Duration(seconds: 95));
+      await controller.ranOut();
+
+      expect(activity.methods, ['startRest']);
+      expect(controller.timer, isNull);
+    },
+  );
+
+  test('"Rest done" goes two minutes after the end of the rest', () async {
     await controller.start(90);
     now = now.add(const Duration(seconds: 90));
-    await controller.stop();
+    await controller.ranOut();
 
-    expect(activity.methods.last, 'end');
-    expect(activity.showingUntil, isNull);
+    now = now.add(const Duration(seconds: 119));
+    controller.tick();
+    expect(activity.methods, ['startRest']);
+
+    now = now.add(const Duration(seconds: 1));
+    controller.tick();
+    controller.tick();
+    expect(activity.methods, ['startRest', 'end']);
+  });
+
+  test('"Rest done" after a skip goes two minutes after the skip', () async {
+    await controller.start(90);
+    now = now.add(const Duration(seconds: 10));
+    await controller.skip();
+
+    now = now.add(RestTimerController.doneLinger);
+    controller.tick();
+
+    expect(activity.methods, ['startRest', 'updateRest', 'end']);
+  });
+
+  test('the next rest replaces "Rest done" and nothing ends it', () async {
+    await controller.start(90);
+    await controller.skip();
+    now = now.add(const Duration(seconds: 40));
+    await controller.start(90);
+
+    now = now.add(RestTimerController.doneLinger);
+    controller.tick();
+
+    expect(activity.methods, ['startRest', 'updateRest', 'startRest']);
   });
 
   test('finishing, discarding or leaving the workout ends it', () async {
@@ -169,9 +223,18 @@ void main() {
     expect(controller.toDraft(), isNotNull);
   });
 
-  test('the screen going away after the rest ended sends nothing', () async {
+  test('the screen going away ends "Rest done" too', () async {
     await controller.start(90);
     await controller.skip();
+    controller.detach();
+
+    expect(activity.methods, ['startRest', 'updateRest', 'end']);
+  });
+
+  test('the screen going away with nothing showing sends nothing', () async {
+    controller.detach();
+    await controller.start(90);
+    await controller.stop();
     controller.detach();
 
     expect(activity.methods, ['startRest', 'end']);

@@ -65,7 +65,8 @@ class ActiveWorkoutScreen extends StatefulWidget {
   final WorkoutEventHub? events;
 
   /// The rest's Live Activity. The rest timer is its only driver; the
-  /// workout events above do not touch it.
+  /// workout events above do not touch it. Its Done, Skip and +30s buttons
+  /// arrive as [WorkoutCommand]s through [events]' command sink.
   final WorkoutActivityBridge activity;
 
   /// The longest workout the server records (3 hours).
@@ -109,7 +110,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   );
   final PageController _pages = PageController();
   late final WorkoutEventHub _events = widget.events ?? WorkoutEventHub();
-  StreamSubscription<WorkoutCommand>? _commands;
+  StreamSubscription<void>? _commands;
   final SetTimingRecorder _timing = SetTimingRecorder();
 
   /// The exercise on screen.
@@ -169,7 +170,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void initState() {
     super.initState();
-    _commands = _events.incomingCommands.listen(_onCommand);
+    _commands = _events.handleCommands(_onCommand);
     _restore();
   }
 
@@ -179,6 +180,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     // goes; anything else (the app returning to sign-in) leaves the rest in
     // the draft and ends only its Live Activity.
     _rest.detach();
+    unawaited(widget.activity.detachButtons(_onButton));
     _saveTimer?.cancel();
     _ticker?.cancel();
     unawaited(_commands?.cancel());
@@ -252,6 +254,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       widget.workout.id,
     );
     _ready = true;
+    if (mounted) unawaited(widget.activity.attachButtons(_onButton));
     final first = _firstOpenExercise();
     _page = first;
     if (mounted) setState(() {});
@@ -428,6 +431,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (timer != null && timer.isExpired(now)) {
       unawaited(_restEnded());
     }
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle == null || lifecycle == AppLifecycleState.resumed) {
+      _rest.tick();
+    }
     final shown = (_elapsedSeconds, _rest.timer?.remainingSeconds(now));
     if (shown == _shownSeconds) return;
     setState(() => _shownSeconds = shown);
@@ -576,7 +583,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     final timer = _rest.timer;
     if (timer == null || !timer.isExpired(now)) return;
     _timing.restEnded(timer.endsAt);
-    unawaited(_rest.stop());
+    unawaited(_rest.ranOut());
   }
 
   bool _resting(DateTime now) {
@@ -661,6 +668,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
         );
       }
+    } else if (_rest.timer == null) {
+      // No rest follows: the "Rest done" activity names a set that is now
+      // logged, so it goes.
+      unawaited(_rest.stop());
     }
     _changed();
   }
@@ -736,39 +747,55 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _changed();
   }
 
+  /// A Live Activity button, sent through the workout's one command sink
+  /// (Contract 3). Completes once the screen has acted on it.
+  Future<void> _onButton(LiveActivityButton button) =>
+      _events.send(workoutCommandFor(button));
+
   /// The Live Activity's buttons. Ignored once the workout is closed.
-  void _onCommand(WorkoutCommand command) {
+  /// Completes when the rest, its Live Activity call and the draft on the
+  /// phone are done, since iOS may suspend the app right after a press.
+  Future<void> _onCommand(WorkoutCommand command) async {
     if (!mounted || !_ready || _closed || _finishing || _viewingCompleted) {
       return;
     }
+    // A button may wake the app after the rest ran out unnoticed: that rest
+    // ended at its stored end, so Skip and +30s then have nothing to change.
+    final running = _rest.timer;
+    _expireRest(widget.clock());
+    if (running != null && _rest.timer == null) await _persistRest();
     switch (command) {
       case CompleteCurrentSet():
-        _completeCurrentSet();
+        if (_completeCurrentSet()) await _persistRest();
       case SkipRest():
-        unawaited(_skipRest());
+        await _skipRest();
       case AddRest(:final seconds):
-        if (seconds > 0) unawaited(_adjustRest(Duration(seconds: seconds)));
+        if (seconds > 0) await _adjustRest(Duration(seconds: seconds));
     }
   }
 
-  /// Ticks the current set of the exercise on screen (else the first
-  /// exercise with sets left) with the kg and reps the screen suggests.
-  void _completeCurrentSet() {
+  /// Ticks the set the rest's "Next" label names: the current set of the
+  /// exercise on screen, else of the next exercise with sets left (the
+  /// order [_nextLabel] uses), with the kg and reps the screen suggests.
+  /// Returns whether a set was ticked.
+  bool _completeCurrentSet() {
     bool open(int i) =>
         !_exercises[i].skipped && _exercises[i].currentSetIndex != null;
-    final page = _page;
-    final exercise = page < _exercises.length && open(page)
-        ? page
-        : _exercises.indexWhere((e) => !e.skipped && e.currentSetIndex != null);
-    if (exercise < 0) return;
+    final count = _exercises.length;
+    final page = _page < count ? _page : 0;
+    final exercise = [
+      for (var i = 0; i < count; i++) (page + i) % count,
+    ].where(open).firstOrNull;
+    if (exercise == null) return false;
     final draft = _exercises[exercise];
     final suggestion = suggestSet(
       draft,
       draft.currentSetIndex!,
       _historyOf(exercise),
     );
-    if ((num.tryParse(suggestion.reps) ?? 0) <= 0) return;
+    if ((num.tryParse(suggestion.reps) ?? 0) <= 0) return false;
     _doneSet(exercise, suggestion.load, suggestion.reps);
+    return true;
   }
 
   Future<void> _more(int exercise) async {
@@ -863,7 +890,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     final timer = _rest.timer;
     if (timer == null) return;
     _timing.restEnded(timer.endsAt);
-    await _rest.stop();
+    await _rest.ranOut();
     if (!mounted) return;
     unawaited(TracendHaptics.success());
     TracendToast.show(

@@ -7,17 +7,30 @@ import Foundation
 ///
 /// The countdown runs on its own from the end time, so the app only starts,
 /// moves and ends the activity; nothing is pushed. At most one rest activity
-/// shows: starting one removes every earlier one. When the athlete turned
-/// Live Activities off, every call succeeds and shows nothing. Calls run one
-/// after another in the order they arrive.
+/// shows: a new rest moves the running one in place, or replaces every
+/// earlier one. When the athlete turned Live Activities off, every call
+/// succeeds and shows nothing. Calls run one after another in the order they
+/// arrive.
+///
+/// Its Done, Skip and +30s buttons are `LiveActivityIntent`s
+/// (`ios/Shared/RestActivityIntents.swift`) that iOS runs in this process,
+/// waking the app in the background; `press` hands each one to the open
+/// workout in Dart and waits until the activity is updated.
 enum WorkoutActivityBridge {
   static let channelName = "tracend/live_activity"
 
-  /// How long a rest that ran to its end keeps showing "Rest done" after the
-  /// end. A rest ended early (skip, finish, leave) goes at once.
+  /// How long a rest that ran out keeps showing "Rest done" when a launch
+  /// finds it left from an earlier run of the app.
   static let doneLinger: TimeInterval = 120
 
+  /// How long a press waits for the workout to answer.
+  static let pressTimeout: TimeInterval = 8
+
   @MainActor private static var queue: Task<Void, Never>?
+  @MainActor private static var channel: FlutterMethodChannel?
+
+  /// A workout screen is open in Dart and takes the buttons.
+  @MainActor private static var buttonsAttached = false
 
   /// Answers the channel, and first ends the rest activities left from an
   /// earlier launch whose rest is over. A running one stays for the app's
@@ -25,6 +38,10 @@ enum WorkoutActivityBridge {
   static func register(on messenger: FlutterBinaryMessenger) {
     enqueue { await endFinished() }
     let channel = FlutterMethodChannel(name: channelName, binaryMessenger: messenger)
+    MainActor.assumeIsolated {
+      Self.channel = channel
+      buttonsAttached = false
+    }
     channel.setMethodCallHandler { call, result in
       let arguments = call.arguments as? [String: Any] ?? [:]
       switch call.method {
@@ -60,9 +77,51 @@ enum WorkoutActivityBridge {
           await endAll()
           result(false)
         }
+      case "attachButtons", "detachButtons":
+        let attached = call.method == "attachButtons"
+        MainActor.assumeIsolated { buttonsAttached = attached }
+        enqueue { result(all.contains(where: isRunning)) }
       default:
         result(FlutterMethodNotImplemented)
       }
+    }
+  }
+
+  /// A button on the activity, from its intent. The open workout acts on it
+  /// and drives the activity through the calls above; this waits until those
+  /// calls are done, so iOS does not suspend the app halfway. With no
+  /// workout open (the app was closed), the activity asks the athlete to
+  /// open the app instead.
+  @MainActor
+  static func press(_ button: RestActivityButton) async {
+    var taken = false
+    if buttonsAttached, let channel {
+      taken = await send(button, on: channel)
+    }
+    if !taken {
+      enqueue { await showNeedsApp() }
+    }
+    await drain()
+  }
+
+  /// Sends `press` to Dart. True once the workout answered that it acted on
+  /// it; false on any other answer or after `pressTimeout`.
+  @MainActor
+  private static func send(
+    _ button: RestActivityButton,
+    on channel: FlutterMethodChannel
+  ) async -> Bool {
+    await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+      var answered = false
+      let finish: (Bool) -> Void = { taken in
+        guard !answered else { return }
+        answered = true
+        continuation.resume(returning: taken)
+      }
+      channel.invokeMethod("press", arguments: button.channelArguments) { reply in
+        finish(reply as? Bool == true)
+      }
+      DispatchQueue.main.asyncAfter(deadline: .now() + pressTimeout) { finish(false) }
     }
   }
 
@@ -79,6 +138,15 @@ enum WorkoutActivityBridge {
     }
   }
 
+  /// Waits until every queued call, including ones queued meanwhile, is done.
+  @MainActor
+  private static func drain() async {
+    while let current = queue {
+      await current.value
+      if queue == current { return }
+    }
+  }
+
   private static func date(_ value: Any?) -> Date? {
     guard let millis = value as? NSNumber else { return nil }
     return Date(timeIntervalSince1970: millis.doubleValue / 1000)
@@ -92,14 +160,22 @@ enum WorkoutActivityBridge {
     activity.activityState == .active || activity.activityState == .stale
   }
 
-  /// Removes every earlier rest activity, including an ended one still
-  /// showing "Rest done", then requests the new one. Answers whether it
-  /// shows: false when Live Activities are off, a fixed error code when iOS
-  /// refused the request.
+  /// Shows a new rest. A running activity (counting down, or "Rest done"
+  /// after the last rest) is moved in place, so a Done tapped on the Lock
+  /// Screen never needs a new request while the app is in the background;
+  /// every other earlier one, an ended one included, is removed. Otherwise a
+  /// new activity is requested. Answers whether it shows: false when Live
+  /// Activities are off, a fixed error code when iOS refused the request.
   @MainActor
   private static func startRest(_ state: RestActivityAttributes.ContentState) async -> Any {
-    for activity in all where activity.activityState != .dismissed {
+    let running = all.first(where: isRunning)
+    for activity in all
+    where activity.activityState != .dismissed && activity.id != running?.id {
       await activity.end(nil, dismissalPolicy: .immediate)
+    }
+    if let running {
+      await running.update(ActivityContent(state: state, staleDate: state.endsAt))
+      return true
     }
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { return false }
     do {
@@ -114,14 +190,16 @@ enum WorkoutActivityBridge {
     }
   }
 
-  /// Moves the end of the running rest (the ±15 s buttons, or a rest resumed
-  /// after a relaunch). Without a running rest activity it shows nothing:
-  /// the athlete may have dismissed it.
+  /// Moves the end of the running rest (±15 s, +30 s, Skip, or a rest
+  /// resumed after a relaunch). An end in the past makes it read "Rest done"
+  /// at once. Without a running rest activity it shows nothing: the athlete
+  /// may have dismissed it.
   @MainActor
   private static func updateRest(endsAt: Date, nextLabel: String?) async -> Bool {
     guard let activity = all.first(where: isRunning) else { return false }
     var state = activity.content.state
     state.endsAt = endsAt
+    state.needsApp = false
     if let nextLabel {
       state.nextLabel = nextLabel
     }
@@ -129,35 +207,36 @@ enum WorkoutActivityBridge {
     return true
   }
 
-  /// Ends every running rest activity. One that ran to its end stays as
-  /// "Rest done" until `doneLinger` after its end; one ended early goes at
-  /// once.
+  /// A button was tapped with no workout open: the running activity swaps
+  /// its buttons for "Open Tracend to continue".
+  @MainActor
+  private static func showNeedsApp() async {
+    guard let activity = all.first(where: isRunning) else { return }
+    var state = activity.content.state
+    state.needsApp = true
+    await activity.update(ActivityContent(state: state, staleDate: state.endsAt))
+  }
+
+  /// Ends every running rest activity at once: the workout closed, the
+  /// "Rest done" time passed, or the athlete signed out.
   @MainActor
   private static func endAll() async {
-    let now = Date()
     for activity in all where isRunning(activity) {
-      await end(activity, finished: activity.content.state.endsAt <= now)
+      await activity.end(activity.content, dismissalPolicy: .immediate)
     }
   }
 
-  /// Ends the running rest activities whose rest is over, as `endAll` would.
+  /// Ends the running rest activities left from an earlier launch whose rest
+  /// is over: "Rest done" stays until `doneLinger` after the end.
   @MainActor
   private static func endFinished() async {
     let now = Date()
     for activity in all where isRunning(activity) && activity.content.state.endsAt <= now {
-      await end(activity, finished: true)
+      let lingerUntil = activity.content.state.endsAt.addingTimeInterval(doneLinger)
+      await activity.end(
+        activity.content,
+        dismissalPolicy: lingerUntil > now ? .after(lingerUntil) : .immediate
+      )
     }
-  }
-
-  @MainActor
-  private static func end(_ activity: Activity<RestActivityAttributes>, finished: Bool) async {
-    let state = activity.content.state
-    let lingerUntil = state.endsAt.addingTimeInterval(doneLinger)
-    let policy: ActivityUIDismissalPolicy =
-      finished && lingerUntil > Date() ? .after(lingerUntil) : .immediate
-    await activity.end(
-      ActivityContent(state: state, staleDate: state.endsAt),
-      dismissalPolicy: policy
-    )
   }
 }
