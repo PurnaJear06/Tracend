@@ -15,13 +15,16 @@ import { evalProfiles } from "../../_evals/fixtures.ts";
 import { renderCoachContext } from "../coach_context/host.ts";
 import {
   buildCoachChatGatewayPrompt,
+  chooseCoachChatRoute,
   coachChatGatewaySchema,
+  coachChatReservationCapUsd,
   coachChatReservationUsd,
   generateCoachChatViaGateway,
 } from "./coach_chat_provider_gateway.ts";
 import {
   classifyQuestion,
   coachChatFailureUsage,
+  coachChatTiming,
   CoachChatUnavailableError,
   formatContextAsMarkdown,
 } from "./coach_chat_provider.ts";
@@ -99,7 +102,7 @@ Deno.test("gateway prompt: rules first, then the cached athlete file, the questi
   assertEquals(parts[2]!.text, "User's message:\nHow did my training go this week?");
 });
 
-Deno.test("gateway prompt: a day's questions share the rules and athlete file byte for byte", () => {
+Deno.test("gateway prompt: questions share the rules and athlete file byte for byte", () => {
   const context = rich();
   const first = buildCoachChatGatewayPrompt("How did I sleep?", context, "recovery");
   const later = buildCoachChatGatewayPrompt(
@@ -360,15 +363,112 @@ Deno.test("a DeepSeek route through the gateway restates the schema for JSON mod
   assertStringIncludes(system, "Return only valid JSON matching this schema");
 });
 
-Deno.test("the turn's budget reservation covers two full attempts within the RPC's range", () => {
-  const haikuCeiling = coachChatReservationUsd(haiku(), []);
-  const sonnetCeiling = coachChatReservationUsd(sonnet(), []);
-  // (128,000 + 16,000) / 1.5 = 96,000 prompt tokens written plus 4,096 output tokens, twice;
-  // Sonnet's 0.56 is held at the RPC's USD 0.50 limit.
-  assertEquals(haikuCeiling, 0.028096);
-  assertEquals(sonnetCeiling, 0.5);
-  const large = routeFor("coach_chat", { MODEL: "claude-sonnet-5-5", MAX_OUTPUT_TOKENS: "32000" });
-  assertEquals(coachChatReservationUsd(large, []), 0.5);
+Deno.test("the first attempt's reservation is its own worst case, never clamped", () => {
+  const haikuCeiling = coachChatReservationUsd(haiku(), [])!;
+  const sonnetCeiling = coachChatReservationUsd(sonnet(), [])!;
+  // (128,000 + 16,000) / 1.5 = 96,000 prompt tokens written plus 4,096 output tokens, once.
+  assertEquals(haikuCeiling, 0.014048);
+  assertEquals(sonnetCeiling, 0.28096);
+  assert(sonnetCeiling <= coachChatReservationCapUsd);
+});
+
+Deno.test("a route whose one attempt cannot be reserved takes today's path", () => {
+  const large = routeFor("coach_chat", {
+    MODEL: "claude-sonnet-5-5",
+    MAX_OUTPUT_TOKENS: "32000",
+    EVALUATED: "true",
+  });
+  assert(coachChatReservationUsd(large, [])! > coachChatReservationCapUsd);
+  const choice = chooseCoachChatRoute(large, []);
+  assertEquals(choice.route, null);
+  assert("legacyReason" in choice && choice.legacyReason === "unreservable");
+});
+
+Deno.test("EVALUATED=false behaves like no route; true, a complete route", () => {
+  assertEquals(chooseCoachChatRoute(null, []), { route: null, legacyReason: "no_route" });
+  for (const value of [undefined, "false"]) {
+    const found = routeFor("coach_chat", value === undefined ? {} : { EVALUATED: value });
+    assertEquals(chooseCoachChatRoute(found, []), { route: null, legacyReason: "not_evaluated" });
+  }
+  const evaluated = routeFor("coach_chat", { EVALUATED: "true" });
+  assertEquals(chooseCoachChatRoute(evaluated, []), { route: evaluated, timeoutClamped: false });
+});
+
+Deno.test("a route timeout over the total deadline is clamped and reported, not ignored", () => {
+  const slow = routeFor("coach_chat", { EVALUATED: "true", TIMEOUT_MS: "150000" });
+  const choice = chooseCoachChatRoute(slow, []);
+  assert("timeoutClamped" in choice && choice.timeoutClamped);
+  assertEquals(coachChatTiming.totalDeadlineMs, 40_000);
+  const ok = routeFor("coach_chat", { EVALUATED: "true", TIMEOUT_MS: "40000" });
+  assertEquals(chooseCoachChatRoute(ok, []), { route: ok, timeoutClamped: false });
+});
+
+Deno.test("an attempt waits for the route's timeout, not a shorter fixed one", async () => {
+  const route = routeFor("coach_chat", { TIMEOUT_MS: "1000" });
+  const started = performance.now();
+  const fake = fakeFetch((sent) =>
+    new Promise<Response>((_, reject) => {
+      sent.signal?.addEventListener("abort", () => reject(new DOMException("", "AbortError")));
+    })
+  );
+  const { result } = await captureLogs(() =>
+    generateCoachChatViaGateway(
+      {
+        question: "How did my training go this week?",
+        context: rich(),
+        contextKind: "explain_evidence",
+        route,
+        consentVendor: "anthropic",
+      },
+      { fetch: fake.fetch },
+      { totalDeadlineMs: 30_000, initialAttemptMs: 100, repairAttemptMs: 100 },
+    ).catch((error) => error)
+  );
+  const elapsed = performance.now() - started;
+  assert(result instanceof CoachChatUnavailableError);
+  assertEquals(result.failureReason, "provider_timeout");
+  assert(elapsed >= 900 && elapsed < 5_000, `waited ${elapsed} ms`);
+});
+
+Deno.test("a repair reserves its own worst case before it is sent; a refused place sends nothing", async () => {
+  const reserved: number[] = [];
+  const budget = (accept: boolean) => ({
+    reserveRepair: (usd: number) => {
+      reserved.push(usd);
+      return Promise.resolve(accept);
+    },
+    inFlight: () => {},
+  });
+  const bad = () => claudeAnswer("not json", { output_tokens: 20 });
+  const route = haiku();
+  const question = "How did my training go this week?";
+  const attempt = (accept: boolean) => {
+    const fake = fakeFetch(bad);
+    return captureLogs(() =>
+      generateCoachChatViaGateway({
+        question,
+        context: rich(),
+        contextKind: classifyQuestion(question),
+        route,
+        consentVendor: "anthropic",
+        budget: budget(accept),
+      }, { fetch: fake.fetch }).catch((error) => error)
+    ).then((logged) => ({ result: logged.result, sent: fake.sent }));
+  };
+
+  const accepted = await attempt(true);
+  assertEquals(accepted.sent.length, 2);
+  assertEquals(reserved.length, 1);
+  assert(reserved[0] > 0 && reserved[0] <= coachChatReservationCapUsd);
+
+  const refused = await attempt(false);
+  assertEquals(refused.sent.length, 1);
+  assert(refused.result instanceof CoachChatUnavailableError);
+  assertEquals(refused.result.failureReason, "provider_response_invalid");
+  assertEquals(refused.result.metadata.repairSkipped, "reservation_refused");
+  // The first attempt was billed and is still recorded.
+  assertEquals(coachChatFailureUsage(refused.result).estimatedCostUsd, 0.00011);
+  assertEquals(reserved.length, 2);
 });
 
 Deno.test("a legacy failure is still priced from its own attempts", () => {

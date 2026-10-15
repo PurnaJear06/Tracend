@@ -12,10 +12,12 @@ import {
 import {
   classifyQuestion,
   coachChatFailureUsage,
+  coachChatTiming,
   CoachChatUnavailableError,
   generateCoachChat,
 } from "../_shared/providers/coach_chat_provider.ts";
 import {
+  chooseCoachChatRoute,
   coachChatReservationUsd,
   generateCoachChatViaGateway,
 } from "../_shared/providers/coach_chat_provider_gateway.ts";
@@ -27,10 +29,13 @@ import {
   aiConsentWithProvider,
   coachChatConsentRefusal,
 } from "../_shared/ai_consent.ts";
-import { AiBudget } from "../_shared/ai_budget.ts";
+import { CoachChatBudgetLedger, keepAfterFailure } from "./budget_ledger.ts";
 import { route } from "../_shared/ai/routes.ts";
 import type { AiRoute } from "../_shared/ai/types.ts";
-import { renderCoachContext } from "../_shared/coach_context/host.ts";
+import {
+  renderCoachContext,
+  validateCoachContextContributors,
+} from "../_shared/coach_context/host.ts";
 import { coachContextContributors } from "../_shared/coach_context/registry.ts";
 
 export const coachChatResponseSchemaVersion = "1.1";
@@ -86,6 +91,38 @@ export function coachChatGatewayConsentRefusal(
   return consent.provider === coachRoute.vendor
     ? null
     : { status: 403, error: "ai_consent_required" };
+}
+
+/**
+ * The gateway route for this turn, or null for today's path: no route, a route whose eval has
+ * not passed, a route whose first attempt cannot be reserved, or a contributor registry that
+ * breaks its contract (checked before any budget place is taken). Each reason except "no route"
+ * is logged, as is a route timeout cut to the total deadline.
+ */
+function usableCoachRoute(log: ReturnType<typeof createLogger>): AiRoute | null {
+  const found = route("coach_chat");
+  if (!found) return null;
+  try {
+    validateCoachContextContributors(coachContextContributors);
+  } catch (error) {
+    log.error("coach_context_registry_invalid", {
+      message: error instanceof Error ? error.message : "unknown",
+    });
+    captureException(error, { functionName: "coach-chat", runtime: "edge" });
+    return null;
+  }
+  const choice = chooseCoachChatRoute(found, coachContextContributors);
+  if (choice.route === null) {
+    log.warn("coach_chat_route_not_used", { reason: choice.legacyReason, model: found.model });
+    return null;
+  }
+  if (choice.timeoutClamped) {
+    log.warn("coach_chat_route_timeout_clamped", {
+      route_timeout_ms: choice.route.timeoutMs,
+      limit_ms: coachChatTiming.totalDeadlineMs,
+    });
+  }
+  return choice.route;
 }
 
 export function coachChatPreparationFailureCode(
@@ -282,7 +319,7 @@ export function buildSessionSummary(
 // Every budget reservation a request takes is released when it ends, however
 // it ends; a reservation kept open (`AiBudget.keep`) stays counted.
 Deno.serve(async (request) => {
-  const budget: { current?: AiBudget } = {};
+  const budget: { current?: CoachChatBudgetLedger } = {};
   try {
     return await handleCoachChat(request, budget);
   } finally {
@@ -292,7 +329,7 @@ Deno.serve(async (request) => {
 
 async function handleCoachChat(
   request: Request,
-  held: { current?: AiBudget },
+  held: { current?: CoachChatBudgetLedger },
 ): Promise<Response> {
   const correlationId = extractCorrelationId(request);
   const log = createLogger(correlationId);
@@ -316,9 +353,10 @@ async function handleCoachChat(
     log.warn("invalid_chat_request");
     return reply(422, versionedResponse({ error: "invalid_chat_request" }));
   }
-  // With AI_COACH_CHAT_* settings the turn goes through the AI gateway; without them it keeps
-  // today's provider path, request for request.
-  const coachRoute = route("coach_chat");
+  // With AI_COACH_CHAT_* settings (and EVALUATED=true) the turn goes through the AI gateway;
+  // without them, or when the route cannot be used, it keeps today's provider path, request for
+  // request.
+  const coachRoute = usableCoachRoute(log);
   // Nothing reaches the AI provider without the athlete's current consent,
   // whichever app build is calling. Through the gateway the consented notice
   // must also name the route's vendor.
@@ -347,14 +385,16 @@ async function handleCoachChat(
     }
     return reply(refusal.status, versionedResponse({ error: refusal.error }));
   }
-  const budget = new AiBudget((fn, args) => auth.serviceClient.rpc(fn, args), auth.userId);
+  const budget = new CoachChatBudgetLedger(
+    (fn, args) => auth.serviceClient.rpc(fn, args),
+    auth.userId,
+  );
   held.current = budget;
+  // The gateway path reserves per attempt: this is the first attempt's worst case, and a repair
+  // reserves its own before it is sent.
   const reserved = coachRoute
-    ? await budget.reserve(
-      "coach_chat",
-      coachChatReservationUsd(coachRoute, coachContextContributors),
-    )
-    : await budget.reserve("coach_chat");
+    ? await budget.reserveInitial(coachChatReservationUsd(coachRoute, coachContextContributors)!)
+    : await budget.reserveLegacy();
   if (!reserved) {
     return reply(429, versionedResponse({ error: "ai_usage_limit" }));
   }
@@ -471,6 +511,7 @@ async function handleCoachChat(
         route: coachRoute,
         consentVendor,
         contributions: contributions ?? undefined,
+        budget: budget.attemptBudget,
       })
       : await generateCoachChat(
         input.question,
@@ -529,7 +570,7 @@ async function handleCoachChat(
           run_estimated_cost_usd: generation.estimatedCostUsd,
         },
       );
-      if (usageError) budget.keep();
+      if (usageError) budget.keepAll();
       return reply(
         422,
         versionedResponse({
@@ -634,6 +675,7 @@ async function handleCoachChat(
       finish_reason: unavailable.metadata.finishReason ?? "unknown",
       initial_rule: unavailable.metadata.initialRule ?? "none",
       repair_rule: unavailable.metadata.repairRule ?? "none",
+      repair_skipped: unavailable.metadata.repairSkipped ?? "none",
       attempts: (unavailable.metadata.attempts ?? []).map((attempt) => ({
         attempt: attempt.attempt,
         outcome: attempt.outcome,
@@ -667,17 +709,15 @@ async function handleCoachChat(
         run_estimated_cost_usd: failureUsage.estimatedCostUsd,
       },
     );
-    // A timeout, or a failure that is not the provider's own answer, may have
-    // been billed with no usage reported: the reservation stays open and keeps
-    // counting at its ceiling. So does a failure that could not be recorded.
-    if (
-      !(error instanceof CoachChatUnavailableError) ||
-      unavailable.failureReason === "provider_timeout"
-    ) {
-      budget.keep();
-    }
+    // Today's path: a timeout, or a failure that is not the provider's own answer, may have
+    // been billed with no usage reported, so the reservation stays open and keeps counting at
+    // its ceiling. The gateway path keeps only the attempt the provider reported in flight
+    // (a sent request that timed out with no usage); a deadline that passed before a request,
+    // a refused repair place and a failure whose cost is recorded are all settled. A failure
+    // that could not be recorded keeps every place.
+    keepAfterFailure(budget, error, coachRoute !== null);
     if (failedRunError) {
-      budget.keep();
+      budget.keepAll();
       log.error("persist_failed_coach_chat_run failed", {
         error_code: failedRunError.code ?? "unknown",
       });

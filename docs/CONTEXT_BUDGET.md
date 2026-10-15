@@ -20,8 +20,8 @@ contributors (`_shared/coach_context/`), each with its own character budget. See
 
 ## Gateway Prompt Layout (A6)
 
-Stable first, so a day's questions share a cached prefix (Claude caches prefixes of 512 tokens
-or more; the cache lasts 5 minutes from its last use):
+Stable first, so questions asked within 5 minutes of each other share a cached prefix (Claude
+caches prefixes of 512 tokens or more; the cache lasts 5 minutes from its last use):
 
 1. System: persona, data honesty and the answer contract with the day's evidence codes.
 2. User message, block 1 (cache breakpoint): the athlete file without conversation memory, then

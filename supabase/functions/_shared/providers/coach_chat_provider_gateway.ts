@@ -7,9 +7,9 @@
 //             2. conversation memory, sections left out for size, volatile contributors
 //             3. the athlete's question
 //             4. (repair attempt only) the repair instruction
-// The rules and the athlete file change only when the athlete's data or evidence does, so every
-// question of a day after the first reads them from the cache; what changes every turn comes
-// after the breakpoint.
+// The rules and the athlete file change only when the athlete's data or evidence does, so a
+// question asked within 5 minutes of the last one (the cache lifetime) reads them from the
+// cache; what changes every turn comes after the breakpoint.
 
 import {
   type CoachChatAnswerV2,
@@ -166,30 +166,86 @@ const charsPerTokenFloor = 1.5;
 // The rules, the answer contract and its evidence codes, the question and every wrapper.
 const instructionsMaxChars = 16_000;
 const reserveCeilingMinUsd = 0.001;
-const reserveCeilingMaxUsd = 0.5;
+/** The most `reserve_ai_budget_v2` accepts for one reservation. */
+export const coachChatReservationCapUsd = 0.5;
 
 /**
- * The per-turn budget reservation for `reserve_ai_budget_v2`: two attempts (the answer and a
- * repair), each writing the largest prompt to the cache and using every output token, at the
- * route model's list prices. Clamped to the RPC's USD 0.001–0.50; settlement records the real
- * cost.
+ * The worst case of one attempt for `reserve_ai_budget_v2`: the whole prompt written to the
+ * cache and every output token used, at the route model's list prices. Null when the model has
+ * no price. It is not clamped: a value over `coachChatReservationCapUsd` cannot be reserved,
+ * and the caller must not send that request.
  */
-export function coachChatReservationUsd(
-  route: AiRoute,
-  contributors: readonly CoachContextContributor[],
-): number {
+export function coachChatAttemptWorstCaseUsd(route: AiRoute, promptChars: number): number | null {
   const spec = modelSpec(route.provider, route.model);
-  if (!spec) return reserveCeilingMaxUsd;
-  const promptChars = coachChatMaxContextBudget + instructionsMaxChars +
-    coachContextMaxChars(contributors);
-  const perAttempt = costUsd(spec.price, {
+  if (!spec) return null;
+  const worst = costUsd(spec.price, {
     inputTokens: 0,
     outputTokens: route.maxOutputTokens,
     cacheReadTokens: 0,
     cacheWriteTokens: Math.ceil(promptChars / charsPerTokenFloor),
   });
-  return Math.min(reserveCeilingMaxUsd, Math.max(reserveCeilingMinUsd, perAttempt * 2));
+  return Math.max(reserveCeilingMinUsd, worst);
 }
+
+/**
+ * The reservation for the first attempt, taken before the athlete file exists: the largest
+ * prompt any turn can send. A repair reserves again from its own prompt. Null when the model
+ * has no price.
+ */
+export function coachChatReservationUsd(
+  route: AiRoute,
+  contributors: readonly CoachContextContributor[],
+): number | null {
+  return coachChatAttemptWorstCaseUsd(
+    route,
+    coachChatMaxContextBudget + instructionsMaxChars + coachContextMaxChars(contributors),
+  );
+}
+
+/** The characters a request carries, which is what its prompt cost is bounded from. */
+function promptChars(request: CoachChatGatewayPrompt): number {
+  const size = (content: readonly AiContent[]) =>
+    content.reduce((sum, part) => sum + (part.type === "text" ? part.text.length : 0), 0);
+  return size(request.system) +
+    request.messages.reduce((sum, message) => sum + size(message.content), 0);
+}
+
+export type CoachChatRouteChoice =
+  | Readonly<{ route: AiRoute; timeoutClamped: boolean }>
+  | Readonly<{ route: null; legacyReason: "no_route" | "not_evaluated" | "unreservable" }>;
+
+/**
+ * Whether this turn goes through the gateway. No route, a route whose eval has not passed
+ * (`EVALUATED` is not `true`) or a route whose first attempt cannot be reserved (its worst case
+ * is over what one reservation holds, or the model has no price) all take today's path, which
+ * sends today's request. A route timeout over the total deadline is clamped to it (the app waits
+ * for the answer no longer), and the choice says so for the caller to log.
+ */
+export function chooseCoachChatRoute(
+  found: AiRoute | null,
+  contributors: readonly CoachContextContributor[],
+  timing: CoachChatTiming = coachChatTiming,
+): CoachChatRouteChoice {
+  if (!found) return { route: null, legacyReason: "no_route" };
+  if (!found.evaluated) return { route: null, legacyReason: "not_evaluated" };
+  const worst = coachChatReservationUsd(found, contributors);
+  if (worst === null || worst > coachChatReservationCapUsd) {
+    return { route: null, legacyReason: "unreservable" };
+  }
+  return { route: found, timeoutClamped: found.timeoutMs > timing.totalDeadlineMs };
+}
+
+/**
+ * The turn's budget places, one per attempt, so every request sent is covered at its own worst
+ * case. The first attempt's place is taken before the turn starts; `reserveRepair` takes the
+ * repair's before it is sent and returns false when it is refused. `inFlight` tells the budget
+ * that a sent request timed out with no usage reported, so it may have been billed and its
+ * place must stay open.
+ */
+export type CoachChatAttemptBudget = Readonly<{
+  reserveRepair(usd: number): Promise<boolean>;
+  inFlight(attempt: CoachChatAttempt): void;
+}>;
 
 export type CoachChatGatewayInput = Readonly<{
   question: string;
@@ -199,6 +255,7 @@ export type CoachChatGatewayInput = Readonly<{
   /** The vendor named by the athlete's accepted Coach notice. */
   consentVendor: AiVendor | null;
   contributions?: CoachContributions;
+  budget?: CoachChatAttemptBudget;
 }>;
 
 type Attempted = Readonly<{
@@ -273,17 +330,31 @@ export async function generateCoachChatViaGateway(
     );
   }
 
+  let repairSkipped: CoachChatFailureMetadata["repairSkipped"];
+  // Null: the attempt was not sent because its budget place was not available.
   const attempt = async (
     kind: CoachChatAttempt,
     request: CoachChatGatewayPrompt,
-  ): Promise<Attempted> => {
+  ): Promise<Attempted | null> => {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
+      // The deadline passed before this attempt: nothing was sent, so nothing is held.
       return {
         telemetry: { attempt: kind, outcome: "timeout", latencyMs: 0, completionTokens: 0 },
         usage: null,
         failure: { reason: "provider_timeout", retryAfterSeconds: null },
       };
+    }
+    if (kind === "repair" && input.budget) {
+      const worst = coachChatAttemptWorstCaseUsd(route, promptChars(request));
+      if (worst === null || worst > coachChatReservationCapUsd) {
+        repairSkipped = "reservation_over_cap";
+        return null;
+      }
+      if (!await input.budget.reserveRepair(worst)) {
+        repairSkipped = "reservation_refused";
+        return null;
+      }
     }
     const started = performance.now();
     const result = await call({
@@ -292,9 +363,12 @@ export async function generateCoachChatViaGateway(
       messages: request.messages,
       output: { kind: "json", schema },
       consentVendor: input.consentVendor,
-      signal: AbortSignal.timeout(remaining),
+      // The route's own limit, cut to what is left of the turn's total deadline.
+      signal: AbortSignal.timeout(Math.min(route.timeoutMs, remaining)),
     }, deps);
     const usage = result.usage;
+    // A sent request that timed out without usage may have been billed: its place stays open.
+    if (!result.ok && result.reason === "timeout" && usage === null) input.budget?.inFlight(kind);
     const telemetry = (
       outcome: CoachChatAttemptOutcome,
       extra: Partial<CoachChatAttemptTelemetry> = {},
@@ -416,7 +490,7 @@ export async function generateCoachChatViaGateway(
     attempts: [...attempts],
   });
 
-  const first = await attempt("initial", prompt);
+  const first = (await attempt("initial", prompt))!;
   record(first);
   if (first.answer) return success(first);
   const repair = first.failure?.repair;
@@ -429,6 +503,13 @@ export async function generateCoachChatViaGateway(
     "repair",
     buildCoachChatGatewayPrompt(question, context, contextKind, contributions, repair),
   );
+  if (!second) {
+    // The repair was never sent, so the first attempt's failure stands.
+    throw unavailable(first.failure!.reason, first.failure!.retryAfterSeconds, {
+      ...initialRule,
+      repairSkipped,
+    });
+  }
   record(second);
   if (second.answer) return success(second);
   const repairIssue = second.failure?.repair?.issue;

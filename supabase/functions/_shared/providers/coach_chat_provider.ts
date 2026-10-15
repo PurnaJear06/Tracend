@@ -96,6 +96,8 @@ export type CoachChatFailureMetadata = Readonly<{
   attempts?: readonly CoachChatAttemptTelemetry[];
   /** Gateway runs: the list-price cost of every attempt, from the gateway's usage. */
   costUsd?: number;
+  /** Gateway runs: why the repair attempt was not sent (its budget place was not available). */
+  repairSkipped?: "reservation_refused" | "reservation_over_cap";
 }>;
 
 // USD per million tokens for each Coach provider: the configured secret, or

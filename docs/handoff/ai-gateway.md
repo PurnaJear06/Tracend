@@ -141,11 +141,35 @@ In review (branch `claude/a6-coach-chat-claude`). Merging changes nothing in pro
 request byte for byte (`coach_chat_parity_test.ts` compares SHA-256 digests of 18 requests,
 first and repair, recorded from the pre-A6 code).
 
-- **Route path** (`coach-chat/index.ts`): consent through `get_ai_consent_v2`; the granted notice
-  must name the route's vendor, else 403 `ai_consent_required` and nothing is sent. Budget through
-  `reserve_ai_budget_v2` with `coachChatReservationUsd` (two full attempts at list price, prompt at
-  1.5 characters per token, clamped to USD 0.50; Sonnet always sits at 0.50). Provenance stores
-  the vendor and the model the provider reports. Logs add `ai_path` (`gateway`/`legacy`).
+- **Route path** (`coach-chat/index.ts`): the gateway is used only when `route("coach_chat")` returns a
+  route with `EVALUATED=true`, the contributor registry passes `validateCoachContextContributors`
+  (checked before any budget place is taken) and the first attempt can be reserved. Anything else
+  takes today's DeepSeek path (`chooseCoachChatRoute`; a reason other than "no route" is logged as
+  `coach_chat_route_not_used`: `not_evaluated` or `unreservable`). Consent through
+  `get_ai_consent_v2`; the granted notice must name the route's vendor, else 403
+  `ai_consent_required` and nothing is sent. Provenance stores the vendor and the model the
+  provider reports. Logs add `ai_path` (`gateway`/`legacy`).
+- **Budget, one place per attempt** (`coach-chat/budget_ledger.ts`): every request sent is covered
+  by a `reserve_ai_budget_v2` place at its own worst case (whole prompt written to the cache at
+  1.5 characters per token plus every output token, at list price). The first attempt reserves the
+  largest prompt any turn can send before the turn starts (Haiku 0.014, Sonnet 0.281 USD; a refusal
+  is the existing 429 `ai_usage_limit`). A repair reserves from its own prompt before it is sent;
+  if that is refused (or over USD 0.50) nothing is sent and the first attempt's failure code
+  stands (`repair_skipped` in the failure log). A route whose first attempt would exceed USD 0.50
+  (for example Sonnet with 32,000 output tokens) is unusable and takes today's path, logged.
+  `AiBudget` has no per-place call, so the ledger holds one `AiBudget` per attempt and the first
+  attempt's place stays open while the repair reserves (its real cost reaches the database only
+  when the turn ends); this can only over-count. At the end every place is settled except one
+  kept: a sent request that timed out with no usage reported (`inFlight`). A deadline that passes
+  before the repair, a refused repair place and a failure whose cost is recorded settle all places
+  (the earlier code kept the place for every `provider_timeout`, which double-charged). A failure
+  that could not be recorded, or that was not the provider's outcome, keeps every place. Today's
+  path keeps its single place on a timeout, as before.
+- **Timeout**: each attempt waits for `route.timeoutMs`, cut to what is left of the 40 s total
+  deadline (`coachChatTiming.totalDeadlineMs`). The app waits 45 s for coach-chat
+  (`coach_repository.dart`), so the deadline stays at 40 s. A route timeout over 40 s (routes
+  accept up to 150 s) is clamped to the deadline and logged as `coach_chat_route_timeout_clamped`;
+  it is not treated as invalid.
 - **Prompt** (`_shared/providers/coach_chat_provider_gateway.ts`): system = rules and answer
   contract; user block 1 = athlete file without conversation memory plus stable contributors
   (`cache: true`); block 2 = memory, omitted-sections line, volatile contributors; block 3 = the
@@ -182,8 +206,9 @@ first and repair, recorded from the pre-A6 code).
   gated). Recommendation: Haiku 5.5 (every gate, about 25 times cheaper and twice as fast);
   Sonnet 5.5 is the settings-only upgrade if the owner wants more clarifying questions.
 - **For A7**: suggested settings `AI_COACH_CHAT_PROVIDER=anthropic`, `MODEL=claude-haiku-5-5`,
-  `MAX_OUTPUT_TOKENS=4096`, `TIMEOUT_MS=30000`, `EVALUATED=true`. The route is used whether or not
-  `EVALUATED` is true. Without an Anthropic-named Coach notice granted, every turn returns 403.
+  `MAX_OUTPUT_TOKENS=4096`, `TIMEOUT_MS=30000`, `EVALUATED=true`. With `EVALUATED` not `true`
+  Coach chat behaves as if there were no route (today's path). Without an Anthropic-named Coach
+  notice granted, every turn returns 403.
   The app shows "AI" for provider `anthropic` (`aiProviderDisplayName` returns null).
 
 ### A7: wording, budgets, cutover
