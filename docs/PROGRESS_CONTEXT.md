@@ -1,8 +1,23 @@
 # Tracend Current State
 
-**As of:** 2026-10-13
+**As of:** 2026-10-15
 
-**Lifecycle:** owner-only private beta; not approved for public production
+**Lifecycle:** owner-only private beta; not approved for public production. Production Auth
+sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
+
+**Current priority (2026-10-15): the coaching platform program.** Plan, contracts and board:
+[`docs/plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md).
+Iteration 1 is Phase 0 + Phase 1. One line per stream; each stream edits only its own line.
+
+<!-- PROGRAM:coaching-platform-2026-10 -->
+- program: P0 (contracts, migration-order CI check) in review.
+- ai-gateway: A1, A2 not started. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
+- training-engine: B0 not started. Handoff: [`training-engine.md`](./handoff/training-engine.md).
+- workout-hr: C1 not started. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
+- ios-widgets: D0 not started. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
+- research-library: E1 not started. Handoff: [`research-library.md`](./handoff/research-library.md).
+- website: W1 not started. Handoff: [`website.md`](./handoff/website.md).
+<!-- /PROGRAM:coaching-platform-2026-10 -->
 
 **Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
 https://tracend.pages.dev) and a double opt-in waitlist on the production project (three
