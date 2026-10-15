@@ -16,10 +16,10 @@ C1 (Phase 1); C2 (Phase 2); C3 (Phase 3); C4 (Phase 4)
 
 ## State
 
-**C1 (set timing, reps left, workout events): in review** on `claude/c1-set-timing` (draft PR #104 to
-`main`). Not merged, not deployed; needs migration first, then an app install.
+**C1 (set timing, reps left, workout events): in review** on `claude/c1-set-timing` (draft PR
+#104 to `main`). Not merged, not deployed; needs migration first, then an app install.
 
-- Migration `20261015100031_set_timing.sql` (code 31): five nullable `exercise_sets` columns with
+- Migration `20261015140031_set_timing.sql` (code 31): five nullable `exercise_sets` columns with
   checks (Contract 2); `sync_workout_draft` redefined from `20260711190000_workout_truth_repair.sql`
   (the latest) with the same signature and behaviour plus the five optional set keys: a missing key
   keeps the stored value, an explicit null clears it, malformed values and times more than 10
@@ -30,11 +30,16 @@ C1 (Phase 1); C2 (Phase 2); C3 (Phase 3); C4 (Phase 4)
   sets. `complete_workout_v2` untouched. Privacy export already selects every column, so it needs
   no change. pgTAP `set_timing_test.sql`; `train_redesign_data_test.sql` and the Deno DB contract
   test expect history 1.1.
-- Interpretation to confirm: the "before the session's start" rule allows the same 10 minutes as
-  the future rule, for a phone clock that differs from the server's. The app also never sends a
-  time from before the server's copy of the session began (a workout started offline: the server
-  stamps its start when the session reaches it), because one refused time would hold back the
-  whole draft; those times stay in the phone's draft.
+- The "before the session's start" rule allows the same 10 minutes as the future rule (Contract 2
+  says "more than 10 minutes before the session's recorded start"). The app never sends a time
+  from before the server's recorded start (read back with `get_my_workout_session` after
+  `start_workout`; the phone clock only when that read fails), so a workout started offline keeps
+  those times on the phone.
+- Clock far off (review B1): when a sync is refused with 22023, the app sends the same revision
+  again without the five keys, stores `timing_refused` in the local draft and syncs the rest of the
+  workout without them (breadcrumb "Set times refused; syncing without them", no values). A finish
+  whose final sync is refused (any code) does not call `complete_workout_v2`: the draft stays,
+  the state reads Needs attention and Send finish retries.
 - App (`lib/features/train/`): `set_timing.dart` records starts, ends and rest from wall-clock
   moments (rest end = Skip, or the timer's stored end even when the app notices late; a set ticked
   during its rest gets no start; a gap over an hour is no rest). `workout_draft.dart` carries the
@@ -44,10 +49,12 @@ C1 (Phase 1); C2 (Phase 2); C3 (Phase 3); C4 (Phase 4)
   every rest change publish `RestAdjusted` (Skip with `endsAt` = now); `ExerciseAdvanced` fires when
   the exercise on screen changes; `WorkoutEnded` on finish (completed) and on discard or leave.
   `SetStarted.at` is the set's real start, which can be earlier than its publication (a start is
-  known only once the set is edited or ticked).
-- UI decision (reps left vs RPE): the 1–10 set-effort picker is replaced by `RirPicker` (0–4, 5+).
-  The old picker already asked "How many reps were left?" and labelled each RPE with reps left, so
-  the redesign's intent is kept and the question is answered directly. The app still writes
+  known only once the set is edited or ticked); it is never withdrawn, so listeners that need a
+  set's window read the stored times. Commands are ignored while finishing and after close. Undo
+  clears the set's times and re-measures any rest counted from it.
+- UI decision (reps left vs RPE): the 1–10 set-effort picker is replaced by `RirPicker` (0–4,
+  5+). The old picker already asked "How many reps were left?" and labelled each RPE with reps
+  left, so the redesign's intent is kept and the question is answered directly. The app still writes
   `rpe = 10 − rir` (the same mapping), so the Coach's set RPE stays consistent; sets logged before
   show their RPE. `rpe_picker.dart` became `effort_scale.dart` (session effort only).
 - Tests: `test/set_timing_test.dart` (rest maths, backgrounding, relaunch),

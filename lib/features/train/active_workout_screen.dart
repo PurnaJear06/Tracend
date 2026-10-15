@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
+import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/account/notification_repository.dart';
@@ -115,6 +116,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// When the server's copy of this session began, when known. Set times
   /// before it stay on this phone (see [WorkoutSetDraft.toMap]).
   DateTime? _serverStartedAt;
+
+  /// The server refused this phone's set times (22023, for example a phone
+  /// clock far off): this session syncs without them from then on.
+  bool _timingRefused = false;
   bool _ready = false;
   _Sync _sync = _Sync.saving;
 
@@ -220,6 +225,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         _timing.pendingStart = DateTime.tryParse(
           '${local[SetTimingRecorder.draftKey] ?? ''}',
         );
+        _timingRefused = local[_timingRefusedKey] == true;
       }
     }
     final storedRest = RestTimer.fromJson(local?[RestTimer.draftKey]);
@@ -246,12 +252,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     unawaited(_loadHistory());
     try {
       if (_sessionId == null) {
-        _sessionId = await widget.repository.start(
+        final id = await widget.repository.start(
           widget.workout,
           _idempotencyKey,
           localDate: widget.sessionDate,
         );
-        _serverStartedAt ??= widget.clock();
+        _sessionId = id;
+        _serverStartedAt ??= await _serverStartOf(id);
       }
     } catch (e) {
       debugPrint('Non-critical error: workout start waits: $e');
@@ -308,6 +315,30 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   /// The local draft field that holds [_serverStartedAt].
   static const _serverStartedKey = 'server_started_at';
+
+  /// The local draft field that holds [_timingRefused].
+  static const _timingRefusedKey = 'timing_refused';
+
+  /// When the server's copy of session [id] began, read back from the
+  /// server; the phone's clock only when that read fails (an estimate: a
+  /// refused time then falls back to syncing without times).
+  Future<DateTime> _serverStartOf(String id) async {
+    try {
+      final session = await widget.repository.loadSession(
+        widget.workout,
+        localDate: widget.sessionDate,
+      );
+      if (session != null && session['session_id'] == id) {
+        final start = DateTime.tryParse(
+          '${session['actual_started_at'] ?? ''}',
+        );
+        if (start != null) return start;
+      }
+    } catch (e) {
+      debugPrint('Non-critical error: session start not read back: $e');
+    }
+    return widget.clock();
+  }
 
   List<Map<String, int>> _clearedLoads() => [
     for (final draft in _exercises)
@@ -412,8 +443,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   // Draft and sync -------------------------------------------------------------
 
   /// The draft. With [notBefore] (for the server), set times before it are
-  /// left out.
-  Map<String, dynamic> _draft({DateTime? notBefore}) => {
+  /// left out; without [timing], every set's timing keys are.
+  Map<String, dynamic> _draft({DateTime? notBefore, bool timing = true}) => {
     'workout_id': widget.workout.id,
     'session_id': _sessionId,
     'idempotency_key': _idempotencyKey,
@@ -427,7 +458,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           'rest_seconds': draft.exercise.restSeconds,
           'sets': [
             for (var j = 0; j < draft.sets.length; j++)
-              {'number': j + 1, ...draft.sets[j].toMap(notBefore: notBefore)},
+              {
+                'number': j + 1,
+                ...draft.sets[j].toMap(notBefore: notBefore, timing: timing),
+              },
           ],
         },
     ],
@@ -440,6 +474,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     ..._draft(),
     'actual_started_at': _startedAt.toUtc().toIso8601String(),
     _serverStartedKey: ?_serverStartedAt?.toUtc().toIso8601String(),
+    if (_timingRefused) _timingRefusedKey: true,
     RestTimer.draftKey: ?_rest.toDraft(),
     SetTimingRecorder.draftKey: ?_timing.pendingStart
         ?.toUtc()
@@ -454,14 +489,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     setState(() {});
   }
 
-  Future<void> _save() async {
-    if (_closed || _viewingCompleted) return;
+  /// Saves the draft on the phone and sends it to the server. Returns how
+  /// the send went, or null when nothing was sent (a closed workout).
+  Future<_Sync?> _save() async {
+    if (_closed || _viewingCompleted) return null;
     await widget.repository.saveDraft(
       widget.workout.id,
       jsonEncode(_localDraft()),
     );
     var id = _sessionId;
-    if (id == null) return;
+    if (id == null) return null;
     if (id.startsWith('pending-')) {
       try {
         id = await widget.repository.start(
@@ -470,30 +507,54 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           localDate: widget.sessionDate,
         );
         _sessionId = id;
-        _serverStartedAt = widget.clock();
+        _serverStartedAt = await _serverStartOf(id);
       } catch (e) {
         debugPrint('Non-critical error: workout start still waits: $e');
         if (mounted) setState(() => _sync = _Sync.offline);
-        return;
+        return _Sync.offline;
       }
     }
     if (mounted) setState(() => _sync = _Sync.saving);
-    _Sync result;
+    final first = await _send(id);
+    final _Sync result;
+    if (first != null) {
+      result = first;
+    } else {
+      // Missing keys keep the server's values, so the same revision goes
+      // again without the times, and so does every later sync.
+      _timingRefused = true;
+      AppBreadcrumbs.workout('Set times refused; syncing without them');
+      await widget.repository.saveDraft(
+        widget.workout.id,
+        jsonEncode(_localDraft()),
+      );
+      result = await _send(id) ?? _Sync.attention;
+    }
+    if (mounted) setState(() => _sync = result);
+    return result;
+  }
+
+  /// One `sync_workout_draft` call. Null when the server refused the draft
+  /// (22023) while it still carried this phone's set times; any other
+  /// refusal needs attention.
+  Future<_Sync?> _send(String id) async {
     try {
       await widget.repository.sync(
         id,
         _revision,
-        _draft(notBefore: _serverStartedAt ?? _startedAt),
+        _draft(
+          notBefore: _serverStartedAt ?? _startedAt,
+          timing: !_timingRefused,
+        ),
       );
-      result = _Sync.saved;
+      return _Sync.saved;
     } on PostgrestException catch (e) {
       debugPrint('Non-critical error: workout sync refused: ${e.code}');
-      result = _Sync.attention;
+      return e.code == '22023' && !_timingRefused ? null : _Sync.attention;
     } catch (e) {
       debugPrint('Non-critical error: workout sync waits: $e');
-      result = _Sync.offline;
+      return _Sync.offline;
     }
-    if (mounted) setState(() => _sync = result);
   }
 
   // Sets ------------------------------------------------------------------------
@@ -588,8 +649,21 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   void _undoSet(int exercise, int set) {
     _exercises[exercise].sets[set]
       ..completed = false
+      ..startedAt = null
       ..completedAt = null
+      ..restBeforeSeconds = null
+      ..timingSource = null
       ..setRir(null);
+    // A rest measured from the undone tick is measured again.
+    for (final draft in _exercises) {
+      for (final other in draft.sets) {
+        if (!other.completed || other.startedAt == null) continue;
+        other.restBeforeSeconds = restTakenSeconds(
+          other.startedAt,
+          _endsExcept(other),
+        );
+      }
+    }
     if (_momentExercise == exercise && _moment?.set == set) {
       _moment = null;
       _momentExercise = null;
@@ -643,7 +717,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   /// The Live Activity's buttons. Ignored once the workout is closed.
   void _onCommand(WorkoutCommand command) {
-    if (!mounted || !_ready || _closed || _viewingCompleted) return;
+    if (!mounted || !_ready || _closed || _finishing || _viewingCompleted) {
+      return;
+    }
     switch (command) {
       case CompleteCurrentSet():
         _completeCurrentSet();
@@ -912,7 +988,24 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     });
     await _rest.stop();
     _saveTimer?.cancel();
-    await _save();
+    final saved = await _save();
+    if (saved == _Sync.attention) {
+      // The server holds older sets than this phone: finishing now would
+      // finish from those, and clear the phone's copy.
+      if (!mounted) return;
+      setState(() {
+        _finishing = false;
+        _pendingFinish = PendingWorkoutFinish(
+          sessionEffort: effort,
+          durationSeconds: durationSeconds,
+        );
+        _finishError =
+            'Tracend could not save your sets, so the workout is not '
+            'finished yet. They are kept on this phone.';
+      });
+      unawaited(TracendHaptics.warning());
+      return;
+    }
     try {
       await widget.repository.completeWithEffort(
         _sessionId ?? 'pending-$_idempotencyKey',

@@ -18,6 +18,9 @@ sealed class WorkoutEvent {
 }
 
 /// A set began: the rest before it ended, or the athlete first edited it.
+/// It is never withdrawn: when the phone's clock moved back so that the
+/// tick comes before this start, the set is stored with no start. Listeners
+/// that need a set's window read the stored times.
 final class SetStarted extends WorkoutEvent {
   const SetStarted({
     required super.at,

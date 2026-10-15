@@ -112,17 +112,26 @@ class WorkoutSetDraft {
   /// The set as the draft holds it. A time before [notBefore] is left out,
   /// so the server keeps what it has: it refuses times from before the
   /// session it holds began (a workout started offline), and one refused
-  /// time would hold back the whole draft.
-  Map<String, dynamic> toMap({DateTime? notBefore}) {
+  /// time would hold back the whole draft. Without [timing] the five
+  /// Contract 2 keys (times, rest, reps left, source) are all left out: the
+  /// server refused this phone's times, and the reps left still reach it as
+  /// the matching RPE.
+  Map<String, dynamic> toMap({DateTime? notBefore, bool timing = true}) {
     bool sendable(DateTime? time) =>
         notBefore == null || time == null || !time.isBefore(notBefore);
-    final start = startedAt;
-    final end = completedAt;
     return {
       'load_kg': load,
       'repetitions': reps,
       'rpe': rpe,
       'completed': completed,
+      if (timing) ..._timingMap(sendable),
+    };
+  }
+
+  Map<String, dynamic> _timingMap(bool Function(DateTime?) sendable) {
+    final start = startedAt;
+    final end = completedAt;
+    return {
       if (sendable(start)) ...{
         'started_at': start?.toUtc().toIso8601String(),
         'rest_before_seconds': restBeforeSeconds,

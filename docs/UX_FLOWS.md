@@ -603,26 +603,33 @@ exercise with sets left.
   reps left** and a ⋯ menu whose only action is **Mark as skipped** (an action sheet with **Keep
   logging**). Logging a set on a skipped exercise unmarks it.
 
-**Reps left (reps in reserve).** Optional on every set: "How many more reps could you do?" with one
-row of 0, 1, 2, 3, 4 and 5+ (VoiceOver reads "Nothing left", "1 rep left" … "5 or more reps
+**Reps left (reps in reserve).** Optional on every set: "How many more reps could you do?" with
+one row of 0, 1, 2, 3, 4 and 5+ (VoiceOver reads "Nothing left", "1 rep left" … "5 or more reps
 left"). It replaced the 1–10 set-effort picker on 2026-10-15 (C1): that picker already asked how
 many reps were left, so the athlete now answers it directly; the app still writes the RPE the same
-answer meant there (10 − reps left, 5+ as 5). Blank is allowed (**Not now**, **Clear**). **Fill reps
-left** gives one value to the logged sets of that exercise that have neither reps left nor an
+answer meant there (10 − reps left, 5+ as 5). Blank is allowed (**Not now**, **Clear**). **Fill
+reps left** gives one value to the logged sets of that exercise that have neither reps left nor an
 older effort, leaves the others alone, and says how many it filled; each set stays adjustable
 afterwards. Reps left are separate from session effort and never feed it.
 
 **Set timing.** Nothing new on screen. Each set records when it started (the end of the rest before
 it, else the first edit of its kg or reps outside a rest; none when it is ticked during its rest),
 when it was ticked and the rest taken since the previous tick, all from the wall clock, so a rest
-that runs out while the phone sleeps ends at its stored end time. Times from before the server's
-copy of an offline-started session began stay on the phone.
+that runs out while the phone sleeps ends at its stored end time. Undo clears the set's times and
+re-measures any rest counted from it. Times from before the server's copy of the session began stay
+on the phone. When the server refuses the times (a phone clock more than 10 minutes off), the draft
+is sent again without them and the rest of that workout syncs without times.
+
+**Finish after a refused sync.** When the server refuses the final sync, the workout is not
+finished (the server would finish it from older sets and the phone would drop its copy): the sync
+state reads **Needs attention**, the banner says the sets are kept on this phone, and **Send
+finish** tries again.
 
 **Rest.** Done set starts the exercise's rest (`rest_seconds`) when something follows it:
 
 - A full-screen lime ring with the time left, "Next: Set 3 of Bench press" (or the next
-  exercise), −15, +15, Skip, and the reps-left picker for the set just done. It covers the page, not
-  the header, so Finish and leave stay reachable.
+  exercise), −15, +15, Skip, and the reps-left picker for the set just done. It covers the page,
+  not the header, so Finish and leave stay reachable.
 - A swipe down, a pull past the top or **Hide** shrinks it to a floating pill (ring, "Next: Set
   3", ±15 at normal sizes, Skip) above the page; a tap on the pill opens the ring again. The rest
   never blocks editing.

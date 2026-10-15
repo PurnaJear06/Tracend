@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/account/notification_repository.dart';
@@ -78,6 +79,18 @@ class _Repository implements WorkoutRepository {
   Map<String, dynamic>? synced;
   bool failStart = false;
   bool failSync = false;
+
+  /// The server refuses (22023) any draft that carries a set end time, as
+  /// it does for a phone clock more than 10 minutes ahead.
+  bool refuseTimes = false;
+
+  /// The server refuses every draft with this code.
+  String? refuseCode;
+  int refusals = 0;
+  int completeCalls = 0;
+
+  /// Runs when the server creates the session.
+  void Function()? onStart;
   bool failComplete = false;
   final efforts = <int>[];
   int? lastDuration;
@@ -131,6 +144,7 @@ class _Repository implements WorkoutRepository {
     DateTime? localDate,
   }) async {
     if (failStart) throw Exception('offline');
+    onStart?.call();
     return 'server-session';
   }
 
@@ -141,6 +155,23 @@ class _Repository implements WorkoutRepository {
     Map<String, dynamic> draft,
   ) async {
     if (failSync) throw Exception('offline');
+    final code = refuseCode;
+    if (code != null) {
+      refusals++;
+      throw PostgrestException(message: 'refused', code: code);
+    }
+    final sets = [
+      for (final exercise in draft['exercises'] as List)
+        ...(exercise as Map)['sets'] as List,
+    ];
+    if (refuseTimes &&
+        sets.any((set) => (set as Map)['completed_at'] != null)) {
+      refusals++;
+      throw const PostgrestException(
+        message: 'set time is in the future',
+        code: '22023',
+      );
+    }
     synced = jsonDecode(jsonEncode(draft)) as Map<String, dynamic>;
   }
 
@@ -152,6 +183,7 @@ class _Repository implements WorkoutRepository {
     Map<String, dynamic> draft, {
     required int sessionEffort,
   }) async {
+    completeCalls++;
     if (failComplete) throw Exception('offline');
     efforts.add(sessionEffort);
     lastDuration = durationSeconds;
@@ -1173,6 +1205,142 @@ void main() {
       expect(events.last, isA<WorkoutEnded>());
       expect((events.last as WorkoutEnded).completed, isTrue);
       expect(done, isTrue);
+    });
+
+    testWidgets('refused set times: the sets sync without them and finish', (
+      tester,
+    ) async {
+      final h = _Harness();
+      h.repository.refuseTimes = true;
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      await _flushSave(tester);
+
+      expect(h.repository.refusals, 1);
+      final sent = h.repository.syncedSet(0, 0);
+      expect(sent['completed'], isTrue);
+      expect(sent['repetitions'], '8');
+      for (final key in [
+        'started_at',
+        'completed_at',
+        'rest_before_seconds',
+        'rir',
+        'timing_source',
+      ]) {
+        expect(sent.containsKey(key), isFalse, reason: key);
+      }
+      // The phone keeps its times and remembers the refusal.
+      expect(h.repository.savedSet(0, 0)['completed_at'], isNotNull);
+      expect(h.repository.savedDraft['timing_refused'], isTrue);
+      expect(find.text('Saved'), findsOneWidget);
+
+      await _tapLabel(tester, 'Skip rest');
+      await _tapText(tester, 'Done set 2');
+      await _flushSave(tester);
+      expect(h.repository.refusals, 1);
+      expect(h.repository.syncedSet(0, 1)['completed'], isTrue);
+
+      await _tapLabel(tester, 'Skip rest');
+      await _tapLabel(tester, 'Finish workout');
+      await _tapLabel(tester, '7, Hard');
+      await _tap(tester, _finishButton);
+      expect(h.repository.efforts, [7]);
+      expect(find.text('Workout complete'), findsOneWidget);
+    });
+
+    for (final code in ['22023', '55000']) {
+      testWidgets('a refused final sync ($code) does not finish', (
+        tester,
+      ) async {
+        final h = _Harness();
+        await _open(tester, h);
+        await _tapText(tester, 'Done set 1');
+        await _tapLabel(tester, 'Skip rest');
+        await _flushSave(tester);
+        h.repository.refuseCode = code;
+
+        await _tapLabel(tester, 'Finish workout');
+        await _tapLabel(tester, '7, Hard');
+        await _tap(tester, _finishButton);
+
+        expect(h.repository.completeCalls, 0);
+        expect(h.repository.efforts, isEmpty);
+        expect(h.repository.saved, isNotNull);
+        expect(h.repository.savedSet(0, 0)['completed'], isTrue);
+        expect(find.text('Needs attention'), findsOneWidget);
+        expect(find.text('Finish not sent yet'), findsOneWidget);
+        expect(find.textContaining('could not save your sets'), findsOneWidget);
+        expect(find.text('Workout complete'), findsNothing);
+
+        // Once the server takes the sets, the finish goes through.
+        h.repository.refuseCode = null;
+        await _tapText(tester, 'Send finish');
+        expect(h.repository.efforts, [7]);
+        expect(find.text('Workout complete'), findsOneWidget);
+      });
+    }
+
+    testWidgets('the server\'s start, read back, bounds the times sent', (
+      tester,
+    ) async {
+      final h = _Harness();
+      // The server's clock is 15 minutes ahead of the phone's.
+      final serverStart = h.clock.now.add(const Duration(minutes: 15));
+      h.repository.onStart = () => h.repository.serverSession = {
+        'session_id': 'server-session',
+        'state': 'in_progress',
+        'revision': 0,
+        'idempotency_key': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        'actual_started_at': serverStart.toUtc().toIso8601String(),
+        'exercises': const [],
+      };
+      await _open(tester, h);
+      h.clock.advance(const Duration(seconds: 40));
+      await _tapText(tester, 'Done set 1');
+      await _flushSave(tester);
+
+      final sent = h.repository.syncedSet(0, 0);
+      expect(sent['completed'], isTrue);
+      expect(sent.containsKey('completed_at'), isFalse);
+      expect(h.repository.savedSet(0, 0)['completed_at'], isNotNull);
+      expect(time(h.repository.savedDraft['server_started_at']), serverStart);
+    });
+
+    testWidgets('undo clears the set\'s times and remeasures the next rest', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      final t0 = h.clock.now;
+      h.clock.advance(const Duration(seconds: 30));
+      await _tapText(tester, 'Done set 1');
+      h.clock.advance(const Duration(seconds: 60));
+      await _tapLabel(tester, 'Skip rest');
+      h.clock.advance(const Duration(seconds: 30));
+      await _tapText(tester, 'Done set 2');
+      await _tapLabel(tester, 'Skip rest');
+      await _flushSave(tester);
+      expect(h.repository.savedSet(0, 1)['rest_before_seconds'], 60);
+
+      await _tapLabel(tester, 'Undo set 1');
+      await _flushSave(tester);
+      final undone = h.repository.savedSet(0, 0);
+      expect(undone['completed'], isFalse);
+      for (final key in [
+        'started_at',
+        'completed_at',
+        'rest_before_seconds',
+        'rir',
+        'timing_source',
+      ]) {
+        expect(undone[key], isNull, reason: key);
+      }
+      // Set 2 began at the skip; nothing done before it remains.
+      expect(
+        time(h.repository.savedSet(0, 1)['started_at']),
+        t0.add(const Duration(seconds: 90)),
+      );
+      expect(h.repository.savedSet(0, 1)['rest_before_seconds'], isNull);
     });
 
     testWidgets('times from before an offline start stay on the phone', (
