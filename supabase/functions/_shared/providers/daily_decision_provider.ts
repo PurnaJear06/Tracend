@@ -96,6 +96,9 @@ export function decisionCeilingUsd(decisionRoute: AiRoute): number | null {
   return Math.max(0.001, Math.ceil(ceiling * 1_000_000) / 1_000_000);
 }
 
+/// The most `reserve_ai_budget_v2` accepts for one call (it refuses anything above).
+export const maxReservableCeilingUsd = 0.5;
+
 /// A place in the AI budget for the path's model call; false means the
 /// deterministic decision answers.
 export async function reserveDailyDecision(
@@ -109,7 +112,16 @@ export async function reserveDailyDecision(
       return false;
     case "gateway": {
       const ceiling = decisionCeilingUsd(path.route);
-      return ceiling !== null && await budget.reserve("daily_decision", ceiling);
+      if (ceiling === null) return false;
+      // Never reserve less than the real worst case: a route that can cost more than the budget
+      // function accepts per call is unusable, and the deterministic decision answers.
+      if (ceiling > maxReservableCeilingUsd) {
+        console.error(
+          `daily_decision_route_unusable: worst case USD ${ceiling} exceeds ${maxReservableCeilingUsd}`,
+        );
+        return false;
+      }
+      return await budget.reserve("daily_decision", ceiling);
     }
   }
 }
@@ -168,6 +180,22 @@ export function failedRunProvenance(
   return { provider: "mock", model: "deterministic-mock-v1" };
 }
 
+// What each evidence code means. The prompt quotes it, and its thresholds are the only numbers a
+// decision may state besides the athlete's own data (groundingFault).
+export const evidenceCodeReference = [
+  "RECOVERY_WITHIN_BASELINE = recovery score >= 50; CHECK_IN_RECOVERY_MIXED = recovery",
+  "score 40-49; RECOVERY_BELOW_BASELINE = recovery score < 40; SLEEP_QUALITY_GOOD = sleep",
+  "quality score >= 50; SLEEP_QUALITY_POOR = sleep quality score < 50;",
+  "TRAINING_LOAD_OPTIMAL = ACWR 0.8-1.3; TRAINING_LOAD_ELEVATED = ACWR > 1.5;",
+  "WEIGHT_TRENDING_DOWN = 7-day slope < -0.1 kg/day; WEIGHT_TRENDING_UP = 7-day slope >",
+  "+0.1 kg/day; WEIGHT_STABLE = 7-day slope between -0.1 and +0.1 kg/day;",
+  "NUTRITION_ON_TRACK = adherence >= 80%; NUTRITION_BEHIND = adherence < 50%;",
+  "DATA_CONFIDENCE_HIGH = 14+ evidence points; DATA_CONFIDENCE_LOW = fewer than 7 evidence",
+  "points; HEALTH_CONTEXT_AVAILABLE = today's Apple Health summary exists;",
+  "APPROVED_PLAN_ACTIVE = the athlete has an approved plan; CHECK_IN_SAFETY_ESCALATION =",
+  "today's check-in reported pain at the safety threshold.",
+].join(" ");
+
 // The gateway prompt. Stable text only, so it is one cacheable prefix; the day's context follows
 // in the user turn. It never names a model or a company (D11): the decision text is shown to the
 // athlete.
@@ -192,17 +220,7 @@ export const decisionSystemPrompt = [
   "- Cite only codes listed in permitted_evidence, each at most once. Use source",
   '  "policy_evaluation" for APPROVED_PLAN_ACTIVE and CHECK_IN_SAFETY_ESCALATION and',
   '  "feature_snapshot" for the others. A label is one plain sentence for the athlete.',
-  "- Code reference: RECOVERY_WITHIN_BASELINE = recovery score >= 50; CHECK_IN_RECOVERY_MIXED =",
-  "  recovery score 40-49; RECOVERY_BELOW_BASELINE = recovery score < 40; SLEEP_QUALITY_GOOD =",
-  "  sleep quality score >= 50; SLEEP_QUALITY_POOR = sleep quality score < 50;",
-  "  TRAINING_LOAD_OPTIMAL = ACWR 0.8-1.3; TRAINING_LOAD_ELEVATED = ACWR > 1.5;",
-  "  WEIGHT_TRENDING_DOWN = 7-day slope < -0.1 kg/day; WEIGHT_TRENDING_UP = 7-day slope >",
-  "  +0.1 kg/day; WEIGHT_STABLE = 7-day slope between -0.1 and +0.1 kg/day; NUTRITION_ON_TRACK",
-  "  = adherence >= 80%; NUTRITION_BEHIND = adherence < 50%; DATA_CONFIDENCE_HIGH = 14+",
-  "  evidence points; DATA_CONFIDENCE_LOW = fewer than 7 evidence points;",
-  "  HEALTH_CONTEXT_AVAILABLE = today's Apple Health summary exists; APPROVED_PLAN_ACTIVE = the",
-  "  athlete has an approved plan; CHECK_IN_SAFETY_ESCALATION = today's check-in reported pain",
-  "  at the safety threshold.",
+  `- Code reference: ${evidenceCodeReference}`,
   "",
   "Data rules:",
   "- null means the metric was NOT MEASURED. Never treat it as zero, never infer a value; say it",
@@ -211,6 +229,8 @@ export const decisionSystemPrompt = [
   "- feature_context.local_date is the decision date. Values from earlier dates are past",
   "  readings, never current.",
   "- Quote numbers exactly as the context gives them, with their units; add no other numbers.",
+  "  That includes amounts you would prescribe (percentages, sets, reps, minutes, weights,",
+  "  calories): describe a change in words, for example shorter, lighter or easier.",
   "- missing_data lists every code in the context's missing_data, using only these codes:",
   "  recovery_check_in, health_context, nutrition_data. Leave it empty when nothing is missing.",
   "- risk_flags uses short snake_case codes (for example elevated_load, safety_escalation) and",
@@ -246,6 +266,38 @@ export function gatewayFailureCode(vendor: AiVendor, reason: AiFailure): string 
   }
 }
 
+/// What a failed decision may have cost: none (nothing was sent, or the
+/// provider answered with an error, which is not billed), unknown (the request
+/// may have been answered after a timeout or a broken connection) or billed (an
+/// answer arrived and was rejected).
+export type DecisionSpend = "none" | "unknown" | "billed";
+
+export class DecisionCallError extends Error {
+  readonly spend: DecisionSpend;
+
+  constructor(code: string, spend: DecisionSpend) {
+    super(code);
+    this.name = "DecisionCallError";
+    this.spend = spend;
+  }
+}
+
+/// What a failed request may have spent, which decides its budget place.
+/// Today's path keeps every place open as before ("unknown"). On the gateway
+/// path a generated answer was billed; the gateway's own failures say; anything
+/// else was thrown before a request was sent. A billed failure keeps its place:
+/// a failed run has no cost column and daily coaching has no usage-event
+/// purpose, so its cost cannot be recorded (contract request in the A5 handoff).
+export function failureSpend(
+  path: DailyDecisionPath,
+  error: unknown,
+  generated: CoachModelGeneration | undefined,
+): DecisionSpend {
+  if (path.kind !== "gateway") return "unknown";
+  if (generated) return "billed";
+  return error instanceof DecisionCallError ? error.spend : "none";
+}
+
 /// The daily decision through the AI gateway (Contract 1). The caller has
 /// checked that the athlete's notice names the route's vendor.
 export class GatewayDecisionProvider implements CoachModelProvider {
@@ -271,7 +323,9 @@ export class GatewayDecisionProvider implements CoachModelProvider {
       feature_context: request.featureContext,
       missing_data: request.missingData,
     });
-    if (context.length > maxContextChars) throw new Error(`${this.#vendor}_context_too_large`);
+    if (context.length > maxContextChars) {
+      throw new DecisionCallError(`${this.#vendor}_context_too_large`, "none");
+    }
     const result = await call({
       route: this.#route,
       system: [{ type: "text", text: decisionSystemPrompt, cache: true }],
@@ -283,9 +337,20 @@ export class GatewayDecisionProvider implements CoachModelProvider {
         }],
       }],
       output: { kind: "json", schema: decisionSchema },
+      // dailyDecisionConsent already required the athlete's notice to name this vendor, so this
+      // restates that check; the gateway refuses on its own if a future caller skips it.
       consentVendor: this.#vendor,
     }, this.#deps);
-    if (!result.ok) throw new Error(gatewayFailureCode(this.#vendor, result.reason));
+    if (!result.ok) {
+      throw new DecisionCallError(
+        gatewayFailureCode(this.#vendor, result.reason),
+        result.usage !== null
+          ? "billed"
+          : result.reason === "timeout" || result.reason === "network"
+          ? "unknown"
+          : "none",
+      );
+    }
     return {
       decision: result.json as CoachDecisionV1,
       provider: this.#vendor,
@@ -296,4 +361,78 @@ export class GatewayDecisionProvider implements CoachModelProvider {
       estimatedCostUsd: result.usage.costUsd,
     };
   }
+}
+
+// --- Grounding (Architecture rule 8) ----------------------------------------------------------
+
+const modelOrCompany =
+  /\b(claude|anthropic|sonnet|haiku|opus|deepseek|groq|qwen|gemini|google|openai|chatgpt|gpt|llm|language model|ai model)\b/i;
+
+// A number as written: digits with optional thousands separators and decimals, not part of a
+// longer word or number (so "7-day" gives 7, "ACWR" none, "2026-09-07" three numbers).
+const numberToken =
+  /(?<![\p{L}\p{N}_.,])\d{1,3}(?:,\d{3})+(?:\.\d+)?(?![\p{N}])|(?<![\p{L}\p{N}_.,])\d+(?:\.\d+)?(?![\p{N}])/gu;
+
+const isoDateOrId =
+  /^(\d{4}-\d{2}-\d{2}([T ][\d:.]+([+-]\d{2}:?\d{2}|Z)?)?|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+function numbersIn(text: string): number[] {
+  return [...text.matchAll(numberToken)].map((match) => Number(match[0].replaceAll(",", "")));
+}
+
+/** Every number the request supplies: numeric values, and numbers written inside text values. */
+function suppliedNumbers(value: unknown, into: Set<number>): Set<number> {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    into.add(Math.abs(value));
+  } else if (typeof value === "string") {
+    // Dates and ids are identifiers, not quantities a decision may quote.
+    if (!isoDateOrId.test(value.trim())) {
+      for (const number of numbersIn(value)) into.add(number);
+    }
+  } else if (Array.isArray(value)) {
+    for (const item of value) suppliedNumbers(item, into);
+  } else if (typeof value === "object" && value !== null) {
+    for (const item of Object.values(value)) suppliedNumbers(item, into);
+  }
+  return into;
+}
+
+const referenceNumbers: ReadonlySet<number> = new Set(numbersIn(evidenceCodeReference));
+
+/** The text of a decision the athlete reads. */
+export function decisionText(decision: CoachDecisionV1): string {
+  return [
+    decision.training.summary,
+    ...decision.training.today_adjustments,
+    decision.nutrition.summary,
+    ...decision.nutrition.today_adjustments,
+    decision.head_coach.final_decision,
+    decision.head_coach.reason,
+    ...decision.evidence.map((item) => item.label),
+  ].join("\n");
+}
+
+/**
+ * Why a contract-valid model decision may still not reach the athlete, or null. One general rule
+ * set over the whole text: every number appears in the request's data or the evidence code
+ * reference (7.0 and 7 are the same number; units and signs are ignored), no model or company is
+ * named (D11), and every gap the policy named stays in missing_data.
+ */
+export function groundingFault(
+  decision: CoachDecisionV1,
+  request: CoachModelRequest,
+): "ungrounded_number" | "names_model_or_company" | "missing_data_dropped" | null {
+  const text = decisionText(decision);
+  const supplied = suppliedNumbers(
+    [request.featureContext, request.permittedEvidence, request.missingData],
+    new Set(),
+  );
+  if (numbersIn(text).some((number) => !supplied.has(number) && !referenceNumbers.has(number))) {
+    return "ungrounded_number";
+  }
+  if (modelOrCompany.test(text)) return "names_model_or_company";
+  if (!request.missingData.every((gap) => decision.missing_data.includes(gap))) {
+    return "missing_data_dropped";
+  }
+  return null;
 }

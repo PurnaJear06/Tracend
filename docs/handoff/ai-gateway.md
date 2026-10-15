@@ -158,25 +158,49 @@ today's path.
   The eval router is refused (no notice names it).
 - `parseCoachDecision` still runs on every path's output in coach-decide before anything is
   stored; a forbidden answer is a 503 `coaching_unavailable`, as today.
-- Tests (`daily_decision_provider_test.ts`, 12): no-route parity (mock default; DeepSeek request
+- Tests (`daily_decision_provider_test.ts`, 14): no-route parity (mock default; DeepSeek request
   byte for byte; consent, budget and provenance as today), unevaluated route sends nothing,
   vendor-checked consent, ceiling, the Claude request (cache mark, no sampling, nulls kept),
   failure mapping, router refused, D11 prompt check, and B0's property pattern on the gateway path
   (5 policies x 5 training x 5 nutrition actions x permitted/unpermitted evidence: nothing the
-  policy forbids passes). Deno suite: 497 passed, 0 failed, 8 ignored.
+  policy forbids passes), grounding rules, the unusable-ceiling route. Deno suite: 505 passed,
+  0 failed, 8 ignored.
+- **Budget outcomes** (`failureSpend`, `DecisionCallError`, handler tests in
+  `coach-decide/handler_test.ts`): on the gateway path a failure that cost nothing (consent
+  mismatch, context too large, 429/503/529/HTTP errors with no usage, a rejected request)
+  releases its place. A genuinely unknown spend (timeout, broken connection) and a billed
+  answer that was then rejected keep the place open at its ceiling. The legacy path is unchanged
+  (always keeps). **Contract request for A7/SQL:** a failed run has no cost column and daily
+  coaching has no usage-event purpose, so a billed-then-rejected call cannot be settled at its
+  real cost today; it counts at its ceiling until the reservation ages out.
+- **Ceiling is never clamped:** `decisionCeilingUsd` is the real worst case. If it passes
+  `maxReservableCeilingUsd` (USD 0.50, what `reserve_ai_budget_v2` accepts), the route is
+  unusable: nothing is reserved or sent, the deterministic decision answers and
+  `daily_decision_route_unusable` is logged. Tested with Opus at 32,000 output tokens.
+- **Grounding** (`groundingFault`, run in coach-decide after `parseCoachDecision`, gateway path
+  only): every number in the athlete-facing text must appear in the request's data (or in the
+  evidence code reference thresholds), matched as whole numbers (`7.0` = `7`, `17` does not match
+  `7`); no model or company names (D11); every `missing_data` gap the policy named stays in the
+  answer. A fault takes the invalid-output path: deterministic decision, a failed run recorded
+  with `ungrounded_number`, `names_model_or_company` or `missing_data_dropped`. The legacy
+  DeepSeek path does not have this check and has the same gap (rule 8); closing it would change
+  today's path and is left to the owner.
 - **Eval** `_evals/daily_decision_eval.ts` (offline checks in `daily_decision_eval_test.ts`):
   13 synthetic days from `test/contract/fixtures/daily_computed_metrics.json` and variants,
   with evidence and policy derived by the SQL rules, plus the two policy cases of B0's tests; the
   deterministic decision is the recorded reference. Gates: 90% valid, every escalation escalates,
-  no model or company names, p95 under 25 s. `EVAL_ATTEMPTS` retries transport failures only
-  (a sleeping laptop times out). No earlier daily-decision eval exists, so this run is the
-  baseline (2026-10-15, Sonnet 5.5, thinking off, 1,800 tokens): 13/13 valid, both escalation
-  days escalate, no model names, training action equals the deterministic reference on 8/13 and
-  nutrition on 12/13, p50 5.1 s, p95 6.0 s, USD 0.118 for the run (about USD 0.009 a decision,
-  about 2,600 prompt tokens read from cache). Where the reference holds on GATHER_DATA (recovery
-  below baseline, elevated load, low confidence, scores unavailable), the model proceeds with the
-  plan and names the risk; both are allowed under `maintain_only` (owner call, see the PR). One
-  answer used a number not in the context ("15").
+  zero unsupported numbers, no model or company names, every named gap kept (the same validator
+  as production), p95 under 25 s. `EVAL_ATTEMPTS` retries transport failures only; the spend
+  guard stops before a day whose ceiling could pass `EVAL_MAX_USD`. Runs (2026-10-15, Sonnet 5.5,
+  thinking off, 1,800 tokens): first run 12/13 valid; the one rejection was an invented "10-15%"
+  volume cut (`ungrounded_number`, gate failed). The prompt now says prescribed amounts
+  (percentages, sets, minutes, calories) are described in words. Second run: 13/13 valid, 0
+  unsupported numbers, 0 model names, 0 dropped gaps, both escalation days escalate, training
+  action equals the deterministic reference on 8/13 and nutrition on 12/13, p50 5.0 s, p95 6.1 s,
+  USD 0.118 for the run (about USD 0.009 a decision). Where the reference holds on GATHER_DATA
+  (recovery below baseline, elevated load, low confidence, scores unavailable), the model
+  proceeds with the plan and names the risk; both are allowed under `maintain_only` (owner
+  call, see the PR). One 13-day run is a small sample; the grounding check is the safety net.
 - **Cutover settings (A7):** `AI_DAILY_DECISION_PROVIDER=anthropic`,
   `AI_DAILY_DECISION_MODEL=claude-sonnet-5-5`, `AI_DAILY_DECISION_MAX_OUTPUT_TOKENS=1800`,
   `AI_DAILY_DECISION_TIMEOUT_MS=25000` (or more; see the eval latency),

@@ -25,6 +25,8 @@ import {
   failedRunProvenance,
   GatewayDecisionProvider,
   gatewayFailureCode,
+  groundingFault,
+  maxReservableCeilingUsd,
   reserveDailyDecision,
 } from "./daily_decision_provider.ts";
 import { DeepseekCoachModelProvider } from "./deepseek_coach_model_provider.ts";
@@ -110,10 +112,17 @@ Deno.test("no daily_decision route keeps today's path; the mock stays the defaul
     environment: environment({}),
   });
   assertInstanceOf(provider, MockCoachModelProvider);
+  const generated = await provider.generateDecision(request);
   assertEquals(
-    await provider.generateDecision(request),
-    await new MockCoachModelProvider().generateDecision(request),
+    [generated.provider, generated.model, generated.estimatedCostUsd],
+    ["mock", "deterministic-mock-v2", 0],
   );
+  assertEquals(generated.decision.training, {
+    action: "PROCEED_AS_PLANNED",
+    summary: "Complete the scheduled session at the approved effort.",
+    today_adjustments: [],
+  });
+  assertEquals(generated.decision.evidence.map((item) => item.code), ["RECOVERY_WITHIN_BASELINE"]);
   assertInstanceOf(
     dailyDecisionProviderFor({ kind: "legacy" }, "not_granted", {
       environment: environment({ COACH_MODEL_PROVIDER: "deepseek" }),
@@ -264,6 +273,30 @@ Deno.test("gateway budget reserves the route's ceiling from the price table", as
   } as unknown as Parameters<typeof reserveDailyDecision>[1];
   assertEquals(await reserveDailyDecision({ kind: "gateway", route: sonnet }, budget), false);
   assertEquals(reserved, [["daily_decision", ceiling]]);
+});
+
+Deno.test("gateway route whose worst case passes the per-call limit reserves nothing", async () => {
+  const route = evaluatedRoute({
+    MODEL: "claude-opus-5-5",
+    THINKING: "adaptive",
+    MAX_OUTPUT_TOKENS: "32000",
+  });
+  const ceiling = decisionCeilingUsd(route);
+  assert(ceiling !== null && ceiling > maxReservableCeilingUsd, `ceiling ${ceiling}`);
+  const budget = {
+    reserve: () => {
+      throw new Error("no reservation expected: the ceiling must never be clamped");
+    },
+  } as unknown as Parameters<typeof reserveDailyDecision>[1];
+  const logged: unknown[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => void logged.push(args);
+  try {
+    assertEquals(await reserveDailyDecision({ kind: "gateway", route }, budget), false);
+  } finally {
+    console.error = original;
+  }
+  assertEquals(logged.length, 1);
 });
 
 Deno.test("gateway request: cached stable rules, delimited context, no sampling", async () => {
@@ -467,4 +500,48 @@ Deno.test("no model answer the active policy forbids passes the validator", asyn
   }
   assertEquals(checked, policies.length * trainingActions.length * nutritionActions.length * 2);
   assert(accepted > 0);
+});
+
+// --- Grounding --------------------------------------------------------------------------------
+
+Deno.test("grounding: every number must come from the request data or the code reference", () => {
+  const groundingRequest: CoachModelRequest = {
+    ...request,
+    missingData: ["health_context"],
+    featureContext: {
+      local_date: "2026-09-07",
+      active_plan_version_id: "00000000-0000-4000-8000-000000000015",
+      scores: { recovery: 34, acwr: 1.62, sleep_debt_minutes: 1800, weight_trend: -0.0714 },
+      check_in: { energy: 2, pain_severity: 0 },
+      eligibility: { detail: "1 comparable session(s), 33% adherence." },
+    },
+  };
+  const withText = (reason: string, missing = ["health_context"]) =>
+    validDecision({
+      head_coach: { final_decision: "Keep your approved plan.", reason },
+      missing_data: missing,
+    });
+  const fault = (reason: string, missing?: string[]) =>
+    groundingFault(withText(reason, missing), groundingRequest);
+  for (
+    const grounded of [
+      "Recovery is 34, below 40, and ACWR is 1.62 (above 1.5).",
+      "Energy 2.0 today; 33% adherence over 1 session; 1,800 minutes of sleep debt.",
+      "Your weight trend is -0.0714 kg/day over 7 days.",
+      "No numbers at all.",
+    ]
+  ) assertEquals(fault(grounded), null, grounded);
+  // Dates and ids supply no quantities, and a number is matched whole, never as a substring.
+  for (
+    const ungrounded of [
+      "Trim volume by 15%.",
+      "Rest for 9 minutes.",
+      "Recovery is 3.",
+      "Recovery is 340.",
+      "ACWR is 1.6.",
+      "Aim for 2026 steps.",
+    ]
+  ) assertEquals(fault(ungrounded), "ungrounded_number", ungrounded);
+  assertEquals(fault("Sonnet suggests rest."), "names_model_or_company");
+  assertEquals(fault("Keep going.", []), "missing_data_dropped");
 });

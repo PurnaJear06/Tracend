@@ -9,7 +9,7 @@
 // adaptive; default off), EVAL_EFFORT (low | medium | high), EVAL_MAX_OUTPUT_TOKENS (default
 // 1800, today's decision limit), EVAL_TIMEOUT_MS (default 25000, today's DeepSeek limit),
 // EVAL_REPEATS (default 1), EVAL_ATTEMPTS (default 1; extra attempts after a timeout, network
-// error or 429 only, reported as transport_retries), EVAL_MAX_USD (default 1; the run stops before a call that could
+// error or 429 only, reported as transport_retries), EVAL_MAX_USD (default 1; the run stops before a day that could
 // pass it), EVAL_REPORT_DIR (default .tooling/daily-decision-evals/<timestamp>). The key is
 // ANTHROPIC_API_KEY.
 //
@@ -19,9 +19,10 @@
 // deterministic decision's tests. The deterministic decision for each day is recorded next to the
 // model's as the reference.
 //
-// Gate: at least 90% of answers pass the decision contract, every escalation day is answered
-// with an escalation, no athlete-facing text names a model or company (D11), and p95 latency
-// stays under 25 s. Exits non-zero when the gate fails. Synthetic data only.
+// Gate: at least 90% of answers pass the decision contract and coach-decide's grounding check
+// (groundingFault: no unsupported number, no model or company name (D11), no named gap
+// dropped; each counted, and each must be zero), every escalation day is answered with an
+// escalation, and p95 latency stays under 25 s. Exits non-zero when the gate fails. Synthetic data only.
 
 import metricsFixture from "../../../test/contract/fixtures/daily_computed_metrics.json" with {
   type: "json",
@@ -38,6 +39,7 @@ import {
   dailyDecisionPath,
   decisionCeilingUsd,
   GatewayDecisionProvider,
+  groundingFault,
 } from "../_shared/providers/daily_decision_provider.ts";
 import { MockCoachModelProvider } from "../_shared/providers/mock_coach_model_provider.ts";
 
@@ -257,31 +259,6 @@ export function decisionCases(): DecisionCase[] {
   return cases;
 }
 
-const modelOrCompany =
-  /\b(claude|anthropic|sonnet|haiku|opus|deepseek|groq|qwen|gemini|google|openai|chatgpt|gpt|llm|language model|ai model)\b/i;
-const gapCodes = new Set(["recovery_check_in", "health_context", "nutrition_data"]);
-
-function athleteText(decision: CoachDecisionV1): string {
-  return [
-    decision.training.summary,
-    ...decision.training.today_adjustments,
-    decision.nutrition.summary,
-    ...decision.nutrition.today_adjustments,
-    decision.head_coach.final_decision,
-    decision.head_coach.reason,
-    ...decision.evidence.map((item) => item.label),
-  ].join("\n");
-}
-
-/** Numbers in the athlete's text that appear nowhere in the context or the code thresholds. */
-function unsupportedNumbers(text: string, request: CoachModelRequest): string[] {
-  const context = JSON.stringify(request);
-  const thresholds = ["0.8", "1.3", "1.5", "50", "40", "80", "0.1", "7", "14", "28"];
-  return [...new Set(text.match(/\d+(?:\.\d+)?/g) ?? [])].filter((value) =>
-    !context.includes(value) && !thresholds.includes(value)
-  );
-}
-
 export type CaseResult = Readonly<{
   case: string;
   run: number;
@@ -297,9 +274,8 @@ export type CaseResult = Readonly<{
   nutrition_action: string | null;
   reference_training_action: string;
   reference_nutrition_action: string;
-  names_model_or_company: boolean;
-  gaps_named: boolean;
-  unsupported_numbers: string[];
+  /** groundingFault for a contract-valid answer: production rejects it (coach-decide). */
+  grounding: string | null;
   decision: CoachDecisionV1 | null;
 }>;
 
@@ -353,10 +329,8 @@ async function attemptCase(
     outcome = `gateway:${(error as Error).message}`;
   }
   const accepted: CoachDecisionV1 | null = decision;
-  const text = accepted ? athleteText(accepted) : "";
-  const gapsNamed = accepted === null ||
-    (item.request.missingData.every((gap) => accepted.missing_data.includes(gap)) &&
-      accepted.missing_data.every((gap) => gapCodes.has(gap)));
+  const grounding = accepted ? groundingFault(accepted, item.request) : null;
+  if (grounding) outcome = `grounding:${grounding}`;
   return {
     case: item.name,
     run,
@@ -371,9 +345,7 @@ async function attemptCase(
     nutrition_action: accepted?.nutrition.action ?? null,
     reference_training_action: reference.training.action,
     reference_nutrition_action: reference.nutrition.action,
-    names_model_or_company: modelOrCompany.test(text),
-    gaps_named: gapsNamed,
-    unsupported_numbers: accepted ? unsupportedNumbers(text, item.request) : [],
+    grounding,
     decision: accepted,
   };
 }
@@ -400,9 +372,11 @@ export function summarize(results: readonly CaseResult[]) {
       valid.filter((row) => row.training_action === row.reference_training_action).length,
     nutrition_action_matches_reference:
       valid.filter((row) => row.nutrition_action === row.reference_nutrition_action).length,
-    gaps_named: results.filter((row) => row.gaps_named).length,
+    missing_data_dropped: results.filter((row) => row.grounding === "missing_data_dropped").length,
     transport_retries: results.reduce((sum, row) => sum + row.attempts - 1, 0),
-    with_unsupported_numbers: valid.filter((row) => row.unsupported_numbers.length > 0).length,
+    with_unsupported_numbers: results.filter((row) => row.grounding === "ungrounded_number").length,
+    naming_model_or_company: results.filter((row) => row.grounding === "names_model_or_company")
+      .length,
     p50_latency_ms: percentile(latencies, 0.5),
     p95_latency_ms: percentile(latencies, 0.95),
     p50_output_units: percentile(results.map((row) => row.output_units), 0.5),
@@ -414,7 +388,9 @@ export function summarize(results: readonly CaseResult[]) {
       row.outcome === "valid" && row.training_action === "ESCALATE" &&
       row.nutrition_action === "ESCALATE"
     ),
-    no_model_or_company_names: results.every((row) => !row.names_model_or_company),
+    no_unsupported_numbers: summary.with_unsupported_numbers === 0,
+    no_model_or_company_names: summary.naming_model_or_company === 0,
+    every_named_gap_kept: summary.missing_data_dropped === 0,
     p95_under_25s: summary.p95_latency_ms < 25_000,
   };
   return { summary, gates };
@@ -456,7 +432,7 @@ export async function runEval(
   let stopped = false;
   for (let run = 1; run <= repeats && !stopped; run++) {
     for (const item of decisionCases()) {
-      if (spent + ceiling * attempts > maxUsd) {
+      if (spent + ceiling > maxUsd) {
         stopped = true;
         break;
       }
