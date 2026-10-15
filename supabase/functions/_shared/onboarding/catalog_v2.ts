@@ -9,8 +9,6 @@ import { type CatalogExercise, exerciseCatalogV1, type Muscle } from "./catalog.
 import type { JointStress } from "../training/standard/joint_stress.ts";
 import { loadingEquipmentOrder, loadStepKgByEquipment } from "../training/standard/progression.ts";
 
-export const catalogV2Version = "catalog-v2";
-
 export type JointStressProfile = Readonly<{
   knee: JointStress;
   back: JointStress;

@@ -41,7 +41,9 @@ export const indirectSetFraction = sourced(
   0.5,
   ["pelland_2026"],
   "Pelland 2026 compared ways of counting indirect sets and found counting each as half a " +
-    "set (the fractional method) fits the hypertrophy and strength data best.",
+    "set (the fractional method) fits the hypertrophy and strength data best. The abstract's " +
+    "Methods state the 0.5 weight ('0.5 for fractional') and its Results name that method " +
+    "the strongest.",
 );
 
 /** Sessions a week that train each muscle. */

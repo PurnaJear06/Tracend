@@ -1,5 +1,5 @@
 begin;
-select plan(10);
+select plan(11);
 
 select is(
   (select count(*) from public.exercise_catalog
@@ -20,6 +20,13 @@ select is(
    where not (c.slug = any(h.regressions)) or h.movement_pattern <> c.movement_pattern),
   0::bigint,
   'progressions and regressions mirror each other within a movement pattern');
+
+select is(
+  (select count(*) from public.exercise_catalog c, unnest(c.regressions) easier
+   join public.exercise_catalog e on e.slug = easier
+   where not (c.slug = any(e.progressions)) or e.movement_pattern <> c.movement_pattern),
+  0::bigint,
+  'regressions and progressions mirror each other in the other direction too');
 
 select is(
   (select count(*) from public.exercise_catalog c, unnest(c.substitutes) other
