@@ -38,7 +38,7 @@ function fakeStore(overrides: Partial<PhysiqueStore> = {}) {
     usage: [] as PhysiqueUsage[],
   };
   const store: PhysiqueStore = {
-    grantedNotice: () => Promise.resolve("progress-photo-ai-v1"),
+    grantedNotice: () => Promise.resolve({ version: "progress-photo-ai-v1", vendor: null }),
     budgetAvailable: () => Promise.resolve(true),
     profileNotes: () => Promise.resolve(["Old shoulder niggle"]),
     loadSet: () =>

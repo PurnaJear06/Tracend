@@ -121,7 +121,14 @@ function parseGroqCandidates(payload: Record<string, unknown>): MealCandidate[] 
       | undefined
     : undefined;
   if (typeof message?.content !== "string") throw new Error("meal_vision_response_invalid");
-  const parsed = JSON.parse(message.content) as Record<string, unknown>;
+  return validMealCandidates(JSON.parse(message.content) as Record<string, unknown>);
+}
+
+/**
+ * The candidates of a parsed answer when every one is complete and storable; throws
+ * meal_vision_response_invalid otherwise.
+ */
+export function validMealCandidates(parsed: Record<string, unknown>): MealCandidate[] {
   if (
     // An empty list is a valid answer: no food in the photo.
     !Array.isArray(parsed.candidates) ||

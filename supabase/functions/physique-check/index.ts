@@ -1,10 +1,13 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.49.8";
 import { AiBudget } from "../_shared/ai_budget.ts";
+import { aiConsentWithProvider } from "../_shared/ai_consent.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { createLogger, extractCorrelationId } from "../_shared/logger.ts";
 import {
   physiqueAllowedUsers,
+  PhysiqueVisionBilledError,
   PhysiqueVisionError,
+  type PhysiqueVisionResolution,
   resolvePhysiqueVision,
 } from "../_shared/providers/physique_vision_provider.ts";
 import { captureException } from "../_shared/sentry.ts";
@@ -16,16 +19,36 @@ function supabaseStore(
   serviceClient: SupabaseClient,
   userId: string,
   budget: AiBudget,
+  resolution: PhysiqueVisionResolution,
 ): PhysiqueStore {
   const number = (value: unknown) => value === null || value === undefined ? null : Number(value);
+  // The vendor stored with usage and results: Groq today, the route's vendor on the gateway.
+  const provider = resolution.kind === "gateway" ? resolution.route.vendor : "groq";
   return {
     async grantedNotice() {
+      if (resolution.kind === "gateway") {
+        // The gateway needs the vendor the notice names (get_ai_consent_v2).
+        const consent = await aiConsentWithProvider(
+          (fn, args) => serviceClient.rpc(fn, args),
+          userId,
+          "physique_vision",
+        );
+        if (consent.consent === "unavailable") throw new Error("photo_ai_consent_unavailable");
+        return consent.consent === "granted" && consent.noticeVersion
+          ? { version: consent.noticeVersion, vendor: consent.provider }
+          : null;
+      }
       const { data, error } = await userClient.rpc("get_my_photo_ai_notice");
       if (error) throw error;
       const notice = data as { version?: unknown; granted?: unknown } | null;
-      return notice?.granted === true && typeof notice.version === "string" ? notice.version : null;
+      return notice?.granted === true && typeof notice.version === "string"
+        ? { version: notice.version, vendor: null }
+        : null;
     },
-    budgetAvailable: () => budget.reserve("progress_vision"),
+    budgetAvailable: (ceilingUsd) =>
+      ceilingUsd === undefined
+        ? budget.reserve("progress_vision")
+        : budget.reserve("physique_vision", ceilingUsd),
     async profileNotes() {
       const { data, error } = await serviceClient.from("user_profiles")
         .select("limitations_note,nutrition_note").eq("user_id", userId).maybeSingle();
@@ -87,7 +110,7 @@ function supabaseStore(
         target_user_id: userId,
         target_set_id: setId,
         analysis_result: result,
-        run_provider: "groq",
+        run_provider: provider,
         run_model: model,
         run_notice_version: noticeVersion,
         run_metadata: metadata,
@@ -99,7 +122,7 @@ function supabaseStore(
       const { error } = await serviceClient.rpc("record_ai_usage_event", {
         target_user_id: userId,
         run_purpose: "progress_vision",
-        run_provider: "groq",
+        run_provider: provider,
         run_model: usage.model,
         run_input_units: usage.inputUnits,
         run_output_units: usage.outputUnits,
@@ -130,11 +153,12 @@ Deno.serve(async (request) => {
   if (!body || typeof body !== "object") return reply(422, { error: "invalid_physique_request" });
   const serviceClient = auth.serviceClient;
   const budget = new AiBudget((fn, args) => serviceClient.rpc(fn, args), auth.userId);
+  const resolution = resolvePhysiqueVision();
   try {
     return await handlePhysiqueCheck({
       userId: auth.userId,
-      store: supabaseStore(auth.userClient, auth.serviceClient, auth.userId, budget),
-      resolution: resolvePhysiqueVision(),
+      store: supabaseStore(auth.userClient, auth.serviceClient, auth.userId, budget, resolution),
+      resolution,
       allowedUsers: physiqueAllowedUsers(),
       observer: {
         info: (event, fields) => log.info(event, fields),
@@ -149,13 +173,15 @@ Deno.serve(async (request) => {
       },
     }, body);
   } catch (error) {
-    // Only a refusal (429) or an HTTP error rules out billing. A timeout, a
-    // dropped connection or an unreadable answer may have been billed with no
-    // usage reported, so the reservation stays open and keeps counting.
-    const unbilled = error instanceof PhysiqueVisionError &&
-      (error.code === "physique_vision_busy" ||
-        error.code.startsWith("physique_vision_request_failed"));
-    if (!unbilled) budget.keep();
+    // Only a refusal (429) or an HTTP error rules out billing, and an unusable
+    // answer's usage is already recorded. A timeout, a dropped connection or an
+    // unreadable answer may have been billed with no usage reported, so the
+    // reservation stays open and keeps counting.
+    const settled = error instanceof PhysiqueVisionBilledError ||
+      (error instanceof PhysiqueVisionError &&
+        (error.code === "physique_vision_busy" ||
+          error.code.startsWith("physique_vision_request_failed")));
+    if (!settled) budget.keep();
     // Codes and names only: never photos, prompts or the model's text.
     log.error("physique_check_failed", {
       error: error instanceof Error ? error.message.slice(0, 80) : "unknown",

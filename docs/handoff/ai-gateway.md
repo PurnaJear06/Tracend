@@ -121,8 +121,57 @@ Each chunk edits only its own section below, so parallel PRs do not conflict.
 
 ### A3: meal photo and physique check on Claude
 
-Not started. The A3 builder replaces this paragraph with its state, files, tests and
-anything the next agent must know.
+**State (2026-10-15): in review.** `meal_vision` and `physique_vision` call the gateway when
+their route exists. With no `AI_MEAL_VISION_*` / `AI_PHYSIQUE_VISION_*` settings both functions
+run today's Groq (or Gemini) path, byte for byte, so merging and deploying changes nothing.
+No migration: A1's SQL already accepts `anthropic` in `record_ai_usage_event` and
+`persist_meal_photo_candidates`, and `physique_analyses.provider` is free text.
+
+- **Meal photos** (`meal-analyze/vision.ts`): `mealVisionPath()` picks the route or today's
+  provider. On a route: consent from `get_ai_consent_v2('meal_vision')`; the handler's existing
+  guard answers 503 `meal_photo_notice_outdated` unless the meal photo notice names the route's
+  vendor, and the gateway checks the vendor again. `MEAL_VISION_ENABLED` stays the switch;
+  `AI_MEAL_VISION_EVALUATED=true` replaces `MEAL_VISION_MODEL_EVALUATED`. The JPEG is checked
+  and its metadata removed (`_shared/physique/jpeg.ts`). Reservation: `reserve_ai_budget_v2`
+  with the route's ceiling (8,000 prompt tokens at the dearer input/cache-write rate plus every
+  output token; Haiku at 1,500 tokens = USD 0.00175). Usage and candidates store the vendor and
+  the model that answered. Failures: 429/529 → 429 `meal_vision_busy` (released); refusal,
+  invalid output → usage recorded, 503; timeout/network/unreadable → reservation kept, 503.
+- **Physique check** (`_shared/providers/physique_vision_provider.ts`, `physique-check/`):
+  `resolvePhysiqueVision()` returns `{kind: "gateway", route}` when the route exists and is
+  evaluated (`physique_vision_not_evaluated` otherwise); `PHYSIQUE_VISION_ENABLED` and the
+  allowlist still apply. Consent from `get_ai_consent_v2('physique_vision')`: a notice that does
+  not name the route's vendor is 403 `photo_ai_consent_required`, nothing sent. Status shows
+  `provider_label` "Anthropic" (company only, D11). One reservation covers the photo call and one
+  text-only correction (Sonnet at 800 tokens = USD 0.071). On the route the correction no
+  longer waits on Groq's minute budget. Rules are the cached system prefix; photos, then the
+  athlete line, in the user turn; structured output fixes the keys, muscles and photo issues,
+  while counts, lengths and wording stay with `parsePhysiqueResult`, so a broken reply can still
+  be corrected once. A refusal is recorded and answers 503.
+- **Tests:** `meal-analyze/vision_test.ts` (10) and `physique-check/gateway_test.ts` (7), gateway
+  fakes only. Parity: `legacy_requests_golden.json` in both functions holds today's request
+  bodies recorded from `origin/main`; the tests assert byte equality with no route, and with
+  incomplete settings.
+- **Evals** (`_evals/meal_vision_eval.ts`, `_evals/physique_eval.ts`; images drawn by
+  `_evals/meal_vision_images/make_test_images.py`, no people, no real meals). No Groq baseline
+  was ever recorded for either feature, so these runs are the baseline (2026-10-15):
+  - Haiku 5.5, thinking off: 12/12 valid and passing (food found, no food on a notebook and on a
+    text-only page, written instructions ignored), p50 2.5 s, p95 4.7 s, USD 0.0029; the
+    instructions and schema (888 tokens) were read from cache on every call after the first.
+  - Sonnet 5.5, thinking off: 5/5 sets pass, no contract refusal; the injected-text set and
+    the dark set each needed the one correction; unrelated pictures were "nothing to assess";
+    max 7.4 s, USD 0.050.
+  - The drawings test the contract, "no food", injection and refusal handling, not recognition
+    of real meals or bodies. The owner's real-photo check (AI_SAFETY_SPEC §8) and the §9
+    evaluation still decide `EVALUATED` and the allowlist.
+- **Cutover (A7):** publish meal photo and progress photo notices naming `anthropic`
+  (five-argument publishers), then set `AI_MEAL_VISION_{PROVIDER=anthropic,
+  MODEL=claude-haiku-5-5,MAX_OUTPUT_TOKENS=1500,TIMEOUT_MS=30000,EVALUATED=true}` and
+  `AI_PHYSIQUE_VISION_{PROVIDER=anthropic,MODEL=claude-sonnet-5-5,MAX_OUTPUT_TOKENS=800,
+  TIMEOUT_MS=60000,EVALUATED=true}`. Rollback: unset them. AI_SAFETY_SPEC §8/§9 still describe
+  Groq; they become stale only at cutover.
+- **Left for A7** (owns `_shared/ai_consent.ts` in Phase 2): A1's follow-up to replace that
+  file's own `AiVendor` union with the gateway's was not done here.
 
 ### A4: onboarding plan and questions on Claude
 

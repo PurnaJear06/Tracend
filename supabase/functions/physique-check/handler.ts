@@ -6,11 +6,16 @@ import {
   type PhysiqueResult,
 } from "../_shared/physique/contract.ts";
 import { maxPhotoBytes, stripJpegMetadata } from "../_shared/physique/jpeg.ts";
+import { type AiVendor, aiVendors } from "../_shared/ai/types.ts";
 import {
+  callPhysiqueGateway,
   callPhysiqueVision,
   type PhysiqueAthlete,
   type PhysiqueCall,
+  physiqueCeilingUsd,
+  type PhysiqueGatewayOptions,
   type PhysiquePhotos,
+  PhysiqueVisionBilledError,
   PhysiqueVisionError,
   type PhysiqueVisionResolution,
 } from "../_shared/providers/physique_vision_provider.ts";
@@ -20,7 +25,9 @@ import {
 // {"schema_version":"1.0","mode":"status"}: whether this account can run a
 // check, and the provider photos would go to (the app names it). Only accounts in PHYSIQUE_VISION_ALLOWED_USERS, with the provider
 // configured, and never when the athlete's own notes mention an eating
-// concern.
+// concern. The provider is Groq today, or the AI gateway's route when
+// AI_PHYSIQUE_VISION_* is set (then the granted notice must name the route's
+// vendor, and the budget holds the route's ceiling for the check).
 //
 // {"schema_version":"1.0","mode":"check","photo_set_id":…}: sends the front,
 // side and back photos of one complete set to the model after checking the
@@ -52,10 +59,14 @@ export type PhysiqueUsage = Readonly<{
   latencyMs: number;
 }>;
 
+/** The current photo AI notice the athlete granted, and the vendor it names (null: none). */
+export type GrantedNotice = Readonly<{ version: string; vendor: string | null }>;
+
 export interface PhysiqueStore {
-  /** The current photo AI notice's version when the athlete granted it, else null. */
-  grantedNotice(): Promise<string | null>;
-  budgetAvailable(): Promise<boolean>;
+  /** The current photo AI notice when the athlete granted it, else null. */
+  grantedNotice(): Promise<GrantedNotice | null>;
+  /** Takes a place in the AI budget: the purpose's own ceiling, or ceilingUsd for the check. */
+  budgetAvailable(ceilingUsd?: number): Promise<boolean>;
   /** The athlete's own free-text notes (limitations, nutrition). */
   profileNotes(): Promise<string[]>;
   loadSet(setId: string): Promise<PhotoSet | null>;
@@ -82,11 +93,72 @@ export type PhysiqueDeps = Readonly<{
   resolution: PhysiqueVisionResolution;
   allowedUsers: ReadonlySet<string>;
   observer: Observer;
+  /** Today's Groq call; tests replace it. */
   call?: typeof callPhysiqueVision;
+  /** The gateway call's dependencies; tests pass a fake fetch. */
+  gateway?: PhysiqueGatewayOptions;
 }>;
 
+/** Where a check's photos go and how its calls are made. */
+type PhysiqueModel = Readonly<{
+  label: string;
+  model: string;
+  /** null on today's path: the purpose's fixed ceiling. */
+  ceilingUsd: number | null;
+  /** Whether the granted notice covers this provider. */
+  covers(notice: GrantedNotice): boolean;
+  ask(
+    athlete: PhysiqueAthlete,
+    photos: PhysiquePhotos | null,
+    repair: Readonly<{ previous: string; rule: string }> | null,
+    notice: GrantedNotice,
+  ): Promise<PhysiqueCall>;
+  /** Whether a correction may follow this first call. */
+  canRepair(first: PhysiqueCall): boolean;
+}>;
+
+function physiqueModel(deps: PhysiqueDeps): PhysiqueModel | null {
+  const resolution = deps.resolution;
+  if (resolution.kind === "ready") {
+    const config = resolution.config;
+    const call = deps.call ?? callPhysiqueVision;
+    return {
+      label: config.label,
+      model: config.model,
+      ceilingUsd: null,
+      // Today's notices name Groq by their text; the check predates vendor ids.
+      covers: () => true,
+      ask: (athlete, photos, repair) => call(config, athlete, photos, repair),
+      // Groq's free tier: only when its minute still has room.
+      canRepair: (first) => first.remainingTokens !== null && first.remainingTokens >= repairTokens,
+    };
+  }
+  if (resolution.kind === "gateway") {
+    const gatewayRoute = resolution.route;
+    return {
+      label: gatewayRoute.providerLabel,
+      model: gatewayRoute.model,
+      ceilingUsd: physiqueCeilingUsd(gatewayRoute),
+      // The notice must name the vendor the route sends to.
+      covers: (notice) => notice.vendor === gatewayRoute.vendor,
+      ask: (athlete, photos, repair, notice) =>
+        callPhysiqueGateway(
+          gatewayRoute,
+          aiVendors.find((vendor): vendor is AiVendor => vendor === notice.vendor) ?? null,
+          athlete,
+          photos,
+          repair,
+          deps.gateway,
+        ),
+      // The budget holds the correction from the start.
+      canRepair: () => true,
+    };
+  }
+  return null;
+}
+
 async function available(deps: PhysiqueDeps): Promise<boolean> {
-  if (deps.resolution.kind !== "ready") return false;
+  if (!physiqueModel(deps)) return false;
   if (!deps.allowedUsers.has(deps.userId.toLowerCase())) return false;
   const notes = await deps.store.profileNotes();
   return !notes.some((note) => eatingConcernPattern.test(note.toLowerCase()));
@@ -122,29 +194,30 @@ export async function handlePhysiqueCheck(
     return reply(200, {
       schema_version: "1.0",
       enabled,
-      ...(enabled && deps.resolution.kind === "ready"
-        ? { provider_label: deps.resolution.config.label }
-        : {}),
+      ...(enabled ? { provider_label: physiqueModel(deps)!.label } : {}),
     });
   }
   if (typeof body.photo_set_id !== "string" || !uuid.test(body.photo_set_id)) {
     return reply(422, { error: "invalid_physique_request" });
   }
-  if (!enabled || deps.resolution.kind !== "ready") {
+  const model = physiqueModel(deps);
+  if (!enabled || !model) {
     return reply(403, { error: "physique_check_unavailable" });
   }
   const { store, observer } = deps;
-  const config = deps.resolution.config;
-  const noticeVersion = await store.grantedNotice();
-  if (!noticeVersion) return reply(403, { error: "photo_ai_consent_required" });
-  if (!await store.budgetAvailable()) return reply(429, { error: "ai_usage_limit" });
+  const notice = await store.grantedNotice();
+  // A notice for another provider is no consent for this one: nothing is sent.
+  if (!notice || !model.covers(notice)) return reply(403, { error: "photo_ai_consent_required" });
+  const budgetAvailable = model.ceilingUsd === null
+    ? await store.budgetAvailable()
+    : await store.budgetAvailable(model.ceilingUsd);
+  if (!budgetAvailable) return reply(429, { error: "ai_usage_limit" });
   const set = await store.loadSet(body.photo_set_id);
   if (!set || set.status !== "complete") return reply(404, { error: "photo_set_not_found" });
   const photos = await preparePhotos(store, set);
   if (photos === "unsupported") return reply(422, { error: "photo_set_unsupported" });
   if (photos === "unavailable") return reply(503, { error: "physique_check_failed" });
   const athlete = await store.athlete();
-  const call = deps.call ?? callPhysiqueVision;
 
   const calls: PhysiqueCall[] = [];
   let recorded = 0;
@@ -156,7 +229,7 @@ export async function handlePhysiqueCheck(
       const spent = calls[recorded++];
       try {
         await store.recordUsage({
-          model: config.model,
+          model: spent.model ?? model.model,
           inputUnits: spent.inputUnits,
           outputUnits: spent.outputUnits,
           estimatedCostUsd: spent.estimatedCostUsd,
@@ -168,13 +241,12 @@ export async function handlePhysiqueCheck(
     }
   };
   try {
-    calls.push(await call(config, athlete, photos, null));
+    calls.push(await model.ask(athlete, photos, null, notice));
     let parsed = parsePhysiqueResult(calls[0].content);
     const firstRule = parsed.ok ? null : parsed.rule;
-    const room = calls[0].remainingTokens;
-    if (!parsed.ok && parsed.rule !== nothingToAssess && room !== null && room >= repairTokens) {
+    if (!parsed.ok && parsed.rule !== nothingToAssess && model.canRepair(calls[0])) {
       calls.push(
-        await call(config, athlete, null, { previous: calls[0].content, rule: parsed.rule }),
+        await model.ask(athlete, null, { previous: calls[0].content, rule: parsed.rule }, notice),
       );
       parsed = parsePhysiqueResult(calls[1].content);
     }
@@ -200,13 +272,15 @@ export async function handlePhysiqueCheck(
     const analysisId = await store.persist(
       body.photo_set_id,
       parsed.result,
-      config.model,
-      noticeVersion,
+      calls[calls.length - 1].model ?? model.model,
+      notice.version,
       metadata,
     );
     observer.info("physique_check_complete", metadata);
     return reply(200, { schema_version: "1.0", analysis_id: analysisId, result: parsed.result });
   } catch (error) {
+    // An answer that arrived but cannot be used was billed: it counts like the others.
+    if (error instanceof PhysiqueVisionBilledError) calls.push(error.spent);
     if (error instanceof PhysiqueVisionError && error.code === "physique_vision_busy") {
       // A refused request is not billed; an earlier answered call in this
       // check still is.
