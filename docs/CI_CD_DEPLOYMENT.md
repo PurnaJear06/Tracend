@@ -94,8 +94,9 @@ matching Supabase's documented logical-backup flow. A backup is valid only when:
 
 - every expected file exists and is non-empty;
 - the generated SHA-256 manifest verifies;
-- schema and data restore with `ON_ERROR_STOP=1` inside the isolated database; and
-- the restored database contains public tables.
+- schema and data restore with `ON_ERROR_STOP=1` inside the isolated database;
+- the restored database contains public tables; and
+- the restored privileges match the migrations (see [Restored privileges](#restored-privileges)).
 
 The isolated database starts with every migration applied (`supabase start`), so the drill first
 drops the `public` and `private` schemas that the snapshot recreates. Before 2026-10-14 it dropped
@@ -107,6 +108,37 @@ The deploy log is public, and on an error psql prints the failing statement, whi
 file holds production rows. Every restore psql call therefore runs through `restore_psql`: its
 output goes to a temporary file that is always removed, and a failure prints only the step and the
 failing `/tmp/<file>.sql:<line>`.
+
+### Restored privileges
+
+`supabase db dump` (CLI 2.101.0) pipes pg_dump through a `sed` that comments out every `GRANT` and
+`REVOKE` line naming a schema the dump excludes (`auth`, `extensions`, `net`, `pgmq`, `storage`,
+`vault`, and the rest; `./scripts/supabase.sh db dump --dry-run --db-url <any>` prints the list).
+A function whose signature uses a type from such a schema therefore comes back from a restore with
+default privileges, EXECUTE for PUBLIC, anon and authenticated, and the drill's table count cannot
+see it. `scripts/restore-privileges.sh` closes that gap:
+
+- the dump step records production's applied migration versions from
+  `supabase migration list --linked`, because the data dump leaves out `supabase_migrations`;
+- right after `supabase start` applies this commit's migrations, the drill snapshots the
+  privileges;
+- after the backup is stored, the last backup step snapshots the restored database and compares.
+  When this commit adds migrations, it first resets the drill database with
+  `supabase db reset --version <production's latest>` and compares with that state instead. It
+  fails if production's history is not a prefix of the local migrations.
+
+A snapshot covers `public` and `private`: schema USAGE and CREATE, function EXECUTE
+(`has_function_privilege`), table, view and sequence privileges for `anon` and `authenticated`,
+and each table's RLS enabled and forced flags. Extension members are skipped. The queries read the
+catalogs only, so the log names objects and never rows, as
+`function private.f(p auth.users): anon EXECUTE (migrations: no, restored: yes)`. Any difference
+fails the backup job, so migrations and functions do not deploy; the encrypted backup is already
+stored by then. A failure means a restore of that backup needs the listed grants or flags put back
+by hand, or that production has drifted from the migrations. Fix the migration (a signature that
+uses a type from an excluded schema needs a `public` or `private` type instead; E1, PR #109, does
+this for its function and adds a pgTAP rule against such signatures) or the drift, then rerun the
+deploy.
+`scripts/test-restore-privileges.sh` covers the parsing, history and report logic in CI.
 
 Only an AES-256 encrypted archive is kept; its passphrase exists as the `BACKUP_ARCHIVE_PASSPHRASE`
 Actions secret. Plaintext dumps are removed from the runner after the encrypted archive is
@@ -120,7 +152,8 @@ never be committed or uploaded unencrypted anywhere, and the backups repository 
 `scripts/test-store-backup.sh` covers the script in CI. Storage object bytes are outside PostgreSQL logical dumps and require their own
 recovery process; database backups cover Storage metadata only.
 
-Any backup or restore-drill failure stops the deployment before production mutation.
+Any backup, restore-drill or restored-privilege failure stops the deployment before production
+mutation.
 
 ## Version and build numbers
 

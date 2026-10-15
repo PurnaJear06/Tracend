@@ -19,7 +19,8 @@
 #       Print every difference between two snapshots. Fails when there is one.
 #   scripts/restore-privileges.sh compare <migrations-snapshot> <applied-versions>
 #       Snapshot the restored database, reset it to the applied version when migrations are pending
-#       (the migrations snapshot then comes from that reset), and report the differences.
+#       (the migrations snapshot then comes from that reset), and report the differences. Run it
+#       from the repository root: it calls `supabase db reset` and `supabase migration list`.
 #
 # A snapshot covers the public and private schemas: schema USAGE and CREATE, function EXECUTE,
 # table, view and sequence privileges for anon and authenticated, and the RLS enabled and forced
@@ -165,18 +166,24 @@ report() {
 }
 
 compare() {
-  local expected="$1" applied="$2" target work
+  local expected="$1" applied="$2" target pending reached
   target="$(target_version "$applied")"
   work="$(mktemp -d)"
   trap 'rm -rf "$work"' EXIT
   snapshot >"$work/restored.tsv"
   if [ "$target" != current ]; then
-    echo "Production has applied migrations up to $target; this commit adds more."
+    # `db reset --version` is taken as the CLI's global --version flag (2.101.0), so reset with
+    # --last, which leaves out the newest N local migrations, and confirm where it stopped.
+    pending="$(local_versions | awk -v latest="$target" '$0 > latest' | wc -l | tr -d ' ')"
+    echo "Production has applied migrations up to $target; this commit adds $pending more."
     echo "Resetting the drill database to $target for the migrations snapshot."
-    supabase db reset --version "$target" >"$work/reset.log" 2>&1 || {
+    supabase db reset --last "$pending" >"$work/reset.log" 2>&1 || {
       cat "$work/reset.log" >&2
-      die "supabase db reset --version $target failed"
+      die "supabase db reset --last $pending failed"
     }
+    supabase migration list --local >"$work/migration-list.txt"
+    reached="$(parse_versions "$work/migration-list.txt" | tail -n 1)"
+    [ "$reached" = "$target" ] || die "the drill database reset to ${reached:-nothing}, not $target"
     snapshot >"$work/migrations.tsv"
     expected="$work/migrations.tsv"
   fi

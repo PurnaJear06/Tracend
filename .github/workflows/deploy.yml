@@ -144,13 +144,37 @@ jobs:
           # production snapshot. `private` must go too: the snapshot recreates it,
           # and its tables already exist here from the migrations `supabase start`
           # applied (first seen 2026-10-13, once production had private tables).
+          # The new `public` gets the grants the old one had, as in a fresh
+          # project; the snapshot then adds its own. A blanket GRANT ALL here
+          # gave anon and authenticated CREATE on `public`, which no migration
+          # grants (found by the privilege comparison, 2026-10-15).
           restore_psql "Reset public and private schemas" \
             --username postgres \
             --dbname postgres \
             --variable ON_ERROR_STOP=1 \
-            --command 'DROP SCHEMA public CASCADE' \
-            --command 'CREATE SCHEMA public' \
-            --command 'GRANT ALL ON SCHEMA public TO postgres, anon, authenticated, service_role' \
+            --command "DO \$\$
+              DECLARE
+                schema_grants text[];
+                schema_grant text;
+              BEGIN
+                SELECT coalesce(array_agg(format(
+                  'GRANT %s ON SCHEMA public TO %s',
+                  acl.privilege_type,
+                  CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE quote_ident(role.rolname) END
+                )), '{}')
+                INTO schema_grants
+                FROM pg_namespace AS namespace
+                CROSS JOIN LATERAL aclexplode(namespace.nspacl) AS acl
+                LEFT JOIN pg_roles AS role ON role.oid = acl.grantee
+                WHERE namespace.nspname = 'public';
+
+                DROP SCHEMA public CASCADE;
+                CREATE SCHEMA public;
+                FOREACH schema_grant IN ARRAY schema_grants LOOP
+                  EXECUTE schema_grant;
+                END LOOP;
+              END
+            \$\$;" \
             --command 'DROP SCHEMA IF EXISTS private CASCADE'
 
           restore_psql "Clear managed schemas" \

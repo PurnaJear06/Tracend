@@ -183,6 +183,15 @@ if echo "$STEPS" | grep -q "deno"; then
     die "backup storage tests failed"
   fi
 
+  info "restore privilege check script tests ..."
+  if bash "$repo_root/scripts/test-restore-privileges.sh" 2>&1 | while IFS= read -r line; do
+    echo "    $line"
+  done; then
+    pass "restore privilege check tests passed"
+  else
+    die "restore privilege check tests failed"
+  fi
+
   if [[ "$FAILURES" -gt 0 ]]; then
     echo ""
     fail "$FAILURES Deno step(s) failed"

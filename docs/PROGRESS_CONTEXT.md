@@ -1,6 +1,6 @@
 # Tracend Current State
 
-**As of:** 2026-10-13
+**As of:** 2026-10-15
 
 **Lifecycle:** owner-only private beta; not approved for public production
 
@@ -11,6 +11,12 @@ access; the owner invites confirmed signups with `private.invite_from_waitlist(n
 now publishes the site after the functions and checks the live version. The owner's one-time
 Gmail, Cloudflare, GitHub and Supabase settings are in
 [`docs/handoff/website.md`](./handoff/website.md).
+
+**Restore drill privileges (2026-10-15):** the deploy's backup restore drill now compares function
+EXECUTE, table and schema privileges for anon and authenticated, and RLS flags, in `public` and
+`private` with the state the migrations create, and stops the deploy on a difference.
+`supabase db dump` drops GRANT and REVOKE lines that name excluded schemas, so a restore could
+silently re-open a revoked function. Details: [`docs/handoff/backend.md`](./handoff/backend.md).
 
 **Security hardening (2026-10-09):** a source review of `d26cf2c` raised leads that the owner
 asked to fix in five PRs, merged in order; details stay in the owner's private report. PR 1
