@@ -11,7 +11,9 @@ Iteration 1 is Phase 0 + Phase 1. One line per stream; each stream edits only it
 
 <!-- PROGRAM:coaching-platform-2026-10 -->
 - program: P0 (contracts, migration-order CI check) in review.
-- ai-gateway: A1: provider-neutral SQL, consent v2 and budget v2 in review (draft PR #103). A2 not started. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
+- ai-gateway: A1: provider-neutral SQL, consent v2 and budget v2 in review (PR #103). A2: gateway
+  module and Claude, OpenAI-compatible and Gemini adapters (`_shared/ai/`) in review, not used by
+  any feature yet. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 in review (mock decision obeys the policy; rules plan ranks by equipment and experience). Handoff: [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 (set timing, reps left, workout events; migration 31) in review as draft PR
   #104. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).

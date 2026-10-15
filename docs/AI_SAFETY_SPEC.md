@@ -497,6 +497,24 @@ pending evaluation). Lite models are rejected by production configuration. Cost 
 bypass visible-food, mixed-dish, hidden-ingredient, portion-uncertainty, prompt-injection,
 schema-validity, or user-correction evaluations. Routing changes require regression results.
 
+**AI gateway** (2026-10, coaching platform program Contract 1; not used by any feature yet):
+`_shared/ai/` is the one path for model calls once features move to it.
+- Settings are per feature (`AI_<FEATURE>_*` plus the provider key); a missing or invalid setting,
+  or a model without a known price, gives no route, and the feature keeps its rules path.
+- `call()` sends nothing when the vendor named by the athlete's accepted notice (Anthropic,
+  DeepSeek, Groq, Google) differs from the route's. DeepSeek and Groq are reached only on their
+  own hosts. Synthetic evals may go through an OpenAI-compatible router (`AI_<FEATURE>_VENDOR=router`);
+  no notice names the router, so no athlete's data can reach it.
+- Notice labels name the company only, never a model (D11).
+- Requests to Claude 5 models never carry `temperature`, `top_p`, tools or a forced
+  `tool_choice`; structured output uses `output_config.format`. DeepSeek, Groq and Gemini routes
+  send what today's providers send (temperature 0.1 without thinking, the schema restated in JSON
+  mode), so a rollback by settings behaves as before. Every JSON answer is checked
+  against the schema by the gateway (`invalid_output` otherwise), whatever the provider enforced.
+- A provider refusal is `refused` and never retried by the gateway; budget stays the caller's job.
+- One scrubbed `ai_call` log line per call: feature, provider, model, outcome, token counts, cost
+  and latency; never prompt, image, reply or provider error text.
+
 Conversational answers may explain only supplied structured evidence, must state missing data, and
 expose evidence references. The model receives at most 20 recent messages and no tools.
 Deterministic pre-model rules refuse medical, emergency, pregnancy, eating-disorder, medication, and

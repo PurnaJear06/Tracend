@@ -120,6 +120,27 @@ representative text-only month is inexpensive:
 
 DeepSeek V4.1 Flash (`COACH_MODEL_PROVIDER=deepseek`) is the current active Coach/chat provider.
 
+**Claude list prices (2026-10-15,** [pricing page](https://platform.claude.com/docs/en/about-claude/pricing)**),**
+USD per million tokens. The AI gateway (`_shared/ai/models.ts`) prices every call from this
+table; a model without a price has no route.
+
+| Model                                  | Input | 5-min cache write | Cache read | Output |
+| -------------------------------------- | ----: | ----------------: | ---------: | -----: |
+| Claude Haiku 5.5, prompt ≤ 100K tokens |  0.10 |             0.125 |       0.01 |   0.50 |
+| Claude Haiku 5.5, prompt > 100K tokens |  0.50 |             0.625 |       0.05 |   2.50 |
+| Claude Sonnet 5.5                      |  2.00 |              2.50 |       0.10 |  10.00 |
+| Claude Opus 5.5                        |  4.00 |              5.00 |       0.20 |  20.00 |
+
+- Haiku's prompt length counts every input token, cache reads and writes included; a request over
+  100K pays the higher card for all its tokens.
+- The gateway marks cache prefixes with the default 5-minute lifetime, so writes use that rate
+  (1-hour writes cost 2x input and are not used).
+- Thinking is billed as output on every provider. US-only inference (`inference_geo`) costs 1.1x
+  and is not used.
+- Rollback routes keep their earlier prices: DeepSeek at the peak rates below (cache hits 0.006),
+  Groq qwen3.8 and Gemini 3.5 Flash with cached tokens at the full input price, since no cache
+  discount is verified for them.
+
 The Gemini Free tier is suitable only for synthetic evaluation data. Gemini paid-service routing
 requires billing-enabled project and data-terms review before it can process restricted data.
 Prior Gemini baseline: `gemini-3.5-flash` at USD 1.50/1M input and USD 9.00/1M output tokens
