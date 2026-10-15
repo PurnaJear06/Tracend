@@ -200,8 +200,10 @@ select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'coac
     'notice_version', (select version from public.ai_notice_current where purpose = 'coach_chat')),
   'nothing is granted at first, and the current notice names no provider');
 
-insert into public.consent_records(user_id, consent_type, notice_version, action, source)
-select 'a1100000-0000-4000-8000-000000000001', 'ai_coaching', version, 'granted', 'ios_app'
+-- Dated earlier: the newest record decides, and a transaction gives every row the same now().
+insert into public.consent_records(user_id, consent_type, notice_version, action, source, created_at)
+select 'a1100000-0000-4000-8000-000000000001', 'ai_coaching', version, 'granted', 'ios_app',
+  now() - interval '1 minute'
 from public.ai_notice_current where purpose = 'coach_chat';
 select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'coach_chat')->'granted',
   'true'::jsonb, 'a grant of a notice without a provider still counts as a grant');
