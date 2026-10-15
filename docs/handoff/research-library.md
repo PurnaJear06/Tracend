@@ -16,7 +16,7 @@ E1 (Phase 1); E2, E3 (Phase 3); E4, E5 (Phase 4)
 
 ## State
 
-**E1 (in review, branch `claude/e1-library-tables`).** Migration
+**E1 (live, #109).** Migration
 `20261015150041_research_library.sql`:
 
 - `create extension if not exists vector with schema extensions`.

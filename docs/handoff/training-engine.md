@@ -16,9 +16,9 @@ B0 (Phase 1); B1 (Phase 2); B2, B3, B6 (Phase 3); B4, B5 (Phase 4)
 
 ## State
 
-No chunk of this stream has merged yet.
+B0 is live (#105, 2026-10-15).
 
-**B0 (in review, branch `claude/b0-decision-plan-fixes`; Edge Functions only, no SQL or app change).**
+**B0 (live, #105; Edge Functions only, no SQL or app change).**
 
 - **Mock decision obeys the policy.** The deterministic daily decision
   (`_shared/providers/mock_coach_model_provider.ts`) picked its action from the evidence alone, so
