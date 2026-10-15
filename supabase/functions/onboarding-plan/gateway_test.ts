@@ -2,6 +2,7 @@
 // fetch and a real AiBudget over a fake database. No test touches the network.
 
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1.0.14";
+import { athletes, evalRoutes, health, history } from "../_evals/onboarding_plan_eval.ts";
 import { AiBudget } from "../_shared/ai_budget.ts";
 import type { AiConsentWithProvider } from "../_shared/ai_consent.ts";
 import {
@@ -815,4 +816,28 @@ Deno.test("spend: an answer is billed, an HTTP error is not, a lost request is u
   );
   assertEquals(resultSpend({ ok: false, reason: "timeout", usage: null }), "unknown");
   assertEquals(resultSpend({ ok: false, reason: "network", usage: null }), "unknown");
+});
+
+Deno.test("every eval athlete is feasible and the eval's default routes are usable", () => {
+  const routes = evalRoutes((name) =>
+    name === "ANTHROPIC_API_KEY" ? "synthetic-test-key" : undefined
+  );
+  assert(routes.plan && routes.questions);
+  for (const [name, answers] of Object.entries(athletes)) {
+    const plan = preparePlan(
+      routes.plan,
+      answers,
+      catalog,
+      health[name] ?? null,
+      history[name] ?? null,
+    );
+    assertEquals(plan.kind, "ready", name);
+    const questions = prepareQuestions(
+      routes.questions,
+      answers,
+      health[name] ?? null,
+      history[name] ?? null,
+    );
+    assertEquals(questions.kind, "ready", name);
+  }
 });

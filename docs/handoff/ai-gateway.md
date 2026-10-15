@@ -126,8 +126,15 @@ anything the next agent must know.
 
 ### A4: onboarding plan and questions on Claude
 
-Not started. The A4 builder replaces this paragraph with its state, files, tests and
-anything the next agent must know.
+**State (2026-10-16): in review.** Features `onboarding_plan` and `onboarding_questions` call the
+gateway when their route exists. With no `AI_ONBOARDING_PLAN_*` / `AI_ONBOARDING_QUESTIONS_*`
+settings (or no `EVALUATED=true`) both run today's `ONBOARDING_PLAN_*` settings path, byte for
+byte, so merging and deploying changes nothing. Edge Functions only: no SQL (A1's
+`record_ai_usage_event` already accepts `anthropic` for both purposes, and the proposal's
+`provider`/`model` live in a free-text payload), no app change. `onboarding-propose-plan` is the
+mock proposal with no model call and is untouched.
+
+PLACEHOLDER_A4_BODY
 
 ### A5: daily decision on Claude
 
