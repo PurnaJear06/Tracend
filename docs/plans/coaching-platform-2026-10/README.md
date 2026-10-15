@@ -136,7 +136,7 @@ Activity from `rest_timer.dart` through one call site that C1 reviews.
 | `onboarding-plan/**`, `onboarding-propose-plan/**`, `_shared/providers/onboarding_plan_provider.ts`, `_shared/onboarding/questions.ts`, `_evals/onboarding_plan_eval.ts` | A4 |
 | `coach-decide/**`, `_shared/providers/{daily_decision,coach_model,create_coach_model,deepseek_coach_model,groq_coach_model,gemini_coach_model}_provider*.ts`, new `_evals/daily_decision_*` | A5 |
 | `coach-chat/**`, `_shared/providers/coach_chat_provider*.ts`, `_shared/coach_chat_fallback*.ts`, new `_shared/coach_context/**` (Contract 7 host), `_evals/{coach_chat_eval*,fixtures.ts,prompts.json}` | A6 |
-| `lib/shared/ai_provider_names.dart`, `lib/features/consent/**`, `lib/features/coach/coach_labels.dart`, `lib/features/onboarding/onboarding_proposal_view.dart` (wording only), `_shared/ai_budget*.ts`, `_shared/ai_consent*.ts`, AI authority-doc sections (AI_SAFETY_SPEC §10, COST_MODEL, ARCHITECTURE §3.7, SECURITY_PRIVACY processors, PRD §5.8) | A7 |
+| `lib/shared/ai_provider_names.dart`, `lib/features/consent/**`, `lib/features/coach/coach_labels.dart`, `lib/features/onboarding/onboarding_proposal_view.dart`, `lib/features/progress/widgets/photo_widgets.dart`, `lib/features/progress/progress_screen.dart` (wording only), `_shared/ai_budget*.ts`, `_shared/ai_consent*.ts`, AI authority-doc sections (AI_SAFETY_SPEC §10, COST_MODEL, ARCHITECTURE §3.7, SECURITY_PRIVACY processors, PRD §5.8) | A7 |
 | `ios/**` (project, Runner, extension), `lib/shared/live_activity/**`, `lib/features/train/**` | D1 |
 | `ios/Runner/Native/HeartRateReader.swift` (new; stacked on D1, so D1's project file is the base), `lib/features/health/**`, new `lib/features/workout_hr/**`, one listener call site in `lib/features/train/` that D1 reviews | C2 |
 | `_shared/onboarding/catalog*.ts` (catalog v2; existing exports keep their shape), new `_shared/training/standard/**` | B1 |
@@ -471,8 +471,9 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
   vendor `router`, which no notice names. Resolves A2's contract request.
 - 2026-10-15: D11 (no model names in user-facing text). App files that name providers today:
   `lib/shared/ai_provider_names.dart`, `lib/features/consent/ai_coaching_consent.dart`,
-  `lib/features/coach/coach_labels.dart`, `lib/features/onboarding/onboarding_proposal_view.dart`;
-  notice bodies are rows the owner publishes (A7 drafts them).
+  `lib/features/coach/coach_labels.dart`, `lib/features/onboarding/onboarding_proposal_view.dart`,
+  and (found in A3 review) `lib/features/progress/widgets/photo_widgets.dart` and
+  `lib/features/progress/progress_screen.dart`, which show the photo provider's name; notice bodies are rows the owner publishes (A7 drafts them).
 - 2026-10-15 (owner): the website keeps "Android in testing" and shows the physique check as live
   (13 Oct notes stand); "For iPhone, best with Apple Watch" (never Watch-only); the glass tab bar's
   sheen and fade are an allowed exception to the gradients-in-data-only rule; full-gym plans default
