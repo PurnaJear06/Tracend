@@ -495,7 +495,8 @@ never stored, and every source records its licence.
 - Embeddings are Supabase's built-in `gte-small` (384 dimensions, mean-pooled and normalised), run
   inside Edge Functions (decision D4). No new processor receives any text.
 - `public.search_library_v1` (service role only, Contract 6) fuses the top 30 Postgres full-text
-  matches and the top 30 nearest embeddings (cosine distance, HNSW index) by reciprocal rank fusion
+  matches and the top 30 nearest embeddings (cosine distance; HNSW index without filters, exact
+  ranking over the matching sources with a region or topics filter) by reciprocal rank fusion
   (k = 60) and returns at most 8 chunks.
 - Retrieved text is reference data. It never overrides Tracend rules, the athlete's data or the
   safety policy, and rules still decide every number.

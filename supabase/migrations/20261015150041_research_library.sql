@@ -80,12 +80,19 @@ revoke all on private.library_ingest_runs from public, anon, authenticated, serv
 
 -- Search ---------------------------------------------------------------------------------
 
+-- The search function takes its embedding as this domain, not as extensions.vector directly:
+-- `supabase db dump` drops GRANT and REVOKE lines that mention the extensions schema, so a
+-- restored dump would leave a vector-typed function with Supabase's default grants (anon and
+-- authenticated could call it). The domain also enforces the 384 dimensions on every call.
+create domain public.library_embedding as extensions.vector(384);
+
 -- Contract 6. Hybrid search: the 30 best full-text matches (websearch syntax, ranked by
 -- ts_rank_cd) and the 30 nearest embeddings (cosine distance), merged by reciprocal rank
 -- fusion with k = 60. A chunk found by both lists outranks one found by either alone.
 --
 --   query_text       free text; null or blank skips full-text search
---   query_embedding  gte-small vector of 384 dimensions; null skips vector search
+--   query_embedding  gte-small vector of 384 dimensions (other sizes raise 22000); null
+--                    skips vector search
 --   match_count      clamped to 1..8; null means 8
 --   filters          null or an object with optional `region` and `topics` text arrays.
 --                    A source matches when its array overlaps the filter. An absent, null
@@ -93,9 +100,14 @@ revoke all on private.library_ingest_runs from public, anon, authenticated, serv
 --
 -- Returns at most match_count rows, best first, each with schema_version 1. No query
 -- (both inputs skipped) returns no rows.
+--
+-- Without filters the nearest embeddings come from the HNSW index. With a filter they are
+-- ranked exactly over the matching sources' chunks: an HNSW scan stops after ef_search (40)
+-- candidates, and a narrow filter could leave almost none of them. The library is small
+-- (open sources only), so the exact ranking stays cheap.
 create function public.search_library_v1(
   query_text text,
-  query_embedding extensions.vector(384),
+  query_embedding public.library_embedding,
   match_count integer,
   filters jsonb
 )
@@ -125,6 +137,8 @@ declare
   region_filter text[];
   topic_filter text[];
   filter_key text;
+  text_ids uuid[] := '{}';
+  vector_ids uuid[] := '{}';
 begin
   if filters is not null and jsonb_typeof(filters) <> 'null' then
     if jsonb_typeof(filters) <> 'object' then
@@ -152,10 +166,6 @@ begin
     end if;
   end if;
 
-  if query_embedding is not null and extensions.vector_dims(query_embedding) <> 384 then
-    raise exception 'query_embedding must have 384 dimensions' using errcode = '22023';
-  end if;
-
   if length(btrim(coalesce(query_text, ''))) > 0 then
     text_query := websearch_to_tsquery('english', query_text);
     -- Only stop words: nothing to match.
@@ -164,33 +174,52 @@ begin
     end if;
   end if;
 
+  if text_query is not null then
+    select coalesce(array_agg(t.id order by t.text_rank desc, t.id), '{}') into text_ids
+    from (
+      select c.id, ts_rank_cd(c.fts, text_query) as text_rank
+      from private.library_chunks c
+      join private.library_sources s on s.id = c.source_id
+      where c.fts @@ text_query
+        and (region_filter is null or s.region && region_filter)
+        and (topic_filter is null or s.topics && topic_filter)
+      order by text_rank desc, c.id
+      limit candidate_limit
+    ) t;
+  end if;
+
+  if query_embedding is not null and region_filter is null and topic_filter is null then
+    select coalesce(array_agg(v.id order by v.distance, v.id), '{}') into vector_ids
+    from (
+      select c.id, c.embedding operator(extensions.<=>) query_embedding as distance
+      from private.library_chunks c
+      where c.embedding is not null
+      order by distance
+      limit candidate_limit
+    ) v;
+  elsif query_embedding is not null then
+    select coalesce(array_agg(v.id order by v.distance, v.id), '{}') into vector_ids
+    from (
+      select m.id, m.embedding operator(extensions.<=>) query_embedding as distance
+      from (
+        select c.id, c.embedding
+        from private.library_chunks c
+        join private.library_sources s on s.id = c.source_id
+        where c.embedding is not null
+          and (region_filter is null or s.region && region_filter)
+          and (topic_filter is null or s.topics && topic_filter)
+        offset 0 -- keeps the filter ahead of the ordering: exact, not an index scan
+      ) m
+      order by distance, m.id
+      limit candidate_limit
+    ) v;
+  end if;
+
   return query
-  with text_candidates as (
-    select c.id, ts_rank_cd(c.fts, text_query) as text_rank
-    from private.library_chunks c
-    join private.library_sources s on s.id = c.source_id
-    where text_query is not null
-      and c.fts @@ text_query
-      and (region_filter is null or s.region && region_filter)
-      and (topic_filter is null or s.topics && topic_filter)
-    order by text_rank desc, c.id
-    limit candidate_limit
-  ), text_hits as (
-    select t.id, row_number() over (order by t.text_rank desc, t.id) as list_rank
-    from text_candidates t
-  ), vector_candidates as (
-    select c.id, c.embedding operator(extensions.<=>) query_embedding as distance
-    from private.library_chunks c
-    join private.library_sources s on s.id = c.source_id
-    where query_embedding is not null
-      and c.embedding is not null
-      and (region_filter is null or s.region && region_filter)
-      and (topic_filter is null or s.topics && topic_filter)
-    order by distance
-    limit candidate_limit
+  with text_hits as (
+    select h.id, h.list_rank from unnest(text_ids) with ordinality as h(id, list_rank)
   ), vector_hits as (
-    select v.id, row_number() over (order by v.distance, v.id) as list_rank
-    from vector_candidates v
+    select h.id, h.list_rank from unnest(vector_ids) with ordinality as h(id, list_rank)
   ), fused as (
     select
       coalesce(t.id, v.id) as id,
@@ -218,7 +247,7 @@ begin
 end
 $$;
 
-revoke all on function public.search_library_v1(text, extensions.vector, integer, jsonb)
+revoke all on function public.search_library_v1(text, public.library_embedding, integer, jsonb)
   from public, anon, authenticated;
-grant execute on function public.search_library_v1(text, extensions.vector, integer, jsonb)
+grant execute on function public.search_library_v1(text, public.library_embedding, integer, jsonb)
   to service_role;

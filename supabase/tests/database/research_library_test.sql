@@ -52,28 +52,26 @@ select ok(not has_table_privilege('service_role', 'private.library_chunks', 'sel
   'the service role reads chunks only through the search function');
 
 select ok(has_function_privilege('service_role',
-  'public.search_library_v1(text, extensions.vector, integer, jsonb)', 'execute'),
+  'public.search_library_v1(text, public.library_embedding, integer, jsonb)', 'execute'),
   'Edge Functions can search the library');
 select ok(not has_function_privilege('anon',
-  'public.search_library_v1(text, extensions.vector, integer, jsonb)', 'execute'), 'visitors cannot search');
+  'public.search_library_v1(text, public.library_embedding, integer, jsonb)', 'execute'), 'visitors cannot search');
 select ok(not has_function_privilege('authenticated',
-  'public.search_library_v1(text, extensions.vector, integer, jsonb)', 'execute'), 'app users cannot search');
+  'public.search_library_v1(text, public.library_embedding, integer, jsonb)', 'execute'), 'app users cannot search');
 select ok((select proacl is not null from pg_proc
-  where oid = 'public.search_library_v1(text, extensions.vector, integer, jsonb)'::regprocedure)
+  where oid = 'public.search_library_v1(text, public.library_embedding, integer, jsonb)'::regprocedure)
   and not exists (
   select 1 from pg_proc p, aclexplode(p.proacl) a
-  where p.oid = 'public.search_library_v1(text, extensions.vector, integer, jsonb)'::regprocedure
+  where p.oid = 'public.search_library_v1(text, public.library_embedding, integer, jsonb)'::regprocedure
     and a.grantee = 0 and a.privilege_type = 'EXECUTE'
 ), 'PUBLIC holds no execute grant');
 select ok((select p.prosecdef and p.proconfig @> array['search_path=""']
-  from pg_proc p where p.oid = 'public.search_library_v1(text, extensions.vector, integer, jsonb)'::regprocedure),
+  from pg_proc p where p.oid = 'public.search_library_v1(text, public.library_embedding, integer, jsonb)'::regprocedure),
   'the search function is security definer with an empty search_path');
 
 set local role authenticated;
 select throws_ok($$select count(*) from private.library_chunks$$, '42501', null,
   'an app user querying chunks is refused');
-select throws_ok($$select * from public.search_library_v1('creatine', null, 8, null)$$, '42501', null,
-  'an app user calling search is refused');
 reset role;
 
 -- Fixture ---------------------------------------------------------------------------------
@@ -186,7 +184,9 @@ select throws_ok($$select * from public.search_library_v1('creatine', null, 8, '
 select throws_ok($$select * from public.search_library_v1('creatine', null, 8, '{"region": "IN"}')$$,
   '22023', 'filter region must be an array of text', 'a filter that is not an array is refused');
 select throws_ok($$select * from public.search_library_v1('creatine', '[1,2,3]', 8, null)$$,
-  '22023', 'query_embedding must have 384 dimensions', 'an embedding of the wrong size is refused');
+  '22000', 'expected 384 dimensions, not 3', 'an embedding of the wrong size is refused');
+select throws_ok($$select * from public.search_library_v1('creatine', '[1,2,3]'::extensions.vector, 8, null)$$,
+  '22000', 'expected 384 dimensions, not 3', 'a vector value of the wrong size is refused too');
 
 reset role;
 

@@ -710,7 +710,14 @@ nearest embeddings (cosine distance) and merges them by reciprocal rank fusion:
 
 - A null or blank `query_text` (or one of stop words only) skips full-text search; a null
   `query_embedding` skips vector search; both skipped returns no rows.
-- `query_embedding` must have 384 dimensions (`22023` otherwise).
+- `query_embedding` is declared as `public.library_embedding`, a domain over
+  `extensions.vector(384)`; callers pass the same JSON number array. Another size raises `22000`
+  ("expected 384 dimensions"). The domain exists because `supabase db dump` drops GRANT and REVOKE
+  lines that mention the `extensions` schema: with a plain `extensions.vector` parameter a
+  restored dump would leave the function executable by `anon` and `authenticated`.
+- Without filters the nearest embeddings come from the HNSW index; with a filter they are ranked
+  exactly over the matching sources' chunks (an HNSW scan stops after `ef_search` = 40
+  candidates, which a narrow filter could empty).
 - `filters` is null or an object with optional `region` and `topics` text arrays. A source matches
   when its array overlaps the filter; an absent, null or empty array does not filter. Any other key
   or a non-text-array value raises `22023`. Sources that apply everywhere carry `global` in
