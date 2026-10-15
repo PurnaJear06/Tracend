@@ -122,8 +122,10 @@ Since 2026-10-15 a notice may also carry `provider`: the vendor that receives th
 (`anthropic`, `deepseek`, `groq` or `gemini`), which the gateway compares with its route's vendor.
 It is never an API shape such as an OpenAI-compatible endpoint, since one shape reaches several
 vendors. It is null on notices published before; the five-argument `private.publish_ai_notice(version, provider,
-provider_label, purposes, body)` sets it. `get_ai_consent_v2` (service role) returns the grant,
-provider and version of the notice current for a purpose or gateway feature.
+provider_label, purposes, body)` sets it and refuses (22023) a `provider_label` that does not name
+the provider's company (Anthropic, DeepSeek, Groq, Google; case ignored) or names another one.
+`get_ai_consent_v2` (service role) returns the grant, provider and version of the notice current
+for a purpose or gateway feature.
 
 ### `user_profiles`
 
@@ -459,7 +461,8 @@ never edited. A grant is a `consent_records` row of type `progress_photo_ai` nam
 (same values as `ai_consent_notices.provider`; null on earlier notices), set by the five-argument
 `private.publish_photo_ai_notice(version, provider, provider_label, model, body)`. The meal photo
 notice table (`meal_photo_ai_notices`, consent type `meal_photo_ai`) works the same way and has always
-named its provider; it now also accepts `deepseek` and `anthropic`.
+named its provider; it now also accepts `deepseek` and `anthropic`. All three publishers that name a
+provider apply the same label check as `private.publish_ai_notice`.
 
 ### `progress_reviews`
 

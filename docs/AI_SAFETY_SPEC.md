@@ -415,7 +415,10 @@ model its route names (a well-formed id of at most 100 characters).
   keep a null provider. A provider switch publishes with the overloads that name it:
   `private.publish_ai_notice(version, provider, provider_label, purposes, body)` and
   `private.publish_photo_ai_notice(version, provider, provider_label, model, body)` (the meal photo
-  publisher already takes one). The four-argument publishers still work.
+  publisher already takes one). The four-argument publishers still work. Every publisher that
+  names a provider refuses a `provider_label` that does not name that provider's company
+  (Anthropic, DeepSeek, Groq, Google; case ignored) or also names another, so the athlete never
+  agrees to one company while the gateway sends to another.
 - **The gateway checks the provider.** `get_ai_consent_v2(target_user_id, consent_purpose)`
   (service role) returns `{schema_version, granted, provider, notice_version}` for the notice current
   for the purpose (`aiConsentWithProvider` in `_shared/ai_consent.ts`, which never throws and answers

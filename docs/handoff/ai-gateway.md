@@ -45,7 +45,10 @@ No chunk of this stream has merged yet.
 - Follow-up for A3: `_shared/ai_consent.ts` declares its own `AiVendor` union, which duplicates the
   gateway's (A2). A3 unifies them after A2 merges.
 - The five-argument publishers are owner-run SQL: `provider_label` must name the same company as
-  `provider`; nothing checks it (comment in the migration). Vision through DeepSeek,
+  `provider`. `private.check_notice_provider_label` enforces it in all three publishers that name
+  a provider (meal photo included): the label must contain Anthropic, DeepSeek, Groq or Google for
+  `anthropic`, `deepseek`, `groq` or `gemini` (case ignored) and no other of those names; a blank
+  label or an unknown provider is refused (22023). Vision through DeepSeek,
   or a Groq or Gemini model other than the pinned ones, still needs a migration (A3).
 
 ## Next agent starts here

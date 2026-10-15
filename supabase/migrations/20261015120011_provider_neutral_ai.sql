@@ -26,7 +26,10 @@
 --
 -- Notices gain a machine-readable vendor so the gateway can refuse a call to
 -- a vendor the athlete's notice does not name. Old notices keep a null
--- provider (never edited); the new publish overloads set it.
+-- provider (never edited); the new publish overloads set it. Every publisher
+-- that names a provider (the two new overloads and the redefined
+-- publish_meal_photo_ai_notice, all owner-run SQL) refuses a provider label
+-- that does not name that provider's company.
 --
 -- New: get_ai_consent_v2 (grant, vendor and version of a purpose's current
 -- notice) and reserve_ai_budget_v2 (the per-call ceiling comes from the route).
@@ -68,18 +71,54 @@ alter table public.photo_ai_notices add column provider text
 
 -- The four-argument publishers keep working (provider null). These name it.
 -- Run by the owner from the SQL editor: provider_label is what the athlete reads
--- and provider is what the gateway checks, so provider_label must name the same
--- company as provider (provider 'anthropic' with label 'Claude (Anthropic)',
--- never a label for another company). Nothing checks this; a mismatch would let
--- the athlete agree to one company while the gateway sends to another.
+-- and provider is what the gateway checks, so the label must name the same
+-- company. check_notice_provider_label enforces it for every publisher that
+-- names a provider: the label must contain the provider's company
+-- (anthropic -> Anthropic, deepseek -> DeepSeek, groq -> Groq, gemini ->
+-- Google; case ignored) and no other provider's company, so provider
+-- 'anthropic' with label 'Claude (Anthropic)' is published and label
+-- 'DeepSeek' is refused. A null provider, an unknown provider, or a null or
+-- blank label is refused as well. Errors use 22023.
+create function private.check_notice_provider_label(vendor_id text, vendor_label text)
+returns void language plpgsql immutable set search_path = '' as $$
+declare
+  companies constant text[] := array['Anthropic', 'DeepSeek', 'Groq', 'Google'];
+  company text;
+  other_company text;
+begin
+  if vendor_id is null then
+    raise exception 'provider required' using errcode = '22023';
+  end if;
+  company := case vendor_id
+    when 'anthropic' then 'Anthropic'
+    when 'deepseek' then 'DeepSeek'
+    when 'groq' then 'Groq'
+    when 'gemini' then 'Google'
+  end;
+  if company is null then
+    raise exception 'unknown provider %', vendor_id using errcode = '22023';
+  end if;
+  if vendor_label is null or vendor_label !~ '[^[:space:]]' then
+    raise exception 'provider label required' using errcode = '22023';
+  end if;
+  if strpos(lower(vendor_label), lower(company)) = 0 then
+    raise exception 'provider label must name %', company using errcode = '22023';
+  end if;
+  foreach other_company in array companies loop
+    if other_company <> company and strpos(lower(vendor_label), lower(other_company)) > 0 then
+      raise exception 'provider label must name only %', company using errcode = '22023';
+    end if;
+  end loop;
+end $$;
+revoke all on function private.check_notice_provider_label(text, text)
+from public, anon, authenticated, service_role;
+
 create function private.publish_ai_notice(
   notice_version text, notice_provider text, notice_provider_label text,
   notice_purposes text[], notice_body text
 ) returns void language plpgsql security definer set search_path = '' as $$
 begin
-  if notice_provider is null then
-    raise exception 'provider required' using errcode = '22023';
-  end if;
+  perform private.check_notice_provider_label(notice_provider, notice_provider_label);
   insert into public.ai_consent_notices(version, provider, provider_label, purposes, body)
   values (notice_version, notice_provider, notice_provider_label, notice_purposes, notice_body);
   insert into public.ai_notice_current(purpose, version)
@@ -94,13 +133,25 @@ create function private.publish_photo_ai_notice(
   notice_body text
 ) returns void language plpgsql security definer set search_path = '' as $$
 begin
-  if notice_provider is null then
-    raise exception 'provider required' using errcode = '22023';
-  end if;
+  perform private.check_notice_provider_label(notice_provider, notice_provider_label);
   insert into public.photo_ai_notices(version, provider, provider_label, model, body)
   values (notice_version, notice_provider, notice_provider_label, notice_model, notice_body);
 end $$;
 revoke all on function private.publish_photo_ai_notice(text, text, text, text, text)
+from public, anon, authenticated;
+
+-- The meal photo publisher has always named its provider; it gains the same
+-- check. Same signature and argument names, so its grants are kept.
+create or replace function private.publish_meal_photo_ai_notice(
+  notice_version text, notice_provider text, notice_provider_label text, notice_model text,
+  notice_body text
+) returns void language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.check_notice_provider_label(notice_provider, notice_provider_label);
+  insert into public.meal_photo_ai_notices(version, provider, provider_label, model, body)
+  values (notice_version, notice_provider, notice_provider_label, notice_model, notice_body);
+end $$;
+revoke all on function private.publish_meal_photo_ai_notice(text, text, text, text, text)
 from public, anon, authenticated;
 
 -- Consent v2 -----------------------------------------------------------------------------

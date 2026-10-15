@@ -1,5 +1,5 @@
 begin;
-select plan(79);
+select plan(88);
 
 -- a11...01 runs, usage and consent; 02 another athlete; 03-05 the budget.
 insert into auth.users(id, role) values
@@ -248,7 +248,28 @@ select ok((select bool_and(not (public.get_ai_consent_v2('a1100000-0000-4000-800
 
 select throws_ok($$select private.publish_ai_notice('ai-coaching-a1-bad', 'openai_compatible',
   'DeepSeek', array['coach_chat'], 'Test notice.')$$,
-  '23514', null, 'a notice must name a vendor, not an API shape');
+  '22023', 'unknown provider openai_compatible', 'a notice must name a vendor, not an API shape');
+select throws_ok($$select private.publish_ai_notice('ai-coaching-a1-mismatch', 'anthropic',
+  'DeepSeek', array['coach_chat'], 'Test notice.')$$,
+  '22023', 'provider label must name Anthropic',
+  'a label naming another company than the provider is refused');
+select throws_ok($$select private.publish_ai_notice('ai-coaching-a1-both', 'anthropic',
+  'Claude (Anthropic) or DeepSeek', array['coach_chat'], 'Test notice.')$$,
+  '22023', 'provider label must name only Anthropic',
+  'a label naming a second company is refused');
+select throws_ok($$select private.publish_ai_notice('ai-coaching-a1-blank', 'anthropic',
+  '   ', array['coach_chat'], 'Test notice.')$$,
+  '22023', 'provider label required', 'a blank provider label is refused');
+select throws_ok($$select private.publish_ai_notice('ai-coaching-a1-null', 'anthropic',
+  null, array['coach_chat'], 'Test notice.')$$,
+  '22023', 'provider label required', 'a null provider label is refused');
+select ok(not has_function_privilege('anon', 'private.check_notice_provider_label(text,text)',
+    'execute')
+  and not has_function_privilege('authenticated', 'private.check_notice_provider_label(text,text)',
+    'execute')
+  and not has_function_privilege('service_role', 'private.check_notice_provider_label(text,text)',
+    'execute'),
+  'only the publishers run the label check');
 select throws_ok($$select private.publish_ai_notice('ai-coaching-a1-none', null, 'Acme',
   array['coach_chat'], 'Test notice.')$$,
   '22023', 'provider required', 'the new publisher requires a provider');
@@ -259,6 +280,9 @@ select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'onbo
   '{"schema_version": "1.0", "granted": false, "provider": null,
     "notice_version": "ai-coaching-a1-old"}'::jsonb,
   'a notice from the original publisher names no provider');
+select lives_ok($$select private.publish_ai_notice('ai-coaching-a1-google', 'gemini',
+  'Gemini (GOOGLE)', array['onboarding_plan'], 'Test notice.')$$,
+  'the label check ignores case');
 
 -- Meal photo notice -------------------------------------------------------------------
 
@@ -277,7 +301,11 @@ select lives_ok($$select private.publish_meal_photo_ai_notice('meal-photo-ai-a1'
   'a Claude meal photo notice is accepted');
 select throws_ok($$select private.publish_meal_photo_ai_notice('meal-photo-ai-a1-bad', 'acme',
   'Acme', 'acme-1', 'Test notice.')$$,
-  '23514', null, 'a meal photo notice naming an unknown provider is refused');
+  '22023', 'unknown provider acme', 'a meal photo notice naming an unknown provider is refused');
+select throws_ok($$select private.publish_meal_photo_ai_notice('meal-photo-ai-a1-mismatch',
+  'anthropic', 'Groq', 'claude-haiku-5-5', 'Test notice.')$$,
+  '22023', 'provider label must name Anthropic',
+  'a meal photo notice whose label names another company is refused');
 insert into public.consent_records(user_id, consent_type, notice_version, action, source)
 values ('a1100000-0000-4000-8000-000000000001', 'meal_photo_ai', 'meal-photo-ai-a1', 'granted',
   'ios_app');
@@ -307,7 +335,15 @@ select lives_ok($$select private.publish_photo_ai_notice('progress-photo-ai-a1',
   'a Claude progress photo notice is published with its provider');
 select throws_ok($$select private.publish_photo_ai_notice('progress-photo-ai-a1-bad', 'acme',
   'Acme', 'acme-1', 'Test notice.')$$,
-  '23514', null, 'a progress photo notice naming an unknown provider is refused');
+  '22023', 'unknown provider acme',
+  'a progress photo notice naming an unknown provider is refused');
+select throws_ok($$select private.publish_photo_ai_notice('progress-photo-ai-a1-mismatch',
+  'anthropic', 'DeepSeek', 'claude-sonnet-5-5', 'Test notice.')$$,
+  '22023', 'provider label must name Anthropic',
+  'a progress photo notice whose label names another company is refused');
+select throws_ok($$select private.publish_photo_ai_notice('progress-photo-ai-a1-blank',
+  'anthropic', '', 'claude-sonnet-5-5', 'Test notice.')$$,
+  '22023', 'provider label required', 'a blank progress photo provider label is refused');
 insert into public.consent_records(user_id, consent_type, notice_version, action, source)
 values ('a1100000-0000-4000-8000-000000000001', 'progress_photo_ai', 'progress-photo-ai-a1',
   'granted', 'ios_app');
