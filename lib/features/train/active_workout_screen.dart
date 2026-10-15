@@ -696,10 +696,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _changed();
   }
 
+  /// Gives [rir] to the done sets of [exercise] that read as unanswered; a
+  /// set with reps left or an older RPE keeps its effort.
   int _fillRir(int exercise, int rir) {
     var filled = 0;
     for (final set in _exercises[exercise].sets) {
-      if (set.completed && set.rir == null && set.rpe.isEmpty) {
+      if (set.completed && set.shownRir == null) {
         set.setRir(rir);
         filled++;
       }

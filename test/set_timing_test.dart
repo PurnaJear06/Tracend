@@ -7,6 +7,13 @@ import 'package:tracend/features/train/workout_draft.dart';
 
 void main() {
   final t0 = DateTime.utc(2026, 10, 15, 9);
+  const timingKeys = [
+    'started_at',
+    'completed_at',
+    'rest_before_seconds',
+    'rir',
+    'timing_source',
+  ];
   DateTime at(int seconds) => t0.add(Duration(seconds: seconds));
 
   group('restTakenSeconds', () {
@@ -205,6 +212,115 @@ void main() {
       expect(set.rir, isNull);
       expect(set.restBeforeSeconds, isNull);
       expect(set.timingSource, isNull);
+      for (final key in timingKeys) {
+        expect(set.toMap().containsKey(key), isFalse, reason: key);
+      }
+    });
+
+    test('a set from a draft without timing keys leaves the server alone', () {
+      final set = WorkoutSetDraft.fromMap({
+        'load_kg': '60',
+        'repetitions': '8',
+        'rpe': '8',
+        'completed': true,
+      });
+      for (final sent in [set.toMap(), set.toMap(notBefore: at(0))]) {
+        for (final key in timingKeys) {
+          expect(sent.containsKey(key), isFalse, reason: key);
+        }
+        expect(sent['rpe'], '8');
+      }
+    });
+
+    test('logging on an older set sends only what it changed', () {
+      final reps = WorkoutSetDraft.fromMap({'completed': true})..setRir(2);
+      expect(reps.toMap(), {
+        'load_kg': '',
+        'repetitions': '',
+        'rpe': '8',
+        'completed': true,
+        'rir': 2,
+      });
+      final cleared = WorkoutSetDraft.fromMap({'completed': true})
+        ..setRir(null);
+      expect(cleared.toMap()['rir'], isNull);
+      expect(cleared.toMap().containsKey('rir'), isTrue);
+
+      final ticked = WorkoutSetDraft.fromMap({'completed': false})
+        ..completed = true;
+      SetTimingRecorder().completed(
+        ticked,
+        now: at(60),
+        resting: false,
+        otherEnds: [at(0)],
+      );
+      final sent = ticked.toMap();
+      expect(sent['completed_at'], at(60).toIso8601String());
+      expect(sent.containsKey('rest_before_seconds'), isTrue);
+      expect(sent['timing_source'], 'app');
+      expect(sent.containsKey('started_at'), isFalse);
+      expect(sent.containsKey('rir'), isFalse);
+    });
+
+    test('un-ticking an older set clears every timing key', () {
+      final set = WorkoutSetDraft.fromMap({'rpe': '8', 'completed': true})
+        ..completed = false
+        ..startedAt = null
+        ..completedAt = null
+        ..restBeforeSeconds = null
+        ..timingSource = null
+        ..setRir(null);
+      final sent = set.toMap();
+      for (final key in timingKeys) {
+        expect(sent.containsKey(key), isTrue, reason: key);
+        expect(sent[key], isNull, reason: key);
+      }
+      expect(sent['rpe'], '');
+    });
+
+    test('a draft saved by this build keeps its keys, nulls included', () {
+      Map<String, dynamic> roundTrip(WorkoutSetDraft set) =>
+          WorkoutSetDraft.fromMap(
+            jsonDecode(jsonEncode(set.toMap())) as Map<String, dynamic>,
+          ).toMap();
+
+      final fresh = roundTrip(WorkoutSetDraft(completed: true));
+      for (final key in timingKeys) {
+        expect(fresh.containsKey(key), isTrue, reason: key);
+        expect(fresh[key], isNull, reason: key);
+      }
+
+      final timed = WorkoutSetDraft(
+        completed: true,
+        startedAt: at(10),
+        completedAt: at(50),
+        restBeforeSeconds: 40,
+        timingSource: SetTimingSource.app,
+      )..setRir(1);
+      expect(roundTrip(timed), timed.toMap());
+
+      final older = WorkoutSetDraft.fromMap({'completed': true})..setRir(3);
+      final again = roundTrip(older);
+      expect(again['rir'], 3);
+      expect(again.containsKey('started_at'), isFalse);
+      expect(again.containsKey('timing_source'), isFalse);
+    });
+
+    test('an older RPE reads as the reps left it meant', () {
+      int? shown(String rpe) => WorkoutSetDraft(rpe: rpe).shownRir;
+      expect(shown('8'), 2);
+      expect(shown('8.5'), 2);
+      expect(shown('10'), 0);
+      expect(shown('5'), 5);
+      expect(shown('3'), 5);
+      expect(shown(''), isNull);
+      final answered = WorkoutSetDraft(rpe: '8')..setRir(4);
+      expect(answered.shownRir, 4);
+      // Shown only: an older set sends no reps left it was not given.
+      final older = WorkoutSetDraft.fromMap({'rpe': 7.0, 'completed': true});
+      expect(older.shownRir, 3);
+      expect(older.rir, isNull);
+      expect(older.toMap().containsKey('rir'), isFalse);
     });
 
     test('reps left writes the effort it meant on the 1–10 picker', () {

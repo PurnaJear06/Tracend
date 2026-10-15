@@ -312,8 +312,7 @@ class _FocusExercisePageState extends State<FocusExercisePage>
                       i == draft.sets.indexWhere((s) => s.completed)
                 ? SetMark.firstLog
                 : null,
-            rir: draft.sets[i].rir,
-            rpe: draft.sets[i].rpeValue,
+            rir: draft.sets[i].shownRir,
             onEffort: widget.readOnly
                 ? null
                 : () => setState(() => _picker = _picker == i ? null : i),
@@ -362,7 +361,7 @@ class _FocusExercisePageState extends State<FocusExercisePage>
               else
                 RirPicker(
                   title: 'Reps left on set ${picker + 1}',
-                  value: draft.sets[picker].rir,
+                  value: draft.sets[picker].shownRir,
                   onSelected: (value) {
                     widget.onRir(picker, value);
                     setState(() => _picker = null);

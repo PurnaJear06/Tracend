@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/app/app.dart';
 import 'package:tracend/app/environment.dart';
+import 'package:tracend/features/shell/floating_tab_bar.dart';
 import 'package:tracend/shared/widgets/tracend_glass.dart';
 
 const _environment = AppEnvironment(
@@ -92,4 +93,29 @@ void main() {
       expect(find.byType(BackdropFilter), findsOneWidget);
     },
   );
+
+  testWidgets('the shell floats its tab bar in the shared bottom frame', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewPadding = const FakeViewPadding(bottom: 34);
+    tester.view.padding = const FakeViewPadding(bottom: 34);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(const TracendApp(environment: _environment));
+    await tester.pumpAndSettle();
+
+    final frame = find.byType(FloatingBarFrame);
+    expect(frame, findsOneWidget);
+    expect(
+      find.descendant(of: frame, matching: find.byType(FloatingBarSwitcher)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: frame, matching: find.byType(FloatingTabBar)),
+      findsOneWidget,
+    );
+    expect(tester.getRect(find.byType(FloatingTabBar)).bottom, 844 - 24);
+  });
 }

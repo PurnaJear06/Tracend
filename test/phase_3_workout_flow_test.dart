@@ -563,6 +563,79 @@ void main() {
     expect(h.repository.savedSet(0, 0)['rir'], 1);
   });
 
+  testWidgets('sets from an older draft keep the server\'s timing and RPE', (
+    tester,
+  ) async {
+    const timingKeys = [
+      'started_at',
+      'completed_at',
+      'rest_before_seconds',
+      'rir',
+      'timing_source',
+    ];
+    final h = _Harness();
+    Map<String, dynamic> set(int number, String rpe) => {
+      'number': number,
+      'load_kg': '60',
+      'repetitions': '8',
+      'rpe': rpe,
+      'completed': true,
+    };
+    // Saved by a build from before set timing: no Contract 2 keys.
+    h.repository.saved = jsonEncode({
+      'workout_id': 'upper-a',
+      'session_id': 'server-session',
+      'idempotency_key': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'revision': 3,
+      'actual_started_at': h.clock.now
+          .subtract(const Duration(minutes: 10))
+          .toUtc()
+          .toIso8601String(),
+      'exercises': [
+        {
+          'order': 1,
+          'status': 'unknown',
+          'pain_flag': false,
+          'sets': [set(1, '8'), set(2, '')],
+        },
+        // Every set done, so the workout opens on the first exercise.
+        {
+          'order': 2,
+          'status': 'unknown',
+          'pain_flag': false,
+          'sets': [set(1, ''), set(2, '')],
+        },
+      ],
+    });
+    await _open(tester, h, size: const Size(390, 1400));
+    await _flushSave(tester);
+    for (final key in timingKeys) {
+      expect(h.repository.syncedSet(0, 0).containsKey(key), isFalse);
+      expect(h.repository.syncedSet(0, 1).containsKey(key), isFalse);
+    }
+    // The older RPE 8 reads as answered, so Fill leaves it alone.
+    expect(find.text('2 left'), findsOneWidget);
+    await _tapLabel(tester, 'Fill reps left');
+    await _tapLabel(tester, '3 reps left');
+    expect(find.text('Reps left 3 added to 1 set'), findsOneWidget);
+    await _flushSave(tester);
+    final older = h.repository.syncedSet(0, 0);
+    expect(older['rpe'], '8');
+    expect(older.containsKey('rir'), isFalse);
+    final filled = h.repository.syncedSet(0, 1);
+    expect((filled['rir'], filled['rpe']), (3, '7'));
+    expect(filled.containsKey('started_at'), isFalse);
+
+    // Un-ticking is a clear the server must receive.
+    await _tapLabel(tester, 'Undo set 1');
+    await _flushSave(tester);
+    final undone = h.repository.syncedSet(0, 0);
+    for (final key in timingKeys) {
+      expect(undone.containsKey(key), isTrue, reason: key);
+      expect(undone[key], isNull, reason: key);
+    }
+  });
+
   testWidgets('Fill reps left before any set asks for a set first', (
     tester,
   ) async {
@@ -895,7 +968,7 @@ void main() {
     await _open(tester, h, size: const Size(390, 1400));
     expect(find.text('Finish not sent yet'), findsOneWidget);
     expect(find.text('Pain noted'), findsOneWidget);
-    expect(find.text('RPE 8'), findsOneWidget);
+    expect(find.text('2 left'), findsOneWidget);
     await _tapText(tester, 'Send finish');
     expect(h.repository.efforts, [9]);
     expect(h.repository.lastDuration, 2400);

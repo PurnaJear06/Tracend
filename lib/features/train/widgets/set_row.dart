@@ -100,7 +100,6 @@ class LoggedSetRow extends StatelessWidget {
     required this.description,
     this.mark,
     this.rir,
-    this.rpe,
     this.onEffort,
     this.onUndo,
     super.key,
@@ -112,12 +111,9 @@ class LoggedSetRow extends StatelessWidget {
   final String description;
   final SetMark? mark;
 
-  /// Reps in reserve, 0 to 5 (5 means 5 or more).
+  /// Reps in reserve, 0 to 5 (5 means 5 or more). A set logged before reps
+  /// left were asked shows what its RPE meant.
   final int? rir;
-
-  /// The effort of a set logged before reps left were asked, shown only
-  /// when [rir] is unknown.
-  final int? rpe;
   final VoidCallback? onEffort;
   final VoidCallback? onUndo;
 
@@ -127,18 +123,13 @@ class LoggedSetRow extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     final compact = MediaQuery.textScalerOf(context).scale(1) > 1.4;
     final reserve = rir;
-    final legacy = rpe;
     final effortLabel = reserve != null
         ? '${rirLabel(reserve)} left'
-        : legacy != null
-        ? 'RPE $legacy'
         : 'Reps left';
     final effortSpoken = reserve != null
         ? 'Reps left for set $number: ${rirHint(reserve)}, change'
-        : legacy != null
-        ? 'Effort for set $number: RPE $legacy, change'
         : 'Add reps left for set $number';
-    final hasEffort = reserve != null || legacy != null;
+    final hasEffort = reserve != null;
     final markLabel = switch (mark) {
       SetMark.newBest => ', new best',
       SetMark.firstLog => ', first log',

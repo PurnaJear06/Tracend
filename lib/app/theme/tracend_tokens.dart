@@ -32,6 +32,7 @@ class TracendColors extends ThemeExtension<TracendColors> {
     required this.scrim,
     required this.glass,
     required this.glassEdge,
+    required this.glassHighlight,
     required this.shimmer,
     required this.mapOff,
     required this.mapBase,
@@ -64,6 +65,7 @@ class TracendColors extends ThemeExtension<TracendColors> {
     scrim: Color(0x47141412),
     glass: Color(0xBDFFFFFF),
     glassEdge: Color(0x0F000000),
+    glassHighlight: Color(0xE6FFFFFF),
     shimmer: Color(0x0D000000),
     mapOff: Color(0xFFD6D6D0),
     mapBase: Color(0xFFE6E6E1),
@@ -96,6 +98,7 @@ class TracendColors extends ThemeExtension<TracendColors> {
     scrim: Color(0x73000000),
     glass: Color(0xB81E1F21),
     glassEdge: Color(0x14FFFFFF),
+    glassHighlight: Color(0x2EFFFFFF),
     shimmer: Color(0x0FFFFFFF),
     mapOff: Color(0xFF34363A),
     mapBase: Color(0xFF26272A),
@@ -157,6 +160,9 @@ class TracendColors extends ThemeExtension<TracendColors> {
   final Color glass;
   final Color glassEdge;
 
+  /// The specular top edge and sheen of the floating tab capsule.
+  final Color glassHighlight;
+
   /// Skeleton highlight.
   final Color shimmer;
 
@@ -194,6 +200,7 @@ class TracendColors extends ThemeExtension<TracendColors> {
     Color? scrim,
     Color? glass,
     Color? glassEdge,
+    Color? glassHighlight,
     Color? shimmer,
     Color? mapOff,
     Color? mapBase,
@@ -225,6 +232,7 @@ class TracendColors extends ThemeExtension<TracendColors> {
       scrim: scrim ?? this.scrim,
       glass: glass ?? this.glass,
       glassEdge: glassEdge ?? this.glassEdge,
+      glassHighlight: glassHighlight ?? this.glassHighlight,
       shimmer: shimmer ?? this.shimmer,
       mapOff: mapOff ?? this.mapOff,
       mapBase: mapBase ?? this.mapBase,
@@ -269,6 +277,7 @@ class TracendColors extends ThemeExtension<TracendColors> {
       scrim: Color.lerp(scrim, other.scrim, t)!,
       glass: Color.lerp(glass, other.glass, t)!,
       glassEdge: Color.lerp(glassEdge, other.glassEdge, t)!,
+      glassHighlight: Color.lerp(glassHighlight, other.glassHighlight, t)!,
       shimmer: Color.lerp(shimmer, other.shimmer, t)!,
       mapOff: Color.lerp(mapOff, other.mapOff, t)!,
       mapBase: Color.lerp(mapBase, other.mapBase, t)!,

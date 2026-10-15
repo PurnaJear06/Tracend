@@ -135,34 +135,25 @@ void main() {
   });
 
   group('LoggedSetRow', () {
-    Future<void> row(WidgetTester tester, {int? rir, int? rpe}) =>
-        tester.pumpWidget(
-          widgetHost(
-            LoggedSetRow(
-              number: 1,
-              description: '60 kg × 8',
-              rir: rir,
-              rpe: rpe,
-              onEffort: () {},
-              onUndo: () {},
-            ),
-          ),
-        );
+    Future<void> row(WidgetTester tester, {int? rir}) => tester.pumpWidget(
+      widgetHost(
+        LoggedSetRow(
+          number: 1,
+          description: '60 kg × 8',
+          rir: rir,
+          onEffort: () {},
+          onUndo: () {},
+        ),
+      ),
+    );
 
-    testWidgets('shows reps left, an older effort, or asks', (tester) async {
-      await row(tester, rir: 5, rpe: 5);
+    testWidgets('shows reps left or asks', (tester) async {
+      await row(tester, rir: 5);
       expect(find.text('5+ left'), findsOneWidget);
       expect(
         find.bySemanticsLabel(
           'Reps left for set 1: 5 or more reps left, change',
         ),
-        findsOneWidget,
-      );
-
-      await row(tester, rpe: 8);
-      expect(find.text('RPE 8'), findsOneWidget);
-      expect(
-        find.bySemanticsLabel('Effort for set 1: RPE 8, change'),
         findsOneWidget,
       );
 
