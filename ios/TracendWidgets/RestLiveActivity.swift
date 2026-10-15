@@ -42,6 +42,7 @@ struct RestLiveActivity: Widget {
       } minimal: {
         RestCountdown(rest: rest, size: 12, doneSymbolSize: 14)
           .minimumScaleFactor(0.7)
+          .frame(maxWidth: 36)
       }
       .keylineTint(TracendStyle.lime)
     }
@@ -55,7 +56,6 @@ struct RestPresentation {
   let isDone: Bool
   let title: String
   let nextLabel: String
-  let workoutTitle: String
 
   init(_ context: ActivityViewContext<RestActivityAttributes>) {
     let state = context.state
@@ -63,7 +63,6 @@ struct RestPresentation {
     isDone = context.isStale || state.endsAt <= .now
     title = state.exerciseName.isEmpty ? "Between sets" : state.exerciseName
     nextLabel = state.nextLabel
-    workoutTitle = context.attributes.workoutTitle
   }
 
   var status: String { isDone ? "Rest done" : "Rest" }
@@ -77,15 +76,8 @@ struct RestLockScreenView: View {
   var body: some View {
     HStack(alignment: .center, spacing: 16) {
       VStack(alignment: .leading, spacing: 4) {
-        HStack(spacing: 6) {
-          RestStatusLabel(rest: rest)
-          if !rest.workoutTitle.isEmpty {
-            Text("· \(rest.workoutTitle)")
-              .foregroundStyle(TracendStyle.textSecondary)
-              .lineLimit(1)
-          }
-        }
-        .font(.system(size: 13, weight: .semibold))
+        RestStatusLabel(rest: rest)
+          .font(.system(size: 13, weight: .semibold))
         RestLabels(rest: rest, titleSize: 20, detailSize: 15)
       }
       .frame(maxWidth: .infinity, alignment: .leading)

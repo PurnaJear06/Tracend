@@ -78,7 +78,6 @@ void main() {
         endsAt: endsAt,
         nextLabel: 'Set 3 of Bench press',
         exerciseName: 'Bench press',
-        workoutTitle: 'Push day',
       );
 
       final call = native.calls.single;
@@ -87,7 +86,6 @@ void main() {
         'ends_at_millis': endsAt.millisecondsSinceEpoch,
         'next_label': 'Set 3 of Bench press',
         'exercise_name': 'Bench press',
-        'workout_title': 'Push day',
       });
     },
   );
@@ -141,8 +139,8 @@ void main() {
     expect(breadcrumbs.single.data, {'showing': false});
   });
 
-  test('a platform error is swallowed', () async {
-    setHandler((_) async => throw PlatformException(code: 'invalid_arguments'));
+  test('a refused request is swallowed', () async {
+    setHandler((_) async => throw PlatformException(code: 'request_failed'));
 
     await bridge.startRest(endsAt: endsAt, nextLabel: '', exerciseName: '');
     await bridge.updateRest(endsAt: endsAt);

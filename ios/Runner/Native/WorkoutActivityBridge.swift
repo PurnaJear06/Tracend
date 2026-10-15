@@ -7,9 +7,9 @@ import Foundation
 ///
 /// The countdown runs on its own from the end time, so the app only starts,
 /// moves and ends the activity; nothing is pushed. At most one rest activity
-/// exists: starting one ends any earlier one. When the athlete turned Live
-/// Activities off, every call succeeds and shows nothing. Calls run one after
-/// another in the order they arrive.
+/// shows: starting one removes every earlier one. When the athlete turned
+/// Live Activities off, every call succeeds and shows nothing. Calls run one
+/// after another in the order they arrive.
 enum WorkoutActivityBridge {
   static let channelName = "tracend/live_activity"
 
@@ -19,7 +19,11 @@ enum WorkoutActivityBridge {
 
   @MainActor private static var queue: Task<Void, Never>?
 
+  /// Answers the channel, and first ends the rest activities left from an
+  /// earlier launch whose rest is over. A running one stays for the app's
+  /// restore to move or end.
   static func register(on messenger: FlutterBinaryMessenger) {
+    enqueue { await endFinished() }
     let channel = FlutterMethodChannel(name: channelName, binaryMessenger: messenger)
     channel.setMethodCallHandler { call, result in
       let arguments = call.arguments as? [String: Any] ?? [:]
@@ -33,15 +37,15 @@ enum WorkoutActivityBridge {
           result(FlutterError(code: "invalid_arguments", message: nil, details: nil))
           return
         }
-        let workoutTitle = arguments["workout_title"] as? String ?? ""
-        enqueue(result) {
-          await startRest(
-            RestActivityAttributes.ContentState(
-              endsAt: endsAt,
-              nextLabel: nextLabel,
-              exerciseName: exerciseName
-            ),
-            workoutTitle: workoutTitle
+        enqueue {
+          result(
+            await startRest(
+              RestActivityAttributes.ContentState(
+                endsAt: endsAt,
+                nextLabel: nextLabel,
+                exerciseName: exerciseName
+              )
+            )
           )
         }
       case "updateRest":
@@ -50,28 +54,27 @@ enum WorkoutActivityBridge {
           return
         }
         let nextLabel = arguments["next_label"] as? String
-        enqueue(result) { await updateRest(endsAt: endsAt, nextLabel: nextLabel) }
+        enqueue { result(await updateRest(endsAt: endsAt, nextLabel: nextLabel)) }
       case "end":
-        enqueue(result) { await endAll() }
+        enqueue {
+          await endAll()
+          result(false)
+        }
       default:
         result(FlutterMethodNotImplemented)
       }
     }
   }
 
-  /// Runs `work` after every earlier call has finished and answers Dart on
-  /// the main thread with its result: whether a rest activity is showing.
-  /// Flutter delivers method calls on the main thread, so the queue is
-  /// extended in arrival order.
-  private static func enqueue(
-    _ result: @escaping FlutterResult,
-    _ work: @escaping @MainActor () async -> Bool
-  ) {
+  /// Runs `work` after every earlier call has finished. Flutter delivers
+  /// method calls on the main thread, so the queue is extended in arrival
+  /// order.
+  private static func enqueue(_ work: @escaping @MainActor () async -> Void) {
     MainActor.assumeIsolated {
       let previous = queue
       queue = Task { @MainActor in
         await previous?.value
-        result(await work())
+        await work()
       }
     }
   }
@@ -81,28 +84,33 @@ enum WorkoutActivityBridge {
     return Date(timeIntervalSince1970: millis.doubleValue / 1000)
   }
 
-  private static var running: [Activity<RestActivityAttributes>] {
-    Activity<RestActivityAttributes>.activities.filter {
-      $0.activityState == .active || $0.activityState == .stale
-    }
+  private static var all: [Activity<RestActivityAttributes>] {
+    Activity<RestActivityAttributes>.activities
   }
 
+  private static func isRunning(_ activity: Activity<RestActivityAttributes>) -> Bool {
+    activity.activityState == .active || activity.activityState == .stale
+  }
+
+  /// Removes every earlier rest activity, including an ended one still
+  /// showing "Rest done", then requests the new one. Answers whether it
+  /// shows: false when Live Activities are off, a fixed error code when iOS
+  /// refused the request.
   @MainActor
-  private static func startRest(
-    _ state: RestActivityAttributes.ContentState,
-    workoutTitle: String
-  ) async -> Bool {
-    _ = await endAll()
+  private static func startRest(_ state: RestActivityAttributes.ContentState) async -> Any {
+    for activity in all where activity.activityState != .dismissed {
+      await activity.end(nil, dismissalPolicy: .immediate)
+    }
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { return false }
     do {
       _ = try Activity.request(
-        attributes: RestActivityAttributes(workoutTitle: workoutTitle),
+        attributes: RestActivityAttributes(),
         content: ActivityContent(state: state, staleDate: state.endsAt),
         pushType: nil
       )
       return true
     } catch {
-      return false
+      return FlutterError(code: "request_failed", message: nil, details: nil)
     }
   }
 
@@ -111,7 +119,7 @@ enum WorkoutActivityBridge {
   /// the athlete may have dismissed it.
   @MainActor
   private static func updateRest(endsAt: Date, nextLabel: String?) async -> Bool {
-    guard let activity = running.first else { return false }
+    guard let activity = all.first(where: isRunning) else { return false }
     var state = activity.content.state
     state.endsAt = endsAt
     if let nextLabel {
@@ -121,22 +129,35 @@ enum WorkoutActivityBridge {
     return true
   }
 
-  /// Ends every rest activity. One that ran to its end stays as "Rest done"
-  /// until `doneLinger` after its end; one ended early goes at once.
+  /// Ends every running rest activity. One that ran to its end stays as
+  /// "Rest done" until `doneLinger` after its end; one ended early goes at
+  /// once.
   @MainActor
-  private static func endAll() async -> Bool {
+  private static func endAll() async {
     let now = Date()
-    for activity in running {
-      let state = activity.content.state
-      let policy: ActivityUIDismissalPolicy =
-        state.endsAt <= now
-        ? .after(state.endsAt.addingTimeInterval(doneLinger))
-        : .immediate
-      await activity.end(
-        ActivityContent(state: state, staleDate: state.endsAt),
-        dismissalPolicy: policy
-      )
+    for activity in all where isRunning(activity) {
+      await end(activity, finished: activity.content.state.endsAt <= now)
     }
-    return false
+  }
+
+  /// Ends the running rest activities whose rest is over, as `endAll` would.
+  @MainActor
+  private static func endFinished() async {
+    let now = Date()
+    for activity in all where isRunning(activity) && activity.content.state.endsAt <= now {
+      await end(activity, finished: true)
+    }
+  }
+
+  @MainActor
+  private static func end(_ activity: Activity<RestActivityAttributes>, finished: Bool) async {
+    let state = activity.content.state
+    let lingerUntil = state.endsAt.addingTimeInterval(doneLinger)
+    let policy: ActivityUIDismissalPolicy =
+      finished && lingerUntil > Date() ? .after(lingerUntil) : .immediate
+    await activity.end(
+      ActivityContent(state: state, staleDate: state.endsAt),
+      dismissalPolicy: policy
+    )
   }
 }

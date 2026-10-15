@@ -6,7 +6,6 @@ typedef ActivityCall = ({
   DateTime? endsAt,
   String? nextLabel,
   String? exerciseName,
-  String? workoutTitle,
 });
 
 /// Records every call instead of showing a Live Activity, and tracks the
@@ -24,14 +23,12 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
     required DateTime endsAt,
     required String nextLabel,
     required String exerciseName,
-    String workoutTitle = '',
   }) async {
     calls.add((
       method: 'startRest',
       endsAt: endsAt,
       nextLabel: nextLabel,
       exerciseName: exerciseName,
-      workoutTitle: workoutTitle,
     ));
     showingUntil = endsAt;
   }
@@ -43,7 +40,6 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       endsAt: endsAt,
       nextLabel: nextLabel,
       exerciseName: null,
-      workoutTitle: null,
     ));
     if (showingUntil != null) showingUntil = endsAt;
   }
@@ -55,7 +51,6 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       endsAt: null,
       nextLabel: null,
       exerciseName: null,
-      workoutTitle: null,
     ));
     showingUntil = null;
   }

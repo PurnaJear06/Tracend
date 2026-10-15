@@ -313,7 +313,8 @@ content.
 
 Phase 8 local reminders are scheduled by iOS and use only the generic title `Tracend reminder` and
 body `Open Tracend when convenient.` Lock-screen content never names health, nutrition, workouts,
-photos, measurements, or coaching decisions. The server stores toggles and coarse permission state,
+photos, measurements, or coaching decisions, with one exception below (the rest Live Activity).
+The server stores toggles and coarse permission state,
 not delivery history or notification content. iOS stores only the two local boolean choices and
 repairs missing pending requests after reopen; no notification payload or delivery history is added
 to local preference storage.
@@ -330,6 +331,16 @@ The toggle in **Account › Notifications** names the lock-screen text ("Rest ti
 its row, and when iOS has not been asked yet, turning it on first shows that text in a confirm;
 only **Continue** leads to the iOS permission request. Off, **Not now** or a denied permission
 keeps the rest timer in the app only.
+
+**Exception: the rest Live Activity (owner decision, 2026-10-15).** During a workout rest, the
+Lock Screen and Dynamic Island Live Activity may show the exercise name and the next-set label
+(for example "Bench press · Next: Set 3 of Bench press") next to the countdown. Nothing else from
+the workout appears in it: never a load, reps, effort, reps left, heart rate or any health value,
+and never the workout's name. It is local to the phone (ActivityKit started by the app; no push,
+no App Group, nothing sent to the server or to Apple's push service), and the athlete removes it
+with iOS **Settings › Tracend › Live Activities**. Ending a rest early removes it at once; a rest
+that ran out shows "Rest done" for at most two minutes after its end; sign-out, account deletion
+and a session Auth refused end it, and the next launch ends any finished one left behind.
 
 ## 11. Retention
 

@@ -5,8 +5,9 @@ import Foundation
 /// Dynamic Island. Compiled into Runner, which starts, moves and ends it
 /// (`WorkoutActivityBridge`), and into TracendWidgets, which draws it.
 ///
-/// Only the end time and two labels travel: never a load, reps, effort, heart
-/// rate or any other health value. The countdown is drawn from `endsAt` with
+/// Only the end time, the exercise name and the next-set label travel; never
+/// a load, reps, effort, heart rate or any other health value
+/// (SECURITY_PRIVACY.md §10). The countdown is drawn from `endsAt` with
 /// `Text(timerInterval:)`, so it keeps running with the app closed.
 struct RestActivityAttributes: ActivityAttributes {
   struct ContentState: Codable, Hashable {
@@ -21,8 +22,4 @@ struct RestActivityAttributes: ActivityAttributes {
     /// The exercise the rest belongs to. Empty when the app did not say.
     var exerciseName: String
   }
-
-  /// The workout's name, fixed for the activity's life. Empty when the app
-  /// did not say.
-  var workoutTitle: String
 }

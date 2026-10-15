@@ -20,6 +20,7 @@ import 'package:tracend/features/train/workout_draft.dart';
 import 'package:tracend/features/train/workout_events.dart';
 import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
@@ -43,6 +44,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
     this.notifications = const MethodChannelNotificationRepository(),
     this.clock = DateTime.now,
     this.events,
+    this.activity = const MethodChannelWorkoutActivityBridge(),
     super.key,
   });
 
@@ -61,6 +63,10 @@ class ActiveWorkoutScreen extends StatefulWidget {
   /// The workout's event stream and command sink. The screen makes its own
   /// when none is given, and closes it when it goes away.
   final WorkoutEventHub? events;
+
+  /// The rest's Live Activity. The rest timer is its only driver; the
+  /// workout events above do not touch it.
+  final WorkoutActivityBridge activity;
 
   /// The longest workout the server records (3 hours).
   static const maxSessionSeconds = 10800;
@@ -98,6 +104,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   late final _GatedRestAlerts _alerts = _GatedRestAlerts(widget.restAlerts);
   late final RestTimerController _rest = RestTimerController(
     alerts: _alerts,
+    activity: widget.activity,
     clock: widget.clock,
   );
   final PageController _pages = PageController();
@@ -168,6 +175,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   @override
   void dispose() {
+    // Finish, discard and save-and-leave stop the rest before the screen
+    // goes; anything else (the app returning to sign-in) leaves the rest in
+    // the draft and ends only its Live Activity.
+    _rest.detach();
     _saveTimer?.cancel();
     _ticker?.cancel();
     unawaited(_commands?.cancel());
@@ -630,7 +641,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       _restEffortDismissed = false;
       _restExpanded = true;
       _timing.restStarted();
-      unawaited(_rest.start(restSeconds).then((_) => _persistRest()));
+      unawaited(
+        _rest
+            .start(
+              restSeconds,
+              nextLabel: next.full,
+              exerciseName: draft.exercise.name,
+            )
+            .then((_) => _persistRest()),
+      );
       final timer = _rest.timer;
       if (timer != null) {
         _events.emit(

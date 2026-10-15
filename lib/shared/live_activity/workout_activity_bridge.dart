@@ -11,18 +11,21 @@ const liveActivityChannel = MethodChannel('tracend/live_activity');
 /// the app closed. It is a convenience like the rest alert: the in-app timer
 /// works without it, so failures are logged and never thrown.
 ///
-/// Only the end time and the labels travel; never a load, reps, effort or
-/// health value.
+/// Only the end time, the exercise name and the next-set label travel; never
+/// a load, reps, effort or health value (SECURITY_PRIVACY.md §10).
+///
+/// Lifecycle: `RestTimerController` is the only caller during a workout
+/// (start, ±15, skip, the end, restore after a relaunch, and the screen going
+/// away); sign-out and account deletion call [end]; the native side ends the
+/// finished ones left from an earlier launch.
 abstract interface class WorkoutActivityBridge {
   /// Shows a rest that ends at [endsAt], replacing any earlier one.
   /// [nextLabel] says what follows ("Set 3 of Bench press"); [exerciseName]
-  /// and [workoutTitle] name what the rest belongs to. Empty labels show
-  /// generic text.
+  /// names the exercise the rest belongs to. Empty labels show generic text.
   Future<void> startRest({
     required DateTime endsAt,
     required String nextLabel,
     required String exerciseName,
-    String workoutTitle = '',
   });
 
   /// Moves the end of the rest that is showing, and its next label when
@@ -41,12 +44,10 @@ class MethodChannelWorkoutActivityBridge implements WorkoutActivityBridge {
     required DateTime endsAt,
     required String nextLabel,
     required String exerciseName,
-    String workoutTitle = '',
   }) => _invoke('startRest', {
     'ends_at_millis': endsAt.millisecondsSinceEpoch,
     'next_label': nextLabel,
     'exercise_name': exerciseName,
-    'workout_title': workoutTitle,
   });
 
   @override
@@ -60,7 +61,9 @@ class MethodChannelWorkoutActivityBridge implements WorkoutActivityBridge {
   Future<void> end() => _invoke('end', null);
 
   /// Calls the native side and leaves a breadcrumb with the method and
-  /// whether a rest activity is showing, never the arguments.
+  /// whether a rest activity is showing, never the arguments. A native
+  /// error carries a fixed code only (`invalid_arguments`,
+  /// `request_failed`), and only the code is logged.
   Future<void> _invoke(String method, Map<String, Object>? arguments) async {
     var showing = false;
     try {

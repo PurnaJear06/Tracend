@@ -22,6 +22,8 @@ import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 
+import 'live_activity/fake_workout_activity_bridge.dart';
+
 const _url = 'https://tracend-test.supabase.co';
 const _userId = '11111111-1111-4111-8111-111111111111';
 const _otherUserId = '22222222-2222-4222-8222-222222222222';
@@ -207,11 +209,18 @@ void main() {
     expect(legacy.getString(CheckInQueue.storageKeyFor(_userId)), isNotNull);
   }
 
+  late FakeWorkoutActivityBridge liveActivity;
+
   Future<void> pumpGate(WidgetTester tester, _Server server) async {
+    liveActivity = FakeWorkoutActivityBridge();
     await tester.pumpWidget(
       MaterialApp(
         theme: TracendTheme.light,
-        home: Phase2Gate(environment: _environment, client: server.client),
+        home: Phase2Gate(
+          environment: _environment,
+          client: server.client,
+          liveActivity: liveActivity,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -272,6 +281,7 @@ void main() {
       expect(server.client.auth.currentSession, isNull);
       expect(server.requests, isNot(contains('GET /rest/v1/user_accounts')));
       await expectAthleteDataCleared();
+      expect(liveActivity.methods, ['end']);
     });
 
     testWidgets(
@@ -293,6 +303,7 @@ void main() {
         expect(find.text('Connection needed'), findsNothing);
         expect(server.client.auth.currentSession, isNull);
         await expectAthleteDataKept();
+        expect(liveActivity.methods, ['end']);
       },
     );
 
@@ -311,6 +322,7 @@ void main() {
 
       expect(find.text('Connection needed'), findsOneWidget);
       expect(server.client.auth.currentSession, isNotNull);
+      expect(liveActivity.calls, isEmpty);
       expect(
         await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
         isNotNull,

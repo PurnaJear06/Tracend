@@ -19,6 +19,7 @@ import 'package:tracend/features/train/workout_events.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 
+import 'live_activity/fake_workout_activity_bridge.dart';
 import 'widgets/haptics_recorder.dart';
 
 const _workout = PlannedWorkout(
@@ -260,6 +261,7 @@ class _Harness {
 
   final repository = _Repository();
   final alerts = _Alerts();
+  final activity = FakeWorkoutActivityBridge();
   final clock = _Clock();
   final _Notifications notifications;
   Object? popped = 'not popped';
@@ -294,6 +296,7 @@ Future<void> _open(
                     notifications: h.notifications,
                     clock: h.clock.call,
                     events: events,
+                    activity: h.activity,
                   ),
                 ),
               );
@@ -664,6 +667,49 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
+
+  testWidgets('the rest Live Activity gets the exercise and the next set', (
+    tester,
+  ) async {
+    final h = _Harness();
+    await _open(tester, h);
+    await _tapText(tester, 'Done set 1');
+
+    final start = h.activity.calls.lastWhere(
+      (call) => call.method == 'startRest',
+    );
+    expect(start.exerciseName, 'Bench press');
+    expect(start.nextLabel, 'Set 2 of Bench press');
+    expect(
+      start.endsAt!.isAtSameMomentAs(
+        h.clock.now.add(const Duration(seconds: 90)),
+      ),
+      isTrue,
+    );
+
+    await _tapLabel(tester, 'Skip rest');
+    expect(h.activity.methods.last, 'end');
+    expect(h.activity.showingUntil, isNull);
+  });
+
+  testWidgets('the screen torn down mid-rest ends only the Live Activity', (
+    tester,
+  ) async {
+    final h = _Harness();
+    await _open(tester, h);
+    await _tapText(tester, 'Done set 1');
+    await _flushSave(tester);
+    final cancels = h.alerts.cancels;
+    expect(h.activity.showingUntil, isNotNull);
+
+    // The app returns to sign-in: the screen goes without Leave or Finish.
+    await tester.pumpWidget(const SizedBox());
+
+    expect(h.activity.methods.last, 'end');
+    expect(h.activity.showingUntil, isNull);
+    expect(h.alerts.cancels, cancels);
+    expect(h.repository.savedDraft[RestTimer.draftKey], isNotNull);
+  });
 
   testWidgets('rest alerts stay off unless the athlete turned them on', (
     tester,

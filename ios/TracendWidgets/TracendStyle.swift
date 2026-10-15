@@ -16,9 +16,11 @@ enum TracendStyle {
   static let lime = Color(hex: 0xC8F05A)
 
   /// Archivo SemiCondensed ExtraBold, the app's number face, bundled with the
-  /// extension. The file's internal font name is "Archivo-SemiBold" (the
-  /// app's Archivo cuts share it), so the name is read from the file instead
-  /// of being written here. Nil when the file cannot be registered.
+  /// extension and listed in its `UIAppFonts`. The file's internal font name
+  /// is "Archivo-SemiBold" (the app's Archivo cuts share it), so the name is
+  /// read from the file instead of being written here. Registering it again
+  /// by URL is a no-op when `UIAppFonts` already did. Nil when the file is
+  /// missing.
   private static let numericFontName: String? = {
     guard
       let url = Bundle.main.url(

@@ -1,8 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/train/rest_timer.dart';
 
 import 'fake_workout_activity_bridge.dart';
+
+/// An alert scheduler whose scheduling waits until the test completes it.
+class _SlowAlerts implements RestAlertScheduler {
+  final pending = Completer<void>();
+
+  @override
+  Future<bool> scheduleRestAlert(int seconds) async {
+    await pending.future;
+    return true;
+  }
+
+  @override
+  Future<void> cancelRestAlert() async {}
+}
 
 class _QuietAlerts implements RestAlertScheduler {
   @override
@@ -35,7 +51,6 @@ void main() {
       90,
       nextLabel: 'Set 3 of Bench press',
       exerciseName: 'Bench press',
-      workoutTitle: 'Push day',
     );
 
     final call = activity.calls.single;
@@ -44,7 +59,6 @@ void main() {
     expect(call.endsAt, controller.timer!.endsAt);
     expect(call.nextLabel, 'Set 3 of Bench press');
     expect(call.exerciseName, 'Bench press');
-    expect(call.workoutTitle, 'Push day');
   });
 
   test('a rest started without labels sends empty ones', () async {
@@ -53,7 +67,6 @@ void main() {
     final call = activity.calls.single;
     expect(call.nextLabel, '');
     expect(call.exerciseName, '');
-    expect(call.workoutTitle, '');
   });
 
   test('a new rest replaces the one showing', () async {
@@ -125,6 +138,43 @@ void main() {
 
     expect(activity.methods, ['startRest', 'end']);
     expect(controller.timer, isNull);
+  });
+
+  test(
+    'a stop while the start waits on the alert leaves nothing showing',
+    () async {
+      final alerts = _SlowAlerts();
+      final slow = RestTimerController(
+        alerts: alerts,
+        activity: activity,
+        clock: () => now,
+      );
+
+      final starting = slow.start(90);
+      await slow.stop();
+      alerts.pending.complete();
+      await starting;
+
+      expect(activity.methods, ['startRest', 'end']);
+      expect(activity.showingUntil, isNull);
+    },
+  );
+
+  test('the screen going away ends a running rest\'s activity only', () async {
+    await controller.start(90);
+    controller.detach();
+
+    expect(activity.methods, ['startRest', 'end']);
+    expect(controller.timer, isNotNull);
+    expect(controller.toDraft(), isNotNull);
+  });
+
+  test('the screen going away after the rest ended sends nothing', () async {
+    await controller.start(90);
+    await controller.skip();
+    controller.detach();
+
+    expect(activity.methods, ['startRest', 'end']);
   });
 
   group('after a relaunch', () {

@@ -92,10 +92,13 @@ secret/service-role key exist only in Supabase Edge Function secrets.
   end time in the local workout draft and does not depend on the alert.
 - The rest also shows as a Live Activity (D0, 2026-10-15). The `TracendWidgets` WidgetKit
   extension (`com.tracend.app.TracendWidgets`, embedded in Runner) draws `RestActivityAttributes`
-  (`ios/Shared/`, compiled into both targets): the end time, the next set label and the exercise
-  name. `RestTimerController` drives it through `WorkoutActivityBridge`
-  (`lib/shared/live_activity/`, channel `tracend/live_activity`: `startRest`, `updateRest`, `end`),
-  sent in order and never awaited. ActivityKit runs the countdown from the end time
+  (`ios/Shared/`, compiled into both targets): the end time, the exercise name and the next-set
+  label, nothing else (SECURITY_PRIVACY.md §10 exception). `RestTimerController` is its only
+  driver during a workout, through `WorkoutActivityBridge` (`lib/shared/live_activity/`, channel
+  `tracend/live_activity`: `startRest`, `updateRest`, `end`), sent before the rest alert is touched
+  and never awaited; the Contract 3 workout events do not drive it. Sign-out, account deletion
+  and a refused session call `end` from `Phase2Gate`, and the native side ends finished rest
+  activities left from an earlier launch. ActivityKit runs the countdown from the end time
   (`Text(timerInterval:)`), so there is no push, no App Group and no server involvement; the
   activity is local to the phone and off when iOS Live Activities are off.
 - Workout logging reads `get_my_exercise_history` (last time, best set, recent top sets) and keeps
