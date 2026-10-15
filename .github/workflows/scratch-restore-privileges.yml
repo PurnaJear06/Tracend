@@ -1,0 +1,108 @@
+name: Scratch restore privilege drill
+
+on:
+  push:
+    branches: [feature/restore-privilege-check-scratch]
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    name: Drill (${{ matrix.case }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [current, pending, lost-grant]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
+        with:
+          version: "2.101.0"
+
+      - name: Extract the deploy drill steps verbatim
+        run: |
+          mkdir -p "$RUNNER_TEMP/steps"
+          step() {
+            yq -r ".jobs.backup.steps[] | select(.name == \"$1\") | .run" .github/workflows/deploy.yml >"$RUNNER_TEMP/steps/$2.sh"
+            test -s "$RUNNER_TEMP/steps/$2.sh"
+          }
+          step "Dump production schema + data" dump
+          step "Verify backup integrity" verify
+          step "Start isolated restore target" start
+          step "Restore schema + data into isolated database" restore
+          step "Compare restored privileges with the migrations" compare
+          # Dump the local stack instead of production.
+          sed -i -e '/supabase link/d' -e 's/--linked/--local/g' "$RUNNER_TEMP/steps/dump.sh"
+          cat "$RUNNER_TEMP/steps/dump.sh"
+          # Scratch data is not production data: show psql output for debugging.
+          sed -i 's|rm -f "\$log"|cat "$log" >\&2; rm -f "$log"|' "$RUNNER_TEMP/steps/restore.sh"
+          grep -n 'cat "\$log"' "$RUNNER_TEMP/steps/restore.sh"
+
+      - name: Use production's Postgres image, as the linked deploy does
+        run: |
+          mkdir -p supabase/.temp
+          echo 17.6.1.127 > supabase/.temp/postgres-version
+
+      - name: Add a migration whose REVOKE the dump drops
+        if: matrix.case == 'lost-grant'
+        run: |
+          cat > supabase/migrations/29991231000000_scratch_lost_grant.sql <<'SQL'
+          create function private.scratch_lost_grant(p_user auth.users)
+          returns uuid
+          language sql
+          stable
+          as $$ select p_user.id $$;
+          revoke all on function private.scratch_lost_grant(auth.users) from public, anon, authenticated;
+          SQL
+
+      - name: Start isolated restore target (deploy step)
+        run: bash -e "$RUNNER_TEMP/steps/start.sh"
+
+      - name: Put the "production" database one migration behind
+        if: matrix.case == 'pending'
+        run: |
+          supabase db reset --last 1
+          supabase migration list --local | tail -n 4
+
+      - name: Dump (deploy step, local stack)
+        run: bash -e "$RUNNER_TEMP/steps/dump.sh"
+
+      - name: Show applied versions read from migration list
+        run: |
+          cat "$RUNNER_TEMP/migration-list.txt"
+          echo "--- parsed"
+          cat "$RUNNER_TEMP/applied-migrations.txt" | tail -n 3
+          wc -l "$RUNNER_TEMP/applied-migrations.txt"
+
+      - name: Verify backup integrity (deploy step)
+        run: bash -e "$RUNNER_TEMP/steps/verify.sh"
+
+      - name: Restore (deploy step)
+        run: bash -e "$RUNNER_TEMP/steps/restore.sh"
+
+      - name: Compare (deploy step)
+        id: compare
+        continue-on-error: ${{ matrix.case == 'lost-grant' }}
+        run: |
+          set -o pipefail
+          start=$(date +%s)
+          bash -e "$RUNNER_TEMP/steps/compare.sh" 2>&1 | tee "$RUNNER_TEMP/compare.log"
+          echo "compare took $(( $(date +%s) - start ))s"
+
+      - name: Expect the lost grant to be reported
+        if: matrix.case == 'lost-grant'
+        run: |
+          test "${{ steps.compare.outcome }}" = failure
+          grep -F 'function private.scratch_lost_grant(p_user auth.users): anon EXECUTE (migrations: no, restored: yes)' "$RUNNER_TEMP/compare.log"
+          grep -F 'function private.scratch_lost_grant(p_user auth.users): authenticated EXECUTE (migrations: no, restored: yes)' "$RUNNER_TEMP/compare.log"
+          echo "Lost grant reported as expected."
+
+      - name: Expect the reset path in the pending case
+        if: matrix.case == 'pending'
+        run: grep -F 'Resetting the drill database to' "$RUNNER_TEMP/compare.log"
