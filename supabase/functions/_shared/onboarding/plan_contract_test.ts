@@ -87,7 +87,7 @@ Deno.test("an exercise from a movement the athlete avoids is rejected", () => {
     avoidPatterns: ["squat", "vertical_push"],
   }));
   // The plan built without the request starts with a squat.
-  assertEquals(valid.workouts[0].exercises[0].slug, "bodyweight-squat");
+  assertEquals(valid.workouts[0].exercises[0].slug, "goblet-squat");
   assertEquals(
     rule(() => validateOnboardingPlan(valid, avoiding)),
     "exercise_avoided",

@@ -9,7 +9,7 @@
 # failure into the pull request:
 #   1. every migration the branch adds must be newer than the base's newest migration;
 #   2. every migration name must start with a 14-digit version and an underscore;
-#   3. migrations already on the base must not be edited (forward-only rule).
+#   3. migrations already on the base must not be edited, renamed or deleted (forward-only rule).
 # The fix for (1) is re-stamping the branch's new migration files to a current version.
 set -euo pipefail
 
@@ -49,6 +49,21 @@ while IFS= read -r file; do
     failures=$((failures + 1))
   fi
 done <<<"$head_files"
+
+# A migration the branch removed (or renamed) is gone from HEAD but present where the branch
+# started. Compare with the merge base, so a branch that is merely behind the base does not count
+# as removing the base's newer migrations. CI checks out the pull request's merge commit with
+# shallow history, where no merge base exists; that commit already holds the base's files, so the
+# base itself is the right comparison there.
+start="$(git merge-base "$base" HEAD 2>/dev/null || echo "$base")"
+start_files="$(git ls-tree --name-only "$start" "$dir/" | grep '\.sql$' || true)"
+while IFS= read -r file; do
+  [ -n "$file" ] || continue
+  if ! printf '%s\n' "$head_files" | grep -Fxq "$file"; then
+    echo "::error file=$file::Migration ${file##*/} on $base was deleted or renamed. Migrations are forward-only; add a new one."
+    failures=$((failures + 1))
+  fi
+done <<<"$start_files"
 
 if [ "$failures" -gt 0 ]; then
   echo "Migration order check failed ($failures problem(s))."

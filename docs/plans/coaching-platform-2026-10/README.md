@@ -44,13 +44,14 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | Phase | Chunk | Stream | Goal | Migration code | Waits for | Status | PR |
 |---|---|---|---|---|---|---|---|
 | 0 | P0 | program | This doc, contracts, migration-order CI check | — | — | review | |
-| 1 | B0 | training-engine | Mock decision obeys the policy; rules plan ranks by equipment and experience | — | P0 | todo | |
-| 1 | A1 | ai-gateway | Provider-neutral SQL, provider on notices, consent v2, budget v2 | 11 | P0 | todo | |
+| 1 | B0 | training-engine | Mock decision obeys the policy; rules plan ranks by equipment and experience | — | P0 | review | |
+| 1 | A1 | ai-gateway | Provider-neutral SQL, provider on notices, consent v2, budget v2 | 11 | P0 | review | #103 |
 | 1 | A2 | ai-gateway | Gateway module and adapters, not wired to features | — | P0 | review | |
-| 1 | C1 | workout-hr | Set start/end, actual rest, reps-left, workout events | 31 | P0 | todo | |
+| 1 | C1 | workout-hr | Set start/end, actual rest, reps-left, workout events | 31 | P0 | review | #104 (draft) |
 | 1 | D0 | ios-widgets | Widget extension and rest-timer Live Activity (countdown only) | — | P0 | todo | |
 | 1 | E1 | research-library | pgvector, library tables, `search_library_v1`, doc rule change | 41 | P0 | todo | |
 | 1 | W1 | website | Site copy fixes, privacy policy naming Anthropic, TestFlight checklist | — | P0 | todo | |
+| 1 | U1 | ui | Glass tab bar (owner request 2026-10-15) | — | P0 | review | |
 | 2 | A3 | ai-gateway | Meal photo on Haiku, physique on Sonnet | 13 | A1, A2 | todo | |
 | 2 | A4 | ai-gateway | Onboarding plan and questions on Sonnet | — | A1, A2 | todo | |
 | 2 | A5 | ai-gateway | Daily decision on Sonnet | — | A1, A2, B0 | todo | |
@@ -218,7 +219,9 @@ Rules:
 `sync_workout_draft(session_id, client_revision, draft)` keeps its signature. Each set object may
 carry `started_at`, `completed_at`, `rest_before_seconds`, `rir`, `timing_source`. A missing key
 keeps the stored value (older builds send none). Invalid values raise `22023`. Times more than 10
-minutes in the future or before the session's start are rejected. `get_my_workout_session` and
+minutes in the future or more than 10 minutes before the session's recorded start are rejected
+(the allowance absorbs small phone/server clock differences). If the server refuses timing, the app
+resends the draft without the timing keys, so logged sets are never blocked by a clock error. `get_my_workout_session` and
 `get_my_exercise_history` return the new fields (additive). `rpe` stays; the app stops asking for
 it only when `rir` is shown.
 
@@ -292,7 +295,7 @@ Golden tests for full gym, dumbbells only, and bodyweight only. Edge Functions o
 
 **A1: provider-neutral database.** One migration (code 11).
 - Every SQL provider whitelist (persist RPCs and check constraints that name `deepseek`, `groq`,
-  `gemini`) accepts `anthropic` and `openai_compatible` in addition to today's values.
+  `gemini`) accepts the vendor id `anthropic` in addition to today's values (Contract 1 v2).
 - `ai_consent_notices` gains `provider` (nullable for old rows); `photo_ai_notices` and
   `meal_photo_ai_notices` accept `anthropic`.
 - `get_ai_consent_v2(target_user_id, purpose)` returns `{granted, provider, notice_version}` for the
@@ -362,5 +365,13 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
   `lib/shared/ai_provider_names.dart`, `lib/features/consent/ai_coaching_consent.dart`,
   `lib/features/coach/coach_labels.dart`, `lib/features/onboarding/onboarding_proposal_view.dart`;
   notice bodies are rows the owner publishes (A7 drafts them).
+- 2026-10-15 (owner): the website keeps "Android in testing" and shows the physique check as live
+  (13 Oct notes stand); "For iPhone, best with Apple Watch" (never Watch-only); the glass tab bar's
+  sheen and fade are an allowed exception to the gradients-in-data-only rule; full-gym plans default
+  to lat pulldowns, with pull-ups returning as a variation in B2.
+- 2026-10-15: beta exit criterion. Health data must not go to DeepSeek once external testers join
+  (App Review 5.1.3; DeepSeek's API terms give no clear no-training/retention position). Phase 2
+  cutover moves every feature to Anthropic before the external TestFlight group opens; the privacy
+  processor list drops DeepSeek and Groq after the rollback window.
 - 2026-10-15: migration-order check added to the Migration Collision Check job
   (`scripts/check-migration-order.sh`).

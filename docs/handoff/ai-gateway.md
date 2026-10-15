@@ -18,6 +18,39 @@ A1, A2 (Phase 1); A3–A7 (Phase 2)
 
 No chunk of this stream has merged yet.
 
+**A1 (review, draft PR #103, migration `20261015120011_provider_neutral_ai.sql`):**
+
+- In SQL a provider is the vendor that receives the data (`anthropic`, `deepseek`, `groq`,
+  `gemini`, `mock` for runs), never `openai_compatible` (lead decision, Contract 1 v2). Every SQL
+  provider list accepts `anthropic` next to today's names:
+  `model_runs` and `ai_usage_events` provider checks, `ai_usage_events_model_check`,
+  `meal_photo_ai_notices_provider_check`, and the RPCs `persist_coach_chat_result`,
+  `persist_daily_coaching_result_v2`, `persist_failed_coaching_run_v2`,
+  `persist_failed_coach_chat_run` (`_v2` wraps it), `record_ai_usage_event`,
+  `persist_meal_photo_candidates`. Old vision vendors keep pinned models; `anthropic` accepts any
+  well-formed model id. No frozen function holds a provider list.
+- `ai_consent_notices.provider` and `photo_ai_notices.provider` (nullable; old notices null).
+  Publish with `private.publish_ai_notice(version, provider, provider_label, purposes, body)` and
+  `private.publish_photo_ai_notice(version, provider, provider_label, model, body)`.
+- `get_ai_consent_v2(target_user_id, consent_purpose)` → `{schema_version, granted, provider,
+  notice_version}`; TS `aiConsentWithProvider(rpc, userId, purpose)` → `{consent, provider,
+  noticeVersion}`, `provider` typed `AiVendor`. Purpose mapping: AI_SAFETY_SPEC §10.
+- `reserve_ai_budget_v2(target_user_id, run_purpose, ceiling_usd)`, ceiling USD 0.001 to 0.50; TS
+  `AiBudget.reserve(purpose, ceilingUsd)`. Feature names map to today's purposes (COST_MODEL).
+- Until a notice naming the route's provider is published and granted, `get_ai_consent_v2` returns
+  `provider: null` for coaching and physique notices, so a gateway call would refuse. Cutover (A7)
+  publishes those notices.
+- Open: a `library_context` model call would need its own usage purpose in `model_runs` or
+  `ai_usage_events` (today it is budgeted and consented as `coach_chat`).
+- Follow-up for A3: `_shared/ai_consent.ts` declares its own `AiVendor` union, which duplicates the
+  gateway's (A2). A3 unifies them after A2 merges.
+- The five-argument publishers are owner-run SQL: `provider_label` must name the same company as
+  `provider`. `private.check_notice_provider_label` enforces it in all three publishers that name
+  a provider (meal photo included): the label must contain Anthropic, DeepSeek, Groq or Google for
+  `anthropic`, `deepseek`, `groq` or `gemini` (case ignored) and no other of those names; a blank
+  label or an unknown provider is refused (22023). Vision through DeepSeek,
+  or a Groq or Gemini model other than the pinned ones, still needs a migration (A3).
+
 ### A2: gateway module (review, branch `claude/a2-ai-gateway`)
 
 `supabase/functions/_shared/ai/` implements Contract 1 version 2. No feature calls it yet;

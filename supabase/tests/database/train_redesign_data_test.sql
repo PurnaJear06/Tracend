@@ -154,7 +154,7 @@ set local "request.jwt.claim.sub" = 'a7000000-0000-4000-8000-000000000001';
 insert into h select public.get_my_exercise_history(
   array['barbell-bench-press', 'push-up', 'Cable fly', 'Nothing logged', 'assisted-pull-up']);
 
-select is((select j->>'schema_version' from h), '1.0', 'history schema 1.0');
+select is((select j->>'schema_version' from h), '1.1', 'history schema 1.1');
 select is((select j->>'sessions_limit' from h), '8', 'eight sessions by default');
 select is((select e->>'kind' from h, jsonb_array_elements(j->'exercises') e
     where e->>'key' = 'barbell-bench-press'), 'load', 'a loaded lift is ranked by load');

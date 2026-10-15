@@ -59,7 +59,15 @@ export type CatalogExercise = Readonly<{
   equipment: readonly EquipmentItem[];
   level: "beginner" | "intermediate";
   compound: boolean;
+  /**
+   * Ranking only. A variation ranks after the standard form of its pattern on
+   * the same equipment; a regression ranks after every other form of its
+   * pattern; absent means the standard form. The database catalog does not store it, so the rules plan reads it
+   * from this list by slug.
+   */
+  role?: ExerciseRole;
 }>;
+export type ExerciseRole = "variation" | "regression";
 
 const x = (
   slug: string,
@@ -69,7 +77,17 @@ const x = (
   equipment: EquipmentItem[],
   level: "beginner" | "intermediate",
   compound: boolean,
-): CatalogExercise => ({ slug, name, pattern, muscles: muscleList, equipment, level, compound });
+  role?: ExerciseRole,
+): CatalogExercise => ({
+  slug,
+  name,
+  pattern,
+  muscles: muscleList,
+  equipment,
+  level,
+  compound,
+  ...(role ? { role } : {}),
+});
 
 export const catalogVersion = "catalog-v1";
 
@@ -97,6 +115,7 @@ export const exerciseCatalogV1: readonly CatalogExercise[] = Object.freeze([
     [],
     "beginner",
     true,
+    "regression",
   ),
   x(
     "pike-push-up",
@@ -138,6 +157,7 @@ export const exerciseCatalogV1: readonly CatalogExercise[] = Object.freeze([
     ["pull_up_bar"],
     "intermediate",
     true,
+    "variation",
   ),
   x(
     "hanging-knee-raise",
@@ -185,6 +205,7 @@ export const exerciseCatalogV1: readonly CatalogExercise[] = Object.freeze([
     ["dumbbells"],
     "beginner",
     true,
+    "regression",
   ),
   x(
     "dumbbell-bench-press",
@@ -203,6 +224,7 @@ export const exerciseCatalogV1: readonly CatalogExercise[] = Object.freeze([
     ["dumbbells", "bench"],
     "beginner",
     true,
+    "variation",
   ),
   x(
     "one-arm-dumbbell-row",
@@ -276,6 +298,7 @@ export const exerciseCatalogV1: readonly CatalogExercise[] = Object.freeze([
     ["dumbbells", "bench"],
     "beginner",
     true,
+    "variation",
   ),
   x(
     "dumbbell-calf-raise",
@@ -313,6 +336,7 @@ export const exerciseCatalogV1: readonly CatalogExercise[] = Object.freeze([
     ["barbell"],
     "intermediate",
     true,
+    "variation",
   ),
   x(
     "barbell-romanian-deadlift",
@@ -367,6 +391,7 @@ export const exerciseCatalogV1: readonly CatalogExercise[] = Object.freeze([
     ["barbell", "bench"],
     "beginner",
     true,
+    "variation",
   ),
   x(
     "barbell-reverse-lunge",
@@ -483,6 +508,7 @@ export const exerciseCatalogV1: readonly CatalogExercise[] = Object.freeze([
     ["machines"],
     "beginner",
     true,
+    "regression",
   ),
   x("pec-deck", "Pec deck", "chest_fly", ["chest"], ["machines"], "beginner", false),
   x(
