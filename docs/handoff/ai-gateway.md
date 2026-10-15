@@ -131,8 +131,57 @@ anything the next agent must know.
 
 ### A5: daily decision on Claude
 
-Not started. The A5 builder replaces this paragraph with its state, files, tests and
-anything the next agent must know.
+In review (branch `claude/a5-decision-claude`). Edge Functions only; no SQL, no app change.
+Production does not change on merge: without `AI_DAILY_DECISION_*` settings coach-decide runs
+today's path.
+
+- **Three paths** (`_shared/providers/daily_decision_provider.ts`, `dailyDecisionPath()`):
+  - `legacy`: `route("daily_decision")` is null. Today's path, unchanged: `COACH_MODEL_PROVIDER`,
+    `has_ai_coaching_consent` for `daily_coaching`, `reserve_ai_budget` at the fixed ceiling, and
+    the same failed-run provenance (the old `COACH_MODEL_PROVIDER` chain, moved verbatim into
+    `failedRunProvenance`). The mock stays the default.
+  - `gateway`: a complete route with `AI_DAILY_DECISION_EVALUATED=true`. Consent comes from
+    `get_ai_consent_v2` (`daily_decision`) and counts only when the current notice names the
+    route's vendor; otherwise the deterministic decision answers (the consent-needed path) and
+    nothing is sent. Budget: `reserve_ai_budget_v2("daily_decision", ceiling)`, ceiling from
+    `decisionCeilingUsd` (whole prompt at a token per character at the higher of the input and
+    cache-write price, plus `MAX_OUTPUT_TOKENS`; Sonnet 5.5 at 1,800 tokens is about USD 0.06).
+    The run stores the vendor and the model that answered and `usage.costUsd`.
+  - `unevaluated`: a route without `EVALUATED=true`. No consent read, no reservation, no model
+    call; the deterministic decision answers. A route never silently falls back to DeepSeek.
+- `GatewayDecisionProvider`: one stable system prompt (`decisionSystemPrompt`, `cache: true`;
+  policy-to-action rules, evidence code reference, null contract, date rule, allowed gap codes,
+  no model or company names) and the day's context in the user turn inside `<coaching_context>`.
+  JSON via the gateway with today's `decisionSchema`; context cap 12,000 characters as today.
+  Failures use today's code forms: `<vendor>_timeout`, `<vendor>_request_failed`,
+  `<vendor>_request_failed_status_429`, `<vendor>_response_invalid`, plus `<vendor>_refused`.
+  The eval router is refused (no notice names it).
+- `parseCoachDecision` still runs on every path's output in coach-decide before anything is
+  stored; a forbidden answer is a 503 `coaching_unavailable`, as today.
+- Tests (`daily_decision_provider_test.ts`, 12): no-route parity (mock default; DeepSeek request
+  byte for byte; consent, budget and provenance as today), unevaluated route sends nothing,
+  vendor-checked consent, ceiling, the Claude request (cache mark, no sampling, nulls kept),
+  failure mapping, router refused, D11 prompt check, and B0's property pattern on the gateway path
+  (5 policies x 5 training x 5 nutrition actions x permitted/unpermitted evidence: nothing the
+  policy forbids passes). Deno suite: 497 passed, 0 failed, 8 ignored.
+- **Eval** `_evals/daily_decision_eval.ts` (offline checks in `daily_decision_eval_test.ts`):
+  13 synthetic days from `test/contract/fixtures/daily_computed_metrics.json` and variants,
+  with evidence and policy derived by the SQL rules, plus the two policy cases of B0's tests; the
+  deterministic decision is the recorded reference. Gates: 90% valid, every escalation escalates,
+  no model or company names, p95 under 25 s. `EVAL_ATTEMPTS` retries transport failures only
+  (a sleeping laptop times out). No earlier daily-decision eval exists, so this run is the
+  baseline (2026-10-15, Sonnet 5.5, thinking off, 1,800 tokens): 13/13 valid, both escalation
+  days escalate, no model names, training action equals the deterministic reference on 8/13 and
+  nutrition on 12/13, p50 5.1 s, p95 6.0 s, USD 0.118 for the run (about USD 0.009 a decision,
+  about 2,600 prompt tokens read from cache). Where the reference holds on GATHER_DATA (recovery
+  below baseline, elevated load, low confidence, scores unavailable), the model proceeds with the
+  plan and names the risk; both are allowed under `maintain_only` (owner call, see the PR). One
+  answer used a number not in the context ("15").
+- **Cutover settings (A7):** `AI_DAILY_DECISION_PROVIDER=anthropic`,
+  `AI_DAILY_DECISION_MODEL=claude-sonnet-5-5`, `AI_DAILY_DECISION_MAX_OUTPUT_TOKENS=1800`,
+  `AI_DAILY_DECISION_TIMEOUT_MS=25000` (or more; see the eval latency),
+  `AI_DAILY_DECISION_EVALUATED=true`, `ANTHROPIC_API_KEY`, and a published daily-coaching notice
+  naming `anthropic`. Rollback: unset `AI_DAILY_DECISION_PROVIDER`.
 
 ### A6: Coach chat, cache-friendly
 

@@ -2,9 +2,14 @@ import { parseCoachDecision, type PolicyOutcome } from "../_shared/contracts/coa
 import { parseCoachRequest } from "../_shared/contracts/coach_request_v1.ts";
 import type { CoachModelGeneration } from "../_shared/providers/coach_model_provider.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
-import { aiCoachingConsent } from "../_shared/ai_consent.ts";
 import { AiBudget } from "../_shared/ai_budget.ts";
-import { dailyDecisionProvider } from "../_shared/providers/daily_decision_provider.ts";
+import {
+  dailyDecisionConsent,
+  dailyDecisionPath,
+  dailyDecisionProviderFor,
+  failedRunProvenance,
+  reserveDailyDecision,
+} from "../_shared/providers/daily_decision_provider.ts";
 
 const SAFE_REASON = /^[a-z][a-z0-9_]{0,60}$/;
 const SAFE_EVIDENCE_CODE = /^[A-Z][A-Z_]{0,39}$/;
@@ -74,10 +79,13 @@ async function handleCoachDecide(
   // Checked before anything else: without the athlete's consent to the notice
   // current for daily coaching (or when the check fails), the day's decision
   // comes from the deterministic provider and no data reaches the AI provider.
-  const consent = await aiCoachingConsent(
+  // With an AI_DAILY_DECISION_* route the notice must also name the route's
+  // vendor; without one, today's provider settings apply unchanged.
+  const path = dailyDecisionPath();
+  const consent = await dailyDecisionConsent(
+    path,
     (name, params) => auth.serviceClient.rpc(name, params),
     auth.userId,
-    "daily_coaching",
   );
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
     "prepare_daily_coaching",
@@ -101,7 +109,7 @@ async function handleCoachDecide(
   // decision comes from the deterministic provider, as without consent.
   const budget = new AiBudget((fn, args) => auth.serviceClient.rpc(fn, args), auth.userId);
   held.current = budget;
-  const useModel = consent === "granted" && await budget.reserve("daily_coaching");
+  const useModel = consent === "granted" && await reserveDailyDecision(path, budget);
 
   const started = performance.now();
   let generated: CoachModelGeneration | undefined;
@@ -118,15 +126,16 @@ async function handleCoachDecide(
     if (snapshotError || !snapshot || typeof snapshot.features !== "object") {
       throw new Error("feature_context_unavailable");
     }
-    generated = await dailyDecisionProvider(useModel ? consent : "not_granted").generateDecision({
-      decisionKind: "daily",
-      featureSnapshotId: prepared.feature_snapshot_id,
-      policyEvaluationId: prepared.policy_evaluation_id,
-      policyOutcome: outcome,
-      permittedEvidence: evidence,
-      featureContext: snapshot.features as Record<string, unknown>,
-      missingData: prepared.missing_data ?? [],
-    });
+    generated = await dailyDecisionProviderFor(path, useModel ? consent : "not_granted")
+      .generateDecision({
+        decisionKind: "daily",
+        featureSnapshotId: prepared.feature_snapshot_id,
+        policyEvaluationId: prepared.policy_evaluation_id,
+        policyOutcome: outcome,
+        permittedEvidence: evidence,
+        featureContext: snapshot.features as Record<string, unknown>,
+        missingData: prepared.missing_data ?? [],
+      });
     const decision = parseCoachDecision(generated.decision, evidence, outcome);
     const persistedPayload = { ...decision, local_date: input.local_date };
     const { data: persisted, error } = await auth.serviceClient.rpc(
@@ -174,6 +183,7 @@ async function handleCoachDecide(
     );
     console.error(`coach-decide failed: ${reason}`);
     if (useModel) budget.keep();
+    const provenance = failedRunProvenance(path, useModel);
     await auth.serviceClient.rpc("persist_failed_coaching_run_v2", {
       target_user_id: auth.userId,
       snapshot_id: prepared.feature_snapshot_id,
@@ -181,24 +191,8 @@ async function handleCoachDecide(
       request_idempotency_key: input.idempotency_key,
       run_latency_ms: Math.round(performance.now() - started),
       error_code: reason,
-      run_provider: !useModel
-        ? "mock"
-        : Deno.env.get("COACH_MODEL_PROVIDER") === "gemini"
-        ? "gemini"
-        : Deno.env.get("COACH_MODEL_PROVIDER") === "groq"
-        ? "groq"
-        : Deno.env.get("COACH_MODEL_PROVIDER") === "deepseek"
-        ? "deepseek"
-        : "mock",
-      run_model: !useModel
-        ? "deterministic-mock-v2"
-        : Deno.env.get("COACH_MODEL_PROVIDER") === "gemini"
-        ? (Deno.env.get("GEMINI_MODEL") || "unconfigured")
-        : Deno.env.get("COACH_MODEL_PROVIDER") === "groq"
-        ? (Deno.env.get("GROQ_MODEL") || "unconfigured")
-        : Deno.env.get("COACH_MODEL_PROVIDER") === "deepseek"
-        ? (Deno.env.get("DEEPSEEK_MODEL") || "unconfigured")
-        : "deterministic-mock-v1",
+      run_provider: provenance.provider,
+      run_model: provenance.model,
     });
     return reply(503, { error: "coaching_unavailable" });
   }

@@ -11,9 +11,12 @@ export type CoachModelRequest = Readonly<{
   missingData: readonly string[];
 }>;
 
+/** Who answered a run, as model_runs stores it: a vendor, or the deterministic mock. */
+export type CoachRunProvider = "mock" | "gemini" | "groq" | "deepseek" | "anthropic";
+
 export type CoachModelGeneration = Readonly<{
   decision: CoachDecisionV1;
-  provider: "mock" | "gemini" | "groq" | "deepseek";
+  provider: CoachRunProvider;
   model: string;
   inputUnits: number;
   outputUnits: number;
