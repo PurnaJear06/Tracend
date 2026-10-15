@@ -205,6 +205,35 @@ Colima VM hung on start again; Dart contract fixtures `training_hub_v1_6.json` a
 change, so no reinstall. After the deploy, confirm the live hub reports `schema_version` 1.6 with a
 read-only dashboard query.
 
+## Tab bar refresh (U1, owner 2026-10-15)
+
+Owner, build 344 on iPhone 18 Pro Max: the nav bar sat "very down" and looked outdated. Cause: the
+capsule was padded only 6pt from the screen edge when a bottom inset existed, so it sat in the
+home-indicator zone. Owner chose an iOS 26 style floating glass capsule.
+
+- `lib/features/shell/floating_tab_bar.dart`: `FloatingBarFrame` places both bottom bars (bottom
+  margin = inset − 10, at least 12; 20pt sides with an inset, 12pt without) over a canvas fade;
+  `FloatingTabBar` is the 64pt capsule with a specular top edge and a sliding lime-tinted selection
+  pill. Measurements and reasons: DESIGN_SYSTEM.md §4.
+- `CheckInGateBar` no longer positions itself; the frame does, so the gate and the tab bar share
+  one position.
+- `TracendScrollView` ends content at the body's bottom padding (the bar slot's height, reported
+  by the shell's `extendBody` Scaffold) plus `endClearance` (96pt), replacing the fixed 176.
+- New token `glassHighlight`.
+- Review fixes: `FloatingBarSwitcher` keeps both bars on the bottom edge during the swap and eases
+  the slot height (no jump); margins read the view padding, so the keyboard does not move the bar;
+  a 20pt bottom floor whenever an inset exists (landscape); the selected label is `textPrimary`
+  w700 and the pill ring is stronger, so selection reads without color.
+- **Owner decisions pending:** (1) the exception to "gradients only in data visuals" for the
+  capsule's sheen and the fade under the bar; (2) the extra soft shadow under the capsule (§3.4
+  allowed only the segmented control and toast lifts). Both are written into DESIGN_SYSTEM.md
+  and can be reverted if the owner declines them.
+- Tests: `test/floating_tab_bar_test.dart` (inset, no-inset, landscape and keyboard offsets,
+  gate position, frame-by-frame swap, content end, pill follows selection, Reduce Motion,
+  selection without color, semantics, 44pt targets, text clamp, one glass layer);
+  `test/app_shell_test.dart` checks the real shell uses the frame.
+- Device check: Flutter change, so install from the merged `main` commit.
+
 ## Deferred
 
 - Move a workout to another day (schedule-override table, RPC, audit).

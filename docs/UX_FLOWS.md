@@ -165,6 +165,10 @@ Account
 └── Privacy: Export data, Consent history, Delete account
 ```
 
+The five tabs sit in a floating glass capsule above the home indicator (DESIGN_SYSTEM.md §4). A
+lime-tinted pill slides behind the selected tab. Every tab's content ends above the bar, and the
+check-in gate bar takes the bar's exact place while it shows.
+
 ## 3. App Entry and Restoration
 
 ### New user
