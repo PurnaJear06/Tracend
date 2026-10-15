@@ -149,6 +149,15 @@ left open on purpose whenever billing cannot be ruled out: a timeout, a dropped 
 unreadable answer with no usage reported (Coach chat, meal photos, physique checks, onboarding),
 an unrecorded usage row, or a failed live daily decision. It then keeps counting at its ceiling,
 so a failure can only overcount. Only a refusal (429) or an HTTP error rules billing out.
+- **Route ceilings (2026-10-15, coaching platform A1):** `reserve_ai_budget_v2(target_user_id,
+  run_purpose, ceiling_usd)` takes the per-call ceiling from the caller's route instead of the fixed
+  per-purpose table, so a Haiku and a Sonnet route of the same feature hold what each can cost. The
+  ceiling must be above 0 and at most USD 0.50, and is rounded up to the reservation's six decimals.
+  The athlete's USD 2 month, 30 calls a day and the global stop apply exactly as in
+  `reserve_ai_budget`, which is unchanged. It also accepts the gateway's feature names and stores
+  them under today's purposes (`daily_decision` as `daily_coaching`, `physique_vision` as
+  `progress_vision`, `library_context` as `coach_chat`). `AiBudget.reserve(purpose, ceilingUsd)` in
+  `_shared/ai_budget.ts` calls it; without a ceiling it calls the original function.
 - **Global stop:** `private.ai_budget_limits.global_monthly_usd` (USD 10 at launch) stops every
   model call once the month's total across all accounts reaches it. Change it from the SQL editor:
   `update private.ai_budget_limits set global_monthly_usd = 20, updated_at = now();`.

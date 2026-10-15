@@ -31,6 +31,85 @@ export async function aiCoachingConsent(
   }
 }
 
+/// What the gateway asks consent for: its features (Contract 1) and today's
+/// names. `get_ai_consent_v2` maps each to the notice that covers it.
+export type AiConsentFeature =
+  | AiConsentPurpose
+  | "daily_decision"
+  | "onboarding_questions"
+  | "meal_vision"
+  | "physique_vision"
+  | "library_context";
+
+/// The providers a notice may name.
+export type AiNoticeProvider = "anthropic" | "openai_compatible" | "gemini" | "deepseek" | "groq";
+
+const noticeProviders: ReadonlySet<string> = new Set<AiNoticeProvider>([
+  "anthropic",
+  "openai_compatible",
+  "gemini",
+  "deepseek",
+  "groq",
+]);
+
+/// The grant, and the provider and version of the notice current for the
+/// purpose. `provider` is null when that notice names no provider (it predates
+/// provider names) or names one this code does not know: the gateway then
+/// refuses to send.
+export type AiConsentWithProvider = Readonly<{
+  consent: AiCoachingConsent;
+  provider: AiNoticeProvider | null;
+  noticeVersion: string | null;
+}>;
+
+export type ConsentV2Rpc = (
+  name: "get_ai_consent_v2",
+  params: { target_user_id: string; consent_purpose: AiConsentFeature },
+) => PromiseLike<{ data: unknown; error: unknown }>;
+
+const consentUnavailable: AiConsentWithProvider = Object.freeze({
+  consent: "unavailable",
+  provider: null,
+  noticeVersion: null,
+});
+
+/// Reads `get_ai_consent_v2`. Never throws: a failed or malformed answer is
+/// `unavailable` with no provider, which callers treat as not granted.
+export async function aiConsentWithProvider(
+  rpc: ConsentV2Rpc,
+  userId: string,
+  purpose: AiConsentFeature,
+): Promise<AiConsentWithProvider> {
+  try {
+    const { data, error } = await rpc(
+      "get_ai_consent_v2",
+      { target_user_id: userId, consent_purpose: purpose },
+    );
+    if (error || data === null || typeof data !== "object" || Array.isArray(data)) {
+      return consentUnavailable;
+    }
+    const answer = data as Record<string, unknown>;
+    const version = typeof answer.notice_version === "string"
+      ? answer.notice_version
+      : answer.notice_version === null
+      ? null
+      : undefined;
+    if (typeof answer.granted !== "boolean" || version === undefined) {
+      return consentUnavailable;
+    }
+    const provider = typeof answer.provider === "string" && noticeProviders.has(answer.provider)
+      ? answer.provider as AiNoticeProvider
+      : null;
+    return {
+      consent: answer.granted ? "granted" : "not_granted",
+      provider,
+      noticeVersion: version,
+    };
+  } catch {
+    return consentUnavailable;
+  }
+}
+
 /// What coach-chat answers instead of calling the model, or null to go on.
 export function coachChatConsentRefusal(
   consent: AiCoachingConsent,

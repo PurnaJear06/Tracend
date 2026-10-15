@@ -1,5 +1,11 @@
 import { assertEquals } from "jsr:@std/assert@1.0.14";
-import { aiCoachingConsent, coachChatConsentRefusal, type ConsentRpc } from "./ai_consent.ts";
+import {
+  aiCoachingConsent,
+  aiConsentWithProvider,
+  coachChatConsentRefusal,
+  type ConsentRpc,
+  type ConsentV2Rpc,
+} from "./ai_consent.ts";
 import { dailyDecisionProvider } from "./providers/daily_decision_provider.ts";
 import type { CoachModelProvider } from "./providers/coach_model_provider.ts";
 import { MockCoachModelProvider } from "./providers/mock_coach_model_provider.ts";
@@ -92,5 +98,116 @@ Deno.test("each caller's purpose reaches the check unchanged", async () => {
       purpose,
     );
     assertEquals(asked, { target_user_id: "athlete-1", consent_purpose: purpose });
+  }
+});
+
+const answeringV2 = (data: unknown, error: unknown = null): ConsentV2Rpc => () =>
+  Promise.resolve({ data, error });
+
+Deno.test("v2 returns the grant with the notice's provider and version", async () => {
+  assertEquals(
+    await aiConsentWithProvider(
+      answeringV2({
+        schema_version: "1.0",
+        granted: true,
+        provider: "anthropic",
+        notice_version: "ai-coaching-v6",
+      }),
+      "u",
+      "coach_chat",
+    ),
+    { consent: "granted", provider: "anthropic", noticeVersion: "ai-coaching-v6" },
+  );
+  assertEquals(
+    await aiConsentWithProvider(
+      answeringV2({
+        schema_version: "1.0",
+        granted: false,
+        provider: "openai_compatible",
+        notice_version: "meal-photo-ai-v2",
+      }),
+      "u",
+      "meal_vision",
+    ),
+    { consent: "not_granted", provider: "openai_compatible", noticeVersion: "meal-photo-ai-v2" },
+  );
+});
+
+Deno.test("v2: a notice without a known provider gives no provider", async () => {
+  for (const provider of [null, "someone_else", 7]) {
+    assertEquals(
+      await aiConsentWithProvider(
+        answeringV2({
+          schema_version: "1.0",
+          granted: true,
+          provider,
+          notice_version: "ai-coaching-v5",
+        }),
+        "u",
+        "daily_decision",
+      ),
+      { consent: "granted", provider: null, noticeVersion: "ai-coaching-v5" },
+    );
+  }
+  assertEquals(
+    await aiConsentWithProvider(
+      answeringV2({ schema_version: "1.0", granted: false, provider: null, notice_version: null }),
+      "u",
+      "physique_vision",
+    ),
+    { consent: "not_granted", provider: null, noticeVersion: null },
+  );
+});
+
+Deno.test("v2: a failed or malformed check is unavailable, never granted", async () => {
+  const unavailable = { consent: "unavailable", provider: null, noticeVersion: null } as const;
+  for (
+    const rpc of [
+      answeringV2(null, { code: "22023" }),
+      answeringV2(null),
+      answeringV2(true),
+      answeringV2([]),
+      answeringV2({ granted: "yes", provider: "anthropic", notice_version: "v" }),
+      answeringV2({ granted: true, provider: "anthropic", notice_version: 3 }),
+      answeringV2({ granted: true, provider: "anthropic" }),
+      (() => Promise.reject(new Error("offline"))) as ConsentV2Rpc,
+      (() => {
+        throw new Error("sync");
+      }) as ConsentV2Rpc,
+    ]
+  ) {
+    assertEquals(await aiConsentWithProvider(rpc, "u", "coach_chat"), unavailable);
+  }
+});
+
+Deno.test("v2 asks about the athlete and the purpose unchanged", async () => {
+  for (
+    const purpose of [
+      "coach_chat",
+      "daily_coaching",
+      "daily_decision",
+      "onboarding_plan",
+      "onboarding_questions",
+      "meal_vision",
+      "physique_vision",
+      "library_context",
+    ] as const
+  ) {
+    let asked: [string, Record<string, unknown>] = ["", {}];
+    await aiConsentWithProvider(
+      (name, params) => {
+        asked = [name, params];
+        return Promise.resolve({
+          data: { granted: true, provider: "anthropic", notice_version: "v" },
+          error: null,
+        });
+      },
+      "athlete-1",
+      purpose,
+    );
+    assertEquals(asked, [
+      "get_ai_consent_v2",
+      { target_user_id: "athlete-1", consent_purpose: purpose },
+    ]);
   }
 });

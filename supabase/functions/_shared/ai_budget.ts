@@ -6,6 +6,12 @@ export type AiBudgetPurpose =
   | "onboarding_plan"
   | "onboarding_questions";
 
+/// The gateway's feature names (Contract 1) that `reserve_ai_budget_v2` also
+/// accepts. It stores them under today's purposes: daily_decision as
+/// daily_coaching, physique_vision as progress_vision, library_context as
+/// coach_chat.
+export type AiBudgetFeature = "daily_decision" | "physique_vision" | "library_context";
+
 export type AiBudgetRpc = (
   fn: string,
   args: Record<string, unknown>,
@@ -27,11 +33,25 @@ export class AiBudget {
     this.#userId = userId;
   }
 
-  async reserve(purpose: AiBudgetPurpose): Promise<boolean> {
-    const { data, error } = await this.#rpc("reserve_ai_budget", {
-      target_user_id: this.#userId,
-      run_purpose: purpose,
-    });
+  // Without a ceiling the place holds the purpose's fixed ceiling
+  // (`reserve_ai_budget`). With one, it holds the route's per-call ceiling
+  // (`reserve_ai_budget_v2`: above 0 and at most USD 0.50, or refused).
+  reserve(purpose: AiBudgetPurpose): Promise<boolean>;
+  reserve(purpose: AiBudgetPurpose | AiBudgetFeature, ceilingUsd: number): Promise<boolean>;
+  async reserve(
+    purpose: AiBudgetPurpose | AiBudgetFeature,
+    ceilingUsd?: number,
+  ): Promise<boolean> {
+    const { data, error } = ceilingUsd === undefined
+      ? await this.#rpc("reserve_ai_budget", {
+        target_user_id: this.#userId,
+        run_purpose: purpose,
+      })
+      : await this.#rpc("reserve_ai_budget_v2", {
+        target_user_id: this.#userId,
+        run_purpose: purpose,
+        ceiling_usd: ceilingUsd,
+      });
     if (error || typeof data !== "string") return false;
     this.#open.push(data);
     return true;
