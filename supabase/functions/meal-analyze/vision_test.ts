@@ -317,3 +317,55 @@ Deno.test("through the handler: busy is 429 and releases; a timeout keeps the pl
   assertEquals(refused.response.status, 503);
   assertEquals(refused.events, ["reserve", "usage:claude-haiku-5-5:0.0003", "report"]);
 });
+
+/** One photo with a real AiBudget, released the way index.ts releases it. */
+async function analyzeWithBudget(respond: (sent: Sent) => Response | Promise<Response>) {
+  const rpcs: string[] = [];
+  const budget = new AiBudget((name, params) => {
+    rpcs.push(name === "reserve_ai_budget_v2" ? `${name}:${params.ceiling_usd}` : name);
+    return Promise.resolve({ data: "reservation-1", error: null });
+  }, "11111111-1111-4111-8111-111111111111");
+  const { events, store } = harness("anthropic");
+  const { fetch } = fakeFetch(respond);
+  const path = mealVisionPath({ environment: environment({ ...today, ...haiku }), fetch });
+  let status: number;
+  try {
+    const response = await handleMealAnalyze(request, {
+      userId: "11111111-1111-4111-8111-111111111111",
+      provider: path.provider,
+      analyze: path.analyze,
+      store: {
+        ...store,
+        reserveBudget: () => reserveMealBudget(budget, path),
+        keepBudget: () => budget.keep(),
+      },
+      log: { info: () => {}, warn: () => {}, error: () => {} },
+      report: () => events.push("report"),
+      now: () => 0,
+    });
+    status = response.status;
+  } finally {
+    await budget.release();
+  }
+  return { status, rpcs, usage: events.filter((event) => event.startsWith("usage:")).length };
+}
+
+Deno.test("budget: a meal refusal is recorded and released; a lost answer keeps its place", async () => {
+  const refused = await analyzeWithBudget(() => answer([], { stop_reason: "refusal" }));
+  assertEquals(refused, {
+    status: 503,
+    rpcs: ["reserve_ai_budget_v2:0.00175", "settle_ai_budget"],
+    usage: 1,
+  });
+  const busy = await analyzeWithBudget(failing(429));
+  assertEquals(busy, {
+    status: 429,
+    rpcs: ["reserve_ai_budget_v2:0.00175", "settle_ai_budget"],
+    usage: 0,
+  });
+  const lost = await analyzeWithBudget(() => Promise.reject(new TypeError("reset")));
+  assertEquals(lost, { status: 503, rpcs: ["reserve_ai_budget_v2:0.00175"], usage: 0 });
+  // An unreadable 200 may have been billed: the place stays held (provider_error, no usage).
+  const unreadable = await analyzeWithBudget(() => new Response("not json", { status: 200 }));
+  assertEquals(unreadable, { status: 503, rpcs: ["reserve_ai_budget_v2:0.00175"], usage: 0 });
+});

@@ -157,6 +157,19 @@ function physiqueModel(deps: PhysiqueDeps): PhysiqueModel | null {
   return null;
 }
 
+/**
+ * Whether a check that failed with this error may give its budget place back. Only a refusal
+ * (429) or an HTTP error rules out billing, and an unusable answer's usage is already recorded.
+ * A timeout, a dropped connection or an unreadable answer may have been billed with no usage
+ * reported, so the reservation stays open and keeps counting.
+ */
+export function billingSettled(error: unknown): boolean {
+  return error instanceof PhysiqueVisionBilledError ||
+    (error instanceof PhysiqueVisionError &&
+      (error.code === "physique_vision_busy" ||
+        error.code.startsWith("physique_vision_request_failed")));
+}
+
 async function available(deps: PhysiqueDeps): Promise<boolean> {
   if (!physiqueModel(deps)) return false;
   if (!deps.allowedUsers.has(deps.userId.toLowerCase())) return false;

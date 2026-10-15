@@ -5,14 +5,12 @@ import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { createLogger, extractCorrelationId } from "../_shared/logger.ts";
 import {
   physiqueAllowedUsers,
-  PhysiqueVisionBilledError,
-  PhysiqueVisionError,
   type PhysiqueVisionResolution,
   resolvePhysiqueVision,
 } from "../_shared/providers/physique_vision_provider.ts";
 import { captureException } from "../_shared/sentry.ts";
 import { isUserStorageKey } from "../_shared/storage_keys.ts";
-import { handlePhysiqueCheck, type PhysiqueStore } from "./handler.ts";
+import { billingSettled, handlePhysiqueCheck, type PhysiqueStore } from "./handler.ts";
 
 function supabaseStore(
   userClient: SupabaseClient,
@@ -173,15 +171,8 @@ Deno.serve(async (request) => {
       },
     }, body);
   } catch (error) {
-    // Only a refusal (429) or an HTTP error rules out billing, and an unusable
-    // answer's usage is already recorded. A timeout, a dropped connection or an
-    // unreadable answer may have been billed with no usage reported, so the
-    // reservation stays open and keeps counting.
-    const settled = error instanceof PhysiqueVisionBilledError ||
-      (error instanceof PhysiqueVisionError &&
-        (error.code === "physique_vision_busy" ||
-          error.code.startsWith("physique_vision_request_failed")));
-    if (!settled) budget.keep();
+    // A call that may have been billed with no usage known keeps its place.
+    if (!billingSettled(error)) budget.keep();
     // Codes and names only: never photos, prompts or the model's text.
     log.error("physique_check_failed", {
       error: error instanceof Error ? error.message.slice(0, 80) : "unknown",

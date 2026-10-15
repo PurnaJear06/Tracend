@@ -141,14 +141,16 @@ No migration: A1's SQL already accepts `anthropic` in `record_ai_usage_event` an
   `resolvePhysiqueVision()` returns `{kind: "gateway", route}` when the route exists and is
   evaluated (`physique_vision_not_evaluated` otherwise); `PHYSIQUE_VISION_ENABLED` and the
   allowlist still apply. Consent from `get_ai_consent_v2('physique_vision')`: a notice that does
-  not name the route's vendor is 403 `photo_ai_consent_required`, nothing sent. Status shows
-  `provider_label` "Anthropic" (company only, D11). One reservation covers the photo call and one
+  not name the route's vendor is 403 `photo_ai_consent_required`, nothing sent. Status returns
+  `provider_label` "Anthropic" (the route's company label, no model). This does **not** meet D11
+  yet: the app renders it outside a notice ("Sent to $provider only when you start a physique
+  check"), see the A7 note below. One reservation covers the photo call and one
   text-only correction (Sonnet at 800 tokens = USD 0.071). On the route the correction no
   longer waits on Groq's minute budget. Rules are the cached system prefix; photos, then the
   athlete line, in the user turn; structured output fixes the keys, muscles and photo issues,
   while counts, lengths and wording stay with `parsePhysiqueResult`, so a broken reply can still
   be corrected once. A refusal is recorded and answers 503.
-- **Tests:** `meal-analyze/vision_test.ts` (10) and `physique-check/gateway_test.ts` (7), gateway
+- **Tests:** `meal-analyze/vision_test.ts` (11) and `physique-check/gateway_test.ts` (10), gateway
   fakes only. Parity: `legacy_requests_golden.json` in both functions holds today's request
   bodies recorded from `origin/main`; the tests assert byte equality with no route, and with
   incomplete settings.
@@ -170,6 +172,15 @@ No migration: A1's SQL already accepts `anthropic` in `record_ai_usage_event` an
   `AI_PHYSIQUE_VISION_{PROVIDER=anthropic,MODEL=claude-sonnet-5-5,MAX_OUTPUT_TOKENS=800,
   TIMEOUT_MS=60000,EVALUATED=true}`. Rollback: unset them. AI_SAFETY_SPEC §8/§9 still describe
   Groq; they become stale only at cutover.
+- **For A7, D11 (app wording, not in A7's file list):** `lib/features/progress/widgets/photo_widgets.dart`
+  (lines 104-106) and `lib/features/progress/progress_screen.dart` (lines 340-351) render the
+  physique status's `provider_label` as "Sent to $provider only when you start a physique
+  check". That names the company outside a notice; both must drop the provider name. A3 left
+  Dart alone (A7 owns the app wording). The server keeps returning `provider_label` for old builds.
+- **Tests added after review:** `billingSettled` (the physique keep/release decision, now in
+  `handler.ts` and used by `index.ts`), refusal-then-release and lost-answer-keeps-place with a
+  real `AiBudget` for both features, and a physique correction call that is busy, refused or
+  lost. An ambiguous `provider_error` (for example an unreadable 200) keeps its reservation.
 - **Left for A7** (owns `_shared/ai_consent.ts` in Phase 2): A1's follow-up to replace that
   file's own `AiVendor` union with the gateway's was not done here.
 

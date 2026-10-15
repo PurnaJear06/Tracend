@@ -12,10 +12,17 @@ import {
   type PhysiqueAthlete,
   physiqueCeilingUsd,
   physiqueRules,
+  PhysiqueVisionBilledError,
   PhysiqueVisionError,
   resolvePhysiqueVision,
 } from "../_shared/providers/physique_vision_provider.ts";
-import { handlePhysiqueCheck, type PhysiqueStore, type PhysiqueUsage } from "./handler.ts";
+import { AiBudget } from "../_shared/ai_budget.ts";
+import {
+  billingSettled,
+  handlePhysiqueCheck,
+  type PhysiqueStore,
+  type PhysiqueUsage,
+} from "./handler.ts";
 import golden from "./legacy_requests_golden.json" with { type: "json" };
 
 const owner = "0f6b3a1e-1111-4111-8111-111111111111";
@@ -248,4 +255,111 @@ Deno.test("route failures: busy is 429, a refusal is billed and counted", async 
   const lost = await run("anthropic", () => Promise.reject(new TypeError("reset")));
   assert(lost.error instanceof PhysiqueVisionError);
   assertEquals([lost.error.code, lost.calls.usage.length], ["physique_vision_network", 0]);
+});
+
+Deno.test("billingSettled: only unbilled or recorded failures give the place back", () => {
+  const spent = {
+    content: "",
+    inputUnits: 1,
+    outputUnits: 1,
+    latencyMs: 1,
+    estimatedCostUsd: 0.001,
+    remainingTokens: null,
+  };
+  const cases: [unknown, boolean][] = [
+    [new PhysiqueVisionBilledError("physique_vision_refused", spent), true],
+    [new PhysiqueVisionError("physique_vision_busy"), true],
+    [new PhysiqueVisionError("physique_vision_request_failed:400:bad_request"), true],
+    [new PhysiqueVisionError("physique_vision_request_failed:consent_provider_mismatch"), true],
+    [new PhysiqueVisionError("physique_vision_timeout"), false],
+    [new PhysiqueVisionError("physique_vision_network"), false],
+    [new PhysiqueVisionError("physique_vision_provider_error"), false],
+    [new PhysiqueVisionError("physique_vision_response_invalid"), false],
+    [new Error("photo_ai_consent_unavailable"), false],
+  ];
+  for (const [error, settled] of cases) {
+    assertEquals(billingSettled(error), settled, String((error as Error).message));
+  }
+});
+
+/**
+ * One check with a real AiBudget, settled the way index.ts settles it: keep the place when
+ * the failure may have been billed unseen, then release whatever is still held.
+ */
+async function runWithBudget(respond: (sent: Sent) => Response | Promise<Response>) {
+  const rpcs: string[] = [];
+  const budget = new AiBudget((name, params) => {
+    rpcs.push(name === "reserve_ai_budget_v2" ? `${name}:${params.ceiling_usd}` : name);
+    return Promise.resolve({ data: "reservation-1", error: null });
+  }, owner);
+  const { store, calls } = fakeStore("anthropic");
+  const { fetch, sent } = fakeFetch(respond);
+  let status: number | null = null;
+  try {
+    const response = await handlePhysiqueCheck({
+      userId: owner,
+      store: {
+        ...store,
+        budgetAvailable: (ceiling) => budget.reserve("physique_vision", ceiling!),
+      },
+      resolution: resolvePhysiqueVision(environment({ ...today, ...sonnet })),
+      allowedUsers: new Set([owner]),
+      observer: { info: () => {}, warn: () => {} },
+      gateway: { deps: { fetch } },
+    }, { schema_version: "1.0", mode: "check", photo_set_id: setId });
+    status = response.status;
+  } catch (error) {
+    if (!billingSettled(error)) budget.keep();
+  } finally {
+    await budget.release();
+  }
+  return { status, rpcs, usage: calls.usage.length, sent: sent.length };
+}
+
+Deno.test("budget: a refusal is recorded and released; a lost answer keeps its place", async () => {
+  const refused = await runWithBudget(() => answer("", { stop_reason: "refusal" }));
+  assertEquals(refused, {
+    status: null,
+    rpcs: ["reserve_ai_budget_v2:0.071", "settle_ai_budget"],
+    usage: 1,
+    sent: 1,
+  });
+  const busy = await runWithBudget(() => new Response("{}", { status: 529 }));
+  assertEquals([busy.status, busy.rpcs, busy.usage], [429, [
+    "reserve_ai_budget_v2:0.071",
+    "settle_ai_budget",
+  ], 0]);
+  const lost = await runWithBudget(() => Promise.reject(new TypeError("reset")));
+  assertEquals([lost.status, lost.rpcs, lost.usage], [null, ["reserve_ai_budget_v2:0.071"], 0]);
+  const unreadable = await runWithBudget(() => new Response("not json", { status: 200 }));
+  assertEquals([unreadable.rpcs, unreadable.usage], [["reserve_ai_budget_v2:0.071"], 0]);
+});
+
+Deno.test("a failing correction still counts the first call", async () => {
+  const isCorrection = (sent: Sent) => JSON.stringify(sent.body).includes("broke the rule");
+  // The correction is refused by a busy provider: 429, the first call recorded, released.
+  const busy = await runWithBudget((sent) =>
+    isCorrection(sent) ? new Response("{}", { status: 429 }) : answer(scored)
+  );
+  assertEquals(busy, {
+    status: 429,
+    rpcs: ["reserve_ai_budget_v2:0.071", "settle_ai_budget"],
+    usage: 1,
+    sent: 2,
+  });
+  // The correction is a refusal: both calls recorded, nothing stored, released.
+  const refused = await runWithBudget((sent) =>
+    isCorrection(sent) ? answer("", { stop_reason: "refusal" }) : answer(scored)
+  );
+  assertEquals(refused, {
+    status: null,
+    rpcs: ["reserve_ai_budget_v2:0.071", "settle_ai_budget"],
+    usage: 2,
+    sent: 2,
+  });
+  // The correction is lost: the first call is recorded, the place stays held.
+  const lost = await runWithBudget((sent) =>
+    isCorrection(sent) ? Promise.reject(new TypeError("reset")) : answer(scored)
+  );
+  assertEquals([lost.status, lost.rpcs, lost.usage], [null, ["reserve_ai_budget_v2:0.071"], 1]);
 });
