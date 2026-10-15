@@ -16,6 +16,14 @@
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		7884E86A2EC3CC0900C636F2 /* TracendNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8692EC3CC0900C636F2 /* TracendNotifications.swift */; };
 		81EBC1EB7EF94A63F1154072 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B99CBDB873CBA83AFBE076CD /* Pods_Runner.framework */; };
+		D0A700000000000000000011 /* RestActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000001 /* RestActivityAttributes.swift */; };
+		D0A700000000000000000012 /* WorkoutActivityBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000002 /* WorkoutActivityBridge.swift */; };
+		D0A700000000000000000013 /* RestActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000001 /* RestActivityAttributes.swift */; };
+		D0A700000000000000000014 /* TracendWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000003 /* TracendWidgetsBundle.swift */; };
+		D0A700000000000000000015 /* RestLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000004 /* RestLiveActivity.swift */; };
+		D0A700000000000000000016 /* TracendStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000005 /* TracendStyle.swift */; };
+		D0A700000000000000000017 /* ArchivoSemiCondensed-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000009 /* ArchivoSemiCondensed-ExtraBold.ttf */; };
+		D0A700000000000000000018 /* TracendWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000008 /* TracendWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,6 +33,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
+		};
+		D0A700000000000000000042 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D0A700000000000000000041;
+			remoteInfo = TracendWidgets;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -37,6 +52,17 @@
 			files = (
 			);
 			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0A700000000000000000034 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				D0A700000000000000000018 /* TracendWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -66,6 +92,15 @@
 		C023CB5E992CE8DD6A361629 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
 		E105896A1952C302F8D9A1D4 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		E7424B6FE74B46D9B271FAF9 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
+		D0A700000000000000000001 /* RestActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestActivityAttributes.swift; sourceTree = "<group>"; };
+		D0A700000000000000000002 /* WorkoutActivityBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutActivityBridge.swift; sourceTree = "<group>"; };
+		D0A700000000000000000003 /* TracendWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TracendWidgetsBundle.swift; sourceTree = "<group>"; };
+		D0A700000000000000000004 /* RestLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestLiveActivity.swift; sourceTree = "<group>"; };
+		D0A700000000000000000005 /* TracendStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TracendStyle.swift; sourceTree = "<group>"; };
+		D0A700000000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		D0A700000000000000000007 /* TracendWidgets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = TracendWidgets.xcconfig; sourceTree = "<group>"; };
+		D0A700000000000000000008 /* TracendWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TracendWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D0A700000000000000000009 /* ArchivoSemiCondensed-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = ArchivoSemiCondensed-ExtraBold.ttf; path = ../assets/fonts/ArchivoSemiCondensed-ExtraBold.ttf; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -82,6 +117,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				5BBF2DD7124B5BB8DE4D2A0C /* Pods_RunnerTests.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0A700000000000000000032 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -126,6 +168,8 @@
 			children = (
 				9740EEB11CF90186004384FC /* Flutter */,
 				97C146F01CF9000F007C117D /* Runner */,
+				D0A700000000000000000021 /* Shared */,
+				D0A700000000000000000023 /* TracendWidgets */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				179BB1539339A8ED1D7ACFE7 /* Pods */,
@@ -138,6 +182,7 @@
 			children = (
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
+				D0A700000000000000000008 /* TracendWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -153,6 +198,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				7884E8692EC3CC0900C636F2 /* TracendNotifications.swift */,
+				D0A700000000000000000022 /* Native */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
@@ -165,6 +211,35 @@
 				7958D1798B2176368236D6F1 /* Pods_RunnerTests.framework */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		D0A700000000000000000021 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				D0A700000000000000000001 /* RestActivityAttributes.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		D0A700000000000000000022 /* Native */ = {
+			isa = PBXGroup;
+			children = (
+				D0A700000000000000000002 /* WorkoutActivityBridge.swift */,
+			);
+			path = Native;
+			sourceTree = "<group>";
+		};
+		D0A700000000000000000023 /* TracendWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				D0A700000000000000000003 /* TracendWidgetsBundle.swift */,
+				D0A700000000000000000004 /* RestLiveActivity.swift */,
+				D0A700000000000000000005 /* TracendStyle.swift */,
+				D0A700000000000000000009 /* ArchivoSemiCondensed-ExtraBold.ttf */,
+				D0A700000000000000000006 /* Info.plist */,
+				D0A700000000000000000007 /* TracendWidgets.xcconfig */,
+			);
+			path = TracendWidgets;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -199,17 +274,36 @@
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
+				D0A700000000000000000034 /* Embed Foundation Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				9BFF83AFAA0EE576E4B75152 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				D0A700000000000000000043 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
 			productType = "com.apple.product-type.application";
+		};
+		D0A700000000000000000041 /* TracendWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D0A700000000000000000054 /* Build configuration list for PBXNativeTarget "TracendWidgets" */;
+			buildPhases = (
+				D0A700000000000000000031 /* Sources */,
+				D0A700000000000000000032 /* Frameworks */,
+				D0A700000000000000000033 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TracendWidgets;
+			productName = TracendWidgets;
+			productReference = D0A700000000000000000008 /* TracendWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -229,6 +323,9 @@
 						CreatedOnToolsVersion = 7.3.1;
 						LastSwiftMigration = 1100;
 					};
+					D0A700000000000000000041 = {
+						CreatedOnToolsVersion = 27.0;
+					};
 				};
 			};
 			buildConfigurationList = 97C146E91CF9000F007C117D /* Build configuration list for PBXProject "Runner" */;
@@ -246,6 +343,7 @@
 			targets = (
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
+				D0A700000000000000000041 /* TracendWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -264,6 +362,14 @@
 			files = (
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0A700000000000000000033 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D0A700000000000000000017 /* ArchivoSemiCondensed-ExtraBold.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -381,6 +487,19 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				7884E86A2EC3CC0900C636F2 /* TracendNotifications.swift in Sources */,
+				D0A700000000000000000011 /* RestActivityAttributes.swift in Sources */,
+				D0A700000000000000000012 /* WorkoutActivityBridge.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0A700000000000000000031 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D0A700000000000000000013 /* RestActivityAttributes.swift in Sources */,
+				D0A700000000000000000014 /* TracendWidgetsBundle.swift in Sources */,
+				D0A700000000000000000015 /* RestLiveActivity.swift in Sources */,
+				D0A700000000000000000016 /* TracendStyle.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -391,6 +510,11 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+		};
+		D0A700000000000000000043 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D0A700000000000000000041 /* TracendWidgets */;
+			targetProxy = D0A700000000000000000042 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -678,6 +802,77 @@
 			};
 			name = Release;
 		};
+		D0A700000000000000000051 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = D0A700000000000000000007 /* TracendWidgets.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = CGLRSQ8G95;
+				INFOPLIST_FILE = TracendWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tracend.app.TracendWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		D0A700000000000000000052 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = D0A700000000000000000007 /* TracendWidgets.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = CGLRSQ8G95;
+				INFOPLIST_FILE = TracendWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tracend.app.TracendWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		D0A700000000000000000053 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = D0A700000000000000000007 /* TracendWidgets.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = CGLRSQ8G95;
+				INFOPLIST_FILE = TracendWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tracend.app.TracendWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Profile;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -707,6 +902,16 @@
 				97C147061CF9000F007C117D /* Debug */,
 				97C147071CF9000F007C117D /* Release */,
 				249021D4217E4FDB00AE95B9 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D0A700000000000000000054 /* Build configuration list for PBXNativeTarget "TracendWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D0A700000000000000000051 /* Debug */,
+				D0A700000000000000000052 /* Release */,
+				D0A700000000000000000053 /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

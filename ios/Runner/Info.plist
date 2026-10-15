@@ -34,6 +34,8 @@
 	<string>Tracend uses the camera only when you choose to photograph a meal for analysis or capture private progress photos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Tracend opens your photo library only when you choose a meal photo to analyze or a private progress photo to save.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

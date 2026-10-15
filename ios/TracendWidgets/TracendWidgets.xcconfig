@@ -1,0 +1,4 @@
+// The extension's version must match the app's, which Flutter writes into
+// Generated.xcconfig (FLUTTER_BUILD_NAME, FLUTTER_BUILD_NUMBER). The app's own
+// xcconfigs are not used here: they also link the app's CocoaPods frameworks.
+#include "../Flutter/Generated.xcconfig"
