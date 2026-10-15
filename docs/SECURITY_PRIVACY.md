@@ -396,8 +396,10 @@ Lock Screen and Dynamic Island Live Activity may show the exercise name and the 
 the workout appears in it: never a load, reps, effort, reps left, heart rate or any health value,
 and never the workout's name. It is local to the phone (ActivityKit started by the app; no push,
 no App Group, nothing sent to the server or to Apple's push service), and the athlete removes it
-with iOS **Settings › Tracend › Live Activities**. Ending a rest early removes it at once; a rest
-that ran out shows "Rest done" for at most two minutes after its end; sign-out, account deletion
+with iOS **Settings › Tracend › Live Activities**. Finishing, discarding or leaving the workout removes it at once; a rest
+that ran out or was skipped shows "Rest done" with the next set and a Done button for two minutes
+after its end while the app is on screen, and until the app next runs while it is away (D1, so the
+next set can be ticked from the Lock Screen); sign-out, account deletion
 and a session Auth refused end it, and the next launch ends any finished one left behind.
 
 ## 11. Retention

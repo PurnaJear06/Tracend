@@ -595,13 +595,25 @@ the app closed.
 - **Dynamic Island:** compact shows a lime timer glyph and the countdown; minimal shows the
   countdown alone; expanded shows "Rest", the countdown, the exercise and the next set. Once the
   rest is over, compact and minimal show a lime check and expanded reads "Rest done".
-- ±15 moves it. Skip, finishing, discarding and leaving end it at once. A rest that ran out stays
-  as "Rest done" for two minutes after its end, and the next rest replaces it at once. A relaunch
-  with a running rest moves the activity to the stored end; an expired one is ended. Sign-out and
-  account deletion end it. If the screen is torn down mid-rest any other way, only the activity
-  ends and the rest stays in the draft.
-- It has no buttons. **Planned (coaching platform, chunk D1):** **Done**, **Skip** and **+30s** on
-  the Live Activity.
+- ±15 and +30s move it. When the rest is over (it ran out, Skip, or −15 past the end) it reads
+  "Rest done" with the next set for two minutes, so that set can be ticked from the Lock Screen;
+  the next rest replaces it in place, and a set with no rest after it removes it. While the app is
+  on screen it goes two minutes after the rest's end; while the app is away nothing can remove it
+  on time, so it stays until the app runs again (a button press counts). Finishing, discarding and
+  leaving end it at once. A relaunch with a running rest moves the activity to the stored end; an
+  expired one is ended. Sign-out and account deletion end it. If the screen is torn down mid-rest
+  any other way, only the activity ends and the rest stays in the draft.
+- **Buttons (D1)** on the Lock Screen and the expanded Dynamic Island (compact and minimal have
+  none): **+30s** and **Skip** while the rest runs; **Done set** once it is over. Each press wakes
+  the app in the background (iOS 17 App Intents) and goes through the workout's command sink
+  (Contract 3): Done ticks the set the "Next" line names, with the kg and reps the screen suggests
+  (the card never shows a load, so the athlete corrects it in the app if needed); Skip ends the
+  rest now; +30s adds 30 seconds. The card never writes a set itself. A press that wakes the app
+  after its rest ran out unnoticed counts that rest as ended at its stored end, so Skip and +30s
+  then change nothing.
+- If the app was closed (swiped away or ended by iOS) when a button is pressed, no workout can
+  take it: the buttons give way to "Open Tracend to continue", and a tap on the card opens the
+  app, whose restore puts the rest back.
 
 **New best.** A done set is a new best only when it beats the history's best set and every
 earlier set of that exercise today, by the history's rule (`newBestSetIndexes`). The moment: a
