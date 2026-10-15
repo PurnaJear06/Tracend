@@ -3,7 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show PostgrestException, Supabase;
 import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
@@ -20,6 +21,7 @@ import 'package:tracend/features/train/workout_draft.dart';
 import 'package:tracend/features/train/workout_events.dart';
 import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/features/workout_hr/set_heart_rate_recorder.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
@@ -115,6 +117,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   final PageController _pages = PageController();
   late final WorkoutEventHub _events = widget.events ?? WorkoutEventHub();
   StreamSubscription<void>? _commands;
+  StreamSubscription<void>? _heartRate;
   final SetTimingRecorder _timing = SetTimingRecorder();
 
   String? _sessionId;
@@ -172,6 +175,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   void initState() {
     super.initState();
     _commands = _events.handleCommands(_onCommand, clock: widget.clock);
+    final repository = widget.repository;
+    if (repository is SupabaseWorkoutRepository) {
+      _heartRate = SetHeartRateRecorder.shared(Supabase.instance.client).listen(
+        _events.events,
+        loadSession: () => repository.loadSession(
+          widget.workout,
+          localDate: widget.sessionDate,
+        ),
+      );
+    }
     _restore();
   }
 
@@ -185,6 +198,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _saveTimer?.cancel();
     _ticker?.cancel();
     unawaited(_commands?.cancel());
+    unawaited(_heartRate?.cancel());
     _events.close();
     _pages.dispose();
     super.dispose();

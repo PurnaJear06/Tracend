@@ -208,6 +208,13 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   relaunch, and drafts from older builds. `test/rir_picker_test.dart` covers the reps-left picker
   (0 to 5+, 44pt cells, 320pt width at 2× text in light and dark). Contract fixtures
   `workout_session_v1_1.json` and `exercise_history_v1_1.json` pin the reads.
+- **Per-set heart rate (C2):** `set_heart_rate_test.sql` (52 assertions) covers the table's RLS and
+  grants, `persist_set_heart_rate_v1` (idempotent upsert, 22023 on invalid values and unknown sets,
+  ownership, no identity), `get_my_set_heart_rate_v1` keys, and the account-deletion cascade.
+  `test/workout_hr/` covers the summary maths (coverage, drops, gaps, no samples, source), the
+  recorder listening to `WorkoutEventHub` (waiting list, retries, refusals, restarts), and the
+  summary line; `test/contract/set_heart_rate_contract_test.dart` pins both RPC fixtures.
+  `privacy-export/index_test.ts` checks the export lists the table.
 - **Rest Live Activity (D0):** `test/contract/live_activity_channel_contract_test.dart` plays the
   native side of the `tracend/live_activity` method channel as
   `ios/Runner/Native/WorkoutActivityBridge.swift` implements it, and proves refused, disabled or

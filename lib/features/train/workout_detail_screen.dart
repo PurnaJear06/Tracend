@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/train/active_workout_screen.dart';
 import 'package:tracend/features/train/exercise_history.dart';
@@ -9,6 +10,8 @@ import 'package:tracend/features/train/widgets/exercise_detail_sheet.dart';
 import 'package:tracend/features/train/widgets/exercise_list_card.dart';
 import 'package:tracend/features/train/widgets/train_parts.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/features/workout_hr/set_heart_rate_line.dart';
+import 'package:tracend/features/workout_hr/set_heart_rate_repository.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
@@ -143,6 +146,7 @@ class LoggedSession {
   const LoggedSession({
     required this.state,
     required this.exercises,
+    this.sessionId,
     this.durationSeconds,
     this.effort,
     this.effortSource,
@@ -150,6 +154,7 @@ class LoggedSession {
   });
 
   final String? state;
+  final String? sessionId;
   final int? durationSeconds;
   final num? effort;
   final EffortSource? effortSource;
@@ -197,6 +202,7 @@ class LoggedSession {
     exercises.sort((a, b) => a.order.compareTo(b.order));
     return LoggedSession(
       state: json['state'] as String?,
+      sessionId: json['session_id'] as String?,
       durationSeconds: (json['duration_seconds'] as num?)?.toInt(),
       effort: json['session_effort'] as num?,
       effortSource: EffortSource.fromKey(json['session_effort_source']),
@@ -219,6 +225,9 @@ Future<void> showWorkoutSummarySheet(
   builder: (_) => WorkoutSummaryBody(
     workout: workout,
     session: repository.loadSession(workout, localDate: date),
+    heartRate: repository is SupabaseWorkoutRepository
+        ? SupabaseSetHeartRateRepository(Supabase.instance.client).load
+        : null,
   ),
 );
 
@@ -226,11 +235,15 @@ class WorkoutSummaryBody extends StatelessWidget {
   const WorkoutSummaryBody({
     required this.workout,
     required this.session,
+    this.heartRate,
     super.key,
   });
 
   final PlannedWorkout workout;
   final Future<Map<String, dynamic>?> session;
+
+  /// Reads the workout's per-set heart-rate summaries; null shows none.
+  final Future<SetHeartRateReport> Function(String sessionId)? heartRate;
 
   static const healthkitNote =
       'Auto-completed from Apple Health. Sets were not logged in Tracend.';
@@ -273,16 +286,71 @@ class WorkoutSummaryBody extends StatelessWidget {
           ),
         );
       }
-      return _SummaryContent(workout: workout, logged: logged);
+      return _SummaryContent(
+        workout: workout,
+        logged: logged,
+        heartRate: heartRate,
+      );
     },
   );
 }
 
-class _SummaryContent extends StatelessWidget {
-  const _SummaryContent({required this.workout, required this.logged});
+class _SummaryContent extends StatefulWidget {
+  const _SummaryContent({
+    required this.workout,
+    required this.logged,
+    required this.heartRate,
+  });
 
   final PlannedWorkout workout;
   final LoggedSession logged;
+  final Future<SetHeartRateReport> Function(String sessionId)? heartRate;
+
+  @override
+  State<_SummaryContent> createState() => _SummaryContentState();
+}
+
+class _SummaryContentState extends State<_SummaryContent> {
+  PlannedWorkout get workout => widget.workout;
+  LoggedSession get logged => widget.logged;
+
+  /// The per-set heart-rate summaries; null while loading, when there are
+  /// none to read, or when they could not be read.
+  SetHeartRateReport? _heartRate;
+
+  @override
+  void initState() {
+    super.initState();
+    final sessionId = logged.sessionId;
+    final load = widget.heartRate;
+    if (sessionId != null && load != null && logged.completedSets > 0) {
+      unawaited(_loadHeartRate(load, sessionId));
+    }
+  }
+
+  Future<void> _loadHeartRate(
+    Future<SetHeartRateReport> Function(String sessionId) load,
+    String sessionId,
+  ) async {
+    try {
+      final report = await load(sessionId);
+      if (mounted) setState(() => _heartRate = report);
+    } catch (error) {
+      debugPrint('Non-critical error: set heart rate not loaded: $error');
+    }
+  }
+
+  /// An exercise's logged sets, then its heart-rate line when it has one.
+  String _exerciseSubtitle(LoggedExercise exercise) {
+    if (exercise.sets.isEmpty) {
+      return exercise.status == 'skipped' ? 'Skipped' : 'No sets logged';
+    }
+    final report = _heartRate;
+    final heartRate = report == null
+        ? null
+        : setHeartRateLine(report, exercise.order);
+    return [lastSessionText(exercise.sets), ?heartRate].join('\n');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -322,11 +390,7 @@ class _SummaryContent extends StatelessWidget {
               for (final exercise in logged.exercises)
                 TracendListRow(
                   title: exercise.name,
-                  subtitle: exercise.sets.isEmpty
-                      ? (exercise.status == 'skipped'
-                            ? 'Skipped'
-                            : 'No sets logged')
-                      : lastSessionText(exercise.sets),
+                  subtitle: _exerciseSubtitle(exercise),
                 ),
             ],
           ),
