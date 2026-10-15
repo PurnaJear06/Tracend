@@ -2,7 +2,7 @@ import { SupabaseClient } from "npm:@supabase/supabase-js@2.49.8";
 import { strToU8, zipSync } from "npm:fflate@0.8.2";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { isUserStorageKey } from "../_shared/storage_keys.ts";
-const dataTables = [
+export const dataTables = [
   "user_accounts",
   "user_profiles",
   "consent_records",
@@ -16,6 +16,7 @@ const dataTables = [
   "workout_sessions",
   "exercise_performances",
   "exercise_sets",
+  "exercise_set_heart_rate",
   "workout_amendments",
   "daily_check_ins",
   "health_sync_runs",
