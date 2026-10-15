@@ -362,9 +362,9 @@ create temporary table held_3 as select public.reserve_ai_budget_v2('a1100000-00
 select is((select reserved_cost_usd from public.ai_budget_reservations
   where id = (select id from held_3)),
   0.001235::numeric(10,6), 'a ceiling rounds up to six decimals, never down');
-create temporary table held_4 as select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'coach_chat', 0.001) id;
+create temporary table held_floor as select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'coach_chat', 0.001) id;
 select is((select reserved_cost_usd from public.ai_budget_reservations
-  where id = (select id from held_4)),
+  where id = (select id from held_floor)),
   0.001000::numeric(10,6), 'a USD 0.001 ceiling is the least one place holds');
 create temporary table held_features as
   select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'physique_vision', 0.03) id
