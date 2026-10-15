@@ -15,10 +15,23 @@ import {
   CoachChatUnavailableError,
   generateCoachChat,
 } from "../_shared/providers/coach_chat_provider.ts";
+import {
+  coachChatReservationUsd,
+  generateCoachChatViaGateway,
+} from "../_shared/providers/coach_chat_provider_gateway.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { captureException } from "../_shared/sentry.ts";
-import { aiCoachingConsent, coachChatConsentRefusal } from "../_shared/ai_consent.ts";
+import {
+  aiCoachingConsent,
+  type AiConsentWithProvider,
+  aiConsentWithProvider,
+  coachChatConsentRefusal,
+} from "../_shared/ai_consent.ts";
 import { AiBudget } from "../_shared/ai_budget.ts";
+import { route } from "../_shared/ai/routes.ts";
+import type { AiRoute } from "../_shared/ai/types.ts";
+import { renderCoachContext } from "../_shared/coach_context/host.ts";
+import { coachContextContributors } from "../_shared/coach_context/registry.ts";
 
 export const coachChatResponseSchemaVersion = "1.1";
 // Request 1.1 (current app) gets response 1.2: answer_source on every message
@@ -58,6 +71,22 @@ const coachChatPreparationFailures: Readonly<Record<string, string>> = {
   "monthly cost limit reached": "monthly_cost_limit",
   "chat context too large": "chat_context_too_large",
 };
+
+/**
+ * With a gateway route, what coach-chat answers instead of calling the model, or null to go on.
+ * The athlete's current Coach notice must be granted and name the route's vendor; a notice for
+ * another vendor (or none) takes the consent-needed path and nothing is sent.
+ */
+export function coachChatGatewayConsentRefusal(
+  consent: AiConsentWithProvider,
+  coachRoute: AiRoute,
+): { status: 403 | 503; error: string } | null {
+  const refusal = coachChatConsentRefusal(consent.consent);
+  if (refusal) return refusal;
+  return consent.provider === coachRoute.vendor
+    ? null
+    : { status: 403, error: "ai_consent_required" };
+}
 
 export function coachChatPreparationFailureCode(
   error: { code?: string; message?: string } | null,
@@ -287,14 +316,26 @@ async function handleCoachChat(
     log.warn("invalid_chat_request");
     return reply(422, versionedResponse({ error: "invalid_chat_request" }));
   }
+  // With AI_COACH_CHAT_* settings the turn goes through the AI gateway; without them it keeps
+  // today's provider path, request for request.
+  const coachRoute = route("coach_chat");
   // Nothing reaches the AI provider without the athlete's current consent,
-  // whichever app build is calling.
-  const consent = await aiCoachingConsent(
-    (name, params) => auth.serviceClient.rpc(name, params),
-    auth.userId,
-    "coach_chat",
-  );
-  const refusal = coachChatConsentRefusal(consent);
+  // whichever app build is calling. Through the gateway the consented notice
+  // must also name the route's vendor.
+  const rpc = (name: string, params: Record<string, unknown>) =>
+    auth.serviceClient.rpc(name, params);
+  let consent: "granted" | "not_granted" | "unavailable";
+  let refusal: { status: 403 | 503; error: string } | null;
+  let consentVendor: AiConsentWithProvider["provider"] = null;
+  if (coachRoute) {
+    const withProvider = await aiConsentWithProvider(rpc, auth.userId, "coach_chat");
+    consent = withProvider.consent;
+    consentVendor = withProvider.provider;
+    refusal = coachChatGatewayConsentRefusal(withProvider, coachRoute);
+  } else {
+    consent = await aiCoachingConsent(rpc, auth.userId, "coach_chat");
+    refusal = coachChatConsentRefusal(consent);
+  }
   if (refusal) {
     if (consent === "unavailable") {
       log.error("ai_consent_check_failed");
@@ -308,7 +349,13 @@ async function handleCoachChat(
   }
   const budget = new AiBudget((fn, args) => auth.serviceClient.rpc(fn, args), auth.userId);
   held.current = budget;
-  if (!await budget.reserve("coach_chat")) {
+  const reserved = coachRoute
+    ? await budget.reserve(
+      "coach_chat",
+      coachChatReservationUsd(coachRoute, coachContextContributors),
+    )
+    : await budget.reserve("coach_chat");
+  if (!reserved) {
     return reply(429, versionedResponse({ error: "ai_usage_limit" }));
   }
   const contextKind = classifyQuestion(input.question);
@@ -406,11 +453,30 @@ async function handleCoachChat(
 
   const chatStart = performance.now();
   try {
-    const generation = await generateCoachChat(
-      input.question,
-      context,
-      contextKind,
-    );
+    const contributions = coachRoute
+      ? await renderCoachContext(coachContextContributors, {
+        userId: auth.userId,
+        question: input.question,
+        localDate: coachingDate,
+      })
+      : null;
+    if (contributions?.outcomes.length) {
+      log.info("coach_context_contributors", { contributors: contributions.outcomes });
+    }
+    const generation = coachRoute
+      ? await generateCoachChatViaGateway({
+        question: input.question,
+        context,
+        contextKind,
+        route: coachRoute,
+        consentVendor,
+        contributions: contributions ?? undefined,
+      })
+      : await generateCoachChat(
+        input.question,
+        context,
+        contextKind,
+      );
     log.info("persist_coach_chat_result", {
       snapshot_id: (prepared.feature_snapshot_id as string) ?? "null",
       policy_id: (prepared.policy_evaluation_id as string) ?? "null",
@@ -515,6 +581,7 @@ async function handleCoachChat(
       provider: generation.provider,
       model: generation.model,
       context_kind: contextKind,
+      ai_path: coachRoute ? "gateway" : "legacy",
       replayed: false,
       attempts: generation.attempts.map((attempt) => ({
         attempt: attempt.attempt,
@@ -562,6 +629,7 @@ async function handleCoachChat(
       provider: unavailable.provider,
       model: unavailable.model,
       context_kind: contextKind,
+      ai_path: coachRoute ? "gateway" : "legacy",
       attempt: unavailable.metadata.attempt ?? "unknown",
       finish_reason: unavailable.metadata.finishReason ?? "unknown",
       initial_rule: unavailable.metadata.initialRule ?? "none",

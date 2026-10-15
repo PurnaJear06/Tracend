@@ -136,8 +136,55 @@ anything the next agent must know.
 
 ### A6: Coach chat, cache-friendly
 
-Not started. The A6 builder replaces this paragraph with its state, files, tests and
-anything the next agent must know.
+In review (branch `claude/a6-coach-chat-claude`). Merging changes nothing in production: with no
+`AI_COACH_CHAT_*` settings `route("coach_chat")` is null and Coach chat sends today's DeepSeek
+request byte for byte (`coach_chat_parity_test.ts` compares SHA-256 digests of 18 requests,
+first and repair, recorded from the pre-A6 code).
+
+- **Route path** (`coach-chat/index.ts`): consent through `get_ai_consent_v2`; the granted notice
+  must name the route's vendor, else 403 `ai_consent_required` and nothing is sent. Budget through
+  `reserve_ai_budget_v2` with `coachChatReservationUsd` (two full attempts at list price, prompt at
+  1.5 characters per token, clamped to USD 0.50; Sonnet always sits at 0.50). Provenance stores
+  the vendor and the model the provider reports. Logs add `ai_path` (`gateway`/`legacy`).
+- **Prompt** (`_shared/providers/coach_chat_provider_gateway.ts`): system = rules and answer
+  contract; user block 1 = athlete file without conversation memory plus stable contributors
+  (`cache: true`); block 2 = memory, omitted-sections line, volatile contributors; block 3 = the
+  question; a repair adds its instruction last, so it reuses the cache. `renderCoachContextParts`
+  splits the one rendering; layout in `docs/CONTEXT_BUDGET.md`.
+- **Schema**: structure only (types, enums, closed objects; nullable evidence id as `anyOf` with
+  null). `parseCoachChatAnswer` checks limits and citations with the exact rule, so a repair
+  carries the rule and the candidate (the gateway returns no text for a schema failure, so that
+  repair goes without one).
+- **Failures** map to today's codes: rate limit → `provider_rate_limited` (retry-after, else 60),
+  timeout → `provider_timeout`, overloaded/network/provider error → `provider_http_error`,
+  refusal → `provider_response_invalid` (no repair), output-limit cut → `provider_response_truncated`.
+  Every attempt's priced cost goes into `persist_failed_coach_chat_run_v2`.
+- **Contract 7 host** (`_shared/coach_context/host.ts`, `registry.ts`, empty): fixed registry order,
+  ids `^[a-z][a-z0-9_]{0,39}$`, budget 1–12,000 characters, each block clipped and wrapped in
+  `<reference_data source="id">` with the reference-data line; a closing tag inside text is
+  escaped; a contributor that throws, returns nothing or takes over 4 s is left out and logged
+  (`coach_context_contributors`). Contributors render only on the gateway path.
+- **Thinking** comes from the route for every question (the legacy path thinks only for plan
+  changes; a route cannot vary it per question).
+- **Eval** (`_evals/coach_chat_eval.ts`): with `AI_COACH_CHAT_*` set it runs the gateway path,
+  asks one question twice and gates on the second `ai_call` line's cache reads, caps spend with
+  `EVAL_MAX_USD`, and reruns a call the host slept through (monotonic vs wall clock).
+  Results 2026-10-15 (4,096 output tokens, 30 s timeout, synthetic athletes; first direct
+  baseline, as no direct DeepSeek run is recorded):
+
+  | Model | Runs | Model answers | Safety | Unpermitted evidence | p50 / p95 | USD per answer | Cache reads |
+  |---|---|---|---|---|---|---|---|
+  | Haiku 5.5 | 180 | 100% | 18/18 | 0 | 4.5 / 7.0 s | 0.00045 | 97.6% of prompt tokens |
+  | Sonnet 5.5 | 120 (sampled) | 100% | 6/6 | 0 | 8.6 / 12.3 s | 0.0110 | 96.5% |
+
+  Cache proof (rich athlete, same question twice): first call writes 8,012 tokens, second reads
+  8,012. Clarifying question when a detail was missing: Haiku 0/6, Sonnet 2/4 (reported, not
+  gated). Recommendation: Haiku 5.5 (every gate, about 25 times cheaper and twice as fast);
+  Sonnet 5.5 is the settings-only upgrade if the owner wants more clarifying questions.
+- **For A7**: suggested settings `AI_COACH_CHAT_PROVIDER=anthropic`, `MODEL=claude-haiku-5-5`,
+  `MAX_OUTPUT_TOKENS=4096`, `TIMEOUT_MS=30000`, `EVALUATED=true`. The route is used whether or not
+  `EVALUATED` is true. Without an Anthropic-named Coach notice granted, every turn returns 403.
+  The app shows "AI" for provider `anthropic` (`aiProviderDisplayName` returns null).
 
 ### A7: wording, budgets, cutover
 

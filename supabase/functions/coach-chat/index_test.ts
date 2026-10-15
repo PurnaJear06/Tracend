@@ -6,12 +6,14 @@ import {
   coachChatDataSummaryResponse,
   coachChatFailureResponse,
   coachChatFailureRules,
+  coachChatGatewayConsentRefusal,
   coachChatPreparationFailureCode,
   coachChatReplayResponse,
   coachChatResponseSchemaVersion,
   detectPreferenceStatement,
   supportsDataSummary,
 } from "./index.ts";
+import { routeFor } from "../_shared/ai/fakes.ts";
 import appDataSummaryFixture from "../../../test/contract/fixtures/coach_chat_data_summary_response_v1_2.json" with {
   type: "json",
 };
@@ -347,4 +349,27 @@ Deno.test("coachChatFailureResponse exposes only the versioned safe error contra
   const serialized = JSON.stringify(response);
   assert(!serialized.includes("Unexpected end of JSON input"));
   assert(!serialized.includes("deepseek-v4-flash"));
+});
+
+Deno.test("through the gateway, the granted notice must name the route's vendor", () => {
+  const coachRoute = routeFor("coach_chat", { MODEL: "claude-haiku-5-5" });
+  const consent = (
+    granted: "granted" | "not_granted" | "unavailable",
+    provider: "anthropic" | "deepseek" | null,
+  ) => ({ consent: granted, provider, noticeVersion: "v6" });
+  assertEquals(coachChatGatewayConsentRefusal(consent("granted", "anthropic"), coachRoute), null);
+  for (const provider of ["deepseek", null] as const) {
+    assertEquals(coachChatGatewayConsentRefusal(consent("granted", provider), coachRoute), {
+      status: 403,
+      error: "ai_consent_required",
+    });
+  }
+  assertEquals(coachChatGatewayConsentRefusal(consent("not_granted", "anthropic"), coachRoute), {
+    status: 403,
+    error: "ai_consent_required",
+  });
+  assertEquals(coachChatGatewayConsentRefusal(consent("unavailable", null), coachRoute), {
+    status: 503,
+    error: "ai_consent_unavailable",
+  });
 });
