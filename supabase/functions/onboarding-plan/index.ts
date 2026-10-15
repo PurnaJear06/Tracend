@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.49.8";
-import { aiCoachingConsent, type ConsentRpc } from "../_shared/ai_consent.ts";
+import {
+  aiCoachingConsent,
+  aiConsentWithProvider,
+  type ConsentRpc,
+  type ConsentV2Rpc,
+} from "../_shared/ai_consent.ts";
 import { AiBudget } from "../_shared/ai_budget.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import {
@@ -9,7 +14,10 @@ import {
   type Muscle,
 } from "../_shared/onboarding/catalog.ts";
 import { createLogger, extractCorrelationId } from "../_shared/logger.ts";
-import { resolveOnboardingModel } from "../_shared/providers/onboarding_plan_provider.ts";
+import {
+  onboardingGatewayRoute,
+  resolveOnboardingModel,
+} from "../_shared/providers/onboarding_plan_provider.ts";
 import { captureException } from "../_shared/sentry.ts";
 import {
   type GenerationClaim,
@@ -171,6 +179,14 @@ function supabaseStore(
     // Questions and plans share this check; a place is held at the plan's
     // (higher) ceiling either way.
     budgetAvailable: () => budget.reserve("onboarding_plan"),
+    gatewayConsent: (feature) =>
+      aiConsentWithProvider(
+        ((name, params) => client.rpc(name, params)) as ConsentV2Rpc,
+        userId,
+        feature,
+      ),
+    reserveGatewayBudget: (feature, ceilingUsd) => budget.reserve(feature, ceilingUsd),
+    releaseBudget: () => budget.release(),
     keepBudget: () => budget.keep(),
     async recordUsage(usage) {
       const { error } = await client.rpc("record_ai_usage_event", {
@@ -252,6 +268,10 @@ Deno.serve(async (request) => {
       mode,
       store: supabaseStore(serviceClient, auth.userId, budget),
       resolution: () => resolveOnboardingModel(),
+      routes: {
+        plan: () => onboardingGatewayRoute("onboarding_plan"),
+        questions: () => onboardingGatewayRoute("onboarding_questions"),
+      },
       currentYear: new Date().getUTCFullYear(),
       now: () => new Date(),
       background: (work) => {

@@ -61,6 +61,10 @@ function store(overrides: Partial<OnboardingStore> & { claimAs?: GenerationClaim
     recordQuestionUsage: () => Promise.resolve(),
     consent: () => Promise.resolve("granted"),
     budgetAvailable: () => Promise.resolve(true),
+    gatewayConsent: () =>
+      Promise.resolve({ consent: "not_granted", provider: null, noticeVersion: null }),
+    reserveGatewayBudget: () => Promise.resolve(false),
+    releaseBudget: () => Promise.resolve(),
     recordUsage: () => Promise.resolve(),
     persist: (generationId, _hash, _snapshot, proposal, metadata) => {
       calls.persisted.push({ generationId, proposal, metadata });
