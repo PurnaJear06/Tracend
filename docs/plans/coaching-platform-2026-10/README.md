@@ -259,10 +259,13 @@ raw samples never leave the phone.
 `respond_to_day_adjustment_v1(local_date date, accept boolean)` records the answer with an audit
 event and returns the updated object.
 
-### Contract 6: Library search (E1)
+### Contract 6: Library search (E1), version 1.1
 
-`search_library_v1(query_text text, query_embedding vector(384), match_count int, filters jsonb)`
-is `security definer`, executable by `service_role` only. Hybrid: full-text top 30 and vector top
+`search_library_v1(query_text text, query_embedding public.library_embedding, match_count int, filters jsonb)`
+is `security definer`, executable by `service_role` only. `public.library_embedding` is a domain
+over `extensions.vector(384)`; callers pass the same JSON array of 384 numbers. v1.1 reason:
+`supabase db dump` strips GRANT/REVOKE lines that mention the `extensions` schema, so a function
+with a plain `vector` argument came back from a restore executable by `anon` and `authenticated`. Hybrid: full-text top 30 and vector top
 30 merged by reciprocal rank fusion (k = 60). Returns rows
 `{chunk_id, source_id, title, year, url, section, body, header, score}`. `filters` may hold
 `region` and `topics` (text arrays). `match_count` is capped at 8.
@@ -351,11 +354,7 @@ Add the TestFlight checklist to `docs/BETA_OPERATIONS.md`. Follow `site/PRODUCT.
 
 ## Contract requests
 
-- E1 (2026-10-15), Contract 6: `query_embedding` is declared as `public.library_embedding`, a
-  domain over `extensions.vector(384)`, instead of `vector(384)` directly. Callers are unchanged
-  (a JSON array of 384 numbers through `rpc`). Reason: `supabase db dump` drops GRANT/REVOKE lines
-  that mention the `extensions` schema, so a restored dump left the vector-typed function
-  executable by `anon` and `authenticated`. Needs the lead's acknowledgement as Contract 6 v1.1.
+None open.
 
 ## Decisions log
 
@@ -378,3 +377,7 @@ Add the TestFlight checklist to `docs/BETA_OPERATIONS.md`. Follow `site/PRODUCT.
   processor list drops DeepSeek and Groq after the rollback window.
 - 2026-10-15: migration-order check added to the Migration Collision Check job
   (`scripts/check-migration-order.sh`).
+- 2026-10-15: Contract 6 v1.1 (E1). `query_embedding` is the domain `public.library_embedding`
+  over `extensions.vector(384)`, because `supabase db dump` strips grants that mention
+  `extensions`. Library regions are `global` or ISO alpha-2 codes; regional callers pass
+  `['global', '<code>']`.

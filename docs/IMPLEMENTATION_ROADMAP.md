@@ -3,8 +3,9 @@
 ## Personal Coaching System Sequence
 
 Deliver Workout Truth Repair, HealthKit reconciliation, Coach Context v2, Qwen weekly reasoning,
-approval-gated plan evolution, and owner-device dogfooding in that order. RAG remains deferred
-pending measured structured-retrieval failure.
+approval-gated plan evolution, and owner-device dogfooding in that order. RAG over user data
+remains deferred pending measured structured-retrieval failure; the research library of open
+sources (decision D3) is in scope.
 
 **Status:** Execution order for the private-beta MVP\
 **Constraint:** This roadmap does not expand [PRD.md](./PRD.md)\

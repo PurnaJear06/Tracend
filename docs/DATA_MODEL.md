@@ -669,7 +669,7 @@ lives in the `extensions` schema.
 | doi            | text        | Nullable                                                            |
 | url            | text        | `https://` only, nullable                                           |
 | licence        | text        | Required: the licence the source is stored under                    |
-| region         | text[]      | Regions it applies to, e.g. `global`, `IN`, `US`, `UK`, `AU`        |
+| region         | text[]      | Required, no default, at least one entry; each `global` or an ISO 3166-1 alpha-2 code (`IN`, `US`, `GB`, `AU`) |
 | topics         | text[]      | Topic tags used by search filters                                   |
 | evidence_level | text        | Nullable, free text set by ingestion                                |
 | kind           | text        | `paper`, `guideline`, `position_stand`, `summary`                   |
@@ -687,6 +687,7 @@ lives in the `extensions` schema.
 | body        | text                       | 1–8000 characters                                            |
 | token_count | integer                    | 1–2000                                                       |
 | embedding   | `extensions.vector(384)`   | gte-small, mean-pooled and normalised; null until embedded   |
+| embedding_model | text                   | Model that made the embedding (e.g. `gte-small`); set exactly when `embedding` is set, so a model change re-embeds selectively |
 | fts         | tsvector, generated stored | `to_tsvector('english', header || ' ' || body)`              |
 | created_at  | timestamptz                |                                                              |
 
@@ -708,7 +709,8 @@ nearest embeddings (cosine distance) and merges them by reciprocal rank fusion:
 (clamped to 1–8, null = 8), best first, each
 `{schema_version: 1, chunk_id, source_id, title, year, url, section, body, header, score}`.
 
-- A null or blank `query_text` (or one of stop words only) skips full-text search; a null
+- Only the first 1000 characters of `query_text` are used. A null or blank `query_text`, or one
+  of stop words or negations (`-creatine`) only, skips full-text search; a null
   `query_embedding` skips vector search; both skipped returns no rows.
 - `query_embedding` is declared as `public.library_embedding`, a domain over
   `extensions.vector(384)`; callers pass the same JSON number array. Another size raises `22000`
@@ -722,6 +724,21 @@ nearest embeddings (cosine distance) and merges them by reciprocal rank fusion:
   when its array overlaps the filter; an absent, null or empty array does not filter. Any other key
   or a non-text-array value raises `22023`. Sources that apply everywhere carry `global` in
   `region`, so a regional caller passes for example `["global", "IN"]`.
+
+#### Dump-safe function signatures (all schemas we own)
+
+`supabase db dump` (CLI 2.101.0) drops every GRANT and REVOKE line that names, after `ON`, a
+quoted identifier from its excluded-schema list (`information_schema`, `pg_*`, `_analytics`,
+`_realtime`, `_supavisor`, `auth`, `etl`, `extensions`, `pgbouncer`, `realtime`, `storage`,
+`supabase_functions`, `supabase_migrations`, `cron`, `dbdev`, `graphql`, `graphql_public`, `net`,
+`pgmq`, `pgsodium`, `pgsodium_masks`, `pgtle`, `repack`, `tiger`, `tiger_data`, `timescaledb_*`,
+`_timescaledb_*`, `topology`, `vault`). A function restored from such a dump keeps Supabase's
+default grants, so `anon` and `authenticated` could call it. Therefore no function in `public` or
+`private` may take an input argument whose type lives in one of those schemas (wrap the type in a
+domain in `public`, as `public.library_embedding` does), have an input argument or a name equal
+to one of those names, and no table, view or sequence there may be named like one.
+`supabase/tests/database/research_library_test.sql` asserts all four. Return types are not in a
+GRANT line and are allowed.
 
 ### Future vector memory
 

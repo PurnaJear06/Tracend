@@ -34,9 +34,15 @@ E1 (Phase 1); E2, E3 (Phase 3); E4, E5 (Phase 4)
   and `authenticated` (seen in the local drill). Callers still pass a JSON number array.
   Unfiltered vector search uses HNSW; filtered vector search ranks exactly over the matching
   sources (an HNSW scan stops at `ef_search` 40 and a narrow filter could empty it).
-- pgTAP: `supabase/tests/database/research_library_test.sql`, 52 assertions (access, grants,
+- Review fixes (lead, 2026-10-15): Contract 6 v1.1 accepted (the domain); `region` has no
+  default and needs at least one entry, each `global` or an ISO alpha-2 code
+  (`private.library_regions_valid`); `library_chunks.embedding_model` is set exactly when
+  `embedding` is; the search uses the first 1000 characters of `query_text` and treats a
+  negation-only query (`-creatine`) like an empty one.
+- pgTAP: `supabase/tests/database/research_library_test.sql`, 66 assertions (access, grants,
   indexes, ranking on a seeded fixture with hand-made 384-dimension vectors, filters, clamps, both
-  single-search paths, wrong dimensions, cascade). Full local suite: 62 files, 1578 tests, pass.
+  single-search paths, wrong dimensions, query limits, region and model constraints, cascade, and
+  the repo-wide dump-safe signature rule in `docs/DATA_MODEL.md` section 12).
 - Docs: decision D3 replaces the "no vector databases" rule in `CLAUDE.md`, `AGENTS.md`,
   `ARCHITECTURE.md` (section 11) and `IMPLEMENTATION_ROADMAP.md`, with matching lines in
   `AI_SAFETY_SPEC.md` section 15 and `PRD.md`; tables in `DATA_MODEL.md`; classification, export
@@ -62,10 +68,17 @@ E1 (Phase 1); E2, E3 (Phase 3); E4, E5 (Phase 4)
   pgTAP tests must therefore check function grants with `has_function_privilege`, never by
   calling the function under `SET ROLE`.
 
-Conventions for E2 to keep: tag sources that apply everywhere with `global` in `region` (filters
-match by overlap, so a regional caller passes for example `["global", "IN"]`); always set
-`licence`; write a context header (source and section) per chunk, because it is embedded and
+Conventions for E2 to keep (region convention accepted by the lead): tag sources that apply
+everywhere with `global` in `region` (filters match by overlap, so a regional caller passes for
+example `["global", "IN"]`); always set `licence`; set `embedding_model` (`gte-small`) with every
+embedding; write a context header (source and section) per chunk, because it is embedded and
 searched with the body.
+
+Scale note: the filtered vector path ranks every chunk of the matching sources exactly (about
+2 ms at 5,000 chunks). Past roughly 50,000 chunks, switch it to an HNSW scan with a runtime
+`set_config('hnsw.iterative_scan', 'relaxed_order', true)` inside the function (never a
+function-level `SET`, which breaks the restore drill), or denormalise `region` and `topics` onto
+the chunks.
 
 ## Next agent starts here
 
