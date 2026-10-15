@@ -34,6 +34,7 @@ without validation, the athlete's approval and an audit event (CLAUDE.md, Archit
 | D8 | Claude builds with sub-agents; the owner merges. |
 | D9 | Heart rate never sets the load. It raises or lowers confidence, informs rest, cardio dosing and recovery, and prompts a question. |
 | D10 | Sleeping heart rate starts in shadow mode: computed and stored, not used in the recovery score until a later reviewed change. |
+| D11 | Privacy and AI wording (owner, 2026-10-15): no model names anywhere the athlete or the public reads (app, notices, website, privacy policy). Remove every DeepSeek, Groq and Qwen mention. Name the receiving company only where disclosure is needed: one line in each AI consent notice and the privacy policy's processor list. Rewrite the notices and privacy pages for clarity. This is a beta exit criterion. |
 
 ## Phases and board
 
@@ -54,7 +55,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 2 | A4 | ai-gateway | Onboarding plan and questions on Sonnet | — | A1, A2 | todo | |
 | 2 | A5 | ai-gateway | Daily decision on Sonnet | — | A1, A2, B0 | todo | |
 | 2 | A6 | ai-gateway | Coach chat, cache-friendly prompt | — | A1, A2 | todo | |
-| 2 | A7 | ai-gateway | Notices, app label, evals, docs, cutover runbook | — | A3–A6 | todo | |
+| 2 | A7 | ai-gateway | Notices and app wording per D11 (no model names; remove DeepSeek/Groq/Qwen everywhere), evals, docs, cutover runbook | — | A3–A6 | todo | |
 | 2 | D1 | ios-widgets | Live Activity with Done / Skip / +30s | — | C1, D0 | todo | |
 | 2 | C2 | workout-hr | Native heart-rate reader, per-set summaries | 32 | C1, D0 | todo | |
 | 2 | B1 | training-engine | Catalog v2 and coaching-standard rule data | 21 | B0 | todo | |
@@ -331,7 +332,8 @@ per Contract 6; pgTAP for ranking on a seeded fixture. Update `CLAUDE.md`, `ARCH
 `IMPLEMENTATION_ROADMAP.md` to replace the "no vector databases" rule with D3. Add `private` table
 reset to the restore drill if needed. No ingestion yet.
 
-**W1: website.** Fix the copy contradictions found on 2026-10-14: "progress photos are private"
+**W1: website.** Apply D11 to the site and privacy policy (no model names, Anthropic named once as
+the AI processor, plain-language rewrite). Fix the copy contradictions found on 2026-10-14: "progress photos are private"
 next to AI processing (say what is processed and by whom), name Anthropic as an AI processor in
 the privacy page, iOS only (no "Android in testing"), the physique check shown as coming later.
 Add the TestFlight checklist to `docs/BETA_OPERATIONS.md`. Follow `site/PRODUCT.md` claim rules.
@@ -356,5 +358,9 @@ None yet.
   `gemini`), not the wire protocol, so a DeepSeek notice can never pass a Groq route. SQL stores
   vendor ids only (A1 adds `anthropic`; `openai_compatible` is never stored). Eval routers use
   vendor `router`, which no notice names. Resolves A2's contract request.
+- 2026-10-15: D11 (no model names in user-facing text). App files that name providers today:
+  `lib/shared/ai_provider_names.dart`, `lib/features/consent/ai_coaching_consent.dart`,
+  `lib/features/coach/coach_labels.dart`, `lib/features/onboarding/onboarding_proposal_view.dart`;
+  notice bodies are rows the owner publishes (A7 drafts them).
 - 2026-10-15: migration-order check added to the Migration Collision Check job
   (`scripts/check-migration-order.sh`).
