@@ -19,7 +19,7 @@ Iteration 1 is Phase 0 + Phase 1. One line per stream; each stream edits only it
   #104. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
 - ios-widgets: D0 not started. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
 - research-library: E1 (pgvector, library tables, `search_library_v1`, D3 doc rule) in review. Handoff: [`research-library.md`](./handoff/research-library.md).
-- website: W1 not started. Handoff: [`website.md`](./handoff/website.md).
+- website: W1 in review (privacy page rewrite per D11 with processor locations, "For iPhone, best with Apple Watch" copy, TestFlight checklist). Handoff: [`website.md`](./handoff/website.md).
 - ui: U1 glass tab bar in review.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 

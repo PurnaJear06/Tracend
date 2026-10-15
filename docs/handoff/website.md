@@ -1,6 +1,6 @@
 # Website and Waitlist Handoff
 
-**As of:** 2026-10-13
+**As of:** 2026-10-15
 
 ## State
 
@@ -14,6 +14,26 @@
   and `waitlist-unsubscribe` (migration `20261013100000_waitlist.sql`). Double opt-in: a signup
   counts once its email is confirmed. Invite links (`?ref=CODE`) move people up the list.
 - Joining grants no app access. App sign-ups stay invite-only (`private.signup_invites`).
+- 2026-10-15 (W1, coaching platform program): the privacy page covers the app as well as the
+  waitlist: what the app collects, AI features only with consent per feature (including the
+  physique check), the processor list with locations (Supabase, Singapore; Anthropic, United
+  States; DeepSeek, China; Groq, United States; Sentry, United States, from the DSN's
+  `ingest.us.sentry.io` host; GitHub for deployments and the newest 30 encrypted backups;
+  Cloudflare; Google), retention and controls (export, delete, AI off). Per decision D11 no model
+  name appears anywhere on the site, and AI companies are named only in that processor list.
+  Owner decisions the same day: Android stays "in testing", the physique check stays shown as
+  live, and the Watch wording is "For iPhone, best with Apple Watch" (never Watch-only).
+  `site/PRODUCT.md` carries the claim rules. The TestFlight checklist is in
+  `docs/BETA_OPERATIONS.md`.
+- Follow-up after the Phase 2 cutover plus its 2-week rollback window: remove DeepSeek and Groq
+  from the processor list in `site/src/pages/privacy.astro` and update its date. A new AI company
+  needs a processor-list entry before any notice names it.
+- Account deletion keeps the email's `private.signup_invites` row and any
+  `private.waitlist_signups` row; the privacy page says so (removed on request). A code change to
+  remove them is filed separately.
+- Meal photos: the privacy page says "about 7 days after you take them". The upload sets a 7-day
+  deadline and confirmation only shortens it (`least(..., now() + 30 days)`), so the 30 days after
+  confirmation in `docs/SECURITY_PRIVACY.md` §11 never applies in practice.
 
 ## Owner setup (once)
 
@@ -77,5 +97,5 @@ by changing the secrets, and update the processor list in `site/src/pages/privac
 - The first live join needs the owner's own email: confirm the email arrives, the link confirms,
   and unsubscribe works.
 - Add `Website Build` to the required checks if wanted.
-- CLAUDE.md says "No Android" while the site says Android is in testing (owner's choice); the
-  owner decides which spec wins.
+- Decided 2026-10-15 (owner): the site keeps Android "in testing"; CLAUDE.md's "No Android"
+  covers what gets built.
