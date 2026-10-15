@@ -181,6 +181,12 @@ No migration: A1's SQL already accepts `anthropic` in `record_ai_usage_event` an
   `handler.ts` and used by `index.ts`), refusal-then-release and lost-answer-keeps-place with a
   real `AiBudget` for both features, and a physique correction call that is busy, refused or
   lost. An ambiguous `provider_error` (for example an unreadable 200) keeps its reservation.
+- **Never under-reserve:** `mealVisionCeilingUsd` and `physiqueCeilingUsd` return `null` (no longer
+  a clamped 0.50) when a route's worst case is above USD 0.50 or its model is unknown. Meal
+  photos then answer 503 `meal_analysis_unavailable` and log `meal_vision_route_unusable`;
+  `resolvePhysiqueVision` returns `off` with reason `physique_vision_route_unusable` (status
+  `enabled: false`, check 403 `physique_check_unavailable`, handler warns with that code). Nothing
+  is reserved or sent. Haiku/Sonnet at 1,500/800 tokens are unaffected.
 - **Left for A7** (owns `_shared/ai_consent.ts` in Phase 2): A1's follow-up to replace that
   file's own `AiVendor` union with the gateway's was not done here.
 

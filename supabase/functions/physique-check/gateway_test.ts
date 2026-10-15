@@ -14,6 +14,7 @@ import {
   physiqueRules,
   PhysiqueVisionBilledError,
   PhysiqueVisionError,
+  physiqueVisionRouteUnusable,
   resolvePhysiqueVision,
 } from "../_shared/providers/physique_vision_provider.ts";
 import { AiBudget } from "../_shared/ai_budget.ts";
@@ -362,4 +363,86 @@ Deno.test("a failing correction still counts the first call", async () => {
     isCorrection(sent) ? Promise.reject(new TypeError("reset")) : answer(scored)
   );
   assertEquals([lost.status, lost.rpcs, lost.usage], [null, ["reserve_ai_budget_v2:0.071"], 1]);
+});
+
+// Opus at the most output the route may allow: both calls together are above the USD 0.50 one
+// reservation can hold.
+const opusHuge = settings("physique_vision", {
+  MODEL: "claude-opus-5-5",
+  THINKING: "adaptive",
+  MAX_OUTPUT_TOKENS: "32000",
+  EVALUATED: "true",
+});
+
+Deno.test("a route above the reservation cap is unusable: nothing is reserved or sent", async () => {
+  const resolution = resolvePhysiqueVision(environment({ ...today, ...opusHuge }));
+  assertEquals(resolution, { kind: "off", reason: "physique_vision_route_unusable" });
+  assertEquals(physiqueVisionRouteUnusable, "physique_vision_route_unusable");
+  const { store, calls } = fakeStore("anthropic");
+  const { fetch, sent } = fakeFetch(() => answer(valid));
+  const warned: string[] = [];
+  for (const mode of ["status", "check"] as const) {
+    const response = await handlePhysiqueCheck({
+      userId: owner,
+      store,
+      resolution,
+      allowedUsers: new Set([owner]),
+      observer: { info: () => {}, warn: (event) => warned.push(event) },
+      gateway: { deps: { fetch } },
+    }, { schema_version: "1.0", mode, photo_set_id: setId });
+    const body = await response.json();
+    assertEquals(
+      [response.status, body],
+      mode === "status"
+        ? [200, { schema_version: "1.0", enabled: false }]
+        : [403, { error: "physique_check_unavailable" }],
+    );
+  }
+  assertEquals(warned, [physiqueVisionRouteUnusable, physiqueVisionRouteUnusable]);
+  assertEquals([sent.length, calls.budget.length, calls.usage.length], [0, 0, 0]);
+});
+
+Deno.test("physique ceiling: Sonnet stays under the cap; a gateway resolution above it is refused", async () => {
+  const sonnetRoute = resolvePhysiqueVision(environment({ ...today, ...sonnet }));
+  assert(sonnetRoute.kind === "gateway");
+  assertEquals(physiqueCeilingUsd(sonnetRoute.route), 0.071);
+  const haikuRoute = resolvePhysiqueVision(environment({
+    ...today,
+    ...settings("physique_vision", {
+      MODEL: "claude-haiku-5-5",
+      MAX_OUTPUT_TOKENS: "800",
+      EVALUATED: "true",
+    }),
+  }));
+  assert(haikuRoute.kind === "gateway");
+  assertEquals(typeof physiqueCeilingUsd(haikuRoute.route), "number");
+  // Even if a caller hands the handler an over-cap route, nothing is reserved or sent.
+  const opus = resolvePhysiqueVision(environment({
+    ...today,
+    ...settings("physique_vision", {
+      MODEL: "claude-opus-5-5",
+      THINKING: "adaptive",
+      MAX_OUTPUT_TOKENS: "32000",
+      EVALUATED: "true",
+    }),
+  }));
+  assertEquals(opus.kind, "off");
+  const { store, calls } = fakeStore("anthropic");
+  const { fetch, sent } = fakeFetch(() => answer(valid));
+  const response = await handlePhysiqueCheck({
+    userId: owner,
+    store,
+    resolution: {
+      kind: "gateway",
+      route: { ...sonnetRoute.route, model: "claude-opus-5-5", maxOutputTokens: 32_000 },
+    },
+    allowedUsers: new Set([owner]),
+    observer: { info: () => {}, warn: () => {} },
+    gateway: { deps: { fetch } },
+  }, { schema_version: "1.0", mode: "check", photo_set_id: setId });
+  assertEquals([response.status, (await response.json()).error], [
+    403,
+    "physique_check_unavailable",
+  ]);
+  assertEquals([sent.length, calls.budget.length], [0, 0]);
 });

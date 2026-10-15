@@ -15,6 +15,7 @@ import {
   mealVisionCeilingUsd,
   mealVisionInstructions,
   mealVisionPath,
+  mealVisionRouteUnusable,
   readMealConsent,
   reserveMealBudget,
 } from "./vision.ts";
@@ -368,4 +369,102 @@ Deno.test("budget: a meal refusal is recorded and released; a lost answer keeps 
   // An unreadable 200 may have been billed: the place stays held (provider_error, no usage).
   const unreadable = await analyzeWithBudget(() => new Response("not json", { status: 200 }));
   assertEquals(unreadable, { status: 503, rpcs: ["reserve_ai_budget_v2:0.00175"], usage: 0 });
+});
+
+// Opus at the most output the route may allow: the worst case is above the USD 0.50 one
+// reservation can hold.
+const opusHuge = settings("meal_vision", {
+  MODEL: "claude-opus-5-5",
+  THINKING: "adaptive",
+  MAX_OUTPUT_TOKENS: "32000",
+  EVALUATED: "true",
+});
+
+Deno.test("a route above the reservation cap is unusable: nothing is reserved or sent", async () => {
+  const rpcs: string[] = [];
+  const rpc = (name: string) => {
+    rpcs.push(name);
+    return Promise.resolve({
+      data: name === "get_ai_consent_v2"
+        ? { granted: true, provider: "anthropic", notice_version: "meal-photo-ai-v2" }
+        : "reservation-1",
+      error: null,
+    });
+  };
+  const { fetch, sent } = fakeFetch(() => answer([dal]));
+  const path = mealVisionPath({ environment: environment({ ...today, ...opusHuge }), fetch });
+  assertEquals(mealVisionCeilingUsd(path.route!), null);
+  const logged: [string, unknown][] = [];
+  const log = { error: (event: string, fields?: unknown) => logged.push([event, fields]) };
+  // The consent read comes back unknown, so the handler answers 503 meal_analysis_unavailable.
+  assertEquals(await readMealConsent(rpc, "user-1", path, log), null);
+  assertEquals(logged, [[mealVisionRouteUnusable, {
+    provider: "anthropic",
+    model: "claude-opus-5-5",
+  }]]);
+  assertEquals(mealVisionRouteUnusable, "meal_vision_route_unusable");
+  // Defence in depth: reserving and analysing refuse too.
+  assertEquals(await reserveMealBudget(new AiBudget(rpc, "user-1"), path), false);
+  await assertRejects(
+    () => path.analyze(goldenJpeg, "image/jpeg", "anthropic"),
+    Error,
+    "meal_vision_disabled",
+  );
+  assertEquals([rpcs, sent.length], [[], 0]);
+});
+
+Deno.test("through the handler: an over-cap route answers unavailable and sends nothing", async () => {
+  const rpcs: string[] = [];
+  const rpc = (name: string) => {
+    rpcs.push(name);
+    return Promise.resolve({
+      data: { granted: true, provider: "anthropic", notice_version: "meal-photo-ai-v2" },
+      error: null,
+    });
+  };
+  const { events, store } = harness("anthropic");
+  const { fetch, sent } = fakeFetch(() => answer([dal]));
+  const path = mealVisionPath({ environment: environment({ ...today, ...opusHuge }), fetch });
+  const response = await handleMealAnalyze(request, {
+    userId: "11111111-1111-4111-8111-111111111111",
+    provider: path.provider,
+    analyze: path.analyze,
+    store: {
+      ...store,
+      consent: () => readMealConsent(rpc, "user-1", path),
+      reserveBudget: () => reserveMealBudget(new AiBudget(rpc, "user-1"), path),
+    },
+    log: { info: () => {}, warn: () => {}, error: () => {} },
+    report: () => events.push("report"),
+    now: () => 0,
+  });
+  assertEquals([response.status, await response.json()], [503, {
+    error: "meal_analysis_unavailable",
+  }]);
+  assertEquals([events, rpcs, sent.length], [[], [], 0]);
+});
+
+Deno.test("the intended Haiku and Sonnet routes stay under the cap; an unknown model is unusable", () => {
+  const ceiling = (values: Record<string, string>) =>
+    mealVisionCeilingUsd(
+      mealVisionPath({ environment: environment({ ...today, ...values }) }).route!,
+    );
+  assertEquals(ceiling(haiku), 0.00175);
+  assertEquals(
+    ceiling(settings("meal_vision", {
+      MODEL: "claude-sonnet-5-5",
+      MAX_OUTPUT_TOKENS: "1500",
+      EVALUATED: "true",
+    })),
+    0.035,
+  );
+  assertEquals(
+    ceiling(settings("meal_vision", {
+      MODEL: "claude-opus-5-5",
+      THINKING: "adaptive",
+      MAX_OUTPUT_TOKENS: "1500",
+      EVALUATED: "true",
+    })) !== null,
+    true,
+  );
 });

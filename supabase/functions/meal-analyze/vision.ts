@@ -24,7 +24,10 @@ import {
   analyzeGroqMealImage,
   validMealCandidates,
 } from "../_shared/providers/groq_meal_vision_provider.ts";
-import type { MealAnalyze, MealPhotoConsent, MealVisionResult } from "./handler.ts";
+import type { MealAnalyze, MealAnalyzeLog, MealPhotoConsent, MealVisionResult } from "./handler.ts";
+
+/** Logged when a route's worst case is above what one reservation can hold. */
+export const mealVisionRouteUnusable = "meal_vision_route_unusable";
 
 // Which meal vision path meal-analyze takes (program Contract 1, chunk A3).
 //
@@ -95,8 +98,15 @@ export async function readMealConsent(
   rpc: MealConsentRpc,
   userId: string,
   path: MealVisionPath,
+  log?: Pick<MealAnalyzeLog, "error">,
 ): Promise<MealPhotoConsent | null> {
   if (path.route) {
+    // A route whose worst case the budget cannot hold is as good as no route: the handler
+    // answers 503 meal_analysis_unavailable before anything is reserved or sent.
+    if (mealVisionCeilingUsd(path.route) === null) {
+      log?.error(mealVisionRouteUnusable, { provider: path.route.vendor, model: path.route.model });
+      return null;
+    }
     const answer = await aiConsentWithProvider(rpc, userId, "meal_vision");
     if (answer.consent === "unavailable") return null;
     return { granted: answer.consent === "granted", provider: answer.provider };
@@ -112,29 +122,35 @@ export async function readMealConsent(
 
 /** Takes a place in the AI budget: the purpose's fixed ceiling, or the route's per call. */
 export function reserveMealBudget(budget: AiBudget, path: MealVisionPath): Promise<boolean> {
-  return path.route
-    ? budget.reserve("meal_vision", mealVisionCeilingUsd(path.route))
-    : budget.reserve("meal_vision");
+  if (!path.route) return budget.reserve("meal_vision");
+  const ceilingUsd = mealVisionCeilingUsd(path.route);
+  // Never reserve less than the worst case: an unusable route reserves nothing.
+  return ceilingUsd === null ? Promise.resolve(false) : budget.reserve("meal_vision", ceilingUsd);
 }
 
 // The most one meal call can send: a photo (Claude counts at most about 4,800 tokens for an
 // image at its largest size, other models fewer) and the instructions and schema, rounded up.
 const maxPromptTokens = 8_000;
+// The most reserve_ai_budget_v2 accepts for one reservation.
+const maxReservationUsd = 0.5;
 
 /**
  * The most one call on this route can cost at list price: the largest prompt at the dearer of
- * the input and cache-write rates, and every output token the route allows. Between the
- * USD 0.001 and 0.50 reserve_ai_budget_v2 accepts.
+ * the input and cache-write rates, and every output token the route allows. At least the
+ * USD 0.001 reserve_ai_budget_v2 accepts. null when the worst case is above the USD 0.50 it
+ * accepts, or the model is unknown: such a route is unusable, because a smaller reservation
+ * would under-count the call.
  */
-export function mealVisionCeilingUsd(route: AiRoute): number {
+export function mealVisionCeilingUsd(route: AiRoute): number | null {
   const spec = modelSpec(route.provider, route.model);
-  if (!spec) return 0.5;
+  if (!spec) return null;
   const price = spec.price.longPrompt && maxPromptTokens > spec.price.longPrompt.aboveTokens
     ? spec.price.longPrompt
     : spec.price;
   const usd = (maxPromptTokens * Math.max(price.input, price.cacheWrite) +
     route.maxOutputTokens * price.output) / 1_000_000;
-  return Math.min(0.5, Math.max(0.001, Math.ceil(usd * 1_000_000) / 1_000_000));
+  const ceiling = Math.max(0.001, Math.ceil(usd * 1_000_000) / 1_000_000);
+  return ceiling > maxReservationUsd ? null : ceiling;
 }
 
 /** The stable instructions: the same for every photo, so they form a cacheable prefix. */
@@ -218,6 +234,8 @@ export async function analyzeMealWithGateway(
   // The app always uploads a re-encoded JPEG; metadata is removed here all the same.
   const clean = contentType === "image/jpeg" ? stripJpegMetadata(bytes) : null;
   if (!spec || !clean || clean.length > spec.maxImageBytes) throw new Error("meal_image_invalid");
+  // Nothing is sent on a route the budget cannot hold (the handler never reaches here).
+  if (mealVisionCeilingUsd(gatewayRoute) === null) throw new Error("meal_vision_disabled");
   const request = mealVisionRequest(gatewayRoute, options.consentVendor, base64(clean));
   const result = await (options.call ?? gatewayCall)(request, options.deps);
   if (!result.ok) {

@@ -37,7 +37,8 @@ Deno.serve(async (request) => {
       report: (error, mealId) =>
         captureException(error, { userId, functionName: "meal-analyze", correlationId, mealId }),
       store: {
-        consent: () => readMealConsent((fn, args) => serviceClient.rpc(fn, args), userId, path),
+        consent: () =>
+          readMealConsent((fn, args) => serviceClient.rpc(fn, args), userId, path, log),
         reserveBudget: () => reserveMealBudget(budget, path),
         keepBudget: () => budget.keep(),
         async loadDraft(mealId) {

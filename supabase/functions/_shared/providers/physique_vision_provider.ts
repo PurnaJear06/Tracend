@@ -33,6 +33,9 @@ export type PhysiqueVisionConfig = Readonly<{
   apiKey: string;
 }>;
 
+/** The reason (and logged code) for a route whose worst case is above one reservation. */
+export const physiqueVisionRouteUnusable = "physique_vision_route_unusable";
+
 export type PhysiqueVisionResolution =
   | Readonly<{ kind: "ready"; config: PhysiqueVisionConfig }>
   | Readonly<{ kind: "gateway"; route: AiRoute }>
@@ -54,9 +57,11 @@ export function resolvePhysiqueVision(
   }
   const gatewayRoute = route("physique_vision", (name) => environment.get(name));
   if (gatewayRoute) {
-    return gatewayRoute.evaluated
-      ? { kind: "gateway", route: gatewayRoute }
-      : { kind: "off", reason: "physique_vision_not_evaluated" };
+    if (!gatewayRoute.evaluated) return { kind: "off", reason: "physique_vision_not_evaluated" };
+    // A route whose worst case one reservation cannot hold is as good as no route.
+    return physiqueCeilingUsd(gatewayRoute) === null
+      ? { kind: "off", reason: physiqueVisionRouteUnusable }
+      : { kind: "gateway", route: gatewayRoute };
   }
   if ((environment.get("PHYSIQUE_VISION_PROVIDER") || "groq") !== "groq") {
     return { kind: "off", reason: "physique_vision_provider_unsupported" };
@@ -321,11 +326,13 @@ const repairCallPromptTokens = 4_000;
 /**
  * The most one check on this route can cost at list price: the photo call and one text-only
  * correction, each at the dearer of the input and cache-write rates with every output token the
- * route allows. Between the USD 0.001 and 0.50 reserve_ai_budget_v2 accepts.
+ * route allows. At least the USD 0.001 reserve_ai_budget_v2 accepts. null when the worst case
+ * is above the USD 0.50 it accepts, or the model is unknown: such a route is unusable, because
+ * a smaller reservation would under-count the check.
  */
-export function physiqueCeilingUsd(gatewayRoute: AiRoute): number {
+export function physiqueCeilingUsd(gatewayRoute: AiRoute): number | null {
   const spec = modelSpec(gatewayRoute.provider, gatewayRoute.model);
-  if (!spec) return 0.5;
+  if (!spec) return null;
   const cost = (promptTokens: number) => {
     const price = spec.price.longPrompt && promptTokens > spec.price.longPrompt.aboveTokens
       ? spec.price.longPrompt
@@ -334,7 +341,8 @@ export function physiqueCeilingUsd(gatewayRoute: AiRoute): number {
       gatewayRoute.maxOutputTokens * price.output;
   };
   const usd = (cost(photoCallPromptTokens) + cost(repairCallPromptTokens)) / 1_000_000;
-  return Math.min(0.5, Math.max(0.001, Math.ceil(usd * 1_000_000) / 1_000_000));
+  const ceiling = Math.max(0.001, Math.ceil(usd * 1_000_000) / 1_000_000);
+  return ceiling > 0.5 ? null : ceiling;
 }
 
 // A model id the usage table and physique_analyses.model (80 characters) accept.

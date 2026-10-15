@@ -18,6 +18,7 @@ import {
   PhysiqueVisionBilledError,
   PhysiqueVisionError,
   type PhysiqueVisionResolution,
+  physiqueVisionRouteUnusable,
 } from "../_shared/providers/physique_vision_provider.ts";
 
 // POST physique-check (owner-only experiment, AI_SAFETY_SPEC §9).
@@ -135,10 +136,13 @@ function physiqueModel(deps: PhysiqueDeps): PhysiqueModel | null {
   }
   if (resolution.kind === "gateway") {
     const gatewayRoute = resolution.route;
+    const ceilingUsd = physiqueCeilingUsd(gatewayRoute);
+    // Defence in depth: resolvePhysiqueVision already turns such a route off.
+    if (ceilingUsd === null) return null;
     return {
       label: gatewayRoute.providerLabel,
       model: gatewayRoute.model,
-      ceilingUsd: physiqueCeilingUsd(gatewayRoute),
+      ceilingUsd,
       // The notice must name the vendor the route sends to.
       covers: (notice) => notice.vendor === gatewayRoute.vendor,
       ask: (athlete, photos, repair, notice) =>
@@ -201,6 +205,9 @@ export async function handlePhysiqueCheck(
 ): Promise<Response> {
   if (body.schema_version !== "1.0" || !["status", "check"].includes(body.mode as string)) {
     return reply(422, { error: "invalid_physique_request" });
+  }
+  if (deps.resolution.kind === "off" && deps.resolution.reason === physiqueVisionRouteUnusable) {
+    deps.observer.warn(physiqueVisionRouteUnusable, {});
   }
   const enabled = await available(deps);
   if (body.mode === "status") {
