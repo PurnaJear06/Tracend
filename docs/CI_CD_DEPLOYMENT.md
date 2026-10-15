@@ -129,13 +129,17 @@ see it. `scripts/restore-privileges.sh` closes that gap:
 - right after `supabase start` applies this commit's migrations, the drill snapshots the
   privileges;
 - after the backup is stored, the last backup step snapshots the restored database and compares.
-  When this commit adds migrations, it first resets the drill database with
-  `supabase db reset --version <production's latest>` and compares with that state instead. It
+  When this commit adds migrations, it first resets the drill database to production's latest
+  with `supabase db reset --last <pending>` (CLI 2.101.0 reads `--version` as its own version
+  flag) and compares with that state instead. It
   fails if production's history is not a prefix of the local migrations.
 
 A snapshot covers `public` and `private`: schema USAGE and CREATE, function EXECUTE
 (`has_function_privilege`), table, view and sequence privileges for `anon` and `authenticated`,
-and each table's RLS enabled and forced flags. Extension members are skipped. The queries read the
+and each table's RLS enabled and forced flags. Extension members are skipped, and so are event
+trigger functions: no role can call one directly, and Supabase's "enable RLS on new tables" option
+adds one (`public.rls_auto_enable()`) to the project outside the migrations (first seen
+2026-10-15, deploy of `b5f8b63`). The queries read the
 catalogs only, so the log names objects and never rows, as
 `function private.f(p auth.users): anon EXECUTE (migrations: no, restored: yes)`. Any difference
 fails the backup job, so migrations and functions do not deploy; the encrypted backup is already
