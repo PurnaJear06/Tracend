@@ -349,13 +349,7 @@ Add the TestFlight checklist to `docs/BETA_OPERATIONS.md`. Follow `site/PRODUCT.
 
 ## Contract requests
 
-- A1 (2026-10-15), for the lead, Contract 1: `openai_compatible` names an API shape, not a
-  company. A notice whose provider is `openai_compatible` (for example labelled DeepSeek) also
-  matches a route to Groq or a router through the same adapter, so `consentProvider === route.provider`
-  alone cannot tell them apart. Options: notices for `openai_compatible` keep their company in
-  `provider` (`deepseek`, `groq`; the database accepts both) and the gateway maps a route's base URL
-  to that name before comparing; or the contract adds the notice's company to the check. The
-  database supports either; no change in A1.
+None yet.
 
 ## Decisions log
 

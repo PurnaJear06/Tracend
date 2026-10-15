@@ -400,15 +400,17 @@ mock remains the default. Progress-photo vision is an owner-only experiment (§9
 allowlist and notice. Provider and Supabase secret/service-role keys never enter Flutter. Price alone cannot
 qualify a model.
 
-**Provider-neutral data (2026-10-15, coaching platform A1).** The database accepts the AI gateway's
-provider names (`anthropic`, `openai_compatible`) next to today's (`mock`, `gemini`, `groq`,
-`deepseek`) everywhere a run, a usage row or a notice names its provider: the `model_runs` and
-`ai_usage_events` checks, the Coach chat, daily decision, failure, usage and meal-candidate RPCs, and
-the three notice tables. Nothing accepted before is refused. Old vision providers keep their pinned
-models; a run through `anthropic` or `openai_compatible` carries the model its route names (a
-well-formed id of at most 100 characters).
+**Provider-neutral data (2026-10-15, coaching platform A1).** In the database a provider is the
+**vendor** that receives the athlete's data (`anthropic`, `deepseek`, `groq`, `gemini`, and `mock`
+for runs), never the API shape used to reach it: a notice naming DeepSeek must not cover a route
+to Groq, though both are reached through an OpenAI-compatible endpoint, and an evaluation router is
+never stored or named by a notice. `anthropic` is accepted next to today's names everywhere a run, a
+usage row or a notice names its provider: the `model_runs` and `ai_usage_events` checks, the Coach
+chat, daily decision, failure, usage and meal-candidate RPCs, and the three notice tables. Nothing
+accepted before is refused. Old vision vendors keep their pinned models; a Claude run carries the
+model its route names (a well-formed id of at most 100 characters).
 
-- **Notices name a provider.** `ai_consent_notices` and `photo_ai_notices` gain a nullable
+- **Notices name a vendor.** `ai_consent_notices` and `photo_ai_notices` gain a nullable
   `provider`; `meal_photo_ai_notices` already had one. Notices published before are never edited and
   keep a null provider. A provider switch publishes with the overloads that name it:
   `private.publish_ai_notice(version, provider, provider_label, purposes, body)` and
@@ -421,9 +423,10 @@ well-formed id of at most 100 characters).
   `coach_chat` and `library_context` read the coaching notice for `coach_chat`; `daily_decision`
   (and `daily_coaching`) the one for `daily_coaching`; `onboarding_plan` and `onboarding_questions`
   the one for `onboarding_plan`; `meal_vision` the meal photo notice; `physique_vision` (and
-  `progress_vision`) the progress photo notice. A null provider means the athlete agreed to a notice
-  that names no machine-readable provider: the gateway refuses (`consent_provider_mismatch`) until a
-  notice naming the route's provider is published and granted. `has_ai_coaching_consent` and
+  `progress_vision`) the progress photo notice. The gateway compares `provider` with the route's
+  vendor. A null provider means the athlete agreed to a notice that names no machine-readable
+  vendor: the gateway refuses (`consent_provider_mismatch`) until a notice naming the route's vendor
+  is published and granted. `has_ai_coaching_consent` and
   `get_meal_photo_ai_consent` are unchanged.
 
 **Onboarding plans** have their own provider settings and switch without a code change:

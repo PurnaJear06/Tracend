@@ -41,24 +41,25 @@ export type AiConsentFeature =
   | "physique_vision"
   | "library_context";
 
-/// The providers a notice may name.
-export type AiNoticeProvider = "anthropic" | "openai_compatible" | "gemini" | "deepseek" | "groq";
+/// The vendor that receives the athlete's data, as a notice names it. Never an
+/// API shape: a notice naming DeepSeek must not cover a route to Groq, though
+/// both are reached the same way.
+export type AiVendor = "anthropic" | "deepseek" | "groq" | "gemini";
 
-const noticeProviders: ReadonlySet<string> = new Set<AiNoticeProvider>([
+const vendors: ReadonlySet<string> = new Set<AiVendor>([
   "anthropic",
-  "openai_compatible",
-  "gemini",
   "deepseek",
   "groq",
+  "gemini",
 ]);
 
-/// The grant, and the provider and version of the notice current for the
-/// purpose. `provider` is null when that notice names no provider (it predates
-/// provider names) or names one this code does not know: the gateway then
-/// refuses to send.
+/// The grant, and the vendor and version of the notice current for the
+/// purpose. `provider` (the vendor) is null when that notice names none (it
+/// predates vendor names) or names one this code does not know: the gateway
+/// then refuses to send.
 export type AiConsentWithProvider = Readonly<{
   consent: AiCoachingConsent;
-  provider: AiNoticeProvider | null;
+  provider: AiVendor | null;
   noticeVersion: string | null;
 }>;
 
@@ -97,8 +98,8 @@ export async function aiConsentWithProvider(
     if (typeof answer.granted !== "boolean" || version === undefined) {
       return consentUnavailable;
     }
-    const provider = typeof answer.provider === "string" && noticeProviders.has(answer.provider)
-      ? answer.provider as AiNoticeProvider
+    const provider = typeof answer.provider === "string" && vendors.has(answer.provider)
+      ? answer.provider as AiVendor
       : null;
     return {
       consent: answer.granted ? "granted" : "not_granted",

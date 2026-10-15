@@ -81,8 +81,8 @@ select lives_ok($$select public.persist_daily_coaching_result_v2(
     "head_coach":{"final_decision":"Keep the plan.","reason":"Plan active."},
     "evidence":[{"code":"APPROVED_PLAN_ACTIVE","label":"Plan active","source":"policy_evaluation"}],
     "confidence":"low","missing_data":[],"risk_flags":[],"change_proposals":[]}')::jsonb,
-  125, 'openai_compatible', 'deepseek-flash', 320, 84, 0.0001)$$,
-  'a daily decision through an OpenAI-compatible route is stored');
+  125, 'anthropic', 'claude-sonnet-5-5', 320, 84, 0.0001)$$,
+  'a Claude daily decision is stored');
 select throws_ok($$select public.persist_daily_coaching_result_v2(
   'a1100000-0000-4000-8000-000000000001', (select snapshot_id from ids), (select policy_id from ids),
   'a1100000-0000-4000-8000-000000000025', '{}'::jsonb,
@@ -104,9 +104,9 @@ select throws_ok($$select public.persist_failed_coaching_run_v2(
 
 select lives_ok($$select public.persist_failed_coach_chat_run(
   'a1100000-0000-4000-8000-000000000001', (select snapshot_id from ids), (select policy_id from ids),
-  'a1100000-0000-4000-8000-000000000029', 400, 'provider_timeout', 'openai_compatible',
+  'a1100000-0000-4000-8000-000000000029', 400, 'provider_timeout', 'deepseek',
   'deepseek-flash')$$,
-  'a failed Coach chat through an OpenAI-compatible route is recorded');
+  'a failed DeepSeek Coach chat is still recorded');
 select throws_ok($$select public.persist_failed_coach_chat_run(
   'a1100000-0000-4000-8000-000000000001', (select snapshot_id from ids), (select policy_id from ids),
   'a1100000-0000-4000-8000-000000000030', 400, 'provider_timeout', 'acme', 'acme-1')$$,
@@ -119,7 +119,7 @@ select lives_ok($$select public.persist_failed_coach_chat_run_v2(
 
 select is((select array_agg(distinct provider order by provider) from public.model_runs
   where user_id = 'a1100000-0000-4000-8000-000000000001'),
-  array['anthropic','deepseek','groq','openai_compatible'],
+  array['anthropic','deepseek','groq'],
   'model runs keep each provider as given');
 select throws_ok($$insert into public.model_runs(user_id, feature_snapshot_id, policy_evaluation_id,
   idempotency_key, purpose, provider, model, prompt_version, schema_version, status,
@@ -135,14 +135,14 @@ select lives_ok($$select public.record_ai_usage_event('a1100000-0000-4000-8000-0
   'onboarding_plan', 'anthropic', 'claude-sonnet-5-5', 8000, 3000, 0.07, 30000)$$,
   'a Claude onboarding plan records its usage');
 select lives_ok($$select public.record_ai_usage_event('a1100000-0000-4000-8000-000000000001',
-  'onboarding_questions', 'openai_compatible', 'deepseek-flash', 3000, 300, 0.001, 5000)$$,
-  'OpenAI-compatible onboarding questions record their usage');
+  'onboarding_questions', 'deepseek', 'deepseek-flash', 3000, 300, 0.001, 5000)$$,
+  'DeepSeek onboarding questions are still recorded');
 select lives_ok($$select public.record_ai_usage_event('a1100000-0000-4000-8000-000000000001',
   'meal_vision', 'anthropic', 'claude-haiku-5-5', 1500, 400, 0.003, 4000)$$,
   'a Claude meal photo records its usage');
 select lives_ok($$select public.record_ai_usage_event('a1100000-0000-4000-8000-000000000001',
-  'progress_vision', 'openai_compatible', 'qwen/qwen3.8-27b', 4000, 600, 0.002, 9000)$$,
-  'an OpenAI-compatible physique check records its usage');
+  'progress_vision', 'anthropic', 'claude-sonnet-5-5', 4000, 600, 0.002, 9000)$$,
+  'a Claude physique check records its usage');
 select lives_ok($$select public.record_ai_usage_event('a1100000-0000-4000-8000-000000000001',
   'meal_vision', 'groq', 'qwen/qwen3.8-27b', 1200, 400, 0.002, 900)$$,
   'a Groq meal photo is still recorded');
@@ -233,9 +233,9 @@ select ok(public.has_ai_coaching_consent('a1100000-0000-4000-8000-000000000001',
 select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000002', 'coach_chat')->'granted',
   'false'::jsonb, 'another athlete''s grant does not count');
 
-select throws_ok($$select private.publish_ai_notice('ai-coaching-a1-bad', 'acme', 'Acme',
-  array['coach_chat'], 'Test notice.')$$,
-  '23514', null, 'a notice naming an unknown provider is refused');
+select throws_ok($$select private.publish_ai_notice('ai-coaching-a1-bad', 'openai_compatible',
+  'DeepSeek', array['coach_chat'], 'Test notice.')$$,
+  '23514', null, 'a notice must name a vendor, not an API shape');
 select throws_ok($$select private.publish_ai_notice('ai-coaching-a1-none', null, 'Acme',
   array['coach_chat'], 'Test notice.')$$,
   '22023', 'provider required', 'the new publisher requires a provider');
@@ -256,9 +256,9 @@ select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'meal
 select lives_ok($$select private.publish_meal_photo_ai_notice('meal-photo-ai-a1-groq', 'groq',
   'Groq', 'qwen/qwen3.8-27b', 'Test notice.')$$,
   'a Groq meal photo notice is still accepted');
-select lives_ok($$select private.publish_meal_photo_ai_notice('meal-photo-ai-a1-oc',
-  'openai_compatible', 'DeepSeek', 'deepseek-flash', 'Test notice.')$$,
-  'an OpenAI-compatible meal photo notice is accepted');
+select lives_ok($$select private.publish_meal_photo_ai_notice('meal-photo-ai-a1-ds',
+  'deepseek', 'DeepSeek', 'deepseek-flash', 'Test notice.')$$,
+  'a DeepSeek meal photo notice is accepted');
 select lives_ok($$select private.publish_meal_photo_ai_notice('meal-photo-ai-a1', 'anthropic',
   'Claude (Anthropic)', 'claude-haiku-5-5', 'Test notice.')$$,
   'a Claude meal photo notice is accepted');
@@ -315,8 +315,9 @@ select ok(has_function_privilege('service_role',
   'public.reserve_ai_budget_v2(uuid,text,numeric)', 'execute'),
   'the service role reserves budget');
 
-select is((with held as (select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'meal_vision', 0.004) id)
-  select reserved_cost_usd from public.ai_budget_reservations r join held on r.id = held.id),
+create temporary table held_1 as select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'meal_vision', 0.004) id;
+select is((select reserved_cost_usd from public.ai_budget_reservations
+  where id = (select id from held_1)),
   0.004000::numeric(10,6), 'a place holds the caller''s ceiling');
 select throws_ok($$select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003',
   'meal_vision', 0)$$, '22023', 'invalid ceiling', 'a zero ceiling is refused');
@@ -326,26 +327,29 @@ select throws_ok($$select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-0
   'meal_vision', 0.51)$$, '22023', 'invalid ceiling', 'a ceiling above USD 0.50 is refused');
 select throws_ok($$select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003',
   'meal_vision', null)$$, '22023', 'invalid ceiling', 'a missing ceiling is refused');
-select is((with held as (select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'onboarding_plan', 0.50) id)
-  select reserved_cost_usd from public.ai_budget_reservations r join held on r.id = held.id),
+create temporary table held_2 as select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'onboarding_plan', 0.50) id;
+select is((select reserved_cost_usd from public.ai_budget_reservations
+  where id = (select id from held_2)),
   0.500000::numeric(10,6), 'a USD 0.50 ceiling is the most one place holds');
-select is((with held as (select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'coach_chat', 0.0000001) id)
-  select reserved_cost_usd from public.ai_budget_reservations r join held on r.id = held.id),
+create temporary table held_3 as select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'coach_chat', 0.0000001) id;
+select is((select reserved_cost_usd from public.ai_budget_reservations
+  where id = (select id from held_3)),
   0.000001::numeric(10,6), 'a ceiling below a millionth rounds up, never down');
-select is((with held as (
-    select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'physique_vision', 0.03) id
-    union all
-    select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'daily_decision', 0.02)
-    union all
-    select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'library_context', 0.01))
-  select array_agg(r.purpose order by r.purpose) from public.ai_budget_reservations r
-  join held on r.id = held.id),
+create temporary table held_features as
+  select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'physique_vision', 0.03) id
+  union all
+  select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'daily_decision', 0.02)
+  union all
+  select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003', 'library_context', 0.01);
+select is((select array_agg(purpose order by purpose) from public.ai_budget_reservations
+  where id in (select id from held_features)),
   array['coach_chat','daily_coaching','progress_vision'],
   'gateway feature names are stored under today''s purposes');
 select throws_ok($$select public.reserve_ai_budget_v2('a1100000-0000-4000-8000-000000000003',
   'acme', 0.01)$$, '22023', 'invalid purpose', 'an unknown purpose is refused');
-select is((with held as (select public.reserve_ai_budget('a1100000-0000-4000-8000-000000000003', 'meal_vision') id)
-  select reserved_cost_usd from public.ai_budget_reservations r join held on r.id = held.id),
+create temporary table held_4 as select public.reserve_ai_budget('a1100000-0000-4000-8000-000000000003', 'meal_vision') id;
+select is((select reserved_cost_usd from public.ai_budget_reservations
+  where id = (select id from held_4)),
   0.010000::numeric(10,6), 'the original reserve keeps the fixed purpose ceiling');
 
 -- Open places count toward the day's 30 calls.

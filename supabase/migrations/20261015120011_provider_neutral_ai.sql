@@ -1,10 +1,12 @@
 -- Provider-neutral AI data (coaching platform program, chunk A1) -------------------------
 --
--- The AI gateway (Contract 1) routes each feature to `anthropic` (Claude) or
--- `openai_compatible` (DeepSeek, Groq or a router through one OpenAI-style
--- endpoint), as well as `gemini`. Every SQL place that names the providers a
--- run, a usage row or a notice may carry now accepts the two new names next to
--- today's. Nothing that is accepted today is refused, so the deployed Edge
+-- The AI gateway (Contract 1) can route each feature to Claude. In the
+-- database a provider is the vendor that receives the athlete's data
+-- (`anthropic`, `deepseek`, `groq`, `gemini`, and `mock` where it already
+-- existed), never the API shape used to reach it: a notice that names DeepSeek
+-- must not cover a route to Groq. Every SQL place that names the providers a
+-- run, a usage row or a notice may carry now accepts `anthropic` next to
+-- today's names. Nothing accepted today is refused, so the deployed Edge
 -- Functions and the installed app keep working unchanged:
 --
 --   * check constraints: model_runs.provider, ai_usage_events.provider and
@@ -15,18 +17,18 @@
 --     persist_failed_coach_chat_run (persist_failed_coach_chat_run_v2 calls
 --     it), record_ai_usage_event and persist_meal_photo_candidates.
 --
--- Model names stay pinned for the old vision providers. A run through the new
--- providers carries the model the route names, so for them any well-formed
--- model id is accepted (letters, digits and . _ : / -, at most 100).
+-- Model names stay pinned for the old vision vendors. A Claude run carries the
+-- model its route names, so for `anthropic` any well-formed model id is
+-- accepted (letters, digits and . _ : / -, at most 100).
 --
 -- None of the program's frozen functions holds a provider list, so none is
 -- redefined here.
 --
--- Notices gain a machine-readable provider so the gateway can refuse a call to
--- a provider the athlete's notice does not name. Old notices keep a null
+-- Notices gain a machine-readable vendor so the gateway can refuse a call to
+-- a vendor the athlete's notice does not name. Old notices keep a null
 -- provider (never edited); the new publish overloads set it.
 --
--- New: get_ai_consent_v2 (grant, provider and version of a purpose's current
+-- New: get_ai_consent_v2 (grant, vendor and version of a purpose's current
 -- notice) and reserve_ai_budget_v2 (the per-call ceiling comes from the route).
 -- has_ai_coaching_consent and reserve_ai_budget are unchanged.
 
@@ -34,18 +36,18 @@
 
 alter table public.model_runs drop constraint model_runs_provider_check;
 alter table public.model_runs add constraint model_runs_provider_check
-  check (provider in ('mock','gemini','groq','deepseek','anthropic','openai_compatible'));
+  check (provider in ('mock','gemini','groq','deepseek','anthropic'));
 
 alter table public.ai_usage_events drop constraint ai_usage_events_provider_check;
 alter table public.ai_usage_events add constraint ai_usage_events_provider_check
-  check (provider in ('gemini','groq','deepseek','anthropic','openai_compatible'));
+  check (provider in ('gemini','groq','deepseek','anthropic'));
 
 alter table public.ai_usage_events drop constraint ai_usage_events_model_check;
 alter table public.ai_usage_events add constraint ai_usage_events_model_check check (
   (purpose not in ('onboarding_plan','onboarding_questions') and model in
     ('gemini-3.5-flash','qwen/qwen3.6-27b','qwen/qwen3.8-27b','deepseek-v4-flash'))
   or (purpose in ('onboarding_plan','onboarding_questions') and length(model) between 1 and 100)
-  or (provider in ('anthropic','openai_compatible')
+  or (provider = 'anthropic'
     and model ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$')
 );
 
@@ -53,16 +55,16 @@ alter table public.ai_usage_events add constraint ai_usage_events_model_check ch
 
 alter table public.meal_photo_ai_notices drop constraint meal_photo_ai_notices_provider_check;
 alter table public.meal_photo_ai_notices add constraint meal_photo_ai_notices_provider_check
-  check (provider in ('deepseek','groq','gemini','anthropic','openai_compatible'));
+  check (provider in ('deepseek','groq','gemini','anthropic'));
 
 -- Null on every notice published before this migration: they are never edited.
 alter table public.ai_consent_notices add column provider text
   constraint ai_consent_notices_provider_check
-  check (provider in ('deepseek','groq','gemini','anthropic','openai_compatible'));
+  check (provider in ('deepseek','groq','gemini','anthropic'));
 
 alter table public.photo_ai_notices add column provider text
   constraint photo_ai_notices_provider_check
-  check (provider in ('deepseek','groq','gemini','anthropic','openai_compatible'));
+  check (provider in ('deepseek','groq','gemini','anthropic'));
 
 -- The four-argument publishers keep working (provider null). These name it.
 create function private.publish_ai_notice(
@@ -107,9 +109,9 @@ from public, anon, authenticated;
 --   onboarding_plan, onboarding_questions -> ai_coaching notice for onboarding_plan
 --   meal_vision                        -> meal photo notice (meal_photo_ai)
 --   physique_vision, progress_vision   -> progress photo notice (progress_photo_ai)
--- `provider` is null when the current notice predates provider names; the
--- gateway then refuses (consent_provider_mismatch) until a notice naming the
--- provider is published and granted.
+-- `provider` (the vendor) is null when the current notice predates vendor
+-- names; the gateway then refuses (consent_provider_mismatch) until a notice
+-- naming the route's vendor is published and granted.
 create function public.get_ai_consent_v2(target_user_id uuid, consent_purpose text)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -228,7 +230,7 @@ begin
   if jsonb_typeof(answer_payload)<>'object' or length(answer_payload->>'answer') not between 1 and 12000
     or jsonb_typeof(answer_payload->'evidence')<>'array' or jsonb_typeof(answer_payload->'missing_data')<>'array'
     or answer_payload->>'safety_state' not in ('allowed','limited','refused','unavailable')
-    or run_provider not in ('mock','gemini','groq','deepseek','anthropic','openai_compatible') or length(run_model) not between 1 and 120
+    or run_provider not in ('mock','gemini','groq','deepseek','anthropic') or length(run_model) not between 1 and 120
     or run_input_units not between 0 and 1000000 or run_output_units not between 0 and 100000 or run_estimated_cost_usd not between 0 and 100
   then raise exception 'invalid chat result' using errcode='22023'; end if;
   if exists(select 1 from jsonb_array_elements(answer_payload->'evidence') e where not (e ? 'code' and e ? 'label' and e ? 'source')) then raise exception 'invalid evidence' using errcode='22023'; end if;
@@ -256,7 +258,7 @@ declare run_id uuid; decision_id uuid; policy public.policy_evaluations%rowtype;
 begin
   select * into policy from public.policy_evaluations where id=policy_id and user_id=target_user_id and feature_snapshot_id=snapshot_id;
   if not found then raise exception 'policy not found' using errcode='P0002'; end if;
-  if run_provider not in ('mock','gemini','groq','deepseek','anthropic','openai_compatible') or length(run_model) not between 1 and 120
+  if run_provider not in ('mock','gemini','groq','deepseek','anthropic') or length(run_model) not between 1 and 120
     or run_input_units not between 0 and 1000000 or run_output_units not between 0 and 100000
     or run_estimated_cost_usd < 0 or run_estimated_cost_usd > 100
   then raise exception 'invalid provider metadata' using errcode='22023'; end if;
@@ -292,7 +294,7 @@ create or replace function public.persist_failed_coaching_run_v2(
 ) returns uuid language plpgsql security definer set search_path='' as $$
 declare run_id uuid;
 begin
-  if error_code is null or length(error_code) not between 1 and 80 or run_provider not in ('mock','gemini','groq','deepseek','anthropic','openai_compatible') or length(run_model) not between 1 and 120 then raise exception 'invalid failure metadata' using errcode='22023'; end if;
+  if error_code is null or length(error_code) not between 1 and 80 or run_provider not in ('mock','gemini','groq','deepseek','anthropic') or length(run_model) not between 1 and 120 then raise exception 'invalid failure metadata' using errcode='22023'; end if;
   if not exists(select 1 from public.policy_evaluations where id=policy_id and user_id=target_user_id and feature_snapshot_id=snapshot_id) then raise exception 'policy not found' using errcode='P0002'; end if;
   select id into run_id from public.model_runs where user_id=target_user_id and idempotency_key=request_idempotency_key;
   if run_id is not null then return run_id; end if;
@@ -311,7 +313,7 @@ create or replace function public.persist_failed_coach_chat_run(
 declare run_id uuid;
 begin
   if error_code is null or length(error_code) not between 1 and 80
-    or run_provider not in ('mock','gemini','groq','deepseek','anthropic','openai_compatible')
+    or run_provider not in ('mock','gemini','groq','deepseek','anthropic')
     or run_model is null or length(run_model) not between 1 and 120
     or failure_rules is null or cardinality(failure_rules) > 4
     or exists(select 1 from unnest(failure_rules) as r(rule_name) where r.rule_name !~ '^[a-z_]{1,64}$')
@@ -345,13 +347,13 @@ create or replace function public.record_ai_usage_event(
 declare event_id uuid;
 begin
   if run_purpose in ('onboarding_plan','onboarding_questions') then
-    if run_provider not in ('deepseek','groq','gemini','anthropic','openai_compatible')
+    if run_provider not in ('deepseek','groq','gemini','anthropic')
       or length(run_model) not between 1 and 100
     then raise exception 'invalid usage event' using errcode='22023'; end if;
   elsif run_purpose not in ('meal_vision','progress_vision') or
     not ((run_provider='gemini' and run_model='gemini-3.5-flash') or
       (run_provider='groq' and run_model in ('qwen/qwen3.6-27b','qwen/qwen3.8-27b')) or
-      (run_provider in ('anthropic','openai_compatible')
+      (run_provider = 'anthropic'
         and run_model ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$'))
   then raise exception 'invalid usage event' using errcode='22023'; end if;
   insert into public.ai_usage_events(user_id,purpose,provider,model,input_units,output_units,estimated_cost_usd,latency_ms)
@@ -371,7 +373,7 @@ begin
     or jsonb_array_length(candidates) not between 1 and 20 or
     not ((run_provider='gemini' and run_model='gemini-3.5-flash') or
       (run_provider='groq' and run_model in ('qwen/qwen3.6-27b','qwen/qwen3.8-27b')) or
-      (run_provider in ('anthropic','openai_compatible')
+      (run_provider = 'anthropic'
         and run_model ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$'))
   then raise exception 'invalid meal analysis' using errcode='22023'; end if;
   delete from public.meal_analysis_candidates where meal_id=target_meal_id;

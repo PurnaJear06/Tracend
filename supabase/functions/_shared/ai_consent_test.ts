@@ -123,18 +123,18 @@ Deno.test("v2 returns the grant with the notice's provider and version", async (
       answeringV2({
         schema_version: "1.0",
         granted: false,
-        provider: "openai_compatible",
+        provider: "deepseek",
         notice_version: "meal-photo-ai-v2",
       }),
       "u",
       "meal_vision",
     ),
-    { consent: "not_granted", provider: "openai_compatible", noticeVersion: "meal-photo-ai-v2" },
+    { consent: "not_granted", provider: "deepseek", noticeVersion: "meal-photo-ai-v2" },
   );
 });
 
-Deno.test("v2: a notice without a known provider gives no provider", async () => {
-  for (const provider of [null, "someone_else", 7]) {
+Deno.test("v2: a notice without a known vendor gives no provider", async () => {
+  for (const provider of [null, "openai_compatible", "someone_else", 7]) {
     assertEquals(
       await aiConsentWithProvider(
         answeringV2({
