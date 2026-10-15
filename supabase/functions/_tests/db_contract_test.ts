@@ -169,7 +169,7 @@ Deno.test({
       p_sessions: 8,
     });
     assertFalse(!!error, `get_my_exercise_history failed: ${error?.message}`);
-    assertEquals(data.schema_version, "1.0");
+    assertEquals(data.schema_version, "1.1");
     assertEquals(data.sessions_limit, 8);
     assertEquals(data.exercises.length, 2);
     for (const row of data.exercises) {

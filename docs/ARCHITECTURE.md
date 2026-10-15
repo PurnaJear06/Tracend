@@ -314,6 +314,10 @@ Workout logging RPCs (2026-10-03): `start_workout`, `sync_workout_draft`, `compl
 (the athlete's 1–10 session effort; `complete_workout` remains for installed builds and records its
 fixed effort as a default), `abandon_workout`, and `get_my_exercise_history(keys, sessions)` (last
 time, best set and heaviest set per completed session for at most 20 exercises and 12 sessions).
+Since 2026-10-15 (coaching platform C1) each set also carries its start and end, the rest taken
+before it, reps left and who timed it (`sync_workout_draft`, `get_my_workout_session` 1.1,
+`get_my_exercise_history` 1.1), and the logging screen publishes workout events and takes the
+Live Activity's commands (`lib/features/train/workout_events.dart`, program Contract 3).
 
 Coach chat stores owner-scoped threads/messages in PostgreSQL under forced RLS. Since v8
 (2026-09-27) every question follows one path regardless of its wording:

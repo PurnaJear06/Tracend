@@ -137,7 +137,8 @@ or effort, rest guidance, and substitutions.
 For each exercise, the user can record:
 
 - completed/skipped status;
-- set number, repetitions, load, and RPE;
+- set number, repetitions, load, and reps left (reps in reserve, 0 to 5+; older sets carry RPE);
+- when each set started and ended, and the rest taken before it (recorded by the app);
 - optional technique or pump rating;
 - pain flag and note;
 - substitution and reason; and

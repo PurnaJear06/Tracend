@@ -1,4 +1,11 @@
-import { allowedExercises, type CatalogExercise, type MovementPattern } from "./catalog.ts";
+import {
+  allowedExercises,
+  catalogBySlug,
+  type CatalogExercise,
+  type EquipmentItem,
+  type ExerciseRole,
+  type MovementPattern,
+} from "./catalog.ts";
 import type { OnboardingPlan, PlanExercise, PlanPolicies, PlanWorkout } from "./plan_contract.ts";
 import { estimateWorkoutMinutes, nutritionBounds, type Split } from "./policy.ts";
 
@@ -8,6 +15,71 @@ import { estimateWorkoutMinutes, nutritionBounds, type Split } from "./policy.ts
 // fails validation after one repair, so every athlete gets a valid plan.
 
 type Slot = readonly MovementPattern[];
+type Experience = PlanPolicies["answers"]["experience"];
+
+// Equipment for a movement, most preferred first. An experienced lifter starts
+// from the barbell; a beginner from dumbbells and machines, which take less
+// skill to load safely, then the barbell.
+const equipmentPreference: Readonly<Record<Experience, readonly EquipmentItem[]>> = {
+  intermediate: [
+    "barbell",
+    "dumbbells",
+    "pull_up_bar",
+    "machines",
+    "cables",
+    "kettlebells",
+    "bands",
+  ],
+  beginner: ["dumbbells", "machines", "barbell", "cables", "kettlebells", "bands", "pull_up_bar"],
+};
+
+function equipmentRank(exercise: CatalogExercise, experience: Experience): number {
+  const order = equipmentPreference[experience];
+  const ranks = exercise.equipment.map((item) => order.indexOf(item)).filter((rank) => rank >= 0);
+  return ranks.length ? Math.min(...ranks) : order.length;
+}
+
+// A bench or a pull-up bar only holds the body, so an exercise that needs
+// nothing else is bodyweight.
+const supportOnly: readonly EquipmentItem[] = ["bench", "pull_up_bar"];
+
+function isBodyweight(exercise: CatalogExercise): boolean {
+  return exercise.equipment.every((item) => supportOnly.includes(item));
+}
+
+// The database catalog carries no role, so it is read from catalog.ts by slug.
+function roleOf(exercise: CatalogExercise): ExerciseRole | undefined {
+  return catalogBySlug.get(exercise.slug)?.role;
+}
+
+/**
+ * The athlete's exercises, best first: loaded before bodyweight, compound
+ * before isolation, a regression only after every other form, preferred
+ * equipment for their experience, the standard form before a variation, then
+ * slug, so the database catalog (read in slug order) and catalog.ts rank the
+ * same way.
+ */
+function rankExercises(
+  exercises: readonly CatalogExercise[],
+  experience: Experience,
+): CatalogExercise[] {
+  const key = (exercise: CatalogExercise) => [
+    isBodyweight(exercise) ? 1 : 0,
+    exercise.compound ? 0 : 1,
+    roleOf(exercise) === "regression" ? 1 : 0,
+    equipmentRank(exercise, experience),
+    roleOf(exercise) === "variation" ? 1 : 0,
+  ];
+  return [...exercises].sort((a, b) =>
+    compareKeys(key(a), key(b)) || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0)
+  );
+}
+
+// Compares two ranking keys position by position; 0 when they are equal.
+function compareKeys(left: readonly number[], right: readonly number[]): number {
+  const index = left.findIndex((value, position) => value !== right[position]);
+  return index >= 0 ? left[index] - right[index] : 0;
+}
 
 // When a slot has nothing the athlete can do (equipment, or a movement they
 // avoid), its sibling pattern fills it, so a day keeps its balance.
@@ -301,11 +373,14 @@ function topUpPriorities(
 
 export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
   const { answers, training, nutrition } = policies;
-  const allowed = allowedExercises(
-    policies.catalog,
-    answers.equipment,
+  const allowed = rankExercises(
+    allowedExercises(
+      policies.catalog,
+      answers.equipment,
+      answers.experience,
+      answers.avoidPatterns,
+    ),
     answers.experience,
-    answers.avoidPatterns,
   );
   const days = templates[training.split](answers.trainingWeekdays.length);
   const usedThisWeek = new Set<string>();
@@ -329,12 +404,30 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
           )
         );
       const own = fill(slot);
-      const candidates = own.length
-        ? own
-        : fill(slot.flatMap((pattern) => substitutes[pattern] ?? []));
-      const choice = candidates.find((exercise) => !usedThisWeek.has(exercise.slug)) ??
-        candidates[0];
-      if (!choice) continue;
+      const pool = own.length ? own : fill(slot.flatMap((pattern) => substitutes[pattern] ?? []));
+      // An exercise for a focus muscle still short of its weekly minimum comes
+      // first, the least-served focus muscle (then the athlete's focus order)
+      // before the others, then a loaded exercise before a bodyweight one;
+      // otherwise the slot's pattern order holds.
+      const focus = training.priorityMinimums;
+      const grade = (exercise: CatalogExercise) => {
+        const index = focus.findIndex((item) =>
+          item.muscle === exercise.muscles[0] && (weeklySets.get(item.muscle) ?? 0) < item.sets
+        );
+        const served = index >= 0 ? weeklySets.get(focus[index].muscle) ?? 0 : Infinity;
+        return [served, index >= 0 ? index : focus.length, isBodyweight(exercise) ? 1 : 0];
+      };
+      const candidates = pool.sort((a, b) => compareKeys(grade(a), grade(b)));
+      const top = candidates[0];
+      if (!top) continue;
+      // An exercise not used yet this week adds variety, but never at the cost
+      // of a focus muscle, by dropping from loaded to bodyweight, or to a
+      // regression.
+      const choice = candidates.find((exercise) =>
+        !usedThisWeek.has(exercise.slug) &&
+        (exercise === top ||
+          compareKeys(grade(exercise), grade(top)) === 0 && roleOf(exercise) !== "regression")
+      ) ?? top;
       const target = choice.muscles[0];
       const room = Math.min(
         training.setBudgetPerSession - sessionSets,

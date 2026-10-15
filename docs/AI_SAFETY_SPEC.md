@@ -400,6 +400,38 @@ mock remains the default. Progress-photo vision is an owner-only experiment (§9
 allowlist and notice. Provider and Supabase secret/service-role keys never enter Flutter. Price alone cannot
 qualify a model.
 
+**Provider-neutral data (2026-10-15, coaching platform A1).** In the database a provider is the
+**vendor** that receives the athlete's data (`anthropic`, `deepseek`, `groq`, `gemini`, and `mock`
+for runs), never the API shape used to reach it: a notice naming DeepSeek must not cover a route
+to Groq, though both are reached through an OpenAI-compatible endpoint, and an evaluation router is
+never stored or named by a notice. `anthropic` is accepted next to today's names everywhere a run, a
+usage row or a notice names its provider: the `model_runs` and `ai_usage_events` checks, the Coach
+chat, daily decision, failure, usage and meal-candidate RPCs, and the three notice tables. Nothing
+accepted before is refused. Old vision vendors keep their pinned models; a Claude run carries the
+model its route names (a well-formed id of at most 100 characters).
+
+- **Notices name a vendor.** `ai_consent_notices` and `photo_ai_notices` gain a nullable
+  `provider`; `meal_photo_ai_notices` already had one. Notices published before are never edited and
+  keep a null provider. A provider switch publishes with the overloads that name it:
+  `private.publish_ai_notice(version, provider, provider_label, purposes, body)` and
+  `private.publish_photo_ai_notice(version, provider, provider_label, model, body)` (the meal photo
+  publisher already takes one). The four-argument publishers still work. Every publisher that
+  names a provider refuses a `provider_label` that does not name that provider's company
+  (Anthropic, DeepSeek, Groq, Google; case ignored) or also names another, so the athlete never
+  agrees to one company while the gateway sends to another.
+- **The gateway checks the provider.** `get_ai_consent_v2(target_user_id, consent_purpose)`
+  (service role) returns `{schema_version, granted, provider, notice_version}` for the notice current
+  for the purpose (`aiConsentWithProvider` in `_shared/ai_consent.ts`, which never throws and answers
+  `unavailable` on any failure). Purposes are the gateway's features plus today's names:
+  `coach_chat` and `library_context` read the coaching notice for `coach_chat`; `daily_decision`
+  (and `daily_coaching`) the one for `daily_coaching`; `onboarding_plan` and `onboarding_questions`
+  the one for `onboarding_plan`; `meal_vision` the meal photo notice; `physique_vision` (and
+  `progress_vision`) the progress photo notice. The gateway compares `provider` with the route's
+  vendor. A null provider means the athlete agreed to a notice that names no machine-readable
+  vendor: the gateway refuses (`consent_provider_mismatch`) until a notice naming the route's vendor
+  is published and granted. `has_ai_coaching_consent` and
+  `get_meal_photo_ai_consent` are unchanged.
+
 **Onboarding plans** have their own provider settings and switch without a code change:
 
 - **Settings:**
@@ -464,6 +496,24 @@ Prior providers: Gemini `gemini-3.5-flash` and Groq Qwen `qwen/qwen3.6-27b` (bot
 pending evaluation). Lite models are rejected by production configuration. Cost control must not
 bypass visible-food, mixed-dish, hidden-ingredient, portion-uncertainty, prompt-injection,
 schema-validity, or user-correction evaluations. Routing changes require regression results.
+
+**AI gateway** (2026-10, coaching platform program Contract 1; not used by any feature yet):
+`_shared/ai/` is the one path for model calls once features move to it.
+- Settings are per feature (`AI_<FEATURE>_*` plus the provider key); a missing or invalid setting,
+  or a model without a known price, gives no route, and the feature keeps its rules path.
+- `call()` sends nothing when the vendor named by the athlete's accepted notice (Anthropic,
+  DeepSeek, Groq, Google) differs from the route's. DeepSeek and Groq are reached only on their
+  own hosts. Synthetic evals may go through an OpenAI-compatible router (`AI_<FEATURE>_VENDOR=router`);
+  no notice names the router, so no athlete's data can reach it.
+- Notice labels name the company only, never a model (D11).
+- Requests to Claude 5 models never carry `temperature`, `top_p`, tools or a forced
+  `tool_choice`; structured output uses `output_config.format`. DeepSeek, Groq and Gemini routes
+  send what today's providers send (temperature 0.1 without thinking, the schema restated in JSON
+  mode), so a rollback by settings behaves as before. Every JSON answer is checked
+  against the schema by the gateway (`invalid_output` otherwise), whatever the provider enforced.
+- A provider refusal is `refused` and never retried by the gateway; budget stays the caller's job.
+- One scrubbed `ai_call` log line per call: feature, provider, model, outcome, token counts, cost
+  and latency; never prompt, image, reply or provider error text.
 
 Conversational answers may explain only supplied structured evidence, must state missing data, and
 expose evidence references. The model receives at most 20 recent messages and no tools.

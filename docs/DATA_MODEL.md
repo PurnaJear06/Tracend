@@ -119,6 +119,15 @@ never edited. `ai_notice_current` names the current notice for each purpose, one
 `ai_coaching` consent counts for a purpose only when its `notice_version` is that purpose's current
 version.
 
+Since 2026-10-15 a notice may also carry `provider`: the vendor that receives the data
+(`anthropic`, `deepseek`, `groq` or `gemini`), which the gateway compares with its route's vendor.
+It is never an API shape such as an OpenAI-compatible endpoint, since one shape reaches several
+vendors. It is null on notices published before; the five-argument `private.publish_ai_notice(version, provider,
+provider_label, purposes, body)` sets it and refuses (22023) a `provider_label` that does not name
+the provider's company (Anthropic, DeepSeek, Groq, Google; case ignored) or names another one.
+`get_ai_consent_v2` (service role) returns the grant, provider and version of the notice current
+for a purpose or gateway feature.
+
 ### `user_profiles`
 
 One row per user containing adult-attestation timestamp, height, experience level, training
@@ -349,6 +358,37 @@ substitutions, extras) are keyed by their lowercased, trimmed name. Assisted exe
 Set number, type, repetitions, load, RPE, completion, and rest duration. Ordering is unique within
 an exercise performance.
 
+Set timing and reps left (2026-10-15, migration `20261015140031_set_timing.sql`, all nullable):
+
+| Column | Type | Rule |
+|---|---|---|
+| `started_at` | timestamptz | when the set began (see below) |
+| `completed_at` | timestamptz | when it was ticked; `>= started_at` |
+| `rest_before_seconds` | integer | rest taken from the previous tick to `started_at`, 0–3600 |
+| `rir` | smallint | reps in reserve 0–5 (5 means 5 or more) |
+| `timing_source` | text | `app` or `watch` |
+
+A set begins at the end of the rest before it (Skip, or the timer's end), else at the athlete's
+first edit of its kg or reps outside a rest. It has no start when it was ticked during its rest or
+without an edit, and no rest when the gap is longer than an hour. The app takes every time from the
+wall clock, so a rest that ran out while the phone slept ended at its stored end time. Undo clears
+a set's times and re-measures any rest counted from its tick.
+
+When the athlete picks reps left, the app also writes `rpe = 10 − rir`, the value the same answer
+meant on the earlier 1–10 picker, so RPE readers (Coach context) stay consistent.
+
+`sync_workout_draft` keeps a stored value when a set omits the key (installed builds send none),
+clears it on an explicit null, and refuses (22023) a malformed value, a time more than 10 minutes
+in the future or more than 10 minutes before the session's recorded start, and an end before the
+start. Set times from before the server's recorded start stay on the phone and are never sent (a
+workout started offline). A set sends only the keys it knows: one restored from a draft without
+them (saved by an older build) sends none until the athlete ticks, un-ticks or answers reps left on
+it, so it never clears times or reps left another device stored; un-ticking sends explicit nulls. If the server still refuses the times (a phone clock more than 10 minutes
+off), the app sends the same draft again without the five keys and syncs the rest of that workout
+without them; the reps left still arrive as the matching RPE. A workout whose final sync is
+refused is not finished. `get_my_workout_session` 1.1 and `get_my_exercise_history` 1.1 (last
+session's sets) return the five fields; the privacy export selects every column.
+
 ### `workout_amendments`
 
 Append-only corrections to completed records containing field, old/new value, reason, actor, and
@@ -449,7 +489,12 @@ analyses first; both are in the privacy export.
 The progress-photo AI notice the athlete grants before a physique check: version, provider label,
 model, body. The newest is current; published by migration or `private.publish_photo_ai_notice`,
 never edited. A grant is a `consent_records` row of type `progress_photo_ai` naming the version
-(`has_photo_ai_consent`, `get_my_photo_ai_notice`).
+(`has_photo_ai_consent`, `get_my_photo_ai_notice`). Since 2026-10-15 a notice may carry `provider`
+(same values as `ai_consent_notices.provider`; null on earlier notices), set by the five-argument
+`private.publish_photo_ai_notice(version, provider, provider_label, model, body)`. The meal photo
+notice table (`meal_photo_ai_notices`, consent type `meal_photo_ai`) works the same way and has always
+named its provider; it now also accepts `deepseek` and `anthropic`. All three publishers that name a
+provider apply the same label check as `private.publish_ai_notice`.
 
 ### `progress_reviews`
 
@@ -526,7 +571,15 @@ codes, permitted/prohibited actions, escalation code, and time.
 
 Operational record containing user, purpose, provider, model, prompt/schema versions, feature and
 policy references, provider request ID, status, usage, latency, cost estimate, validation result,
-retry lineage, and sanitized error. It never stores provider secrets.
+retry lineage, and sanitized error. It never stores provider secrets. `provider` is one of `mock`,
+`gemini`, `groq`, `deepseek` or `anthropic` (since 2026-10-15), the vendor that received the data;
+`ai_usage_events.provider` takes the same names except `mock`. Model ids are pinned for the old
+vision vendors; usage through `anthropic` carries any well-formed model id
+(letters, digits and `. _ : / -`, at most 100).
+
+`ai_budget_reservations` holds a call's place in the AI budget until its usage is recorded
+(COST_MODEL). `reserve_ai_budget` holds the purpose's fixed ceiling; `reserve_ai_budget_v2` holds
+the caller's route ceiling (USD 0.001 to 0.50).
 
 Account usage summaries are computed from user-scoped `model_runs` through a restricted aggregate
 query or RPC; they are not a second source of truth and must omit prompts, provider request
