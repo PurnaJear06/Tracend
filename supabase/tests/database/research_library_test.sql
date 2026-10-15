@@ -1,5 +1,5 @@
 begin;
-select plan(52);
+select plan(66);
 
 -- A 384-dimension vector with weight w at position i and (1 - w) at position j.
 create function pg_temp.vec(i integer, j integer default null, w real default 1)
@@ -84,25 +84,25 @@ values
   ('00000000-0000-4000-8000-0000000000a3', 'test-sleep-us', 'Sleep source (US)', 2022,
     'https://example.test/sleep', 'In-house summary', '{US}', '{sleep}', 'summary');
 
-insert into private.library_chunks (id, source_id, ordinal, section, header, body, token_count, embedding)
+insert into private.library_chunks (id, source_id, ordinal, section, header, body, token_count, embedding, embedding_model)
 values
   -- Found by both searches: second by text, second by vector.
   ('00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000a1', 0, 'Results',
-    'Strength source: results', 'Creatine loading raised muscle stores within a week.', 12, pg_temp.vec(1, 2, 0.7)),
+    'Strength source: results', 'Creatine loading raised muscle stores within a week.', 12, pg_temp.vec(1, 2, 0.7), 'gte-small'),
   -- Keyword only: the best text match, never embedded.
   ('00000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-0000000000a2', 0, 'Supplements',
     'Creatine loading', 'Creatine loading protocols: creatine loading for five days, then a daily dose. Creatine loading is optional.',
-    24, null),
+    24, null, null),
   -- Vector only: the nearest embedding, no shared words.
   ('00000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-0000000000a3', 0, 'Sleep',
-    'Sleep source: sleep', 'Sleep extension improved sprint times in athletes.', 10, pg_temp.vec(1)),
+    'Sleep source: sleep', 'Sleep extension improved sprint times in athletes.', 10, pg_temp.vec(1), 'gte-small'),
   ('00000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-0000000000a3', 1, 'Sleep',
-    'Sleep source: sleep', 'Creatine and sleep deprivation in shift workers.', 9, pg_temp.vec(3));
+    'Sleep source: sleep', 'Creatine and sleep deprivation in shift workers.', 9, pg_temp.vec(3), 'gte-small');
 
 -- Filler chunks so more than 8 candidates exist.
-insert into private.library_chunks (source_id, ordinal, header, body, token_count, embedding)
+insert into private.library_chunks (source_id, ordinal, header, body, token_count, embedding, embedding_model)
 select '00000000-0000-4000-8000-0000000000a1', n, 'Strength source: methods',
-  'Bench press technique cue number ' || n || '.', 8, pg_temp.vec(10 + n)
+  'Bench press technique cue number ' || n || '.', 8, pg_temp.vec(10 + n), 'gte-small'
 from generate_series(1, 6) n;
 
 select ok((select fts @@ to_tsquery('english', 'results') and fts @@ to_tsquery('english', 'raised')
@@ -165,6 +165,12 @@ select is((select count(*) from public.search_library_v1('  ', null, 8, null)), 
   'no text and no embedding returns nothing');
 select is((select count(*) from public.search_library_v1('the and of', null, 8, null)), 0::bigint,
   'a query of stop words alone returns nothing');
+select is((select count(*) from public.search_library_v1('-creatine', null, 8, null)), 0::bigint,
+  'a query of negations alone returns nothing');
+select is(
+  (select chunk_id from public.search_library_v1('creatine loading' || repeat(' the', 300) || ' bench', null, 1, null)),
+  '00000000-0000-4000-8000-000000000002'::uuid,
+  'only the first 1000 characters of a long query are used (the trailing word is ignored)');
 
 -- Filters
 select is(
@@ -189,6 +195,68 @@ select throws_ok($$select * from public.search_library_v1('creatine', '[1,2,3]':
   '22000', 'expected 384 dimensions, not 3', 'a vector value of the wrong size is refused too');
 
 reset role;
+
+-- Constraints -----------------------------------------------------------------------------
+select throws_ok($$insert into private.library_sources (manifest_key, title, licence, region, kind)
+  values ('bad-empty-region', 'T', 'CC BY 4.0', '{}', 'paper')$$, '23514', null, 'a source needs at least one region');
+select throws_ok($$insert into private.library_sources (manifest_key, title, licence, kind)
+  values ('bad-no-region', 'T', 'CC BY 4.0', 'paper')$$, '23502', null, 'region has no default');
+select throws_ok($$insert into private.library_sources (manifest_key, title, licence, region, kind)
+  values ('bad-lower-region', 'T', 'CC BY 4.0', '{in}', 'paper')$$, '23514', null, 'regions are upper-case codes');
+select throws_ok($$insert into private.library_sources (manifest_key, title, licence, region, kind)
+  values ('bad-null-region', 'T', 'CC BY 4.0', array['global', null], 'paper')$$, '23514', null, 'a null region entry is refused');
+select throws_ok($$insert into private.library_sources (manifest_key, title, licence, region, kind)
+  values ('bad-name-region', 'T', 'CC BY 4.0', '{India}', 'paper')$$, '23514', null, 'regions are codes, not names');
+select lives_ok($$insert into private.library_sources (manifest_key, title, licence, region, kind)
+  values ('ok-region', 'T', 'CC BY 4.0', '{global,IN,GB}', 'paper')$$, 'global and two-letter codes are accepted');
+select throws_ok($$insert into private.library_chunks (source_id, ordinal, body, token_count, embedding)
+  values ('00000000-0000-4000-8000-0000000000a1', 99, 'x', 1, pg_temp.vec(1))$$, '23514', null,
+  'an embedding needs its model');
+select throws_ok($$insert into private.library_chunks (source_id, ordinal, body, token_count, embedding_model)
+  values ('00000000-0000-4000-8000-0000000000a1', 99, 'x', 1, 'gte-small')$$, '23514', null,
+  'a model without an embedding is refused');
+
+-- Dump-safe signatures ----------------------------------------------------------------------
+-- `supabase db dump` drops every GRANT/REVOKE line that names a quoted identifier from its
+-- excluded-schema list after ON (CLI 2.101.0 dump script). A restored dump then leaves such a
+-- function with Supabase's default grants. A function's GRANT line holds its name and its input
+-- arguments' names and types, so none of them may come from (or be named like) those schemas.
+create temp table dump_excluded on commit drop as
+select '^(information_schema|pg_*|_analytics|_realtime|_supavisor|auth|etl|extensions|pgbouncer|realtime|storage|supabase_functions|supabase_migrations|cron|dbdev|graphql|graphql_public|net|pgmq|pgsodium|pgsodium_masks|pgtle|repack|tiger|tiger_data|timescaledb_*|_timescaledb_*|topology|vault)$'::text as pattern;
+select is(
+  (select array_agg(distinct p.oid::regprocedure::text order by p.oid::regprocedure::text)
+   from pg_proc p
+   join pg_namespace fn on fn.oid = p.pronamespace
+   cross join lateral unnest(p.proargtypes::oid[]) as arg(type_oid)
+   join pg_type t on t.oid = arg.type_oid
+   join pg_namespace tn on tn.oid = t.typnamespace
+   where fn.nspname in ('public', 'private') and tn.nspname ~ (select pattern from dump_excluded)),
+  null,
+  'no public or private function takes an argument whose type lives in a dump-excluded schema');
+select is(
+  (select array_agg(distinct p.oid::regprocedure::text order by p.oid::regprocedure::text)
+   from pg_proc p
+   join pg_namespace fn on fn.oid = p.pronamespace
+   cross join lateral unnest(coalesce(p.proargnames, '{}'), coalesce(p.proargmodes, '{}'))
+     as arg(arg_name, arg_mode)
+   where fn.nspname in ('public', 'private')
+     and (arg.arg_mode is null or arg.arg_mode in ('i', 'b', 'v'))
+     and arg.arg_name ~ (select pattern from dump_excluded)),
+  null,
+  'no public or private function has an input argument named like a dump-excluded schema');
+select is(
+  (select array_agg(p.oid::regprocedure::text order by p.oid::regprocedure::text)
+   from pg_proc p join pg_namespace fn on fn.oid = p.pronamespace
+   where fn.nspname in ('public', 'private') and p.proname ~ (select pattern from dump_excluded)),
+  null,
+  'no public or private function is named like a dump-excluded schema');
+select is(
+  (select array_agg(n.nspname || '.' || c.relname order by n.nspname, c.relname)
+   from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname in ('public', 'private') and c.relkind in ('r', 'p', 'v', 'm', 'S', 'f')
+     and c.relname ~ (select pattern from dump_excluded)),
+  null,
+  'no public or private table, view or sequence is named like a dump-excluded schema');
 
 -- Deleting a source removes its chunks.
 delete from private.library_sources where id = '00000000-0000-4000-8000-0000000000a3';

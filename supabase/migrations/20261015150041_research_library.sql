@@ -13,6 +13,19 @@
 
 create extension if not exists vector with schema extensions;
 
+-- True when every entry is 'global' or an ISO 3166-1 alpha-2 code ('IN', 'US', 'GB', 'AU').
+-- An empty array or a null entry is invalid.
+create function private.library_regions_valid(regions text[])
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(bool_and(coalesce(r ~ '^(global|[A-Z]{2})$', false)), false)
+  from unnest(regions) as r
+$$;
+revoke all on function private.library_regions_valid(text[]) from public, anon, authenticated, service_role;
+
 create table private.library_sources (
   id uuid primary key default gen_random_uuid(),
   -- Stable key from the ingestion manifest; re-ingesting a source replaces it by this key.
@@ -24,8 +37,10 @@ create table private.library_sources (
   url text check (url ~ '^https://' and length(url) <= 2000),
   -- Every source records the licence it is stored under; paid course material is never stored.
   licence text not null check (length(btrim(licence)) between 1 and 200),
-  -- Regions the source applies to (for example 'global', 'IN', 'US', 'UK', 'AU') and its topics.
-  region text[] not null default '{}',
+  -- Regions the source applies to: 'global' for sources that apply everywhere, otherwise
+  -- ISO 3166-1 alpha-2 codes ('IN', 'US', 'GB', 'AU'). Regional callers filter with
+  -- ['global', '<code>']. Topics are free tags used by search filters.
+  region text[] not null check (cardinality(region) > 0 and private.library_regions_valid(region)),
   topics text[] not null default '{}',
   evidence_level text check (length(btrim(evidence_level)) between 1 and 100),
   kind text not null check (kind in ('paper', 'guideline', 'position_stand', 'summary')),
@@ -44,11 +59,15 @@ create table private.library_chunks (
   token_count integer not null check (token_count between 1 and 2000),
   -- Null until embedded; a chunk without an embedding is still found by full-text search.
   embedding extensions.vector(384),
+  -- The model that produced the embedding (for example 'gte-small'), so a later model change
+  -- can re-embed only the chunks it affects. Set exactly when embedding is set.
+  embedding_model text check (length(btrim(embedding_model)) between 1 and 100),
   fts tsvector generated always as (
     to_tsvector('english', coalesce(header, '') || ' ' || body)
   ) stored,
   created_at timestamptz not null default now(),
-  unique (source_id, ordinal)
+  unique (source_id, ordinal),
+  check ((embedding is null) = (embedding_model is null))
 );
 -- The unique (source_id, ordinal) index also serves lookups and cascades by source_id.
 create index library_chunks_embedding_hnsw on private.library_chunks
@@ -90,7 +109,8 @@ create domain public.library_embedding as extensions.vector(384);
 -- ts_rank_cd) and the 30 nearest embeddings (cosine distance), merged by reciprocal rank
 -- fusion with k = 60. A chunk found by both lists outranks one found by either alone.
 --
---   query_text       free text; null or blank skips full-text search
+--   query_text       free text, first 1000 characters used; null, blank, stop words only or
+--                    negation only skips full-text search
 --   query_embedding  gte-small vector of 384 dimensions (other sizes raise 22000); null
 --                    skips vector search
 --   match_count      clamped to 1..8; null means 8
@@ -167,9 +187,9 @@ begin
   end if;
 
   if length(btrim(coalesce(query_text, ''))) > 0 then
-    text_query := websearch_to_tsquery('english', query_text);
-    -- Only stop words: nothing to match.
-    if numnode(text_query) = 0 then
+    text_query := websearch_to_tsquery('english', left(query_text, 1000));
+    -- Only stop words, or only negations ('-creatine'): nothing an index can match.
+    if numnode(text_query) = 0 or querytree(text_query) = 'T' then
       text_query := null;
     end if;
   end if;
