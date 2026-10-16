@@ -24,6 +24,13 @@ export type StoredMealCandidate = Omit<MealCandidate, "assumptions" | "question"
 
 export type MealPhotoConsent = Readonly<{ granted: boolean; provider: string | null }>;
 
+/** Sends one photo; consentedProvider is the vendor the athlete's granted notice names. */
+export type MealAnalyze = (
+  bytes: Uint8Array,
+  contentType: string,
+  consentedProvider: string | null,
+) => Promise<MealVisionResult>;
+
 export interface MealAnalyzeStore {
   /** The grant and the provider the current notice names; null when unknown. */
   consent(): Promise<MealPhotoConsent | null>;
@@ -51,8 +58,9 @@ export type MealAnalyzeLog = Readonly<{
 
 export type MealAnalyzeDependencies = Readonly<{
   userId: string;
-  provider: "groq" | "gemini";
-  analyze: (bytes: Uint8Array, contentType: string) => Promise<MealVisionResult>;
+  /** The vendor that receives the photo: groq or gemini today, anthropic through the gateway. */
+  provider: string;
+  analyze: MealAnalyze;
   store: MealAnalyzeStore;
   log: MealAnalyzeLog;
   report: (error: unknown, mealId: string) => void;
@@ -62,7 +70,7 @@ export type MealAnalyzeDependencies = Readonly<{
 // Errors raised before the provider was reached, or a refusal it answered
 // without billing.
 const unbilled =
-  /^(meal_vision_disabled|meal_vision_configuration_invalid|meal_image_invalid|meal_vision_request_failed)/;
+  /^(meal_vision_disabled|meal_vision_configuration_invalid|meal_image_invalid|meal_vision_request_failed|meal_vision_busy$)/;
 
 export async function handleMealAnalyze(
   body: unknown,
@@ -99,7 +107,7 @@ export async function handleMealAnalyze(
   if (!image) return reply(503, { error: "meal_image_unavailable" });
   let result: MealVisionResult;
   try {
-    result = await dependencies.analyze(image, draft.contentType);
+    result = await dependencies.analyze(image, draft.contentType, consent.provider);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof MealVisionBilledError) {
@@ -107,8 +115,9 @@ export async function handleMealAnalyze(
     } else if (!unbilled.test(message)) {
       store.keepBudget();
     }
-    if (message.startsWith("meal_vision_request_failed:429:")) {
-      // Groq's free tier allows about one photo a minute. Busy, not broken.
+    if (message.startsWith("meal_vision_request_failed:429:") || message === "meal_vision_busy") {
+      // Groq's free tier allows about one photo a minute, and any provider may
+      // ask to wait (rate limited or overloaded). Busy, not broken.
       log.warn("meal_analysis_busy", { detail: message });
       return reply(429, { error: "meal_vision_busy" });
     }
