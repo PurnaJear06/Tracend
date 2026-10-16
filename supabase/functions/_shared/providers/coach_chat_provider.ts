@@ -1389,6 +1389,18 @@ export function isCoachChatLiveProviderConfigured(
     environment.get("GEMINI_MODEL") === "gemini-3.5-flash";
 }
 
+/**
+ * The vendor today's path sends the athlete's data to, or null when it sends nothing (mock, or a
+ * provider that is not fully configured, which fails before any request).
+ */
+export function legacyCoachChatVendor(
+  environment: Pick<typeof Deno.env, "get">,
+): "deepseek" | "groq" | "gemini" | null {
+  if (!isCoachChatLiveProviderConfigured(environment)) return null;
+  const provider = environment.get("COACH_MODEL_PROVIDER");
+  return provider === "deepseek" || provider === "groq" || provider === "gemini" ? provider : null;
+}
+
 export async function generateCoachChat(
   question: string,
   context: Record<string, unknown>,

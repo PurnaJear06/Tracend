@@ -205,6 +205,7 @@ first and repair, recorded from the pre-A6 code).
   8,012. Clarifying question when a detail was missing: Haiku 0/6, Sonnet 2/4 (reported, not
   gated). Recommendation: Haiku 5.5 (every gate, about 25 times cheaper and twice as fast);
   Sonnet 5.5 is the settings-only upgrade if the owner wants more clarifying questions.
+- **Fallback consent** (privacy rule): whenever the route is not used (no route, `EVALUATED=false`, over USD 0.50, unknown model, or the D1 rollback), today's provider is DeepSeek, Groq or Gemini (`legacyCoachChatVendor`, from `COACH_MODEL_PROVIDER`), so the current Coach notice must name that vendor (`get_ai_consent_v2`); a notice naming another vendor (Anthropic after cutover) answers 403 `ai_consent_required`, with nothing sent and nothing reserved. A null provider counts as the legacy vendor: A1 added the column without a backfill, so every notice published before A1 (today's production notice, which names its vendor only in `provider_label`) is null, and today's behaviour must stay byte-identical. Mock or unconfigured providers send nothing and keep the generic consent check.
 - **For A7**: suggested settings `AI_COACH_CHAT_PROVIDER=anthropic`, `MODEL=claude-haiku-5-5`,
   `MAX_OUTPUT_TOKENS=4096`, `TIMEOUT_MS=30000`, `EVALUATED=true`. With `EVALUATED` not `true`
   Coach chat behaves as if there were no route (today's path). Without an Anthropic-named Coach

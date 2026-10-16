@@ -1,5 +1,8 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
-import { CoachChatUnavailableError } from "../_shared/providers/coach_chat_provider.ts";
+import {
+  CoachChatUnavailableError,
+  legacyCoachChatVendor,
+} from "../_shared/providers/coach_chat_provider.ts";
 import { buildCoachChatDataSummary } from "../_shared/coach_chat_fallback.ts";
 import {
   buildSessionSummary,
@@ -7,6 +10,7 @@ import {
   coachChatFailureResponse,
   coachChatFailureRules,
   coachChatGatewayConsentRefusal,
+  coachChatLegacyConsentRefusal,
   coachChatPreparationFailureCode,
   coachChatReplayResponse,
   coachChatResponseSchemaVersion,
@@ -372,4 +376,55 @@ Deno.test("through the gateway, the granted notice must name the route's vendor"
     status: 503,
     error: "ai_consent_unavailable",
   });
+});
+
+const deepseekEnvironment = new Map([
+  ["COACH_AI_ENABLED", "true"],
+  ["COACH_MODEL_PROVIDER", "deepseek"],
+  ["DEEPSEEK_API_KEY", "test-key-not-real"],
+  ["DEEPSEEK_MODEL", "deepseek-flash"],
+]);
+
+Deno.test("without a route, the data goes only to the vendor the athlete's notice names", () => {
+  const legacyVendor = legacyCoachChatVendor(deepseekEnvironment);
+  assertEquals(legacyVendor, "deepseek");
+  const consent = (
+    granted: "granted" | "not_granted" | "unavailable",
+    provider: "anthropic" | "deepseek" | "groq" | null,
+  ) => ({ consent: granted, provider, noticeVersion: "v6" });
+  // No route, or a route that cannot be used (over the cap, unknown model, EVALUATED=false):
+  // both reach this check, and a notice naming Anthropic sends nothing to DeepSeek.
+  for (const provider of ["anthropic", "groq"] as const) {
+    assertEquals(coachChatLegacyConsentRefusal(consent("granted", provider), "deepseek"), {
+      status: 403,
+      error: "ai_consent_required",
+    });
+  }
+  // Today's notices name DeepSeek or predate vendor names (provider null): unchanged.
+  for (const provider of ["deepseek", null] as const) {
+    assertEquals(coachChatLegacyConsentRefusal(consent("granted", provider), "deepseek"), null);
+  }
+  assertEquals(coachChatLegacyConsentRefusal(consent("not_granted", "deepseek"), "deepseek"), {
+    status: 403,
+    error: "ai_consent_required",
+  });
+  assertEquals(coachChatLegacyConsentRefusal(consent("unavailable", null), "deepseek"), {
+    status: 503,
+    error: "ai_consent_unavailable",
+  });
+});
+
+Deno.test("the legacy vendor is the configured provider, and none when nothing is sent", () => {
+  const withProvider = (provider: string, extra: [string, string][]) =>
+    new Map([["COACH_AI_ENABLED", "true"], ["COACH_MODEL_PROVIDER", provider], ...extra]);
+  assertEquals(
+    legacyCoachChatVendor(withProvider("groq", [
+      ["GROQ_API_KEY", "test-key-not-real"],
+      ["GROQ_MODEL", "qwen/qwen3.6-27b"],
+    ])),
+    "groq",
+  );
+  assertEquals(legacyCoachChatVendor(new Map<string, string>()), null);
+  assertEquals(legacyCoachChatVendor(withProvider("mock", [])), null);
+  assertEquals(legacyCoachChatVendor(withProvider("deepseek", [])), null);
 });

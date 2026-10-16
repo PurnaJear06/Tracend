@@ -15,6 +15,7 @@ import {
   coachChatTiming,
   CoachChatUnavailableError,
   generateCoachChat,
+  legacyCoachChatVendor,
 } from "../_shared/providers/coach_chat_provider.ts";
 import {
   chooseCoachChatRoute,
@@ -27,6 +28,7 @@ import {
   aiCoachingConsent,
   type AiConsentWithProvider,
   aiConsentWithProvider,
+  type AiVendor,
   coachChatConsentRefusal,
 } from "../_shared/ai_consent.ts";
 import { CoachChatBudgetLedger, keepAfterFailure } from "./budget_ledger.ts";
@@ -89,6 +91,23 @@ export function coachChatGatewayConsentRefusal(
   const refusal = coachChatConsentRefusal(consent.consent);
   if (refusal) return refusal;
   return consent.provider === coachRoute.vendor
+    ? null
+    : { status: 403, error: "ai_consent_required" };
+}
+
+/**
+ * Without a gateway route, today's provider receives the data, so the athlete's current Coach
+ * notice must name that vendor. A notice that predates vendor names (provider null) is the one
+ * published for today's provider and keeps working; a notice naming another vendor (for example
+ * Anthropic after cutover) never covers a fallback or rollback to DeepSeek, Groq or Gemini.
+ */
+export function coachChatLegacyConsentRefusal(
+  consent: AiConsentWithProvider,
+  legacyVendor: AiVendor,
+): { status: 403 | 503; error: string } | null {
+  const refusal = coachChatConsentRefusal(consent.consent);
+  if (refusal) return refusal;
+  return consent.provider === null || consent.provider === legacyVendor
     ? null
     : { status: 403, error: "ai_consent_required" };
 }
@@ -371,8 +390,15 @@ async function handleCoachChat(
     consentVendor = withProvider.provider;
     refusal = coachChatGatewayConsentRefusal(withProvider, coachRoute);
   } else {
-    consent = await aiCoachingConsent(rpc, auth.userId, "coach_chat");
-    refusal = coachChatConsentRefusal(consent);
+    const legacyVendor = legacyCoachChatVendor(Deno.env);
+    if (legacyVendor) {
+      const withProvider = await aiConsentWithProvider(rpc, auth.userId, "coach_chat");
+      consent = withProvider.consent;
+      refusal = coachChatLegacyConsentRefusal(withProvider, legacyVendor);
+    } else {
+      consent = await aiCoachingConsent(rpc, auth.userId, "coach_chat");
+      refusal = coachChatConsentRefusal(consent);
+    }
   }
   if (refusal) {
     if (consent === "unavailable") {
