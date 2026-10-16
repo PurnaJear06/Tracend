@@ -239,6 +239,55 @@ void main() {
     expect(find.text('Second paragraph.'), findsOneWidget);
   });
 
+  testWidgets('the AI step retries a notice that failed to load', (
+    tester,
+  ) async {
+    final consent = FixtureAiCoachingConsentRepository(
+      AiCoachingChoice.undecided,
+      null,
+    );
+    await _pump(
+      tester,
+      _FakeOnboardingRepository(draft: _draft('ai')),
+      consent: AiCoachingConsentController(consent),
+    );
+    expect(find.textContaining('could not be loaded'), findsOneWidget);
+    expect(find.text('Allow AI coaching'), findsNothing);
+    expect(find.text('Not now'), findsNothing);
+
+    consent.notice = const AiNotice(
+      version: 'ai-coaching-v6',
+      providerLabel: 'Anthropic',
+      body: 'First paragraph from the server.',
+    );
+    await _tapText(tester, 'Try again');
+    expect(find.text('First paragraph from the server.'), findsOneWidget);
+    expect(find.text('Allow AI coaching'), findsOneWidget);
+    expect(consent.recorded, isEmpty);
+  });
+
+  testWidgets('onboarding completes when the notice never loads', (
+    tester,
+  ) async {
+    final consent = FixtureAiCoachingConsentRepository(
+      AiCoachingChoice.undecided,
+      null,
+    );
+    await _pump(
+      tester,
+      _FakeOnboardingRepository(draft: _draft('ai')),
+      consent: AiCoachingConsentController(consent),
+    );
+    expect(find.textContaining('AI coaching stays off'), findsOneWidget);
+
+    await _continue(tester);
+
+    // Past the AI step with no answer recorded: the rules plan follows.
+    expect(find.text('Choose whether to allow AI coaching.'), findsNothing);
+    expect(find.text('Allow AI coaching?'), findsNothing);
+    expect(consent.recorded, isEmpty);
+  });
+
   testWidgets('an older draft continues where the new answers start', (
     tester,
   ) async {

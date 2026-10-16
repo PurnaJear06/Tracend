@@ -1007,7 +1007,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       if (_step == _eligibilityStep) {
         await widget.repository.recordEligibilityAndConsent(eligible: true);
       }
-      if (_step == _aiStep && _aiChoice != _aiRecorded) {
+      if (_step == _aiStep &&
+          _aiNoticeReady &&
+          _aiChoice != null &&
+          _aiChoice != _aiRecorded) {
         await widget.aiConsent?.record(granted: _aiChoice!);
         _aiRecorded = _aiChoice;
       }
@@ -1042,7 +1045,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   bool _isStepValid() => switch (_step) {
     _eligibilityStep => _adult && !_needsClinicalSupport && _terms && _privacy,
-    _aiStep => _aiChoice != null && _aiNoticeReady,
+    // Without a server notice nothing can be answered: onboarding goes on
+    // with AI coaching off and the plan from Tracend's rules.
+    _aiStep => !_aiNoticeReady || _aiChoice != null,
     _pathStep => _path != null,
     _goalStep => _goal != null,
     _healthStep => _healthImport != null && !_healthBusy,
@@ -1456,7 +1461,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         'Allow AI coaching?',
         'Your answer is saved when you continue. You can change it later in Account.',
       ),
-      AiCoachingNoticeSection(controller: widget.aiConsent),
+      AiCoachingNoticeSection(
+        controller: widget.aiConsent,
+        unavailableNote:
+            'You can continue without it: AI coaching stays off, Tracend builds your plan with its own rules, and you can turn AI coaching on later in Account.',
+      ),
       const SizedBox(height: TracendSpacing.lg),
       if (_aiNoticeReady) ...[
         _ChoiceCard(

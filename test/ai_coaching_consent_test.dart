@@ -447,7 +447,10 @@ void main() {
       final controller = AiCoachingConsentController(
         FixtureAiCoachingConsentRepository(AiCoachingChoice.undecided, null),
       );
-      expect(controller.load(), throwsA(isA<AiNoticeUnavailable>()));
+      // Loading is not an error: AI coaching is unavailable, nothing assumed.
+      await controller.load();
+      expect(controller.notice, isNull);
+      expect(controller.granted, isFalse);
       await expectLater(
         controller.record(granted: true),
         throwsA(isA<AiNoticeUnavailable>()),
@@ -491,6 +494,68 @@ void main() {
       await tester.tap(find.text('Allow AI coaching'));
       await tester.pumpAndSettle();
       expect(repository.recorded, [true]);
+    });
+
+    testWidgets('the Coach entry opens a sheet that retries, then asks', (
+      tester,
+    ) async {
+      await _tall(tester);
+      final repository = FixtureAiCoachingConsentRepository(
+        AiCoachingChoice.undecided,
+        null,
+      );
+      final consent = AiCoachingConsentController(repository);
+      await tester.pumpWidget(
+        _app(CoachScreen(threadMemory: _Memory(), aiConsent: consent)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('AI coaching is off'), findsOneWidget);
+
+      await tester.tap(find.text('Review AI coaching'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('could not be loaded'), findsOneWidget);
+      expect(find.text('Allow AI coaching'), findsNothing);
+      expect(find.text('Not now'), findsNothing);
+
+      // A failed retry keeps the error; a later one shows the notice.
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('could not be loaded'), findsOneWidget);
+      expect(repository.recorded, isEmpty);
+
+      repository.notice = _anthropicNotice;
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Tracend sends Anthropic'), findsOneWidget);
+      expect(find.text('Allow AI coaching'), findsOneWidget);
+    });
+
+    testWidgets('the Account entry retries the same way', (tester) async {
+      await _tall(tester);
+      final repository = FixtureAiCoachingConsentRepository(
+        AiCoachingChoice.undecided,
+        null,
+      );
+      final consent = AiCoachingConsentController(repository);
+      await tester.pumpWidget(
+        _app(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAiCoachingConsentSheet(context, consent),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('could not be loaded'), findsOneWidget);
+      expect(find.text('Allow AI coaching'), findsNothing);
+
+      repository.notice = _anthropicNotice;
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Tracend sends Anthropic'), findsOneWidget);
     });
   });
 }

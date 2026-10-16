@@ -8,8 +8,9 @@ import 'package:tracend/shared/widgets/tracend_sheet.dart';
 /// the owner republishes it when the provider, the data sent or the purpose
 /// changes, and a grant of an older version no longer counts, so everyone is
 /// asked again. The app never shows a notice body it did not fetch and never
-/// records an answer for a version it did not fetch: when the notice cannot be
-/// loaded the athlete sees an error and can retry.
+/// records an answer for a version it did not fetch. A notice that cannot be
+/// loaded never blocks the signed-in app: AI coaching stays off, and only the
+/// screens that ask about it show the error and a retry.
 class AiNoticeUnavailable implements Exception {
   const AiNoticeUnavailable();
 
@@ -195,12 +196,19 @@ class AiCoachingConsentController extends ChangeNotifier {
   bool get granted => _choice == AiCoachingChoice.granted;
 
   /// The notice the athlete answers, recorded with their choice; null while it
-  /// has not loaded. Throws [AiNoticeUnavailable] from [load] and [record]
-  /// rather than answering for a notice that was not fetched.
+  /// has not loaded. [record] throws [AiNoticeUnavailable] rather than answer
+  /// for a notice that was not fetched.
   AiNotice? get notice => _repository.notice;
 
+  /// Loads the notice and the athlete's answer. A notice that cannot be
+  /// loaded is not an error here: AI coaching is unavailable (off, with no
+  /// answer assumed) until a later [load] succeeds. Other failures throw.
   Future<void> load() async {
-    _choice = await _repository.load();
+    try {
+      _choice = await _repository.load();
+    } on AiNoticeUnavailable {
+      _choice = AiCoachingChoice.undecided;
+    }
     notifyListeners();
   }
 
@@ -236,11 +244,16 @@ class AiCoachingDisclosure extends StatelessWidget {
 
 /// The controller's notice, or the error and a retry when it has not loaded.
 /// With no controller there is nothing to retry. The answer buttons belong
-/// only under a loaded notice.
+/// only under a loaded notice. [unavailableNote] says what happens meanwhile.
 class AiCoachingNoticeSection extends StatefulWidget {
-  const AiCoachingNoticeSection({this.controller, super.key});
+  const AiCoachingNoticeSection({
+    this.controller,
+    this.unavailableNote,
+    super.key,
+  });
 
   final AiCoachingConsentController? controller;
+  final String? unavailableNote;
 
   @override
   State<AiCoachingNoticeSection> createState() =>
@@ -270,16 +283,20 @@ class _AiCoachingNoticeSectionState extends State<AiCoachingNoticeSection> {
       builder: (context, _) {
         final notice = controller.notice;
         if (notice != null) return AiCoachingDisclosure(notice: notice);
-        return _NoticeUnavailable(onRetry: _retrying ? null : _retry);
+        return _NoticeUnavailable(
+          onRetry: _retrying ? null : _retry,
+          note: widget.unavailableNote,
+        );
       },
     );
   }
 }
 
 class _NoticeUnavailable extends StatelessWidget {
-  const _NoticeUnavailable({this.onRetry});
+  const _NoticeUnavailable({this.onRetry, this.note});
 
   final VoidCallback? onRetry;
+  final String? note;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -290,6 +307,10 @@ class _NoticeUnavailable extends StatelessWidget {
         'and try again.',
         style: Theme.of(context).textTheme.bodyLarge,
       ),
+      if (note != null) ...[
+        const SizedBox(height: TracendSpacing.xs),
+        Text(note!, style: Theme.of(context).textTheme.bodyMedium),
+      ],
       if (onRetry != null)
         TextButton(onPressed: onRetry, child: const Text('Try again')),
     ],
