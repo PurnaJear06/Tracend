@@ -43,7 +43,7 @@ Other properties:
 | Coach chat | `AI_COACH_CHAT_` | `claude-haiku-5-5` | 4096 | 30000 | yes |
 | Daily decision | `AI_DAILY_DECISION_` | `claude-sonnet-5-5` | 1800 | 25000 | yes |
 | Meal photo | `AI_MEAL_VISION_` | `claude-haiku-5-5` | 1500 | 30000 | yes |
-| Physique check | `AI_PHYSIQUE_VISION_` | `claude-sonnet-5-5` | 800 | 60000 | yes, after the owner's real-photo check |
+| Physique check | `AI_PHYSIQUE_VISION_` | `claude-sonnet-5-5` | 800 | 60000 | yes, limited to you until your real-photo check passes |
 | Onboarding plan | `AI_ONBOARDING_PLAN_` | `claude-sonnet-5-5` | 8000 | 90000 | **no, later, after B2** |
 | Onboarding questions | `AI_ONBOARDING_QUESTIONS_` | `claude-sonnet-5-5` | 1500 | 30000 | **no, later, after B2** |
 
@@ -84,7 +84,7 @@ changes. Do this before step 4 so athletes accept the notices in the new build.
 Work one feature group at a time, in this order: **Coach chat and daily decision**, then **meal
 photo**, then **physique check**. For each group: set its route here (3.1-3.4), then publish its
 notice and accept it (step 4), then use the feature and run the verify list at the end of this
-step. Stop and roll back (section 7) at the first problem.
+step. Stop and roll back (section 6) at the first problem.
 
 Until the notice is published and accepted (step 4), the route sends nothing and the feature is
 degraded for that athlete: Coach chat answers "consent required" (the app shows its AI-off card),
@@ -136,13 +136,15 @@ confirms the foods, so the check costs no wrong data.
 ```
 After you accept the meal photo notice (step 4): photograph about ten of your own typical meals, including a mixed home dish. Foods named,
 portions sensible, no invented items, and "no food" for a non-meal photo. If it is poor, unset the
-five settings (section 7) and report it.
+five settings (section 6) and report it.
 
-**3.4 Physique check (only after the owner's real-photo check).** The route refuses with 403
-`physique_vision_not_evaluated` until `EVALUATED=true`, and only the ids in
-`PHYSIQUE_VISION_ALLOWED_USERS` (you) can run it, so setting it exposes nothing else. The check is
-your own set of photos: the result must be sensible muscles to develop, no body-fat figure, no score,
-and no judgement of appearance.
+**3.4 Physique check (route limited to you, your real-photo check, then widen).** The route refuses
+with 403 `physique_vision_not_evaluated` until `AI_PHYSIQUE_VISION_EVALUATED=true`, so the check cannot
+run without it. That is safe only because `PHYSIQUE_VISION_ALLOWED_USERS` holds just your id: setting
+`EVALUATED=true` lets nobody else run it. Confirm that before you set anything:
+`./scripts/supabase.sh secrets list --project-ref qsfzzsjenopqqqhvpyaw` shows
+`PHYSIQUE_VISION_ALLOWED_USERS` (its value is hidden; if you cannot say it is only you, set it to
+your id first). Then:
 ```sh
 ./scripts/supabase.sh secrets set \
   AI_PHYSIQUE_VISION_PROVIDER=anthropic AI_PHYSIQUE_VISION_MODEL=claude-sonnet-5-5 \
@@ -150,8 +152,12 @@ and no judgement of appearance.
   AI_PHYSIQUE_VISION_EVALUATED=true --project-ref qsfzzsjenopqqqhvpyaw
 ./scripts/verify-live-function.sh --all
 ```
-After you accept the progress photo notice (step 4), run the check on your own set. Do not add
-another account to the allowlist; that needs the separate evaluation in AI_SAFETY_SPEC §9.
+After you accept the progress photo notice (step 4), run the check on your own set of photos: the
+result must be sensible muscles to develop, no body-fat figure, no score, and no judgement of
+appearance. That is the real-photo check; the eval drawings only test the contract. If it fails,
+unset the five settings (section 6). **Only after it passes** consider widening the allowlist, and
+even then only after the separate evaluation in AI_SAFETY_SPEC §9; this runbook never adds an
+account.
 
 **Verify after each feature.**
 - `./scripts/verify-live-function.sh --all` passes.
@@ -196,10 +202,14 @@ change to v6 needs the same change in `lib/features/consent/ai_coaching_consent.
 build.
 
 **4a. Publish.** Run the draft's SQL in the Supabase SQL editor (production), then its "Check after
-publishing" query. The label check refuses a wrong label (22023); nothing is half-published.
-- Coaching `ai-coaching-v6` covers `coach_chat`, `daily_coaching` **and `onboarding_plan`**. So from
-  this moment onboarding too uses its rules plan (no AI) until its own route is set after B2
-  (section "Later"). That also means DeepSeek receives nothing from the moment v6 is current. If you
+publishing" query. The label check refuses a wrong label (22023); nothing is half-published. (The
+old four-argument publishers refuse too, so a notice can never be published without its vendor.)
+- Coaching `ai-coaching-v6` covers `coach_chat`, `daily_coaching` **and `onboarding_plan`**. The
+  notice is written to be honest about onboarding: it says AI starting plans are not switched on
+  yet and nothing from onboarding goes to an AI until they are. So **from the moment v6 is current,
+  new athletes get the rules plan, with no AI starting plan and no follow-up questions, until you set
+  the onboarding routes after B2** (section "Later"); the old DeepSeek onboarding path stops
+  because the current notice no longer names DeepSeek. DeepSeek therefore receives nothing. If you
   would rather keep AI onboarding on DeepSeek meanwhile, do not publish v6 until B2 has merged and
   onboarding can move with the rest (the Coach and daily decision routes stay degraded until then).
 - Meal photo `meal-photo-ai-v2`: before it is accepted, meal photos answer 503 `meal_photo_notice_outdated`.
@@ -230,7 +240,7 @@ order by user_id, consent_type, created_at desc;
 Your rows show `granted` with the new version. Then use the feature (step 3's checks) before moving
 to the next group.
 
-## 6. Verify the whole cutover (OWNER)
+## 5. Verify the whole cutover (OWNER)
 
 - `./scripts/verify-live-function.sh --all` from the deployed commit.
 - Each moved feature has a recent `ai_call` line with `vendor` `anthropic` and `outcome` `ok`, and
@@ -264,15 +274,15 @@ athlete who accepted v6:
 Verify as in step 3 (`feature` `onboarding_plan` and `onboarding_questions`), with a new test
 account's onboarding. Onboarding's own 2-week rollback window starts then.
 
-## 7. Rollback (OWNER), for 2 weeks after each feature moves (D1)
+## 6. Rollback (OWNER), for 2 weeks after each feature moves (D1)
 
-Rolling back has **two separate steps**. Step 1 is instant and safe. Step 2 is only needed if you
+Rolling back has **two separate steps**. 6.1 is instant and safe. 6.2 is only needed if you
 want the old vendor to serve athletes again.
 
 DeepSeek and Groq keys and the old `COACH_*`, `ONBOARDING_PLAN_*`, `MEAL_VISION_*` and
 `PHYSIQUE_VISION_*` settings stay in place for the whole window. Do not remove them early.
 
-### 7.1 Stop calling Anthropic (settings only, immediate)
+### 6.1 Stop calling Anthropic (settings only, immediate)
 
 Unset the feature's provider (a route without a provider is no route):
 ```sh
@@ -295,9 +305,9 @@ That is the right state for an Anthropic outage or a bad answer you want to stop
 outage needs no rollback at all: the Coach shows its labelled data summary and the daily decision
 its deterministic fallback.
 
-### 7.2 Restore DeepSeek or Groq (only if you want AI back on the old vendor)
+### 6.2 Restore DeepSeek or Groq (only if you want AI back on the old vendor)
 
-Do 7.1 first. Then republish the old text under a **new version** naming the old vendor, so the
+Do 6.1 first. Then republish the old text under a **new version** naming the old vendor, so the
 current notice matches the vendor that will receive the data. Every athlete is asked again and must
 re-accept before the old path serves them.
 - Coaching: `private.publish_ai_notice('ai-coaching-v7', 'deepseek', 'DeepSeek',
@@ -312,7 +322,7 @@ Re-accept the notice yourself and check the feature works before telling anyone.
 are asked to accept again), so restore for a real reason, not one slow answer. Moving forward to
 Anthropic again later needs a new Anthropic notice version and the same accept step.
 
-## 8. After the window (OWNER)
+## 7. After the window (OWNER)
 
 Two weeks after a feature moved with no rollback:
 1. Remove its old settings and keys (`./scripts/supabase.sh secrets unset ...`), then

@@ -438,7 +438,7 @@ and Groq; no feature has a Claude route yet.**
 | --- | --- | --- | --- | --- |
 | Coach chat | `COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`, provider key and model | DeepSeek V4.1 Flash (`deepseek`, model `deepseek-flash`) | deterministic mock | `coach_chat`: Haiku 5.5 |
 | Daily decision | same as Coach chat | DeepSeek V4.1 Flash | deterministic mock | `daily_decision`: Sonnet 5.5 |
-| Onboarding plan and follow-up questions | `ONBOARDING_PLAN_*` (§10.4) | DeepSeek V4.1 Flash | rules plan only (`mock`) | stays as today at the cutover; `onboarding_plan` and `onboarding_questions`: Sonnet 5.5 after B2 |
+| Onboarding plan and follow-up questions | `ONBOARDING_PLAN_*` (§10.4) | DeepSeek V4.1 Flash | rules plan only (`mock`) | no route at the cutover: once the Anthropic coaching notice is current, onboarding uses the rules plan; `onboarding_plan` and `onboarding_questions`: Sonnet 5.5 after B2 |
 | Meal photos | `MEAL_VISION_*` (§8) | Groq `qwen/qwen3.8-27b` | off | `meal_vision`: Haiku 5.5 |
 | Physique check (owner only) | `PHYSIQUE_VISION_*` (§9) | Groq `qwen/qwen3.8-27b` | off | `physique_vision`: Sonnet 5.5 |
 
@@ -531,7 +531,10 @@ code change. This is the path that runs **today**. A gateway route for the same 
 (`AI_ONBOARDING_PLAN_*`, `AI_ONBOARDING_QUESTIONS_*`, Sonnet 5.5, §10.5) but is **not enabled at the
 cutover**: its eval passes the 90% bar on only about half of the runs, because of weekly-volume
 rules that chunk B2 fixes. The owner switches onboarding to Claude after B2 (runbook, "Later").
-A route without `AI_ONBOARDING_*_EVALUATED=true` is identical to no route.
+A route without `AI_ONBOARDING_*_EVALUATED=true` is identical to no route. **Fail closed:** the
+settings path sends only while the current `onboarding_plan` notice names its vendor. The Anthropic
+coaching notice covers `onboarding_plan`, so from its publication this path no longer sends and the
+rules plan answers, with no follow-up questions, until the Claude route is set.
 
 - **Settings:** `ONBOARDING_PLAN_PROVIDER` (`mock`, rules only, the default; `deepseek`, `groq`
   or `gemini`), `ONBOARDING_PLAN_MODEL`, the provider's key, `ONBOARDING_PLAN_MODEL_EVALUATED=true`,
@@ -662,9 +665,11 @@ routes stay available by settings alone for two weeks after the cutover.
   `./scripts/verify-live-function.sh --all` afterwards.
 - **After the window,** the privacy policy's processor list drops DeepSeek and Groq, and the old
   settings and adapters can be removed in a cleanup change.
-- **Beta exit criterion.** Health data must not go to DeepSeek once external testers join. Every
-  feature moves to Anthropic before the external TestFlight group opens. Onboarding is the one
-  feature still on DeepSeek after the cutover, so the external group waits for it as well.
+- **Beta exit criterion.** Health data must not go to DeepSeek once external testers join. Once
+  the Anthropic coaching notice is current, no feature sends data to DeepSeek: onboarding, which
+  has no Claude route until after B2, uses the rules plan (no AI) until its route is set, so
+  health data does not reach DeepSeek. The external TestFlight group should still wait for
+  onboarding's AI route if it is to open with AI starting plans.
 
 ## 11. Prompt and Context Rules
 

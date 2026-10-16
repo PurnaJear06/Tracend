@@ -263,7 +263,8 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
 > TestFlight group opens, following
 > [`docs/runbooks/phase2-claude-cutover.md`](./runbooks/phase2-claude-cutover.md). Health data
 > must not go to DeepSeek once external testers join (beta exit criterion, plan decisions log,
-> 2026-10-15); onboarding, which moves after chunk B2, is the last feature on DeepSeek. The
+> 2026-10-15). Once the Anthropic coaching notice is current, DeepSeek receives nothing: onboarding,
+> which has no Claude route until after chunk B2, uses the rules plan (no AI) until then. The
 > DeepSeek and Groq routes stay as a settings-only rollback for two weeks; after that window the
 > owner removes them from the privacy policy's processor list (runbook, "After the window").
 

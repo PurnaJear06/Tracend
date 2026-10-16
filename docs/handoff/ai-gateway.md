@@ -148,8 +148,10 @@ Nothing here changes production by itself except migration code 17 (the budget s
 - **D11 app wording.** No model or company name outside a consent notice.
   - `lib/shared/ai_provider_names.dart` holds only `aiProvenanceLine` ("checked by Tracend"); the
     display-name map and `aiProviderDisplayName` are gone.
-  - `aiAnswerLabel()` (no argument) reads "AI answer · checked by Tracend"; the onboarding proposal
-    chip reads "Proposed by AI · checked by Tracend" (`OnboardingProposalView.provenanceLabel` is a
+  - `aiAnswerLabel(provider:, model:)` reads "AI answer · checked by Tracend" for a reply a model
+    wrote and "Tracend safety answer · not AI" / "Tracend answer · not AI" for a deterministic or
+    mock reply (provider `mock`, model `deterministic-safety-v1`, or `deterministic`); the onboarding
+    proposal chip reads "Proposed by AI · checked by Tracend" (`OnboardingProposalView.provenanceLabel` is a
     constant now).
   - `PhotoProgressCard` takes `physiqueCheckAvailable` (bool) in place of `photoCheckProvider`; the
     card says "Sent to AI only when you start a physique check". `PhysiqueCheckRepository.loadProvider`
@@ -158,14 +160,20 @@ Nothing here changes production by itself except migration code 17 (the budget s
     (`coach_screen.dart`, the "AI coaching is off" card) and "AI" (`account_screen.dart`, "On · AI
     writes Coach answers"). One-line edits, flagged in the PR; `coach_message_bubble.dart` changed
     its `aiAnswerLabel` call and a comment.
-  - `AiNotice.builtIn` (shown only when the server notice cannot load) is the `ai-coaching-v6`
-    draft, version `ai-coaching-v6`; `test/ai_coaching_consent_test.dart` compares it with the SQL
-    body in `docs/notices/ai-coaching-v6.md`.
+  - **No built-in notice.** `AiNotice.builtIn` and `aiCoachingNoticeVersion` are gone. The app shows
+    only the notice it fetched (`get_current_ai_notice`) and never records a grant for a version it
+    did not fetch: a failed call is `AiNoticeUnavailable` (`loadCurrentAiNotice`), the gate shows
+    "Connection needed" with retry at start-up, and the consent screen, sheet and onboarding step
+    show "The AI coaching notice could not be loaded…" with **Try again** and no answer buttons
+    (`AiCoachingNoticeSection`). The fixture repository (tests only) has a neutral notice naming no
+    company. `lib/features/onboarding/onboarding_flow.dart` changed for this (out-of-list edit) and
+    its AI choice card no longer says an AI model drafts the starting plan.
   - Tests: `test/ai_wording_test.dart` renders Coach replies stored by deepseek, groq, gemini and
     anthropic plus the photo card and greps the rendered text for model and company names. Not in
     A7's scope and still naming providers: the App Store mock-ups in `design/store/`, and test
     fixtures of old notices.
-- **Notice drafts** in `docs/notices/`: `ai-coaching-v6.md`, `meal-photo-ai-v2.md`,
+- **Notice drafts** in `docs/notices/` (v6 says plainly that AI starting plans are not on yet and
+  that a plan or plan change needs the athlete's approval, not every answer): `ai-coaching-v6.md`, `meal-photo-ai-v2.md`,
   `progress-photo-ai-v2.md`. Each has the exact five-argument publisher call (dollar-quoted body)
   and a check query. Not published. Anthropic is named once per notice; retention is "deleted within
   30 days, not used for training, longer only where the law requires or to enforce its usage rules",
@@ -180,6 +188,16 @@ Nothing here changes production by itself except migration code 17 (the budget s
   `supabase/tests/database/ai_budget_phase2_test.sql`; four older tests pin the stop to 2 at their
   start because they test its mechanics at USD 2. **Not run locally (no Docker); CI pgTAP is the
   proof.** The USD 50 global stop is marked "confirm at cutover" in the runbook.
+- **Migration code 17, part 2 (same file):** backfills `provider` on every existing row of
+  `ai_consent_notices`, `photo_ai_notices` and `meal_photo_ai_notices` with
+  `private.notice_vendor_from_label(label, model)` (DeepSeek → deepseek, Groq/Qwen → groq,
+  Gemini/Google → gemini, Anthropic/Claude → anthropic; raises 22023 when it finds none or two), and
+  makes the four-argument `private.publish_ai_notice` and `private.publish_photo_ai_notice` refuse
+  (22023, pointing to the five-argument form; same signatures and grants). The legacy "null or
+  matching" rule then behaves as before, and no new null-provider notice can be published. Tests
+  that used the old publishers (`onboarding_plan_v2`, `onboarding_review_fixes`, `physique_check`,
+  `provider_neutral_ai`) now use the five-argument form; `provider_neutral_ai_test.sql` expects
+  `deepseek` and `groq` where it expected null.
 - **`_shared/ai_consent.ts`** takes its vendor list from the gateway (`aiVendors` without
   `router`; type `AthleteVendor`). It still exports `AiVendor` as an alias, because A5's
   `daily_decision_provider.ts` imports that name from here. Behaviour is unchanged; the test now

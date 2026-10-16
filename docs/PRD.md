@@ -359,8 +359,11 @@ audit events without storing secrets or unnecessary raw prompt content.
   setting; with none, the feature runs the route above unchanged.
 - **Cutover (Phase 2; D1, D2), code merged, not yet switched on:** the owner moves features to
   Claude by settings, one at a time: Coach chat and meal photos to Haiku 5.5, the daily decision
-  and the physique check to Sonnet 5.5; onboarding follows after chunk B2. The old routes stay
-  available by settings only, for two weeks after the cutover. Health data must not go to DeepSeek
+  and the physique check to Sonnet 5.5; onboarding follows after chunk B2 (until then, once the
+  Anthropic notice is current, new athletes get the rules plan with no AI). The old code paths stay
+  for two weeks after the cutover, but data goes only to the vendor named by the notice the
+  athlete accepted: unsetting the settings stops Anthropic and the features degrade safely;
+  restoring DeepSeek or Groq needs a notice naming that vendor. Health data must not go to DeepSeek
   once external testers join. Steps: `docs/runbooks/phase2-claude-cutover.md`.
 - AI wording (D11): the app says "AI" and never names a model or company outside an AI consent
   notice; each notice names the receiving company once.

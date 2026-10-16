@@ -247,9 +247,11 @@ deterministic path stays available when a model is unavailable.
 > providers until the owner runs the cutover runbook
 > ([`docs/runbooks/phase2-claude-cutover.md`](./runbooks/phase2-claude-cutover.md)): Coach chat and
 > meal photos on Haiku 5.5, the daily decision and the physique check on Sonnet 5.5; onboarding
-> follows on Sonnet 5.5 after chunk B2. The DeepSeek and Groq paths stay as a settings-only
-> rollback (unset the feature's `AI_<FEATURE>_PROVIDER`) for two weeks after the cutover. Details:
-> AI_SAFETY_SPEC §10.5-§10.7.
+> follows on Sonnet 5.5 after chunk B2; until then, once the Anthropic notice is current, onboarding
+> uses the rules plan. Data goes only to the vendor named by the athlete's accepted notice, so
+> unsetting a feature's `AI_<FEATURE>_PROVIDER` stops Anthropic but does not send traffic back to
+> DeepSeek or Groq; restoring them needs a notice naming that vendor. Details: AI_SAFETY_SPEC
+> §10.5-§10.7.
 
 ## 4. Supabase Boundary Rules
 
