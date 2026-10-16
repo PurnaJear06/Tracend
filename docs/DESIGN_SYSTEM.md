@@ -195,20 +195,29 @@ in light and dark mode alike, so its text and lime keep the dark theme's contras
 | `graphite`      | `#18191B` | `surface`         | Lock Screen card background                       |
 | `textPrimary`   | `#F4F4F1` | `textPrimary`     | Status, exercise name, system action foreground   |
 | `textSecondary` | `#9C9D98` | `textSecondary`   | "Next: …"                                         |
-| `lime`          | `#C8F05A` | `accentSignal`    | Timer glyph, countdown, done check, island keyline |
+| `lime`          | `#C8F05A` | `accentSignal`    | Timer glyph, countdown, done check, island keyline, Done fill |
+| `raised`        | `#232427` | `surfaceRaised`   | +30s and Skip button fill                         |
+| `onLime`        | `#141A05` | `onAccentSignal`  | Done button text and check                        |
 
 - **Numbers** use Archivo SemiCondensed ExtraBold, bundled with the extension, with monospaced
   digits so the countdown never jitters; without the font file it falls back to the condensed
   heavy system face. Other text is the system font.
 - **Lock Screen:** status on the left ("Rest" with a lime `timer` symbol, or "Rest done" with a lime
   check, 13pt semibold), the exercise name in the number face at 20pt and "Next: …" at 15pt in
-  `textSecondary`; on the right a lime countdown at 44pt (a 34pt lime check when done). Padding is
-  20pt horizontal and 16pt vertical.
+  `textSecondary`; on the right a lime countdown at 44pt (a 34pt lime check when done). Under them
+  sits a row of 44pt capsule buttons, 12pt below. Padding is 20pt horizontal and 14pt vertical.
 - **Dynamic Island:** expanded shows the status (15pt), a 34pt countdown and the exercise (17pt)
   over the next set; compact shows a lime `timer` glyph and a 16pt countdown; minimal shows a 12pt
-  countdown. Done replaces the countdown with a lime check.
-- The countdown is `Text(timerInterval:)`, run by the system with the app closed. The activity has
-  no buttons and shows no load, reps, effort or health value (UX_FLOWS.md §6).
+  countdown. Done replaces the countdown with a lime check. The expanded bottom region adds the same
+  buttons at 40pt, 10pt under the labels; compact and minimal have no buttons.
+- **Buttons:** while the rest runs, **+30s** and **Skip** (with a `forward.end.fill` glyph) share
+  the row in two equal `raised` capsules with off-white 16pt semibold text; the countdown stays the
+  only lime. Once the rest is over, one full-width lime **Done set** capsule with a check in
+  `onLime`, the single next thing to do. With no workout open, or when the card names no set
+  for Done, the row is "Open Tracend to continue" in `textSecondary` with an `arrow.up.forward.app` glyph. VoiceOver reads "Add 30
+  seconds", "Skip rest" and "Done, <next set>".
+- The countdown is `Text(timerInterval:)`, run by the system with the app closed. The activity
+  shows no load, reps, effort or health value (UX_FLOWS.md §6).
 
 ## 4. Navigation
 

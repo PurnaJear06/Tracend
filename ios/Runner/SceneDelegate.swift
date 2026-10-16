@@ -22,6 +22,7 @@ class SceneDelegate: FlutterSceneDelegate {
     configureNotifications(on: flutterEngine.binaryMessenger)
     configureTimeZone(on: flutterEngine.binaryMessenger)
     WorkoutActivityBridge.register(on: flutterEngine.binaryMessenger)
+    HeartRateReader.register(on: flutterEngine.binaryMessenger)
     registerSceneLifeCycle(with: flutterEngine)
 
     window?.rootViewController = FlutterViewController(

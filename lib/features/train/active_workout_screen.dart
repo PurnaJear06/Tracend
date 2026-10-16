@@ -3,7 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show PostgrestException, Supabase;
 import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
@@ -20,6 +21,7 @@ import 'package:tracend/features/train/workout_draft.dart';
 import 'package:tracend/features/train/workout_events.dart';
 import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/features/workout_hr/set_heart_rate_recorder.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
@@ -65,7 +67,8 @@ class ActiveWorkoutScreen extends StatefulWidget {
   final WorkoutEventHub? events;
 
   /// The rest's Live Activity. The rest timer is its only driver; the
-  /// workout events above do not touch it.
+  /// workout events above do not touch it. Its Done, Skip and +30s buttons
+  /// arrive as [WorkoutCommand]s through [events]' command sink.
   final WorkoutActivityBridge activity;
 
   /// The longest workout the server records (3 hours).
@@ -79,7 +82,11 @@ enum _Sync { saving, saved, offline, attention }
 
 enum _Leave { save, discard }
 
-typedef _Next = ({String full, String short});
+/// What a Done press from the Live Activity did.
+enum _Tick { ticked, stale, unsuggested }
+
+/// What follows a set: the label, and the set it names (1-based).
+typedef _Next = ({String full, String short, int exerciseOrder, int setNumber});
 
 /// Schedules the lock-screen alert only while the athlete's toggle is on;
 /// cancelling always goes through, so no alert outlives its rest.
@@ -109,11 +116,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   );
   final PageController _pages = PageController();
   late final WorkoutEventHub _events = widget.events ?? WorkoutEventHub();
-  StreamSubscription<WorkoutCommand>? _commands;
+  StreamSubscription<void>? _commands;
+  StreamSubscription<void>? _heartRate;
   final SetTimingRecorder _timing = SetTimingRecorder();
-
-  /// The exercise on screen.
-  int _page = 0;
 
   String? _sessionId;
   String _idempotencyKey = newIdempotencyKey();
@@ -169,7 +174,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   @override
   void initState() {
     super.initState();
-    _commands = _events.incomingCommands.listen(_onCommand);
+    _commands = _events.handleCommands(_onCommand, clock: widget.clock);
+    final repository = widget.repository;
+    if (repository is SupabaseWorkoutRepository) {
+      _heartRate = SetHeartRateRecorder.shared(Supabase.instance.client).listen(
+        _events.events,
+        loadSession: () => repository.loadSession(
+          widget.workout,
+          localDate: widget.sessionDate,
+        ),
+      );
+    }
     _restore();
   }
 
@@ -179,9 +194,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     // goes; anything else (the app returning to sign-in) leaves the rest in
     // the draft and ends only its Live Activity.
     _rest.detach();
+    unawaited(widget.activity.detachButtons(_onButton));
     _saveTimer?.cancel();
     _ticker?.cancel();
     unawaited(_commands?.cancel());
+    unawaited(_heartRate?.cancel());
     _events.close();
     _pages.dispose();
     super.dispose();
@@ -252,8 +269,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       widget.workout.id,
     );
     _ready = true;
+    if (mounted) unawaited(widget.activity.attachButtons(_onButton));
     final first = _firstOpenExercise();
-    _page = first;
     if (mounted) setState(() {});
     if (first > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -428,6 +445,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     if (timer != null && timer.isExpired(now)) {
       unawaited(_restEnded());
     }
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle == null || lifecycle == AppLifecycleState.resumed) {
+      _rest.tick();
+    }
     final shown = (_elapsedSeconds, _rest.timer?.remainingSeconds(now));
     if (shown == _shownSeconds) return;
     setState(() => _shownSeconds = shown);
@@ -576,7 +597,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     final timer = _rest.timer;
     if (timer == null || !timer.isExpired(now)) return;
     _timing.restEnded(timer.endsAt);
-    unawaited(_rest.stop());
+    unawaited(_rest.ranOut());
   }
 
   bool _resting(DateTime now) {
@@ -647,6 +668,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               restSeconds,
               nextLabel: next.full,
               exerciseName: draft.exercise.name,
+              nextExerciseOrder: next.exerciseOrder,
+              nextSetNumber: next.setNumber,
             )
             .then((_) => _persistRest()),
       );
@@ -661,6 +684,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
         );
       }
+    } else if (_rest.timer == null) {
+      // No rest follows: the "Rest done" activity names a set that is now
+      // logged, so it goes.
+      unawaited(_rest.stop());
     }
     _changed();
   }
@@ -736,39 +763,104 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     _changed();
   }
 
-  /// The Live Activity's buttons. Ignored once the workout is closed.
-  void _onCommand(WorkoutCommand command) {
-    if (!mounted || !_ready || _closed || _finishing || _viewingCompleted) {
-      return;
-    }
-    switch (command) {
-      case CompleteCurrentSet():
-        _completeCurrentSet();
-      case SkipRest():
-        unawaited(_skipRest());
-      case AddRest(:final seconds):
-        if (seconds > 0) unawaited(_adjustRest(Duration(seconds: seconds)));
-    }
+  /// How long a button press waits for the server copy before it answers;
+  /// iOS gives up on a press after 8 s, and the save carries on after that.
+  static const _pressSaveWait = Duration(seconds: 5);
+
+  /// A Live Activity button, sent through the workout's one command sink
+  /// (Contract 3). Completes with whether the screen handled it, and drops a
+  /// press that waited past [LiveActivityButton.pressTimeout].
+  Future<bool> _onButton(LiveActivityButton button) =>
+      _events.send(workoutCommandFor(button), expiresAt: button.expiresAt);
+
+  /// The Live Activity's buttons. True when the command was acted on or
+  /// knowingly ignored as out of date (the card is then redrawn to the true
+  /// state); false when nothing could act on it (the workout is closed or
+  /// ending, or the set cannot be ticked from the card), so the card asks the
+  /// athlete to open the app. Completes when the rest, its Live Activity call
+  /// and the draft are saved, since iOS may suspend the app right after a
+  /// press. Commands arrive one at a time, so each sees the last one's state.
+  ///
+  /// The press also waits for the Live Activity update its change sent
+  /// (bounded by [RestTimerController.activityWait], and a failed or slow
+  /// update never undoes the change), so the card is current before iOS can
+  /// suspend the app. In-app taps do not wait: nothing suspends the app
+  /// there, and the timer must not stall on iOS.
+  Future<bool> _onCommand(WorkoutCommand command) async {
+    final handled = await _handleCommand(command);
+    await _rest.activityUpdated();
+    return handled;
   }
 
-  /// Ticks the current set of the exercise on screen (else the first
-  /// exercise with sets left) with the kg and reps the screen suggests.
-  void _completeCurrentSet() {
-    bool open(int i) =>
-        !_exercises[i].skipped && _exercises[i].currentSetIndex != null;
-    final page = _page;
-    final exercise = page < _exercises.length && open(page)
-        ? page
-        : _exercises.indexWhere((e) => !e.skipped && e.currentSetIndex != null);
-    if (exercise < 0) return;
-    final draft = _exercises[exercise];
-    final suggestion = suggestSet(
-      draft,
-      draft.currentSetIndex!,
-      _historyOf(exercise),
+  Future<bool> _handleCommand(WorkoutCommand command) async {
+    if (!mounted || !_ready || _closed || _finishing || _viewingCompleted) {
+      return false;
+    }
+    // A button may wake the app after the rest ran out unnoticed: that rest
+    // ended at its stored end, so Skip and +30s then have nothing to change.
+    final running = _rest.timer;
+    _expireRest(widget.clock());
+    if (running != null && _rest.timer == null) await _persistRest();
+    switch (command) {
+      case CompleteCurrentSet(:final exerciseOrder, :final setNumber):
+        // A running rest means the card is out of date (its set was ticked
+        // and the next rest started): the athlete is not doing a set now.
+        // Every card change comes from this screen, so the card already
+        // shows the true state; the refresh only clears a stuck "Open
+        // Tracend to continue".
+        if (_rest.timer != null) {
+          _rest.refresh();
+          return true;
+        }
+        switch (_completeSet(exerciseOrder, setNumber)) {
+          case _Tick.ticked:
+            await _saveForPress();
+          case _Tick.stale:
+            // The set is no longer the current one (a repeated or late
+            // Done): nothing changes.
+            break;
+          case _Tick.unsuggested:
+            return false;
+        }
+      case SkipRest():
+        await _skipRest();
+      case AddRest(:final seconds):
+        if (seconds > 0) await _adjustRest(Duration(seconds: seconds));
+    }
+    return true;
+  }
+
+  /// Ticks set [setNumber] (1-based) of the exercise at [exerciseOrder] with
+  /// the kg and reps the screen suggests, but only while it is still that
+  /// exercise's current, unticked set.
+  _Tick _completeSet(int exerciseOrder, int setNumber) {
+    final exercise = _exercises.indexWhere(
+      (e) => e.exercise.order == exerciseOrder,
     );
-    if ((num.tryParse(suggestion.reps) ?? 0) <= 0) return;
+    if (exercise < 0) return _Tick.stale;
+    final draft = _exercises[exercise];
+    final index = draft.currentSetIndex;
+    if (draft.skipped || index == null || index != setNumber - 1) {
+      return _Tick.stale;
+    }
+    final suggestion = suggestSet(draft, index, _historyOf(exercise));
+    if ((num.tryParse(suggestion.reps) ?? 0) <= 0) return _Tick.unsuggested;
     _doneSet(exercise, suggestion.load, suggestion.reps);
+    return _Tick.ticked;
+  }
+
+  /// Saves a ticked set to the phone and the server now, as the 250 ms
+  /// timer after an in-app tick would, because iOS may suspend the app
+  /// before it fires. A failed send is handled inside [_save] exactly as for
+  /// an in-app tick (the draft waits and syncs later); the set is logged
+  /// either way.
+  Future<void> _saveForPress() async {
+    _saveTimer?.cancel();
+    try {
+      await _save().timeout(_pressSaveWait, onTimeout: () => null);
+    } catch (e) {
+      debugPrint('Non-critical error: saving a button press failed: $e');
+    }
   }
 
   Future<void> _more(int exercise) async {
@@ -801,12 +893,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       return (
         full: 'Set ${set + 1} of ${draft.exercise.name}',
         short: 'Set ${set + 1}',
+        exerciseOrder: draft.exercise.order,
+        setNumber: set + 1,
       );
     }
     for (var i = 1; i < _exercises.length; i++) {
       final other = _exercises[(exercise + i) % _exercises.length];
-      if (!other.skipped && other.currentSetIndex != null) {
-        return (full: other.exercise.name, short: other.exercise.name);
+      final otherSet = other.currentSetIndex;
+      if (!other.skipped && otherSet != null) {
+        return (
+          full: other.exercise.name,
+          short: other.exercise.name,
+          exerciseOrder: other.exercise.order,
+          setNumber: otherSet + 1,
+        );
       }
     }
     return null;
@@ -818,12 +918,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     for (final draft in _exercises) {
       final set = draft.currentSetIndex;
       if (!draft.skipped && set != null) {
-        return set == 0
-            ? (full: draft.exercise.name, short: draft.exercise.name)
-            : (
-                full: 'Set ${set + 1} of ${draft.exercise.name}',
-                short: 'Set ${set + 1}',
-              );
+        return (
+          full: set == 0
+              ? draft.exercise.name
+              : 'Set ${set + 1} of ${draft.exercise.name}',
+          short: set == 0 ? draft.exercise.name : 'Set ${set + 1}',
+          exerciseOrder: draft.exercise.order,
+          setNumber: set + 1,
+        );
       }
     }
     return null;
@@ -863,7 +965,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     final timer = _rest.timer;
     if (timer == null) return;
     _timing.restEnded(timer.endsAt);
-    await _rest.stop();
+    await _rest.ranOut();
     if (!mounted) return;
     unawaited(TracendHaptics.success());
     TracendToast.show(
@@ -1487,7 +1589,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
 
   void _pageChanged(int page) {
     TracendHaptics.selection();
-    _page = page;
     final exercise = _exercises[page].exercise;
     _events.emit(
       ExerciseAdvanced(

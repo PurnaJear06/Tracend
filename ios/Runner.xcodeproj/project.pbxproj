@@ -18,11 +18,14 @@
 		81EBC1EB7EF94A63F1154072 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B99CBDB873CBA83AFBE076CD /* Pods_Runner.framework */; };
 		D0A700000000000000000011 /* RestActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000001 /* RestActivityAttributes.swift */; };
 		D0A700000000000000000012 /* WorkoutActivityBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000002 /* WorkoutActivityBridge.swift */; };
+		C2A700000000000000000012 /* HeartRateReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A700000000000000000002 /* HeartRateReader.swift */; };
 		D0A700000000000000000013 /* RestActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000001 /* RestActivityAttributes.swift */; };
 		D0A700000000000000000014 /* TracendWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000003 /* TracendWidgetsBundle.swift */; };
 		D0A700000000000000000015 /* RestLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000004 /* RestLiveActivity.swift */; };
 		D0A700000000000000000016 /* TracendStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000005 /* TracendStyle.swift */; };
 		D0A700000000000000000017 /* ArchivoSemiCondensed-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000009 /* ArchivoSemiCondensed-ExtraBold.ttf */; };
+		D1A700000000000000000011 /* RestActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A700000000000000000001 /* RestActivityIntents.swift */; };
+		D1A700000000000000000012 /* RestActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A700000000000000000001 /* RestActivityIntents.swift */; };
 		D0A700000000000000000018 /* TracendWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000008 /* TracendWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -93,7 +96,9 @@
 		E105896A1952C302F8D9A1D4 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		E7424B6FE74B46D9B271FAF9 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		D0A700000000000000000001 /* RestActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestActivityAttributes.swift; sourceTree = "<group>"; };
+		D1A700000000000000000001 /* RestActivityIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestActivityIntents.swift; sourceTree = "<group>"; };
 		D0A700000000000000000002 /* WorkoutActivityBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutActivityBridge.swift; sourceTree = "<group>"; };
+		C2A700000000000000000002 /* HeartRateReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartRateReader.swift; sourceTree = "<group>"; };
 		D0A700000000000000000003 /* TracendWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TracendWidgetsBundle.swift; sourceTree = "<group>"; };
 		D0A700000000000000000004 /* RestLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestLiveActivity.swift; sourceTree = "<group>"; };
 		D0A700000000000000000005 /* TracendStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TracendStyle.swift; sourceTree = "<group>"; };
@@ -217,6 +222,7 @@
 			isa = PBXGroup;
 			children = (
 				D0A700000000000000000001 /* RestActivityAttributes.swift */,
+				D1A700000000000000000001 /* RestActivityIntents.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -225,6 +231,7 @@
 			isa = PBXGroup;
 			children = (
 				D0A700000000000000000002 /* WorkoutActivityBridge.swift */,
+				C2A700000000000000000002 /* HeartRateReader.swift */,
 			);
 			path = Native;
 			sourceTree = "<group>";
@@ -489,6 +496,8 @@
 				7884E86A2EC3CC0900C636F2 /* TracendNotifications.swift in Sources */,
 				D0A700000000000000000011 /* RestActivityAttributes.swift in Sources */,
 				D0A700000000000000000012 /* WorkoutActivityBridge.swift in Sources */,
+				C2A700000000000000000012 /* HeartRateReader.swift in Sources */,
+				D1A700000000000000000011 /* RestActivityIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -500,6 +509,7 @@
 				D0A700000000000000000014 /* TracendWidgetsBundle.swift in Sources */,
 				D0A700000000000000000015 /* RestLiveActivity.swift in Sources */,
 				D0A700000000000000000016 /* TracendStyle.swift in Sources */,
+				D1A700000000000000000012 /* RestActivityIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "session_id": "5f1d7d34-3f5b-4a0e-9a53-2c0a6a1f6001",
+  "sets": [
+    {
+      "exercise_order": 1,
+      "set_number": 1,
+      "start_bpm": 112,
+      "peak_bpm": 148,
+      "end_bpm": 141,
+      "drop_30s_bpm": 14,
+      "drop_60s_bpm": 27,
+      "coverage": 0.943,
+      "sample_count": 18,
+      "source": "watch_workout"
+    },
+    {
+      "exercise_order": 1,
+      "set_number": 2,
+      "start_bpm": 118,
+      "peak_bpm": 152,
+      "end_bpm": 149,
+      "drop_30s_bpm": -3,
+      "drop_60s_bpm": null,
+      "coverage": 0.714,
+      "sample_count": 12,
+      "source": "watch_workout"
+    },
+    {
+      "exercise_order": 2,
+      "set_number": 1,
+      "start_bpm": null,
+      "peak_bpm": null,
+      "end_bpm": null,
+      "drop_30s_bpm": null,
+      "drop_60s_bpm": null,
+      "coverage": 0.143,
+      "sample_count": 1,
+      "source": "background"
+    }
+  ]
+}

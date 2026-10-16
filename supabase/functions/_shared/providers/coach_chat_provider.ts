@@ -12,6 +12,7 @@ import {
 } from "../contracts/coach_chat_v1.ts";
 import { deepseekFlashPeakPricePerMillionUsd, isApprovedDeepseekModel } from "./deepseek_models.ts";
 import { calculateCoachNumbers, formatCoachCalculations } from "../coach_calculations.ts";
+import type { AiVendor } from "../ai/types.ts";
 
 /** How long the athlete has trained, as onboarding asks it. */
 const trainingYearsLabels: Readonly<Record<string, string>> = {
@@ -28,7 +29,14 @@ export type CoachChatAttemptOutcome =
   | "truncated"
   | "timeout"
   | "rate_limited"
-  | "http_error";
+  | "http_error"
+  | "refused";
+
+/** The providers today's Coach chat path calls directly (no gateway route). */
+export type LegacyCoachChatProvider = "mock" | "gemini" | "groq" | "deepseek";
+
+/** Who answered: a legacy provider, or the vendor of the gateway route. */
+export type CoachChatProvider = LegacyCoachChatProvider | AiVendor;
 
 export type CoachChatAttemptTelemetry = Readonly<{
   attempt: CoachChatAttempt;
@@ -41,11 +49,14 @@ export type CoachChatAttemptTelemetry = Readonly<{
   finishReason?: string | null;
   promptTokens?: number;
   completionTokens: number;
+  /** Gateway attempts: prompt tokens read from and written to the provider's cache. */
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
 }>;
 
 export type CoachChatGeneration = Readonly<{
   answer: CoachChatAnswerV2;
-  provider: "mock" | "gemini" | "groq" | "deepseek";
+  provider: CoachChatProvider;
   model: string;
   inputUnits: number;
   outputUnits: number;
@@ -83,12 +94,16 @@ export type CoachChatFailureMetadata = Readonly<{
   repairRule?: CoachChatValidationRule;
   repairPath?: string;
   attempts?: readonly CoachChatAttemptTelemetry[];
+  /** Gateway runs: the list-price cost of every attempt, from the gateway's usage. */
+  costUsd?: number;
+  /** Gateway runs: why the repair attempt was not sent (its budget place was not available). */
+  repairSkipped?: "reservation_refused" | "reservation_over_cap";
 }>;
 
 // USD per million tokens for each Coach provider: the configured secret, or
 // the provider's list price when it is unset, so no call is counted as free.
 export function coachChatPricePerMillionUsd(
-  provider: "mock" | "gemini" | "groq" | "deepseek",
+  provider: LegacyCoachChatProvider,
 ): Readonly<{ input: number; output: number }> {
   const rate = (name: string, fallback: number) => {
     const value = Number(Deno.env.get(name) ?? fallback);
@@ -122,7 +137,8 @@ export function coachChatPricePerMillionUsd(
 }
 
 // Tokens and estimated cost of every attempt a failed request made, so a
-// failure still counts toward the budget.
+// failure still counts toward the budget. A gateway run carries the priced cost
+// of its attempts; a legacy run is priced here.
 export function coachChatFailureUsage(error: CoachChatUnavailableError): Readonly<{
   inputUnits: number;
   outputUnits: number;
@@ -131,6 +147,9 @@ export function coachChatFailureUsage(error: CoachChatUnavailableError): Readonl
   const attempts = error.metadata.attempts ?? [];
   const inputUnits = attempts.reduce((sum, attempt) => sum + (attempt.promptTokens ?? 0), 0);
   const outputUnits = attempts.reduce((sum, attempt) => sum + attempt.completionTokens, 0);
+  if (error.metadata.costUsd !== undefined || !isLegacyCoachChatProvider(error.provider)) {
+    return { inputUnits, outputUnits, estimatedCostUsd: error.metadata.costUsd ?? 0 };
+  }
   const price = coachChatPricePerMillionUsd(error.provider);
   return {
     inputUnits,
@@ -279,9 +298,17 @@ export function deterministicBoundary(question: string): CoachChatAnswerV1 | nul
   return null;
 }
 
+const legacyCoachChatProviders: readonly string[] = ["mock", "gemini", "groq", "deepseek"];
+
+function isLegacyCoachChatProvider(
+  provider: CoachChatProvider,
+): provider is LegacyCoachChatProvider {
+  return legacyCoachChatProviders.includes(provider);
+}
+
 export class CoachChatUnavailableError extends Error {
   constructor(
-    readonly provider: "mock" | "gemini" | "groq" | "deepseek",
+    readonly provider: CoachChatProvider,
     readonly model: string,
     readonly failureReason: CoachChatFailureCode = "provider_response_invalid",
     readonly retryAfterSeconds: number | null = null,
@@ -512,6 +539,14 @@ export function compactContext(context: Record<string, unknown>): Record<string,
 const coachChatContextBudget = 96_000;
 const planChangeContextBudget = 128_000;
 
+/** The character budget of the athlete file and its wrappers for a question kind. */
+export function coachChatContextBudgetFor(contextKind: string): number {
+  return contextKind === "plan_change" ? planChangeContextBudget : coachChatContextBudget;
+}
+
+/** The largest budget any question kind gets. */
+export const coachChatMaxContextBudget = planChangeContextBudget;
+
 function str(v: unknown): string {
   // null is rendered as the sentinel "—", which the system prompt's null
   // contract defines as NOT MEASURED (never zero, never fabricated).
@@ -563,6 +598,21 @@ export function formatContextAsMarkdown(
   ctx: Record<string, unknown>,
   maxLength: number = 28_000,
 ): string {
+  const { file, recent } = renderCoachContextParts(ctx, maxLength);
+  return recent ? `${file}\n${recent}` : file;
+}
+
+/**
+ * The athlete file in two parts within one budget. `file` is everything but the conversation
+ * memory: it changes only when the athlete's data does, so a day's questions share it as a
+ * cacheable prefix. `recent` is the conversation memory (session history, other conversations,
+ * this thread) and the closing list of sections left out for size, which change every turn.
+ * `formatContextAsMarkdown` joins them with a newline.
+ */
+export function renderCoachContextParts(
+  ctx: Record<string, unknown>,
+  maxLength: number,
+): Readonly<{ file: string; recent: string }> {
   const out: string[] = [];
   const deferredHistory: string[] = [];
   const omitted: string[] = [];
@@ -1194,6 +1244,7 @@ export function formatContextAsMarkdown(
     push(s);
   }
 
+  const fileEnd = out.length;
   for (const historySection of deferredHistory) push(historySection);
 
   // Whole sections left out for size (here or by the SQL size guard) are named,
@@ -1209,7 +1260,7 @@ export function formatContextAsMarkdown(
     );
   }
 
-  return out.join("\n");
+  return { file: out.slice(0, fileEnd).join("\n"), recent: out.slice(fileEnd).join("\n") };
 }
 
 export function classifyQuestion(question: string): string {
@@ -1250,7 +1301,7 @@ export function buildCoachChatUserMessage(
   context: Record<string, unknown>,
   contextKind: string,
 ): string {
-  const budget = contextKind === "plan_change" ? planChangeContextBudget : coachChatContextBudget;
+  const budget = coachChatContextBudgetFor(contextKind);
   const prefix = "Prepared coaching context (supporting evidence only):\n<coaching_context>\n";
   const suffix = "\n</coaching_context>\n\nUser's message:\n" + question;
   const contextBudget = Math.max(0, budget - prefix.length - suffix.length);
@@ -1261,7 +1312,7 @@ export function buildCoachChatUserMessage(
   return prefix + markdown + suffix;
 }
 
-type ValidationIssue = Readonly<{
+export type ValidationIssue = Readonly<{
   rule: CoachChatValidationRule;
   path: string;
   limit?: number;
@@ -1284,7 +1335,7 @@ function answerContractText(permittedEvidence: readonly string[]): string {
     "- If the question is ambiguous or needs a detail the context lacks (for example maintenance calories, a target date, or which session they mean), answer what the data supports, then ask one short clarifying question. Offer the likely replies in suggested_follow_ups, written as the athlete would say them.\n";
 }
 
-function repairContractText(
+export function repairContractText(
   issue: ValidationIssue,
   permittedEvidence: readonly string[],
 ): string {
@@ -1299,6 +1350,14 @@ function repairContractText(
     `The previous candidate failed validation: ${details}.\n` +
     `Allowed evidence codes: ${allowed}.\n` +
     "Fix only the stated validation problem and any sentence that depends on an invalid citation. If a citation must be removed, remove or soften the dependent sentence. Never add facts, numbers, or evidence.\n";
+}
+
+/**
+ * The rules every Coach chat request carries: persona, data honesty and the answer contract for
+ * the permitted evidence. Stable for an athlete's day, so it opens the cached prefix.
+ */
+export function coachChatInstructions(permittedEvidence: readonly string[]): string {
+  return coachChatPersona + nullContract + answerContractText(permittedEvidence);
 }
 
 function coachChatSystemPrompt(
@@ -1328,6 +1387,18 @@ export function isCoachChatLiveProviderConfigured(
     environment.get("GEMINI_PAID_DATA_TERMS_ACCEPTED") === "true" &&
     Boolean(environment.get("GEMINI_API_KEY")) &&
     environment.get("GEMINI_MODEL") === "gemini-3.5-flash";
+}
+
+/**
+ * The vendor today's path sends the athlete's data to, or null when it sends nothing (mock, or a
+ * provider that is not fully configured, which fails before any request).
+ */
+export function legacyCoachChatVendor(
+  environment: Pick<typeof Deno.env, "get">,
+): "deepseek" | "groq" | "gemini" | null {
+  if (!isCoachChatLiveProviderConfigured(environment)) return null;
+  const provider = environment.get("COACH_MODEL_PROVIDER");
+  return provider === "deepseek" || provider === "groq" || provider === "gemini" ? provider : null;
 }
 
 export async function generateCoachChat(

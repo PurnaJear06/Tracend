@@ -414,8 +414,8 @@ and B3 add them). The route chooses Haiku 5.5 or Sonnet 5.5 by settings; evaluat
 recommend one. Done when a repeated question shows cache reads in its `ai_call` log, and the eval
 meets the baseline.
 
-**A7: wording, budgets, cutover (after A3–A6 merge).** Apply D11 in the app (the four files in the
-decisions log): "AI answer" and a provenance line without a model name. Draft the new consent
+**A7: wording, budgets, cutover (after A3–A6 merge).** Apply D11 in the app (the six files in A7's row of the Phase 2 file
+owners): "AI answer" and a provenance line without a model name. Draft the new consent
 notices (coaching v6, meal photo v2, physique v2) for the owner to edit and publish. Migration code 17
 sets the Phase 2 budget limits the owner chooses. Update the AI authority-doc sections, run the
 final evals, and write the cutover runbook: the settings per feature, `verify-live-function.sh

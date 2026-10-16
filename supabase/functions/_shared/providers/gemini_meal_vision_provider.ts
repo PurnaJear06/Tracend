@@ -10,7 +10,8 @@ export type MealCandidate = Readonly<{
   question: string;
 }>;
 
-const schema = {
+// The candidate list every meal vision provider returns.
+export const mealCandidatesSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
@@ -161,7 +162,7 @@ export async function analyzeMealImage(
             temperature: 0.1,
             maxOutputTokens: 1800,
             responseMimeType: "application/json",
-            responseJsonSchema: schema,
+            responseJsonSchema: mealCandidatesSchema,
             thinkingConfig: { thinkingLevel: "low" },
           },
         }),

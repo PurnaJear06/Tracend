@@ -1,10 +1,9 @@
 import { AiBudget } from "../_shared/ai_budget.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import { createLogger, extractCorrelationId } from "../_shared/logger.ts";
-import { analyzeMealImage } from "../_shared/providers/gemini_meal_vision_provider.ts";
-import { analyzeGroqMealImage } from "../_shared/providers/groq_meal_vision_provider.ts";
 import { captureException } from "../_shared/sentry.ts";
 import { handleMealAnalyze } from "./handler.ts";
+import { mealVisionPath, readMealConsent, reserveMealBudget } from "./vision.ts";
 
 Deno.serve(async (request) => {
   const correlationId = extractCorrelationId(request);
@@ -25,29 +24,22 @@ Deno.serve(async (request) => {
     return reply(422, { error: "invalid_meal_request" });
   }
   const { serviceClient, userClient, userId } = auth;
-  const provider = Deno.env.get("MEAL_VISION_PROVIDER") === "groq" ? "groq" : "gemini";
+  // The gateway route when AI_MEAL_VISION_* is complete, else today's provider.
+  const path = mealVisionPath();
+  const provider = path.provider;
   const budget = new AiBudget((fn, args) => serviceClient.rpc(fn, args), userId);
   try {
     return await handleMealAnalyze(body, {
       userId,
       provider,
-      analyze: provider === "groq" ? analyzeGroqMealImage : analyzeMealImage,
+      analyze: path.analyze,
       log,
       report: (error, mealId) =>
         captureException(error, { userId, functionName: "meal-analyze", correlationId, mealId }),
       store: {
-        async consent() {
-          const { data, error } = await serviceClient.rpc("get_meal_photo_ai_consent", {
-            target_user_id: userId,
-          });
-          if (error || !data || typeof data !== "object") return null;
-          const state = data as { granted?: unknown; provider?: unknown };
-          return {
-            granted: state.granted === true,
-            provider: typeof state.provider === "string" ? state.provider : null,
-          };
-        },
-        reserveBudget: () => budget.reserve("meal_vision"),
+        consent: () =>
+          readMealConsent((fn, args) => serviceClient.rpc(fn, args), userId, path, log),
+        reserveBudget: () => reserveMealBudget(budget, path),
         keepBudget: () => budget.keep(),
         async loadDraft(mealId) {
           const { data: meal, error } = await serviceClient.from("meals")
