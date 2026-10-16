@@ -162,12 +162,20 @@ Nothing here changes production by itself except migration code 17 (the budget s
     its `aiAnswerLabel` call and a comment.
   - **No built-in notice.** `AiNotice.builtIn` and `aiCoachingNoticeVersion` are gone. The app shows
     only the notice it fetched (`get_current_ai_notice`) and never records a grant for a version it
-    did not fetch: a failed call is `AiNoticeUnavailable` (`loadCurrentAiNotice`), the gate shows
-    "Connection needed" with retry at start-up, and the consent screen, sheet and onboarding step
-    show "The AI coaching notice could not be loaded…" with **Try again** and no answer buttons
+    did not fetch: a failed call is `AiNoticeUnavailable` (`loadCurrentAiNotice`). **A notice
+    failure never blocks the signed-in app:** `AiCoachingConsentController.load` treats it as "AI
+    unavailable" (choice undecided, no notice), `Phase2Gate` opens the app with AI coaching off and
+    shows the consent screen only when a notice loaded, and only the AI surfaces (consent screen,
+    Coach and Account sheet, onboarding AI step) show "The AI coaching notice could not be loaded…"
+    with **Try again** and no answer buttons
     (`AiCoachingNoticeSection`). The fixture repository (tests only) has a neutral notice naming no
     company. `lib/features/onboarding/onboarding_flow.dart` changed for this (out-of-list edit) and
-    its AI choice card no longer says an AI model drafts the starting plan.
+    its AI choice card no longer says an AI model drafts the starting plan. With no notice the AI
+    step lets onboarding continue without recording anything (AI off, the rules plan).
+  - **Own-photo check before the vision routes** (review fix). `supabase/functions/_evals/owner_photo_check.ts`
+    sends the owner's own photos through the features' own request (`analyzeMealWithGateway`,
+    `handlePhysiqueCheck`) and prints the parsed results; the runbook (3.3, 3.4) runs it and the
+    owner judges it before any `AI_*_VISION_EVALUATED=true` is set. AI_SAFETY_SPEC §8 and §9 describe it.
   - Tests: `test/ai_wording_test.dart` renders Coach replies stored by deepseek, groq, gemini and
     anthropic plus the photo card and greps the rendered text for model and company names. Not in
     A7's scope and still naming providers: the App Store mock-ups in `design/store/`, and test

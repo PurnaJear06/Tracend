@@ -321,10 +321,23 @@ clarification rather than imply false precision.
   Retention setting must be on for the key's organization while this route is enabled.
 - **After the cutover:** Claude Haiku 5.5 (`AI_MEAL_VISION_PROVIDER=anthropic`,
   `AI_MEAL_VISION_MODEL=claude-haiku-5-5`). `MEAL_VISION_ENABLED` stays the on/off switch, and
-  `AI_MEAL_VISION_EVALUATED=true` replaces `MEAL_VISION_MODEL_EVALUATED`; the owner sets it only
-  after checking the model on their own meal photos. Anthropic's standard commercial terms apply:
+  `AI_MEAL_VISION_EVALUATED=true` replaces `MEAL_VISION_MODEL_EVALUATED`. The owner sets it only
+  after the own-photo check below passes. Anthropic's standard commercial terms apply:
   inputs and outputs are deleted within 30 days and not used for training, which the notice says.
   The JPEG is checked and its metadata removed before sending (`_shared/physique/jpeg.ts`).
+- **Own-photo check (before any production route is set; the synthetic drawings in the gateway
+  evals test the contract and refusals, not recognition of real food).** The owner puts a few of
+  their own meal photos (about ten typical meals, including a mixed home dish and one non-meal
+  photo) in a local folder and runs `supabase/functions/_evals/owner_photo_check.ts meal <folder>`.
+  It sends each photo to Anthropic through the same request meal-analyze sends (the same
+  instructions, schema, model and settings, from `meal-analyze/vision.ts`), prints the parsed
+  candidates, stores nothing, reads `ANTHROPIC_API_KEY` from the environment without printing it,
+  and stops before a call that could pass its spend cap. The owner judges the output: the foods
+  named are the foods on the plate, portions are sensible, no item is invented, a mixed dish asks
+  about its recipe rather than implying precision, and a non-meal photo returns no food. Only if
+  it passes does the owner set the production route with `AI_MEAL_VISION_EVALUATED=true`; if it
+  does not, no route is set. Meal vision has no allowlist, so this check is the only gate before
+  every athlete can use the route.
 - **Rollback:** unset the `AI_MEAL_VISION_*` settings. The Groq path runs again (and needs a Groq
   meal photo notice current, so the rollback window keeps the old notice available to republish).
 
@@ -354,9 +367,20 @@ feature `physique_vision`.
 - **After the cutover:** Claude Sonnet 5.5 (`AI_PHYSIQUE_VISION_PROVIDER=anthropic`,
   `AI_PHYSIQUE_VISION_MODEL=claude-sonnet-5-5`). The function answers 403 `physique_vision_not_evaluated`
   until `AI_PHYSIQUE_VISION_EVALUATED=true`. The synthetic drawings used in the gateway evals test
-  the contract, refusals and injected text, not recognition of real bodies, so the owner sets
-  `EVALUATED=true` only after checking the model on their own photos. Rollback: unset the
-  `AI_PHYSIQUE_VISION_*` settings.
+  the contract, refusals and injected text, not recognition of real bodies.
+- **Own-photo check (before any production route is set).** The owner puts a few of their own
+  photo sets in a local folder, one sub-folder per set holding `front.jpg`, `side.jpg` and
+  `back.jpg`, and runs `supabase/functions/_evals/owner_photo_check.ts physique <folder>`. It sends
+  each set to Anthropic through the check's own handler (`physique-check/handler.ts`: JPEG
+  cleaning, the same request, model and settings, the contract and the one correction), prints the
+  parsed result or the refusal, stores nothing, reads `ANTHROPIC_API_KEY` from the environment
+  without printing it, and stops before a call that could pass its spend cap. The owner judges
+  the output: sensible muscles to develop for their own build, no body-fat figure, percentage,
+  score or rating, no judgement of appearance, nothing medical, and no contract refusal on a
+  clear set. Only if it passes does the owner set the production route with
+  `AI_PHYSIQUE_VISION_EVALUATED=true`, and the allowlist stays owner-only for the first production
+  day; widening it is a later step that needs the separate evaluation below. If the check fails,
+  no route is set. Rollback: unset the `AI_PHYSIQUE_VISION_*` settings.
 
 No other account may be added to the allowlist until a separate evaluation passes: consented or synthetic sets across body types and skin tones; pose,
 clothing, lighting and pump changes; repeatability; wrong priorities; forbidden outputs; text
@@ -522,8 +546,13 @@ is needed: once in each AI consent notice and in the privacy policy's processor 
   `qwen/qwen3.8-27b` and the current coaching notice names DeepSeek, until the owner publishes the
   v6 / v2 / v2 drafts, which name Anthropic once and no model. The `model` argument of the photo
   publishers is a stored provenance field of the notice row and is not shown by the app.
-- **The built-in fallback notice** in the app (shown only when the server notice cannot load) is
-  the `ai-coaching-v6` text; a test keeps it identical to the draft.
+- **The app has no notice text of its own.** It shows only the notice it fetched
+  (`get_current_ai_notice`) and records only the version it fetched. When that call fails or
+  returns something that is not a notice, the signed-in app still opens, with AI coaching off and
+  no answer assumed. Only the screens that ask (the AI coaching question, the Coach and Account
+  sheet, and the onboarding AI step) say the notice could not be loaded and offer **Try again**,
+  with no answer buttons until it loads; onboarding goes on with the rules plan. The photo notices
+  are likewise fetched from the server and recorded by the version fetched. A test keeps the drafts in `docs/notices/` free of model names.
 
 ### 10.4 Onboarding plan provider
 

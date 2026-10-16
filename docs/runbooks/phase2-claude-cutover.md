@@ -42,8 +42,8 @@ Other properties:
 | --- | --- | --- | ---: | ---: | --- |
 | Coach chat | `AI_COACH_CHAT_` | `claude-haiku-5-5` | 4096 | 30000 | yes |
 | Daily decision | `AI_DAILY_DECISION_` | `claude-sonnet-5-5` | 1800 | 25000 | yes |
-| Meal photo | `AI_MEAL_VISION_` | `claude-haiku-5-5` | 1500 | 30000 | yes |
-| Physique check | `AI_PHYSIQUE_VISION_` | `claude-sonnet-5-5` | 800 | 60000 | yes, limited to you until your real-photo check passes |
+| Meal photo | `AI_MEAL_VISION_` | `claude-haiku-5-5` | 1500 | 30000 | yes, after your own-photo check passes (3.3) |
+| Physique check | `AI_PHYSIQUE_VISION_` | `claude-sonnet-5-5` | 800 | 60000 | yes, after your own-photo check passes (3.4), limited to you |
 | Onboarding plan | `AI_ONBOARDING_PLAN_` | `claude-sonnet-5-5` | 8000 | 90000 | **no, later, after B2** |
 | Onboarding questions | `AI_ONBOARDING_QUESTIONS_` | `claude-sonnet-5-5` | 1500 | 30000 | **no, later, after B2** |
 
@@ -65,9 +65,10 @@ Verify:
 - Migration code 17 applied. In the SQL editor:
   `select per_person_monthly_usd, global_monthly_usd from private.ai_budget_limits;`
   expects `3.00` and `50.00`.
-- **Confirm the USD 50 global stop.** The owner said "that is fine" but it was to be confirmed at
-  cutover. To change it: `update private.ai_budget_limits set global_monthly_usd = <n>, updated_at
-  = now();`
+- The USD 50 global stop is the owner's to confirm **before merging #124**: migration code 17
+  sets it at deploy. If you want another number, tell the lead before the merge so the migration
+  is changed; after it has deployed, change it with
+  `update private.ai_budget_limits set global_monthly_usd = <n>, updated_at = now();`.
 - Production still runs DeepSeek and Groq: Supabase dashboard > Edge Functions > Logs shows no
   `ai_call` lines yet (the gateway logs only when a route is used).
 
@@ -90,7 +91,8 @@ Until the notice is published and accepted (step 4), the route sends nothing and
 degraded for that athlete: Coach chat answers "consent required" (the app shows its AI-off card),
 the daily decision and the starting plan use the deterministic rules, meal photos answer 503
 `meal_photo_notice_outdated`, the physique check is unavailable. Plans, logging and Apple Health
-sync are unaffected. Do the route, the publish and your own accept in one sitting.
+sync are unaffected. Do the route, the publish and your own accept in one sitting. For the two
+photo features, your own-photo check on your Mac (3.3, 3.4) comes before their route.
 
 **3.0 Load the key (once).** Never print it. `.env` holds `ANTHROPIC_API_KEY`:
 ```sh
@@ -123,10 +125,26 @@ checked by Tracend".
 After you accept the coaching notice (step 4): generate today's decision. It must pass the existing validator (a forbidden or ungrounded
 answer falls back to the deterministic decision and records a failed run).
 
-**3.3 Meal photo.** `MEAL_VISION_ENABLED` stays `true`. This is also the **real-photo check** the
-spec requires before `EVALUATED` (AI_SAFETY_SPEC §8): the synthetic drawings used in the evals test
-the contract and refusals, not recognition of real food. Nothing is logged until the athlete
-confirms the foods, so the check costs no wrong data.
+**3.3 Meal photo.** `MEAL_VISION_ENABLED` stays `true`. Meal vision has no allowlist: once its
+route is evaluated, every athlete who accepts the notice can use it. So your own-photo check
+(AI_SAFETY_SPEC §8) comes **first**; the synthetic drawings used in the evals test the contract and
+refusals, not recognition of real food. The check runs on your Mac and touches nothing in
+production: no route, no database, no Storage.
+1. Put about ten of your own typical meals in a local folder (not in the repo), including a mixed
+   home dish and one photo that is not a meal.
+2. Run it (the key is read from `.env` and never printed; the photos go only to Anthropic; it
+   stops before a call that could pass its cap, 1 USD unless you pass `--cap-usd`):
+   ```sh
+   set -a; . ./.env; set +a
+   ./scripts/deno.sh run --allow-env --allow-net=api.anthropic.com --allow-read="$PHOTOS" \
+     supabase/functions/_evals/owner_photo_check.ts meal "$PHOTOS"
+   ```
+   It sends each photo through the same request meal-analyze sends (same instructions, schema,
+   model and settings, imported from `meal-analyze/vision.ts`) and prints the foods it would offer.
+3. Judge the output: the foods named are the foods on the plate, portions are sensible, nothing is
+   invented, the mixed dish asks about its recipe, and the non-meal photo returns "no food found".
+4. **Only if it passes,** set the production route (`EVALUATED=true` last). If it does not, set
+   nothing and report what was wrong.
 ```sh
 ./scripts/supabase.sh secrets set \
   AI_MEAL_VISION_PROVIDER=anthropic AI_MEAL_VISION_MODEL=claude-haiku-5-5 \
@@ -134,17 +152,35 @@ confirms the foods, so the check costs no wrong data.
   AI_MEAL_VISION_EVALUATED=true --project-ref qsfzzsjenopqqqhvpyaw
 ./scripts/verify-live-function.sh --all
 ```
-After you accept the meal photo notice (step 4): photograph about ten of your own typical meals, including a mixed home dish. Foods named,
-portions sensible, no invented items, and "no food" for a non-meal photo. If it is poor, unset the
-five settings (section 6) and report it.
+After you accept the meal photo notice (step 4): photograph a meal or two in the app and confirm the
+candidates look like the check's. Nothing is logged until you confirm the foods. If it is poor,
+unset the five settings (section 6) and report it.
 
-**3.4 Physique check (route limited to you, your real-photo check, then widen).** The route refuses
-with 403 `physique_vision_not_evaluated` until `AI_PHYSIQUE_VISION_EVALUATED=true`, so the check cannot
-run without it. That is safe only because `PHYSIQUE_VISION_ALLOWED_USERS` holds just your id: setting
-`EVALUATED=true` lets nobody else run it. Confirm that before you set anything:
-`./scripts/supabase.sh secrets list --project-ref qsfzzsjenopqqqhvpyaw` shows
-`PHYSIQUE_VISION_ALLOWED_USERS` (its value is hidden; if you cannot say it is only you, set it to
-your id first). Then:
+**3.4 Physique check (your own-photo check first, then a route limited to you, then widen later).**
+The route refuses with 403 `physique_vision_not_evaluated` until `AI_PHYSIQUE_VISION_EVALUATED=true`,
+and AI_SAFETY_SPEC §9 requires your own-photo check before that. It comes **first** and runs on your
+Mac only; nothing in production is touched.
+1. Put a few of your own photo sets in a local folder (not in the repo): one sub-folder per set,
+   each holding `front.jpg`, `side.jpg` and `back.jpg`.
+2. Run it (the key is read from `.env` and never printed; the photos go only to Anthropic; it
+   stops before a call that could pass its cap, 1 USD unless you pass `--cap-usd`):
+   ```sh
+   set -a; . ./.env; set +a
+   ./scripts/deno.sh run --allow-env --allow-net=api.anthropic.com --allow-read="$PHOTOS" \
+     supabase/functions/_evals/owner_photo_check.ts physique "$PHOTOS"
+   ```
+   Each set goes through the check's own handler (JPEG cleaning, the same request, model and
+   settings, the result contract and the one correction), and the parsed result or the refusal is
+   printed.
+3. Judge the output: sensible muscles to develop for your own build, no body-fat figure, no score,
+   no judgement of appearance, nothing medical, and no refusal on a clear set. The drawings in the
+   evals only test the contract.
+4. **Only if it passes,** confirm the route stays limited to you, then set it. The first
+   production day keeps `PHYSIQUE_VISION_ALLOWED_USERS` at your id alone; widening it is a later
+   step that needs the separate evaluation in AI_SAFETY_SPEC §9, and this runbook never adds an
+   account. Check first: `./scripts/supabase.sh secrets list --project-ref qsfzzsjenopqqqhvpyaw`
+   shows `PHYSIQUE_VISION_ALLOWED_USERS` (its value is hidden; if you cannot say it is only you,
+   set it to your id first).
 ```sh
 ./scripts/supabase.sh secrets set \
   AI_PHYSIQUE_VISION_PROVIDER=anthropic AI_PHYSIQUE_VISION_MODEL=claude-sonnet-5-5 \
@@ -152,12 +188,8 @@ your id first). Then:
   AI_PHYSIQUE_VISION_EVALUATED=true --project-ref qsfzzsjenopqqqhvpyaw
 ./scripts/verify-live-function.sh --all
 ```
-After you accept the progress photo notice (step 4), run the check on your own set of photos: the
-result must be sensible muscles to develop, no body-fat figure, no score, and no judgement of
-appearance. That is the real-photo check; the eval drawings only test the contract. If it fails,
-unset the five settings (section 6). **Only after it passes** consider widening the allowlist, and
-even then only after the separate evaluation in AI_SAFETY_SPEC §9; this runbook never adds an
-account.
+After you accept the progress photo notice (step 4), run one check in the app on your own set and
+confirm it matches the check's. If anything is wrong, unset the five settings (section 6).
 
 **Verify after each feature.**
 - `./scripts/verify-live-function.sh --all` passes.
@@ -196,10 +228,15 @@ Drafts: [`docs/notices/ai-coaching-v6.md`](../notices/ai-coaching-v6.md),
 **Before the first publish:** edit the text if you want to, then re-read Anthropic's published
 retention policy (privacy.claude.com, "How long do you store my organization's data?"). The drafts
 say: deleted within 30 days, not used for training, kept longer only where the law requires or to
-enforce its usage rules. If the policy changed, change the text first. `AiNotice.builtIn` must
-equal the v6 body (`test/ai_coaching_consent_test.dart` checks it against the draft), so a text
-change to v6 needs the same change in `lib/features/consent/ai_coaching_consent.dart` and a new app
-build.
+enforce its usage rules. If the policy changed, change the text first.
+
+The app has no notice text of its own: it shows and records only the notice the server returns
+(`get_current_ai_notice`), so a text change needs no new app build. If that call fails, the
+signed-in app still opens with AI coaching off and no answer assumed; only the AI coaching
+question, the Coach and Account sheet and the onboarding AI step say the notice could not be
+loaded and offer **Try again**, with no answer buttons until it loads (onboarding goes on with the
+rules plan). Nothing is recorded without a fetched notice. If you cannot accept in the app, check
+the publish with the draft's "Check after publishing" query and retry.
 
 **4a. Publish.** Run the draft's SQL in the Supabase SQL editor (production), then its "Check after
 publishing" query. The label check refuses a wrong label (22023); nothing is half-published. (The
