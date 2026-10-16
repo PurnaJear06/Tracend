@@ -197,12 +197,12 @@ select is((select array_agg(key order by key) from jsonb_object_keys(
     public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'coach_chat')) key),
   array['granted','notice_version','provider','schema_version'],
   'consent v2 returns exactly its four keys');
-select is((select count(*) from public.ai_consent_notices where provider is not null), 0::bigint,
-  'notices published before provider names keep a null provider');
+select is((select count(*) from public.ai_consent_notices where provider is null), 0::bigint,
+  'notices published before provider names were backfilled with their vendor');
 select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'coach_chat'),
-  jsonb_build_object('schema_version', '1.0', 'granted', false, 'provider', null,
+  jsonb_build_object('schema_version', '1.0', 'granted', false, 'provider', 'deepseek',
     'notice_version', (select version from public.ai_notice_current where purpose = 'coach_chat')),
-  'nothing is granted at first, and the current notice names no provider');
+  'nothing is granted at first, and the current notice names its backfilled vendor');
 
 -- Dated earlier: the newest record decides, and a transaction gives every row the same now().
 insert into public.consent_records(user_id, consent_type, notice_version, action, source, created_at)
@@ -277,13 +277,13 @@ select ok(not has_function_privilege('anon', 'private.check_notice_provider_labe
 select throws_ok($$select private.publish_ai_notice('ai-coaching-a1-none', null, 'Acme',
   array['coach_chat'], 'Test notice.')$$,
   '22023', 'provider required', 'the new publisher requires a provider');
-select lives_ok($$select private.publish_ai_notice('ai-coaching-a1-old', 'DeepSeek',
+select throws_ok($$select private.publish_ai_notice('ai-coaching-a1-old', 'DeepSeek',
   array['onboarding_plan'], 'Old form.')$$,
-  'the original publisher still works');
+  '22023', null, 'the original four-argument publisher refuses');
 select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'onboarding_questions'),
-  '{"schema_version": "1.0", "granted": false, "provider": null,
-    "notice_version": "ai-coaching-a1-old"}'::jsonb,
-  'a notice from the original publisher names no provider');
+  '{"schema_version": "1.0", "granted": false, "provider": "anthropic",
+    "notice_version": "ai-coaching-a1-test"}'::jsonb,
+  'a refused old-form publish changes no current notice');
 select lives_ok($$select private.publish_ai_notice('ai-coaching-a1-google', 'gemini',
   'Gemini (GOOGLE)', array['onboarding_plan'], 'Test notice.')$$,
   'the label check ignores case');
@@ -331,7 +331,7 @@ select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'meal
 -- Progress photo notice ---------------------------------------------------------------
 
 select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'physique_vision'),
-  '{"schema_version": "1.0", "granted": false, "provider": null,
+  '{"schema_version": "1.0", "granted": false, "provider": "groq",
     "notice_version": "progress-photo-ai-v1"}'::jsonb,
   'physique vision reads the progress photo notice');
 select lives_ok($$select private.publish_photo_ai_notice('progress-photo-ai-a1', 'anthropic',
@@ -360,13 +360,13 @@ values ('a1100000-0000-4000-8000-000000000001', 'progress_photo_ai', 'progress-p
   'withdrawn', 'ios_app', now() + interval '1 minute');
 select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'physique_vision')->'granted',
   'false'::jsonb, 'a progress photo withdrawal stops physique vision');
-select lives_ok($$select private.publish_photo_ai_notice('progress-photo-ai-a1-old', 'Groq',
+select throws_ok($$select private.publish_photo_ai_notice('progress-photo-ai-a1-old', 'Groq',
   'qwen/qwen3.8-27b', 'Old form.')$$,
-  'the original progress photo publisher still works');
+  '22023', null, 'the original four-argument progress photo publisher refuses');
 select is(public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'physique_vision'),
-  '{"schema_version": "1.0", "granted": false, "provider": null,
-    "notice_version": "progress-photo-ai-a1-old"}'::jsonb,
-  'its notice names no provider and needs a new grant');
+  '{"schema_version": "1.0", "granted": false, "provider": "anthropic",
+    "notice_version": "progress-photo-ai-a1"}'::jsonb,
+  'a refused old-form publish changes no current notice');
 
 select throws_ok($$select public.get_ai_consent_v2('a1100000-0000-4000-8000-000000000001', 'acme')$$,
   '22023', 'invalid purpose', 'an unknown purpose is refused');

@@ -69,6 +69,22 @@ void main() {
       });
     }
 
+    testWidgets('a deterministic safety reply is not labelled as AI', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          CoachMessageBubble(
+            message: _reply('mock', 'deterministic-safety-v1'),
+          ),
+        ),
+      );
+
+      expect(find.text('Tracend safety answer · not AI'), findsOneWidget);
+      expect(find.textContaining('AI answer'), findsNothing);
+      _expectNoNames(tester);
+    });
+
     testWidgets('a reply with no stored provider shows no AI label', (
       tester,
     ) async {

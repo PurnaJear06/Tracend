@@ -5,6 +5,34 @@ void main() {
   group('AI answer label', () {
     test('names no model or company (D11)', () {
       expect(aiAnswerLabel(), 'AI answer · checked by Tracend');
+      for (final (provider, model) in [
+        ('deepseek', 'deepseek-flash'),
+        ('groq', 'qwen/qwen3.8-27b'),
+        ('anthropic', 'claude-haiku-5-5'),
+      ]) {
+        expect(
+          aiAnswerLabel(provider: provider, model: model),
+          'AI answer · checked by Tracend',
+        );
+      }
+    });
+
+    test('a reply no model wrote never carries the AI badge', () {
+      expect(
+        aiAnswerLabel(provider: 'mock', model: 'deterministic-safety-v1'),
+        'Tracend safety answer · not AI',
+      );
+      expect(
+        aiAnswerLabel(provider: 'mock', model: 'something-else'),
+        'Tracend answer · not AI',
+      );
+      expect(
+        aiAnswerLabel(
+          provider: 'deterministic',
+          model: 'coach-data-summary-v1',
+        ),
+        'Tracend answer · not AI',
+      );
     });
   });
 

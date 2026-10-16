@@ -352,8 +352,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   void initState() {
     super.initState();
     _aiChoice = _aiRecorded = _answered(widget.aiConsent?.choice);
+    widget.aiConsent?.addListener(_aiNoticeChanged);
     _restore();
   }
+
+  void _aiNoticeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// The answer buttons exist only under a notice the server supplied.
+  bool get _aiNoticeReady =>
+      widget.aiConsent == null || widget.aiConsent!.notice != null;
 
   static bool? _answered(AiCoachingChoice? choice) => switch (choice) {
     AiCoachingChoice.granted => true,
@@ -364,6 +373,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   @override
   void dispose() {
     _pollRun++;
+    widget.aiConsent?.removeListener(_aiNoticeChanged);
     _birthYear.dispose();
     _equipmentNote.dispose();
     _nutrition.dispose();
@@ -1032,7 +1042,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   bool _isStepValid() => switch (_step) {
     _eligibilityStep => _adult && !_needsClinicalSupport && _terms && _privacy,
-    _aiStep => _aiChoice != null,
+    _aiStep => _aiChoice != null && _aiNoticeReady,
     _pathStep => _path != null,
     _goalStep => _goal != null,
     _healthStep => _healthImport != null && !_healthBusy,
@@ -1446,27 +1456,27 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         'Allow AI coaching?',
         'Your answer is saved when you continue. You can change it later in Account.',
       ),
-      AiCoachingDisclosure(
-        notice: widget.aiConsent?.notice ?? AiNotice.builtIn,
-      ),
+      AiCoachingNoticeSection(controller: widget.aiConsent),
       const SizedBox(height: TracendSpacing.lg),
-      _ChoiceCard(
-        selected: _aiChoice == true,
-        icon: CupertinoIcons.chat_bubble_text,
-        title: 'Allow AI coaching',
-        body:
-            'An AI model drafts your starting plan within Tracend\'s safety ranges and writes the Coach chat and daily decision.',
-        onTap: () => setState(() => _aiChoice = true),
-      ),
-      const SizedBox(height: TracendSpacing.sm),
-      _ChoiceCard(
-        selected: _aiChoice == false,
-        icon: CupertinoIcons.hand_raised,
-        title: 'Not now',
-        body:
-            'Tracend builds your plan with its own rules; the Coach chat stays off.',
-        onTap: () => setState(() => _aiChoice = false),
-      ),
+      if (_aiNoticeReady) ...[
+        _ChoiceCard(
+          selected: _aiChoice == true,
+          icon: CupertinoIcons.chat_bubble_text,
+          title: 'Allow AI coaching',
+          body:
+              'AI writes the Coach chat and your daily decision. It may also draft your starting plan, within Tracend\'s safety ranges, once Tracend turns that on.',
+          onTap: () => setState(() => _aiChoice = true),
+        ),
+        const SizedBox(height: TracendSpacing.sm),
+        _ChoiceCard(
+          selected: _aiChoice == false,
+          icon: CupertinoIcons.hand_raised,
+          title: 'Not now',
+          body:
+              'Tracend builds your plan with its own rules; the Coach chat stays off.',
+          onTap: () => setState(() => _aiChoice = false),
+        ),
+      ],
     ],
   );
 

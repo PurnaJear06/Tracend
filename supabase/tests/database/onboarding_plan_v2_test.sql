@@ -38,7 +38,7 @@ select ok(has_column_privilege('authenticated', 'public.user_profiles', 'session
 
 -- A notice may cover some purposes only (v4 covers all three since
 -- 20261002101000_onboarding_health_profile.sql, so this test publishes its own).
-select private.publish_ai_notice('ai-test-coach', 'DeepSeek', array['coach_chat','daily_coaching'],
+select private.publish_ai_notice('ai-test-coach', 'deepseek', 'DeepSeek', array['coach_chat','daily_coaching'],
   'Coach and daily decisions only');
 insert into public.consent_records(user_id, consent_type, notice_version, action, source)
 values ('e1000000-0000-4000-8000-000000000001', 'ai_coaching', 'ai-test-coach', 'granted', 'ios_app');
@@ -49,7 +49,7 @@ select ok(not public.has_ai_coaching_consent('e1000000-0000-4000-8000-0000000000
 select is(public.get_current_ai_notice()->>'version', 'ai-test-coach',
   'the app is shown the notice current for the most purposes');
 
-select throws_ok($$select private.publish_ai_notice('ai-coaching-bad', 'X', array['everything'], 'Body')$$,
+select throws_ok($$select private.publish_ai_notice('ai-coaching-bad', 'deepseek', 'DeepSeek', array['everything'], 'Body')$$,
   '23514', null, 'a notice with an unknown purpose is refused');
 select is((select version from public.ai_notice_current where purpose = 'coach_chat'), 'ai-test-coach',
   'a refused publish changes nothing');
@@ -178,7 +178,7 @@ select is((select count(*) from public.audit_events where target_type = 'change_
 
 -- Consent changes, other athletes, usage ---------------------------------------
 
-select lives_ok($$select private.publish_ai_notice('ai-coaching-v3', 'Another provider',
+select lives_ok($$select private.publish_ai_notice('ai-coaching-v3', 'groq', 'Groq',
     array['coach_chat','daily_coaching','onboarding_plan'], 'New provider notice')$$,
   'the owner publishes a new notice for every purpose');
 select ok(not public.has_ai_coaching_consent('e1000000-0000-4000-8000-000000000001'),

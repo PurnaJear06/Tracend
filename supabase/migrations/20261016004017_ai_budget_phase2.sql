@@ -116,3 +116,63 @@ select jsonb_build_object('schema_version','1.0','period','current_month',
   'daily_limit',30)
 from private.ai_usage_totals(auth.uid()) totals, private.ai_budget_limits lim;
 $$;
+
+-- Notices always name their vendor (migration code 17, part 2) ------------------------------
+
+-- The provider column was added in 20261015120011 without a backfill, so every notice
+-- published before it has provider null, and the old DeepSeek and Groq paths treat "null or
+-- matching" as naming their vendor. A notice naming Anthropic published through a
+-- four-argument publisher would also be null and would pass that rule. Two changes close it:
+-- every existing row gets its vendor, and the four-argument publishers stop publishing.
+
+-- The vendor a legacy notice named, from what the athlete read: its label and, for photo
+-- notices, its model. Exactly one known company must be found; anything else raises, so
+-- nothing is guessed.
+create function private.notice_vendor_from_label(vendor_label text, vendor_model text)
+returns text language plpgsql immutable set search_path = '' as $$
+declare
+  readable text := lower(coalesce(vendor_label, '') || ' ' || coalesce(vendor_model, ''));
+  vendors_found text[] := array[]::text[];
+begin
+  if readable like '%deepseek%' then vendors_found := vendors_found || 'deepseek'; end if;
+  if readable like '%groq%' or readable like '%qwen%' then vendors_found := vendors_found || 'groq'; end if;
+  if readable like '%gemini%' or readable like '%google%' then vendors_found := vendors_found || 'gemini'; end if;
+  if readable like '%anthropic%' or readable like '%claude%' then vendors_found := vendors_found || 'anthropic'; end if;
+  if cardinality(vendors_found) <> 1 then
+    raise exception 'cannot tell which vendor the notice named (label %, model %)',
+      vendor_label, vendor_model using errcode = '22023';
+  end if;
+  return vendors_found[1];
+end $$;
+revoke all on function private.notice_vendor_from_label(text, text)
+from public, anon, authenticated, service_role;
+
+update public.ai_consent_notices
+set provider = private.notice_vendor_from_label(provider_label, null)
+where provider is null;
+
+update public.photo_ai_notices
+set provider = private.notice_vendor_from_label(provider_label, model)
+where provider is null;
+
+update public.meal_photo_ai_notices
+set provider = private.notice_vendor_from_label(provider_label, model)
+where provider is null;
+
+-- Same signatures, argument names and (no) grants; they now refuse. The meal photo publisher
+-- has only a five-argument form already.
+create or replace function private.publish_ai_notice(
+  notice_version text, notice_provider_label text, notice_purposes text[], notice_body text
+) returns void language plpgsql security definer set search_path = '' as $$
+begin
+  raise exception 'publish_ai_notice with four arguments no longer publishes: use private.publish_ai_notice(version, provider, provider_label, purposes, body)'
+    using errcode = '22023';
+end $$;
+
+create or replace function private.publish_photo_ai_notice(
+  notice_version text, notice_provider_label text, notice_model text, notice_body text
+) returns void language plpgsql security definer set search_path = '' as $$
+begin
+  raise exception 'publish_photo_ai_notice with four arguments no longer publishes: use private.publish_photo_ai_notice(version, provider, provider_label, model, body)'
+    using errcode = '22023';
+end $$;

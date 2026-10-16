@@ -1,5 +1,5 @@
 begin;
-select plan(22);
+select plan(39);
 
 insert into auth.users(id, role) values
   ('a7000000-0000-4000-8000-000000000001', 'authenticated'),
@@ -79,6 +79,46 @@ set local role service_role;
 select lives_ok($$select public.reserve_ai_budget_v2('a7000000-0000-4000-8000-000000000002',
   'meal_vision', 0.50)$$, 'raising the stop to USD 4 admits the athlete again');
 reset role;
+
+-- Every notice names its vendor (part 2 of migration code 17) -----------------------------
+
+select is((select count(*) from public.ai_consent_notices where provider is null), 0::bigint,
+  'every coaching notice names its vendor');
+select is((select count(*) from public.photo_ai_notices where provider is null), 0::bigint,
+  'every progress photo notice names its vendor');
+select is((select count(*) from public.meal_photo_ai_notices where provider is null), 0::bigint,
+  'every meal photo notice names its vendor');
+select is((select provider from public.ai_consent_notices where version = 'ai-coaching-v5'), 'deepseek',
+  'the coaching notice that named DeepSeek now says deepseek');
+select is((select provider from public.photo_ai_notices where version = 'progress-photo-ai-v1'), 'groq',
+  'the progress photo notice that named Groq now says groq');
+select is((select provider from public.meal_photo_ai_notices where version = 'meal-photo-ai-v1'), 'groq',
+  'the meal photo notice that named Groq still says groq');
+
+select is(private.notice_vendor_from_label('DeepSeek', null), 'deepseek', 'DeepSeek maps to deepseek');
+select is(private.notice_vendor_from_label('Groq', 'qwen/qwen3.8-27b'), 'groq', 'Groq with a Qwen model maps to groq');
+select is(private.notice_vendor_from_label('Google Gemini', null), 'gemini', 'Google maps to gemini');
+select throws_ok($$select private.notice_vendor_from_label('Acme', null)$$, '22023', null,
+  'a label naming no known company is refused, never guessed');
+select throws_ok($$select private.notice_vendor_from_label('DeepSeek and Groq', null)$$, '22023', null,
+  'a label naming two companies is refused');
+
+-- The four-argument publishers refuse and publish nothing.
+select throws_ok($$select private.publish_ai_notice('ai-coaching-a7-old', 'Anthropic',
+  array['coach_chat'], 'Old form.')$$, '22023', null, 'the four-argument coaching publisher refuses');
+select throws_ok($$select private.publish_photo_ai_notice('progress-photo-ai-a7-old', 'Anthropic',
+  'claude-sonnet-5-5', 'Old form.')$$, '22023', null, 'the four-argument photo publisher refuses');
+select is((select count(*) from public.ai_consent_notices where version = 'ai-coaching-a7-old')
+  + (select count(*) from public.photo_ai_notices where version = 'progress-photo-ai-a7-old'),
+  0::bigint, 'a refused publish stores nothing');
+select ok(not has_function_privilege('authenticated', 'private.publish_ai_notice(text,text,text[],text)', 'execute')
+  and not has_function_privilege('service_role', 'private.publish_ai_notice(text,text,text[],text)', 'execute'),
+  'the four-argument coaching publisher is still closed to clients');
+select ok(not has_function_privilege('authenticated', 'private.publish_photo_ai_notice(text,text,text,text)', 'execute')
+  and not has_function_privilege('service_role', 'private.publish_photo_ai_notice(text,text,text,text)', 'execute'),
+  'the four-argument photo publisher is still closed to clients');
+select lives_ok($$select private.publish_ai_notice('ai-coaching-a7-new', 'anthropic', 'Anthropic',
+  array['coach_chat'], 'Five-argument form.')$$, 'the five-argument publisher names the vendor');
 
 select * from finish();
 rollback;

@@ -7,9 +7,26 @@ import 'package:tracend/shared/formatting.dart';
 
 export 'package:tracend/shared/ai_provider_names.dart';
 
-/// The small label under an AI reply: "AI answer · checked by Tracend". It
-/// never names a model or company (D11), whatever provider the reply stored.
-String aiAnswerLabel() => 'AI answer · $aiProvenanceLine';
+/// The small label under a Coach reply, chosen by what the reply stored.
+///
+/// A reply no model wrote (the deterministic safety boundary stores provider
+/// `mock` and model `deterministic-safety-v1`; summaries use `deterministic`)
+/// is "Tracend safety answer · not AI" or "Tracend answer · not AI", never an
+/// AI badge. Any other reply is "AI answer · checked by Tracend". None of them
+/// names a model or company (D11), whatever provider id the reply stored.
+String aiAnswerLabel({String? provider, String? model}) {
+  final providerId = provider?.trim().toLowerCase() ?? '';
+  final modelId = model?.trim().toLowerCase() ?? '';
+  if (modelId.startsWith('deterministic-safety')) {
+    return 'Tracend safety answer · not AI';
+  }
+  if (providerId == 'mock' ||
+      providerId == 'deterministic' ||
+      modelId.startsWith('deterministic')) {
+    return 'Tracend answer · not AI';
+  }
+  return 'AI answer · $aiProvenanceLine';
+}
 
 /// Data the Coach could not use, keyed by the `missing_data` codes the
 /// coaching context, the daily decision and the feature engine produce.
