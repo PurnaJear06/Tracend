@@ -113,6 +113,8 @@ async function run(
     respond?: () => Response | Promise<Response>;
     consentVendor?: string | null;
     snapshot?: boolean;
+    /** Today's provider settings (COACH_MODEL_PROVIDER and the rest). */
+    settings?: Record<string, string>;
   },
 ) {
   const { auth, calls } = fakeAuth(options);
@@ -120,7 +122,10 @@ async function run(
   const handler = coachDecideHandler({
     requireAuth: () => Promise.resolve(auth),
     path: options.path,
-    provider: { environment: { get: () => undefined }, gateway: { fetch: fake.fetch } },
+    provider: {
+      environment: { get: (name: string) => options.settings?.[name] },
+      gateway: { fetch: fake.fetch },
+    },
   });
   const { result: response } = await captureLogs(() => handler(request()));
   const body = await response.json();
@@ -213,4 +218,67 @@ Deno.test("gateway: a notice naming another vendor gets the deterministic decisi
   assertEquals(result.named("reserve_ai_budget_v2").length, 0);
   const persisted = result.named("persist_daily_coaching_result_v2")[0].params;
   assertEquals(persisted.run_provider, "mock");
+});
+
+// --- Today's provider is a vendor too: the notice must name it --------------------------------
+
+const deepseekSettings = { COACH_MODEL_PROVIDER: "deepseek" };
+
+Deno.test("no route: a notice naming Anthropic sends nothing to DeepSeek", async () => {
+  const result = await run({
+    path: () => ({ kind: "legacy" }),
+    consentVendor: "anthropic",
+    settings: deepseekSettings,
+  });
+  assertEquals(result.status, 200);
+  assertEquals(result.named("get_ai_consent_v2").length, 1);
+  assertEquals(result.named("reserve_ai_budget").length, 0);
+  assertEquals(result.named("reserve_ai_budget_v2").length, 0);
+  const persisted = result.named("persist_daily_coaching_result_v2")[0].params;
+  assertEquals([persisted.run_provider, persisted.run_model], ["mock", "deterministic-mock-v2"]);
+  assertEquals(result.sent, 0);
+});
+
+Deno.test("an unusable route: a notice naming Anthropic sends nothing to DeepSeek", async () => {
+  const over = (): DailyDecisionPath => ({
+    kind: "gateway",
+    route: routeFor("daily_decision", {
+      EVALUATED: "true",
+      MODEL: "claude-opus-5-5",
+      THINKING: "adaptive",
+      MAX_OUTPUT_TOKENS: "32000",
+    }),
+  });
+  const unevaluated = (): DailyDecisionPath => ({ kind: "unevaluated" });
+  for (const path of [over, unevaluated]) {
+    const logged = console.error;
+    console.error = () => {};
+    let result;
+    try {
+      result = await run({ path, consentVendor: "anthropic", settings: deepseekSettings });
+    } finally {
+      console.error = logged;
+    }
+    assertEquals(result.status, 200);
+    assertEquals(result.named("reserve_ai_budget").length, 0);
+    assertEquals(result.named("reserve_ai_budget_v2").length, 0);
+    assertEquals(result.sent, 0);
+    const persisted = result.named("persist_daily_coaching_result_v2")[0].params;
+    assertEquals(persisted.run_provider, "mock");
+  }
+});
+
+Deno.test("no route: a notice naming DeepSeek (or none) keeps today's path", async () => {
+  for (const consentVendor of ["deepseek", null]) {
+    const result = await run({
+      path: () => ({ kind: "legacy" }),
+      consentVendor,
+      settings: deepseekSettings,
+    });
+    // Consent is granted and today's fixed place is taken. (COACH_AI_ENABLED is not set here, so
+    // the provider refuses to start and no request is made: the failure keeps the place open.)
+    assertEquals(result.named("reserve_ai_budget").length, 1);
+    assertEquals(result.named("reserve_ai_budget")[0].params.run_purpose, "daily_coaching");
+    assertEquals(result.sent, 0);
+  }
 });

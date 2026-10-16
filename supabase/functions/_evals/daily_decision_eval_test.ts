@@ -123,3 +123,47 @@ Deno.test("eval retries a transport failure, never a model answer", async () => 
   assertEquals(invalid.summary.transport_retries, 0);
   assertEquals(broken.sent.length, 13);
 });
+
+Deno.test("eval reserves every attempt of a day against its spend limit", async () => {
+  const fake = answering((decision) => decision);
+  // One request can cost about USD 0.06 (Sonnet): 0.1 allows one attempt per day, not three.
+  const { result: one } = await captureLogs(() =>
+    runEval(env({ EVAL_MAX_USD: "0.1" }), { fetch: fake.fetch }, () => {})
+  );
+  assert(one.summary.answers > 0);
+  const { result: three } = await captureLogs(() =>
+    runEval(env({ EVAL_MAX_USD: "0.1", EVAL_ATTEMPTS: "3" }), { fetch: fake.fetch }, () => {})
+  );
+  assertEquals(three.summary.answers, 0);
+  assertEquals(three.stopped_at_spend_limit, true);
+});
+
+Deno.test("eval counts an attempt that lost its usage at the full ceiling and says at most", async () => {
+  // The first request of the run times out, so nothing says what it cost.
+  let calls = 0;
+  const fake = fakeFetch(async (sent) => {
+    calls++;
+    if (calls === 1) throw new TypeError("connection dropped");
+    const { decision } = await new MockCoachModelProvider().generateDecision(contextOf(sent));
+    return jsonResponse(
+      claudeMessage({ content: [{ type: "text", text: JSON.stringify(decision) }] }),
+    );
+  });
+  const { result } = await captureLogs(() =>
+    runEval(env({ EVAL_ATTEMPTS: "2" }), { fetch: fake.fetch }, () => {})
+  );
+  const first = result.results[0];
+  assertEquals(first.attempts, 2);
+  assertEquals(first.cost_known, false);
+  // The lost attempt counts at the ceiling, so the day costs more than its answered attempt.
+  const answered = result.results[1];
+  assert(first.cost_usd > answered.cost_usd * 5);
+  assertEquals(result.summary.attempts_with_unknown_cost, 1);
+  assert(result.summary.spend.startsWith("at most $"));
+  const clean = answering((decision) => decision);
+  const { result: exact } = await captureLogs(() =>
+    runEval(env(), { fetch: clean.fetch }, () => {})
+  );
+  assertEquals(exact.summary.attempts_with_unknown_cost, 0);
+  assert(exact.summary.spend.startsWith("$"));
+});

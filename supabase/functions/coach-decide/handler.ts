@@ -102,6 +102,7 @@ async function handleCoachDecide(
     path,
     (name, params) => auth.serviceClient.rpc(name, params),
     auth.userId,
+    deps.provider?.environment,
   );
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
     "prepare_daily_coaching",

@@ -54,17 +54,34 @@ export type DecisionRpc = (
   params: Record<string, unknown>,
 ) => PromiseLike<{ data: unknown; error: unknown }>;
 
-/// The athlete's AI consent for the path. Through the gateway it counts only
-/// when the notice current for daily coaching names the route's vendor; any
-/// other vendor (or none) is the consent-needed path: the deterministic decision.
+/// The vendor today's provider settings send the decision's data to, or null when they send
+/// nothing (the mock, or no provider named).
+export function legacyDecisionVendor(
+  environment: CoachProviderEnvironment = Deno.env,
+): Exclude<AiVendor, "anthropic"> | null {
+  const provider = environment.get("COACH_MODEL_PROVIDER")?.trim();
+  return provider === "deepseek" || provider === "groq" || provider === "gemini" ? provider : null;
+}
+
+/// The athlete's AI consent for the path. Data goes to a vendor only under a notice that names
+/// it: through the gateway the notice current for daily coaching must name the route's vendor;
+/// on today's path it must name the configured provider (a notice with no vendor, from before
+/// vendor names, is the one published for that provider and keeps working). Any other notice is
+/// the consent-needed path: the deterministic decision, with nothing sent.
 export async function dailyDecisionConsent(
   path: DailyDecisionPath,
   rpc: DecisionRpc,
   userId: string,
+  environment: CoachProviderEnvironment = Deno.env,
 ): Promise<AiCoachingConsent> {
   switch (path.kind) {
-    case "legacy":
-      return await aiCoachingConsent(rpc, userId, "daily_coaching");
+    case "legacy": {
+      const vendor = legacyDecisionVendor(environment);
+      if (vendor === null) return await aiCoachingConsent(rpc, userId, "daily_coaching");
+      const answer = await aiConsentWithProvider(rpc, userId, "daily_decision");
+      if (answer.consent !== "granted") return answer.consent;
+      return answer.provider === null || answer.provider === vendor ? "granted" : "not_granted";
+    }
     case "unevaluated":
       return "not_granted";
     case "gateway": {

@@ -137,9 +137,18 @@ today's path.
 
 - **Three paths** (`_shared/providers/daily_decision_provider.ts`, `dailyDecisionPath()`):
   - `legacy`: `route("daily_decision")` is null. Today's path, unchanged: `COACH_MODEL_PROVIDER`,
-    `has_ai_coaching_consent` for `daily_coaching`, `reserve_ai_budget` at the fixed ceiling, and
+    consent, `reserve_ai_budget` at the fixed ceiling, and
     the same failed-run provenance (the old `COACH_MODEL_PROVIDER` chain, moved verbatim into
     `failedRunProvenance`). The mock stays the default.
+  - Consent on every path (privacy rule): data goes to a vendor only if the athlete's accepted
+    current daily-coaching notice names it. With a configured DeepSeek, Groq or Gemini
+    (`legacyDecisionVendor`, from `COACH_MODEL_PROVIDER`) the `legacy` path reads
+    `get_ai_consent_v2` and a notice naming another vendor (Anthropic after cutover) gets the
+    deterministic decision, nothing sent or reserved. A null provider counts as that vendor: A1
+    added the column without a backfill, so today's production notice (vendor named only in
+    `provider_label`) is null, and today's behaviour must stay byte-identical. The mock sends
+    nothing and keeps `has_ai_coaching_consent`. An unusable or unevaluated route never falls
+    back to the legacy provider, so it needs no vendor check.
   - `gateway`: a complete route with `AI_DAILY_DECISION_EVALUATED=true`. Consent comes from
     `get_ai_consent_v2` (`daily_decision`) and counts only when the current notice names the
     route's vendor; otherwise the deterministic decision answers (the consent-needed path) and
@@ -191,7 +200,9 @@ today's path.
   deterministic decision is the recorded reference. Gates: 90% valid, every escalation escalates,
   zero unsupported numbers, no model or company names, every named gap kept (the same validator
   as production), p95 under 25 s. `EVAL_ATTEMPTS` retries transport failures only; the spend
-  guard stops before a day whose ceiling could pass `EVAL_MAX_USD`. Runs (2026-10-15, Sonnet 5.5,
+  guard reserves the ceiling times `EVAL_ATTEMPTS` before each day against `EVAL_MAX_USD`; an
+  attempt that fails with no usage (timeout, dropped connection) counts at its full ceiling and
+  the report's `spend` then reads "at most $X" (`attempts_with_unknown_cost`). Runs (2026-10-15, Sonnet 5.5,
   thinking off, 1,800 tokens): first run 12/13 valid; the one rejection was an invented "10-15%"
   volume cut (`ungrounded_number`, gate failed). The prompt now says prescribed amounts
   (percentages, sets, minutes, calories) are described in words. Second run: 13/13 valid, 0

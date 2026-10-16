@@ -26,6 +26,7 @@ import {
   GatewayDecisionProvider,
   gatewayFailureCode,
   groundingFault,
+  legacyDecisionVendor,
   maxReservableCeilingUsd,
   reserveDailyDecision,
 } from "./daily_decision_provider.ts";
@@ -549,4 +550,34 @@ Deno.test("grounding: every number must come from the request data or the code r
   ) assertEquals(fault(ungrounded), "ungrounded_number", ungrounded);
   assertEquals(fault("Sonnet suggests rest."), "names_model_or_company");
   assertEquals(fault("Keep going.", []), "missing_data_dropped");
+});
+
+Deno.test("no route: consent follows the configured provider's vendor", async () => {
+  const deepseek = environment({ COACH_MODEL_PROVIDER: "deepseek" });
+  assertEquals(legacyDecisionVendor(deepseek), "deepseek");
+  assertEquals(legacyDecisionVendor(environment({ COACH_MODEL_PROVIDER: "groq" })), "groq");
+  assertEquals(legacyDecisionVendor(environment({ COACH_MODEL_PROVIDER: "gemini" })), "gemini");
+  assertEquals(legacyDecisionVendor(environment({})), null);
+  assertEquals(legacyDecisionVendor(environment({ COACH_MODEL_PROVIDER: "mock" })), null);
+  const answer = (granted: boolean, provider: string | null) =>
+    recordingRpc({ schema_version: "1.0", granted, provider, notice_version: "ai-coaching-v6" });
+  const consent = (granted: boolean, provider: string | null) =>
+    dailyDecisionConsent({ kind: "legacy" }, answer(granted, provider).rpc, "user-a5", deepseek);
+  assertEquals(await consent(true, "deepseek"), "granted");
+  // A notice from before vendor names is the one published for today's provider.
+  assertEquals(await consent(true, null), "granted");
+  assertEquals(await consent(true, "anthropic"), "not_granted");
+  assertEquals(await consent(true, "groq"), "not_granted");
+  assertEquals(await consent(false, "deepseek"), "not_granted");
+  assertEquals(
+    await dailyDecisionConsent({ kind: "legacy" }, recordingRpc("broken").rpc, "u", deepseek),
+    "unavailable",
+  );
+  // The mock sends nothing: the generic consent check stays, as today.
+  const mock = recordingRpc(true);
+  assertEquals(
+    await dailyDecisionConsent({ kind: "legacy" }, mock.rpc, "user-a5", environment({})),
+    "granted",
+  );
+  assertEquals(mock.calls.map((call) => call.name), ["has_ai_coaching_consent"]);
 });

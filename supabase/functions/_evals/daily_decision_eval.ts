@@ -9,8 +9,9 @@
 // adaptive; default off), EVAL_EFFORT (low | medium | high), EVAL_MAX_OUTPUT_TOKENS (default
 // 1800, today's decision limit), EVAL_TIMEOUT_MS (default 25000, today's DeepSeek limit),
 // EVAL_REPEATS (default 1), EVAL_ATTEMPTS (default 1; extra attempts after a timeout, network
-// error or 429 only, reported as transport_retries), EVAL_MAX_USD (default 1; the run stops before a day that could
-// pass it), EVAL_REPORT_DIR (default .tooling/daily-decision-evals/<timestamp>). The key is
+// error or 429 only, reported as transport_retries), EVAL_MAX_USD (default 1; the run stops before
+// a day whose attempts, each at the request ceiling, could pass it; an attempt that fails with no
+// usage reported counts at its full ceiling and the report then says "at most"), EVAL_REPORT_DIR (default .tooling/daily-decision-evals/<timestamp>). The key is
 // ANTHROPIC_API_KEY.
 //
 // Days: the recorded synthetic metrics fixture (test/contract/fixtures/daily_computed_metrics.json)
@@ -37,6 +38,7 @@ import {
 import type { CoachModelRequest } from "../_shared/providers/coach_model_provider.ts";
 import {
   dailyDecisionPath,
+  DecisionCallError,
   decisionCeilingUsd,
   GatewayDecisionProvider,
   groundingFault,
@@ -267,7 +269,10 @@ export type CaseResult = Readonly<{
   policy: PolicyOutcome;
   outcome: "valid" | string;
   latency_ms: number;
+  /** Summed over attempts; an attempt that lost its usage counts at the request ceiling. */
   cost_usd: number;
+  /** False when any attempt failed with no usage reported, so cost_usd is an upper bound. */
+  cost_known: boolean;
   input_units: number;
   output_units: number;
   training_action: string | null;
@@ -288,12 +293,17 @@ export async function runCase(
   item: DecisionCase,
   run: number,
   attempts = 1,
+  ceilingUsd = 0,
 ): Promise<CaseResult> {
-  let result = await attemptCase(provider, item, run, 1);
+  let result = await attemptCase(provider, item, run, 1, ceilingUsd);
   for (let attempt = 2; attempt <= attempts; attempt++) {
     if (!transportFailure.test(result.outcome)) break;
-    const retry = await attemptCase(provider, item, run, attempt);
-    result = { ...retry, cost_usd: retry.cost_usd + result.cost_usd };
+    const retry = await attemptCase(provider, item, run, attempt, ceilingUsd);
+    result = {
+      ...retry,
+      cost_usd: retry.cost_usd + result.cost_usd,
+      cost_known: retry.cost_known && result.cost_known,
+    };
   }
   return result;
 }
@@ -303,12 +313,14 @@ async function attemptCase(
   item: DecisionCase,
   run: number,
   attempt: number,
+  ceilingUsd: number,
 ): Promise<CaseResult> {
   const reference = (await new MockCoachModelProvider().generateDecision(item.request)).decision;
   const started = performance.now();
   let outcome = "valid";
   let decision: CoachDecisionV1 | null = null;
   let cost = 0;
+  let costKnown = true;
   let inputUnits = 0;
   let outputUnits = 0;
   try {
@@ -327,6 +339,12 @@ async function attemptCase(
     }
   } catch (error) {
     outcome = `gateway:${(error as Error).message}`;
+    // The failure carries no usage. Unless the request was never sent, it may have been billed
+    // (a timeout or a dropped connection loses it), so it counts at its full ceiling.
+    if (!(error instanceof DecisionCallError && error.spend === "none")) {
+      cost = ceilingUsd;
+      costKnown = false;
+    }
   }
   const accepted: CoachDecisionV1 | null = decision;
   const grounding = accepted ? groundingFault(accepted, item.request) : null;
@@ -339,6 +357,7 @@ async function attemptCase(
     outcome,
     latency_ms: Math.round(performance.now() - started),
     cost_usd: cost,
+    cost_known: costKnown,
     input_units: inputUnits,
     output_units: outputUnits,
     training_action: accepted?.training.action ?? null,
@@ -381,6 +400,12 @@ export function summarize(results: readonly CaseResult[]) {
     p95_latency_ms: percentile(latencies, 0.95),
     p50_output_units: percentile(results.map((row) => row.output_units), 0.5),
     total_cost_usd: Math.round(results.reduce((sum, row) => sum + row.cost_usd, 0) * 1e6) / 1e6,
+    /** Attempts that failed with no usage reported, counted at their full ceiling. */
+    attempts_with_unknown_cost: results.filter((row) => !row.cost_known).length,
+  };
+  const spend = {
+    ...summary,
+    spend: `${summary.attempts_with_unknown_cost > 0 ? "at most " : ""}$${summary.total_cost_usd}`,
   };
   const gates = {
     valid_rate_at_least_90pct: summary.valid_rate >= 0.9,
@@ -393,7 +418,7 @@ export function summarize(results: readonly CaseResult[]) {
     every_named_gap_kept: summary.missing_data_dropped === 0,
     p95_under_25s: summary.p95_latency_ms < 25_000,
   };
-  return { summary, gates };
+  return { summary: spend, gates };
 }
 
 /** The route the eval runs, from EVAL_* settings, built by the production route(). */
@@ -432,17 +457,20 @@ export async function runEval(
   let stopped = false;
   for (let run = 1; run <= repeats && !stopped; run++) {
     for (const item of decisionCases()) {
-      if (spent + ceiling > maxUsd) {
+      // Every attempt of the day may be sent, each costing up to the request ceiling.
+      if (spent + ceiling * Math.max(1, attempts) > maxUsd) {
         stopped = true;
         break;
       }
-      const row = await runCase(provider, item, run, attempts);
+      const row = await runCase(provider, item, run, attempts, ceiling);
       spent += row.cost_usd;
       results.push(row);
       log(
         `${item.name} #${run}: ${row.outcome} ${row.training_action ?? "-"}/${
           row.nutrition_action ?? "-"
-        } (reference ${row.reference_training_action}) ${row.latency_ms} ms $${row.cost_usd} attempts ${row.attempts}`,
+        } (reference ${row.reference_training_action}) ${row.latency_ms} ms ${
+          row.cost_known ? "" : "at most "
+        }$${row.cost_usd} attempts ${row.attempts}`,
       );
     }
   }
