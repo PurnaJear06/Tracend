@@ -267,32 +267,28 @@ const slugsByWorkout = (answers: Parameters<typeof policiesFor>[0]) =>
 Deno.test("golden: an experienced lifter in a full gym gets barbell and dumbbell compounds", () => {
   assertEquals(
     slugsByWorkout(answersFor({ path: "experienced", experience: "intermediate" })),
-    [
-      [
-        "barbell-back-squat",
-        "barbell-bench-press",
-        "barbell-row",
-        "barbell-deadlift",
-        "cable-crunch",
-        "dumbbell-lateral-raise",
-      ],
-      [
-        "barbell-romanian-deadlift",
-        "barbell-overhead-press",
-        "lat-pulldown",
-        "barbell-reverse-lunge",
-        "cable-crunch",
-        "dumbbell-overhead-triceps-extension",
-      ],
-      [
-        "barbell-front-squat",
-        "dumbbell-bench-press",
-        "chest-supported-dumbbell-row",
-        "barbell-hip-thrust",
-        "barbell-curl",
-        "cable-crunch",
-      ],
-    ],
+    [[
+      "barbell-back-squat",
+      "barbell-bench-press",
+      "barbell-row",
+      "barbell-deadlift",
+      "cable-crunch",
+      "dumbbell-lateral-raise",
+    ], [
+      "barbell-romanian-deadlift",
+      "barbell-overhead-press",
+      "lat-pulldown",
+      "barbell-reverse-lunge",
+      "hanging-knee-raise",
+      "dumbbell-overhead-triceps-extension",
+    ], [
+      "barbell-front-squat",
+      "dumbbell-bench-press",
+      "pull-up",
+      "barbell-hip-thrust",
+      "bird-dog",
+      "barbell-curl",
+    ]],
   );
 });
 
@@ -307,62 +303,54 @@ Deno.test("golden: a beginner in a full gym starts on dumbbells and machines, th
   );
   assertEquals(
     plan,
-    [
-      [
-        "goblet-squat",
-        "dumbbell-bench-press",
-        "chest-supported-dumbbell-row",
-        "dumbbell-romanian-deadlift",
-        "cable-crunch",
-        "dumbbell-lateral-raise",
-      ],
-      [
-        "dumbbell-hip-thrust",
-        "dumbbell-shoulder-press",
-        "lat-pulldown",
-        "dumbbell-reverse-lunge",
-        "cable-crunch",
-        "dumbbell-overhead-triceps-extension",
-      ],
-      [
-        "leg-press",
-        "incline-dumbbell-press",
-        "one-arm-dumbbell-row",
-        "barbell-romanian-deadlift",
-        "dumbbell-curl",
-        "cable-crunch",
-      ],
-    ],
+    [[
+      "goblet-squat",
+      "dumbbell-bench-press",
+      "chest-supported-dumbbell-row",
+      "dumbbell-romanian-deadlift",
+      "cable-crunch",
+      "dumbbell-lateral-raise",
+    ], [
+      "dumbbell-hip-thrust",
+      "dumbbell-shoulder-press",
+      "lat-pulldown",
+      "dumbbell-reverse-lunge",
+      "hanging-knee-raise",
+      "dumbbell-overhead-triceps-extension",
+    ], [
+      "leg-press",
+      "incline-dumbbell-press",
+      "one-arm-dumbbell-row",
+      "barbell-romanian-deadlift",
+      "bird-dog",
+      "dumbbell-curl",
+    ]],
   );
 });
 
 Deno.test("golden: dumbbells only load every main movement; bodyweight only for the trunk", () => {
-  const expected = [
-    [
-      "goblet-squat",
-      "dumbbell-floor-press",
-      "one-arm-dumbbell-row",
-      "dumbbell-romanian-deadlift",
-      "bird-dog",
-      "dumbbell-lateral-raise",
-    ],
-    [
-      "dumbbell-romanian-deadlift",
-      "dumbbell-shoulder-press",
-      "one-arm-dumbbell-row",
-      "dumbbell-reverse-lunge",
-      "dead-bug",
-      "dumbbell-overhead-triceps-extension",
-    ],
-    [
-      "goblet-squat",
-      "dumbbell-floor-press",
-      "one-arm-dumbbell-row",
-      "dumbbell-romanian-deadlift",
-      "dumbbell-curl",
-      "bird-dog",
-    ],
-  ];
+  const expected = [[
+    "goblet-squat",
+    "dumbbell-floor-press",
+    "one-arm-dumbbell-row",
+    "dumbbell-romanian-deadlift",
+    "bird-dog",
+    "dumbbell-lateral-raise",
+  ], [
+    "dumbbell-romanian-deadlift",
+    "dumbbell-shoulder-press",
+    "one-arm-dumbbell-row",
+    "dumbbell-reverse-lunge",
+    "dead-bug",
+    "dumbbell-overhead-triceps-extension",
+  ], [
+    "goblet-squat",
+    "dumbbell-floor-press",
+    "one-arm-dumbbell-row",
+    "dumbbell-romanian-deadlift",
+    "bird-dog",
+    "dumbbell-curl",
+  ]];
   for (const experience of ["beginner", "intermediate"] as const) {
     assertEquals(
       slugsByWorkout(answersFor({ experience, equipment: equipmentSets.dumbbells })),
@@ -431,6 +419,8 @@ Deno.test("without focus muscles, a loaded form free for the session beats bodyw
           for (const workout of buildRulesPlan(policies).workouts) {
             for (const { slug } of workout.exercises) {
               const { pattern } = catalogBySlug.get(slug)!;
+              // Trunk work and the pull-up family rotate (they do not rank loaded first).
+              if (pattern === "core" || (pattern === "vertical_pull" && !loads(slug))) continue;
               // A loaded form already in this session cannot be repeated in it.
               const loadedExists = offered.some((exercise) =>
                 exercise.pattern === pattern && loads(exercise.slug) &&

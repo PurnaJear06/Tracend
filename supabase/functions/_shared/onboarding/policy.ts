@@ -2,6 +2,7 @@ import { type HealthSummary, startsLighter } from "./health_summary.ts";
 import { type HealthHistory, returningFromBreak } from "./health_history.ts";
 import type { DailyActivity, Goal, OnboardingAnswers, Sex } from "./answers.ts";
 import type { MovementPattern, Muscle } from "./catalog.ts";
+import type { ScreeningOutcome } from "../training/screening/outcome.ts";
 
 // onboarding-policy-v2: the safe ranges an onboarding plan must stay inside.
 // Deterministic code computes them; the model chooses within them and its plan
@@ -221,13 +222,28 @@ export function priorityMinimumSets(
   return Math.min(priorityMinimumCeiling, share, maxWeeklySetsPerMuscle);
 }
 
+/** The effort ceiling while an athlete is not yet cleared: 3 reps left in reserve is RPE 7. */
+export const moderateEffortRpe = 7;
+
+/**
+ * Contract 8: `see_professional` builds no plan. A missing outcome means the athlete was never
+ * screened and reads as cleared.
+ */
+export const screeningBlocksPlan = (screening: ScreeningOutcome | undefined): boolean =>
+  screening === "see_professional";
+
 export function trainingPolicy(
   answers: OnboardingAnswers,
   health: HealthSummary | null = null,
   history: HealthHistory | null = null,
+  screening: ScreeningOutcome = "cleared",
 ): TrainingPolicy {
   const minutes = answers.sessionMinutes;
-  const strength = answers.goal === "strength";
+  // Until cleared: moderate effort only (Contract 8). No strength emphasis (the 3-rep floor and
+  // the long strength rests go), at least 3 reps in reserve, and the lighter-start rule still
+  // applies on top.
+  const moderate = screening === "moderate_until_cleared";
+  const strength = answers.goal === "strength" && !moderate;
   const beginner = answers.experience === "beginner";
   const avoid: readonly MovementPattern[] = answers.avoidPatterns;
   const returning = returningFromBreak(history, health);
@@ -250,7 +266,7 @@ export function trainingPolicy(
     maxWeeklySetsPerMuscle,
     setsPerExercise: [1, 5],
     reps: [strength ? 3 : 6, 20],
-    rpe: [7, rpeHigh],
+    rpe: moderate ? [moderateEffortRpe - 1, Math.min(rpeHigh, moderateEffortRpe)] : [7, rpeHigh],
     restSeconds: [60, strength ? 240 : 180],
     sessionOverrunMinutes: Math.max(5, Math.round(minutes * 0.15)),
     requiredPatternGroups: patternGroups
