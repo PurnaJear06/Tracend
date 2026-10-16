@@ -18,8 +18,8 @@ import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 /// - evidence rows = `CoachMessage.evidence` (label + source, display-only)
 /// - data gaps = `CoachMessage.missingData`, in words ([coachGapLabel])
 /// - suggested prompts ONLY from `CoachMessage.suggestedFollowUps`
-/// - the provider label comes from `CoachMessage.modelProvider` through the
-///   display-name map ([aiAnswerLabel]), never a raw id
+/// - an AI reply (`CoachMessage.modelProvider` set) carries [aiAnswerLabel],
+///   which names no model or company (D11)
 /// - reasoning from `CoachMessage.reasoningChain` (structured data only,
 ///   never hidden model chain-of-thought), without its evidence ids
 /// - a data summary (`CoachMessage.isDataSummary`) is labeled as not an AI
@@ -167,7 +167,7 @@ class _CoachReply extends StatelessWidget {
           if (provider != null) ...[
             const SizedBox(height: TracendSpacing.xs),
             Text(
-              aiAnswerLabel(provider),
+              aiAnswerLabel(),
               style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
             ),
           ],

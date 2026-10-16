@@ -2,18 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/features/coach/coach_labels.dart';
 
 void main() {
-  group('provider display names', () {
-    test('a known provider reads by its name', () {
-      expect(aiAnswerLabel('deepseek'), 'AI answer · DeepSeek');
-      expect(aiAnswerLabel('groq'), 'AI answer · Qwen');
-      expect(aiAnswerLabel('gemini'), 'AI answer · Gemini');
-      expect(aiProviderDisplayName('DeepSeek'), 'DeepSeek');
-    });
-
-    test('an unlisted or missing provider never shows its raw id', () {
-      expect(aiProviderDisplayName('acme-llm'), isNull);
-      expect(aiAnswerLabel('acme-llm'), 'AI answer');
-      expect(aiAnswerLabel(null), 'AI answer');
+  group('AI answer label', () {
+    test('names no model or company (D11)', () {
+      expect(aiAnswerLabel(), 'AI answer · checked by Tracend');
     });
   });
 

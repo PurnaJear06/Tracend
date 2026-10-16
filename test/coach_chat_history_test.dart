@@ -216,7 +216,7 @@ void main() {
     ]);
     expect(repository.created, 1);
     expect(find.text('Here is my full take.'), findsOneWidget);
-    expect(find.text('AI answer · DeepSeek'), findsOneWidget);
+    expect(find.text('AI answer · checked by Tracend'), findsOneWidget);
     expect(find.textContaining('deepseek'), findsNothing);
     expect(find.text('Retry'), findsNothing);
   });

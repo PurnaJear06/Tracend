@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -85,7 +87,7 @@ class _EmptyBrief implements DailyBriefRepository {
 Widget _app(Widget home) => MaterialApp(theme: TracendTheme.dark, home: home);
 
 Future<void> _tall(WidgetTester tester) async {
-  tester.view.physicalSize = const Size(430, 1600);
+  tester.view.physicalSize = const Size(430, 3200);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -172,7 +174,7 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('Hangzhou DeepSeek'), findsOneWidget);
+    expect(find.textContaining('Anthropic, a US company'), findsOneWidget);
     await tester.tap(find.text('Allow AI coaching'));
     await tester.pumpAndSettle();
 
@@ -216,6 +218,8 @@ void main() {
 
     expect(find.text('AI coaching is off'), findsOneWidget);
     expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    // The company is named in the notice only (D11), not on this card.
+    expect(find.textContaining('Anthropic'), findsNothing);
 
     await tester.tap(find.text('Review AI coaching'));
     await tester.pumpAndSettle();
@@ -252,7 +256,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final row = find.text('On · DeepSeek writes Coach answers');
+    final row = find.text('On · AI writes Coach answers');
     await tester.scrollUntilVisible(
       row,
       240,
@@ -369,9 +373,32 @@ void main() {
       );
     });
 
-    test('the built-in notice is the v1 text in three paragraphs', () {
+    test('the built-in notice is the v6 draft the owner publishes', () {
       expect(AiNotice.builtIn.version, aiCoachingNoticeVersion);
       expect(AiNotice.builtIn.paragraphs, hasLength(3));
+      final draft = File('docs/notices/ai-coaching-v6.md').readAsStringSync();
+      final published = RegExp(
+        r'\$notice\$(.*)\$notice\$',
+        dotAll: true,
+      ).firstMatch(draft)!.group(1);
+      expect(AiNotice.builtIn.body, published);
+    });
+
+    test('the built-in notice names one company and no model (D11)', () {
+      final body = AiNotice.builtIn.body;
+      expect(RegExp('Anthropic').allMatches(body), hasLength(1));
+      expect(
+        body,
+        isNot(
+          matches(
+            RegExp(
+              r'deepseek|groq|qwen|gemini|claude|haiku|sonnet|opus|openai|'
+              r'china',
+              caseSensitive: false,
+            ),
+          ),
+        ),
+      );
     });
   });
 }

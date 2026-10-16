@@ -9,7 +9,7 @@ import 'package:tracend/shared/widgets/tracend_sheet.dart';
 /// server data (`get_current_ai_notice`): the owner republishes it when the
 /// provider, the data sent or the purpose changes, and a grant of an older
 /// version no longer counts, so everyone is asked again.
-const aiCoachingNoticeVersion = 'ai-coaching-v1';
+const aiCoachingNoticeVersion = 'ai-coaching-v6';
 
 /// An AI notice: what AI coaching sends, to whom, and what works without it.
 class AiNotice {
@@ -25,23 +25,42 @@ class AiNotice {
   /// Paragraphs separated by blank lines.
   final String body;
 
-  /// The notice built into this app, matching `ai-coaching-v1` on the server.
+  /// The notice built into this app, matching `ai-coaching-v6` on the server
+  /// (`docs/notices/ai-coaching-v6.md`; a test keeps them identical).
   static const builtIn = AiNotice(
     version: aiCoachingNoticeVersion,
-    providerLabel: 'DeepSeek',
+    providerLabel: 'Anthropic',
     body:
-        'The Coach chat and your daily decision are written by an AI model. '
-        'To write them, Tracend sends DeepSeek your training plan and '
-        'workout logs, check-ins, Apple Health summaries (sleep, heart rate, '
-        'HRV, steps and workouts), meals and nutrition targets, body '
-        'measurements, goals and preferences, and the messages you send the '
-        'Coach. Your name, email address and photos are not sent.\n\n'
-        'DeepSeek is run by Hangzhou DeepSeek Artificial Intelligence Co., '
-        'Ltd. and processes this data on servers in China. Its terms, not '
-        'Tracend’s, decide how long it keeps requests.\n\n'
-        'Without AI coaching, your plan, logging, Apple Health sync and '
-        'progress keep working; the Coach chat and AI daily decisions stay '
-        'off. You can change this at any time in Account.',
+        'Your starting plan, the Coach chat and your daily decision are '
+        'written by an AI model. To write your starting plan, and the few '
+        'follow-up questions it may ask first, Tracend sends Anthropic, a '
+        'US company, your onboarding answers: goal, age, sex, height, '
+        'weight and target weight, daily activity, training days and '
+        'session length, years of training and what has worked or stalled, '
+        'equipment, limitations, movements to avoid, focus and strong '
+        'muscles, diet notes, the barbell top sets you report with '
+        'Tracend’s one-rep-max estimates, your answers to the follow-up '
+        'questions, any changes you ask for to a proposal and, if you have '
+        'one, your current plan. If you connected Apple Health, it also '
+        'sends a summary of your last 4 weeks (average steps, active energy '
+        'and sleep, workouts per week, and your weight trend) and of your '
+        'usual completed months. For the Coach chat and daily decision it '
+        'sends your training plan and workout logs, check-ins, Apple Health '
+        'summaries (sleep, heart rate, HRV, steps and workouts), meals and '
+        'nutrition targets, body measurements, goals, focus muscles and '
+        'preferences, and the messages you send the Coach. Your name, email '
+        'address and photos are not sent.\n\n'
+        'Under its standard commercial terms, that company deletes this '
+        'data within 30 days and does not use it to train its models. It '
+        'may keep data longer only where the law requires it or to enforce '
+        'its usage rules.\n\n'
+        'Tracend checks every AI plan, answer and decision against its '
+        'safety rules, and nothing starts until you approve it. Without AI '
+        'coaching, Tracend builds your starting plan with its own rules, '
+        'and your plan, logging, Apple Health sync and progress keep '
+        'working; the Coach chat and AI daily decisions stay off. You can '
+        'turn AI coaching off at any time in Account. That stops new '
+        'requests; data already sent is deleted on the schedule above.',
   );
 
   /// Reads `get_current_ai_notice`; null when the response is not a notice.

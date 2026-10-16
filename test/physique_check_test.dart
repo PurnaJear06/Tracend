@@ -11,7 +11,7 @@ import 'package:tracend/features/progress/widgets/physique_check_widgets.dart';
 
 const _privateCopy = 'Only you can see these. Never sent to AI.';
 const _checkCopy =
-    'Only you can see these. Sent to Groq only when you start a physique '
+    'Only you can see these. Sent to AI only when you start a physique '
     'check.';
 const _noticeFirst = 'Tracend sends your front, side and back photos to Groq.';
 const _noticeSecond = 'Groq runs qwen/qwen3.8-27b and keeps nothing.';

@@ -7,12 +7,9 @@ import 'package:tracend/shared/formatting.dart';
 
 export 'package:tracend/shared/ai_provider_names.dart';
 
-/// The small label under an AI reply: "AI answer · DeepSeek", or "AI answer"
-/// when the provider has no display name.
-String aiAnswerLabel(String? providerId) {
-  final name = aiProviderDisplayName(providerId);
-  return name == null ? 'AI answer' : 'AI answer · $name';
-}
+/// The small label under an AI reply: "AI answer · checked by Tracend". It
+/// never names a model or company (D11), whatever provider the reply stored.
+String aiAnswerLabel() => 'AI answer · $aiProvenanceLine';
 
 /// Data the Coach could not use, keyed by the `missing_data` codes the
 /// coaching context, the daily decision and the feature engine produce.

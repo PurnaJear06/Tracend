@@ -346,7 +346,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 inProgress: _activeSet != null && _capturedPoses.isNotEmpty,
                 onCapture: _openPhotoCapture,
                 onOpenSets: () => _openPhotoSets(data.photoSets),
-                photoCheckProvider: provider,
+                physiqueCheckAvailable: provider != null,
                 onPhysiqueCheck:
                     provider != null && newest?.status == 'complete'
                     ? () => _openPhysiqueCheck(photoSetId: newest!.id)
