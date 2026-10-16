@@ -48,6 +48,9 @@ export type AiConsentFeature =
 /// the evaluation router, which no notice names (type `AthleteVendor`). Never
 /// an API shape: a notice naming DeepSeek must not cover a route to Groq,
 /// though both are reached the same way.
+/// Kept for callers that import the old name; it is the gateway's athlete vendor.
+export type AiVendor = AthleteVendor;
+
 const vendors: ReadonlySet<string> = new Set<string>(
   aiVendors.filter((vendor) => vendor !== "router"),
 );
