@@ -292,6 +292,22 @@ void main() {
     expect(repository.saved, isEmpty);
   });
 
+  test('an expired session or a server error waits and tries again', () async {
+    for (final code in ['PGRST301', '500', null]) {
+      repository.failure = PostgrestException(message: 'transient', code: code);
+      final recorder = newRecorder();
+      listen(recorder);
+      await finish();
+      expect(repository.saved, isEmpty, reason: '$code');
+
+      repository.failure = null;
+      now = now.add(SetHeartRateRecorder.retryAfter);
+      await recorder.processDue();
+      expect(repository.saved, isNotEmpty, reason: '$code');
+      repository.saved.clear();
+    }
+  });
+
   test(
     'no connection keeps the workout waiting without using a read',
     () async {

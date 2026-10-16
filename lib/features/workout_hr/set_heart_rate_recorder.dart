@@ -179,11 +179,12 @@ class SetHeartRateRecorder with WidgetsBindingObserver {
           'Set heart rate saved',
           data: {'sets': summaries.length},
         );
-      } on PostgrestException catch (e) {
-        debugPrint('Non-critical error: heart rate was refused: ${e.code}');
-        return null;
       } catch (e) {
-        debugPrint('Non-critical error: heart rate waits for a connection: $e');
+        if (e is PostgrestException && _refusedForGood(e)) {
+          debugPrint('Non-critical error: heart rate was refused: ${e.code}');
+          return null;
+        }
+        debugPrint('Non-critical error: heart rate waits to be sent: $e');
         return now.isAfter(job.expiresAt)
             ? null
             : job.waiting(now.add(retryAfter));
@@ -194,6 +195,18 @@ class SetHeartRateRecorder with WidgetsBindingObserver {
         job.sets.length;
     if (covered >= enoughCoverage) return null;
     return job.tried(now, bestSamples: best);
+  }
+
+  /// The database refused these summaries and would refuse them again:
+  /// invalid values (class 22), a constraint (23), a permission or schema
+  /// error (42) or a raised exception (P0). Anything else (an expired
+  /// session, a server error) waits and tries again like a lost connection.
+  static bool _refusedForGood(PostgrestException e) {
+    final code = e.code ?? '';
+    return code.startsWith('22') ||
+        code.startsWith('23') ||
+        code.startsWith('42') ||
+        code.startsWith('P0');
   }
 
   void _wake(List<_Job> jobs) {
