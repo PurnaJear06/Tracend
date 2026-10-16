@@ -14,6 +14,19 @@
 // matches ONBOARDING_PLAN_THINKING. EVAL_REPORT_DIR defaults to
 // .tooling/onboarding-evals/<timestamp>.
 //
+// EVAL_PROVIDER=anthropic runs the AI gateway path instead (the production code of
+// onboarding-plan/gateway.ts: prompt -> Claude -> validation -> one repair -> rules plan, and the
+// follow-up questions for every athlete), with ANTHROPIC_API_KEY from the environment:
+//
+//   set -a; . ./.env; set +a
+//   EVAL_PROVIDER=anthropic ./scripts/deno.sh run --allow-env --allow-net --allow-write \
+//     supabase/functions/_evals/onboarding_plan_eval.ts
+//
+// EVAL_MODEL (default claude-sonnet-5-5), EVAL_MAX_OUTPUT_TOKENS (plan; default 8000),
+// EVAL_QUESTIONS_MAX_OUTPUT_TOKENS (default 1500), EVAL_TIMEOUT_MS (default 90000),
+// EVAL_THINKING (on = adaptive; default off) and EVAL_MAX_USD (default 1.4) set the routes; the
+// run stops before an athlete whose worst case could pass EVAL_MAX_USD.
+//
 // Gate: at least 90% of athletes get a valid model plan (initial or repaired)
 // without falling back to the rules plan, every valid plan for an athlete with
 // focus muscles names one of them in its assessment, and, for a direct
@@ -23,6 +36,14 @@
 import { type OnboardingAnswers } from "../_shared/onboarding/answers.ts";
 import { exerciseCatalogV1 } from "../_shared/onboarding/catalog.ts";
 import { generateOnboardingProposal } from "../_shared/onboarding/generate.ts";
+import { route } from "../_shared/ai/routes.ts";
+import {
+  generatePlanViaGateway,
+  generateQuestionsViaGateway,
+  namesModelOrCompany,
+  preparePlan,
+  prepareQuestions,
+} from "../onboarding-plan/gateway.ts";
 import {
   type HealthDay,
   type HealthSummary,
@@ -71,7 +92,7 @@ const base: OnboardingAnswers = {
 };
 
 const gym = base.equipment;
-const athletes: Readonly<Record<string, OnboardingAnswers>> = {
+export const athletes: Readonly<Record<string, OnboardingAnswers>> = {
   "beginner-fat-loss-gym-3d": { ...base, goal: "fat_loss", targetWeightKg: 72 },
   "beginner-muscle-gain-dumbbells-4d": {
     ...base,
@@ -228,7 +249,7 @@ function syntheticHealth(
   return summarizeHealth(days, found, evalToday)!;
 }
 
-const health: Readonly<Record<string, HealthSummary>> = {
+export const health: Readonly<Record<string, HealthSummary>> = {
   // Losing about half a kilo a week, weighed every few days.
   "beginner-fat-loss-gym-3d": syntheticHealth((back) => ({
     steps: 6400,
@@ -256,7 +277,7 @@ const health: Readonly<Record<string, HealthSummary>> = {
 
 // Usual months for the returning athlete: four strength sessions a week, every
 // night's sleep and a weekly weigh-in, through the month before last.
-const history: Readonly<Record<string, HealthHistory>> = {
+export const history: Readonly<Record<string, HealthHistory>> = {
   "experienced-returning-gym-4d": summarizeHealthHistory(
     Array.from({ length: 11 }, (_, index): HealthMonth => ({
       month: monthStart(evalToday, index + 1),
@@ -332,7 +353,178 @@ const percentile = (values: number[], p: number) => {
   return sorted[Math.min(sorted.length - 1, Math.ceil(p * sorted.length) - 1)] ?? 0;
 };
 
+/** The synthetic routes of an EVAL_PROVIDER=anthropic run, built by the production route(). */
+export function evalRoutes(read: (name: string) => string | undefined) {
+  const model = read("EVAL_MODEL") ?? "claude-sonnet-5-5";
+  const thinking = (read("EVAL_THINKING") ?? "off") === "on" ? "adaptive" : "off";
+  const common = {
+    PROVIDER: "anthropic",
+    MODEL: model,
+    THINKING: thinking,
+    TIMEOUT_MS: read("EVAL_TIMEOUT_MS") ?? "90000",
+    EVALUATED: "true",
+  };
+  const settings = (feature: string, maxOutputTokens: string) =>
+    Object.fromEntries(
+      Object.entries({ ...common, MAX_OUTPUT_TOKENS: maxOutputTokens }).map((
+        [name, value],
+      ) => [`AI_${feature}_${name}`, value]),
+    );
+  const env = {
+    ...settings("ONBOARDING_PLAN", read("EVAL_MAX_OUTPUT_TOKENS") ?? "8000"),
+    ...settings(
+      "ONBOARDING_QUESTIONS",
+      read("EVAL_QUESTIONS_MAX_OUTPUT_TOKENS") ?? "1500",
+    ),
+    ANTHROPIC_API_KEY: read("ANTHROPIC_API_KEY") ?? "",
+  } as Record<string, string>;
+  const lookup = (name: string) => env[name] || undefined;
+  return {
+    plan: route("onboarding_plan", lookup),
+    questions: route("onboarding_questions", lookup),
+  };
+}
+
+async function gatewayMain() {
+  const { plan: planRoute, questions: questionsRoute } = evalRoutes((name) => Deno.env.get(name));
+  if (!planRoute || !questionsRoute) {
+    throw new Error("no gateway route: set ANTHROPIC_API_KEY and a known EVAL_MODEL");
+  }
+  const maxUsd = Number(Deno.env.get("EVAL_MAX_USD") ?? "1.4");
+  let spent = 0;
+  const results = [];
+  const questionRows = [];
+  let stopped: string | null = null;
+  for (const [name, answers] of Object.entries(athletes)) {
+    const prepared = preparePlan(
+      planRoute,
+      answers,
+      exerciseCatalogV1,
+      health[name] ?? null,
+      history[name] ?? null,
+    );
+    const asking = prepareQuestions(
+      questionsRoute,
+      answers,
+      health[name] ?? null,
+      history[name] ?? null,
+    );
+    if (prepared.kind !== "ready" || asking.kind !== "ready") {
+      throw new Error(`${name}: route unusable for this athlete`);
+    }
+    // The worst case of this athlete's plan and questions must fit what is left.
+    if (spent + prepared.prepared.ceilingUsd + asking.ceilingUsd > maxUsd) {
+      stopped = `stopped before ${name}: spent USD ${spent.toFixed(4)} of ${maxUsd}`;
+      break;
+    }
+    const started = performance.now();
+    const result = await generatePlanViaGateway(planRoute, prepared.prepared, {
+      info: (event, fields) => console.log(`  ${event} ${JSON.stringify(fields)}`),
+    });
+    const latency = Math.round(performance.now() - started);
+    const assessment = String(result.proposal.training.assessment ?? "").toLowerCase();
+    const row = {
+      athlete: name,
+      apple_health: name in health,
+      origin: result.proposal.training.origin as string,
+      fallback_reason: result.fallbackReason,
+      attempts: result.attempts,
+      latency_ms: latency,
+      cost_usd: result.usage?.estimatedCostUsd ?? 0,
+      output_units: result.usage?.outputUnits ?? 0,
+      calories: result.proposal.nutrition.calories,
+      title: result.proposal.training.title,
+      names_focus: answers.priorityMuscles.length === 0 ||
+        answers.priorityMuscles.some((muscle) => assessment.includes(muscle)),
+      names_model: namesModelOrCompany(
+        [result.proposal.training.assessment, result.proposal.training.title].join("\n"),
+      ),
+      assessment: result.proposal.training.assessment,
+    };
+    spent += row.cost_usd;
+    results.push(row);
+    console.log(
+      `${name}: ${row.origin}${
+        row.fallback_reason ? ` (${row.fallback_reason})` : ""
+      } ${latency} ms USD ${row.cost_usd.toFixed(4)}`,
+    );
+    const questionStarted = performance.now();
+    const asked = await generateQuestionsViaGateway(questionsRoute, asking);
+    const questionLatency = Math.round(performance.now() - questionStarted);
+    const questionCost = asked.usage?.estimatedCostUsd ?? 0;
+    spent += questionCost;
+    questionRows.push({
+      athlete: name,
+      skipped_reason: asked.skippedReason,
+      questions: asked.questions,
+      latency_ms: questionLatency,
+      cost_usd: questionCost,
+    });
+    console.log(
+      `${name} questions: ${asked.questions.length}${
+        asked.skippedReason ? ` (${asked.skippedReason})` : ""
+      } ${questionLatency} ms`,
+    );
+  }
+  const valid = results.filter((row) => row.origin === "ai").length;
+  const repaired =
+    results.filter((row) =>
+      row.origin === "ai" && row.attempts.some((attempt) => attempt.attempt === "repair")
+    ).length;
+  const latencies = results.map((row) => row.latency_ms);
+  const questionLatencies = questionRows.map((row) => row.latency_ms);
+  const answered =
+    questionRows.filter((row) =>
+      row.skipped_reason === null || row.skipped_reason === "no_questions_needed"
+    ).length;
+  const summary = {
+    provider: "anthropic",
+    model: planRoute.model,
+    thinking: planRoute.thinking,
+    athletes: results.length,
+    valid_without_fallback: valid,
+    valid_rate: results.length ? valid / results.length : 0,
+    repaired,
+    fallback: results.length - valid,
+    fallback_reasons: results.filter((row) => row.origin !== "ai").map((row) =>
+      `${row.athlete}: ${row.fallback_reason}`
+    ),
+    p50_latency_ms: percentile(latencies, 0.5),
+    p95_latency_ms: percentile(latencies, 0.95),
+    p50_output_units: percentile(results.map((row) => row.output_units), 0.5),
+    plan_cost_usd: Math.round(results.reduce((sum, row) => sum + row.cost_usd, 0) * 1e6) / 1e6,
+    questions_answered: answered,
+    questions_asked_total: questionRows.reduce((sum, row) => sum + row.questions.length, 0),
+    questions_p95_latency_ms: percentile(questionLatencies, 0.95),
+    questions_cost_usd: Math.round(questionRows.reduce((sum, row) => sum + row.cost_usd, 0) * 1e6) /
+      1e6,
+    total_cost_usd: Math.round(spent * 1e6) / 1e6,
+    stopped,
+  };
+  const p95LimitMs = planRoute.thinking === "adaptive" ? 120_000 : 60_000;
+  const gates = {
+    all_athletes_ran: stopped === null,
+    valid_rate_at_least_90pct: summary.valid_rate >= 0.9,
+    ai_plans_name_focus_muscles: results.every((row) => row.origin !== "ai" || row.names_focus),
+    no_model_or_company_named: results.every((row) => !row.names_model),
+    plan_p95_within_limit: summary.p95_latency_ms < p95LimitMs,
+    questions_answer_at_least_90pct: questionRows.length > 0 &&
+      answered / questionRows.length >= 0.9,
+    questions_p95_under_40s: summary.questions_p95_latency_ms < 40_000,
+  };
+  const dir = Deno.env.get("EVAL_REPORT_DIR") ??
+    `.tooling/onboarding-evals/${new Date().toISOString().replaceAll(":", "-")}`;
+  await Deno.mkdir(dir, { recursive: true });
+  await Deno.writeTextFile(
+    `${dir}/report.json`,
+    JSON.stringify({ summary, gates, results, questions: questionRows }, null, 2),
+  );
+  console.log(JSON.stringify({ summary, gates }, null, 2));
+  if (!Object.values(gates).every(Boolean)) Deno.exit(1);
+}
+
 async function main() {
+  if (Deno.env.get("EVAL_PROVIDER") === "anthropic") return await gatewayMain();
   const { config: modelConfig, router } = config();
   // A direct run uses production timing (chosen by thinking); the router adds
   // its own queueing and gets more room.

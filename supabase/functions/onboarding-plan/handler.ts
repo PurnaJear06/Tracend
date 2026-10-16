@@ -1,5 +1,6 @@
 import { reply } from "../_shared/auth.ts";
-import type { AiCoachingConsent } from "../_shared/ai_consent.ts";
+import type { AiCoachingConsent, AiConsentWithProvider, AiVendor } from "../_shared/ai_consent.ts";
+import type { AiRoute } from "../_shared/ai/types.ts";
 import {
   type AnswersResult,
   answersSnapshot,
@@ -38,7 +39,22 @@ import {
   generateFollowUpQuestions,
 } from "../_shared/onboarding/questions.ts";
 import { sha256 } from "../_shared/onboarding/snapshot.ts";
-import type { OnboardingModelResolution } from "../_shared/providers/onboarding_plan_provider.ts";
+import type {
+  OnboardingGatewayFeature,
+  OnboardingModelResolution,
+} from "../_shared/providers/onboarding_plan_provider.ts";
+import {
+  type GatewayDeps,
+  type GatewayPlanResult,
+  type GatewayQuestionsResult,
+  type GatewaySpend,
+  generatePlanViaGateway,
+  generateQuestionsViaGateway,
+  type PreparedPlan,
+  preparePlan,
+  prepareQuestions,
+  type QuestionsPreparation,
+} from "./gateway.ts";
 
 // POST onboarding-plan: start (or return) the athlete's onboarding plan
 // generation and answer at once with its id. The plan is built in the
@@ -126,8 +142,21 @@ export interface OnboardingStore {
   /** Drops this request's claim after a failed call, so a retry asks again. */
   releaseQuestions(questionsHash: string): Promise<void>;
   recordQuestionUsage(usage: GenerationUsage): Promise<void>;
-  consent(): Promise<AiCoachingConsent>;
+  /**
+   * Settings path: whether the athlete's current onboarding notice is granted and names `vendor`,
+   * the provider the settings send the data to (see `legacyNoticeConsent`).
+   */
+  consent(feature: OnboardingGatewayFeature, vendor: AiVendor): Promise<AiCoachingConsent>;
   budgetAvailable(): Promise<boolean>;
+  /** The notice current for the feature, and the vendor it names (gateway path). */
+  gatewayConsent(feature: OnboardingGatewayFeature): Promise<AiConsentWithProvider>;
+  /**
+   * Takes a place in the budget at the route's worst-case cost (gateway path); false when the
+   * limit stops it.
+   */
+  reserveGatewayBudget(feature: OnboardingGatewayFeature, ceilingUsd: number): Promise<boolean>;
+  /** Gives the place back: no call was made, it cost nothing, or its usage is recorded. */
+  releaseBudget(): Promise<void>;
   /** Leaves the budget place open: a call may have been billed with no usage reported. */
   keepBudget?(): void;
   recordUsage(usage: GenerationUsage): Promise<void>;
@@ -166,6 +195,14 @@ export type HandlerDeps = Readonly<{
   /** Keeps the background work alive after the response (EdgeRuntime.waitUntil). */
   background: (work: Promise<void>) => void;
   observer: Observer;
+  /**
+   * The AI gateway routes (Contract 1), read per request: a usable, evaluated route sends that
+   * feature through the gateway; null (no route, not evaluated, or unusable) keeps the settings
+   * path in `resolution`.
+   */
+  routes?: Readonly<{ plan: () => AiRoute | null; questions: () => AiRoute | null }>;
+  /** The gateway's fetch and clock (tests pass fakes). */
+  gateway?: GatewayDeps;
   generate?: typeof generateOnboardingProposal;
   askQuestions?: typeof generateFollowUpQuestions;
   /** Waits between polls of a claim another request holds. */
@@ -256,6 +293,25 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
   return reply(202, body);
 }
 
+/**
+ * The settings path sends the athlete's data to its own provider (DeepSeek, Groq or Gemini), so
+ * a granted notice covers it only when the notice names that vendor. A notice with no vendor
+ * (provider null) predates vendor names: it is the notice published for the settings path, so it
+ * keeps covering it. A notice that names another vendor (Anthropic after cutover) does not, and
+ * a fallback or rollback to the settings path then sends nothing.
+ */
+export function legacyNoticeConsent(
+  answer: AiConsentWithProvider,
+  vendor: AiVendor,
+): AiCoachingConsent {
+  if (answer.consent !== "granted") return answer.consent;
+  return answer.provider === null || answer.provider === vendor ? "granted" : "not_granted";
+}
+
+/** The athlete's current notice names the vendor the route sends to. */
+const namesVendor = (answer: AiConsentWithProvider, route: AiRoute) =>
+  answer.consent === "granted" && answer.provider === route.vendor;
+
 async function handleQuestions(
   deps: HandlerDeps,
   answers: OnboardingAnswers,
@@ -271,15 +327,72 @@ async function handleQuestions(
       questions: stored.questions,
       ...(stored.skipped_reason ? { skipped_reason: stored.skipped_reason } : {}),
     });
+  // The gateway answers when its route is usable and evaluated; otherwise the settings path does.
+  const gatewayRoute = deps.routes?.questions() ?? null;
+  let gateway:
+    | { route: AiRoute; prepared: Extract<QuestionsPreparation, { kind: "ready" }> }
+    | null = null;
+  if (gatewayRoute) {
+    const prepared = prepareQuestions(gatewayRoute, answers, health, history);
+    if (prepared.kind === "ready") gateway = { route: gatewayRoute, prepared };
+    else observer.warn("onboarding_questions_route_unusable", { fallbackReason: prepared.reason });
+  }
   const resolution = deps.resolution();
   let consentGranted = false;
   let budgetAvailable = false;
-  if (resolution.kind === "model") {
-    consentGranted = (await store.consent()) === "granted";
-    if (consentGranted) budgetAvailable = await store.budgetAvailable();
+  let closed: string | null;
+  if (gateway) {
+    // A notice that does not name the route's vendor is no consent: nothing is sent.
+    consentGranted = namesVendor(await store.gatewayConsent("onboarding_questions"), gateway.route);
+    if (consentGranted) {
+      budgetAvailable = await store.reserveGatewayBudget(
+        "onboarding_questions",
+        gateway.prepared.ceilingUsd,
+      );
+    }
+    closed = !consentGranted
+      ? "ai_consent_not_granted"
+      : !budgetAvailable
+      ? "ai_usage_limit"
+      : null;
+  } else {
+    if (resolution.kind === "model") {
+      consentGranted =
+        (await store.consent("onboarding_questions", resolution.config.provider)) === "granted";
+      if (consentGranted) budgetAvailable = await store.budgetAvailable();
+    }
+    closed = followUpGateReason(resolution, { consentGranted, budgetAvailable });
   }
-  const closed = followUpGateReason(resolution, { consentGranted, budgetAvailable });
   if (closed !== null) return respond({ questions: [], skipped_reason: closed, metadata: null });
+  try {
+    return await askOrReuse(
+      deps,
+      resolution,
+      answers,
+      health,
+      history,
+      questionsHash,
+      gateway,
+      respond,
+    );
+  } finally {
+    // The place is given back whatever happened; a call of unknown cost kept it before this.
+    if (gateway) await store.releaseBudget();
+  }
+}
+
+async function askOrReuse(
+  deps: HandlerDeps,
+  resolution: OnboardingModelResolution,
+  answers: OnboardingAnswers,
+  health: HealthSummary | null,
+  history: HealthHistory | null,
+  questionsHash: string,
+  gateway: { route: AiRoute; prepared: Extract<QuestionsPreparation, { kind: "ready" }> } | null,
+  respond: (stored: StoredQuestions) => Response,
+): Promise<Response> {
+  const { store, observer } = deps;
+  const gate = { consentGranted: true, budgetAvailable: true };
   const sleep = deps.sleep ?? ((ms: number) => new Promise((done) => setTimeout(done, ms)));
   let claim = await store.claimQuestions(questionsHash);
   for (
@@ -303,19 +416,33 @@ async function handleQuestions(
     }
   };
   let result: FollowUpResult;
+  let spend: GatewaySpend | null = null;
   try {
-    result = await (deps.askQuestions ?? generateFollowUpQuestions)(
-      answers,
-      resolution,
-      { consentGranted, budgetAvailable },
-      health,
-      history,
-    );
+    if (gateway) {
+      const answered: GatewayQuestionsResult = await generateQuestionsViaGateway(
+        gateway.route,
+        gateway.prepared,
+        gatewayDeps(deps),
+      );
+      spend = answered.spend;
+      result = answered;
+    } else {
+      result = await (deps.askQuestions ?? generateFollowUpQuestions)(
+        answers,
+        resolution,
+        gate,
+        health,
+        history,
+      );
+    }
   } catch (error) {
     await release();
     throw error;
   }
-  if (result.skippedReason === "provider_timeout") store.keepBudget?.();
+  // A call that may have been billed with no usage known keeps its place at the ceiling.
+  if (gateway ? spend === "unknown" : result.skippedReason === "provider_timeout") {
+    store.keepBudget?.();
+  }
   if (result.usage) {
     try {
       await store.recordQuestionUsage(result.usage);
@@ -352,6 +479,11 @@ async function handleQuestions(
   }
   return respond(await store.saveQuestions(questionsHash, outcome));
 }
+
+const gatewayDeps = (deps: HandlerDeps): GatewayDeps => ({
+  ...deps.gateway,
+  info: (event, fields) => deps.observer.info(event, fields),
+});
 
 /** The answers that decide whether a broken rule can be met. */
 export function answersToChange(rule: string, answers: OnboardingAnswers): string[] {
@@ -399,33 +531,65 @@ async function runGeneration(
   history: HealthHistory | null,
 ): Promise<void> {
   const { store, observer } = deps;
+  let viaGateway = false;
   try {
-    const resolution = deps.resolution();
-    let consentGranted = false;
-    let budgetAvailable = false;
-    if (resolution.kind === "model") {
-      consentGranted = (await store.consent()) === "granted";
-      if (consentGranted) budgetAvailable = await store.budgetAvailable();
+    // The gateway answers when its route is usable and evaluated; otherwise the settings path does.
+    const gatewayRoute = deps.routes?.plan() ?? null;
+    let prepared: PreparedPlan | null = null;
+    if (gatewayRoute) {
+      const preparation = preparePlan(gatewayRoute, answers, catalog, health, history);
+      if (preparation.kind === "ready") prepared = preparation.prepared;
+      else observer.warn("onboarding_plan_route_unusable", { fallbackReason: preparation.reason });
     }
-    const result: GenerationResult = await (deps.generate ?? generateOnboardingProposal)(
-      answers,
-      catalog,
-      resolution,
-      { consentGranted, budgetAvailable },
-      fetch,
-      undefined,
-      health,
-      history,
-    );
-    // A call that failed with no HTTP answer (a timeout or a dropped
-    // connection) may still have been billed with no usage reported.
-    if (
-      result.fallbackReason === "provider_timeout" ||
-      result.attempts.some((attempt) =>
-        attempt.outcome === "call_failed" && attempt.httpStatus === null
-      )
-    ) {
-      store.keepBudget?.();
+    let result: GenerationResult;
+    // A model was asked: its plan not being used is worth a look.
+    let asked: boolean;
+    let provider: string | null;
+    if (gatewayRoute && prepared) {
+      viaGateway = true;
+      const answered = await generateViaGateway(
+        deps,
+        gatewayRoute,
+        prepared,
+        answers,
+        catalog,
+        health,
+        history,
+      );
+      result = answered.result;
+      asked = answered.asked;
+      provider = asked ? gatewayRoute.vendor : null;
+    } else {
+      const resolution = deps.resolution();
+      let consentGranted = false;
+      let budgetAvailable = false;
+      if (resolution.kind === "model") {
+        consentGranted =
+          (await store.consent("onboarding_plan", resolution.config.provider)) === "granted";
+        if (consentGranted) budgetAvailable = await store.budgetAvailable();
+      }
+      result = await (deps.generate ?? generateOnboardingProposal)(
+        answers,
+        catalog,
+        resolution,
+        { consentGranted, budgetAvailable },
+        fetch,
+        undefined,
+        health,
+        history,
+      );
+      // A call that failed with no HTTP answer (a timeout or a dropped
+      // connection) may still have been billed with no usage reported.
+      if (
+        result.fallbackReason === "provider_timeout" ||
+        result.attempts.some((attempt) =>
+          attempt.outcome === "call_failed" && attempt.httpStatus === null
+        )
+      ) {
+        store.keepBudget?.();
+      }
+      asked = result.usage !== null;
+      provider = result.usage?.provider ?? null;
     }
     if (result.usage) {
       try {
@@ -437,14 +601,13 @@ async function runGeneration(
     const fields = {
       generationId,
       origin: result.proposal.training.origin,
-      provider: result.usage?.provider ?? null,
+      provider,
       model: result.usage?.model ?? null,
       fallbackReason: result.fallbackReason,
       attempts: result.attempts,
       metadata: generationMetadata(result),
     };
-    // A model was asked and its plan was not used: worth a look.
-    if (result.usage && result.fallbackReason) {
+    if (asked && result.fallbackReason) {
       observer.warn("onboarding_plan_model_fallback", fields);
     } else {
       observer.info("onboarding_plan_generated", fields);
@@ -470,5 +633,51 @@ async function runGeneration(
       // The lease expires on its own; the app then reads the generation as failed.
       observer.error("onboarding_plan_failure_not_recorded", failError, { generationId });
     }
+  } finally {
+    // The place is given back once the usage is recorded or when nothing was spent; a call of
+    // unknown cost kept it before this.
+    if (viaGateway) await store.releaseBudget();
   }
+}
+
+/**
+ * The plan through the gateway. A notice that does not name the route's vendor, or a budget that
+ * will not take the worst case, sends nothing and builds the rules plan.
+ */
+async function generateViaGateway(
+  deps: HandlerDeps,
+  gatewayRoute: AiRoute,
+  prepared: PreparedPlan,
+  answers: OnboardingAnswers,
+  catalog: CatalogExercise[],
+  health: HealthSummary | null,
+  history: HealthHistory | null,
+): Promise<{ result: GenerationResult; asked: boolean }> {
+  const { store } = deps;
+  const rulesPlan = async (reason: string) => ({
+    result: await generateOnboardingProposal(
+      answers,
+      catalog,
+      { kind: "rules", reason },
+      { consentGranted: false, budgetAvailable: false },
+      fetch,
+      undefined,
+      health,
+      history,
+    ),
+    asked: false,
+  });
+  if (!namesVendor(await store.gatewayConsent("onboarding_plan"), gatewayRoute)) {
+    return await rulesPlan("ai_consent_not_granted");
+  }
+  if (!(await store.reserveGatewayBudget("onboarding_plan", prepared.ceilingUsd))) {
+    return await rulesPlan("ai_usage_limit");
+  }
+  const answered: GatewayPlanResult = await generatePlanViaGateway(
+    gatewayRoute,
+    prepared,
+    gatewayDeps(deps),
+  );
+  if (answered.spend === "unknown") store.keepBudget?.();
+  return { result: answered, asked: answered.asked };
 }

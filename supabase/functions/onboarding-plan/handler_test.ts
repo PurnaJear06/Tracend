@@ -1,14 +1,17 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { catalogBySlug, exerciseCatalogV1 } from "../_shared/onboarding/catalog.ts";
 import { generateOnboardingProposal } from "../_shared/onboarding/generate.ts";
+import { generateFollowUpQuestions } from "../_shared/onboarding/questions.ts";
 import type { OnboardingProposalPayload } from "../_shared/onboarding/plan_contract.ts";
-import type { AiCoachingConsent } from "../_shared/ai_consent.ts";
+import type { AiCoachingConsent, AiConsentWithProvider } from "../_shared/ai_consent.ts";
+import { routeFor } from "../_shared/ai/fakes.ts";
 import type { OnboardingModelResolution } from "../_shared/providers/onboarding_plan_provider.ts";
 import {
   type GenerationClaim,
   type GenerationMetadata,
   handleOnboardingPlan,
   type HandlerDeps,
+  legacyNoticeConsent,
   type OnboardingStore,
   questionsPollMs,
   questionsWaitMs,
@@ -61,6 +64,10 @@ function store(overrides: Partial<OnboardingStore> & { claimAs?: GenerationClaim
     recordQuestionUsage: () => Promise.resolve(),
     consent: () => Promise.resolve("granted"),
     budgetAvailable: () => Promise.resolve(true),
+    gatewayConsent: () =>
+      Promise.resolve({ consent: "not_granted", provider: null, noticeVersion: null }),
+    reserveGatewayBudget: () => Promise.resolve(false),
+    releaseBudget: () => Promise.resolve(),
     recordUsage: () => Promise.resolve(),
     persist: (generationId, _hash, _snapshot, proposal, metadata) => {
       calls.persisted.push({ generationId, proposal, metadata });
@@ -579,4 +586,174 @@ Deno.test("a plan call that timed out keeps its budget place; an answered one do
     });
     assertEquals(keeps, kept, `${outcome} ${httpStatus}`);
   }
+});
+
+// --- Settings path: the notice must name the provider the settings send to --------------------
+
+const notice = (provider: AiConsentWithProvider["provider"]): AiConsentWithProvider => ({
+  consent: "granted",
+  provider,
+  noticeVersion: "coaching-v6",
+});
+
+// Over the USD 0.50 cap, so the gateway route is unusable and the settings path answers.
+const unusableRoutes = {
+  plan: () => routeFor("onboarding_plan", { MAX_OUTPUT_TOKENS: "32000", EVALUATED: "true" }),
+  questions: () =>
+    routeFor("onboarding_questions", {
+      MAX_OUTPUT_TOKENS: "32000",
+      MODEL: "claude-opus-5-5",
+      THINKING: "adaptive",
+      EVALUATED: "true",
+    }),
+};
+const noRoutes = { plan: () => null, questions: () => null };
+
+/** A fetch that records what the settings path sends and answers like a provider that fails. */
+function recordingFetch() {
+  const sent: string[] = [];
+  const fetcher = ((input: string | URL | Request) => {
+    sent.push(String(input));
+    return Promise.resolve(new Response("{}", { status: 500 }));
+  }) as typeof fetch;
+  return { sent, fetcher };
+}
+
+const settingsPathCases = [
+  { name: "no route", routes: noRoutes },
+  { name: "an unusable route", routes: unusableRoutes },
+];
+
+for (const { name, routes } of settingsPathCases) {
+  Deno.test(`plan, ${name}: a notice naming Anthropic sends nothing to DeepSeek`, async () => {
+    const { fake, calls } = store();
+    const { sent, fetcher } = recordingFetch();
+    let budgetAsked = 0;
+    await run(
+      {
+        ...fake,
+        consent: (_feature, vendor) =>
+          Promise.resolve(legacyNoticeConsent(notice("anthropic"), vendor)),
+        budgetAvailable: () => {
+          budgetAsked++;
+          return Promise.resolve(true);
+        },
+      },
+      {
+        resolution: () => deepseek,
+        routes,
+        generate: (answers, catalog, resolution, gate, _fetch, _signal, health, history) =>
+          generateOnboardingProposal(
+            answers,
+            catalog,
+            resolution,
+            gate,
+            fetcher,
+            undefined,
+            health,
+            history,
+          ),
+      },
+    );
+    assertEquals(sent, []);
+    assertEquals(budgetAsked, 0);
+    // The deterministic rules plan is stored.
+    assertEquals(calls.persisted.length, 1);
+    assertEquals(calls.persisted[0].metadata, null);
+  });
+
+  Deno.test(`plan, ${name}: a notice naming DeepSeek keeps today's request`, async () => {
+    const { fake } = store();
+    const { sent, fetcher } = recordingFetch();
+    for (const provider of ["deepseek", null] as const) {
+      sent.length = 0;
+      await run(
+        {
+          ...fake,
+          consent: (_feature, vendor) =>
+            Promise.resolve(legacyNoticeConsent(notice(provider), vendor)),
+        },
+        {
+          resolution: () => deepseek,
+          routes,
+          generate: (answers, catalog, resolution, gate, _fetch, _signal, health, history) =>
+            generateOnboardingProposal(
+              answers,
+              catalog,
+              resolution,
+              gate,
+              fetcher,
+              undefined,
+              health,
+              history,
+            ),
+        },
+      );
+      assert(sent.length > 0, `a notice with provider ${provider} still reaches DeepSeek`);
+      assertEquals(sent[0], "https://api.deepseek.com/v1/chat/completions");
+    }
+  });
+
+  Deno.test(`questions, ${name}: a notice naming Anthropic sends nothing to DeepSeek`, async () => {
+    const { fake, saved } = questionStore();
+    const { sent, fetcher } = recordingFetch();
+    const { body } = await run(
+      {
+        ...fake,
+        consent: (_feature, vendor) =>
+          Promise.resolve(legacyNoticeConsent(notice("anthropic"), vendor)),
+      },
+      {
+        mode: "questions",
+        resolution: () => deepseek,
+        routes,
+        askQuestions: (answers, resolution, gate, health, history) =>
+          generateFollowUpQuestions(answers, resolution, gate, health, history, fetcher),
+      },
+    );
+    assertEquals(sent, []);
+    assertEquals(body.questions, []);
+    assertEquals(body.skipped_reason, "ai_consent_not_granted");
+    assertEquals(saved.size, 0);
+  });
+
+  Deno.test(`questions, ${name}: a notice naming DeepSeek keeps today's request`, async () => {
+    for (const provider of ["deepseek", null] as const) {
+      const { fake } = questionStore();
+      const { sent, fetcher } = recordingFetch();
+      await run(
+        {
+          ...fake,
+          consent: (_feature, vendor) =>
+            Promise.resolve(legacyNoticeConsent(notice(provider), vendor)),
+        },
+        {
+          mode: "questions",
+          resolution: () => deepseek,
+          routes,
+          askQuestions: (answers, resolution, gate, health, history) =>
+            generateFollowUpQuestions(answers, resolution, gate, health, history, fetcher),
+        },
+      );
+      assertEquals(sent, ["https://api.deepseek.com/v1/chat/completions"]);
+    }
+  });
+}
+
+Deno.test("legacy notice consent: granted only for a notice that names the vendor or none", () => {
+  assertEquals(legacyNoticeConsent(notice("deepseek"), "deepseek"), "granted");
+  assertEquals(legacyNoticeConsent(notice(null), "groq"), "granted");
+  assertEquals(legacyNoticeConsent(notice("anthropic"), "gemini"), "not_granted");
+  assertEquals(legacyNoticeConsent(notice("groq"), "deepseek"), "not_granted");
+  assertEquals(
+    legacyNoticeConsent({ consent: "unavailable", provider: null, noticeVersion: null }, "groq"),
+    "unavailable",
+  );
+  assertEquals(
+    legacyNoticeConsent(
+      { consent: "not_granted", provider: "deepseek", noticeVersion: "v" },
+      "deepseek",
+    ),
+    "not_granted",
+  );
 });

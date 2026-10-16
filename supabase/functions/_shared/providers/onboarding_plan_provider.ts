@@ -1,4 +1,7 @@
 import { deepseekFlashPeakPricePerMillionUsd } from "./deepseek_models.ts";
+import { costUsd, modelSpec } from "../ai/models.ts";
+import { type Env as RouteEnv, route } from "../ai/routes.ts";
+import type { AiRoute } from "../ai/types.ts";
 
 // The model behind onboarding plans, chosen by server settings so the owner
 // can switch provider or model without a code change:
@@ -18,6 +21,12 @@ import { deepseekFlashPeakPricePerMillionUsd } from "./deepseek_models.ts";
 // Every provider is called through its OpenAI-compatible chat-completions
 // endpoint in JSON mode. A provider change also needs a new AI notice
 // (private.publish_ai_notice), because athletes agreed to a named provider.
+//
+// The AI gateway (Contract 1) is the other path: AI_ONBOARDING_PLAN_* and
+// AI_ONBOARDING_QUESTIONS_* settings, read by route(). A feature with a complete,
+// evaluated route (and a worst-case cost the budget accepts) goes through the
+// gateway; without one it takes the settings above unchanged. See
+// onboardingGatewayRoute and gatewayCeilingUsd below.
 
 export const onboardingPlanProviders = {
   deepseek: {
@@ -287,4 +296,65 @@ export function estimateCostUsd(
 ): number {
   const cost = (inputUnits * config.price.input + outputUnits * config.price.output) / 1_000_000;
   return Math.round(cost * 1_000_000) / 1_000_000;
+}
+
+// --- The AI gateway path ----------------------------------------------------------------------
+
+export type OnboardingGatewayFeature = "onboarding_plan" | "onboarding_questions";
+
+/**
+ * The gateway route for an onboarding feature, or null when the feature takes the settings path
+ * above. Null for a feature without a complete route and for one whose
+ * AI_<FEATURE>_EVALUATED is not true: a route that has not passed its eval behaves exactly like
+ * having no route. The eval router is ignored too (logged): no notice names it, so an athlete's
+ * answers never reach it.
+ */
+export function onboardingGatewayRoute(
+  feature: OnboardingGatewayFeature,
+  env?: RouteEnv,
+): AiRoute | null {
+  const found = route(feature, env);
+  if (!found || !found.evaluated) return null;
+  if (found.vendor === "router") {
+    console.error(`${feature}_route_ignored: the evaluation router never receives athlete data`);
+    return null;
+  }
+  return found;
+}
+
+/** The most `reserve_ai_budget_v2` accepts for one reservation (it refuses anything above). */
+export const maxReservableCeilingUsd = 0.5;
+
+const utf8 = new TextEncoder();
+
+/** A token is at least one byte, so the UTF-8 length bounds a text's tokens from above. */
+export const tokenBound = (...texts: readonly string[]): number =>
+  texts.reduce((sum, text) => sum + utf8.encode(text).length, 0);
+
+/** Message framing and the schema Claude compiles from ours: counted on top of the text. */
+const requestOverheadTokens = 1_000;
+
+/**
+ * The most a route's requests can cost: for each attempt, the whole prompt (one token per byte,
+ * plus framing) at the higher of the input and cache-write prices, and every output token the
+ * route allows. Never clamped: the result can pass maxReservableCeilingUsd, and then the route
+ * is unusable for the request (nothing sent, nothing reserved). Null when the model has no
+ * price.
+ */
+export function gatewayCeilingUsd(
+  gatewayRoute: AiRoute,
+  attemptPromptBytes: readonly number[],
+): number | null {
+  const spec = modelSpec(gatewayRoute.provider, gatewayRoute.model);
+  if (!spec) return null;
+  let total = 0;
+  for (const bytes of attemptPromptBytes) {
+    const promptTokens = bytes + requestOverheadTokens;
+    const rest = { outputTokens: gatewayRoute.maxOutputTokens, cacheReadTokens: 0 };
+    total += Math.max(
+      costUsd(spec.price, { ...rest, inputTokens: promptTokens, cacheWriteTokens: 0 }),
+      costUsd(spec.price, { ...rest, inputTokens: 0, cacheWriteTokens: promptTokens }),
+    );
+  }
+  return Math.max(0.001, Math.ceil(total * 1_000_000) / 1_000_000);
 }

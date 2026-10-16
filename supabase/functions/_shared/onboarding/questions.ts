@@ -91,6 +91,32 @@ export function parseFollowUpQuestions(content: string): FollowUpQuestion[] | nu
   return questions;
 }
 
+/**
+ * The shape the gateway constrains the model's reply to. Structure only: lengths, the question
+ * mark, the number of choices and the out-of-scope words stay with parseFollowUpQuestions, so a
+ * reply that breaks them is dropped there, never refused as unreadable.
+ */
+export const followUpJsonSchema = Object.freeze({
+  type: "object",
+  properties: {
+    questions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          category: { type: "string", enum: [...followUpCategories] },
+          question: { type: "string" },
+          choices: { type: "array", items: { type: "string" } },
+        },
+        required: ["category", "question", "choices"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["questions"],
+  additionalProperties: false,
+});
+
 export function followUpSystemPrompt(): string {
   return [
     "You are Tracend's onboarding coach. Before Tracend builds this athlete's first plan, decide whether a few short questions would change it.",
