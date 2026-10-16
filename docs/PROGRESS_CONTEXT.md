@@ -7,18 +7,24 @@ sign-ups are switched off (2026-10-15) on top of the invite-only trigger.
 
 **Current priority (2026-10-15): the coaching platform program.** Plan, contracts and board:
 [`docs/plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md).
-Iteration 1 (Phase 0 + Phase 1) is merged and live. Iteration 2 (Phase 2: A3–A7, D1, C2, B1) is
-in progress. One line per stream; the lead updates these lines when a chunk merges.
+Iteration 1 (Phase 0 + Phase 1) is live. Iteration 2 (Phase 2: A3–A7, D1, C2, B1) is merged
+(2026-10-16). The AI features still run on DeepSeek and Groq until the owner follows the cutover
+runbook. One line per stream; the lead updates these lines when a chunk merges.
 
 <!-- PROGRAM:coaching-platform-2026-10 -->
 - program: P0 (contracts, migration-order CI check) live (#102).
-- ai-gateway: A1 (provider-neutral SQL, consent v2, budget v2; #103) and A2 (gateway module with
-  Claude, OpenAI-compatible and Gemini adapters, not used by any feature yet; #106) live. Next: A3–A7
-  (Phase 2). Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
-- training-engine: B0 live (#105: mock decision obeys the policy; rules plan ranks by equipment and experience). Handoff: [`training-engine.md`](./handoff/training-engine.md).
-- workout-hr: C1 live (#104: set timing, reps left, workout events; migration 31). Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
-- ios-widgets: D0 live (#112: TracendWidgets extension, rest-timer Live Activity countdown);
-  the owner's Lock Screen and Dynamic Island check passed on build 395 (2026-10-15). Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
+- ai-gateway: A1 (#103) and A2 (#106) live. Phase 2 merged: meal photo and physique check (A3,
+  #119), onboarding (A4, #122), daily decision (A5, #117) and Coach chat (A6, #120) call Claude
+  through the gateway once their route settings are set; A7 (#124) removed provider names from the
+  app, drafted the notices, set the USD 3 / USD 50 budget and wrote the cutover runbook
+  (`docs/runbooks/phase2-claude-cutover.md`). Data goes only to the vendor the accepted notice
+  names. Next: the owner's cutover. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
+- training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
+  sources; nothing reads it until B2). Next: B2 templates. Handoff: [`training-engine.md`](./handoff/training-engine.md).
+- workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
+  migration 32; raw samples stay on the phone); the owner's Watch check is pending. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
+- ios-widgets: D0 live (#112). D1 merged (#121: Done, Skip and +30s on the Lock Screen and in the
+  Dynamic Island); the owner's device check is pending. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
 - research-library: E1 live (#109: pgvector, library tables, `search_library_v1`, D3 doc rule). Next: E2 ingestion. Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
