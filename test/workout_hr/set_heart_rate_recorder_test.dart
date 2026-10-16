@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
@@ -58,6 +60,31 @@ List<HeartRateSample> _readings({int from = 0, int to = 100}) => [
       bpm: second <= 40 ? 110 + second * 1.0 : 150 - (second - 40) * 1.0,
     ),
 ];
+
+/// Two finished sets: 0-40 seconds, and 100-140 seconds.
+Map<String, dynamic> _twoSetSession() => {
+  'session_id': 'session-1',
+  'state': 'completed',
+  'exercises': [
+    {
+      'order': 1,
+      'sets': [
+        {
+          'number': 1,
+          'completed': true,
+          'started_at': _after(0).toIso8601String(),
+          'completed_at': _after(40).toIso8601String(),
+        },
+        {
+          'number': 2,
+          'completed': true,
+          'started_at': _after(100).toIso8601String(),
+          'completed_at': _after(140).toIso8601String(),
+        },
+      ],
+    },
+  ],
+};
 
 /// One finished workout: a 40 second set, and a second one a minute later.
 Map<String, dynamic> _session({bool timed = true}) => {
@@ -262,6 +289,104 @@ void main() {
       expect(repository.saved, hasLength(1));
     },
   );
+
+  test(
+    'a full-coverage read with fewer samples replaces a partial one with more',
+    () async {
+      session = _twoSetSession();
+      now = _after(300);
+      // Only the first set, read densely.
+      reader.samples = [
+        for (var second = 0; second <= 60; second++)
+          HeartRateSample(at: _after(second), bpm: 120),
+      ];
+      final recorder = newRecorder();
+      listen(recorder);
+      await finish();
+      expect(repository.saved, hasLength(1));
+      expect(repository.saved.single.$2, hasLength(1));
+
+      // Both sets, read sparsely, with fewer samples in all.
+      reader.samples = [
+        for (var second = 0; second <= 200; second += 5)
+          HeartRateSample(at: _after(second), bpm: 120),
+      ];
+      now = now.add(SetHeartRateRecorder.retryAfter);
+      await recorder.processDue();
+      expect(repository.saved, hasLength(2));
+      final better = repository.saved.last.$2;
+      expect(better, hasLength(2));
+      expect(
+        better.fold<double>(0, (sum, item) => sum + item.coverage) / 2,
+        greaterThanOrEqualTo(SetHeartRateRecorder.enoughCoverage),
+      );
+
+      // The persisted best is enough, so the job has ended.
+      now = now.add(SetHeartRateRecorder.retryAfter);
+      await recorder.processDue();
+      expect(reader.reads, hasLength(2));
+    },
+  );
+
+  test('a worse retry is not saved and the job is not ended', () async {
+    session = _twoSetSession();
+    now = _after(300);
+    reader.samples = _readings(to: 140);
+    final recorder = newRecorder();
+    listen(recorder);
+    await finish();
+    expect(repository.saved, hasLength(1));
+
+    reader.samples = _readings(to: 60);
+    now = now.add(SetHeartRateRecorder.retryAfter);
+    await recorder.processDue();
+    expect(repository.saved, hasLength(1));
+    expect(reader.reads, hasLength(2));
+  });
+
+  test('a good read that could not be saved does not end the job', () async {
+    repository.failure = StateError('offline');
+    final recorder = newRecorder();
+    listen(recorder);
+    await finish();
+    expect(repository.saved, isEmpty);
+
+    // The full read was never saved, so the job still waits.
+    repository.failure = null;
+    now = now.add(SetHeartRateRecorder.retryAfter);
+    await recorder.processDue();
+    expect(repository.saved, hasLength(1));
+  });
+
+  test('a job saved before the ranking existed still loads', () async {
+    final preferences = SharedPreferencesAsync();
+    await preferences.setString(
+      SetHeartRateRecorder.pendingKey,
+      jsonEncode([
+        {
+          'session_id': 'session-1',
+          'next_attempt_at': _after(100).toIso8601String(),
+          'expires_at': _after(100000).toIso8601String(),
+          'attempts': 1,
+          'best_samples': 500,
+          'sets': [
+            {
+              'exercise_order': 1,
+              'set_number': 1,
+              'started_at': _after(0).toIso8601String(),
+              'completed_at': _after(40).toIso8601String(),
+            },
+          ],
+        },
+      ]),
+    );
+    final recorder = newRecorder();
+    listen(recorder);
+    await pumpEventQueue(times: 60);
+
+    expect(repository.saved, hasLength(1));
+    expect(repository.saved.single.$1, 'session-1');
+  });
 
   test('a read that fails is tried again later', () async {
     reader.failing = true;

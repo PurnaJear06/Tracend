@@ -157,7 +157,7 @@ class SetHeartRateRecorder with WidgetsBindingObserver {
       );
     } catch (e) {
       debugPrint('Non-critical error: heart rate could not be read: $e');
-      return job.tried(now, bestSamples: job.bestSamples);
+      return job.tried(now, best: job.best);
     }
     final summaries = [
       for (final window in job.sets)
@@ -169,12 +169,18 @@ class SetHeartRateRecorder with WidgetsBindingObserver {
           samples: samples,
         ),
     ];
-    final total = summaries.fold<int>(0, (sum, item) => sum + item.sampleCount);
-    var best = job.bestSamples;
-    if (summaries.isNotEmpty && total > best) {
+    final candidate = _Best(
+      setsCovered: summaries.length,
+      coverage:
+          summaries.fold<double>(0, (sum, item) => sum + item.coverage) /
+          job.sets.length,
+      samples: summaries.fold<int>(0, (sum, item) => sum + item.sampleCount),
+    );
+    var best = job.best;
+    if (summaries.isNotEmpty && candidate.isBetterThan(best)) {
       try {
         await repository.persist(job.sessionId, summaries);
-        best = total;
+        best = candidate;
         AppBreadcrumbs.workout(
           'Set heart rate saved',
           data: {'sets': summaries.length},
@@ -190,11 +196,8 @@ class SetHeartRateRecorder with WidgetsBindingObserver {
             : job.waiting(now.add(retryAfter));
       }
     }
-    final covered =
-        summaries.fold<double>(0, (sum, item) => sum + item.coverage) /
-        job.sets.length;
-    if (covered >= enoughCoverage) return null;
-    return job.tried(now, bestSamples: best);
+    if (best.coverage >= enoughCoverage) return null;
+    return job.tried(now, best: best);
   }
 
   /// The database refused these summaries and would refuse them again:
@@ -266,6 +269,53 @@ class _SetWindow {
   final DateTime completedAt;
 }
 
+/// What a save was made from, ranked by the sets it covers, then by the average
+/// coverage across all of the workout's sets, then by the readings it holds.
+class _Best {
+  const _Best({
+    required this.setsCovered,
+    required this.coverage,
+    required this.samples,
+  });
+
+  static const none = _Best(setsCovered: 0, coverage: 0, samples: 0);
+
+  /// A saved job from before the ranking existed has no figures: it ranks
+  /// lowest, so the next read with any summary replaces it.
+  static _Best fromJson(Map<dynamic, dynamic> json) {
+    final sets = json['best_sets_covered'];
+    final coverage = json['best_coverage'];
+    final samples = json['best_samples'];
+    return _Best(
+      setsCovered: sets is int ? sets : 0,
+      coverage: coverage is num ? coverage.toDouble() : 0,
+      samples: samples is int ? samples : 0,
+    );
+  }
+
+  final int setsCovered;
+  final double coverage;
+  final int samples;
+
+  bool isBetterThan(_Best other) {
+    if (setsCovered != other.setsCovered) {
+      return setsCovered > other.setsCovered;
+    }
+    if ((coverage - other.coverage).abs() > _tolerance) {
+      return coverage > other.coverage;
+    }
+    return samples > other.samples;
+  }
+
+  Map<String, Object?> toJson() => {
+    'best_sets_covered': setsCovered,
+    'best_coverage': coverage,
+    'best_samples': samples,
+  };
+
+  static const _tolerance = 1e-9;
+}
+
 /// A finished workout waiting to be read.
 class _Job {
   const _Job({
@@ -274,7 +324,7 @@ class _Job {
     required this.nextAttemptAt,
     required this.expiresAt,
     this.attempts = 0,
-    this.bestSamples = 0,
+    this.best = _Best.none,
   });
 
   /// The workout's sets that have both times, or null when it has none or
@@ -342,9 +392,7 @@ class _Job {
       nextAttemptAt: next,
       expiresAt: expires,
       attempts: json['attempts'] is int ? json['attempts'] as int : 0,
-      bestSamples: json['best_samples'] is int
-          ? json['best_samples'] as int
-          : 0,
+      best: _Best.fromJson(json),
     );
   }
 
@@ -354,16 +402,16 @@ class _Job {
   final DateTime expiresAt;
   final int attempts;
 
-  /// The most readings any save so far was made from; a later read replaces a
-  /// saved summary only when it has more.
-  final int bestSamples;
+  /// The best result saved so far; a later read replaces it only when it ranks
+  /// higher.
+  final _Best best;
 
   DateTime get firstStart => sets.map((w) => w.startedAt).reduce(_earlier);
   DateTime get lastEnd => sets.map((w) => w.completedAt).reduce(_later);
 
   /// The job after a read at [now] that did not cover enough: read again in
   /// a few minutes, unless the reads or the time ran out.
-  _Job? tried(DateTime now, {required int bestSamples}) {
+  _Job? tried(DateTime now, {required _Best best}) {
     final used = attempts + 1;
     if (used >= SetHeartRateRecorder.maxAttempts || now.isAfter(expiresAt)) {
       return null;
@@ -374,7 +422,7 @@ class _Job {
       nextAttemptAt: now.add(SetHeartRateRecorder.retryAfter),
       expiresAt: expiresAt,
       attempts: used,
-      bestSamples: bestSamples,
+      best: best,
     );
   }
 
@@ -385,7 +433,7 @@ class _Job {
     nextAttemptAt: at,
     expiresAt: expiresAt,
     attempts: attempts,
-    bestSamples: bestSamples,
+    best: best,
   );
 
   Map<String, Object?> toJson() => {
@@ -393,7 +441,7 @@ class _Job {
     'next_attempt_at': nextAttemptAt.toUtc().toIso8601String(),
     'expires_at': expiresAt.toUtc().toIso8601String(),
     'attempts': attempts,
-    'best_samples': bestSamples,
+    ...best.toJson(),
     'sets': [
       for (final window in sets)
         {

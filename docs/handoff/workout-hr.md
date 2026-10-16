@@ -102,7 +102,8 @@ commits until that merges). Contract 4, summaries only; raw samples never leave 
   it on a waiting list in `SharedPreferencesAsync` (session id and set times only). The read runs
   60 s after the last set (the Watch syncs to Apple Health after the workout), up to three reads
   five minutes apart while the average coverage is below 0.8; a later save replaces an earlier one
-  only when it has more readings. A server refusal ends the work; no connection keeps it waiting
+  only when it ranks higher (sets covered, then average coverage, then readings), and the work ends
+  only when the saved best reaches 0.8. A server refusal ends the work; no connection keeps it waiting
   (two days) without using a read. The list is also worked on when the app returns to the
   foreground and when a workout screen opens, so a read that came due while the app slept runs
   the next time it is open (a cold start that never opens a workout waits for the next workout).
