@@ -1,6 +1,10 @@
 begin;
 select plan(18);
 
+-- These checks exercise the stop's mechanics at its original USD 2; the
+-- Phase 2 value (USD 3) is tested in ai_budget_phase2_test.sql.
+update private.ai_budget_limits set per_person_monthly_usd = 2;
+
 insert into auth.users(id, role) values
   ('d1000000-0000-4000-8000-000000000001', 'authenticated'),
   ('d1000000-0000-4000-8000-000000000002', 'authenticated'),
