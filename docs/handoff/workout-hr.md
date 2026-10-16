@@ -111,6 +111,9 @@ commits until that merges). Contract 4, summaries only; raw samples never leave 
   `heartRate` loader and `LoggedSession` a `sessionId`: each exercise row in the finished-workout
   summary gets one extra line, "Heart rate peaks 148 · 152 bpm · 90% tracked". D9: it informs
   only.
+  "Tracked" divides the readings' coverage by every completed set of the exercise (the detail's
+  own set count), so sets with no readings count as 0: 1 tracked of 4 sets reads 25%, as the
+  recorder's retry check (which divides by all timed sets) already did.
 - Tests: `test/workout_hr/*`, `test/contract/set_heart_rate_contract_test.dart` with fixtures
   `set_heart_rate_v1_0.json` and `persist_set_heart_rate_v1_0.json`.
 

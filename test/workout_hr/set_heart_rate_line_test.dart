@@ -31,11 +31,11 @@ void main() {
       ]);
 
       expect(
-        setHeartRateLine(report, 1),
+        setHeartRateLine(report, 1, completedSets: 2),
         'Heart rate peaks 148 · 152 bpm · 85% tracked',
       );
       expect(
-        setHeartRateLine(report, 2),
+        setHeartRateLine(report, 2, completedSets: 1),
         'Heart rate peaks 120 bpm · 100% tracked',
       );
     });
@@ -47,16 +47,34 @@ void main() {
       ]);
 
       expect(
-        setHeartRateLine(report, 1),
+        setHeartRateLine(report, 1, completedSets: 2),
         'Heart rate peaks 140 bpm · 60% tracked',
+      );
+    });
+
+    test('untracked sets count as zero: 1 of 4 sets reads 25%, not 100%', () {
+      final report = SetHeartRateReport([_set(1, 2, peak: 150)]);
+
+      expect(
+        setHeartRateLine(report, 1, completedSets: 4),
+        'Heart rate peaks 150 bpm · 25% tracked',
+      );
+    });
+
+    test('the share never exceeds what the report holds', () {
+      final report = SetHeartRateReport([_set(1, 1, peak: 150)]);
+
+      expect(
+        setHeartRateLine(report, 1, completedSets: 0),
+        'Heart rate peaks 150 bpm · 100% tracked',
       );
     });
 
     test('an exercise with no heart rate has no line', () {
       final report = SetHeartRateReport([_set(1, 1, coverage: 0.1)]);
 
-      expect(setHeartRateLine(report, 1), isNull);
-      expect(setHeartRateLine(report, 3), isNull);
+      expect(setHeartRateLine(report, 1, completedSets: 1), isNull);
+      expect(setHeartRateLine(report, 3, completedSets: 2), isNull);
     });
   });
 
@@ -89,6 +107,7 @@ void main() {
     Future<void> pump(
       WidgetTester tester, {
       Future<SetHeartRateReport> Function(String sessionId)? heartRate,
+      Map<String, dynamic>? logged,
     }) => tester.pumpWidget(
       MaterialApp(
         theme: TracendTheme.dark,
@@ -96,7 +115,7 @@ void main() {
           body: SingleChildScrollView(
             child: WorkoutSummaryBody(
               workout: PlannedWorkout.fixture,
-              session: Future.value(session()),
+              session: Future.value(logged ?? session()),
               heartRate: heartRate,
             ),
           ),
@@ -126,6 +145,26 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Heart rate peaks'), findsOneWidget);
+    });
+
+    testWidgets('counts every completed set: 1 tracked of 4 shows 25%', (
+      tester,
+    ) async {
+      final full = session();
+      final first = (full['exercises'] as List).first as Map<String, dynamic>;
+      first['sets'] = [
+        for (var n = 1; n <= 4; n++)
+          {'number': n, 'repetitions': 8, 'load_kg': 30, 'completed': true},
+      ];
+      await pump(
+        tester,
+        logged: full,
+        heartRate: (_) async => SetHeartRateReport([_set(1, 3, peak: 150)]),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('25% tracked'), findsOneWidget);
+      expect(find.textContaining('100% tracked'), findsNothing);
     });
 
     testWidgets('shows nothing extra without a loader or when it fails', (

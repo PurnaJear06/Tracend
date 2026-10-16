@@ -348,7 +348,11 @@ class _SummaryContentState extends State<_SummaryContent> {
     final report = _heartRate;
     final heartRate = report == null
         ? null
-        : setHeartRateLine(report, exercise.order);
+        : setHeartRateLine(
+            report,
+            exercise.order,
+            completedSets: exercise.sets.length,
+          );
     return [lastSessionText(exercise.sets), ?heartRate].join('\n');
   }
 
