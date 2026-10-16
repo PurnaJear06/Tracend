@@ -11,11 +11,32 @@ nothing enforces the budget end-to-end.
 This document is the contract. Any PR that adds data to the coach context pipeline must pass the
 budget test or explicitly increase the budget with justification.
 
-**Coming change (Phase 2, chunk A6):** the coaching platform program moves Coach chat onto the AI
-gateway with a cache-friendly prompt, and new context then arrives through contributors with their
-own character budgets (plan Contract 7). `prepare_coach_chat_v8` and `build_coach_athlete_context`
-are frozen for the program. Update this document in the A6 pull request. See
+**Gateway route and contributors (Phase 2, chunk A6):** when the `AI_COACH_CHAT_*` settings make
+a gateway route, Coach chat sends a cache-friendly request (below); without them it keeps today's
+DeepSeek request byte for byte (`coach_chat_parity_test.ts`). `prepare_coach_chat_v8` and
+`build_coach_athlete_context` stay frozen for the program; new context arrives through Contract 7
+contributors (`_shared/coach_context/`), each with its own character budget. See
 [`docs/plans/coaching-platform-2026-10/README.md`](./plans/coaching-platform-2026-10/README.md).
+
+## Gateway Prompt Layout (A6)
+
+Stable first, so questions asked within 5 minutes of each other share a cached prefix (Claude
+caches prefixes of 512 tokens or more; the cache lasts 5 minutes from its last use):
+
+1. System: persona, data honesty and the answer contract with the day's evidence codes.
+2. User message, block 1 (cache breakpoint): the athlete file without conversation memory, then
+   the stable contributors.
+3. Block 2: conversation memory (session history, other conversations, this thread), the
+   "Omitted This Turn" line, then the volatile contributors.
+4. Block 3: the question. A repair attempt adds its instruction after it, so it reuses the cache.
+
+The athlete file and memory share the same budget as today (96,000 characters, 128,000 for a plan
+change; wrappers and question reserved first) and the same whole-section dropping.
+`renderCoachContextParts` splits the one rendering; `formatContextAsMarkdown` joins it for the
+legacy path. Contributors render after the athlete file in the registry's fixed order, each
+clipped to its `budgetChars` (at most 12,000) and labelled as reference data; a contributor that
+fails, returns nothing or takes over 4 seconds is left out. Their budgets are on top of the
+athlete file's and count toward the turn's budget reservation.
 
 ## Budget Layering
 
@@ -68,6 +89,8 @@ legacy provider paths.
 | Edge DeepSeek (every question) | 96,000 chars | Whole-section budget | Reserves the question and wrappers; required truth renders first; history last; dropped sections listed |
 | Edge DeepSeek plan change | 128,000 chars | Whole-section budget | Larger bounded context; no string slicing                                |
 | Legacy compacted path | 32,000 chars | Progressive trim | Retained for disabled prior providers                                    |
+| Gateway route | 96,000 / 128,000 chars | Same as Edge DeepSeek | Same file, split at the cache breakpoint before conversation memory |
+| Each contributor | its `budgetChars` (≤ 12,000) | Clip | Labelled reference data, after the athlete file |
 
 ## Rules for Adding Coach Context Data
 
@@ -103,6 +126,8 @@ What we're fixing here is industry-standard for production AI pipelines:
 ## Files To Update When Changing The Budget
 
 - `supabase/functions/_shared/providers/coach_chat_provider.ts` — budgets and whole-section renderer
+- `supabase/functions/_shared/providers/coach_chat_provider_gateway.ts` — gateway prompt layout
+- `supabase/functions/_shared/coach_context/registry.ts` — contributors and their budgets
 - `supabase/migrations/20260927230000_coach_chat_v8_full_athlete_context.sql` — v8 90K guard and
   conversation memory, first version. The current definition of `prepare_coach_chat_v8` is in
   `20261002110000_coach_intake.sql`, the latest migration that replaces it (same 90K guard)

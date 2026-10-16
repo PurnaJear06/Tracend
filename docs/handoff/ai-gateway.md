@@ -286,8 +286,81 @@ today's path.
 
 ### A6: Coach chat, cache-friendly
 
-Not started. The A6 builder replaces this paragraph with its state, files, tests and
-anything the next agent must know.
+In review (branch `claude/a6-coach-chat-claude`). Merging changes nothing in production: with no
+`AI_COACH_CHAT_*` settings `route("coach_chat")` is null and Coach chat sends today's DeepSeek
+request byte for byte (`coach_chat_parity_test.ts` compares SHA-256 digests of 18 requests,
+first and repair, recorded from the pre-A6 code).
+
+- **Route path** (`coach-chat/index.ts`): the gateway is used only when `route("coach_chat")` returns a
+  route with `EVALUATED=true`, the contributor registry passes `validateCoachContextContributors`
+  (checked before any budget place is taken) and the first attempt can be reserved. Anything else
+  takes today's DeepSeek path (`chooseCoachChatRoute`; a reason other than "no route" is logged as
+  `coach_chat_route_not_used`: `not_evaluated` or `unreservable`). Consent through
+  `get_ai_consent_v2`; the granted notice must name the route's vendor, else 403
+  `ai_consent_required` and nothing is sent. Provenance stores the vendor and the model the
+  provider reports. Logs add `ai_path` (`gateway`/`legacy`).
+- **Budget, one place per attempt** (`coach-chat/budget_ledger.ts`): every request sent is covered
+  by a `reserve_ai_budget_v2` place at its own worst case (whole prompt written to the cache at
+  1.5 characters per token plus every output token, at list price). The first attempt reserves the
+  largest prompt any turn can send before the turn starts (Haiku 0.014, Sonnet 0.281 USD; a refusal
+  is the existing 429 `ai_usage_limit`). A repair reserves from its own prompt before it is sent;
+  if that is refused (or over USD 0.50) nothing is sent and the first attempt's failure code
+  stands (`repair_skipped` in the failure log). A route whose first attempt would exceed USD 0.50
+  (for example Sonnet with 32,000 output tokens) is unusable and takes today's path, logged.
+  `AiBudget` has no per-place call, so the ledger holds one `AiBudget` per attempt and the first
+  attempt's place stays open while the repair reserves (its real cost reaches the database only
+  when the turn ends); this can only over-count. At the end every place is settled except one
+  kept: a sent request that timed out with no usage reported (`inFlight`). A deadline that passes
+  before the repair, a refused repair place and a failure whose cost is recorded settle all places
+  (the earlier code kept the place for every `provider_timeout`, which double-charged). A failure
+  that could not be recorded, or that was not the provider's outcome, keeps every place. Today's
+  path keeps its single place on a timeout, as before.
+- **Timeout**: each attempt waits for `route.timeoutMs`, cut to what is left of the 40 s total
+  deadline (`coachChatTiming.totalDeadlineMs`). The app waits 45 s for coach-chat
+  (`coach_repository.dart`), so the deadline stays at 40 s. A route timeout over 40 s (routes
+  accept up to 150 s) is clamped to the deadline and logged as `coach_chat_route_timeout_clamped`;
+  it is not treated as invalid.
+- **Prompt** (`_shared/providers/coach_chat_provider_gateway.ts`): system = rules and answer
+  contract; user block 1 = athlete file without conversation memory plus stable contributors
+  (`cache: true`); block 2 = memory, omitted-sections line, volatile contributors; block 3 = the
+  question; a repair adds its instruction last, so it reuses the cache. `renderCoachContextParts`
+  splits the one rendering; layout in `docs/CONTEXT_BUDGET.md`.
+- **Schema**: structure only (types, enums, closed objects; nullable evidence id as `anyOf` with
+  null). `parseCoachChatAnswer` checks limits and citations with the exact rule, so a repair
+  carries the rule and the candidate (the gateway returns no text for a schema failure, so that
+  repair goes without one).
+- **Failures** map to today's codes: rate limit → `provider_rate_limited` (retry-after, else 60),
+  timeout → `provider_timeout`, overloaded/network/provider error → `provider_http_error`,
+  refusal → `provider_response_invalid` (no repair), output-limit cut → `provider_response_truncated`.
+  Every attempt's priced cost goes into `persist_failed_coach_chat_run_v2`.
+- **Contract 7 host** (`_shared/coach_context/host.ts`, `registry.ts`, empty): fixed registry order,
+  ids `^[a-z][a-z0-9_]{0,39}$`, budget 1–12,000 characters, each block clipped and wrapped in
+  `<reference_data source="id">` with the reference-data line; a closing tag inside text is
+  escaped; a contributor that throws, returns nothing or takes over 4 s is left out and logged
+  (`coach_context_contributors`). Contributors render only on the gateway path.
+- **Thinking** comes from the route for every question (the legacy path thinks only for plan
+  changes; a route cannot vary it per question).
+- **Eval** (`_evals/coach_chat_eval.ts`): with `AI_COACH_CHAT_*` set it runs the gateway path,
+  asks one question twice and gates on the second `ai_call` line's cache reads, caps spend with
+  `EVAL_MAX_USD`, and reruns a call the host slept through (monotonic vs wall clock).
+  Results 2026-10-15 (4,096 output tokens, 30 s timeout, synthetic athletes; first direct
+  baseline, as no direct DeepSeek run is recorded):
+
+  | Model | Runs | Model answers | Safety | Unpermitted evidence | p50 / p95 | USD per answer | Cache reads |
+  |---|---|---|---|---|---|---|---|
+  | Haiku 5.5 | 180 | 100% | 18/18 | 0 | 4.5 / 7.0 s | 0.00045 | 97.6% of prompt tokens |
+  | Sonnet 5.5 | 120 (sampled) | 100% | 6/6 | 0 | 8.6 / 12.3 s | 0.0110 | 96.5% |
+
+  Cache proof (rich athlete, same question twice): first call writes 8,012 tokens, second reads
+  8,012. Clarifying question when a detail was missing: Haiku 0/6, Sonnet 2/4 (reported, not
+  gated). Recommendation: Haiku 5.5 (every gate, about 25 times cheaper and twice as fast);
+  Sonnet 5.5 is the settings-only upgrade if the owner wants more clarifying questions.
+- **Fallback consent** (privacy rule): whenever the route is not used (no route, `EVALUATED=false`, over USD 0.50, unknown model, or the D1 rollback), today's provider is DeepSeek, Groq or Gemini (`legacyCoachChatVendor`, from `COACH_MODEL_PROVIDER`), so the current Coach notice must name that vendor (`get_ai_consent_v2`); a notice naming another vendor (Anthropic after cutover) answers 403 `ai_consent_required`, with nothing sent and nothing reserved. A null provider counts as the legacy vendor: A1 added the column without a backfill, so every notice published before A1 (today's production notice, which names its vendor only in `provider_label`) is null, and today's behaviour must stay byte-identical. Mock or unconfigured providers send nothing and keep the generic consent check.
+- **For A7**: suggested settings `AI_COACH_CHAT_PROVIDER=anthropic`, `MODEL=claude-haiku-5-5`,
+  `MAX_OUTPUT_TOKENS=4096`, `TIMEOUT_MS=30000`, `EVALUATED=true`. With `EVALUATED` not `true`
+  Coach chat behaves as if there were no route (today's path). Without an Anthropic-named Coach
+  notice granted, every turn returns 403.
+  The app shows "AI" for provider `anthropic` (`aiProviderDisplayName` returns null).
 
 ### A7: wording, budgets, cutover
 

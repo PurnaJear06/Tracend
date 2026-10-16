@@ -13,6 +13,14 @@
 // api.deepseek.com (EVAL_MODEL overrides the model name; a router run is a
 // smoke test, not production latency: it waits up to routerTiming for each
 // attempt and does not gate on latency).
+//
+// Gateway route (A6): when the AI_COACH_CHAT_* settings make a route (for example
+// AI_COACH_CHAT_PROVIDER=anthropic, AI_COACH_CHAT_MODEL=claude-haiku-5-5,
+// AI_COACH_CHAT_MAX_OUTPUT_TOKENS=4096, AI_COACH_CHAT_TIMEOUT_MS=30000 and ANTHROPIC_API_KEY),
+// the same prompts go through generateCoachChatViaGateway, the path coach-chat takes with those
+// settings. The run first asks one question twice and records both `ai_call` log lines, the
+// proof that a repeated question reads the cached prefix. EVAL_MAX_USD (default 1) stops new
+// calls once the run has spent that much at list prices.
 // Exits non-zero when a merge gate fails. Synthetic data only.
 
 import prompts from "./prompts.json" with { type: "json" };
@@ -20,11 +28,22 @@ import { evalProfiles } from "./fixtures.ts";
 import { buildCoachChatDataSummary } from "../_shared/coach_chat_fallback.ts";
 import {
   classifyQuestion,
+  coachChatFailureUsage,
+  type CoachChatGeneration,
   type CoachChatTiming,
   coachChatTiming,
   CoachChatUnavailableError,
   generateCoachChat,
 } from "../_shared/providers/coach_chat_provider.ts";
+import { generateCoachChatViaGateway } from "../_shared/providers/coach_chat_provider_gateway.ts";
+import { route } from "../_shared/ai/routes.ts";
+import type { AiRoute } from "../_shared/ai/types.ts";
+
+type Generate = (
+  question: string,
+  context: Record<string, unknown>,
+  contextKind: string,
+) => Promise<CoachChatGeneration>;
 
 type EvalPrompt = Readonly<{
   id: string;
@@ -56,8 +75,18 @@ type RunResult = {
   answer?: string;
   evidence_codes?: string[];
   follow_ups?: readonly string[];
+  cost_usd: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  prompt_tokens: number;
   checks: Record<string, boolean>;
 };
+
+const cacheTokens = (attempts: CoachChatGeneration["attempts"]) => ({
+  cache_read_tokens: attempts.reduce((sum, a) => sum + (a.cacheReadTokens ?? 0), 0),
+  cache_write_tokens: attempts.reduce((sum, a) => sum + (a.cacheWriteTokens ?? 0), 0),
+  prompt_tokens: attempts.reduce((sum, a) => sum + (a.promptTokens ?? 0), 0),
+});
 
 export const evalGates = Object.freeze({
   minModelAnswerRate: 0.97,
@@ -180,8 +209,7 @@ async function runOne(
   profile: ReturnType<typeof evalProfiles>[number],
   prompt: EvalPrompt,
   repeat: number,
-  fetcher: typeof fetch,
-  timing: CoachChatTiming,
+  generate: Generate,
 ): Promise<RunResult> {
   const context = structuredClone(profile.context);
   if (prompt.history) context.recent_messages = [...prompt.history];
@@ -196,13 +224,7 @@ async function runOne(
     context_kind: contextKind,
   };
   try {
-    const generation = await generateCoachChat(
-      prompt.text,
-      context,
-      contextKind,
-      fetcher,
-      timing,
-    );
+    const generation = await generate(prompt.text, context, contextKind);
     const answer = generation.answer;
     const checks: Record<string, boolean> = {
       evidence_permitted: answer.evidence.every((e) => permitted.includes(e.code)),
@@ -226,6 +248,8 @@ async function runOne(
       answer: answer.answer,
       evidence_codes: answer.evidence.map((e) => e.code),
       follow_ups: answer.suggested_follow_ups,
+      cost_usd: generation.estimatedCostUsd,
+      ...cacheTokens(generation.attempts),
       checks,
     };
   } catch (error) {
@@ -243,6 +267,8 @@ async function runOne(
         latency_ms,
         safety_state: summary.safety_state,
         answer: summary.answer,
+        cost_usd: coachChatFailureUsage(error).estimatedCostUsd,
+        ...cacheTokens(error.metadata.attempts ?? []),
         checks: prompt.expect?.safety
           ? { safety: prompt.expect.safety.includes(summary.safety_state) }
           : {},
@@ -253,12 +279,79 @@ async function runOne(
       outcome: "dead_end",
       failure_code: error instanceof Error ? error.name : "unknown",
       latency_ms,
+      cost_usd: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      prompt_tokens: 0,
       checks: prompt.expect?.safety ? { safety: false } : {},
     };
   }
 }
 
+// A Mac that sleeps mid-request kills the connection; the monotonic clock stops while it sleeps
+// and the wall clock does not. Such a run measures the host, not the model, so it runs again (at
+// most twice) and the summary counts the reruns.
+let hostSleepReruns = 0;
+async function runAwake(run: () => Promise<RunResult>): Promise<RunResult> {
+  for (let tries = 0;; tries++) {
+    const wall = Date.now();
+    const monotonic = performance.now();
+    const result = await run();
+    const sleptMs = Date.now() - wall - (performance.now() - monotonic);
+    if (sleptMs < 5_000 || tries >= 2) return result;
+    hostSleepReruns++;
+  }
+}
+
+/** The `ai_call` log lines the gateway writes while run() goes; other output passes through. */
+async function aiCallLines<T>(run: () => Promise<T>): Promise<{ result: T; calls: unknown[] }> {
+  const calls: unknown[] = [];
+  const saved = { log: console.log, warn: console.warn };
+  const capture = (write: (...args: unknown[]) => void) => (...args: unknown[]) => {
+    const line = args.map(String).join(" ");
+    try {
+      const entry = JSON.parse(line);
+      if (entry?.msg === "ai_call") {
+        calls.push(entry);
+        return;
+      }
+    } catch {
+      // Not a log entry.
+    }
+    write(...args);
+  };
+  console.log = capture(saved.log);
+  console.warn = capture(saved.warn);
+  try {
+    return { result: await run(), calls };
+  } finally {
+    Object.assign(console, saved);
+  }
+}
+
+function gatewayGenerate(coachRoute: AiRoute): Generate {
+  return (question, context, contextKind) =>
+    generateCoachChatViaGateway({
+      question,
+      context,
+      contextKind,
+      route: coachRoute,
+      consentVendor: coachRoute.vendor,
+    });
+}
+
 async function main(): Promise<void> {
+  const coachRoute = route("coach_chat");
+  if (coachRoute) {
+    await runEvaluation({
+      generate: gatewayGenerate(coachRoute),
+      endpoint: `${coachRoute.providerLabel} gateway route`,
+      model: coachRoute.model,
+      router: false,
+      coachRoute,
+    });
+    return;
+  }
   const baseUrl = Deno.env.get("EVAL_BASE_URL")?.trim() ?? "";
   const apiKey = baseUrl ? Deno.env.get("EVAL_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY");
   if (!apiKey) {
@@ -277,8 +370,26 @@ async function main(): Promise<void> {
   Deno.env.set("DEEPSEEK_MODEL", model);
   const endpoint = baseUrl ? new URL(baseUrl).host : new URL(deepseekChatUrl).host;
   const fetcher = baseUrl ? routedFetch(baseUrl) : fetch;
-  const timing = baseUrl ? routerTiming : coachChatTiming;
+  const timing: CoachChatTiming = baseUrl ? routerTiming : coachChatTiming;
+  await runEvaluation({
+    generate: (question, context, contextKind) =>
+      generateCoachChat(question, context, contextKind, fetcher, timing),
+    endpoint,
+    model,
+    router: Boolean(baseUrl),
+  });
+}
 
+async function runEvaluation(setup: {
+  generate: Generate;
+  endpoint: string;
+  model: string;
+  router: boolean;
+  coachRoute?: AiRoute;
+}): Promise<void> {
+  const { generate, endpoint, model } = setup;
+  const router = setup.router;
+  const maxUsd = Number(Deno.env.get("EVAL_MAX_USD") ?? "1");
   const repeats = Number(Deno.env.get("EVAL_REPEATS") ?? "2");
   const concurrency = Number(Deno.env.get("EVAL_CONCURRENCY") ?? "4");
   const maxCalls = Number(Deno.env.get("EVAL_MAX_CALLS") ?? "0");
@@ -299,15 +410,40 @@ async function main(): Promise<void> {
     )
   );
   const jobs: Array<() => Promise<RunResult>> = sampleJobs(planned, maxCalls).map((job) => () =>
-    runOne(job.profile, job.prompt, job.repeat, fetcher, timing)
+    runAwake(() => runOne(job.profile, job.prompt, job.repeat, generate))
+  );
+
+  // Cache proof: the same question twice for the same athlete, one after the other.
+  const cacheProof: unknown[] = [];
+  if (setup.coachRoute) {
+    const athlete = evalProfiles().find((p) => p.id === "rich")!;
+    const question = "How did my training go over the last two weeks?";
+    for (let ask = 0; ask < 2; ask++) {
+      const { calls } = await aiCallLines(() =>
+        generate(question, structuredClone(athlete.context), classifyQuestion(question))
+          .catch((error) => error)
+      );
+      cacheProof.push(...calls);
+    }
+  }
+  const proofSpent = cacheProof.reduce(
+    (sum: number, entry) => sum + Number((entry as { cost_usd?: number }).cost_usd ?? 0),
+    0,
   );
 
   const results: RunResult[] = [];
   let next = 0;
+  let spent = proofSpent;
+  let stoppedForBudget = false;
   const workers = Array.from({ length: Math.max(1, concurrency) }, async () => {
     while (next < jobs.length) {
+      if (spent >= maxUsd) {
+        stoppedForBudget = true;
+        return;
+      }
       const job = jobs[next++];
       const result = await job();
+      spent += result.cost_usd;
       results.push(result);
       if (results.length % 20 === 0) console.log(`${results.length}/${jobs.length} runs done`);
     }
@@ -345,9 +481,21 @@ async function main(): Promise<void> {
     safety: failedCheck("safety") <= evalGates.maxSafetyFailures,
     unpermitted_evidence: failedCheck("evidence_permitted") <= evalGates.maxUnpermittedEvidence,
     // A router's latency says nothing about production, so it is reported only.
-    p95_latency: Boolean(baseUrl) || percentile(latencies, 95) <= evalGates.maxP95LatencyMs,
+    p95_latency: router || percentile(latencies, 95) <= evalGates.maxP95LatencyMs,
+    // Through the gateway the repeated question must read the cached prefix.
+    cache_read: !setup.coachRoute ||
+      Number((cacheProof.at(-1) as { cache_read_tokens?: number } | undefined)?.cache_read_tokens) >
+        0,
   };
-  const passed = Object.values(gates).every(Boolean);
+  const passed = Object.values(gates).every(Boolean) && !stoppedForBudget;
+  const promptTokens = results.reduce((sum, r) => sum + r.prompt_tokens, 0);
+  const cacheRead = results.reduce((sum, r) => sum + r.cache_read_tokens, 0);
+  const cacheWrite = results.reduce((sum, r) => sum + r.cache_write_tokens, 0);
+  const answered = count("model");
+  const proofLines = cacheProof.map((entry) => {
+    const e = entry as Record<string, unknown>;
+    return `- ${e.outcome}: input ${e.input_tokens}, cache read ${e.cache_read_tokens}, cache write ${e.cache_write_tokens}, output ${e.output_tokens}, USD ${e.cost_usd}, ${e.latency_ms} ms`;
+  });
 
   const summary = [
     `# Coach chat live evaluation — ${passed ? "PASSED" : "FAILED"}`,
@@ -356,18 +504,36 @@ async function main(): Promise<void> {
       jobs.length < planned.length ? `, sampled to ${jobs.length}` : ""
     })`,
     `Endpoint: ${endpoint}, model \`${model}\`${
-      baseUrl
+      router
         ? ` (router smoke test: not production latency or upstream; attempts wait up to ${
           routerTiming.initialAttemptMs / 1000
         } s, repairs ${routerTiming.repairAttemptMs / 1000} s)`
         : ""
     }`,
     "",
+    `Spend: USD ${spent.toFixed(4)} at list prices (cap ${maxUsd})${
+      stoppedForBudget ? " — STOPPED at the cap before every run finished" : ""
+    }; USD ${(answered ? (spent - proofSpent) / answered : 0).toFixed(5)} per model answer.`,
+    `Runs repeated because the host slept mid-request: ${hostSleepReruns}.`,
+    `Prompt tokens: ${promptTokens}, of which cache reads ${cacheRead} (${
+      promptTokens ? ((cacheRead / promptTokens) * 100).toFixed(1) : "0"
+    }%) and cache writes ${cacheWrite}.`,
+    ...(proofLines.length
+      ? ["", "Cache proof (`ai_call` lines, same question asked twice):", ...proofLines]
+      : []),
+    "",
     "| Gate | Result | Value |",
     "|---|---|---|",
     `| Model answers ≥ ${evalGates.minModelAnswerRate * 100}% | ${
       gates.model_answer_rate ? "pass" : "FAIL"
     } | ${(modelAnswerRate * 100).toFixed(1)}% |`,
+    ...(setup.coachRoute
+      ? [
+        `| Repeated question reads the cache | ${gates.cache_read ? "pass" : "FAIL"} | ${
+          proofLines.at(-1) ?? "no call"
+        } |`,
+      ]
+      : []),
     `| Dead-ends = 0 | ${gates.dead_ends ? "pass" : "FAIL"} | ${count("dead_end")} |`,
     `| Safety prompts handled safely | ${gates.safety ? "pass" : "FAIL"} | ${
       failedCheck("safety")
@@ -376,7 +542,7 @@ async function main(): Promise<void> {
       failedCheck("evidence_permitted")
     } |`,
     `| p95 latency ≤ ${evalGates.maxP95LatencyMs / 1000} s | ${
-      baseUrl ? "not gated (router)" : gates.p95_latency ? "pass" : "FAIL"
+      router ? "not gated (router)" : gates.p95_latency ? "pass" : "FAIL"
     } | ${(percentile(latencies, 95) / 1000).toFixed(1)} s (p50 ${
       (percentile(latencies, 50) / 1000).toFixed(1)
     } s) |`,
