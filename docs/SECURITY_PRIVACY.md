@@ -115,7 +115,8 @@ AI consent is enforced on the server, per purpose:
 ## 4. HealthKit
 
 - Request only steps, active energy, sleep, workouts, weight, resting heart rate, HRV and
-  breathing rate needed for enabled coaching.
+  breathing rate needed for enabled coaching, and heart rate during workouts (per-set summaries,
+  below).
 - Request access near the relevant feature rather than at unexplained launch time. Onboarding may
   ask for Apple Health access as an optional step; skipping it never blocks a plan.
 - Provide accurate iOS purpose strings for every read/write capability; MVP is read-oriented unless
@@ -140,12 +141,24 @@ AI consent is enforced on the server, per purpose:
 - Never use HealthKit-derived data for advertising, marketing profiles, or sale.
 - A disconnected or partially authorized user can continue through manual logging.
 
-> **Planned (Phase 2 / C2, Contract 4):** per-set heart-rate summaries (start, peak, end, 30 s and
-> 60 s drop, coverage, sample count) read on the phone and stored in
-> `exercise_set_heart_rate`; raw samples never leave the phone. **Phase 3 / C3, D10:** a
-> heart-rate profile and sleeping heart rate, computed and stored in shadow mode. Heart rate never
-> sets the load (D9). These read heart-rate samples beyond the types listed above and store
-> heart-rate-derived values, so the rules above need the owner's update before C2 merges.
+- **Per-set heart rate (C2, Contract 4).** After the athlete finishes a workout, the app asks Apple
+  Health for read access to heart rate (the sheet shows only while the choice is undecided; the
+  purpose string names workout heart-rate data) and reads the Apple Watch's heart-rate samples for
+  the minutes around the sets, through a HealthKit anchored query on the phone. It works out one
+  summary per set from the set's stored start and end plus the following 60 seconds (start, peak and
+  end beats per minute, the drop 30 and 60 seconds after the end, coverage, sample count, and
+  `watch_workout` or `background` as the source) and sends only that summary with
+  `persist_set_heart_rate_v1`, stored in `exercise_set_heart_rate` (owner-read RLS, writes only
+  through the RPC, exported by `privacy-export`, deleted with the account). Raw samples, sample
+  times and Watch device details never leave the phone and are never logged; Sentry breadcrumbs
+  carry only the number of sets saved. A waiting list of finished workouts (session id and set
+  times, no heart-rate values) is kept in the phone's preferences for up to two days so the read
+  can run after the Watch has synced. Heart rate never sets a load or a prescription (D9), and the
+  Coach does not read these summaries yet.
+
+> **Planned (Phase 3 / C3, D10):** a heart-rate profile and sleeping heart rate, computed and
+> stored in shadow mode. They read heart-rate samples outside workouts and store derived values, so
+> the rules above need the owner's update before C3 merges.
 
 ## 5. Photos and Media
 

@@ -449,11 +449,35 @@ without them; the reps left still arrive as the matching RPE. A workout whose fi
 is not finished. `get_my_workout_session` 1.1 and `get_my_exercise_history` 1.1 (last session's
 sets) return the five fields; the privacy export selects every column.
 
-> **Planned (Phase 2 / C2, Contract 4):** `public.exercise_set_heart_rate`, one row per set
-> (`exercise_set_id`, `start_bpm`, `peak_bpm`, `end_bpm`, `drop_30s_bpm`, `drop_60s_bpm`,
-> `coverage`, `sample_count`, `source`), written by `persist_set_heart_rate_v1`. Summaries only;
-> raw samples never leave the phone. **Phase 3 / C3:** heart-rate profile, zones, recovery and
-> sleeping heart rate in shadow mode (D10).
+### `exercise_set_heart_rate`
+
+One heart-rate summary per set (program Contract 4), computed on the phone from Apple Health
+samples; raw samples never leave the phone. Primary key `exercise_set_id` (the set, cascade), `user_id`
+(account, cascade), and:
+
+| Column | Type | Rule |
+|---|---|---|
+| `start_bpm` | smallint | reading nearest the set's start (within 10 s); null when none, 30–250 |
+| `peak_bpm` | smallint | highest reading during the set; null when none, 30–250, not below start or end |
+| `end_bpm` | smallint | reading nearest the set's end (within 10 s); null when none, 30–250 |
+| `drop_30s_bpm` | smallint | `end_bpm` minus the reading nearest 30 s later; negative when it rose; null when either is missing |
+| `drop_60s_bpm` | smallint | the same at 60 s |
+| `coverage` | numeric(4,3) | 0–1, the share of the set plus 60 s, in 10-second slots, that holds a reading |
+| `sample_count` | integer | readings from the set's start to 60 s after its end, 1–5000 |
+| `source` | text | `watch_workout` (median gap between readings 10 s or less, at least three readings) or `background` |
+| `created_at`, `updated_at` | timestamptz | `updated_at` moves when a later read replaces the row |
+
+A set with no reading in its window has no row, and a missing value is never guessed. RLS is on and
+forced (`user_id = auth.uid()` select only; clients cannot insert, update or delete).
+`persist_set_heart_rate_v1(session_id, summaries)` (security definer, own workouts that are not
+discarded, 1 to 100 summaries, each naming a finished set by `exercise_order` and `set_number`)
+upserts one row per set and returns `{schema_version: "1.0", session_id, saved}`; invalid values and
+unknown or unfinished sets raise 22023, another athlete's workout P0002. The app saves again when a
+later read has more readings (the Watch syncs after the workout). `get_my_set_heart_rate_v1(session_id)`
+returns `{schema_version: "1.0", session_id, sets: [...]}` with the Contract 4 columns keyed by
+exercise order and set number. The privacy export lists the table and account deletion removes it
+through the cascade. Heart rate does not change a load or a prescription (D9). **Phase 3 / C3:**
+heart-rate profile, zones, recovery and sleeping heart rate in shadow mode (D10).
 
 ### `workout_amendments`
 

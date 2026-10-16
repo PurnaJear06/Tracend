@@ -1,8 +1,12 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
-import { addMedia, csv, encrypt } from "./index.ts";
+import { addMedia, csv, dataTables, encrypt } from "./index.ts";
 
 Deno.test("CSV preserves user-readable fields and quotes", () => {
   assertEquals(csv([{ value: "a,b", count: 2 }]), '"value","count"\n"a,b","2"');
+});
+
+Deno.test("the export includes each set's heart-rate summary", () => {
+  assert(dataTables.includes("exercise_set_heart_rate"));
 });
 
 Deno.test("export bytes are encrypted and contain no plaintext payload", async () => {
