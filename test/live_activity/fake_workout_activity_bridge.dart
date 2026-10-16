@@ -27,6 +27,22 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
   /// The end time of the activity that would be showing, or null.
   DateTime? showingUntil;
 
+  /// When set, every start, update and end records its call at once but
+  /// finishes only when this completes, as a slow ActivityKit call would;
+  /// the activity shows the new state only then.
+  Future<void>? hold;
+
+  /// When set, every start, update and end throws it after the hold.
+  Object? failWith;
+
+  Future<void> _finish(void Function() show) async {
+    final gate = hold;
+    if (gate != null) await gate;
+    final error = failWith;
+    if (error != null) throw error;
+    show();
+  }
+
   List<String> get methods => [for (final call in calls) call.method];
 
   /// The open workout's handler for the buttons, or null.
@@ -73,10 +89,12 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       nextExerciseOrder: nextExerciseOrder,
       nextSetNumber: nextSetNumber,
     ));
-    showingUntil = endsAt;
-    card = nextExerciseOrder == null || nextSetNumber == null
-        ? null
-        : (exerciseOrder: nextExerciseOrder, setNumber: nextSetNumber);
+    await _finish(() {
+      showingUntil = endsAt;
+      card = nextExerciseOrder == null || nextSetNumber == null
+          ? null
+          : (exerciseOrder: nextExerciseOrder, setNumber: nextSetNumber);
+    });
   }
 
   @override
@@ -89,7 +107,9 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       nextExerciseOrder: null,
       nextSetNumber: null,
     ));
-    if (showingUntil != null) showingUntil = endsAt;
+    await _finish(() {
+      if (showingUntil != null) showingUntil = endsAt;
+    });
   }
 
   @override
@@ -102,8 +122,10 @@ class FakeWorkoutActivityBridge implements WorkoutActivityBridge {
       nextExerciseOrder: null,
       nextSetNumber: null,
     ));
-    showingUntil = null;
-    card = null;
+    await _finish(() {
+      showingUntil = null;
+      card = null;
+    });
   }
 
   @override

@@ -131,6 +131,10 @@ Island check passed on 2026-10-15. What exists:
     activity whose end passed more than two minutes ago and does not forward the press. Otherwise
     iOS removes it at its own limit (8 hours after the start). SECURITY_PRIVACY §10 and UX_FLOWS
     say this. A `BGAppRefreshTask` could add a best-effort wake, but iOS decides when; not built.
+  - *Card current before the answer.* `RestTimerController` remembers each activity call it sends
+    (still not awaited in the app, so the timer never stalls on iOS); a press (`_onCommand`) awaits
+    `activityUpdated()` after it acts, at most 1.5 s (so 5 s save + 1.5 s stays inside Swift's 8 s).
+    A failed or slow update is logged and the press still answers; it never undoes the change.
   - *`tick` only when resumed.* A button press wakes the app in the background, so it does not run
     `tick`; the docs no longer say a press counts as the app running.
 - **Lifecycle change** (`RestTimerController`): Skip and −15 past the end send `updateRest(now)`

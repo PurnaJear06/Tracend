@@ -276,4 +276,51 @@ void main() {
       expect(activity.methods, ['end']);
     });
   });
+
+  group('waiting for the activity update', () {
+    test(
+      'activityUpdated waits for a slow update, in app code it does not',
+      () async {
+        final gate = Completer<void>();
+        activity.hold = gate.future;
+        // Starting a rest returns without waiting on the activity.
+        await controller.start(90, nextLabel: 'Set 2');
+        var settled = false;
+        unawaited(controller.activityUpdated().then((_) => settled = true));
+        await Future<void>.delayed(Duration.zero);
+        expect(settled, isFalse);
+
+        gate.complete();
+        await Future<void>.delayed(Duration.zero);
+        expect(settled, isTrue);
+        expect(activity.showingUntil, controller.timer!.endsAt);
+      },
+    );
+
+    test('a hanging update is waited for only activityWait', () async {
+      activity.hold = Completer<void>().future;
+      controller = RestTimerController(
+        alerts: _QuietAlerts(),
+        activity: activity,
+        clock: () => now,
+        activityWait: const Duration(milliseconds: 20),
+      );
+      await controller.start(90);
+
+      await controller.activityUpdated();
+
+      expect(activity.methods, ['startRest']);
+      expect(controller.timer, isNotNull);
+    });
+
+    test('a failing update neither throws nor undoes the rest', () async {
+      activity.failWith = StateError('no activity');
+      await controller.start(90);
+      await controller.adjust(const Duration(seconds: 30));
+
+      await controller.activityUpdated();
+
+      expect(controller.timer!.totalSeconds, 120);
+    });
+  });
 }
