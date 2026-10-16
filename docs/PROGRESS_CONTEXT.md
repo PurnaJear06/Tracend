@@ -32,10 +32,16 @@ a plan decision contradicts are kept as written and are waiting on the owner:
 - "Rehabilitation excluded" vs D6 injury modifications.
 - "No Android" vs the site's "Android in testing".
 - Body-fat range: allowed in PRD and VISION, forbidden in AI_SAFETY_SPEC §9.
-- Heart-rate series "not copied" vs C2 and D10.
 - Glow ban vs the built glows.
 - Meal images: the rule says 30 days, but the code deletes them after about 7.
-- Whether a model-only change still needs a new consent notice under D11.
+
+Decided by the owner on 2026-10-16:
+- A model change within the same company needs no new consent notice (D11 names the company,
+  not the model). A new company, new data sent or a retention change still does.
+- Phase 2 AI budget: USD 3 per person and USD 50 overall per month (from the owner's USD 100
+  Anthropic credit), set by #124's migration.
+- Per-set heart-rate summaries (Contract 4, #123) are allowed; raw heart-rate series still never
+  leave the phone.
 
 Known gaps found:
 - `privacy-export` leaves out several tables (SECURITY_PRIVACY §15).

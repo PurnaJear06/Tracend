@@ -390,7 +390,9 @@ written into the image; and empty, unrelated or low-quality photos.
 `progress_photo_ai`, §10.3), separate from the AI coaching notice. The notice names the receiving
 company, the data sent, the company's retention, what Tracend keeps and how to stop. Consent counts only when
 the athlete's newest `progress_photo_ai` record grants the newest notice (`has_photo_ai_consent`);
-a new provider, model, data sent or retention is a new notice and needs a new grant. Withdrawing
+a new company, new data sent or a retention change is a new notice and needs a new grant. A
+model change within the same company is not (owner decision, 2026-10-16): the notice names the
+company, not the model (D11). Withdrawing
 stops new checks; past results stay until the set or account is deleted.
 
 **Input.** The front, side and back photos of one complete set (Groq accepts three images; a Claude
