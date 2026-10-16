@@ -1,3 +1,6 @@
+import type { AthleteVendor } from "./ai/models.ts";
+import { aiVendors } from "./ai/types.ts";
+
 /// The athlete's AI coaching answer as the server sees it. `unavailable`
 /// means the check itself failed; callers treat it as not granted.
 export type AiCoachingConsent = "granted" | "not_granted" | "unavailable";
@@ -41,17 +44,13 @@ export type AiConsentFeature =
   | "physique_vision"
   | "library_context";
 
-/// The vendor that receives the athlete's data, as a notice names it. Never an
-/// API shape: a notice naming DeepSeek must not cover a route to Groq, though
-/// both are reached the same way.
-export type AiVendor = "anthropic" | "deepseek" | "groq" | "gemini";
-
-const vendors: ReadonlySet<string> = new Set<AiVendor>([
-  "anthropic",
-  "deepseek",
-  "groq",
-  "gemini",
-]);
+/// The vendors a notice can name: the gateway's vendor ids (Contract 1) without
+/// the evaluation router, which no notice names (type `AthleteVendor`). Never
+/// an API shape: a notice naming DeepSeek must not cover a route to Groq,
+/// though both are reached the same way.
+const vendors: ReadonlySet<string> = new Set<string>(
+  aiVendors.filter((vendor) => vendor !== "router"),
+);
 
 /// The grant, and the vendor and version of the notice current for the
 /// purpose. `provider` (the vendor) is null when that notice names none (it
@@ -59,7 +58,7 @@ const vendors: ReadonlySet<string> = new Set<AiVendor>([
 /// then refuses to send.
 export type AiConsentWithProvider = Readonly<{
   consent: AiCoachingConsent;
-  provider: AiVendor | null;
+  provider: AthleteVendor | null;
   noticeVersion: string | null;
 }>;
 
@@ -99,7 +98,7 @@ export async function aiConsentWithProvider(
       return consentUnavailable;
     }
     const provider = typeof answer.provider === "string" && vendors.has(answer.provider)
-      ? answer.provider as AiVendor
+      ? answer.provider as AthleteVendor
       : null;
     return {
       consent: answer.granted ? "granted" : "not_granted",
