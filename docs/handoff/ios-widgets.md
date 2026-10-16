@@ -74,10 +74,108 @@ Island check passed on 2026-10-15. What exists:
   activity), `test/account_session_test.dart` (a refused session ends it). The fake is
   `test/live_activity/fake_workout_activity_bridge.dart`.
 
-**S3 choice.** A new rest ends every earlier rest activity with `.immediate`, including an ended
-one still showing "Rest done"; the two-minute linger stays. If the device check shows "Rest done"
-staying next to a new countdown (ActivityKit ignoring `end` on an ended activity), the fallback is
-to shorten `doneLinger` to 30 s.
+**D1 in review** (branch `claude/d1-live-activity-buttons`): Done, Skip and +30s.
+
+- **Intents** `ios/Shared/RestActivityIntents.swift` (both targets): `CompleteSetIntent`,
+  `SkipRestIntent`, `AddRestIntent`, all `LiveActivityIntent` and hidden from Shortcuts
+  (`isDiscoverable = false`). iOS runs them in the app's process; `AppDelegate` points
+  `RestActivityButtons.handler` at `WorkoutActivityBridge.press` before any scene connects, because
+  a background launch for a press may have no scene and no Flutter engine.
+- **Bridge.** `press` sends `press` (`{"button": "done" | "skip" | "add_rest", "seconds": 30,
+  "exercise_order", "set_number", "pressed_at_millis"}`) to Dart only while a workout screen has
+  called `attachButtons`; it waits up to 8 s from the press for the answer, then for every queued
+  activity call, so iOS does not suspend the app halfway. A press that no workout handled (answer
+  false, timeout, or no workout) sets the content's `needsApp` ("Open Tracend to continue");
+  `updateRest` and a new rest clear it. `startRest` moves a running activity (counting down or
+  "Rest done") in place instead of ending it and requesting a new one, so a Done from the Lock
+  Screen never needs a request from the background (Apple forum reports say background requests
+  can fail with "Target is not foreground" while another activity exists). `end` is always
+  `.immediate`; the two-minute linger lives in Dart, and the launch sweep keeps it.
+- **No App Group.** The intent runs in the app's own process, where the Flutter engine and the
+  channel already are, so nothing is shared between processes.
+- **Dart.** `WorkoutActivityBridge.attachButtons/detachButtons` and `LiveActivityButton`
+  (`lib/shared/live_activity/`); `workoutCommandFor` maps a button to its Contract 3 command;
+  `WorkoutEventHub.send` answers (true/false) once `ActiveWorkoutScreen` has handled it
+  (`handleCommands` replaced `incomingCommands`; `commands.add` still works). The hub runs commands
+  one at a time, so each sees the state the last left. The screen attaches once ready and detaches
+  on dispose.
+- **Review fixes (PR #121).**
+  - *Set identity (Contract 3 change).* `CompleteCurrentSet` now carries `exerciseOrder` and
+    `setNumber` (1-based), both required. The set comes from the rest's "Next" label: `startRest`
+    sends `next_exercise_order` and `next_set_number` (optional, additive), the activity keeps them
+    in its content state (`nextExerciseOrder`, `nextSetNumber`), and the Done button builds
+    `CompleteSetIntent(exerciseOrder:setNumber:)` with them. The plan README's Contract 3 block
+    still shows the old empty class; update it when D1 merges. Without a set in the state the card
+    shows "Open Tracend to continue" instead of Done. Dart refuses a `press` for Done without both
+    numbers (`invalid_arguments`, so the card asks to open the app) and never ticks "whatever is
+    current".
+  - *Guards.* Dart ticks only if that exercise's current unticked set is that set, and ignores Done
+    while a rest runs. An ignored press answers true and changes nothing; a running rest's card is
+    redrawn with its true end (`RestTimerController.refresh`), which also clears a stuck
+    "Open Tracend to continue". It answers false when the workout is closed, finishing or viewing a
+    completed one, or the set cannot be ticked (no suggested reps).
+  - *Late press.* Swift stamps `pressed_at_millis` when the intent runs. Dart drops a press older
+    than 8 s (`LiveActivityButton.pressTimeout`, equal to Swift's `pressTimeout`) twice: on arrival
+    and again when the hub's turn comes (a press queued behind a slow save). A dropped press
+    answers false and changes nothing.
+  - *Server sync.* After a Done tick the press awaits `_save()` (local draft plus
+    `sync_workout_draft`, the same call the 250 ms timer makes after an in-app tick), at most 5 s
+    so the answer stays inside iOS's 8 s. A failed send is handled inside `_save` exactly as for
+    an in-app tick: the set stays logged and the sync state shows Offline. Skip and +30s save the
+    local draft only, as in the app.
+  - *"Rest done" bound.* ActivityKit cannot dismiss an activity by itself: `staleDate` only marks
+    it stale (the card already uses that to flip to "Rest done" at the rest's end), and
+    `dismissalPolicy: .after(date)` applies only to `end()`, which needs app code (or a push, which
+    D1 does not use). Closest bounds: the screen's `tick` (every second on screen), the launch
+    sweep, and now a button press: `WorkoutActivityBridge.press` first ends, at once, any rest
+    activity whose end passed more than two minutes ago and does not forward the press. Otherwise
+    iOS removes it at its own limit (8 hours after the start). SECURITY_PRIVACY §10 and UX_FLOWS
+    say this. A `BGAppRefreshTask` could add a best-effort wake, but iOS decides when; not built.
+  - *Card current before the answer.* `RestTimerController` remembers each activity call it sends
+    (still not awaited in the app, so the timer never stalls on iOS); a press (`_onCommand`) awaits
+    `activityUpdated()` after it acts, at most 1.5 s (so 5 s save + 1.5 s stays inside Swift's 8 s).
+    A failed or slow update is logged and the press still answers; it never undoes the change.
+  - *`tick` only when resumed.* A button press wakes the app in the background, so it does not run
+    `tick`; the docs no longer say a press counts as the app running.
+- **Lifecycle change** (`RestTimerController`): Skip and −15 past the end send `updateRest(now)`
+  ("Rest done") instead of `end`; a rest that ran out sends nothing (`ranOut`); `tick` ends "Rest
+  done" two minutes after the rest's end and the screen calls it only while the app is resumed; a
+  set with no rest after it ends the activity; `detach` also ends "Rest done". SECURITY_PRIVACY §10
+  is updated to match (owner to confirm).
+- **Facts for the other authority docs** (kept out of this PR; fold in when D1 merges):
+  ARCHITECTURE §3.1 should say the buttons are iOS 17 `LiveActivityIntent`s in
+  `ios/Shared/RestActivityIntents.swift` (both targets), run in the app's process, that the bridge
+  forwards `press` to the attached workout screen as a Contract 3 command and waits for its answer
+  (8 s at most) and for its queued activity calls, with no App Group. PRD §4 should replace
+  "Planned (Phase 2, D1)" with: Done, Skip and +30s on the Live Activity; Done logs the suggested
+  kg and reps. TESTING_STRATEGY should list the D1 tests below.
+- **Tests:** contract test (press with set identity and press time, attach/detach, refused
+  arguments including an old Done without a set, the answer waiting, a late press dropped),
+  `test/live_activity/live_activity_commands_test.dart` (button mapping, the command sink's answers,
+  one-at-a-time order, expiry), the controller tests, and in `test/phase_3_workout_flow_test.dart` a
+  whole workout from the buttons plus a double press, a stale Done after an in-app tick, Done during
+  a rest, a late press, the server copy before the answer, and a failed send. The intents run only
+  on the owner's iPhone.
+
+**Test D1 on the device** (signed build from the branch):
+
+1. Start a workout, tick set 1 in the app, lock the phone. The card shows +30s and Skip.
+2. Tap +30s: the countdown jumps 30 s. Tap Skip: "Rest done", a lime Done set button.
+3. Tap Done set: a new rest starts in the same card with the next set. Let that one run out on the
+   Lock Screen, then tap Done set.
+4. Go home and long-press the Dynamic Island: the same buttons work there.
+5. Finish the workout from the Lock Screen to the last set: the card goes. Open the app: every set
+   is ticked with the suggested kg and reps, rests match what you did.
+6. Mid-rest, swipe the app away, then tap Skip: "Open Tracend to continue". Tap the card: the app
+   opens, reopen the workout, the countdown is back and the buttons return.
+7. Skip in the app and stay on screen: "Rest done" goes after two minutes.
+8. Double-tap Done set on the Lock Screen: one set is ticked, the card shows the next rest.
+9. Tick the set in the app while the card shows Done for it, then tap the card's Done: nothing is
+   ticked. Tap Done while a rest runs (a stale card): nothing is ticked.
+10. Tap Done set on the Lock Screen, then open the app straight away: the set is on the server
+    (the sync state reads Saved, not Offline).
+11. Let a rest end, leave the phone for five minutes with the app in the background: "Rest done"
+    may still show (nothing can dismiss it); tap Done set: the card goes and no set is ticked.
 
 **For D1.** C1's Contract 3 events (`RestStarted`, `RestAdjusted`) are emitted next to the
 controller calls, but the activity is driven only by `RestTimerController`. D1 must keep it that
@@ -93,18 +191,21 @@ registers the new App ID on first signing):
 2. Go home: the Dynamic Island shows the lime glyph and the countdown; a long press expands it.
 3. ±15 moves it; Skip removes it at once.
 4. Let a rest run out with the app open: "Rest done". Tick the next set within two minutes:
-   "Rest done" goes and only the new countdown shows (S3).
+   the card moves in place to the new countdown (D1 updates the one activity, no second card).
 5. Let a rest run out with the app closed (swipe it away): "Rest done". Relaunch: it goes within
-   two minutes of the end (launch sweep).
+   two minutes of the end (launch sweep), or at once if two minutes have passed.
 6. Kill the app mid-rest and reopen the workout: the countdown is still right.
 7. Finish, Discard, and Save and leave each remove it at once. Sign out mid-rest: it goes.
 8. Settings › Tracend › Live Activities off: the in-app timer and the rest alert work; nothing
    shows.
 
-**Known limits:** no buttons until D1 (tapping opens the app); no push, so nothing changes it
-from the server; iOS ends any activity after 8 hours; the free team's profiles expire after 7
+**Known limits:** a press with the app closed cannot reach a workout (the card asks to open the
+app); "Rest done" stays past two minutes while the app is away, until the app runs or a button
+is pressed (ActivityKit cannot dismiss it without app code or a push); Done logs the suggested kg
+and reps; no push, so nothing changes it from the server; iOS ends any activity after 8 hours; the free team's profiles expire after 7
 days like the app's.
 
 ## Next agent starts here
 
-Take D1 (Done / Skip / +30s), Phase 2; the brief is in the program doc.
+After the owner's D1 device check: D2 (Today and Lock Screen widgets), Phase 3. C2 stacks on the
+D1 branch; its listener uses `WorkoutEventHub.events` only (the command sink is D1's).
