@@ -2,6 +2,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/consent/photo_ai_notice.dart';
+import 'package:tracend/shared/shared_reads.dart';
 import 'package:uuid/uuid.dart';
 
 export 'package:tracend/features/consent/photo_ai_notice.dart';
@@ -291,6 +292,7 @@ class SupabaseNutritionRepository
   SupabaseNutritionRepository(this._client);
   static const _uuid = Uuid();
   final SupabaseClient _client;
+  final _reads = SharedReads();
 
   @override
   Future<PhotoAiNotice> loadMealPhotoNotice() async {
@@ -324,7 +326,7 @@ class SupabaseNutritionRepository
     required DateTime date,
     required String mealType,
     required Uint8List bytes,
-  }) async {
+  }) => _reads.afterWrite(() async {
     if (bytes.isEmpty) throw const MealPhotoFailure('upload', 'photo_empty');
     if (bytes.length > 4194304) {
       throw const MealPhotoFailure('upload', 'photo_too_large');
@@ -399,7 +401,7 @@ class SupabaseNutritionRepository
         _ => MealPhotoFailure(step, error.runtimeType.toString()),
       };
     }
-  }
+  });
 
   /// `503 meal_analysis_unavailable` from the function's JSON error body.
   static String _functionFailure(FunctionException error) {
@@ -409,7 +411,10 @@ class SupabaseNutritionRepository
   }
 
   @override
-  Future<NutritionSchedule> loadSchedule(DateTime date) async {
+  Future<NutritionSchedule> loadSchedule(DateTime date) =>
+      _reads.join(('schedule', _dateKey(date)), () => _loadSchedule(date));
+
+  Future<NutritionSchedule> _loadSchedule(DateTime date) async {
     final value = Map<String, dynamic>.from(
       await _client.rpc(
             'get_my_nutrition_schedule',
@@ -446,7 +451,7 @@ class SupabaseNutritionRepository
     required String scheduleItemId,
     required String mealType,
     required ManualFoodInput food,
-  }) async {
+  }) => _reads.afterWrite(() async {
     final account = await _client
         .from('user_accounts')
         .select('timezone')
@@ -463,10 +468,13 @@ class SupabaseNutritionRepository
         'meal_note': '',
       },
     );
-  }
+  });
 
   @override
-  Future<NutritionTargets?> loadTargets() async {
+  Future<NutritionTargets?> loadTargets() =>
+      _reads.join('targets', _loadTargets);
+
+  Future<NutritionTargets?> _loadTargets() async {
     final rows = await _client
         .from('nutrition_target_sets')
         .select('calories,protein_g,carbohydrate_g,fat_g')
@@ -501,7 +509,10 @@ class SupabaseNutritionRepository
   }
 
   @override
-  Future<List<MealEntry>> loadMeals(DateTime date) async {
+  Future<List<MealEntry>> loadMeals(DateTime date) =>
+      _reads.join(('meals', _dateKey(date)), () => _loadMeals(date));
+
+  Future<List<MealEntry>> _loadMeals(DateTime date) async {
     final rows = await _client
         .from('meals')
         .select(
@@ -519,7 +530,7 @@ class SupabaseNutritionRepository
     required DateTime date,
     required String mealType,
     required ManualFoodInput food,
-  }) async {
+  }) => _reads.afterWrite(() async {
     final account = await _client
         .from('user_accounts')
         .select('timezone')
@@ -535,13 +546,13 @@ class SupabaseNutritionRepository
         'meal_note': '',
       },
     );
-  }
+  });
 
   @override
   Future<String> createFixtureMeal({
     required DateTime date,
     required String mealType,
-  }) async {
+  }) => _reads.afterWrite(() async {
     final account = await _client
         .from('user_accounts')
         .select('timezone')
@@ -556,7 +567,7 @@ class SupabaseNutritionRepository
           },
         )
         as String;
-  }
+  });
 
   @override
   Future<List<MealCandidate>> loadCandidates(String mealId) async {
@@ -587,7 +598,7 @@ class SupabaseNutritionRepository
   Future<void> confirmCandidates(
     String mealId,
     List<MealCandidate> candidates,
-  ) async {
+  ) => _reads.afterWrite(() async {
     await _client.rpc(
       'confirm_analyzed_meal',
       params: {
@@ -597,12 +608,12 @@ class SupabaseNutritionRepository
             .toList(),
       },
     );
-  }
+  });
 
   @override
-  Future<void> deleteMeal(String mealId) async {
+  Future<void> deleteMeal(String mealId) => _reads.afterWrite(() async {
     await _client.rpc('delete_my_meal', params: {'target_meal_id': mealId});
-  }
+  });
 
   String _dateKey(DateTime value) =>
       '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';

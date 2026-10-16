@@ -30,6 +30,7 @@ class AppShell extends StatefulWidget {
     this.onSignOut,
     this.aiConsent,
     this.health,
+    this.repositories,
     super.key,
   });
 
@@ -44,12 +45,45 @@ class AppShell extends StatefulWidget {
   /// Built here when not given.
   final HealthRepository? health;
 
+  /// Replaces the repositories the shell builds from [environment]. Tests use
+  /// it to count reads; the app leaves it null.
+  @visibleForTesting
+  final AppShellRepositories? repositories;
+
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
+/// The repositories the tabs share. Any left null is built from the
+/// environment.
+@visibleForTesting
+class AppShellRepositories {
+  const AppShellRepositories({
+    this.workouts,
+    this.coach,
+    this.nutrition,
+    this.progress,
+    this.physique,
+    this.brief,
+  });
+
+  final WorkoutRepository? workouts;
+  final CoachRepository? coach;
+  final NutritionRepository? nutrition;
+  final ProgressRepository? progress;
+  final PhysiqueCheckRepository? physique;
+
+  /// The unshared brief repository; the shell shares it between tabs.
+  final DailyBriefRepository? brief;
+}
+
 class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
+
+  /// Tabs opened at least once. A tab is built, and so starts its reads, the
+  /// first time it is selected and stays built after that so it keeps its
+  /// scroll position and state. Today is the launch tab.
+  final _opened = <int>{0};
   late final WorkoutRepository _workouts;
   late final HealthRepository _health;
   late final CoachRepository _coach;
@@ -71,37 +105,50 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
-    _workouts = widget.environment.hasSupabaseConfiguration
-        ? SupabaseWorkoutRepository(
-            Supabase.instance.client,
-            SharedPreferencesAsync(),
-          )
-        : FixtureWorkoutRepository();
+    final injected = widget.repositories;
+    final live = widget.environment.hasSupabaseConfiguration;
+    _workouts =
+        injected?.workouts ??
+        (live
+            ? SupabaseWorkoutRepository(
+                Supabase.instance.client,
+                SharedPreferencesAsync(),
+              )
+            : FixtureWorkoutRepository());
     _health =
         widget.health ??
-        (widget.environment.hasSupabaseConfiguration
+        (live
             ? SupabaseHealthRepository(
                 Supabase.instance.client,
                 SharedPreferencesAsync(),
               )
             : const ManualHealthRepository());
-    _coach = widget.environment.hasSupabaseConfiguration
-        ? SupabaseCoachRepository(Supabase.instance.client)
-        : const FixtureCoachRepository();
-    _nutrition = widget.environment.hasSupabaseConfiguration
-        ? SupabaseNutritionRepository(Supabase.instance.client)
-        : const FixtureNutritionRepository();
-    _progress = widget.environment.hasSupabaseConfiguration
-        ? SupabaseProgressRepository(Supabase.instance.client)
-        : const FixtureProgressRepository();
-    _physique = widget.environment.hasSupabaseConfiguration
-        ? SupabasePhysiqueCheckRepository(Supabase.instance.client)
-        : const FixturePhysiqueCheckRepository();
-    _brief = widget.environment.hasSupabaseConfiguration
-        ? SharedDailyBriefRepository(
-            SupabaseDailyBriefRepository(Supabase.instance.client),
-          )
-        : const FixtureDailyBriefRepository();
+    _coach =
+        injected?.coach ??
+        (live
+            ? SupabaseCoachRepository(Supabase.instance.client)
+            : const FixtureCoachRepository());
+    _nutrition =
+        injected?.nutrition ??
+        (live
+            ? SupabaseNutritionRepository(Supabase.instance.client)
+            : const FixtureNutritionRepository());
+    _progress =
+        injected?.progress ??
+        (live
+            ? SupabaseProgressRepository(Supabase.instance.client)
+            : const FixtureProgressRepository());
+    _physique =
+        injected?.physique ??
+        (live
+            ? SupabasePhysiqueCheckRepository(Supabase.instance.client)
+            : const FixturePhysiqueCheckRepository());
+    _brief = SharedDailyBriefRepository(
+      injected?.brief ??
+          (live
+              ? SupabaseDailyBriefRepository(Supabase.instance.client)
+              : const FixtureDailyBriefRepository()),
+    );
   }
 
   /// Account opened from a screen without its own route to it (Train's
@@ -130,13 +177,16 @@ class _AppShellState extends State<AppShell> {
   void _selectTab(int index) {
     if (index == _selectedIndex) return;
     HapticFeedback.selectionClick();
-    setState(() => _selectedIndex = index);
+    setState(() {
+      _selectedIndex = index;
+      _opened.add(index);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final destinations = <Widget>[
-      TodayScreen(
+    final destinations = <Widget Function()>[
+      () => TodayScreen(
         key: const ValueKey('tab_today'),
         environment: widget.environment,
         onSignOut: widget.onSignOut,
@@ -150,7 +200,7 @@ class _AppShellState extends State<AppShell> {
         aiConsent: widget.aiConsent,
         checkInGate: _checkInGate,
       ),
-      TrainScreen(
+      () => TrainScreen(
         key: const ValueKey('tab_train'),
         repository: _workouts,
         brief: _brief,
@@ -158,17 +208,17 @@ class _AppShellState extends State<AppShell> {
         health: _health,
         onOpenAccount: _openAccount,
       ),
-      CoachScreen(
+      () => CoachScreen(
         key: const ValueKey('tab_coach'),
         repository: _coach,
         aiConsent: widget.aiConsent,
       ),
-      NutritionScreen(
+      () => NutritionScreen(
         key: const ValueKey('tab_nutrition'),
         repository: _nutrition,
         coach: _coach,
       ),
-      ProgressScreen(
+      () => ProgressScreen(
         key: const ValueKey('tab_progress'),
         repository: _progress,
         training: _workouts is TrainingHubRepository
@@ -179,11 +229,16 @@ class _AppShellState extends State<AppShell> {
       ),
     ];
 
+    final tabs = [
+      for (var i = 0; i < destinations.length; i++)
+        _opened.contains(i) ? destinations[i]() : const SizedBox.shrink(),
+    ];
+
     return Scaffold(
       // The body runs under the bottom slot, and its bottom padding reports
       // the slot's height, so scroll views end clear of the bar.
       extendBody: true,
-      body: IndexedStack(index: _selectedIndex, children: destinations),
+      body: IndexedStack(index: _selectedIndex, children: tabs),
       bottomNavigationBar: FloatingBarFrame(
         child: ListenableBuilder(
           listenable: _checkInGate,

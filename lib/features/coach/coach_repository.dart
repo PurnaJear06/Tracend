@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/shared/shared_reads.dart';
 import 'package:uuid/uuid.dart';
 
 class CoachDecision {
@@ -278,6 +279,7 @@ class SupabaseCoachRepository
   final SupabaseClient _client;
   final DateTime Function() _now;
   Map<String, dynamic>? _lastResponse;
+  final _reads = SharedReads();
 
   @override
   Future<List<CoachContextSource>> loadContextStatus() async {
@@ -407,17 +409,19 @@ class SupabaseCoachRepository
   }
 
   @override
-  Future<CoachDecision?> loadLatest() async {
+  Future<CoachDecision?> loadLatest() => _reads.join('latest', () async {
     final rows = await _client
         .from('coach_decisions')
         .select()
         .order('created_at', ascending: false)
         .limit(1);
     return rows.isEmpty ? null : CoachDecision.fromJson(rows.first);
-  }
+  });
 
   @override
-  Future<CoachDecision> generate() async {
+  Future<CoachDecision> generate() => _reads.afterWrite(_generate);
+
+  Future<CoachDecision> _generate() async {
     final now = _now();
     final account = await _client
         .from('user_accounts')
