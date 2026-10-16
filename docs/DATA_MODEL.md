@@ -318,9 +318,27 @@ level (`beginner`, `intermediate`), compound flag, `status` (`active` or `retire
 are retired, never deleted; generation uses only active ones. Catalog changes do not rewrite
 historical snapshots.
 
-Not built: laterality, contraindication tags, substitution groups and instructions.
+**Catalog v2 (B1, migration `20261015170021_exercise_catalog_v2.sql`).** Additive columns, mirrored
+from `_shared/onboarding/catalog_v2.ts` (a Deno test keeps them equal):
 
-> **Planned (Phase 2 / B1):** catalog v2 and coaching-standard rule data (migration code 21).
+- `secondary_muscles` (`text[]`, default empty): muscles trained indirectly, never a primary muscle;
+- `knee_stress`, `back_stress`, `shoulder_stress` (`low`, `moderate`, `high`): rated with the
+  in-house method in `_shared/training/standard/joint_stress.ts`, for choosing swaps and range
+  limits (D6), never for diagnosis;
+- `regressions`, `progressions` (`text[]` of slugs): easier and harder forms of the same movement
+  pattern, mirrored both ways;
+- `substitutes` (`text[]` of slugs): mutual alternatives sharing the pattern or the target muscle;
+- `load_step_kg` (nullable): the smallest load increase of the loading implement (per dumbbell or
+  kettlebell); null for bodyweight, bar, bench and band exercises;
+- `exercise_role` (`variation`, `regression`, or null for the standard form): B0's ranking role.
+
+No exercise links to itself; the migration refuses an unrated row or a link to a missing slug, and
+pgTAP checks both. Nothing reads the new columns yet: `onboarding-plan` still selects the v1
+columns and the rules plan reads roles from `catalog.ts`, so today's plans are unchanged (a Deno
+test proves it byte for byte). The rule data B2 uses with them (rep ranges, rest, weekly sets,
+progression steps, each value with a source) lives in `_shared/training/standard/`, not in SQL.
+
+Not built: laterality and instructions.
 
 ### `exercise_muscle_references`
 

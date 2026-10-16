@@ -82,6 +82,40 @@ B0 is live (#105, 2026-10-15).
   a goblet squat (it asserted the old bodyweight squat). Deno suite: 407 passed, 0 failed,
   8 ignored.
 
+**B1 (review; catalog v2 and coaching-standard data; migration 21; no behaviour change).**
+
+- **Catalog v2** (`_shared/onboarding/catalog_v2.ts`): `exerciseCatalogV2` / `catalogV2BySlug`
+  are the 72 v1 exercises, unchanged and in order, plus `secondaryMuscles`, `jointStress`
+  (knee, back, shoulder: low, moderate, high), `regressions`, `progressions`, `substitutes` and
+  `loadStepKg`. Catalog v1 and its exports are untouched (`coach_chat_provider.ts`,
+  `onboarding-plan` and the prompt still read them).
+- **Database mirror** (`20261015170021_exercise_catalog_v2.sql`): the same fields plus
+  `exercise_role` (B0's request) as additive columns on `public.exercise_catalog`. No reader
+  selects them yet. The migration refuses an unrated row or a dangling link.
+- **Coaching standard** (`_shared/training/standard/`): `sources.ts` (12 open sources, each
+  checked against PubMed on 2026-10-15, plus a Tracend in-house entry), `prescription.ts` (goal
+  emphasis, rep ranges by emphasis x experience x compound/isolation, reps in reserve, RPE
+  mapping, rest), `volume.ts` (weekly sets: minimum 4, growth 10, maximum 12/20; indirect set =
+  0.5, Pelland 2026; 2 sessions per muscle; strength 2-3 sets), `progression.ts` (2-10% load
+  increase, double progression trigger, +1 rep a session, load steps by equipment),
+  `joint_stress.ts` (rating method). Every value is a `Sourced` with sources and a basis in our
+  own words.
+- **In-house values (owner or coach review):** the equipment load steps (barbell 2.5, dumbbells
+  2.5, kettlebells 4, machines 5, cables 2.5 kg), +1 rep a session, the beginner cap of 12 sets,
+  every joint-stress rating, and the substitute/regression/progression links.
+- **For B2:** the standard differs from today's rules plan in places it does not yet read: strength
+  rest 180-300 s (policy cap 240 s), beginner strength reps 8-12 (rules plan 4-6), hypertrophy
+  compound rest from 90 s. Reconcile in B2 with the policy and ALGORITHMS §9.
+- **Tests.** `catalog_v2_test.ts`: links point at real, other exercises; progressions and
+  regressions mirror each other inside a pattern, never drop a level, never loop; substitutes are
+  mutual and share pattern or target; vocabularies; load steps; the migration mirrors the TS rows.
+  `catalog_plans_test.ts`: SHA-256 digests of 10,080 rules-plan proposals and model prompts
+  (7 equipment sets x 2 levels x 1-6 days x 5 goals x 4 lengths x avoid x focus) recorded on
+  477da79 match with catalog v1 and with the v2 entries. `standard_test.ts`: every rule value
+  has a known source and a basis, every source is cited with a DOI and PMID, ranges are ordered.
+  pgTAP `exercise_catalog_v2_test.sql`: ratings, links, mirroring, constraints, read access.
+
 ## Next agent starts here
 
-B1 (catalog v2 and coaching-standard data), Phase 2. The brief is in the program doc.
+B2 (templates; fractional volume) and B6 (screening gate), Phase 3, read catalog v2 and the
+standard. The briefs are in the program doc.
