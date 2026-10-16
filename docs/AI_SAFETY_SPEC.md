@@ -486,16 +486,17 @@ the server enforces the same rule for every caller. `coach-chat` answers 403
 data reaches the AI provider.
 
 **Notices name a vendor.** All three tables have a `provider` column. The meal photo table always
-required one; the other two gained a nullable one in migration A1, so today's coaching and
-progress-photo notices, published earlier, have none. Publish with
+required one; the other two gained a nullable one in migration A1, and migration code 17 filled
+it for every earlier notice from its label and model (DeepSeek, Groq), so no notice has a null
+provider. Publish with
 the five-argument functions: `private.publish_ai_notice(version, provider, provider_label,
 purposes, body)`, `private.publish_photo_ai_notice(version, provider, provider_label, model, body)`
 and `private.publish_meal_photo_ai_notice(version, provider, provider_label, model, body)`. Each
 calls `private.check_notice_provider_label`, which refuses (22023) a null or unknown provider, a
 blank label, and a label that does not name the provider's company (Anthropic, DeepSeek, Groq or
 Google; case ignored) or also names another, so the athlete never agrees to one company while the
-gateway sends to another. The older four-argument publishers still exist but store a null
-provider, which the gateway refuses; do not use them.
+gateway sends to another. The older four-argument publishers still exist but refuse
+(22023) and point to the five-argument form, so a notice without a vendor cannot be published.
 
 **The gateway checks the vendor.** `get_ai_consent_v2(target_user_id, consent_purpose)` (service
 role) returns `{schema_version, granted, provider, notice_version}` for the notice current for the
