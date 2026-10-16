@@ -146,6 +146,14 @@ mock proposal with no model call and is untouched.
   name the route's vendor (`consentVendor`, checked again by the gateway). Otherwise nothing is
   sent: the plan becomes the rules plan (`ai_consent_not_granted`) and the questions are skipped
   and not stored.
+- **Settings-path consent** (privacy rule): when the route is not used (no route, `EVALUATED=false`,
+  over USD 0.50, unknown model, or the D1 rollback), the settings send the data to their own
+  provider (DeepSeek, Groq or Gemini), so the current onboarding notice must name that vendor
+  (`store.consent(feature, vendor)` reads `get_ai_consent_v2`; `legacyNoticeConsent`). A notice
+  naming another vendor (Anthropic after cutover) sends nothing: rules plan, questions skipped
+  (`ai_consent_not_granted`), no budget asked. A null provider counts as the settings vendor: A1
+  added the column without a backfill, so today's production notice (vendor named only in
+  `provider_label`) is null, and today's requests must stay byte-identical.
 - **Plan** (`onboarding-plan/gateway.ts`, `generatePlanViaGateway`): the same rules prompt as the
   settings path (`onboardingSystemPrompt`, `onboardingUserMessage`, so the policy text stays in one
   place) plus one line forbidding model and company names (D11), as a cached system block; JSON

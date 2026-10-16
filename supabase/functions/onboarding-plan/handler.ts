@@ -1,5 +1,5 @@
 import { reply } from "../_shared/auth.ts";
-import type { AiCoachingConsent, AiConsentWithProvider } from "../_shared/ai_consent.ts";
+import type { AiCoachingConsent, AiConsentWithProvider, AiVendor } from "../_shared/ai_consent.ts";
 import type { AiRoute } from "../_shared/ai/types.ts";
 import {
   type AnswersResult,
@@ -142,7 +142,11 @@ export interface OnboardingStore {
   /** Drops this request's claim after a failed call, so a retry asks again. */
   releaseQuestions(questionsHash: string): Promise<void>;
   recordQuestionUsage(usage: GenerationUsage): Promise<void>;
-  consent(): Promise<AiCoachingConsent>;
+  /**
+   * Settings path: whether the athlete's current onboarding notice is granted and names `vendor`,
+   * the provider the settings send the data to (see `legacyNoticeConsent`).
+   */
+  consent(feature: OnboardingGatewayFeature, vendor: AiVendor): Promise<AiCoachingConsent>;
   budgetAvailable(): Promise<boolean>;
   /** The notice current for the feature, and the vendor it names (gateway path). */
   gatewayConsent(feature: OnboardingGatewayFeature): Promise<AiConsentWithProvider>;
@@ -289,6 +293,21 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
   return reply(202, body);
 }
 
+/**
+ * The settings path sends the athlete's data to its own provider (DeepSeek, Groq or Gemini), so
+ * a granted notice covers it only when the notice names that vendor. A notice with no vendor
+ * (provider null) predates vendor names: it is the notice published for the settings path, so it
+ * keeps covering it. A notice that names another vendor (Anthropic after cutover) does not, and
+ * a fallback or rollback to the settings path then sends nothing.
+ */
+export function legacyNoticeConsent(
+  answer: AiConsentWithProvider,
+  vendor: AiVendor,
+): AiCoachingConsent {
+  if (answer.consent !== "granted") return answer.consent;
+  return answer.provider === null || answer.provider === vendor ? "granted" : "not_granted";
+}
+
 /** The athlete's current notice names the vendor the route sends to. */
 const namesVendor = (answer: AiConsentWithProvider, route: AiRoute) =>
   answer.consent === "granted" && answer.provider === route.vendor;
@@ -338,7 +357,8 @@ async function handleQuestions(
       : null;
   } else {
     if (resolution.kind === "model") {
-      consentGranted = (await store.consent()) === "granted";
+      consentGranted =
+        (await store.consent("onboarding_questions", resolution.config.provider)) === "granted";
       if (consentGranted) budgetAvailable = await store.budgetAvailable();
     }
     closed = followUpGateReason(resolution, { consentGranted, budgetAvailable });
@@ -544,7 +564,8 @@ async function runGeneration(
       let consentGranted = false;
       let budgetAvailable = false;
       if (resolution.kind === "model") {
-        consentGranted = (await store.consent()) === "granted";
+        consentGranted =
+          (await store.consent("onboarding_plan", resolution.config.provider)) === "granted";
         if (consentGranted) budgetAvailable = await store.budgetAvailable();
       }
       result = await (deps.generate ?? generateOnboardingProposal)(

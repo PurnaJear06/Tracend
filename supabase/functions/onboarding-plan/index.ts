@@ -1,10 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.49.8";
-import {
-  aiCoachingConsent,
-  aiConsentWithProvider,
-  type ConsentRpc,
-  type ConsentV2Rpc,
-} from "../_shared/ai_consent.ts";
+import { aiConsentWithProvider, type ConsentV2Rpc } from "../_shared/ai_consent.ts";
 import { AiBudget } from "../_shared/ai_budget.ts";
 import { AuthError, reply, requireAuth } from "../_shared/auth.ts";
 import {
@@ -23,6 +18,7 @@ import {
   type GenerationClaim,
   generationLeaseSeconds,
   handleOnboardingPlan,
+  legacyNoticeConsent,
   type OnboardingStore,
   type QuestionsClaim,
   questionsLeaseSeconds,
@@ -169,11 +165,14 @@ function supabaseStore(
         throw error;
       }
     },
-    consent() {
-      return aiCoachingConsent(
-        ((name, params) => client.rpc(name, params)) as ConsentRpc,
-        userId,
-        "onboarding_plan",
+    async consent(feature, vendor) {
+      return legacyNoticeConsent(
+        await aiConsentWithProvider(
+          ((name, params) => client.rpc(name, params)) as ConsentV2Rpc,
+          userId,
+          feature,
+        ),
+        vendor,
       );
     },
     // Questions and plans share this check; a place is held at the plan's
