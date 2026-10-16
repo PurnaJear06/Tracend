@@ -134,10 +134,10 @@ declare
   readable text := lower(coalesce(vendor_label, '') || ' ' || coalesce(vendor_model, ''));
   vendors_found text[] := array[]::text[];
 begin
-  if readable like '%deepseek%' then vendors_found := vendors_found || 'deepseek'; end if;
-  if readable like '%groq%' or readable like '%qwen%' then vendors_found := vendors_found || 'groq'; end if;
-  if readable like '%gemini%' or readable like '%google%' then vendors_found := vendors_found || 'gemini'; end if;
-  if readable like '%anthropic%' or readable like '%claude%' then vendors_found := vendors_found || 'anthropic'; end if;
+  if readable like '%deepseek%' then vendors_found := array_append(vendors_found, 'deepseek'::text); end if;
+  if readable like '%groq%' or readable like '%qwen%' then vendors_found := array_append(vendors_found, 'groq'::text); end if;
+  if readable like '%gemini%' or readable like '%google%' then vendors_found := array_append(vendors_found, 'gemini'::text); end if;
+  if readable like '%anthropic%' or readable like '%claude%' then vendors_found := array_append(vendors_found, 'anthropic'::text); end if;
   if cardinality(vendors_found) <> 1 then
     raise exception 'cannot tell which vendor the notice named (label %, model %)',
       vendor_label, vendor_model using errcode = '22023';
