@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/features/onboarding/onboarding_screening.dart';
 
 class OnboardingDraft {
   const OnboardingDraft({
@@ -438,6 +439,10 @@ abstract interface class OnboardingRepository {
   Future<void> recordEligibilityAndConsent({required bool eligible});
   Future<void> saveGoal(String goal);
 
+  /// Records the pre-plan health check and returns the server's outcome.
+  /// Answering the same again adds no record.
+  Future<ScreeningRecord> recordScreening(ScreeningAnswers answers);
+
   /// Starts (or returns) the plan generation for the saved draft.
   /// Throws [OnboardingAnswersIncomplete] when answers are missing and
   /// [OnboardingPlanInfeasible] when no safe plan fits them.
@@ -568,6 +573,20 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
           .update({'goal_type': goal})
           .eq('id', existing.first['id']);
     }
+  }
+
+  @override
+  Future<ScreeningRecord> recordScreening(ScreeningAnswers answers) async {
+    final result = await _client.rpc(
+      'record_screening_v1',
+      params: {
+        'exercises_regularly': answers.exercisesRegularly,
+        'known_disease': answers.knownCondition,
+        'symptoms': answers.symptoms,
+        'cleared_by_professional': answers.clearedByProfessional,
+      },
+    );
+    return ScreeningRecord.fromJson(result);
   }
 
   @override

@@ -289,6 +289,18 @@ settings are in §10.4.
 
 ## 7. Eligibility and Escalation
 
+Before any plan is built, a deterministic pre-exercise screening (`_shared/training/screening/`,
+ACSM 2015 preparticipation logic in our own words) maps four yes/no answers to `cleared`,
+`moderate_until_cleared` or `see_professional`. Any current sign or symptom, or no regular exercise
+with a known heart, metabolic or kidney condition and no professional clearance, gives
+`see_professional`: no plan is built and the app shows professional guidance, the same path as the
+exclusions below. Regular exercise with a known condition and no clearance gives
+`moderate_until_cleared`: the rules plan caps intensity (no strength emphasis, at least 3 reps in
+reserve, no vigorous conditioning). A model never sets, changes or overrides the outcome, and the
+screening makes no diagnosis. The answers, outcome and date are stored in
+`onboarding_screenings`; no row (an account or app build from before the screening) reads as
+`cleared`.
+
 The MVP does not support:
 
 - users under 18;

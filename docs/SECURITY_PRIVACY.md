@@ -487,7 +487,8 @@ history.
   account deletion is pending. A package that fails after upload is removed from Storage.
 - The package contains user-readable JSON/CSV and media organized by purpose, with units,
   provenance, and timestamps. It includes the onboarding profile fields, `onboarding_generations`,
-  `onboarding_questions`, `health_history_months`, `ai_usage_events`, physique analyses and every
+  `onboarding_questions`, `onboarding_screenings` (the pre-plan health check answers),
+  `health_history_months`, `ai_usage_events`, physique analyses and every
   set-timing column. Known gap: the table list in `privacy-export` does not yet include Coach
   threads and messages, `user_preferences`, Coach memory tables, nutrition schedules, HealthKit
   workout references and reconciliations, or the feature-engine tables.

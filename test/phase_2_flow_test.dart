@@ -11,6 +11,7 @@ import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/onboarding/onboarding_proposal_view.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
+import 'package:tracend/features/onboarding/onboarding_screening.dart';
 import 'package:tracend/shared/brand/tracend_mark.dart';
 
 void main() {
@@ -90,6 +91,7 @@ void main() {
     await _tapText(tester, 'I accept the private-beta terms');
     await _tapText(tester, 'I have read the privacy notice');
     await _continue(tester);
+    await _passScreening(tester);
 
     expect(find.text('Allow AI coaching?'), findsOneWidget);
     await _continue(tester);
@@ -135,7 +137,7 @@ void main() {
 
     // A beginner skips the training and top-set steps.
     expect(find.text('Where should the plan focus?'), findsOneWidget);
-    expect(find.textContaining('Step 10 of 13'), findsOneWidget);
+    expect(find.textContaining('Step 11 of 14'), findsOneWidget);
     // The first row is "Bring up"; the second, "Already strong".
     await tester.tap(find.widgetWithText(FilterChip, 'Chest').first);
     await tester.pumpAndSettle();
@@ -174,6 +176,13 @@ void main() {
     expect(payload['goal'], 'fat_loss');
     expect(payload['avoid_patterns'], ['squat', 'vertical_push']);
     expect(payload['health_import'], 'skipped');
+    expect(payload['screening'], {
+      'exercises_regularly': true,
+      'known_disease': false,
+      'symptoms': false,
+      'cleared_by_professional': false,
+    });
+    expect(repository.screenings, hasLength(1));
     expect(payload['priority_muscles'], ['chest']);
     expect(payload.containsKey('training_years'), isFalse);
     // No questions came back: the plan was built straight away.
@@ -193,6 +202,208 @@ void main() {
     expect(repository.responses, ['accept']);
   });
 
+  group('health check', () {
+    Future<_FakeOnboardingRepository> openCheck(
+      WidgetTester tester, {
+      ScreeningOutcome? outcome,
+    }) async {
+      final repository = _FakeOnboardingRepository()
+        ..screeningOutcome = outcome;
+      await _pump(
+        tester,
+        repository,
+        consent: AiCoachingConsentController(
+          FixtureAiCoachingConsentRepository(),
+        ),
+      );
+      await _tapText(tester, 'I am 18 or older');
+      await _tapText(tester, 'I accept the private-beta terms');
+      await _tapText(tester, 'I have read the privacy notice');
+      await _continue(tester);
+      expect(find.text('A quick health check.'), findsOneWidget);
+      return repository;
+    }
+
+    testWidgets('all questions must be answered before it continues', (
+      tester,
+    ) async {
+      final repository = await openCheck(tester);
+      await _continue(tester);
+      expect(find.text('Answer each question to continue.'), findsOneWidget);
+      expect(repository.screenings, isEmpty);
+      await _answerScreening(tester, [true, false]);
+      await _continue(tester);
+      expect(repository.screenings, isEmpty);
+    });
+
+    testWidgets('asks about clearance only with a condition and no symptom', (
+      tester,
+    ) async {
+      final repository = await openCheck(tester);
+      const clearance =
+          'Has a health professional said you are fine to exercise?';
+      expect(find.text(clearance), findsNothing);
+      await _answerScreening(tester, [true, true, false]);
+      expect(find.text(clearance), findsOneWidget);
+      // Unanswered, the check cannot continue.
+      await _continue(tester);
+      expect(repository.screenings, isEmpty);
+      await _answerScreening(tester, [true, true, false, true]);
+      await _continue(tester);
+      expect(repository.screenings.single.clearedByProfessional, isTrue);
+      expect(find.text('Allow AI coaching?'), findsOneWidget);
+    });
+
+    testWidgets('a symptom hides the clearance question and stops the plan', (
+      tester,
+    ) async {
+      final repository = await openCheck(tester);
+      await _answerScreening(tester, [true, true, true]);
+      expect(
+        find.text('Has a health professional said you are fine to exercise?'),
+        findsNothing,
+      );
+      await _continue(tester);
+      expect(repository.screenings.single.symptoms, isTrue);
+      expect(repository.screenings.single.clearedByProfessional, isFalse);
+      expect(
+        find.text('Please see a health professional first.'),
+        findsOneWidget,
+      );
+      // Still on the check: no plan, and Continue stays closed.
+      await _continue(tester);
+      expect(find.text('Allow AI coaching?'), findsNothing);
+      expect(
+        find.text(
+          'Tracend cannot build a plan until a health professional has cleared you to exercise.',
+        ),
+        findsOneWidget,
+      );
+      expect(repository.screenings, hasLength(1));
+    });
+
+    testWidgets('changing an answer after a stop lets the athlete go on', (
+      tester,
+    ) async {
+      final repository = await openCheck(tester);
+      await _answerScreening(tester, [true, false, true]);
+      await _continue(tester);
+      expect(
+        find.text('Please see a health professional first.'),
+        findsOneWidget,
+      );
+      final symptom = find.text('No').at(2);
+      await tester.ensureVisible(symptom);
+      await tester.pumpAndSettle();
+      await tester.tap(symptom);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Please see a health professional first.'),
+        findsNothing,
+      );
+      await _continue(tester);
+      expect(repository.screenings, hasLength(2));
+      expect(find.text('Allow AI coaching?'), findsOneWidget);
+    });
+
+    testWidgets('moderate effort shows its note and goes on with a second '
+        'Continue', (tester) async {
+      final repository = await openCheck(
+        tester,
+        outcome: ScreeningOutcome.moderateUntilCleared,
+      );
+      await _answerScreening(tester, [true, true, false, false]);
+      await _continue(tester);
+      expect(
+        find.text('Your plan will stay at moderate effort.'),
+        findsOneWidget,
+      );
+      expect(find.text('Allow AI coaching?'), findsNothing);
+      await _continue(tester);
+      expect(find.text('Allow AI coaching?'), findsOneWidget);
+      // The answer is recorded once, not again by the second Continue.
+      expect(repository.screenings, hasLength(1));
+      expect(repository.savedPayload?['screening'], {
+        'exercises_regularly': true,
+        'known_disease': true,
+        'symptoms': false,
+        'cleared_by_professional': false,
+      });
+    });
+
+    testWidgets('a failed record keeps the athlete on the check', (
+      tester,
+    ) async {
+      final repository = await openCheck(tester);
+      repository.failScreening = true;
+      await _answerScreening(tester, [true, false, false]);
+      await _continue(tester);
+      expect(
+        find.text(
+          'This section could not be saved. Check the connection and try again.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Allow AI coaching?'), findsNothing);
+    });
+
+    testWidgets('a draft past the check without answers returns to it', (
+      tester,
+    ) async {
+      final repository = _FakeOnboardingRepository(
+        draft: OnboardingDraft(
+          path: 'beginner',
+          currentSection: 'equipment',
+          payload: {..._draft('equipment').payload}..remove('screening'),
+        ),
+      );
+      await _pump(tester, repository);
+      expect(find.text('A quick health check.'), findsOneWidget);
+    });
+
+    testWidgets('a draft with answers restores them', (tester) async {
+      final repository = _FakeOnboardingRepository(
+        draft: OnboardingDraft(
+          path: 'beginner',
+          currentSection: 'screening',
+          payload: {
+            ..._draft('screening').payload,
+            'screening': {
+              'exercises_regularly': false,
+              'known_disease': true,
+              'symptoms': false,
+              'cleared_by_professional': true,
+            },
+          },
+        ),
+      );
+      await _pump(tester, repository);
+      expect(find.text('A quick health check.'), findsOneWidget);
+      expect(
+        find.text('Has a health professional said you are fine to exercise?'),
+        findsOneWidget,
+      );
+      await _continue(tester);
+      expect(repository.screenings.single.exercisesRegularly, isFalse);
+      expect(repository.screenings.single.clearedByProfessional, isTrue);
+    });
+
+    testWidgets('a plan refused for screening sends the athlete back to it', (
+      tester,
+    ) async {
+      final repository = _FakeOnboardingRepository(
+        draft: _draft('review'),
+        missing: const ['screening'],
+      );
+      await _pump(tester, repository);
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Continue to your coach'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('A quick health check.'), findsOneWidget);
+    });
+  });
+
   testWidgets('passing the AI step again records only a changed answer', (
     tester,
   ) async {
@@ -206,6 +417,7 @@ void main() {
     await _tapText(tester, 'I accept the private-beta terms');
     await _tapText(tester, 'I have read the privacy notice');
     await _continue(tester);
+    await _passScreening(tester);
 
     await _tapText(tester, 'Allow AI coaching');
     await _continue(tester);
@@ -304,12 +516,13 @@ void main() {
           'equipment': 'Full gym',
           'nutrition_context': 'No restrictions',
           'current_plan': 'Upper/lower split',
+          'screening': _clearedScreening,
         },
       ),
     );
     await _pump(tester, repository);
 
-    expect(find.textContaining('Step 6 of 15'), findsOneWidget);
+    expect(find.textContaining('Step 7 of 16'), findsOneWidget);
     expect(find.text('About you.'), findsOneWidget);
     expect(find.text('Current weight: 82 kg'), findsOneWidget);
     await tester.tap(find.byTooltip('Previous section'));
@@ -330,7 +543,11 @@ void main() {
         draft: const OnboardingDraft(
           path: 'beginner',
           currentSection: 'review',
-          payload: {'goal': 'recomposition', 'training_days': 3},
+          payload: {
+            'goal': 'recomposition',
+            'training_days': 3,
+            'screening': _clearedScreening,
+          },
         ),
       ),
     );
@@ -664,7 +881,7 @@ void main() {
           draft: const OnboardingDraft(
             path: 'beginner',
             currentSection: 'goal',
-            payload: {},
+            payload: {'screening': _clearedScreening},
           ),
         ),
       );
@@ -856,7 +1073,7 @@ void main() {
         await _continue(tester);
 
         expect(find.text('Your training so far.'), findsOneWidget);
-        expect(find.textContaining('Step 10 of 15'), findsOneWidget);
+        expect(find.textContaining('Step 11 of 16'), findsOneWidget);
         await _continue(tester);
         expect(find.text('Choose how long you have trained.'), findsOneWidget);
         await _tapText(tester, 'Over 5 years');
@@ -1420,8 +1637,16 @@ OnboardingDraft _draft(String section) => OnboardingDraft(
     'equipment': '',
     'nutrition_context': 'No dairy',
     'constraints': '',
+    'screening': _clearedScreening,
   },
 );
+
+const _clearedScreening = {
+  'exercises_regularly': true,
+  'known_disease': false,
+  'symptoms': false,
+  'cleared_by_professional': false,
+};
 
 Future<void> _pump(
   WidgetTester tester,
@@ -1471,6 +1696,24 @@ Future<void> _openCalculation(WidgetTester tester) async {
   await tester.pumpAndSettle();
   await tester.tap(disclosure);
   await tester.pumpAndSettle();
+}
+
+/// Answers the health check: the four questions in order, Yes or No each.
+Future<void> _answerScreening(WidgetTester tester, List<bool> answers) async {
+  for (final (index, answer) in answers.indexed) {
+    final choice = find.text(answer ? 'Yes' : 'No').at(index);
+    await tester.ensureVisible(choice);
+    await tester.pumpAndSettle();
+    await tester.tap(choice);
+    await tester.pumpAndSettle();
+  }
+}
+
+/// Answers the health check with nothing to report and continues.
+Future<void> _passScreening(WidgetTester tester) async {
+  expect(find.text('A quick health check.'), findsOneWidget);
+  await _answerScreening(tester, [true, false, false]);
+  await _continue(tester);
 }
 
 Future<void> _continue(WidgetTester tester) async {
@@ -1542,6 +1785,24 @@ class _FakeOnboardingRepository implements OnboardingRepository {
   @override
   Future<void> recordEligibilityAndConsent({required bool eligible}) async {
     eligibilityCalls++;
+  }
+
+  /// What the server answers to the health check; by default the outcome the
+  /// real rule gives for the answers.
+  ScreeningOutcome? screeningOutcome;
+  final screenings = <ScreeningAnswers>[];
+  bool failScreening = false;
+
+  @override
+  Future<ScreeningRecord> recordScreening(ScreeningAnswers answers) async {
+    if (failScreening) throw Exception('offline');
+    screenings.add(answers);
+    final outcome =
+        screeningOutcome ??
+        (answers.symptoms
+            ? ScreeningOutcome.seeProfessional
+            : ScreeningOutcome.cleared);
+    return ScreeningRecord(outcome: outcome, screenedAt: DateTime.utc(2026));
   }
 
   @override

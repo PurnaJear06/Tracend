@@ -160,13 +160,32 @@ sign-in**.
 4. If excluded, stop plan generation and show appropriate professional guidance. Today an
    excluded answer shows the inline message "Tracend cannot create a plan for clinical nutrition,
    pregnancy, acute injury, or rehabilitation needs." and nothing is built.
-   **Planned (coaching platform, chunk B6):** a screening gate.
 5. Accept terms and privacy notice: **I accept the private-beta terms** and **I have read the
    privacy notice**, as check rows in a grouped list on the same step as the age question. The
    hosted terms and privacy pages exist on the site, but the app does not link the rows to them
    yet. That is acceptable only for the owner-only beta and is a public-release blocker
    (SECURITY_PRIVACY.md §15). No legal text lives in the app.
-6. Choose whether to allow AI coaching. **Allow AI coaching** and **Not now** are both valid
+6. **Health check** (B6), its own step right after the boundary and terms and before anything else
+   is asked, so an athlete who should see a professional first learns it at once. Four plain
+   yes/no questions, with no diagnosis and the note that this is not a medical check. (1) Do you exercise regularly now (about 30 minutes or more, at least 3
+   days a week, for the last 3 months)? (2) Do you know you have a heart, diabetes or other
+   metabolic, or kidney condition? (3) Do you notice any of these right now: chest pain or
+   pressure, breathlessness at rest or with light effort, dizziness or fainting, swollen ankles, a
+   racing or skipping heartbeat, or cramping leg pain when you walk? (4) Only with a known condition
+   and no symptom: has a health professional said you are fine to exercise? Continue records the
+   answers (`record_screening_v1`) and the server's outcome decides what follows:
+   - **Cleared:** the flow goes on.
+   - **Moderate effort until cleared:** the step shows "Your plan will stay at moderate effort."
+     and explains that sessions stay at a comfortable effort with no all-out sets until a health
+     professional says the athlete is fine to exercise; a second Continue goes on.
+   - **See a professional first:** the step shows "Please see a health professional first." and
+     explains that Tracend cannot build a plan until then (with a line to get medical help
+     straight away for chest pain, severe breathlessness or fainting now). Continue stays closed;
+     changing an answer clears the result so the athlete can answer again after being cleared.
+   An old draft that passed this step's place without answers returns to it, and a plan request the
+   server refuses for a malformed screening sends the athlete back to it. Builds from before the
+   health check never send answers; the server reads that as cleared.
+7. Choose whether to allow AI coaching. **Allow AI coaching** and **Not now** are both valid
    answers.
    - The text is the server's current notice (`get_current_ai_notice`). The app records that
      notice's version. If the notice cannot load, the step shows "The AI coaching notice could not
@@ -176,7 +195,7 @@ sign-in**.
    - The notice says what data is sent and what works without it, and names the receiving company
      once, with no model names (D11).
    - Without AI coaching, Tracend's rules build the starting plan.
-7. Choose **Guide me** or **Preserve what works**.
+8. Choose **Guide me** or **Preserve what works**.
 
 An account that has not answered the current AI coaching notice (created before the question
 existed, or asked again after the notice changed) answers it once before the app opens. While AI

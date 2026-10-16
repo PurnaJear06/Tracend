@@ -205,6 +205,26 @@ bounded answer payload (at most 128 KB, including the follow-up answers `follow_
 `follow_ups_hash`), timestamps, and row version. Drafts are user-owned under RLS and remain
 separate from immutable feature snapshots and approved plans.
 
+### `onboarding_screenings`
+
+The pre-plan health check (coaching platform Contract 8, chunk B6): one row per distinct set of
+answers, so every answer the athlete gave stays on record. Columns: `id`, `user_id`,
+`exercises_regularly`, `known_disease` (a known heart, metabolic or kidney condition), `symptoms`
+(a current sign or symptom), `cleared_by_professional` (false when not asked), `outcome`
+(`cleared`, `moderate_until_cleared` or `see_professional`) and `screened_at`. The newest row per
+user is current; no row reads as `cleared`.
+
+- **Written only by `record_screening_v1`** (the athlete's own session; it audits
+  `onboarding_screening_recorded` with the outcome only). It works out the outcome in the database
+  (`private.screening_outcome`), adds no row when the newest row has the same answers, and answers
+  `{schema_version, outcome, screened_at}`. A check constraint makes a stored outcome that
+  disagrees with its answers impossible. The same rule lives in
+  `_shared/training/screening/screening.ts`, and both tests hold the same sixteen-row table.
+- **RLS:** owner read only (`user_id = auth.uid()`); clients cannot insert, update or delete.
+- **Privacy:** included in `privacy-export`; deleted with the account (cascade).
+- The answers also sit in the onboarding draft payload (`screening`) so a plan request can read
+  them; an old draft without the key reads as cleared.
+
 ### `onboarding_generations`
 
 One row per onboarding plan generation: the snapshot hash of the reviewed answers, `status`

@@ -7,6 +7,7 @@ export const dataTables = [
   "user_profiles",
   "consent_records",
   "onboarding_drafts",
+  "onboarding_screenings",
   "user_goals",
   "training_plans",
   "training_plan_versions",

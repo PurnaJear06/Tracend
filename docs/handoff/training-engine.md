@@ -193,8 +193,64 @@ Contract 8).
   in `rules_plan_test.ts` moved to the new exercise mixes. The loaded-beats-bodyweight sweep now
   exempts trunk work and the pull-up family, which rotate by design.
 
+**B6 (review; screening gate; migration 26; app change; plan wiring waits for B2).**
+
+- **Questions and mapping** (ACSM 2015 preparticipation logic, our own words; plain wording, no
+  diagnosis). Four yes/no questions in a new onboarding step, **Health check**, right after the
+  boundary and terms: exercises regularly now; knows of a heart, metabolic or kidney condition;
+  notices a sign or symptom now; and, only with a known condition and no symptom, a professional
+  has cleared them. `screeningOutcome` (`_shared/training/screening/screening.ts`, pure, 16-row
+  table test): any symptom gives `see_professional` (even after an earlier clearance: the
+  symptom is current); a known condition with no clearance gives `see_professional` when not
+  exercising regularly and `moderate_until_cleared` when exercising regularly; everything else is
+  `cleared`. `outcome.ts` (Contract 8) is unchanged. Missing screening reads as `cleared`
+  (`screeningOutcomeOf`).
+- **Where the answers live.** The app saves them in the onboarding draft payload (`screening`:
+  `exercises_regularly`, `known_disease`, `symptoms`, `cleared_by_professional`), and
+  `parseOnboardingAnswers` reads them into the optional `OnboardingAnswers.screening`. Absent
+  (an older app build) is fine; present but malformed asks again (`missing: ["screening"]`, 422,
+  the app reopens the step). `answersSnapshot` adds `screening` (answers + outcome) only when
+  present, so snapshots and hashes of drafts without it are unchanged and changing an answer
+  builds new questions and a new plan.
+- **Schema** (`20261017050226_onboarding_screening.sql`, additive). `public.onboarding_screenings`:
+  `id`, `user_id` (cascade from `user_accounts`), the four answers, `outcome`, `screened_at`.
+  Rows are only added (a new row per distinct set of answers); the newest row is current; no row
+  is `cleared`. A check constraint (`private.screening_outcome`) keeps a stored outcome in line
+  with its answers. RLS enabled and forced, owner read (`user_id = auth.uid()`), no client
+  insert/update/delete. `record_screening_v1(exercises_regularly, known_disease, symptoms,
+  cleared_by_professional default false)` (authenticated, security definer) works out the outcome
+  in the database, adds no row for the same answers as the newest row, audits
+  `onboarding_screening_recorded` (outcome only) and returns `{schema_version "1.0", outcome,
+  screened_at}`. The SQL rule and the TS rule carry the same sixteen-row table in their tests.
+- **Export and deletion.** `privacy-export` lists `onboarding_screenings` (`dataTables`, with a
+  test); account deletion cascades from `user_accounts` (pgTAP deletes the auth user and counts
+  rows). SECURITY_PRIVACY, DATA_MODEL, PRD, AI_SAFETY_SPEC and UX_FLOWS §4.1 updated.
+- **App.** New step key `screening` (index 1; other steps shift by one, drafts restore by key).
+  Continue calls `record_screening_v1`; `cleared` goes on, `moderate_until_cleared` shows "Your
+  plan will stay at moderate effort." and goes on with a second Continue, `see_professional`
+  shows "Please see a health professional first." and keeps Continue closed until an answer
+  changes. The app mirrors no rule: it shows what the server returns. A draft past the step
+  without answers returns to it. Contract fixture `test/contract/fixtures/record_screening_v1_0.json`
+  with a complete-key-list test.
+- **The wiring call the lead adds after B2 merges** (B2 owns the files; B6 does not edit them):
+  1. In `policiesFor` (`_shared/onboarding/generate.ts`), pass the athlete's outcome into the
+     `PlanPolicies` that B2 extended: `screening: screeningOutcomeOf(answers.screening)`
+     (import from `_shared/training/screening/screening.ts`).
+  2. `see_professional` builds nothing. Cheapest place: `handleOnboardingPlan`
+     (`onboarding-plan/handler.ts`, both modes) answers 422 for
+     `screeningOutcomeOf(asked.answers.screening) === "see_professional"` before
+     `validRulesPlan`, so a client that skipped the app's stop still gets no plan. Then add a
+     matching message in `_throwPlanError` (Dart) if the app should show it.
+  3. The app's moderate-effort note is a promise: do not install this build before step 1 is live.
+  Server code that wants the stored record rather than the draft reads
+  `onboarding_screenings` for the user, newest `screened_at` (service role).
+- **Open.** (a) Should a professional's clearance override a current symptom? Today it does not
+  (conservative). (b) The question texts and "regularly" definition (30 minutes, 3 days, 3 months)
+  are ours; a coach or the owner should review them. (c) Re-screening later (a yearly or
+  after-injury prompt) is not built.
+
 ## Next agent starts here
 
-B6 (screening gate, Phase 3) produces the Contract 8 outcome and wires it through the handler (see
-"For B6 / the lead" in the B2 section). B3 (progression and deloads, Phase 3 round 2) builds on the
-templates and `setWeights`/`fractionalWeeklySets`. The briefs are in the program doc.
+B3 (progression and deloads, Phase 3 round 2) builds on the templates and
+`setWeights`/`fractionalWeeklySets`. B6's wiring is part of the B6 section above. The briefs are in
+the program doc.
