@@ -73,6 +73,6 @@ and `timing_source = app`.
 
 ## Next agent starts here
 
-After C1 merges: C2 (native heart-rate reader, per-set summaries) waits for D0. Read set windows
-from `exercise_sets.started_at`/`completed_at` and listen to `WorkoutEventHub.events`; never write
-sets.
+C2 (native heart-rate reader, per-set summaries), Phase 2, stacked on D1's branch. Read set
+windows from `exercise_sets.started_at`/`completed_at` and listen to `WorkoutEventHub.events`;
+never write sets. The brief is in the program doc.
