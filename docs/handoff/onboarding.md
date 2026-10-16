@@ -284,8 +284,9 @@ Branch `claude/onboarding-ai-app`, stacked on PR 2. It needs PR 2 deployed first
 
 **AI notice** (`lib/features/consent/ai_coaching_consent.dart`)
 
-- The disclosure renders `get_current_ai_notice` and records that version. The built-in v1 text
-  appears only when the server can't be reached.
+- The disclosure renders `get_current_ai_notice` and records that version. There is no built-in
+  notice text: when the notice cannot be loaded, the AI step shows "could not be loaded" with Try
+  again and no answer, nothing is recorded, and onboarding continues to the rules plan.
 - The consent gate asks again when the server's current version changes.
 
 **Tests:** 17 onboarding widget tests and a generation-status test:
