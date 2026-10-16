@@ -12,7 +12,8 @@ before purchase.
 ## 1. AI Providers and Per-Feature Costs Today
 
 Which feature uses which provider, and the settings that choose it, are in
-[AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md) §10.2. In production today:
+[AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md) §10.2. In production **today, until the Claude cutover
+(§3)**:
 
 | Feature | Provider and model | Typical call | Estimated cost per call | Reservation ceiling |
 | --- | --- | --- | --- | ---: |
@@ -89,18 +90,25 @@ Every limit below is enforced server-side in SQL and counts every account. Sourc
 
 | Limit | Value | Where |
 | --- | --- | --- |
-| Monthly warning, per athlete | USD 1 (shown, not enforced) | `get_my_ai_budget_state` |
-| Monthly hard stop, per athlete | USD 2 | `reserve_ai_budget`, `reserve_ai_budget_v2`, `assert_owner_ai_budget` |
+| Monthly warning, per athlete | half the hard stop, USD 1.50 (shown, not enforced) | `get_my_ai_budget_state` |
+| Monthly hard stop, per athlete | USD 3 | `private.ai_budget_limits.per_person_monthly_usd`, read by `reserve_ai_budget`, `reserve_ai_budget_v2`, `assert_owner_ai_budget` |
 | Daily requests, per athlete | 30, shared by Coach chat, daily decisions, meal photos, physique checks and onboarding | same |
-| Global monthly stop, all accounts | USD 10 | `private.ai_budget_limits.global_monthly_usd` |
+| Global monthly stop, all accounts | USD 50 (confirm at cutover) | `private.ai_budget_limits.global_monthly_usd` |
+
+Owner decision 2026-10-16: USD 3 per athlete per month, replacing USD 2, and a USD 50 global stop,
+replacing USD 10; the owner said "that is fine" to the global value, which is marked to confirm at
+the cutover. Migration code 17 (`20261016004017_ai_budget_phase2.sql`) moves the per-athlete stop
+from a literal inside four functions into the limits row and sets both values. The 30 requests a
+day are unchanged.
 
 - **Daily decisions:** `prepare_daily_coaching` applies the same 30, counting only runs that
   called an AI model. A daily decision with no place left falls back to the deterministic
   provider, as without consent; the plan stays usable.
-- **Global stop:** stops every model call once the month's total across all accounts reaches it.
-  Change it from the SQL editor:
+- **Changing a stop:** from the SQL editor,
+  `update private.ai_budget_limits set per_person_monthly_usd = 4, updated_at = now();` or
   `update private.ai_budget_limits set global_monthly_usd = 20, updated_at = now();`
-  (allowed range above 0 and at most 1,000).
+  (each above 0 and at most 1,000). The global stop stops every model call once the month's total
+  across all accounts reaches it.
 
 **Reservations.** Every model call first takes a place with `reserve_ai_budget` and gives it back
 with `settle_ai_budget` once its usage is recorded or no call was made.
@@ -108,8 +116,8 @@ with `settle_ai_budget` once its usage is recorded or no call was made.
 - Open places count toward the limits at a per-purpose ceiling (the last column of the table in
   §1) and as one request each, so parallel calls cannot all pass a check that only saw finished
   calls.
-- A call is admitted only if its own ceiling still fits under each stop, so the USD 2 and global
-  stops are never crossed by an admitted call.
+- A call is admitted only if its own ceiling still fits under each stop, so the per-athlete and
+  global stops are never crossed by an admitted call.
 - A place is left open on purpose whenever billing cannot be ruled out: a timeout, a dropped
   connection or an unreadable answer with no usage reported (Coach chat, meal photos, physique
   checks, onboarding), an unrecorded usage row, or a failed live daily decision. It then keeps
@@ -122,22 +130,37 @@ with `settle_ai_budget` once its usage is recorded or no call was made.
   accepts the gateway's feature names and stores them under today's purposes (`daily_decision` as
   `daily_coaching`, `physique_vision` as `progress_vision`, `library_context` as `coach_chat`).
   `AiBudget.reserve(purpose, ceilingUsd)` calls it; without a ceiling it calls
-  `reserve_ai_budget`. No feature passes a ceiling yet.
+  `reserve_ai_budget`. Every feature on a gateway route passes its route's ceiling; the settings
+  path of each feature still reserves the fixed per-purpose ceiling.
 
 **Failed calls count.** A meal photo whose answer is unusable still records its usage, and so does
 one whose candidates the database refuses. A failed Coach chat records the tokens of every attempt
 at the list price (`persist_failed_coach_chat_run_v2`), as does an answer that could not be
 stored. Every billed onboarding call counts, including empty or cut-off answers and the repair.
 
-## 3. Planned: Claude in Phase 2
+## 3. Claude routes (Phase 2 cutover)
 
-> **Planned, not live.** See the
-> [program plan](./plans/coaching-platform-2026-10/README.md) (D1, chunks A3–A7).
+> **Not live until the owner runs the cutover**
+> ([`docs/runbooks/phase2-claude-cutover.md`](./runbooks/phase2-claude-cutover.md)). The code is
+> merged behind settings (program decision D1, chunks A3-A7); the table in §1 is still what
+> production runs.
 
-Phase 2 moves every feature to Claude through the AI gateway: meal photos to Haiku 5.5, the
-physique check, onboarding plan and questions, and the daily decision to Sonnet 5.5, and Coach chat
-with a cache-friendly prompt (its model is chosen in A6). The old routes stay available by settings
-for two weeks after cutover.
+Phase 2 moves every feature to Claude through the AI gateway: Coach chat and meal photos to
+Haiku 5.5, the daily decision and the physique check to Sonnet 5.5; onboarding follows later, after
+chunk B2. The old routes stay available by settings for two weeks after the cutover.
+
+| Feature | Model | Measured cost per call (synthetic evals, 2026-10-15/16) | Reservation ceiling |
+| --- | --- | --- | ---: |
+| Coach chat question | Haiku 5.5 | USD 0.00045 (97.6% of prompt tokens read from cache) | up to 0.014 |
+| Daily decision | Sonnet 5.5 | about USD 0.009 | about 0.06 |
+| Meal photo | Haiku 5.5 | about USD 0.0002 | 0.00175 |
+| Physique check (one correction at most) | Sonnet 5.5 | about USD 0.01 a set | 0.071 |
+| Onboarding plan (later) | Sonnet 5.5 | USD 0.02-0.08 | 0.24-0.27 |
+| Onboarding questions (later) | Sonnet 5.5 | about USD 0.003 | 0.023 |
+
+Measured costs come from small synthetic runs (the evals in `docs/handoff/ai-gateway.md`), not from
+athletes; the first month of `ai_call` logs replaces them. Ceilings are worst cases, never clamped,
+and are what the stops count while a call is in flight.
 
 **Claude list prices (2026-10-15,** [pricing page](https://platform.claude.com/docs/en/about-claude/pricing)**),**
 USD per million tokens. The gateway's price table (`_shared/ai/models.ts`) uses these values.
@@ -171,11 +194,15 @@ Consequences for the stops in §2:
 - Several Sonnet calls cost more than today's fixed per-purpose ceilings (Coach chat 0.02,
   onboarding questions 0.02, onboarding plan 0.05 with thinking). Phase 2 routes therefore reserve
   with their own ceiling through `reserve_ai_budget_v2`.
-- At about USD 0.038 a question, the USD 2 monthly stop allows roughly 50 uncached Sonnet chat
-  questions per athlete, and the USD 10 global stop roughly 260 across all accounts. Caching the
-  stable athlete file lowers the input cost.
-- The program plan sets no new budget limits for Phase 2. Any change to the USD 2, 30-a-day or
-  global stops is an owner decision.
+- With Coach chat on Haiku 5.5 at about USD 0.00045 a question, the 30 requests a day (not the
+  money) bind first: 30 questions a day for a month cost about USD 0.40. An uncached Sonnet question
+  at about USD 0.038 would let the USD 3 stop allow roughly 80 a month, so keep Coach chat on the
+  cached Haiku route.
+- A typical athlete is expected to cost well under USD 1 a month on these routes; USD 3 is a ceiling
+  with headroom, and the USD 50 global stop covers roughly 50-100 active athletes before it binds.
+  Both are the owner's numbers (2026-10-16) and are re-read from the logs after the first month.
+- Anthropic does not use commercial API data for training and deletes it within 30 days (the
+  notices say so); that is a retention term, not a cost.
 
 ## 4. Infrastructure Costs
 
@@ -247,14 +274,15 @@ database size weekly; actual measurements replace estimates once uploads exist.
 
 ### Expected monthly scenarios
 
-AI spend is capped by the global stop (USD 10 a month today, §2), whatever the number of users.
+AI spend is capped by the global stop (USD 50 a month from migration code 17, §2; USD 10 before),
+whatever the number of users.
 
 | Stage                         | Supabase |    AI (capped) |                 Apple |                 Expected cash cost |
 | ----------------------------- | -------: | -------------: | --------------------: | ---------------------------------: |
 | Local development             |       $0 |          $0–$5 | $0 until distribution |                    **$0–$5/month** |
 | Owner TestFlight on Free      |       $0 |          $1–$5 |              $99/year |         **$1–$5/month + $99/year** |
-| Up to 10 active users on Free |       $0 |    up to $10   |              $99/year |      **up to $10/month + $99/year** |
-| 10–25 active users on Pro     |      $25 |    up to $10   |              $99/year | **$25–$35/month + $99/year**       |
+| Up to 10 active users on Free |       $0 |    up to $50   |              $99/year |      **up to $50/month + $99/year** |
+| 10–25 active users on Pro     |      $25 |    up to $50   |              $99/year | **$25–$75/month + $99/year**       |
 
 Raising the global stop raises the AI column by the same amount. For this private beta, Supabase
 compute, database, Storage, egress, Auth, and Edge Function use may remain inside Free limits at

@@ -313,11 +313,20 @@ The user edits and confirms candidates; catalog data calculates nutrients. Uncon
 never affect adherence or coaching. Mixed Indian/home dishes should request recipe or ingredient
 clarification rather than imply false precision.
 
-**Provider.** Server-side Groq `qwen/qwen3.8-27b` (`MEAL_VISION_PROVIDER=groq`), the successor of
-the retired `qwen/qwen3.6-27b`. The function refuses any other Groq model name, and it stays off
-until `MEAL_VISION_ENABLED` and `MEAL_VISION_MODEL_EVALUATED` are both `true`; the owner sets the
-second only after checking the model on their own meal photos. Groq's Zero Data Retention setting
-must be on for the key's organization before the route is enabled.
+**Provider.** Server-side, through the AI gateway (§10.5) as feature `meal_vision`.
+- **Live today (until the cutover, §10.7):** Groq `qwen/qwen3.8-27b` (`MEAL_VISION_PROVIDER=groq`),
+  the successor of the retired `qwen/qwen3.6-27b`. With no `AI_MEAL_VISION_*` settings the function
+  runs this path unchanged. It refuses any other Groq model name, and it stays off until
+  `MEAL_VISION_ENABLED` and `MEAL_VISION_MODEL_EVALUATED` are both `true`. Groq's Zero Data
+  Retention setting must be on for the key's organization while this route is enabled.
+- **After the cutover:** Claude Haiku 5.5 (`AI_MEAL_VISION_PROVIDER=anthropic`,
+  `AI_MEAL_VISION_MODEL=claude-haiku-5-5`). `MEAL_VISION_ENABLED` stays the on/off switch, and
+  `AI_MEAL_VISION_EVALUATED=true` replaces `MEAL_VISION_MODEL_EVALUATED`; the owner sets it only
+  after checking the model on their own meal photos. Anthropic's standard commercial terms apply:
+  inputs and outputs are deleted within 30 days and not used for training, which the notice says.
+  The JPEG is checked and its metadata removed before sending (`_shared/physique/jpeg.ts`).
+- **Rollback:** unset the `AI_MEAL_VISION_*` settings. The Groq path runs again (and needs a Groq
+  meal photo notice current, so the rollback window keeps the old notice available to republish).
 
 **Consent.** Meal photos are not covered by the AI coaching consent, which states that photos are
 not sent. They have their own notice (`meal_photo_ai_notices`, §10.3) and consent type
@@ -325,33 +334,43 @@ not sent. They have their own notice (`meal_photo_ai_notices`, §10.3) and conse
 
 - The app shows the notice before the first photo is picked.
 - meal-analyze refuses with 403 `meal_photo_ai_consent_required` without a grant of the current
-  version, and with 503 `meal_photo_notice_outdated` when that notice names a provider other than
-  `MEAL_VISION_PROVIDER`.
+  version, and with 503 `meal_photo_notice_outdated` when that notice names a vendor other than
+  the route's (`MEAL_VISION_PROVIDER` on the Groq path).
 - The athlete withdraws from **Log a meal** (**Turn off meal photo AI**, a `withdrawn` record),
   which stops new analysis at once.
-- A provider or model change needs a new notice (`private.publish_meal_photo_ai_notice`) before
-  the switch; every athlete is then asked again.
+- A vendor change needs a new notice (`private.publish_meal_photo_ai_notice`) before the switch;
+  every athlete is then asked again. A model change within the same vendor does not, because the
+  notice names the company, not the model (D11).
 
 ## 9. Physique Analysis
 
 **Status: owner-only experiment.** The `physique-check` Edge Function serves only the user IDs in
-`PHYSIQUE_VISION_ALLOWED_USERS` (empty at deploy). It runs on Groq `qwen/qwen3.8-27b`
-(`PHYSIQUE_VISION_*`; Groq is the only provider it supports). Before the owner adds their own ID,
-Groq's Zero Data Retention must be on for the key's organization and the proof (date or
-screenshot) recorded in `docs/handoff/physique-check.md`. No other account may be added until a
-separate evaluation passes: consented or synthetic sets across body types and skin tones; pose,
+`PHYSIQUE_VISION_ALLOWED_USERS` (empty at deploy). It runs through the AI gateway (§10.5) as
+feature `physique_vision`.
+- **Live today (until the cutover, §10.7):** Groq `qwen/qwen3.8-27b` (`PHYSIQUE_VISION_*`). With no
+  `AI_PHYSIQUE_VISION_*` settings the function runs this path unchanged. Groq's Zero Data Retention
+  must be on for the key's organization, with the proof (date or screenshot) recorded in
+  `docs/handoff/physique-check.md`.
+- **After the cutover:** Claude Sonnet 5.5 (`AI_PHYSIQUE_VISION_PROVIDER=anthropic`,
+  `AI_PHYSIQUE_VISION_MODEL=claude-sonnet-5-5`). The function answers 403 `physique_vision_not_evaluated`
+  until `AI_PHYSIQUE_VISION_EVALUATED=true`. The synthetic drawings used in the gateway evals test
+  the contract, refusals and injected text, not recognition of real bodies, so the owner sets
+  `EVALUATED=true` only after checking the model on their own photos. Rollback: unset the
+  `AI_PHYSIQUE_VISION_*` settings.
+
+No other account may be added to the allowlist until a separate evaluation passes: consented or synthetic sets across body types and skin tones; pose,
 clothing, lighting and pump changes; repeatability; wrong priorities; forbidden outputs; text
 written into the image; and empty, unrelated or low-quality photos.
 
 **Consent.** Its own server-versioned notice (`photo_ai_notices`, consent type
-`progress_photo_ai`, §10.3), separate from the AI coaching notice. The notice names the provider,
-the data sent, Zero Data Retention, what Tracend keeps and how to stop. Consent counts only when
+`progress_photo_ai`, §10.3), separate from the AI coaching notice. The notice names the receiving
+company, the data sent, the company's retention, what Tracend keeps and how to stop. Consent counts only when
 the athlete's newest `progress_photo_ai` record grants the newest notice (`has_photo_ai_consent`);
 a new provider, model, data sent or retention is a new notice and needs a new grant. Withdrawing
 stops new checks; past results stay until the set or account is deleted.
 
-**Input.** The front, side and back photos of one complete set (Groq accepts three images), each a
-JPEG of at most 3 MB with every metadata segment (EXIF, location, XMP, ICC, comments) removed on the
+**Input.** The front, side and back photos of one complete set (Groq accepts three images; a Claude
+image may be 3.75 MB decoded), each a JPEG of at most 3 MB with every metadata segment (EXIF, location, XMP, ICC, comments) removed on the
 server before sending, across every scan of a progressive file, and nothing after its end marker
 (`_shared/physique/jpeg.ts`); the app already re-encodes at capture (longest side 1800 px, no
 metadata). Also sex, height, latest weight and body measurements, and the active goal, as data.
@@ -366,8 +385,10 @@ percentage, body-fat, score or rating, appearance judgement, sexual, medical, se
 eating wording rejects the whole reply. A reply that suggests no muscle at all means the photos
 show no physique to judge (an unrelated picture, the body out of frame): nothing is stored, no
 correction is asked, and the athlete is told to retake the set (422 `photo_set_unassessable`). One
-text-only correction is asked (the photos are not sent again) when Groq reports at least 2,500
-tokens left in the minute; otherwise, or if the correction also fails, nothing is stored (502 `physique_check_invalid`) and the tokens are still counted.
+text-only correction is asked (the photos are not sent again). On the Groq path it waits for at
+least 2,500 tokens left in the minute; the gateway route has no such wait. If the correction is
+not possible or also fails, nothing is stored (502 `physique_check_invalid`) and the tokens are
+still counted.
 
 **Use.** The result is shown as an AI visual estimate, not a measurement. Nothing changes on its
 own: the athlete chooses up to two suggested muscles (`set_my_priority_muscles`), which become
@@ -407,15 +428,19 @@ data unless it passes its own privacy review.
 
 ### 10.2 Providers today
 
-Each feature has its own server-side settings inside Supabase Edge Functions. No feature calls the
-AI gateway (§10.5) yet.
+Each feature has its own server-side settings inside Supabase Edge Functions, and each calls the AI
+gateway (§10.5) only when its `AI_<FEATURE>_*` route exists and is evaluated. Without one, the
+feature runs the path in the "Live today" column unchanged, so deploying the gateway code changed
+nothing for the athlete. **Until the cutover (§10.7) production still sends athlete data to DeepSeek
+and Groq; no feature has a Claude route yet.**
 
-| Feature | Settings | Production today | Default when unset |
-| --- | --- | --- | --- |
-| Coach chat and daily decision | `COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`, provider key and model | DeepSeek V4.1 Flash (`deepseek`, model `deepseek-flash`) | deterministic mock |
-| Onboarding plan and follow-up questions | `ONBOARDING_PLAN_*` (§10.4) | DeepSeek V4.1 Flash | rules plan only (`mock`) |
-| Meal photos | `MEAL_VISION_*` (§8) | Groq `qwen/qwen3.8-27b` | off |
-| Physique check (owner only) | `PHYSIQUE_VISION_*` (§9) | Groq `qwen/qwen3.8-27b` | off |
+| Feature | Settings today | Live today | Default when unset | Cutover route (§10.7) |
+| --- | --- | --- | --- | --- |
+| Coach chat | `COACH_MODEL_PROVIDER`, `COACH_AI_ENABLED`, provider key and model | DeepSeek V4.1 Flash (`deepseek`, model `deepseek-flash`) | deterministic mock | `coach_chat`: Haiku 5.5 |
+| Daily decision | same as Coach chat | DeepSeek V4.1 Flash | deterministic mock | `daily_decision`: Sonnet 5.5 |
+| Onboarding plan and follow-up questions | `ONBOARDING_PLAN_*` (§10.4) | DeepSeek V4.1 Flash | rules plan only (`mock`) | stays as today at the cutover; `onboarding_plan` and `onboarding_questions`: Sonnet 5.5 after B2 |
+| Meal photos | `MEAL_VISION_*` (§8) | Groq `qwen/qwen3.8-27b` | off | `meal_vision`: Haiku 5.5 |
+| Physique check (owner only) | `PHYSIQUE_VISION_*` (§9) | Groq `qwen/qwen3.8-27b` | off | `physique_vision`: Sonnet 5.5 |
 
 - **Coach chat and daily decision.** `COACH_MODEL_PROVIDER` is `mock`, `deepseek`, `groq` or
   `gemini`. A live model needs `COACH_AI_ENABLED=true`, the provider's key and an approved model,
@@ -431,10 +456,10 @@ AI gateway (§10.5) yet.
   `GEMINI_PAID_DATA_TERMS_ACCEPTED`) before they can process restricted coaching context.
   Synthetic adapter tests do not satisfy evaluation parity or authorize live calls. Meal and
   progress vision remain separately gated.
-- **Photos.** DeepSeek receives no photos today: meal-analyze calls only Groq or Gemini, and
-  physique-check only Groq. The photo notice tables accept `deepseek` since migration A1, but a
-  DeepSeek photo route would also need new code and a migration, because the run and usage tables
-  still pin the old vision models.
+- **Photos.** DeepSeek receives no photos: meal-analyze calls Groq or Gemini (or, with a route,
+  Claude), and physique-check Groq (or Claude). The photo notice tables accept `deepseek` since
+  migration A1, but a DeepSeek photo route would also need new code and a migration, because the
+  run and usage tables still pin the old vision models.
 
 ### 10.3 Consent notices
 
@@ -446,6 +471,10 @@ for its purpose. Notices are server data, never edited once published.
 | `ai_consent_notices` (current per purpose in `ai_notice_current`) | `ai_coaching` | `coach_chat`, `daily_coaching`, `onboarding_plan` | `ai-coaching-v5`, DeepSeek; states photos are not sent |
 | `meal_photo_ai_notices` | `meal_photo_ai` | meal photos (§8) | `meal-photo-ai-v1`, Groq |
 | `photo_ai_notices` | `progress_photo_ai` | physique check (§9) | `progress-photo-ai-v1`, Groq |
+
+These are the notices published **today**. The cutover replaces them with the drafts in
+[`docs/notices/`](./notices/): `ai-coaching-v6`, `meal-photo-ai-v2` and `progress-photo-ai-v2`, all
+naming Anthropic (§10.7). A draft is not a notice until the owner publishes it.
 
 **AI coaching consent.** `has_ai_coaching_consent` reads the newest `ai_coaching` record; only a
 grant of the notice current for the purpose counts. Publish any later notice for every purpose: the
@@ -481,15 +510,28 @@ when it is null, until a notice naming the route's vendor is published and grant
 
 **Wording (owner decision D11).** No model name appears anywhere the athlete or the public reads:
 the app, notices, website and privacy policy. The receiving company is named only where disclosure
-is needed: one line in each AI consent notice and the privacy policy's processor list. Today the
-meal photo and progress photo notices still name the model `qwen/qwen3.8-27b`, and the app still
-names providers outside the notices (for example "Qwen" in `lib/shared/ai_provider_names.dart`,
-the Coach reply label and the onboarding proposal). They stay until chunk A7 (§10.7).
+is needed: once in each AI consent notice and in the privacy policy's processor list.
+- **The app (done, A7).** Screens say "AI". An AI answer is labelled "AI answer · checked by
+  Tracend" and an onboarding proposal "Proposed by AI · checked by Tracend"; the physique card says
+  "Sent to AI only when you start a physique check"; the Coach and Account rows say "an AI service"
+  and "AI". The stored provider and model are provenance only. Old servers still send
+  `provider_label` and old rows carry provider ids; the app accepts them and shows none. Widget
+  tests grep the rendered text for model and company names (`test/ai_wording_test.dart`).
+- **The notices.** The published meal photo and progress photo notices still name the model
+  `qwen/qwen3.8-27b` and the current coaching notice names DeepSeek, until the owner publishes the
+  v6 / v2 / v2 drafts, which name Anthropic once and no model. The `model` argument of the photo
+  publishers is a stored provenance field of the notice row and is not shown by the app.
+- **The built-in fallback notice** in the app (shown only when the server notice cannot load) is
+  the `ai-coaching-v6` text; a test keeps it identical to the draft.
 
 ### 10.4 Onboarding plan provider
 
 Onboarding plans and follow-up questions have their own provider settings and switch without a
-code change.
+code change. This is the path that runs **today**. A gateway route for the same features exists
+(`AI_ONBOARDING_PLAN_*`, `AI_ONBOARDING_QUESTIONS_*`, Sonnet 5.5, §10.5) but is **not enabled at the
+cutover**: its eval passes the 90% bar on only about half of the runs, because of weekly-volume
+rules that chunk B2 fixes. The owner switches onboarding to Claude after B2 (runbook, "Later").
+A route without `AI_ONBOARDING_*_EVALUATED=true` is identical to no route.
 
 - **Settings:** `ONBOARDING_PLAN_PROVIDER` (`mock`, rules only, the default; `deepseek`, `groq`
   or `gemini`), `ONBOARDING_PLAN_MODEL`, the provider's key, `ONBOARDING_PLAN_MODEL_EVALUATED=true`,
@@ -527,49 +569,101 @@ code change.
 
 ### 10.5 AI gateway
 
-`_shared/ai/` (program Contract 1) is the one path for model calls once features move to it. It
-is merged, but no Edge Function imports it yet.
+`_shared/ai/` (program Contract 1) is the one path for model calls. Every feature (`coach_chat`,
+`daily_decision`, `onboarding_plan`, `onboarding_questions`, `meal_vision`, `physique_vision`)
+calls it when `route(feature)` returns a complete route whose `AI_<FEATURE>_EVALUATED` is `true`;
+otherwise the feature runs today's path (§10.2) unchanged, and tests compare that path with
+recorded requests byte for byte. `library_context` is reserved for the research library.
 
 - Settings are per feature: `AI_<FEATURE>_{PROVIDER,MODEL,BASE_URL,THINKING,EFFORT,
   MAX_OUTPUT_TOKENS,TIMEOUT_MS,EVALUATED,VENDOR}` plus the provider key (`ANTHROPIC_API_KEY`,
   `OPENAI_COMPATIBLE_API_KEY_<FEATURE>`, or `GEMINI_API_KEY` with
   `GEMINI_PAID_DATA_TERMS_ACCEPTED=true`). A missing or invalid setting, or a model without a
-  known price in `_shared/ai/models.ts`, gives no route, and the feature keeps its rules path.
-- `call()` sends nothing when the vendor named by the athlete's accepted notice differs from the
-  route's (`consent_provider_mismatch`). DeepSeek and Groq are reached only on their own hosts. An
-  eval router (`AI_<FEATURE>_VENDOR=router`) is named by no notice, so no athlete's data reaches it.
+  known price in `_shared/ai/models.ts`, gives no route, and the feature keeps today's path.
+  Switching a feature, or rolling it back, is a settings change only: set or unset
+  `AI_<FEATURE>_PROVIDER` (runbook `docs/runbooks/phase2-claude-cutover.md`).
+- Consent is read with `get_ai_consent_v2`, and `call()` sends nothing when the vendor named by
+  the athlete's accepted notice differs from the route's (`consent_provider_mismatch`). A feature
+  then takes its existing consent-needed path (the Coach answers 403, the daily decision and the
+  plan use their rules, a photo feature answers its notice error). DeepSeek and Groq are reached
+  only on their own hosts. An eval router (`AI_<FEATURE>_VENDOR=router`) is named by no notice, so
+  no athlete's data reaches it; features ignore it on athlete requests.
 - Requests to Claude 5 models never carry `temperature`, `top_p`, tools or a forced
-  `tool_choice`; structured output uses `output_config.format`. DeepSeek, Groq and Gemini routes
-  send what today's providers send (temperature 0.1 without thinking, the schema restated in JSON
-  mode), so a rollback by settings behaves as before. Every JSON answer is checked against the
-  schema by the gateway (`invalid_output` otherwise), whatever the provider enforced.
-- A provider refusal is `refused` and never retried by the gateway; budget stays the caller's job.
+  `tool_choice`; structured output uses `output_config.format`. The stable prompt prefix carries
+  `cache_control`, so repeated Coach questions read the prefix from the cache. DeepSeek, Groq and
+  Gemini routes send what today's providers send (temperature 0.1 without thinking, the schema
+  restated in JSON mode), so a rollback by settings behaves as before. Every JSON answer is
+  checked against the schema by the gateway (`invalid_output` otherwise), and each feature's own
+  validator (plan contract, decision grounding, Coach citations, physique contract) still runs
+  after it.
+- A provider refusal is `refused` and never retried by the gateway.
+- The caller reserves budget first (`reserve_ai_budget_v2`, with the route's worst-case ceiling,
+  never clamped: a route whose worst case passes USD 0.50 is unusable and the feature keeps
+  today's path, logged as `<feature>_route_unusable`) and settles with the real cost.
 - One scrubbed `ai_call` log line per call: feature, provider, model, outcome, token counts, cost
   and latency; never prompt, image, reply or provider error text.
+- Provenance (`model_runs`, usage events, proposals) stores the vendor and model that answered.
+  It is never shown to the athlete (D11).
 
 ### 10.6 Budget
 
 Every model call first reserves budget against a per-athlete monthly hard stop, a per-athlete daily
-request limit and a global monthly stop. A daily decision with no budget left falls back to the
-deterministic provider, as without consent; the plan stays usable. Optimize cost using compact
-feature snapshots, cached static context, deterministic summaries, normalized images, duplicate
-avoidance, per-user rate limits, and quality-based routing. Cost cannot override safety or the
-quality floor. Limits, prices and hard controls are in [COST_MODEL.md](./COST_MODEL.md).
+request limit and a global monthly stop. From migration code 17 the stops are **USD 3 per athlete
+per month**, **30 requests per athlete per day** and **USD 50 across every account per month**,
+held in `private.ai_budget_limits` (`per_person_monthly_usd`, `global_monthly_usd`) so the owner
+changes either from the SQL editor. (Before it: USD 2 per athlete and USD 10 global.) The USD 50
+global stop is owner-approved in principle and is to be confirmed at the cutover. A daily decision
+with no budget left falls back to the deterministic provider, as without consent; the plan stays
+usable. Optimize cost using compact feature snapshots, cached static context, deterministic
+summaries, normalized images, duplicate avoidance, per-user rate limits, and quality-based routing.
+Cost cannot override safety or the quality floor. Limits, prices and hard controls are in
+[COST_MODEL.md](./COST_MODEL.md).
 
-### 10.7 Planned: move to Claude (Phase 2)
+### 10.7 Cutover to Claude (Phase 2)
 
-> **Planned, not live.** See the
-> [program plan](./plans/coaching-platform-2026-10/README.md), chunks A3–A7.
+> **Not yet done.** The code for A3–A6 is merged behind settings; production still uses DeepSeek
+> and Groq until the owner runs
+> [`docs/runbooks/phase2-claude-cutover.md`](./runbooks/phase2-claude-cutover.md). Program plan:
+> [coaching platform](./plans/coaching-platform-2026-10/README.md), chunks A3–A7.
 
-- Owner decision D1: features move from DeepSeek and Groq to Claude through the gateway: meal
-  photos to Haiku 5.5 (A3); the physique check (A3), onboarding plan and questions (A4) and daily
-  decision (A5) to Sonnet 5.5; Coach chat with a cache-friendly prompt (A6). The old routes stay
-  available by settings alone for two weeks after cutover.
-- A7 drafts notices that name Anthropic as the vendor (the owner publishes them), applies D11 to
-  the app wording, runs the evals, and writes the cutover runbook.
-- Beta exit criterion: health data must not go to DeepSeek once external testers join. Every
-  feature moves to Anthropic before the external TestFlight group opens, and the privacy
-  processor list drops DeepSeek and Groq after the rollback window.
+Owner decision D1: features move from DeepSeek and Groq to Claude through the gateway, and the old
+routes stay available by settings alone for two weeks after the cutover.
+
+| Feature | Route | Model | Output tokens | Timeout | At the cutover |
+| --- | --- | --- | --- | --- | --- |
+| Coach chat | `coach_chat` | Haiku 5.5 | 4,096 | 30 s | move |
+| Daily decision | `daily_decision` | Sonnet 5.5 | 1,800 | 25 s | move |
+| Meal photos | `meal_vision` | Haiku 5.5 | 1,500 | 30 s | move |
+| Physique check | `physique_vision` | Sonnet 5.5 | 800 | 60 s | move after the owner's real-photo check |
+| Onboarding plan | `onboarding_plan` | Sonnet 5.5 | 8,000 | 90 s | later, after B2 |
+| Onboarding questions | `onboarding_questions` | Sonnet 5.5 | 1,500 | 30 s | later, after B2 |
+
+- **Order** (the runbook has the commands): merge and deploy the code; the owner publishes the
+  three notices; athletes accept them in the app; the owner sets each feature's settings one at a
+  time, with `EVALUATED=true` last; verify with `./scripts/verify-live-function.sh --all` and the
+  `ai_call` log. A new notice version asks every athlete again, and
+  an athlete who has not accepted it is sent nothing by the new route. **Gap to keep short:** the
+  Coach and the daily decision's old DeepSeek path checks only that the current notice is granted,
+  not whom it names, so between an athlete accepting the Anthropic notice and the owner setting the
+  routes, that athlete's requests still go to DeepSeek. Publish the coaching notice and set the
+  Coach and daily decision routes in one sitting, or pause the old path first (the runbook, step 3).
+  Meal photos are protected: the old path refuses (503 `meal_photo_notice_outdated`) while the
+  current meal photo notice names another vendor.
+- **Retention and training.** Anthropic's standard commercial terms (checked 2026-10-16): inputs and
+  outputs are deleted within 30 days and are not used for training. Longer only where the law
+  requires or to enforce its usage rules (up to 2 years if its safety systems flag an input).
+  Zero Data Retention is not arranged. The notices state the 30 days and the no-training term
+  plainly; re-read Anthropic's published policy on the day the notices are published.
+- **Rollback (2 weeks).** Unset the feature's `AI_<FEATURE>_PROVIDER`. The old path runs again at
+  once and needs its own notice current (the DeepSeek coaching notice, the Groq photo notices), so
+  republish the old notice text under a new version if the rollback is used after the new notices
+  have replaced them. Changing any Edge secret creates a new version of every function; run
+  `./scripts/verify-live-function.sh --all` afterwards.
+- **After the window,** the privacy policy's processor list drops DeepSeek and Groq, and the old
+  settings and adapters can be removed in a cleanup change.
+- **Beta exit criterion.** Health data must not go to DeepSeek once external testers join. Every
+  feature moves to Anthropic before the external TestFlight group opens. Onboarding is the one
+  feature still on DeepSeek after the cutover, so the external group waits for it as well.
 
 ## 11. Prompt and Context Rules
 

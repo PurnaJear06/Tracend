@@ -108,9 +108,11 @@ AI consent is enforced on the server, per purpose:
   company. The AI gateway compares that vendor with its route (`get_ai_consent_v2`) and sends
   nothing on a mismatch, so a grant for one company never covers another.
 
-> **Planned (Phase 2 / A7, D11):** the in-app wording and the notice bodies still name providers
-> and, in places, a model (for example the "Qwen" label in `lib/shared/ai_provider_names.dart`).
-> A7 rewrites them to D11; the owner publishes the new notices. This is a beta exit criterion.
+> **D11 status.** The app wording is done (A7): screens say "AI" and name no model or company
+> outside a consent notice. The notice bodies are rows the owner publishes: the drafts that name
+> Anthropic once and no model are in [`docs/notices/`](./notices/) (`ai-coaching-v6`,
+> `meal-photo-ai-v2`, `progress-photo-ai-v2`). Until they are published, the current notices still
+> name DeepSeek, Groq and a model. This is a beta exit criterion.
 
 ## 4. HealthKit
 
@@ -204,8 +206,11 @@ AI consent is enforced on the server, per purpose:
   visible for safe retry.
 - Progress photos are included only in user-requested comparison jobs, never routine text coaching.
 - A physique check (owner-only experiment, AI_SAFETY_SPEC §9) sends the front, side and back photos
-  of one set to Groq only when the athlete starts it, under its own notice and consent
-  (`progress_photo_ai`), with metadata stripped on the server and Groq's Zero Data Retention on.
+  of one set to the physique provider only when the athlete starts it (Groq today; Anthropic after
+  the cutover), under its own notice and consent (`progress_photo_ai`), with metadata stripped on
+  the server. Groq's Zero Data Retention is on for the Groq route; Anthropic's standard commercial
+  terms (deleted within 30 days, not used for training) apply to the Claude route and are stated in
+  the notice.
   Results (`physique_analyses`) are owner-read, exported, and deleted with their set (analyses go
   first, `delete_my_progress_photo_set`) or the account.
 - Face recognition, identity matching, sensitive-trait inference, and unrelated reuse are
@@ -243,16 +248,24 @@ Current AI processors (internal names; athlete-facing text follows D11):
 | --- | --- | --- |
 | DeepSeek | Coach chat and daily decision (DeepSeek V4.1 Flash), onboarding plan and follow-up questions | ADR 0011, `ai_coaching` notice |
 | Groq | Meal-photo candidates and the owner-only physique check (`qwen/qwen3.8-27b`) | ADR 0006, meal photo and photo notices |
-| Anthropic | None yet; the gateway can route to it and SQL accepts it | Plan D1, Contract 1 v2 |
+| Anthropic | None until the cutover; the gateway routes and SQL accept it. Planned: Coach chat and meal photos (Haiku 5.5), daily decision and physique check (Sonnet 5.5), onboarding later | Plan D1, Contract 1 v2; notices `ai-coaching-v6`, `meal-photo-ai-v2`, `progress-photo-ai-v2` (drafts) |
+
+Anthropic's standard commercial terms (checked 2026-10-16, privacy.claude.com): inputs and outputs
+are deleted within 30 days and are not used for model training; they may be kept longer where the
+law requires or to enforce Anthropic's usage rules (up to 2 years if its safety systems flag an
+input). No Zero Data Retention agreement is arranged. Re-read the policy when the notices are
+published and when the processor list changes.
 
 Gemini remains coded but gated by `GEMINI_PAID_DATA_TERMS_ACCEPTED`; it is not in use. The
 website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
 
-> **Planned (Phase 2 / A3–A7, D1):** every feature moves to Anthropic before the external
-> TestFlight group opens. Health data must not go to DeepSeek once external testers join (beta
-> exit criterion, plan decisions log, 2026-10-15). The DeepSeek and Groq routes stay as a
-> settings-only rollback for two weeks; after that window the privacy policy's processor list drops
-> them.
+> **Cutover (Phase 2, D1), not yet done:** every feature moves to Anthropic before the external
+> TestFlight group opens, following
+> [`docs/runbooks/phase2-claude-cutover.md`](./runbooks/phase2-claude-cutover.md). Health data
+> must not go to DeepSeek once external testers join (beta exit criterion, plan decisions log,
+> 2026-10-15); onboarding, which moves after chunk B2, is the last feature on DeepSeek. The
+> DeepSeek and Groq routes stay as a settings-only rollback for two weeks; after that window the
+> owner removes them from the privacy policy's processor list (runbook, "After the window").
 
 ## 7. Authentication and Authorization
 
