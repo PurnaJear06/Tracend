@@ -780,7 +780,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   /// athlete to open the app. Completes when the rest, its Live Activity call
   /// and the draft are saved, since iOS may suspend the app right after a
   /// press. Commands arrive one at a time, so each sees the last one's state.
+  ///
+  /// The press also waits for the Live Activity update its change sent
+  /// (bounded by [RestTimerController.activityWait], and a failed or slow
+  /// update never undoes the change), so the card is current before iOS can
+  /// suspend the app. In-app taps do not wait: nothing suspends the app
+  /// there, and the timer must not stall on iOS.
   Future<bool> _onCommand(WorkoutCommand command) async {
+    final handled = await _handleCommand(command);
+    await _rest.activityUpdated();
+    return handled;
+  }
+
+  Future<bool> _handleCommand(WorkoutCommand command) async {
     if (!mounted || !_ready || _closed || _finishing || _viewingCompleted) {
       return false;
     }

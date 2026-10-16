@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -966,6 +968,69 @@ void main() {
       // No timer has fired: the press itself sent the draft.
       expect(h.repository.syncedSet(0, 1)['completed'], isTrue);
       await _flushSave(tester);
+    });
+
+    testWidgets('a press answers only after the activity update finished', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      final update = Completer<void>();
+      h.activity.hold = update.future;
+      final until = h.activity.showingUntil;
+
+      bool? answer;
+      unawaited(h.activity.pressSkip().then((v) => answer = v));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // The workout changed and the update was sent, but the card has not
+      // moved yet, so the press has not answered.
+      expect(h.activity.methods.last, 'updateRest');
+      expect(h.activity.showingUntil, until);
+      expect(answer, isNull);
+
+      update.complete();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(answer, isTrue);
+      expect(h.activity.showingUntil, h.clock.now);
+    });
+
+    testWidgets('a hanging activity update still lets the press answer', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      expect(await h.activity.pressSkip(), isTrue);
+      h.activity.hold = Completer<void>().future;
+
+      bool? answer;
+      unawaited(h.activity.pressDone().then((v) => answer = v));
+      await tester.pump(const Duration(seconds: 1));
+      expect(answer, isNull);
+
+      await tester.pump(const Duration(seconds: 1));
+      expect(answer, isTrue);
+      // The set is logged on the phone whatever the card did.
+      expect(h.repository.savedSet(0, 1)['completed'], isTrue);
+      await _flushSave(tester);
+    });
+
+    testWidgets('a failed activity update never undoes the press', (
+      tester,
+    ) async {
+      final h = _Harness();
+      await _open(tester, h);
+      await _tapText(tester, 'Done set 1');
+      h.activity.failWith = StateError('no activity');
+
+      expect(await h.activity.pressSkip(), isTrue);
+
+      expect(h.activity.methods.last, 'updateRest');
+      await _tapText(tester, 'Done set 2');
+      await _flushSave(tester);
+      expect(h.repository.savedSet(0, 1)['completed'], isTrue);
     });
 
     testWidgets('a failed server send never blocks a logged set', (

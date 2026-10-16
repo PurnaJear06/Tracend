@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'package:flutter/foundation.dart';
 
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
@@ -66,10 +66,12 @@ class RestTimer {
 }
 
 /// Runs the rest timer and keeps the lock-screen alert and the Live Activity
-/// in step with it. Activity calls are never awaited, so the in-app timer
-/// never waits on iOS, and each is sent before the alert is touched: channel
-/// messages arrive in the order they are sent, so a stop that follows a
-/// start can never reach iOS first.
+/// in step with it. In the app the activity calls are never awaited, so the
+/// timer never waits on iOS; each is sent before the alert is touched
+/// (channel messages arrive in the order they are sent, so a stop that follows
+/// a start can never reach iOS first), and is remembered until it completes.
+/// A Live Activity button press, after which iOS may suspend the app, waits
+/// for those with [activityUpdated] before it answers.
 ///
 /// The activity shows a rest from its start until the next set is ticked or
 /// the workout closes. When the rest is over (it ran out, Skip, or -15 past
@@ -84,9 +86,18 @@ class RestTimerController {
     required RestAlertScheduler alerts,
     WorkoutActivityBridge activity = const MethodChannelWorkoutActivityBridge(),
     DateTime Function() clock = DateTime.now,
+    this.activityWait = defaultActivityWait,
   }) : _alerts = alerts,
        _activity = activity,
        _clock = clock;
+
+  /// The longest a button press waits for the activity update. The press
+  /// then still has to answer inside iOS's 8 s (`LiveActivityButton`'s
+  /// `pressTimeout`) after a save of at most 5 s.
+  static const defaultActivityWait = Duration(milliseconds: 1500);
+
+  /// How long [activityUpdated] waits at most.
+  final Duration activityWait;
 
   /// How long "Rest done" shows after the rest is over
   /// (SECURITY_PRIVACY.md §10).
@@ -97,12 +108,43 @@ class RestTimerController {
   final DateTime Function() _clock;
   RestTimer? _timer;
 
+  /// The activity calls sent and not yet finished.
+  final _pending = <Future<void>>{};
+
   /// When the "Rest done" activity goes, while no rest runs; null when none
   /// shows.
   DateTime? _doneUntil;
 
   /// The running timer, or null when no rest is running.
   RestTimer? get timer => _timer;
+
+  /// Sends an activity call now and remembers it until it finishes. A failure
+  /// is logged and dropped: the activity is a display of the workout, so it
+  /// never blocks or undoes a change to it.
+  void _send(Future<void> call) {
+    late final Future<void> tracked;
+    tracked = call
+        .catchError((Object e) {
+          debugPrint('Non-critical error: live activity update failed: $e');
+        })
+        .whenComplete(() => _pending.remove(tracked));
+    _pending.add(tracked);
+  }
+
+  /// Completes when every activity call sent so far has finished, or after
+  /// [activityWait], whichever comes first; never throws. A Live Activity
+  /// button press awaits it before answering, so iOS does not suspend the
+  /// app with the card still showing the old state.
+  Future<void> activityUpdated() async {
+    if (_pending.isEmpty) return;
+    await Future.wait(_pending.toList()).timeout(
+      activityWait,
+      onTimeout: () {
+        debugPrint('Non-critical error: live activity update timed out');
+        return const [];
+      },
+    );
+  }
 
   /// The value to store in the workout draft under [RestTimer.draftKey].
   Map<String, Object>? toDraft() => _timer?.toJson();
@@ -123,7 +165,7 @@ class RestTimerController {
     final timer = RestTimer.start(seconds, now: _clock());
     _timer = timer;
     _doneUntil = null;
-    unawaited(
+    _send(
       _activity.startRest(
         endsAt: timer.endsAt,
         nextLabel: nextLabel,
@@ -144,7 +186,7 @@ class RestTimerController {
     final now = _clock();
     if (next.isExpired(now)) return _over(now);
     _timer = next;
-    unawaited(_activity.updateRest(endsAt: next.endsAt));
+    _send(_activity.updateRest(endsAt: next.endsAt));
     await _alerts.scheduleRestAlert(next.remainingSeconds(now));
   }
 
@@ -153,7 +195,7 @@ class RestTimerController {
   /// changed nothing, so the card never shows a state the workout is not in.
   void refresh() {
     final timer = _timer;
-    if (timer != null) unawaited(_activity.updateRest(endsAt: timer.endsAt));
+    if (timer != null) _send(_activity.updateRest(endsAt: timer.endsAt));
   }
 
   /// Skip: the rest ends now and the activity reads "Rest done".
@@ -176,7 +218,7 @@ class RestTimerController {
     final until = _doneUntil;
     if (_timer != null || until == null || _clock().isBefore(until)) return;
     _doneUntil = null;
-    unawaited(_activity.end());
+    _send(_activity.end());
   }
 
   /// Ends the rest, its alert and its Live Activity: finishing, discarding,
@@ -185,7 +227,7 @@ class RestTimerController {
   Future<void> stop() async {
     _timer = null;
     _doneUntil = null;
-    unawaited(_activity.end());
+    _send(_activity.end());
     await _alerts.cancelRestAlert();
   }
 
@@ -196,7 +238,7 @@ class RestTimerController {
   void detach() {
     if (_timer == null && _doneUntil == null) return;
     _doneUntil = null;
-    unawaited(_activity.end());
+    _send(_activity.end());
   }
 
   /// Resumes the timer stored in the draft after a relaunch. A rest that has
@@ -208,7 +250,7 @@ class RestTimerController {
     if (timer == null || timer.isExpired(_clock())) return stop();
     _timer = timer;
     _doneUntil = null;
-    unawaited(_activity.updateRest(endsAt: timer.endsAt));
+    _send(_activity.updateRest(endsAt: timer.endsAt));
   }
 
   /// The rest ends at [now]: the activity reads "Rest done" from now on.
@@ -216,7 +258,7 @@ class RestTimerController {
     if (_timer == null) return;
     _timer = null;
     _doneUntil = now.add(doneLinger);
-    unawaited(_activity.updateRest(endsAt: now));
+    _send(_activity.updateRest(endsAt: now));
     await _alerts.cancelRestAlert();
   }
 }
