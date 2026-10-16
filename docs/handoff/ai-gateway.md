@@ -176,6 +176,9 @@ Nothing here changes production by itself except migration code 17 (the budget s
     sends the owner's own photos through the features' own request (`analyzeMealWithGateway`,
     `handlePhysiqueCheck`) and prints the parsed results; the runbook (3.3, 3.4) runs it and the
     owner judges it before any `AI_*_VISION_EVALUATED=true` is set. AI_SAFETY_SPEC §8 and §9 describe it.
+    The script imports A3's `meal-analyze/vision.ts` and the gateway physique path (#119), so it is
+    added to this branch in a commit made after #119 is in `main` (it could not compile before);
+    it is written and its offline test (fake folder and fake fetch) passes against #119's code.
   - Tests: `test/ai_wording_test.dart` renders Coach replies stored by deepseek, groq, gemini and
     anthropic plus the photo card and greps the rendered text for model and company names. Not in
     A7's scope and still naming providers: the App Store mock-ups in `design/store/`, and test
