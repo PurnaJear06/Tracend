@@ -194,13 +194,22 @@ Nothing here changes production by itself except migration code 17 (the budget s
   the consent republish it needs, and dropping DeepSeek and Groq from the privacy list after the
   windows. Every step is the owner's.
 - **Things to know.**
-  - Between an athlete accepting the Anthropic coaching notice and the routes being set, the old
-    DeepSeek path (it checks only that the current notice is granted) still serves that athlete.
-    The runbook has the one-sitting order and an optional `COACH_AI_ENABLED=false` pause.
-  - After a rollback the notice must name the company that receives the data; the runbook lists
-    the republish calls.
-  - Onboarding stays on DeepSeek at the cutover, so DeepSeek leaves the processor list only after
-    onboarding moves and its window passes; the external TestFlight group waits for that.
+  - Fail closed (lead, after the A4-A6 fixes): data goes only to the vendor named by the notice
+    the athlete accepted. Cutover order per feature group: route (`EVALUATED=true`), then publish
+    the Anthropic notice, then athletes accept; in between the feature degrades safely (Coach
+    "consent required", rules for the decision and plan, meal photos unavailable). The runbook
+    explains the short window either way.
+  - Rollback is two steps: unsetting the settings stops Anthropic but does NOT send traffic back to
+    DeepSeek or Groq (the old paths refuse while the notice names Anthropic); restoring them means
+    republishing a notice naming that vendor and athletes accepting it.
+  - `ai-coaching-v6` covers `onboarding_plan`, so onboarding uses its rules plan from publication
+    until its route is set after B2; DeepSeek then receives nothing, and the owner may prefer to
+    delay publishing v6 (runbook 4a).
+  - The program README's A7 brief says "the four files in the decisions log"; it does not list all
+    six wording files. The owner table does (`ai_provider_names.dart`, `consent/**`,
+    `coach_labels.dart`, `onboarding_proposal_view.dart`, `photo_widgets.dart`,
+    `progress_screen.dart`). The lead is fixing the brief in #116; A7 changed all six, and README
+    is untouched here.
   - Final live evals were not rerun here: A3-A6 recorded theirs (their handoff sections); A7 added
     no model code.
 

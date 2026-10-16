@@ -638,26 +638,27 @@ routes stay available by settings alone for two weeks after the cutover.
 | Onboarding plan | `onboarding_plan` | Sonnet 5.5 | 8,000 | 90 s | later, after B2 |
 | Onboarding questions | `onboarding_questions` | Sonnet 5.5 | 1,500 | 30 s | later, after B2 |
 
-- **Order** (the runbook has the commands): merge and deploy the code; the owner publishes the
-  three notices; athletes accept them in the app; the owner sets each feature's settings one at a
-  time, with `EVALUATED=true` last; verify with `./scripts/verify-live-function.sh --all` and the
-  `ai_call` log. A new notice version asks every athlete again, and
-  an athlete who has not accepted it is sent nothing by the new route. **Gap to keep short:** the
-  Coach and the daily decision's old DeepSeek path checks only that the current notice is granted,
-  not whom it names, so between an athlete accepting the Anthropic notice and the owner setting the
-  routes, that athlete's requests still go to DeepSeek. Publish the coaching notice and set the
-  Coach and daily decision routes in one sitting, or pause the old path first (the runbook, step 3).
-  Meal photos are protected: the old path refuses (503 `meal_photo_notice_outdated`) while the
-  current meal photo notice names another vendor.
+- **Order** (the runbook has the commands). Per feature group, in one sitting: set the route
+  (`EVALUATED=true` last); the owner publishes the Anthropic notice; athletes accept it. The first
+  deploy changes nothing. **Fail closed:** data goes only to the vendor named by the notice the
+  athlete accepted, on the gateway and on the old paths alike. While a route exists but the
+  current notice names another vendor, the athlete's feature degrades without sending anything:
+  Coach chat answers 403 `ai_consent_required`, the daily decision and the starting plan use the
+  deterministic rules, meal photos answer 503 `meal_photo_notice_outdated`, the physique check is
+  unavailable. After the Anthropic notice is current the old DeepSeek and Groq paths refuse in the
+  same way. The coaching notice also covers `onboarding_plan`, so onboarding uses its rules plan from
+  its publication until onboarding's own route is set after B2.
 - **Retention and training.** Anthropic's standard commercial terms (checked 2026-10-16): inputs and
   outputs are deleted within 30 days and are not used for training. Longer only where the law
   requires or to enforce its usage rules (up to 2 years if its safety systems flag an input).
   Zero Data Retention is not arranged. The notices state the 30 days and the no-training term
   plainly; re-read Anthropic's published policy on the day the notices are published.
-- **Rollback (2 weeks).** Unset the feature's `AI_<FEATURE>_PROVIDER`. The old path runs again at
-  once and needs its own notice current (the DeepSeek coaching notice, the Groq photo notices), so
-  republish the old notice text under a new version if the rollback is used after the new notices
-  have replaced them. Changing any Edge secret creates a new version of every function; run
+- **Rollback (2 weeks) has two steps.** (1) Settings only: unset the feature's
+  `AI_<FEATURE>_PROVIDER`. Calls to Anthropic stop at once, and the feature degrades safely as
+  above. **It does not send traffic back to DeepSeek or Groq**, because the current notice names
+  Anthropic and the old paths fail closed. (2) To restore the old vendor, the owner publishes a
+  notice naming that vendor (the old text under a new version) and athletes accept it again. Changing
+  any Edge secret creates a new version of every function; run
   `./scripts/verify-live-function.sh --all` afterwards.
 - **After the window,** the privacy policy's processor list drops DeepSeek and Groq, and the old
   settings and adapters can be removed in a cleanup change.
