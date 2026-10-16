@@ -2,18 +2,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tracend/features/coach/coach_labels.dart';
 
 void main() {
-  group('provider display names', () {
-    test('a known provider reads by its name', () {
-      expect(aiAnswerLabel('deepseek'), 'AI answer · DeepSeek');
-      expect(aiAnswerLabel('groq'), 'AI answer · Qwen');
-      expect(aiAnswerLabel('gemini'), 'AI answer · Gemini');
-      expect(aiProviderDisplayName('DeepSeek'), 'DeepSeek');
+  group('AI answer label', () {
+    test('names no model or company (D11)', () {
+      expect(aiAnswerLabel(), 'AI answer · checked by Tracend');
+      for (final (provider, model) in [
+        ('deepseek', 'deepseek-flash'),
+        ('groq', 'qwen/qwen3.8-27b'),
+        ('anthropic', 'claude-haiku-5-5'),
+      ]) {
+        expect(
+          aiAnswerLabel(provider: provider, model: model),
+          'AI answer · checked by Tracend',
+        );
+      }
     });
 
-    test('an unlisted or missing provider never shows its raw id', () {
-      expect(aiProviderDisplayName('acme-llm'), isNull);
-      expect(aiAnswerLabel('acme-llm'), 'AI answer');
-      expect(aiAnswerLabel(null), 'AI answer');
+    test('a reply no model wrote never carries the AI badge', () {
+      expect(
+        aiAnswerLabel(provider: 'mock', model: 'deterministic-safety-v1'),
+        'Tracend safety answer · not AI',
+      );
+      expect(
+        aiAnswerLabel(provider: 'mock', model: 'something-else'),
+        'Tracend answer · not AI',
+      );
+      expect(
+        aiAnswerLabel(
+          provider: 'deterministic',
+          model: 'coach-data-summary-v1',
+        ),
+        'Tracend answer · not AI',
+      );
     });
   });
 

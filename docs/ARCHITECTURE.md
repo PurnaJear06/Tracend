@@ -205,7 +205,8 @@ with `scripts/verify-live-function.sh --all` (CI_CD_DEPLOYMENT.md). An athlete's
 company that receives the data, so moving a feature to another company also needs a new notice
 (SECURITY_PRIVACY §3).
 
-Today each feature has its own provider module in `_shared/providers/`:
+Each feature keeps its own provider module in `_shared/providers/` for the path that runs when it
+has no gateway route (the path production runs **today**):
 
 | Feature | Function | Settings | Providers in code | Unset or off |
 | --- | --- | --- | --- | --- |
@@ -220,25 +221,37 @@ onboarding plan; Groq `qwen/qwen3.8-27b` serves meal photos and the owner-only p
 coach-decide gate is all-or-nothing: without every server-side setting configured together it uses
 the deterministic mock.
 
-The provider-neutral gateway (`supabase/functions/_shared/ai/`, program Contract 1 v2) is built but
-no feature uses it yet. `route(feature)` reads `AI_<FEATURE>_{PROVIDER, MODEL, BASE_URL, THINKING,
-EFFORT, MAX_OUTPUT_TOKENS, TIMEOUT_MS, EVALUATED}` and returns null when a route is incomplete, so
-the feature keeps its rules path. Adapters speak the Anthropic, OpenAI-compatible and Gemini wire
-protocols. Prices live in one table (`models.ts`). `call()` refuses before sending when the
-athlete's notice names another vendor (`consent_provider_mismatch`), never sends sampling
-parameters to Claude 5 models, and logs one scrubbed `ai_call` line per call (no prompt, image or
-reply text). Budget stays the caller's job (`AiBudget.reserve` before the call).
+The provider-neutral gateway (`supabase/functions/_shared/ai/`, program Contract 1 v2) is the one
+call path for a route. `route(feature)` reads `AI_<FEATURE>_{PROVIDER, MODEL, BASE_URL, THINKING,
+EFFORT, MAX_OUTPUT_TOKENS, TIMEOUT_MS, EVALUATED}` and returns null when a route is incomplete.
+Each feature (`coach_chat`, `daily_decision`, `onboarding_plan`, `onboarding_questions`,
+`meal_vision`, `physique_vision`) calls the gateway when its route is complete and evaluated, and
+otherwise runs the path in the table above byte for byte (recorded-request tests prove it). So the
+gateway being deployed changes nothing until the owner sets a route. Adapters speak the
+Anthropic, OpenAI-compatible and Gemini wire protocols. Prices live in one table (`models.ts`).
+`call()` refuses before sending when the athlete's notice names another vendor
+(`consent_provider_mismatch`; the feature then takes its consent-needed path), never sends
+sampling parameters to Claude 5 models, and logs one scrubbed `ai_call` line per call (no prompt,
+image or reply text). The feature reserves budget first with the route's worst-case ceiling
+(`reserve_ai_budget_v2`) and settles it with the call's real cost; the stops are USD 3 per athlete
+a month, 30 requests a day and USD 50 across accounts (COST_MODEL §2). Coach chat puts the stable
+athlete file in a cacheable prefix and the question last, so a repeated question reads the prefix
+from the cache, and hosts the Contract 7 contributor registry (`_shared/coach_context/`).
 
 For every route, calls use structured output, compact feature snapshots, request-level timeouts,
 and per-user rate and cost gates. Provider output never directly writes canonical user state;
 validation and approval remain in deterministic code and PostgreSQL transactions. The
 deterministic path stays available when a model is unavailable.
 
-> **Planned (coaching platform, Phase 2 / A3–A7, D1):** move every feature onto the gateway and to
-> Claude: meal photo on Haiku 5.5 and physique on Sonnet 5.5 (A3), onboarding plan and questions on
-> Sonnet 5.5 (A4), daily decision on Sonnet 5.5 (A5), Coach chat with a cache-friendly prompt
-> (A6), then notices, wording, evals and the cutover runbook (A7). The DeepSeek and Groq routes
-> stay as a settings-only rollback for two weeks after cutover.
+> **Cutover to Claude (Phase 2, D1): code merged, not yet switched on.** Production keeps today's
+> providers until the owner runs the cutover runbook
+> ([`docs/runbooks/phase2-claude-cutover.md`](./runbooks/phase2-claude-cutover.md)): Coach chat and
+> meal photos on Haiku 5.5, the daily decision and the physique check on Sonnet 5.5; onboarding
+> follows on Sonnet 5.5 after chunk B2; until then, once the Anthropic notice is current, onboarding
+> uses the rules plan. Data goes only to the vendor named by the athlete's accepted notice, so
+> unsetting a feature's `AI_<FEATURE>_PROVIDER` stops Anthropic but does not send traffic back to
+> DeepSeek or Groq; restoring them needs a notice naming that vendor. Details: AI_SAFETY_SPEC
+> §10.5-§10.7.
 
 ## 4. Supabase Boundary Rules
 

@@ -134,7 +134,7 @@ Deno.test("v2 returns the grant with the notice's provider and version", async (
 });
 
 Deno.test("v2: a notice without a known vendor gives no provider", async () => {
-  for (const provider of [null, "openai_compatible", "someone_else", 7]) {
+  for (const provider of [null, "openai_compatible", "router", "someone_else", 7]) {
     assertEquals(
       await aiConsentWithProvider(
         answeringV2({

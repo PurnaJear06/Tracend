@@ -44,11 +44,13 @@ No model or provider name appears anywhere the athlete or the public reads. The 
 receives data is named only where disclosure is needed: one line in each AI consent notice, and the
 privacy policy's processor list. The required labels are given in each flow below.
 
-Until chunk A7 ships, the current build still shows provider names in five places: the Coach
-reply label (**AI answer · DeepSeek**), the plan proposal (**Proposed by AI (DeepSeek) · checked
-by Tracend**), the Account AI coaching row, the Coach "AI coaching is off" text, and the physique
-check card (the server's label, today "Groq"). The built-in AI coaching notice also names DeepSeek.
-**Planned (coaching platform, chunk A7):** notices and app wording per D11.
+D11 is applied in the app (chunk A7). The Coach reply label is **AI answer · checked by Tracend**
+(**Tracend safety answer · not AI** for a deterministic safety reply), the plan proposal reads
+**Proposed by AI · checked by Tracend**, the Account AI coaching row and the Coach "AI coaching is
+off" text say "AI", and the physique check card says "Sent to AI only when you start a physique
+check". The app has no copy of an AI notice: it shows the notice it fetches from the server. The
+notice bodies are rows the owner publishes (drafts in `docs/notices/`); until then the published
+notices still name their companies.
 
 ## 2. Information Architecture
 
@@ -167,10 +169,12 @@ sign-in**.
 6. Choose whether to allow AI coaching. **Allow AI coaching** and **Not now** are both valid
    answers.
    - The text is the server's current notice (`get_current_ai_notice`). The app records that
-     notice's version; the built-in text is shown only if the notice cannot load.
+     notice's version. If the notice cannot load, the step shows "The AI coaching notice could not
+     be loaded. Check the connection and try again." with **Try again** and no answer buttons: the
+     app never shows a notice body it did not fetch and never records an answer for a version it
+     did not fetch.
    - The notice says what data is sent and what works without it, and names the receiving company
-     in one line, with no model names (D11). Until A7, the built-in fallback still names DeepSeek,
-     its operating company and its servers in China.
+     once, with no model names (D11).
    - Without AI coaching, Tracend's rules build the starting plan.
 7. Choose **Guide me** or **Preserve what works**.
 
@@ -178,8 +182,8 @@ An account that has not answered the current AI coaching notice (created before 
 existed, or asked again after the notice changed) answers it once before the app opens. While AI
 coaching is off, Coach shows **AI coaching is off** with **Review AI coaching**, its composer is
 disabled, and Today generates no AI decision. **Account › AI coaching** turns it on or off. The
-"off" text explains why the Coach needs permission, without a provider name (D11; until A7 it
-names the provider from the notice).
+"off" text explains why the Coach needs permission, without a provider name (D11): "The Coach sends
+your Tracend data to an AI service to answer, so it needs your permission first."
 
 Meal-photo AI and progress-photo AI consent occur separately when their value is visible. Apple
 Health is offered once, as the optional onboarding step below, and otherwise from Account.
@@ -276,9 +280,7 @@ missing information, and safety boundaries. Actions are **Approve plan**, **Requ
 The proposal screen shows, top to bottom:
 
 - **Provenance:** **Proposed by AI · checked by Tracend**, or **Built by Tracend's rules**. No
-  provider name appears (D11). Until A7 the build adds the provider's display name in brackets,
-  for example **Proposed by AI (DeepSeek) · checked by Tracend**, taken from
-  `lib/shared/ai_provider_names.dart`; an unknown id already reads without one.
+  provider name appears (D11), whatever model answered.
 - **Confidence** and **the assessment**.
 - **Training:** every training day with its exercises (sets × reps, RPE with the reps left in
   plain words, for example "RPE 7.5 (about 2–3 reps left)", rest), **Start at ‹kg› kg** on
@@ -471,10 +473,10 @@ Training and Nutrition remain perspectives in one controlled decision pipeline, 
 agents. The Coach tab answers direct questions through the same workflow and never behaves like
 three separate autonomous chatbots.
 
-- **AI label.** A live AI reply carries the small label **AI answer**, with no provider name
-  (D11). Until A7 the build appends the provider's display name from
-  `lib/shared/ai_provider_names.dart` (**AI answer · DeepSeek**); an unlisted provider already
-  reads **AI answer**. A provider or validation failure never substitutes generic coaching text.
+- **AI label.** A reply a model wrote carries the small label **AI answer · checked by Tracend**,
+  with no provider name (D11). A reply no model wrote (the deterministic safety boundary, stored
+  with provider `mock`) reads **Tracend safety answer · not AI** and never carries the AI badge. A
+  provider or validation failure never substitutes generic coaching text.
 - **Formatting.** Replies display bold, italic, and bullet or numbered lists, so they read as
   formatted text rather than raw Markdown. Long answers are selectable.
 - **Labeled replies.** When the model cannot answer, Coach shows a labeled reply in its place,
@@ -934,8 +936,7 @@ served account, the card says photos are sent to AI only when a check is started
 Checking (usually under 30 s) → Result: "AI visual estimate, not a measurement", muscles with
 confidence and reason, observations, photo tips, limitations → choose up to two → Use as my focus`.
 
-- The card names no provider (D11). Until A7 it shows the server's provider label ("Sent to Groq
-  only when you start a physique check.").
+- The card names no provider (D11): "Sent to AI only when you start a physique check."
 - The check sends the front, side and back photos. The newest set is the one taken last
   (`captured_on`, then `created_at`).
 - A stored check stays visible after the feature is switched off for the account, and the card
@@ -1037,7 +1038,7 @@ Account is one iOS inset-grouped settings page:
 - **AI coach:** **AI coaching** (on, or "Off · plans and logging still work"), **AI usage this
   month**, and **Coach conversations** (a sheet; deleting a conversation asks with a destructive
   confirm, **Delete thread**). The footnote says provider keys stay on Tracend's server. The AI
-  coaching row names no provider (D11); until A7 it reads "On · ‹provider› writes Coach answers".
+  coaching row names no provider (D11): "On · AI writes Coach answers".
 - **Privacy:** **Export data**, **Consent history** and **Delete account**, then **Sign out** at
   the foot.
 

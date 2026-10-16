@@ -43,7 +43,7 @@ values ('f5000000-0000-4000-8000-000000000001', 'progress_photo_ai', 'progress-p
 select is(public.get_my_photo_ai_notice()->>'granted', 'true', 'granting the current notice counts');
 reset role;
 select ok(public.has_photo_ai_consent('f5000000-0000-4000-8000-000000000001'), 'the server sees the grant');
-select private.publish_photo_ai_notice('progress-photo-ai-v2', 'Groq', 'qwen/qwen3.8-27b', 'A newer notice.');
+select private.publish_photo_ai_notice('progress-photo-ai-v2', 'groq', 'Groq', 'qwen/qwen3.8-27b', 'A newer notice.');
 select ok(not public.has_photo_ai_consent('f5000000-0000-4000-8000-000000000001'),
   'a newer notice needs a new grant');
 insert into public.consent_records(user_id, consent_type, notice_version, action, source, created_at) values

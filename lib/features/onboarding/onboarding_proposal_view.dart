@@ -48,9 +48,7 @@ class OnboardingProposalView extends StatelessWidget {
           runSpacing: TracendSpacing.xs,
           children: [
             StatusChip(
-              label: fromModel
-                  ? provenanceLabel(proposal.model)
-                  : 'Built by Tracend\'s rules',
+              label: fromModel ? provenanceLabel : 'Built by Tracend\'s rules',
               icon: CupertinoIcons.checkmark_shield,
               tone: StatusTone.neutral,
             ),
@@ -172,13 +170,9 @@ class OnboardingProposalView extends StatelessWidget {
     );
   }
 
-  /// "Proposed by AI (DeepSeek) · checked by Tracend": the provider is named
-  /// through the shared display-name map; an unknown id shows just "AI",
-  /// never the raw id.
-  static String provenanceLabel(String? model) {
-    final provider = aiProviderDisplayName(model);
-    return 'Proposed by AI${provider == null ? '' : ' ($provider)'} · checked by Tracend';
-  }
+  /// "Proposed by AI · checked by Tracend". The model that answered is stored
+  /// with the proposal but never named on screen (D11).
+  static const provenanceLabel = 'Proposed by AI · $aiProvenanceLine';
 
   /// RPE in plain words: reps left in reserve, 10 − RPE (RPE 7.5 → about
   /// 2–3 reps left).

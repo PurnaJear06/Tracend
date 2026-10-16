@@ -119,6 +119,8 @@ class _Phase2GateState extends State<Phase2Gate> {
         final aiConsent = _aiConsent ??= AiCoachingConsentController(
           SupabaseAiCoachingConsentRepository(client),
         );
+        // A notice that cannot be loaded turns AI coaching off here and
+        // leaves the app open; the screens that ask retry it themselves.
         await aiConsent.load();
         // The usual months a later plan review compares with; never blocks.
         if (complete) unawaited(_baselineSource().refreshIfDue());
@@ -229,8 +231,11 @@ class _Phase2GateState extends State<Phase2Gate> {
       );
     }
     // Accounts created before the question existed, and anyone asked again
-    // after a notice change, answer once before the app opens.
-    if (aiConsent.choice == AiCoachingChoice.undecided) {
+    // after a notice change, answer once before the app opens. Without a
+    // notice from the server there is nothing to answer: the app opens with
+    // AI coaching off.
+    if (aiConsent.choice == AiCoachingChoice.undecided &&
+        aiConsent.notice != null) {
       return AiCoachingConsentScreen(
         controller: aiConsent,
         onDecided: () => setState(() {}),

@@ -642,9 +642,8 @@ class _CoachScreenState extends State<CoachScreen> {
               Text('AI coaching is off', style: textTheme.titleMedium),
               const SizedBox(height: TracendSpacing.xxs),
               Text(
-                'The Coach sends your Tracend data to '
-                '${widget.aiConsent!.notice.providerLabel} to answer, so it '
-                'needs your permission first.',
+                'The Coach sends your Tracend data to an AI service to answer, '
+                'so it needs your permission first.',
                 style: textTheme.bodyMedium?.copyWith(
                   color: colors.textSecondary,
                 ),

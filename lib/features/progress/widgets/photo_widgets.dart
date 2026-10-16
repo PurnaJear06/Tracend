@@ -52,7 +52,7 @@ class PhotoProgressCard extends StatelessWidget {
     required this.inProgress,
     required this.onCapture,
     required this.onOpenSets,
-    this.photoCheckProvider,
+    this.physiqueCheckAvailable = false,
     this.onPhysiqueCheck,
     this.latestPhysique,
     this.onOpenPhysique,
@@ -68,10 +68,10 @@ class PhotoProgressCard extends StatelessWidget {
   final VoidCallback onCapture;
   final VoidCallback onOpenSets;
 
-  /// Who photos go to when this account starts a physique check, as the
-  /// server names it; null when it may not. The privacy line then says when
-  /// they leave the app; with a stored check it never says "never".
-  final String? photoCheckProvider;
+  /// Whether this account may start a physique check. The privacy line then
+  /// says when photos leave the app, without naming who receives them (D11:
+  /// the consent notice does); with a stored check it never says "never".
+  final bool physiqueCheckAvailable;
 
   /// Starts a check on the newest set; null hides the action.
   final VoidCallback? onPhysiqueCheck;
@@ -83,7 +83,6 @@ class PhotoProgressCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context).textTheme;
     final latest = photoSets.isEmpty ? null : photoSets.first;
-    final provider = photoCheckProvider;
     final physique = latestPhysique;
     return PremiumGradientCard(
       child: Column(
@@ -104,8 +103,8 @@ class PhotoProgressCard extends StatelessWidget {
                       style: theme.titleMedium,
                     ),
                     Text(
-                      provider != null
-                          ? 'Only you can see these. Sent to $provider only '
+                      physiqueCheckAvailable
+                          ? 'Only you can see these. Sent to AI only '
                                 'when you start a physique check.'
                           : physique != null
                           ? 'Only you can see these. A set was sent to AI '
@@ -140,7 +139,7 @@ class PhotoProgressCard extends StatelessWidget {
               ),
             ),
           ),
-          if (provider != null && onPhysiqueCheck != null) ...[
+          if (physiqueCheckAvailable && onPhysiqueCheck != null) ...[
             const SizedBox(height: TracendSpacing.xs),
             SizedBox(
               width: double.infinity,

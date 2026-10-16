@@ -1,7 +1,8 @@
 # Coaching Platform Program (October 2026)
 
 **Status:** approved by the owner on 2026-10-15. Iteration 1 (Phase 0 + Phase 1) is merged and
-live; the owner's device check passed on 2026-10-15. Iteration 2 (Phase 2) is in progress.
+live; the owner's device check passed on 2026-10-15. Iteration 2 (Phase 2) is merged (2026-10-16); the
+Claude cutover follows `docs/runbooks/phase2-claude-cutover.md`.
 
 This is the single source of truth for every agent working on the program. Read it fully before
 touching code. If this document and an authority doc (`docs/*.md`) disagree, stop and report the
@@ -53,14 +54,14 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 1 | E1 | research-library | pgvector, library tables, `search_library_v1`, doc rule change | 41 | P0 | live | #109 |
 | 1 | W1 | website | Site copy fixes, privacy policy naming Anthropic, TestFlight checklist | — | P0 | merged | #108 |
 | 1 | U1 | ui | Glass tab bar (owner request 2026-10-15) | — | P0 | live | #107 |
-| 2 | A3 | ai-gateway | Meal photo on Haiku, physique on Sonnet | 13 | A1, A2 | todo | |
-| 2 | A4 | ai-gateway | Onboarding plan and questions on Sonnet | — | A1, A2 | todo | |
-| 2 | A5 | ai-gateway | Daily decision on Sonnet | — | A1, A2, B0 | todo | |
-| 2 | A6 | ai-gateway | Coach chat, cache-friendly prompt | — | A1, A2 | todo | |
-| 2 | A7 | ai-gateway | Notices and app wording per D11 (no model names; remove DeepSeek/Groq/Qwen everywhere), budget limits, evals, docs, cutover runbook | 17 | A3–A6 | todo | |
-| 2 | D1 | ios-widgets | Live Activity with Done / Skip / +30s | — | C1, D0 | todo | |
-| 2 | C2 | workout-hr | Native heart-rate reader, per-set summaries | 32 | C1, D0 | todo | |
-| 2 | B1 | training-engine | Catalog v2 and coaching-standard rule data | 21 | B0 | todo | |
+| 2 | A3 | ai-gateway | Meal photo on Haiku, physique on Sonnet | 13 | A1, A2 | merged | #119 |
+| 2 | A4 | ai-gateway | Onboarding plan and questions on Sonnet | — | A1, A2 | merged | #122 |
+| 2 | A5 | ai-gateway | Daily decision on Sonnet | — | A1, A2, B0 | merged | #117 |
+| 2 | A6 | ai-gateway | Coach chat, cache-friendly prompt | — | A1, A2 | merged | #120 |
+| 2 | A7 | ai-gateway | Notices and app wording per D11 (no model names; remove DeepSeek/Groq/Qwen everywhere), budget limits, evals, docs, cutover runbook | 17 | A3–A6 | merged | #124 |
+| 2 | D1 | ios-widgets | Live Activity with Done / Skip / +30s | — | C1, D0 | merged | #121 |
+| 2 | C2 | workout-hr | Native heart-rate reader, per-set summaries | 32 | C1, D0 | merged | #123 |
+| 2 | B1 | training-engine | Catalog v2 and coaching-standard rule data | 21 | B0 | merged | #118 |
 | 3 | B2 | training-engine | Templates by goal × days × experience; fractional volume | — | B1 | todo | |
 | 3 | B3 | training-engine | Progression from actual sets; hub 1.7; Train shows targets | 23 | B2 | todo | |
 | 3 | B6 | training-engine | Screening gate (own words, ACSM 2015 method) | 26 | B1 | todo | |

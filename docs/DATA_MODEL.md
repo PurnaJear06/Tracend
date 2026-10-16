@@ -137,7 +137,8 @@ OpenAI-compatible endpoint, since one shape reaches several vendors. Notices are
 `private.publish_ai_notice(version, provider, provider_label, purposes, body)` inserts a notice and
 repoints its purposes in one transaction. It refuses (22023) a `provider_label` that does not name
 the provider's company (Anthropic, DeepSeek, Groq, Google; case ignored) or names another one. The
-older four-argument form still works and leaves `provider` null.
+older four-argument form refuses (22023) since migration code 17, which also filled `provider` on
+every earlier notice row.
 
 An `ai_coaching` consent counts for a purpose only when its `notice_version` is that purpose's
 current version (`has_ai_coaching_consent`, service role). `get_ai_consent_v2(target_user_id,

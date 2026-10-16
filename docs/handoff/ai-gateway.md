@@ -16,7 +16,7 @@ A1, A2 (Phase 1); A3–A7 (Phase 2)
 
 ## State
 
-A1 (#103) and A2 (#106) are live (2026-10-15).
+A1 (#103) and A2 (#106) are live (2026-10-15). A3-A7 are in review.
 
 **A1 (live, #103, migration `20261015120011_provider_neutral_ai.sql`):**
 
@@ -480,8 +480,106 @@ first and repair, recorded from the pre-A6 code).
 
 ### A7: wording, budgets, cutover
 
-Not started. The A7 builder replaces this paragraph with its state, files, tests and
-anything the next agent must know.
+**State (2026-10-16): in review.** Built on `claude/p2-kickoff`; the authority-doc edits assume A3-A6
+are merged first (the program's merge order), because they describe the gateway as in use.
+Nothing here changes production by itself except migration code 17 (the budget stops).
+
+- **D11 app wording.** No model or company name outside a consent notice.
+  - `lib/shared/ai_provider_names.dart` holds only `aiProvenanceLine` ("checked by Tracend"); the
+    display-name map and `aiProviderDisplayName` are gone.
+  - `aiAnswerLabel(provider:, model:)` reads "AI answer · checked by Tracend" for a reply a model
+    wrote and "Tracend safety answer · not AI" / "Tracend answer · not AI" for a deterministic or
+    mock reply (provider `mock`, model `deterministic-safety-v1`, or `deterministic`); the onboarding
+    proposal chip reads "Proposed by AI · checked by Tracend" (`OnboardingProposalView.provenanceLabel` is a
+    constant now).
+  - `PhotoProgressCard` takes `physiqueCheckAvailable` (bool) in place of `photoCheckProvider`; the
+    card says "Sent to AI only when you start a physique check". `PhysiqueCheckRepository.loadProvider`
+    still returns the server's `provider_label` (old servers send it); the app only tests it for null.
+  - Two cards outside A7's file list named the notice's company and now say "an AI service"
+    (`coach_screen.dart`, the "AI coaching is off" card) and "AI" (`account_screen.dart`, "On · AI
+    writes Coach answers"). One-line edits, flagged in the PR; `coach_message_bubble.dart` changed
+    its `aiAnswerLabel` call and a comment.
+  - **No built-in notice.** `AiNotice.builtIn` and `aiCoachingNoticeVersion` are gone. The app shows
+    only the notice it fetched (`get_current_ai_notice`) and never records a grant for a version it
+    did not fetch: a failed call is `AiNoticeUnavailable` (`loadCurrentAiNotice`). **A notice
+    failure never blocks the signed-in app:** `AiCoachingConsentController.load` treats it as "AI
+    unavailable" (choice undecided, no notice), `Phase2Gate` opens the app with AI coaching off and
+    shows the consent screen only when a notice loaded, and only the AI surfaces (consent screen,
+    Coach and Account sheet, onboarding AI step) show "The AI coaching notice could not be loaded…"
+    with **Try again** and no answer buttons
+    (`AiCoachingNoticeSection`). The fixture repository (tests only) has a neutral notice naming no
+    company. `lib/features/onboarding/onboarding_flow.dart` changed for this (out-of-list edit) and
+    its AI choice card no longer says an AI model drafts the starting plan. With no notice the AI
+    step lets onboarding continue without recording anything (AI off, the rules plan).
+  - **Own-photo check before the vision routes** (review fix). `supabase/functions/_evals/owner_photo_check.ts`
+    sends the owner's own photos through the features' own request (`analyzeMealWithGateway`,
+    `handlePhysiqueCheck`) and prints the parsed results; the runbook (3.3, 3.4) runs it and the
+    owner judges it before any `AI_*_VISION_EVALUATED=true` is set. AI_SAFETY_SPEC §8 and §9 describe it.
+    The script imports A3's `meal-analyze/vision.ts` and the gateway physique path (#119), so it is
+    added to this branch in a commit made after #119 is in `main` (it could not compile before);
+    it is written and its offline test (fake folder and fake fetch) passes against #119's code.
+  - Tests: `test/ai_wording_test.dart` renders Coach replies stored by deepseek, groq, gemini and
+    anthropic plus the photo card and greps the rendered text for model and company names. Not in
+    A7's scope and still naming providers: the App Store mock-ups in `design/store/`, and test
+    fixtures of old notices.
+- **Notice drafts** in `docs/notices/` (v6 says plainly that AI starting plans are not on yet and
+  that a plan or plan change needs the athlete's approval, not every answer): `ai-coaching-v6.md`, `meal-photo-ai-v2.md`,
+  `progress-photo-ai-v2.md`. Each has the exact five-argument publisher call (dollar-quoted body)
+  and a check query. Not published. Anthropic is named once per notice; retention is "deleted within
+  30 days, not used for training, longer only where the law requires or to enforce its usage rules",
+  verified 2026-10-16 on privacy.claude.com ("How long do you store my organization's data?"; its
+  safety systems may keep a flagged input up to 2 years, which the notices leave out). The photo
+  publishers' `model` argument is a stored field the app never shows.
+- **Migration code 17** `20261016004017_ai_budget_phase2.sql`: adds `per_person_monthly_usd` to
+  `private.ai_budget_limits` (default 2), sets it to 3 and the global stop to 50, and re-creates
+  `reserve_ai_budget`, `reserve_ai_budget_v2`, `assert_owner_ai_budget` and `get_my_ai_budget_state`
+  to read it (same signatures, grants and error messages; the state keeps every field, and its
+  values follow the stop: warning 1.5, hard stop 3). No per-feature setting is needed. pgTAP:
+  `supabase/tests/database/ai_budget_phase2_test.sql`; four older tests pin the stop to 2 at their
+  start because they test its mechanics at USD 2. **Not run locally (no Docker); CI pgTAP is the
+  proof.** The USD 50 global stop is marked "confirm at cutover" in the runbook.
+- **Migration code 17, part 2 (same file):** backfills `provider` on every existing row of
+  `ai_consent_notices`, `photo_ai_notices` and `meal_photo_ai_notices` with
+  `private.notice_vendor_from_label(label, model)` (DeepSeek → deepseek, Groq/Qwen → groq,
+  Gemini/Google → gemini, Anthropic/Claude → anthropic; raises 22023 when it finds none or two), and
+  makes the four-argument `private.publish_ai_notice` and `private.publish_photo_ai_notice` refuse
+  (22023, pointing to the five-argument form; same signatures and grants). The legacy "null or
+  matching" rule then behaves as before, and no new null-provider notice can be published. Tests
+  that used the old publishers (`onboarding_plan_v2`, `onboarding_review_fixes`, `physique_check`,
+  `provider_neutral_ai`) now use the five-argument form; `provider_neutral_ai_test.sql` expects
+  `deepseek` and `groq` where it expected null.
+- **`_shared/ai_consent.ts`** takes its vendor list from the gateway (`aiVendors` without
+  `router`; type `AthleteVendor`). It still exports `AiVendor` as an alias, because A5's
+  `daily_decision_provider.ts` imports that name from here. Behaviour is unchanged; the test now
+  also feeds `router` as a notice vendor (null).
+- **Authority docs** (AI_SAFETY_SPEC §8-§10, COST_MODEL §1-§4, ARCHITECTURE §3.7, SECURITY_PRIVACY
+  §3 and §6, PRD §5.8) describe the gateway, the per-feature routes, today's providers (live until
+  the cutover) and the cutover plan. AI_SAFETY_SPEC §10.5's "no Edge Function imports it yet" is
+  gone. `docs/PROGRESS_CONTEXT.md` still says USD 2 and USD 10 on two lines; it is the lead's file.
+- **Runbook** `docs/runbooks/phase2-claude-cutover.md`: merge and deploy, install the app, publish
+  the notices, athletes re-accept, set the routes one feature at a time (Coach chat, daily decision,
+  meal photo, physique), verify, onboarding later (after B2), the 2-week rollback by settings with
+  the consent republish it needs, and dropping DeepSeek and Groq from the privacy list after the
+  windows. Every step is the owner's.
+- **Things to know.**
+  - Fail closed (lead, after the A4-A6 fixes): data goes only to the vendor named by the notice
+    the athlete accepted. Cutover order per feature group: route (`EVALUATED=true`), then publish
+    the Anthropic notice, then athletes accept; in between the feature degrades safely (Coach
+    "consent required", rules for the decision and plan, meal photos unavailable). The runbook
+    explains the short window either way.
+  - Rollback is two steps: unsetting the settings stops Anthropic but does NOT send traffic back to
+    DeepSeek or Groq (the old paths refuse while the notice names Anthropic); restoring them means
+    republishing a notice naming that vendor and athletes accepting it.
+  - `ai-coaching-v6` covers `onboarding_plan`, so onboarding uses its rules plan from publication
+    until its route is set after B2; DeepSeek then receives nothing, and the owner may prefer to
+    delay publishing v6 (runbook 4a).
+  - The program README's A7 brief says "the four files in the decisions log"; it does not list all
+    six wording files. The owner table does (`ai_provider_names.dart`, `consent/**`,
+    `coach_labels.dart`, `onboarding_proposal_view.dart`, `photo_widgets.dart`,
+    `progress_screen.dart`). The lead is fixing the brief in #116; A7 changed all six, and README
+    is untouched here.
+  - Final live evals were not rerun here: A3-A6 recorded theirs (their handoff sections); A7 added
+    no model code.
 
 ## Next agent starts here
 

@@ -16,6 +16,8 @@ import 'package:tracend/features/account/widgets/account_sheets.dart';
 import 'package:tracend/features/auth/account_session.dart';
 import 'package:tracend/features/auth/owner_auth_screen.dart';
 import 'package:tracend/features/auth/phase_2_gate.dart';
+import 'package:tracend/features/consent/ai_coaching_consent.dart';
+import 'package:tracend/features/onboarding/onboarding_flow.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
 import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -363,6 +365,81 @@ void main() {
       answer.completeError(http.ClientException('offline'));
       await tester.pumpAndSettle();
       expect(find.text('Connection needed'), findsOneWidget);
+    });
+  });
+
+  group('the AI coaching notice', () {
+    late _Server server;
+
+    setUp(() async {
+      server = _Server()
+        ..answer('GET /auth/v1/user', 200, _user())
+        ..answer('GET /rest/v1/user_accounts', 200, {
+          'onboarding_state': 'completed',
+        })
+        ..answer('GET /rest/v1/onboarding_drafts', 200, <Object>[])
+        ..answer('GET /rest/v1/consent_records', 200, <Object>[]);
+      await _storeSession(
+        server.client,
+        DateTime.now().add(const Duration(minutes: 50)),
+      );
+    });
+
+    void startOnboarding() => server.answer('GET /rest/v1/user_accounts', 200, {
+      'onboarding_state': 'in_progress',
+    });
+
+    /// The gate's requests resolve on real time; the signed-in app keeps
+    /// animating, so it is pumped for a fixed span instead of settled.
+    Future<void> openGate(WidgetTester tester) async {
+      await pumpGate(tester, server);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    testWidgets('a failed notice call never blocks the gate', (tester) async {
+      startOnboarding();
+      server.answer('POST /rest/v1/rpc/get_current_ai_notice', 500, {
+        'message': 'down',
+      });
+
+      await openGate(tester);
+
+      expect(find.byType(OnboardingFlow), findsOneWidget);
+      expect(find.text('Connection needed'), findsNothing);
+      expect(find.byType(AiCoachingConsentScreen), findsNothing);
+      expect(server.requests, isNot(contains('POST /rest/v1/consent_records')));
+    });
+
+    testWidgets('a malformed notice never blocks the gate', (tester) async {
+      startOnboarding();
+      server.answer('POST /rest/v1/rpc/get_current_ai_notice', 200, {
+        'version': 'ai-coaching-v6',
+      });
+
+      await openGate(tester);
+
+      expect(find.byType(OnboardingFlow), findsOneWidget);
+      expect(find.text('Connection needed'), findsNothing);
+      expect(find.byType(AiCoachingConsentScreen), findsNothing);
+    });
+
+    testWidgets('a notice that loads still asks before the app opens', (
+      tester,
+    ) async {
+      server.answer('POST /rest/v1/rpc/get_current_ai_notice', 200, {
+        'version': 'ai-coaching-v6',
+        'provider_label': 'Anthropic',
+        'body': 'One.',
+      });
+
+      await openGate(tester);
+
+      expect(find.byType(AiCoachingConsentScreen), findsOneWidget);
+      expect(find.text('Allow AI coaching'), findsOneWidget);
     });
   });
 

@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/account/account_screen.dart';
@@ -85,24 +88,39 @@ class _EmptyBrief implements DailyBriefRepository {
 Widget _app(Widget home) => MaterialApp(theme: TracendTheme.dark, home: home);
 
 Future<void> _tall(WidgetTester tester) async {
-  tester.view.physicalSize = const Size(430, 1600);
+  tester.view.physicalSize = const Size(430, 3200);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
+/// A notice as the server publishes it: it names the company once.
+const _anthropicNotice = AiNotice(
+  version: 'ai-coaching-v6',
+  providerLabel: 'Anthropic',
+  body:
+      'Tracend sends Anthropic your coaching data.\n\n'
+      'It keeps it 30 days.\n\n'
+      'You can change this in Account.',
+);
+
 void main() {
+  const current = 'ai-coaching-v6';
+
   group('aiCoachingChoiceFrom', () {
     test('no record means the athlete has not answered', () {
-      expect(aiCoachingChoiceFrom(null), AiCoachingChoice.undecided);
+      expect(
+        aiCoachingChoiceFrom(null, currentVersion: current),
+        AiCoachingChoice.undecided,
+      );
     });
 
     test('a grant of the current notice counts', () {
       expect(
         aiCoachingChoiceFrom({
           'action': 'granted',
-          'notice_version': aiCoachingNoticeVersion,
-        }),
+          'notice_version': current,
+        }, currentVersion: current),
         AiCoachingChoice.granted,
       );
     });
@@ -112,7 +130,7 @@ void main() {
         aiCoachingChoiceFrom({
           'action': 'granted',
           'notice_version': 'ai-coaching-v0',
-        }),
+        }, currentVersion: current),
         AiCoachingChoice.undecided,
       );
     });
@@ -134,7 +152,7 @@ void main() {
         aiCoachingChoiceFrom({
           'action': 'withdrawn',
           'notice_version': 'ai-coaching-v0',
-        }),
+        }, currentVersion: current),
         AiCoachingChoice.declined,
       );
     });
@@ -172,7 +190,7 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('Hangzhou DeepSeek'), findsOneWidget);
+    expect(find.textContaining('This is a test notice'), findsOneWidget);
     await tester.tap(find.text('Allow AI coaching'));
     await tester.pumpAndSettle();
 
@@ -204,6 +222,7 @@ void main() {
     await _tall(tester);
     final repository = FixtureAiCoachingConsentRepository(
       AiCoachingChoice.declined,
+      _anthropicNotice,
     );
     final consent = AiCoachingConsentController(
       repository,
@@ -216,6 +235,8 @@ void main() {
 
     expect(find.text('AI coaching is off'), findsOneWidget);
     expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    // The company is named in the notice only (D11), not on this card.
+    expect(find.textContaining('Anthropic'), findsNothing);
 
     await tester.tap(find.text('Review AI coaching'));
     await tester.pumpAndSettle();
@@ -252,7 +273,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final row = find.text('On · DeepSeek writes Coach answers');
+    final row = find.text('On · AI writes Coach answers');
     await tester.scrollUntilVisible(
       row,
       240,
@@ -369,9 +390,172 @@ void main() {
       );
     });
 
-    test('the built-in notice is the v1 text in three paragraphs', () {
-      expect(AiNotice.builtIn.version, aiCoachingNoticeVersion);
-      expect(AiNotice.builtIn.paragraphs, hasLength(3));
+    test('the notice drafts name one company and no model (D11)', () {
+      final models = RegExp(
+        r'deepseek|groq|qwen|gemini|claude|haiku|sonnet|opus|openai|china',
+        caseSensitive: false,
+      );
+      for (final name in [
+        'ai-coaching-v6',
+        'meal-photo-ai-v2',
+        'progress-photo-ai-v2',
+      ]) {
+        final draft = File('docs/notices/$name.md').readAsStringSync();
+        final body = RegExp(
+          r'\$notice\$(.*)\$notice\$',
+          dotAll: true,
+        ).firstMatch(draft)!.group(1)!;
+        expect(
+          RegExp('Anthropic').allMatches(body),
+          hasLength(1),
+          reason: name,
+        );
+        expect(models.hasMatch(body), isFalse, reason: name);
+        expect(body.length, lessThanOrEqualTo(4000), reason: name);
+      }
+    });
+  });
+
+  group('a notice that cannot be loaded', () {
+    test('the app has no text of its own: a failed call is unavailable', () {
+      expect(
+        loadCurrentAiNotice(() async => throw StateError('offline')),
+        throwsA(isA<AiNoticeUnavailable>()),
+      );
+      expect(
+        loadCurrentAiNotice(() async => null),
+        throwsA(isA<AiNoticeUnavailable>()),
+      );
+      expect(
+        loadCurrentAiNotice(() async => {'version': 'v'}),
+        throwsA(isA<AiNoticeUnavailable>()),
+      );
+    });
+
+    test('a server notice loads as given', () async {
+      final notice = await loadCurrentAiNotice(
+        () async => {
+          'version': 'ai-coaching-v6',
+          'provider_label': 'Anthropic',
+          'body': 'One.',
+        },
+      );
+      expect(notice.version, 'ai-coaching-v6');
+    });
+
+    test('loading and answering refuse without a notice', () async {
+      final controller = AiCoachingConsentController(
+        FixtureAiCoachingConsentRepository(AiCoachingChoice.undecided, null),
+      );
+      // Loading is not an error: AI coaching is unavailable, nothing assumed.
+      await controller.load();
+      expect(controller.notice, isNull);
+      expect(controller.granted, isFalse);
+      await expectLater(
+        controller.record(granted: true),
+        throwsA(isA<AiNoticeUnavailable>()),
+      );
+      expect(controller.choice, AiCoachingChoice.undecided);
+    });
+
+    test('the Supabase repository never records for a notice it lacks', () {
+      final repository = SupabaseAiCoachingConsentRepository(
+        SupabaseClient('http://localhost:54321', 'test-key'),
+      );
+      expect(repository.notice, isNull);
+      expect(
+        repository.record(granted: true),
+        throwsA(isA<AiNoticeUnavailable>()),
+      );
+    });
+
+    testWidgets('the question shows an error and a retry, no answer buttons', (
+      tester,
+    ) async {
+      await _tall(tester);
+      final repository = FixtureAiCoachingConsentRepository(
+        AiCoachingChoice.undecided,
+        null,
+      );
+      final controller = AiCoachingConsentController(repository);
+      await tester.pumpWidget(
+        _app(AiCoachingConsentScreen(controller: controller, onDecided: () {})),
+      );
+
+      expect(find.textContaining('could not be loaded'), findsOneWidget);
+      expect(find.text('Allow AI coaching'), findsNothing);
+      expect(find.text('Not now'), findsNothing);
+
+      // The server answers on the next try: the notice and the buttons appear.
+      repository.notice = _anthropicNotice;
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Tracend sends Anthropic'), findsOneWidget);
+      await tester.tap(find.text('Allow AI coaching'));
+      await tester.pumpAndSettle();
+      expect(repository.recorded, [true]);
+    });
+
+    testWidgets('the Coach entry opens a sheet that retries, then asks', (
+      tester,
+    ) async {
+      await _tall(tester);
+      final repository = FixtureAiCoachingConsentRepository(
+        AiCoachingChoice.undecided,
+        null,
+      );
+      final consent = AiCoachingConsentController(repository);
+      await tester.pumpWidget(
+        _app(CoachScreen(threadMemory: _Memory(), aiConsent: consent)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('AI coaching is off'), findsOneWidget);
+
+      await tester.tap(find.text('Review AI coaching'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('could not be loaded'), findsOneWidget);
+      expect(find.text('Allow AI coaching'), findsNothing);
+      expect(find.text('Not now'), findsNothing);
+
+      // A failed retry keeps the error; a later one shows the notice.
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('could not be loaded'), findsOneWidget);
+      expect(repository.recorded, isEmpty);
+
+      repository.notice = _anthropicNotice;
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Tracend sends Anthropic'), findsOneWidget);
+      expect(find.text('Allow AI coaching'), findsOneWidget);
+    });
+
+    testWidgets('the Account entry retries the same way', (tester) async {
+      await _tall(tester);
+      final repository = FixtureAiCoachingConsentRepository(
+        AiCoachingChoice.undecided,
+        null,
+      );
+      final consent = AiCoachingConsentController(repository);
+      await tester.pumpWidget(
+        _app(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAiCoachingConsentSheet(context, consent),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('could not be loaded'), findsOneWidget);
+      expect(find.text('Allow AI coaching'), findsNothing);
+
+      repository.notice = _anthropicNotice;
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Tracend sends Anthropic'), findsOneWidget);
     });
   });
 }

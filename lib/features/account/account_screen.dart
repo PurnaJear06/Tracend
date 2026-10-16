@@ -181,7 +181,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       TracendListRow(
                         title: 'AI coaching',
                         subtitle: aiConsent.granted
-                            ? 'On · ${aiConsent.notice.providerLabel} writes Coach answers'
+                            ? 'On · AI writes Coach answers'
                             : 'Off · plans and logging still work',
                         leading: const TracendRowIcon(
                           icon: CupertinoIcons.chat_bubble_text,

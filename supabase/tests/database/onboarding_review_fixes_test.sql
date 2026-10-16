@@ -10,7 +10,7 @@ insert into public.consent_records(user_id, consent_type, notice_version, action
 values ('f1000000-0000-4000-8000-000000000001', 'ai_coaching', 'ai-coaching-v5', 'granted', 'ios_app');
 select ok(public.has_ai_coaching_consent('f1000000-0000-4000-8000-000000000001', 'daily_coaching'),
   'a v4 grant allows daily coaching while v4 is its notice');
-select lives_ok($$select private.publish_ai_notice('ai-daily-v2', 'Another provider',
+select lives_ok($$select private.publish_ai_notice('ai-daily-v2', 'groq', 'Groq',
     array['daily_coaching'], 'Daily decisions move to another provider')$$,
   'the owner publishes a notice for daily coaching only');
 select ok(not public.has_ai_coaching_consent('f1000000-0000-4000-8000-000000000001', 'daily_coaching'),

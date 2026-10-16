@@ -4,12 +4,19 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
 
-/// Version of the built-in AI coaching disclosure, shown only when the
-/// server's current notice cannot be loaded. The notice the athlete answers is
-/// server data (`get_current_ai_notice`): the owner republishes it when the
-/// provider, the data sent or the purpose changes, and a grant of an older
-/// version no longer counts, so everyone is asked again.
-const aiCoachingNoticeVersion = 'ai-coaching-v1';
+/// The notice the athlete answers is server data (`get_current_ai_notice`):
+/// the owner republishes it when the provider, the data sent or the purpose
+/// changes, and a grant of an older version no longer counts, so everyone is
+/// asked again. The app never shows a notice body it did not fetch and never
+/// records an answer for a version it did not fetch. A notice that cannot be
+/// loaded never blocks the signed-in app: AI coaching stays off, and only the
+/// screens that ask about it show the error and a retry.
+class AiNoticeUnavailable implements Exception {
+  const AiNoticeUnavailable();
+
+  @override
+  String toString() => 'The AI coaching notice could not be loaded.';
+}
 
 /// An AI notice: what AI coaching sends, to whom, and what works without it.
 class AiNotice {
@@ -25,26 +32,7 @@ class AiNotice {
   /// Paragraphs separated by blank lines.
   final String body;
 
-  /// The notice built into this app, matching `ai-coaching-v1` on the server.
-  static const builtIn = AiNotice(
-    version: aiCoachingNoticeVersion,
-    providerLabel: 'DeepSeek',
-    body:
-        'The Coach chat and your daily decision are written by an AI model. '
-        'To write them, Tracend sends DeepSeek your training plan and '
-        'workout logs, check-ins, Apple Health summaries (sleep, heart rate, '
-        'HRV, steps and workouts), meals and nutrition targets, body '
-        'measurements, goals and preferences, and the messages you send the '
-        'Coach. Your name, email address and photos are not sent.\n\n'
-        'DeepSeek is run by Hangzhou DeepSeek Artificial Intelligence Co., '
-        'Ltd. and processes this data on servers in China. Its terms, not '
-        'Tracend’s, decide how long it keeps requests.\n\n'
-        'Without AI coaching, your plan, logging, Apple Health sync and '
-        'progress keep working; the Coach chat and AI daily decisions stay '
-        'off. You can change this at any time in Account.',
-  );
-
-  /// Reads `get_current_ai_notice`; null when the response is not a notice.
+  /// Reads a `get_current_ai_notice` response; null when it is not a notice.
   static AiNotice? fromJson(Object? value) {
     if (value is! Map) return null;
     final version = value['version'];
@@ -71,7 +59,7 @@ enum AiCoachingChoice { undecided, granted, declined }
 /// current notice version counts as granted.
 AiCoachingChoice aiCoachingChoiceFrom(
   Map<String, dynamic>? latest, {
-  String currentVersion = aiCoachingNoticeVersion,
+  required String currentVersion,
 }) {
   if (latest == null) return AiCoachingChoice.undecided;
   if (latest['action'] != 'granted') return AiCoachingChoice.declined;
@@ -80,9 +68,26 @@ AiCoachingChoice aiCoachingChoiceFrom(
       : AiCoachingChoice.undecided;
 }
 
+/// Fetches the server's current notice. A failed call or a response that is
+/// not a notice is [AiNoticeUnavailable]: the app has no text of its own to
+/// show in its place.
+Future<AiNotice> loadCurrentAiNotice(Future<Object?> Function() fetch) async {
+  final Object? response;
+  try {
+    response = await fetch();
+  } catch (e) {
+    debugPrint('Non-critical error: $e');
+    throw const AiNoticeUnavailable();
+  }
+  final notice = AiNotice.fromJson(response);
+  if (notice == null) throw const AiNoticeUnavailable();
+  return notice;
+}
+
 abstract interface class AiCoachingConsentRepository {
-  /// The notice the athlete is asked about, as of the last [load].
-  AiNotice get notice;
+  /// The notice the athlete is asked about, as of the last [load]; null until
+  /// one has loaded, and again after a load that failed.
+  AiNotice? get notice;
 
   /// Loads the current notice, then the newest `ai_coaching` record: a grant
   /// of that notice, a decline, or none (also when the grant was of an older
@@ -100,20 +105,15 @@ class SupabaseAiCoachingConsentRepository
   final SupabaseClient _client;
 
   @override
-  AiNotice notice = AiNotice.builtIn;
+  AiNotice? notice;
 
   @override
   Future<AiCoachingChoice> load() async {
-    try {
-      notice =
-          AiNotice.fromJson(await _client.rpc('get_current_ai_notice')) ??
-          AiNotice.builtIn;
-    } catch (e) {
-      // Builds older than the server notice, or an offline moment, keep the
-      // built-in text; the server still decides what a grant covers.
-      debugPrint('Non-critical error: $e');
-      notice = AiNotice.builtIn;
-    }
+    notice = null;
+    final loaded = await loadCurrentAiNotice(
+      () => _client.rpc('get_current_ai_notice'),
+    );
+    notice = loaded;
     final rows = await _client
         .from('consent_records')
         .select('notice_version,action')
@@ -122,43 +122,60 @@ class SupabaseAiCoachingConsentRepository
         .limit(1);
     return aiCoachingChoiceFrom(
       rows.isEmpty ? null : rows.first,
-      currentVersion: notice.version,
+      currentVersion: loaded.version,
     );
   }
 
   @override
   Future<void> record({required bool granted}) async {
+    final shown = notice;
+    if (shown == null) throw const AiNoticeUnavailable();
     final user = _client.auth.currentUser;
     if (user == null) throw StateError('Authentication required.');
     await _client.from('consent_records').insert({
       'user_id': user.id,
       'consent_type': 'ai_coaching',
-      'notice_version': notice.version,
+      'notice_version': shown.version,
       'action': granted ? 'granted' : 'withdrawn',
       'source': 'ios_app',
     });
   }
 }
 
-/// In-memory choice for builds without a backend and for tests.
+/// Neutral text for [FixtureAiCoachingConsentRepository]; it names no company.
+const _fixtureNotice = AiNotice(
+  version: 'fixture-notice-v1',
+  providerLabel: 'Test',
+  body:
+      'This is a test notice. It stands in for the notice the server holds.\n\n'
+      'Nothing is sent anywhere.\n\n'
+      'You can change your answer at any time in Account.',
+);
+
+/// In-memory choice for tests. Pass a null notice to see the notice-unavailable
+/// state.
 class FixtureAiCoachingConsentRepository
     implements AiCoachingConsentRepository {
   FixtureAiCoachingConsentRepository([
     this.choice = AiCoachingChoice.undecided,
-    this.notice = AiNotice.builtIn,
+    this.notice = _fixtureNotice,
   ]);
 
   AiCoachingChoice choice;
 
   @override
-  AiNotice notice;
+  AiNotice? notice;
   final recorded = <bool>[];
 
   @override
-  Future<AiCoachingChoice> load() async => choice;
+  Future<AiCoachingChoice> load() async {
+    if (notice == null) throw const AiNoticeUnavailable();
+    return choice;
+  }
 
   @override
   Future<void> record({required bool granted}) async {
+    if (notice == null) throw const AiNoticeUnavailable();
     recorded.add(granted);
     choice = granted ? AiCoachingChoice.granted : AiCoachingChoice.declined;
   }
@@ -178,11 +195,20 @@ class AiCoachingConsentController extends ChangeNotifier {
   AiCoachingChoice get choice => _choice;
   bool get granted => _choice == AiCoachingChoice.granted;
 
-  /// The notice the athlete answers; recorded with their choice.
-  AiNotice get notice => _repository.notice;
+  /// The notice the athlete answers, recorded with their choice; null while it
+  /// has not loaded. [record] throws [AiNoticeUnavailable] rather than answer
+  /// for a notice that was not fetched.
+  AiNotice? get notice => _repository.notice;
 
+  /// Loads the notice and the athlete's answer. A notice that cannot be
+  /// loaded is not an error here: AI coaching is unavailable (off, with no
+  /// answer assumed) until a later [load] succeeds. Other failures throw.
   Future<void> load() async {
-    _choice = await _repository.load();
+    try {
+      _choice = await _repository.load();
+    } on AiNoticeUnavailable {
+      _choice = AiCoachingChoice.undecided;
+    }
     notifyListeners();
   }
 
@@ -194,9 +220,9 @@ class AiCoachingConsentController extends ChangeNotifier {
 }
 
 /// What AI coaching sends, to whom, and what still works without it: the
-/// current server notice, or the built-in one.
+/// server's current notice.
 class AiCoachingDisclosure extends StatelessWidget {
-  const AiCoachingDisclosure({this.notice = AiNotice.builtIn, super.key});
+  const AiCoachingDisclosure({required this.notice, super.key});
 
   final AiNotice notice;
 
@@ -214,6 +240,81 @@ class AiCoachingDisclosure extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The controller's notice, or the error and a retry when it has not loaded.
+/// With no controller there is nothing to retry. The answer buttons belong
+/// only under a loaded notice. [unavailableNote] says what happens meanwhile.
+class AiCoachingNoticeSection extends StatefulWidget {
+  const AiCoachingNoticeSection({
+    this.controller,
+    this.unavailableNote,
+    super.key,
+  });
+
+  final AiCoachingConsentController? controller;
+  final String? unavailableNote;
+
+  @override
+  State<AiCoachingNoticeSection> createState() =>
+      _AiCoachingNoticeSectionState();
+}
+
+class _AiCoachingNoticeSectionState extends State<AiCoachingNoticeSection> {
+  bool _retrying = false;
+
+  Future<void> _retry() async {
+    setState(() => _retrying = true);
+    try {
+      await widget.controller!.load();
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+    } finally {
+      if (mounted) setState(() => _retrying = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.controller;
+    if (controller == null) return const _NoticeUnavailable();
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final notice = controller.notice;
+        if (notice != null) return AiCoachingDisclosure(notice: notice);
+        return _NoticeUnavailable(
+          onRetry: _retrying ? null : _retry,
+          note: widget.unavailableNote,
+        );
+      },
+    );
+  }
+}
+
+class _NoticeUnavailable extends StatelessWidget {
+  const _NoticeUnavailable({this.onRetry, this.note});
+
+  final VoidCallback? onRetry;
+  final String? note;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'The AI coaching notice could not be loaded. Check the connection '
+        'and try again.',
+        style: Theme.of(context).textTheme.bodyLarge,
+      ),
+      if (note != null) ...[
+        const SizedBox(height: TracendSpacing.xs),
+        Text(note!, style: Theme.of(context).textTheme.bodyMedium),
+      ],
+      if (onRetry != null)
+        TextButton(onPressed: onRetry, child: const Text('Try again')),
+    ],
+  );
 }
 
 /// Full-screen question for an athlete who has not answered yet: shown once
@@ -272,7 +373,7 @@ class _AiCoachingConsentScreenState extends State<AiCoachingConsentScreen> {
             style: Theme.of(context).textTheme.headlineMedium,
           ),
           const SizedBox(height: TracendSpacing.md),
-          AiCoachingDisclosure(notice: widget.controller.notice),
+          AiCoachingNoticeSection(controller: widget.controller),
           const SizedBox(height: TracendSpacing.lg),
           if (_error != null) ...[
             Text(
@@ -281,7 +382,12 @@ class _AiCoachingConsentScreenState extends State<AiCoachingConsentScreen> {
             ),
             const SizedBox(height: TracendSpacing.sm),
           ],
-          AiCoachingConsentButtons(saving: _saving, onDecide: _decide),
+          ListenableBuilder(
+            listenable: widget.controller,
+            builder: (context, _) => widget.controller.notice == null
+                ? const SizedBox.shrink()
+                : AiCoachingConsentButtons(saving: _saving, onDecide: _decide),
+          ),
         ],
       ),
     ),
@@ -366,36 +472,41 @@ class _AiCoachingConsentSheetState extends State<_AiCoachingConsentSheet> {
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
     padding: const EdgeInsets.all(TracendSpacing.gutter),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'AI coaching is ${widget.controller.granted ? 'on' : 'off'}',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: TracendSpacing.md),
-        AiCoachingDisclosure(notice: widget.controller.notice),
-        const SizedBox(height: TracendSpacing.lg),
-        if (_error != null) ...[
+    child: ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           Text(
-            _error!,
-            style: TextStyle(color: context.tracendColors.stateDanger),
+            'AI coaching is ${widget.controller.granted ? 'on' : 'off'}',
+            style: Theme.of(context).textTheme.titleLarge,
           ),
-          const SizedBox(height: TracendSpacing.sm),
+          const SizedBox(height: TracendSpacing.md),
+          AiCoachingNoticeSection(controller: widget.controller),
+          const SizedBox(height: TracendSpacing.lg),
+          if (_error != null) ...[
+            Text(
+              _error!,
+              style: TextStyle(color: context.tracendColors.stateDanger),
+            ),
+            const SizedBox(height: TracendSpacing.sm),
+          ],
+          if (widget.controller.notice == null)
+            const SizedBox.shrink()
+          else if (widget.controller.granted) ...[
+            OutlinedButton(
+              onPressed: _saving ? null : () => _decide(false),
+              child: const Text('Turn off AI coaching'),
+            ),
+            const SizedBox(height: TracendSpacing.xs),
+            TextButton(
+              onPressed: _saving ? null : () => Navigator.of(context).pop(),
+              child: const Text('Keep it on'),
+            ),
+          ] else
+            AiCoachingConsentButtons(saving: _saving, onDecide: _decide),
         ],
-        if (widget.controller.granted) ...[
-          OutlinedButton(
-            onPressed: _saving ? null : () => _decide(false),
-            child: const Text('Turn off AI coaching'),
-          ),
-          const SizedBox(height: TracendSpacing.xs),
-          TextButton(
-            onPressed: _saving ? null : () => Navigator.of(context).pop(),
-            child: const Text('Keep it on'),
-          ),
-        ] else
-          AiCoachingConsentButtons(saving: _saving, onDecide: _decide),
-      ],
+      ),
     ),
   );
 }

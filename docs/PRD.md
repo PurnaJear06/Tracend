@@ -350,18 +350,27 @@ audit events without storing secrets or unnecessary raw prompt content.
   set on the server, never in the app. A live route requires the full all-or-nothing secret gate
   in [AI_SAFETY_SPEC.md](./AI_SAFETY_SPEC.md) §10; without it the feature takes its deterministic
   path.
-- Current production routes: Coach chat, daily decisions, and the onboarding plan and questions use
-  DeepSeek V4.1 Flash (ADR 0011). Meal photos and the physique check use Groq `qwen/qwen3.8-27b`.
-  Gemini (ADR 0005) is a gated alternative that requires paid-service privacy terms. Cost facts
-  live in [COST_MODEL.md](./COST_MODEL.md).
+- Current production routes (until the Claude cutover below): Coach chat, daily decisions, and the
+  onboarding plan and questions use DeepSeek V4.1 Flash (ADR 0011). Meal photos and the physique
+  check use Groq `qwen/qwen3.8-27b`. Gemini (ADR 0005) is a gated alternative that requires
+  paid-service privacy terms. Cost facts live in [COST_MODEL.md](./COST_MODEL.md).
 - A provider-neutral AI gateway (`supabase/functions/_shared/ai/`, with Anthropic,
-  OpenAI-compatible and Gemini adapters) is built but not yet used by any feature.
-- **Planned (Phase 2, A3–A7; D1, D2):** every feature moves to the gateway on Claude (Haiku 5.5 and
-  Sonnet 5.5). The old routes stay available by settings only, for two weeks after cutover. Health
-  data must not go to DeepSeek once external testers join.
-- Budgets, enforced in SQL before each call: per account, a USD 1 monthly warning, a USD 2 monthly
-  hard stop, and 30 AI requests a day across every AI feature; across all accounts, a USD 10 monthly
-  stop. Each call reserves its expected cost ceiling first, so parallel calls cannot cross a stop.
+  OpenAI-compatible and Gemini adapters) serves every feature that has an `AI_<FEATURE>_*` route
+  setting; with none, the feature runs the route above unchanged.
+- **Cutover (Phase 2; D1, D2), code merged, not yet switched on:** the owner moves features to
+  Claude by settings, one at a time: Coach chat and meal photos to Haiku 5.5, the daily decision
+  and the physique check to Sonnet 5.5; onboarding follows after chunk B2 (until then, once the
+  Anthropic notice is current, new athletes get the rules plan with no AI). The old code paths stay
+  for two weeks after the cutover, but data goes only to the vendor named by the notice the
+  athlete accepted: unsetting the settings stops Anthropic and the features degrade safely;
+  restoring DeepSeek or Groq needs a notice naming that vendor. Health data must not go to DeepSeek
+  once external testers join. Steps: `docs/runbooks/phase2-claude-cutover.md`.
+- AI wording (D11): the app says "AI" and never names a model or company outside an AI consent
+  notice; each notice names the receiving company once.
+- Budgets, enforced in SQL before each call: per account, a USD 1.50 monthly warning, a USD 3
+  monthly hard stop, and 30 AI requests a day across every AI feature; across all accounts, a
+  USD 50 monthly stop (owner decision 2026-10-16; the global value is confirmed at cutover). Each
+  call reserves its expected cost ceiling first, so parallel calls cannot cross a stop.
 - Meal verification and photo interpretation use evaluated providers with bounded context,
   output, request budgets, and task-specific thinking. Lite models are not production routes.
 - Progress-photo interpretation remains separately consented and separately evaluated. Manual use
