@@ -20,14 +20,16 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   (`docs/runbooks/phase2-claude-cutover.md`). Data goes only to the vendor the accepted notice
   names. Next: the owner's cutover. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
-  sources; nothing reads it until B2). Next: B2 templates. Handoff: [`training-engine.md`](./handoff/training-engine.md).
+  sources; nothing reads it until B2). Phase 3 round 1 building (2026-10-17): B2 templates, B6
+  screening gate. Handoff: [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
 - ios-widgets: D0 live (#112). D1 merged (#121: Done, Skip and +30s on the Lock Screen and in the
   Dynamic Island); the owner's device check is pending. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
 - research-library: E1 live (#109: pgvector, library tables, `search_library_v1`, D3 doc rule). Next: E2 ingestion. Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
-- ui: U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
+- ui: U3 launch speed building (2026-10-17: tabs load on first open, shared reads, photo decode size).
+  U1 glass tab bar live (#107). The owner did not like it (2026-10-15): a U2 design pass with a prototype comes next.
 <!-- /PROGRAM:coaching-platform-2026-10 -->
 
 **Authority docs rewritten (2026-10-15):** the 13 authority docs were checked against `main` after

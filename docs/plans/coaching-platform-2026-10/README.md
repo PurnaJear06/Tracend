@@ -2,7 +2,8 @@
 
 **Status:** approved by the owner on 2026-10-15. Iteration 1 (Phase 0 + Phase 1) is merged and
 live; the owner's device check passed on 2026-10-15. Iteration 2 (Phase 2) is merged (2026-10-16); the
-Claude cutover follows `docs/runbooks/phase2-claude-cutover.md`.
+Claude cutover follows `docs/runbooks/phase2-claude-cutover.md`. Iteration 3 (Phase 3) round 1
+(U3, B2, B6) started on 2026-10-17.
 
 This is the single source of truth for every agent working on the program. Read it fully before
 touching code. If this document and an authority doc (`docs/*.md`) disagree, stop and report the
@@ -62,9 +63,10 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 2 | D1 | ios-widgets | Live Activity with Done / Skip / +30s | — | C1, D0 | merged | #121 |
 | 2 | C2 | workout-hr | Native heart-rate reader, per-set summaries | 32 | C1, D0 | merged | #123 |
 | 2 | B1 | training-engine | Catalog v2 and coaching-standard rule data | 21 | B0 | merged | #118 |
-| 3 | B2 | training-engine | Templates by goal × days × experience; fractional volume | — | B1 | todo | |
+| 3 | U3 | ui | Launch speed: tabs load on first open, shared reads, photo decode size, measured baseline | — | — | building | |
+| 3 | B2 | training-engine | Templates by goal × days × experience; fractional volume | — | B1 | building | |
 | 3 | B3 | training-engine | Progression from actual sets; hub 1.7; Train shows targets | 23 | B2 | todo | |
-| 3 | B6 | training-engine | Screening gate (own words, ACSM 2015 method) | 26 | B1 | todo | |
+| 3 | B6 | training-engine | Screening gate (own words, ACSM 2015 method) | 26 | B1 | building | |
 | 3 | C3 | workout-hr | Heart-rate profile, zones, recovery, sleeping HR (shadow) | 33 | C2 | todo | |
 | 3 | D2 | ios-widgets | Today and Lock Screen widgets | — | D1 | todo | |
 | 3 | E2 | research-library | Ingestion and the first 30 sources | — | E1 | todo | |
@@ -147,6 +149,17 @@ Activity from `rest_timer.dart` through one call site that C1 reviews.
 Everyone else reads `catalog.ts`, `coach_chat_fallback.ts` and `deepseek_models.ts` but does not edit
 them. Until A7, A3–A6 leave the AI authority-doc sections alone: production keeps today's providers
 until the cutover, so those sections stay true.
+
+### File owners (Phase 3, round 1)
+
+| Path | Owner |
+|---|---|
+| `lib/features/shell/**`, `lib/features/progress/widgets/photo_widgets.dart`, read sharing inside the existing repositories under `lib/features/**` (callers see no change), new `test/perf/**` | U3 |
+| `_shared/onboarding/{rules_plan,policy,generate,plan_contract}*.ts` (plan contract additive only), `_shared/onboarding/catalog_plans_test.ts` digests, new `_shared/training/templates/**`, `docs/ALGORITHMS.md` §9 | B2 |
+| `_shared/training/screening/**` (Contract 8 type is fixed), migration code 26, `lib/features/onboarding/{onboarding_flow,onboarding_repository}.dart`, `_shared/onboarding/answers*.ts`, privacy export and deletion for its table | B6 |
+
+U3 leaves `lib/features/onboarding/**` alone. B6 merges after B2; after rebasing it adds the one call
+that passes the stored outcome into `policiesFor` (B2's file, reviewed by the lead).
 
 ## Contracts (version 1)
 
@@ -310,6 +323,14 @@ type CoachContextContributor = Readonly<{
 The host renders contributors after the frozen athlete file, in a fixed order, each clipped to its
 budget, labelled as reference data that never overrides Tracend rules or the athlete's data.
 
+### Contract 8: Screening outcome (B6 produces, B2 reads)
+
+`_shared/training/screening/outcome.ts`: `ScreeningOutcome = "cleared" | "moderate_until_cleared" |
+"see_professional"`. `PlanPolicies` gains an optional `screening`; missing means `cleared`.
+`moderate_until_cleared` caps the plan at moderate effort (no strength emphasis, at least 3 reps in
+reserve, no vigorous conditioning). `see_professional` builds no plan and takes today's excluded
+path (professional guidance, nothing built).
+
 ## Chunk briefs: Iteration 1
 
 Every brief adds: read this doc, `CLAUDE.md`, `docs/PROGRESS_CONTEXT.md`, and the stream's handoff.
@@ -450,6 +471,53 @@ the new data). Migration code 21 only if the catalog is mirrored in SQL. Done wh
 every substitute, regression and progression points at a real exercise, and every rule value has a
 source.
 
+## Chunk briefs: Iteration 3 (Phase 3)
+
+Round 1 runs U3, B2 and B6 in parallel; round 2 runs C3, E2 and B3 (after B2); round 3 runs D2 and
+E3. Builders run on Sonnet; the review is `codex review --base origin/main` in the builder's
+worktree (the owner's ChatGPT plan), and the lead checks the fixes.
+
+**U3: launch speed (owner-approved after the 2026-10-17 GPT review).** `AppShell` builds all five
+tabs inside one `IndexedStack`, so every tab starts its reads at launch. Mount a tab the first time
+it is selected and keep it mounted after that; Today mounts at launch. Share reads that several tabs
+make for the same data within a short window, the way the shared brief repository already does (a
+second caller joins the in-flight read; no long-lived cache, no stale data after a write). Decode
+progress photos at their displayed size (`cacheWidth` / `ResizeImage` from the layout size and the
+device pixel ratio). No visual change. Prove it with a widget test that counts repository reads at
+launch and on first opening each tab (before and after numbers in the handoff). The lead then
+measures a profile build on the owner's iPhone (cold launch, tab switches, Progress scroll, photo
+viewer, Coach, a full workout) and records the numbers as the first budgets in TESTING_STRATEGY §6.
+
+**B2: templates and fractional volume.** Replace the rules plan's single layout with templates
+chosen by goal × days (1–6) × experience × session length: full body for few days, upper/lower and
+push/pull/legs splits as days rise. Weekly sets per muscle come from `_shared/training/standard/`
+(indirect sets count 0.5), within the policy. Reconcile the standard with the policy where they
+differ (strength rest, beginner strength reps, hypertrophy compound rest; see the training-engine
+handoff) and record each choice in ALGORITHMS §9. Owner decision 2026-10-15: full-gym plans default
+to lat pulldowns, with pull-ups returning as a variation; core work rotates. Read Contract 8 and cap
+intensity for `moderate_until_cleared`. The plan contract and its validator stay authoritative and
+change only additively; the model path still falls back to the rules plan. Update the
+`catalog_plans_test.ts` digests on purpose and report what changed (sets by muscle, exercise mix),
+as B0 did. No migration.
+
+**B6: screening gate (ACSM 2015 method, our own words).** Ask, during onboarding before the plan:
+whether the athlete exercises regularly now, whether they have known heart, metabolic or kidney
+disease, whether they have signs or symptoms of one, and whether a professional has cleared them.
+Map the answers to Contract 8 following the ACSM 2015 preparticipation logic: any symptom, or
+inactive with known disease and no clearance, gives `see_professional`; active with known disease
+and no clearance gives `moderate_until_cleared`; otherwise `cleared`. Store the answers, the outcome
+and the date (migration code 26: user-owned table, RLS with `auth.uid()`, pgTAP, privacy export and
+deletion in the same PR). The existing exclusions (pregnancy, rehab, acute injury, clinical
+nutrition) stay. Questions and guidance in plain words, no diagnosis; update UX_FLOWS §4.1, PRD and
+AI_SAFETY_SPEC where they describe eligibility.
+
+**Later rounds (recorded now).** E2 builds a retrieval test set with its first 30 sources: about 40
+athlete questions, each with the sources a good answer needs. E3 connects the library to Coach only
+if that set passes: recall of the expected sources in the top 8, every citation pointing at a
+retrieved chunk, and no unsupported claim in the eval; when retrieval is slow or fails, Coach
+answers without it (the Contract 7 host's time limit). Before the external beta, the lead repeats
+U3's device measurements against the recorded budgets.
+
 ## Review loop (every chunk)
 
 1. Builder implements in its worktree and runs the stream's tests plus `./scripts/pre-deploy.sh`
@@ -499,3 +567,7 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
   showed (`exerciseOrder`, `setNumber`); the workout applies it only while that set is still the
   current unticked one and no rest is running, so a double tap or a stale Done never ticks the
   next set. Presses older than 8 s are dropped.
+- 2026-10-17: Iteration 3 = Phase 3, run in three rounds to fit the owner's usage. U3 (launch speed)
+  added after the owner's GPT review found every tab loading at launch; E2/E3 gain a retrieval test
+  set and a pass gate; a device speed check comes before the external beta. Contract 8 (screening
+  outcome) added. Reviews use the Codex CLI on the owner's ChatGPT plan.
