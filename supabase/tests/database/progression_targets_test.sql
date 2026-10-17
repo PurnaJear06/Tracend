@@ -208,7 +208,7 @@ select is((select jsonb_array_length(j->'next_targets') from hub), 2,
   'an exercise without logged sets gets no target (the plan''s prescription stands)');
 select is((select j->'next_targets'->0->>'name' from hub), 'Barbell bench press',
   'targets follow the plan order');
-select is((select j->'next_targets'->0 - 'basis' - 'planned_exercise_id' from hub),
+select is((select (j->'next_targets'->0) - 'basis' - 'planned_exercise_id' from hub),
   '{"name":"Barbell bench press","exercise_key":"barbell-bench-press","action":"add_load",
     "reason":"top_of_range","load_kg":62.5,"reps":5,"sets":3,"confidence":"high"}'::jsonb,
   'bench: every set at 8 with three reps left, so +2.5 kg and back to the bottom of the range');
@@ -218,7 +218,7 @@ select is((select jsonb_array_length(j->'next_targets'->0->'basis'->'recent') fr
   'with the earlier session behind it');
 select is((select j->'next_targets'->0->'basis'->'recent'->0->>'sets' from hub), '3',
   'the back-off set and the unticked set are not working sets');
-select is((select j->'next_targets'->1 - 'basis' - 'planned_exercise_id' from hub),
+select is((select (j->'next_targets'->1) - 'basis' - 'planned_exercise_id' from hub),
   '{"name":"Cable fly","exercise_key":"cable fly","action":"add_reps","reason":"within_range",
     "load_kg":15,"reps":11,"sets":2,"confidence":"low"}'::jsonb,
   'fly without reps in reserve: one more rep, lower confidence');
