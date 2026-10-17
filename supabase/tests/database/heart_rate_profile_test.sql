@@ -162,7 +162,7 @@ select public.persist_set_heart_rate_v1((select id from flow where name = 'a'),
 -- Sleeping heart rate: saving --------------------------------------------------------------------
 
 select is(pg_temp.save(jsonb_build_array(pg_temp.night(1), pg_temp.night(2))),
-  '{"schema_version":"1.0","saved":2}'::jsonb, 'two nights are saved');
+  '{"schema_version":"1.0","saved":2,"skipped":0}'::jsonb, 'two nights are saved');
 select is((select count(*) from public.sleeping_heart_rate_nights), 2::bigint, 'one row per night');
 select is((select array[median_bpm, lowest_bpm, sample_count, asleep_minutes]::integer[]
     from public.sleeping_heart_rate_nights where local_date = current_date - 1),
@@ -331,7 +331,7 @@ delete from auth.users where id = 'c3300000-0000-4000-8000-000000000002';
 select is((select count(*) from public.sleeping_heart_rate_nights
     where user_id = 'c3300000-0000-4000-8000-000000000002'), 0::bigint,
   'deleting the account deletes the nights');
-select is((select count(*) from public.sleeping_heart_rate_nights), 2::bigint,
+select is((select count(*) from public.sleeping_heart_rate_nights), 4::bigint,
   'and leaves the other athlete''s nights');
 
 select * from finish();
