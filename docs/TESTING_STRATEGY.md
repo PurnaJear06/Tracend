@@ -305,9 +305,10 @@ gracefully skipped.
 
 ### Pre-Deploy Gate (CI Equivalent)
 
-Run `./scripts/pre-deploy.sh` before handing a pull request to the owner. Use
-`--skip-colima --skip-reset` when the local database is unavailable, and rely on CI pgTAP. It
-executes:
+Run `./scripts/pre-deploy.sh` before handing a pull request to the owner. When the local database
+is unavailable, run `--deno-only` and `--flutter-only` and rely on CI pgTAP
+(`--skip-colima --skip-reset` still starts Supabase, so it needs a running container runtime).
+Every mode stops Colima and Supabase at the end unless `--no-cleanup` is passed. It executes:
 
 1. Colima + Supabase start → db reset (all migrations applied cleanly)
 2. pgTAP database tests

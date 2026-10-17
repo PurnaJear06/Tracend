@@ -9,10 +9,11 @@ CLEANUP=true
 STEPS="pg,tap,deno,flutter,analyze,build,dryrun"
 COLOUR_CLEAN="${COLOUR_CLEAN:-}"
 
-BOLD=""; GREEN=""; RED=""; YELLOW=""; CYAN=""; RESET=""
-if [[ -t 2 ]] || [[ "${COLOUR_CLEAN:-false}" == "false" ]]; then
-  BOLD="\033[1m"; GREEN="\033[32m"; RED="\033[31m"
-  YELLOW="\033[33m"; CYAN="\033[36m"; RESET="\033[0m"
+# Colour codes carry a C_ prefix so they never overwrite a flag (RESET above).
+C_BOLD=""; C_GREEN=""; C_RED=""; C_YELLOW=""; C_CYAN=""; C_RESET=""
+if [[ -t 1 ]] && [[ "$COLOUR_CLEAN" != "true" ]]; then
+  C_BOLD="\033[1m"; C_GREEN="\033[32m"; C_RED="\033[31m"
+  C_YELLOW="\033[33m"; C_CYAN="\033[36m"; C_RESET="\033[0m"
 fi
 
 usage() {
@@ -63,11 +64,11 @@ fi
 
 # ── helpers ───────────────────────────────────────────────────────────────
 now() { date '+%H:%M:%S'; }
-pass()  { echo -e "  ${GREEN}✓${RESET} $* ($(now))"; }
-fail()  { echo -e "  ${RED}✗${RESET} $* ($(now))" >&2; }
-warn()  { echo -e "  ${YELLOW}!${RESET} $* ($(now))"; }
-info()  { echo -e "  ${CYAN}→${RESET} $*"; }
-step()  { echo -e "${BOLD}═══ $* ═══${RESET}"; }
+pass()  { echo -e "  ${C_GREEN}✓${C_RESET} $* ($(now))"; }
+fail()  { echo -e "  ${C_RED}✗${C_RESET} $* ($(now))" >&2; }
+warn()  { echo -e "  ${C_YELLOW}!${C_RESET} $* ($(now))"; }
+info()  { echo -e "  ${C_CYAN}→${C_RESET} $*"; }
+step()  { echo -e "${C_BOLD}═══ $* ═══${C_RESET}"; }
 
 FAILURES=0
 
@@ -269,6 +270,6 @@ fi
 # ── final report ──────────────────────────────────────────────────────────
 echo ""
 step "GATE RESULT"
-echo -e "  ${GREEN}All checks passed${RESET} — ${BOLD}safe to deploy to production${RESET}  ($(date))"
+echo -e "  ${C_GREEN}All checks passed${C_RESET} — ${C_BOLD}safe to deploy to production${C_RESET}  ($(date))"
 cleanup
 exit 0
