@@ -110,16 +110,31 @@ accepted as a permanent retry.
 - `daily_coaching_scoring_guard_test.sql` (7 assertions) proves the day's first chat, a later chat,
   and coach-decide's `prepare_daily_coaching` survive a scoring-engine failure with no snapshot yet,
   storing the snapshot with `scores_unavailable` and permitting only non-score evidence;
-- the live Coach chat evaluation (`supabase/functions/_evals/`, manual `Coach Eval` workflow) runs
-  about 60 varied prompts × 3 synthetic athletes against the real model with gates of at least 97%
-  model answers, zero dead-ends, safe handling of every safety prompt, zero unpermitted evidence,
-  and p95 latency under 25 s. Run it before merging any Coach chat change:
-  - A run makes 17 calls unless `max_calls` / `EVAL_MAX_CALLS` asks for another number: all six
-    safety prompts, which are never sampled away, then one prompt per other category, rotating
-    prompts and athletes. "all" runs everything. The gates are meant for full runs.
-  - `EVAL_BASE_URL` + `EVAL_API_KEY` send the same synthetic requests through an OpenAI-compatible
-    router as a cheap smoke test. It says nothing about production latency or DeepSeek's own
-    serving.
+- the Coach eval bank (`supabase/functions/_evals/coach_bank/`) gates every Coach change: about 100
+  synthetic athletes (the owner's long cut, a stale goal detail, an outlier reading, partial
+  logging, no target at a healthy weight, red flags and their harmless look-alikes, screening
+  caps, calorie floor and loss ceiling, claimed actions, contradicted facts, no plan, Hinglish
+  phrasing, data lookups), each graded by code. Its deterministic half runs in the Deno job of
+  every pull request with no key (the red-flag cases run through the real path with a fetch that
+  fails on any request, and every grader is tested on hand-written good and bad replies, including
+  two replies that failed in production). Its live half runs each case that reaches a model 3
+  times: safety categories (red flags, screening, floors and actions) allow zero failures, every
+  other category reports its pass rate against 0.8, with at least 97% model answers and no dead
+  ends. The over-caution rate and the optional tone judge (a different model, binary rubric,
+  ungated until checked against about 30 human labels) are reported. Every Coach pull request must
+  pass the bank before the lead hands it over: add the `coach-eval` label (the `Coach Eval`
+  workflow) or run `coach_bank/run.ts` locally, and say in the pull request which model ran;
+- the operations evaluation (`coach_chat_eval.ts`, same workflow) runs about 54 varied prompts × 3
+  synthetic athletes for the model-answer rate (at least 97%), dead ends (none), unpermitted
+  evidence (none) and p95 latency (under 25 s), and proves the prompt cache. A run makes 17 calls
+  unless `max_calls` / `EVAL_MAX_CALLS` asks for another number; "all" runs everything. The gates
+  are meant for full runs. `EVAL_BASE_URL` + `EVAL_API_KEY` send the same synthetic requests
+  through an OpenAI-compatible router as a cheap smoke test, which says nothing about production
+  latency;
+- the library retrieval bank (`library_eval.ts`, job `library-retrieval` of the same workflow)
+  scores 67 questions (42 single-topic, 15 multi-source, 10 outside the library) through the real
+  hybrid search: recall@8 and MRR per search mode and kind. It needs the database and the real
+  embeddings, so only the question set and the metrics are tested in the Deno job;
 - Coach-chat provider tests require `finish_reason=stop`, cover truncation, empty/malformed and
   schema-invalid output, unknown evidence, and overlong reasoning fields; prove exactly one
   non-thinking targeted repair receives only the finite rule/path/limit and allowed codes; and prove
@@ -457,7 +472,8 @@ measured vertical slice.
 
 Branch protection requires seven of them; `Website Build` is not required. The live AI
 evaluations (`coach-eval.yml`, `onboarding-eval.yml`) run on demand or when a pull request gets
-their label; they are not required checks.
+their label; they are not required checks, but a Coach pull request is not handed over until the
+answer bank has passed.
 
 Before TestFlight expansion:
 

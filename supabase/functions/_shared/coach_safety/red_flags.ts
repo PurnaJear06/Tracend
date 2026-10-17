@@ -65,7 +65,7 @@ const rules: readonly Rule[] = [
     "self_harm",
     "self_harm",
     String
-      .raw`\bsuicid\w*|\bkill(?:ing)? myself\b|\bend(?:ing)? (?:my own life|my life|it all)\b|\bwant(?:ed)? to die\b|\bwanna die\b|\bwish i (?:was|were) dead\b|\bbetter off (?:dead|without me)\b|\bself[- ]?harm\w*|\b(?:want|going|plan(?:ning)?|thinking (?:of|about)|urge|feel like|need) (?:to )?(?:hurt|hurting|harm|harming|cut|cutting) myself\b|\b(?:hurt|harm)(?:ing)? myself (?:on purpose|deliberately|intentionally)\b|\btake my own life\b|\bnot worth living\b|\bno reason to (?:live|go on)\b|\bdon'?t want to (?:be here|live|exist|wake up)\b`,
+      .raw`\bsuicid\w*|\bkill(?:ing)? myself\b|\bend(?:ing)? (?:my own life|my life|it all)\b|\bwant(?:ed)? to die\b|\bwanna die\b|\bwish i (?:was|were) dead\b|\bbetter off (?:dead|without me)\b|\bself[- ]?harm\w*|\b(?:want|going|plan(?:ning)?|thinking (?:of|about)|urge|feel like|need) (?:to )?(?:hurt|hurting|harm|harming|cut|cutting) myself\b|\b(?:hurt|harm)(?:ing)? myself (?:on purpose|deliberately|intentionally)\b|\btake my own life\b|\bnot worth living\b|\bno reason to (?:live|go on)\b|\bdon'?t want to (?:be here|be alive|live|exist|wake up)\b|\bdon'?t want to be around (?:any ?more)\b`,
     undefined,
     true,
   ),

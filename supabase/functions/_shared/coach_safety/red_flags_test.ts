@@ -66,6 +66,8 @@ const hits: readonly (readonly [string, RedFlagCategory])[] = [
   ["I've been thinking about suicide", "self_harm"],
   ["I want to kill myself", "self_harm"],
   ["I feel like hurting myself", "self_harm"],
+  ["I don't want to be alive anymore", "self_harm"],
+  ["i dont want to be around anymore", "self_harm"],
   // Dark urine
   ["my urine is dark brown after leg day", "dark_urine"],
   ["I think I have rhabdo", "dark_urine"],
