@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
+import 'package:tracend/features/progress/widgets/cover_resize_image.dart';
 import 'package:tracend/features/progress/widgets/physique_check_widgets.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/formatting.dart';
@@ -390,9 +391,10 @@ class PhotoSetsSheet extends StatelessWidget {
 /// a sheet titled "Private photo set".
 ///
 /// Photos are stored up to 1800 px wide but show about 225 points wide, so
-/// each decodes at its layout width times the device pixel ratio instead of
-/// at full size. Poses are portrait, and the box is 3:4, so the width sets
-/// the decoded height as well.
+/// each decodes at the size [BoxFit.cover] needs for its box (layout size
+/// times the device pixel ratio) instead of at full size. The decode size
+/// follows the photo's own aspect ratio, so landscape and square photos from
+/// the library stay as sharp as portrait ones.
 class PrivatePhotoViewer extends StatelessWidget {
   const PrivatePhotoViewer({required this.urls, super.key});
 
@@ -412,12 +414,13 @@ class PrivatePhotoViewer extends StatelessWidget {
           child: AspectRatio(
             aspectRatio: 3 / 4,
             child: LayoutBuilder(
-              builder: (context, constraints) => Image.network(
-                urls[i],
+              builder: (context, constraints) => Image(
+                image: CoverResizeImage(
+                  NetworkImage(urls[i]),
+                  width: (constraints.maxWidth * pixelRatio).round(),
+                  height: (constraints.maxHeight * pixelRatio).round(),
+                ),
                 fit: BoxFit.cover,
-                cacheWidth: constraints.maxWidth.isFinite
-                    ? (constraints.maxWidth * pixelRatio).round()
-                    : null,
                 errorBuilder: (_, _, _) =>
                     const Center(child: Text('Photo unavailable')),
               ),

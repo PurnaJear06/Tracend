@@ -253,9 +253,14 @@ launch (22 repository reads in the fixture shell, behind the one first paint of 
   delete invalidate). Callers are unchanged. The three duplicated reads are Today, Train and
   Nutrition asking for the latest decision, and Today and Nutrition asking for targets, today's
   meals and today's schedule. The brief keeps its own `SharedDailyBriefRepository`.
-- `PrivatePhotoViewer` (`photo_widgets.dart`) decodes each photo at `cacheWidth` = layout width ×
-  device pixel ratio (225 pt, so 675 px at 3x) instead of up to 1800 px. Poses are portrait and the
-  box is 3:4, so the width fixes the height too. No layout or wording change.
+- `PrivatePhotoViewer` (`photo_widgets.dart`) decodes each photo through `CoverResizeImage`
+  (`cover_resize_image.dart`) instead of up to 1800 px. The box is 225 x 300 pt (675 x 900 px at
+  3x). Once the decoder has read the header, `coverDecodeSize` scales the photo's own size by the
+  larger of box width / photo width and box height / photo height, so `BoxFit.cover` never upscales:
+  a portrait 3:4 photo decodes at 675 x 900, a 1800 x 1200 landscape at 1350 x 900, a square at
+  900 x 900. A photo smaller than the box keeps its own size. Width-only `cacheWidth` was rejected
+  because it left landscape and square library photos upscaled and blurry. No layout or wording
+  change.
 
 Reads, counted by `test/perf/tab_reads_test.dart` (fake repositories, fixture shell, 390x844):
 
@@ -293,12 +298,13 @@ Checked for reliance on a tab being built early:
 
 Tests: `test/perf/tab_reads_test.dart` (launch reads only Today's; each tab reads on first open and
 never when returned to; a built tab keeps its state), `test/perf/shared_reads_test.dart`,
-`test/perf/photo_decode_test.dart` (decode width at 2x and 3x).
+`test/perf/photo_decode_test.dart` (the viewer's box size at 2x and 3x, and decoded size for
+landscape, square and portrait photos).
 
 Lead to check on device (profile build; the budgets go into TESTING_STRATEGY §6): cold launch to
 Today, switching to each tab for the first time (a short loading state now shows where the tab
-used to be ready), Progress scroll, the photo viewer (a landscape library photo is the one case
-where width-based decoding could look softer; camera photos are portrait), Coach, a full workout.
+used to be ready), Progress scroll, the photo viewer (a landscape or square library photo should be as sharp
+as a portrait camera photo), Coach, a full workout.
 Flutter change, so install from the merged `main` commit.
 
 ## Deferred
