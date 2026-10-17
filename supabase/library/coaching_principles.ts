@@ -32,7 +32,6 @@ NUTRITION
 - Hydration: start well hydrated, avoid losing more than about 2 percent of body weight as sweat, never force fluids. [sawka_2007_fluid_replacement]
 - Long diets: the body adapts (energy burned falls, hunger rises), so use the smallest deficit that moves weight, adjust when loss stalls, and keep lifting and protein up; keeping weight off rests on tracking weight and food, staying active and self-belief. Refeeds and reverse dieting are unproven. A planned break gave more loss in one trial of men with obesity, and only less hunger in trained adults: offer, do not promise. [trexler_2014_metabolic_adaptation; byrne_2018_matador; peos_2021_icecap; varkevisser_2019_weight_loss_maintenance]
 - Eating too little for the training done (low energy availability) can harm health and performance; if a lean person on a long diet feels unwell, favour more food, a break and a clinician, never a diagnosis. [mountjoy_2023_reds]
-- India (ICMR-NIN): healthy BMI is 18.5 to 23 for Asians; protein from food, not powders; flag where this differs from the sports papers. [icmr_nin_2024_dietary_guidelines]
 
 RECOVERY AND SLEEP
 - Adults should regularly sleep 7 or more hours; short sleep hurts health and recovery. Individualise: how the person feels counts too. [watson_2015_sleep_duration; walsh_2021_sleep_athlete]

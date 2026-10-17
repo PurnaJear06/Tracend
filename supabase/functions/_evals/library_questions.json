@@ -441,7 +441,7 @@
     },
     {
       "id": "home_ten_days",
-      "text": "Can I keep my gains if I only do bodyweight training at home for ten days?",
+      "text": "Can I keep my gains if I only train with resistance bands at home for ten days?",
       "expected": [
         "lopes_2019_elastic_resistance",
         "mujika_2001_muscular_detraining"

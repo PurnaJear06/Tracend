@@ -214,7 +214,7 @@ steps in one command if that happens.)
 ### Coaching principles digest (owner request, 2026-10-17)
 
 `supabase/library/coaching_principles.ts` is a fixed, deterministic text (6,007 characters in version 1;
-7,197 in version 2, see E2.1; about 1,500 to 1,800 tokens, in our own words, no athlete data) with source ids inline in square brackets:
+7,024 in version 2, see E2.1; about 1,500 to 1,800 tokens, in our own words, no athlete data) with source ids inline in square brackets:
 training (volume, frequency, loads, effort, rest, progression, deloads, cardio with lifting), cardio
 and activity, nutrition, recovery and sleep, screening and safety, and how a good coach
 communicates (individualise, honest about missing data and evidence strength, never diagnose, no
@@ -337,11 +337,13 @@ little weird" and will train at home for 10 to 15 days.
   limited to text fetched: the abstract for all but Trexler 2014, Vella 2010 and Varkevisser 2019
   (also read in their open full text) and ICMR-NIN 2024 (read in the PDF: guidelines 8, 9 and 10).
   Lally 2010 is not in PubMed or Europe PMC, so its abstract comes from Crossref.
-- **Digest, version 2** (`coaching_principles.ts`): 7,197 characters, inside the 7,200 budget
+- **Digest, version 2** (`coaching_principles.ts`): 7,024 characters, inside the 7,200 budget
   (1,800 tokens at four characters a token). Added: long diets and diet breaks, metabolic
   adaptation, low energy availability, keeping weight off, alcohol, time off, home training, the
-  menstrual cycle, older adults, an India line and habits. Every figure added is in a cited source
-  (4 weeks, 18 to 254 days, 18.5 to 23). To make room, wording of the version-1 text was tightened
+  menstrual cycle, older adults and habits. Every figure added is in a cited source (4 weeks,
+  18 to 254 days). There is deliberately no India line: the digest is in every athlete's prompt,
+  and the ICMR-NIN source is region-tagged `IN`, so it is reached only through retrieval with a
+  region filter (regional digests are E4). To make room, wording of the version-1 text was tightened
   without removing a figure; `pelland_2026_volume_frequency` and `piercy_2018_us_guidelines` are no
   longer cited in the digest (both stay in the library).
 - **Retrieval questions:** 19 added to `library_questions.json` (61 in all); the size bounds in
@@ -384,8 +386,9 @@ stack); CI runs it.
   NIN's written permission. Only an own-words summary with the citation is stored (same treatment as
   the other publisher-copyright sources); confirm that is acceptable, or ask NIN.
 - The ICMR-NIN guidelines advise against protein powders and give 0.83 g per kg a day as the
-  allowance, while ISSN (Jäger 2017) gives 1.4 to 2.0 g per kg for people who train. The digest
-  tells Coach to say where the two differ for Indian users; the numbers stay with the plan's rules.
+  allowance, while ISSN (Jäger 2017) gives 1.4 to 2.0 g per kg for people who train. Coach sees ICMR-NIN
+  only through retrieval for Indian users, where the region filter applies; the numbers stay with the
+  plan's rules.
 - MATADOR (Byrne 2018) found more fat loss with diet breaks in men with obesity; ICECAP (Peos 2021)
   found none in trained adults but less hunger. Both are summarised, and the digest calls a break a
   choice, not a promise.
