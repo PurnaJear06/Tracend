@@ -918,6 +918,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               : 'Add your ${labels.join(', ')} to build your plan.';
         });
         return true;
+      case OnboardingScreeningBlocked():
+        // The health check's stop, shown on the check itself.
+        setState(() {
+          _saving = false;
+          _asking = false;
+          _step = _screeningStep;
+          _screeningOutcome = ScreeningOutcome.seeProfessional;
+          _error = null;
+        });
+        return true;
       case OnboardingPlanUnavailable():
         setState(() {
           _saving = false;

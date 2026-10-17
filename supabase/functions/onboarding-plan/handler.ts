@@ -16,7 +16,11 @@ import {
   policiesFor,
   validRulesPlan,
 } from "../_shared/onboarding/generate.ts";
-import type { OnboardingProposalPayload } from "../_shared/onboarding/plan_contract.ts";
+import {
+  type OnboardingProposalPayload,
+  PlanBlockedByScreeningError,
+} from "../_shared/onboarding/plan_contract.ts";
+import type { ScreeningOutcome } from "../_shared/training/screening/outcome.ts";
 import { onboardingPolicyVersion } from "../_shared/onboarding/policy.ts";
 import {
   type HealthDay,
@@ -62,6 +66,10 @@ import {
 // with the same answers returns the same generation. Answers no valid plan can
 // meet are refused at once (422 onboarding_plan_infeasible, with the answers
 // to change), so retrying them never starts a generation or calls a model.
+//
+// An athlete whose stored screening outcome is see_professional gets 422
+// onboarding_screening_see_professional (both modes): no plan, no questions, no model call and no
+// budget. moderate_until_cleared builds a plan capped at moderate effort.
 //
 // POST onboarding-plan {"mode":"questions"}: the coach's follow-up questions
 // for the current answers, answered synchronously. One request claims the
@@ -125,6 +133,12 @@ export interface OnboardingStore {
   loadCatalog(): Promise<CatalogExercise[]>;
   /** The athlete's IANA time zone (user_accounts.timezone). */
   timezone(): Promise<string>;
+  /**
+   * The athlete's stored pre-exercise screening outcome (Contract 8): the newest
+   * onboarding_screenings row. No row (an account or app build from before the screening) is
+   * "cleared".
+   */
+  screening(): Promise<ScreeningOutcome>;
   /** Apple Health daily summaries and workouts with local dates in [from, through]. */
   loadHealth(
     from: string,
@@ -238,9 +252,13 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
   }
   const catalog = await deps.store.loadCatalog();
   const { health, history } = await loadHealthContext(deps);
+  const screening = await deps.store.screening();
   try {
-    validRulesPlan(policiesFor(asked.answers, catalog, health, history));
+    validRulesPlan(policiesFor(asked.answers, catalog, health, history, screening));
   } catch (error) {
+    if (error instanceof PlanBlockedByScreeningError) {
+      return reply(422, { error: "onboarding_screening_see_professional" });
+    }
     if (!(error instanceof OnboardingPlanInfeasibleError)) throw error;
     return reply(422, {
       error: "onboarding_plan_infeasible",
@@ -268,6 +286,9 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
     // data reuses the existing one.
     health,
     health_history: history,
+    // Part of the hash when it limits the plan, so a changed outcome builds a new plan; a cleared
+    // athlete's snapshot (and every older one) is unchanged.
+    ...(screening === "cleared" ? {} : { screening }),
   };
   const snapshotHash = await sha256(snapshot);
   const claim = await deps.store.claim(snapshotHash);
@@ -288,6 +309,7 @@ export async function handleOnboardingPlan(deps: HandlerDeps): Promise<Response>
       catalog,
       health,
       history,
+      screening,
     ),
   );
   return reply(202, body);
@@ -529,6 +551,7 @@ async function runGeneration(
   catalog: CatalogExercise[],
   health: HealthSummary | null,
   history: HealthHistory | null,
+  screening: ScreeningOutcome,
 ): Promise<void> {
   const { store, observer } = deps;
   let viaGateway = false;
@@ -537,7 +560,14 @@ async function runGeneration(
     const gatewayRoute = deps.routes?.plan() ?? null;
     let prepared: PreparedPlan | null = null;
     if (gatewayRoute) {
-      const preparation = preparePlan(gatewayRoute, answers, catalog, health, history);
+      const preparation = preparePlan(
+        gatewayRoute,
+        answers,
+        catalog,
+        health,
+        history,
+        screening,
+      );
       if (preparation.kind === "ready") prepared = preparation.prepared;
       else observer.warn("onboarding_plan_route_unusable", { fallbackReason: preparation.reason });
     }
@@ -555,6 +585,7 @@ async function runGeneration(
         catalog,
         health,
         history,
+        screening,
       );
       result = answered.result;
       asked = answered.asked;
@@ -577,6 +608,7 @@ async function runGeneration(
         undefined,
         health,
         history,
+        screening,
       );
       // A call that failed with no HTTP answer (a timeout or a dropped
       // connection) may still have been billed with no usage reported.
@@ -652,6 +684,7 @@ async function generateViaGateway(
   catalog: CatalogExercise[],
   health: HealthSummary | null,
   history: HealthHistory | null,
+  screening: ScreeningOutcome,
 ): Promise<{ result: GenerationResult; asked: boolean }> {
   const { store } = deps;
   const rulesPlan = async (reason: string) => ({
@@ -664,6 +697,7 @@ async function generateViaGateway(
       undefined,
       health,
       history,
+      screening,
     ),
     asked: false,
   });

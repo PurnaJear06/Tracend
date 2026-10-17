@@ -15,6 +15,7 @@ import {
 } from "../_shared/onboarding/generate.ts";
 import type { HealthHistory } from "../_shared/onboarding/health_history.ts";
 import type { HealthSummary } from "../_shared/onboarding/health_summary.ts";
+import type { ScreeningOutcome } from "../_shared/training/screening/outcome.ts";
 import {
   buildOnboardingProposal,
   type OnboardingPlan,
@@ -268,8 +269,9 @@ export function preparePlan(
   catalog: readonly CatalogExercise[],
   health: HealthSummary | null,
   history: HealthHistory | null,
+  screening?: ScreeningOutcome,
 ): PlanPreparation {
-  const policies = policiesFor(answers, catalog, health, history);
+  const policies = policiesFor(answers, catalog, health, history, screening);
   const system = `${onboardingSystemPrompt(policies)}\n${noNamesRule}`;
   const user = onboardingUserMessage(answers, catalog, health, history);
   const first = tokenBound(system, user, JSON.stringify(onboardingPlanJsonSchema));

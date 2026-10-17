@@ -107,6 +107,7 @@ function fakeStore(
     claim: () => Promise.resolve({ generation_id: "gen-1", status: "running", started: true }),
     loadCatalog: () => Promise.resolve(catalog),
     timezone: () => Promise.resolve("UTC"),
+    screening: () => Promise.resolve("cleared"),
     loadHealth: () => Promise.resolve({ days: [], workouts: [] }),
     loadHealthHistory: () => Promise.resolve([]),
     claimQuestions: () => Promise.resolve({ started: true }),

@@ -183,7 +183,8 @@ sign-in**.
      straight away for chest pain, severe breathlessness or fainting now). Continue stays closed;
      changing an answer clears the result so the athlete can answer again after being cleared.
    An old draft that passed this step's place without answers returns to it, and a plan request the
-   server refuses for a malformed screening sends the athlete back to it. Builds from before the
+   server refuses for a malformed or professional-first screening sends the athlete back to it (the
+   latter with the same guidance and Continue closed). Builds from before the
    health check never send answers; the server reads that as cleared.
 7. Choose whether to allow AI coaching. **Allow AI coaching** and **Not now** are both valid
    answers.

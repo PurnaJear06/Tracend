@@ -388,6 +388,26 @@ void main() {
       expect(repository.screenings.single.clearedByProfessional, isTrue);
     });
 
+    testWidgets('a plan the server refuses for the health check shows the '
+        'professional guidance on the check', (tester) async {
+      final repository = _FakeOnboardingRepository(draft: _draft('review'))
+        ..blockedByScreening = true;
+      await _pump(tester, repository);
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Continue to your coach'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('A quick health check.'), findsOneWidget);
+      expect(
+        find.text('Please see a health professional first.'),
+        findsOneWidget,
+      );
+      expect(repository.startCalls, 0);
+      // Continue stays closed until an answer changes.
+      await _continue(tester);
+      expect(find.text('Allow AI coaching?'), findsNothing);
+    });
+
     testWidgets('a plan refused for screening sends the athlete back to it', (
       tester,
     ) async {
@@ -1793,6 +1813,9 @@ class _FakeOnboardingRepository implements OnboardingRepository {
   final screenings = <ScreeningAnswers>[];
   bool failScreening = false;
 
+  /// The server refuses to build a plan for the stored health check.
+  bool blockedByScreening = false;
+
   @override
   Future<ScreeningRecord> recordScreening(ScreeningAnswers answers) async {
     if (failScreening) throw Exception('offline');
@@ -1814,6 +1837,7 @@ class _FakeOnboardingRepository implements OnboardingRepository {
     if (missing != null) throw OnboardingAnswersIncomplete(missing!);
     if (infeasible != null) throw OnboardingPlanInfeasible(infeasible!);
     if (unavailable) throw const OnboardingPlanUnavailable();
+    if (blockedByScreening) throw const OnboardingScreeningBlocked();
     return _next() ?? _running;
   }
 
@@ -1829,6 +1853,7 @@ class _FakeOnboardingRepository implements OnboardingRepository {
   @override
   Future<OnboardingQuestions> askQuestions() async {
     askCalls++;
+    if (blockedByScreening) throw const OnboardingScreeningBlocked();
     await questionsDelay?.future;
     return OnboardingQuestions(hash: questionsHash, questions: questions);
   }

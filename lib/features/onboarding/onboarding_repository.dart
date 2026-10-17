@@ -80,6 +80,13 @@ class OnboardingAnswersIncomplete implements Exception {
   final List<String> missing;
 }
 
+/// The athlete's health check says to see a health professional first, so the
+/// server builds no plan and asks no model (422
+/// `onboarding_screening_see_professional`).
+class OnboardingScreeningBlocked implements Exception {
+  const OnboardingScreeningBlocked();
+}
+
 /// No safe plan fits these answers (for example, the equipment and the
 /// movements to avoid leave a training day empty). [change] names the answers
 /// that decide it; retrying unchanged answers gives the same result.
@@ -616,6 +623,9 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
       }
       if (details['error'] == 'onboarding_plan_infeasible') {
         throw OnboardingPlanInfeasible(strings(details['change']));
+      }
+      if (details['error'] == 'onboarding_screening_see_professional') {
+        throw const OnboardingScreeningBlocked();
       }
       // No saved draft with a path: the starting point is what is missing.
       if (details['error'] == 'onboarding_draft_incomplete') {

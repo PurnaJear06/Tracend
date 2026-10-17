@@ -193,7 +193,7 @@ Contract 8).
   in `rules_plan_test.ts` moved to the new exercise mixes. The loaded-beats-bodyweight sweep now
   exempts trunk work and the pull-up family, which rotate by design.
 
-**B6 (review; screening gate; migration 26; app change; plan wiring waits for B2).**
+**B6 (review; screening gate; migration 26; app change; stacked on #127).**
 
 - **Questions and mapping** (ACSM 2015 preparticipation logic, our own words; plain wording, no
   diagnosis). Four yes/no questions in a new onboarding step, **Health check**, right after the
@@ -232,18 +232,21 @@ Contract 8).
   changes. The app mirrors no rule: it shows what the server returns. A draft past the step
   without answers returns to it. Contract fixture `test/contract/fixtures/record_screening_v1_0.json`
   with a complete-key-list test.
-- **The wiring call the lead adds after B2 merges** (B2 owns the files; B6 does not edit them):
-  1. In `policiesFor` (`_shared/onboarding/generate.ts`), pass the athlete's outcome into the
-     `PlanPolicies` that B2 extended: `screening: screeningOutcomeOf(answers.screening)`
-     (import from `_shared/training/screening/screening.ts`).
-  2. `see_professional` builds nothing. Cheapest place: `handleOnboardingPlan`
-     (`onboarding-plan/handler.ts`, both modes) answers 422 for
-     `screeningOutcomeOf(asked.answers.screening) === "see_professional"` before
-     `validRulesPlan`, so a client that skipped the app's stop still gets no plan. Then add a
-     matching message in `_throwPlanError` (Dart) if the app should show it.
-  3. The app's moderate-effort note is a promise: do not install this build before step 1 is live.
-  Server code that wants the stored record rather than the draft reads
-  `onboarding_screenings` for the user, newest `screened_at` (service role).
+- **Server wiring** (stacked on B2, #127; the lead granted `onboarding-plan/handler.ts`). The
+  handler reads the stored outcome through `OnboardingStore.screening()` (the newest
+  `onboarding_screenings` row for the user; no row is `cleared`) once per request and passes it as
+  the last argument of `policiesFor`, `preparePlan` (gateway.ts, one optional argument added) and
+  `generateOnboardingProposal`. `see_professional` answers 422
+  `onboarding_screening_see_professional` from the pre-check, in both plan and questions mode,
+  before the claim, consent, budget, any model call or a generation row, so it cannot surface as
+  `generation_failed`; the same request is refused every time. A limiting outcome is added to the
+  generation snapshot (`screening`) so a changed outcome builds a new plan; a cleared athlete's
+  snapshot and hash are unchanged. The Dart repository maps the code to
+  `OnboardingScreeningBlocked`, and the flow returns to the health check showing "Please see a
+  health professional first.". The stored row, not the draft, decides the outcome; the draft's
+  answers only feed the snapshot and the app's restore. Tests: handler (cleared/no row, moderate
+  with an RPE cap and its own hash, see_professional with nothing spent in both modes), gateway
+  (policies carry the outcome), Flutter (refused plan shows the guidance).
 - **Open.** (a) Should a professional's clearance override a current symptom? Today it does not
   (conservative). (b) The question texts and "regularly" definition (30 minutes, 3 days, 3 months)
   are ours; a coach or the owner should review them. (c) Re-screening later (a yearly or
@@ -252,5 +255,5 @@ Contract 8).
 ## Next agent starts here
 
 B3 (progression and deloads, Phase 3 round 2) builds on the templates and
-`setWeights`/`fractionalWeeklySets`. B6's wiring is part of the B6 section above. The briefs are in
+`setWeights`/`fractionalWeeklySets`. B6's server wiring is done (see the B6 section). The briefs are in
 the program doc.

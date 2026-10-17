@@ -41,6 +41,7 @@ function store(overrides: Partial<OnboardingStore> & { claimAs?: GenerationClaim
     claimedHashes: [] as string[],
     persisted: [] as {
       generationId: string;
+      snapshot: Record<string, unknown>;
       proposal: OnboardingProposalPayload;
       metadata: GenerationMetadata | null;
     }[],
@@ -56,6 +57,7 @@ function store(overrides: Partial<OnboardingStore> & { claimAs?: GenerationClaim
     },
     loadCatalog: () => Promise.resolve([...exerciseCatalogV1]),
     timezone: () => Promise.resolve("UTC"),
+    screening: () => Promise.resolve("cleared"),
     loadHealth: () => Promise.resolve({ days: [], workouts: [] }),
     loadHealthHistory: () => Promise.resolve([]),
     claimQuestions: () => Promise.resolve({ started: true }),
@@ -69,8 +71,8 @@ function store(overrides: Partial<OnboardingStore> & { claimAs?: GenerationClaim
     reserveGatewayBudget: () => Promise.resolve(false),
     releaseBudget: () => Promise.resolve(),
     recordUsage: () => Promise.resolve(),
-    persist: (generationId, _hash, _snapshot, proposal, metadata) => {
-      calls.persisted.push({ generationId, proposal, metadata });
+    persist: (generationId, _hash, snapshot, proposal, metadata) => {
+      calls.persisted.push({ generationId, snapshot, proposal, metadata });
       return Promise.resolve("stored");
     },
     fail: (generationId) => {
@@ -756,4 +758,123 @@ Deno.test("legacy notice consent: granted only for a notice that names the vendo
     ),
     "not_granted",
   );
+});
+
+// Contract 8: the stored screening outcome decides what the handler builds.
+
+/** Counts every call that would cost money or reach a model. */
+function spend(extra: Partial<OnboardingStore> = {}) {
+  const spent = { consent: 0, budget: 0, reserve: 0, generated: 0, questions: 0 };
+  return {
+    spent,
+    overrides: {
+      consent: () => {
+        spent.consent++;
+        return Promise.resolve("granted" as const);
+      },
+      budgetAvailable: () => {
+        spent.budget++;
+        return Promise.resolve(true);
+      },
+      reserveGatewayBudget: () => {
+        spent.reserve++;
+        return Promise.resolve(true);
+      },
+      claimQuestions: () => {
+        spent.questions++;
+        return Promise.resolve({ started: true });
+      },
+      ...extra,
+    } satisfies Partial<OnboardingStore>,
+  };
+}
+
+const planOf = (proposal: OnboardingProposalPayload) =>
+  proposal.training.calculation as Record<string, unknown>;
+
+Deno.test("no stored screening (an old app build) builds the usual plan", async () => {
+  const { fake, calls } = store({ screening: () => Promise.resolve("cleared") });
+  const { response } = await run(fake);
+  assertEquals(response.status, 202);
+  assertEquals(calls.persisted.length, 1);
+  assertEquals(planOf(calls.persisted[0].proposal).screening, undefined);
+  // A cleared athlete's snapshot, and so its hash, is the one made before the screening existed.
+  assertEquals("screening" in calls.persisted[0].snapshot, false);
+});
+
+Deno.test("moderate_until_cleared builds a plan capped at moderate effort", async () => {
+  const cleared = store();
+  await run(cleared.fake);
+  const { fake, calls } = store({ screening: () => Promise.resolve("moderate_until_cleared") });
+  const { response, backgroundRuns } = await run(fake);
+  assertEquals(response.status, 202);
+  assertEquals(backgroundRuns, 1);
+  assertEquals(calls.persisted.length, 1);
+  assertEquals(planOf(calls.persisted[0].proposal).screening, "moderate_until_cleared");
+  assertEquals(calls.persisted[0].snapshot.screening, "moderate_until_cleared");
+  // A different outcome is a different generation, never the cleared plan returned again.
+  assert(cleared.calls.claimedHashes[0] !== calls.claimedHashes[0]);
+  const rpe = (proposal: OnboardingProposalPayload) =>
+    (proposal.training.weekly_structure as { exercises: { target_rpe: number }[] }[])
+      .flatMap((workout) => workout.exercises.map((exercise) => exercise.target_rpe));
+  assert(rpe(calls.persisted[0].proposal).every((value) => value <= 7), "no hard sets");
+});
+
+Deno.test("see_professional builds no plan, asks no model and spends nothing", async () => {
+  const { spent, overrides } = spend({ screening: () => Promise.resolve("see_professional") });
+  const { fake, calls } = store(overrides);
+  let generated = 0;
+  const { response, body, backgroundRuns } = await run(fake, {
+    resolution: () => ({
+      kind: "model",
+      config: {
+        provider: "deepseek",
+        model: "deepseek-flash",
+        url: "https://api.deepseek.com/v1/chat/completions",
+        apiKey: "test-key",
+        extraBody: {},
+        thinkingBody: {},
+        thinking: true,
+        price: { input: 0.3, output: 1.2 },
+      },
+    }),
+    generate: () => {
+      generated++;
+      return Promise.reject(new Error("a model plan must not be asked for"));
+    },
+  });
+  assertEquals(response.status, 422);
+  assertEquals(body, { error: "onboarding_screening_see_professional" });
+  assertEquals(backgroundRuns, 0);
+  assertEquals(generated, 0);
+  assertEquals(calls.claimedHashes, []);
+  assertEquals(calls.persisted, []);
+  assertEquals(calls.failed, []);
+  assertEquals(spent, { consent: 0, budget: 0, reserve: 0, generated: 0, questions: 0 });
+});
+
+Deno.test("see_professional also stops the follow-up questions, every time", async () => {
+  const { spent, overrides } = spend({ screening: () => Promise.resolve("see_professional") });
+  const { fake } = store(overrides);
+  for (let retry = 0; retry < 2; retry++) {
+    const { response, body } = await run(fake, { mode: "questions" });
+    assertEquals(response.status, 422);
+    assertEquals(body.error, "onboarding_screening_see_professional");
+  }
+  assertEquals(spent.questions, 0);
+  assertEquals(spent.consent + spent.budget + spent.reserve, 0);
+});
+
+Deno.test("the stored outcome is read once per request and reaches the plan", async () => {
+  const reads: string[] = [];
+  const { fake, calls } = store({
+    screening: () => {
+      reads.push("read");
+      return Promise.resolve("moderate_until_cleared");
+    },
+  });
+  const { response } = await run(fake);
+  assertEquals(response.status, 202);
+  assertEquals(reads.length, 1);
+  assertEquals(planOf(calls.persisted[0].proposal).screening, "moderate_until_cleared");
 });
