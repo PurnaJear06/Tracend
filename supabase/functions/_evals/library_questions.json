@@ -1,5 +1,5 @@
 {
-  "description": "Realistic athlete questions with the library sources a good answer needs. No athlete data.",
+  "description": "Realistic athlete questions with the library sources a good answer needs. No athlete data. Questions without a kind need one topic's sources; multi_source questions need sources from two or three topics; no_answer questions are outside the library (medication, rehabilitation, pregnancy, minors, medical diets, eating disorders, medical reports, drugs) and have no expected sources: a good answer says so.",
   "questions": [
     {
       "id": "sets_per_week",
@@ -307,6 +307,348 @@
       "expected": [
         "acsm_2026_resistance_prescription"
       ]
+    },
+    {
+      "id": "diet_break",
+      "text": "Should I take a diet break after many weeks of cutting?",
+      "expected": [
+        "byrne_2018_matador",
+        "peos_2021_icecap"
+      ]
+    },
+    {
+      "id": "diet_break_speed",
+      "text": "Do diet breaks make fat loss faster, or just easier to stick to?",
+      "expected": [
+        "peos_2021_icecap",
+        "byrne_2018_matador"
+      ]
+    },
+    {
+      "id": "stalled_deficit",
+      "text": "Why has my fat loss stalled even though I am still eating in a deficit?",
+      "expected": [
+        "trexler_2014_metabolic_adaptation"
+      ]
+    },
+    {
+      "id": "hunger_leaner",
+      "text": "My hunger keeps rising the leaner I get. Is my metabolism slowing down?",
+      "expected": [
+        "trexler_2014_metabolic_adaptation"
+      ]
+    },
+    {
+      "id": "refeed_reverse",
+      "text": "Do refeed days or reverse dieting actually work?",
+      "expected": [
+        "trexler_2014_metabolic_adaptation"
+      ]
+    },
+    {
+      "id": "low_energy_availability",
+      "text": "Can eating too little while training harm my health?",
+      "expected": [
+        "mountjoy_2023_reds"
+      ]
+    },
+    {
+      "id": "feel_weird_lean",
+      "text": "I have lost a lot of weight and feel a bit weird and run down. Is something wrong?",
+      "expected": [
+        "mountjoy_2023_reds",
+        "trexler_2014_metabolic_adaptation"
+      ]
+    },
+    {
+      "id": "keep_weight_off",
+      "text": "What helps people keep weight off after they have lost it?",
+      "expected": [
+        "varkevisser_2019_weight_loss_maintenance",
+        "trexler_2014_metabolic_adaptation"
+      ]
+    },
+    {
+      "id": "coach_questions",
+      "text": "Does a coach asking questions instead of giving orders really help people exercise more?",
+      "expected": [
+        "zhu_2024_motivational_interviewing"
+      ]
+    },
+    {
+      "id": "habit_days",
+      "text": "How long does it take for a new habit to become automatic?",
+      "expected": [
+        "lally_2010_habit_formation"
+      ]
+    },
+    {
+      "id": "missed_day_habit",
+      "text": "If I miss a day, do I lose the habit I was building?",
+      "expected": [
+        "lally_2010_habit_formation"
+      ]
+    },
+    {
+      "id": "india_bmi",
+      "text": "What is a healthy BMI for an Indian adult?",
+      "expected": [
+        "icmr_nin_2024_dietary_guidelines"
+      ]
+    },
+    {
+      "id": "india_protein_powder",
+      "text": "Do Indian dietary guidelines say protein powders are necessary?",
+      "expected": [
+        "icmr_nin_2024_dietary_guidelines"
+      ]
+    },
+    {
+      "id": "alcohol_recovery",
+      "text": "Does drinking alcohol after training hurt my recovery?",
+      "expected": [
+        "vella_2010_alcohol_recovery"
+      ]
+    },
+    {
+      "id": "older_lifting",
+      "text": "Is lifting weights safe and useful for older adults?",
+      "expected": [
+        "fragala_2019_older_adults"
+      ]
+    },
+    {
+      "id": "cycle_training",
+      "text": "Should I train differently at different points of my menstrual cycle?",
+      "expected": [
+        "mcnulty_2020_menstrual_cycle"
+      ]
+    },
+    {
+      "id": "bands_home",
+      "text": "Can resistance bands build strength as well as weights when I train at home?",
+      "expected": [
+        "lopes_2019_elastic_resistance"
+      ]
+    },
+    {
+      "id": "two_weeks_off",
+      "text": "I cannot train for two weeks. Will I lose my strength and muscle?",
+      "expected": [
+        "mujika_2001_muscular_detraining",
+        "bosquet_2013_training_cessation"
+      ]
+    },
+    {
+      "id": "home_ten_days",
+      "text": "Can I keep my gains if I only train with resistance bands at home for ten days?",
+      "expected": [
+        "lopes_2019_elastic_resistance",
+        "mujika_2001_muscular_detraining"
+      ]
+    },
+    {
+      "id": "protein_while_cutting_pace",
+      "kind": "multi_source",
+      "text": "I am cutting while training four days a week: how much protein should I eat and how fast should I lose?",
+      "expected": [
+        "jager_2017_protein",
+        "aragon_2017_diets_body_composition",
+        "helms_2014_contest_prep"
+      ]
+    },
+    {
+      "id": "protein_spread_over_day",
+      "kind": "multi_source",
+      "text": "How should I spread my protein over the day to build muscle, and how much in each meal?",
+      "expected": [
+        "schoenfeld_2018_protein_per_meal",
+        "jager_2017_protein"
+      ]
+    },
+    {
+      "id": "legs_twice_or_once",
+      "kind": "multi_source",
+      "text": "Should I train legs twice a week with a few sets each, or once with lots of sets?",
+      "expected": [
+        "pelland_2026_volume_frequency",
+        "schoenfeld_2016_frequency_hypertrophy",
+        "schoenfeld_2017_weekly_volume"
+      ]
+    },
+    {
+      "id": "run_and_lift",
+      "kind": "multi_source",
+      "text": "I run three times a week and want to build muscle too. How should I fit cardio and lifting together?",
+      "expected": [
+        "schumann_2022_concurrent_training",
+        "who_2020_activity_guidelines"
+      ]
+    },
+    {
+      "id": "bad_sleep_week",
+      "kind": "multi_source",
+      "text": "I have slept badly all week and feel flat. Should I train hard, take a deload, or just sleep more?",
+      "expected": [
+        "walsh_2021_sleep_athlete",
+        "bell_2023_deloading",
+        "watson_2015_sleep_duration"
+      ]
+    },
+    {
+      "id": "coffee_and_sleep",
+      "kind": "multi_source",
+      "text": "Does coffee before training help, and what does it do to my sleep and recovery?",
+      "expected": [
+        "guest_2021_caffeine",
+        "walsh_2021_sleep_athlete"
+      ]
+    },
+    {
+      "id": "creatine_and_water",
+      "kind": "multi_source",
+      "text": "Is creatine safe while I am cutting, and do I need to drink extra water with it?",
+      "expected": [
+        "kreider_2017_creatine",
+        "sawka_2007_fluid_replacement"
+      ]
+    },
+    {
+      "id": "beginner_short_sessions",
+      "kind": "multi_source",
+      "text": "I am new and only have 30 minutes a session: how many sets, how often and how hard?",
+      "expected": [
+        "iversen_2021_time_efficient",
+        "acsm_2009_progression"
+      ]
+    },
+    {
+      "id": "progress_without_injury",
+      "kind": "multi_source",
+      "text": "How fast can I add weight to my lifts and still keep injuries away?",
+      "expected": [
+        "acsm_2009_progression",
+        "gabbett_2016_training_load",
+        "lauersen_2014_injury_prevention"
+      ]
+    },
+    {
+      "id": "weekly_activity_total",
+      "kind": "multi_source",
+      "text": "How much activity should an adult get in a week, counting steps and strength work?",
+      "expected": [
+        "who_2020_activity_guidelines",
+        "paluch_2022_daily_steps",
+        "acsm_2011_exercise_quantity"
+      ]
+    },
+    {
+      "id": "recover_for_tomorrow",
+      "kind": "multi_source",
+      "text": "What is the best way to recover for tomorrow after a hard session: food, sleep or cold baths?",
+      "expected": [
+        "dupuy_2018_recovery_techniques",
+        "kerksick_2017_nutrient_timing",
+        "walsh_2021_sleep_athlete"
+      ]
+    },
+    {
+      "id": "failure_and_rest",
+      "kind": "multi_source",
+      "text": "Do I have to train to failure, and how long should I rest between those sets?",
+      "expected": [
+        "robinson_2024_proximity_to_failure",
+        "singer_2024_rest_intervals",
+        "zourdos_2016_rir_scale"
+      ]
+    },
+    {
+      "id": "screening_then_start",
+      "kind": "multi_source",
+      "text": "After years off, what health screening should I do before lifting and how much exercise should I begin with?",
+      "expected": [
+        "riebe_2015_screening",
+        "acsm_2011_exercise_quantity"
+      ]
+    },
+    {
+      "id": "cranky_joints_loads",
+      "kind": "multi_source",
+      "text": "My joints are cranky: should I use light weights for many reps or heavy for few if I want size?",
+      "expected": [
+        "lopez_2021_load_network",
+        "schoenfeld_2021_loading_continuum",
+        "schoenfeld_2020_range_of_motion"
+      ]
+    },
+    {
+      "id": "long_session_fuel",
+      "kind": "multi_source",
+      "text": "How much do I need to eat after a workout, and what should I have during a very long session?",
+      "expected": [
+        "kerksick_2017_nutrient_timing",
+        "jager_2017_protein"
+      ]
+    },
+    {
+      "id": "na_ibuprofen_dose",
+      "kind": "no_answer",
+      "text": "What dose of ibuprofen can I take before leg day?",
+      "expected": []
+    },
+    {
+      "id": "na_metformin",
+      "kind": "no_answer",
+      "text": "How much metformin should I take on the days I train?",
+      "expected": []
+    },
+    {
+      "id": "na_acl_rehab",
+      "kind": "no_answer",
+      "text": "What rehab protocol should I follow after my ACL surgery?",
+      "expected": []
+    },
+    {
+      "id": "na_rotator_cuff",
+      "kind": "no_answer",
+      "text": "How do I rehabilitate a torn rotator cuff at home?",
+      "expected": []
+    },
+    {
+      "id": "na_pregnancy",
+      "kind": "no_answer",
+      "text": "Which exercises are safe for me in my second trimester?",
+      "expected": []
+    },
+    {
+      "id": "na_teenager",
+      "kind": "no_answer",
+      "text": "How should my 14-year-old son train to gain size quickly?",
+      "expected": []
+    },
+    {
+      "id": "na_diabetes_diet",
+      "kind": "no_answer",
+      "text": "What diet should I follow to manage my type 2 diabetes?",
+      "expected": []
+    },
+    {
+      "id": "na_binge_purge",
+      "kind": "no_answer",
+      "text": "How do I stop binge and purge cycles?",
+      "expected": []
+    },
+    {
+      "id": "na_blood_test",
+      "kind": "no_answer",
+      "text": "Can you tell me what my blood test results mean?",
+      "expected": []
+    },
+    {
+      "id": "na_steroid_cycle",
+      "kind": "no_answer",
+      "text": "Which anabolic steroid cycle is best for a beginner?",
+      "expected": []
     }
   ]
 }
