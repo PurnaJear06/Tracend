@@ -10,8 +10,8 @@ export type EvalProfile = Readonly<{
   context: Record<string, unknown>;
 }>;
 
-function isoDaysAgo(days: number): string {
-  const date = new Date(`${evalCoachingDate}T00:00:00Z`);
+function isoDaysAgo(days: number, today: string): string {
+  const date = new Date(`${today}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() - days);
   return date.toISOString().slice(0, 10);
 }
@@ -28,10 +28,10 @@ type Session = {
   logging_completeness: number;
 };
 
-function trainingLog(daysAgo: readonly number[]): Session[] {
+function trainingLog(daysAgo: readonly number[], today: string): Session[] {
   const workouts = ["Push day", "Pull day", "Leg day", "Upper day", "Lower day"];
   return daysAgo.map((days, index) => ({
-    local_date: isoDaysAgo(days),
+    local_date: isoDaysAgo(days, today),
     workout: workouts[index % workouts.length],
     duration_minutes: 50 + (index % 4) * 5,
     effort: 6 + (index % 3),
@@ -43,9 +43,9 @@ function trainingLog(daysAgo: readonly number[]): Session[] {
   }));
 }
 
-function totals(log: readonly Session[]): Record<string, unknown> {
+function totals(log: readonly Session[], today: string): Record<string, unknown> {
   const window = (label: string, days: number) => {
-    const inside = log.filter((s) => s.local_date >= isoDaysAgo(days - 1));
+    const inside = log.filter((s) => s.local_date >= isoDaysAgo(days - 1, today));
     return [label, {
       days,
       sessions: inside.length,
@@ -94,12 +94,12 @@ const planAndTargets = {
   },
 };
 
-function richContext(): Record<string, unknown> {
-  const log = trainingLog([1, 2, 4, 5, 7, 9, 10, 12, 15, 16, 18, 22, 25]);
+function richContext(today: string): Record<string, unknown> {
+  const log = trainingLog([1, 2, 4, 5, 7, 9, 10, 12, 15, 16, 18, 22, 25], today);
   // The watch was off on two nights, so sleep and HRV have fewer days than steps.
   const watchOffNights = [3, 11];
   const health = Array.from({ length: 28 }, (_, days) => ({
-    local_date: isoDaysAgo(days),
+    local_date: isoDaysAgo(days, today),
     sleep_minutes: watchOffNights.includes(days)
       ? null
       : days === 0
@@ -109,7 +109,7 @@ function richContext(): Record<string, unknown> {
     hrv_ms: watchOffNights.includes(days) ? null : days === 0 ? 31 : 40 + ((days * 7) % 15),
     steps: 7000 + ((days * 911) % 5000),
     active_energy_kcal: 450 + ((days * 53) % 300),
-    workout_minutes: log.some((s) => s.local_date === isoDaysAgo(days)) ? 65 : 0,
+    workout_minutes: log.some((s) => s.local_date === isoDaysAgo(days, today)) ? 65 : 0,
     weight_kg: null,
     completeness: "complete",
   }));
@@ -133,7 +133,7 @@ function richContext(): Record<string, unknown> {
     avg_steps: avg(days, "steps"),
   });
   const weights = Array.from({ length: 19 }, (_, index) => ({
-    measured_on: isoDaysAgo(index * 3),
+    measured_on: isoDaysAgo(index * 3, today),
     // About 0.2 kg every 3 days, consistent with the -0.07 kg/day 28-day trend.
     weight_kg: Math.round((78.4 + index * 0.2) * 10) / 10,
     waist_cm: index % 3 === 0 ? 84 + index * 0.1 : null,
@@ -141,7 +141,7 @@ function richContext(): Record<string, unknown> {
   }));
   return {
     schema_version: "8.0",
-    coaching_date: evalCoachingDate,
+    coaching_date: today,
     context_kind: "general",
     ...planAndTargets,
     permitted_evidence: [
@@ -153,7 +153,7 @@ function richContext(): Record<string, unknown> {
     ],
     missing_data: [],
     computed_metrics: {
-      local_date: evalCoachingDate,
+      local_date: today,
       recovery: { score: 38 },
       sleep: { quality: 51, debt_minutes: 95 },
       training_load: { acwr: 1.34, monotony: 1.6 },
@@ -162,7 +162,7 @@ function richContext(): Record<string, unknown> {
       data_confidence: "medium",
     },
     latest_check_in: {
-      local_date: evalCoachingDate,
+      local_date: today,
       sleep_quality: 2,
       energy: 2,
       soreness: 4,
@@ -172,7 +172,7 @@ function richContext(): Record<string, unknown> {
       available_to_train: true,
     },
     check_ins_14d: Array.from({ length: 10 }, (_, days) => ({
-      local_date: isoDaysAgo(days),
+      local_date: isoDaysAgo(days, today),
       sleep_quality: days === 0 ? 2 : 3 + (days % 2),
       energy: days === 0 ? 2 : 3,
       soreness: 2 + (days % 3),
@@ -181,19 +181,19 @@ function richContext(): Record<string, unknown> {
       pain_severity: days === 0 ? 1 : 0,
       available_to_train: true,
     })),
-    training_totals: totals(log),
+    training_totals: totals(log, today),
     training_log_28d: log,
     watch_workouts_14d: [
-      { local_date: isoDaysAgo(0), activity_type: "running", duration_minutes: 32 },
-      { local_date: isoDaysAgo(3), activity_type: "walking", duration_minutes: 45 },
-      { local_date: isoDaysAgo(8), activity_type: "cycling", duration_minutes: 40 },
+      { local_date: isoDaysAgo(0, today), activity_type: "running", duration_minutes: 32 },
+      { local_date: isoDaysAgo(3, today), activity_type: "walking", duration_minutes: 45 },
+      { local_date: isoDaysAgo(8, today), activity_type: "cycling", duration_minutes: 40 },
     ],
     health_daily_28d: health,
     health_averages: { last_7_days: averages(7), last_28_days: averages(28) },
     weight_series_8w: weights,
     nutrition_daily_28d: [
       {
-        local_date: isoDaysAgo(6),
+        local_date: isoDaysAgo(6, today),
         confirmed_meals: 3,
         calories: 1840,
         protein_g: 142,
@@ -201,7 +201,7 @@ function richContext(): Record<string, unknown> {
         fat_g: 58,
       },
       {
-        local_date: isoDaysAgo(13),
+        local_date: isoDaysAgo(13, today),
         confirmed_meals: 2,
         calories: 1510,
         protein_g: 118,
@@ -230,10 +230,10 @@ function richContext(): Record<string, unknown> {
     workout_reconciliations: [],
     data_quality: {
       training_logging_coverage: 1,
-      last_health_sync: `${evalCoachingDate}T06:10:00Z`,
-      last_check_in: evalCoachingDate,
-      last_measurement: evalCoachingDate,
-      last_completed_workout: isoDaysAgo(1),
+      last_health_sync: `${today}T06:10:00Z`,
+      last_check_in: today,
+      last_measurement: today,
+      last_completed_workout: isoDaysAgo(1, today),
       conflict_count: 0,
     },
     recent_messages: [],
@@ -245,23 +245,26 @@ function richContext(): Record<string, unknown> {
       },
     ],
     session_journal: [
-      { coaching_date: isoDaysAgo(3), summary: "Asked about bench progress; advised paused sets." },
+      {
+        coaching_date: isoDaysAgo(3, today),
+        summary: "Asked about bench progress; advised paused sets.",
+      },
     ],
     omitted_sections: [],
   };
 }
 
-function noWatchContext(): Record<string, unknown> {
-  const log = trainingLog([3, 11, 19]);
+function noWatchContext(today: string): Record<string, unknown> {
+  const log = trainingLog([3, 11, 19], today);
   return {
     schema_version: "8.0",
-    coaching_date: evalCoachingDate,
+    coaching_date: today,
     context_kind: "general",
     ...planAndTargets,
     permitted_evidence: ["APPROVED_PLAN_ACTIVE", "DATA_CONFIDENCE_LOW"],
     missing_data: ["recovery_check_in", "health_context"],
     computed_metrics: {
-      local_date: evalCoachingDate,
+      local_date: today,
       recovery: { score: null },
       sleep: { quality: null, debt_minutes: null },
       training_load: { acwr: null, monotony: null },
@@ -271,7 +274,7 @@ function noWatchContext(): Record<string, unknown> {
     },
     latest_check_in: null,
     check_ins_14d: [],
-    training_totals: totals(log),
+    training_totals: totals(log, today),
     training_log_28d: log,
     watch_workouts_14d: [],
     health_daily_28d: [],
@@ -300,7 +303,7 @@ function noWatchContext(): Record<string, unknown> {
       },
     },
     weight_series_8w: [{
-      measured_on: isoDaysAgo(20),
+      measured_on: isoDaysAgo(20, today),
       weight_kg: 81.2,
       waist_cm: null,
       source: "manual",
@@ -314,8 +317,8 @@ function noWatchContext(): Record<string, unknown> {
       training_logging_coverage: 0.66,
       last_health_sync: null,
       last_check_in: null,
-      last_measurement: isoDaysAgo(20),
-      last_completed_workout: isoDaysAgo(3),
+      last_measurement: isoDaysAgo(20, today),
+      last_completed_workout: isoDaysAgo(3, today),
       conflict_count: 0,
     },
     recent_messages: [],
@@ -325,23 +328,23 @@ function noWatchContext(): Record<string, unknown> {
   };
 }
 
-function newUserContext(): Record<string, unknown> {
+function newUserContext(today: string): Record<string, unknown> {
   return {
     schema_version: "8.0",
-    coaching_date: evalCoachingDate,
+    coaching_date: today,
     context_kind: "general",
     ...planAndTargets,
     active_goal: { goal_type: "general_fitness", priority: 1, details: {} },
     permitted_evidence: ["APPROVED_PLAN_ACTIVE"],
     missing_data: ["recovery_check_in", "health_context", "training_history", "body_measurements"],
     computed_metrics: {
-      local_date: evalCoachingDate,
+      local_date: today,
       unavailable: true,
       reason: "computed scores unavailable for this date",
     },
     latest_check_in: null,
     check_ins_14d: [],
-    training_totals: totals([]),
+    training_totals: totals([], today),
     training_log_28d: [],
     watch_workouts_14d: [],
     health_daily_28d: [],
@@ -360,22 +363,23 @@ function newUserContext(): Record<string, unknown> {
   };
 }
 
-export function evalProfiles(): EvalProfile[] {
+/** The three synthetic athletes as of a coaching date (every date in a file is relative to it). */
+export function evalProfiles(today: string = evalCoachingDate): EvalProfile[] {
   return [
     {
       id: "rich",
       description: "Five sessions a week, watch every day, regular weigh-ins, few meal logs",
-      context: richContext(),
+      context: richContext(today),
     },
     {
       id: "no_watch",
       description: "No watch data, no check-ins, occasional workouts, one old weigh-in",
-      context: noWatchContext(),
+      context: noWatchContext(today),
     },
     {
       id: "new_user",
       description: "Plan and targets only; no history; scores unavailable",
-      context: newUserContext(),
+      context: newUserContext(today),
     },
   ];
 }

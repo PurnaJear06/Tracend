@@ -14,21 +14,33 @@
 //
 // EVAL_SUPABASE_URL defaults to http://127.0.0.1:54321. The worker secret is the Vault secret
 // `library_worker_secret` (select private.library_worker_secret() in the database).
-// Exits non-zero when mean recall in the top 8 falls under EVAL_MIN_RECALL (default 0.8).
+// Scores every question (single-topic, multi-source and no-answer, library_questions.json) and
+// prints one table of recall@8 and MRR per search mode and kind. A no_answer question is not
+// scored: the search returns its nearest chunks whatever the question, so the table lists the
+// sources it brought back for review; whether Coach then declines is graded by the answer bank.
+// Exits non-zero when, for the hybrid search, mean recall in the top 8 falls under EVAL_MIN_RECALL
+// (default 0.8), mean recall on the multi-source questions under EVAL_MIN_MULTI_RECALL (default
+// 0.7), or MRR under EVAL_MIN_MRR (default 0.5). The last two are first estimates: the first run
+// that measures them sets the floor to keep.
 
 import { librarySources } from "../../library/index.ts";
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
   type LibraryQuestion,
   type QuestionScore,
+  renderTable,
   scoreQuestion,
   summarise,
+  summariseKind,
+  topSources,
 } from "./library_eval_metrics.ts";
 
 const baseUrl = Deno.env.get("EVAL_SUPABASE_URL") ?? "http://127.0.0.1:54321";
 const serviceKey = Deno.env.get("EVAL_SERVICE_KEY") ?? "";
 const workerSecret = Deno.env.get("EVAL_WORKER_SECRET") ?? "";
 const minRecall = Number(Deno.env.get("EVAL_MIN_RECALL") ?? "0.8");
+const minMultiRecall = Number(Deno.env.get("EVAL_MIN_MULTI_RECALL") ?? "0.7");
+const minMrr = Number(Deno.env.get("EVAL_MIN_MRR") ?? "0.5");
 if (serviceKey === "" || workerSecret === "") {
   console.error("Set EVAL_SERVICE_KEY and EVAL_WORKER_SECRET.");
   Deno.exit(2);
@@ -105,22 +117,26 @@ for (const [index, question] of questions.entries()) {
   modes.vector_only.push(scoreQuestion(question, await search(null, embeddings[index])));
 }
 
-for (const [mode, scores] of Object.entries(modes)) {
-  const summary = summarise(scores);
-  console.log(
-    `${mode.padEnd(12)} mean recall@8 ${summary.meanRecall.toFixed(3)}  all expected found ` +
-      `${(summary.fullRecall * 100).toFixed(0)}%  at least one ${
-        (summary.anyRecall * 100).toFixed(0)
-      }%`,
-  );
-}
+console.log(`\n${renderTable(modes)}`);
 console.log("\nHybrid misses:");
 for (const score of modes.hybrid.filter((entry) => entry.missing.length > 0)) {
   console.log(`  ${score.id}: missing ${score.missing.join(", ")}`);
 }
+console.log("\nNo-answer questions (nearest sources the hybrid search returned):");
+for (const score of modes.hybrid.filter((entry) => entry.kind === "no_answer")) {
+  console.log(`  ${score.id}: ${topSources(score.retrieved).join(", ")}`);
+}
 
 const hybrid = summarise(modes.hybrid);
-if (hybrid.meanRecall < minRecall) {
-  console.error(`\nMean recall ${hybrid.meanRecall.toFixed(3)} is under ${minRecall}.`);
+const multi = summariseKind(modes.hybrid, "multi_source");
+const failures = [
+  hybrid.meanRecall < minRecall &&
+  `mean recall ${hybrid.meanRecall.toFixed(3)} is under ${minRecall}`,
+  multi.meanRecall < minMultiRecall &&
+  `multi-source recall ${multi.meanRecall.toFixed(3)} is under ${minMultiRecall}`,
+  hybrid.mrr < minMrr && `MRR ${hybrid.mrr.toFixed(3)} is under ${minMrr}`,
+].filter((failure): failure is string => failure !== false);
+if (failures.length > 0) {
+  console.error(`\n${failures.join("\n")}`);
   Deno.exit(1);
 }
