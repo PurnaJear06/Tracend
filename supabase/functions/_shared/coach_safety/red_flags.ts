@@ -146,7 +146,7 @@ const rules: readonly Rule[] = [
     "severe_pain",
     "injury_pain",
     String
-      .raw`\b(?:sharp|severe|sudden|stabbing|shooting|excruciating|intense|searing|tearing|piercing|unbearable|agonising|agonizing)(?: \w+){0,2} pains?\b|\bpains?\b.{0,25}\b(?:sharp|severe|sudden|stabbing|shooting|excruciating|unbearable|agonis\w+|agoniz\w+)\b|\b(?:heard|felt|got|had) (?:a )?(?:loud )?(?:pop|snap|crack|tear|rip)(?:ping)?\b|\b(?:something|it) (?:just )?(?:popped|snapped|tore|ripped|gave way)\b|\b(?:pulled|tore|torn|ruptured|snapped|dislocated|fractured|broke|broken) (?:a |my )?(?:\w+ ){0,3}(?:muscle|tendon|ligament|acl|mcl|hamstring|quad|bicep|tricep|pec|shoulder|knee|rotator cuff|achilles|meniscus|disc|rib|bone|wrist|ankle|elbow)\b|\b(?:[7-9]|10)\s*(?:/|out of)\s*10\b.{0,20}\bpain\b|\bpain\b.{0,20}\b(?:[7-9]|10)\s*(?:/|out of)\s*10\b|\bcan'?t (?:put weight on|bear weight|move my|lift my arm)\b`,
+      .raw`\b(?:sharp|severe|sudden|stabbing|shooting|excruciating|intense|searing|tearing|piercing|unbearable|agonising|agonizing)(?: \w+){0,2} pains?\b|\bpains?\b.{0,25}\b(?:sharp|severe|sudden|stabbing|shooting|excruciating|unbearable|agonis\w+|agoniz\w+)\b|\b(?:heard|felt|got|had) (?:a )?(?:loud )?(?:pop|snap|crack|tear|rip)(?:ping)?\b|\b(?:feel|hear|get|have) (?:a |an )?(?:loud |sudden |sharp )?(?:pop|snap|tear|rip)(?:ping)?\b.{0,40}\b(?:knee|knees|shoulder|elbow|ankle|wrist|hip|back|neck|hamstring|quad|quads|calf|groin|muscle|tendon|ligament|joint|bicep|tricep|pec|achilles|rib|foot|leg|arm|thumb|finger)\b|\b(?:knee|knees|shoulder|elbow|ankle|wrist|hip|back|neck|hamstring|quad|quads|calf|groin|muscle|tendon|ligament|joint|bicep|tricep|pec|achilles|rib|foot|leg|arm|thumb|finger) (?:just |suddenly )?(?:popped|snapped|tore|ripped|gave (?:way|out)|locked(?: up)?|buckled)\b|\b(?:pop|snap|tear|rip)(?:ping)? in (?:my |the )?(?:knee|knees|shoulder|elbow|ankle|wrist|hip|back|neck|hamstring|quad|quads|calf|groin|muscle|tendon|ligament|joint|bicep|tricep|pec|achilles|rib|foot|leg|arm|thumb|finger)\b|\b(?:something|it) (?:just )?(?:popped|snapped|tore|ripped|gave way)\b|\b(?:pulled|tore|torn|ruptured|snapped|dislocated|fractured|broke|broken) (?:a |my )?(?:\w+ ){0,3}(?:muscle|tendon|ligament|acl|mcl|hamstring|quad|bicep|tricep|pec|shoulder|knee|rotator cuff|achilles|meniscus|disc|rib|bone|wrist|ankle|elbow)\b|\b(?:[7-9]|10)\s*(?:/|out of)\s*10\b.{0,20}\bpain\b|\bpain\b.{0,20}\b(?:[7-9]|10)\s*(?:/|out of)\s*10\b|\bcan'?t (?:put weight on|bear weight|move my|lift my arm)\b`,
   ),
   rule(
     "numbness",
@@ -180,7 +180,7 @@ const rules: readonly Rule[] = [
     "medication_advice",
     "scope",
     String
-      .raw`\b(?:interact\w*|mix(?:ing)?|combin\w+)\b.{0,40}\b(?:medication|medications|meds|medicine|pills?|prescription)\b|\b(?:take|taking|use|using)\b.{0,40}\b(?:with|alongside)\s+(?:my |your |the |a )?(?:[\w-]+ ){0,3}(?:medication|medications|meds|medicine|prescription)\b|\b(?:should|can|could|may|do) i (?:take|start|stop|quit|skip|increase|decrease|double|miss|swap|switch) (?:my |the |some |any |a |an )?(?:\w+ ){0,2}(?:medication|medications|meds|medicine|pills?|tablets?|insulin|antidepressants?|steroids?|statins?|beta[- ]?blockers?|inhalers?|ozempic|semaglutide|metformin|prescription|ibuprofen|painkillers?)\b|\bwhat (?:dose|dosage)\b|\bprescribe\b|\b(?:stop|stopping|quit|quitting|come off|coming off|go off) (?:taking )?(?:my )?(?:medication|meds|pills|insulin|antidepressants?)\b`,
+      .raw`\b(?:interact\w*|mix(?:ing)?|combin\w+)\b.{0,40}\b(?:medication|medications|meds|medicine|pills?|prescription)\b|\b(?:take|taking|use|using)\b.{0,40}\b(?:with|alongside)\s+(?:my |your |the |a )?(?:[\w-]+ ){0,3}(?:medication|medications|meds|medicine|prescription)\b|\b(?:should|can|could|may|do) i (?:take|start|stop|quit|skip|increase|decrease|double|miss|swap|switch) (?:my |the |some |any |a |an )?(?:\w+ ){0,2}(?:medication|medications|meds|medicine|pills?|tablets?|insulin|antidepressants?|steroids?|statins?|beta[- ]?blockers?|inhalers?|ozempic|semaglutide|metformin|prescription|ibuprofen|painkillers?)\b|\bwhat (?:dose|dosage)\b|\b(?:how (?:much|many)|dose|dosage|dosing|\d+\s?mg|\bmg\b|milligrams?|when (?:should|do|can) i (?:take|have|use|start)|when to (?:take|have|use)|what time)\b.{0,50}\b(?:medications?|meds|medicine|prescription|(?:my|the) (?:pills?|tablets?)|metformin|ibuprofen|paracetamol|acetaminophen|aspirin|naproxen|insulin|statins?|beta[- ]?blockers?|antidepressants?|antibiotics?|ozempic|semaglutide|prednisone|tylenol|advil)\b|\b(?:medications?|meds|medicine|prescription|(?:my|the) (?:pills?|tablets?)|metformin|ibuprofen|paracetamol|acetaminophen|aspirin|naproxen|insulin|statins?|beta[- ]?blockers?|antidepressants?|antibiotics?|ozempic|semaglutide|prednisone|tylenol|advil)\b.{0,50}\b(?:how (?:much|many)|dose|dosage|dosing|\d+\s?mg|\bmg\b|milligrams?|when (?:should|do|can) i (?:take|have|use|start)|when to (?:take|have|use)|what time)\b|\bprescribe\b|\b(?:stop|stopping|quit|quitting|come off|coming off|go off) (?:taking )?(?:my )?(?:medication|meds|pills|insulin|antidepressants?)\b`,
   ),
 ];
 
@@ -341,13 +341,14 @@ const clauseSelfReport = /\bfor me\b|\bevery time\b|\bwhen i\b|\bwhenever i\b|\b
 const happensToMe = /\bhappens? to me\b|\bkeeps? happening\b|\bit happens\b|\bthis happens\b/;
 
 // A denial that stops at a point in time is a report of what came after it: "I never had chest
-// pain until today's run", "no dizziness until this morning", "no chest pain today".
+// pain until today's run", "no dizziness until this morning", "no chest pain recently". A bare
+// "today" or "now" after a denial is not a contrast: "no chest pain or dizziness today" is a denial.
 const timeBoundedAfter = new RegExp(
   [
     String
       .raw`^\W*(?:\w+\s+){0,3}?(?:until|till|before|up to|except)\b(?:\W+\w+){0,4}?\W+(?:today|today's|now|tonight|yesterday|morning|afternoon|evening|run|session|workout|set|recently|lately|week|day)\b`,
     String
-      .raw`^\W*(?:\w+\s+){0,2}?(?:now|today|today's|tonight|this morning|this afternoon|this evening|recently|lately)\b`,
+      .raw`^\W*(?:\w+\s+){0,2}?(?:tonight|this morning|this afternoon|this evening|recently|lately)\b`,
   ].join("|"),
 );
 const timeBounded = (after: string) => timeBoundedAfter.test(after);

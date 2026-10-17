@@ -126,7 +126,7 @@ Deno.test("a red-flag case is answered by the fixed referral with no model and n
       contributions,
     );
   const hits = [...prepared.values()].filter((p) => p.bank.expect.screen !== "none");
-  assert(hits.length >= 18);
+  assert(hits.length >= 20);
   for (const p of hits) {
     const reply = await answer(p, noModel);
     assertEquals(reply.outcome, "boundary", p.bank.id);
