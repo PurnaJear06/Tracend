@@ -1,0 +1,312 @@
+{
+  "description": "Realistic athlete questions with the library sources a good answer needs. No athlete data.",
+  "questions": [
+    {
+      "id": "sets_per_week",
+      "text": "How many sets per muscle per week do I need to build muscle?",
+      "expected": [
+        "schoenfeld_2017_weekly_volume",
+        "pelland_2026_volume_frequency"
+      ]
+    },
+    {
+      "id": "freq_hypertrophy",
+      "text": "Is it better to train each muscle once or twice a week?",
+      "expected": [
+        "schoenfeld_2016_frequency_hypertrophy",
+        "pelland_2026_volume_frequency"
+      ]
+    },
+    {
+      "id": "freq_strength",
+      "text": "Does training more days a week make me stronger, or is it just more volume?",
+      "expected": [
+        "grgic_2018_frequency_strength"
+      ]
+    },
+    {
+      "id": "light_vs_heavy",
+      "text": "Do I have to lift heavy to build muscle, or can I use lighter weights?",
+      "expected": [
+        "schoenfeld_2021_loading_continuum",
+        "lopez_2021_load_network"
+      ]
+    },
+    {
+      "id": "sore_knees_light",
+      "text": "My knees hurt with heavy squats. Can I still build muscle with lighter loads?",
+      "expected": [
+        "lopez_2021_load_network"
+      ]
+    },
+    {
+      "id": "how_close_failure",
+      "text": "How close to failure should I take my sets?",
+      "expected": [
+        "robinson_2024_proximity_to_failure"
+      ]
+    },
+    {
+      "id": "what_is_rir",
+      "text": "What does reps in reserve mean and how do I use it?",
+      "expected": [
+        "zourdos_2016_rir_scale"
+      ]
+    },
+    {
+      "id": "failure_strength_vs_size",
+      "text": "Is training to failure more important for strength or for muscle size?",
+      "expected": [
+        "robinson_2024_proximity_to_failure"
+      ]
+    },
+    {
+      "id": "rest_between_sets",
+      "text": "How long should I rest between sets for muscle growth?",
+      "expected": [
+        "singer_2024_rest_intervals"
+      ]
+    },
+    {
+      "id": "thirty_minutes",
+      "text": "I only have 30 minutes, three times a week. How do I train efficiently?",
+      "expected": [
+        "iversen_2021_time_efficient"
+      ]
+    },
+    {
+      "id": "minimum_dose",
+      "text": "What is the least training I can do and still make progress?",
+      "expected": [
+        "iversen_2021_time_efficient"
+      ]
+    },
+    {
+      "id": "when_add_weight",
+      "text": "When should I add weight to the bar?",
+      "expected": [
+        "acsm_2009_progression"
+      ]
+    },
+    {
+      "id": "deload",
+      "text": "What is a deload and how do I know when I need one?",
+      "expected": [
+        "bell_2023_deloading"
+      ]
+    },
+    {
+      "id": "cardio_kills_gains",
+      "text": "Will doing cardio ruin my muscle gains?",
+      "expected": [
+        "schumann_2022_concurrent_training"
+      ]
+    },
+    {
+      "id": "cardio_order",
+      "text": "Should I do cardio before or after lifting on the same day?",
+      "expected": [
+        "schumann_2022_concurrent_training"
+      ]
+    },
+    {
+      "id": "full_range",
+      "text": "Do I need a full range of motion on every exercise?",
+      "expected": [
+        "schoenfeld_2020_range_of_motion"
+      ]
+    },
+    {
+      "id": "injury_risk_strength",
+      "text": "Does strength training lower my risk of getting injured?",
+      "expected": [
+        "lauersen_2014_injury_prevention"
+      ]
+    },
+    {
+      "id": "increase_load_safely",
+      "text": "How quickly can I increase my training load without getting hurt?",
+      "expected": [
+        "gabbett_2016_training_load"
+      ]
+    },
+    {
+      "id": "stretch_prevent",
+      "text": "Does stretching stop injuries?",
+      "expected": [
+        "lauersen_2014_injury_prevention"
+      ]
+    },
+    {
+      "id": "protein_daily",
+      "text": "How much protein should I eat per day to build muscle?",
+      "expected": [
+        "jager_2017_protein",
+        "morton_2018_protein_supplementation"
+      ]
+    },
+    {
+      "id": "protein_per_meal",
+      "text": "Is there a limit to how much protein my body can use in one meal?",
+      "expected": [
+        "schoenfeld_2018_protein_per_meal"
+      ]
+    },
+    {
+      "id": "protein_after_workout",
+      "text": "Do I need to eat protein right after my workout?",
+      "expected": [
+        "kerksick_2017_nutrient_timing",
+        "jager_2017_protein"
+      ]
+    },
+    {
+      "id": "protein_cutting",
+      "text": "How much protein should I eat while cutting to keep my muscle?",
+      "expected": [
+        "jager_2017_protein",
+        "aragon_2017_diets_body_composition",
+        "helms_2014_contest_prep"
+      ]
+    },
+    {
+      "id": "rate_of_loss",
+      "text": "How fast can I lose weight without losing muscle?",
+      "expected": [
+        "helms_2014_contest_prep",
+        "aragon_2017_diets_body_composition"
+      ]
+    },
+    {
+      "id": "keto_vs_low_fat",
+      "text": "Which diet is best for fat loss, keto or low fat?",
+      "expected": [
+        "aragon_2017_diets_body_composition"
+      ]
+    },
+    {
+      "id": "creatine_safe",
+      "text": "Is creatine safe and how much should I take?",
+      "expected": [
+        "kreider_2017_creatine"
+      ]
+    },
+    {
+      "id": "creatine_loading",
+      "text": "Do I need a loading phase for creatine?",
+      "expected": [
+        "kreider_2017_creatine"
+      ]
+    },
+    {
+      "id": "caffeine_dose",
+      "text": "How much caffeine before a workout is helpful?",
+      "expected": [
+        "guest_2021_caffeine"
+      ]
+    },
+    {
+      "id": "preworkout_sleep",
+      "text": "Will a pre-workout drink with caffeine stop me from sleeping?",
+      "expected": [
+        "guest_2021_caffeine"
+      ]
+    },
+    {
+      "id": "water_training",
+      "text": "How much water should I drink during training?",
+      "expected": [
+        "sawka_2007_fluid_replacement"
+      ]
+    },
+    {
+      "id": "cardio_per_week",
+      "text": "How much cardio should an adult do each week?",
+      "expected": [
+        "who_2020_activity_guidelines",
+        "acsm_2011_exercise_quantity"
+      ]
+    },
+    {
+      "id": "ten_thousand_steps",
+      "text": "Do I really need 10,000 steps a day?",
+      "expected": [
+        "paluch_2022_daily_steps"
+      ]
+    },
+    {
+      "id": "sleep_hours",
+      "text": "How many hours of sleep do I need?",
+      "expected": [
+        "watson_2015_sleep_duration",
+        "walsh_2021_sleep_athlete"
+      ]
+    },
+    {
+      "id": "sleep_training",
+      "text": "Does poor sleep hurt my training and recovery?",
+      "expected": [
+        "walsh_2021_sleep_athlete"
+      ]
+    },
+    {
+      "id": "massage_cold",
+      "text": "Do massage or cold baths help with muscle soreness?",
+      "expected": [
+        "dupuy_2018_recovery_techniques"
+      ]
+    },
+    {
+      "id": "see_doctor",
+      "text": "Do I need to see a doctor before I start exercising?",
+      "expected": [
+        "riebe_2015_screening",
+        "bredin_2013_parq_plus"
+      ]
+    },
+    {
+      "id": "screening_questions",
+      "text": "What questions should a readiness screening ask before I begin?",
+      "expected": [
+        "bredin_2013_parq_plus"
+      ]
+    },
+    {
+      "id": "strength_per_week",
+      "text": "How much strength training do adults need each week?",
+      "expected": [
+        "who_2020_activity_guidelines",
+        "acsm_2011_exercise_quantity"
+      ]
+    },
+    {
+      "id": "beginner_sets_reps",
+      "text": "How many sets and reps should a beginner do?",
+      "expected": [
+        "acsm_2009_progression"
+      ]
+    },
+    {
+      "id": "carbs_long_session",
+      "text": "How much carbohydrate do I need during a long training session?",
+      "expected": [
+        "kerksick_2017_nutrient_timing"
+      ]
+    },
+    {
+      "id": "machines_vs_free",
+      "text": "Do machines work as well as free weights?",
+      "expected": [
+        "acsm_2026_resistance_prescription",
+        "iversen_2021_time_efficient"
+      ]
+    },
+    {
+      "id": "tempo",
+      "text": "Does lifting tempo or time under tension matter for results?",
+      "expected": [
+        "acsm_2026_resistance_prescription"
+      ]
+    }
+  ]
+}

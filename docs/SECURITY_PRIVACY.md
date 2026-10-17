@@ -343,6 +343,13 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
 - `meal-media-retention` validates a dedicated `RETENTION_WORKER_SECRET` (not JWT). Store the same
   generated value in Edge Function secrets and Supabase Vault; Cron reads Vault. Never place it in
   Flutter, shell history, logs, or committed files.
+- `library-embed` (research library embeddings) validates a bearer secret that the database
+  generates itself in Vault (`library_worker_secret`, created by `private.library_worker_secret()`);
+  there is no Edge Function secret and no manual step. The cron job reads Vault and calls the
+  function through `pg_net`; the function checks the bearer through the service-role
+  `library_worker_authorized_v1` and never accepts a user session. It reads only library chunks and
+  holds no user data. Its optional `{"texts": [...]}` mode (at most 8 short texts, same secret)
+  exists for the retrieval evaluation.
 
 ## 8. Encryption and Secret Management
 

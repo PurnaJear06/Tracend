@@ -185,7 +185,10 @@ physique check answer within the request.
   - `tracend-schedule-weekly-progress-reviews` (daily 03:30 UTC) and
     `tracend-process-weekly-progress-reviews` (every five minutes);
   - `tracend-recompute-daily-metrics` (daily 06:00 UTC, `recompute_stale_metrics`);
-  - `tracend-waitlist-cleanup` (daily 03:40 UTC); and
+  - `tracend-waitlist-cleanup` (daily 03:40 UTC);
+  - `tracend-library-embed` (every minute while any research-library chunk lacks an embedding; it
+    calls the `library-embed` Edge Function through `pg_net` with a secret the database keeps in
+    Vault); and
   - the daily `meal-media-retention` worker, which authenticates with `RETENTION_WORKER_SECRET`
     read from Vault. The same worker removes expired export packages and orphaned Storage objects;
     a failed Storage deletion keeps the object reference for retry.
@@ -611,10 +614,13 @@ never stored, and every source records its licence.
 - Retrieved text is reference data. It never overrides Tracend rules, the athlete's data or the
   safety policy, and rules still decide every number.
 
-The tables and search are built; the library is empty.
+The tables, search and ingestion are built (E2). The first 35 sources are files in
+`supabase/library/`, loaded by a migration with null embeddings; the `library-embed` Edge Function
+fills them with `gte-small`, triggered by a cron job (see DATA_MODEL.md section 12). A short
+coaching-principles digest of the sources is exported for the Coach's stable prompt prefix
+(`_shared/library/principles.ts`); it is not registered yet.
 
-> **Planned (coaching platform):** ingestion and the first 30 sources (Phase 3 / E2), the library
-> inside Coach chat (Phase 3 / E3), regional modules chosen by the athlete's region (Phase 4 / E4,
+> **Planned (coaching platform):** the library inside Coach chat (Phase 3 / E3), regional modules chosen by the athlete's region (Phase 4 / E4,
 > D5), and plan explanations citing sources (Phase 4 / E5).
 
 ### Add vector retrieval over user data only when all are true

@@ -1019,6 +1019,37 @@ One row per ingestion run: `id`, `started_at`, `finished_at` (null exactly while
 `running`), `status` (`running`, `succeeded`, `failed`), `source_count`, `chunk_count`, `error`
 (at most 2000 characters).
 
+#### Content and ingestion (E2, migration `20261017110842_library_content`)
+
+Content lives in the repo as `supabase/library/sources/*.ts` (one object per source: metadata,
+licence, region, topics, why it was chosen, and a summary in Tracend's own words split into titled
+sections). `supabase/functions/_shared/library/chunk.ts` splits each section into chunks of at most
+1400 characters, each with the context header `Source: <label>, <title>. Section: <section>.`
+(`token_count` is characters / 4, at most 512 so a chunk fits the `gte-small` window). The first
+migration loads 35 sources and about 120 chunks, all with a null embedding, through
+`private.library_replace_source(source jsonb, chunks jsonb)`: it upserts a source by `manifest_key`
+and replaces its chunks only when their text changed, so loading a block again keeps valid
+embeddings. A later content update is a new migration holding the blocks printed by
+`_shared/library/build_migration.ts` for the changed sources; `library_content_test.ts` fails when a
+content file differs from the newest migration that loads it.
+
+Embeddings are filled server-side. Service-role functions (all security definer, empty
+`search_path`, no grant to `anon` or `authenticated`):
+
+| Function | Purpose |
+|---|---|
+| `library_worker_authorized_v1(candidate text)` | true when `candidate` is the Vault secret `library_worker_secret` |
+| `library_pending_chunks_v1(batch_size integer)` | `{chunk_id, source_id, input_text}` of chunks without an embedding (batch 1 to 200, default 25); `input_text` is header, line break, body |
+| `library_store_embeddings_v1(model text, items jsonb)` | stores `[{chunk_id, embedding}]` (384 numbers) with `embedding_model` on chunks that have none; returns the count; a wrong size raises `22000` |
+| `library_record_run_v1(started_at, succeeded, source_count, chunk_count, error)` | one finished `library_ingest_runs` row |
+| `library_status_v1()` | `{schema_version, sources, chunks, embedded_chunks}` |
+
+`private.library_worker_secret()` creates the Vault secret on first use (a restore does not carry
+Vault, so a restored database makes a new one). `private.library_embed_kick()` posts to the
+`library-embed` Edge Function through `pg_net` when any chunk lacks an embedding, and the pg_cron job
+`tracend-library-embed` runs it every minute. None of these private functions is executable by an API
+role.
+
 #### `public.search_library_v1(query_text, query_embedding, match_count, filters)`
 
 Contract 6 v1.1. Security definer, empty `search_path`, executable by `service_role` only. Takes
