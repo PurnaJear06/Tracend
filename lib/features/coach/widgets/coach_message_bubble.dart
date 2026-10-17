@@ -137,7 +137,16 @@ class _CoachReply extends StatelessWidget {
         message.evidence.isNotEmpty ||
         message.missingData.isNotEmpty ||
         reasoning.isNotEmpty;
-    final provider = !summary && !referral ? message.modelProvider : null;
+    final provider = !summary ? message.modelProvider : null;
+    // "Not an AI answer" only for what the server wrote without a model: a
+    // data summary or a deterministic referral. A refusal a model wrote is an
+    // AI answer, so it keeps its provider label under the safety styling.
+    final noModel =
+        summary ||
+        aiAnswerLabel(
+          provider: message.modelProvider,
+          model: message.model,
+        ).endsWith('not AI');
     return Semantics(
       container: true,
       label: referral
@@ -151,7 +160,7 @@ class _CoachReply extends StatelessWidget {
           if (summary || referral) ...[
             StatusChip(
               label: referral
-                  ? 'Safety note · not an AI answer'
+                  ? (noModel ? 'Safety note · not an AI answer' : 'Safety note')
                   : 'Data summary · not an AI answer',
               icon: referral ? CupertinoIcons.heart : CupertinoIcons.doc_text,
               tone: referral ? StatusTone.neutral : StatusTone.caution,

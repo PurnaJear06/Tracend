@@ -939,12 +939,21 @@ void _safetyNoteTests() {
       expect(find.text('Data summary · not an AI answer'), findsNothing);
     });
 
-    testWidgets('a refused reply stored as a model row is a safety note', (
-      tester,
-    ) async {
+    testWidgets('a refusal the server wrote without a model is not an AI '
+        'answer', (tester) async {
       await show(tester, reply(state: 'refused', source: null));
       expect(find.text('Safety note · not an AI answer'), findsOneWidget);
-      expect(find.textContaining('AI answer ·'), findsNothing);
+      expect(find.text('Tracend answer · not AI'), findsOneWidget);
+    });
+
+    testWidgets('a refusal a model wrote keeps its AI label', (tester) async {
+      await show(
+        tester,
+        reply(state: 'refused', source: 'model', provider: 'anthropic'),
+      );
+      expect(find.text('Safety note'), findsOneWidget);
+      expect(find.textContaining('not an AI answer'), findsNothing);
+      expect(find.textContaining('AI answer ·'), findsOneWidget);
     });
 
     testWidgets('an ordinary data summary stays a data summary', (
