@@ -42,6 +42,39 @@ export type ExcludedReading = Readonly<{
 
 export type PhaseConfidence = "high" | "medium" | "low";
 
+/** Every recorded weight reading, from the first one; present only when it starts before the phase. */
+export type RecordedHistory = Readonly<{
+  startDate: string;
+  startWeightKg: number;
+  /** Current minus start, in kg; negative is a loss. */
+  changeKg: number;
+  changePct: number;
+  weeks: number;
+  readingsUsed: number;
+  /** Too few readings or too long a gap to confirm the trend between the two ends. */
+  sparse: boolean;
+  /** The input held the most readings the RPC returns, so older ones may exist. */
+  capped: boolean;
+}>;
+
+/**
+ * The run of falling weight that ends now, from its high point (a rise smaller than the
+ * tolerance does not end it). Present only when it differs from the goal phase: it began before
+ * the goal phase, or after the phase began (weight rose, then fell).
+ */
+export type ContinuousLoss = Readonly<{
+  startDate: string;
+  startWeightKg: number;
+  changeKg: number;
+  changePct: number;
+  weeks: number;
+  /** Average kg a week over the run; negative is a loss. */
+  weeklyRateKg: number;
+  /** Enough readings, none too far apart; only a confirmed run feeds the review. */
+  confirmed: boolean;
+  beganBeforeGoalPhase: boolean;
+}>;
+
 export type GoalPhaseSummary = Readonly<{
   hasGoal: boolean;
   goalType: string | null;
@@ -68,6 +101,14 @@ export type GoalPhaseSummary = Readonly<{
   hasTarget: boolean;
   target: GoalTarget;
   readingsUsed: number;
+  /** The latest reading is older than the freshness limit (staleReadingDays). */
+  latestReadingStale: boolean;
+  /** How many readings the current weight is the median of (1 to 3). */
+  currentReadingsUsed: number;
+  /** Whole days from the latest reading to the coaching date, or null without a reading. */
+  latestReadingAgeDays: number | null;
+  history: RecordedHistory | null;
+  continuousLoss: ContinuousLoss | null;
   excluded: readonly ExcludedReading[];
   confidence: PhaseConfidence;
   notes: readonly string[];

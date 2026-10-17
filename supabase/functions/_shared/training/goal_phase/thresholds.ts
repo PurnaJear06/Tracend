@@ -102,6 +102,41 @@ export const goalPhaseThresholds = Object.freeze({
     sources: ["tracend_in_house"],
     inHouse: true,
   }),
+  // Recorded history before the goal
+  continuousRunTolerancePct: threshold({
+    value: 3,
+    unit: "% of body weight",
+    basis: "Body weight scatters by up to about 2 to 3% with fluid, food and glycogen. A rise " +
+      "smaller than this does not end a run of loss, and a start weight must sit at least this " +
+      "far above the goal phase's start weight before the loss counts as having begun before " +
+      "the goal.",
+    sources: ["tracend_in_house"],
+    inHouse: true,
+  }),
+  runMinimumReadings: threshold({
+    value: 4,
+    unit: "readings",
+    basis: "A run counts as continuous loss for the review only with at least this many " +
+      "readings in it; two weights months apart say nothing about what happened between them.",
+    sources: ["tracend_in_house"],
+    inHouse: true,
+  }),
+  runMaximumGapDays: threshold({
+    value: 35,
+    unit: "days",
+    basis: "A run counts as continuous loss for the review only when no two readings in it are " +
+      "further apart than this (five weeks); a longer gap could hide a rebound or a break.",
+    sources: ["tracend_in_house"],
+    inHouse: true,
+  }),
+  historyMinimumLeadDays: threshold({
+    value: 7,
+    unit: "days",
+    basis: "The recorded history is shown beside the goal phase only when the first reading is " +
+      "at least a week before the first reading of the goal phase; less adds nothing.",
+    sources: ["tracend_in_house"],
+    inHouse: true,
+  }),
   // Data
   implausibleBaseFraction: threshold({
     value: 0.03,

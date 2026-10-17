@@ -84,3 +84,16 @@ export const longCutContext: Record<string, unknown> = {
     .filter((r) => r.date >= "2026-08-20")
     .map((r) => ({ measured_on: r.date, weight_kg: r.kg, waist_cm: null, source: "manual" })),
 };
+
+/**
+ * The same athlete when the goal was activated a month into the cut (3 July): the goal phase
+ * starts at 82 kg, but the recorded weight starts on 3 June at 90 kg, so the journey is longer
+ * than the goal.
+ */
+export const lateGoalInputs: GoalPhaseInputs = { ...longCutInputs, activatedOn: "2026-07-03" };
+
+/** The RPC payload for the late-goal athlete. */
+export const lateGoalPayload = {
+  ...longCutPayload,
+  goal: { ...longCutPayload.goal, activated_on: "2026-07-03" },
+};
