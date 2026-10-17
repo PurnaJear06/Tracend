@@ -1,5 +1,5 @@
 begin;
-select plan(76);
+select plan(96);
 
 -- Start from a library with no embeddings, as production does right after the migration.
 update private.library_chunks set embedding = null, embedding_model = null;
@@ -36,7 +36,8 @@ select ok((select bool_and(topics <> '{}') from private.library_sources), 'every
 select ok((select bool_and(has_function_privilege('service_role', f, 'execute'))
   from unnest(array[
     'public.library_worker_authorized_v1(text)',
-    'public.library_pending_chunks_v1(integer)',
+    'public.library_pending_chunks_v1(integer, uuid[])',
+    'public.library_record_embed_failures_v1(uuid[])',
     'public.library_store_embeddings_v1(text, jsonb)',
     'public.library_record_run_v1(timestamptz, boolean, integer, integer, text)',
     'public.library_status_v1()'
@@ -45,7 +46,8 @@ select ok((select bool_and(not has_function_privilege('anon', f, 'execute')
     and not has_function_privilege('authenticated', f, 'execute'))
   from unnest(array[
     'public.library_worker_authorized_v1(text)',
-    'public.library_pending_chunks_v1(integer)',
+    'public.library_pending_chunks_v1(integer, uuid[])',
+    'public.library_record_embed_failures_v1(uuid[])',
     'public.library_store_embeddings_v1(text, jsonb)',
     'public.library_record_run_v1(timestamptz, boolean, integer, integer, text)',
     'public.library_status_v1()'
@@ -61,7 +63,7 @@ select ok((select bool_and(not has_function_privilege('service_role', f, 'execut
 select ok((select bool_and(p.prosecdef) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname in ('library_worker_authorized_v1',
     'library_pending_chunks_v1', 'library_store_embeddings_v1', 'library_record_run_v1',
-    'library_status_v1')), 'the worker functions are security definer');
+    'library_record_embed_failures_v1', 'library_status_v1')), 'the worker functions are security definer');
 select is((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname in ('public', 'private') and p.proname like 'library\_%'
     and p.proconfig is distinct from array['search_path=""']), 0::bigint,
@@ -138,6 +140,20 @@ select lives_ok($$select private.library_embed_kick()$$, 'the kick runs with a b
 select is((select count(*) from net.http_request_queue), (select n from queue_before),
   'and posts nothing');
 
+-- Failed attempts: the kick stops once every waiting chunk has failed 5 times.
+select private.library_set_embed_url('https://abcdefghijklmnopqrst.supabase.co/functions/v1/library-embed');
+update private.library_chunks set embed_attempts = 5 where embedding is null;
+update queue_before set n = (select count(*) from net.http_request_queue);
+select lives_ok($$select private.library_embed_kick()$$, 'the kick runs when every waiting chunk has given up');
+select is((select count(*) from net.http_request_queue), (select n from queue_before),
+  'and posts nothing');
+update private.library_chunks set embed_attempts = 4
+  where id = (select id from private.library_chunks where embedding is null limit 1);
+select lives_ok($$select private.library_embed_kick()$$, 'the kick runs when one chunk has an attempt left');
+select is((select count(*) from net.http_request_queue), (select n + 1 from queue_before),
+  'and posts again');
+update private.library_chunks set embed_attempts = 0;
+
 select ok(has_function_privilege('service_role', 'private.library_set_embed_url(text)', 'execute'),
   'the service role can set the embed URL');
 select ok(not has_function_privilege('anon', 'private.library_set_embed_url(text)', 'execute'),
@@ -158,6 +174,32 @@ select ok((select bool_and(input_text = c.header || E'\n' || c.body)
 select is((select array_agg(chunk_id order by chunk_id) from public.library_pending_chunks_v1(10)),
   (select array_agg(chunk_id order by chunk_id) from public.library_pending_chunks_v1(10)),
   'the order is stable between calls');
+
+-- Failed attempts -------------------------------------------------------------------------------------
+create temp table poison as select chunk_id from public.library_pending_chunks_v1(1);
+select ok(not exists (select 1 from public.library_pending_chunks_v1(200, array[(select chunk_id from poison)])
+  where chunk_id = (select chunk_id from poison)), 'a chunk the caller excludes is not offered');
+select ok(exists (select 1 from public.library_pending_chunks_v1(200, array[(select chunk_id from poison)])),
+  'and the other chunks still are');
+select public.library_record_embed_failures_v1(array[(select chunk_id from poison)]) from generate_series(1, 4);
+select is((select embed_attempts from private.library_chunks where id = (select chunk_id from poison)), 4,
+  'four failures are counted');
+select is((select count(*) from public.library_pending_chunks_v1(200) where chunk_id = (select chunk_id from poison)),
+  1::bigint, 'and the chunk is still offered');
+select is(public.library_record_embed_failures_v1(array[(select chunk_id from poison)]), 1,
+  'the fifth failure reports the chunk as given up');
+select is((select embed_attempts from private.library_chunks where id = (select chunk_id from poison)), 5,
+  'five failures are counted');
+select ok((select embed_failed_at is not null from private.library_chunks where id = (select chunk_id from poison)),
+  'with the time of the last one');
+select is((select count(*) from public.library_pending_chunks_v1(200) where chunk_id = (select chunk_id from poison)),
+  0::bigint, 'a chunk that failed five times is no longer offered');
+select is(public.library_record_embed_failures_v1(array[(select chunk_id from poison)]), 0,
+  'and a further failure is not reported again');
+select is(public.library_record_embed_failures_v1(null), 0, 'no chunks is no failures');
+update private.library_chunks set embed_attempts = 0, embed_failed_at = null;
+select is((select count(*) from public.library_pending_chunks_v1(200) where chunk_id = (select chunk_id from poison)),
+  1::bigint, 'resetting the count offers the chunk again');
 
 -- Storing embeddings -------------------------------------------------------------------------------
 create temp table first_chunk as
@@ -181,6 +223,22 @@ select is((select count(*) from public.library_pending_chunks_v1(200) where chun
 select throws_ok($$select public.library_store_embeddings_v1('gte-small',
   jsonb_build_array(jsonb_build_object('chunk_id', gen_random_uuid(), 'embedding', '[1,2,3]'::jsonb)))$$,
   '22000', null, 'a vector of the wrong size is refused');
+create temp table next_chunk as select chunk_id from public.library_pending_chunks_v1(1);
+select throws_ok($$select public.library_store_embeddings_v1('gte-small',
+  jsonb_build_array(jsonb_build_object('chunk_id', (select chunk_id from next_chunk))))$$,
+  '22023', null, 'an item without an embedding is refused');
+select throws_ok($$select public.library_store_embeddings_v1('gte-small',
+  jsonb_build_array(jsonb_build_object('chunk_id', (select chunk_id from next_chunk), 'embedding', null)))$$,
+  '22023', null, 'and one with a null embedding');
+select throws_ok($$select public.library_store_embeddings_v1('gte-small',
+  jsonb_build_array(jsonb_build_object('embedding', pg_temp.embedding_json(2))))$$,
+  '22023', null, 'and one without a chunk');
+select throws_ok($$select public.library_store_embeddings_v1('gte-small', jsonb_build_array(
+  jsonb_build_object('chunk_id', (select chunk_id from next_chunk), 'embedding', pg_temp.embedding_json(2)),
+  jsonb_build_object('chunk_id', gen_random_uuid())))$$,
+  '22023', null, 'a batch with one bad item is refused');
+select is((select embedding is null from private.library_chunks where id = (select chunk_id from next_chunk)),
+  true, 'and stores none of it');
 select throws_ok($$select public.library_store_embeddings_v1('  ', '[]'::jsonb)$$, '22023', null,
   'a blank model name is refused');
 select throws_ok($$select public.library_store_embeddings_v1('gte-small', '{}'::jsonb)$$, '22023', null,

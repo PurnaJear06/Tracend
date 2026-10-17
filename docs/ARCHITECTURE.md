@@ -186,9 +186,11 @@ physique check answer within the request.
     `tracend-process-weekly-progress-reviews` (every five minutes);
   - `tracend-recompute-daily-metrics` (daily 06:00 UTC, `recompute_stale_metrics`);
   - `tracend-waitlist-cleanup` (daily 03:40 UTC);
-  - `tracend-library-embed` (every minute while any research-library chunk lacks an embedding; it
-    calls the `library-embed` Edge Function through `pg_net` with a secret the database keeps in
-    Vault); and
+  - `tracend-library-embed` (every minute while any research-library chunk lacks an embedding and
+    has attempts left; it calls the `library-embed` Edge Function through `pg_net` with a secret the
+    database keeps in Vault, at the URL in the Vault secret `library_embed_url`. The job is inert
+    until the deploy workflow stores that URL after the migrations, via
+    `private.library_set_embed_url`, executable by `service_role` only); and
   - the daily `meal-media-retention` worker, which authenticates with `RETENTION_WORKER_SECRET`
     read from Vault. The same worker removes expired export packages and orphaned Storage objects;
     a failed Storage deletion keeps the object reference for retry.
@@ -616,7 +618,8 @@ never stored, and every source records its licence.
 
 The tables, search and ingestion are built (E2). The first 35 sources are files in
 `supabase/library/`, loaded by a migration with null embeddings; the `library-embed` Edge Function
-fills them with `gte-small`, triggered by a cron job (see DATA_MODEL.md section 12). A short
+fills them with `gte-small`, triggered by a cron job that stays inert until the deploy workflow sets
+the function's URL in Vault (see DATA_MODEL.md section 12). A short
 coaching-principles digest of the sources is exported for the Coach's stable prompt prefix
 (`_shared/library/principles.ts`); it is not registered yet.
 

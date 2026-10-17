@@ -1,7 +1,7 @@
 -- Research library, part 2 (coaching platform program, chunk E2) -------------------------
 
 -- Loads the first sources into the library tables from E1 and fills their embeddings on the
--- server, with no manual step in production:
+-- server:
 --
 --  1. private.library_replace_source loads (or re-loads) one source with its chunks. The
 --     blocks at the end of this file call it. A later content update is a new migration with
@@ -10,12 +10,20 @@
 --  2. The library-embed Edge Function fills the missing embeddings with Supabase's built-in
 --     gte-small model (decision D4). A pg_cron job calls it every minute while any chunk
 --     lacks an embedding, authenticating with a secret the database generates in Vault.
---     Nothing is configured by hand: the secret never leaves the database and the function.
+--     The job is inert until the deploy workflow stores the function's URL in Vault
+--     (private.library_set_embed_url); the bearer secret never leaves the database and the function.
 --
 -- Everything here is service-role only. Rules still decide every number; the library only
 -- grounds wording.
 
 create extension if not exists pg_net with schema extensions;
+
+-- Failed embedding attempts. A chunk the embedder keeps failing on is offered for at most 5
+-- attempts (one a minute), after which cron goes quiet about it. To try it again, a migration or
+-- the SQL editor sets embed_attempts back to 0.
+alter table private.library_chunks
+  add column embed_attempts integer not null default 0,
+  add column embed_failed_at timestamptz;
 
 -- Loading ----------------------------------------------------------------------------------
 
@@ -137,9 +145,10 @@ $$;
 
 -- Embedding -------------------------------------------------------------------------------
 
--- Chunks that still have no embedding, in a stable order. input_text is what both the
--- embedder and full-text search see: the context header, then the body.
-create function public.library_pending_chunks_v1(batch_size integer)
+-- Chunks that still have no embedding and fewer than 5 failed attempts, in a stable order, leaving
+-- out exclude_ids (the chunks that already failed in the caller's run). input_text is what both
+-- the embedder and full-text search see: the context header, then the body.
+create function public.library_pending_chunks_v1(batch_size integer, exclude_ids uuid[] default null)
 returns table (chunk_id uuid, source_id uuid, input_text text)
 language sql
 stable
@@ -151,14 +160,16 @@ as $$
     c.source_id,
     case when c.header = '' then c.body else c.header || E'\n' || c.body end
   from private.library_chunks c
-  where c.embedding is null
+  where c.embedding is null and c.embed_attempts < 5
+    and (exclude_ids is null or c.id <> all (exclude_ids))
   order by c.created_at, c.source_id, c.ordinal
   limit least(greatest(coalesce(batch_size, 25), 1), 200)
 $$;
 
 -- Stores embeddings from [{chunk_id, embedding: [384 numbers]}] on chunks that have none, and
 -- returns how many it stored. Chunks that already have one are left alone, so running the
--- worker twice (or two workers at once) is harmless. A vector of the wrong size raises 22000.
+-- worker twice (or two workers at once) is harmless. A vector of the wrong size raises 22000, and
+-- so does an item without a chunk_id or an embedding (22023): nothing is stored then.
 create function public.library_store_embeddings_v1(model text, items jsonb)
 returns integer
 language plpgsql
@@ -178,6 +189,13 @@ begin
     raise exception 'at most 200 items per call' using errcode = '22023';
   end if;
 
+  if exists (
+    select 1 from jsonb_array_elements(items) e
+    where (e ->> 'chunk_id') is null or jsonb_typeof(e -> 'embedding') is distinct from 'array'
+  ) then
+    raise exception 'every item needs a chunk_id and an embedding' using errcode = '22023';
+  end if;
+
   -- Check every vector first: the update below would not look at those of unknown chunks.
   perform (e -> 'embedding')::text::extensions.vector(384) from jsonb_array_elements(items) e;
 
@@ -190,10 +208,28 @@ begin
   update private.library_chunks c
   set embedding = incoming.embedding, embedding_model = model
   from incoming
-  where c.id = incoming.id and c.embedding is null;
+  where c.id = incoming.id and c.embedding is null and incoming.embedding is not null;
   get diagnostics stored = row_count;
   return stored;
 end
+$$;
+
+-- Counts one failed attempt on each of the chunks that still have no embedding, and returns how
+-- many reached the limit of 5 with this call (the caller reports those once). A chunk at the limit
+-- is no longer offered by library_pending_chunks_v1 or counted by the kick.
+create function public.library_record_embed_failures_v1(chunk_ids uuid[])
+returns integer
+language sql
+security definer
+set search_path = ''
+as $$
+  with updated as (
+    update private.library_chunks c
+    set embed_attempts = c.embed_attempts + 1, embed_failed_at = now()
+    where c.id = any (coalesce(chunk_ids, '{}'::uuid[])) and c.embedding is null
+    returning c.embed_attempts
+  )
+  select count(*) filter (where embed_attempts = 5)::integer from updated
 $$;
 
 -- One finished row per worker run that did any work.
@@ -240,13 +276,15 @@ as $$
 $$;
 
 revoke all on function public.library_worker_authorized_v1(text) from public, anon, authenticated;
-revoke all on function public.library_pending_chunks_v1(integer) from public, anon, authenticated;
+revoke all on function public.library_pending_chunks_v1(integer, uuid[]) from public, anon, authenticated;
+revoke all on function public.library_record_embed_failures_v1(uuid[]) from public, anon, authenticated;
 revoke all on function public.library_store_embeddings_v1(text, jsonb) from public, anon, authenticated;
 revoke all on function public.library_record_run_v1(timestamptz, boolean, integer, integer, text)
   from public, anon, authenticated;
 revoke all on function public.library_status_v1() from public, anon, authenticated;
 grant execute on function public.library_worker_authorized_v1(text) to service_role;
-grant execute on function public.library_pending_chunks_v1(integer) to service_role;
+grant execute on function public.library_pending_chunks_v1(integer, uuid[]) to service_role;
+grant execute on function public.library_record_embed_failures_v1(uuid[]) to service_role;
 grant execute on function public.library_store_embeddings_v1(text, jsonb) to service_role;
 grant execute on function public.library_record_run_v1(timestamptz, boolean, integer, integer, text)
   to service_role;
@@ -254,7 +292,8 @@ grant execute on function public.library_status_v1() to service_role;
 
 -- Trigger ---------------------------------------------------------------------------------
 
--- Calls library-embed when any chunk lacks an embedding; does nothing otherwise. One request
+-- Calls library-embed when any chunk lacks an embedding and has attempts left; does nothing
+-- otherwise (a chunk that failed 5 times no longer wakes cron). One request
 -- embeds only what fits in an Edge Function's CPU limit (about a dozen chunks), so cron calls
 -- it every minute until none are left. pg_net sends the request in the background. If the
 -- function is not deployed yet (migrations run before the function deploy) the call fails and
@@ -304,7 +343,9 @@ begin
   if target_url is null or btrim(target_url) = '' then
     return;
   end if;
-  if not exists (select 1 from private.library_chunks c where c.embedding is null) then
+  if not exists (
+    select 1 from private.library_chunks c where c.embedding is null and c.embed_attempts < 5
+  ) then
     return;
   end if;
   perform net.http_post(

@@ -1006,6 +1006,8 @@ lives in the `extensions` schema. The tables are empty until ingestion.
 | body            | text                       | 1–8000 characters                                            |
 | token_count     | integer                    | 1–2000                                                       |
 | embedding       | `extensions.vector(384)`   | gte-small, mean-pooled and normalised; null until embedded   |
+| embed_attempts  | integer, default 0         | Failed embedding attempts; at 5 the chunk is no longer offered and cron goes quiet about it |
+| embed_failed_at | timestamptz                | Time of the last failed attempt                              |
 | embedding_model | text                       | Model that made the embedding (e.g. `gte-small`); set exactly when `embedding` is set, so a model change re-embeds selectively |
 | fts             | tsvector, generated stored | `to_tsvector('english', header || ' ' || body)`              |
 | created_at      | timestamptz                |                                                              |
@@ -1039,16 +1041,22 @@ Embeddings are filled server-side. Service-role functions (all security definer,
 | Function | Purpose |
 |---|---|
 | `library_worker_authorized_v1(candidate text)` | true when `candidate` is the Vault secret `library_worker_secret` |
-| `library_pending_chunks_v1(batch_size integer)` | `{chunk_id, source_id, input_text}` of chunks without an embedding (batch 1 to 200, default 25); `input_text` is header, line break, body |
-| `library_store_embeddings_v1(model text, items jsonb)` | stores `[{chunk_id, embedding}]` (384 numbers) with `embedding_model` on chunks that have none; returns the count; a wrong size raises `22000` |
+| `library_pending_chunks_v1(batch_size integer, exclude_ids uuid[] default null)` | `{chunk_id, source_id, input_text}` of chunks without an embedding and with fewer than 5 failed attempts, leaving out `exclude_ids` (batch 1 to 200, default 25); `input_text` is header, line break, body |
+| `library_store_embeddings_v1(model text, items jsonb)` | stores `[{chunk_id, embedding}]` (384 numbers) with `embedding_model` on chunks that have none; returns the count; a wrong size raises `22000`, an item without a `chunk_id` or an embedding raises `22023` and nothing is stored |
+| `library_record_embed_failures_v1(chunk_ids uuid[])` | counts one failed attempt on each chunk still without an embedding; returns how many reached the limit of 5 with this call |
 | `library_record_run_v1(started_at, succeeded, source_count, chunk_count, error)` | one finished `library_ingest_runs` row |
 | `library_status_v1()` | `{schema_version, sources, chunks, embedded_chunks}` |
 
 `private.library_worker_secret()` creates the Vault secret on first use (a restore does not carry
 Vault, so a restored database makes a new one). `private.library_embed_kick()` posts to the
-`library-embed` Edge Function through `pg_net` when any chunk lacks an embedding, and the pg_cron job
-`tracend-library-embed` runs it every minute. None of these private functions is executable by an API
-role.
+`library-embed` Edge Function through `pg_net` when any chunk lacks an embedding and has attempts
+left, and the pg_cron job `tracend-library-embed` runs it every minute. The target URL is the Vault
+secret `library_embed_url`; the kick does nothing while it is missing or blank, so the job is inert
+until the deploy workflow runs `private.library_set_embed_url(url)` after the migrations (idempotent;
+it accepts only `https://<20 lowercase letters>.supabase.co/functions/v1/library-embed`). The
+loader, the worker secret and the kick are not executable by any API role; `library_set_embed_url`
+is executable by `service_role` only (and needs a direct SQL connection, because `private` is not
+exposed to the Data API).
 
 #### `public.search_library_v1(query_text, query_embedding, match_count, filters)`
 

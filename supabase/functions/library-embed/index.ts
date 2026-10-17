@@ -50,9 +50,10 @@ Deno.serve(async (request) => {
 
     const startedAt = new Date().toISOString();
     const result = await embedPendingChunks({
-      pending: async (batchSize) => {
+      pending: async (batchSize, excludeIds) => {
         const { data, error } = await client.rpc("library_pending_chunks_v1", {
           batch_size: batchSize,
+          exclude_ids: excludeIds.length === 0 ? null : excludeIds,
         });
         if (error) throw new Error("pending_failed");
         return (data ?? []).map((
@@ -68,6 +69,13 @@ Deno.serve(async (request) => {
         if (error) throw new Error("store_failed");
         return typeof data === "number" ? data : 0;
       },
+      recordFailures: async (chunkIds) => {
+        const { data, error } = await client.rpc("library_record_embed_failures_v1", {
+          chunk_ids: chunkIds,
+        });
+        if (error) throw new Error("failure_record_failed");
+        return typeof data === "number" ? data : 0;
+      },
       now: () => Date.now(),
     });
 
@@ -81,16 +89,19 @@ Deno.serve(async (request) => {
       });
       if (error) throw new Error("run_record_failed");
     }
-    if (result.failed > 0) {
-      captureException(new Error(`library_embed_failed_${result.failed}`), {
+    // Once per chunk, not every minute: only when a chunk has just been given up on.
+    if (result.abandoned > 0) {
+      console.error(`library-embed: gave up on ${result.abandoned} chunks after repeated failures`);
+      captureException(new Error(`library_embed_abandoned_${result.abandoned}`), {
         functionName: "library-embed",
-        failureCode: "embedding_failed",
+        failureCode: "embedding_abandoned",
       });
     }
     return response(200, {
       schema_version: "1.0",
       embedded: result.embedded,
       failed: result.failed,
+      abandoned: result.abandoned,
       stopped_early: result.stoppedEarly,
     });
   } catch (error) {

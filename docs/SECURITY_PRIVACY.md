@@ -345,8 +345,12 @@ website's privacy policy lists Anthropic, DeepSeek and Groq as AI processors.
   Flutter, shell history, logs, or committed files.
 - `library-embed` (research library embeddings) validates a bearer secret that the database
   generates itself in Vault (`library_worker_secret`, created by `private.library_worker_secret()`);
-  there is no Edge Function secret and no manual step. The cron job reads Vault and calls the
-  function through `pg_net`; the function checks the bearer through the service-role
+  there is no Edge Function secret. The cron job is inert until the deploy workflow stores the
+  function's URL in the Vault secret `library_embed_url` after the migrations (it runs
+  `select private.library_set_embed_url('https://<project ref>.supabase.co/functions/v1/library-embed')`,
+  a function executable by `service_role` only that accepts nothing but that URL shape), so a local
+  or CI database never posts anywhere, least of all to production. Once set, the cron job reads Vault
+  and calls the function through `pg_net`; the function checks the bearer through the service-role
   `library_worker_authorized_v1` and never accepts a user session. It reads only library chunks and
   holds no user data. Its optional `{"texts": [...]}` mode (at most 8 short texts, same secret)
   exists for the retrieval evaluation.
