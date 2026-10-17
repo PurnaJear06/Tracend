@@ -1,6 +1,9 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/features/coach/coach_errors.dart';
 import 'package:tracend/shared/shared_reads.dart';
 import 'package:uuid/uuid.dart';
+
+export 'package:tracend/features/coach/coach_errors.dart';
 
 class CoachDecision {
   const CoachDecision({
@@ -111,29 +114,6 @@ class CoachContextSource {
   final String? latestDate;
 }
 
-class CoachUnavailableException implements Exception {
-  const CoachUnavailableException(
-    this.message, {
-    this.code,
-    this.retryAfterSeconds,
-  });
-  final String message;
-  final String? code;
-  final int? retryAfterSeconds;
-
-  @override
-  String toString() => message;
-}
-
-String coachChatFailureMessage(String? code) => switch (code) {
-  'provider_response_empty' ||
-  'provider_response_truncated' ||
-  'provider_response_invalid' =>
-    'Coach couldn’t complete that response. Please try again.',
-  'provider_timeout' => 'Coach took too long to respond. Please try again.',
-  _ => 'Coach is unavailable right now. Your approved plan is unchanged.',
-};
-
 abstract interface class CoachContextRepository {
   Future<List<CoachContextSource>> loadContextStatus();
 }
@@ -143,8 +123,11 @@ abstract interface class CoachContextRepository {
 /// the model cannot produce a valid answer.
 const coachChatRequestSchemaVersion = '1.1';
 
-/// Every call gets a new idempotency key, so a retry is a new turn. Reusing a
-/// key would only return the first attempt's outcome.
+/// The idempotency key makes a request safe to repeat: the server returns
+/// what the first attempt with that key produced and never runs the model or
+/// charges again. A new question (and a retry after the server did answer,
+/// with a failure or a data summary) gets a new key; a retry after a timeout
+/// or a lost connection reuses the key it had.
 Map<String, String> coachChatRequestBody({
   required String threadId,
   required String question,
@@ -194,6 +177,7 @@ class CoachMessage {
     this.reasoningChain = const [],
     this.answerSource,
     this.diagnostic,
+    this.nearBudgetLimit = false,
   });
 
   /// Parses a stored `coach_messages` row or a coach-chat response message.
@@ -227,6 +211,7 @@ class CoachMessage {
       diagnostic: diagnostic is Map
           ? CoachChatDiagnostic.fromJson(Map<String, dynamic>.from(diagnostic))
           : null,
+      nearBudgetLimit: row['budget_warning'] == true,
     );
   }
 
@@ -247,6 +232,10 @@ class CoachMessage {
   final String? answerSource;
   final CoachChatDiagnostic? diagnostic;
 
+  /// The server's `budget_warning` on the response that carried this reply:
+  /// the athlete is nearing this month's Coach allowance. Never stored.
+  final bool nearBudgetLimit;
+
   /// A labeled deterministic reply from the athlete's data, served when the
   /// model could not answer. Never the Coach AI's own answer.
   bool get isDataSummary => answerSource == 'data_summary';
@@ -260,7 +249,14 @@ abstract interface class CoachChatRepository {
   Future<List<CoachThread>> loadThreads();
   Future<String> createThread();
   Future<List<CoachMessage>> loadMessages(String threadId);
-  Future<CoachMessage> sendMessage(String threadId, String question);
+
+  /// Asks the Coach. A [idempotencyKey] repeats an earlier attempt of the same
+  /// message; without one the call is a new turn.
+  Future<CoachMessage> sendMessage(
+    String threadId,
+    String question, {
+    String? idempotencyKey,
+  });
   Future<void> deleteThread(String threadId);
 }
 
@@ -329,39 +325,43 @@ class SupabaseCoachRepository
   }
 
   @override
-  Future<CoachMessage> sendMessage(String threadId, String question) async {
+  Future<CoachMessage> sendMessage(
+    String threadId,
+    String question, {
+    String? idempotencyKey,
+  }) async {
     final account = await _client
         .from('user_accounts')
         .select('timezone')
         .single();
-    final response = await _client.functions
-        .invoke(
-          'coach-chat',
-          body: coachChatRequestBody(
-            threadId: threadId,
-            question: question,
-            timezone: account['timezone'] as String? ?? 'UTC',
-            idempotencyKey: _uuid.v4(),
-          ),
-        )
-        .timeout(const Duration(seconds: 45));
-    if (response.status != 200 || response.data is! Map) {
-      String? code;
-      int? retryAfter;
-      if (response.data is Map) {
-        final d = Map<String, dynamic>.from(response.data as Map);
-        code = d['code'] as String?;
-        final rawRetry = d['retry_after_seconds'];
-        if (rawRetry is int) {
-          retryAfter = rawRetry;
-        } else if (rawRetry is num) {
-          retryAfter = rawRetry.ceil();
-        }
-      }
-      throw CoachUnavailableException(
-        coachChatFailureMessage(code),
-        code: code,
-        retryAfterSeconds: retryAfter,
+    final FunctionResponse response;
+    try {
+      response = await _client.functions
+          .invoke(
+            'coach-chat',
+            body: coachChatRequestBody(
+              threadId: threadId,
+              question: question,
+              timezone: account['timezone'] as String? ?? 'UTC',
+              idempotencyKey: idempotencyKey ?? _uuid.v4(),
+            ),
+          )
+          .timeout(const Duration(seconds: 45));
+    } on Object catch (error) {
+      // functions_client throws on every non-2xx status, so the function's
+      // error code and reason are in the exception, not in a response.
+      throw coachChatFailure(
+        error,
+        now: _now(),
+        budget: error is FunctionException && error.status == 429
+            ? await _budgetState()
+            : null,
+      );
+    }
+    if (response.data is! Map) {
+      throw coachChatFailure(
+        FunctionsHttpException(status: response.status, details: response.data),
+        now: _now(),
       );
     }
     final body = Map<String, dynamic>.from(response.data as Map);
@@ -370,7 +370,22 @@ class SupabaseCoachRepository
     if (message is! Map) {
       throw const FormatException('Coach response has no message body.');
     }
-    return _messageFromJson(Map<String, dynamic>.from(message));
+    return _messageFromJson({
+      ...Map<String, dynamic>.from(message),
+      'budget_warning': body['budget_warning'] == true,
+    });
+  }
+
+  /// The athlete's budget state, to tell which limit a 429 reached. Without
+  /// it the message names no limit.
+  Future<Map<String, dynamic>?> _budgetState() async {
+    try {
+      return Map<String, dynamic>.from(
+        await _client.rpc('get_my_ai_budget_state') as Map,
+      );
+    } on Object {
+      return null;
+    }
   }
 
   Future<void> confirmPreference({
@@ -477,8 +492,9 @@ class FixtureCoachRepository implements CoachRepository, CoachChatRepository {
   @override
   Future<CoachMessage> sendMessage(
     String threadId,
-    String question,
-  ) async => CoachMessage(
+    String question, {
+    String? idempotencyKey,
+  }) async => CoachMessage(
     id: 'fixture-message',
     role: 'assistant',
     content:

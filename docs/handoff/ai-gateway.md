@@ -581,6 +581,42 @@ Nothing here changes production by itself except migration code 17 (the budget s
   - Final live evals were not rerun here: A3-A6 recorded theirs (their handoff sections); A7 added
     no model code.
 
+### A9: app and SQL half (code 19, `claude/a9-coach-app-errors`)
+
+The server half (red-flag screen, numbers check, safety floors, the stronger route) is a separate
+branch (`claude/a9-coach-guardrails`). This half:
+
+- **Errors (audit 21).** `functions_client` throws `FunctionException` on every non-2xx status, so
+  the old code that read `code` and `retry_after_seconds` never ran and the cooldown was dead.
+  `lib/features/coach/coach_errors.dart` (`coachChatFailure`) maps every response `coach-chat` can
+  send (fixture `test/contract/fixtures/coach_chat_error_responses_v1.json`, tests in
+  `test/coach_chat_errors_test.dart`) to a plain sentence, the raw diagnostic, and flags (can
+  retry, retry with the same key, needs consent). A 429 `ai_usage_limit` has no reason; the
+  repository reads `get_my_ai_budget_state` to say monthly or daily, and takes a `reason` from the
+  body when the function sends one. The cooldown now ends on its last tick (the stream's done event
+  never arrived under the test clock). `budget_warning` shows as a note under the newest reply.
+- **Safe retry (25).** `CoachChatRepository.sendMessage(..., {idempotencyKey})`. The screen keeps the
+  key of a failed send: Retry repeats it after a timeout, a lost connection, a gateway timeout or a
+  409 (at most twice), and uses a new key after any failure the server itself reported. The server
+  returns a finished turn for the same key (`prepared.replayed`, `coachChatReplayResponse`).
+  Note for the server half: `coach-chat` reserves budget before it looks up a replay, so a retry of
+  a finished turn at the monthly limit gets 429 instead of its stored answer; a turn the function
+  lost stays "in progress" and answers 409 for that key until the app gives up on it.
+- **Local date (18).** Migration `20261017170019_coach_chat_local_date_no_plan.sql` makes
+  `prepare_coach_chat` use `private.local_date_for` and pick the snapshot by `features.local_date`.
+- **No plan (22).** `prepare_daily_coaching`'s body moved to `private.prepare_daily_coaching_core`
+  (`for_chat`); `public.prepare_daily_coaching` delegates with `for_chat = false`, so coach-decide
+  is unchanged (its tests did not change). Chat context gains `plan_status`; `prepare_coach_chat_v7`
+  drops `APPROVED_PLAN_ACTIVE` from permitted evidence without a plan. The frozen v8 and
+  `build_coach_athlete_context` are untouched. For the server half: render `plan_status` in
+  `coach_chat_provider.ts` (no plan, the reason, the screening outcome and date; no plan advice),
+  and note `active_plan` is now null for these athletes.
+- **One gate (26).** The base function no longer checks USD 5 or 30 a day; `reserve_ai_budget(_v2)`
+  is the gate and reads `private.ai_budget_limits`. `budget_warning` follows the same row.
+- **Verification.** pgTAP `coach_chat_local_date_no_plan_test.sql` (the local database could not be
+  started here: Colima is not running; CI runs it). Time cannot be set in pgTAP, so the local date
+  is checked in UTC+14 and UTC-11, one of which is always on another UTC day.
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

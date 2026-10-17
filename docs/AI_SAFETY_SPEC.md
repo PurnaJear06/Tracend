@@ -666,6 +666,16 @@ summaries, normalized images, duplicate avoidance, per-user rate limits, and qua
 Cost cannot override safety or the quality floor. Limits, prices and hard controls are in
 [COST_MODEL.md](./COST_MODEL.md).
 
+The reservation is the only gate. Coach chat preparation (`prepare_coach_chat`) used to keep its own
+USD 5 a month and 30 a day literals; it no longer checks spending, and its `budget_warning` follows
+`private.ai_budget_limits` (true from half of `per_person_monthly_usd`, as in
+`get_my_ai_budget_state`). The app tells the athlete in plain words which limit was reached and when
+it resets (a monthly limit resets on the first of the next month at 00:00 UTC, a daily limit at the
+next 00:00 UTC), never "Coach couldn’t answer" alone: UX_FLOWS, Coach replies. Coach chat also
+answers an athlete who has no active plan (screening outcome `see_professional` builds none); it
+may answer questions and suggest next steps but cites no plan, and the daily decision still
+requires one.
+
 ### 10.7 Cutover to Claude (Phase 2)
 
 > **Not yet done.** The code for A3–A6 is merged behind settings; production still uses DeepSeek

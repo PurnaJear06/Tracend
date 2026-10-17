@@ -402,17 +402,23 @@ class CoachRetryButton extends StatelessWidget {
 /// A turn that failed, shown in place of the Coach's reply under the
 /// question it answers: what happened in plain words, then the raw beta
 /// diagnostic as a small second line, and Retry when it can be asked again.
+/// A failure with its own way out (reviewing AI coaching consent) offers it
+/// as [actionLabel].
 class CoachTurnError extends StatelessWidget {
   const CoachTurnError({
     required this.message,
     this.diagnostic,
     this.onRetry,
+    this.actionLabel,
+    this.onAction,
     super.key,
   });
 
   final String message;
   final String? diagnostic;
   final VoidCallback? onRetry;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -456,6 +462,10 @@ class CoachTurnError extends StatelessWidget {
         if (onRetry != null) ...[
           const SizedBox(height: TracendSpacing.xxs),
           CoachRetryButton(onPressed: onRetry),
+        ],
+        if (actionLabel != null && onAction != null) ...[
+          const SizedBox(height: TracendSpacing.xxs),
+          OutlinedButton(onPressed: onAction, child: Text(actionLabel!)),
         ],
       ],
     );

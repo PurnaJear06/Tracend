@@ -21,10 +21,27 @@ import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 import 'package:tracend/shared/widgets/tracend_sheet.dart';
 import 'package:tracend/shared/widgets/tracend_skeleton.dart';
 import 'package:tracend/shared/widgets/tracend_toast.dart';
+import 'package:uuid/uuid.dart';
 
-/// A send that failed: what to say about it, the raw beta diagnostic, and
-/// the question it was answering, which Retry asks again.
-typedef _TurnFailure = ({String message, String? diagnostic, String question});
+/// A send that failed: what to say about it, the raw beta diagnostic, the
+/// question it was answering (which Retry asks again), the idempotency key
+/// that attempt used, and what Retry may do. [reuseKey] says whether Retry
+/// repeats that key (no answer reached the app, so the server may still
+/// finish it); [replays] counts how many times the key has been repeated.
+typedef _TurnFailure = ({
+  String message,
+  String? diagnostic,
+  String question,
+  String key,
+  int replays,
+  bool reuseKey,
+  bool retryable,
+  bool needsConsent,
+});
+
+/// A key is repeated at most this many times, so a turn the server lost
+/// (it would answer "still working" forever) cannot trap Retry.
+const _maxKeyReplays = 2;
 
 class CoachScreen extends StatefulWidget {
   const CoachScreen({
@@ -44,6 +61,7 @@ class CoachScreen extends StatefulWidget {
 }
 
 class _CoachScreenState extends State<CoachScreen> {
+  static const _uuid = Uuid();
   final _composer = TextEditingController();
   final _scroll = ScrollController();
   Future<List<CoachContextSource>>? _contextStatus;
@@ -85,6 +103,10 @@ class _CoachScreenState extends State<CoachScreen> {
   Map<String, dynamic>? _preferencePrompt;
   StreamSubscription<int>? _cooldownSubscription;
   int? _cooldownRemaining;
+
+  /// The server says this month's Coach allowance is nearly used; shown
+  /// under the newest reply.
+  bool _budgetWarning = false;
 
   bool get _aiAllowed => widget.aiConsent?.granted ?? true;
 
@@ -130,15 +152,12 @@ class _CoachScreenState extends State<CoachScreen> {
       (tick) => seconds - tick - 1,
     ).take(seconds);
     setState(() => _cooldownRemaining = seconds);
-    _cooldownSubscription = stream.listen(
-      (remaining) {
-        if (!mounted) return;
-        setState(() => _cooldownRemaining = remaining);
-      },
-      onDone: () {
-        if (mounted) setState(() => _cooldownRemaining = null);
-      },
-    );
+    // The last tick (zero seconds left) ends the cooldown itself; waiting for
+    // the stream's done event would leave the composer off until it arrived.
+    _cooldownSubscription = stream.listen((remaining) {
+      if (!mounted) return;
+      setState(() => _cooldownRemaining = remaining > 0 ? remaining : null);
+    });
   }
 
   Future<void> _restoreChat() async {
@@ -189,6 +208,7 @@ class _CoachScreenState extends State<CoachScreen> {
       _error = null;
       _turnFailure = null;
       _preferencePrompt = null;
+      _budgetWarning = false;
     });
     unawaited(widget.threadMemory.remember(id));
     try {
@@ -218,6 +238,7 @@ class _CoachScreenState extends State<CoachScreen> {
     _error = null;
     _turnFailure = null;
     _preferencePrompt = null;
+    _budgetWarning = false;
   });
 
   /// Creates the server thread for a new conversation's first send. It is
@@ -260,7 +281,11 @@ class _CoachScreenState extends State<CoachScreen> {
     }
   }
 
-  Future<void> _send([String? suggestion]) async {
+  /// Sends a question as a new turn, or, with [retrying], asks a failed
+  /// send again: repeating its idempotency key when no answer reached the
+  /// app, so a turn the server finished after the timeout is returned and not
+  /// run (and charged) a second time.
+  Future<void> _send([String? suggestion, _TurnFailure? retrying]) async {
     final chat = _chat;
     final question = (suggestion ?? _composer.text).trim();
     if (chat == null || question.isEmpty || _sending || _loadingChat) {
@@ -274,14 +299,29 @@ class _CoachScreenState extends State<CoachScreen> {
     // Retry and suggestion chips keep whatever the user is typing.
     if (suggestion == null) _composer.clear();
     final view = _view;
-    final local = CoachMessage(
-      id: 'pending-${DateTime.now().microsecondsSinceEpoch}',
-      role: 'user',
-      content: question,
-      createdAt: DateTime.now(),
-    );
+    final key = retrying != null && retrying.reuseKey
+        ? retrying.key
+        : _uuid.v4();
+    final replays = retrying != null && retrying.reuseKey
+        ? retrying.replays + 1
+        : 0;
+    // A retry of a failed send asks under the question already on screen.
+    final pending = _messages.lastOrNull;
+    final local =
+        retrying != null &&
+            pending != null &&
+            pending.role == 'user' &&
+            pending.id.startsWith('pending-') &&
+            pending.content == question
+        ? pending
+        : CoachMessage(
+            id: 'pending-${DateTime.now().microsecondsSinceEpoch}',
+            role: 'user',
+            content: question,
+            createdAt: DateTime.now(),
+          );
     setState(() {
-      _messages = [..._messages, local];
+      if (!_messages.contains(local)) _messages = [..._messages, local];
       _sending = true;
       _turnFailure = null;
       _preferencePrompt = null;
@@ -308,7 +348,11 @@ class _CoachScreenState extends State<CoachScreen> {
         unawaited(_refreshThreads(chat));
         return;
       }
-      final answer = await chat.sendMessage(threadId, question);
+      final answer = await chat.sendMessage(
+        threadId,
+        question,
+        idempotencyKey: key,
+      );
       Map<String, dynamic>? prompt;
       if (chat is SupabaseCoachRepository) {
         final raw = await chat.loadLastRawResponse();
@@ -327,6 +371,7 @@ class _CoachScreenState extends State<CoachScreen> {
           if (_view == view) {
             _messages = [..._messages, answer];
             _preferencePrompt = prompt;
+            _budgetWarning = answer.nearBudgetLimit;
           }
           _sending = false;
         });
@@ -344,7 +389,7 @@ class _CoachScreenState extends State<CoachScreen> {
           await Future.delayed(const Duration(milliseconds: 1200) - elapsed);
           if (!mounted) return;
         }
-        final failure = _describeFailure(e, question);
+        final failure = _describeFailure(e, question, key, replays);
         setState(() {
           _sending = false;
           if (_view == view) _turnFailure = failure;
@@ -364,29 +409,23 @@ class _CoachScreenState extends State<CoachScreen> {
   /// the beta diagnostic. During the private beta the raw text stays visible
   /// (with its HTTP status and the server's stable code) so the owner can
   /// see where a failure comes from (owner decision, 2026-09-27).
-  _TurnFailure _describeFailure(Object error, String question) {
-    String raw(Object value) => value
-        .toString()
-        .replaceFirst('Exception: ', '')
-        .replaceFirst('StateError: ', '')
-        .replaceFirst('Bad state: ', '');
-    return switch (error) {
-      TimeoutException() => (
-        message: 'Coach took too long to respond. Please try again.',
-        diagnostic: 'Beta diagnostic: ${raw(error)}',
-        question: question,
-      ),
-      CoachUnavailableException(:final message, :final code) => (
-        message: message,
-        diagnostic: code == null ? null : 'Beta diagnostic: $code',
-        question: question,
-      ),
-      _ => (
-        message: 'Coach couldn’t answer. Your approved plan is unchanged.',
-        diagnostic: raw(error),
-        question: question,
-      ),
-    };
+  _TurnFailure _describeFailure(
+    Object error,
+    String question,
+    String key,
+    int replays,
+  ) {
+    final failure = coachChatFailure(error, now: DateTime.now());
+    return (
+      message: failure.message,
+      diagnostic: failure.betaDiagnostic,
+      question: question,
+      key: key,
+      replays: replays,
+      reuseKey: failure.retrySameKey && replays < _maxKeyReplays,
+      retryable: failure.retryable,
+      needsConsent: failure.needsConsent,
+    );
   }
 
   /// Retry is offered on a data summary that ends the conversation. It asks
@@ -624,6 +663,25 @@ class _CoachScreenState extends State<CoachScreen> {
     );
   }
 
+  /// The questions offered on a new conversation. Context status that reports
+  /// no approved plan swaps the plan questions for ones that work without it.
+  List<String> _suggestions(List<CoachContextSource>? sources) {
+    final noPlan = sources?.any(
+      (source) => source.key == 'approved_plan' && !source.available,
+    );
+    return noPlan ?? false
+        ? const [
+            'What can you help me with?',
+            'Why don’t I have a plan yet?',
+            'What should I do next?',
+          ]
+        : const [
+            'What should I do next?',
+            'Explain today’s evidence',
+            'What is my next meal?',
+          ];
+  }
+
   List<Widget> _content(BuildContext context) {
     final colors = context.tracendColors;
     final textTheme = Theme.of(context).textTheme;
@@ -680,21 +738,21 @@ class _CoachScreenState extends State<CoachScreen> {
           ),
           const SizedBox(height: TracendSpacing.lg),
         ],
-        // Padded chips already keep 8pt between rows.
-        Wrap(
-          spacing: TracendSpacing.xs,
-          children: [
-            for (final suggestion in const [
-              'What should I do next?',
-              'Explain today’s evidence',
-              'What is my next meal?',
-            ])
-              ActionChip(
-                label: Text(suggestion),
-                materialTapTargetSize: MaterialTapTargetSize.padded,
-                onPressed: () => _send(suggestion),
-              ),
-          ],
+        // Padded chips already keep 8pt between rows. An athlete without an
+        // approved plan is offered questions the Coach can answer for them.
+        FutureBuilder<List<CoachContextSource>>(
+          future: _contextStatus,
+          builder: (context, snapshot) => Wrap(
+            spacing: TracendSpacing.xs,
+            children: [
+              for (final suggestion in _suggestions(snapshot.data))
+                ActionChip(
+                  label: Text(suggestion),
+                  materialTapTargetSize: MaterialTapTargetSize.padded,
+                  onPressed: () => _send(suggestion),
+                ),
+            ],
+          ),
         ),
       ] else
         for (final (index, message) in _messages.indexed) ...[
@@ -710,14 +768,24 @@ class _CoachScreenState extends State<CoachScreen> {
             onRetry: message.isDataSummary ? _retryFor(index) : null,
           ),
         ],
+      if (_budgetWarning && failure == null && !_sending) ...[
+        const SizedBox(height: TracendSpacing.md),
+        _Notice(coachBudgetWarningMessage(DateTime.now())),
+      ],
       if (failure != null && !_loadingChat) ...[
         const SizedBox(height: TracendSpacing.md),
         CoachTurnError(
           message: failure.message,
           diagnostic: failure.diagnostic,
-          onRetry: _sending || _cooldownRemaining != null
+          onRetry: !failure.retryable || _sending || _cooldownRemaining != null
               ? null
-              : () => _send(failure.question),
+              : () => _send(failure.question, failure),
+          actionLabel: failure.needsConsent && widget.aiConsent != null
+              ? 'Review AI coaching'
+              : null,
+          onAction: failure.needsConsent && widget.aiConsent != null
+              ? _reviewAiCoaching
+              : null,
         ),
       ],
       if (_sending) ...[

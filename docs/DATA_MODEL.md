@@ -736,6 +736,23 @@ The prepared Coach context for one question or decision: thread, schema version,
 checksum. Coach chat preparation writes it with the prepared athlete file.
 Deleting a thread deletes its snapshots.
 
+Coach chat preparation (`prepare_coach_chat`, under every `prepare_coach_chat_v*` layer) works on
+the athlete's own date: `private.local_date_for` (the account time zone, UTC when unset), not the
+server's UTC date. The day's `daily` feature snapshot is picked by its `features.local_date`, and a
+snapshot made for an athlete with a plan is not reused after the plan is gone, or the reverse. It
+has no spending limit of its own: `coach-chat` reserves budget before preparing anything
+(`reserve_ai_budget`, which reads `private.ai_budget_limits`), and `budget_warning` is true when the
+month's spend (recorded and reserved) reaches half of `per_person_monthly_usd`, the same threshold as
+`get_my_ai_budget_state().warning`.
+
+An athlete with no active plan or no active nutrition target can still chat (a plan is needed
+for the daily decision, `prepare_daily_coaching`, which still raises `approved plan required`;
+chat uses `private.prepare_daily_coaching_core` with `for_chat`). The context says so in
+`plan_status`: `has_active_plan`, `has_nutrition_target`, `reason` (`null`, `no_approved_plan`, or
+`see_professional` when the newest screening says so), `screening_outcome` and `screened_on` (null
+when never screened). `active_plan` and `nutrition_targets` are null, and
+`APPROVED_PLAN_ACTIVE` is not in `permitted_evidence`.
+
 ### `coach_narrative_entries`
 
 Versioned coaching timeline phases owned by the user: `phase`, `headline` (deterministic one-

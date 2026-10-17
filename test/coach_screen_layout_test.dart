@@ -297,7 +297,11 @@ class _Repository
   Future<List<CoachMessage>> loadMessages(String threadId) async => messages;
 
   @override
-  Future<CoachMessage> sendMessage(String threadId, String question) {
+  Future<CoachMessage> sendMessage(
+    String threadId,
+    String question, {
+    String? idempotencyKey,
+  }) {
     final reply = this.reply;
     if (reply is Completer<CoachMessage>) return reply.future;
     if (reply is Exception) return Future.error(reply);

@@ -1,0 +1,185 @@
+{
+  "description": "Every error response coach-chat can send, as the Edge Function builds them (supabase/functions/coach-chat/index.ts and _shared/auth.ts). Flutter maps each to a plain sentence (test/coach_chat_errors_test.dart).",
+  "cases": {
+    "usage_limit": {
+      "status": 429,
+      "body": {
+        "schema_version": "1.1",
+        "error": "ai_usage_limit"
+      }
+    },
+    "usage_limit_monthly_reason": {
+      "status": 429,
+      "body": {
+        "schema_version": "1.1",
+        "error": "ai_usage_limit",
+        "reason": "monthly_cost_limit"
+      }
+    },
+    "consent_required": {
+      "status": 403,
+      "body": {
+        "schema_version": "1.1",
+        "error": "ai_consent_required"
+      }
+    },
+    "consent_unavailable": {
+      "status": 503,
+      "body": {
+        "schema_version": "1.1",
+        "error": "ai_consent_unavailable"
+      }
+    },
+    "session_expired": {
+      "status": 401,
+      "body": {
+        "error": "invalid_session"
+      }
+    },
+    "request_in_progress": {
+      "status": 409,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_in_progress",
+        "code": "request_in_progress",
+        "replayed": true
+      }
+    },
+    "daily_rate_limit": {
+      "status": 422,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "context_preparation_failed",
+        "reason": "daily_rate_limit"
+      }
+    },
+    "monthly_cost_limit": {
+      "status": 422,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "context_preparation_failed",
+        "reason": "monthly_cost_limit"
+      }
+    },
+    "approved_plan_required": {
+      "status": 422,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "context_preparation_failed",
+        "reason": "approved_plan_required"
+      }
+    },
+    "thread_not_found": {
+      "status": 422,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "context_preparation_failed",
+        "reason": "thread_not_found"
+      }
+    },
+    "invalid_chat_request_reason": {
+      "status": 422,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "context_preparation_failed",
+        "reason": "invalid_chat_request"
+      }
+    },
+    "account_not_found": {
+      "status": 422,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "context_preparation_failed",
+        "reason": "account_not_found"
+      }
+    },
+    "invalid_timezone": {
+      "status": 422,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "context_preparation_failed",
+        "reason": "invalid_timezone"
+      }
+    },
+    "chat_context_too_large": {
+      "status": 422,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "context_preparation_failed",
+        "reason": "chat_context_too_large"
+      }
+    },
+    "unknown_preparation_failure": {
+      "status": 422,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "context_preparation_failed",
+        "reason": "sqlstate_XX000"
+      }
+    },
+    "invalid_chat_request": {
+      "status": 422,
+      "body": {
+        "schema_version": "1.1",
+        "error": "invalid_chat_request"
+      }
+    },
+    "persistence_rejected": {
+      "status": 422,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_rejected",
+        "code": "persistence_rejected"
+      }
+    },
+    "provider_timeout": {
+      "status": 503,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "provider_timeout",
+        "retry_after_seconds": null
+      }
+    },
+    "provider_rate_limited": {
+      "status": 503,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "provider_rate_limited",
+        "retry_after_seconds": 3
+      }
+    },
+    "provider_response_invalid": {
+      "status": 503,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "provider_response_invalid",
+        "retry_after_seconds": null
+      }
+    },
+    "provider_http_error": {
+      "status": 503,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "provider_http_error",
+        "retry_after_seconds": null
+      }
+    },
+    "gateway_timeout": {
+      "status": 546,
+      "body": "upstream timed out"
+    }
+  }
+}
