@@ -503,6 +503,43 @@ void main() {
       expect([for (final message in loaded) message.id], ['bb', 'ccc', 'dddd']);
     });
 
+    test('a thread hides the data summary that answered a superseded '
+        'question, and keeps other summaries', () async {
+      Map<String, dynamic> row(
+        String id,
+        String role, {
+        String? state,
+        bool summary = false,
+      }) => {
+        'id': id,
+        'thread_id': _threadId,
+        'role': role,
+        'content': 'text $id',
+        'created_at': '2026-10-17T12:00:0${id.length}Z',
+        'safety_state': ?state,
+        'answer_source': ?(summary ? 'data_summary' : null),
+      };
+      final server = _Server(
+        messages: [
+          row('a', 'user', state: 'unavailable'),
+          row('bb', 'assistant', state: 'unavailable', summary: true),
+          row('ccc', 'user'),
+          row('dddd', 'assistant', state: 'unavailable', summary: true),
+          row('eeeee', 'user', state: 'unavailable'),
+          row('ffffff', 'assistant'),
+        ],
+      );
+      final repository = SupabaseCoachRepository(
+        server.client,
+        now: () => _now,
+      );
+      final loaded = await repository.loadMessages(_threadId);
+      expect(
+        [for (final message in loaded) message.id],
+        ['ccc', 'dddd', 'ffffff'],
+      );
+    });
+
     test('a lost connection is a retryable Coach failure', () async {
       final server = _Server(offline: true);
       final repository = SupabaseCoachRepository(

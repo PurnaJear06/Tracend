@@ -326,15 +326,22 @@ class SupabaseCoachRepository
         .eq('thread_id', threadId)
         .order('created_at');
     // A question the server marked superseded (`safety_state` unavailable on
-    // a user row: a failed or lost attempt that its retry replaced) is not
-    // part of the conversation; the retry stands in for it.
-    return rows
-        .map(_messageFromJson)
-        .where(
-          (message) =>
-              !(message.role == 'user' && message.safetyState == 'unavailable'),
-        )
-        .toList();
+    // a user row: a failed, lost or summarised attempt that its retry
+    // replaced) is not part of the conversation, and neither is the data
+    // summary that answered it. Other data summaries stay.
+    final visible = <CoachMessage>[];
+    var afterHiddenQuestion = false;
+    for (final message in rows.map(_messageFromJson)) {
+      final hiddenQuestion =
+          message.role == 'user' && message.safetyState == 'unavailable';
+      final orphanSummary =
+          afterHiddenQuestion &&
+          message.role == 'assistant' &&
+          message.isDataSummary;
+      afterHiddenQuestion = hiddenQuestion;
+      if (!hiddenQuestion && !orphanSummary) visible.add(message);
+    }
+    return visible;
   }
 
   @override
