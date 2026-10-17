@@ -336,7 +336,8 @@ Deno.test("the safety boundary answers before any request", async () => {
   if (result instanceof Error) throw result;
   assertEquals(sent.length, 0);
   assertEquals(result.provider, "mock");
-  assertEquals(result.answer.safety_state, "refused");
+  assertEquals(result.model, "deterministic-safety-v1");
+  assertEquals(result.answer.safety_state, "limited");
 });
 
 Deno.test("a DeepSeek route through the gateway restates the schema for JSON mode", async () => {

@@ -4,6 +4,9 @@
 
 export const aiFeatures = [
   "coach_chat",
+  // A second Coach chat route for progress, body-weight, nutrition-number and plan questions
+  // (A9). Unset, those questions take the "coach_chat" route.
+  "coach_chat_strong",
   "daily_decision",
   "onboarding_plan",
   "onboarding_questions",

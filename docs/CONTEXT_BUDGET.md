@@ -38,6 +38,22 @@ clipped to its `budgetChars` (at most 12,000) and labelled as reference data; a 
 fails, returns nothing or takes over 4 seconds is left out. Their budgets are on top of the
 athlete file's and count toward the turn's budget reservation.
 
+## Safety Blocks (A9)
+
+Three deterministic pieces came with the Coach guardrails. None changes a budget layer; they sit
+inside budgets that already exist.
+
+| Piece | Where | Size | Notes |
+| --- | --- | --- | --- |
+| Safe Ranges section | Athlete file, after the profile (`renderCoachContextParts`) | about 660-900 characters (712 for a full profile; 891 with the pain line; 658 with no data) | Inside the 96,000 / 128,000 file budget, rendered as a required section (never dropped). Calorie floor, weekly loss ceiling, healthy-weight floor, longest cut, effort-cap pointer, and the pain-of-7 line on an escalate day. |
+| Plan Status section | Athlete file, after the Safe Ranges, only when `plan_status` says there is no plan or no nutrition target | 470 (no plan approved) or 627 (`see_professional`) characters | Required section. Stated reason, health-check outcome and date, and "no plan-specific advice". |
+| Coaching principles digest | First stable contributor (cached block, after the athlete file) | 6,581 characters (limits 4,800 to 7,200; budget 7,200) | Fixed text, no athlete data (E2). Its figures ground the numbers check. Counts toward the turn's budget reservation; Sonnet 5.5 still fits one reservation. Changing the text changes the cached prefix: bump its version. |
+| `screening` contributor | Stable contributor block, first in the registry | 249 (cleared), 458 (see_professional), 483 (moderate_until_cleared) or about 800 (unknown, when the lookup failed) characters; budget 900 | Counts toward the turn's budget reservation (`coachContextMaxChars`); nothing renders for an athlete never screened. |
+| Persona and contract lines | System prompt | about +1,650 characters (7,265 before A9) | Inside the 16,000-character instructions reserve. |
+
+Sonnet 5.5 as the stronger Coach route still fits one budget reservation (USD 0.50) with these
+blocks; `coach_chat_provider_route_test.ts` fails if a larger block ever pushes it over.
+
 ## Budget Layering
 
 ```

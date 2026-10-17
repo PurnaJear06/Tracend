@@ -241,3 +241,23 @@ Deno.test("a route that is not evaluated or cannot be reserved never reaches the
   });
   assertEquals(chooseCoachChatRoute(huge, []).route, null);
 });
+
+Deno.test("a refused first place carries the database's reason for the 429", async () => {
+  for (
+    const [message, reason] of [
+      ["monthly cost limit reached", "monthly_cost_limit"],
+      ["daily rate limit reached", "daily_rate_limit"],
+      ["global monthly cost limit reached", "global_monthly_cost_limit"],
+    ] as const
+  ) {
+    const ledger = new CoachChatBudgetLedger(
+      () => Promise.resolve({ data: null, error: { message } }),
+      "user-1",
+    );
+    assertEquals(ledger.refusal, null);
+    assertEquals(await ledger.reserveInitial(0.01), false);
+    assertEquals(ledger.refusal, reason);
+    assertEquals(await ledger.reserveLegacy(), false);
+    assertEquals(ledger.refusal, reason);
+  }
+});

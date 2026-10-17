@@ -5,8 +5,9 @@ import {
 } from "../../../library/coaching_principles.ts";
 
 // The coaching principles digest as a Contract 7 contributor for the stable (cached) prompt
-// prefix. It is fixed text without athlete data. It is NOT registered here: the registry
-// changes with E3 (coach_context/registry.ts belongs to the lead).
+// prefix. It is fixed text without athlete data. Coach chat registers it first (A9, lead decision
+// 2026-10-17): the digest shapes every reply, and its figures (for example 1.6 g of protein per kg)
+// count as given to the numbers check. E3 adds retrieval on top of it.
 
 /** Largest size the digest may reach: 1,800 tokens at four characters a token. */
 export const coachingPrinciplesMaxChars = 7_200;

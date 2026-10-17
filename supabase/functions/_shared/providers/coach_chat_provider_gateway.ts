@@ -19,7 +19,7 @@ import {
   parseCoachChatAnswer,
 } from "../contracts/coach_chat_v1.ts";
 import { call } from "../ai/gateway.ts";
-import { weightClaimCheckFor } from "../training/goal_phase/guard.ts";
+import { screenTurn } from "../coach_safety/red_flags.ts";
 import { costUsd, modelSpec } from "../ai/models.ts";
 import type { AiCallDeps, AiContent, AiMessage, AiRoute, AiUsage, AiVendor } from "../ai/types.ts";
 import {
@@ -41,7 +41,10 @@ import {
   type CoachChatTiming,
   coachChatTiming,
   CoachChatUnavailableError,
-  deterministicBoundary,
+  coachReplyCheckFor,
+  deterministicSafetyGeneration,
+  issueOfValidationError,
+  loggableIssue,
   renderCoachContextParts,
   repairContractText,
   type ValidationIssue,
@@ -273,7 +276,7 @@ type Attempted = Readonly<{
 
 function issueOf(error: unknown): ValidationIssue {
   return error instanceof CoachChatAnswerValidationError
-    ? { rule: error.rule, path: error.path, limit: error.limit, actual: error.actual }
+    ? issueOfValidationError(error)
     : { rule: "json_syntax", path: "$" };
 }
 
@@ -284,23 +287,13 @@ export async function generateCoachChatViaGateway(
   timing: CoachChatTiming = coachChatTiming,
 ): Promise<CoachChatGeneration> {
   const { question, context, contextKind, route } = input;
-  const boundary = deterministicBoundary(question);
-  if (boundary) {
-    return {
-      answer: boundary,
-      provider: "mock",
-      model: "deterministic-safety-v1",
-      inputUnits: 0,
-      outputUnits: 0,
-      estimatedCostUsd: 0,
-      attempts: [],
-    };
-  }
+  const hit = screenTurn(question, context);
+  if (hit) return deterministicSafetyGeneration(hit);
 
   const permitted = permittedEvidenceOf(context);
-  const answerCheck = weightClaimCheckFor(context, question);
-  const schema = coachChatGatewaySchema(permitted);
   const contributions = input.contributions ?? noCoachContributions;
+  const answerCheck = coachReplyCheckFor(context, question, contributions);
+  const schema = coachChatGatewaySchema(permitted);
   const deadline = Date.now() + timing.totalDeadlineMs;
   const attempts: CoachChatAttemptTelemetry[] = [];
   let spentUsd = 0;
@@ -395,7 +388,7 @@ export async function generateCoachChatViaGateway(
       if (result.stop === "max_tokens") {
         issue = { rule: "json_syntax", path: "$" };
         return {
-          telemetry: telemetry("truncated", issue),
+          telemetry: telemetry("truncated", loggableIssue(issue)),
           usage,
           failure: {
             reason: "provider_response_truncated",
@@ -410,7 +403,7 @@ export async function generateCoachChatViaGateway(
       } catch (error) {
         issue = issueOf(error);
         return {
-          telemetry: telemetry("invalid", issue),
+          telemetry: telemetry("invalid", loggableIssue(issue)),
           usage,
           failure: {
             reason: "provider_response_invalid",
@@ -428,7 +421,7 @@ export async function generateCoachChatViaGateway(
         const issue: ValidationIssue = { rule: "json_syntax", path: "$" };
         const truncated = (usage?.outputTokens ?? 0) >= route.maxOutputTokens;
         return {
-          telemetry: telemetry(truncated ? "truncated" : "invalid", issue),
+          telemetry: telemetry(truncated ? "truncated" : "invalid", loggableIssue(issue)),
           usage,
           failure: {
             reason: truncated ? "provider_response_truncated" : "provider_response_invalid",

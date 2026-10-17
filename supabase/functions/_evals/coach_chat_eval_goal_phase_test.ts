@@ -14,7 +14,11 @@ import {
   formatContextAsMarkdown,
 } from "../_shared/providers/coach_chat_provider.ts";
 import { weightClaimCheckFor } from "../_shared/training/goal_phase/guard.ts";
-import { longCutContext, longCutPayload } from "../_shared/training/goal_phase/fixtures.ts";
+import {
+  lateGoalPayload,
+  longCutContext,
+  longCutPayload,
+} from "../_shared/training/goal_phase/fixtures.ts";
 
 const question = "I feel weird. Should I keep cutting?";
 
@@ -40,6 +44,14 @@ Deno.test("15 kg over 19 weeks through a 6-week window: the prompt carries the w
   assertStringIncludes(text, "-15.2 kg (-16.9%) over 18.9 weeks");
   assertStringIncludes(text, "Review outcome: consider_maintenance_or_diet_break (no target set)");
   assertStringIncludes(text, "Target: none set");
+});
+
+Deno.test("a goal activated a month into the cut: the prompt carries the whole recorded journey", async () => {
+  const text = await promptText(longCutContext, lateGoalPayload);
+  assertStringIncludes(text, "Recorded history, all weight readings: 90 kg on 2026-06-03");
+  assertStringIncludes(text, "-15.2 kg (-16.9%) over 18.9 weeks");
+  assertStringIncludes(text, "Goal phase (fat loss, since 2026-07-03)");
+  assertStringIncludes(text, "18.9 weeks of falling weight since 2026-06-03");
 });
 
 Deno.test("a stale goal detail never reaches Coach as a figure", () => {

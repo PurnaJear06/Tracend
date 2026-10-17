@@ -1,4 +1,4 @@
-import { AiBudget, type AiBudgetRpc } from "../_shared/ai_budget.ts";
+import { AiBudget, type AiBudgetRefusal, type AiBudgetRpc } from "../_shared/ai_budget.ts";
 import type { CoachChatAttemptBudget } from "../_shared/providers/coach_chat_provider_gateway.ts";
 import {
   type CoachChatAttempt,
@@ -19,10 +19,16 @@ export class CoachChatBudgetLedger {
   readonly #rpc: AiBudgetRpc;
   readonly #userId: string;
   readonly #places: { attempt: CoachChatAttempt; budget: AiBudget }[] = [];
+  #refusal: AiBudgetRefusal | null = null;
 
   constructor(rpc: AiBudgetRpc, userId: string) {
     this.#rpc = rpc;
     this.#userId = userId;
+  }
+
+  /** Why the last refused place was refused, when the database said. */
+  get refusal(): AiBudgetRefusal | null {
+    return this.#refusal;
   }
 
   /** Today's single place at the purpose's fixed ceiling. */
@@ -53,7 +59,10 @@ export class CoachChatBudgetLedger {
     reserve: (budget: AiBudget) => Promise<boolean>,
   ): Promise<boolean> {
     const budget = new AiBudget(this.#rpc, this.#userId);
-    if (!await reserve(budget)) return false;
+    if (!await reserve(budget)) {
+      this.#refusal = budget.refusal;
+      return false;
+    }
     this.#places.push({ attempt, budget });
     return true;
   }
