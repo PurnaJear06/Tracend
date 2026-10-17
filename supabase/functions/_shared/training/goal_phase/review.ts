@@ -2,6 +2,7 @@
 // explains it; it never sets or changes it (Architecture rule 1), and the athlete alone sets a
 // target (rule 2). Safety outcomes come before "ask for a target", so an athlete deep in a long
 // cut is told so even while no target is set; `needsTarget` still says a target is missing.
+import { latestWeightBasis } from "./render.ts";
 import { goalPhaseThresholds as limits } from "./thresholds.ts";
 import type { ContinuousLoss, GoalPhaseReview, GoalPhaseSummary, ReviewReason } from "./types.ts";
 
@@ -34,7 +35,7 @@ function targetReached(summary: GoalPhaseSummary): ReviewReason | null {
     ? {
       code: "target_weight_reached",
       detail:
-        `the latest recorded weight, ${current} kg on ${summary.currentDate}, is at the target ` +
+        `the latest weight, ${current} kg (${latestWeightBasis(summary)}), is at the target ` +
         `of ${target} kg`,
       sources: [],
     }
@@ -74,14 +75,14 @@ function maintenanceReasons(summary: GoalPhaseSummary): ReviewReason[] {
   if (bmi !== null && bmi < limits.bmiHealthyFloor.value) {
     reasons.push({
       code: "bmi_below_healthy_range",
-      detail: `BMI ${bmi} at the latest recorded weight (${summary.currentDate}) is below ` +
+      detail: `BMI ${bmi} at the latest weight (${latestWeightBasis(summary)}) is below ` +
         `${limits.bmiHealthyFloor.value}, the underweight range`,
       sources: ["who_2004"],
     });
   } else if (bmi !== null && bmi < limits.bmiNearFloor.value && stillLosing) {
     reasons.push({
       code: "bmi_near_healthy_floor",
-      detail: `BMI ${bmi} at the latest recorded weight (${summary.currentDate}) is close to ` +
+      detail: `BMI ${bmi} at the latest weight (${latestWeightBasis(summary)}) is close to ` +
         `${limits.bmiHealthyFloor.value} and weight is still falling`,
       sources: ["who_2004", "tracend_in_house"],
     });

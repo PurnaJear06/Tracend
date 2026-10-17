@@ -52,11 +52,14 @@ Deno.test("the owner's case renders the totals, the exclusion and the outcome as
   const text = renderGoalPhase(payloadSummary, reviewGoalPhase(payloadSummary))!;
   assertStringIncludes(text, "-15.2 kg (-16.9%)");
   assertStringIncludes(text, "Start 90 kg (2026-06-03");
-  assertStringIncludes(text, "latest recorded weight 74.8 kg (2026-10-13, 1 day ago)");
+  assertStringIncludes(
+    text,
+    "latest weight 74.8 kg (median of the last 3 readings, up to 2026-10-13, 1 day ago)",
+  );
   assertStringIncludes(text, "Excluded reading");
   assertStringIncludes(text, "60 kg on 2026-07-02");
   assertStringIncludes(text, "Review outcome: consider_maintenance_or_diet_break (no target set)");
-  assertStringIncludes(text, "BMI 23.1 at the latest recorded weight");
+  assertStringIncludes(text, "BMI 23.1 at the latest weight");
   assertStringIncludes(text, "Target: none set");
   assert(!text.includes("86.2"), "the stale goal weight never reaches the phase summary");
 });
@@ -101,7 +104,8 @@ Deno.test("goal activated a month into the cut: Coach sees the history beside th
   assertStringIncludes(
     text,
     "Recorded history, all weight readings: 90 kg on 2026-06-03 (median of the first readings) " +
-      "to latest recorded weight 74.8 kg (2026-10-13, 1 day ago): -15.2 kg (-16.9%) over 18.9 weeks",
+      "to latest weight 74.8 kg (median of the last 3 readings, up to 2026-10-13, 1 day ago): " +
+      "-15.2 kg (-16.9%) over 18.9 weeks",
   );
   assertStringIncludes(text, "one continuous loss");
   assertStringIncludes(text, "Goal phase (fat loss, since 2026-07-03): Start 83 kg (2026-07-09");
@@ -196,7 +200,7 @@ Deno.test("weight rose, then fell: the continuous loss starts at the high point"
   const text = renderGoalPhase(during, review)!;
   assertStringIncludes(
     text,
-    "Continuous loss: from the high of 80 kg on 2026-02-23 to latest recorded weight 66 kg (2026-06-29, 1 day ago): -14 kg (-17.5%) over 18 " +
+    "Continuous loss: from the high of 80 kg on 2026-02-23 to latest weight 66 kg (reading on 2026-06-29, 1 day ago): -14 kg (-17.5%) over 18 " +
       "weeks; the weight rose before it fell.",
   );
   assert(!text.includes("Recorded history"));
@@ -469,7 +473,7 @@ Deno.test("every rendered change equals the rendered start minus the rendered cu
     const text = renderGoalPhase(summary, reviewGoalPhase(summary))!;
     for (const line of text.split("\n")) {
       const match = line.match(
-        /^- .*?(\d+(?:\.\d+)?) kg (?:on|\().*? to latest recorded weight (\d+(?:\.\d+)?) kg[^:]*: ([+-]?\d+(?:\.\d+)?) kg/,
+        /^- .*?(\d+(?:\.\d+)?) kg (?:on|\().*? to latest weight (\d+(?:\.\d+)?) kg[^:]*: ([+-]?\d+(?:\.\d+)?) kg/,
       );
       if (!match) continue;
       const [start, current, change] = [match[1], match[2], match[3]].map(Number);
@@ -534,7 +538,7 @@ Deno.test("a stale latest reading: no rate counts as losing now and the text nev
     assert(review.outcome !== "slow_down");
     const text = renderGoalPhase(summary, review)!;
     assert(!/\b(now|current|currently)\b/i.test(text), text);
-    assertStringIncludes(text, "latest recorded weight");
+    assertStringIncludes(text, "latest weight");
     assertStringIncludes(text, "days ago");
   }
   // Absolute-state reasons still fire, labelled with the reading's date.
@@ -545,7 +549,7 @@ Deno.test("a stale latest reading: no rate counts as losing now and the text nev
   }));
   const review = reviewGoalPhase(under);
   assertEquals(review.reasons.map((r) => r.code), ["bmi_below_healthy_range"]);
-  assertStringIncludes(review.reasons[0].detail, "latest recorded weight (2026-09-29)");
+  assertStringIncludes(review.reasons[0].detail, "latest weight (reading on 2026-09-29)");
   const reached = summarizeGoalPhase(inputs({
     readings: weekly("2026-09-01", [82, 80, 78, 76.4, 76.3]),
     activatedOn: "2026-09-01",
@@ -554,7 +558,25 @@ Deno.test("a stale latest reading: no rate counts as losing now and the text nev
   }));
   const done = reviewGoalPhase(reached);
   assertEquals(done.outcome, "target_reached");
-  assertStringIncludes(done.reasons[0].detail, "76.3 kg on 2026-09-29");
+  assertStringIncludes(done.reasons[0].detail, "76.3 kg (reading on 2026-09-29)");
+});
+
+Deno.test("the latest weight says what it is: a median of readings, or one reading", () => {
+  const median = summarizeGoalPhase(longCutInputs);
+  assertEquals(median.currentReadingsUsed, 3);
+  assertStringIncludes(
+    renderGoalPhase(median, reviewGoalPhase(median))!,
+    "median of the last 3 readings, up to 2026-10-13",
+  );
+  const single = summarizeGoalPhase(inputs({
+    readings: weekly("2026-09-01", [82, 81.8, 81.6, 81.5, 81.3]),
+    activatedOn: "2026-09-01",
+    today: "2026-09-30",
+  }));
+  assertEquals(single.currentReadingsUsed, 1);
+  const text = renderGoalPhase(single, reviewGoalPhase(single))!;
+  assertStringIncludes(text, "latest weight 81.3 kg (reading on 2026-09-29, 1 day ago)");
+  assert(!text.includes("latest recorded weight"));
 });
 
 Deno.test("a lone implausible reading is excluded; two readings or a steady fall are not", () => {

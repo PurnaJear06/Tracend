@@ -198,6 +198,7 @@ const emptySummary = (input: GoalPhaseInputs): Omit<
   | "continuousLoss"
   | "latestReadingStale"
   | "latestReadingAgeDays"
+  | "currentReadingsUsed"
 > => ({
   goalType: input.goalType,
   phaseStart: null,
@@ -252,6 +253,7 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
       readingsUsed: 0,
       latestReadingStale: false,
       latestReadingAgeDays: null,
+      currentReadingsUsed: 0,
       history: null,
       continuousLoss: null,
       excluded,
@@ -278,6 +280,8 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
     readingsUsed: phase.length,
     latestReadingStale: stale,
     latestReadingAgeDays: Math.max(0, (dayIndex(input.today) ?? 0) - last.day),
+    currentReadingsUsed: clean.filter((p) => last.day - p.day < smoothingDays)
+      .slice(-smoothingReadings).length,
     history: null,
     continuousLoss: null,
     excluded,

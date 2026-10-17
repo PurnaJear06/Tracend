@@ -27,6 +27,16 @@ export function describeGoalTarget(target: GoalTarget): string {
   return parts.join(", ");
 }
 
+/** What the current weight is: the median of its last readings, or the single reading. */
+export function latestWeightBasis(summary: GoalPhaseSummary): string {
+  return summary.currentReadingsUsed <= 1
+    ? `reading on ${summary.currentDate}`
+    : `median of the last ${summary.currentReadingsUsed} readings, up to ${summary.currentDate}`;
+}
+
+/** Excluded readings listed one by one; the rest are counted. */
+const maxExcludedListed = 3;
+
 function ago(days: number | null): string {
   return days === null ? "" : days === 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago`;
 }
@@ -40,6 +50,17 @@ export function renderGoalPhase(
     "Goal phase review, calculated by Tracend from the athlete's recorded weight readings (not " +
     "from the goal's saved weight):",
   ];
+  // The outcome and its reasons come first: the host clips a block from its tail.
+  lines.push(`- Review outcome: ${review.outcome}${review.needsTarget ? " (no target set)" : ""}.`);
+  const cited = new Set<string>();
+  for (const reason of review.reasons) {
+    lines.push(`  - ${reason.detail}.`);
+    reason.sources.forEach((id) => cited.add(id));
+  }
+  const labels = [...cited].map((id) =>
+    goalPhaseSources[id as keyof typeof goalPhaseSources]?.label
+  ).filter(Boolean);
+  if (labels.length > 0) lines.push(`  - Basis: ${labels.join("; ")}.`);
   const goal = summary.goalType?.replaceAll("_", " ") ?? "unknown";
   lines.push(
     `- Goal: ${goal}. Phase start ${summary.phaseStart ?? "unknown"}` +
@@ -51,7 +72,7 @@ export function renderGoalPhase(
         `weights in them are from that day, not today.`,
     );
   }
-  const latest = `latest recorded weight ${summary.currentWeightKg} kg (${summary.currentDate}, ${
+  const latest = `latest weight ${summary.currentWeightKg} kg (${latestWeightBasis(summary)}, ${
     ago(summary.latestReadingAgeDays)
   })`;
   const history = summary.history;
@@ -107,9 +128,7 @@ export function renderGoalPhase(
     );
   } else if (summary.currentWeightKg !== null) {
     lines.push(
-      `- Latest recorded weight ${summary.currentWeightKg} kg (${summary.currentDate}, ${
-        ago(summary.latestReadingAgeDays)
-      }); not enough readings ` +
+      `- ${latest[0].toUpperCase()}${latest.slice(1)}; not enough readings ` +
         `since the goal began to show a change or a rate.`,
     );
   } else {
@@ -117,7 +136,7 @@ export function renderGoalPhase(
   }
   if (summary.bmi !== null) {
     lines.push(
-      `- BMI ${summary.bmi} at the latest recorded weight (height ${summary.heightCm} cm).`,
+      `- BMI ${summary.bmi} at the latest weight (height ${summary.heightCm} cm).`,
     );
   }
   lines.push(
@@ -125,22 +144,18 @@ export function renderGoalPhase(
       ? `- Target set by the athlete: ${describeGoalTarget(summary.target)}.`
       : "- Target: none set. The athlete has not chosen a weight, body-fat range or physique goal.",
   );
-  for (const item of summary.excluded) {
+  for (const item of summary.excluded.slice(0, maxExcludedListed)) {
     lines.push(
       `- Excluded reading (not physiologically plausible against its neighbours; do not use it): ` +
         `${item.kg} kg on ${item.date}.`,
     );
   }
-  lines.push(`- Review outcome: ${review.outcome}${review.needsTarget ? " (no target set)" : ""}.`);
-  const cited = new Set<string>();
-  for (const reason of review.reasons) {
-    lines.push(`  - ${reason.detail}.`);
-    reason.sources.forEach((id) => cited.add(id));
+  if (summary.excluded.length > maxExcludedListed) {
+    lines.push(
+      `- and ${summary.excluded.length - maxExcludedListed} more excluded readings (same rule; ` +
+        `do not use them).`,
+    );
   }
-  const labels = [...cited].map((id) =>
-    goalPhaseSources[id as keyof typeof goalPhaseSources]?.label
-  ).filter(Boolean);
-  if (labels.length > 0) lines.push(`  - Basis: ${labels.join("; ")}.`);
   lines.push(
     `- Confidence: ${summary.confidence}${
       summary.notes.length > 0 ? ` (${summary.notes.join("; ")})` : ""

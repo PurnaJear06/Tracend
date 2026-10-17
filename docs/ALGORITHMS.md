@@ -690,6 +690,8 @@ readings; when the input holds 400, the history line reads "the newest 400 readi
 (older readings may exist)" instead of "all weight readings", so a capped window is
 never presented as the whole journey.
 
+**Block order.** The host clips a contributor block from its tail, so the text starts with the review outcome and its reasons; at most 3 excluded readings are listed, the rest counted ("and N more").
+
 **Review outcomes**, first match wins:
 
 1. `target_reached`: the target weight is met within 0.5 kg in the goal's direction.
@@ -704,8 +706,8 @@ never presented as the whole journey.
    run or phase) counts as losing now, so the rate-driven outcomes (`slow_down`, the 16-week and
    10% rules, BMI near the floor) cannot fire; only the absolute-state reasons (BMI below 18.5,
    target reached) can, and their text names the reading's date. The text Coach sees never says
-   "now" or "current" for a weight: it reads "latest recorded weight 74.4 kg (DATE, N days ago)" in
-   the history, run and phase lines, fresh or stale, and a stale average rate carries a note that
+   "now" or "current" for a weight: it reads "latest weight 74.4 kg (median of the last 3 readings, up to DATE, N days ago)" (or
+   "reading on DATE" when one reading is used) in the history, run, phase, BMI and reason lines, fresh or stale, and a stale average rate carries a note that
    it is not evidence of the present trend. The
    history and the run are shown even when the goal is days old and the phase has no rate yet. The pace rule (`slow_down`) and the precedence of the
    outcomes are unchanged.

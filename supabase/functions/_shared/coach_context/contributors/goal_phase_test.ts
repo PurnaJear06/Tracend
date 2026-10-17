@@ -8,6 +8,11 @@ import {
 import { renderCoachContext, validateCoachContextContributors } from "../host.ts";
 import { coachContextContributors } from "../registry.ts";
 import { longCutPayload } from "../../training/goal_phase/fixtures.ts";
+import {
+  parseGoalPhaseInputs,
+  reviewGoalPhase,
+  summarizeGoalPhase,
+} from "../../training/goal_phase/index.ts";
 
 const input = { userId: "user-1", question: "Should I keep cutting?", localDate: "2026-10-14" };
 
@@ -55,4 +60,43 @@ Deno.test("the RPC source asks for the user and raises on an error", async () =>
 Deno.test("the registry holds the goal phase contributor and is valid", () => {
   validateCoachContextContributors(coachContextContributors);
   assertEquals(coachContextContributors.map((c) => c.id), ["goal_phase"]);
+});
+
+Deno.test("eight excluded readings, a long history and a long run still fit with the outcome and every reason", async () => {
+  const first = Date.parse("2025-12-01T00:00:00Z");
+  const spikes = new Set([5, 9, 13, 17, 21, 25, 29, 33]);
+  const readings = Array.from({ length: 45 }, (_, index) => ({
+    date: new Date(first + index * 7 * 86_400_000).toISOString().slice(0, 10),
+    kg: spikes.has(index) ? 60 : Math.round((100 - index * 0.5) * 10) / 10,
+  }));
+  const payload = {
+    ...longCutPayload,
+    goal: {
+      ...longCutPayload.goal,
+      activated_on: "2026-03-02",
+      target: {
+        ...longCutPayload.goal.target,
+        physique: "athletic",
+        physique_note: "lean and strong enough to run a half marathon and still lift three days " +
+          "a week without losing the muscle I built over the last four years",
+        date: "2026-12-31",
+      },
+    },
+    readings,
+  };
+  const contributor = createGoalPhaseContributor(() => Promise.resolve(payload));
+  const text = (await contributor.render({ ...input, localDate: "2026-10-05" }))!;
+  assert(text.length <= goalPhaseContributorBudgetChars, `${text.length} chars`);
+  const rendered = await renderCoachContext([contributor], { ...input, localDate: "2026-10-05" });
+  assertEquals(rendered.outcomes[0].clipped, false);
+  const summary = summarizeGoalPhase(parseGoalPhaseInputs(payload, "2026-10-05"));
+  assertEquals(summary.excluded.length, 8);
+  assertEquals(summary.continuousLoss?.beganBeforeGoalPhase, true);
+  const review = reviewGoalPhase(summary);
+  assertEquals(review.reasons.length >= 2, true);
+  assertStringIncludes(text, `Review outcome: ${review.outcome}`);
+  for (const reason of review.reasons) assertStringIncludes(text, reason.detail);
+  assert(text.indexOf("Review outcome") < text.indexOf("Recorded history"));
+  assertEquals(text.split("\n").filter((line) => line.startsWith("- Excluded reading")).length, 3);
+  assertStringIncludes(text, "and 5 more excluded readings");
 });
