@@ -13,6 +13,9 @@ import {
 import { deepseekFlashPeakPricePerMillionUsd, isApprovedDeepseekModel } from "./deepseek_models.ts";
 import { calculateCoachNumbers, formatCoachCalculations } from "../coach_calculations.ts";
 import type { AiVendor } from "../ai/types.ts";
+import type { CoachContributions } from "../coach_context/host.ts";
+import { targetFromDetails, weightClaimCheckFor } from "../training/goal_phase/guard.ts";
+import { describeGoalTarget } from "../training/goal_phase/render.ts";
 
 /** How long the athlete has trained, as onboarding asks it. */
 const trainingYearsLabels: Readonly<Record<string, string>> = {
@@ -228,16 +231,16 @@ const nullContract = "\n# Data honesty — never violate\n" +
 
 // Shared by every coach-chat provider so their personas cannot drift apart.
 const coachChatPersona =
-  "You are Tracend, an experienced personal fitness coach who has been working with this athlete through their journey. You know their training history, preferences, setbacks, and wins. Your coaching balances evidence with empathy — you use data to inform, never to judge.\n" +
+  "You are Tracend, an experienced personal fitness coach. You work only from the prepared context of this conversation, which covers a limited window of the athlete's history; its dates tell you how far back it goes. Your coaching balances evidence with empathy — you use data to inform, never to judge.\n" +
   "\n" +
   "# Coaching approach\n" +
-  "1. Start with the person, not the data. Acknowledge their question, feelings, or situation before referencing metrics.\n" +
-  "2. Build a mental timeline. Connect what they are asking now to what you have discussed before. Reference their progress, not just current numbers.\n" +
+  "1. Start with the person, not the data. Acknowledge their question, feelings, or situation in a sentence before referencing metrics. Keep replies short: about 120 words, at most 3 bullets and 1 question. Go longer only when the athlete asks for detail.\n" +
+  '2. Build a timeline from the context. Connect what they are asking now to what the context shows they discussed before. Reference their progress, not just current numbers. When you claim a change (lost, gained, improved, up, down), state the window it covers, for example "over the last 6 weeks of readings". Never say "since you started", "overall" or "in total" beyond the data you have; the goal-phase reference data, which states its own start date, is the one source for change across the whole goal phase.\n' +
   "3. Reason transparently. Work through: goal → constraints → available data → recommendation. Use your reasoning_chain to show this.\n" +
   '4. Celebrate wins. Notice streaks, personal records, and consistency that the context shows — and mention them with its exact numbers. "You logged all three planned sessions this week — that consistency is what drives progress."\n' +
   "5. Acknowledge setbacks without judgment. Missed workouts, off-plan meals, poor sleep — these are data points, not failures. Help them find the pattern.\n" +
   "6. Personalize. If they have told you they dislike running or cannot eat dairy, never suggest those. Remember what did not work before.\n" +
-  "7. Offer natural follow-ups. After your answer, give 2-3 specific next steps that feel like a real conversation, not a script.\n" +
+  "7. Offer natural follow-ups through suggested_follow_ups: 2-3 specific next steps that feel like a real conversation, not a script. The answer text itself ends with at most one question.\n" +
   "\n" +
   "# Communication style\n" +
   '- Warm, direct, and personal — use "you" and "your." This is coaching, not a report.\n' +
@@ -249,6 +252,7 @@ const coachChatPersona =
   "\n" +
   "# Hard boundaries — never violate\n" +
   "- Never invent data, symptoms, meals, medical history, user facts, or evidence.\n" +
+  "- You have no tools. Never say you changed, saved, updated, logged, scheduled or set anything, and never say you will. Say what the athlete can do in the app instead (for example, set a target on Progress). Plan changes and targets happen only when the athlete approves or enters them.\n" +
   "- No diagnosis, treatment, medication, pregnancy, rehabilitation, or eating-disorder guidance.\n" +
   '- For ordinary illness (fever/cold/cough): recommend rest and hydration, never "push through" or complete the workout.\n' +
   "- Temporary same-day adjustments are fine; persistent plan changes require explicit user approval.\n" +
@@ -609,6 +613,52 @@ export function formatContextAsMarkdown(
  * this thread) and the closing list of sections left out for size, which change every turn.
  * `formatContextAsMarkdown` joins them with a newline.
  */
+// Goal detail keys Coach may see: free-text notes the athlete wrote. Anything else (a weight,
+// a body-fat figure, a measurement) was true when the goal was written and goes stale, so it is
+// never rendered; the readings and the goal-phase data carry current figures. The athlete's
+// target is rendered separately from its own `target_*` keys.
+const goalDetailNoteKeys: readonly string[] = [
+  "description",
+  "notes",
+  "note",
+  "focus",
+  "motivation",
+  "why",
+];
+
+/**
+ * The goal's details for Coach: the athlete's target (with the date they set it) and the
+ * whitelisted free-text notes entered with the goal, labelled as entered then (the goal-phase
+ * data states the date the goal began). Every other key, weights above all, is dropped.
+ */
+export function formatGoalDetails(details: unknown): string {
+  if (typeof details === "string") {
+    return details ? `- entered with the goal (not updated since): ${details}\n` : "";
+  }
+  if (!details || typeof details !== "object" || Array.isArray(details)) return "";
+  const record = details as Record<string, unknown>;
+  const target = describeGoalTarget(targetFromDetails(record));
+  let s = "";
+  if (target) {
+    const setAt = typeof record.target_set_at === "string"
+      ? record.target_set_at.slice(0, 10)
+      : null;
+    s += `- Target set by the athlete${setAt ? ` on ${setAt}` : ""}: ${target}\n`;
+  }
+  const notes: string[] = [];
+  for (const key of goalDetailNoteKeys) {
+    const value = record[key];
+    if (typeof value !== "string" || value.trim() === "") continue;
+    notes.push(`${key}: ${value.trim()}`);
+  }
+  if (notes.length) {
+    s += `- Entered when the goal was written, not updated since (it may be out of date): ${
+      notes.join("; ")
+    }\n`;
+  }
+  return s;
+}
+
 export function renderCoachContextParts(
   ctx: Record<string, unknown>,
   maxLength: number,
@@ -782,19 +832,8 @@ export function renderCoachContextParts(
   if (Object.keys(goal).length) {
     let s = "## Goal\n";
     const type = str(goal.goal_type ?? goal.type ?? goal.target_label ?? "Active Goal");
-    s += `**${type}**`;
-    if (goal.target_value != null) s += ` — target: ${str(goal.target_value)}`;
-    if (goal.deadline) s += `, deadline: ${str(goal.deadline)}`;
-    s += "\n";
-    const details = goal.details;
-    if (details && typeof details === "object" && !Array.isArray(details)) {
-      for (const [key, value] of Object.entries(details as Record<string, unknown>)) {
-        if (value !== null && typeof value === "object") continue;
-        s += `- ${key.replace(/_/g, " ")}: ${str(value)}\n`;
-      }
-    } else if (typeof details === "string" && details) {
-      s += `${details}\n`;
-    }
+    s += `**${type}**\n`;
+    s += formatGoalDetails(goal.details);
     push(s);
   }
 
@@ -1300,10 +1339,14 @@ export function buildCoachChatUserMessage(
   question: string,
   context: Record<string, unknown>,
   contextKind: string,
+  contributions: CoachContributions | null = null,
 ): string {
   const budget = coachChatContextBudgetFor(contextKind);
   const prefix = "Prepared coaching context (supporting evidence only):\n<coaching_context>\n";
-  const suffix = "\n</coaching_context>\n\nUser's message:\n" + question;
+  // Contributor blocks (goal phase review) come after the athlete file and before the question.
+  const extra = [contributions?.stable, contributions?.volatile].filter(Boolean).join("\n\n");
+  const suffix = "\n</coaching_context>\n\n" + (extra ? extra + "\n\n" : "") +
+    "User's message:\n" + question;
   const contextBudget = Math.max(0, budget - prefix.length - suffix.length);
   const markdown = formatContextAsMarkdown(context, contextBudget);
   if (markdown.length > contextBudget) {
@@ -1330,9 +1373,30 @@ function answerContractText(permittedEvidence: readonly string[]): string {
     "- Each reasoning evidence_id must be one permitted code or null.\n" +
     "- Numbers about the athlete's data come only from the prepared context, quoted with the same units and rounding. Never invent a measurement.\n" +
     '- The "Calculated by Tracend" section holds exact results. When it has the average, change, trend or projection you need, quote it with its window instead of computing your own. Its projections are still estimates: call them estimates.\n' +
-    "- You may give an estimate (for example, time to reach a target weight) derived from context numbers or from numbers the athlete states. Call it an estimate, show its inputs and assumptions, and never present it as measured data.\n" +
+    "- You may give an estimate (for example, time to reach a target weight) only toward a target the athlete has set or states in their question, derived from context numbers or numbers the athlete states. Without a set target, give no future weight. Call an estimate an estimate, show its inputs and assumptions, and never present it as measured data.\n" +
     "- If a needed value is null, —, or absent, say it was not measured.\n" +
     "- If the question is ambiguous or needs a detail the context lacks (for example maintenance calories, a target date, or which session they mean), answer what the data supports, then ask one short clarifying question. Offer the likely replies in suggested_follow_ups, written as the athlete would say them.\n";
+}
+
+// The goal-phase rules every coach-chat prompt carries (docs/AI_SAFETY_SPEC.md, "No projection as a
+// goal"). The reply check in training/goal_phase/guard.ts enforces the two projection rules; the
+// rest steer wording around the deterministic phase review.
+const goalPhaseContract = "\n# Goal phase and targets — never violate\n" +
+  "- A weight trend is history, not a goal. When the goal has no target, never extrapolate the trend into a future body weight, never offer a projected weight as something to aim for, and never state a future weight below the healthy range (BMI 18.5 for the athlete's height). Describe where the athlete is, not where the trend would take them.\n" +
+  "- With a target, a projection is an estimate toward the athlete's own target and nothing lower.\n" +
+  "- The goal-phase reference data holds the start weight, total change, rate, BMI and a review outcome, all calculated by Tracend from the athlete's own readings. Quote them; never recompute them.\n" +
+  "- The goal's saved current_weight_kg is the weight when the goal was written. Never treat it as today's weight or as a starting weight. A reading listed as excluded is an error: do not use it.\n" +
+  "- When there is no target (the goal details and the goal-phase data say so), ask for one: a target weight, a body-fat range, a physique goal such as visible abs or more definition, or a date. The athlete sets it in the app (Progress, Set your target); you never set or change it.\n" +
+  "- Outcome consider_maintenance_or_diet_break: say plainly that a maintenance period or a diet break is worth considering, with the reasons shown, before any advice to keep cutting. Outcome slow_down: say the pace is faster than the evidence supports. Outcome target_reached: say the target is reached and suggest holding that weight.\n";
+
+function repairRuleHint(rule: CoachChatValidationRule): string {
+  if (rule === "weight_below_healthy_floor") {
+    return "Remove any future body weight below the healthy range for this athlete's height. Do not state or imply one.\n";
+  }
+  if (rule === "projection_without_target") {
+    return "Remove the projected future body weight: the goal has no target, and a trend is history, not a goal. Describe the trend as past change and ask the athlete for a target.\n";
+  }
+  return "";
 }
 
 export function repairContractText(
@@ -1349,7 +1413,8 @@ export function repairContractText(
   return "\n# Repair instruction\n" +
     `The previous candidate failed validation: ${details}.\n` +
     `Allowed evidence codes: ${allowed}.\n` +
-    "Fix only the stated validation problem and any sentence that depends on an invalid citation. If a citation must be removed, remove or soften the dependent sentence. Never add facts, numbers, or evidence.\n";
+    "Fix only the stated validation problem and any sentence that depends on an invalid citation. If a citation must be removed, remove or soften the dependent sentence. Never add facts, numbers, or evidence.\n" +
+    repairRuleHint(issue.rule);
 }
 
 /**
@@ -1357,7 +1422,8 @@ export function repairContractText(
  * the permitted evidence. Stable for an athlete's day, so it opens the cached prefix.
  */
 export function coachChatInstructions(permittedEvidence: readonly string[]): string {
-  return coachChatPersona + nullContract + answerContractText(permittedEvidence);
+  return coachChatPersona + nullContract + answerContractText(permittedEvidence) +
+    goalPhaseContract;
 }
 
 function coachChatSystemPrompt(
@@ -1366,6 +1432,7 @@ function coachChatSystemPrompt(
   repairIssue?: ValidationIssue,
 ): string {
   return coachChatPersona + nullContract + answerContractText(permittedEvidence) +
+    goalPhaseContract +
     (repairIssue ? repairContractText(repairIssue, permittedEvidence) : "") +
     "\nReturn only one JSON object matching this schema:\n" + JSON.stringify(schema);
 }
@@ -1407,6 +1474,7 @@ export async function generateCoachChat(
   contextKind: string = "general",
   fetcher: typeof fetch = fetch,
   timing: CoachChatTiming = coachChatTiming,
+  contributions: CoachContributions | null = null,
 ): Promise<CoachChatGeneration> {
   const boundary = deterministicBoundary(question);
   if (boundary) {
@@ -1430,6 +1498,7 @@ export async function generateCoachChat(
     ? context.permitted_evidence.filter((item): item is string => typeof item === "string")
     : [];
   const permitted = [...new Set(policyEvidence)];
+  const answerCheck = weightClaimCheckFor(context, question);
   const answerSchema = buildCoachChatAnswerSchema(permitted);
   const groqKey = Deno.env.get("GROQ_API_KEY") ?? "";
   const groqModel = Deno.env.get("GROQ_MODEL") ?? "";
@@ -1456,7 +1525,7 @@ export async function generateCoachChat(
     const ctx = context as Record<string, unknown>;
     if (deepseekEnabled) {
       const deadline = Date.now() + timing.totalDeadlineMs;
-      const dsUserMessage = buildCoachChatUserMessage(question, ctx, contextKind);
+      const dsUserMessage = buildCoachChatUserMessage(question, ctx, contextKind, contributions);
       const attempts: CoachChatAttemptTelemetry[] = [];
       const request = async (
         attempt: CoachChatAttempt,
@@ -1631,7 +1700,7 @@ export async function generateCoachChat(
         let parsed: CoachChatAnswerV1 | undefined;
         if (!issue) {
           try {
-            parsed = parseCoachChatAnswer(JSON.parse(result.content), permitted);
+            parsed = parseCoachChatAnswer(JSON.parse(result.content), permitted, answerCheck);
           } catch (error) {
             issue = error instanceof CoachChatAnswerValidationError
               ? {
@@ -1900,12 +1969,12 @@ export async function generateCoachChat(
       let inputUnits = reasoningInputUnits + first.inputUnits;
       let outputUnits = reasoningOutputUnits + first.outputUnits;
       try {
-        answer = parseCoachChatAnswer(JSON.parse(first.content), permitted);
+        answer = parseCoachChatAnswer(JSON.parse(first.content), permitted, answerCheck);
       } catch {
         const repaired = await request(true);
         inputUnits += repaired.inputUnits;
         outputUnits += repaired.outputUnits;
-        answer = parseCoachChatAnswer(JSON.parse(repaired.content), permitted);
+        answer = parseCoachChatAnswer(JSON.parse(repaired.content), permitted, answerCheck);
       }
       const { input: inputRate, output: outputRate } = coachChatPricePerMillionUsd("groq");
       return {
@@ -1989,6 +2058,7 @@ export async function generateCoachChat(
     const parsed = parseCoachChatAnswer(
       JSON.parse((parts[0] as Record<string, string>).text),
       permitted,
+      answerCheck,
     );
     const usage = payload.usageMetadata as Record<string, unknown> | undefined;
     const inputUnits = Number.isInteger(usage?.promptTokenCount)

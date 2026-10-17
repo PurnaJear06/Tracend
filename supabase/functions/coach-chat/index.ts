@@ -519,14 +519,13 @@ async function handleCoachChat(
 
   const chatStart = performance.now();
   try {
-    const contributions = coachRoute
-      ? await renderCoachContext(coachContextContributors, {
-        userId: auth.userId,
-        question: input.question,
-        localDate: coachingDate,
-      })
-      : null;
-    if (contributions?.outcomes.length) {
+    // Both paths render the contributors (the goal phase review is not tied to the gateway).
+    const contributions = await renderCoachContext(coachContextContributors, {
+      userId: auth.userId,
+      question: input.question,
+      localDate: coachingDate,
+    });
+    if (contributions.outcomes.length) {
       log.info("coach_context_contributors", { contributors: contributions.outcomes });
     }
     const generation = coachRoute
@@ -536,13 +535,16 @@ async function handleCoachChat(
         contextKind,
         route: coachRoute,
         consentVendor,
-        contributions: contributions ?? undefined,
+        contributions,
         budget: budget.attemptBudget,
       })
       : await generateCoachChat(
         input.question,
         context,
         contextKind,
+        undefined,
+        undefined,
+        contributions,
       );
     log.info("persist_coach_chat_result", {
       snapshot_id: (prepared.feature_snapshot_id as string) ?? "null",

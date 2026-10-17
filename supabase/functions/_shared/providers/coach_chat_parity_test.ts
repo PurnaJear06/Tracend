@@ -3,7 +3,9 @@
 // path sends (an invalid first answer forces the repair request too) and compares their SHA-256
 // with the digest recorded from the pre-A6 code (commit 477da79). A digest changes only when the
 // legacy request changes, which A6 forbids; a later chunk that changes it on purpose records the
-// new digests and says so in its pull request.
+// new digests and says so in its pull request. B7 (goal phase review) did: it adds the goal-phase
+// rules, the no-tools and brevity persona rules and the goal-details rendering, and records the
+// digests again.
 
 import { assertEquals } from "jsr:@std/assert@1.0.14";
 import { route } from "../ai/routes.ts";
@@ -102,22 +104,22 @@ Deno.test("no route settings: the DeepSeek request is byte-identical to the pre-
 // Per athlete (rich, no_watch, new_user): weekly question, plan-change question, weekly question
 // with history; each the first request and its repair.
 const preA6Requests: readonly string[] = [
-  "aa5b43c56d3ec98afce39c3f2115a71fefcd397ea39f75833372041ca9cc0a36",
-  "ee40b91bfb8349149ebf48bd93c7a620fb9f7991db9786c15bcd7c4bf5533169",
-  "827d8bbdef854d069167cbcc8d047dcc02174ee98402f3131957390e9b162d4f",
-  "431c317b5912c8eaaa7aed7705e3bf8b7299094da744b8aec73944ef2cdd22e8",
-  "14a6bc16d86f28595b33abd30edc95d822468a9ae67cbb9e8c28df0e9878327e",
-  "153fec699d1782680ae350d8c5e0e70d173afca720ecf7a71a6975063137db7e",
-  "517886c5af6d9f378b7defab0e99b81a7a1d7f2d39c4695ab7949c9518b4c51a",
-  "c18691d618506a5b3fb16ebec50609473868f8e0508b374aec1bf907a8dc8430",
-  "a2fd78ed640edb5e46b1f02fce3df903ad177e9c7229aa03f39784a2427c3f83",
-  "909816d03b6eb6f55105d2f73f7f8bfa4c1179b089460228af4abe0a0afcc44e",
-  "2a5e4134a7bda5d03538447b3944acc04d646dba44e63fc76dcf53bef3c689eb",
-  "1725be6c7aec997f4b82cba6a7911d93f9149d208f677403f149efc46e346bd0",
-  "0d9494d8aad621e12b7506320ff3a2bdd8edfbb6b30172be7cf5d3936b505075",
-  "e3fe397d9efe92758abfef28e820e2ee2e5e1b082c7187a1db11f9051a3eb567",
-  "1f4847d41eecc2d866f46b57fc259e178b2317dc4625038132b3682bc4072217",
-  "d93fe078008f43b1cde48b3c60aaa4714463b1fed8462c9a998d7782bdd910e1",
-  "3ad02747a5c904795ccfaf1b41767cb1465b18fefef92f7a9eace4a9b736b8f1",
-  "fd655a49c60690a98a5440d4f72747367c81dcbb371800ac8a79588d2c1866b0",
+  "e0186e4baec48c1b6233449e4d2af1d4845cd33bb06b4e7742c05f43ecf711cf",
+  "056a0dcb67a253ddf877344cc00dc5ea7bbf545381915682f40bbfec65232d9f",
+  "753f65e56c60f2c5463e28d456ea1d7dd98e80729f26a077820735297f6a2fef",
+  "d53167e00fafd602972cf344a104338bde21e8a0b7e8413273d14b29078440ed",
+  "d52851434ace710565b6a184a4fee682d076cc6fa1bd0bfebb280261b1842921",
+  "61fecb67dc17c70bef3856405b52a2a6dba347daab3a5bfbea4d9ec9081ff316",
+  "63839f30a02f16b672b7010646fec7f88cf86a87eaba9280bb00812c0c52e732",
+  "770123bb7501f5a69b91187de857c7e5d39f4ba4fe0e4204a5221e36fdaf529d",
+  "bfe88f4978d64eaa37d62da051248ff2e5d5ae0300a8ec6031157f4771f616fa",
+  "53f6c8b2b00b3509502104ae2ba3bf5ceb8907e4496ec24a1af782d8e3b88a82",
+  "f23da3a0b80dff08e5fe0c3037cc48c447b4fab64d3ee90bbdbeccdb28e0a6ad",
+  "9856bd7feab46ca1a3f04657eee1564b803c02b59cbdbf76a7ce3a084abf91be",
+  "3021003a993a9b6bfbf40bfd2ccf61b1667f96c3d79fa9399028ea56021bf99a",
+  "b80f82691a03ed2cd245a22a4096795abba1c9c1f0959b3ae850725b5f6be434",
+  "70d45cc3c6dbc00b9c3ed54f6932355ddff29417497e9152b2c396dbd1398773",
+  "668f55d0b4453fe4f46b25be54c1319efbb13dd70af59697cb33a6c3bcb4202c",
+  "ed1a35b24d79c66bfd5099876b7ebed96ac7d5d740c2641e9b123bf727f668e0",
+  "23a9663615cc56d8a49f0fefaf392cc8e169a2e06e6532bff654bd1eeba5205a",
 ];

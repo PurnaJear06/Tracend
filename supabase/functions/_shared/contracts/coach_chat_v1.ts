@@ -92,6 +92,8 @@ export const coachChatValidationRules = [
   "reasoning_value_too_long",
   "reasoning_evidence_invalid",
   "reasoning_evidence_not_permitted",
+  "weight_below_healthy_floor",
+  "projection_without_target",
 ] as const;
 
 export type CoachChatValidationRule = typeof coachChatValidationRules[number];
@@ -141,9 +143,16 @@ export function parseCoachChatRequest(value: unknown): CoachChatRequestV1 {
   return input as unknown as CoachChatRequestV1;
 }
 
+/**
+ * A deterministic check of the answer text against facts Tracend holds (for example a future
+ * body weight the athlete's goal does not support). It returns the rule the answer breaks.
+ */
+export type CoachChatAnswerCheck = (answer: string) => CoachChatValidationRule | null;
+
 export function parseCoachChatAnswer(
   value: unknown,
   permittedEvidence: readonly string[],
+  answerCheck?: CoachChatAnswerCheck,
 ): CoachChatAnswerV2 {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     invalid("invalid_root", "$");
@@ -295,5 +304,7 @@ export function parseCoachChatAnswer(
       }
     }
   }
+  const broken = answerCheck?.(answer.answer);
+  if (broken) invalid(broken, "answer");
   return answer as unknown as CoachChatAnswerV2;
 }

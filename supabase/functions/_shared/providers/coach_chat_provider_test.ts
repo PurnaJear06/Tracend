@@ -1015,7 +1015,7 @@ Deno.test("v8: the contract allows labeled estimates and one clarifying question
   );
   for (
     const phrase of [
-      "Call it an estimate, show its inputs and assumptions",
+      "Call an estimate an estimate, show its inputs and assumptions",
       "ask one short clarifying question",
       "Numbers about the athlete's data come only from the prepared context",
     ]
@@ -1311,8 +1311,8 @@ Deno.test("DeepSeek system prompt carries the full coach persona before the outp
     const messages = bodies[0].messages as Array<Record<string, unknown>>;
     const system = String(messages[0]?.content ?? "");
     const markers = [
-      "working with this athlete through their journey",
-      "Build a mental timeline",
+      "work only from the prepared context",
+      "Build a timeline from the context",
       "Celebrate wins",
       "Acknowledge setbacks without judgment",
       "Match your tone to their mood",

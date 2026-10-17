@@ -4,6 +4,10 @@
 // result names its window and how many days were measured; a metric that was
 // not measured is left out, never counted as zero.
 
+import { healthyFloorWeightKg } from "./training/goal_phase/bmi.ts";
+import { findImplausibleReadings } from "./training/goal_phase/summary.ts";
+import type { ExcludedReading } from "./training/goal_phase/types.ts";
+
 export type WindowAverage = Readonly<{ days: number; average: number | null }>;
 
 export type WeightTrend = Readonly<{
@@ -37,6 +41,8 @@ export type WeightCalculation = Readonly<{
     }>
     | null;
   projection_unavailable_reason: string | null;
+  /** Readings left out of every figure above as physiologically implausible. */
+  excluded_readings: readonly ExcludedReading[];
 }>;
 
 export type TrainingWindow = Readonly<{
@@ -155,7 +161,10 @@ function mean(values: readonly number[]): number | null {
 
 type WeightPoint = Readonly<{ day: number; date: string; kg: number }>;
 
-function weightPoints(ctx: Record<string, unknown>, today: number): WeightPoint[] {
+function weightReadings(
+  ctx: Record<string, unknown>,
+  today: number,
+): Readonly<{ points: WeightPoint[]; excluded: ExcludedReading[] }> {
   // Same sources and precedence as the feature engine's weight trend
   // (docs/ALGORITHMS.md §5): body measurements, plus HealthKit daily weights
   // only on dates with no body measurement. Identical readings count once.
@@ -179,7 +188,15 @@ function weightPoints(ctx: Record<string, unknown>, today: number): WeightPoint[
   for (const row of arr(ctx.health_daily_28d)) {
     add(obj(row).local_date, obj(row).weight_kg, false);
   }
-  return points;
+  // A reading that cannot be real against its neighbours (a typo, a wrong scale) is left out of
+  // every trend; the same exclusion the goal phase review applies.
+  const excluded = findImplausibleReadings(points);
+  return {
+    points: excluded.length === 0
+      ? points
+      : points.filter((p) => !excluded.some((bad) => bad.date === p.date && bad.kg === p.kg)),
+    excluded,
+  };
 }
 
 function weightTrend(points: readonly WeightPoint[], today: number, window: 28 | 56) {
@@ -232,7 +249,7 @@ export function weightTrendKgPerWeek(
 }
 
 function calculateWeight(ctx: Record<string, unknown>, today: number): WeightCalculation | null {
-  const points = weightPoints(ctx, today);
+  const { points, excluded } = weightReadings(ctx, today);
   if (!points.length) return null;
   const latestDay = Math.max(...points.map((p) => p.day));
   // weight_series_8w lists the newest entry first within a day.
@@ -273,6 +290,7 @@ function calculateWeight(ctx: Record<string, unknown>, today: number): WeightCal
       trends,
       projection: null,
       projection_unavailable_reason: reason,
+      excluded_readings: excluded,
     };
   }
 
@@ -285,6 +303,10 @@ function calculateWeight(ctx: Record<string, unknown>, today: number): WeightCal
   );
   const goal = num(obj(obj(ctx.active_goal).details).target_weight_kg);
   const goalAhead = goal !== null && Math.sign(goal - latest.kg) === direction;
+  // A trend is history, not a goal: weights below the healthy BMI floor are never projected, and
+  // "in N weeks" weights appear only while the athlete's own target weight is still ahead.
+  const floor = healthyFloorWeightKg(num(obj(ctx.profile_context).height_cm));
+  const aboveFloor = (kg: number) => floor === null || kg >= floor;
   if (goalAhead && !targetValues.includes(goal)) targetValues.push(goal);
   const targets: WeightProjectionRow[] = targetValues
     .sort((a, b) => direction < 0 ? b - a : a - b)
@@ -297,15 +319,15 @@ function calculateWeight(ctx: Record<string, unknown>, today: number): WeightCal
         goal: goalAhead && target === goal,
       };
     })
-    .filter((row) => row.weeks_low <= projectionMaxWeeks);
-  const horizons: WeightHorizonRow[] = projectionHorizonsWeeks.map((weeks) => {
+    .filter((row) => row.weeks_low <= projectionMaxWeeks && aboveFloor(row.target_kg));
+  const horizons: WeightHorizonRow[] = !goalAhead ? [] : projectionHorizonsWeeks.map((weeks) => {
     const values = rates.map((r) => latest.kg + r.rate * weeks);
     return {
       weeks,
       kg_low: roundTo(Math.min(...values), 1),
       kg_high: roundTo(Math.max(...values), 1),
     };
-  });
+  }).filter((row) => aboveFloor(row.kg_low));
   const rounded = rates.map((r) => roundTo(r.rate, 2));
   return {
     latest_kg: latest.kg,
@@ -319,6 +341,7 @@ function calculateWeight(ctx: Record<string, unknown>, today: number): WeightCal
       horizons,
     },
     projection_unavailable_reason: null,
+    excluded_readings: excluded,
   };
 }
 
@@ -508,6 +531,10 @@ export function formatCoachCalculations(calc: CoachCalculations | null): string 
   if (w) {
     let s = "### Weight\n";
     s += `- Latest: ${w.latest_kg} kg on ${w.latest_date}\n`;
+    for (const reading of w.excluded_readings) {
+      s +=
+        `- Excluded reading (implausible against its neighbours, not used in any figure here): ${reading.kg} kg on ${reading.date}\n`;
+    }
     for (const t of w.trends) {
       s += `- ${t.window_days / 7}-week trend: ${signed(t.kg_per_week)} kg/week (${t.readings} ${
         t.readings === 1 ? "reading" : "readings"
