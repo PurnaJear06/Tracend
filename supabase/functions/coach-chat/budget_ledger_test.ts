@@ -208,11 +208,34 @@ Deno.test("a deadline that passes before the repair releases everything and char
 Deno.test("a failure that is not the provider's own outcome keeps every place", async () => {
   const { ledger, reserved, settled } = fakeBudget();
   assert(await ledger.reserveInitial(0.01));
-  assert(await ledger.reserveRepair(0.01));
+  assert(await ledger.reserveAttempt(0.01, "repair"));
   keepAfterFailure(ledger, new Error("unexpected"), true);
   await ledger.release();
   assertEquals(reserved.length, 2);
   assertEquals(settled, []);
+});
+
+Deno.test("a timeout on the second lookup call keeps only that call's place, not the settled first round's", async () => {
+  const { ledger, reserved, settled } = fakeBudget();
+  assert(await ledger.reserveInitial(0.01)); // r1: the first call
+  assert(await ledger.reserveAttempt(0.01, "lookup")); // r2: round one's call, answered
+  assert(await ledger.reserveAttempt(0.01, "lookup")); // r3: round two's call, timed out
+  ledger.attemptBudget.inFlight("lookup");
+  await ledger.release();
+  assertEquals(reserved.length, 3);
+  // The initial call and the first lookup call settle; only the call in flight stays open.
+  assertEquals(settled.sort(), ["r1", "r2"]);
+});
+
+Deno.test("an initial or repair timeout keeps that one place", async () => {
+  for (const kind of ["initial", "repair"] as const) {
+    const { ledger, settled } = fakeBudget();
+    assert(await ledger.reserveInitial(0.01));
+    assert(await ledger.reserveAttempt(0.01, "repair"));
+    ledger.attemptBudget.inFlight(kind);
+    await ledger.release();
+    assertEquals(settled, [kind === "initial" ? "r2" : "r1"]);
+  }
 });
 
 Deno.test("today's path still keeps its place on a timeout", async () => {

@@ -63,6 +63,9 @@ Deno.test("the registry holds the goal phase contributor after the screening and
     "coaching_principles",
     "screening",
     "goal_phase",
+    "training_plan",
+    "nutrition_state",
+    "data_index",
   ]);
 });
 

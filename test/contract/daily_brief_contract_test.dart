@@ -256,7 +256,7 @@ void main() {
         json['eligibility_jsonb'] as Map,
       );
 
-      expect(eligibility['eligibility_version'], 'eligibility-v1');
+      expect(eligibility['eligibility_version'], 'eligibility-v2');
       expect(
         Map<String, dynamic>.from(
           eligibility['training_change'] as Map,

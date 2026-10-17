@@ -9,6 +9,7 @@ import {
   summarizeGoalPhase,
 } from "../../training/goal_phase/index.ts";
 import type { CoachContextContributor } from "../host.ts";
+import { coachServiceRpc } from "../service_source.ts";
 
 /** Reads the goal phase inputs payload for a user (the service-role RPC). */
 export type GoalPhaseSource = (userId: string) => Promise<unknown>;
@@ -27,24 +28,9 @@ export function goalPhaseSourceFromRpc(rpc: GoalPhaseRpc): GoalPhaseSource {
   };
 }
 
-/**
- * The source for Edge Functions: a service-role client built on first use, so importing the
- * registry needs no environment (tests, type checks). A missing key fails the turn's contributor,
- * which the host leaves out.
- */
+/** The source for Edge Functions: the shared service-role caller (coach_context/service_source.ts). */
 export function serviceRoleGoalPhaseSource(): GoalPhaseSource {
-  let rpc: GoalPhaseRpc | undefined;
-  return async (userId) => {
-    if (!rpc) {
-      const url = Deno.env.get("SUPABASE_URL");
-      const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-      if (!url || !key) throw new Error("service role is not configured");
-      const { createClient } = await import("npm:@supabase/supabase-js@2.49.8");
-      const client = createClient(url, key, { auth: { persistSession: false } });
-      rpc = (name, params) => client.rpc(name, params);
-    }
-    return goalPhaseSourceFromRpc(rpc)(userId);
-  };
+  return goalPhaseSourceFromRpc((name, params) => coachServiceRpc(name, params));
 }
 
 export const goalPhaseContributorBudgetChars = 2_200;

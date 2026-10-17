@@ -13,6 +13,7 @@ import { distinctJudgeRoute, judgeRoute, judgeTone, toneRubric } from "./judge.t
 import { bankGates, type CaseRun, summarise } from "./report.ts";
 import { runBank } from "./run.ts";
 import type { BankCase, GraderResult } from "./types.ts";
+import { bankLookupRunner } from "./lookups.ts";
 
 const byId = (...ids: string[]): BankCase[] => ids.map((id) => bankCases.find((c) => c.id === id)!);
 
@@ -102,26 +103,48 @@ Deno.test("the budget cap stops the run and fails it", async () => {
   assertStringIncludes(result.text, "STOPPED at the cap");
 });
 
-Deno.test("a data lookup: the first answer asks, the second carries the rows and is graded", async () => {
+Deno.test("a data lookup: the production loop asks the bank's runner, which serves the case's rows", async () => {
   const [bench] = byId("lookup-bench-since-august");
-  const seen: string[] = [];
+  let served = "";
   const result = await runBank({
     cases: [bench],
     repeats: 1,
-    generate: ({ contributions }) => {
-      seen.push(contributions?.volatile ?? "");
-      return Promise.resolve(
-        seen.length === 1
-          ? generation("Let me look.", { data_requests: bench.goodRequests })
-          : generation(bench.good![0]),
-      );
+    // What generateCoachChatViaGateway does when the model asks: validate, run, answer.
+    generate: async ({ lookups }) => {
+      const round = await lookups!([{
+        lookup: "exercise_history",
+        from: "2026-08-01",
+        to: "2026-10-14",
+        filter: "bench press",
+      }]);
+      served = round.text;
+      return generation(bench.good![0]);
     },
   });
-  assertEquals(seen.length, 2);
-  assert(!seen[0].includes("2026-08-04"), "the first round has no rows");
-  assertStringIncludes(seen[1], "2026-08-04: Bench press 3 x 8 at 65 kg");
+  assertStringIncludes(served, "2026-08-04: Bench press 3 x 8 at 65 kg");
+  assertStringIncludes(served, "<looked_up_data>");
   assert(result.passed, result.text);
-  assertEquals(result.runs[0].reply.dataRequests.length, 1);
+  assertEquals(result.runs[0].reply.dataRequests, [{
+    lookup: "exercise_history",
+    from: "2026-08-01",
+    to: "2026-10-14",
+    filter: "bench press",
+  }]);
+});
+
+Deno.test("the bank's runner serves only rows inside the requested range and says when there are none", async () => {
+  const seen: { lookup: string; from: string; to: string }[] = [];
+  const run = bankLookupRunner(
+    { meals: [{ date: "2026-10-13", text: "Breakfast: poha, 380 kcal" }] },
+    seen,
+  );
+  const hit = await run([{ lookup: "meals", from: "2026-10-13", to: "2026-10-13", filter: null }]);
+  assertEquals(hit.counts, [{ lookup: "meals", rows: 1 }]);
+  assertEquals(hit.grounds, ["- 2026-10-13: Breakfast: poha, 380 kcal"]);
+  const miss = await run([{ lookup: "meals", from: "2026-10-01", to: "2026-10-12", filter: null }]);
+  assertEquals(miss.counts, [{ lookup: "meals", rows: 0 }]);
+  assertStringIncludes(miss.text, "No records in this range.");
+  assertEquals(seen.length, 2);
 });
 
 Deno.test("a lookup answered without asking fails the data_requests grader", async () => {

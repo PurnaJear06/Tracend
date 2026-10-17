@@ -744,6 +744,33 @@ evidence references, missing-data labels, safety state (`allowed`, `limited`, `r
 writes a content-free audit event. At most 50 new threads a day and 1,000 in all per user. Account
 deletion is the final retention bound.
 
+A10 adds two nullable columns on an assistant message, written by the Edge Function with the service
+role and never by the app (the app has select only): `guard_faults text[]` (rule names with counts,
+for example `rule:numbers_not_grounded:2`, `outcome:repair_timeout`, and
+`fallback:provider_response_invalid` when the turn ended in the data summary) and `lookups text[]`
+(the lookups a turn ran with their row counts, for example `exercise_history:14`). Names and counts
+only, never message content; a check limits each to 12 entries of `[a-z0-9_:]`. Row-level security
+limits both to the message's owner.
+
+#### Coach data lookups and baseline reads (A10, migration code 20)
+
+Read-only `SECURITY DEFINER` functions, granted to `service_role` only, each returning
+`schema_version` `1.0` (the user id comes from the authenticated Edge Function call; dates of
+records such as plan versions and goals are the athlete's local days, `private.local_day`):
+
+- Baseline, `(p_user_id, p_local_date)`: `get_coach_plan_state_v1` (the active plan's sessions with
+  exercises, the sessions finished this ISO week, equipment and movements to avoid, and the next
+  targets from `get_progression_summary_v1`), `get_coach_nutrition_state_v1` (the week's days with
+  complete flags, the target, the schedule with what is logged, what was eaten today, where meals
+  came from), `get_coach_data_index_v1` (first and last date and count per kind of record).
+- Lookups (ten), `(p_user_id, p_from, p_to, p_filter)`, range cut to 400 days, rows capped:
+  `coach_lookup_workouts_v1`, `_exercise_history_v1`, `_meals_v1`, `_body_v1`, `_check_ins_v1`,
+  `_recovery_v1`, `_plan_history_v1`, `_goals_v1`, `_weekly_reviews_v1`,
+  `_health_history_v1`. Check-in notes are cut to 300 characters; a goal returns its target keys only
+  (never the free-form details).
+- `private.nutrition_day_totals` and `private.nutrition_complete_day_rules` define a complete
+  logging day (ALGORITHMS.md section 6); `evaluate_change_eligibility` averages complete days only.
+
 ### `coach_context_snapshots`
 
 The prepared Coach context for one question or decision: thread, schema version, trigger kind

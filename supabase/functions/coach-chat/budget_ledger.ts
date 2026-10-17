@@ -12,7 +12,7 @@ import {
  * stay open (`keepAttempt`) while the others are given back.
  *
  * Nothing is given back while a turn runs: the first attempt's place keeps counting while a
- * repair is reserved (its real cost is recorded only when the turn ends), which can only
+ * repair or a lookup round is reserved (its real cost is recorded only when the turn ends), which can only
  * over-count. `release` settles every place that was not kept.
  */
 export class CoachChatBudgetLedger {
@@ -41,15 +41,15 @@ export class CoachChatBudgetLedger {
     return this.#take("initial", (budget) => budget.reserve("coach_chat", ceilingUsd));
   }
 
-  /** The repair's place, taken before the repair is sent. */
-  reserveRepair(ceilingUsd: number): Promise<boolean> {
-    return this.#take("repair", (budget) => budget.reserve("coach_chat", ceilingUsd));
+  /** A repair's or a lookup round's place, taken before the call is sent. */
+  reserveAttempt(ceilingUsd: number, kind: CoachChatAttempt): Promise<boolean> {
+    return this.#take(kind, (budget) => budget.reserve("coach_chat", ceilingUsd));
   }
 
   /** The gateway path's view of the ledger. */
   get attemptBudget(): CoachChatAttemptBudget {
     return {
-      reserveRepair: (usd) => this.reserveRepair(usd),
+      reserveAttempt: (usd, kind) => this.reserveAttempt(usd, kind),
       inFlight: (attempt) => this.keepAttempt(attempt),
     };
   }
@@ -67,9 +67,14 @@ export class CoachChatBudgetLedger {
     return true;
   }
 
-  /** A request of this attempt may have been billed with no usage known: its place stays open. */
+  /**
+   * A request of this attempt kind may have been billed with no usage known: its place stays open.
+   * Only the newest place of that kind is the request in flight; an earlier one (the first lookup
+   * round, when the second timed out) was answered and settles with the rest.
+   */
   keepAttempt(attempt: CoachChatAttempt): void {
-    for (const place of this.#places) if (place.attempt === attempt) place.budget.keep();
+    const inFlight = this.#places.findLast((place) => place.attempt === attempt);
+    inFlight?.budget.keep();
   }
 
   /** Every place stays open, as when the turn's cost could not be recorded. */

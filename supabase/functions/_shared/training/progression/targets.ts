@@ -202,11 +202,14 @@ export function describeLastSession(item: ProgressionTarget): string {
   return `${last.localDate}: ${load}, ${last.sets} sets, fewest reps ${last.minReps}`;
 }
 
+/** The target and why: "62.5 kg x 5 reps, 3 sets; add load, every set reached the top ...". */
+export function describeTargetAdvice(item: ProgressionTarget): string {
+  const caution = item.confidence === "low" ? " (reps in reserve were not logged)" : "";
+  return `${describeTargetPrescription(item)}; ${item.action.replace("_", " ")}, ` +
+    `${reasonWords(item.reason, item.action, isAssistedTarget(item))}${caution}`;
+}
+
 /** One line of Coach context for a target. */
 export function describeTarget(item: ProgressionTarget): string {
-  const caution = item.confidence === "low" ? " (reps in reserve were not logged)" : "";
-  return `${item.name}: ${describeTargetPrescription(item)}; ${item.action.replace("_", " ")}, ` +
-    `${reasonWords(item.reason, item.action, isAssistedTarget(item))}${caution}. Last logged ${
-      describeLastSession(item)
-    }.`;
+  return `${item.name}: ${describeTargetAdvice(item)}. Last logged ${describeLastSession(item)}.`;
 }
