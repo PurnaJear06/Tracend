@@ -478,6 +478,49 @@ out of the reference set so a constant default is never presented as personal in
 `reference` reports which rule applied (`personal` or `fixed`). The classified day never counts in
 its own reference.
 
+### Progression from the Logged Sets (B3, 2026-10)
+
+Next-session targets are arithmetic on the sets the athlete logged. They are computed in the
+database (`private.next_session_targets`, `private.progression_decision`, migration
+`20261017140023`) and reported as `next_targets` in `get_my_training_hub` 1.7. The coaching
+standard's double progression (`_shared/training/standard/progression.ts`: ACSM 2009, Helms 2016)
+is the model: reps rise inside the plan's range first; the load rises by one step only when every
+working set reached the top of the range with the planned reps in reserve, then the reps restart
+at the bottom.
+
+```text
+history      completed sessions of the exercise in the last 180 days, matched as
+             get_my_exercise_history does (catalog slug, else name; a substitution or an
+             extra never joins a catalog exercise)
+working sets the session's completed sets with reps > 0 at the session's top load
+             (warm-ups, back-off sets and unticked sets are not working sets)
+rir(set)     set.rir, else 10 - set.rpe (0 to 5), else unknown
+rir_target   10 - target_rpe, rounded (2 when the plan sets no RPE)
+step         exercise_catalog.load_step_kg; none for assisted exercises, bands, benches, bars
+             and exercises without a catalog link (those progress by reps only)
+
+first match wins, on the latest session (s1) and the two before it (s2, s3):
+  pain flagged on s1                            -> hold
+  days since s1 >= 28 and a step exists         -> lower: load - step, reps = range minimum
+  days since s1 >= 14                           -> hold
+  skipped after s1                              -> hold
+  min reps < range minimum                      -> twice at this load: lower; else hold at minimum
+  3 sessions at one load, reps < range maximum,
+    total reps(s1) <= total reps(s3)            -> stall: lower (hold without a step)
+  sets done < planned sets                      -> hold
+  min rir < rir_target                          -> hold
+  min reps >= range maximum                     -> add_load: load + step, reps = range minimum
+                                                   (hold at the maximum without a step)
+  otherwise                                     -> add_reps: min(range maximum, min reps + 1)
+```
+
+A hold repeats the last result (reps clamped into the range). The target's sets are the plan's
+set count. A target is never more than one step above the last logged load and its reps always sit
+in the plan's range. An exercise with no logged sets has no target, so the plan's prescription
+stands. Missing reps in reserve does not block a target but sets `confidence` to `low`. Heart rate
+is never an input (decision D9). The 14-day and 28-day thresholds, the three-session stall and the
+one-step lowering are Tracend's own choices, not research values, and wait for a coach's review.
+
 ### Literature
 
 - Gabbett, T.J. (2016). The training-injury prevention paradox. *Br J Sports Med* 50(5), 273–280.

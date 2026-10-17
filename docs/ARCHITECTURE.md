@@ -430,7 +430,7 @@ The daily Head Coach decision is a separate immutable record, shown on Today.
 
 ### Read-model and transactional RPC
 
-`get_my_training_hub(period)` (1.6), `get_my_nutrition_schedule(date)` (1.0) and
+`get_my_training_hub(period)` (1.7), `get_my_nutrition_schedule(date)` (1.0) and
 `get_my_daily_brief(date)` (1.8) are authenticated read models. They derive identity from
 `auth.uid()`, use only active approved versions and confirmed execution, and return bounded
 structured data for the iPhone client.

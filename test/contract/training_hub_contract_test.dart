@@ -2,7 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/muscle_groups.dart';
+import 'package:tracend/features/train/widgets/exercise_list_card.dart';
+import 'package:tracend/features/train/widgets/train_parts.dart';
+import 'package:tracend/features/train/workout_draft.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 
 String _readFixture(String name) {
@@ -315,6 +319,156 @@ void main() {
         // A day without athlete-reported effort never gets an intensity.
         if (recorded && day['effort_reported'] != true) expect(level, isNull);
       }
+    });
+  });
+
+  group('Training Hub contract — get_my_training_hub v1.7', () {
+    const fixture = 'training_hub_v1_7.json';
+
+    test('v1.7 keeps every v1.6 key and adds only next_targets', () {
+      final v16 = _loadFixtureJson('training_hub_v1_6.json');
+      final v17 = _loadFixtureJson(fixture);
+      expect(v17['schema_version'], '1.7');
+      expect(v17.keys.toSet().difference(v16.keys.toSet()), {'next_targets'});
+      expect(v16.keys.toSet().difference(v17.keys.toSet()), isEmpty);
+      for (final key in v16.keys.where((k) => k != 'schema_version')) {
+        expect(v17[key], v16[key], reason: '$key is unchanged');
+      }
+    });
+
+    test('a target reports exactly these keys', () {
+      final targets = (_loadFixtureJson(fixture)['next_targets'] as List)
+          .toMapList();
+      expect(targets, isNotEmpty);
+      for (final target in targets) {
+        expect(target.keys.toList()..sort(), [
+          'action',
+          'basis',
+          'confidence',
+          'exercise_key',
+          'load_kg',
+          'name',
+          'planned_exercise_id',
+          'reason',
+          'reps',
+          'sets',
+        ]);
+        expect(
+          target['action'],
+          isIn(['add_load', 'add_reps', 'hold', 'lower']),
+        );
+        expect(target['confidence'], isIn(['high', 'low']));
+        expect(target['load_kg'], anyOf(isNull, isA<num>()));
+        final basis = Map<String, dynamic>.from(target['basis'] as Map);
+        expect(basis.keys.toList()..sort(), ['last_date', 'recent']);
+        for (final session in (basis['recent'] as List).toMapList()) {
+          expect(session.keys.toList()..sort(), [
+            'effort_known',
+            'load_kg',
+            'local_date',
+            'min_reps',
+            'min_rir',
+            'pain',
+            'sets',
+            'total_reps',
+          ]);
+        }
+      }
+    });
+
+    test('targets attach to their exercises; others keep the plan', () {
+      final hub = TrainingHubData.fromHubJson(_loadFixtureJson(fixture));
+      final exercises = hub.workouts.single.exercises;
+      final bench = exercises[0].nextTarget!;
+      expect(bench.action, NextTargetAction.addLoad);
+      expect(bench.loadKg, 75);
+      expect(bench.reps, 6);
+      expect(bench.sets, 3);
+      expect(bench.lowConfidence, isFalse);
+      expect(exercises[1].nextTarget!.action, NextTargetAction.addReps);
+      expect(exercises[1].nextTarget!.lowConfidence, isTrue);
+      expect(exercises[2].nextTarget, isNull);
+      expect(exercises[0].targetLoadKg, 72.5);
+    });
+
+    test('a 1.6 hub parses with no targets, so installed builds are fine', () {
+      final hub = TrainingHubData.fromHubJson(
+        _loadFixtureJson('training_hub_v1_6.json'),
+      );
+      for (final exercise in hub.workouts.single.exercises) {
+        expect(exercise.nextTarget, isNull);
+      }
+    });
+
+    test('a target this build cannot read is left out, not guessed', () {
+      final json = _loadFixtureJson(fixture);
+      final targets = (json['next_targets'] as List).toMapList();
+      targets[0]['action'] = 'double_load';
+      targets[1]['reps'] = '9';
+      json['next_targets'] = targets;
+      final hub = TrainingHubData.fromHubJson(json);
+      for (final exercise in hub.workouts.single.exercises) {
+        expect(exercise.nextTarget, isNull);
+      }
+    });
+
+    test('the Train lines show the target next to the plan', () {
+      final exercises = TrainingHubData.fromHubJson(
+        _loadFixtureJson(fixture),
+      ).workouts.single.exercises;
+      expect(exerciseLine(exercises[0]), '3 × 6 to 8 · next 75 kg × 6');
+      expect(exerciseLine(exercises[1]), '3 × 8 to 10 · next 62.5 kg × 9');
+      expect(exerciseLine(exercises[2]), '2 × 10 to 12');
+      expect(
+        exerciseSpeech(exercises[0]),
+        '3 sets of 6 to 8 reps, next target 75 kilograms for 6 reps',
+      );
+      expect(
+        nextTargetWhy(exercises[0].nextTarget!),
+        startsWith('Every set reached the top of the range'),
+      );
+      expect(
+        nextTargetWhy(exercises[1].nextTarget!),
+        endsWith('Reps left were not logged, so check it feels right.'),
+      );
+    });
+
+    test('a target without a load reads in reps, and an unknown reason has '
+        'no explanation', () {
+      final target = NextTarget.fromJson({
+        'action': 'hold',
+        'reason': 'a_reason_from_a_newer_server',
+        'load_kg': null,
+        'reps': 12,
+        'sets': 2,
+        'confidence': 'high',
+      })!;
+      expect(nextTargetText(target), '12 reps');
+      expect(nextTargetWhy(target), isNull);
+    });
+
+    test('the workout starts each set from the target before last time', () {
+      final exercise = TrainingHubData.fromHubJson(
+        _loadFixtureJson(fixture),
+      ).workouts.single.exercises[0];
+      const history = ExerciseHistory(
+        key: 'barbell-bench-press',
+        kind: ExerciseHistoryKind.load,
+        lastSession: ExerciseLastSession(
+          sets: [HistorySet(setNumber: 1, loadKg: 72.5, repetitions: 8)],
+        ),
+      );
+      final suggestion = suggestSet(ExerciseDraft(exercise), 0, history);
+      expect(suggestion.load, '75');
+      expect(suggestion.reps, '6');
+      expect(suggestion.source, SetSuggestionSource.nextTarget);
+
+      final withoutTarget = TrainingHubData.fromHubJson(
+        _loadFixtureJson('training_hub_v1_6.json'),
+      ).workouts.single.exercises[0];
+      final fallback = suggestSet(ExerciseDraft(withoutTarget), 0, history);
+      expect(fallback.load, '72.5');
+      expect(fallback.source, SetSuggestionSource.lastTime);
     });
   });
 

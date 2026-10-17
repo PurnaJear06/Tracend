@@ -55,6 +55,8 @@ class ExerciseDetailBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final load = exercise.targetLoadKg;
+    final next = exercise.nextTarget;
+    final why = next == null ? null : nextTargetWhy(next);
     final notes = exercise.notes.trim();
     final rule = progressionRule?.trim();
     return Column(
@@ -63,7 +65,9 @@ class ExerciseDetailBody extends StatelessWidget {
         const SizedBox(height: TracendSpacing.xs),
         TrainStatRow(
           tiles: [
-            if (load != null)
+            if (next != null)
+              TrainStatTile(label: 'Next target', value: nextTargetText(next))
+            else if (load != null)
               TrainStatTile(label: 'Today', value: '${formatKg(load)} kg'),
             TrainStatTile(
               label: 'Sets × reps',
@@ -77,6 +81,10 @@ class ExerciseDetailBody extends StatelessWidget {
           'Aim for about ${_repsLeft(exercise.targetRpe)} on each set.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
+        if (why != null) ...[
+          const SizedBox(height: TracendSpacing.xs),
+          Text(why, style: Theme.of(context).textTheme.bodySmall),
+        ],
         const SizedBox(height: 14),
         FutureBuilder<ExerciseHistoryResult>(
           future: history,

@@ -283,8 +283,72 @@ Contract 8).
   are ours; a coach or the owner should review them. (c) Re-screening later (a yearly or
   after-injury prompt) is not built.
 
+**B3 (review; progression from the sets actually logged; migration 23; hub 1.7; Train change; based on #130).**
+
+- **Where the rules live: SQL.** The training hub, which Train reads, is a SQL function, and the sets
+  live in the database, so the targets are computed in the hub's transaction by
+  `private.next_session_targets(user)` and the pure `private.progression_decision(...)`
+  (`20261017140023_progression_targets.sql`). A Deno module would have needed a new Edge Function
+  and a second copy of the rules for the app. The Deno side (`_shared/training/progression/
+  targets.ts`) holds the payload types, a strict parser and the words Coach is given, with tests
+  that keep it and the migration from drifting.
+- **Hub 1.7 (additive).** `schema_version` is `1.7` and there is one new top-level key,
+  `next_targets`, an array of `{planned_exercise_id, exercise_key, name, action, reason, load_kg,
+  reps, sets, confidence, basis: {last_date, recent[]}}` in plan order. Every 1.6 key is unchanged.
+  The hub body is copied from `20261004090000_exercise_muscle_references.sql` (the newest definition;
+  nothing later redefines it) and differs by the two lines for `schema_version` and `next_targets`
+  (a Deno test asserts exactly that). An exercise without logged sets in the last 180 days has no
+  entry, and the plan's prescription stands. Two existing pgTAP tests asserted `'1.6'`
+  (`train_redesign_data_test.sql`, `coach_intake_test.sql`) and now assert `'1.7'`.
+- **Rules** (history is the athlete's completed sessions only; the working sets of a session are its
+  completed sets at the top load, so warm-ups, back-off sets and unticked sets never count). For the
+  latest session, first match wins:
+  1. pain flagged: hold;
+  2. 28 days or more away: lower one step (hold when the exercise has no load step); 14 days or more:
+     hold;
+  3. skipped after the last logged session: hold;
+  4. fewest reps below the plan's range: hold at the bottom of the range; twice in a row at the same
+     load: lower one step;
+  5. three sessions at one load with no more total reps than the oldest of them (and not at the top
+     of the range): lower one step (hold without a step);
+  6. fewer sets than planned: hold;
+  7. fewest reps in reserve below the plan's (10 minus the target RPE, 2 when unset): hold;
+  8. every set at the top of the range: add exactly one load step and restart at the bottom of the
+     range (hold at the top without a step: needs a harder variation);
+  9. otherwise add one rep (the standard's `repsAddedPerSession`) to the weakest set, up to the top.
+  The load step is `exercise_catalog.load_step_kg` (B1). Assisted exercises, bands, benches, bars
+  and exercises without a catalog link have no step, so they progress by reps only. A target is
+  never more than one step above the last logged load and its reps are always inside the plan's
+  range (pgTAP sweeps both). Reps in reserve come from `rir`, else from `rpe` (10 minus RPE); when a
+  working set has neither, `confidence` is `low` and the target is not blocked by it.
+- **D9.** Heart rate is not an input anywhere; a Deno test fails if the migration's code mentions
+  heart rate.
+- **Coach context (Contract 7).** `_shared/coach_context/contributors/progression.ts`
+  (`createProgressionContributor(source)`, volatile slot, 2,400 characters) renders the targets as
+  reference lines. It reads `public.get_progression_summary_v1(p_user_id)` (`{schema_version: '1.0',
+  targets}`, service role only, checked with `has_function_privilege`) through
+  `progressionSourceFromRpc`. It is **not registered**: the lead adds it to `registry.ts` in round 3
+  with `progressionSourceFromRpc((name, params) => serviceClient.rpc(name, params))`.
+- **Train.** Each exercise with a target reads "3 × 6 to 8 · next 75 kg × 6" in the list; its sheet
+  shows a **Next target** tile in place of **Today** and one sentence of why ("Every set reached the
+  top of the range last time. Add weight and start the reps again."); the workout screen starts each
+  set from the target, before last time's set ("Your next target"). VoiceOver reads the target.
+  Reason codes this build does not know show the target without a sentence. Older builds ignore
+  `next_targets`.
+- **Tests.** `progression/targets_test.ts` and `contributors/progression_test.ts` (Deno, 19 tests),
+  pgTAP `progression_targets_test.sql` (decision table, invariants, real logged sets through the hub,
+  exact key lists, grants), `training_hub_contract_test.dart` (v1.7 fixture `training_hub_v1_7.json`:
+  full key lists, parsing, older payloads, Train lines, set suggestions).
+- **Open.** (a) The in-house numbers: 14/28 days away, three sessions for a stall, one rep a
+  session, the equipment steps (B1), lowering by one step. All are a coach's or the owner's to
+  review; they sit in `private.progression_rules()` and the decision function. (b) Sets are never
+  changed by progression (the target repeats the plan's set count); volume belongs to the plan and
+  B5's deload rules. (c) The decision looks at the heaviest working load only; a session logged at
+  two loads is judged on the heavier. (d) Train shows the target, but Today's session card and the
+  plan editor do not yet.
+
 ## Next agent starts here
 
-B3 (progression and deloads, Phase 3 round 2) builds on the templates and
-`setWeights`/`fractionalWeeklySets`. B6's server wiring is done (see the B6 section). The briefs are in
-the program doc.
+B4 (same-day readiness) and B5 (deloads, cardio dosing, joint rules) build on B3's targets
+(`private.next_session_targets`, hub 1.7) and the templates. B6's server wiring is done (see the B6
+section). The briefs are in the program doc.

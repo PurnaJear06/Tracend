@@ -8,6 +8,77 @@ import 'package:tracend/app/breadcrumbs.dart';
 import 'package:tracend/features/train/exercise_history.dart';
 import 'package:tracend/features/train/muscle_groups.dart';
 
+/// What the next session's target does with last time's result.
+enum NextTargetAction {
+  addLoad('add_load'),
+  addReps('add_reps'),
+  hold('hold'),
+  lower('lower');
+
+  const NextTargetAction(this.key);
+  final String key;
+
+  static NextTargetAction? fromKey(Object? key) {
+    for (final action in values) {
+      if (action.key == key) return action;
+    }
+    return null;
+  }
+}
+
+/// The next-session target for one exercise, worked out by the server from
+/// the sets the athlete logged (hub 1.7 `next_targets`): weight, reps and
+/// reps in reserve. It never comes from heart rate. An exercise with no
+/// logged sets has none, and the plan's prescription stands.
+class NextTarget {
+  const NextTarget({
+    required this.action,
+    required this.reason,
+    required this.reps,
+    required this.sets,
+    this.loadKg,
+    this.lowConfidence = false,
+  });
+
+  final NextTargetAction action;
+
+  /// The server's reason code, for example `top_of_range`.
+  final String reason;
+
+  /// Null for an exercise logged without a load.
+  final num? loadKg;
+  final int reps;
+  final int sets;
+
+  /// True when reps in reserve were not logged for every working set.
+  final bool lowConfidence;
+
+  /// Null when [raw] is not a target this build understands.
+  static NextTarget? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final action = NextTargetAction.fromKey(raw['action']);
+    final reason = raw['reason'];
+    final reps = raw['reps'];
+    final sets = raw['sets'];
+    final load = raw['load_kg'];
+    if (action == null ||
+        reason is! String ||
+        reps is! num ||
+        sets is! num ||
+        (load != null && load is! num)) {
+      return null;
+    }
+    return NextTarget(
+      action: action,
+      reason: reason,
+      loadKg: load as num?,
+      reps: reps.toInt(),
+      sets: sets.toInt(),
+      lowConfidence: raw['confidence'] == 'low',
+    );
+  }
+}
+
 class PlannedExercise {
   const PlannedExercise({
     required this.order,
@@ -21,6 +92,7 @@ class PlannedExercise {
     this.targetLoadKg,
     this.exerciseSlug,
     this.primaryMuscles = const [],
+    this.nextTarget,
   });
   final int order;
   final String name;
@@ -42,6 +114,10 @@ class PlannedExercise {
   /// exercise, otherwise those of Tracend's reviewed exercise list for this
   /// name. Empty when the name is on neither: nothing is inferred.
   final List<MuscleGroup> primaryMuscles;
+
+  /// The next-session target from the sets logged (hub 1.7); null without
+  /// logged sets and in every payload older than 1.7.
+  final NextTarget? nextTarget;
 
   /// The key `get_my_exercise_history` knows this exercise by: its catalog
   /// slug, or its name when it has none.
@@ -72,33 +148,37 @@ class PlannedWorkout {
   final String cooldownCardio;
 
   /// Parses a workout from `get_my_training_hub` or the daily brief's
-  /// `today_workout`, which share one shape.
-  factory PlannedWorkout.fromHubJson(Map<String, dynamic> row) =>
-      PlannedWorkout(
-        id: row['id'] as String,
-        name: row['name'] as String,
-        objective: row['objective'] as String,
-        weekday: (row['weekday'] as num?)?.toInt(),
-        estimatedMinutes: (row['estimated_minutes'] as num).toInt(),
-        warmUp: row['warm_up'] as String? ?? '',
-        cooldownCardio: row['cooldown_cardio'] as String? ?? '',
-        exercises: (row['exercises'] as List? ?? const []).map((item) {
-          final exercise = Map<String, dynamic>.from(item as Map);
-          return PlannedExercise(
-            order: (exercise['order'] as num).toInt(),
-            name: exercise['name'] as String,
-            setCount: (exercise['set_count'] as num).toInt(),
-            repMin: (exercise['rep_min'] as num).toInt(),
-            repMax: (exercise['rep_max'] as num).toInt(),
-            targetRpe: exercise['target_rpe'] as num? ?? 8,
-            restSeconds: (exercise['rest_seconds'] as num? ?? 90).toInt(),
-            notes: exercise['notes'] as String? ?? '',
-            targetLoadKg: exercise['target_load_kg'] as num?,
-            exerciseSlug: exercise['exercise_slug'] as String?,
-            primaryMuscles: _muscleGroups(exercise['primary_muscles']),
-          );
-        }).toList(),
+  /// `today_workout`, which share one shape. [nextTargets] holds the hub's
+  /// 1.7 targets by planned exercise id.
+  factory PlannedWorkout.fromHubJson(
+    Map<String, dynamic> row, {
+    Map<String, NextTarget> nextTargets = const {},
+  }) => PlannedWorkout(
+    id: row['id'] as String,
+    name: row['name'] as String,
+    objective: row['objective'] as String,
+    weekday: (row['weekday'] as num?)?.toInt(),
+    estimatedMinutes: (row['estimated_minutes'] as num).toInt(),
+    warmUp: row['warm_up'] as String? ?? '',
+    cooldownCardio: row['cooldown_cardio'] as String? ?? '',
+    exercises: (row['exercises'] as List? ?? const []).map((item) {
+      final exercise = Map<String, dynamic>.from(item as Map);
+      return PlannedExercise(
+        order: (exercise['order'] as num).toInt(),
+        name: exercise['name'] as String,
+        setCount: (exercise['set_count'] as num).toInt(),
+        repMin: (exercise['rep_min'] as num).toInt(),
+        repMax: (exercise['rep_max'] as num).toInt(),
+        targetRpe: exercise['target_rpe'] as num? ?? 8,
+        restSeconds: (exercise['rest_seconds'] as num? ?? 90).toInt(),
+        notes: exercise['notes'] as String? ?? '',
+        targetLoadKg: exercise['target_load_kg'] as num?,
+        exerciseSlug: exercise['exercise_slug'] as String?,
+        primaryMuscles: _muscleGroups(exercise['primary_muscles']),
+        nextTarget: nextTargets[exercise['id']],
       );
+    }).toList(),
+  );
 
   static List<MuscleGroup> _muscleGroups(Object? raw) {
     if (raw is! List) return const [];
@@ -343,8 +423,9 @@ class TrainingHubData {
   });
 
   /// Parses `get_my_training_hub`. A cached 1.5 payload parses too: every
-  /// 1.6 field is optional and reads as absent.
+  /// 1.6 and 1.7 field is optional and reads as absent.
   factory TrainingHubData.fromHubJson(Map<String, dynamic> value) {
+    final targets = _nextTargets(value['next_targets']);
     final active = _map(value['active_plan']);
     final adherence = _map(value['adherence']);
     final computed = _map(value['computed']);
@@ -363,10 +444,13 @@ class TrainingHubData {
             ),
       localToday: _date(value['local_today']),
       workouts: (value['workouts'] as List? ?? const [])
-          .map((item) => PlannedWorkout.fromHubJson(_map(item)))
+          .map(
+            (item) =>
+                PlannedWorkout.fromHubJson(_map(item), nextTargets: targets),
+          )
           .toList(),
       todayWorkout: todayWorkout is Map
-          ? PlannedWorkout.fromHubJson(_map(todayWorkout))
+          ? PlannedWorkout.fromHubJson(_map(todayWorkout), nextTargets: targets)
           : null,
       recentSessions: (value['recent_sessions'] as List? ?? const []).map((
         item,
@@ -427,6 +511,19 @@ class TrainingHubData {
 
   static Map<String, dynamic> _map(Object? value) =>
       value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+
+  /// The 1.7 targets by planned exercise id; a target this build cannot read
+  /// is left out, so that exercise keeps the plan's prescription.
+  static Map<String, NextTarget> _nextTargets(Object? raw) {
+    final targets = <String, NextTarget>{};
+    if (raw is! List) return targets;
+    for (final item in raw) {
+      final id = item is Map ? item['planned_exercise_id'] : null;
+      final target = NextTarget.fromJson(item);
+      if (id is String && target != null) targets[id] = target;
+    }
+    return targets;
+  }
 
   static DateTime? _date(Object? value) =>
       value is String ? DateTime.tryParse(value) : null;

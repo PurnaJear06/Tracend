@@ -737,11 +737,20 @@ confirmation actions. The tab reads top to bottom:
     logged in Tracend." shows only when `completion_source` is `healthkit`.
   - A rest day reads **Rest day** ("You took the day off. Recovery is part of the plan.") and names
     the week's next workout with "See Sunday's workout".
-- **Exercises.** One grouped list; every row opens the exercise sheet: today's target (load, sets ×
+- **Exercises.** One grouped list; a row reads "3 × 6 to 8 at 72.5 kg" (the plan's starting load)
+  and, once the exercise has logged sets, "3 × 6 to 8 · next 75 kg × 6" ("next 11 reps" without a
+  load). Every row opens the exercise sheet: today's target (load, sets ×
   reps, rest, "Aim for about N reps left on each set."), **Last time** and **Your best** from
   `get_my_exercise_history`, the heaviest set of each logged session as a chart (two sessions
   minimum, else "Not enough data yet"; planned values are never charted) and a tip labelled **From
-  your plan** (the exercise note) or **Plan rule** (the plan's progression rule). A first-ever
+  your plan** (the exercise note) or **Plan rule** (the plan's progression rule).
+  With a next target the first tile is **Next target** ("75 kg × 6") instead of **Today**, followed
+  by one sentence of why, from the sets logged ("Every set reached the top of the range last time.
+  Add weight and start the reps again."; "Add one rep to your weakest set before adding weight.";
+  holds and lowerings say why too; with reps left not logged: "Reps left were not logged, so check
+  it feels right."). During a workout each set starts from the target ("Your next target"), ahead
+  of last time's set. The target is computed by the server from weight, reps and reps in reserve,
+  never from heart rate; an exercise with no logged sets keeps the plan's values. A first-ever
   exercise reads "First time. Pick a weight you can lift for every rep with good form." Offline
   without a saved copy it reads "Last time loads when you're online."; a saved copy says it is from
   this phone.
