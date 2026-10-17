@@ -49,6 +49,7 @@ Deno.test("the required groups are covered", () => {
   assert(count("floors_actions") >= 8, "floors and actions");
   assert(count("data_faults") >= 6, "data faults");
   assert(count("lookups") >= 4, "lookups");
+  assert(count("proposals") >= 5, "proposals");
   const ids = bankCases.map((c) => c.id);
   for (
     const id of [
@@ -148,6 +149,7 @@ Deno.test("the graders accept every hand-written good reply", () => {
         answer: text,
         safetyState: stateOf(p.bank.expect.safetyStates),
         dataRequests: p.bank.goodRequests ?? [],
+        ...(p.bank.goodIntent === undefined ? {} : { proposalIntent: p.bank.goodIntent }),
         costUsd: 0,
         latencyMs: 0,
       };
@@ -172,6 +174,14 @@ Deno.test("the graders catch every hand-written bad reply with the named grader"
         answer: example.reply,
         safetyState: stateOf(p.bank.expect.safetyStates),
         dataRequests: example.requests ?? p.bank.goodRequests ?? [],
+        // An example's own intent wins; null means it proposed nothing.
+        ...(example.intent === null
+          ? {}
+          : example.intent !== undefined
+          ? { proposalIntent: example.intent }
+          : p.bank.goodIntent === undefined
+          ? {}
+          : { proposalIntent: p.bank.goodIntent }),
         costUsd: 0,
         latencyMs: 0,
       };
@@ -200,6 +210,7 @@ Deno.test("the graders catch every hand-written bad reply with the named grader"
       "routine_sets_reps",
       "cites_rows",
       "data_requests",
+      "proposal_intent",
     ]
   ) assert(caught.has(grader), `no bad example exercises ${grader}`);
 });
@@ -300,7 +311,7 @@ Deno.test("healthy BMI, fat loss and no target: Coach is told to ask for one", (
 Deno.test("the rules cap reply length, forbid claimed actions and unsupported history", () => {
   const rules = coachChatInstructions([]);
   assertStringIncludes(rules, "about 120 words, at most 3 bullets and 1 question");
-  assertStringIncludes(rules, "You have no tools");
+  assertStringIncludes(rules, "You cannot change anything yourself");
   assertStringIncludes(rules, 'Never say "since you started"');
 });
 

@@ -122,7 +122,7 @@ Deno.test("an intent outside the vocabulary builds nothing", () => {
       direction: "lighter",
       session: "yesterday",
     },
-    { kind: "exercise_swap", reason: "preference", from_slug: "Bad Slug!" },
+    { kind: "exercise_swap", reason: "preference", from_exercise: "Bad Slug!" },
   ];
   for (const raw of cases) {
     const result = buildFromRawIntent(raw, state);

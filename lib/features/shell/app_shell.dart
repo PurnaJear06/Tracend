@@ -9,6 +9,7 @@ import 'package:tracend/features/account/account_screen.dart';
 import 'package:tracend/features/account/notification_repository.dart';
 import 'package:tracend/features/account/privacy_export_repository.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
+import 'package:tracend/features/coach/proposals/coach_proposal_repository.dart';
 import 'package:tracend/features/coach/coach_screen.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_repository.dart';
@@ -68,6 +69,7 @@ class AppShellRepositories {
     this.physique,
     this.goalTargets,
     this.brief,
+    this.proposals,
   });
 
   final WorkoutRepository? workouts;
@@ -79,6 +81,10 @@ class AppShellRepositories {
 
   /// The unshared brief repository; the shell shares it between tabs.
   final DailyBriefRepository? brief;
+
+  /// The Coach proposals repository; built from the environment (and absent
+  /// without a backend) when not given.
+  final CoachProposalRepository? proposals;
 }
 
 class _AppShellState extends State<AppShell> {
@@ -96,6 +102,7 @@ class _AppShellState extends State<AppShell> {
   late final PhysiqueCheckRepository _physique;
   late final GoalTargetRepository _goalTargets;
   late final DailyBriefRepository _brief;
+  late final CoachProposalRepository? _proposals;
 
   /// Today's morning check-in gate: while it is required, the tab bar gives
   /// way to "Check in to start your day".
@@ -138,6 +145,11 @@ class _AppShellState extends State<AppShell> {
         (live
             ? SupabaseCoachRepository(Supabase.instance.client)
             : const FixtureCoachRepository());
+    _proposals =
+        injected?.proposals ??
+        (live
+            ? SupabaseCoachProposalRepository(Supabase.instance.client)
+            : null);
     _nutrition =
         injected?.nutrition ??
         (live
@@ -229,6 +241,8 @@ class _AppShellState extends State<AppShell> {
         key: const ValueKey('tab_coach'),
         repository: _coach,
         aiConsent: widget.aiConsent,
+        proposals: _proposals,
+        planChanges: _planChanges,
       ),
       () => NutritionScreen(
         key: const ValueKey('tab_nutrition'),

@@ -28,6 +28,7 @@ import {
   validateDataRequests,
 } from "../coach_lookups/catalogue.ts";
 import type { CoachLookupRunner, LookupCount } from "../coach_lookups/runner.ts";
+import { proposalIntentJsonSchema } from "../coach_proposals/intent.ts";
 
 import { screenTurn } from "../coach_safety/red_flags.ts";
 import { costUsd, modelSpec } from "../ai/models.ts";
@@ -69,6 +70,7 @@ import {
 export function coachChatGatewaySchema(
   permittedEvidence: readonly string[],
   withLookups = false,
+  withProposals = false,
 ) {
   const codes = [...new Set(permittedEvidence)];
   const codeEnum = codes.length > 0 ? codes : ["__NO_PERMITTED_EVIDENCE__"];
@@ -92,6 +94,7 @@ export function coachChatGatewaySchema(
     additionalProperties: false,
     properties: {
       ...(withLookups ? { data_requests: dataRequests } : {}),
+      ...(withProposals ? { proposal_intent: proposalIntentJsonSchema } : {}),
       answer: { type: "string" },
       evidence: {
         type: "array",
@@ -163,6 +166,7 @@ export function buildCoachChatGatewayPrompt(
   contributions: CoachContributions = noCoachContributions,
   repair?: CoachChatRepair,
   lookups?: CoachChatLookupPrompt,
+  withProposals = false,
 ): CoachChatGatewayPrompt {
   const permitted = permittedEvidenceOf(context);
   const wrappers = fileOpen.length + fileClose.length + recentOpen.length + recentClose.length +
@@ -186,7 +190,10 @@ export function buildCoachChatGatewayPrompt(
   if (lookups?.closed) content.push({ type: "text", text: lookupsClosed });
   if (repair) content.push({ type: "text", text: repairText(repair, permitted) });
   return {
-    system: [{ type: "text", text: coachChatInstructions(permitted, lookups !== undefined) }],
+    system: [{
+      type: "text",
+      text: coachChatInstructions(permitted, lookups !== undefined, withProposals),
+    }],
     messages: [{ role: "user", content }],
   };
 }
@@ -309,12 +316,19 @@ export type CoachChatGatewayInput = Readonly<{
    * it the model is not offered lookups.
    */
   lookups?: CoachLookupRunner;
+  /**
+   * Whether the model may return a `proposal_intent` (A8). The caller passes it to the proposal
+   * engine after the answer passes every guard; nothing here acts on it.
+   */
+  proposals?: boolean;
 }>;
 
 type Attempted = Readonly<{
   telemetry: CoachChatAttemptTelemetry;
   usage: AiUsage | null;
   answer?: CoachChatAnswerV2;
+  /** The `proposal_intent` of a valid final answer, as the model wrote it. */
+  proposalIntent?: unknown;
   /** The model asked for data instead of answering. */
   lookup?: Readonly<{ requests: readonly DataRequest[]; interim: unknown }>;
   model?: string;
@@ -336,7 +350,11 @@ function lookupAsk(json: unknown): { requests: unknown; rest: unknown } | null {
   if (!json || typeof json !== "object" || Array.isArray(json) || !("data_requests" in json)) {
     return null;
   }
-  const { data_requests: requests, ...rest } = json as Record<string, unknown>;
+  // A turn that is still gathering data proposes nothing: the intent is dropped with the request.
+  const { data_requests: requests, proposal_intent: _intent, ...rest } = json as Record<
+    string,
+    unknown
+  >;
   return { requests, rest };
 }
 
@@ -368,7 +386,11 @@ export async function generateCoachChatViaGateway(
   // One call of a lookup round gets half an initial attempt, and a round starts only when that
   // much of the turn's deadline is left, so sequential calls cannot run past it.
   const lookupCallMs = Math.round(timing.initialAttemptMs / 2);
-  const schema = coachChatGatewaySchema(permitted, input.lookups !== undefined);
+  const schema = coachChatGatewaySchema(
+    permitted,
+    input.lookups !== undefined,
+    input.proposals === true,
+  );
   const deadline = Date.now() + timing.totalDeadlineMs;
   const attempts: CoachChatAttemptTelemetry[] = [];
   let spentUsd = 0;
@@ -397,6 +419,7 @@ export async function generateCoachChatViaGateway(
       contributions,
       repair,
       lookupPrompt(closed || repair !== undefined),
+      input.proposals === true,
     );
 
   let prompt: CoachChatGatewayPrompt;
@@ -489,6 +512,13 @@ export async function generateCoachChatViaGateway(
         };
       }
       let json = result.json;
+      // The intent is not part of the answer: it is read here and handed on untouched.
+      let proposalIntent: unknown;
+      if (input.proposals === true && json && typeof json === "object" && !Array.isArray(json)) {
+        const { proposal_intent: intent, ...rest } = json as Record<string, unknown>;
+        proposalIntent = intent ?? undefined;
+        json = rest;
+      }
       const asked = input.lookups ? lookupAsk(json) : null;
       if (asked) {
         const empty = Array.isArray(asked.requests) && asked.requests.length === 0;
@@ -521,7 +551,13 @@ export async function generateCoachChatViaGateway(
       }
       try {
         const answer = parseCoachChatAnswer(json, permitted, answerCheck);
-        return { telemetry: telemetry("valid"), usage, answer, model: result.model };
+        return {
+          telemetry: telemetry("valid"),
+          usage,
+          answer,
+          model: result.model,
+          ...(proposalIntent === undefined ? {} : { proposalIntent }),
+        };
       } catch (error) {
         issue = issueOf(error);
         return {
@@ -599,6 +635,7 @@ export async function generateCoachChatViaGateway(
   };
   const success = (attempted: Attempted, answer: CoachChatAnswerV2): CoachChatGeneration => ({
     answer,
+    ...(attempted.proposalIntent === undefined ? {} : { proposalIntent: attempted.proposalIntent }),
     provider: route.vendor,
     model: attempted.model ?? route.model,
     inputUnits: attempts.reduce((sum, item) => sum + (item.promptTokens ?? 0), 0),

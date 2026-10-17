@@ -974,3 +974,57 @@ begin
 end $$;
 revoke all on function public.get_coach_proposal_inputs_v1(uuid) from public, anon, authenticated;
 grant execute on function public.get_coach_proposal_inputs_v1(uuid) to service_role;
+
+-- 9. Chat -------------------------------------------------------------------------------------------
+
+-- An assistant message points at the proposal it introduced, so the thread (live and reloaded)
+-- shows the card under the reply. Set by link_coach_proposal_v1 after the reply is stored.
+alter table public.coach_messages
+  add column proposal_id uuid references public.change_proposals(id) on delete set null;
+
+create function public.link_coach_proposal_v1(
+  p_user_id uuid, p_message_id uuid, p_proposal_id uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  update public.coach_messages set proposal_id = p_proposal_id
+  where id = p_message_id and user_id = p_user_id and role = 'assistant'
+    and exists (select 1 from public.change_proposals c
+      where c.id = p_proposal_id and c.user_id = p_user_id and c.schema_version = '3.0');
+  if not found then raise exception 'message or proposal not found' using errcode = 'P0002'; end if;
+  update public.change_proposals set source_message_id = p_message_id
+  where id = p_proposal_id and user_id = p_user_id;
+end $$;
+revoke all on function public.link_coach_proposal_v1(uuid, uuid, uuid) from public, anon, authenticated;
+grant execute on function public.link_coach_proposal_v1(uuid, uuid, uuid) to service_role;
+
+-- What Coach is told about the athlete's proposals: a temporary block that is running and when it
+-- ends, the goal phase and when it ends (a diet break that has ended is reported as ended, so Coach
+-- raises the next step), proposals waiting for an answer, and how the recent ones were answered.
+-- Service role only; the Coach context contributor reads it.
+create function public.get_coach_proposals_context_v1(p_user_id uuid, p_local_date date)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object(
+    'schema_version', '1.0',
+    'local_date', p_local_date,
+    'block', (select jsonb_build_object('title', tp.title, 'kind', v.block_kind,
+        'started_on', v.effective_date, 'ends_on', v.ends_on)
+      from public.training_plan_versions v
+      join public.training_plans tp on tp.id = v.plan_id and tp.user_id = v.user_id
+      where v.user_id = p_user_id and v.status = 'active' and v.ends_on is not null),
+    'phase', (select jsonb_build_object('phase', g.details ->> 'phase',
+        'started_on', g.details ->> 'phase_started_on', 'ends_on', g.details ->> 'phase_ends_on')
+      from public.user_goals g where g.id = private.active_goal_id(p_user_id)
+        and g.details ? 'phase'),
+    'proposals', coalesce((select jsonb_agg(x.item order by x.created_at desc) from (
+        select c.created_at, jsonb_build_object(
+          'kind', c.proposal_kind, 'title', c.proposed_training ->> 'title',
+          'status', private.coach_proposal_json(c) ->> 'status',
+          'created_on', c.created_at::date, 'expires_at', c.expires_at, 'ends_on', c.ends_on) item
+        from public.change_proposals c
+        where c.user_id = p_user_id and c.schema_version = '3.0'
+          and c.created_at > statement_timestamp() - interval '60 days'
+        order by c.created_at desc limit 8) x), '[]'::jsonb));
+$$;
+revoke all on function public.get_coach_proposals_context_v1(uuid, date)
+  from public, anon, authenticated;
+grant execute on function public.get_coach_proposals_context_v1(uuid, date) to service_role;

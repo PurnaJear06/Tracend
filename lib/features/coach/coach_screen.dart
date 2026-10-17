@@ -7,6 +7,8 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
+import 'package:tracend/features/coach/proposals/coach_proposal_card.dart';
+import 'package:tracend/features/coach/proposals/coach_proposal_repository.dart';
 import 'package:tracend/features/coach/widgets/coach_composer.dart';
 import 'package:tracend/features/coach/widgets/coach_context_card.dart';
 import 'package:tracend/features/coach/widgets/coach_message_bubble.dart';
@@ -14,6 +16,7 @@ import 'package:tracend/features/coach/widgets/coach_thinking_indicator.dart';
 import 'package:tracend/features/coach/widgets/preference_prompt_chip.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/shared/formatting.dart';
+import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
@@ -48,10 +51,20 @@ class CoachScreen extends StatefulWidget {
     this.repository = const FixtureCoachRepository(),
     this.threadMemory = const SharedPreferencesCoachThreadMemory(),
     this.aiConsent,
+    this.proposals,
+    this.planChanges,
     super.key,
   });
   final CoachRepository repository;
   final CoachThreadMemory threadMemory;
+
+  /// Reads and answers the proposals Coach makes (A8). Null without a backend,
+  /// where Coach makes none.
+  final CoachProposalRepository? proposals;
+
+  /// Announced when an approved or undone proposal changed the plan, the
+  /// targets or the goal, so the screens that show them reload.
+  final PlanChanges? planChanges;
 
   /// Chat and decisions send the athlete's data to the AI provider only while
   /// this is granted. Null without a backend, where nothing is sent.
@@ -781,6 +794,17 @@ class _CoachScreenState extends State<CoachScreen> {
             onSendFollowUp: (suggestion) => _send(suggestion),
             onRetry: message.isDataSummary ? _retryFor(index) : null,
           ),
+          if (message.proposalId case final proposalId?
+              when widget.proposals != null) ...[
+            const SizedBox(height: TracendSpacing.sm),
+            CoachProposalLoader(
+              key: ValueKey('proposal-$proposalId'),
+              proposalId: proposalId,
+              repository: widget.proposals!,
+              onPlanChanged: widget.planChanges?.announce,
+              onChangeIt: (proposal) => _send(proposal.changeRequestMessage),
+            ),
+          ],
         ],
       if (_budgetWarning && failure == null && !_sending) ...[
         const SizedBox(height: TracendSpacing.md),

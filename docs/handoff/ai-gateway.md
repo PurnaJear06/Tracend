@@ -763,12 +763,50 @@ audit (1, 2, 3, 6 deterministic part, 7, 15).
   safety notes ("not an AI answer" only for rows no model wrote; a model-written refusal keeps its
   AI label).
 
-### A8 part 1: Coach proposals (code 18, `claude/a8-coach-proposals`)
+### A8: Coach proposals (code 18, `claude/a8-coach-proposals`, #148)
 
 Coach proposes a change in chat; rules compute it; the athlete approves with one tap; a new
 version and an audit event are written; the athlete can undo for seven days. Part 1 is the engine,
-storage, approval flow and app card. Part 2 (the lead, after A10 merges) wires chat to it; the
-integration contract is in the program plan's "Contract requests".
+storage, approval flow and app card. Part 2 (same PR, after A10 merged) wires chat to it.
+
+**Part 2 (chat wiring).**
+- `proposal_intent` is an optional key of the gateway answer (`coachChatGatewaySchema(…, withProposals)`,
+  `CoachChatGatewayInput.proposals`, set by coach-chat and by the eval bank's `gatewayGenerate`).
+  The gateway strips it before `parseCoachChatAnswer` (it is not part of the stored answer, also
+  when a lookup round came first) and returns it as `CoachChatGeneration.proposalIntent`, untrusted.
+  Not offered on the legacy DeepSeek path.
+- coach-chat calls `proposeFromChat` (`_shared/coach_proposals/chat.ts`) after the reply guards, only
+  for an `allowed` model answer without `generation.safety`. Stored: `link_coach_proposal_v1`
+  after `persist_coach_chat_result` sets `coach_messages.proposal_id`; the live response message
+  carries `proposal_id`; a thread reload returns it (the app selects the column). Refusal: the
+  rules' plain reason is appended to the stored reply. A failed link is logged
+  (`coach_chat_proposal_link_failed`); the proposal then expires unanswered.
+- Persona: "You have no tools" became "You cannot change anything yourself" (shared by both
+  paths, so the DeepSeek parity digests in `coach_chat_parity_test.ts` were recorded again on
+  purpose); the proposal rules are a gateway-only block (`proposalContract`). The `claimed_action`
+  guard and its repair hint (now "you cannot change anything yourself … or that it is a proposal
+  they can approve") stay.
+- Context: `coach_proposals` contributor (`get_coach_proposals_context_v1`, volatile, registered
+  after `nutrition_state`) tells Coach what is waiting, what was answered, the running block and
+  its last day, and the goal phase with its end date; an ended diet break is reported as ended.
+- Intent uses exercise names (`from_exercise`, `to_exercise`), resolved to catalog slugs by the
+  parser, because the plan context shows names, not slugs.
+- App: `CoachMessage.proposalId`; `CoachScreen` renders `CoachProposalLoader` under the reply when it
+  has a `CoachProposalRepository`; `onPlanChanged` is the shell's `PlanChanges.announce`,
+  `onChangeIt` sends `changeRequestMessage`.
+- Tests: `coach-chat/proposals_test.ts` runs the real handler with a fake Anthropic fetch for each
+  owner case (chat answer, stored proposal arguments, link, response), the 1,200 kcal refusal,
+  a red-flag turn (no model call, no proposal), a limited or refused answer, an invalid intent and
+  a claimed change; gateway tests for the schema, the stripped intent and a lookup round; contributor
+  tests; Flutter tests for the thread. Eval bank: category `proposals` (home block, 4 days,
+  diet break, lighter tomorrow, a question that asks for no change), `floor-1200`, a rewritten
+  `action-update-plan`, and a `proposal_intent` grader on every reply (an unasked intent fails;
+  an asked one must parse, be of the right kind and be accepted, or refused with the expected code,
+  by the rules for the standard athlete).
+- Removed or replaced: the persona line "You have no tools", the matching repair wording, the
+  bank's `action-update-plan` expectation that Coach says it cannot change the plan (it now
+  proposes), and the contract-request entry for part 2.
+- The hourly job is `tracend-end-plan-blocks` (pg_cron, minute 7 of every hour).
 
 - **Migration `20261018120018_coach_proposals.sql`** (additive): `change_proposals` 3.0 columns
   (`proposal_kind`, `proposal_payload`, `before_snapshot`, `after_snapshot`, `basis`,
@@ -805,10 +843,8 @@ integration contract is in the program plan's "Contract requests".
 - **Gates (decision for the owner):** eligibility gates calorie cuts below maintenance, a new
   fat-loss phase, a strength phase and a heavier session. Easing off and life-driven changes are not
   gated. AI_SAFETY_SPEC §6 says why.
-- **Removed:** nothing. Part 1 replaces no code; the Coach persona's "you have no tools" rule (A9)
-  stays until part 2 lets chat claim a waiting proposal.
 - **Open:** after a diet break ends, resuming a deficit is a new proposal (nothing reverts by
-  itself); hub history for sessions logged on a block's workouts follows the active version, as
+  itself; the Coach context reports the end so Coach suggests it); hub history for sessions logged on a block's workouts follows the active version, as
   after any re-plan; the deload is an in-house rule until B5.
 
 ### A10 part 1: Coach looks up the athlete's data, plus a lean baseline (migration code 20)

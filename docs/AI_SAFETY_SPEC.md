@@ -234,6 +234,19 @@ holds at every step:
    it is refused once a later change replaced them. A temporary block carries its last day and the
    version to restore; the regular plan returns by itself the day after.
 
+**In chat.** On the gateway route the answer may carry an optional `proposal_intent` (closed
+vocabulary above; the schema enumerates the kinds, reasons and settings, the parser checks every
+range). The persona no longer says Coach "has no tools": it says Coach cannot change anything
+itself and may *propose*, in words like "Here's a proposal you can approve below", never "I've
+changed it". The deterministic `claimed_action` guard is unchanged and still rejects a reply that
+says a change was made. After the reply has passed every guard, and only for an ordinary `allowed`
+model answer (never a red-flag referral, a pain-day referral, a limited or refused answer, a
+lookup interim sentence or a data summary), coach-chat calls `proposeCoachChange`. A stored
+proposal is linked to the reply; a refusal's plain reason is appended to the reply; an intent the
+parser rejects is dropped with the same plain words. The Coach context tells the model what is
+waiting, what was answered, what is running and what has ended (a diet break or a block that ended
+is reported as ended so Coach suggests the next step as a new proposal).
+
 A diet break ends on its date but nutrition does not revert by itself: resuming a deficit is a new
 proposal the athlete approves, so no calorie change happens without a tap.
 

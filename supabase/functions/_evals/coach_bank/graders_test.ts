@@ -12,6 +12,7 @@ import {
   lengthLimits,
   lookupProblem,
   prescriptionCount,
+  proposalProblem,
   repeatedAdvice,
   statesFigure,
   wordCount,
@@ -226,4 +227,57 @@ Deno.test("a reply with a heading and four bullets fails format", async () => {
     model("# Tips\n- Sleep\n- Protein\n- Walk\n- Warm up\nYou can't remove soreness completely."),
   );
   assert(results.some((r) => r.grader === "format" && !r.pass));
+});
+
+Deno.test("proposals: an intent must be of the kind asked for and accepted by the rules", () => {
+  const diet = { kind: "goal_or_phase", reason: "diet_fatigue", phase: "diet_break" };
+  const expected = {
+    kind: "intent",
+    intent: "goal_or_phase",
+    has: { phase: "diet_break" },
+  } as const;
+  assertEquals(proposalProblem(expected, diet, "Take a diet break", "2026-09-27"), null);
+  assert(proposalProblem(expected, undefined, "Take a diet break")!.includes("no proposal_intent"));
+  assert(proposalProblem(expected, { kind: "nope" }, "x")!.includes("invalid"));
+  assert(
+    proposalProblem(expected, { ...diet, phase: "cut" }, "Take a diet break")!.includes("phase"),
+  );
+  assert(proposalProblem({ kind: "none" }, diet, "What is a diet break?")!.includes("not asked"));
+  assertEquals(proposalProblem({ kind: "none" }, undefined, "What is a diet break?"), null);
+});
+
+Deno.test("proposals: a refusal the case expects must be the rules' own refusal", () => {
+  const lower = {
+    kind: "nutrition_targets",
+    reason: "athlete_request",
+    direction: "lower",
+    requested_calories: 1200,
+  };
+  const expected = {
+    kind: "intent",
+    intent: "nutrition_targets",
+    refusedWith: "below_calorie_floor",
+    orNone: true,
+  } as const;
+  assertEquals(proposalProblem(expected, lower, "Lower my calories to 1,200"), null);
+  // The figure must come from the athlete's own message.
+  assert(
+    proposalProblem(expected, lower, "Lower my calories")!.includes("figure_not_from_athlete"),
+  );
+  assertEquals(proposalProblem(expected, undefined, "Lower my calories to 1,200"), null);
+  assert(
+    proposalProblem(
+      { ...expected, orNone: false },
+      undefined,
+      "Lower my calories to 1,200",
+    )!.includes("no proposal_intent"),
+  );
+  // An intent the rules accept is a problem when the case expects a refusal.
+  assert(
+    proposalProblem(
+      expected,
+      { ...lower, requested_calories: 2200 },
+      "Set my calories to 2,200",
+    )!.includes("accepted"),
+  );
 });

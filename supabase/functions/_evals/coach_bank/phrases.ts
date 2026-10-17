@@ -75,3 +75,9 @@ export const suggestsOnApp = phrase(
   /\bsettings\b/i,
   /\byou can (?:set|change|update|edit|log|add)\b/i,
 );
+
+export const proposalWords = phrase(
+  "says a proposal waits for the athlete's approval",
+  /\bproposal\b/i,
+  /\bapprove\b/i,
+);

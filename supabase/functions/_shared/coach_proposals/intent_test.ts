@@ -23,8 +23,8 @@ Deno.test("every kind has a valid intent and the parser reads it into camel case
     {
       kind: "exercise_swap",
       reason: "preference",
-      from_slug: "barbell-back-squat",
-      to_slug: "goblet-squat",
+      from_exercise: "Barbell back squat",
+      to_exercise: "Goblet squat",
     },
     { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks: 1 },
     { kind: "intensity_or_phase", reason: "plateau", focus: "strength", weeks: 6 },

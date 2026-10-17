@@ -15,6 +15,9 @@
 // the training_plan and nutrition_state contributors replace (today's check-in, the weekly
 // review string, the meal schedule and today's meals, per-logged-day nutrition, the week
 // structure). Today's DeepSeek request has no lookups: those are gateway-only.
+// A8 (Coach proposals) did on purpose too: the persona's "You have no tools" line now reads "You
+// cannot change anything yourself" (the proposal rules themselves are gateway-only), and the
+// claimed-action repair hint says the same.
 
 import { assertEquals } from "jsr:@std/assert@1.0.14";
 import { route } from "../ai/routes.ts";
@@ -113,22 +116,22 @@ Deno.test("no route settings: the DeepSeek request is byte-identical to the pre-
 // Per athlete (rich, no_watch, new_user): weekly question, plan-change question, weekly question
 // with history; each the first request and its repair.
 const preA6Requests: readonly string[] = [
-  "b2ca992837854827b82037a233679d00281b29a1bf359e6656cfd0615c738911",
-  "b0e0f2c6807918b9f3b345f1fee4653dbe7f60bc52996f0f00a58efb5bf3a158",
-  "d4965af55f5811e27e1cf5bb8d5a35d821ce0e092061c73a03374d05b49c17ac",
-  "adcc88ded82b5c891c382034df13baa6c38ffb9ad9933206c891397750988e7b",
-  "57fbb2b5168f349cd4da7ba8a8500e49111f2f31f86b27aad88d69b751dd5399",
-  "3bb6a7bee1e1a4f98fdc96e1f250ba13d5cd5900b0e77cfcd29ab8d53e6f48b8",
-  "b478dfe4d5c990f46ac2f209b33d8343120dfc8df8d9fcfe405390c066886e73",
-  "0ea7f9c62a8499c5cb9504942236be48621644a43127db6e023b01ed9a28e801",
-  "b9c7d80270cc629f9b2608584f0219345cb3033bc9d922e5d1f80529919cb5dd",
-  "dbb786d6ffcb4e6f94df23cd61f259f696c33597688a32d840cd09bf8199d2b3",
-  "718cb4d3091ba66a714f64ed89d47f8624a7561a1b22a77b41f519033afcebcd",
-  "5983ef761a314256e50083af0247bee292b0db61882644fa80fb5b394e0a3399",
-  "d5786b0a3e4574d91d6de289184d280429b3ac88e2ad2b71e399cc512a2aa506",
-  "fea382dc6e4e2aff9eda76fe603182de7ee42cfd7679596d80be710efb93408c",
-  "c821ce84bca13306f2fb220a551956eb8dc7d4969cf51ed50d935cea9dbb674c",
-  "8916fefb7bf74c9ce8b696b93ff898e023998021de4f301c2c5bd83e358efc46",
-  "020bf80906cb6da9e9161b6eef66ef340f0cfeaf080d7f5428e7356056557f12",
-  "11b5b28423bf73d4bef3e9d10c5130742ec35fe46154531597d4489387bd27b5",
+  "ba2e78d197dd68f76496415222a38d3b65b3bdb44c2776905fa66c86047d978d",
+  "43c2af7315b8b2706e75ea51539caa5a5b5d9c904d2fa26fdcf8b4b9a420969e",
+  "53f9e08c56eee644b764d4b45e28b170d75b5507a684414fad8b7268ec1b64cc",
+  "5d285ca31e6f3137c1d5bd8620e1ec923826b628908273fac4af6deb16b48168",
+  "e488cdcfb1f1766d9bc5c59844858b316155a526a4a241c615b5d8290a44dc82",
+  "14df52044cb43370bb2113899b60a50eae51fcb0366e1d85f83744f1a6181519",
+  "be8c1ac62424ac5608ae7365e81b2f1152d67dea42ef95feca1dbf61fbb348dc",
+  "b6298d10ee790b4594ea84c064e7089c3244a4b12c90299904e8f52a547d1f4f",
+  "596341ecac103b065a9ed966245854092895bf9274f98920ff057ba754f5e199",
+  "afa1ae5088f7995401479fa9bea4b565bf1b1d97f2df99274a52e6226a536171",
+  "71df207de011767f52bf2b2511d4eacbc448533e44cadfe4544663a59c7a9439",
+  "bda410ba6d2cc563b7edea7451250297959004d9bc36134a4c2b53bd0b81e5d6",
+  "c7622614529a2abdd4c83b9cb481ae81935821763ca012e01ada5f564dc81808",
+  "6f1052c5f4c7a61bf524fac9f83f87743918d65c8b16f4872df5e5c7466eee17",
+  "80a950ec0729849653548a25a9104a824a21b3f7eab4758f2752ccb56b03e0c3",
+  "62efe99658f0ad4c3e03a0285336a081dad887a34c7d3cddf7c751fa7418b6c8",
+  "cf09c8c58d511cea219134771a8c5b34a6f6678a889504b35f28d100815e9048",
+  "9b3c6bd38c1172325e1b1de415827875f3332742f25082d142787f810ad6bac1",
 ];

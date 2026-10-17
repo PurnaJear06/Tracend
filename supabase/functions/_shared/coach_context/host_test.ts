@@ -27,11 +27,13 @@ Deno.test("the registry is valid and holds the contributors registered so far", 
     "goal_phase",
     "training_plan",
     "nutrition_state",
+    "coach_proposals",
     "data_index",
   ]);
   assertEquals(coachContextContributors.map((item) => item.slot), [
     "stable",
     "stable",
+    "volatile",
     "volatile",
     "volatile",
     "volatile",

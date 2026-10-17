@@ -1,107 +1,14 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
-import { addDays } from "./common.ts";
-import { stateFixture, today, weightReadings } from "./fixtures.ts";
+import { proposalRpcPayloads, stateFixture, today } from "./fixtures.ts";
 import { type ProposalRpc, proposeCoachChange } from "./service.ts";
 import { parseAthleteState } from "./state.ts";
 
 const user = "00000000-0000-4000-8000-0000000000aa";
 
-/** The database payloads for the fixture athlete, as the three service-role RPCs return them. */
-function payloads() {
-  const state = stateFixture();
-  const plan = state.plan!;
-  return {
-    inputs: {
-      schema_version: "1.0",
-      local_date: today,
-      screening: "cleared",
-      profile: {
-        sex: "male",
-        birth_year: 1994,
-        height_cm: 176,
-        experience: "intermediate",
-        daily_activity: "mostly_sitting",
-        equipment: state.profile.equipment,
-        avoid_patterns: [],
-        training_days: [1, 3, 5],
-        session_minutes: 60,
-        priority_muscles: null,
-        strong_muscles: null,
-      },
-      plan: {
-        version_id: plan.versionId,
-        plan_id: plan.planId,
-        version_number: 1,
-        title: plan.title,
-        block_weeks: plan.blockWeeks,
-        ends_on: null,
-        block_kind: null,
-        workouts: plan.workouts.map((workout) => ({
-          name: workout.name,
-          objective: workout.objective,
-          weekday: workout.weekday,
-          estimated_minutes: workout.estimatedMinutes,
-          warm_up: workout.warmUp,
-          cool_down: workout.coolDown,
-          exercises: workout.exercises.map((exercise) => ({
-            slug: exercise.slug,
-            name: exercise.name,
-            sets: exercise.sets,
-            rep_min: exercise.repMin,
-            rep_max: exercise.repMax,
-            target_rpe: exercise.targetRpe,
-            rest_seconds: exercise.restSeconds,
-            notes: exercise.notes,
-            target_load_kg: exercise.targetLoadKg,
-          })),
-        })),
-      },
-      nutrition: {
-        version_id: state.nutrition!.versionId,
-        calories: 2300,
-        protein_g: 170,
-        carbohydrate_g: 240,
-        fat_g: 75,
-      },
-      goal: {
-        id: state.goal!.id,
-        goal_type: "fat_loss",
-        details: { description: "Lean out" },
-        activated_on: addDays(today, -40),
-      },
-      eligibility: {
-        training_eligible: true,
-        training_detail: "3 comparable sessions in last 14 days",
-        nutrition_eligible: true,
-        nutrition_detail: "24 weight days, 88% adherence, trend r2=0.61",
-      },
-      today_workout_done: false,
-    },
-    goalPhase: {
-      schema_version: "1.0",
-      height_cm: 176,
-      goal: {
-        goal_type: "fat_loss",
-        activated_on: addDays(today, -40),
-        target: {
-          weight_kg: null,
-          body_fat_pct_min: null,
-          body_fat_pct_max: null,
-          physique: null,
-          physique_note: null,
-          date: null,
-        },
-      },
-      readings: weightReadings(),
-    },
-    progression: { schema_version: "1.0", targets: [] },
-  };
-}
-
 type Call = { name: string; params: Record<string, unknown> };
 
 function fakeRpc(overrides: Record<string, { data?: unknown; error?: { code?: string } }> = {}) {
-  const data = payloads();
+  const data = proposalRpcPayloads();
   const calls: Call[] = [];
   const rpc: ProposalRpc = (name, params) => {
     calls.push({ name, params });
@@ -127,7 +34,7 @@ function fakeRpc(overrides: Record<string, { data?: unknown; error?: { code?: st
 const lowerIntent = { kind: "nutrition_targets", reason: "plateau", direction: "lower" };
 
 Deno.test("the payloads read into the athlete state the rules use", () => {
-  const data = payloads();
+  const data = proposalRpcPayloads();
   const state = parseAthleteState({ ...data, athleteMessage: "hi" })!;
   assertEquals(state.today, today);
   assertEquals(state.profile.age, 32);
@@ -142,9 +49,9 @@ Deno.test("the payloads read into the athlete state the rules use", () => {
 });
 
 Deno.test("a payload that leaves out something the rules need yields no state", () => {
-  type Inputs = ReturnType<typeof payloads>["inputs"];
+  type Inputs = ReturnType<typeof proposalRpcPayloads>["inputs"];
   const broken = (change: (inputs: Inputs) => void) => {
-    const data = structuredClone(payloads());
+    const data = structuredClone(proposalRpcPayloads());
     change(data.inputs);
     return parseAthleteState(data);
   };

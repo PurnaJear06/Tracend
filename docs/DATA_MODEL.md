@@ -771,6 +771,15 @@ records such as plan versions and goals are the athlete's local days, `private.l
 - `private.nutrition_day_totals` and `private.nutrition_complete_day_rules` define a complete
   logging day (ALGORITHMS.md section 6); `evaluate_change_eligibility` averages complete days only.
 
+`coach_messages.proposal_id` (nullable, A8) points at the Coach proposal an assistant reply
+introduced (`on delete set null`). `link_coach_proposal_v1` (service role) sets it once the reply is
+stored and sets `change_proposals.source_message_id` the other way; the thread load returns it, so
+the card shows live and on reload. `get_coach_proposals_context_v1(user, local_date)` (service role)
+feeds the Coach context: the running block and its last day, the goal phase and its end date (a
+phase or block that has ended is reported as ended), proposals waiting and how recent ones were
+answered.
+
+
 ### `coach_context_snapshots`
 
 The prepared Coach context for one question or decision: thread, schema version, trigger kind

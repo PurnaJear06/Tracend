@@ -162,7 +162,7 @@ Deno.test("the persona asks for these behaviours: answer first, no recap, no rep
   assertStringIncludes(rules, "compact list of up to about 200 words");
   assertStringIncludes(rules, "Home options in the training plan reference data");
   // The honesty and safety rules of A9 are untouched.
-  assertStringIncludes(rules, "You have no tools.");
+  assertStringIncludes(rules, "You cannot change anything yourself.");
   assertStringIncludes(rules, "Safe Ranges");
   assert(!rules.includes("Looking up the athlete's records"), "lookups are a gateway-only block");
   assertStringIncludes(coachChatInstructions([], true), "Looking up the athlete's records");

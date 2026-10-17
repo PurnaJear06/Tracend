@@ -1,6 +1,7 @@
 // The only thing the model hands to the proposal engine: an intent from a closed vocabulary. The
 // parser is strict. A kind it does not know, a value outside its vocabulary, a stray key or a
 // figure that is not a plain number makes the intent invalid, and the engine builds nothing.
+import { exerciseCatalogV1 } from "../onboarding/catalog.ts";
 import {
   blockSettings,
   type CoachProposalIntent,
@@ -18,7 +19,13 @@ export type IntentResult =
   | Readonly<{ ok: false; problem: string }>;
 
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
-const slugPattern = /^[a-z0-9][a-z0-9-]{0,79}$/;
+
+/** An exercise's catalog slug from its name as the plan shows it (case and spacing ignored). */
+function slugOfName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const key = value.replace(/\s+/g, " ").trim().toLowerCase();
+  return exerciseCatalogV1.find((exercise) => exercise.name.toLowerCase() === key)?.slug ?? null;
+}
 
 /** The longest free-text note kept with an intent (the athlete's own context, never a figure). */
 export const maxNoteLength = 140;
@@ -75,7 +82,7 @@ const allowedKeys: Readonly<Record<string, readonly string[]>> = {
     "session_minutes",
     "weeks",
   ],
-  exercise_swap: ["kind", "reason", "note", "from_slug", "to_slug"],
+  exercise_swap: ["kind", "reason", "note", "from_exercise", "to_exercise"],
   intensity_or_phase: ["kind", "reason", "note", "level", "focus", "weeks"],
   goal_or_phase: ["kind", "reason", "note", "phase", "target_weight_kg", "target_date"],
   nutrition_targets: ["kind", "reason", "note", "direction", "requested_calories"],
@@ -143,15 +150,12 @@ export function parseCoachProposalIntent(raw: unknown): IntentResult {
       };
     }
     case "exercise_swap": {
-      const fromSlug = typeof body.from_slug === "string" && slugPattern.test(body.from_slug)
-        ? body.from_slug
-        : null;
-      if (!fromSlug) return bad("from_slug is not a catalog slug");
-      if (body.to_slug !== undefined) {
-        if (typeof body.to_slug !== "string" || !slugPattern.test(body.to_slug)) {
-          return bad("to_slug is not a catalog slug");
-        }
-        return { ok: true, intent: { kind, ...common, fromSlug, toSlug: body.to_slug } };
+      const fromSlug = slugOfName(body.from_exercise);
+      if (!fromSlug) return bad("from_exercise is not an exercise in the catalog");
+      if (body.to_exercise !== undefined) {
+        const toSlug = slugOfName(body.to_exercise);
+        if (!toSlug) return bad("to_exercise is not an exercise in the catalog");
+        return { ok: true, intent: { kind, ...common, fromSlug, toSlug } };
       }
       return { ok: true, intent: { kind, ...common, fromSlug } };
     }
@@ -221,3 +225,35 @@ export function parseCoachProposalIntent(raw: unknown): IntentResult {
     }
   }
 }
+
+/**
+ * The intent's shape for structured output (Claude enforces structure, not ranges: the parser
+ * checks every range). Every field but `kind` and `reason` is optional.
+ */
+export const proposalIntentJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    kind: { type: "string", enum: [...proposalKinds] },
+    reason: { type: "string", enum: [...proposalReasons] },
+    note: { type: "string" },
+    setting: { type: "string", enum: [...blockSettings] },
+    start_date: { type: "string" },
+    end_date: { type: "string" },
+    days_per_week: { type: "integer" },
+    weekdays: { type: "array", items: { type: "integer" } },
+    session_minutes: { type: "integer" },
+    weeks: { type: "integer" },
+    from_exercise: { type: "string" },
+    to_exercise: { type: "string" },
+    level: { type: "string", enum: [...intensityLevels] },
+    focus: { type: "string", enum: [...trainingFocuses] },
+    phase: { type: "string", enum: [...goalPhases] },
+    target_weight_kg: { type: "number" },
+    target_date: { type: "string" },
+    direction: { type: "string", enum: ["lower", "raise", "maintenance", "lighter", "heavier"] },
+    requested_calories: { type: "integer" },
+    session: { type: "string", enum: ["today", "next"] },
+  },
+  required: ["kind", "reason"],
+} as const;

@@ -1,5 +1,5 @@
 begin;
-select plan(81);
+select plan(90);
 
 -- Coach proposals (migration 18): rules compute a change, Coach stores it as a pending proposal, the
 -- athlete approves it with one tap (a new version and an audit event) and can undo it for seven days.
@@ -432,6 +432,12 @@ select is((select source_proposal_id from public.user_goals
 select is((select calories from public.nutrition_target_sets
     where user_id = 'a8000000-0000-4000-8000-000000000001' and status = 'active'),
   2200, 'and the targets are at maintenance');
+select is(public.get_coach_proposals_context_v1('a8000000-0000-4000-8000-000000000001',
+    private.local_date_for('a8000000-0000-4000-8000-000000000001')) -> 'phase' ->> 'phase', 'diet_break',
+  'Coach is told the goal phase');
+select is(public.get_coach_proposals_context_v1('a8000000-0000-4000-8000-000000000001',
+    private.local_date_for('a8000000-0000-4000-8000-000000000001')) -> 'phase' ->> 'ends_on',
+  (private.local_date_for('a8000000-0000-4000-8000-000000000001') + 13)::text, 'and the day a diet break ends');
 set local role authenticated;
 set local "request.jwt.claim.sub" = 'a8000000-0000-4000-8000-000000000001';
 select public.undo_coach_proposal_v1((select id from p where name = 'break'));
@@ -463,6 +469,39 @@ reset role;
 select is((select calories from public.nutrition_target_sets
     where user_id = 'a8000000-0000-4000-8000-000000000001' and status = 'active'),
   2000, 'and stays in force');
+
+-- 9c. The chat links a reply to its proposal, and Coach is told about proposals ----------------------------------------
+
+insert into public.coach_threads(id, user_id, title)
+values ('a8000000-0000-4000-8000-0000000000a1', 'a8000000-0000-4000-8000-000000000001', 'Thread');
+insert into public.coach_messages(id, user_id, thread_id, role, content)
+values ('a8000000-0000-4000-8000-0000000000a2', 'a8000000-0000-4000-8000-000000000001', 'a8000000-0000-4000-8000-0000000000a1',
+  'assistant', 'Here is a proposal you can approve.');
+select public.link_coach_proposal_v1('a8000000-0000-4000-8000-000000000001', 'a8000000-0000-4000-8000-0000000000a2',
+  (select id from p where name = 'window'));
+select is((select proposal_id from public.coach_messages
+    where id = 'a8000000-0000-4000-8000-0000000000a2'),
+  (select id from p where name = 'window'), 'the reply points at its proposal');
+select is((select source_message_id from public.change_proposals
+    where id = (select id from p where name = 'window')),
+  'a8000000-0000-4000-8000-0000000000a2'::uuid, 'and the proposal at its reply');
+select throws_ok($$select public.link_coach_proposal_v1('a8000000-0000-4000-8000-000000000001',
+    'a8000000-0000-4000-8000-0000000000ff', (select id from p where name = 'window'))$$,
+  'P0002', 'message or proposal not found', 'a message that is not the athlete''s cannot be linked');
+select ok(not has_function_privilege('authenticated',
+    'public.link_coach_proposal_v1(uuid, uuid, uuid)', 'execute'),
+  'only the service role links');
+-- Every row in this transaction has the same created_at; make the newest one clearly newest.
+update public.change_proposals set created_at = now() + interval '1 hour'
+where id = (select id from p where name = 'window');
+select is(public.get_coach_proposals_context_v1('a8000000-0000-4000-8000-000000000001',
+    private.local_date_for('a8000000-0000-4000-8000-000000000001')) -> 'proposals' -> 0 ->> 'status', 'accepted',
+  'Coach is told how the newest proposal was answered');
+select is(public.get_coach_proposals_context_v1('a8000000-0000-4000-8000-000000000001',
+    private.local_date_for('a8000000-0000-4000-8000-000000000001')) -> 'proposals' -> 0 ->> 'title', 'A change from Coach',
+  'with its title');
+select is(public.get_coach_proposals_context_v1('a8000000-0000-4000-8000-000000000001',
+    private.local_date_for('a8000000-0000-4000-8000-000000000001')) -> 'block', 'null'::jsonb, 'and that no block is running');
 
 -- 10. A stricter health check, undo after seven days, and deletion --------------------------------------------------------
 
