@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "as_of": "2026-10-17",
+  "birth_year": 1990,
+  "resting": [
+    { "local_date": "2026-10-15", "bpm": 60.0 },
+    { "local_date": "2026-10-16", "bpm": 58.0 }
+  ],
+  "sets": [
+    {
+      "local_date": "2026-10-16",
+      "start_bpm": 112,
+      "peak_bpm": 148,
+      "end_bpm": 141,
+      "drop_30s_bpm": 14,
+      "drop_60s_bpm": 27,
+      "coverage": 0.943,
+      "sample_count": 18,
+      "source": "watch_workout"
+    },
+    {
+      "local_date": "2026-10-16",
+      "start_bpm": 118,
+      "peak_bpm": null,
+      "end_bpm": null,
+      "drop_30s_bpm": null,
+      "drop_60s_bpm": null,
+      "coverage": 0.2,
+      "sample_count": 3,
+      "source": "background"
+    }
+  ],
+  "peak_candidates": [
+    {
+      "local_date": "2026-10-16",
+      "start_bpm": 112,
+      "peak_bpm": 148,
+      "end_bpm": 141,
+      "drop_30s_bpm": 14,
+      "drop_60s_bpm": 27,
+      "coverage": 0.943,
+      "sample_count": 18,
+      "source": "watch_workout"
+    }
+  ]
+}

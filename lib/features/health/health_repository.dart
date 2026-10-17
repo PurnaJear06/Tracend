@@ -1,10 +1,15 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/health/health_data_source.dart';
 import 'package:tracend/features/health/health_models.dart';
+import 'package:tracend/features/workout_hr/heart_rate_profile.dart';
+import 'package:tracend/features/workout_hr/heart_rate_profile_repository.dart';
+import 'package:tracend/features/workout_hr/heart_rate_reader.dart';
+import 'package:tracend/features/workout_hr/sleeping_heart_rate_recorder.dart';
 import 'package:uuid/uuid.dart';
 
 abstract interface class HealthRepository {
@@ -25,12 +30,15 @@ String healthSyncFailureMessage(Object error) => switch (error) {
   _ => '$error',
 };
 
-class SupabaseHealthRepository implements HealthRepository {
+class SupabaseHealthRepository
+    implements HealthRepository, HeartRateProfileSource {
   SupabaseHealthRepository(
     SupabaseClient client,
     SharedPreferencesAsync preferences, {
     HealthDataSource? source,
     DateTime Function()? now,
+    SleepingHeartRateRecorder? sleepingHeartRate,
+    HeartRateReader? heartRateReader,
   }) : _client = client,
        _state = HealthPreferences(
          preferences,
@@ -38,7 +46,18 @@ class SupabaseHealthRepository implements HealthRepository {
          serverLastSync: () => _serverLastSync(client),
        ),
        _source = source ?? HealthKitDataSource(),
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _heartRateReader =
+           heartRateReader ?? const MethodChannelHeartRateReader(),
+       _sleepingHeartRate =
+           sleepingHeartRate ??
+           SleepingHeartRateRecorder(
+             reader: heartRateReader ?? const MethodChannelHeartRateReader(),
+             repository: SupabaseSleepingHeartRateRepository(client),
+             preferences: preferences,
+             userId: () => client.auth.currentUser?.id,
+             clock: now ?? DateTime.now,
+           );
 
   static const _uuid = Uuid();
 
@@ -46,6 +65,15 @@ class SupabaseHealthRepository implements HealthRepository {
   final HealthPreferences _state;
   final HealthDataSource _source;
   final DateTime Function() _now;
+  final HeartRateReader _heartRateReader;
+  final SleepingHeartRateRecorder _sleepingHeartRate;
+
+  @override
+  Future<HeartRateProfile?> loadHeartRateProfile() =>
+      SupabaseHeartRateProfileRepository(
+        _client,
+        now: _now,
+      ).loadHeartRateProfile();
 
   /// The newest sync the server holds for the signed-in athlete (RLS limits
   /// the rows to their own).
@@ -138,6 +166,15 @@ class SupabaseHealthRepository implements HealthRepository {
         accessError: HealthAccessError.authorizationDenied,
       );
     }
+    // Sleeping heart rate (a shadow measurement) reads heart rate, which the
+    // plugin's types do not include. Asking here, when the athlete taps
+    // Connect or Refresh, shows Apple's sheet only while the choice is
+    // undecided; a plain background sync never asks.
+    try {
+      await _heartRateReader.requestAccess();
+    } catch (e) {
+      debugPrint('Non-critical error: heart-rate access not requested: $e');
+    }
     return sync();
   }
 
@@ -220,6 +257,8 @@ class SupabaseHealthRepository implements HealthRepository {
       result.returnedMetrics.map((metric) => metric.code).toList(),
     );
     await preferences.setBool(keys.initialBackfillComplete, true);
+    // Shadow measurement (D10): it never delays or fails the sync.
+    unawaited(_sleepingHeartRate.record(result.samples));
     return HealthSyncStatus(
       state: deriveHealthConnectionState(
         now: now,

@@ -1,0 +1,423 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
+import 'package:tracend/features/health/health_models.dart';
+import 'package:tracend/features/workout_hr/heart_rate_reader.dart';
+import 'package:tracend/features/workout_hr/set_heart_rate_summary.dart';
+import 'package:tracend/features/workout_hr/sleeping_heart_rate.dart';
+import 'package:tracend/features/workout_hr/sleeping_heart_rate_recorder.dart';
+
+// Local times, so the night's date does not depend on the machine's zone.
+DateTime _at(int day, int hour, [int minute = 0]) =>
+    DateTime(2026, 10, day, hour, minute);
+
+RawHealthSample _sleep(
+  DateTime start,
+  DateTime end,
+  SleepStage stage, [
+  String id = 's',
+]) => RawHealthSample(
+  metric: HealthMetric.sleep,
+  value: 0,
+  start: start,
+  end: end,
+  sampleId: '$id-${start.microsecondsSinceEpoch}',
+  sourceId: 'watch',
+  sleepStage: stage,
+);
+
+/// 23:00 on the 15th to 07:00 on the 16th: core sleep, a wake-up at 03:00
+/// for 20 minutes, then more sleep.
+List<RawHealthSample> _night() => [
+  _sleep(_at(15, 23), _at(16, 3), SleepStage.light),
+  _sleep(_at(16, 3), _at(16, 3, 20), SleepStage.awake),
+  _sleep(_at(16, 3, 20), _at(16, 7), SleepStage.deep),
+];
+
+/// A reading every [everyMinutes] minutes from [from] to [to].
+List<HeartRateSample> _readings(
+  DateTime from,
+  DateTime to, {
+  int everyMinutes = 5,
+  double Function(DateTime)? bpm,
+}) => [
+  for (
+    var at = from;
+    at.isBefore(to);
+    at = at.add(Duration(minutes: everyMinutes))
+  )
+    HeartRateSample(at: at, bpm: bpm == null ? 52 : bpm(at)),
+];
+
+class _FakeReader implements HeartRateReader {
+  List<HeartRateSample> samples = [];
+  bool failing = false;
+  void Function()? onRead;
+  final reads = <(DateTime, DateTime)>[];
+
+  @override
+  Future<void> requestAccess() async {}
+
+  @override
+  Future<List<HeartRateSample>> readSamples(DateTime from, DateTime to) async {
+    reads.add((from, to));
+    onRead?.call();
+    if (failing) throw StateError('cannot read');
+    return [
+      for (final sample in samples)
+        if (!sample.at.isBefore(from) && sample.at.isBefore(to)) sample,
+    ];
+  }
+}
+
+class _FakeRepository implements SleepingHeartRateRepository {
+  final saved = <List<SleepingHeartRateNight>>[];
+  Object? failure;
+
+  @override
+  Future<int> persist(List<SleepingHeartRateNight> nights) async {
+    final error = failure;
+    if (error != null) throw error;
+    saved.add(nights);
+    return nights.length;
+  }
+}
+
+void main() {
+  group('nights from Apple Health sleep', () {
+    test('a night is one session, dated by the day it ends', () {
+      final nights = sleepNightsFrom(_night());
+      expect(nights, hasLength(1));
+      expect(nights.single.localDate, '2026-10-16');
+      expect(nights.single.start, _at(15, 23));
+      expect(nights.single.end, _at(16, 7));
+    });
+
+    test('awake time is taken out of the asleep spans', () {
+      final night = sleepNightsFrom(_night()).single;
+      expect(night.asleep, hasLength(2));
+      expect(night.asleepMinutes, 7 * 60 + 40);
+      expect(night.asleep.first.end, _at(16, 3));
+      expect(night.asleep.last.start, _at(16, 3, 20));
+    });
+
+    test('an awake span overlapping another source is still taken out', () {
+      final night = sleepNightsFrom([
+        _sleep(_at(15, 23), _at(16, 7), SleepStage.asleep, 'a'),
+        _sleep(_at(16, 2), _at(16, 3), SleepStage.awake, 'b'),
+      ]).single;
+      expect(night.asleepMinutes, 8 * 60 - 60);
+    });
+
+    test('a nap or a short session is not a night', () {
+      expect(
+        sleepNightsFrom([
+          _sleep(_at(16, 14), _at(16, 15, 30), SleepStage.asleep),
+        ]),
+        isEmpty,
+      );
+      expect(
+        sleepNightsFrom([
+          _sleep(_at(15, 23), _at(16, 3), SleepStage.awake, 'a'),
+          _sleep(_at(16, 3), _at(16, 4), SleepStage.light, 'b'),
+        ]),
+        isEmpty,
+      );
+    });
+
+    test('sessions less than an hour apart join; further apart they split', () {
+      final joined = sleepNightsFrom([
+        _sleep(_at(15, 23), _at(16, 3), SleepStage.light, 'a'),
+        _sleep(_at(16, 3, 50), _at(16, 7), SleepStage.deep, 'b'),
+      ]);
+      expect(joined, hasLength(1));
+      final split = sleepNightsFrom([
+        _sleep(_at(14, 23), _at(15, 6), SleepStage.light, 'a'),
+        _sleep(_at(15, 23), _at(16, 6), SleepStage.light, 'b'),
+      ]);
+      expect(split.map((n) => n.localDate), ['2026-10-15', '2026-10-16']);
+    });
+
+    test('other metrics are ignored', () {
+      expect(
+        sleepNightsFrom([
+          RawHealthSample(
+            metric: HealthMetric.steps,
+            value: 10,
+            start: _at(16, 1),
+            end: _at(16, 2),
+            sampleId: 'x',
+            sourceId: 'phone',
+          ),
+        ]),
+        isEmpty,
+      );
+    });
+  });
+
+  group('summarising a night', () {
+    final night = sleepNightsFrom(_night()).single;
+
+    test('median, lowest slot mean, count and coverage', () {
+      final summary = summariseSleepingHeartRate(
+        night,
+        _readings(_at(15, 22), _at(16, 8), bpm: (at) => at.hour == 5 ? 46 : 54),
+      )!;
+      expect(summary.localDate, '2026-10-16');
+      expect(summary.medianBpm, 54);
+      expect(summary.lowestBpm, 46);
+      expect(summary.asleepMinutes, 460);
+      // Readings every 5 minutes from 22:00: only those asleep count (not
+      // 22:00-23:00, the 4 taken in the 20 awake minutes or 07:00-08:00).
+      expect(summary.sampleCount, 92);
+      expect(summary.coverage, 1);
+    });
+
+    test('lowest never exceeds the median', () {
+      final summary = summariseSleepingHeartRate(
+        night,
+        _readings(_at(15, 23), _at(16, 7)),
+      )!;
+      expect(summary.lowestBpm, lessThanOrEqualTo(summary.medianBpm));
+    });
+
+    test('readings awake or implausible do not count', () {
+      final readings = [
+        ..._readings(_at(15, 23), _at(16, 7)),
+        HeartRateSample(at: _at(16, 3, 5), bpm: 40),
+        HeartRateSample(at: _at(16, 4), bpm: 250),
+        HeartRateSample(at: _at(16, 4, 1), bpm: 10),
+      ];
+      final summary = summariseSleepingHeartRate(night, readings)!;
+      expect(summary.medianBpm, 52);
+      expect(summary.lowestBpm, 52);
+      expect(summary.sampleCount, 92);
+    });
+
+    test('a slot with one reading never sets the lowest', () {
+      // 55 bpm every 5 minutes; the 05:00-05:10 slot keeps only a single
+      // reading of 40, which must not count as the night's lowest.
+      final readings = [
+        for (final r in _readings(_at(15, 23), _at(16, 7), bpm: (_) => 55))
+          if (r.at == _at(16, 5))
+            HeartRateSample(at: r.at, bpm: 40)
+          else if (r.at != _at(16, 5, 5))
+            r,
+      ];
+      final summary = summariseSleepingHeartRate(night, readings)!;
+      expect(summary.lowestBpm, 55);
+      expect(summary.medianBpm, 55);
+    });
+
+    test('a night where no slot has two readings has no row', () {
+      expect(
+        summariseSleepingHeartRate(
+          night,
+          _readings(_at(15, 23), _at(16, 7), everyMinutes: 10),
+        ),
+        isNull,
+      );
+    });
+
+    test('too few readings or too little coverage gives no row', () {
+      expect(
+        summariseSleepingHeartRate(
+          night,
+          _readings(_at(15, 23), _at(16, 7), everyMinutes: 30),
+        ),
+        isNull,
+      );
+      expect(
+        summariseSleepingHeartRate(
+          night,
+          _readings(_at(15, 23), _at(16, 1), everyMinutes: 2),
+        ),
+        isNull,
+      );
+      expect(summariseSleepingHeartRate(night, const []), isNull);
+    });
+  });
+
+  group('the recorder', () {
+    late _FakeReader reader;
+    late _FakeRepository repository;
+    late SleepingHeartRateRecorder recorder;
+    var now = _at(16, 9);
+
+    setUp(() {
+      SharedPreferencesAsyncPlatform.instance =
+          InMemorySharedPreferencesAsync.empty();
+      reader = _FakeReader()..samples = _readings(_at(15, 22), _at(16, 8));
+      repository = _FakeRepository();
+      now = _at(16, 9);
+      recorder = SleepingHeartRateRecorder(
+        reader: reader,
+        repository: repository,
+        preferences: SharedPreferencesAsync(),
+        userId: () => 'user-1',
+        clock: () => now,
+      );
+    });
+
+    test('reads the night in short windows and saves one summary', () async {
+      await recorder.record(_night());
+      expect(repository.saved, hasLength(1));
+      expect(repository.saved.single.single.localDate, '2026-10-16');
+      expect(repository.saved.single.single.medianBpm, 52);
+      expect(reader.reads, hasLength(3));
+      for (final (from, to) in reader.reads) {
+        expect(
+          to.difference(from),
+          lessThanOrEqualTo(const Duration(hours: 4)),
+        );
+      }
+      expect(reader.reads.first.$1, _at(15, 23));
+      expect(reader.reads.last.$2, _at(16, 7));
+    });
+
+    test('no sleep means no reads and no save', () async {
+      await recorder.record(const []);
+      expect(reader.reads, isEmpty);
+      expect(repository.saved, isEmpty);
+    });
+
+    test('a night that ended over a week ago is left alone', () async {
+      now = _at(25, 9);
+      await recorder.record(_night());
+      expect(reader.reads, isEmpty);
+      expect(repository.saved, isEmpty);
+    });
+
+    test('no heart-rate access means no row, not an invented one', () async {
+      reader.samples = [];
+      await recorder.record(_night());
+      expect(repository.saved, isEmpty);
+    });
+
+    test('a night outside the server bounds is not sent', () async {
+      // About 24000 readings asleep: the server accepts at most 20000.
+      reader.samples = [
+        for (var i = 0; i < 25000; i++)
+          HeartRateSample(at: _at(15, 23).add(Duration(seconds: i)), bpm: 52),
+      ];
+      await recorder.record(_night());
+      expect(repository.saved, isEmpty);
+    });
+
+    test('the server bounds are checked on every field', () {
+      SleepingHeartRateNight night({
+        int median = 52,
+        int lowest = 46,
+        int samples = 84,
+        int asleep = 430,
+        double coverage = 0.8,
+      }) => SleepingHeartRateNight(
+        localDate: '2026-10-16',
+        medianBpm: median,
+        lowestBpm: lowest,
+        sampleCount: samples,
+        asleepMinutes: asleep,
+        coverage: coverage,
+      );
+      expect(night().withinServerBounds, isTrue);
+      expect(night(samples: 20000).withinServerBounds, isTrue);
+      expect(night(samples: 20001).withinServerBounds, isFalse);
+      expect(night(asleep: 1440).withinServerBounds, isTrue);
+      expect(night(asleep: 1441).withinServerBounds, isFalse);
+      expect(night(asleep: 0).withinServerBounds, isFalse);
+      expect(night(median: 201).withinServerBounds, isFalse);
+      expect(night(lowest: 29).withinServerBounds, isFalse);
+      expect(night(lowest: 60).withinServerBounds, isFalse);
+      expect(night(coverage: 1.1).withinServerBounds, isFalse);
+    });
+
+    test('a failing read or save never throws', () async {
+      reader.failing = true;
+      await recorder.record(_night());
+      reader.failing = false;
+      repository.failure = StateError('offline');
+      await recorder.record(_night());
+      expect(repository.saved, isEmpty);
+    });
+
+    test('a night is read again until it is two days old, then kept', () async {
+      await recorder.record(_night());
+      await recorder.record(_night());
+      expect(repository.saved, hasLength(2));
+      now = _at(19, 9);
+      await recorder.record(_night());
+      expect(repository.saved, hasLength(3));
+      final reads = reader.reads.length;
+      await recorder.record(_night());
+      expect(repository.saved, hasLength(3));
+      expect(reader.reads.length, reads);
+    });
+
+    test('another account signing in during the reads saves nothing', () async {
+      String? current = 'user-1';
+      final switching = SleepingHeartRateRecorder(
+        reader: reader..onRead = () => current = 'user-2',
+        repository: repository,
+        preferences: SharedPreferencesAsync(),
+        userId: () => current,
+        clock: () => now,
+      );
+      await switching.record(_night());
+      expect(reader.reads, isNotEmpty);
+      expect(repository.saved, isEmpty);
+      // Nothing is marked final for either account.
+      final prefs = SharedPreferencesAsync();
+      expect(
+        await prefs.getStringList('tracend.sleeping_heart_rate.final.user-1'),
+        isNull,
+      );
+      expect(
+        await prefs.getStringList('tracend.sleeping_heart_rate.final.user-2'),
+        isNull,
+      );
+    });
+
+    test('signing out during the reads saves nothing', () async {
+      String? current = 'user-1';
+      final signingOut = SleepingHeartRateRecorder(
+        reader: reader..onRead = () => current = null,
+        repository: repository,
+        preferences: SharedPreferencesAsync(),
+        userId: () => current,
+        clock: () => now,
+      );
+      await signingOut.record(_night());
+      expect(repository.saved, isEmpty);
+    });
+
+    test('the same account throughout still saves', () async {
+      var checks = 0;
+      final steady = SleepingHeartRateRecorder(
+        reader: reader,
+        repository: repository,
+        preferences: SharedPreferencesAsync(),
+        userId: () {
+          checks += 1;
+          return 'user-1';
+        },
+        clock: () => now,
+      );
+      await steady.record(_night());
+      expect(repository.saved, hasLength(1));
+      expect(checks, greaterThanOrEqualTo(3));
+    });
+
+    test('nobody signed in means nothing happens', () async {
+      final signedOut = SleepingHeartRateRecorder(
+        reader: reader,
+        repository: repository,
+        preferences: SharedPreferencesAsync(),
+        userId: () => null,
+        clock: () => now,
+      );
+      await signedOut.record(_night());
+      expect(reader.reads, isEmpty);
+    });
+  });
+}

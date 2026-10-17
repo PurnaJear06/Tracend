@@ -145,7 +145,7 @@ AI consent is enforced on the server, per purpose:
 
 - **Per-set heart rate (C2, Contract 4).** After the athlete finishes a workout, the app asks Apple
   Health for read access to heart rate (the sheet shows only while the choice is undecided; the
-  purpose string names workout heart-rate data) and reads the Apple Watch's heart-rate samples for
+  purpose string names workout and overnight (sleeping) heart-rate data) and reads the Apple Watch's heart-rate samples for
   the minutes around the sets, through a HealthKit anchored query on the phone. It works out one
   summary per set from the set's stored start and end plus the following 60 seconds (start, peak and
   end beats per minute, the drop 30 and 60 seconds after the end, coverage, sample count, and
@@ -155,12 +155,28 @@ AI consent is enforced on the server, per purpose:
   times and Watch device details never leave the phone and are never logged; Sentry breadcrumbs
   carry only the number of sets saved. A waiting list of finished workouts (session id and set
   times, no heart-rate values) is kept in the phone's preferences for up to two days so the read
-  can run after the Watch has synced. Heart rate never sets a load or a prescription (D9), and the
-  Coach does not read these summaries yet.
+  can run after the Watch has synced. Heart rate never sets a load or a prescription (D9). The Coach
+  reads these summaries only through the heart-rate profile contributor described next, once it is registered.
 
-> **Planned (Phase 3 / C3, D10):** a heart-rate profile and sleeping heart rate, computed and
-> stored in shadow mode. They read heart-rate samples outside workouts and store derived values, so
-> the rules above need the owner's update before C3 merges.
+- **Heart-rate profile and sleeping heart rate (C3, D9, D10).** The profile (resting heart rate,
+  an estimated maximum, heart-rate zones and recovery after sets) is computed from values the app
+  already stores: the resting heart rate Apple Health sync sends (no new metric), the birth year in
+  the profile, and the per-set summaries above. It is not stored; it is worked out on demand by
+  deterministic code from `get_my_heart_rate_inputs_v1` (own data) and, for the Coach's contributor
+  (not registered until E3), `get_heart_rate_inputs_v1` (service role only). Sleeping heart rate is
+  new: after an Apple Health sync the phone reads the heart-rate samples taken asleep for the last
+  7 nights (the sleep samples the sync already read give the nights; the same heart-rate read access
+  is used and the Health sheet asks for it only when the athlete taps Connect or Refresh) and sends
+  one summary per night with `persist_sleeping_heart_rate_v1`: the median, the lowest 10-minute mean (slots with at least 2 readings),
+  the number of readings, the minutes asleep and the share of the night covered. The save is bound to the athlete signed in when the sync
+  began: if another account signs in during the reads, nothing is sent. Raw samples and
+  their times never leave the phone and are never logged; the Sentry breadcrumb carries only the
+  number of nights saved. The rows live in `sleeping_heart_rate_nights` (owner-read RLS, writes only
+  through the RPC, exported by `privacy-export`, deleted with the account). **They are in shadow
+  mode (D10): no recovery score, readiness line, baseline, brief or Coach context reads them**, and
+  a pgTAP test proves the recovery score does not move when nights are stored. Using them in a
+  score is a later reviewed change that must update this section. The heart-rate profile informs
+  rest, cardio and recovery talk; it never sets a load or a prescription (D9).
 
 ## 5. Photos and Media
 

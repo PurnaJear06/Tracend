@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
+import 'package:tracend/features/workout_hr/heart_rate_profile_repository.dart';
+import 'package:tracend/features/workout_hr/heart_rate_zones_view.dart';
 import 'package:tracend/shared/widgets/tracend_loading_indicator.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
 
@@ -164,6 +166,16 @@ class _HealthStatusCardState extends State<HealthStatusCard> {
             Text(
               'Reads: steps, active energy, sleep, workouts, weight, resting heart rate, HRV and breathing rate.',
               style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          if (!widget.compact &&
+              refreshed &&
+              widget.repository is HeartRateProfileSource) ...[
+            const SizedBox(height: TracendSpacing.md),
+            HeartRateZonesView(
+              key: ValueKey(status.lastSuccessfulSync),
+              load: (widget.repository as HeartRateProfileSource)
+                  .loadHeartRateProfile,
             ),
           ],
           if (_error != null) ...[

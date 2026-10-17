@@ -1,6 +1,6 @@
 # Session Timing and Heart Rate Handoff
 
-**As of:** 2026-10-16
+**As of:** 2026-10-17
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -125,9 +125,83 @@ workout's summary: each exercise should show the heart-rate line, and "tracked" 
 80%. If it is lower, keep the app open for a few minutes (the Watch may not have synced yet) and
 open the summary again.
 
+**C3 (heart-rate profile, zones, recovery, sleeping heart rate in shadow mode): in review**
+(based on the kickoff PR #130). Heart rate informs; it never sets a load (D9).
+
+- Migration `20261017150233_heart_rate_profile.sql` (code 33, re-stamp before handoff): table
+  `sleeping_heart_rate_nights` (RLS on and forced, owner select only; one derived row per night:
+  median, lowest 10-minute mean with 2+ readings, readings, minutes asleep, coverage), `persist_sleeping_heart_rate_v1`
+  (security definer, authenticated, 1 to 14 nights; an invalid night is skipped and counted in `skipped`, a null or malformed list raises 22023; `schema_version` 1.0),
+  `get_my_heart_rate_inputs_v1(local_date)` (own data, 1.0) and `get_heart_rate_inputs_v1(user, date)`
+  (service role only, the same object). The inputs hold the birth year, 14 days of resting heart rate,
+  the usable per-set summaries of two 28-day windows (filtered first, 200 per window) and the 10 highest peaks of 365 days; no sleeping heart rate. The profile
+  is not stored: it is computed on demand. `privacy-export` lists the new table; account deletion
+  removes it through the `user_accounts` cascade (pgTAP proves it). pgTAP `heart_rate_profile_test.sql`.
+- Maths (twins: `lib/features/workout_hr/heart_rate_profile.dart`,
+  `supabase/functions/_shared/training/heart_rate/profile.ts`; both read `profile_cases.json`, so they
+  cannot drift): resting = median of 14 days (from 3 days); maximum = Tanaka 2001 `208 - 0.7 x age`
+  (ages 16 to 90) until a trusted workout peak is higher (Watch workout, 8+ readings, 60%+ coverage,
+  120 bpm up to formula + 20, 210 with no age); zones = Karvonen at 50/60/70/80/90/100% of reserve,
+  five bands; recovery = median 60-second drop over 28 days against the 28 before (6+ sets each,
+  3 bpm for improving or slower). Full rules and sources in ALGORITHMS.md "Heart-Rate Profile".
+- Sleeping heart rate (D10, shadow): `sleeping_heart_rate.dart` finds nights in the sleep samples the
+  Health sync already read (sessions joined across gaps up to 1 hour, dated by the day they end, 3+
+  hours asleep, awake time removed) and summarises the heart-rate readings taken asleep (20+ readings,
+  50%+ of 10-minute slots covered, else no row). `SleepingHeartRateRecorder` runs after a successful
+  `SupabaseHealthRepository.sync()` without delaying it, for the last 7 nights, reading each in windows
+  of at most 3.5 hours (the Swift reader's cap is 4), and stops re-reading a saved night once it is two
+  days old. Heart-rate access is requested in `connectAndSync` only (the user's tap), never by a
+  background sync. `HeartRateReader.swift` needed no change.
+- **Shadow proof:** pgTAP `sleeping_heart_rate_shadow_test.sql` computes `compute_daily_metrics` for a
+  morning estimate, stores eight nights of sleeping heart rate (31 to 38 bpm, far from the resting
+  values), computes again and asserts `scores`, `today_raw` and the baselines are identical; it also
+  asserts no function in `public` or `private` other than `persist_sleeping_heart_rate_v1` mentions
+  the table, and no view or rule depends on it. Moving sleeping heart rate into a score must update that
+  test and SECURITY_PRIVACY §4. TypeScript and Dart profile inputs have no sleeping field (tests).
+- App: `HeartRateZonesView` (`heart_rate_zones_view.dart`) at the end of the Apple Health sheet's
+  `HealthStatusCard` (Account), shown when Apple Health is connected and the card is not compact: resting
+  and maximum line, five zones, one recovery line, "For information only". Missing data is said plainly
+  and no zone is drawn. `SupabaseHealthRepository` implements `HeartRateProfileSource`.
+- Coach: `_shared/coach_context/contributors/heart_rate.ts` (`createHeartRateContributor(load)`, id
+  `heart_rate_profile`, volatile, 900 characters) with `_shared/training/heart_rate/inputs.ts`
+  (`loadHeartRateInputs(client, userId, localDate)` calls the service-role RPC). **Not registered in
+  `registry.ts`**; the lead registers it with E3 in round 3, passing a loader built on the service
+  client. The text states what is known and what is missing and never mentions sleep.
+- Tests: `profile_test.ts`, `inputs_test.ts`, `heart_rate_test.ts` (Deno); `test/workout_hr/
+  heart_rate_profile_test.dart`, `sleeping_heart_rate_test.dart`, `heart_rate_zones_view_test.dart`,
+  `health_card_zones_test.dart`; `test/contract/heart_rate_profile_contract_test.dart` with fixtures
+  `heart_rate_inputs_v1_0.json` and `persist_sleeping_heart_rate_v1_0.json`.
+- Review fixes (Claude Opus review of #133): (1) `private.heart_rate_inputs` filters the recovery sets to
+  the usable ones (60 s drop, end heart rate, 60%+ coverage) and caps each 28-day window at 200 on its own,
+  instead of one newest-first limit of 400 over everything (pgTAP: a heavy-volume case). (2)
+  `SupabaseHealthRepository.connectAndSync` wraps the heart-rate access request in try/catch (logged as
+  non-critical) so it can never stop the sync; the reader is injectable (test: a throwing reader, the sync
+  still runs). (3) The phone drops a night outside the server bounds (`withinServerBounds`) before sending, and
+  `persist_sleeping_heart_rate_v1` skips an invalid night per item and returns `skipped` (additive, still
+  `schema_version` 1.0; fixture updated). (4) A null `nights` raises 22023. (5) DATA_MODEL states the `local_date`
+  rule (at most one day after the server's date). The migration is not on main, so it was edited in place.
+- Review fixes (GPT 5.6 Sol review of #133): (1) `SleepingHeartRateRecorder.record` is bound to the
+  athlete signed in when it starts: it checks the signed-in id before the RPC and before marking nights
+  final, and sends nothing if another account signed in during the reads (test: switch account).
+  (2) `private.heart_rate_inputs` applies the peak trust rules before `limit 10` (source, 8+ readings,
+  60%+ coverage, 120 bpm up to the age ceiling + 1, 210 with no age), so ten untrusted higher peaks
+  cannot hide a valid lower one (pgTAP case added; migration 33 is not on main, so it was edited in
+  place). (3) The nightly lowest uses only 10-minute slots with at least 2 readings; a night with no
+  such slot is not sent (`lowest_bpm` is NOT NULL). Sleeping heart rate has no TypeScript copy, so
+  `profile_cases.json` is unaffected. (4) `NSHealthShareUsageDescription` in `Info.plist` now names
+  overnight (sleeping) heart-rate data (granted to C3 for this one change); SECURITY_PRIVACY §4 mirrors it.
+
+Owner device check after install (a build from `main` once the migration is deployed): open Account,
+Apple Health, tap Refresh (allow Heart Rate in the Apple Health sheet if it shows). With 3 or more
+days of resting heart rate the Heart-rate zones section lists five zones and "Max ... estimated from your
+age" (it needs a birth year in the profile). After a few tracked workouts a recovery line appears. The
+next morning, ask for the `sleeping_heart_rate_nights` rows (SQL editor) to see last night; no score
+changes. A night with the Watch off has no row.
+
 ## Next agent starts here
 
-C3 (heart-rate profile, zones, recovery, sleeping heart rate in shadow mode, migration code 33),
-Phase 3, after C2 merges. Read the per-set summaries with `get_my_set_heart_rate_v1`; do not read
-raw samples through a new path without updating SECURITY_PRIVACY §4. Sleeping heart rate stays in
-shadow mode (D10). The brief is in the program doc.
+C4 (Watch-workout prompt, load signals for the engine), Phase 4, after C3 merges. Read the profile
+with `buildHeartRateProfile` (Dart or TypeScript) from `get_my_heart_rate_inputs_v1`; do not read raw
+samples through a new path without updating SECURITY_PRIVACY §4. Sleeping heart rate stays in shadow
+mode (D10) until a reviewed change updates `sleeping_heart_rate_shadow_test.sql`. The lead registers the
+`heart_rate_profile` contributor with E3. The brief is in the program doc.

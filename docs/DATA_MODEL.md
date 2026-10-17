@@ -497,8 +497,49 @@ unknown or unfinished sets raise 22023, another athlete's workout P0002. The app
 later read has more readings (the Watch syncs after the workout). `get_my_set_heart_rate_v1(session_id)`
 returns `{schema_version: "1.0", session_id, sets: [...]}` with the Contract 4 columns keyed by
 exercise order and set number. The privacy export lists the table and account deletion removes it
-through the cascade. Heart rate does not change a load or a prescription (D9). **Phase 3 / C3:**
-heart-rate profile, zones, recovery and sleeping heart rate in shadow mode (D10).
+through the cascade. Heart rate does not change a load or a prescription (D9).
+
+### `sleeping_heart_rate_nights` (shadow mode, C3, migration code 33)
+
+One derived row per athlete and night (primary key `user_id`, `local_date`; `user_id` cascades with
+the account). The phone works it out from Apple Health sleep and heart-rate samples; samples never
+leave it. **SHADOW MODE (program decision D10):** stored and exported, read by no score, readiness
+line, brief, baseline or Coach context until a later reviewed change. The pgTAP test
+`sleeping_heart_rate_shadow_test.sql` proves the recovery score and baselines do not move when nights
+are stored and that no function other than the save mentions the table.
+
+| Column | Type | Rule |
+|---|---|---|
+| `local_date` | date | the local day the night ends on (the day Apple Health sleep is attributed to); at most one day after the server's date (timezones ahead of UTC), not over 400 days old |
+| `median_bpm` | smallint | median of the readings taken asleep, 30–200 |
+| `lowest_bpm` | smallint | the lowest mean of any 10-minute slot asleep that holds at least 2 readings (never one reading; a night with no such slot is not sent), 30–200, not above the median |
+| `sample_count` | integer | readings asleep, 1–20000 (the phone sends a night only with at least 20) |
+| `asleep_minutes` | integer | 1–1440 (the phone sends a night only with at least 180) |
+| `coverage` | numeric(4,3) | 0–1, share of the night's 10-minute slots that hold a reading (the phone sends a night only at 0.5 or more) |
+| `created_at`, `updated_at` | timestamptz | `updated_at` moves when a later read replaces the row |
+
+RLS is on and forced (select own rows only; no direct insert, update or delete).
+`persist_sleeping_heart_rate_v1(nights)` (security definer, authenticated, 1 to 14 nights) upserts per
+night and returns `{schema_version: "1.0", saved, skipped}`. A night with an invalid value is skipped and
+counted in `skipped` (one bad night does not lose the others, and the phone also drops a night outside
+these bounds before sending); a request that is null, not a list or not 1 to 14 nights raises 22023. The privacy export lists
+the table and account deletion removes it through the cascade.
+
+**Heart-rate profile inputs (C3).** The profile (resting heart rate, estimated maximum, zones,
+recovery after sets) is not stored. It is computed on demand by deterministic code (Dart in the app,
+TypeScript for the Coach, with shared test cases) from
+`get_my_heart_rate_inputs_v1(local_date default today)` (security definer, authenticated, own data,
+date within 2 days of today) and, for the Coach's contributor, `get_heart_rate_inputs_v1(target_user,
+local_date)` (service role only). Both return the same object, `schema_version` 1.0:
+`{schema_version, as_of, birth_year, resting: [{local_date, bpm}], sets: [...], peak_candidates: [...]}`.
+`resting` holds Apple Health resting heart rate of the last 14 days between 30 and 120 bpm, oldest first;
+`sets` the recovery sets, newest first: per-set summaries (above) with a 60-second drop, an end heart rate
+and 60%+ coverage, from the last 28 days and the 28 days before, each window capped at 200 on its own after
+that filter, each with its workout's `local_date`; `peak_candidates` the 10 sets with the highest *trusted* peaks of the last 365 days: the trust rules
+(Watch workout, 8+ readings, 60%+ coverage, 120 bpm up to the age ceiling, 210 with no age) are applied
+before the limit, so untrusted higher peaks never crowd out a valid lower one. The SQL ceiling is the
+formula + 21 (a superset of the exact check), and the profile code applies the exact one.
+Discarded workouts are left out. Sleeping heart rate is never in the object.
 
 ### `workout_amendments`
 

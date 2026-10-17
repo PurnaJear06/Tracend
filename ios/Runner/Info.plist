@@ -27,7 +27,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Tracend reads selected activity, recovery and workout heart-rate data to build private daily coaching summaries.</string>
+	<string>Tracend reads selected activity, recovery, workout heart-rate and overnight (sleeping) heart-rate data to build private daily coaching summaries.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Tracend does not write health data. This key is required by HealthKit.</string>
 	<key>NSCameraUsageDescription</key>

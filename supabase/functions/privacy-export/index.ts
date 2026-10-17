@@ -18,6 +18,7 @@ export const dataTables = [
   "exercise_performances",
   "exercise_sets",
   "exercise_set_heart_rate",
+  "sleeping_heart_rate_nights",
   "workout_amendments",
   "daily_check_ins",
   "health_sync_runs",
