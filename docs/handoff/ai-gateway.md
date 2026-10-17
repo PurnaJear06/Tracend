@@ -778,7 +778,7 @@ integration contract is in the program plan's "Contract requests".
   `user_goals.source_proposal_id`. RPCs: `get_coach_proposal_inputs_v1`,
   `persist_coach_proposal_v1` (service role), `get_my_coach_proposals_v1`,
   `respond_to_coach_proposal_v1`, `undo_coach_proposal_v1`. pgTAP:
-  `supabase/tests/database/coach_proposals_test.sql` (80 assertions: storing and refusing, reads
+  `supabase/tests/database/coach_proposals_test.sql` (81 assertions: storing and refusing, reads
   and RLS, approve and undo for nutrition, schedule, block and goal, expiry, stale basis,
   replaced proposals, decline and change, the end of a block, the undo window, a stricter health
   check, deletion). No new table, so the privacy export (`change_proposals`, `audit_events`,
@@ -787,7 +787,7 @@ integration contract is in the program plan's "Contract requests".
   vocabulary), `build.ts` (`buildCoachProposal`, pure), `nutrition.ts`, `goal.ts`, `training.ts`
   (block, schedule, swap, intensity or focus phase, next session), `plan_rules.ts` (reuses the
   rules plan, B2 templates and the coaching standard), `state.ts` (database payloads to athlete
-  state), `service.ts` (`proposeCoachChange`), `refusals.ts` (plain reasons). Tests: 46 in
+  state), `service.ts` (`proposeCoachChange`), `refusals.ts` (plain reasons). Tests: 47 in
   `build_test.ts`, `service_test.ts`, `intent_test.ts`, including the owner's cases (home for 10 to
   15 days, 4 days a week for 2 months, a diet break, 1,200 kcal refused with the floor reason, a
   lighter session tomorrow) and a mirror of the database's payload checks.
