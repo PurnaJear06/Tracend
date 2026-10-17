@@ -314,7 +314,8 @@ export function lookupProblem(
     request.from <= expectation.covers && request.to >= through
   );
   if (!fits) return `no ${expectation.lookup} request covers ${expectation.covers}..${through}`;
-  const span = daysBetween(fits.from, fits.to);
+  // Days counted inclusively: a one-day limit means from == to.
+  const span = daysBetween(fits.from, fits.to) + 1;
   if (expectation.maxSpanDays !== undefined && span > expectation.maxSpanDays) {
     return `${expectation.lookup} request spans ${span} days`;
   }

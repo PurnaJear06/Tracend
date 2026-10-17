@@ -796,8 +796,9 @@ in `supabase/functions/_evals/`.
   Other categories report a pass rate against 0.8. Model answers at least 97%, no dead ends. The
   over-caution rate and the tone judge are printed, never gated.
 - **Runner** (`run.ts`, `live_model.ts`): each model case runs 3 times through the production path
-  (`generateCoachChatViaGateway` with an `AI_COACH_CHAT_*` route, else DeepSeek or the router like
-  the older eval). A red-flag case is answered by the fixed referral and never reaches a model.
+  (`generateCoachChatViaGateway` with an `AI_COACH_CHAT_*` route, the strong route
+  `AI_COACH_CHAT_STRONG_*` chosen per question by `selectCoachChatRoute` as coach-chat does, else
+  DeepSeek or the router like the older eval). A red-flag case is answered by the fixed referral and never reaches a model.
   `EVAL_MAX_USD` (default 3) stops and fails the run. The tone judge (`judge.ts`) is off unless
   `EVAL_JUDGE_MODEL` is set; it must be a different model, sees only the question and the reply,
   and stays ungated until it has been checked against about 30 human labels.

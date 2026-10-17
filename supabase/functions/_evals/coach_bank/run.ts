@@ -141,7 +141,7 @@ async function main(): Promise<void> {
     console.error(live.error);
     Deno.exit(2);
   }
-  const judgeRoute = distinctJudgeRoute(live.model);
+  const judgeRoute = distinctJudgeRoute(live.models);
   const cases = selectCases(Deno.env.get("EVAL_CASES"));
   if (cases.length === 0) {
     console.error("EVAL_CASES matched no case.");

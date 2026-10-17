@@ -6,8 +6,9 @@
 //
 // Settings, read like a gateway route's but with the EVAL_JUDGE_ prefix (so no production setting
 // can reach the judge): EVAL_JUDGE_PROVIDER, EVAL_JUDGE_MODEL, EVAL_JUDGE_API_KEY and, where
-// the provider needs them, EVAL_JUDGE_BASE_URL and EVAL_JUDGE_VENDOR; EVAL_JUDGE_MAX_OUTPUT_TOKENS
-// (default 400) and EVAL_JUDGE_TIMEOUT_MS (default 30000).
+// the provider needs them, EVAL_JUDGE_BASE_URL and EVAL_JUDGE_VENDOR; for Gemini also
+// EVAL_JUDGE_GEMINI_PAID_DATA_TERMS_ACCEPTED=true; EVAL_JUDGE_MAX_OUTPUT_TOKENS (default 400) and
+// EVAL_JUDGE_TIMEOUT_MS (default 30000).
 import { call } from "../../_shared/ai/gateway.ts";
 import { type Env, route } from "../../_shared/ai/routes.ts";
 import type { AiCallDeps, AiRoute } from "../../_shared/ai/types.ts";
@@ -34,20 +35,24 @@ export function judgeRoute(env: Env = (name) => Deno.env.get(name)): AiRoute | n
       if (suffix === "TIMEOUT_MS") return setting(suffix) ?? "30000";
       return setting(suffix);
     }
-    if (name === "ANTHROPIC_API_KEY" || name.startsWith("OPENAI_COMPATIBLE_API_KEY_")) {
-      return setting("API_KEY");
+    if (
+      name === "ANTHROPIC_API_KEY" || name === "GEMINI_API_KEY" ||
+      name.startsWith("OPENAI_COMPATIBLE_API_KEY_")
+    ) return setting("API_KEY");
+    if (name === "GEMINI_PAID_DATA_TERMS_ACCEPTED") {
+      return setting("GEMINI_PAID_DATA_TERMS_ACCEPTED");
     }
     return undefined;
   };
   return route("coach_chat", mapped);
 }
 
-/** The judge route, refused when it is the answering model. */
-export function distinctJudgeRoute(answeringModel: string, env?: Env): AiRoute | null {
+/** The judge route, refused when it is any model that answers. */
+export function distinctJudgeRoute(answeringModels: readonly string[], env?: Env): AiRoute | null {
   const judge = judgeRoute(env);
-  if (judge && judge.model === answeringModel) {
+  if (judge && answeringModels.includes(judge.model)) {
     throw new Error(
-      `The tone judge must be a different model from the answering model (${answeringModel}).`,
+      `The tone judge must be a different model from the answering model (${judge.model}).`,
     );
   }
   return judge;

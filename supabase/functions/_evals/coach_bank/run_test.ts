@@ -225,14 +225,25 @@ Deno.test("the judge is off unless its model is set, and must differ from the an
   const route = judgeRoute(env)!;
   assertEquals(route.model, "claude-sonnet-5-5");
   assertEquals(route.maxOutputTokens, 400);
-  assertEquals(distinctJudgeRoute("claude-haiku-5-5", env)!.model, "claude-sonnet-5-5");
+  assertEquals(distinctJudgeRoute(["claude-haiku-5-5"], env)!.model, "claude-sonnet-5-5");
   let refused = false;
   try {
-    distinctJudgeRoute("claude-sonnet-5-5", env);
+    distinctJudgeRoute(["claude-haiku-5-5", "claude-sonnet-5-5"], env);
   } catch {
     refused = true;
   }
   assert(refused, "a model must not grade its own tone");
+  // Gemini needs its key and its paid-data terms, both under the EVAL_JUDGE_ prefix.
+  const gemini = {
+    EVAL_JUDGE_PROVIDER: "gemini",
+    EVAL_JUDGE_MODEL: "gemini-3.5-flash",
+    EVAL_JUDGE_API_KEY: "synthetic-test-key",
+  };
+  assertEquals(judgeRoute(envOf(gemini)), null);
+  assertEquals(
+    judgeRoute(envOf({ ...gemini, EVAL_JUDGE_GEMINI_PAID_DATA_TERMS_ACCEPTED: "true" }))?.provider,
+    "gemini",
+  );
   // A production setting alone never makes a judge.
   assertEquals(
     judgeRoute(

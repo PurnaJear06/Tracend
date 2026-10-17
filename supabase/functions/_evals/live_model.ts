@@ -1,7 +1,7 @@
 // How the live Coach evals reach a model, shared by coach_chat_eval.ts (operations: answer rate,
 // latency, cache) and coach_bank/run.ts (the answer bank).
 //
-// Gateway route (A6): when the AI_COACH_CHAT_* settings make a route (for example
+// Gateway route (A6, A9): when the AI_COACH_CHAT_* settings make a route (for example
 // AI_COACH_CHAT_PROVIDER=anthropic, AI_COACH_CHAT_MODEL=claude-haiku-5-5,
 // AI_COACH_CHAT_MAX_OUTPUT_TOKENS=4096, AI_COACH_CHAT_TIMEOUT_MS=30000 and ANTHROPIC_API_KEY),
 // questions go through generateCoachChatViaGateway, the path coach-chat takes with those
@@ -10,7 +10,7 @@
 // model name). A router run is a smoke test, not production latency: it waits up to routerTiming
 // for each attempt.
 import { route } from "../_shared/ai/routes.ts";
-import type { AiRoute } from "../_shared/ai/types.ts";
+import type { AiCallDeps, AiRoute } from "../_shared/ai/types.ts";
 import type { CoachContributions } from "../_shared/coach_context/host.ts";
 import {
   type CoachChatGeneration,
@@ -18,6 +18,7 @@ import {
   coachChatTiming,
   generateCoachChat,
 } from "../_shared/providers/coach_chat_provider.ts";
+import { selectCoachChatRoute } from "../_shared/providers/coach_chat_provider_route.ts";
 import { generateCoachChatViaGateway } from "../_shared/providers/coach_chat_provider_gateway.ts";
 
 export type GenerateInput = Readonly<{
@@ -32,7 +33,10 @@ export type Generate = (input: GenerateInput) => Promise<CoachChatGeneration>;
 export type LiveModel = Readonly<{
   generate: Generate;
   endpoint: string;
+  /** The model answering; with a strong route set, both models, the default first. */
   model: string;
+  /** Every model that may answer a question (the default route's and the strong route's). */
+  models: readonly string[];
   /** A router run: latency says nothing about production. */
   router: boolean;
   /** Set on the gateway path. */
@@ -69,26 +73,40 @@ export function routedFetch(baseUrl: string, fetcher: typeof fetch = fetch): typ
   };
 }
 
-export function gatewayGenerate(coachRoute: AiRoute): Generate {
+/**
+ * The gateway path with the route chosen per question by `selectCoachChatRoute`, as coach-chat
+ * does: a question that needs analysis takes the strong route (AI_COACH_CHAT_STRONG_*) when it is
+ * set and names the default route's vendor (the eval's stand-in for the athlete's notice).
+ */
+export function gatewayGenerate(
+  coachRoute: AiRoute,
+  strong: () => AiRoute | null = () => route("coach_chat_strong"),
+  deps: AiCallDeps = {},
+): Generate {
   return ({ question, context, contextKind, contributions }) =>
     generateCoachChatViaGateway({
       question,
       context,
       contextKind,
-      route: coachRoute,
+      route: selectCoachChatRoute(question, coachRoute, strong, coachRoute.vendor).route,
       consentVendor: coachRoute.vendor,
       ...(contributions ? { contributions } : {}),
-    });
+    }, deps);
 }
 
 /** The model the environment points at, or null (with a message) when no key is set. */
 export function liveModelFromEnv(): LiveModel | { error: string } {
   const coachRoute = route("coach_chat");
   if (coachRoute) {
+    const strongRoute = route("coach_chat_strong");
+    const models = strongRoute && strongRoute.model !== coachRoute.model
+      ? [coachRoute.model, strongRoute.model]
+      : [coachRoute.model];
     return {
       generate: gatewayGenerate(coachRoute),
       endpoint: `${coachRoute.providerLabel} gateway route`,
-      model: coachRoute.model,
+      model: models.join(" + strong "),
+      models,
       router: false,
       coachRoute,
     };
@@ -115,6 +133,7 @@ export function liveModelFromEnv(): LiveModel | { error: string } {
       generateCoachChat(question, context, contextKind, fetcher, timing, contributions),
     endpoint: baseUrl ? new URL(baseUrl).host : new URL(deepseekChatUrl).host,
     model,
+    models: [model],
     router: Boolean(baseUrl),
   };
 }

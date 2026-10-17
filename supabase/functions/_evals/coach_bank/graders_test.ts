@@ -167,6 +167,13 @@ Deno.test("data requests: the lookup, the span and the filter are checked", () =
     null,
   );
   assert(
+    lookupProblem(day, [
+      request({ lookup: "meals", from: "2026-10-12", to: "2026-10-13", filter: undefined }),
+    ])!
+      .includes("spans 2 days"),
+    "a one-day limit means from == to",
+  );
+  assert(
     lookupProblem(day, [request({ lookup: "meals", from: "2026-10-01", to: "2026-10-14" })])!
       .includes("spans"),
   );

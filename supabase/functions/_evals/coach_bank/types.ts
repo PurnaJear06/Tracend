@@ -80,7 +80,7 @@ export type LookupExpectation =
     through?: string;
     /** Words the request's filter must hold (all). */
     filterHas?: readonly string[];
-    /** Most days the request may span. */
+    /** Most days the request may span, counted inclusively (1 means from == to). */
     maxSpanDays?: number;
   }>;
 
