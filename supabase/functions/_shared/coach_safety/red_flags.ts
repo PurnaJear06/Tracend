@@ -32,8 +32,12 @@ type Rule = Readonly<{
   id: string;
   category: RedFlagCategory;
   pattern: RegExp;
-  /** The rule does not apply to a clause this matches (for example a harmless supplement). */
-  unless?: RegExp;
+  /**
+   * A phrase-level exemption: true when this match, with the few words around it, is a known
+   * benign phrase ("breathe through my nose", "tingling" from beta-alanine). Never a clause-wide
+   * exemption: a benign word elsewhere in the clause does not cover a symptom.
+   */
+  benign?: (matched: string, nearby: string) => boolean;
   /**
    * Any mention that reaches the patterns is a hit: no negation, conditional or educational
    * exemption. Self-harm and eating-disorder behaviour: a false referral is acceptable there.
@@ -45,9 +49,15 @@ const rule = (
   id: string,
   category: RedFlagCategory,
   source: string,
-  unless?: RegExp,
+  benign?: (matched: string, nearby: string) => boolean,
   noExemptions = false,
-): Rule => ({ id, category, pattern: new RegExp(source, "g"), unless, noExemptions });
+): Rule => ({ id, category, pattern: new RegExp(source, "g"), benign, noExemptions });
+
+// Benign phrases, each tied to the exact words it excuses.
+const nasalBlockage =
+  /\bbreath(?:e|ing) through (?:my |the |your )?nose\b|\bstuffy nose\b|\bnasal congestion\b|\b(?:blocked|congested|stuffy) nose\b|\bnose (?:is |was )?(?:blocked|stuffy|congested)\b/;
+const supplementTingle = /^(?:tingl|pins and needles)/;
+const tingleSupplement = /beta[- ]?alanine|niacin/;
 
 // Listed from the most urgent; a message that matches several gets the first rule here.
 const rules: readonly Rule[] = [
@@ -82,7 +92,7 @@ const rules: readonly Rule[] = [
     "breathing",
     String
       .raw`\bcan'?t breathe\b|\bcannot breathe\b|\bcan'?t catch my breath\b|\b(?:trouble|difficulty|struggling|struggle|hard|harder) (?:to )?breath(?:e|ing)\b|\bgasping\b|\bwheez(?:e|ing)\b|\b(?:severe|extreme|sudden|serious|terrible|awful|unusual)(?:ly)? (?:shortness of breath|short of breath|breathlessness|out of breath)\b|\b(?:short of breath|shortness of breath|breathless\w*)\b.{0,40}\b(?:at rest|resting|sitting|lying|in bed|sleeping|doing nothing|walking|stairs|won'?t go away|not going away)\b|\bpain (?:when|while|on|with) (?:i )?(?:breathe|breathing|breath|inhale|inhaling|deep breath\w*)\b|\bpainful (?:to )?breath\w*`,
-    /\bnose\b|\bnasal\b|\bcongest\w*|\bblocked\b|\bstuffy\b/,
+    (_matched, nearby) => nasalBlockage.test(nearby),
   ),
   rule(
     "stroke_signs",
@@ -142,8 +152,8 @@ const rules: readonly Rule[] = [
     "numbness",
     "numbness",
     String
-      .raw`\bnumb(?:ness)?\b|\btingling\b|\bpins and needles\b|\bloss of (?:feeling|sensation)\b|\bcan'?t feel my (?:arm|arms|leg|legs|hand|hands|foot|feet|fingers|toes)\b`,
-    /beta[- ]?alanine|pre[- ]?workout|supplement|caffeine|niacin|creatine/,
+      .raw`\bnumb(?:ness)?\b|\btingl(?:e|es|ed|ing)\b|\bpins and needles\b|\b(?:loss of|lost|losing|lose) (?:all )?(?:the )?(?:feeling|sensation)\b|\bcan'?t feel my (?:arm|arms|leg|legs|hand|hands|foot|feet|fingers|toes)\b`,
+    (matched, nearby) => supplementTingle.test(matched) && tingleSupplement.test(nearby),
   ),
   // Not red flags: requests Tracend does not support (AI_SAFETY_SPEC §7). They get the scope
   // answer, not an urgent referral.
@@ -330,14 +340,26 @@ const clauseSelfReport = /\bfor me\b|\bevery time\b|\bwhen i\b|\bwhenever i\b|\b
 // Said anywhere in the message, it makes a question about the symptom a report of it.
 const happensToMe = /\bhappens? to me\b|\bkeeps? happening\b|\bit happens\b|\bthis happens\b/;
 
+// A denial that stops at a point in time is a report of what came after it: "I never had chest
+// pain until today's run", "no dizziness until this morning", "no chest pain today".
+const timeBoundedAfter = new RegExp(
+  [
+    String
+      .raw`^\W*(?:\w+\s+){0,3}?(?:until|till|before|up to|except)\b(?:\W+\w+){0,4}?\W+(?:today|today's|now|tonight|yesterday|morning|afternoon|evening|run|session|workout|set|recently|lately|week|day)\b`,
+    String
+      .raw`^\W*(?:\w+\s+){0,2}?(?:now|today|today's|tonight|this morning|this afternoon|this evening|recently|lately)\b`,
+  ].join("|"),
+);
+const timeBounded = (after: string) => timeBoundedAfter.test(after);
+
 /** Whether the athlete is reporting the symptom, not denying it, supposing it or asking about it. */
-function reported(clause: string, index: number, message: string): boolean {
+function reported(clause: string, index: number, length: number, message: string): boolean {
   const before = clause.slice(0, index);
   // The athlete's own symptom comes first: a possessive directly before it, a possessive or
   // self-report anywhere makes the later exemptions moot, and a negation cannot cover it.
   const possessed = stretchBefore(before, 3).some((word) => word === "my" || word === "me");
   if (possessed) return true;
-  if (negated(before)) return false;
+  if (negated(before)) return timeBounded(clause.slice(index + length));
   const owned = selfReport.test(clause) || clauseSelfReport.test(clause) ||
     happensToMe.test(message);
   if (owned) return true;
@@ -352,9 +374,13 @@ export function screenMessage(question: string): RedFlagHit | null {
   const clauses = clausesOf(normalized);
   for (const candidate of rules) {
     for (const clause of clauses) {
-      if (candidate.unless?.test(clause)) continue;
       for (const match of clause.matchAll(candidate.pattern)) {
-        if (candidate.noExemptions || reported(clause, match.index, normalized)) {
+        const nearby = clause.slice(
+          Math.max(0, match.index - 40),
+          match.index + match[0].length + 40,
+        );
+        if (candidate.benign?.(match[0], nearby)) continue;
+        if (candidate.noExemptions || reported(clause, match.index, match[0].length, normalized)) {
           return { category: candidate.category, rule: candidate.id, source: "message" };
         }
       }

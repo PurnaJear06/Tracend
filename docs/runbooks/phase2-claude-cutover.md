@@ -116,7 +116,7 @@ After you accept the coaching notice (step 4), use it: ask the Coach one questio
 checked by Tracend".
 
 **3.1b Coach chat, stronger route (OWNER, optional; needs the A9 server change deployed).**
-Questions about progress, body weight and goals, nutrition numbers and the training plan are
+Questions that ask for analysis (progress, a trend or pace, a change to the plan or a target, a nutrition amount) are
 answered by this second route instead of the default one (a plain rules classifier decides;
 `coach_chat_provider_route.ts`). Everything else, and every question while this is unset, uses the
 3.1 route. It needs no new key and no new notice: it is Anthropic like the default route, and it is

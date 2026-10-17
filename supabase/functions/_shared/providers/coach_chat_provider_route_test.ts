@@ -33,7 +33,8 @@ Deno.test("progress, weight and goal, nutrition-number and plan questions need t
       "Can you change my plan so legs come twice a week?",
       "Is my cut going to plateau?",
       "Do I need a deload?",
-      "What's my body fat goal?",
+      "How is my progress over the last month?",
+      "Should I change my calories?",
     ]
   ) {
     assert(needsStrongerCoachRoute(question), question);
@@ -49,6 +50,12 @@ Deno.test("conversation and simple questions stay on the default route", () => {
       "how do I breathe during a squat?",
       "what time should I train?",
       "good morning coach",
+      "how many sets should I do today?",
+      "should I go heavier?",
+      "what's my plan today?",
+      "what's my body fat goal?",
+      "what's my protein target?",
+      "what weight should I use for squats?",
     ]
   ) {
     assert(!needsStrongerCoachRoute(question), question);

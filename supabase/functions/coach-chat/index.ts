@@ -335,7 +335,7 @@ async function screenTodaysCheckIn(
  * The fixed referral for a red flag when the context could not be prepared. It is stored through
  * the lightest path there is (the question, then the reply as a labelled deterministic reply: no
  * snapshot, policy or model run is needed) and returned whether or not storing worked; a storing
- * failure is logged. A referral stored this way reads as a safety note in the app.
+ * failure is logged. Stored this way it is a labelled deterministic reply with the referral's own safety state.
  */
 async function referralWithoutContext(
   client: Awaited<ReturnType<typeof requireAuth>>["serviceClient"],
@@ -345,9 +345,8 @@ async function referralWithoutContext(
   log: ReturnType<typeof createLogger>,
 ): Promise<Response> {
   log.warn("coach_chat_red_flag", { category: hit.category, rule: hit.rule, source: hit.source });
-  // The stored reply is a labelled deterministic reply, which the app shows as a safety note when
-  // it is `limited`; the referral's own state (`refused` for self-harm) is kept in the logs.
-  const referral = { ...referralFor(hit), safety_state: "limited" as const };
+  // The same state as the normal path: `refused` for self-harm and unsupported requests.
+  const referral = referralFor(hit);
   let stored: { assistant_message_id?: string; created_at?: string } | null = null;
   try {
     const { error: recordError } = await client.rpc("record_coach_chat_question", {
@@ -633,16 +632,22 @@ export async function handleCoachChat(
     log.info("coach_chat_replayed", { status: replay.status });
     return reply(replay.status, replay.body);
   };
-  const savedQuestionCreatedAt = async (): Promise<{ saved: boolean; createdAt: unknown }> => {
-    const { data } = await auth.serviceClient.from("coach_messages").select("created_at")
-      .eq("user_id", auth.userId).eq("idempotency_key", input.idempotency_key).maybeSingle();
+  // The athlete's saved question for this key (a user message: a reply may carry the same key). A
+  // failed read is "unknown", never "not saved".
+  const savedQuestionCreatedAt = async (): Promise<
+    { saved: boolean | "unknown"; createdAt: unknown }
+  > => {
+    const { data, error } = await auth.serviceClient.from("coach_messages").select("created_at")
+      .eq("user_id", auth.userId).eq("role", "user").eq("idempotency_key", input.idempotency_key)
+      .maybeSingle();
+    if (error) return { saved: "unknown", createdAt: undefined };
     return {
       saved: data !== null && data !== undefined,
       createdAt: (data as { created_at?: unknown } | null)?.created_at,
     };
   };
   const earlier = await savedQuestionCreatedAt();
-  if (earlier.saved) {
+  if (earlier.saved === true) {
     const { data: turn, error: turnError } = await auth.serviceClient.rpc("coach_chat_turn", {
       target_user_id: auth.userId,
       request_idempotency_key: input.idempotency_key,

@@ -648,7 +648,7 @@ audit (1, 2, 3, 6 deterministic part, 7, 15).
   or `global_monthly_cost_limit`, read from the database's refusal (`AiBudget.refusal`,
   `CoachChatBudgetLedger.refusal`); no `reason` when the database gave none.
 - **Lost turns**: a turn with no answer and no failure whose saved question is older than
-  `coachChatTurnStaleAfterMs` (the 40 s model deadline plus 30 s, 70 s) answers 503
+  `coachChatTurnStaleAfterMs` (the Edge Function wall-clock limit, 400 s at most on paid plans, plus 30 s: 430 s) answers 503
   `chat_unavailable` with `code: "turn_lost"` and `replayed: true`, for that key every time. The
   app should show "your last message didn't go through" and send it again under a new key (no SQL
   change; the age is the question row's `created_at`). Younger turns, or an age that cannot be read,
@@ -699,6 +699,17 @@ audit (1, 2, 3, 6 deterministic part, 7, 15).
   if storing fails (logged); it reads as a safety note in the app. The lost-turn age is the Edge
   Function wall-clock limit (Supabase documents 150 s free, 400 s paid; no per-function setting in
   `config.toml`) plus 30 s, so a running turn is never taken for lost.
+- **Fourth review:** a symptom rule's exemption is a benign phrase next to the match, never a
+  clause-wide word (`benign` on the rule: "breathe through my nose", "stuffy nose", "nasal
+  congestion"; only tingling next to beta-alanine or niacin; "numb" and "loss of feeling" are
+  never excused); a denial that stops at a point in time ("never had chest pain until today's
+  run", "no dizziness until this morning", "no chest pain recently") is a report; the saved
+  question is read as a user message and a failed read is unknown, not "not saved"; the
+  referral stored without context keeps its own safety state (`refused` for self-harm and
+  unsupported requests; the app labels only `limited` data summaries as safety notes, so a
+  `refused` one reads as a data summary there); the stronger route needs analytic intent
+  (progress, trend, pace, a change to the plan or a target, a nutrition amount), not a domain
+  noun.
 - **For the app (superseded replies):** only user questions are marked. An attempt's reply exists
   only as a data summary (already stored with `safety_state` `unavailable`) or a model answer
   (never superseded), so `unavailable` cannot hide an orphaned summary by itself, and hiding every

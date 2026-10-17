@@ -317,12 +317,15 @@ cutting"). **Design rule for every exemption, here and in the reply guard:** it 
 it provably governs the matched symptom, prescription or figure: in the same clause, within a short
 window before the match, with no `and`, `but` or comma between. A possessive directly before the
 symptom ("my chest feels tight"), a self-report in the clause ("I get", "I feel"), or "it happens
-to me" anywhere in the message defeats the conditional and educational exemptions. Self-harm and
+to me" anywhere in the message defeats the conditional and educational exemptions. An exemption inside a symptom rule is a benign phrase next to the match ("breathe through my nose",
+"stuffy nose", "nasal congestion"; tingling next to beta-alanine or niacin), never a word elsewhere in
+the clause; "numb" and "loss of feeling" are never excused. A denial that stops at a point in time
+("never had chest pain until today's run", "no dizziness until this morning") is a report. Self-harm and
 eating-disorder patterns have no exemption at all: any mention is a hit. A negation counts only when
 its cue is directly before the symptom with a few filler words between ("no", "any", "feel",
 "have"; "can't" never denies), and "cause" alone is not education ("what causes" is; "squats cause
 chest pain for me" is a report). A red flag does not depend on context preparation: when it fails
-the referral is still stored and returned. Every other phrasing, and any doubt, leans toward a hit, because a miss answers a red flag with coaching and a false alarm costs one
+the referral is still stored and returned with its own safety state. Every other phrasing, and any doubt, leans toward a hit, because a miss answers a red flag with coaching and a false alarm costs one
 referral. It covers: chest pain, pressure or tightness; palpitations and a heartbeat that races at
 rest or skips; fainting, passing out, blacking out, collapse; dizziness and light-headedness;
 severe or sudden breathlessness and wheezing; signs of stroke (slurred speech, one-sided
@@ -920,8 +923,9 @@ routes stay available by settings alone for two weeks after the cutover.
   `plan_status` and the athlete file states there is no plan, the reason, the health-check outcome
   and date, and that Coach gives no plan-specific advice (sessions, loads, calorie or protein
   targets). General questions and next steps stay allowed.
-- **Second Coach route.** Questions about progress, body weight and goals, nutrition numbers and
-  the training plan (`coach_chat_provider_route.ts`, a rules classifier) use the route configured
+- **Second Coach route.** Questions that ask for analysis (progress, a trend or pace, a change to
+  the plan or a target, a nutrition amount; a domain noun alone is not enough) per
+  `coach_chat_provider_route.ts`, a rules classifier, use the route configured
   as `AI_COACH_CHAT_STRONG_*` when it is set, evaluated and its vendor is the one the athlete's
   accepted notice names; every other question, and every question when it is unset, uses the
   `coach_chat` route. The budget reservation, the price and the stored provenance follow the route

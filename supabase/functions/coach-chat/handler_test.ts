@@ -43,6 +43,8 @@ type Setup = Readonly<{
   prepareFails?: string;
   /** The reply cannot be stored. */
   persistFails?: boolean;
+  /** The first read of the saved question fails (as a database error does). */
+  savedReadFailsOnce?: boolean;
 }>;
 
 type StoredRow = {
@@ -60,6 +62,7 @@ async function run(question: string, setup: Setup) {
   const calls: Call[] = [];
   const updates: Record<string, unknown>[] = [];
   const markedIds: string[] = [];
+  let savedReads = 0;
   const rpc = (name: string, args: Record<string, unknown>) => {
     calls.push([name, args]);
     switch (name) {
@@ -151,13 +154,17 @@ async function run(question: string, setup: Setup) {
         return chain;
       },
       then: (resolve: (value: unknown) => unknown) => resolve({ data: rowsNow(), error: null }),
-      maybeSingle: () =>
-        Promise.resolve({
-          data: name === "daily_check_ins"
-            ? setup.checkIn ?? null
-            : ((rowsNow() as unknown[])[0] ?? null),
-          error: null,
-        }),
+      maybeSingle: () => {
+        if (name === "daily_check_ins") {
+          return Promise.resolve({ data: setup.checkIn ?? null, error: null });
+        }
+        const rows = rowsNow() as unknown[];
+        // Like PostgREST: a second matching row is an error, a failed read is an error.
+        if (rows.length > 1 || (setup.savedReadFailsOnce && savedReads++ === 0)) {
+          return Promise.resolve({ data: null, error: { code: "PGRST116" } });
+        }
+        return Promise.resolve({ data: rows[0] ?? null, error: null });
+      },
     };
     return chain;
   };
@@ -492,4 +499,49 @@ Deno.test("an ordinary question still fails with 422 when the context cannot be 
   });
   assertEquals(result.status, 422);
   assertEquals(result.body.reason, "approved_plan_required");
+});
+
+Deno.test("a reply carrying the same key does not hide the saved question: replay still works at the limit", async () => {
+  const reply = stored("reply", {
+    role: "assistant",
+    idempotency_key: key,
+    created_at: new Date().toISOString(),
+  });
+  const result = await run("How did my week go?", {
+    prepared: { replayed: false, context: {} },
+    savedQuestionAt: new Date().toISOString(),
+    stored: [reply],
+    turns: { [key]: answeredTurn },
+    refuse: "monthly cost limit reached",
+  });
+  assertEquals(result.status, 200);
+  assertEquals(result.body.replayed, true);
+  assert(!result.calls.includes("reserve_ai_budget"), result.calls.join());
+});
+
+Deno.test("a failed read of the saved question is unknown, not 'not saved': a lost turn is still found", async () => {
+  const result = await run("How did my week go?", {
+    // The early read fails; the budget place is taken; context preparation reports the replay.
+    prepared: { replayed: true, turn: { state: "in_progress" } },
+    savedQuestionAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+    savedReadFailsOnce: true,
+  });
+  assertEquals(result.status, 503);
+  assertEquals(result.body.code, "turn_lost");
+  assert(result.calls.includes("reserve_ai_budget"), "unknown does not skip the normal path");
+  assert(result.calls.includes("prepare_coach_chat_v8"));
+});
+
+Deno.test("a referral without context keeps its own safety state", async () => {
+  for (
+    const [question, state] of [
+      ["I want to die", "refused"],
+      ["Please diagnose my knee pain", "refused"],
+      ["I fainted at the gym", "limited"],
+    ] as const
+  ) {
+    const result = await run(question, { prepared: null, prepareFails: "approved plan required" });
+    assertEquals(result.status, 200, question);
+    assertEquals(result.body.message!.safety_state, state, question);
+  }
 });
