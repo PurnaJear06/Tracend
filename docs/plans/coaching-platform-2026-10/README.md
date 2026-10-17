@@ -72,6 +72,9 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 3 | E2 | research-library | Ingestion, the first 30 sources and the retrieval test set | 42 | E1 | building | |
 | 3 | E3 | research-library | Library inside Coach chat | 43 | A6, E2 | todo | |
 | 3 | A8 | ai-gateway | Coach proposals: Coach proposes a change in chat, rules compute it, the athlete approves with one tap | 18 | A6, B7 | todo | |
+| 3 | A9 | ai-gateway | Coach safety and honesty: pre-model red-flag screen, numbers grounding, safety floors, plain error messages, local date, no-plan chat | 19 | B7 | todo | |
+| 3 | A10 | ai-gateway | Coach memory: confirmed facts, athlete state, coach notes, a new context assembler (v9) | 20 | B7, A9 | todo | |
+| 3 | A11 | ai-gateway | Coach eval bank: synthetic athletes that gate every Coach change | — | B7 | todo | |
 | 4 | B4 | training-engine | Same-day readiness adjustment, one-tap approval | 24 | B3, C3 | todo | |
 | 4 | B5 | training-engine | Deloads, cardio dosing, joint rules, pain check, red flags | 25 | B3 | todo | |
 | 4 | C4 | workout-hr | Watch-workout prompt, load signals for the engine | — | C3 | todo | |
@@ -582,6 +585,65 @@ retrieved chunk, and no unsupported claim in the eval; when retrieval is slow or
 answers without it (the Contract 7 host's time limit). Before the external beta, the lead repeats
 U3's device measurements against the recorded budgets.
 
+## Coach design (owner-approved 2026-10-17, checked against industry practice)
+
+Goal: Coach behaves like a certified coach on every reply, with no temporary fixes. Research
+summary (Anthropic Contextual Retrieval and context-engineering posts, the Mem0, Zep and LangMem
+memory work, Letta, ChatGPT memory, Google PH-LLM and the Personal Health Agent) is recorded in the
+decisions log. Borrow patterns, not packages: no LangChain, LangGraph, LlamaIndex, Mem0 or Zep
+(frameworks hide the prompt, and autonomous memory writes break Architecture rule 2).
+
+**Three memory stores plus knowledge.**
+1. **Confirmed facts** (profile): goal and target, phase, screening, conditions and medications,
+   equipment, schedule, injuries, food and exercise likes, coaching style. Only the athlete writes
+   them; Coach may propose one and the athlete confirms. Each fact is versioned (superseded, never
+   overwritten), carries its source, `confirmed_at` and, for volatile facts such as injuries or
+   schedule, a re-confirm date. An athlete statement that contradicts a confirmed fact triggers an
+   update proposal and never silently overrides it.
+2. **Athlete state** (computed): one deterministic renderer with a weekly horizon (check-ins and
+   notes, recovery, plan and next meal, next targets, heart-rate profile, complete-day nutrition,
+   open proposals) and a long-term horizon (phases such as "cut, June to October, -15.2 kg",
+   monthly weight, strength per lift, adherence by month). Computed on demand; cached only if slow.
+3. **Coach notes** (episodic): small structured notes per session, written in the background after
+   the reply (topics, concerns, advice given, commitments and whether they were followed), capped,
+   decaying, linked to message ids, labelled as the coach's notes and treated as untrusted. Search
+   over raw past messages backs them up, because extraction loses detail.
+4. **Knowledge**: the coaching principles digest in the cached prefix, plus library retrieval on
+   every Coach turn.
+
+**Context assembler (v9, alongside the frozen v8).** Fixed budgets per part; order stable parts
+(rules, principles digest, confirmed facts) before volatile ones (state, notes, retrieved chunks,
+the question) so the prefix caches; precedence: Tracend calculations, then confirmed facts, then
+the athlete's recent statements, then coach notes, then knowledge. Every item carries its date and
+every window is stated. v8 stays for rollback until v9 passes the eval bank.
+
+**Retrieval, just enough for about 35 sources.** Fix full-text search (OR the terms instead of
+`websearch_to_tsquery`'s AND), fuse with reciprocal rank fusion (k about 50), filter by topic and
+population, and rewrite follow-up questions with the previous turn's topic. Return 8 to 10 chunks
+with source ids and require Coach to cite them. No reranker, contextual chunk prefixes or larger
+embedding model until the library passes about 100K tokens. E3 runs one head-to-head check on the
+retrieval questions answered end to end: retrieval against the whole library in the cached prefix.
+If quality is within noise, keep whichever is simpler.
+
+**Guardrails (A9).** A deterministic red-flag screen before the model (symptoms, check-in pain of
+7 or more) returns a fixed referral; a numbers check allows only numbers from the context and the
+athlete's message (repair once, else the labelled data summary); safety floors (calorie floor,
+weekly loss ceiling, healthy-weight floor, cut length, the screening cap); no claimed actions;
+replies about 120 words by default; a stronger model route for progress, nutrition-number and plan
+questions.
+
+**Memory controls (A10).** The athlete can view, edit and delete confirmed facts and coach notes,
+and can open a chat that is not remembered.
+
+**Eval bank (A11), gates every Coach change.** Retrieval: the 42 questions plus about 15 multi-source
+and 10 no-answer questions, recall and MRR, no model call, every pull request. Answers: 60 to 100
+synthetic athletes (the owner's case, a stale goal detail, an outlier reading, partial logging, no
+target at a healthy weight, "I fainted", a contradicted fact, and more), mostly code-graded, each
+run 3 times; safety categories allow zero failures. A model judge only for tone, with binary
+rubrics, a different model from the one answering, and checked against about 30 human labels.
+
+**Build order (round 3).** B7, then A9, A11 (grows with each chunk), A10, E3, A8, then D2.
+
 ## Phase 5: during the beta (owner, 2026-10-17)
 
 These ship between beta test rounds, not before the first one. Each is sensitive data: its own
@@ -669,3 +731,9 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
 - 2026-10-17 (owner): A8 Coach proposals added to round 3. Phase 5 (during the beta): L1 lifestyle
   log (alcohol, smoking, substances), L2 hydration, L3 health history; medical-report analysis stays
   excluded unless the owner changes the MVP rule.
+- 2026-10-17 (owner): Coach design approved after an industry check. Three memory stores (confirmed
+  facts, computed athlete state, coach notes) plus knowledge; a v9 context assembler beside the
+  frozen v8; just-enough retrieval (fixed full-text, RRF, filters, follow-up rewrite; no reranker
+  yet; a head-to-head against the whole library in the cached prefix); A9 guardrails; A10 memory
+  with athlete controls; A11 eval bank gating every Coach change; no agent or memory frameworks.
+  A9 (code 19) and A10 (code 20) added.
