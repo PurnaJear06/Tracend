@@ -18,11 +18,17 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   through the gateway once their route settings are set; A7 (#124) removed provider names from the
   app, drafted the notices, set the USD 3 / USD 50 budget and wrote the cutover runbook
   (`docs/runbooks/phase2-claude-cutover.md`). Data goes only to the vendor the accepted notice
-  names. Next: the owner's cutover. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
+  names. Phase 3 round 3 (2026-10-17): A9 Coach safety and honesty merged as #143 (server: a
+  red-flag screen before the model, a numbers check, safe ranges and reply guards on every visible
+  field, a screening contributor, the coaching-principles digest in the stable prefix, an optional
+  stronger route) and #142 (app: plain error messages, same-key retries, the athlete's local date,
+  chat without a plan, one budget gate, a warning at 80%; migration 19). Handoff:
+  [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and
   fractional volume (#127), B6 screening gate (#128, migration 26). Round 2 merged (2026-10-17): B3 progression from logged sets, hub 1.7 (#132); B7 goal phase review,
-  athlete-set targets and no projection as a goal (#136). Next: round 3 (A9, A11, A10, E3, A8, D2). Handoff: [`training-engine.md`](./handoff/training-engine.md).
+  athlete-set targets and no projection as a goal (#136); B7.1 the whole recorded weight history
+  and the continuous loss judged across it (#141). Next: A11, A10, E3, A8, D2. Handoff: [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
   heart rate in shadow. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
