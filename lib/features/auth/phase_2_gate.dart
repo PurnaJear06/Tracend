@@ -15,6 +15,7 @@ import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/shell/app_shell.dart';
 import 'package:tracend/shared/brand/tracend_intro.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 
 class Phase2Gate extends StatefulWidget {
@@ -23,6 +24,7 @@ class Phase2Gate extends StatefulWidget {
     this.client,
     this.localData,
     this.liveActivity = const MethodChannelWorkoutActivityBridge(),
+    this.homeWidgets = const MethodChannelHomeWidgetBridge(),
     super.key,
   });
 
@@ -34,6 +36,10 @@ class Phase2Gate extends StatefulWidget {
   /// The workout rest's Live Activity, ended whenever the session ends so
   /// no rest outlives its athlete on the Lock Screen.
   final WorkoutActivityBridge liveActivity;
+
+  /// The Home Screen and Lock Screen widgets, emptied whenever the session
+  /// ends so no widget keeps a signed-out athlete's day.
+  final HomeWidgetBridge homeWidgets;
   final LocalAccountData? localData;
 
   @override
@@ -147,6 +153,7 @@ class _Phase2GateState extends State<Phase2Gate> {
     required bool accountDeleted,
   }) async {
     unawaited(widget.liveActivity.end());
+    unawaited(widget.homeWidgets.clear());
     await endRejectedSession(
       _client,
       _localData,
@@ -177,6 +184,7 @@ class _Phase2GateState extends State<Phase2Gate> {
   /// once the deletion settles).
   Future<void> _signOut() async {
     unawaited(widget.liveActivity.end());
+    unawaited(widget.homeWidgets.clear());
     try {
       await _client.auth.signOut();
     } catch (e) {
@@ -189,7 +197,10 @@ class _Phase2GateState extends State<Phase2Gate> {
   @override
   Widget build(BuildContext context) {
     if (!widget.environment.hasSupabaseConfiguration) {
-      return AppShell(environment: widget.environment);
+      return AppShell(
+        environment: widget.environment,
+        homeWidgets: widget.homeWidgets,
+      );
     }
     if (!widget.environment.usesOwnerEmailPassword) {
       return const _GateMessage(
@@ -246,6 +257,7 @@ class _Phase2GateState extends State<Phase2Gate> {
       onSignOut: _signOut,
       aiConsent: aiConsent,
       health: health,
+      homeWidgets: widget.homeWidgets,
     );
   }
 }

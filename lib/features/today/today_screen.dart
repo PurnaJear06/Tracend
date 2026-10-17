@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,6 +27,7 @@ import 'package:tracend/features/today/widgets/today_hero.dart';
 import 'package:tracend/features/today/widgets/today_session_card.dart';
 import 'package:tracend/features/today/widgets/today_tiles.dart';
 import 'package:tracend/features/today/widgets/your_week_card.dart';
+import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
@@ -51,6 +54,7 @@ class TodayScreen extends StatefulWidget {
     this.aiConsent,
     this.checkInGate,
     this.planChanges,
+    this.widgetPublisher,
     super.key,
   });
 
@@ -89,6 +93,10 @@ class TodayScreen extends StatefulWidget {
   /// Reloads the targets and today's brief when a Coach proposal changed the
   /// plan, the targets or the goal.
   final PlanChanges? planChanges;
+
+  /// Writes Today's snapshot for the Home Screen and Lock Screen widgets each
+  /// time the brief loads; null where there are no widgets.
+  final TodayWidgetPublisher? widgetPublisher;
 
   @override
   State<TodayScreen> createState() => _TodayScreenState();
@@ -243,15 +251,42 @@ class _TodayScreenState extends State<TodayScreen> {
     }
   }
 
-  /// Loads the brief and, once it arrives, sets the check-in gate from it.
+  /// Loads the brief and, once it arrives, sets the check-in gate from it and
+  /// hands it to the widgets.
   Future<DailyBrief> _loadBrief() {
     final future = widget.brief.load(DateTime.now());
     future.then((brief) {
       if (!mounted) return;
       _lastBrief = brief;
       _updateGate();
+      unawaited(_publishWidgets(brief));
     }, onError: (_) {});
     return future;
+  }
+
+  /// Newest publish wins: targets can arrive after the brief, and a slow
+  /// older publish must not overwrite a newer one.
+  int _publishes = 0;
+
+  /// Writes [brief] with the plan's targets and the check-in state for the
+  /// Home Screen and Lock Screen widgets. Without targets (they did not load)
+  /// only what was eaten shows. Silent: the widgets are a convenience.
+  Future<void> _publishWidgets(DailyBrief brief) async {
+    final publisher = widget.widgetPublisher;
+    if (publisher == null) return;
+    final publish = ++_publishes;
+    NutritionTargets? targets;
+    try {
+      targets = await _targets;
+    } catch (_) {
+      // Unknown targets leave the widgets showing what was eaten.
+    }
+    if (!mounted || publish != _publishes) return;
+    await publisher.publish(
+      brief: brief,
+      targets: targets,
+      checkedIn: _checkedIn(brief),
+    );
   }
 
   bool _checkedIn(DailyBrief brief) =>
@@ -276,6 +311,8 @@ class _TodayScreenState extends State<TodayScreen> {
         _skippedOn = preferences.getString(_skippedKey);
       });
       _updateGate();
+      final brief = _lastBrief;
+      if (brief != null) unawaited(_publishWidgets(brief));
     } catch (_) {
       // Without stored days the gate follows the brief alone.
     }
@@ -502,6 +539,7 @@ class _TodayScreenState extends State<TodayScreen> {
         onSignOut: widget.onSignOut,
         health: widget.health,
         coach: widget.coach,
+        widgetPublisher: widget.widgetPublisher,
         notifications: widget.environment.hasSupabaseConfiguration
             ? SupabaseNotificationRepository(Supabase.instance.client)
             : const FixtureNotificationRepository(),

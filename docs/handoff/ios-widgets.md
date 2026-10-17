@@ -1,6 +1,6 @@
 # iOS Widgets and Live Activity Handoff
 
-**As of:** 2026-10-15
+**As of:** 2026-10-18
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -177,6 +177,82 @@ Island check passed on 2026-10-15. What exists:
 11. Let a rest end, leave the phone for five minutes with the app in the background: "Rest done"
     may still show (nothing can dismiss it); tap Done set: the card goes and no set is ticked.
 
+**D2 in review** (branch `claude/d2-widgets`): Today and Lock Screen widgets.
+
+- **New: the App Group `group.com.tracend.app`**, in `Runner.entitlements` and the new
+  `TracendWidgets/TracendWidgets.entitlements`. It exists only so the widget process can read the
+  snapshot; the Live Activity still uses none. The free team registers the group on first signing
+  (see the device check). If signing refuses the capability, nothing else in the app changes: the
+  bridge answers `no_app_group`, the widgets read "Open Tracend to refresh", and Dart logs
+  the error code only.
+- **Snapshot (Dart)** `lib/shared/home_widgets/today_widget_snapshot.dart`: `TodayWidgetSnapshot.build`
+  turns the loaded `DailyBrief`, the plan's `NutritionTargets`, the check-in state and the Lock Screen
+  choice into the v1 JSON (`schema_version`, `stale_after_seconds` = 43200, `local_date`, `session`
+  with up to three exercise targets, `recovery`, `nutrition`, `check_in_done`, `lock`,
+  `generated_at_millis`). Every value is one Today already shows; no free text. `lock` is null while
+  Lock Screen numbers are off.
+- **Publisher** `today_widget_publisher.dart`: `TodayWidgetPublisher` writes on each brief load
+  (`TodayScreen._loadBrief` hands the brief over; the newest publish wins), skips an unchanged
+  snapshot for five minutes, owns the Lock Screen choice (`home_widgets_lock_screen_numbers` in
+  `SharedPreferencesAsync`, default off) and clears the snapshot on `dispose` (AppShell going away).
+  `Phase2Gate` also clears it on sign-out, account deletion and a refused session.
+- **Bridge** `home_widget_bridge.dart` + `ios/Runner/Native/HomeWidgetBridge.swift`, channel
+  `tracend/home_widgets`: `write` (decodes the JSON, refuses anything but v1 with
+  `invalid_snapshot`, stores it in the group's `UserDefaults`, `WidgetCenter.reloadAllTimelines()`),
+  `clear`, `takePendingTab`; iOS calls `tabRequested` when a widget is tapped.
+- **Deep links.** None existed. `Info.plist` now registers the `tracend` URL scheme and sets
+  `FlutterDeepLinkingEnabled` = NO (Flutter would otherwise try to route the URL as a Navigator route).
+  `SceneDelegate` passes `connectionOptions.urlContexts` and `scene(_:openURLContexts:)` to
+  `HomeWidgetBridge.open`, which accepts `tracend://today` and `tracend://train` only, keeps the tab
+  for a minute and nudges Dart; `AppShell` calls `takePendingTab` on start and on each nudge.
+- **Swift shared files** (both targets): `ios/Shared/TodayWidgetSnapshot.swift` (Codable model,
+  `decode`, `isStale`, `staleDate`) and `ios/Shared/TodayWidgetStore.swift` (group storage and
+  `TracendLink`). **Extension:** `TodayTimeline.swift` (provider, entry; timeline = now plus the
+  stale moment, policy `.never`: the app asks for reloads), `TodayWidgets.swift` (small and
+  medium), `LockScreenWidgets.swift` (circular, rectangular, inline). Visuals: DESIGN_SYSTEM §3.7.
+- **Account.** `lib/features/account/widgets/widget_settings.dart`: **Widgets › Health numbers on the
+  Lock Screen**, off by default. SECURITY_PRIVACY §10 documents it as a second lock-screen
+  exception, marked "owner to confirm".
+- **Tests:** `test/home_widgets/` (snapshot, publisher, flow), `test/contract/today_widget_snapshot_contract_test.dart`
+  with `fixtures/today_widget_snapshot_v1.json`, and `TodayWidgetSnapshotTests` in `RunnerTests.swift`
+  reading the same fixture (not run in CI). The extension, the bridge and the XCTest logic were
+  type-checked with `swiftc -typecheck` and the staleness logic exercised in a host script; the
+  widgets' look and the App Group are only proven on the iPhone.
+- **Known limits.** The exercise lines are the plan's targets from the daily brief (sets, rep range,
+  load), not the training hub's progression `next_targets` (that needs the hub, a second read Today
+  does not make). The widgets show the last time Today loaded: a meal logged in Nutrition or a set
+  logged in Train shows after the next Today load. A medium widget with long exercise names truncates
+  the name, not the target.
+
+**Test D2 on the device** (signed build from the branch, `./scripts/install-device.sh`; the free team
+registers the App Group on first signing):
+
+1. Install. If signing stops on the App Group, open the project once in Xcode (Runner and
+   TracendWidgets targets, Signing & Capabilities, App Groups) so the free team registers
+   `group.com.tracend.app`, then install again.
+2. Open Tracend and let Today load. Add the **Today** widget, small and medium, to the Home Screen
+   (long-press, +). Small: session name, status, recovery score. Medium: the first three exercises
+   with targets, calories and protein bars, "Checked in" or "Check-in due".
+3. Compare every number with Today. Pull to refresh in Today after logging a meal: the widget
+   follows within a few seconds.
+4. Add the three **Today on the Lock Screen** widgets (Lock Screen › Customize). With Account ›
+   Widgets off (the default) they read "Tracend", "Lock Screen numbers are off" and a lock glyph.
+   Turn **Health numbers on the Lock Screen** on in Account: circular shows the recovery ring,
+   rectangular the session, recovery and protein, inline the session and recovery. Turn it off:
+   the numbers go from the Lock Screen at once.
+5. Tap each widget: small and medium open Today; the medium exercise list and the rectangular
+   Lock Screen widget open Train when a session is planned or started (Today on a rest day or a
+   finished session). Test with the app in the background and with it force-quit.
+6. Staleness: turn on Airplane mode, leave the phone 12+ hours (or change the date forward a day):
+   every widget reads "Open Tracend to refresh" and shows no number. Open the app: they return.
+7. Sign out: all widgets read "Open Tracend to refresh" within a moment. Sign back in and open Today.
+8. Rest-timer Live Activity still works (start a workout, tick a set): the App Group changed
+   Runner's entitlements.
+9. Dark and light mode, and a large Dynamic Type size: the Home Screen widgets stay graphite with
+   lime, and no text overlaps.
+10. StandBy (iPhone on its side, charging): the Home Screen widget numbers hide or show as iOS
+    decides for sensitive content.
+
 **For D1.** C1's Contract 3 events (`RestStarted`, `RestAdjusted`) are emitted next to the
 controller calls, but the activity is driven only by `RestTimerController`. D1 must keep it that
 way: feed the Live Activity's buttons into C1's command sink (`SkipRest`, `AddRest`,
@@ -207,5 +283,7 @@ days like the app's.
 
 ## Next agent starts here
 
-After the owner's D1 device check: D2 (Today and Lock Screen widgets), Phase 3. C2 stacks on the
-D1 branch; its listener uses `WorkoutEventHub.events` only (the command sink is D1's).
+D2 (Today and Lock Screen widgets) is in review; the owner's device check is the list above. After
+it passes, the widgets chunk is done. Follow-ups worth a chunk if the owner wants them: use the
+training hub's progression `next_targets` for the medium widget's exercise lines, and a small
+interactive widget (iOS 17 buttons) for the check-in.

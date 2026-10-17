@@ -426,7 +426,8 @@ content.
 
 Local reminders are scheduled by iOS and use only the generic title `Tracend reminder` and body
 `Open Tracend when convenient.` Lock-screen content never names health, nutrition, workouts,
-photos, measurements, or coaching decisions, with one exception below (the rest Live Activity).
+photos, measurements, or coaching decisions, with two exceptions below (the rest Live Activity, and
+the Lock Screen widgets, which show nothing until the athlete turns them on).
 The server stores toggles and coarse permission state, not delivery history or notification
 content. iOS stores only the local boolean choices and repairs missing pending requests after
 reopen; no notification payload or delivery history is added to local preference storage.
@@ -449,7 +450,7 @@ Lock Screen and Dynamic Island Live Activity may show the exercise name and the 
 (for example "Bench press · Next: Set 3 of Bench press") next to the countdown. Nothing else from
 the workout appears in it: never a load, reps, effort, reps left, heart rate or any health value,
 and never the workout's name. It is local to the phone (ActivityKit started by the app; no push,
-no App Group, nothing sent to the server or to Apple's push service), and the athlete removes it
+the Live Activity itself uses no App Group, and nothing is sent to the server or to Apple's push service), and the athlete removes it
 with iOS **Settings › Tracend › Live Activities**. Finishing, discarding or leaving the workout removes it at once. A rest that
 ran out or was skipped shows "Rest done" with the next set and a Done button (D1), and the app ends
 it two minutes after the rest's end while the app is on screen. ActivityKit has no timer of its own
@@ -459,6 +460,39 @@ is pressed after those two minutes, which removes it instead of acting; failing 
 ends it at its own limit (8 hours after it started). It carries nothing beyond the exercise name
 and next-set label above, plus the set's position in the workout (exercise order and set number)
 that the Done button sends back. Sign-out, account deletion and a session Auth refused end it, and the next launch ends any finished one left behind.
+
+**Exception: Today and Lock Screen widgets (chunk D2; owner to confirm).** This is the second
+exception to the rule above, made because the D2 brief asks for Lock Screen widgets, and bounded by an
+off-by-default choice. The
+`TracendWidgets` extension draws Home Screen and Lock Screen widgets from a snapshot the app writes
+to the app group `group.com.tracend.app` (`UserDefaults`, key `today_widget_snapshot`) each time
+Today loads. The app group is how the widget process reads it; the widgets never call the network,
+hold no token, and the snapshot never leaves the phone.
+
+- **What it holds.** The brief's local date; the session's state, plan name and set counts; up to
+  three plan exercises with their targets ("4 × 6–8 · 82.5 kg"); the recovery score; calories and
+  protein eaten and their plan targets; whether the check-in is done; and a time stamp with a
+  12-hour stale limit. No free text: no check-in or meal notes, meal names, coach wording, decisions,
+  photos, measurements, heart-rate, sleep or weight values. The plan's own names are shown as the
+  plan has them.
+- **Lock Screen numbers are the athlete's choice and start off** (**Account › Widgets › Health
+  numbers on the Lock Screen**, a device-only setting in app preferences; the server stores no copy).
+  While off, the snapshot has no `lock` section at all, so the Lock Screen widgets read nothing but
+  show "Tracend" and "Lock Screen numbers are off". On adds the recovery score, the session name
+  and protein, which anyone holding the locked phone can read; the row and its footnote say so.
+  Turning it off rewrites the snapshot at once; with no Today loaded to rebuild from, it removes the
+  snapshot.
+- **Home Screen widgets** show the full snapshot (session, recovery, exercises, calories, protein,
+  check-in) once the phone is unlocked, and are marked `privacySensitive` so iOS redacts them where
+  it hides sensitive content on a locked phone (StandBy). Removing the widget removes the exposure.
+- **Lifetime.** The snapshot is removed on sign-out, account deletion, a session Auth refused and
+  when the app's screens go away; widgets then read "Open Tracend to refresh". It is also treated as
+  stale after 12 hours or on another day: no number is drawn from it.
+- **Deep links.** `tracend://today` and `tracend://train` only switch tab; the native side accepts
+  nothing else, and Flutter's own deep-link routing is off (`FlutterDeepLinkingEnabled` = NO). A
+  request waits a minute for the app and then expires.
+- **Telemetry.** Sentry breadcrumbs (`home_widgets`) carry the method name only, never the
+  snapshot.
 
 ## 11. Retention
 

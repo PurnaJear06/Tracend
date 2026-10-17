@@ -27,6 +27,14 @@
 		D1A700000000000000000011 /* RestActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A700000000000000000001 /* RestActivityIntents.swift */; };
 		D1A700000000000000000012 /* RestActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A700000000000000000001 /* RestActivityIntents.swift */; };
 		D0A700000000000000000018 /* TracendWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000008 /* TracendWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D2A700000000000000000011 /* TodayWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000001 /* TodayWidgetSnapshot.swift */; };
+		D2A700000000000000000012 /* TodayWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000001 /* TodayWidgetSnapshot.swift */; };
+		D2A700000000000000000013 /* TodayWidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000002 /* TodayWidgetStore.swift */; };
+		D2A700000000000000000014 /* TodayWidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000002 /* TodayWidgetStore.swift */; };
+		D2A700000000000000000015 /* HomeWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000003 /* HomeWidgetBridge.swift */; };
+		D2A700000000000000000016 /* TodayTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000004 /* TodayTimeline.swift */; };
+		D2A700000000000000000017 /* TodayWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000005 /* TodayWidgets.swift */; };
+		D2A700000000000000000018 /* LockScreenWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000006 /* LockScreenWidgets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -106,6 +114,13 @@
 		D0A700000000000000000007 /* TracendWidgets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = TracendWidgets.xcconfig; sourceTree = "<group>"; };
 		D0A700000000000000000008 /* TracendWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TracendWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0A700000000000000000009 /* ArchivoSemiCondensed-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = ArchivoSemiCondensed-ExtraBold.ttf; path = ../assets/fonts/ArchivoSemiCondensed-ExtraBold.ttf; sourceTree = SOURCE_ROOT; };
+		D2A700000000000000000001 /* TodayWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidgetSnapshot.swift; sourceTree = "<group>"; };
+		D2A700000000000000000002 /* TodayWidgetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidgetStore.swift; sourceTree = "<group>"; };
+		D2A700000000000000000003 /* HomeWidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetBridge.swift; sourceTree = "<group>"; };
+		D2A700000000000000000004 /* TodayTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayTimeline.swift; sourceTree = "<group>"; };
+		D2A700000000000000000005 /* TodayWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidgets.swift; sourceTree = "<group>"; };
+		D2A700000000000000000006 /* LockScreenWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenWidgets.swift; sourceTree = "<group>"; };
+		D2A700000000000000000007 /* TracendWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TracendWidgets.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -223,6 +238,8 @@
 			children = (
 				D0A700000000000000000001 /* RestActivityAttributes.swift */,
 				D1A700000000000000000001 /* RestActivityIntents.swift */,
+				D2A700000000000000000001 /* TodayWidgetSnapshot.swift */,
+				D2A700000000000000000002 /* TodayWidgetStore.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -232,6 +249,7 @@
 			children = (
 				D0A700000000000000000002 /* WorkoutActivityBridge.swift */,
 				C2A700000000000000000002 /* HeartRateReader.swift */,
+				D2A700000000000000000003 /* HomeWidgetBridge.swift */,
 			);
 			path = Native;
 			sourceTree = "<group>";
@@ -242,7 +260,11 @@
 				D0A700000000000000000003 /* TracendWidgetsBundle.swift */,
 				D0A700000000000000000004 /* RestLiveActivity.swift */,
 				D0A700000000000000000005 /* TracendStyle.swift */,
+				D2A700000000000000000004 /* TodayTimeline.swift */,
+				D2A700000000000000000005 /* TodayWidgets.swift */,
+				D2A700000000000000000006 /* LockScreenWidgets.swift */,
 				D0A700000000000000000009 /* ArchivoSemiCondensed-ExtraBold.ttf */,
+				D2A700000000000000000007 /* TracendWidgets.entitlements */,
 				D0A700000000000000000006 /* Info.plist */,
 				D0A700000000000000000007 /* TracendWidgets.xcconfig */,
 			);
@@ -498,6 +520,9 @@
 				D0A700000000000000000012 /* WorkoutActivityBridge.swift in Sources */,
 				C2A700000000000000000012 /* HeartRateReader.swift in Sources */,
 				D1A700000000000000000011 /* RestActivityIntents.swift in Sources */,
+				D2A700000000000000000011 /* TodayWidgetSnapshot.swift in Sources */,
+				D2A700000000000000000013 /* TodayWidgetStore.swift in Sources */,
+				D2A700000000000000000015 /* HomeWidgetBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -510,6 +535,11 @@
 				D0A700000000000000000015 /* RestLiveActivity.swift in Sources */,
 				D0A700000000000000000016 /* TracendStyle.swift in Sources */,
 				D1A700000000000000000012 /* RestActivityIntents.swift in Sources */,
+				D2A700000000000000000012 /* TodayWidgetSnapshot.swift in Sources */,
+				D2A700000000000000000014 /* TodayWidgetStore.swift in Sources */,
+				D2A700000000000000000016 /* TodayTimeline.swift in Sources */,
+				D2A700000000000000000017 /* TodayWidgets.swift in Sources */,
+				D2A700000000000000000018 /* LockScreenWidgets.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -816,6 +846,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = D0A700000000000000000007 /* TracendWidgets.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TracendWidgets/TracendWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = CGLRSQ8G95;
@@ -841,6 +872,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = D0A700000000000000000007 /* TracendWidgets.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TracendWidgets/TracendWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = CGLRSQ8G95;
@@ -864,6 +896,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = D0A700000000000000000007 /* TracendWidgets.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TracendWidgets/TracendWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = CGLRSQ8G95;

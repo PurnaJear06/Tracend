@@ -23,4 +23,12 @@ abstract final class AppBreadcrumbs {
           data: data.isEmpty ? null : Map<String, dynamic>.of(data),
         ),
       );
+
+  static void homeWidgets(String message) => sink(
+    Breadcrumb(
+      category: 'home_widgets',
+      message: message,
+      level: SentryLevel.info,
+    ),
+  );
 }

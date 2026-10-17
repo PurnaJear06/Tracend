@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,6 +27,8 @@ import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
+import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/plan_changes.dart';
 
 class AppShell extends StatefulWidget {
@@ -34,6 +38,7 @@ class AppShell extends StatefulWidget {
     this.aiConsent,
     this.health,
     this.repositories,
+    this.homeWidgets = const MethodChannelHomeWidgetBridge(),
     super.key,
   });
 
@@ -52,6 +57,10 @@ class AppShell extends StatefulWidget {
   /// it to count reads; the app leaves it null.
   @visibleForTesting
   final AppShellRepositories? repositories;
+
+  /// The Home Screen and Lock Screen widgets: Today writes their snapshot
+  /// here, and a tap on a widget asks this shell for a tab.
+  final HomeWidgetBridge homeWidgets;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -112,16 +121,36 @@ class _AppShellState extends State<AppShell> {
   /// the plan, the targets and the goal.
   final _planChanges = PlanChanges();
 
+  /// Writes Today's snapshot for the widgets and keeps the Lock Screen choice.
+  late final TodayWidgetPublisher _widgetPublisher = TodayWidgetPublisher(
+    bridge: widget.homeWidgets,
+  );
+
   @override
   void dispose() {
+    widget.homeWidgets.stopListeningForTab(_openRequestedTab);
+    unawaited(_widgetPublisher.dispose());
     _checkInGate.dispose();
     _planChanges.dispose();
     super.dispose();
   }
 
+  /// Opens the tab a tapped widget asked for (`tracend://today`,
+  /// `tracend://train`).
+  Future<void> _openRequestedTab() async {
+    final tab = await widget.homeWidgets.takePendingTab();
+    if (tab == null || !mounted) return;
+    _selectTab(switch (tab) {
+      HomeWidgetTab.today => 0,
+      HomeWidgetTab.train => 1,
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    widget.homeWidgets.listenForTab(_openRequestedTab);
+    unawaited(_openRequestedTab());
     final injected = widget.repositories;
     final live = widget.environment.hasSupabaseConfiguration;
     _workouts =
@@ -197,6 +226,7 @@ class _AppShellState extends State<AppShell> {
             ? SupabaseAccountDeletionRepository(Supabase.instance.client)
             : const FixtureAccountDeletionRepository(),
         aiConsent: widget.aiConsent,
+        widgetPublisher: _widgetPublisher,
       ),
     ),
   );
@@ -227,6 +257,7 @@ class _AppShellState extends State<AppShell> {
         aiConsent: widget.aiConsent,
         checkInGate: _checkInGate,
         planChanges: _planChanges,
+        widgetPublisher: _widgetPublisher,
       ),
       () => TrainScreen(
         key: const ValueKey('tab_train'),

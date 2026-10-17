@@ -98,11 +98,26 @@ nothing else (SECURITY_PRIVACY §10 exception). `RestTimerController` is its onl
 `updateRest`, `end`; native `ios/Runner/Native/WorkoutActivityBridge.swift`), never awaited.
 Sign-out, account deletion and a refused session call `end`, and the native side ends finished
 activities left from an earlier launch. ActivityKit runs the countdown from the end time
-(`Text(timerInterval:)`): no push, no App Group, no server. It is off when iOS Live Activities are
-off.
+(`Text(timerInterval:)`): no push, no server. The Live Activity itself uses no App Group. It is off
+when iOS Live Activities are off.
 
 > **Planned (coaching platform, Phase 2 / D1):** Done, Skip and +30s buttons on the Live Activity,
-> driven by Contract 3 commands. **Phase 3 / D2:** Today and Lock Screen widgets.
+> driven by Contract 3 commands.
+
+**Today and Lock Screen widgets (D2).** The same extension draws `TodayWidget` (small, medium) and
+`LockScreenWidget` (circular, rectangular, inline). The widget process cannot reach the app's
+storage, so the app and the extension share the app group `group.com.tracend.app`
+(`ios/Shared/TodayWidgetStore.swift`, in both entitlements). `TodayScreen` hands each loaded
+brief, with the plan's targets and the check-in state, to `TodayWidgetPublisher`
+(`lib/shared/home_widgets/`), which builds `TodayWidgetSnapshot` (JSON, `schema_version` 1,
+`test/contract/fixtures/today_widget_snapshot_v1.json`), skips an unchanged one for five minutes,
+and sends it through `HomeWidgetBridge` (channel `tracend/home_widgets`: `write`, `clear`,
+`takePendingTab`; native `ios/Runner/Native/HomeWidgetBridge.swift`), which validates it, stores it
+and calls `WidgetCenter.reloadAllTimelines()`. The widgets only read the snapshot, decide staleness
+from it (older than its `stale_after_seconds`, or another local day) and never call the network or
+calculate anything. A tap opens `tracend://today` or `tracend://train`; `SceneDelegate` hands the
+URL to `HomeWidgetBridge.open`, and `AppShell` reads it with `takePendingTab`. The Lock Screen
+choice lives in `TodayWidgetPublisher` (SECURITY_PRIVACY §10).
 
 ### 3.2 Supabase Auth
 
