@@ -138,11 +138,11 @@ begin
       'target_set_at', to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')))
   where g.id = goal.id returning * into goal;
 
-  if p_target_weight_kg is not null then kinds := kinds || 'weight'; end if;
+  if p_target_weight_kg is not null then kinds := array_append(kinds, 'weight'); end if;
   if p_body_fat_pct_min is not null or p_body_fat_pct_max is not null then
-    kinds := kinds || 'body_fat';
+    kinds := array_append(kinds, 'body_fat');
   end if;
-  if p_physique is not null then kinds := kinds || 'physique'; end if;
+  if p_physique is not null then kinds := array_append(kinds, 'physique'); end if;
   insert into public.audit_events(user_id, action_code, target_type, target_id, outcome, metadata)
   values (auth.uid(), 'goal_target_set', 'user_goal', goal.id, 'succeeded',
     jsonb_build_object('schema_version', '1.0', 'kinds', to_jsonb(kinds),
