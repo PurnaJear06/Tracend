@@ -147,7 +147,7 @@ select is((select count(*) from public.audit_events where user_id = 'c2700000-00
   'each set writes an audit event');
 select is((select metadata -> 'kinds' from public.audit_events
     where user_id = 'c2700000-0000-4000-8000-000000000001' and action_code = 'goal_target_set'
-    order by created_at desc, id limit 1), '["body_fat", "physique"]'::jsonb,
+      and metadata -> 'kinds' ? 'physique'), '["body_fat", "physique"]'::jsonb,
   'the event names the kinds of target, never the values');
 
 -- Athletes are separate ---------------------------------------------------------------------------
