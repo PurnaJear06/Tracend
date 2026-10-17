@@ -41,6 +41,7 @@ Other properties:
 | Feature | `AI_<FEATURE>_*` prefix | Model id | `MAX_OUTPUT_TOKENS` | `TIMEOUT_MS` | At this cutover |
 | --- | --- | --- | ---: | ---: | --- |
 | Coach chat | `AI_COACH_CHAT_` | `claude-haiku-5-5` | 4096 | 30000 | yes |
+| Coach chat, stronger route (A9, optional) | `AI_COACH_CHAT_STRONG_` | `claude-sonnet-5-5` | 4096 | 30000 | optional, after 3.1 (step 3.1b) |
 | Daily decision | `AI_DAILY_DECISION_` | `claude-sonnet-5-5` | 1800 | 25000 | yes |
 | Meal photo | `AI_MEAL_VISION_` | `claude-haiku-5-5` | 1500 | 30000 | yes, after your own-photo check passes (3.3) |
 | Physique check | `AI_PHYSIQUE_VISION_` | `claude-sonnet-5-5` | 800 | 60000 | yes, after your own-photo check passes (3.4), limited to you |
@@ -113,6 +114,29 @@ Also set a monthly spend limit on the Anthropic console workspace as a backstop 
 After you accept the coaching notice (step 4), use it: ask the Coach one question, then the same question again. Check the log (below): the second
 `ai_call` for `coach_chat` has `cache_read_tokens` above zero. The reply is labelled "AI answer ·
 checked by Tracend".
+
+**3.1b Coach chat, stronger route (OWNER, optional; needs the A9 server change deployed).**
+Questions that ask for analysis (progress, a trend or pace, a change to the plan or a target, a nutrition amount) are
+answered by this second route instead of the default one (a plain rules classifier decides;
+`coach_chat_provider_route.ts`). Everything else, and every question while this is unset, uses the
+3.1 route. It needs no new key and no new notice: it is Anthropic like the default route, and it is
+used only for an athlete whose accepted notice names Anthropic. Set it after 3.1 works:
+```sh
+./scripts/supabase.sh secrets set \
+  AI_COACH_CHAT_STRONG_PROVIDER=anthropic AI_COACH_CHAT_STRONG_MODEL=claude-sonnet-5-5 \
+  AI_COACH_CHAT_STRONG_MAX_OUTPUT_TOKENS=4096 AI_COACH_CHAT_STRONG_TIMEOUT_MS=30000 \
+  AI_COACH_CHAT_STRONG_EVALUATED=true --project-ref qsfzzsjenopqqqhvpyaw
+./scripts/verify-live-function.sh --all
+```
+Cost: A6's eval measured about USD 0.011 per Sonnet answer against 0.00045 for Haiku, so an
+analytic question costs about 25 times a chat one. The per-athlete stop (USD 3 a month) counts the
+real price of the route that answered; at 30 analytic questions a day it would be reached in about
+nine days, which is why only the analytic questions use it. Check: ask "Why has my weight
+stalled?" in the app. The log (below) shows an `ai_call` with `feature` `coach_chat_strong` and the
+Sonnet model, and `model_runs` shows `anthropic` with `claude-sonnet-5-5`. A greeting still shows
+`coach_chat`. **Roll back (instant, settings only):** `./scripts/supabase.sh secrets unset
+AI_COACH_CHAT_STRONG_PROVIDER --project-ref qsfzzsjenopqqqhvpyaw`, then
+`./scripts/verify-live-function.sh --all`: every question goes back to the default route.
 
 **3.2 Daily decision.**
 ```sh

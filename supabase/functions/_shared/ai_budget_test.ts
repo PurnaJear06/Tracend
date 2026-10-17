@@ -105,3 +105,25 @@ Deno.test("places with and without a ceiling are all released", async () => {
     { reservation_id: "reservation-2" },
   ]);
 });
+
+Deno.test("a refusal names its reason when the database said, else none", async () => {
+  for (
+    const [message, reason] of [
+      ["monthly cost limit reached", "monthly_cost_limit"],
+      ["daily rate limit reached", "daily_rate_limit"],
+      ["global monthly cost limit reached", "global_monthly_cost_limit"],
+      ["something unexpected", null],
+    ] as const
+  ) {
+    const budget = new AiBudget(
+      () => Promise.resolve({ data: null, error: { message } }),
+      "user-1",
+    );
+    assertEquals(budget.refusal, null);
+    assertEquals(await budget.reserve("coach_chat", 0.01), false);
+    assertEquals(budget.refusal, reason, message);
+  }
+  const accepted = new AiBudget(() => Promise.resolve({ data: "r-1", error: null }), "user-1");
+  assertEquals(await accepted.reserve("coach_chat"), true);
+  assertEquals(accepted.refusal, null);
+});

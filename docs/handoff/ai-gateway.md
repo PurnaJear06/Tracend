@@ -1,6 +1,6 @@
 # AI Gateway Handoff
 
-**As of:** 2026-10-15
+**As of:** 2026-10-17
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -12,7 +12,7 @@ Every AI call goes through one provider-neutral gateway (Contract 1). Claude Hai
 
 ## Chunks
 
-A1, A2 (Phase 1); A3–A7 (Phase 2)
+A1, A2 (Phase 1); A3–A7 (Phase 2); A9 server half (Phase 3, round 3)
 
 ## State
 
@@ -580,6 +580,142 @@ Nothing here changes production by itself except migration code 17 (the budget s
     is untouched here.
   - Final live evals were not rerun here: A3-A6 recorded theirs (their handoff sections); A7 added
     no model code.
+
+### A9: Coach safety and honesty guardrails (server half)
+
+Branch `claude/a9-coach-guardrails`. The app half (plain error messages, local dates, the no-plan
+chat mode and the budget gates, migration code 19) is the parallel branch
+`claude/a9-coach-app-errors` and owns `lib/features/coach/**`. This half changes no SQL and no
+frozen function (`prepare_coach_chat_v8`, `build_coach_athlete_context`). Findings are from the Coach
+audit (1, 2, 3, 6 deterministic part, 7, 15).
+
+- **Red-flag screen before the model** (`_shared/coach_safety/red_flags.ts`, `referrals.ts`;
+  AI_SAFETY_SPEC §7). Replaces the five-keyword `deterministicBoundary` (removed). It runs in
+  `coach-chat/index.ts` before consent and the budget reservation (a hit sends nothing, so it needs
+  no consent and takes no budget place, and contributors are not rendered), and again inside
+  `generateCoachChat` and `generateCoachChatViaGateway` with the context, where today's check-in
+  adds the `escalate` outcome (pain 7 or more, `CHECK_IN_SAFETY_ESCALATION`) for training
+  questions. A hit is stored like the old boundary reply (provider `mock`, model
+  `deterministic-safety-v1`, 0 tokens, USD 0; the app labels it "Tracend safety answer · not AI")
+  with `safety_state: limited` (`refused` for self-harm and unsupported requests). The log line is
+  `coach_chat_red_flag` with category, rule and source, never the message. Negation, conditionals
+  and educational questions are skipped; `red_flags_test.ts` holds 72 reported messages and 51
+  ordinary ones. The fallback screen (`mayConcernHealthRisk`) now includes this screen.
+  Eval prompts: only the six `safety-*` prompts hit; the other 54 reach the model.
+- **Safe Ranges** (`safe_ranges.ts`): calorie floor (new `calorieFloorKcal` in
+  `onboarding/policy.ts`, the same math `nutritionPolicy` uses; `sexFloorKcal` is now exported),
+  weekly loss ceiling (1% of body weight), healthy-weight floor (BMI 18.5), longest cut (16 weeks)
+  and the pain line, rendered in the athlete file after the profile (about 700 characters).
+- **Screening contributor** (`coach_context/contributors/screening.ts`, stable, 900 characters,
+  registered first). Reads the newest `onboarding_screenings` row with the service role. The reply
+  guard reads the outcome back from the rendered block (`screeningOutcomeIn`), so the model and the
+  guard use one value.
+- **Reply guard** (`reply_guard.ts`, `numbers_check.ts`): five new validation rules
+  (`calories_below_floor`, `loss_rate_above_ceiling`, `effort_above_screening_cap`,
+  `claimed_action`, `numbers_not_grounded`) next to B7's two. `CoachChatAnswerCheck` may now
+  return `{rule, rules, detail, count}`: `rules` lets one repair name every broken rule, `detail`
+  (the unsupported figures) goes into the repair instruction only, and `count` is logged as
+  `actual`. Telemetry and failure metadata carry rule names (`rule`, `also_rules`) and counts, never
+  figures. The check is enforcing from the first deploy. **Measure it:** in the Edge Function logs
+  count `coach_chat_complete` attempts with `rule: "numbers_not_grounded"` against all turns, and
+  `coach_chat_failure` with `initial_rule` or `repair_rule` `numbers_not_grounded` (a turn that
+  fell back to the data summary). If the repaired-turn rate is high, loosen the allow-list in
+  `numbers_check.ts` (`mustBeGrounded`) rather than switching the check off.
+- **Prompt**: new persona lines (red flags arrive pre-screened, the Safe Ranges, the screening
+  rule) and a stricter numbers line; the instructions grew from 7,265 to 8,582 characters.
+  **The legacy request digests in `coach_chat_parity_test.ts` were recorded again on purpose**
+  (persona, answer contract and the Safe Ranges section changed the request).
+- **Second route** (`coach_chat_provider_route.ts`; `coach_chat_strong` added to `aiFeatures`):
+  a rules classifier sends progress, body-weight and goal, nutrition-number and plan questions to
+  `AI_COACH_CHAT_STRONG_*` when it is set and `EVALUATED=true`, its reservation fits one budget
+  place (Sonnet 5.5 at 4,096 output tokens does) and the athlete's accepted notice names its
+  vendor; otherwise the default route answers (`coach_chat_strong_route_not_used` is logged for the
+  vendor case). Reservation, price and stored provenance follow the route that answers. Logs add
+  `route_feature`. Owner action: the runbook's step 3.1b.
+- **Plan status** (`renderPlanStatus` in `coach_chat_provider.ts`): when the chat context's
+  `plan_status` (app half, migration code 19) says there is no active plan or no nutrition target, the
+  athlete file gets a required "Plan Status" section after the Safe Ranges: no plan, the reason
+  (`no_approved_plan` or `see_professional`), the health-check outcome and date, and "no
+  plan-specific advice; general answers and next steps are fine". `active_plan` is null for these
+  athletes, so no plan section renders. A context without `plan_status` renders as before.
+- **Order of a request**: consent, then a cheap replay lookup (the saved question for the key, then
+  `coach_chat_turn`), then the budget reservation, then the heavy `prepare_coach_chat_v8`. A retry of
+  a finished turn is answered from its stored reply with no budget place and no context work, so it
+  works at the monthly limit; an athlete at the limit gets 429 without triggering context
+  preparation or snapshot writes with each new key. (`prepare` still reports a replay that raced in
+  between.) The pain-7 check-in screen stays ahead of consent and budget.
+- **429 reason**: `{error: "ai_usage_limit", reason}` with `monthly_cost_limit`, `daily_rate_limit`
+  or `global_monthly_cost_limit`, read from the database's refusal (`AiBudget.refusal`,
+  `CoachChatBudgetLedger.refusal`); no `reason` when the database gave none.
+- **Lost turns**: a turn with no answer and no failure whose saved question is older than
+  `coachChatTurnStaleAfterMs` (the Edge Function wall-clock limit, 400 s at most on paid plans, plus 30 s: 430 s) answers 503
+  `chat_unavailable` with `code: "turn_lost"` and `replayed: true`, for that key every time. The
+  app should show "your last message didn't go through" and send it again under a new key (no SQL
+  change; the age is the question row's `created_at`). Younger turns, or an age that cannot be read,
+  still answer 409 `chat_in_progress`. `handler_test.ts` runs the real handler against a fake client.
+- **Review fixes (Codex, 7 safety fail-opens), all with tests:** (1) the check-in escalation is
+  read from `daily_check_ins` and decided before the consent and budget gates (`screenTodaysCheckIn`);
+  (2) a negation ends at contrast words and clause punctuation, and crosses a comma only into a short
+  symptom list; (3) `see_professional` blocks every training prescription, and "keep HIIT moderate"
+  fails `moderate_until_cleared` (only a prohibition exempts a vigorous word);
+  (4) `parseCoachChatAnswer` runs the check once over every visible field (answer, follow-ups,
+  missing data, evidence labels, reasoning chain); the new rule `training_advice_on_pain_day`
+  stops training advice in any field on a pain-7 day; (5) a year-like number with a unit or an
+  amount word is a measurement; (6) the calorie floor exempts only a limit word or judgement that
+  governs the figure, and meal or burn words only when they govern it; (7) a failed, slow or
+  unreadable screening lookup renders "Outcome: unknown" (restricted like `moderate_until_cleared`)
+  and `screeningStateOf` also reads the host's failed or timed-out report.
+- **Fresh-key retry** (`coach-chat/superseded.ts`): when the context's memory holds an unanswered
+  copy of the question being asked, the handler asks `coach_chat_turn` about each earlier same-text
+  attempt and sets `safety_state = 'unavailable'` on the user row of those that failed, were lost
+  (still open past `coachChatTurnStaleAfterMs`, the `turn_lost` rule; a running turn is never
+  touched) or only got a data summary. The rows are chosen in code (`earlierAttempts`): NULL
+  `safety_state` and untrimmed text count, and removes the unanswered copies from `recent_messages` before the
+  model sees them. No SQL. **For the app:** hide user messages with `safety_state = 'unavailable'`
+  in the thread (a marked row is a failed attempt the retry replaced).
+- **Exemption rule (second review):** every exemption (negation, conditional, educational,
+  prohibition, warning, decline, description of the athlete's past) must provably govern its
+  match: same clause, short window before it, no `and`/`but`/comma between (clauses are cut by
+  `clausesOf` in `reply_guard.ts` and `clausesOf`/`stretchBefore` in `red_flags.ts`); a possessive or
+  self-report defeats the conditional/educational skips; a bare "if" is no longer a conditional.
+  `exemptions_adversarial_test.ts` is the table (message or reply, expected hit or pass) every new
+  exemption must be added to. A negated list across a comma ("no chest pain, dizziness or
+  fainting") is now a hit: a false referral is cheap.
+- **Superseded memory on every turn** (`withoutSupersededMemory`): see the spec; the retry-turn
+  cleanup (`withoutSupersededQuestions`) stays for the current question.
+- **Coaching principles digest**: registered first in `coach_context/registry.ts` (stable, cached
+  block); persona line added; legacy parity digests recorded again on purpose.
+- **Open**: the sets and reps a coach prescribes as advice are not checked (see the spec);
+  sentences claiming an action that the model words in an unusual way will pass the regexes (the
+  persona rule is the main defence).
+- **Third review:** self-harm and eating-disorder patterns get no exemption (any mention is a
+  hit); a negation governs only when its cue is directly before the symptom with a few filler
+  words between ("no", "any", "feel", "have"; "can't" never counts), and a possessive or
+  self-report is read before it; "cause" alone is no longer education (only "what causes",
+  "causes of", "common causes", "why does ... cause"), and "for me", "every time", "when I" make a
+  statement a report. A red flag no longer depends on context preparation: if
+  `prepare_coach_chat_v8` fails, the referral is stored through `record_coach_chat_question` and
+  `persist_coach_chat_data_summary` (no snapshot, policy or model run) and returned with 200 even
+  if storing fails (logged); it reads as a safety note in the app. The lost-turn age is the Edge
+  Function wall-clock limit (Supabase documents 150 s free, 400 s paid; no per-function setting in
+  `config.toml`) plus 30 s, so a running turn is never taken for lost.
+- **Fourth review:** a symptom rule's exemption is a benign phrase next to the match, never a
+  clause-wide word (`benign` on the rule: "breathe through my nose", "stuffy nose", "nasal
+  congestion"; only tingling next to beta-alanine or niacin; "numb" and "loss of feeling" are
+  never excused); a denial that stops at a point in time ("never had chest pain until today's
+  run", "no dizziness until this morning", "no chest pain recently") is a report; the saved
+  question is read as a user message and a failed read is unknown, not "not saved"; the
+  referral stored without context keeps its own safety state (`refused` for self-harm and
+  unsupported requests; the app labels only `limited` data summaries as safety notes, so a
+  `refused` one reads as a data summary there); the stronger route needs analytic intent
+  (progress, trend, pace, a change to the plan or a target, a nutrition amount), not a domain
+  noun.
+- **For the app (superseded replies):** only user questions are marked. An attempt's reply exists
+  only as a data summary (already stored with `safety_state` `unavailable`) or a model answer
+  (never superseded), so `unavailable` cannot hide an orphaned summary by itself, and hiding every
+  assistant row with that state would hide ordinary data summaries. The app should hide a data
+  summary that directly follows a hidden (superseded) user question. #142's `loadMessages` hides
+  user rows only.
 
 ## Next agent starts here
 

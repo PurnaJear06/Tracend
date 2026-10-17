@@ -12,6 +12,18 @@ export type AiBudgetPurpose =
 /// coach_chat.
 export type AiBudgetFeature = "daily_decision" | "physique_vision" | "library_context";
 
+/** Why a reservation was refused, when the database said (the finite reasons the app maps). */
+export type AiBudgetRefusal =
+  | "monthly_cost_limit"
+  | "daily_rate_limit"
+  | "global_monthly_cost_limit";
+
+const refusalMessages: Readonly<Record<string, AiBudgetRefusal>> = {
+  "monthly cost limit reached": "monthly_cost_limit",
+  "daily rate limit reached": "daily_rate_limit",
+  "global monthly cost limit reached": "global_monthly_cost_limit",
+};
+
 export type AiBudgetRpc = (
   fn: string,
   args: Record<string, unknown>,
@@ -27,6 +39,7 @@ export class AiBudget {
   readonly #rpc: AiBudgetRpc;
   readonly #userId: string;
   #open: string[] = [];
+  #refusal: AiBudgetRefusal | null = null;
 
   constructor(rpc: AiBudgetRpc, userId: string) {
     this.#rpc = rpc;
@@ -52,9 +65,20 @@ export class AiBudget {
         run_purpose: purpose,
         ceiling_usd: ceilingUsd,
       });
-    if (error || typeof data !== "string") return false;
+    if (error || typeof data !== "string") {
+      const message = error && typeof error === "object" && "message" in error
+        ? String((error as { message: unknown }).message)
+        : "";
+      this.#refusal = refusalMessages[message] ?? null;
+      return false;
+    }
     this.#open.push(data);
     return true;
+  }
+
+  /** The reason the last refused reservation gave, or null (accepted, or an unknown failure). */
+  get refusal(): AiBudgetRefusal | null {
+    return this.#refusal;
   }
 
   keep(): void {

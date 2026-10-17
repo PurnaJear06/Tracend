@@ -1,5 +1,6 @@
 import { type AvoidablePattern, avoidablePatternLabels } from "../onboarding/catalog.ts";
 import {
+  type CoachChatAnswerCheck,
   coachChatAnswerLimits,
   type CoachChatAnswerV1,
   type CoachChatAnswerV2,
@@ -16,6 +17,12 @@ import type { AiVendor } from "../ai/types.ts";
 import type { CoachContributions } from "../coach_context/host.ts";
 import { targetFromDetails, weightClaimCheckFor } from "../training/goal_phase/guard.ts";
 import { describeGoalTarget } from "../training/goal_phase/render.ts";
+import { type RedFlagHit, screenTurn } from "../coach_safety/red_flags.ts";
+import { referralFor, safetyReferralModel } from "../coach_safety/referrals.ts";
+import { numberGroundOf } from "../coach_safety/numbers_check.ts";
+import { coachReplyCheck } from "../coach_safety/reply_guard.ts";
+import { renderSafeRanges, safeRangesOf } from "../coach_safety/safe_ranges.ts";
+import { screeningStateOf } from "../coach_context/contributors/screening.ts";
 
 /** How long the athlete has trained, as onboarding asks it. */
 const trainingYearsLabels: Readonly<Record<string, string>> = {
@@ -45,6 +52,8 @@ export type CoachChatAttemptTelemetry = Readonly<{
   attempt: CoachChatAttempt;
   outcome: CoachChatAttemptOutcome;
   rule?: CoachChatValidationRule;
+  /** Other reply rules the same answer broke (finite names, no content). */
+  alsoRules?: readonly CoachChatValidationRule[];
   path?: string;
   limit?: number;
   actual?: number;
@@ -65,6 +74,8 @@ export type CoachChatGeneration = Readonly<{
   outputUnits: number;
   estimatedCostUsd: number;
   attempts: readonly CoachChatAttemptTelemetry[];
+  /** Set when a red-flag referral answered instead of a model: the rule that fired. */
+  safety?: RedFlagHit;
 }>;
 
 export type CoachChatFailureCode =
@@ -254,52 +265,30 @@ const coachChatPersona =
   "- Never invent data, symptoms, meals, medical history, user facts, or evidence.\n" +
   "- You have no tools. Never say you changed, saved, updated, logged, scheduled or set anything, and never say you will. Say what the athlete can do in the app instead (for example, set a target on Progress). Plan changes and targets happen only when the athlete approves or enters them.\n" +
   "- No diagnosis, treatment, medication, pregnancy, rehabilitation, or eating-disorder guidance.\n" +
+  "- Messages that report a red-flag symptom (chest pain, fainting, severe breathlessness, purging, self-harm and similar) are answered before they reach you. If one reaches you anyway, tell the athlete to stop, give no training or nutrition advice, and recommend a doctor (emergency services when it is acute).\n" +
+  "- The Safe Ranges section holds Tracend's limits for daily calories, weekly weight loss, the healthy-weight floor and the length of a cut. Never advise outside them and never help the athlete work around them. When the athlete asks for something outside a limit, say what the limit is and why.\n" +
+  "- The coaching principles reference data is general guidance for healthy adults, summarised from the library's sources. Use it to explain why and to quote its guideline figures as guidance (never as the athlete's own numbers), without printing its square-bracket source ids. The athlete's plan, targets and the Safe Ranges always come first.\n" +
+  "- The screening reference data, when present, is Tracend's own rule for this athlete's effort cap (not text the athlete wrote). Follow its Rule line exactly.\n" +
   '- For ordinary illness (fever/cold/cough): recommend rest and hydration, never "push through" or complete the workout.\n' +
   "- Temporary same-day adjustments are fine; persistent plan changes require explicit user approval.\n" +
   "- Honor active_preferences — never suggest declined foods, exercises, or approaches.\n" +
   "- When safety_state is limited or refused, explain why clearly and redirect to what you can help with.\n";
 
-export function deterministicBoundary(question: string): CoachChatAnswerV1 | null {
-  const normalized = question.toLowerCase();
-  const emergency = [
-    "chest pain",
-    "fainting",
-    "can't breathe",
-    "cannot breathe",
-    "severe shortness of breath",
-  ];
-  if (emergency.some((term) => normalized.includes(term))) {
-    return {
-      answer:
-        "Stop the activity. Tracend cannot safely assess these symptoms. Contact local emergency services or seek urgent medical care now.",
-      evidence: [],
-      missing_data: [],
-      safety_state: "refused",
-      suggested_follow_ups: [],
-    };
-  }
-  const clinical = [
-    "diagnose",
-    "medication",
-    "medical report",
-    "rehab",
-    "pregnant",
-    "eating disorder",
-  ];
-  if (clinical.some((term) => normalized.includes(term))) {
-    return {
-      answer:
-        "Tracend cannot provide diagnosis, treatment, rehabilitation, medication, pregnancy, or eating-disorder guidance. Use a qualified clinician for this request.",
-      evidence: [],
-      missing_data: [],
-      safety_state: "refused",
-      suggested_follow_ups: [
-        "Ask about the approved training plan",
-        "Review current fitness evidence",
-      ],
-    };
-  }
-  return null;
+/**
+ * The generation for a red-flag hit: the fixed referral, no model call, no tokens and no cost.
+ * Provider `mock` and the model id are what the app reads to label it a Tracend safety answer.
+ */
+export function deterministicSafetyGeneration(hit: RedFlagHit): CoachChatGeneration {
+  return {
+    answer: referralFor(hit),
+    provider: "mock",
+    model: safetyReferralModel,
+    inputUnits: 0,
+    outputUnits: 0,
+    estimatedCostUsd: 0,
+    attempts: [],
+    safety: hit,
+  };
 }
 
 const legacyCoachChatProviders: readonly string[] = ["mock", "gemini", "groq", "deepseek"];
@@ -659,6 +648,37 @@ export function formatGoalDetails(details: unknown): string {
   return s;
 }
 
+/**
+ * The "Plan Status" section for an athlete without an active plan or nutrition target, or null
+ * when both exist (or the context carries no status, as before the no-plan chat mode).
+ */
+export function renderPlanStatus(status: Record<string, unknown>): string | null {
+  if (Object.keys(status).length === 0) return null;
+  const hasPlan = status.has_active_plan !== false;
+  const hasTarget = status.has_nutrition_target !== false;
+  if (hasPlan && hasTarget) return null;
+  const outcome = typeof status.screening_outcome === "string" ? status.screening_outcome : null;
+  const screenedOn = typeof status.screened_on === "string" ? status.screened_on : null;
+  const professional = status.reason === "see_professional";
+  const lines = [
+    "## Plan Status",
+    `- Active training plan: ${hasPlan ? "yes" : "none"}. Nutrition target: ${
+      hasTarget ? "yes" : "none"
+    }.`,
+    professional
+      ? "- Reason: the athlete's health check says they should see a doctor or qualified exercise professional first, so Tracend built no plan."
+      : "- Reason: no plan has been approved yet.",
+    outcome === null
+      ? "- Health check: not on file."
+      : `- Health check: ${outcome}${screenedOn ? ` (answered on ${screenedOn})` : ""}.`,
+    "- Give no plan-specific advice: no sessions, loads, sets, reps, calorie or protein targets, and never refer to a plan the athlete does not have. You can answer general questions, explain how Tracend works, and suggest next steps.",
+    professional
+      ? "- The next step is clearance from a doctor or qualified exercise professional; Tracend builds a plan once the health check allows it."
+      : "- The next step is to finish setting up and approve a plan in the app.",
+  ];
+  return lines.join("\n") + "\n";
+}
+
 export function renderCoachContextParts(
   ctx: Record<string, unknown>,
   maxLength: number,
@@ -814,6 +834,16 @@ export function renderCoachContextParts(
     }
     push(s);
   }
+
+  // 1a2. Safe Ranges: Tracend's limits for calories, weekly loss, healthy weight and the length
+  // of a cut (and today's pain rule). Required: the reply guard holds the answer to them.
+  pushRequired(renderSafeRanges(safeRangesOf(ctx)));
+
+  // 1b. Plan status: an athlete with no active plan or nutrition target (no plan approved yet,
+  // or a health check that builds none) gets general help only. The chat context carries the flags
+  // and reason (the no-plan chat mode of A9); `active_plan` is null for these athletes.
+  const planStatus = renderPlanStatus(obj(ctx.plan_status));
+  if (planStatus) pushRequired(planStatus);
 
   // 1. Active Training Plan
   const plan = obj(ctx.active_plan);
@@ -1337,6 +1367,35 @@ function contributionText(contributions: CoachContributions | null): string {
   return [contributions?.stable, contributions?.volatile].filter(Boolean).join("\n\n");
 }
 
+/** The text of the athlete's own earlier messages in the context: figures they stated are theirs. */
+function athleteMessages(context: Record<string, unknown>): string[] {
+  return [...arr(context.recent_messages), ...arr(context.recent_other_conversations)]
+    .map(obj).filter((message) => message.role === "user" && typeof message.content === "string")
+    .map((message) => message.content as string);
+}
+
+/**
+ * The check every answer for this turn must pass (coach_safety/reply_guard.ts): the goal phase
+ * rules, the Safe Ranges and screening rules, no claimed actions, and the numbers check against
+ * what Coach was given. The given text is the athlete file without the conversation memory (Coach's
+ * own earlier words never ground a figure), the contributor blocks, the question, and the
+ * athlete's earlier messages.
+ */
+export function coachReplyCheckFor(
+  context: Record<string, unknown>,
+  question: string,
+  contributions: CoachContributions | null,
+): CoachChatAnswerCheck {
+  const contributed = contributionText(contributions);
+  const { file } = renderCoachContextParts(context, coachChatMaxContextBudget);
+  return coachReplyCheck({
+    ranges: safeRangesOf(context),
+    screening: screeningStateOf(contributions),
+    ground: numberGroundOf([file, contributed, question, ...athleteMessages(context)]),
+    weightClaim: weightClaimCheckFor(context, question),
+  });
+}
+
 // The athlete file comes first and the question last: the file is stable
 // across a day's questions, so DeepSeek can serve it from its prefix cache,
 // and the conversation history sits right before the question it leads to.
@@ -1365,7 +1424,37 @@ export type ValidationIssue = Readonly<{
   path: string;
   limit?: number;
   actual?: number;
+  /** Every rule the answer broke, the first being `rule`. */
+  rules?: readonly CoachChatValidationRule[];
+  /** For the repair instruction only (for example the figures that were not grounded). It holds
+   * athlete content, so it is never logged: log `loggableIssue(issue)` instead. */
+  detail?: string;
 }>;
+
+/** The issue's finite fields, safe to log and to keep in telemetry (never the detail). */
+export function loggableIssue(
+  issue: ValidationIssue,
+): Pick<CoachChatAttemptTelemetry, "rule" | "path" | "limit" | "actual" | "alsoRules"> {
+  return {
+    rule: issue.rule,
+    path: issue.path,
+    limit: issue.limit,
+    actual: issue.actual,
+    ...(issue.rules && issue.rules.length > 1 ? { alsoRules: issue.rules.slice(1) } : {}),
+  };
+}
+
+/** The issue a failed validation reports, with every rule and the repair detail. */
+export function issueOfValidationError(error: CoachChatAnswerValidationError): ValidationIssue {
+  return {
+    rule: error.rule,
+    path: error.path,
+    limit: error.limit,
+    actual: error.actual,
+    rules: error.rules,
+    detail: error.detail,
+  };
+}
 
 function answerContractText(permittedEvidence: readonly string[]): string {
   const allowed = permittedEvidence.length > 0 ? permittedEvidence.join(", ") : "(none)";
@@ -1376,9 +1465,9 @@ function answerContractText(permittedEvidence: readonly string[]): string {
     `- Hard limits: answer ${l.answerMaxLength} characters; evidence ${l.evidenceMaxItems} items (label ${l.evidenceLabelMaxLength}); missing_data ${l.missingDataMaxItems} items (${l.missingDataItemMaxLength} each); suggested_follow_ups ${l.followUpsMaxItems} items (${l.followUpMaxLength} each); reasoning_chain ${l.reasoningMaxItems} items (step ${l.reasoningStepMaxLength}, value ${l.reasoningValueMaxLength}).\n` +
     `- Permitted evidence codes for this request: ${allowed}. Cite only these codes exactly. Leave evidence empty when none applies.\n` +
     "- Each reasoning evidence_id must be one permitted code or null.\n" +
-    "- Numbers about the athlete's data come only from the prepared context, quoted with the same units and rounding. Never invent a measurement.\n" +
+    "- Numbers about the athlete's data come only from the prepared context (the athlete file, the Calculated by Tracend section, the Safe Ranges or a reference-data block) or from the athlete's own message, quoted with the same units and rounding. Never invent a measurement. Never work out a new total, difference, percentage, rate or date yourself, and never state a figure from memory (such as a guideline range) that the context does not hold: say the figure is not available, or describe it in words. A check rejects any reply that states a number which is not in what you were given.\n" +
     '- The "Calculated by Tracend" section holds exact results. When it has the average, change, trend or projection you need, quote it with its window instead of computing your own. Its projections are still estimates: call them estimates.\n' +
-    "- You may give an estimate (for example, time to reach a target weight) only toward a target the athlete has set or states in their question, derived from context numbers or numbers the athlete states. Without a set target, give no future weight. Call an estimate an estimate, show its inputs and assumptions, and never present it as measured data.\n" +
+    "- You may give an estimate (for example, time to reach a target weight) only toward a target the athlete has set or states in their question, and only from the projection rows of the Calculated section or numbers the athlete states. Without a set target, give no future weight. Call an estimate an estimate, show its inputs and assumptions, and never present it as measured data. If the Calculated section has no row for it, say so instead of working one out.\n" +
     "- If a needed value is null, —, or absent, say it was not measured.\n" +
     "- If the question is ambiguous or needs a detail the context lacks (for example maintenance calories, a target date, or which session they mean), answer what the data supports, then ask one short clarifying question. Offer the likely replies in suggested_follow_ups, written as the athlete would say them.\n";
 }
@@ -1394,22 +1483,39 @@ const goalPhaseContract = "\n# Goal phase and targets — never violate\n" +
   "- When there is no target (the goal details and the goal-phase data say so), ask for one: a target weight, a body-fat range, a physique goal such as visible abs or more definition, or a date. The athlete sets it in the app (Progress, Set your target); you never set or change it.\n" +
   "- Outcome consider_maintenance_or_diet_break: say plainly that a maintenance period or a diet break is worth considering, with the reasons shown, before any advice to keep cutting. Outcome slow_down: say the pace is faster than the evidence supports. Outcome target_reached: say the target is reached and suggest holding that weight.\n";
 
-function repairRuleHint(rule: CoachChatValidationRule): string {
-  if (rule === "weight_below_healthy_floor") {
-    return "Remove any future body weight below the healthy range for this athlete's height. Do not state or imply one.\n";
+function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string {
+  switch (rule) {
+    case "weight_below_healthy_floor":
+      return "Remove any future body weight below the healthy range for this athlete's height. Do not state or imply one.\n";
+    case "projection_without_target":
+      return "Remove the projected future body weight: the goal has no target, and a trend is history, not a goal. Describe the trend as past change and ask the athlete for a target.\n";
+    case "calories_below_floor":
+      return "Remove the advice to eat below the calorie floor. Quote the floor from the Safe Ranges section and say why Tracend does not go lower.\n";
+    case "loss_rate_above_ceiling":
+      return "Remove the advice to lose weight faster than the weekly ceiling. Quote the ceiling from the Safe Ranges section and say why Tracend does not go faster.\n";
+    case "effort_above_screening_cap":
+      return "Remove the advice to train at vigorous or maximal effort (to failure, sprints, intervals, heavy singles). The health check caps this athlete's effort: follow the Rule line of the screening reference data exactly (moderate effort only, or no training prescriptions at all) and recommend getting a professional's clearance.\n";
+    case "training_advice_on_pain_day":
+      return "Remove all training advice (sets, reps, loads, durations, cardio, workouts, a programme). The athlete's check-in today reported pain of 7 or more: say the pain is too high to train through and recommend a doctor or physio. Food, sleep and recovery questions may still be answered.\n";
+    case "claimed_action":
+      return "Remove every claim or promise that you changed, saved, updated, scheduled or will do something: you have no tools. Say what the athlete can do in the app instead (for example, set a target on Progress, Set your target). A plan change happens only when the athlete approves it.\n";
+    case "numbers_not_grounded":
+      return `These figures are not in the athlete file, the calculated sections, the Safe Ranges, the reference data or the athlete's message${
+        detail ? `: ${detail}` : ""
+      }. Remove each one, or replace it with a figure that is in the context. Never work out a figure yourself; describe it in words when the context holds no number.\n`;
+    default:
+      return "";
   }
-  if (rule === "projection_without_target") {
-    return "Remove the projected future body weight: the goal has no target, and a trend is history, not a goal. Describe the trend as past change and ask the athlete for a target.\n";
-  }
-  return "";
 }
 
 export function repairContractText(
   issue: ValidationIssue,
   permittedEvidence: readonly string[],
 ): string {
+  const rules = issue.rules && issue.rules.length > 0 ? issue.rules : [issue.rule];
   const details = [
     `rule=${issue.rule}`,
+    rules.length > 1 ? `also=${rules.slice(1).join("+")}` : null,
     `path=${issue.path}`,
     issue.limit === undefined ? null : `limit=${issue.limit}`,
     issue.actual === undefined ? null : `actual=${issue.actual}`,
@@ -1419,7 +1525,7 @@ export function repairContractText(
     `The previous candidate failed validation: ${details}.\n` +
     `Allowed evidence codes: ${allowed}.\n` +
     "Fix only the stated validation problem and any sentence that depends on an invalid citation. If a citation must be removed, remove or soften the dependent sentence. Never add facts, numbers, or evidence.\n" +
-    repairRuleHint(issue.rule);
+    rules.map((rule) => repairRuleHint(rule, issue.detail)).join("");
 }
 
 /**
@@ -1481,18 +1587,8 @@ export async function generateCoachChat(
   timing: CoachChatTiming = coachChatTiming,
   contributions: CoachContributions | null = null,
 ): Promise<CoachChatGeneration> {
-  const boundary = deterministicBoundary(question);
-  if (boundary) {
-    return {
-      answer: boundary,
-      provider: "mock",
-      model: "deterministic-safety-v1",
-      inputUnits: 0,
-      outputUnits: 0,
-      estimatedCostUsd: 0,
-      attempts: [],
-    };
-  }
+  const hit = screenTurn(question, context);
+  if (hit) return deterministicSafetyGeneration(hit);
 
   const enabled = Deno.env.get("COACH_AI_ENABLED") === "true";
   const provider = Deno.env.get("COACH_MODEL_PROVIDER") ?? "mock";
@@ -1503,7 +1599,7 @@ export async function generateCoachChat(
     ? context.permitted_evidence.filter((item): item is string => typeof item === "string")
     : [];
   const permitted = [...new Set(policyEvidence)];
-  const answerCheck = weightClaimCheckFor(context, question);
+  const answerCheck = coachReplyCheckFor(context, question, contributions);
   const answerSchema = buildCoachChatAnswerSchema(permitted);
   const groqKey = Deno.env.get("GROQ_API_KEY") ?? "";
   const groqModel = Deno.env.get("GROQ_MODEL") ?? "";
@@ -1684,6 +1780,8 @@ export async function generateCoachChat(
         }
       };
 
+      // The first answer's validation issue, with the detail the repair instruction needs.
+      let initialIssueFound: ValidationIssue | undefined;
       const validateAttempt = (
         result: Awaited<ReturnType<typeof request>>,
         attempt: CoachChatAttempt,
@@ -1708,20 +1806,16 @@ export async function generateCoachChat(
             parsed = parseCoachChatAnswer(JSON.parse(result.content), permitted, answerCheck);
           } catch (error) {
             issue = error instanceof CoachChatAnswerValidationError
-              ? {
-                rule: error.rule,
-                path: error.path,
-                limit: error.limit,
-                actual: error.actual,
-              }
+              ? issueOfValidationError(error)
               : { rule: "json_syntax", path: "$" };
           }
         }
         if (issue) {
+          if (attempt === "initial") initialIssueFound = issue;
           const telemetry: CoachChatAttemptTelemetry = {
             attempt,
             outcome,
-            ...issue,
+            ...loggableIssue(issue),
             latencyMs: result.latencyMs,
             finishReason: result.finishReason,
             promptTokens: result.inputUnits,
@@ -1774,7 +1868,7 @@ export async function generateCoachChat(
         ) {
           throw error;
         }
-        const initialIssue: ValidationIssue = {
+        const initialIssue: ValidationIssue = initialIssueFound ?? {
           rule: error.metadata.initialRule ?? "json_syntax",
           path: error.metadata.initialPath ?? "$",
           limit: error.metadata.attempts?.[0]?.limit,

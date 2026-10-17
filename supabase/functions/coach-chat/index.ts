@@ -14,9 +14,30 @@ import {
   coachChatFailureUsage,
   coachChatTiming,
   CoachChatUnavailableError,
+  deterministicSafetyGeneration,
   generateCoachChat,
   legacyCoachChatVendor,
 } from "../_shared/providers/coach_chat_provider.ts";
+import {
+  type AttemptStore,
+  coachChatTurnStaleAfterMs,
+  earlierAttempts,
+  questionAgeMs,
+  type StoredQuestion,
+  supersededSafetyState,
+  supersedeFailedAttempts,
+  withoutSupersededMemory,
+  withoutSupersededQuestions,
+} from "./superseded.ts";
+import { referralFor } from "../_shared/coach_safety/referrals.ts";
+import { selectCoachChatRoute } from "../_shared/providers/coach_chat_provider_route.ts";
+import {
+  localDateIn,
+  type RedFlagHit,
+  screenCheckInRow,
+  screenMessage,
+  trainingQuestion,
+} from "../_shared/coach_safety/red_flags.ts";
 import {
   chooseCoachChatRoute,
   coachChatReservationUsd,
@@ -33,8 +54,9 @@ import {
 } from "../_shared/ai_consent.ts";
 import { CoachChatBudgetLedger, keepAfterFailure } from "./budget_ledger.ts";
 import { route } from "../_shared/ai/routes.ts";
-import type { AiRoute } from "../_shared/ai/types.ts";
+import type { AiFeature, AiRoute } from "../_shared/ai/types.ts";
 import {
+  noCoachContributions,
   renderCoachContext,
   validateCoachContextContributors,
 } from "../_shared/coach_context/host.ts";
@@ -113,13 +135,17 @@ export function coachChatLegacyConsentRefusal(
 }
 
 /**
- * The gateway route for this turn, or null for today's path: no route, a route whose eval has
- * not passed, a route whose first attempt cannot be reserved, or a contributor registry that
- * breaks its contract (checked before any budget place is taken). Each reason except "no route"
- * is logged, as is a route timeout cut to the total deadline.
+ * The gateway route of a Coach chat feature ("coach_chat", or "coach_chat_strong" for the second
+ * route), or null for today's path: no route, a route whose eval has not passed, a route whose
+ * first attempt cannot be reserved, or a contributor registry that breaks its contract (checked
+ * before any budget place is taken). Each reason except "no route" is logged, as is a route
+ * timeout cut to the total deadline.
  */
-function usableCoachRoute(log: ReturnType<typeof createLogger>): AiRoute | null {
-  const found = route("coach_chat");
+function usableCoachRoute(
+  log: ReturnType<typeof createLogger>,
+  feature: Extract<AiFeature, "coach_chat" | "coach_chat_strong"> = "coach_chat",
+): AiRoute | null {
+  const found = route(feature);
   if (!found) return null;
   try {
     validateCoachContextContributors(coachContextContributors);
@@ -132,11 +158,16 @@ function usableCoachRoute(log: ReturnType<typeof createLogger>): AiRoute | null 
   }
   const choice = chooseCoachChatRoute(found, coachContextContributors);
   if (choice.route === null) {
-    log.warn("coach_chat_route_not_used", { reason: choice.legacyReason, model: found.model });
+    log.warn("coach_chat_route_not_used", {
+      feature,
+      reason: choice.legacyReason,
+      model: found.model,
+    });
     return null;
   }
   if (choice.timeoutClamped) {
     log.warn("coach_chat_route_timeout_clamped", {
+      feature,
       route_timeout_ms: choice.route.timeoutMs,
       limit_ms: coachChatTiming.totalDeadlineMs,
     });
@@ -198,9 +229,15 @@ export type CoachChatTurn = Readonly<{
 // produced and never runs the model again. The question is saved when a turn
 // starts, so a saved question alone is not a completed reply: the turn is
 // answered, failed, or still in progress.
+//
+// A turn still in progress after `coachChatTurnStaleAfterMs` (`ageMs`, the age of its saved
+// question) is lost: it answers 503 `turn_lost` once and for every retry of that key, so the app
+// stops waiting and sends the message again under a new key. Without an age, or while the turn is
+// young, it answers 409 as before.
 export function coachChatReplayResponse(
   turn: CoachChatTurn | null | undefined,
   dataSummarySupported: boolean,
+  ageMs: number | null = null,
 ): { status: number; body: Record<string, unknown> } {
   const message = turn?.message;
   const isDataSummary = message?.answer_source === "data_summary";
@@ -241,6 +278,17 @@ export function coachChatReplayResponse(
       }),
     };
   }
+  if (ageMs !== null && ageMs > coachChatTurnStaleAfterMs) {
+    return {
+      status: 503,
+      body: versionedResponse({
+        error: "chat_unavailable",
+        code: "turn_lost",
+        retry_after_seconds: null,
+        replayed: true,
+      }),
+    };
+  }
   return {
     status: 409,
     body: versionedResponse({
@@ -248,6 +296,127 @@ export function coachChatReplayResponse(
       code: "request_in_progress",
       replayed: true,
     }),
+  };
+}
+
+/**
+ * With a question about training, today's check-in read straight from the table (a cheap read,
+ * no budget): pain of 7 or more answers with the referral before the consent and budget gates.
+ * A failed read lets the turn go on: the providers screen again with the prepared context.
+ */
+async function screenTodaysCheckIn(
+  client: Awaited<ReturnType<typeof requireAuth>>["serviceClient"],
+  userId: string,
+  question: string,
+  timezone: string,
+  log: ReturnType<typeof createLogger>,
+): Promise<RedFlagHit | null> {
+  if (!trainingQuestion(question)) return null;
+  try {
+    const { data, error } = await client.from("daily_check_ins")
+      .select("local_date,pain_severity").eq("user_id", userId).is("superseded_at", null)
+      .order("local_date", { ascending: false }).limit(1).maybeSingle();
+    if (error) {
+      log.warn("coach_chat_check_in_unread", { error_code: error.code ?? "unknown" });
+      return null;
+    }
+    return screenCheckInRow(
+      data as { local_date?: unknown; pain_severity?: unknown } | null,
+      localDateIn(timezone),
+      question,
+    );
+  } catch {
+    log.warn("coach_chat_check_in_unread", { error_code: "exception" });
+    return null;
+  }
+}
+
+/**
+ * The fixed referral for a red flag when the context could not be prepared. It is stored through
+ * the lightest path there is (the question, then the reply as a labelled deterministic reply: no
+ * snapshot, policy or model run is needed) and returned whether or not storing worked; a storing
+ * failure is logged. Stored this way it is a labelled deterministic reply with the referral's own safety state.
+ */
+async function referralWithoutContext(
+  client: Awaited<ReturnType<typeof requireAuth>>["serviceClient"],
+  userId: string,
+  input: CoachChatRequestV1,
+  hit: RedFlagHit,
+  log: ReturnType<typeof createLogger>,
+): Promise<Response> {
+  log.warn("coach_chat_red_flag", { category: hit.category, rule: hit.rule, source: hit.source });
+  // The same state as the normal path: `refused` for self-harm and unsupported requests.
+  const referral = referralFor(hit);
+  let stored: { assistant_message_id?: string; created_at?: string } | null = null;
+  try {
+    const { error: recordError } = await client.rpc("record_coach_chat_question", {
+      target_user_id: userId,
+      target_thread_id: input.thread_id,
+      question: input.question,
+      request_idempotency_key: input.idempotency_key,
+    });
+    if (recordError) log.error("referral_question_not_recorded", { error_code: recordError.code });
+    const { data, error } = await client.rpc("persist_coach_chat_data_summary", {
+      target_user_id: userId,
+      target_thread_id: input.thread_id,
+      request_idempotency_key: input.idempotency_key,
+      summary_payload: referral,
+    });
+    if (error) log.error("referral_not_stored", { error_code: error.code ?? "unknown" });
+    else stored = data;
+  } catch {
+    log.error("referral_not_stored", { error_code: "exception" });
+  }
+  const message = {
+    id: stored?.assistant_message_id ?? crypto.randomUUID(),
+    role: "assistant",
+    created_at: stored?.created_at ?? new Date().toISOString(),
+    model_provider: "deterministic",
+    model: coachChatDataSummaryModel,
+    ...(supportsDataSummary(input) ? { answer_source: "data_summary" } : {}),
+    ...referral,
+  };
+  return reply(200, {
+    schema_version: supportsDataSummary(input)
+      ? coachChatDataSummaryResponseSchemaVersion
+      : coachChatResponseSchemaVersion,
+    message,
+    budget_warning: null,
+    replayed: false,
+  });
+}
+
+/** The database side of superseding a failed attempt (see superseded.ts), on the service client. */
+function attemptStore(
+  client: Awaited<ReturnType<typeof requireAuth>>["serviceClient"],
+  userId: string,
+  threadId: string,
+  question: string,
+  currentKey: string,
+): AttemptStore {
+  return {
+    async copies() {
+      // The state and the text are compared in code (superseded.ts): in SQL, `<>` drops the NULL
+      // `safety_state` that user messages normally have, and a row may be stored untrimmed.
+      const { data, error } = await client.from("coach_messages")
+        .select("id,idempotency_key,content,safety_state,created_at")
+        .eq("user_id", userId).eq("thread_id", threadId).eq("role", "user")
+        .order("created_at", { ascending: false }).limit(40);
+      if (error) throw new Error("copies unreadable");
+      return earlierAttempts((data ?? []) as StoredQuestion[], question, currentKey).slice(0, 5);
+    },
+    async turn(key) {
+      const { data, error } = await client.rpc("coach_chat_turn", {
+        target_user_id: userId,
+        request_idempotency_key: key,
+      });
+      return error ? null : data as never;
+    },
+    async mark(ids) {
+      const { error } = await client.from("coach_messages")
+        .update({ safety_state: supersededSafetyState }).eq("user_id", userId).in("id", [...ids]);
+      if (error) throw new Error("mark failed");
+    },
   };
 }
 
@@ -346,9 +515,10 @@ Deno.serve(async (request) => {
   }
 });
 
-async function handleCoachChat(
+export async function handleCoachChat(
   request: Request,
   held: { current?: CoachChatBudgetLedger },
+  authenticate: typeof requireAuth = requireAuth,
 ): Promise<Response> {
   const correlationId = extractCorrelationId(request);
   const log = createLogger(correlationId);
@@ -358,7 +528,7 @@ async function handleCoachChat(
   }
   let auth;
   try {
-    auth = await requireAuth(request);
+    auth = await authenticate(request);
   } catch (e) {
     if (e instanceof AuthError) {
       return reply(e.status, versionedResponse({ error: e.message }));
@@ -372,24 +542,43 @@ async function handleCoachChat(
     log.warn("invalid_chat_request");
     return reply(422, versionedResponse({ error: "invalid_chat_request" }));
   }
+  // A message that reports a red-flag symptom, or a question about training on a day of check-in
+  // pain of 7 or more, is answered by the fixed referral: nothing is sent to an AI provider, so
+  // no consent is needed and no budget place is taken (an athlete without consent or budget still
+  // gets the referral). The message is not logged, only the rule that fired.
+  const redFlag: RedFlagHit | null = screenMessage(input.question) ??
+    await screenTodaysCheckIn(auth.serviceClient, auth.userId, input.question, input.timezone, log);
   // With AI_COACH_CHAT_* settings (and EVALUATED=true) the turn goes through the AI gateway;
   // without them, or when the route cannot be used, it keeps today's provider path, request for
-  // request.
-  const coachRoute = usableCoachRoute(log);
+  // request. A question that needs analysis (progress, weight, nutrition numbers, the plan) uses
+  // the second route (AI_COACH_CHAT_STRONG_*) when it is set and the athlete's notice names its
+  // vendor.
+  const defaultRoute = redFlag ? null : usableCoachRoute(log);
+  let coachRoute = defaultRoute;
   // Nothing reaches the AI provider without the athlete's current consent,
   // whichever app build is calling. Through the gateway the consented notice
   // must also name the route's vendor.
   const rpc = (name: string, params: Record<string, unknown>) =>
     auth.serviceClient.rpc(name, params);
-  let consent: "granted" | "not_granted" | "unavailable";
-  let refusal: { status: 403 | 503; error: string } | null;
+  let consent: "granted" | "not_granted" | "unavailable" = "granted";
+  let refusal: { status: 403 | 503; error: string } | null = null;
   let consentVendor: AiConsentWithProvider["provider"] = null;
-  if (coachRoute) {
+  if (defaultRoute) {
     const withProvider = await aiConsentWithProvider(rpc, auth.userId, "coach_chat");
     consent = withProvider.consent;
     consentVendor = withProvider.provider;
-    refusal = coachChatGatewayConsentRefusal(withProvider, coachRoute);
-  } else {
+    const selection = selectCoachChatRoute(
+      input.question,
+      defaultRoute,
+      () => usableCoachRoute(log, "coach_chat_strong"),
+      withProvider.provider,
+    );
+    coachRoute = selection.route;
+    if ("strongSkipped" in selection) {
+      log.warn("coach_chat_strong_route_not_used", { reason: selection.strongSkipped });
+    }
+    refusal = coachChatGatewayConsentRefusal(withProvider, selection.route);
+  } else if (!redFlag) {
     const legacyVendor = legacyCoachChatVendor(Deno.env);
     if (legacyVendor) {
       const withProvider = await aiConsentWithProvider(rpc, auth.userId, "coach_chat");
@@ -416,15 +605,73 @@ async function handleCoachChat(
     auth.userId,
   );
   held.current = budget;
+  const contextKind = classifyQuestion(input.question);
+
+  // A retry of a turn that already started is answered from what that turn produced. The lookup
+  // is two cheap reads (the saved question, then `coach_chat_turn`) and comes before the budget
+  // and before the heavy context step, so a finished turn is returned even at a spending limit
+  // and an athlete at the limit cannot trigger context preparation with every new key.
+  const replayResponse = async (
+    turn: CoachChatTurn | null | undefined,
+    createdAt: unknown,
+  ): Promise<Response> => {
+    const stillOpen = !turn || turn.state === "in_progress";
+    const replay = coachChatReplayResponse(
+      turn,
+      supportsDataSummary(input),
+      stillOpen ? questionAgeMs(createdAt) : null,
+    );
+    if (replay.status === 200) {
+      // Kept from the earlier replay response, which listed the thread.
+      const { data } = await auth.userClient.from("coach_messages").select().eq(
+        "thread_id",
+        input.thread_id,
+      ).order("created_at");
+      replay.body.messages = data ?? [];
+    }
+    log.info("coach_chat_replayed", { status: replay.status });
+    return reply(replay.status, replay.body);
+  };
+  // The athlete's saved question for this key (a user message: a reply may carry the same key). A
+  // failed read is "unknown", never "not saved".
+  const savedQuestionCreatedAt = async (): Promise<
+    { saved: boolean | "unknown"; createdAt: unknown }
+  > => {
+    const { data, error } = await auth.serviceClient.from("coach_messages").select("created_at")
+      .eq("user_id", auth.userId).eq("role", "user").eq("idempotency_key", input.idempotency_key)
+      .maybeSingle();
+    if (error) return { saved: "unknown", createdAt: undefined };
+    return {
+      saved: data !== null && data !== undefined,
+      createdAt: (data as { created_at?: unknown } | null)?.created_at,
+    };
+  };
+  const earlier = await savedQuestionCreatedAt();
+  if (earlier.saved === true) {
+    const { data: turn, error: turnError } = await auth.serviceClient.rpc("coach_chat_turn", {
+      target_user_id: auth.userId,
+      request_idempotency_key: input.idempotency_key,
+    });
+    if (!turnError) return await replayResponse(turn as CoachChatTurn, earlier.createdAt);
+  }
+
   // The gateway path reserves per attempt: this is the first attempt's worst case, and a repair
-  // reserves its own before it is sent.
-  const reserved = coachRoute
+  // reserves its own before it is sent. A referral calls no model and reserves nothing.
+  const reserved = redFlag
+    ? true
+    : coachRoute
     ? await budget.reserveInitial(coachChatReservationUsd(coachRoute, coachContextContributors)!)
     : await budget.reserveLegacy();
   if (!reserved) {
-    return reply(429, versionedResponse({ error: "ai_usage_limit" }));
+    return reply(
+      429,
+      versionedResponse({
+        error: "ai_usage_limit",
+        ...(budget.refusal ? { reason: budget.refusal } : {}),
+      }),
+    );
   }
-  const contextKind = classifyQuestion(input.question);
+
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
     "prepare_coach_chat_v8",
     {
@@ -436,6 +683,14 @@ async function handleCoachChat(
       context_kind: contextKind,
     },
   );
+  // A referral needs no context and no model: when preparation fails (an athlete with no plan
+  // before the no-plan chat mode is deployed, a database error) the athlete still gets it.
+  if ((prepareError || !prepared) && redFlag) {
+    log.warn("coach_chat_referral_without_context", {
+      reason: coachChatPreparationFailureCode(prepareError),
+    });
+    return await referralWithoutContext(auth.serviceClient, auth.userId, input, redFlag, log);
+  }
   if (prepareError || !prepared) {
     const reason = coachChatPreparationFailureCode(prepareError);
     log.error("prepare_coach_chat_v8 failed", {
@@ -459,21 +714,33 @@ async function handleCoachChat(
       }),
     );
   }
+  // Another request saved the question between the lookup above and now.
   if (prepared.replayed) {
-    const replay = coachChatReplayResponse(prepared.turn, supportsDataSummary(input));
-    if (replay.status === 200) {
-      // Kept from the earlier replay response, which listed the thread.
-      const { data } = await auth.userClient.from("coach_messages").select().eq(
-        "thread_id",
-        input.thread_id,
-      ).order("created_at");
-      replay.body.messages = data ?? [];
-    }
-    log.info("coach_chat_replayed", { status: replay.status });
-    return reply(replay.status, replay.body);
+    return await replayResponse(prepared.turn, (await savedQuestionCreatedAt()).createdAt);
   }
 
-  const context = prepared.context as Record<string, unknown>;
+  // A fresh-key retry of a message whose earlier attempt failed: the failed attempt's question is
+  // marked superseded and left out of the model's memory, so the thread holds the question once.
+  const { context, dropped: repeatedQuestions } = withoutSupersededQuestions(
+    withoutSupersededMemory(prepared.context as Record<string, unknown>),
+    input.question,
+  );
+  if (repeatedQuestions > 0) {
+    try {
+      const marked = await supersedeFailedAttempts(
+        attemptStore(
+          auth.serviceClient,
+          auth.userId,
+          input.thread_id,
+          input.question,
+          input.idempotency_key,
+        ),
+      );
+      log.info("coach_chat_attempts_superseded", { marked });
+    } catch {
+      log.warn("coach_chat_supersede_failed");
+    }
+  }
   const coachingDate = (context.coaching_date as string) ??
     new Date().toISOString().slice(0, 10);
 
@@ -519,16 +786,22 @@ async function handleCoachChat(
 
   const chatStart = performance.now();
   try {
-    // Both paths render the contributors (the goal phase review is not tied to the gateway).
-    const contributions = await renderCoachContext(coachContextContributors, {
-      userId: auth.userId,
-      question: input.question,
-      localDate: coachingDate,
-    });
+    // Both paths render the contributors (the goal phase review is not tied to the gateway). A
+    // referral shows the model nothing, so it renders none.
+    const contributions = redFlag ? noCoachContributions : await renderCoachContext(
+      coachContextContributors,
+      {
+        userId: auth.userId,
+        question: input.question,
+        localDate: coachingDate,
+      },
+    );
     if (contributions.outcomes.length) {
       log.info("coach_context_contributors", { contributors: contributions.outcomes });
     }
-    const generation = coachRoute
+    const generation = redFlag
+      ? deterministicSafetyGeneration(redFlag)
+      : coachRoute
       ? await generateCoachChatViaGateway({
         question: input.question,
         context,
@@ -546,6 +819,14 @@ async function handleCoachChat(
         undefined,
         contributions,
       );
+    if (generation.safety) {
+      // The rule that fired, never the message.
+      log.warn("coach_chat_red_flag", {
+        category: generation.safety.category,
+        rule: generation.safety.rule,
+        source: generation.safety.source,
+      });
+    }
     log.info("persist_coach_chat_result", {
       snapshot_id: (prepared.feature_snapshot_id as string) ?? "null",
       policy_id: (prepared.policy_evaluation_id as string) ?? "null",
@@ -650,12 +931,14 @@ async function handleCoachChat(
       provider: generation.provider,
       model: generation.model,
       context_kind: contextKind,
-      ai_path: coachRoute ? "gateway" : "legacy",
+      ai_path: generation.safety ? "safety" : coachRoute ? "gateway" : "legacy",
+      route_feature: coachRoute?.feature ?? "none",
       replayed: false,
       attempts: generation.attempts.map((attempt) => ({
         attempt: attempt.attempt,
         outcome: attempt.outcome,
         rule: attempt.rule ?? "none",
+        also_rules: attempt.alsoRules ?? [],
         path: attempt.path ?? "none",
         limit: attempt.limit ?? null,
         actual: attempt.actual ?? null,
@@ -704,10 +987,12 @@ async function handleCoachChat(
       initial_rule: unavailable.metadata.initialRule ?? "none",
       repair_rule: unavailable.metadata.repairRule ?? "none",
       repair_skipped: unavailable.metadata.repairSkipped ?? "none",
+      route_feature: coachRoute?.feature ?? "none",
       attempts: (unavailable.metadata.attempts ?? []).map((attempt) => ({
         attempt: attempt.attempt,
         outcome: attempt.outcome,
         rule: attempt.rule ?? "none",
+        also_rules: attempt.alsoRules ?? [],
         path: attempt.path ?? "none",
         limit: attempt.limit ?? null,
         actual: attempt.actual ?? null,

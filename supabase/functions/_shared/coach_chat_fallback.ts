@@ -1,4 +1,5 @@
 import type { CoachChatAnswerV2 } from "./contracts/coach_chat_v1.ts";
+import { screenMessage } from "./coach_safety/red_flags.ts";
 
 // Served when the model cannot produce a valid answer, so the athlete is never
 // left at a dead end. It is deterministic and explicitly labeled: every number
@@ -40,9 +41,15 @@ const healthRiskPatterns: readonly RegExp[] = [
   /suicid|kill myself|self[- ]?harm|end my life|want to die/,
 ];
 
+/**
+ * The wider screen behind the data summary. It includes everything the pre-model red-flag screen
+ * catches (coach_safety/red_flags.ts), so a message the model never saw because of a red flag
+ * cannot reach a summary of numbers if that screen is ever bypassed.
+ */
 export function mayConcernHealthRisk(question: string): boolean {
   const normalized = question.toLowerCase();
-  return healthRiskPatterns.some((pattern) => pattern.test(normalized));
+  return healthRiskPatterns.some((pattern) => pattern.test(normalized)) ||
+    screenMessage(question) !== null;
 }
 
 const safetyReferral =
