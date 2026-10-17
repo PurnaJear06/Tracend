@@ -6,17 +6,20 @@
 // no valid reply), and the retry stands in for it. An attempt that was answered by the model
 // stays: the athlete really asked twice.
 
-import { coachChatTiming } from "../_shared/providers/coach_chat_provider.ts";
-
 export const supersededSafetyState = "unavailable";
 
 // A turn that has neither an answer nor a failure was started by a request that is still running
-// or was lost (the function was cut off). Its question was saved when it started, and the whole
-// request, model deadline included, ends within `coachChatTiming.totalDeadlineMs`, so a turn
-// still open this long after its question is lost, not running. The margin covers the work around
-// the model call (context preparation, persistence) and clock differences. The replay answer
-// (`turn_lost`) and superseding a failed attempt both use this rule.
-export const coachChatTurnStaleAfterMs = coachChatTiming.totalDeadlineMs + 30_000;
+// or was lost (the function was cut off). A running request ends at the Edge Function's wall-clock
+// limit at the latest, so a turn still open longer than that after its question was saved is lost.
+// Supabase documents the limit as 150 seconds on the free plan and 400 seconds on paid plans
+// (https://supabase.com/docs/guides/functions/limits, "Maximum duration (wall-clock limit)"), and
+// the gateway's route timeouts are capped at 150 seconds for the same reason (ai/routes.ts);
+// supabase/config.toml sets no per-function timeout. The longest limit is used, so a turn that is
+// still running is never taken for lost, plus a margin for clock differences and for the work
+// around the request. The replay answer (`turn_lost`) and superseding a failed attempt both use
+// this rule.
+export const edgeFunctionWallClockMs = 400_000;
+export const coachChatTurnStaleAfterMs = edgeFunctionWallClockMs + 30_000;
 
 /** How long ago a saved question was created, or null when it cannot be told. */
 export function questionAgeMs(createdAt: unknown, now: number = Date.now()): number | null {
@@ -136,6 +139,11 @@ export type AttemptStore = Readonly<{
 
 /**
  * Marks the failed or lost earlier attempts of this question as superseded; returns how many.
+ * Only the user's question is marked. An attempt's reply exists only when its state is "answered":
+ * a labelled data summary, which is stored with `safety_state` "unavailable" already, or a model
+ * answer, which is never superseded. A turn with no reply (failed, lost) has nothing to mark. So
+ * `unavailable` cannot tell an orphaned summary from a live one by itself; hiding the summary of
+ * a superseded attempt is the reader's rule (hide a data summary that follows a hidden question).
  * An attempt the model answered, one still running, or one whose state or age cannot be read, is
  * left alone.
  */

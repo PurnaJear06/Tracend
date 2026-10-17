@@ -317,8 +317,12 @@ cutting"). **Design rule for every exemption, here and in the reply guard:** it 
 it provably governs the matched symptom, prescription or figure: in the same clause, within a short
 window before the match, with no `and`, `but` or comma between. A possessive directly before the
 symptom ("my chest feels tight"), a self-report in the clause ("I get", "I feel"), or "it happens
-to me" anywhere in the message defeats the conditional and educational exemptions. Every other
-phrasing, and any doubt, leans toward a hit, because a miss answers a red flag with coaching and a false alarm costs one
+to me" anywhere in the message defeats the conditional and educational exemptions. Self-harm and
+eating-disorder patterns have no exemption at all: any mention is a hit. A negation counts only when
+its cue is directly before the symptom with a few filler words between ("no", "any", "feel",
+"have"; "can't" never denies), and "cause" alone is not education ("what causes" is; "squats cause
+chest pain for me" is a report). A red flag does not depend on context preparation: when it fails
+the referral is still stored and returned. Every other phrasing, and any doubt, leans toward a hit, because a miss answers a red flag with coaching and a false alarm costs one
 referral. It covers: chest pain, pressure or tightness; palpitations and a heartbeat that races at
 rest or skips; fainting, passing out, blacking out, collapse; dizziness and light-headedness;
 severe or sudden breathlessness and wheezing; signs of stroke (slurred speech, one-sided
@@ -971,8 +975,9 @@ apart. Every other summary ends with the same referral in one line.
 A request retried with the same idempotency key receives what its first attempt produced (the
 stored answer, the original failure code, or 409 while it is still running) and never calls the
 model again. The replay is looked up before any budget is reserved, so a finished turn is returned
-even at a spending limit. A turn that is neither answered nor failed more than 70 seconds after
-its question was saved (the 40-second model deadline plus a margin) was lost with its function and
+even at a spending limit. A turn that is neither answered nor failed more than 430 seconds after
+its question was saved (the Edge Function wall-clock limit, 400 seconds at most on Supabase's paid
+plans, plus a margin) was lost with its function and
 answers 503 `turn_lost` for that key, so the app can send the message again under a new key.
 When the app does send the same text under a new key after a failed attempt, the failed attempt's
 question is marked superseded (`safety_state = "unavailable"` on that user message, the existing

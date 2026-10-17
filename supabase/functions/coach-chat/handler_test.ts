@@ -39,6 +39,10 @@ type Setup = Readonly<{
   stored?: StoredRow[];
   /** What each attempt produced, by idempotency key (coach_chat_turn). */
   turns?: Record<string, unknown>;
+  /** `prepare_coach_chat_v8` raises this message (for example "approved plan required"). */
+  prepareFails?: string;
+  /** The reply cannot be stored. */
+  persistFails?: boolean;
 }>;
 
 type StoredRow = {
@@ -68,7 +72,21 @@ async function run(question: string, setup: Setup) {
             : { data: "reservation-1", error: null },
         );
       case "prepare_coach_chat_v8":
-        return Promise.resolve({ data: setup.prepared, error: null });
+        return Promise.resolve(
+          setup.prepareFails
+            ? { data: null, error: { message: setup.prepareFails, code: "P0001" } }
+            : { data: setup.prepared, error: null },
+        );
+      case "persist_coach_chat_data_summary":
+        return Promise.resolve(
+          setup.persistFails ? { data: null, error: { code: "XX000" } } : {
+            data: {
+              assistant_message_id: "55555555-5555-4555-8555-555555555555",
+              created_at: "2026-10-17T09:00:00Z",
+            },
+            error: null,
+          },
+        );
       case "coach_chat_turn":
         return Promise.resolve({
           data: setup.turns?.[String(args.request_idempotency_key)] ?? null,
@@ -254,7 +272,7 @@ Deno.test("a turn still running answers 409; a lost one answers 503 turn_lost", 
     const lost = await run("How did my week go?", {
       prepared: { replayed: false, context: {} },
       turns: { [key]: { state: "in_progress" } },
-      savedQuestionAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      savedQuestionAt: new Date(Date.now() - 10 * 60_000).toISOString(),
     });
     assertEquals(lost.status, 503);
     assertEquals(lost.body.code, "turn_lost");
@@ -438,4 +456,40 @@ Deno.test("a later, different question still gets memory without the superseded 
   assertEquals(result.status, 200);
   assertEquals(result.updates, []);
   assert(!result.calls.includes("coach_chat_turn"));
+});
+
+Deno.test("a red flag gets its referral even when the context cannot be prepared", async () => {
+  const result = await run("I fainted at the gym yesterday", {
+    prepared: null,
+    prepareFails: "approved plan required",
+  });
+  assertEquals(result.status, 200);
+  assertEquals(result.body.message!.safety_state, "limited");
+  assert(result.body.message!.answer.includes("emergency number"));
+  assertEquals(result.body.message!.model_provider, "deterministic");
+  assert(result.calls.includes("record_coach_chat_question"));
+  assert(result.calls.includes("persist_coach_chat_data_summary"));
+  assert(!result.calls.includes("reserve_ai_budget"));
+  assert(!result.calls.includes("persist_coach_chat_result"));
+  assert(result.lines.join("\n").includes("coach_chat_referral_without_context"));
+});
+
+Deno.test("the referral is returned even when it cannot be stored, and the failure is logged", async () => {
+  const result = await run("I want to die", {
+    prepared: null,
+    prepareFails: "approved plan required",
+    persistFails: true,
+  });
+  assertEquals(result.status, 200);
+  assert(result.body.message!.answer.includes("988"));
+  assert(result.lines.join("\n").includes("referral_not_stored"));
+});
+
+Deno.test("an ordinary question still fails with 422 when the context cannot be prepared", async () => {
+  const result = await run("How is my week?", {
+    prepared: null,
+    prepareFails: "approved plan required",
+  });
+  assertEquals(result.status, 422);
+  assertEquals(result.body.reason, "approved_plan_required");
 });

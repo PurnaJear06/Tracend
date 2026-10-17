@@ -29,6 +29,7 @@ import {
   withoutSupersededMemory,
   withoutSupersededQuestions,
 } from "./superseded.ts";
+import { referralFor } from "../_shared/coach_safety/referrals.ts";
 import { selectCoachChatRoute } from "../_shared/providers/coach_chat_provider_route.ts";
 import {
   localDateIn,
@@ -330,6 +331,62 @@ async function screenTodaysCheckIn(
   }
 }
 
+/**
+ * The fixed referral for a red flag when the context could not be prepared. It is stored through
+ * the lightest path there is (the question, then the reply as a labelled deterministic reply: no
+ * snapshot, policy or model run is needed) and returned whether or not storing worked; a storing
+ * failure is logged. A referral stored this way reads as a safety note in the app.
+ */
+async function referralWithoutContext(
+  client: Awaited<ReturnType<typeof requireAuth>>["serviceClient"],
+  userId: string,
+  input: CoachChatRequestV1,
+  hit: RedFlagHit,
+  log: ReturnType<typeof createLogger>,
+): Promise<Response> {
+  log.warn("coach_chat_red_flag", { category: hit.category, rule: hit.rule, source: hit.source });
+  // The stored reply is a labelled deterministic reply, which the app shows as a safety note when
+  // it is `limited`; the referral's own state (`refused` for self-harm) is kept in the logs.
+  const referral = { ...referralFor(hit), safety_state: "limited" as const };
+  let stored: { assistant_message_id?: string; created_at?: string } | null = null;
+  try {
+    const { error: recordError } = await client.rpc("record_coach_chat_question", {
+      target_user_id: userId,
+      target_thread_id: input.thread_id,
+      question: input.question,
+      request_idempotency_key: input.idempotency_key,
+    });
+    if (recordError) log.error("referral_question_not_recorded", { error_code: recordError.code });
+    const { data, error } = await client.rpc("persist_coach_chat_data_summary", {
+      target_user_id: userId,
+      target_thread_id: input.thread_id,
+      request_idempotency_key: input.idempotency_key,
+      summary_payload: referral,
+    });
+    if (error) log.error("referral_not_stored", { error_code: error.code ?? "unknown" });
+    else stored = data;
+  } catch {
+    log.error("referral_not_stored", { error_code: "exception" });
+  }
+  const message = {
+    id: stored?.assistant_message_id ?? crypto.randomUUID(),
+    role: "assistant",
+    created_at: stored?.created_at ?? new Date().toISOString(),
+    model_provider: "deterministic",
+    model: coachChatDataSummaryModel,
+    ...(supportsDataSummary(input) ? { answer_source: "data_summary" } : {}),
+    ...referral,
+  };
+  return reply(200, {
+    schema_version: supportsDataSummary(input)
+      ? coachChatDataSummaryResponseSchemaVersion
+      : coachChatResponseSchemaVersion,
+    message,
+    budget_warning: null,
+    replayed: false,
+  });
+}
+
 /** The database side of superseding a failed attempt (see superseded.ts), on the service client. */
 function attemptStore(
   client: Awaited<ReturnType<typeof requireAuth>>["serviceClient"],
@@ -621,6 +678,14 @@ export async function handleCoachChat(
       context_kind: contextKind,
     },
   );
+  // A referral needs no context and no model: when preparation fails (an athlete with no plan
+  // before the no-plan chat mode is deployed, a database error) the athlete still gets it.
+  if ((prepareError || !prepared) && redFlag) {
+    log.warn("coach_chat_referral_without_context", {
+      reason: coachChatPreparationFailureCode(prepareError),
+    });
+    return await referralWithoutContext(auth.serviceClient, auth.userId, input, redFlag, log);
+  }
   if (prepareError || !prepared) {
     const reason = coachChatPreparationFailureCode(prepareError);
     log.error("prepare_coach_chat_v8 failed", {

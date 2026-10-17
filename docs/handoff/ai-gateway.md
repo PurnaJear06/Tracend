@@ -687,9 +687,24 @@ audit (1, 2, 3, 6 deterministic part, 7, 15).
   block); persona line added; legacy parity digests recorded again on purpose.
 - **Open**: the sets and reps a coach prescribes as advice are not checked (see the spec);
   sentences claiming an action that the model words in an unusual way will pass the regexes (the
-  persona rule is the main defence); `prepare_coach_chat_v8` still raises for an athlete with no
-  active plan, so a red-flag message from the athlete who most needs it gets the app half's no-plan
-  chat mode, not a referral, until that lands.
+  persona rule is the main defence).
+- **Third review:** self-harm and eating-disorder patterns get no exemption (any mention is a
+  hit); a negation governs only when its cue is directly before the symptom with a few filler
+  words between ("no", "any", "feel", "have"; "can't" never counts), and a possessive or
+  self-report is read before it; "cause" alone is no longer education (only "what causes",
+  "causes of", "common causes", "why does ... cause"), and "for me", "every time", "when I" make a
+  statement a report. A red flag no longer depends on context preparation: if
+  `prepare_coach_chat_v8` fails, the referral is stored through `record_coach_chat_question` and
+  `persist_coach_chat_data_summary` (no snapshot, policy or model run) and returned with 200 even
+  if storing fails (logged); it reads as a safety note in the app. The lost-turn age is the Edge
+  Function wall-clock limit (Supabase documents 150 s free, 400 s paid; no per-function setting in
+  `config.toml`) plus 30 s, so a running turn is never taken for lost.
+- **For the app (superseded replies):** only user questions are marked. An attempt's reply exists
+  only as a data summary (already stored with `safety_state` `unavailable`) or a model answer
+  (never superseded), so `unavailable` cannot hide an orphaned summary by itself, and hiding every
+  assistant row with that state would hide ordinary data summaries. The app should hide a data
+  summary that directly follows a hidden (superseded) user question. #142's `loadMessages` hides
+  user rows only.
 
 ## Next agent starts here
 

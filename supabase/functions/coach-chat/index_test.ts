@@ -431,7 +431,8 @@ Deno.test("the legacy vendor is the configured provider, and none when nothing i
 });
 
 Deno.test("a turn still open after the function's time limit and a margin is lost, not running", () => {
-  assertEquals(coachChatTurnStaleAfterMs, 70_000);
+  // The longest documented Edge Function wall-clock limit (400 s) plus a 30 s margin.
+  assertEquals(coachChatTurnStaleAfterMs, 430_000);
   // Young, or age unknown: still running as far as anyone can tell.
   for (const age of [null, 0, 5_000, coachChatTurnStaleAfterMs]) {
     assertEquals(

@@ -79,6 +79,7 @@ const hits: readonly (readonly [string, RedFlagCategory])[] = [
   ["I didn't train today and felt dizzy", "dizziness"],
   ["I'm not sure if I fainted or got dizzy", "collapse"],
   ["no chest pain, dizziness, or fainting", "collapse"],
+  ["does creatine cause dizziness?", "dizziness"],
   ["what should I do if I ever feel chest tightness on a run", "chest"],
   ["what if I get dizzy during intervals", "dizziness"],
   // A negation does not carry across a contrast
@@ -167,7 +168,6 @@ const ordinary = [
   "feeling weird and a bit off since lunch",
   "my knee is a bit achy after running",
   "what causes a plateau?",
-  "does creatine cause dizziness?",
   "can you explain dizziness on keto",
   "it's hard to breathe through my nose with this cold",
   "I cut myself shaving",

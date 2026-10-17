@@ -34,6 +34,11 @@ type Rule = Readonly<{
   pattern: RegExp;
   /** The rule does not apply to a clause this matches (for example a harmless supplement). */
   unless?: RegExp;
+  /**
+   * Any mention that reaches the patterns is a hit: no negation, conditional or educational
+   * exemption. Self-harm and eating-disorder behaviour: a false referral is acceptable there.
+   */
+  noExemptions?: boolean;
 }>;
 
 const rule = (
@@ -41,7 +46,8 @@ const rule = (
   category: RedFlagCategory,
   source: string,
   unless?: RegExp,
-): Rule => ({ id, category, pattern: new RegExp(source, "g"), unless });
+  noExemptions = false,
+): Rule => ({ id, category, pattern: new RegExp(source, "g"), unless, noExemptions });
 
 // Listed from the most urgent; a message that matches several gets the first rule here.
 const rules: readonly Rule[] = [
@@ -50,6 +56,8 @@ const rules: readonly Rule[] = [
     "self_harm",
     String
       .raw`\bsuicid\w*|\bkill(?:ing)? myself\b|\bend(?:ing)? (?:my own life|my life|it all)\b|\bwant(?:ed)? to die\b|\bwanna die\b|\bwish i (?:was|were) dead\b|\bbetter off (?:dead|without me)\b|\bself[- ]?harm\w*|\b(?:want|going|plan(?:ning)?|thinking (?:of|about)|urge|feel like|need) (?:to )?(?:hurt|hurting|harm|harming|cut|cutting) myself\b|\b(?:hurt|harm)(?:ing)? myself (?:on purpose|deliberately|intentionally)\b|\btake my own life\b|\bnot worth living\b|\bno reason to (?:live|go on)\b|\bdon'?t want to (?:be here|live|exist|wake up)\b`,
+    undefined,
+    true,
   ),
   rule(
     "chest_symptom",
@@ -93,18 +101,24 @@ const rules: readonly Rule[] = [
     "eating",
     String
       .raw`\bpurg(?:e|ed|es|ing)\b|\bmak(?:e|ing|made) myself (?:throw up|vomit|sick|puke)\b|\binduc(?:e|ed|ing) vomiting\b|\bthrow(?:ing)? up (?:my )?(?:food|meals?|everything)\b|\bvomit(?:ing|ed)? (?:after|every) (?:eat|meal|food)\w*|\blaxatives?\b.{0,40}\b(?:lose|loss|weight|water|burn|drop|weigh|cut)\b|\b(?:lose|drop|cut) (?:water )?weight\b.{0,40}\blaxatives?\b|\bdiuretics?\b.{0,30}\b(?:lose|drop|cut|weigh|weight|water)\b|\bbulimi\w*|\banorexi\w*|\beating disorder\b|\bstarv(?:e|ing) myself\b|\bpunish(?:ing)? myself\b.{0,30}\b(?:eat|food|ate|meal)\b|\bstopped eating (?:completely|altogether|entirely|at all)\b|\bnot eating (?:at all|anything)\b`,
+    undefined,
+    true,
   ),
   rule(
     "binge_compensation",
     "eating",
     String
       .raw`\bbing(?:e|ed|eing)\b.{0,60}\b(?:purg|vomit|throw up|laxativ|fast|starv|skip|punish|guilt|out of control|can'?t stop|cannot stop|every (?:night|day|week)|secret|hid)|\b(?:purg|vomit|throw up|laxativ|fast|starv|skip|punish|guilt|out of control|secret|hid)\w*\b.{0,60}\bbing(?:e|ed|eing)\b`,
+    undefined,
+    true,
   ),
   rule(
     "extended_fast",
     "eating",
     String
       .raw`\b(?:fast(?:ed|ing)?|(?:haven'?t|have not|hasn'?t|didn'?t|did not|not) eat(?:en)?|no food|(?:ate|eaten|eating) (?:nothing|no food|almost nothing)|without (?:food|eating)|skipp(?:ed|ing) (?:all )?(?:food|meals))\b.{0,30}\b(?:for|in|over)\s+(?:the (?:last|past) )?(?:[2-9]|\d{2,}|two|three|four|five|six|seven|several|a few|many|multiple)\s+(?:consecutive |whole |full )?days?\b|\b(?:[2-9]|\d{2,}|two|three|four|five|six|seven)[- ]days?[- ](?:water )?fast\b|\bfast(?:ed|ing)? (?:for )?(?:4[8-9]|[5-9]\d|\d{3})\s*(?:h|hrs|hours)\b`,
+    undefined,
+    true,
   ),
   rule(
     "dark_urine",
@@ -211,7 +225,6 @@ const scopeBreakers = new Set([
   "other",
   "rather",
 ]);
-const uncertainWords = new Set(["sure", "certain", "know", "if", "whether", "idea", "unsure"]);
 const negationCues = new Set([
   "no",
   "not",
@@ -242,13 +255,63 @@ function stretchBefore(before: string, max: number): string[] {
   return stretch;
 }
 
-/** True when a negation word governs the symptom: "no chest pain or dizziness". */
+// Words that may stand between a negation and the symptom it denies: "no", "any", "a", "feel",
+// "have", "had", "get", "got", "experience". Anything else (another verb, a possessive) breaks it.
+const negationFillers = new Set([
+  "any",
+  "a",
+  "an",
+  "the",
+  "of",
+  "feel",
+  "feeling",
+  "felt",
+  "have",
+  "had",
+  "has",
+  "having",
+  "get",
+  "got",
+  "getting",
+  "experience",
+  "experienced",
+  "experiencing",
+  "been",
+]);
+// "can't" and "cannot" are not denials of a symptom ("I can't stop feeling dizzy").
+const modalNegations = new Set(["can't", "cannot", "couldn't", "mustn't", "shouldn't", "won't"]);
+
+const isNegationCue = (token: string) =>
+  negationCues.has(token) || (token.endsWith("n't") && !modalNegations.has(token));
+
+/**
+ * True when a negation cue sits directly before the symptom, with at most a few filler words
+ * between them: "no chest pain", "I don't feel dizzy", "without any chest pain". A list joined by
+ * "or" shares the cue ("no chest pain or dizziness"). Another verb or a possessive between the cue
+ * and the symptom breaks it ("my doctor doesn't know about my chest pain", "I haven't told anyone
+ * about my chest pain"), and so does a comma or a conjunction.
+ */
 function negated(before: string): boolean {
-  const stretch = stretchBefore(before, 8);
-  for (let index = stretch.length - 1; index >= 0; index--) {
-    const token = stretch[index];
-    if (uncertainWords.has(token)) return false;
-    if (negationCues.has(token) || token.endsWith("n't")) return true;
+  const stretch = stretchBefore(before, 12);
+  let index = stretch.length - 1;
+  for (let listItems = 0; listItems < 3; listItems++) {
+    let fillers = 0;
+    while (index >= 0 && negationFillers.has(stretch[index]) && fillers < 4) {
+      index--;
+      fillers++;
+    }
+    if (index >= 0 && isNegationCue(stretch[index])) return true;
+    // "<cue> chest pain or dizziness": step back over the earlier item of the list.
+    if (index < 0 || (stretch[index] !== "or" && stretch[index] !== "nor")) return false;
+    index--;
+    let itemWords = 0;
+    while (
+      index >= 0 && itemWords < 3 && !isNegationCue(stretch[index]) && stretch[index] !== "or"
+    ) {
+      index--;
+      itemWords++;
+    }
+    if (index >= 0 && itemWords === 3 && !isNegationCue(stretch[index])) return false;
   }
   return false;
 }
@@ -257,19 +320,26 @@ function negated(before: string): boolean {
 // 10 minutes I get chest pain" is a report.
 const conditionalCue = /\b(?:what if|suppose|in case|should i ever|hypothetically|imagine if)\b/;
 const educationCue =
-  /\b(?:avoid|avoiding|prevent|preventing|prevention|minimi[sz]e|minimi[sz]ing|reduce|reducing|what causes|causes? of|what is|what are|what's|define|meaning of|signs? of|symptoms? of|difference between|common cause|explain|tell me about|cause|causes)\b/;
+  /\b(?:avoid|avoiding|prevent|preventing|prevention|minimi[sz]e|minimi[sz]ing|reduce|reducing|what causes|causes? of|what is|what are|what's|define|meaning of|signs? of|symptoms? of|difference between|common causes?|explain|tell me about)\b|\bwhy (?:does|do|can|could)\b.{0,40}\bcause/;
 // The athlete's own symptom: "my chest feels tight", or a self-report anywhere in the clause.
 const selfReport =
   /\b(?:i|we)\s+(?:(?:just|also|still|really|always|sometimes|often|actually|almost|nearly|suddenly|ever|keep|kept)\s+)*(?:felt|feel|feeling|get|getting|got|have|having|had|am|was|been|passed|fainted|blacked|collapsed|started|noticed|experienc\w+|suffer\w*|woke|become|became)\b|\b(?:i'm|im|i've|ive)\s+(?:feeling|having|getting|been|dizzy|faint|lightheaded|short|numb)\b/;
+// In the clause, these make a statement about the symptom a report of it: "squats cause chest
+// pain for me", "every time I lift", "when I run".
+const clauseSelfReport = /\bfor me\b|\bevery time\b|\bwhen i\b|\bwhenever i\b|\bto me\b/;
 // Said anywhere in the message, it makes a question about the symptom a report of it.
 const happensToMe = /\bhappens? to me\b|\bkeeps? happening\b|\bit happens\b|\bthis happens\b/;
 
 /** Whether the athlete is reporting the symptom, not denying it, supposing it or asking about it. */
 function reported(clause: string, index: number, message: string): boolean {
   const before = clause.slice(0, index);
+  // The athlete's own symptom comes first: a possessive directly before it, a possessive or
+  // self-report anywhere makes the later exemptions moot, and a negation cannot cover it.
+  const possessed = stretchBefore(before, 3).some((word) => word === "my" || word === "me");
+  if (possessed) return true;
   if (negated(before)) return false;
-  const owned = stretchBefore(before, 3).some((word) => word === "my" || word === "me") ||
-    selfReport.test(clause) || happensToMe.test(message);
+  const owned = selfReport.test(clause) || clauseSelfReport.test(clause) ||
+    happensToMe.test(message);
   if (owned) return true;
   if (conditionalCue.test(stretchBefore(before, 5).join(" "))) return false;
   if (educationCue.test(stretchBefore(before, 7).join(" "))) return false;
@@ -284,7 +354,7 @@ export function screenMessage(question: string): RedFlagHit | null {
     for (const clause of clauses) {
       if (candidate.unless?.test(clause)) continue;
       for (const match of clause.matchAll(candidate.pattern)) {
-        if (reported(clause, match.index, normalized)) {
+        if (candidate.noExemptions || reported(clause, match.index, normalized)) {
           return { category: candidate.category, rule: candidate.id, source: "message" };
         }
       }
