@@ -167,7 +167,8 @@ export function normalizeMessage(text: string): string {
 
 const clauseBreak = new RegExp(
   [
-    String.raw`[.!?;:\n]+`,
+    String.raw`[.!?;:\n()\u2013\u2014]+`,
+    String.raw`\s-+\s`,
     String.raw`,\s*(?=(?:i|i'm|im|i've|ive|my|it|so|now|also|though|but|and)\b)`,
     String.raw`\bbut\b|\bhowever\b|\balthough\b|\bthough\b|\bexcept\b`,
     String.raw`\band (?=(?:i|i'm|im|i've|ive|my|now|also|it|they|he|she)\b)`,
@@ -178,6 +179,7 @@ function clausesOf(text: string): string[] {
   return text.split(clauseBreak).map((part) => part.trim()).filter(Boolean);
 }
 
+// Words that end a negation's reach: a conjunction or a contrast ("no chest pain, just dizzy").
 const scopeBreakers = new Set([
   "and",
   "but",
@@ -190,6 +192,18 @@ const scopeBreakers = new Set([
   "during",
   "although",
   "which",
+  "just",
+  "only",
+  "except",
+  "though",
+  "however",
+  "instead",
+  "besides",
+  "apart",
+  "yet",
+  "still",
+  "other",
+  "rather",
 ]);
 const uncertainWords = new Set(["sure", "certain", "know", "if", "whether", "idea", "unsure"]);
 const negationCues = new Set([
@@ -204,16 +218,75 @@ const negationCues = new Set([
   "nothing",
   "denies",
 ]);
+// Words that make the stretch after a comma a statement of its own, not another item of a list.
+const statementWords = new Set([
+  "i",
+  "i'm",
+  "im",
+  "i've",
+  "ive",
+  "my",
+  "me",
+  "feel",
+  "feels",
+  "felt",
+  "feeling",
+  "get",
+  "gets",
+  "got",
+  "getting",
+  "have",
+  "has",
+  "had",
+  "having",
+  "am",
+  "is",
+  "are",
+  "was",
+  "were",
+  "keep",
+  "kept",
+  "started",
+  "noticed",
+  "with",
+  "since",
+  "at",
+  "on",
+]);
+// After a list, what follows the symptom says it is happening ("no chest pain, dizzy when I run").
+const happeningAfter =
+  /^\W*(?:when|while|after|during|since|every|whenever|at\b|on\b|today|yesterday|again|a lot|often|sometimes|all the time|lately|recently)/;
 
-/** True when a negation word governs the words just before a symptom ("no chest pain or ..."). */
-function negated(before: string): boolean {
+/**
+ * True when a negation governs the symptom that follows `before`: "no chest pain or dizziness".
+ * The reach ends at a conjunction or a contrast (just, only, but, except, though, however), at
+ * clause punctuation (the clause is cut there), and at a comma unless what follows it is another
+ * item of the list ("no chest pain, dizziness, or fainting"): a short run of words with no verb,
+ * that is not followed by words saying it is happening.
+ */
+function negated(before: string, after: string): boolean {
   const tokens = before.split(" ").filter(Boolean);
   let uncertain = false;
-  for (let index = tokens.length - 1, steps = 0; index >= 0 && steps < 8; index--, steps++) {
-    const token = tokens[index].replace(/^[("']+|[,)"'?]+$/g, "");
+  let crossedComma = false;
+  let segmentWords = 0;
+  let segmentStatement = false;
+  for (let index = tokens.length - 1, steps = 0; index >= 0 && steps < 10; index--, steps++) {
+    const raw = tokens[index];
+    const token = raw.replace(/^[("']+|[,)"'?]+$/g, "");
     if (scopeBreakers.has(token)) return false;
     if (uncertainWords.has(token)) uncertain = true;
-    if (negationCues.has(token) || token.endsWith("n't")) return !uncertain;
+    if (negationCues.has(token) || token.endsWith("n't")) {
+      if (uncertain) return false;
+      return !(crossedComma && happeningAfter.test(after));
+    }
+    if (raw.endsWith(",")) {
+      if (segmentWords > 3 || segmentStatement) return false;
+      crossedComma = true;
+      segmentWords = 0;
+      segmentStatement = false;
+    }
+    if (token !== "or" && token !== "nor") segmentWords++;
+    if (statementWords.has(token)) segmentStatement = true;
   }
   return false;
 }
@@ -228,9 +301,9 @@ const ownershipCue =
   /\b(?:i|i'm|im|i've|ive|we)\s+(?:(?:just|also|still|really|always|sometimes|often|actually|almost|nearly|suddenly|keep|kept)\s+)*(?:felt|feel|feeling|get|getting|got|have|having|had|am|was|been|passed|fainted|blacked|collapsed|started|noticed|experienc\w+|suffer\w*|woke)\b/;
 
 /** Whether the athlete is reporting the symptom, not denying it, supposing it or asking about it. */
-function reported(clause: string, index: number): boolean {
+function reported(clause: string, index: number, length: number): boolean {
   const before = clause.slice(0, index);
-  if (negated(before)) return false;
+  if (negated(before, clause.slice(index + length))) return false;
   if (conditionalCue.test(before) && !experienceCue.test(clause)) return false;
   if (educationCue.test(clause) && !ownershipCue.test(clause)) return false;
   return true;
@@ -243,7 +316,7 @@ export function screenMessage(question: string): RedFlagHit | null {
     for (const clause of clauses) {
       if (candidate.unless?.test(clause)) continue;
       for (const match of clause.matchAll(candidate.pattern)) {
-        if (reported(clause, match.index)) {
+        if (reported(clause, match.index, match[0].length)) {
           return { category: candidate.category, rule: candidate.id, source: "message" };
         }
       }
@@ -294,6 +367,44 @@ export function screenCheckIn(
   if (!checkInEscalated(context)) return null;
   if (!trainingIntent.test(normalizeMessage(question))) return null;
   return { category: "check_in_pain", rule: "check_in_pain", source: "check_in" };
+}
+
+/** The check-in columns the early screen reads. */
+export type CheckInRow = Readonly<{ local_date?: unknown; pain_severity?: unknown }>;
+
+/** A question about training, from the words alone (nothing is read). */
+export function trainingQuestion(question: string): boolean {
+  return trainingIntent.test(normalizeMessage(question));
+}
+
+/** The athlete's calendar date in their timezone (UTC when the timezone is unknown). */
+export function localDateIn(timezone: string, instant: number = Date.now()): string {
+  const format = (zone: string) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: zone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(instant);
+  try {
+    return format(timezone);
+  } catch {
+    return format("UTC");
+  }
+}
+
+/**
+ * The same check-in screen from the newest check-in row, read before the consent and budget
+ * gates: a day of pain of 7 or more must reach the athlete as the referral even when they have no
+ * consent or budget left.
+ */
+export function screenCheckInRow(
+  row: CheckInRow | null,
+  localDate: string,
+  question: string,
+): RedFlagHit | null {
+  if (row === null) return null;
+  return screenCheckIn({ coaching_date: localDate, latest_check_in: row }, question);
 }
 
 /** The screen for a turn: the message first, then today's check-in. */

@@ -8,10 +8,20 @@
 // The reply guard (coach_safety/reply_guard.ts) reads the same outcome from the rendered block
 // (`screeningOutcomeIn`), so the model and the guard always work from one value.
 import { type ScreeningOutcome, screeningOutcomes } from "../../training/screening/outcome.ts";
-import type { CoachContextContributor } from "../host.ts";
+import type { CoachContextContributor, CoachContributions } from "../host.ts";
 
 export const screeningContributorId = "screening";
 export const screeningBudgetChars = 900;
+
+/**
+ * What Coach and the reply guard act on: the outcome, or "unknown" when the lookup failed. An
+ * unreadable health check is never read as cleared: it carries the restrictions of
+ * moderate_until_cleared.
+ */
+export type ScreeningState = ScreeningOutcome | "unknown";
+
+/** How long the lookup may take before the contributor reports the health check unknown. */
+export const screeningLookupTimeoutMs = 3_000;
 
 export type ScreeningRecord = Readonly<{ outcome: ScreeningOutcome; screenedAt: string }>;
 
@@ -28,8 +38,11 @@ export function screeningSourceFromQuery(query: ScreeningQuery): ScreeningSource
   return async (userId) => {
     const { data, error } = await query(userId);
     if (error) throw new Error("screening unavailable");
-    const outcome = screeningOutcomes.find((candidate) => candidate === data?.outcome);
-    return data && outcome ? { outcome, screenedAt: data.screened_at } : null;
+    if (!data) return null;
+    const outcome = screeningOutcomes.find((candidate) => candidate === data.outcome);
+    // A row with a value this code does not know is not "no row".
+    if (!outcome) throw new Error("screening outcome unreadable");
+    return { outcome, screenedAt: data.screened_at };
   };
 }
 
@@ -78,26 +91,69 @@ export function renderScreening(record: ScreeningRecord | null): string | null {
   ].join("\n");
 }
 
+/** The block when the lookup failed or timed out: restricted, never cleared. */
+export function renderScreeningUnknown(): string {
+  return [
+    "The athlete's pre-exercise health check could not be read just now, so its outcome is unknown. Tracend treats an unknown outcome as moderate_until_cleared.",
+    "Outcome: unknown",
+    `${rules.moderate_until_cleared} If the athlete asks, say the health check could not be read this time.`,
+  ].join("\n");
+}
+
 const outcomeLine = new RegExp(
   String.raw`<reference_data source="${screeningContributorId}">[\s\S]*?^Outcome: (${
-    screeningOutcomes.join("|")
+    [...screeningOutcomes, "unknown"].join("|")
   })$`,
   "m",
 );
 
 /** The outcome in rendered contributor text; cleared when the block is absent. */
-export function screeningOutcomeIn(contributorText: string): ScreeningOutcome {
+export function screeningOutcomeIn(contributorText: string): ScreeningState {
   const found = outcomeLine.exec(contributorText)?.[1];
+  if (found === "unknown") return "unknown";
   return screeningOutcomes.find((outcome) => outcome === found) ?? "cleared";
 }
 
-export function createScreeningContributor(source: ScreeningSource): CoachContextContributor {
+/**
+ * The screening state a turn runs under. The rendered block decides. Without a block, a
+ * contributor that failed or timed out means unknown (restricted); one that rendered nothing
+ * means the athlete was never screened (cleared); no contributors at all (a rollback path or a
+ * test) means there is nothing to apply.
+ */
+export function screeningStateOf(contributions: CoachContributions | null): ScreeningState {
+  if (!contributions) return "cleared";
+  const blockState = screeningOutcomeIn(contributions.stable);
+  if (blockState !== "cleared") return blockState;
+  const reported = contributions.outcomes.find((entry) => entry.id === screeningContributorId);
+  return reported && (reported.outcome === "failed" || reported.outcome === "timeout")
+    ? "unknown"
+    : "cleared";
+}
+
+export function createScreeningContributor(
+  source: ScreeningSource,
+  timeoutMs: number = screeningLookupTimeoutMs,
+): CoachContextContributor {
   return Object.freeze({
     id: screeningContributorId,
     slot: "stable",
     budgetChars: screeningBudgetChars,
     async render(input) {
-      return renderScreening(await source(input.userId));
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const record = await Promise.race([
+          source(input.userId),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("screening lookup timed out")), timeoutMs);
+          }),
+        ]);
+        return renderScreening(record);
+      } catch {
+        // Fail closed: "could not read" is not "no row".
+        return renderScreeningUnknown();
+      } finally {
+        clearTimeout(timer);
+      }
     },
   });
 }

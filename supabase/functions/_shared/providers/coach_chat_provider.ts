@@ -22,7 +22,7 @@ import { referralFor, safetyReferralModel } from "../coach_safety/referrals.ts";
 import { numberGroundOf } from "../coach_safety/numbers_check.ts";
 import { coachReplyCheck } from "../coach_safety/reply_guard.ts";
 import { renderSafeRanges, safeRangesOf } from "../coach_safety/safe_ranges.ts";
-import { screeningOutcomeIn } from "../coach_context/contributors/screening.ts";
+import { screeningStateOf } from "../coach_context/contributors/screening.ts";
 
 /** How long the athlete has trained, as onboarding asks it. */
 const trainingYearsLabels: Readonly<Record<string, string>> = {
@@ -267,6 +267,7 @@ const coachChatPersona =
   "- No diagnosis, treatment, medication, pregnancy, rehabilitation, or eating-disorder guidance.\n" +
   "- Messages that report a red-flag symptom (chest pain, fainting, severe breathlessness, purging, self-harm and similar) are answered before they reach you. If one reaches you anyway, tell the athlete to stop, give no training or nutrition advice, and recommend a doctor (emergency services when it is acute).\n" +
   "- The Safe Ranges section holds Tracend's limits for daily calories, weekly weight loss, the healthy-weight floor and the length of a cut. Never advise outside them and never help the athlete work around them. When the athlete asks for something outside a limit, say what the limit is and why.\n" +
+  "- The coaching principles reference data is general guidance for healthy adults, summarised from the library's sources. Use it to explain why and to quote its guideline figures as guidance (never as the athlete's own numbers), without printing its square-bracket source ids. The athlete's plan, targets and the Safe Ranges always come first.\n" +
   "- The screening reference data, when present, is Tracend's own rule for this athlete's effort cap (not text the athlete wrote). Follow its Rule line exactly.\n" +
   '- For ordinary illness (fever/cold/cough): recommend rest and hydration, never "push through" or complete the workout.\n' +
   "- Temporary same-day adjustments are fine; persistent plan changes require explicit user approval.\n" +
@@ -1389,7 +1390,7 @@ export function coachReplyCheckFor(
   const { file } = renderCoachContextParts(context, coachChatMaxContextBudget);
   return coachReplyCheck({
     ranges: safeRangesOf(context),
-    screening: screeningOutcomeIn(contributed),
+    screening: screeningStateOf(contributions),
     ground: numberGroundOf([file, contributed, question, ...athleteMessages(context)]),
     weightClaim: weightClaimCheckFor(context, question),
   });
@@ -1493,7 +1494,9 @@ function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string 
     case "loss_rate_above_ceiling":
       return "Remove the advice to lose weight faster than the weekly ceiling. Quote the ceiling from the Safe Ranges section and say why Tracend does not go faster.\n";
     case "effort_above_screening_cap":
-      return "Remove the advice to train at vigorous or maximal effort (to failure, sprints, intervals, heavy singles). The health check caps this athlete's effort: follow the Rule line of the screening reference data and recommend getting a professional's clearance.\n";
+      return "Remove the advice to train at vigorous or maximal effort (to failure, sprints, intervals, heavy singles). The health check caps this athlete's effort: follow the Rule line of the screening reference data exactly (moderate effort only, or no training prescriptions at all) and recommend getting a professional's clearance.\n";
+    case "training_advice_on_pain_day":
+      return "Remove all training advice (sets, reps, loads, durations, cardio, workouts, a programme). The athlete's check-in today reported pain of 7 or more: say the pain is too high to train through and recommend a doctor or physio. Food, sleep and recovery questions may still be answered.\n";
     case "claimed_action":
       return "Remove every claim or promise that you changed, saved, updated, scheduled or will do something: you have no tools. Say what the athlete can do in the app instead (for example, set a target on Progress, Set your target). A plan change happens only when the athlete approves it.\n";
     case "numbers_not_grounded":

@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import type { CoachChatAnswerBreak } from "../contracts/coach_chat_v1.ts";
-import type { ScreeningOutcome } from "../training/screening/outcome.ts";
+import type { ScreeningState } from "../coach_context/contributors/screening.ts";
 import { weightClaimCheckFor } from "../training/goal_phase/guard.ts";
 import { numberGroundOf } from "./numbers_check.ts";
 import { coachReplyCheck } from "./reply_guard.ts";
@@ -13,10 +13,13 @@ const context = ownerContext();
 const file = renderCoachContextParts(context, 96_000).file;
 const goalPhase = renderGoalPhasePayload(ownerGoalPhasePayload, "2026-10-14")!;
 
-function check(answer: string, options: { screening?: ScreeningOutcome; question?: string } = {}) {
+function check(
+  answer: string,
+  options: { screening?: ScreeningState; question?: string; painEscalated?: boolean } = {},
+) {
   const question = options.question ?? "What should I do?";
   const result = coachReplyCheck({
-    ranges: safeRangesOf(context),
+    ranges: { ...safeRangesOf(context), painEscalated: options.painEscalated ?? false },
     screening: options.screening ?? "cleared",
     ground: numberGroundOf([file, goalPhase, question]),
     weightClaim: weightClaimCheckFor(context, question),
@@ -183,4 +186,140 @@ Deno.test("every broken rule is reported together, the goal phase rule first", (
     "claimed_action",
     "numbers_not_grounded",
   ]);
+});
+
+Deno.test("calories_below_floor: only a real warning is exempt, parsed for direction", () => {
+  const flagged = [
+    "Set your minimum to 900 kcal a day.",
+    "Your floor can be 1,000 calories a day, so drop to it.",
+    "Skip dinner and drop to 900 calories.",
+    "Reduce dinner to 400 kcal and eat 1,000 kcal a day.",
+    "Don't skip meals; drop to 1,200 calories a day.",
+    "A good minimum is to eat 1,100 kcal a day.",
+    "Never mind the scale, eat 1,300 kcal a day for a month.",
+    "The floor is a guide, so go down to 1,000 kcal.",
+    "Breakfast is optional; try 1,200 kcal a day total.",
+  ];
+  for (const reply of flagged) {
+    assert(broken(reply).includes("calories_below_floor"), reply);
+  }
+  const warnings = [
+    "Don't go below 1,500 kcal a day.",
+    "Never under 1,200 calories.",
+    "You should not eat less than 1,000 kcal a day.",
+    "1,200 kcal a day is too low for you.",
+    "Eating 1,200 kcal a day isn't safe.",
+    "A 400 kcal snack is fine.",
+    "Reduce dinner to 400 kcal.",
+    "You burn 600 kcal in a session.",
+    "Please avoid dropping under 1,400 calories a day.",
+  ];
+  for (const reply of warnings) {
+    assert(!broken(reply).includes("calories_below_floor"), reply);
+  }
+});
+
+Deno.test("effort_above_screening_cap: moderate-until-cleared keeps HIIT, sprints and intervals out", () => {
+  for (
+    const reply of [
+      "Keep HIIT moderate.",
+      "Do HIIT intervals at a moderate pace.",
+      "Add a few moderate sprints.",
+      "Use a limited number of intervals.",
+    ]
+  ) {
+    assert(
+      broken(reply, { screening: "moderate_until_cleared" }).includes("effort_above_screening_cap"),
+      reply,
+    );
+  }
+  for (
+    const reply of [
+      "No HIIT until a doctor clears you.",
+      "Avoid sprints and intervals for now.",
+      "Keep the effort moderate and finish every set with 3 reps in reserve.",
+      "Skip HIIT for now.",
+    ]
+  ) {
+    assert(
+      !broken(reply, { screening: "moderate_until_cleared" }).includes(
+        "effort_above_screening_cap",
+      ),
+      reply,
+    );
+  }
+  assertEquals(broken("Do 3 sets of 8 reps.", { screening: "moderate_until_cleared" }), []);
+});
+
+Deno.test("effort_above_screening_cap: see_professional blocks every training prescription", () => {
+  for (
+    const reply of [
+      "Do 3 sets of 8 reps.",
+      "Try 3x10 squats.",
+      "Squat 60 kg for 5 reps.",
+      "Walk 30 minutes a day.",
+      "Follow this 3-day split.",
+      "Add a full-body workout twice a week.",
+      "Aim for 8,000 steps a day.",
+      "Start with 20 minutes of easy cardio.",
+      "Keep HIIT moderate.",
+      "Do some RPE 6 work.",
+      "Try a push, pull, legs routine.",
+      "Train three times a week.",
+      "Finish with planks and lunges.",
+    ]
+  ) {
+    assert(
+      broken(reply, { screening: "see_professional" }).includes("effort_above_screening_cap"),
+      reply,
+    );
+  }
+  for (
+    const reply of [
+      "I can't give you sets or reps until a professional clears you.",
+      "Please see a doctor before any training.",
+      "Tracend builds a plan once your health check allows it.",
+      "You can ask me about sleep and food.",
+      "No workouts or cardio targets until you are cleared.",
+      "Don't train until a doctor clears you.",
+      "A doctor can tell you how much exercise is safe.",
+    ]
+  ) {
+    assert(
+      !broken(reply, { screening: "see_professional" }).includes("effort_above_screening_cap"),
+      reply,
+    );
+  }
+});
+
+Deno.test("an unknown screening is treated as moderate_until_cleared, never as cleared", () => {
+  assert(
+    broken("Finish with sprints.", { screening: "unknown" }).includes("effort_above_screening_cap"),
+  );
+  assert(
+    broken("Keep HIIT moderate.", { screening: "unknown" }).includes("effort_above_screening_cap"),
+  );
+  assertEquals(broken("Do 3 sets of 8 reps.", { screening: "unknown" }), []);
+});
+
+Deno.test("training_advice_on_pain_day: no training prescription on a day of check-in pain of 7 or more", () => {
+  for (
+    const reply of [
+      "Do 3 sets of 8 reps today.",
+      "Try an easy 20 minutes of cardio.",
+      "Keep HIIT moderate.",
+      "Go for a 30 minute walk.",
+    ]
+  ) {
+    assert(broken(reply, { painEscalated: true }).includes("training_advice_on_pain_day"), reply);
+    assert(!broken(reply).includes("training_advice_on_pain_day"), reply);
+  }
+  for (
+    const reply of [
+      "Please don't train today; rest and see a doctor or physio.",
+      "Eat around 2000 kcal and sleep well.",
+    ]
+  ) {
+    assert(!broken(reply, { painEscalated: true }).includes("training_advice_on_pain_day"), reply);
+  }
 });

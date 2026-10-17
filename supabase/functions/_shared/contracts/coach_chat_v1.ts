@@ -98,6 +98,7 @@ export const coachChatValidationRules = [
   "calories_below_floor",
   "loss_rate_above_ceiling",
   "effort_above_screening_cap",
+  "training_advice_on_pain_day",
   "claimed_action",
 ] as const;
 
@@ -172,6 +173,27 @@ export function parseCoachChatRequest(value: unknown): CoachChatRequestV1 {
 export type CoachChatAnswerCheck = (
   answer: string,
 ) => CoachChatValidationRule | CoachChatAnswerBreak | null;
+
+/**
+ * Every string of the answer the app shows: the answer, the follow-up chips, the notes on missing
+ * data, the evidence labels and the reasoning chain. The reply guards read all of it, so a claimed
+ * action or an unsupported figure cannot sit in a field the check skips. Call after the shape is
+ * validated.
+ */
+function visibleText(answer: Record<string, unknown>): string[] {
+  const texts: string[] = [answer.answer as string];
+  const strings = (value: unknown) =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  texts.push(...strings(answer.suggested_follow_ups), ...strings(answer.missing_data));
+  for (const item of Array.isArray(answer.evidence) ? answer.evidence : []) {
+    texts.push(...strings([(item as Record<string, unknown>).label]));
+  }
+  for (const item of Array.isArray(answer.reasoning_chain) ? answer.reasoning_chain : []) {
+    const step = item as Record<string, unknown>;
+    texts.push(...strings([step.step, step.value]));
+  }
+  return texts;
+}
 
 export function parseCoachChatAnswer(
   value: unknown,
@@ -328,7 +350,8 @@ export function parseCoachChatAnswer(
       }
     }
   }
-  const found = answerCheck?.(answer.answer);
+  // One pass over everything the athlete can read, not only `answer`.
+  const found = answerCheck?.(visibleText(answer).join("\n"));
   if (found) {
     const broken: CoachChatAnswerBreak = typeof found === "string" ? { rule: found } : found;
     throw new CoachChatAnswerValidationError(

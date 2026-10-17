@@ -31,15 +31,23 @@ type Setup = Readonly<{
   /** The error `reserve_ai_budget` raises, or null to accept. */
   refuse?: string | null;
   savedQuestionAt?: string | null;
+  /** The newest check-in row, or none. */
+  checkIn?: { local_date: string; pain_severity: number } | null;
+  /** The athlete's AI consent (default granted). */
+  consent?: boolean;
+  /** Earlier user messages with the same text (other keys), and what each attempt produced. */
+  copies?: { id: string; idempotency_key: string }[];
+  turns?: Record<string, unknown>;
 }>;
 
 async function run(question: string, setup: Setup) {
   const calls: Call[] = [];
+  const updates: Record<string, unknown>[] = [];
   const rpc = (name: string, args: Record<string, unknown>) => {
     calls.push([name, args]);
     switch (name) {
       case "has_ai_coaching_consent":
-        return Promise.resolve({ data: true, error: null });
+        return Promise.resolve({ data: setup.consent ?? true, error: null });
       case "reserve_ai_budget":
         return Promise.resolve(
           setup.refuse
@@ -48,6 +56,11 @@ async function run(question: string, setup: Setup) {
         );
       case "prepare_coach_chat_v8":
         return Promise.resolve({ data: setup.prepared, error: null });
+      case "coach_chat_turn":
+        return Promise.resolve({
+          data: setup.turns?.[String(args.request_idempotency_key)] ?? null,
+          error: null,
+        });
       case "persist_coach_chat_result":
         return Promise.resolve({
           data: { assistant_message_id: "33333333-3333-4333-8333-333333333333" },
@@ -57,14 +70,31 @@ async function run(question: string, setup: Setup) {
         return Promise.resolve({ data: null, error: null });
     }
   };
-  const table = (rows: unknown) => {
+  const table = (name: string, rows: unknown) => {
     const chain: Record<string, unknown> = {
       select: () => chain,
       eq: () => chain,
-      order: () => Promise.resolve({ data: rows, error: null }),
+      is: () => chain,
+      limit: () => chain,
+      neq: () => chain,
+      in: () => chain,
+      update: (payload: Record<string, unknown>) => {
+        updates.push(payload);
+        return chain;
+      },
+      order: () => chain,
+      then: (resolve: (value: unknown) => unknown) =>
+        resolve({
+          data: name === "coach_messages" && setup.copies ? setup.copies : rows,
+          error: null,
+        }),
       maybeSingle: () =>
         Promise.resolve({
-          data: setup.savedQuestionAt ? { created_at: setup.savedQuestionAt } : null,
+          data: name === "daily_check_ins"
+            ? setup.checkIn ?? null
+            : setup.savedQuestionAt
+            ? { created_at: setup.savedQuestionAt }
+            : null,
           error: null,
         }),
     };
@@ -74,8 +104,8 @@ async function run(question: string, setup: Setup) {
     Promise.resolve({
       userId: "user-1",
       userEmail: undefined,
-      serviceClient: { rpc, from: () => table([]) },
-      userClient: { from: () => table([{ id: "m1" }]) },
+      serviceClient: { rpc, from: (name: string) => table(name, []) },
+      userClient: { from: (name: string) => table(name, [{ id: "m1" }]) },
     })) as unknown as typeof requireAuth;
   const held: { current?: CoachChatBudgetLedger } = {};
   const logged = await captureLogs(async () => {
@@ -105,6 +135,7 @@ async function run(question: string, setup: Setup) {
     body: await response.json() as Body,
     calls: calls.map(([name]) => name),
     lines: logged.lines,
+    updates,
   };
 }
 
@@ -218,4 +249,95 @@ Deno.test("an ordinary question still checks consent and takes a budget place fi
   });
   assert(result.calls.includes("has_ai_coaching_consent"));
   assertEquals(result.status, 429);
+});
+
+Deno.test("pain of 7 or more on today's check-in gets the referral even with no consent and no budget", async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const result = await run("Can I train today?", {
+    prepared: { replayed: false, context: { coaching_date: today } },
+    checkIn: { local_date: today, pain_severity: 8 },
+    consent: false,
+    refuse: "monthly cost limit reached",
+  });
+  assertEquals(result.status, 200);
+  assertEquals(result.body.message!.model, "deterministic-safety-v1");
+  assertEquals(result.body.message!.safety_state, "limited");
+  assert(!result.calls.includes("has_ai_coaching_consent"), result.calls.join());
+  assert(!result.calls.includes("reserve_ai_budget"), result.calls.join());
+  assert(result.lines.join("\n").includes('"source":"check_in"'));
+});
+
+Deno.test("an old or mild check-in, or a question that is not about training, takes the normal gates", async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const cases: [string, Setup][] = [
+    ["Can I train today?", {
+      prepared: { replayed: false, context: { coaching_date: today } },
+      checkIn: { local_date: today, pain_severity: 6 },
+      consent: false,
+    }],
+    ["Can I train today?", {
+      prepared: { replayed: false, context: { coaching_date: today } },
+      checkIn: { local_date: "2020-01-01", pain_severity: 9 },
+      consent: false,
+    }],
+    ["What should I eat tonight?", {
+      prepared: { replayed: false, context: { coaching_date: today } },
+      checkIn: { local_date: today, pain_severity: 9 },
+      consent: false,
+    }],
+  ];
+  for (const [question, setup] of cases) {
+    const result = await run(question, setup);
+    assertEquals(result.status, 403, question);
+    assertEquals(result.body.error, "ai_consent_required");
+  }
+});
+
+Deno.test("a fresh-key retry marks the failed attempt's question superseded and keeps an answered one", async () => {
+  const result = await run("How is my week?", {
+    prepared: {
+      replayed: false,
+      context: {
+        coaching_date: "2026-10-17",
+        recent_messages: [
+          { role: "user", content: "How is my week?" },
+          { role: "assistant", content: "Fine." },
+          { role: "user", content: "How is my week?" },
+        ],
+      },
+    },
+    copies: [
+      { id: "failed-1", idempotency_key: "k-failed" },
+      { id: "answered-1", idempotency_key: "k-answered" },
+    ],
+    turns: {
+      "k-failed": { state: "failed" },
+      "k-answered": { state: "answered", message: { answer_source: null } },
+    },
+  });
+  assertEquals(result.status, 200);
+  assertEquals(result.updates, [{ safety_state: "unavailable" }]);
+  assert(result.calls.includes("coach_chat_turn"));
+  assert(
+    result.calls.indexOf("coach_chat_turn") < result.calls.indexOf("record_coach_chat_question"),
+    result.calls.join(),
+  );
+  assert(result.lines.join("\n").includes('"marked":1'));
+});
+
+Deno.test("a question that was not asked before reads and writes nothing about attempts", async () => {
+  const result = await run("How is my week?", {
+    prepared: {
+      replayed: false,
+      context: {
+        coaching_date: "2026-10-17",
+        recent_messages: [
+          { role: "user", content: "Something else" },
+          { role: "assistant", content: "Fine." },
+        ],
+      },
+    },
+  });
+  assertEquals(result.updates, []);
+  assert(!result.calls.includes("coach_chat_turn"));
 });

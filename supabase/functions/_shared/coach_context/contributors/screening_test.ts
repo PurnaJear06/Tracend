@@ -5,8 +5,9 @@ import {
   screeningBudgetChars,
   screeningOutcomeIn,
   screeningSourceFromQuery,
+  screeningStateOf,
 } from "./screening.ts";
-import { renderCoachContext } from "../host.ts";
+import { noCoachContributions, renderCoachContext } from "../host.ts";
 import { coachContextContributors } from "../registry.ts";
 
 const input = { userId: "user-1", question: "Can I go heavy?", localDate: "2026-10-17" };
@@ -53,11 +54,67 @@ Deno.test("the contributor is stable, and the guard reads the outcome the model 
   assertEquals(screeningOutcomeIn(rendered.volatile), "cleared");
 });
 
-Deno.test("a failing source leaves the contributor out; the turn goes on", async () => {
+Deno.test("a failed lookup fails closed: the block says unknown and carries the moderate rule", async () => {
   const failing = createScreeningContributor(() => Promise.reject(new Error("down")));
   const result = await renderCoachContext([failing], input);
-  assertEquals(result.outcomes[0].outcome, "failed");
-  assertEquals(result.stable, "");
+  assertEquals(result.outcomes[0].outcome, "rendered");
+  assertStringIncludes(result.stable, "Outcome: unknown");
+  assertStringIncludes(result.stable, "could not be read");
+  assertStringIncludes(result.stable, "no maximal or near-failure sets");
+  assertEquals(screeningOutcomeIn(result.stable), "unknown");
+  assertEquals(screeningStateOf(result), "unknown");
+});
+
+Deno.test("a lookup that takes too long is unknown too, not cleared", async () => {
+  const slow = createScreeningContributor(
+    () => new Promise((resolve) => setTimeout(() => resolve(null), 200)),
+    20,
+  );
+  const result = await renderCoachContext([slow], input);
+  assertEquals(screeningStateOf(result), "unknown");
+  assertStringIncludes(result.stable, "Outcome: unknown");
+});
+
+Deno.test("no row is cleared; a lookup that failed is not", async () => {
+  const none = await renderCoachContext(
+    [createScreeningContributor(() => Promise.resolve(null))],
+    input,
+  );
+  assertEquals(none.outcomes[0].outcome, "empty");
+  assertEquals(screeningStateOf(none), "cleared");
+  assertEquals(screeningStateOf(null), "cleared");
+  assertEquals(screeningStateOf(noCoachContributions), "cleared");
+});
+
+Deno.test("the state follows the host's report when the block never arrived", () => {
+  const outcome = (kind: "failed" | "timeout" | "empty" | "rendered") => ({
+    stable: "",
+    volatile: "",
+    outcomes: [{
+      id: "screening",
+      slot: "stable" as const,
+      outcome: kind,
+      chars: 0,
+      clipped: false,
+    }],
+  });
+  assertEquals(screeningStateOf(outcome("failed")), "unknown");
+  assertEquals(screeningStateOf(outcome("timeout")), "unknown");
+  assertEquals(screeningStateOf(outcome("empty")), "cleared");
+});
+
+Deno.test("an outcome value the code does not know is a failure, not 'no row'", async () => {
+  const source = screeningSourceFromQuery(() =>
+    Promise.resolve({
+      data: { outcome: "surprise", screened_at: "2026-10-12T08:30:00Z" },
+      error: null,
+    })
+  );
+  await assertRejects(() => source("u"));
+  const result = await renderCoachContext([createScreeningContributor(source)], input);
+  assertEquals(screeningStateOf(result), "unknown");
+  assert(result.stable.length <= screeningBudgetChars + 200);
+  assertEquals(result.outcomes[0].clipped, false);
 });
 
 Deno.test("the query source reads the newest row, ignores a value it does not know, raises on error", async () => {
@@ -67,7 +124,6 @@ Deno.test("the query source reads the newest row, ignores a value it does not kn
     outcome: "see_professional",
     screenedAt: "2026-10-12T08:30:00Z",
   });
-  assertEquals(await screeningSourceFromQuery(row("surprise"))("u"), null);
   assertEquals(
     await screeningSourceFromQuery(() => Promise.resolve({ data: null, error: null }))("u"),
     null,
@@ -77,6 +133,6 @@ Deno.test("the query source reads the newest row, ignores a value it does not kn
   );
 });
 
-Deno.test("the screening comes first in the registry, before the cached goal phase block", () => {
-  assertEquals(coachContextContributors[0].id, "screening");
+Deno.test("the screening comes after the fixed digest and before the goal phase block", () => {
+  assertEquals(coachContextContributors[1].id, "screening");
 });

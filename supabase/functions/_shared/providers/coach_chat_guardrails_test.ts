@@ -7,6 +7,7 @@ import { captureLogs, claudeMessage, fakeFetch, jsonResponse, routeFor } from ".
 import { ownerContext, ownerGoalPhasePayload } from "../coach_safety/fixtures.ts";
 import { renderGoalPhasePayload } from "../coach_context/contributors/goal_phase.ts";
 import { renderCoachContext } from "../coach_context/host.ts";
+import { coachContextContributors } from "../coach_context/registry.ts";
 import { createScreeningContributor } from "../coach_context/contributors/screening.ts";
 import { generateCoachChatViaGateway } from "./coach_chat_provider_gateway.ts";
 import {
@@ -316,4 +317,123 @@ Deno.test("the file states the missing plan after the Safe Ranges and before any
   );
   assert(file.indexOf("## Safe Ranges") < file.indexOf("## Plan Status"));
   assert(!file.includes("## Active Training Plan"));
+});
+
+Deno.test("when the health check cannot be read, Coach is told and the guard holds it to moderate effort", async () => {
+  const unreadable = createScreeningContributor(() => Promise.reject(new Error("down")));
+  const contributions = await renderCoachContext([unreadable], {
+    userId: "u",
+    question: "Can I do intervals?",
+    localDate: "2026-10-14",
+  });
+  let index = 0;
+  const answers = [
+    "Finish with a few sprints.",
+    "Keep it moderate until you know your health check.",
+  ];
+  const fake = fakeFetch(() => claude(answers[index++]));
+  const { result } = await captureLogs(() =>
+    generateCoachChatViaGateway({
+      question: "Can I do intervals?",
+      context: ownerContext(),
+      contextKind: "general",
+      route: route(),
+      consentVendor: "anthropic",
+      contributions,
+    }, { fetch: fake.fetch })
+  );
+  const sent = fake.sent as unknown as Sent[];
+  assertEquals(sent.length, 2);
+  assertStringIncludes(sent[0].body.messages[0].content[0].text, "Outcome: unknown");
+  assertStringIncludes(repairText(sent[1]), "rule=effort_above_screening_cap");
+  assertEquals(result.attempts[0].rule, "effort_above_screening_cap");
+});
+
+Deno.test("a host report of a failed screening contributor restricts the guard even with no block", async () => {
+  const contributions = {
+    stable: "",
+    volatile: "",
+    outcomes: [
+      {
+        id: "screening",
+        slot: "stable" as const,
+        outcome: "timeout" as const,
+        chars: 0,
+        clipped: false,
+      },
+    ],
+  };
+  const fake = fakeFetch(() => claude("Finish with a few sprints."));
+  const { result } = await captureLogs(async () => {
+    try {
+      return await generateCoachChatViaGateway({
+        question: "Can I do intervals?",
+        context: ownerContext(),
+        contextKind: "general",
+        route: route(),
+        consentVendor: "anthropic",
+        contributions,
+      }, { fetch: fake.fetch });
+    } catch (error) {
+      return error as CoachChatUnavailableError;
+    }
+  });
+  assert(result instanceof CoachChatUnavailableError);
+  assertEquals(result.metadata.initialRule, "effort_above_screening_cap");
+});
+
+Deno.test("the registered principles digest grounds its guideline figures; without it they are refused", async () => {
+  const question = "How much protein should I eat?";
+  const withDigest = await renderCoachContext(
+    coachContextContributors.filter((c) => c.id === "coaching_principles"),
+    { userId: "u", question, localDate: "2026-10-14" },
+  );
+  assertStringIncludes(withDigest.stable, '<reference_data source="coaching_principles">');
+  const reply = "Most people who train do well on about 1.6 g of protein per kg a day.";
+  const run1 = async (contributions?: typeof withDigest) => {
+    const fake = fakeFetch(() => claude(reply));
+    const { result } = await captureLogs(async () => {
+      try {
+        return await generateCoachChatViaGateway({
+          question,
+          context: ownerContext(),
+          contextKind: "nutrition_focus",
+          route: route(),
+          consentVendor: "anthropic",
+          contributions,
+        }, { fetch: fake.fetch });
+      } catch (error) {
+        return error as CoachChatUnavailableError;
+      }
+    });
+    return { result, requests: fake.sent.length };
+  };
+  const grounded = await run1(withDigest);
+  if (grounded.result instanceof Error) throw grounded.result;
+  assertEquals(grounded.requests, 1);
+  const refused = await run1();
+  assert(refused.result instanceof CoachChatUnavailableError);
+  assertEquals(refused.result.metadata.initialRule, "numbers_not_grounded");
+});
+
+Deno.test("the digest sits in the cached stable block, before the volatile parts and the question", async () => {
+  const contributions = await renderCoachContext(coachContextContributors, {
+    userId: "u",
+    question: "How is my week?",
+    localDate: "2026-10-14",
+  });
+  const { buildCoachChatGatewayPrompt } = await import("./coach_chat_provider_gateway.ts");
+  const prompt = buildCoachChatGatewayPrompt(
+    "How is my week?",
+    ownerContext(),
+    "general",
+    contributions,
+  );
+  const parts = prompt.messages[0].content.map((part) => part.type === "text" ? part : null);
+  assertEquals(parts[0]!.cache, true);
+  assertStringIncludes(parts[0]!.text, "Coaching principles (Tracend library digest");
+  assert(
+    parts[0]!.text.indexOf("</coaching_context>") < parts[0]!.text.indexOf("coaching_principles"),
+  );
+  assert(!parts.slice(1).some((part) => part!.text.includes("Coaching principles (Tracend")));
 });

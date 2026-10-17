@@ -651,6 +651,26 @@ audit (1, 2, 3, 6 deterministic part, 7, 15).
   app should show "your last message didn't go through" and send it again under a new key (no SQL
   change; the age is the question row's `created_at`). Younger turns, or an age that cannot be read,
   still answer 409 `chat_in_progress`. `handler_test.ts` runs the real handler against a fake client.
+- **Review fixes (Codex, 7 safety fail-opens), all with tests:** (1) the check-in escalation is
+  read from `daily_check_ins` and decided before the consent and budget gates (`screenTodaysCheckIn`);
+  (2) a negation ends at contrast words and clause punctuation, and crosses a comma only into a short
+  symptom list; (3) `see_professional` blocks every training prescription, and "keep HIIT moderate"
+  fails `moderate_until_cleared` (only a prohibition exempts a vigorous word);
+  (4) `parseCoachChatAnswer` runs the check once over every visible field (answer, follow-ups,
+  missing data, evidence labels, reasoning chain); the new rule `training_advice_on_pain_day`
+  stops training advice in any field on a pain-7 day; (5) a year-like number with a unit or an
+  amount word is a measurement; (6) the calorie floor exempts only a limit word or judgement that
+  governs the figure, and meal or burn words only when they govern it; (7) a failed, slow or
+  unreadable screening lookup renders "Outcome: unknown" (restricted like `moderate_until_cleared`)
+  and `screeningStateOf` also reads the host's failed or timed-out report.
+- **Fresh-key retry** (`coach-chat/superseded.ts`): when the context's memory holds an unanswered
+  copy of the question being asked, the handler asks `coach_chat_turn` about each earlier same-text
+  attempt and sets `safety_state = 'unavailable'` on the user row of those that failed, were lost
+  or only got a data summary, and removes the unanswered copies from `recent_messages` before the
+  model sees them. No SQL. **For the app:** hide user messages with `safety_state = 'unavailable'`
+  in the thread (a marked row is a failed attempt the retry replaced).
+- **Coaching principles digest**: registered first in `coach_context/registry.ts` (stable, cached
+  block); persona line added; legacy parity digests recorded again on purpose.
 - **Open**: the sets and reps a coach prescribes as advice are not checked (see the spec);
   sentences claiming an action that the model words in an unusual way will pass the regexes (the
   persona rule is the main defence); `prepare_coach_chat_v8` still raises for an athlete with no

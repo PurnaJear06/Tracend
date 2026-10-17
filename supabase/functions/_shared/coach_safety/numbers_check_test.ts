@@ -104,3 +104,43 @@ Deno.test("negative signs and thousands separators are read, not guessed", () =>
   assertEquals(missing("Volume was 9,800 kg last week."), []);
   assertEquals(missing("Volume was 9,000 kg last week."), ["9,000"]);
 });
+
+Deno.test("a year-like figure with a unit or an energy context is a measurement, not a year", () => {
+  const given = numberGroundOf(["Target 1800 kcal and 74.4 kg."]);
+  const missingIn = (answer: string) => ungroundedNumbers(answer, given);
+  // Measurements that look like years.
+  assertEquals(missingIn("Aim for 2000 kcal a day."), ["2000"]);
+  assertEquals(missingIn("Eat 1950 calories."), ["1950"]);
+  assertEquals(missingIn("About 2020 g of food."), ["2020"]);
+  assertEquals(missingIn("Walk 2000 steps more."), ["2000"]);
+  assertEquals(missingIn("Eat around 2000 a day."), ["2000"]);
+  assertEquals(missingIn("Stay under 2100."), ["2100"]);
+  assertEquals(missingIn("A target of 1999 kcal works."), ["1999"]);
+  assertEquals(missingIn("You weigh 1990 g less."), ["1990"]);
+  // Real years and dates are not measurements.
+  assertEquals(missingIn("Since 2025 you trained a lot."), []);
+  assertEquals(missingIn("In 2026 you started."), []);
+  assertEquals(missingIn("It was March 2026 when you began."), []);
+  assertEquals(missingIn("By 2027 the goal may be near."), []);
+  assertEquals(missingIn("On 2026-07-04 you began."), ["2026-07-04"]);
+  // A given measurement that looks like a year grounds the same figure with its unit.
+  assertEquals(missingIn("Aim for 1800 kcal a day."), []);
+});
+
+Deno.test("a figure with no unit matches a given figure of any unit", () => {
+  const given = numberGroundOf(["Latest 74.4 kg; 54 completed sets."]);
+  assertEquals(ungroundedNumbers("You are at 74.4.", given), []);
+  assertEquals(ungroundedNumbers("You did 54 in total.", given), []);
+  assertEquals(ungroundedNumbers("You did 54 sessions.", given), []);
+  assertEquals(ungroundedNumbers("You did 54 kg.", given), ["54"]);
+});
+
+Deno.test("ranges give both ends the unit of the end: a digest range grounds its lower figure", () => {
+  const given = numberGroundOf([
+    "Protein: about 1.4 to 2.0 g per kg a day; 150 to 300 minutes a week.",
+  ]);
+  assertEquals(ungroundedNumbers("Aim for 1.4 g per kg.", given), []);
+  assertEquals(ungroundedNumbers("Aim for 2.0 g per kg.", given), []);
+  assertEquals(ungroundedNumbers("About 150 minutes a week.", given), []);
+  assertEquals(ungroundedNumbers("About 1.4 kg of protein.", given), ["1.4"]);
+});

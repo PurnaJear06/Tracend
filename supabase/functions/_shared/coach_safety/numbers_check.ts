@@ -54,6 +54,18 @@ const ordinal = /\b\d+(?:st|nd|rd|th)\b/gi;
 const monthThenDay = new RegExp(String.raw`\b(${monthWord})\.? (\d{1,2})\b`, "gi");
 const dayThenMonth = new RegExp(String.raw`\b(\d{1,2}) (${monthWord})\b`, "gi");
 const year = /\b(?:19|20)\d{2}\b/g;
+// A year-like number is a measurement ("2000 kcal", "eat around 2000") when a unit follows it or a
+// word that introduces an amount precedes it; otherwise it is a year and is not checked.
+const amountAfter =
+  /^\s*(?:kcals?\b|calories?\b|cals?\b|kgs?\b|kilos?\b|kilograms?\b|lbs?\b|pounds?\b|gr?\b|grams?\b|steps?\b|%|percent\b|ml\b|mg\b|bpm\b|cm\b|mm\b|minutes?\b|mins?\b|hours?\b|reps?\b|sets?\b|a day\b|per day\b|daily\b|a week\b|per week\b)/i;
+const amountBefore =
+  /\b(?:about|around|roughly|approximately|near|nearly|under|over|below|above|than|between|only|just|eat|eating|aim|aiming|target|targeting|intake|burn|burning|consume|consuming|budget|calories|kcal|weigh|weighs|weighed|weight|steps)\s*~?\s*$|~\s*$/i;
+
+function isMeasurement(whole: string, offset: number, length: number): boolean {
+  return amountAfter.test(whole.slice(offset + length, offset + length + 20)) ||
+    amountBefore.test(whole.slice(Math.max(0, offset - 24), offset));
+}
+
 const alwaysOn = /\b24\/7\b/g;
 const listNumber = /^([ \t]*)\d+[.)](?=\s)/gm;
 
@@ -86,7 +98,13 @@ function clean(text: string, blankYears: boolean): Cleaned {
     monthDays.push(`${monthIndex(month)}-${day.padStart(2, "0")}`);
     return blank(match);
   });
-  if (blankYears) out = out.replace(year, blank);
+  if (blankYears) {
+    out = out.replace(
+      year,
+      (match, offset: number, whole: string) =>
+        isMeasurement(whole, offset, match.length) ? match : blank(match),
+    );
+  }
   return { text: out, dates, monthDays };
 }
 
@@ -147,7 +165,7 @@ function tokensOf(text: string): Token[] {
       raw: match[0],
       before,
       after,
-      unit: unitOf(before, after),
+      unit: unitOf(before, rangeEnd.exec(after)?.[1] ?? after),
     });
   }
   return found;
@@ -202,9 +220,9 @@ function mustBeGrounded(token: Token): boolean {
   return token.value > 10;
 }
 
-/** Units agree when the reply's is the given number's, or the given number has no unit. */
+/** Units agree when the reply's is the given number's, or either has no unit at all. */
 function unitsAgree(token: Token, given: GivenNumber): boolean {
-  if (given.unit === "") return true;
+  if (given.unit === "" || token.unit === "") return true;
   const known = token.unit !== "" && token.unit !== "other";
   return known ? given.unit === token.unit : given.unit === token.unit || given.unit === "other";
 }

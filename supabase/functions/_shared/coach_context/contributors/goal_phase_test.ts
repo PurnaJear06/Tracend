@@ -54,5 +54,9 @@ Deno.test("the RPC source asks for the user and raises on an error", async () =>
 
 Deno.test("the registry holds the goal phase contributor after the screening and is valid", () => {
   validateCoachContextContributors(coachContextContributors);
-  assertEquals(coachContextContributors.map((c) => c.id), ["screening", "goal_phase"]);
+  assertEquals(coachContextContributors.map((c) => c.id), [
+    "coaching_principles",
+    "screening",
+    "goal_phase",
+  ]);
 });

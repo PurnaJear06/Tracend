@@ -1,13 +1,16 @@
 import type { CoachContextContributor } from "./host.ts";
 import { goalPhaseContributor } from "./contributors/goal_phase.ts";
 import { screeningContributor } from "./contributors/screening.ts";
+import { coachingPrinciplesContributor } from "../library/principles.ts";
 
-// The contributors Coach chat renders, in their fixed order (Contract 7). A9 (screening) and B7
-// (goal phase) are registered; E3 (research library), C3 (heart-rate profile) and B3
-// (progression) add theirs. Order is part of the prompt: a stable contributor placed before
-// another keeps the cached prefix of the ones before it, so the screening, which changes only
-// when the athlete answers the health check again, comes first.
+// The contributors Coach chat renders, in their fixed order (Contract 7). The coaching principles
+// digest (E2, registered by A9), the screening (A9) and the goal phase (B7) are registered; E3
+// (retrieval), C3 (heart-rate profile) and B3 (progression) add theirs. Order is part of the
+// prompt: a stable contributor placed before another keeps the cached prefix of the ones before
+// it, so the fixed digest comes first, then the screening, which changes only when the athlete
+// answers the health check again.
 export const coachContextContributors: readonly CoachContextContributor[] = Object.freeze([
+  coachingPrinciplesContributor,
   screeningContributor,
   goalPhaseContributor,
 ]);

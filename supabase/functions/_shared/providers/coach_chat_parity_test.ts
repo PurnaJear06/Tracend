@@ -7,7 +7,8 @@
 // rules, the no-tools and brevity persona rules and the goal-details rendering, and (for the rich athlete, whose goal weight is set) the
 // calculators' kilogram rows that stop at the goal weight, and records the digests again. A9 (Coach
 // guardrails) did too: it adds the red-flag, Safe Ranges, screening and numbers rules to the persona
-// and answer contract and the Safe Ranges section to the athlete file, and records them again.
+// and answer contract and the Safe Ranges section to the athlete file, and records them again. The later A9 fixes did
+// once more: a persona line for the coaching principles digest and the stricter screening rule.
 
 import { assertEquals } from "jsr:@std/assert@1.0.14";
 import { route } from "../ai/routes.ts";
@@ -106,22 +107,22 @@ Deno.test("no route settings: the DeepSeek request is byte-identical to the pre-
 // Per athlete (rich, no_watch, new_user): weekly question, plan-change question, weekly question
 // with history; each the first request and its repair.
 const preA6Requests: readonly string[] = [
-  "989e44ffc9594adfbc14a97d8f00f1ccb19f7ebc9930cd1c97919bf910887935",
-  "970a7718eaa0f0e7e9a0ad77226c3c86294d6d7b094a098bf50fb0890815dfd0",
-  "d4483ba11405fd613878217fd21721958c80eaa00a2261d6e417cd6e32f6368c",
-  "b25b017ab2d95faf5a303a042642a6bd23644ae32e0495953e1c1edd7498ffe2",
-  "fa9842b0d678d2a372ab3ddbf6dd846bf7e41b83a1c086c953e85b23b19d3564",
-  "077438c340a5e8726f1b08f78df4aed72fc18ec69484c9ac1f85bdc0412c0c2a",
-  "7e92a2a08d48c8ef280b443eae76a2c019d955c1b67c3348dc2a85f463f830b5",
-  "644b2d24d7d4633aac8c57c9d7b7cf6791ca073bc0e85483f4e421d68c68aef2",
-  "2190e5d09eddce84241c44ee0e36998a767dbdfe5bbc57915e5263ade56d338c",
-  "320a71d3799276d3686302114444e68455f1b0e39ec66d34a42964b99cc21a42",
-  "f94512697748444a454fd32d2e34c3fd1365a34e4b7bb3aa33d4a63dff8fa270",
-  "04a7949a30b0bd4e3806d518cc480f7bf7d25ab4c2aef9c9f53adfd0b9658345",
-  "70367fb97a75c55b992805d8e42eb534bea5cccdebc7f0f4e87aeff866912066",
-  "580de77c8105a4f0be5153b013e7ae0b15a722267a9c45b3d6ab8c3e22e267de",
-  "bf317d9ef486576f9338a383b42306433261f9765d9960d925987affb1e31db2",
-  "2d75677e1b5c6a08ab4d6fa619043ebea5dc2daf88e7be37ba32e727210fd356",
-  "5834f07fefb78c93b286d1c18aec11ae35cd3897e7bee1299ec39d7f1236d5b4",
-  "c527c2a1e4afe3f89efa02fa86fb3bf38cca921ab7d774f0116989089efc2625",
+  "182b4a9d8726317ab2c65622e2e816ba3c2c9ee8f209c3be8e688d8e12ad8ee6",
+  "65504a5e52ee76e6db69435c717d1b175fe36fb0b35ec438c540959bd62a9a8b",
+  "937483169ea0e1ec094bba872f988a20b586bf9d52c4dd36f6e8480730d611a9",
+  "973d4201f163f3bb2ad5580f96db0f6a892f3cfa5fbac5e9e8029da2f796c702",
+  "c4c3fe1da70b4449624a8259fec7f1f169a0cfb6c7724351653540b5f126e31e",
+  "1b0bb5366ed7f7857a46b438ff85a260334bfdf14285201b757200688a0dee1b",
+  "e03e642c7d4255150c5f4b7ef7a4db63d8cc100c07b02aeda7d56d5011f2a2d6",
+  "09b02acb6767248863e0540b059b781a2b07459e7589b1a0ce5d4987eb0ffb94",
+  "220e1f9dc6986bc21f66e96baa72653c83fd9196f7fd780f290e55ce5869bde5",
+  "d72078e7ebfb6ab39ff359a29f9881c9d3477fb2baa83b34729dc85adc418111",
+  "66995fd7560d9f2bab17ddc59dfa17d3501fe2476925bc83cf26ca228b3505fd",
+  "f312ce5548b45031a8152dfa82626a1554f6cfa8dc23f313a107f286de0efff4",
+  "50ee7b6cec83cbc3fdb03f967642d7c0220a69503428ffe592ae49aeed4c0658",
+  "448484d5510d112ad027e11c312f64e3df6b70a05bd95ea9a3de922d00f52e01",
+  "99bbb7a72db805ed519f46e3bc571095b6a953ce576a2cdf0d6bf9aae2d29192",
+  "26c104df8da9fca436e9fcf68abb1d065390d2af0f55c52045a7c352921744a6",
+  "7db39f101c77e10730b8c29f79c04abcd89019636c1d60e2af907859ebfbf092",
+  "68b3ce2eac3f4e565b9a25b912d287d1ffd1843556467aaa3e87f58819734931",
 ];

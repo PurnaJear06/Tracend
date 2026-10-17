@@ -21,8 +21,12 @@ function contributor(
 
 Deno.test("the registry is valid and holds the contributors registered so far", () => {
   validateCoachContextContributors(coachContextContributors);
-  assertEquals(coachContextContributors.map((item) => item.id), ["screening", "goal_phase"]);
-  assertEquals(coachContextContributors.map((item) => item.slot), ["stable", "volatile"]);
+  assertEquals(coachContextContributors.map((item) => item.id), [
+    "coaching_principles",
+    "screening",
+    "goal_phase",
+  ]);
+  assertEquals(coachContextContributors.map((item) => item.slot), ["stable", "stable", "volatile"]);
 });
 
 Deno.test("contributors render in registry order, split by slot and labelled", async () => {

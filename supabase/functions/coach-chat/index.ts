@@ -18,8 +18,20 @@ import {
   generateCoachChat,
   legacyCoachChatVendor,
 } from "../_shared/providers/coach_chat_provider.ts";
+import {
+  type AttemptStore,
+  supersededSafetyState,
+  supersedeFailedAttempts,
+  withoutSupersededQuestions,
+} from "./superseded.ts";
 import { selectCoachChatRoute } from "../_shared/providers/coach_chat_provider_route.ts";
-import { screenMessage } from "../_shared/coach_safety/red_flags.ts";
+import {
+  localDateIn,
+  type RedFlagHit,
+  screenCheckInRow,
+  screenMessage,
+  trainingQuestion,
+} from "../_shared/coach_safety/red_flags.ts";
 import {
   chooseCoachChatRoute,
   coachChatReservationUsd,
@@ -288,6 +300,73 @@ export function coachChatReplayResponse(
   };
 }
 
+/**
+ * With a question about training, today's check-in read straight from the table (a cheap read,
+ * no budget): pain of 7 or more answers with the referral before the consent and budget gates.
+ * A failed read lets the turn go on: the providers screen again with the prepared context.
+ */
+async function screenTodaysCheckIn(
+  client: Awaited<ReturnType<typeof requireAuth>>["serviceClient"],
+  userId: string,
+  question: string,
+  timezone: string,
+  log: ReturnType<typeof createLogger>,
+): Promise<RedFlagHit | null> {
+  if (!trainingQuestion(question)) return null;
+  try {
+    const { data, error } = await client.from("daily_check_ins")
+      .select("local_date,pain_severity").eq("user_id", userId).is("superseded_at", null)
+      .order("local_date", { ascending: false }).limit(1).maybeSingle();
+    if (error) {
+      log.warn("coach_chat_check_in_unread", { error_code: error.code ?? "unknown" });
+      return null;
+    }
+    return screenCheckInRow(
+      data as { local_date?: unknown; pain_severity?: unknown } | null,
+      localDateIn(timezone),
+      question,
+    );
+  } catch {
+    log.warn("coach_chat_check_in_unread", { error_code: "exception" });
+    return null;
+  }
+}
+
+/** The database side of superseding a failed attempt (see superseded.ts), on the service client. */
+function attemptStore(
+  client: Awaited<ReturnType<typeof requireAuth>>["serviceClient"],
+  userId: string,
+  threadId: string,
+  question: string,
+  currentKey: string,
+): AttemptStore {
+  return {
+    async copies() {
+      const { data, error } = await client.from("coach_messages").select("id,idempotency_key")
+        .eq("user_id", userId).eq("thread_id", threadId).eq("role", "user")
+        .eq("content", question.trim()).neq("idempotency_key", currentKey)
+        .neq("safety_state", supersededSafetyState)
+        .order("created_at", { ascending: false }).limit(5);
+      if (error) throw new Error("copies unreadable");
+      return ((data ?? []) as { id: string; idempotency_key: string | null }[])
+        .filter((row) => typeof row.idempotency_key === "string")
+        .map((row) => ({ id: row.id, key: row.idempotency_key as string }));
+    },
+    async turn(key) {
+      const { data, error } = await client.rpc("coach_chat_turn", {
+        target_user_id: userId,
+        request_idempotency_key: key,
+      });
+      return error ? null : data as never;
+    },
+    async mark(ids) {
+      const { error } = await client.from("coach_messages")
+        .update({ safety_state: supersededSafetyState }).eq("user_id", userId).in("id", [...ids]);
+      if (error) throw new Error("mark failed");
+    },
+  };
+}
+
 /** How long ago a saved question was created, or null when it cannot be told. */
 export function questionAgeMs(createdAt: unknown, now: number = Date.now()): number | null {
   const created = typeof createdAt === "string" ? Date.parse(createdAt) : NaN;
@@ -416,10 +495,12 @@ export async function handleCoachChat(
     log.warn("invalid_chat_request");
     return reply(422, versionedResponse({ error: "invalid_chat_request" }));
   }
-  // A message that reports a red-flag symptom is answered by the fixed referral: nothing is sent
-  // to an AI provider, so no consent is needed and no budget place is taken. The message is not
-  // logged, only the rule that fired.
-  const redFlag = screenMessage(input.question);
+  // A message that reports a red-flag symptom, or a question about training on a day of check-in
+  // pain of 7 or more, is answered by the fixed referral: nothing is sent to an AI provider, so
+  // no consent is needed and no budget place is taken (an athlete without consent or budget still
+  // gets the referral). The message is not logged, only the rule that fired.
+  const redFlag: RedFlagHit | null = screenMessage(input.question) ??
+    await screenTodaysCheckIn(auth.serviceClient, auth.userId, input.question, input.timezone, log);
   // With AI_COACH_CHAT_* settings (and EVALUATED=true) the turn goes through the AI gateway;
   // without them, or when the route cannot be used, it keeps today's provider path, request for
   // request. A question that needs analysis (progress, weight, nutrition numbers, the plan) uses
@@ -555,7 +636,28 @@ export async function handleCoachChat(
     );
   }
 
-  const context = prepared.context as Record<string, unknown>;
+  // A fresh-key retry of a message whose earlier attempt failed: the failed attempt's question is
+  // marked superseded and left out of the model's memory, so the thread holds the question once.
+  const { context, dropped: repeatedQuestions } = withoutSupersededQuestions(
+    prepared.context as Record<string, unknown>,
+    input.question,
+  );
+  if (repeatedQuestions > 0) {
+    try {
+      const marked = await supersedeFailedAttempts(
+        attemptStore(
+          auth.serviceClient,
+          auth.userId,
+          input.thread_id,
+          input.question,
+          input.idempotency_key,
+        ),
+      );
+      log.info("coach_chat_attempts_superseded", { marked });
+    } catch {
+      log.warn("coach_chat_supersede_failed");
+    }
+  }
   const coachingDate = (context.coaching_date as string) ??
     new Date().toISOString().slice(0, 10);
 

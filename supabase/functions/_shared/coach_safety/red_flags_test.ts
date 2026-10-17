@@ -4,10 +4,13 @@ import { mayConcernHealthRisk } from "../coach_chat_fallback.ts";
 import { referralFor } from "./referrals.ts";
 import {
   checkInEscalated,
+  localDateIn,
   type RedFlagCategory,
   screenCheckIn,
+  screenCheckInRow,
   screenMessage,
   screenTurn,
+  trainingQuestion,
 } from "./red_flags.ts";
 
 const hits: readonly (readonly [string, RedFlagCategory])[] = [
@@ -75,6 +78,25 @@ const hits: readonly (readonly [string, RedFlagCategory])[] = [
   ["if I feel dizzy again should I keep training", "dizziness"],
   ["I didn't train today and felt dizzy", "dizziness"],
   ["I'm not sure if I fainted or got dizzy", "collapse"],
+  // A negation does not carry across a contrast
+  ["No chest pain, just dizzy", "dizziness"],
+  ["No chest pain just dizzy", "dizziness"],
+  ["no chest pain, only dizzy when I stand", "dizziness"],
+  ["no chest pain, only lightheaded", "dizziness"],
+  ["not dizzy, just fainted once", "collapse"],
+  ["no chest pain except I feel dizzy", "dizziness"],
+  ["no chest pain though I felt faint", "collapse"],
+  ["no fainting, however I get dizzy", "dizziness"],
+  ["no chest pain although my vision went black", "collapse"],
+  ["I haven't fainted - just dizzy", "dizziness"],
+  ["no chest pain (just dizzy)", "dizziness"],
+  ["no chest pain; dizzy after sets", "dizziness"],
+  ["no chest pain, dizzy when I run", "dizziness"],
+  ["no chest pain and I am dizzy", "dizziness"],
+  ["I never fainted, but I get dizzy", "dizziness"],
+  ["no dizziness. chest pain though", "chest"],
+  ["I didn't pass out, I only felt dizzy", "dizziness"],
+  ["no chest pain besides feeling dizzy", "dizziness"],
   // Pain
   ["I felt a sharp pain in my lower back on deadlifts", "injury_pain"],
   ["sudden pain in my knee during the squat", "injury_pain"],
@@ -114,6 +136,13 @@ const ordinary = [
   "without any chest pain I finished the session",
   "I haven't had any numbness since last month",
   "no pain, no sharp pain, just soreness",
+  "no chest pain, dizziness, or fainting",
+  "no chest pain, dizziness or fainting",
+  "no chest pain or dizziness, just tired legs",
+  "no dizziness, no chest pain, just sore",
+  "never dizzy, never faint, just hungry on a cut",
+  "no chest pain, nothing dizzy",
+  "zero dizziness, only a sore chest day",
   // Hypothetical and education
   "how do I avoid dizziness when cutting?",
   "how can I prevent feeling lightheaded on a deficit",
@@ -280,4 +309,41 @@ Deno.test("a hit carries a finite rule name and never the message", () => {
   const hit = screenMessage("I fainted at 7pm in my kitchen")!;
   assertEquals(hit, { category: "collapse", rule: "faint", source: "message" });
   assert(!JSON.stringify(hit).includes("kitchen"));
+});
+
+Deno.test("a check-in row from the database is screened the same way as the context", () => {
+  const training = "Can I train today?";
+  const today = "2026-10-17";
+  assertEquals(
+    screenCheckInRow({ local_date: today, pain_severity: 8 }, today, training)?.source,
+    "check_in",
+  );
+  assertEquals(
+    screenCheckInRow({ local_date: today, pain_severity: 7 }, today, training)?.rule,
+    "check_in_pain",
+  );
+  assertEquals(screenCheckInRow({ local_date: today, pain_severity: 6 }, today, training), null);
+  assertEquals(
+    screenCheckInRow({ local_date: "2026-10-16", pain_severity: 9 }, today, training),
+    null,
+  );
+  assertEquals(
+    screenCheckInRow({ local_date: today, pain_severity: 9 }, today, "what should I eat?"),
+    null,
+  );
+  assertEquals(screenCheckInRow(null, today, training), null);
+  assertEquals(screenCheckInRow({ local_date: today, pain_severity: null }, today, training), null);
+});
+
+Deno.test("a training question is recognised without reading anything", () => {
+  assert(trainingQuestion("Can I train today?"));
+  assert(trainingQuestion("should i skip the gym"));
+  assert(!trainingQuestion("What should I eat tonight?"));
+});
+
+Deno.test("the athlete's local date comes from the timezone, UTC when it is unknown", () => {
+  const instant = Date.parse("2026-10-17T22:30:00Z");
+  assertEquals(localDateIn("Asia/Kolkata", instant), "2026-10-18");
+  assertEquals(localDateIn("America/Los_Angeles", instant), "2026-10-17");
+  assertEquals(localDateIn("Not/AZone", instant), "2026-10-17");
 });
