@@ -782,10 +782,11 @@ routes stay available by settings alone for two weeks after the cutover.
 - User text and retrieved content are delimited, untrusted data.
 - Context states units, windows, freshness, provenance, and missing data.
 - Direct identifiers, tokens, object keys, and unrelated history are excluded.
-- Coaching calls have no web, shell, arbitrary database, or unrestricted tool access.
+- Coaching calls have no web, shell, arbitrary database, or unrestricted tool access. Coach chat on
+  the gateway route may ask for bounded, read-only lookups of the athlete's own records (§11.1).
 - The model may reference only supplied catalog identifiers.
 - Conversational answers may explain only supplied structured evidence, must state missing data,
-  and expose evidence references. The model receives at most 20 recent messages and no tools.
+  and expose evidence references. The model receives at most 20 recent messages and no tools (bounded data lookups travel in the JSON answer, §11.1).
   The deterministic red-flag screen (§7) answers symptom reports and unsupported medical,
   pregnancy, medication and rehabilitation requests before the model sees them.
 - **Null contract:** a `null` value in any model context (chat or decision) means the metric was
@@ -944,6 +945,46 @@ routes stay available by settings alone for two weeks after the cutover.
   hard boundaries), followed by the null contract and the output accuracy/validation contract so the
   contract's rules take precedence.
 
+### 11.1 Bounded data lookups (A10)
+
+Coach answers like a coach who can open the athlete's file: it can look up any of the athlete's
+records, for any day or period, when the question needs it. This is **not an agent and not tool
+calling**. The mechanism is part of the JSON answer, so it works with any provider and the Claude
+adapter still sends no tools.
+
+- **A closed catalogue** (`_shared/coach_lookups/catalogue.ts`): eleven lookups (`workouts`,
+  `exercise_history`, `meals`, `body`, `check_ins`, `recovery`, `plan_history`, `goals`,
+  `weekly_reviews`, `physique`, `health_history`). Each is one `SECURITY DEFINER` RPC granted to
+  `service_role` only, read-only, with a `schema_version`, a row cap and a range clamp.
+- **The model names a lookup, a range and a filter; nothing else.** The answer may carry
+  `data_requests: [{lookup, from, to, filter}]` instead of a final answer. The athlete's id is bound
+  by the Edge Function from the authenticated request when it builds the runner; it is never part of
+  a request and never reaches the model's output.
+- **Validation before anything runs**: a known lookup, real dates, `from` not after `to`, at most
+  400 days, a range not wholly in the future (an end after the coaching date is cut to it), at most
+  4 requests a round, a required filter for `exercise_history`, filters of plain words only. A
+  refused request is an invalid answer (rules `lookup_request_invalid`,
+  `lookup_rounds_exceeded`): the one repair attempt must answer without lookups.
+- **At most 2 lookup rounds.** After the rows return, the model is called again; after the second
+  round it is told no more lookups exist and must answer. A third request is refused.
+- **Budget.** Every extra call, lookup round or repair, reserves its own budget place at its own
+  worst case before it is sent. When no place is available the model's interim sentence (it says
+  what it is checking and has not seen) is the answer if it passes every guard; otherwise the turn
+  ends in the labelled data summary.
+- **Order of guards.** The deterministic red-flag screen runs first and answers before any model
+  call or lookup. Every guard (safe ranges, screening cap, claimed actions, the numbers check, the
+  goal-phase rules) runs on the final answer. The rows a lookup returned count as grounded for the
+  numbers check, because they are the athlete's own records.
+- **Rows are reference data**, dated and labelled; athlete-written text in them (check-in notes) is
+  untrusted data. A lookup that fails is reported to the model as unreadable and it must say it
+  could not check.
+- **Nothing is written, nothing runs in the background, no loop is open-ended.** Lookups exist
+  only on the gateway route; today's DeepSeek path has none.
+- **Observability**: the lookup names and row counts, never the rows, are stored on the assistant
+  message (`coach_messages.lookups`), with the guard rules each attempt broke and any fallback code
+  (`coach_messages.guard_faults`), so the lead can query what Coach looked at and why a turn fell
+  back.
+
 ## 12. Validation and Failure Handling
 
 The invoking Supabase Edge Function validates schema, enums, ranges, evidence, policy permissions,
@@ -1076,6 +1117,9 @@ The MVP uses structured state and bounded summaries. Vector RAG over user data i
 the gates in [ARCHITECTURE.md](./ARCHITECTURE.md) pass. The research library of open sources and
 in-house summaries (decision D3, ARCHITECTURE.md section 11) is the one retrieval source allowed
 now. Retrieval cannot override confirmed facts or policy.
+
+Bounded lookups of the athlete's own records (§11.1) are not an agent: a closed read-only
+catalogue, a hard cap of two rounds, no writes and no background runs.
 
 Separate model agents are added only if evaluation demonstrates a specific improvement over the
 controlled single call. Safety and mutation approval always remain external to models.

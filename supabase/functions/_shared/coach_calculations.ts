@@ -74,26 +74,11 @@ export type MetricCalculation = Readonly<{
   max_28d: number;
 }>;
 
-export type NutritionWindow = Readonly<{
-  days_logged: number;
-  calories: number | null;
-  protein_g: number | null;
-  carbohydrate_g: number | null;
-  fat_g: number | null;
-}>;
-
-export type NutritionCalculation = Readonly<{
-  last_7_days: NutritionWindow;
-  last_28_days: NutritionWindow;
-  targets: Readonly<Record<string, number>>;
-}>;
-
 export type CoachCalculations = Readonly<{
   coaching_date: string;
   weight: WeightCalculation | null;
   training: TrainingCalculation | null;
   metrics: readonly MetricCalculation[];
-  nutrition: NutritionCalculation | null;
 }>;
 
 // A trend needs readings on at least 4 days spanning at least 14 days; fewer
@@ -116,8 +101,6 @@ const metricDefinitions = [
   { key: "active_energy_kcal", label: "Active energy (kcal)", decimals: 0 },
   { key: "workout_minutes", label: "Workout minutes", decimals: 0 },
 ] as const;
-
-const nutritionKeys = ["calories", "protein_g", "carbohydrate_g", "fat_g"] as const;
 
 function obj(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -441,42 +424,6 @@ function calculateMetrics(ctx: Record<string, unknown>, today: number): MetricCa
   return results;
 }
 
-function nutritionWindow(rows: readonly Record<string, unknown>[]): NutritionWindow {
-  const average = (key: string) => {
-    const value = mean(rows.map((row) => num(row[key])).filter((v): v is number => v !== null));
-    return value === null ? null : roundTo(value, 0);
-  };
-  return {
-    days_logged: rows.length,
-    calories: average("calories"),
-    protein_g: average("protein_g"),
-    carbohydrate_g: average("carbohydrate_g"),
-    fat_g: average("fat_g"),
-  };
-}
-
-function calculateNutrition(
-  ctx: Record<string, unknown>,
-  today: number,
-): NutritionCalculation | null {
-  if (!Array.isArray(ctx.nutrition_daily_28d)) return null;
-  const rows = ctx.nutrition_daily_28d.map(obj).filter((row) => {
-    const day = dayIndex(row.local_date);
-    return day !== null && day <= today && day >= today - 27;
-  });
-  const targetSource = obj(ctx.nutrition_targets);
-  const targets: Record<string, number> = {};
-  for (const key of nutritionKeys) {
-    const value = num(targetSource[key]);
-    if (value !== null) targets[key] = value;
-  }
-  return {
-    last_7_days: nutritionWindow(rows.filter((row) => dayIndex(row.local_date)! >= today - 6)),
-    last_28_days: nutritionWindow(rows),
-    targets,
-  };
-}
-
 export function calculateCoachNumbers(ctx: Record<string, unknown>): CoachCalculations | null {
   const today = dayIndex(ctx.coaching_date);
   if (today === null) return null;
@@ -485,7 +432,6 @@ export function calculateCoachNumbers(ctx: Record<string, unknown>): CoachCalcul
     weight: calculateWeight(ctx, today),
     training: calculateTraining(ctx, today),
     metrics: calculateMetrics(ctx, today),
-    nutrition: calculateNutrition(ctx, today),
   };
 }
 
@@ -504,27 +450,6 @@ function formatTraining(label: string, t: TrainingWindow): string {
     line += `, avg RPE ${t.avg_rpe ?? "—"}, avg session ${t.avg_session_minutes ?? "—"} min`;
   }
   return line + "\n";
-}
-
-function formatNutrition(
-  label: string,
-  n: NutritionWindow,
-  targets: Readonly<Record<string, number>>,
-): string {
-  if (n.days_logged === 0) return `- ${label}: no days with confirmed meals\n`;
-  const part = (key: (typeof nutritionKeys)[number], unit: string, name: string) => {
-    const value = n[key];
-    if (value === null) return `${name} —`;
-    const target = targets[key];
-    return target === undefined
-      ? `${value} ${unit} ${name}`
-      : `${value} ${unit} ${name} (target ${target}, ${signed(roundTo(value - target, 0))})`;
-  };
-  return `- ${label}: ${n.days_logged} ${
-    n.days_logged === 1 ? "day" : "days"
-  } logged; per logged day ${part("calories", "kcal", "energy")}, ${
-    part("protein_g", "g", "protein")
-  }, ${part("carbohydrate_g", "g", "carbohydrate")}, ${part("fat_g", "g", "fat")}\n`;
 }
 
 // The "Calculated by Tracend" context section, or "" when nothing applies.
@@ -603,13 +528,6 @@ export function formatCoachCalculations(calc: CoachCalculations | null): string 
     }
     s +=
       `Change is shown only when both weeks have at least ${metricChangeMinimumDays} measured days.\n`;
-    parts.push(s);
-  }
-  const n = calc.nutrition;
-  if (n) {
-    let s = "### Nutrition (confirmed meals; unlogged days are unknown, not zero)\n";
-    s += formatNutrition("Last 7 days", n.last_7_days, n.targets);
-    s += formatNutrition("Last 28 days", n.last_28_days, n.targets);
     parts.push(s);
   }
   if (!parts.length) return "";

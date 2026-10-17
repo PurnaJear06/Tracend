@@ -434,7 +434,7 @@ Deno.test("an attempt waits for the route's timeout, not a shorter fixed one", a
 Deno.test("a repair reserves its own worst case before it is sent; a refused place sends nothing", async () => {
   const reserved: number[] = [];
   const budget = (accept: boolean) => ({
-    reserveRepair: (usd: number) => {
+    reserveAttempt: (usd: number) => {
       reserved.push(usd);
       return Promise.resolve(accept);
     },

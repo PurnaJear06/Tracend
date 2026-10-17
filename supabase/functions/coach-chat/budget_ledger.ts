@@ -12,7 +12,7 @@ import {
  * stay open (`keepAttempt`) while the others are given back.
  *
  * Nothing is given back while a turn runs: the first attempt's place keeps counting while a
- * repair is reserved (its real cost is recorded only when the turn ends), which can only
+ * repair or a lookup round is reserved (its real cost is recorded only when the turn ends), which can only
  * over-count. `release` settles every place that was not kept.
  */
 export class CoachChatBudgetLedger {
@@ -41,15 +41,15 @@ export class CoachChatBudgetLedger {
     return this.#take("initial", (budget) => budget.reserve("coach_chat", ceilingUsd));
   }
 
-  /** The repair's place, taken before the repair is sent. */
-  reserveRepair(ceilingUsd: number): Promise<boolean> {
-    return this.#take("repair", (budget) => budget.reserve("coach_chat", ceilingUsd));
+  /** A repair's or a lookup round's place, taken before the call is sent. */
+  reserveAttempt(ceilingUsd: number, kind: CoachChatAttempt): Promise<boolean> {
+    return this.#take(kind, (budget) => budget.reserve("coach_chat", ceilingUsd));
   }
 
   /** The gateway path's view of the ledger. */
   get attemptBudget(): CoachChatAttemptBudget {
     return {
-      reserveRepair: (usd) => this.reserveRepair(usd),
+      reserveAttempt: (usd, kind) => this.reserveAttempt(usd, kind),
       inFlight: (attempt) => this.keepAttempt(attempt),
     };
   }

@@ -744,15 +744,33 @@ for 70 kg", "a goal of 72 kg") are not forecasts unless they also carry a pace c
 
 ## 6. Macro Adherence
 
+### Complete logging day (A10, 2026-10)
+
+An athlete who logs breakfast and nothing else has not eaten 400 kcal. A logging day is
+**complete** when it has at least 3 confirmed meals **or** its confirmed energy reaches 70% of the
+active calorie target. Every other day with a confirmed meal is **partial**, and a day with no meal
+is unknown, never zero. One definition serves every reader: `private.nutrition_complete_day_rules()`
+holds the numbers (`min_meals` 3, `min_target_share` 0.7) and `private.nutrition_day_totals()`
+returns each day's meals, energy, macros and `complete` flag. `evaluate_change_eligibility`, the
+Coach `nutrition_state` contributor and the `meals` lookup all read it.
+
+- The contributor reports "k of n logged days are complete", averages **complete days only**
+  against the target, and lists the partial days as partial.
+- Only confirmed meals with confirmed items count.
+
 ### Formula
 
 ```text
-macro_adherence_pct = avg(14-day daily calorie intake / target_calories * 100) capped at 200%
+macro_adherence_pct = avg over complete days of
+                      (daily calories / target_calories * 100) capped at 200%
 ```
 
 - 14-day window: target_date - 13 through target_date (inclusive)
-- Only confirmed meals with confirmed items counted
-- Returns null when: no active nutrition target, no confirmed meals, or target calories = 0
+- Only complete days enter the average (they were all-day logs). `evaluate_change_eligibility`
+  reports the number of complete days it averaged (`nutrition_change.complete_days`).
+- Returns null when: no active nutrition target, no complete day, or target calories = 0
+- `compute_daily_metrics` still averages every logged day for the daily score the app shows; the
+  change-eligibility gate and the Coach use the complete-day rule.
 
 ### Boundaries
 
@@ -778,7 +796,7 @@ macro_adherence_pct = avg(14-day daily calorie intake / target_calories * 100) c
 | Gate                        | Criterion                                    |
 | --------------------------- | -------------------------------------------- |
 | Weight Data Minimum         | ≥ 14 distinct weight measurement days in last 28 days |
-| AND Adherence Minimum       | ≥ 80% macro adherence over last 14 days      |
+| AND Adherence Minimum       | ≥ 80% macro adherence over the complete logging days of the last 14 days (section 6) |
 | AND Trend R² Minimum        | 28-day OLS R² ≥ 0.3                          |
 | AND Active Target           | User must have an active nutrition target    |
 
@@ -1063,3 +1081,22 @@ Code: `health_history.ts` (server) and `lib/features/health/health_baseline.dart
   session set budget drops a fifth and the RPE ceiling 0.5 (`startLighter`) for the first block,
   and a note says why.
 
+
+### Home alternatives (A10, 2026-10)
+
+For each planned exercise Coach is given catalog exercises that train the same movement without gym
+kit, so it can build a routine for days away from the gym without inventing an exercise
+(`_shared/training/home_alternatives.ts`). Candidates come from the exercise's catalog links
+(substitutes, then regressions, then progressions) and then from the catalog exercises with the same
+movement pattern and first-listed muscle (compound, beginner and alphabetical order break ties).
+Two kinds, at most two each: **bodyweight** (no equipment) and **minimal kit** (only dumbbells,
+kettlebells, bands or a pull-up bar). A movement pattern the athlete asked to avoid is left out. An
+exercise outside the catalog has none. The plan itself is not changed; a different plan is a
+proposal the athlete approves.
+
+### Exercise history lookup (A10, 2026-10)
+
+The `exercise_history` lookup returns, per completed session, the heaviest completed set, the sets
+done and the fewest reps in reserve, and an estimated one-rep max by the Epley formula
+(`load x (1 + reps / 30)`, sets of 1 to 12 reps with a load, the highest of the session). It is a
+figure Tracend computes from logged sets; Coach quotes it and never recomputes it.

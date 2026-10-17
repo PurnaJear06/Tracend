@@ -382,6 +382,10 @@ const stored = (
   ...extra,
 });
 
+/** The updates that mark earlier attempts superseded (the turn trace writes others). */
+const supersedeUpdates = (updates: readonly Record<string, unknown>[]) =>
+  updates.filter((update) => "safety_state" in update);
+
 Deno.test("a fresh-key retry supersedes failed and lost attempts, and only those", async () => {
   const result = await run("How is my week?", {
     prepared: {
@@ -420,7 +424,9 @@ Deno.test("a fresh-key retry supersedes failed and lost attempts, and only those
   });
   assertEquals(result.status, 200);
   assertEquals(result.markedIds.sort(), ["failed", "lost", "untrimmed"]);
-  assertEquals(result.updates, [{ safety_state: "unavailable" }]);
+  assertEquals(supersedeUpdates(result.updates), [{ safety_state: "unavailable" }]);
+  // The fallback turn is traced: its message gets the fallback code.
+  assert(result.updates.some((update) => "guard_faults" in update));
   assert(
     result.calls.indexOf("coach_chat_turn") < result.calls.indexOf("record_coach_chat_question"),
     result.calls.join(),
@@ -441,7 +447,7 @@ Deno.test("a question that was not asked before reads and writes nothing about a
       },
     },
   });
-  assertEquals(result.updates, []);
+  assertEquals(supersedeUpdates(result.updates), []);
   assert(!result.calls.includes("coach_chat_turn"));
 });
 
@@ -461,7 +467,7 @@ Deno.test("a later, different question still gets memory without the superseded 
     },
   });
   assertEquals(result.status, 200);
-  assertEquals(result.updates, []);
+  assertEquals(supersedeUpdates(result.updates), []);
   assert(!result.calls.includes("coach_chat_turn"));
 });
 

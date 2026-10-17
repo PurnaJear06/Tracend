@@ -1,0 +1,313 @@
+// The plain text Coach reads for one lookup result: compact, dated rows. Every figure in a row is
+// copied from the record, never computed here, so the numbers check can ground a reply on it.
+// Text the athlete wrote (check-in notes) is quoted, flattened to one line and labelled.
+import { describeTarget, parseProgressionSummary } from "../training/progression/targets.ts";
+import { clipToBudget } from "../coach_context/host.ts";
+import { type DataRequest, lookupSpec } from "./catalogue.ts";
+
+/** Most characters of one lookup's text. */
+export const lookupResultMaxChars = 5_000;
+
+export type RenderedLookup = Readonly<{ text: string; rows: number }>;
+
+type Json = Record<string, unknown>;
+
+const rec = (value: unknown): Json =>
+  value && typeof value === "object" && !Array.isArray(value) ? value as Json : {};
+const list = (value: unknown): Json[] => Array.isArray(value) ? value.map(rec) : [];
+const has = (value: unknown) => value !== null && value !== undefined && value !== "";
+const val = (value: unknown) => has(value) ? String(value) : "—";
+const withUnit = (value: unknown, unit: string) => has(value) ? `${value} ${unit}` : "—";
+
+/** One line of the athlete's own words: quoted, flattened, without angle brackets. */
+function quoted(value: unknown, max = 300): string {
+  const flat = String(value ?? "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
+  return `"${clipToBudget(flat, max)}"`;
+}
+
+function setText(set: Json): string {
+  const load = has(set.load_kg) ? `${set.load_kg} kg x ` : "";
+  let text = `${load}${val(set.reps)}`;
+  if (has(set.rir)) text += ` (${set.rir} reps in reserve)`;
+  else if (has(set.rpe)) text += ` (RPE ${set.rpe})`;
+  if (set.done === false) text += " (not ticked)";
+  if (has(set.peak_bpm)) {
+    text += ` [peak ${set.peak_bpm} bpm${
+      has(set.drop_60s_bpm) ? `, ${set.drop_60s_bpm} bpm lower after 60 s` : ""
+    }]`;
+  }
+  return text;
+}
+
+function workouts(body: Json): { lines: string[]; rows: number } {
+  const sessions = list(body.sessions);
+  const lines = sessions.flatMap((session) => {
+    const head = `- ${val(session.local_date)} ${val(session.workout)}, ${
+      withUnit(session.minutes, "min")
+    }, effort ${val(session.effort)}`;
+    const exercises = list(session.exercises).map((exercise) => {
+      const planned = rec(exercise.planned);
+      const plan = has(planned.sets)
+        ? ` (planned ${planned.sets} x ${planned.rep_min}-${planned.rep_max})`
+        : " (not in the plan)";
+      const sets = list(exercise.sets).map(setText).join("; ");
+      const status = exercise.status === "skipped" ? " skipped" : "";
+      const pain = exercise.pain ? " pain flagged;" : "";
+      return `    ${val(exercise.name)}${plan}${status}:${pain} ${sets || "no sets logged"}`;
+    });
+    return [head, ...exercises];
+  });
+  return { lines, rows: sessions.length };
+}
+
+function exerciseHistory(body: Json): { lines: string[]; rows: number } {
+  const sessions = list(body.sessions);
+  const lines = sessions.map((session) =>
+    `- ${val(session.local_date)} ${val(session.name)}: heaviest set ${
+      has(session.top_load_kg) ? `${session.top_load_kg} kg x ` : ""
+    }${val(session.top_reps)}, ${val(session.sets)} sets, estimated one-rep max ${
+      withUnit(session.e1rm_kg, "kg")
+    }, fewest reps in reserve ${val(session.min_rir)}`
+  );
+  const planned = list(body.planned).map((item) =>
+    `Plan now: ${val(item.name)} ${item.sets} x ${item.rep_min}-${item.rep_max}, rest ${
+      val(item.rest_seconds)
+    } s`
+  );
+  const targets = parseProgressionSummary({ schema_version: "1.0", targets: body.next_targets })
+    .map((target) => `Next target (Tracend): ${describeTarget(target)}`);
+  return { lines: [...lines, ...planned, ...targets], rows: sessions.length };
+}
+
+function meals(body: Json): { lines: string[]; rows: number } {
+  const days = list(body.days);
+  const rules = rec(body.rules);
+  const header =
+    `Target ${withUnit(body.target_kcal, "kcal")} a day. A day is complete with ${
+      val(rules.min_meals)
+    } or more meals or ${
+      Math.round(Number(rules.min_target_share) * 100)
+    }% of the target; otherwise ` +
+    "it is partial and says nothing about the day's intake.";
+  const dayLines = days.map((day) =>
+    `- ${val(day.local_date)}: ${val(day.meals)} meals, ${val(day.calories)} kcal, protein ${
+      val(day.protein_g)
+    } g, carbs ${val(day.carbohydrate_g)} g, fat ${val(day.fat_g)} g (${
+      day.complete ? "complete" : "partial"
+    })`
+  );
+  const how = (meal: Json) =>
+    meal.source === "photo_analysis"
+      ? "photo estimate"
+      : meal.from_schedule
+      ? "from the schedule"
+      : "typed in";
+  const mealLines = list(body.meals).map((meal) =>
+    `  ${val(meal.local_date)} ${val(meal.meal_type)} (${how(meal)}): ${
+      list(meal.foods).map((food) => `${val(food.name)} ${val(food.calories)} kcal`).join(", ")
+    }`
+  );
+  return { lines: [header, ...dayLines, ...mealLines], rows: days.length + mealLines.length };
+}
+
+function bodyLookup(body: Json): { lines: string[]; rows: number } {
+  const weights = list(body.weights);
+  const tape = list(body.measurements);
+  const lines = [
+    ...weights.map((row) => `- ${val(row.date)}: ${val(row.kg)} kg (${val(row.source)})`),
+    ...tape.map((row) =>
+      `- ${val(row.date)} tape: waist ${val(row.waist_cm)}, chest ${val(row.chest_cm)}, hip ${
+        val(row.hip_cm)
+      }, arm ${val(row.arm_cm)}, thigh ${val(row.thigh_cm)} (cm)`
+    ),
+  ];
+  return { lines, rows: weights.length + tape.length };
+}
+
+function checkIns(body: Json): { lines: string[]; rows: number } {
+  const rows = list(body.check_ins);
+  const lines = rows.map((row) => {
+    const note = String(row.note ?? "").trim() === ""
+      ? ""
+      : `; note (the athlete's words): ${quoted(row.note)}`;
+    return `- ${val(row.local_date)}: sleep ${val(row.sleep_quality)}, energy ${
+      val(row.energy)
+    }, soreness ${val(row.soreness)}, hunger ${val(row.hunger)}, mood ${
+      val(row.mood)
+    } (1-5), pain ${val(row.pain_severity)}/10, ${
+      row.available_to_train === false ? "not available to train" : "available to train"
+    }${note}`;
+  });
+  return { lines, rows: rows.length };
+}
+
+function recovery(body: Json): { lines: string[]; rows: number } {
+  const days = list(body.days);
+  const lines = days.map((day) =>
+    `- ${val(day.local_date)}: sleep ${withUnit(day.sleep_minutes, "min")}, resting heart rate ${
+      withUnit(day.resting_heart_rate_bpm, "bpm")
+    }, HRV ${withUnit(day.hrv_ms, "ms")}, steps ${val(day.steps)}, recovery score ${
+      val(day.recovery_score)
+    }, sleep quality ${val(day.sleep_quality)}, load ratio ${val(day.acwr)}`
+  );
+  return { lines, rows: days.length };
+}
+
+function planHistory(body: Json): { lines: string[]; rows: number } {
+  const training = list(body.training);
+  const nutrition = list(body.nutrition);
+  const lines = [
+    ...training.flatMap((version) => [
+      `- Plan v${val(version.version)} (${val(version.status)}), created ${
+        val(version.created_on)
+      }, effective ${val(version.effective_date)}: ${val(version.title)}, ${
+        val(version.sessions_per_week)
+      } sessions a week, ${val(version.block_weeks)}-week block. Why: ${val(version.rationale)}`,
+      ...list(version.sessions).map((session) =>
+        `    day ${val(session.weekday)} ${val(session.name)}: ${
+          list(session.exercises).map((exercise) =>
+            `${val(exercise.name)} ${exercise.sets} x ${exercise.rep_min}-${exercise.rep_max}`
+          ).join(", ")
+        }`
+      ),
+    ]),
+    ...nutrition.map((target) =>
+      `- Nutrition target v${val(target.version)} (${val(target.status)}), created ${
+        val(target.created_on)
+      }, effective ${val(target.effective_date)}: ${val(target.calories)} kcal, protein ${
+        val(target.protein_g)
+      } g, carbs ${val(target.carbohydrate_g)} g, fat ${val(target.fat_g)} g. Why: ${
+        val(target.rationale)
+      }`
+    ),
+  ];
+  return { lines, rows: training.length + nutrition.length };
+}
+
+function goals(body: Json): { lines: string[]; rows: number } {
+  const goalRows = list(body.goals);
+  const screenings = list(body.screenings);
+  const lines = [
+    ...goalRows.map((goal) => {
+      const target = rec(goal.target);
+      const parts = [
+        has(target.weight_kg) ? `target weight ${target.weight_kg} kg` : null,
+        has(target.body_fat_pct_min)
+          ? `target body fat ${target.body_fat_pct_min}-${target.body_fat_pct_max}%`
+          : null,
+        has(target.physique) ? `target physique ${val(target.physique)}` : null,
+        has(target.date) ? `target date ${target.date}` : null,
+        has(target.set_at) ? `target set ${String(target.set_at).slice(0, 10)}` : null,
+      ].filter(Boolean);
+      return `- Goal ${val(goal.goal_type)} (${val(goal.status)}), created ${
+        val(goal.created_on)
+      }: ${parts.length ? parts.join(", ") : "no target set"}`;
+    }),
+    ...screenings.map((row) =>
+      `- Health check ${val(row.screened_on)}: ${val(row.outcome).replaceAll("_", " ")}`
+    ),
+  ];
+  return { lines, rows: goalRows.length + screenings.length };
+}
+
+function weeklyReviews(body: Json): { lines: string[]; rows: number } {
+  const reviews = list(body.reviews);
+  const lines = reviews.map((review) => {
+    const training = rec(review.training);
+    const recoveryPart = rec(review.recovery);
+    return `- Week of ${val(review.review_week)}: ${
+      val(review.outcome_code).replaceAll("_", " ")
+    }; ${val(training.completed_workouts)} of ${val(training.planned_sessions)} planned workouts (${
+      val(training.adherence_percent)
+    }% done), ${val(training.completed_sets)} sets; ${
+      val(recoveryPart.check_in_days)
+    } check-in days; ${val(rec(review.nutrition).confirmed_days)} days with meals; next focus ${
+      val(review.next_focus_code).replaceAll("_", " ")
+    }`;
+  });
+  return { lines, rows: reviews.length };
+}
+
+function physique(body: Json): { lines: string[]; rows: number } {
+  const checks = list(body.checks);
+  const lines = checks.map((check) => {
+    const priorities = list(check.priorities).map((item) =>
+      `${val(item.muscle)} (${val(item.confidence)} confidence: ${val(item.reason)})`
+    ).join("; ");
+    const confirmed = Array.isArray(check.confirmed_muscles) && check.confirmed_muscles.length
+      ? `; the athlete confirmed ${check.confirmed_muscles.join(", ")} as focus`
+      : "";
+    return `- ${
+      val(check.checked_on)
+    } (a visual estimate from photos, not a measurement): develop ${
+      priorities || "—"
+    }${confirmed}. Limitations: ${val(check.limitations)}`;
+  });
+  return { lines, rows: checks.length };
+}
+
+function healthHistory(body: Json): { lines: string[]; rows: number } {
+  const months = list(body.months);
+  const lines = months.map((month) =>
+    `- ${String(month.month ?? "").slice(0, 7)} (imported from Apple Health): ${
+      val(month.workouts)
+    } workouts (${val(month.strength_workouts)} strength, ${
+      val(month.workout_minutes)
+    } min), sleep ${withUnit(month.sleep_minutes_avg, "min")} over ${
+      val(month.sleep_nights)
+    } nights, weight ${withUnit(month.weight_kg_avg, "kg")} over ${val(month.weight_days)} days`
+  );
+  return { lines, rows: months.length };
+}
+
+const renderers: Readonly<Record<string, (body: Json) => { lines: string[]; rows: number }>> = {
+  workouts,
+  exercise_history: exerciseHistory,
+  meals,
+  body: bodyLookup,
+  check_ins: checkIns,
+  recovery,
+  plan_history: planHistory,
+  goals,
+  weekly_reviews: weeklyReviews,
+  physique,
+  health_history: healthHistory,
+};
+
+/** The heading of a result: what was asked, the range, and whether older rows were cut. */
+function heading(request: DataRequest, body: Json, rows: number): string {
+  const range = `${request.from} to ${request.to}`;
+  const filter = request.filter ? `, filter "${request.filter.replace(/"/g, "")}"` : "";
+  const cut = body.truncated === true
+    ? "; more rows exist than are shown (the newest are shown): ask for a narrower range for the rest"
+    : "";
+  return `### ${request.lookup} ${range}${filter}: ${rows} ${rows === 1 ? "row" : "rows"}${cut}`;
+}
+
+/** The text of a lookup's RPC payload, or a plain notice when the payload is not readable. */
+export function renderLookup(request: DataRequest, payload: unknown): RenderedLookup {
+  const body = rec(payload);
+  const render = renderers[request.lookup];
+  if (
+    !render || !lookupSpec(request.lookup) || typeof body.schema_version !== "string" ||
+    !body.schema_version.startsWith("1.")
+  ) {
+    return unreadable(request);
+  }
+  const { lines, rows } = render(body);
+  const empty = rows === 0 ? ["No records in this range."] : [];
+  const text = clipToBudget(
+    [heading(request, body, rows), ...empty, ...lines].join("\n"),
+    lookupResultMaxChars,
+  );
+  return { text, rows };
+}
+
+/** Shown in place of a result the server could not read: Coach must say it could not check. */
+export function unreadable(request: DataRequest): RenderedLookup {
+  return {
+    text: `### ${request.lookup} ${request.from} to ${request.to}: could not be read just now. ` +
+      "Say you could not check it; do not guess.",
+    rows: 0,
+  };
+}

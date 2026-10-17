@@ -208,7 +208,7 @@ Deno.test("a deadline that passes before the repair releases everything and char
 Deno.test("a failure that is not the provider's own outcome keeps every place", async () => {
   const { ledger, reserved, settled } = fakeBudget();
   assert(await ledger.reserveInitial(0.01));
-  assert(await ledger.reserveRepair(0.01));
+  assert(await ledger.reserveAttempt(0.01, "repair"));
   keepAfterFailure(ledger, new Error("unexpected"), true);
   await ledger.release();
   assertEquals(reserved.length, 2);

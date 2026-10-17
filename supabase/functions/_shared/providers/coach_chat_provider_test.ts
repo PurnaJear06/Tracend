@@ -884,12 +884,10 @@ const v8Sections = [
   "## Training Totals",
   "## Training Log (last 28 days)",
   "## Watch Workouts (last 14 days)",
-  "## Training Week Structure",
   "## Watch Data (last 28 days)",
   "## Weight (last 8 weeks)",
   "## Check-ins (last 14 days",
-  "## Nutrition\n",
-  "## Logged Nutrition",
+  "## Nutrition Targets",
   "## This Conversation",
 ];
 
@@ -1133,21 +1131,15 @@ Deno.test("formatContextAsMarkdown distinguishes measured zero from null (Pass 4
 
 Deno.test("formatContextAsMarkdown renders null check-in fields rather than dropping them", () => {
   const markdown = formatContextAsMarkdown({
-    latest_check_in: {
+    check_ins_14d: [{
       local_date: "2026-09-08",
       sleep_quality: 3,
       energy: null,
       available_to_train: null,
-    },
+    }],
   });
-  if (!markdown.includes("energy: —")) {
-    throw new Error("null check-in energy must render as '—'");
-  }
-  if (!markdown.includes("available to train: —")) {
-    throw new Error("null available_to_train must render as '—'");
-  }
-  if (!markdown.includes("sleep quality: 3")) {
-    throw new Error("measured sleep quality must still render");
+  if (!markdown.includes("| 2026-09-08 | 3 | — | — | — | — | — | — |")) {
+    throw new Error("null check-in fields must render as '—' next to measured ones");
   }
 });
 
@@ -1312,9 +1304,10 @@ Deno.test("DeepSeek system prompt carries the full coach persona before the outp
     const system = String(messages[0]?.content ?? "");
     const markers = [
       "work only from the prepared context",
-      "Build a timeline from the context",
-      "Celebrate wins",
-      "Acknowledge setbacks without judgment",
+      "Answer the question that was asked, first and concretely",
+      "Do not repeat advice or a caution you already gave",
+      "Connect the question to the context",
+      "without judgment",
       "Match your tone to their mood",
       "Offer natural follow-ups",
       "# Hard boundaries — never violate",
@@ -1326,7 +1319,7 @@ Deno.test("DeepSeek system prompt carries the full coach persona before the outp
         throw new Error(`DeepSeek system prompt is missing: ${marker}`);
       }
     }
-    if (system.indexOf("Celebrate wins") > system.indexOf("# Output accuracy")) {
+    if (system.indexOf("Offer natural follow-ups") > system.indexOf("# Output accuracy")) {
       throw new Error("The output contract must follow the persona so its rules take precedence");
     }
   });
