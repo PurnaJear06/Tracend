@@ -76,6 +76,8 @@ Deno.test("goal activated a month into the cut: the history is 90 to 74.8 kg, th
     changePct: -16.9,
     weeks: 18.9,
     readingsUsed: lateGoalInputs.readings.length - 1,
+    sparse: false,
+    capped: false,
   });
   assertEquals(summary.continuousLoss?.startDate, "2026-06-03");
   assertEquals(summary.continuousLoss?.beganBeforeGoalPhase, true);
@@ -185,6 +187,7 @@ Deno.test("weight rose, then fell: the continuous loss starts at the high point"
     changePct: -17.5,
     weeks: 18,
     weeklyRateKg: -0.78,
+    confirmed: true,
     beganBeforeGoalPhase: false,
   });
   const review = reviewGoalPhase(during);
@@ -320,6 +323,103 @@ Deno.test("a goal that predates the first reading names the first reading as the
     assertStringIncludes(reason.detail, "since 2026-06-03");
     assert(!reason.detail.includes("2025-01-01"), reason.detail);
   }
+});
+
+Deno.test("two sparse weights months apart are shown, but never drive the review", () => {
+  const summary = summarizeGoalPhase(inputs({
+    readings: [
+      { date: "2026-01-05", kg: 90 },
+      { date: "2026-10-05", kg: 75.2 },
+      { date: "2026-10-12", kg: 75 },
+    ],
+    activatedOn: "2026-10-01",
+    today: "2026-10-14",
+  }));
+  assertEquals(summary.history?.sparse, true);
+  assertEquals(summary.history?.weeks, 40);
+  assertEquals(summary.continuousLoss?.confirmed, false);
+  const review = reviewGoalPhase(summary);
+  assertEquals(review.outcome, "ask_target");
+  const text = renderGoalPhase(summary, review)!;
+  assertStringIncludes(text, "Recorded history, all weight readings: 90 kg on 2026-01-05");
+  assertStringIncludes(text, "sparse readings, trend not confirmed");
+  assert(!text.includes("one continuous loss"));
+});
+
+Deno.test("a gap of more than five weeks inside the run leaves it unconfirmed", () => {
+  const readings = [
+    ...weekly("2026-01-05", [90, 89, 88, 87, 86, 85]),
+    ...weekly("2026-04-20", [79, 78, 77, 76]),
+  ];
+  const summary = summarizeGoalPhase(inputs({
+    readings,
+    activatedOn: "2026-04-20",
+    today: "2026-05-14",
+  }));
+  assertEquals(summary.continuousLoss?.startDate, "2026-01-05");
+  assertEquals(summary.continuousLoss?.confirmed, false);
+  assertEquals(summary.history?.sparse, true);
+  assert(reviewGoalPhase(summary).outcome !== "consider_maintenance_or_diet_break");
+  // The same weights without the gap are confirmed and do drive the review.
+  const dense = summarizeGoalPhase(inputs({
+    readings: weekly("2026-01-05", [
+      90,
+      89,
+      88,
+      87,
+      86,
+      85,
+      84,
+      83,
+      82,
+      81,
+      80,
+      79,
+      78,
+      77,
+      76,
+      75,
+      74.5,
+      74,
+      73.5,
+      73,
+      72.5,
+      72,
+    ]),
+    activatedOn: "2026-04-20",
+    today: "2026-06-05",
+  }));
+  assertEquals(dense.continuousLoss?.confirmed, true);
+  assertEquals(reviewGoalPhase(dense).outcome, "consider_maintenance_or_diet_break");
+});
+
+Deno.test("at the 400-reading cap the history is the newest window, not the whole journey", () => {
+  const first = Date.parse("2025-09-01T00:00:00Z");
+  const day = (index: number) => new Date(first + index * 86_400_000).toISOString().slice(0, 10);
+  const readings = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      date: day(index),
+      kg: Math.round((90 - index * 0.03) * 10) / 10,
+    }));
+  const capped = summarizeGoalPhase(inputs({
+    readings: readings(400),
+    activatedOn: "2026-08-01",
+    today: "2026-10-05",
+  }));
+  assertEquals(capped.history?.capped, true);
+  const text = renderGoalPhase(capped, reviewGoalPhase(capped))!;
+  assertStringIncludes(
+    text,
+    "Recorded history, the newest 400 readings, from 2025-09-01 (older ones exist and are not shown)",
+  );
+  assert(!text.includes("all weight readings"));
+  const whole = summarizeGoalPhase(inputs({
+    readings: readings(399),
+    activatedOn: "2026-08-01",
+    today: "2026-10-04",
+  }));
+  assertEquals(whole.history?.capped, false);
+  assertStringIncludes(renderGoalPhase(whole, reviewGoalPhase(whole))!, "all weight readings");
 });
 
 Deno.test("a lone implausible reading is excluded; two readings or a steady fall are not", () => {

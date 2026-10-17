@@ -113,6 +113,22 @@ export const goalPhaseThresholds = Object.freeze({
     sources: ["tracend_in_house"],
     inHouse: true,
   }),
+  runMinimumReadings: threshold({
+    value: 4,
+    unit: "readings",
+    basis: "A run counts as continuous loss for the review only with at least this many " +
+      "readings in it; two weights months apart say nothing about what happened between them.",
+    sources: ["tracend_in_house"],
+    inHouse: true,
+  }),
+  runMaximumGapDays: threshold({
+    value: 35,
+    unit: "days",
+    basis: "A run counts as continuous loss for the review only when no two readings in it are " +
+      "further apart than this (five weeks); a longer gap could hide a rebound or a break.",
+    sources: ["tracend_in_house"],
+    inHouse: true,
+  }),
   historyMinimumLeadDays: threshold({
     value: 7,
     unit: "days",

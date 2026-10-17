@@ -3,7 +3,7 @@
 // target (rule 2). Safety outcomes come before "ask for a target", so an athlete deep in a long
 // cut is told so even while no target is set; `needsTarget` still says a target is missing.
 import { goalPhaseThresholds as limits } from "./thresholds.ts";
-import type { GoalPhaseReview, GoalPhaseSummary, ReviewReason } from "./types.ts";
+import type { ContinuousLoss, GoalPhaseReview, GoalPhaseSummary, ReviewReason } from "./types.ts";
 
 const lossGoalTypes = ["fat_loss"];
 const gainGoalTypes = ["muscle_gain"];
@@ -44,12 +44,17 @@ function currentPace(summary: GoalPhaseSummary): number | null {
   return summary.recentRateKgPerWeek ?? summary.weeklyRateKg;
 }
 
+/** The continuous loss when its readings confirm it; a sparse run never feeds the review. */
+function confirmedRun(summary: GoalPhaseSummary): ContinuousLoss | null {
+  return summary.continuousLoss?.confirmed ? summary.continuousLoss : null;
+}
+
 /**
  * The pace the loss rules read: the recent fit, else the average of the window those rules
  * judge (the continuous loss when there is one, else the goal phase).
  */
 function lossPace(summary: GoalPhaseSummary): number | null {
-  return summary.recentRateKgPerWeek ?? summary.continuousLoss?.weeklyRateKg ??
+  return summary.recentRateKgPerWeek ?? confirmedRun(summary)?.weeklyRateKg ??
     summary.weeklyRateKg;
 }
 
@@ -74,7 +79,7 @@ function maintenanceReasons(summary: GoalPhaseSummary): ReviewReason[] {
   // The loss is judged over the continuous run of falling weight when it differs from the goal
   // phase (it began before the goal, or the weight rose first): the athlete's body does not
   // know the date the goal was activated.
-  const run = summary.continuousLoss;
+  const run = confirmedRun(summary);
   const weeks = run?.weeks ?? summary.weeks;
   const changePct = run?.changePct ?? summary.changePct;
   const since = run?.startDate ?? summary.firstReadingDate;

@@ -105,6 +105,18 @@ function recentSlope(points: readonly Point[]): number | null {
   return round((covariance / variance) * 7, 2);
 }
 
+/** The most readings get_goal_phase_inputs_v1 returns (the newest, all sources). */
+export const maxInputReadings = 400;
+
+/** Whether the readings are enough to say the weight moved between the first and the last. */
+function hasEvidence(points: readonly Point[]): boolean {
+  if (points.length < limits.runMinimumReadings.value) return false;
+  for (let index = 1; index < points.length; index++) {
+    if (points[index].day - points[index - 1].day > limits.runMaximumGapDays.value) return false;
+  }
+  return true;
+}
+
 /**
  * The recorded history, when the first reading is at least a week before the phase's first
  * reading (so it says something the phase does not). The start is smoothed like the phase start.
@@ -114,6 +126,7 @@ function recordedHistory(
   last: Point,
   firstDay: number,
   current: number,
+  capped: boolean,
 ): RecordedHistory | null {
   const lead = firstDay - clean[0].day;
   if (lead < limits.historyMinimumLeadDays.value) return null;
@@ -126,6 +139,8 @@ function recordedHistory(
     changePct: round((changeKg / startWeightKg) * 100, 1),
     weeks: round((last.day - clean[0].day) / 7, 1),
     readingsUsed: clean.length,
+    sparse: !hasEvidence(clean),
+    capped,
   };
 }
 
@@ -167,6 +182,7 @@ function continuousLoss(
     changePct: round((changeKg / startWeightKg) * 100, 1),
     weeks: round(weeks, 1),
     weeklyRateKg: round(changeKg / weeks, 2),
+    confirmed: hasEvidence(clean.slice(startIndex)),
     beganBeforeGoalPhase: startIndex < firstIndex,
   };
 }
@@ -199,6 +215,7 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
   const notes: string[] = [];
   const excluded = findImplausibleReadings(input.readings);
   const skipped = new Set(excluded.map((e) => e.date));
+  const capped = input.readings.length >= maxInputReadings;
   const clean = normalise(input.readings).filter((p) => !skipped.has(p.date));
   const base = emptySummary(input);
   if (!hasGoal) notes.push("no active goal");
@@ -261,7 +278,7 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
     return {
       ...common,
       startWeightKg: phaseStart,
-      history: recordedHistory(clean, last, first.day, current),
+      history: recordedHistory(clean, last, first.day, current, capped),
       continuousLoss: continuousLoss(
         clean,
         clean.length - phase.length,
@@ -287,7 +304,7 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
   return {
     ...common,
     startWeightKg: start,
-    history: recordedHistory(clean, last, first.day, current),
+    history: recordedHistory(clean, last, first.day, current, capped),
     continuousLoss: continuousLoss(clean, firstIndex, last, current, start),
     changeKg,
     changePct: round((changeKg / start) * 100, 1),

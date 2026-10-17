@@ -2,6 +2,7 @@
 // sources behind the outcome. It is reference data; the rules for how to speak about it live in
 // the Coach chat instructions.
 import { goalPhaseSources } from "./sources.ts";
+import { maxInputReadings } from "./summary.ts";
 import type { GoalPhaseReview, GoalPhaseSummary, GoalTarget } from "./types.ts";
 
 function signed(value: number): string {
@@ -50,11 +51,19 @@ export function renderGoalPhase(
   const run = summary.continuousLoss;
   if (history !== null) {
     lines.push(
-      `- Recorded history, all weight readings: ${history.startWeightKg} kg on ${history.startDate} ` +
+      `- Recorded history, ${
+        history.capped
+          ? `the newest ${maxInputReadings} readings, from ${history.startDate} (older ones exist and are not shown)`
+          : "all weight readings"
+      }: ${history.startWeightKg} kg on ${history.startDate} ` +
         `(median of the first readings) to now ${summary.currentWeightKg} kg: ` +
         `${signed(history.changeKg)} kg (${signed(history.changePct)}%) over ${history.weeks} ` +
         `weeks, ${history.readingsUsed} readings` +
-        (run?.startDate === history.startDate ? "; one continuous loss." : "."),
+        (history.sparse
+          ? "; sparse readings, trend not confirmed."
+          : run?.confirmed && run.startDate === history.startDate
+          ? "; one continuous loss."
+          : "."),
     );
   }
   if (run !== null && run.startDate !== history?.startDate) {
@@ -62,7 +71,8 @@ export function renderGoalPhase(
       `- Continuous loss: from the high of ${run.startWeightKg} kg on ${run.startDate} to now ` +
         `${summary.currentWeightKg} kg: ${signed(run.changeKg)} kg (${signed(run.changePct)}%) ` +
         `over ${run.weeks} weeks` +
-        (run.beganBeforeGoalPhase ? "." : "; the weight rose before it fell."),
+        (run.beganBeforeGoalPhase ? "" : "; the weight rose before it fell") +
+        (run.confirmed ? "." : "; sparse readings, trend not confirmed."),
     );
   }
   if (summary.changeKg !== null && summary.changePct !== null && summary.weeks !== null) {

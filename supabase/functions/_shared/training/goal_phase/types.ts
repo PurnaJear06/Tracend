@@ -51,6 +51,10 @@ export type RecordedHistory = Readonly<{
   changePct: number;
   weeks: number;
   readingsUsed: number;
+  /** Too few readings or too long a gap to confirm the trend between the two ends. */
+  sparse: boolean;
+  /** The input held the most readings the RPC returns, so older ones may exist. */
+  capped: boolean;
 }>;
 
 /**
@@ -66,6 +70,8 @@ export type ContinuousLoss = Readonly<{
   weeks: number;
   /** Average kg a week over the run; negative is a loss. */
   weeklyRateKg: number;
+  /** Enough readings, none too far apart; only a confirmed run feeds the review. */
+  confirmed: boolean;
   beganBeforeGoalPhase: boolean;
 }>;
 

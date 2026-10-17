@@ -681,12 +681,21 @@ run needs a loss and at least 2 weeks. Its start, weight, change, weeks and whet
 as "Continuous loss", or folded into the history line ("one continuous loss") when it starts at the
 first reading.
 
+**Evidence for a run.** Two weights months apart do not show a continuous loss. A run (and the
+history) is *confirmed* only with at least 4 readings (`runMinimumReadings`) and no two consecutive
+readings more than 35 days apart (`runMaximumGapDays`); both are in-house values. A run that is not
+confirmed never feeds the review (the rules fall back to the goal phase and its pace), and the
+history and run lines say "sparse readings, trend not confirmed". The RPC returns the newest 400
+readings; when the input holds 400, the history line reads "the newest 400 readings, from DATE
+(older ones exist and are not shown)" instead of "all weight readings", so a capped window is
+never presented as the whole journey.
+
 **Review outcomes**, first match wins:
 
 1. `target_reached`: the target weight is met within 0.5 kg in the goal's direction.
 2. `consider_maintenance_or_diet_break`: BMI below 18.5, or, while the weight is still falling
    (at least 0.1 kg a week), any of BMI below 19.5, 16 weeks or more with a loss of at least 5%,
-   12 weeks or more with a loss of at least 10%. The two loss rules judge the continuous loss
+   12 weeks or more with a loss of at least 10%. The two loss rules judge the confirmed continuous loss
    (its weeks and its % from its high point) whenever one exists, else the goal phase; the
    reason text names the date the run began (the first reading when there is no separate run).
    "Still falling" reads the recent rate, else the run's average rate (the phase average when
@@ -706,7 +715,7 @@ even beside a safety outcome.
 | 1% of body weight a week | Athletes keeping muscle lose 0.5 to 1% a week; 1.4% a week lost lean mass | Helms 2014; Garthe 2011 |
 | 16 weeks, 5% | A 16-week continuous deficit; intermittent arms lost more; 3 to 5% is clinically meaningful | Byrne 2018; Trexler 2014; Jensen 2014 |
 | 10% at 12 weeks | Top of the 5 to 10% first-goal range | Jensen 2014 |
-| 19.5, 3 weeks, 0.1 kg, 0.5 kg, 3%, 1.5%, 12 weeks, 14 days, 3% run tolerance, 7 days history lead | Tracend in-house values | listed for owner review in `docs/handoff/training-engine.md` |
+| 19.5, 3 weeks, 0.1 kg, 0.5 kg, 3%, 1.5%, 12 weeks, 14 days, 3% run tolerance, 7 days history lead, 4 readings and 35 days gap for a run | Tracend in-house values | listed for owner review in `docs/handoff/training-engine.md` |
 
 Sources and DOIs live in `goal_phase/sources.ts` (each checked against Crossref, 2026-10-17).
 
