@@ -21,12 +21,12 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   names. Next: the owner's cutover. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and
-  fractional volume (#127), B6 screening gate (#128, migration 26). Next: B3 progression. Handoff: [`training-engine.md`](./handoff/training-engine.md).
+  fractional volume (#127), B6 screening gate (#128, migration 26). Round 2 building (2026-10-17): B3 progression. Handoff: [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
   migration 32; raw samples stay on the phone); the owner's Watch check is pending. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
 - ios-widgets: D0 live (#112). D1 merged (#121: Done, Skip and +30s on the Lock Screen and in the
   Dynamic Island); the owner's device check is pending. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
-- research-library: E1 live (#109: pgvector, library tables, `search_library_v1`, D3 doc rule). Next: E2 ingestion. Handoff: [`research-library.md`](./handoff/research-library.md).
+- research-library: E1 live (#109: pgvector, library tables, `search_library_v1`, D3 doc rule). E2 (knowledge base, first 30 sources, retrieval test set) building (2026-10-17). Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.

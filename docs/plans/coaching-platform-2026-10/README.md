@@ -65,11 +65,11 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 2 | B1 | training-engine | Catalog v2 and coaching-standard rule data | 21 | B0 | merged | #118 |
 | 3 | U3 | ui | Launch speed: tabs load on first open, shared reads, photo decode size, measured baseline | — | — | merged | #126 |
 | 3 | B2 | training-engine | Templates by goal × days × experience; fractional volume | — | B1 | merged | #127 |
-| 3 | B3 | training-engine | Progression from actual sets; hub 1.7; Train shows targets | 23 | B2 | todo | |
+| 3 | B3 | training-engine | Progression from actual sets; hub 1.7; Train shows targets | 23 | B2 | building | |
 | 3 | B6 | training-engine | Screening gate (own words, ACSM 2015 method) | 26 | B1 | merged | #128 |
-| 3 | C3 | workout-hr | Heart-rate profile, zones, recovery, sleeping HR (shadow) | 33 | C2 | todo | |
+| 3 | C3 | workout-hr | Heart-rate profile, zones, recovery, sleeping HR (shadow) | 33 | C2 | building | |
 | 3 | D2 | ios-widgets | Today and Lock Screen widgets | — | D1 | todo | |
-| 3 | E2 | research-library | Ingestion and the first 30 sources | — | E1 | todo | |
+| 3 | E2 | research-library | Ingestion, the first 30 sources and the retrieval test set | 42 | E1 | building | |
 | 3 | E3 | research-library | Library inside Coach chat | 43 | A6, E2 | todo | |
 | 4 | B4 | training-engine | Same-day readiness adjustment, one-tap approval | 24 | B3, C3 | todo | |
 | 4 | B5 | training-engine | Deloads, cardio dosing, joint rules, pain check, red flags | 25 | B3 | todo | |
@@ -160,6 +160,18 @@ until the cutover, so those sections stay true.
 
 U3 leaves `lib/features/onboarding/**` alone. B6 merges after B2; after rebasing it adds the one call
 that passes the stored outcome into `policiesFor` (B2's file, reviewed by the lead).
+
+### File owners (Phase 3, round 2)
+
+| Path | Owner |
+|---|---|
+| new `_shared/training/progression/**`, `lib/features/train/**`, migration code 23 (a new training-hub version, 1.7, additive), its contract fixture, new `_shared/coach_context/contributors/progression.ts` | B3 |
+| new `_shared/training/heart_rate/**`, `lib/features/workout_hr/**`, `lib/features/health/**`, `ios/Runner/Native/HeartRateReader.swift`, migration code 33, new `_shared/coach_context/contributors/heart_rate.ts` | C3 |
+| new `supabase/library/**` (source content), new `_shared/library/**`, migration code 42, new `_evals/library_*`, a new embedding Edge Function if the design needs one | E2 |
+| `_shared/coach_context/registry.ts`, `.github/workflows/**`, `scripts/**`, `supabase/config.toml` | lead only (file a contract request) |
+
+B3 and C3 write their Contract 7 contributor modules with tests but do not register them; the
+registry changes with E3 in round 3, so the Coach prompt does not change in round 2.
 
 ## Contracts (version 1)
 
@@ -511,6 +523,39 @@ deletion in the same PR). The existing exclusions (pregnancy, rehab, acute injur
 nutrition) stay. Questions and guidance in plain words, no diagnosis; update UX_FLOWS §4.1, PRD and
 AI_SAFETY_SPEC where they describe eligibility.
 
+**Round 2 (started 2026-10-17).**
+
+**E2: the knowledge base, part 1.** The library is the Coach's knowledge base for how to train and
+eat: the evidence behind good coaching, written so Coach can explain and cite it. Rules still set
+the plan's numbers (Architecture 1); B1's standard is built from the same evidence. About 30
+sources, chosen for coaching value and quality (position stands, consensus statements, systematic
+reviews and meta-analyses, public guidelines): training (volume, intensity, frequency, rest,
+progression, deloads, time-efficient training), nutrition (protein, energy balance and body
+composition, timing, creatine, caffeine, hydration), cardio and activity guidelines, recovery and
+sleep, pre-exercise screening, and joint-friendly training (no rehab). Licence rule (D3): store
+full text only where the licence allows it (CC BY and similar); otherwise store a summary in our
+own words with the citation and link. Free public articles from certification bodies (NASM, ACE,
+NSCA) may be summarised in our own words with a link; their textbooks, course modules and exam
+material are never used. Every source records its licence and why it was chosen; the full list goes
+in the handoff for the owner to review. Ingestion must reach production through the normal deploy
+(no manual production steps): content as files in the repo, loaded by migration 42, embeddings
+filled server-side with `gte-small`. Build the retrieval test set (about 40 athlete questions, each
+with the sources a good answer needs) and report recall in the top 8 with the real search.
+
+**B3: progression from the sets actually logged.** Deterministic next-session targets per exercise
+(load, reps, sets) from `exercise_sets` actuals and B1's `progression.ts` (double progression,
+load steps by equipment, reps in reserve). A stall or a missed session holds or lowers; never more
+than the standard's step. D9: heart rate never sets a load. Training hub 1.7 adds the targets
+(additive; older builds ignore them). Train shows the next target on each exercise. A Contract 7
+contributor (`progression.ts`) summarises recent progression for Coach (not registered yet).
+
+**C3: heart-rate profile.** From HealthKit and C2's per-set summaries: resting heart rate, an
+estimated maximum (age formula until an observed higher peak replaces it), heart-rate zones from
+heart-rate reserve, and recovery after sets. Sleeping heart rate is computed and stored in shadow
+(D10): never used in the recovery score. D9: heart rate never sets a load. Migration 33: user-owned
+tables with RLS, pgTAP, privacy export and deletion. A small zones view in the app, and a Contract 7
+contributor (`heart_rate.ts`, not registered yet).
+
 **Later rounds (recorded now).** E2 builds a retrieval test set with its first 30 sources: about 40
 athlete questions, each with the sources a good answer needs. E3 connects the library to Coach only
 if that set passes: recall of the expected sources in the top 8, every citation pointing at a
@@ -574,3 +619,6 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
 - 2026-10-17: round 1 merged (#125 kickoff, #126 U3, #127 B2, #128 B6) after Codex review fixes:
   cover-sized photo decoding (U3); a stricter screening expires plans built under a weaker one and
   approval re-checks the current outcome (B6).
+- 2026-10-17: round 2 = B3, C3, E2. E2 gets migration code 42. Owner direction: the library is a
+  knowledge base for how to train, built from the best open evidence; NASM/ACE/NSCA public articles
+  may be summarised in our own words, never their textbooks or course material.
