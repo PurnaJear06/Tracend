@@ -307,6 +307,145 @@
       "expected": [
         "acsm_2026_resistance_prescription"
       ]
+    },
+    {
+      "id": "diet_break",
+      "text": "Should I take a diet break after many weeks of cutting?",
+      "expected": [
+        "byrne_2018_matador",
+        "peos_2021_icecap"
+      ]
+    },
+    {
+      "id": "diet_break_speed",
+      "text": "Do diet breaks make fat loss faster, or just easier to stick to?",
+      "expected": [
+        "peos_2021_icecap",
+        "byrne_2018_matador"
+      ]
+    },
+    {
+      "id": "stalled_deficit",
+      "text": "Why has my fat loss stalled even though I am still eating in a deficit?",
+      "expected": [
+        "trexler_2014_metabolic_adaptation"
+      ]
+    },
+    {
+      "id": "hunger_leaner",
+      "text": "My hunger keeps rising the leaner I get. Is my metabolism slowing down?",
+      "expected": [
+        "trexler_2014_metabolic_adaptation"
+      ]
+    },
+    {
+      "id": "refeed_reverse",
+      "text": "Do refeed days or reverse dieting actually work?",
+      "expected": [
+        "trexler_2014_metabolic_adaptation"
+      ]
+    },
+    {
+      "id": "low_energy_availability",
+      "text": "Can eating too little while training harm my health?",
+      "expected": [
+        "mountjoy_2023_reds"
+      ]
+    },
+    {
+      "id": "feel_weird_lean",
+      "text": "I have lost a lot of weight and feel a bit weird and run down. Is something wrong?",
+      "expected": [
+        "mountjoy_2023_reds",
+        "trexler_2014_metabolic_adaptation"
+      ]
+    },
+    {
+      "id": "keep_weight_off",
+      "text": "What helps people keep weight off after they have lost it?",
+      "expected": [
+        "varkevisser_2019_weight_loss_maintenance",
+        "trexler_2014_metabolic_adaptation"
+      ]
+    },
+    {
+      "id": "coach_questions",
+      "text": "Does a coach asking questions instead of giving orders really help people exercise more?",
+      "expected": [
+        "zhu_2024_motivational_interviewing"
+      ]
+    },
+    {
+      "id": "habit_days",
+      "text": "How long does it take for a new habit to become automatic?",
+      "expected": [
+        "lally_2010_habit_formation"
+      ]
+    },
+    {
+      "id": "missed_day_habit",
+      "text": "If I miss a day, do I lose the habit I was building?",
+      "expected": [
+        "lally_2010_habit_formation"
+      ]
+    },
+    {
+      "id": "india_bmi",
+      "text": "What is a healthy BMI for an Indian adult?",
+      "expected": [
+        "icmr_nin_2024_dietary_guidelines"
+      ]
+    },
+    {
+      "id": "india_protein_powder",
+      "text": "Do Indian dietary guidelines say protein powders are necessary?",
+      "expected": [
+        "icmr_nin_2024_dietary_guidelines"
+      ]
+    },
+    {
+      "id": "alcohol_recovery",
+      "text": "Does drinking alcohol after training hurt my recovery?",
+      "expected": [
+        "vella_2010_alcohol_recovery"
+      ]
+    },
+    {
+      "id": "older_lifting",
+      "text": "Is lifting weights safe and useful for older adults?",
+      "expected": [
+        "fragala_2019_older_adults"
+      ]
+    },
+    {
+      "id": "cycle_training",
+      "text": "Should I train differently at different points of my menstrual cycle?",
+      "expected": [
+        "mcnulty_2020_menstrual_cycle"
+      ]
+    },
+    {
+      "id": "bands_home",
+      "text": "Can resistance bands build strength as well as weights when I train at home?",
+      "expected": [
+        "lopes_2019_elastic_resistance"
+      ]
+    },
+    {
+      "id": "two_weeks_off",
+      "text": "I cannot train for two weeks. Will I lose my strength and muscle?",
+      "expected": [
+        "mujika_2001_muscular_detraining",
+        "bosquet_2013_training_cessation"
+      ]
+    },
+    {
+      "id": "home_ten_days",
+      "text": "Can I keep my gains if I only do bodyweight training at home for ten days?",
+      "expected": [
+        "lopes_2019_elastic_resistance",
+        "mujika_2001_muscular_detraining"
+      ]
     }
   ]
 }

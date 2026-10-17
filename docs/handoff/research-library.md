@@ -1,6 +1,6 @@
 # Research Library Handoff
 
-**As of:** 2026-10-17
+**As of:** 2026-10-18
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -14,7 +14,7 @@ A hybrid (full-text plus gte-small vector) research library behind Coach answers
 
 E1 (Phase 1); E2, E3 (Phase 3); E4, E5 (Phase 4)
 
-E2 (Phase 3, round 2) is built and in review; see its section below.
+E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is in review. See the sections below.
 
 ## State
 
@@ -213,8 +213,8 @@ steps in one command if that happens.)
 
 ### Coaching principles digest (owner request, 2026-10-17)
 
-`supabase/library/coaching_principles.ts` is a fixed, deterministic text of about 6,000 characters
-(about 1,500 tokens, in our own words, no athlete data) with source ids inline in square brackets:
+`supabase/library/coaching_principles.ts` is a fixed, deterministic text (6,007 characters in version 1;
+7,197 in version 2, see E2.1; about 1,500 to 1,800 tokens, in our own words, no athlete data) with source ids inline in square brackets:
 training (volume, frequency, loads, effort, rest, progression, deloads, cardio with lifting), cardio
 and activity, nutrition, recovery and sleep, screening and safety, and how a good coach
 communicates (individualise, honest about missing data and evidence strength, never diagnose, no
@@ -231,7 +231,7 @@ addresses; the contributor passes `validateCoachContextContributors`. The host w
 data, so the communication rules are phrased as guidance for explaining, not as instructions that
 override Tracend's rules.
 
-### The 35 sources (for the owner's review)
+### The first 35 sources (for the owner's review; E2.1 adds 14 below)
 
 Every entry was checked on 2026-10-17 against its Europe PMC and PubMed record (title, authors,
 year, pages, DOI or PMCID, licence); the DOI is the one in that record. Nothing is copied: every
@@ -284,6 +284,20 @@ Iversen 2021; Pelland 2026; Singer 2024; Zourdos 2016; Robinson 2024). Baz-Valle
 | dupuy_2018_recovery_techniques | Recovery and sleep | Dupuy et al. 2018 | doi:10.3389/fphys.2018.00403 | CC BY 4.0 | global | recovery, soreness, training | Compares popular recovery methods on soreness and fatigue, so Coach can say which ones have evidence and which do not. |
 | riebe_2015_screening | Screening | Riebe et al. 2015 (ACSM) | doi:10.1249/MSS.0000000000000664 | Publisher copyright | global | screening, safety, health | The professional basis for deciding who should check with a doctor before starting or stepping up exercise, central to Tracend's safety gate. |
 | bredin_2013_parq_plus | Screening | Bredin et al. 2013 | https://pmc.ncbi.nlm.nih.gov/articles/PMC3596208/ | Publisher copyright | global | screening, safety, health | Describes the widely used PAR-Q+ readiness questionnaire and its risk tiers, matching how Tracend's screening decides between proceed, moderate and refer. |
+| byrne_2018_matador | Energy balance | Byrne et al. 2018 (MATADOR) | doi:10.1038/ijo.2017.206 | CC BY-NC-ND | global | nutrition, energy-balance, fat-loss, diet-break, metabolic-adaptation | The best-known trial of planned breaks from dieting, so Coach can explain what a diet break is and what the evidence for it does and does not show. |
+| peos_2021_icecap | Energy balance | Peos et al. 2021 (ICECAP) | doi:10.1249/mss.0000000000002636 | Publisher copyright | global | nutrition, energy-balance, fat-loss, diet-break, training, hunger | The only trial of diet breaks in resistance-trained men and women, and it did not reproduce the extra fat loss seen in earlier work, which keeps Coach honest about breaks. |
+| trexler_2014_metabolic_adaptation | Energy balance | Trexler et al. 2014 | doi:10.1186/1550-2783-11-7 | CC BY 2.0 | global | nutrition, energy-balance, fat-loss, metabolic-adaptation, diet-break, weight-maintenance | Explains why fat loss slows and hunger rises on a long diet, the situation of anyone who has already lost a lot of weight and still wants to lose more. |
+| mountjoy_2023_reds | Energy balance | Mountjoy et al. 2023 (IOC) | doi:10.1136/bjsports-2023-106994 | Publisher copyright | global | nutrition, energy-balance, low-energy-availability, recovery, safety, fat-loss | The leading authority on the health risk of eating too little for the training done, which Coach needs for anyone cutting hard while training. |
+| varkevisser_2019_weight_loss_maintenance | Energy balance | Varkevisser et al. 2019 | doi:10.1111/obr.12772 | CC BY-NC-ND | global | nutrition, weight-maintenance, fat-loss, behaviour-change, adherence | The most careful review of what predicts keeping weight off, which tells Coach where to put attention once someone has lost a lot of weight. |
+| icmr_nin_2024_dietary_guidelines | Energy balance | ICMR-NIN 2024 | https://www.nin.res.in/dietaryguidelines/pdfjs/locale/DGI_2024.pdf | Publisher copyright (reproducing it in a product needs written permission) | IN | nutrition, protein, fat-loss, energy-balance, activity, guidelines, india | India's official food-based guidance, needed for users in India, and it differs from the sports-nutrition papers on BMI and protein powders in ways Coach must explain. |
+| vella_2010_alcohol_recovery | Energy balance | Vella and Cameron-Smith 2010 | doi:10.3390/nu2080781 | CC BY 3.0 | global | alcohol, recovery, nutrition, sleep, hydration, performance | A free review of what alcohol does to exercise performance and recovery, for the common question of whether drinking undoes training. |
+| zhu_2024_motivational_interviewing | Behaviour change | Zhu et al. 2024 | doi:10.1136/bmj-2023-078713 | CC BY 4.0 | global | behaviour-change, coaching-communication, activity, adherence, motivation | The strongest recent test of whether a motivational-interviewing coaching style raises activity, with a frank statement of how weak and short-lived the evidence is. |
+| lally_2010_habit_formation | Behaviour change | Lally et al. 2010 | doi:10.1002/ejsp.674 | Publisher copyright | global | behaviour-change, habits, adherence, consistency, coaching-communication | The standard study of how long a new daily habit takes to feel automatic, which answers 'how long until this becomes easy?' without a made-up number. |
+| mujika_2001_muscular_detraining | Special cases | Mujika and Padilla 2001 | doi:10.1097/00005768-200108000-00009 | Publisher copyright | global | detraining, training, strength, recovery, time-off | Directly answers 'will I lose my gains if I cannot train for a couple of weeks?' for trained people. |
+| bosquet_2013_training_cessation | Special cases | Bosquet et al. 2013 | doi:10.1111/sms.12047 | Publisher copyright | global | detraining, training, strength, time-off, older-adults | The broadest pooled analysis of how much strength is lost when resistance training stops and who loses it fastest. |
+| lopes_2019_elastic_resistance | Special cases | Lopes et al. 2019 | doi:10.1177/2050312119831116 | CC BY-NC | global | home-training, equipment, strength, training, minimal-equipment | Shows that resistance bands, which fit in a bag, build strength about as well as weights, which is the main question when a person must train away from a gym. |
+| fragala_2019_older_adults | Special cases | Fragala et al. 2019 (NSCA) | doi:10.1519/jsc.0000000000003230 | Publisher copyright | global | older-adults, strength, training, safety, guidelines | The most thorough professional position on resistance training for older adults, so Coach can explain why lifting matters with age. |
+| mcnulty_2020_menstrual_cycle | Special cases | McNulty et al. 2020 | doi:10.1007/s40279-020-01319-3 | CC BY 4.0 | global | women, menstrual-cycle, performance, training, individualisation | The best pooled answer to whether training should change across the menstrual cycle, which Coach is often asked. |
 
 Owner review points: Helms 2014 is a contest-prep paper (an extreme case; the summary says so and
 repeats its eating-disorder warning); Piercy 2018 is tagged `US` (the others are `global`); the
@@ -302,6 +316,79 @@ loaded counts and constraints, the loader's idempotence, the worker functions' g
 does the whole suite (71 files, 1,989 tests) on the local stack with the migration applied.
 `research_library_test.sql` now starts by deleting the loaded sources inside its transaction,
 because its ranking fixtures assume an empty library.
+
+## E2.1: knowledge base, gap sources (in review)
+
+Branch `claude/e2-library-gaps`, migration `20261018030042_library_gap_sources.sql` (code 42, additive:
+it only calls `private.library_replace_source`; the `library-embed` worker fills the 14 sources'
+embeddings after the deploy, as it did for the first 35). Written for a real case: an athlete who
+lost 15 kg (17 percent) over 19 weeks, is at BMI 23, still wants to lose fat, says he "feels a
+little weird" and will train at home for 10 to 15 days.
+
+### What shipped
+
+- **14 sources** in `supabase/library/sources/energy_balance.ts`, `behaviour_change.ts` and
+  `special_cases.ts` (49 sources in all; 14 source blocks in the migration, generated by the same
+  `build_migration.ts` with `--only`). The table above lists them with licence, region, topics and
+  why each was chosen. One is regional: `icmr_nin_2024_dietary_guidelines` carries `region: ["IN"]`
+  (the pgTAP region check now allows `IN`), so a caller passes `["global", "IN"]` to see it.
+- **Verification.** Every DOI was checked on 2026-10-18 against Crossref (title, authors, year,
+  volume and pages, licence) and Europe PMC (the abstract). Each summary is in our own words and
+  limited to text fetched: the abstract for all but Trexler 2014, Vella 2010 and Varkevisser 2019
+  (also read in their open full text) and ICMR-NIN 2024 (read in the PDF: guidelines 8, 9 and 10).
+  Lally 2010 is not in PubMed or Europe PMC, so its abstract comes from Crossref.
+- **Digest, version 2** (`coaching_principles.ts`): 7,197 characters, inside the 7,200 budget
+  (1,800 tokens at four characters a token). Added: long diets and diet breaks, metabolic
+  adaptation, low energy availability, keeping weight off, alcohol, time off, home training, the
+  menstrual cycle, older adults, an India line and habits. Every figure added is in a cited source
+  (4 weeks, 18 to 254 days, 18.5 to 23). To make room, wording of the version-1 text was tightened
+  without removing a figure; `pelland_2026_volume_frequency` and `piercy_2018_us_guidelines` are no
+  longer cited in the digest (both stay in the library).
+- **Retrieval questions:** 19 added to `library_questions.json` (61 in all); the size bounds in
+  `library_eval_test.ts` and `library_content_test.ts` were widened, and the area test now checks the
+  new topics.
+
+### Recall
+
+Not measured. The local Colima VM would not boot (nine minutes with no serial log, the known VZ
+boot hang), so `library_eval.ts` could not run against real gte-small embeddings, and a number
+from full-text search alone would say nothing (E2 measured 0.20 for it). The 19 new questions are
+in place; run the E2 "How to run it" steps on a working stack, or once production has embedded
+all 14 sources, and compare against E2's 0.929 hybrid mean recall (42 questions).
+
+### Gates
+
+`./scripts/deno.sh fmt --check supabase/functions`, `lint` and `test --allow-env --allow-net
+--allow-read=supabase/migrations,site/src/config.ts supabase/functions` pass (941 tests);
+`./scripts/check-migration-order.sh origin/main` passes. The pgTAP file
+`library_ingestion_test.sql` was edited for the new `IN` region and has not run locally (no
+stack); CI runs it.
+
+### Sources dropped or limited
+
+- Grgic 2022 (detraining, older adults) was dropped: it covers 12 to 52 weeks in older adults, not
+  a short break. Mujika and Padilla 2001 and Bosquet 2013 answer the short-break question.
+- Gardner 2012 (habits) was dropped: its abstract is empty, and Lally 2010 carries the habit
+  evidence.
+- No bodyweight-training review was found with a usable abstract; the home-training source
+  (Lopes 2019) covers resistance bands against conventional weights only, and its summary and the
+  digest say bodyweight was not tested.
+- Mountjoy 2023 (IOC REDs) and Fragala 2019 (NSCA position statement) are summarised from the
+  abstract only (the full text is paywalled or behind a bot check), so neither gives signs,
+  thresholds or programme variables. Fragala is a peer-reviewed journal position statement; no
+  NSCA, NASM or ACE course material or textbook was used.
+
+### Owner review points
+
+- ICMR-NIN 2024 copyright: reproduction "in any electronic format for creating a product" needs
+  NIN's written permission. Only an own-words summary with the citation is stored (same treatment as
+  the other publisher-copyright sources); confirm that is acceptable, or ask NIN.
+- The ICMR-NIN guidelines advise against protein powders and give 0.83 g per kg a day as the
+  allowance, while ISSN (Jäger 2017) gives 1.4 to 2.0 g per kg for people who train. The digest
+  tells Coach to say where the two differ for Indian users; the numbers stay with the plan's rules.
+- MATADOR (Byrne 2018) found more fat loss with diet breaks in men with obesity; ICECAP (Peos 2021)
+  found none in trained adults but less hunger. Both are summarised, and the digest calls a break a
+  choice, not a promise.
 
 ## Next agent starts here
 
