@@ -1058,6 +1058,8 @@ lives in the `extensions` schema. The tables are empty until ingestion.
 | body            | text                       | 1–8000 characters                                            |
 | token_count     | integer                    | 1–2000                                                       |
 | embedding       | `extensions.vector(384)`   | gte-small, mean-pooled and normalised; null until embedded   |
+| embed_attempts  | integer, default 0         | Failed embedding attempts; at 5 the chunk is no longer offered and cron goes quiet about it |
+| embed_failed_at | timestamptz                | Time of the last failed attempt                              |
 | embedding_model | text                       | Model that made the embedding (e.g. `gte-small`); set exactly when `embedding` is set, so a model change re-embeds selectively |
 | fts             | tsvector, generated stored | `to_tsvector('english', header || ' ' || body)`              |
 | created_at      | timestamptz                |                                                              |
@@ -1070,6 +1072,43 @@ Indexes: HNSW on `embedding` (`vector_cosine_ops`), GIN on `fts`, and the unique
 One row per ingestion run: `id`, `started_at`, `finished_at` (null exactly while `status` is
 `running`), `status` (`running`, `succeeded`, `failed`), `source_count`, `chunk_count`, `error`
 (at most 2000 characters).
+
+#### Content and ingestion (E2, migration `20261017150842_library_content`)
+
+Content lives in the repo as `supabase/library/sources/*.ts` (one object per source: metadata,
+licence, region, topics, why it was chosen, and a summary in Tracend's own words split into titled
+sections). `supabase/functions/_shared/library/chunk.ts` splits each section into chunks of at most
+1400 characters, each with the context header `Source: <label>, <title>. Section: <section>.`
+(`token_count` is characters / 4, at most 512 so a chunk fits the `gte-small` window). The first
+migration loads 35 sources and about 120 chunks, all with a null embedding, through
+`private.library_replace_source(source jsonb, chunks jsonb)`: it upserts a source by `manifest_key`
+and replaces its chunks only when their text changed, so loading a block again keeps valid
+embeddings. A later content update is a new migration holding the blocks printed by
+`_shared/library/build_migration.ts` for the changed sources; `library_content_test.ts` fails when a
+content file differs from the newest migration that loads it.
+
+Embeddings are filled server-side. Service-role functions (all security definer, empty
+`search_path`, no grant to `anon` or `authenticated`):
+
+| Function | Purpose |
+|---|---|
+| `library_worker_authorized_v1(candidate text)` | true when `candidate` is the Vault secret `library_worker_secret` |
+| `library_pending_chunks_v1(batch_size integer, exclude_ids uuid[] default null)` | `{chunk_id, source_id, input_text}` of chunks without an embedding and with fewer than 5 failed attempts, leaving out `exclude_ids` (batch 1 to 200, default 25); `input_text` is header, line break, body |
+| `library_store_embeddings_v1(model text, items jsonb)` | stores `[{chunk_id, embedding}]` (384 numbers) with `embedding_model` on chunks that have none; returns the count; a wrong size raises `22000`, an item without a `chunk_id` or an embedding raises `22023` and nothing is stored |
+| `library_record_embed_failures_v1(chunk_ids uuid[])` | counts one failed attempt on each chunk still without an embedding; returns how many reached the limit of 5 with this call |
+| `library_record_run_v1(started_at, succeeded, source_count, chunk_count, error)` | one finished `library_ingest_runs` row |
+| `library_status_v1()` | `{schema_version, sources, chunks, embedded_chunks}` |
+
+`private.library_worker_secret()` creates the Vault secret on first use (a restore does not carry
+Vault, so a restored database makes a new one). `private.library_embed_kick()` posts to the
+`library-embed` Edge Function through `pg_net` when any chunk lacks an embedding and has attempts
+left, and the pg_cron job `tracend-library-embed` runs it every minute. The target URL is the Vault
+secret `library_embed_url`; the kick does nothing while it is missing or blank, so the job is inert
+until the deploy workflow runs `private.library_set_embed_url(url)` after the migrations (idempotent;
+it accepts only `https://<20 lowercase letters>.supabase.co/functions/v1/library-embed`). The
+loader, the worker secret and the kick are not executable by any API role; `library_set_embed_url`
+is executable by `service_role` only (and needs a direct SQL connection, because `private` is not
+exposed to the Data API).
 
 #### `public.search_library_v1(query_text, query_embedding, match_count, filters)`
 

@@ -1,6 +1,9 @@
 begin;
 select plan(66);
 
+-- The ranking fixtures below assume an empty library; E2's migration loads the real sources.
+delete from private.library_sources;
+
 -- A 384-dimension vector with weight w at position i and (1 - w) at position j.
 create function pg_temp.vec(i integer, j integer default null, w real default 1)
 returns extensions.vector language sql immutable as $$

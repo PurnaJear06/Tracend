@@ -407,6 +407,11 @@ verify_jwt = true
 [functions.health-check]
 verify_jwt = false
 
+[functions.library-embed]
+# pg_cron calls it with a Vault-held worker secret that the function checks;
+# it never accepts a user session.
+verify_jwt = false
+
 [functions.meal-media-retention]
 # Cron authenticates with a dedicated server-side secret validated by the
 # function; this endpoint never accepts a user session.

@@ -305,6 +305,16 @@ jobs:
           supabase link --project-ref qsfzzsjenopqqqhvpyaw
           supabase db push --linked
 
+      # The research library's embedding job posts only where this Vault secret
+      # exists, so local and CI databases stay inert. Idempotent; Vault is not
+      # part of a restore, so every deploy sets it again.
+      - name: Point the library embedder at production
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase db query --linked \
+            "select private.library_set_embed_url('https://qsfzzsjenopqqqhvpyaw.supabase.co/functions/v1/library-embed');"
+
   deploy-functions:
     name: Deploy Edge Functions
     needs: deploy-migrations
@@ -322,6 +332,7 @@ jobs:
           - coach-decide
           - health-check
           - health-sync
+          - library-embed
           - meal-analyze
           - meal-media-retention
           - onboarding-plan
