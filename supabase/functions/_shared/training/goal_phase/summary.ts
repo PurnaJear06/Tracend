@@ -253,6 +253,9 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
   const first = phase[0];
   const last = phase[phase.length - 1];
   const current = round(smoothed(phase, false), 1);
+  // The history and the run end at the latest weight smoothed over all kept readings, so the
+  // goal's activation date never changes their figures.
+  const endWeight = round(smoothed(clean, false), 1);
   const bmi = input.heightCm === null ? null : bmiOf(current, input.heightCm);
   const common = {
     ...base,
@@ -278,12 +281,12 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
     return {
       ...common,
       startWeightKg: phaseStart,
-      history: recordedHistory(clean, last, first.day, current, capped),
+      history: recordedHistory(clean, last, first.day, endWeight, capped),
       continuousLoss: continuousLoss(
         clean,
         clean.length - phase.length,
         last,
-        current,
+        endWeight,
         phaseStart,
       ),
       confidence: "low",
@@ -304,8 +307,8 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
   return {
     ...common,
     startWeightKg: start,
-    history: recordedHistory(clean, last, first.day, current, capped),
-    continuousLoss: continuousLoss(clean, firstIndex, last, current, start),
+    history: recordedHistory(clean, last, first.day, endWeight, capped),
+    continuousLoss: continuousLoss(clean, firstIndex, last, endWeight, start),
     changeKg,
     changePct: round((changeKg / start) * 100, 1),
     weeks: round(weeks, 1),

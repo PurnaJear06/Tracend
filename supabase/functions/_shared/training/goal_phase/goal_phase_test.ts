@@ -258,7 +258,7 @@ Deno.test("a newly activated goal still shows the whole history, before it has a
   assertEquals(days.weeklyRateKg, null);
   assertEquals(days.history?.startDate, "2026-06-03");
   assertEquals(days.history?.startWeightKg, 90);
-  assertEquals(days.history?.changeKg, -15.1);
+  assertEquals(days.history?.changeKg, -15.2);
   assertEquals(days.continuousLoss?.startDate, "2026-06-03");
   // One reading since the goal began: the same.
   const one = summarizeGoalPhase({ ...lateGoalInputs, activatedOn: "2026-10-12" });
@@ -410,7 +410,7 @@ Deno.test("at the 400-reading cap the history is the newest window, not the whol
   const text = renderGoalPhase(capped, reviewGoalPhase(capped))!;
   assertStringIncludes(
     text,
-    "Recorded history, the newest 400 readings, from 2025-09-01 (older ones exist and are not shown)",
+    "Recorded history, the newest 400 readings, from 2025-09-01 (older readings may exist)",
   );
   assert(!text.includes("all weight readings"));
   const whole = summarizeGoalPhase(inputs({
@@ -420,6 +420,17 @@ Deno.test("at the 400-reading cap the history is the newest window, not the whol
   }));
   assertEquals(whole.history?.capped, false);
   assertStringIncludes(renderGoalPhase(whole, reviewGoalPhase(whole))!, "all weight readings");
+});
+
+Deno.test("moving the activation date never changes the history or the run", () => {
+  const at = (activatedOn: string) => summarizeGoalPhase({ ...lateGoalInputs, activatedOn });
+  for (const [a, b] of [["2026-10-12", "2026-10-10"], ["2026-07-03", "2026-07-10"]]) {
+    const one = at(a);
+    const other = at(b);
+    assertEquals(one.history, other.history);
+    assertEquals(one.continuousLoss, other.continuousLoss);
+    assertEquals(one.history?.changeKg, -15.2);
+  }
 });
 
 Deno.test("a lone implausible reading is excluded; two readings or a steady fall are not", () => {

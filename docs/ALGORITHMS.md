@@ -687,7 +687,7 @@ readings more than 35 days apart (`runMaximumGapDays`); both are in-house values
 confirmed never feeds the review (the rules fall back to the goal phase and its pace), and the
 history and run lines say "sparse readings, trend not confirmed". The RPC returns the newest 400
 readings; when the input holds 400, the history line reads "the newest 400 readings, from DATE
-(older ones exist and are not shown)" instead of "all weight readings", so a capped window is
+(older readings may exist)" instead of "all weight readings", so a capped window is
 never presented as the whole journey.
 
 **Review outcomes**, first match wins:

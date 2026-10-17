@@ -53,7 +53,7 @@ export function renderGoalPhase(
     lines.push(
       `- Recorded history, ${
         history.capped
-          ? `the newest ${maxInputReadings} readings, from ${history.startDate} (older ones exist and are not shown)`
+          ? `the newest ${maxInputReadings} readings, from ${history.startDate} (older readings may exist)`
           : "all weight readings"
       }: ${history.startWeightKg} kg on ${history.startDate} ` +
         `(median of the first readings) to now ${summary.currentWeightKg} kg: ` +
