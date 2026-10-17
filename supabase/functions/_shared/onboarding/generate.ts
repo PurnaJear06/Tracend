@@ -14,7 +14,13 @@ import {
   type PlanPolicies,
   validateOnboardingPlan,
 } from "./plan_contract.ts";
-import { goalCalorieAdjustments, nutritionPolicy, trainingPolicy } from "./policy.ts";
+import {
+  goalCalorieAdjustments,
+  nutritionPolicy,
+  screeningBlocksPlan,
+  trainingPolicy,
+} from "./policy.ts";
+import type { ScreeningOutcome } from "../training/screening/outcome.ts";
 import { buildRulesPlan, weeklySetsByMuscle } from "./rules_plan.ts";
 import {
   callOnboardingModel,
@@ -40,7 +46,11 @@ export class OnboardingPlanInfeasibleError extends Error {
   }
 }
 
-/** The rules plan for these answers, validated against the same policy. */
+/**
+ * The rules plan for these answers, validated against the same policy. Throws
+ * PlanBlockedByScreeningError, before anything is built or any model is asked, when the screening
+ * outcome is `see_professional` (Contract 8): callers answer with professional guidance.
+ */
 export function validRulesPlan(policies: PlanPolicies) {
   const plan = buildRulesPlan(policies);
   try {
@@ -161,6 +171,13 @@ export function onboardingSystemPrompt(policies: PlanPolicies): string {
       training.rpe[1]
     }; rest_seconds ${training.restSeconds[0]}-${training.restSeconds[1]}.`,
     `- Weekly sets for each target muscle (the first muscle in the catalog line) at most ${training.maxWeeklySetsPerMuscle}.`,
+    ...(policies.screening === "moderate_until_cleared"
+      ? [
+        `- The athlete is not yet cleared for vigorous exercise: keep every set at moderate effort (no more than RPE ${
+          training.rpe[1]
+        }, at least 3 reps left), no strength or maximal work, and no vigorous conditioning.`,
+      ]
+      : []),
     ...(training.priorityMinimums.length
       ? [
         `- Focus muscles the athlete chose: ${
@@ -349,8 +366,9 @@ export function policiesFor(
   catalog: readonly CatalogExercise[],
   health: HealthSummary | null = null,
   history: HealthHistory | null = null,
+  screening?: ScreeningOutcome,
 ): PlanPolicies {
-  const training = trainingPolicy(answers, health, history);
+  const training = trainingPolicy(answers, health, history, screening);
   // A movement group is required only while the athlete can still do one of
   // its patterns: avoiding push-ups with no equipment leaves no push to require.
   const available = new Set(
@@ -370,24 +388,30 @@ export function policiesFor(
         .filter((group) => group.length > 0),
     },
     catalog,
+    ...(screening === undefined ? {} : { screening }),
   };
-  if (!training.priorityMinimums.length) return desired;
+  // No plan is built for `see_professional`, so there is nothing to size a minimum against.
+  if (!training.priorityMinimums.length || screeningBlocksPlan(screening)) return desired;
   // A focus minimum is lowered to what the athlete's equipment, schedule and
   // session length can hold, so a valid plan always exists: the rules plan
-  // fills the focus muscles as far as every limit allows.
-  const reached = weeklySetsByMuscle(buildRulesPlan(desired).workouts, catalog);
-  return {
-    ...desired,
-    training: {
-      ...desired.training,
-      priorityMinimums: training.priorityMinimums
-        .map((item) => ({
-          muscle: item.muscle,
-          sets: Math.min(item.sets, reached.get(item.muscle) ?? 0),
-        }))
-        .filter((item) => item.sets > 0),
-    },
-  };
+  // fills the focus muscles as far as every limit allows. Lowering a minimum
+  // can change the plan, so it repeats until the plan built with the lowered
+  // minimums reaches every one of them.
+  let current = desired;
+  for (let round = 0; round < 6; round++) {
+    const reached = weeklySetsByMuscle(buildRulesPlan(current).workouts, catalog);
+    const minimums = current.training.priorityMinimums
+      .map((item) => ({
+        muscle: item.muscle,
+        sets: Math.min(item.sets, reached.get(item.muscle) ?? 0),
+      }))
+      .filter((item) => item.sets > 0);
+    const settled = minimums.length === current.training.priorityMinimums.length &&
+      minimums.every((item, index) => item.sets === current.training.priorityMinimums[index].sets);
+    current = { ...current, training: { ...current.training, priorityMinimums: minimums } };
+    if (settled) return current;
+  }
+  return { ...current, training: { ...current.training, priorityMinimums: [] } };
 }
 
 export async function generateOnboardingProposal(
@@ -399,8 +423,9 @@ export async function generateOnboardingProposal(
   timingOverride?: OnboardingPlanTiming,
   health: HealthSummary | null = null,
   history: HealthHistory | null = null,
+  screening?: ScreeningOutcome,
 ): Promise<GenerationResult> {
-  const policies = policiesFor(answers, catalog, health, history);
+  const policies = policiesFor(answers, catalog, health, history, screening);
   // Built and checked before any model call: infeasible answers throw here and
   // spend nothing, and every fallback below is a plan known to be valid.
   const fallback = validRulesPlan(policies);

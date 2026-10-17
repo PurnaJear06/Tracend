@@ -693,26 +693,84 @@ TDEE = BMR × daily-activity factor + training energy
 - **Movements to avoid:** squat, lunge, hinge, horizontal push, vertical push, horizontal pull,
   vertical pull. Every exercise with an avoided pattern is excluded.
 - **Prescription ranges:**
-  - Reps 6–20, or 3–20 for strength.
-  - RPE 7–8.5 for beginners (RIR 2–3) and 7–9 for intermediates.
+  - Reps 6–20, or 3–20 for strength (6–20 until a moderate-effort screening outcome clears).
+  - RPE 7–8.5 for beginners (RIR 2–3) and 7–9 for intermediates (6–7 until cleared).
   - Rest 60–180 s, or up to 240 s for strength.
   - Sets per exercise 1–5.
 - **Blocks:** 4–8 weeks before a review. The app repeats one weekly template, so the plan never
   promises a deload or a different week; progression is adding reps or load within the ranges.
   (Deloads in practice come about every 5–6 weeks, Sports Med Open 2024, and need a week-by-week
   plan the app does not have yet.)
-- **Rules plan:**
-  - The same limits, using split templates and the first equipment-compatible catalog exercise for
-    each movement slot.
-  - Sessions of 45 minutes or less keep compound rests at 2 minutes so that they still cover the
-    patterns.
-  - A slot with nothing the athlete can do takes its sibling pattern (squat ↔ lunge, horizontal ↔
-    vertical push or pull).
-  - It is validated before use. Answers it cannot meet are refused as infeasible (see
-    AI_SAFETY_SPEC §6), never stored.
-  - Deno tests prove it is valid for every equipment set × 1–6 days × both paths × every goal ×
-    30–120 minutes; its nutrition is valid and storable for 14,400 combinations of body size, age,
-    activity, goal, sex and schedule; and it is valid with any one movement avoided.
+- **Rules plan:** see "Templates and fractional volume" below. In short: the same limits, a
+  template chosen by split, goal, experience and session length, prescriptions from the coaching
+  standard, and weekly sets spread toward the standard's volume. It is validated before use;
+  answers it cannot meet are refused as infeasible (see AI_SAFETY_SPEC §6), never stored. Deno
+  tests prove it is valid for every equipment set × 1–6 days × both paths × every goal ×
+  30–120 minutes × every screening outcome; its nutrition is valid and storable for 14,400
+  combinations of body size, age, activity, goal, sex and schedule; and it is valid with any one
+  movement avoided.
+
+### Templates and fractional volume (B2, 2026-10)
+
+Code: `supabase/functions/_shared/training/templates/` (the week's shape and volume counting),
+`onboarding/rules_plan.ts` (exercise choice, prescription, set spreading). Values from the coaching
+standard (`_shared/training/standard/`, B1) are cited there; the choices below are Tracend's.
+
+**Template choice.** The policy still decides the split from the number of days (table above);
+the template then depends on the goal, the experience and the session length.
+
+| Input | What it changes |
+| --- | --- |
+| Days (split) | Full body A/B/C for 1–3 days; Upper A/B + Lower A/B for 4; Upper A, Lower A, Push, Pull, Legs for 5; Push, Pull, Legs, then Push 2, Pull 2, Legs 2 for 6 |
+| Goal | Strength: main lifts every session, two accessories at most. Muscle gain: shoulders, arms, calves and trunk after the lifts. Aesthetic: shoulders, rear delts and arms first. Fat loss and recomposition: compound-led, trunk first, few isolation exercises |
+| Experience | A beginner keeps at most 2 accessory exercises a session (in-house); only an intermediate is offered pull-ups (catalog level) |
+| Session length | Slots are in priority order (main, support, accessory); a session keeps as many from the top as its exercise limit (2 + minutes / 15) and set budget (minutes / 3) allow. Length also sets rest (below) |
+
+The plan names a template id (split, days, profile, experience, length) in the Deno tests; the
+rationale text names the split and the goal.
+
+**Exercise choice (owner decision 2026-10-15).** Full-gym plans use the lat pulldown for the
+vertical pull; the second vertical-pull slot of a week (full body C, Upper B, Pull 2) rotates, so an
+intermediate with a pull-up bar gets the pull-up as the variation. Trunk work rotates: a trunk
+exercise is not reused in a week while another is available, and loaded and bodyweight forms count
+the same there. A regression is never the variation.
+
+**Fractional volume.** One working set counts 1 toward the target muscle and the exercise's other
+catalog muscles, and 0.5 toward each secondary muscle (catalog v2; Pelland 2026, fractional method).
+Weekly targets (indirect sets included): strength goals 6 (2 sessions × 3 sets, the standard's
+frequency and strength sets); other goals the growth level of 10, then, with spare session room, a
+stretch halfway to the experience's maximum (11 beginner, 15 intermediate); trunk 4 (the minimum),
+because every lift braces it. The rules plan starts every exercise at 2 sets, brings the main lifts
+to 3, then adds one set at a time where the weekly shortfall is largest (a main lift before an
+accessory when equal). An added set never passes the session set budget, the session length, the
+exercise count, the policy's weekly maximum for the exercise's target muscle (12 beginner, 20
+intermediate, direct sets as before), or the standard's maximum for that muscle with indirect sets
+counted. The plan the spreading starts from is not trimmed, so a muscle many exercises train
+indirectly (glutes) can pass the standard's maximum when counted fractionally; only the policy's
+direct count is a hard limit. An exercise stops at 4 sets (3 for strength goals or isolation).
+
+**Reconciling the standard with the policy.**
+
+| Point | Standard | Policy (before B2) | Rules plan now, and why |
+| --- | --- | --- | --- |
+| Strength compound rest | 180–300 s | cap 240 s | 120 s in sessions of 45 minutes or less, 180 s up to 75 minutes, 240 s from 90 minutes. 240 s is the policy cap, kept because 300 s rests would cost most of a 60–90 minute session (each set also costs 45 s of work); the short-session 120 s is below the standard's 180 s because longer rests cannot hold the four movement patterns in 45 minutes |
+| Beginner strength reps | 8–12 | rules plan 4–6 | 8–12, the standard's novice range (ACSM 2009): heavy loading comes after the technique is learned. The policy minimum of 3 reps still applies to a model plan |
+| Intermediate strength compound reps | 3–6 | rules plan 4–6 | 3–6 (the policy's lowest allowed count) |
+| Hypertrophy compound rest | from 90 s | 150 s (120 s in short sessions) | 90 s in sessions of 45 minutes or less, otherwise 120 s; both inside the standard (Singer 2024: no clear gain beyond 90 s) and shorter than before, which leaves room for more sets |
+| Hypertrophy compound reps | beginner 8–12, intermediate 6–12 | 8–12 / 6–10 | the standard's ranges |
+| Isolation reps | 10–15 (strength: 8–12 beginner, 6–12 intermediate) | 10–15 | the standard's ranges |
+| Effort | reps in reserve 2–3 beginner, 1–3 intermediate | RPE 7–8.5 / 7–9 | compound lifts stop at the middle of the range (RPE 7.5 beginner, 8 intermediate), isolation at 2 reps left (RPE 8); the half point for short sleep still applies |
+| Weekly sets | 4 minimum, 10 growth, 12/20 maximum | at most 12/20, no minimum | as above; the model path keeps the policy's direct-set limit |
+
+**Screening (Contract 8).** `PlanPolicies.screening` is optional; a missing outcome means `cleared`.
+`moderate_until_cleared` (`trainingPolicy`): no strength emphasis (the 3-rep floor becomes 6, rest at
+most 180 s, the strength goal builds the general-fitness template with hypertrophy reps), effort at
+most RPE 7 (at least 3 reps in reserve, range RPE 6–7), and no conditioning, which the rules plan
+never contains. The athlete sees a note first in the plan's assumptions, and the model prompt carries
+the same cap. `see_professional` builds no plan: `buildRulesPlan`, `validRulesPlan`,
+`validateOnboardingPlan` and `generateOnboardingProposal` throw `PlanBlockedByScreeningError` before
+any model call, and the caller answers with professional guidance (today's excluded path: the app
+stops at the eligibility step and nothing is built).
 
 ### Apple Health summary (2026-10)
 

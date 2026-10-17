@@ -1,6 +1,6 @@
 # Training Engine Handoff
 
-**As of:** 2026-10-15
+**As of:** 2026-10-17
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -115,7 +115,86 @@ B0 is live (#105, 2026-10-15).
   has a known source and a basis, every source is cited with a DOI and PMID, ranges are ordered.
   pgTAP `exercise_catalog_v2_test.sql`: ratings, links, mirroring, constraints, read access.
 
+**B2 (review; Edge Functions only, no SQL or app change).** Based on #125 (the Phase 3 briefs and
+Contract 8).
+
+- **Templates** (`_shared/training/templates/`): `weekTemplate` turns the policy's split (days 1-3
+  full body, 4 upper/lower, 5 upper-lower-push-pull-legs, 6 push-pull-legs twice) into sessions of
+  slots in priority order (main, support, accessory), tuned by goal (strength: few accessories;
+  muscle gain; aesthetic: shoulders, rear delts and arms first; fat loss and recomposition:
+  compound-led, trunk first), experience (a beginner keeps at most 2 accessories a session) and
+  length (short <= 45 min, standard, long > 75; the session keeps as many slots as its exercise
+  limit and set budget hold). 4 profiles x 6 day counts x 2 experiences x 3 length tiers = 144
+  template ids. `buildRulesPlan` picks the exercise for each slot with B0's ranking.
+- **Exercise choice.** Full-gym plans keep the lat pulldown for the vertical pull; the week's second
+  vertical-pull slot rotates, so an intermediate with a pull-up bar gets the pull-up (3 full-body
+  days or more). Core work rotates (a trunk exercise is not reused in a week while another is
+  free, loaded or bodyweight alike): distinct trunk exercises per rotating week went 54% -> 78%.
+- **Fractional volume** (`templates/volume.ts`): `setWeights` (1 for the catalog's muscles, 0.5 for
+  catalog v2 `secondaryMuscles`, read by slug), `fractionalWeeklySets`, `weeklyTargets` (strength
+  6; growth 10, stretching to 11/15 with spare room; trunk 4). The rules plan starts exercises at
+  2 sets, lifts the main lifts to 3, then adds sets where the weekly shortfall is largest, inside
+  the session set budget, session length, exercise count, the policy's direct weekly maximum and
+  the standard's maximum for the target muscle. The validator and policy are unchanged (direct
+  sets on the target muscle stay the hard limit).
+- **Reconciliation** (all recorded with reasons in ALGORITHMS §9): strength compound rest 120 s
+  (<= 45 min), 180 s, 240 s (>= 90 min; policy cap kept, the standard's 300 s not used); beginner
+  strength reps 8-12 (was 4-6), intermediate strength 3-6 (was 4-6); hypertrophy compound rest 90 s
+  (<= 45 min) or 120 s (was 120/150 s); intermediate hypertrophy compound reps 6-12 (was 6-10);
+  isolation reps from the standard (strength 6-12/8-12; hypertrophy 10-15); effort from the
+  standard's reps in reserve (compound mid-range, isolation 2).
+- **Contract 8.** `PlanPolicies.screening?: ScreeningOutcome` (missing = cleared). `policiesFor` and
+  `generateOnboardingProposal` take it as a last optional argument; `trainingPolicy` takes it as a
+  fourth. `moderate_until_cleared`: RPE <= 7 (range 6-7), reps floor 6, rest <= 180 s, the strength
+  goal builds the `general` template with hypertrophy reps; a first note in the plan's assumptions;
+  a line in the model prompt; `calculation.screening` in the proposal. The rules plan contains no
+  conditioning. `see_professional`: `PlanBlockedByScreeningError` (exported from `plan_contract.ts`)
+  from `buildRulesPlan`, `validRulesPlan`, `validateOnboardingPlan` and `generateOnboardingProposal`,
+  before any model call; `policiesFor` does not throw. **For B6 / the lead:** the exclusion today
+  lives only in the app (`onboarding_flow.dart` stops at the eligibility step), so nothing on the
+  server maps this error yet. `onboarding-plan/handler.ts` (not B2's file) must catch it, in both
+  the pre-check around `validRulesPlan(policiesFor(...))` and the background generation, and answer
+  with professional guidance (not `generation_failed`), and must pass the stored outcome as the
+  last argument of `policiesFor` and `generateOnboardingProposal`.
+- **Digest change** (`catalog_plans_test.ts`, same 10,080 cases, re-recorded on purpose; none refused
+  before or after). Plans by split are unchanged (full body 5,040; upper/lower 1,680; upper-lower-
+  push-pull-legs 1,680; push-pull-legs 1,680), because the policy still chooses the split.
+  Prompts: byte-identical for the 3,360 cases without a focus muscle; the 6,720 with one differ
+  where a lowered focus minimum changed (416 cases, all higher, total 75,290 -> 75,926 sets;
+  `policiesFor` now repeats the lowering until the plan reaches every minimum). Plans, per plan
+  (average over the 10,080), before -> after:
+  - sets 48.8 -> 47.4 (-3%); session estimate 46.5 -> 42.5 min (shorter rests);
+  - direct weekly sets by target muscle: back 8.2 -> 8.7, chest 6.3 -> 7.5, quads 8.9 -> 9.3,
+    shoulders 6.3 -> 5.8, glutes 5.7 -> 5.2, hamstrings 3.1 -> 2.9, calves 2.2 -> 2.1, biceps
+    1.7 -> 1.4, triceps 1.6 -> 1.2, core 4.9 -> 3.4;
+  - with indirect sets at half: back 9.7 -> 10.3, chest 6.5 -> 7.6, quads 9.0 -> 9.4, biceps
+    9.6 -> 9.9, triceps 10.8 -> 11.3, shoulders 12.8 -> 13.1, glutes 17.8 -> 17.6, hamstrings
+    11.9 -> 11.3, core 8.9 -> 7.6, calves 2.4 -> 2.2;
+  - exercises 17.1 -> 17.4 a plan: compound 12.1 -> 12.1, isolation 5.0 -> 5.3, bodyweight (incl.
+    pull-up bar and bench only) 6.1 -> 6.7, dumbbells 5.05 -> 5.15, cables 1.62 -> 1.49, barbell
+    0.59 -> 0.60, machines 1.37 -> 1.36; lat pulldown 2,480 -> 2,640 uses, pull-up family 0 -> 1,080.
+- **In-house values needing owner or coach review:** the slot orders and accessories per goal; the
+  beginner accessory limit of 2; the 120/90 s hypertrophy rests and the 120 s short-session strength
+  rest (below the standard's 180 s); counting the catalog's second and third muscles as full sets
+  (the standard's rule) makes arms look served by rows and presses, so direct biceps and triceps
+  sets fell 19-26% (a size goal can still get isolation work through the stretch target) and glutes
+  pass the standard's maximum in 59% of plans (54% before) when counted fractionally (squats, lunges and hinges
+  all count them; only the direct count is limited); the strength target of 6; the stretch halfway
+  to the maximum; the per-exercise cap of 4 sets (3 for strength); the main-lift bonus. The upper
+  sessions have no trunk work on purpose, so an athlete avoiding every upper-body movement is
+  still refused as infeasible.
+- **Tests.** `templates_test.ts` (shape of every goal x days x experience x length, golden week
+  outlines, set weights, fractional sums, targets); `rules_plan_templates_test.ts` (valid plans for
+  every goal x days x experience x length x three equipment sets x screening outcome, 5,400 cases;
+  prescription equals the standard; rests by length; lat pulldown and pull-up; core rotation;
+  beginner accessories; main lifts at 3 sets; an independent fractional count; the growth level
+  reached; a golden 3-day size plan; moderate effort end to end including a model plan above the
+  cap being refused; `see_professional` builds nothing and spends no model call). Existing goldens
+  in `rules_plan_test.ts` moved to the new exercise mixes. The loaded-beats-bodyweight sweep now
+  exempts trunk work and the pull-up family, which rotate by design.
+
 ## Next agent starts here
 
-B2 (templates; fractional volume) and B6 (screening gate), Phase 3, read catalog v2 and the
-standard. The briefs are in the program doc.
+B6 (screening gate, Phase 3) produces the Contract 8 outcome and wires it through the handler (see
+"For B6 / the lead" in the B2 section). B3 (progression and deloads, Phase 3 round 2) builds on the
+templates and `setWeights`/`fractionalWeeklySets`. The briefs are in the program doc.

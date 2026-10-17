@@ -6,11 +6,13 @@ import { onboardingSystemPrompt, policiesFor, validRulesPlan } from "./generate.
 import { buildOnboardingProposal } from "./plan_contract.ts";
 import { answersFor, weekdaysFor } from "./test_helpers.ts";
 
-// Catalog v2 adds data for later chunks (B2); it must not change a single
-// byte of what onboarding produces today. The digests below were recorded on
-// the commit before catalog v2 existed (477da79) and cover the rules plan, the
-// proposal built from it and the model's system prompt (which lists the
-// catalog) for every case in the sweep.
+// Catalog v2 adds data the planner reads (secondary muscles, B2); the v2 entries must build
+// exactly the plans and prompts catalog v1 builds. The digests cover the rules plan, the proposal
+// built from it and the model's system prompt (which lists the catalog) for every case in the
+// sweep. They were recorded on 477da79 (before catalog v2) and re-recorded on purpose by B2
+// (templates and fractional volume changed the rules plan; the prompt changed only where a focus
+// muscle's lowered weekly minimum changed). The change is described in
+// docs/handoff/training-engine.md, section B2.
 
 const equipment: Record<string, EquipmentItem[]> = {
   bodyweight: [],
@@ -78,11 +80,11 @@ async function digest(catalog: readonly CatalogExercise[]) {
 
 const recorded = {
   cases: 10080,
-  plans: "6719a6cf28d903ba1bc0277cafc5efc0842c9f905de746705d2b924915bce609",
-  prompts: "58b00b718a5af7648803596b0f8b351a03762315c973b76f775a25ca2f8848da",
+  plans: "82234370a26602ec8838dc30dbe93428c8fb2c5b838ad872b63720d1b4c3b3b4",
+  prompts: "b34cf68c6ed52d41f89d7e83ef9404a1da60c3923f8d0985abc68d5814d5a997",
 };
 
-Deno.test("today's onboarding plans and prompts are byte-identical with catalog v1", async () => {
+Deno.test("onboarding plans and prompts are byte-identical to the recorded digests with catalog v1", async () => {
   assertEquals(await digest(exerciseCatalogV1), recorded);
 });
 

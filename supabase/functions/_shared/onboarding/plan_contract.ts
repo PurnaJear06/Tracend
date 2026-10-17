@@ -6,6 +6,7 @@ import {
   startsLighter,
 } from "./health_summary.ts";
 import type { HealthHistory } from "./health_history.ts";
+import type { ScreeningOutcome } from "../training/screening/outcome.ts";
 import { type LiftEstimate, startingLoadKg, strengthRatios } from "./strength.ts";
 import {
   allowedExercises,
@@ -335,7 +336,24 @@ export type PlanPolicies = Readonly<{
   nutrition: NutritionPolicy;
   training: TrainingPolicy;
   catalog: readonly CatalogExercise[];
+  /**
+   * Contract 8: the athlete's pre-exercise screening outcome. Missing means never screened,
+   * which reads as "cleared". `moderate_until_cleared` caps the plan at moderate effort
+   * (trainingPolicy); `see_professional` builds no plan (PlanBlockedByScreeningError).
+   */
+  screening?: ScreeningOutcome;
 }>;
+
+/** The screening outcome says to see a professional first, so no plan is built (Contract 8). */
+export class PlanBlockedByScreeningError extends Error {
+  readonly outcome: ScreeningOutcome;
+
+  constructor(outcome: ScreeningOutcome) {
+    super(`no plan is built while the screening outcome is ${outcome}`);
+    this.name = "PlanBlockedByScreeningError";
+    this.outcome = outcome;
+  }
+}
 
 const between = (value: number, [low, high]: readonly [number, number]) =>
   value >= low && value <= high;
@@ -343,6 +361,9 @@ const between = (value: number, [low, high]: readonly [number, number]) =>
 /** Throws OnboardingPlanValidationError on the first rule the plan breaks. */
 export function validateOnboardingPlan(plan: OnboardingPlan, policies: PlanPolicies): void {
   const { answers, training, nutrition } = policies;
+  if (policies.screening === "see_professional") {
+    throw new PlanBlockedByScreeningError(policies.screening);
+  }
   if (!between(plan.block_weeks, training.blockWeeks)) {
     fail("block_weeks_out_of_range", "$.block_weeks");
   }
@@ -497,6 +518,11 @@ export function requiredNotes(plan: OnboardingPlan, policies: PlanPolicies): str
   const usualSleep = history?.usual_sleep_minutes;
   const sleepIsUsual = usualSleep !== undefined && usualSleep < shortSleepMinutes;
   return [
+    ...(policies.screening === "moderate_until_cleared"
+      ? [
+        "Moderate effort until a professional clears you: every set stops 3 or more reps short, no heavy or hard conditioning.",
+      ]
+      : []),
     ...(avoided.length ? [`Leaves out, as you asked: ${avoided.join(", ")}.`] : []),
     ...(training.priorityMinimums.length
       ? [
@@ -650,6 +676,9 @@ export function buildOnboardingProposal(
           ? { priority_minimums: policies.training.priorityMinimums }
           : {}),
         ...(policies.training.returningFromBreak ? { returning_from_break: true } : {}),
+        ...(policies.screening && policies.screening !== "cleared"
+          ? { screening: policies.screening }
+          : {}),
       },
     },
     nutrition: {

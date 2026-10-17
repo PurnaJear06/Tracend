@@ -6,15 +6,45 @@ import {
   type ExerciseRole,
   type MovementPattern,
 } from "./catalog.ts";
-import type { OnboardingPlan, PlanExercise, PlanPolicies, PlanWorkout } from "./plan_contract.ts";
-import { estimateWorkoutMinutes, nutritionBounds, type Split } from "./policy.ts";
+import {
+  type OnboardingPlan,
+  PlanBlockedByScreeningError,
+  type PlanExercise,
+  type PlanPolicies,
+  type PlanWorkout,
+} from "./plan_contract.ts";
+import {
+  estimateWorkoutMinutes,
+  moderateEffortRpe,
+  nutritionBounds,
+  screeningBlocksPlan,
+} from "./policy.ts";
+import {
+  goalEmphasis,
+  repRanges,
+  restSeconds,
+  targetRepsInReserve,
+} from "../training/standard/prescription.ts";
+import { weeklySetsPerMuscle } from "../training/standard/volume.ts";
+import { weekTemplate } from "../training/templates/select.ts";
+import type { SlotTier } from "../training/templates/types.ts";
+import {
+  fractionalWeeklySets,
+  setWeights,
+  supportingMuscles,
+  weeklyTargets,
+} from "../training/templates/volume.ts";
 
 // The rules plan: a complete onboarding plan built only by deterministic code
 // from onboarding-policy-v2 and the catalog. It is used whenever a model is
 // not used (no AI consent, no evaluated provider, budget reached) or its plan
 // fails validation after one repair, so every athlete gets a valid plan.
+//
+// The week's shape comes from a template (_shared/training/templates) chosen by the policy's split,
+// the goal, the experience and the session length; this file picks the exercise for each slot,
+// sets the prescription from the coaching standard and spreads the weekly sets toward the
+// standard's volume (ALGORITHMS §9).
 
-type Slot = readonly MovementPattern[];
 type Experience = PlanPolicies["answers"]["experience"];
 
 // Equipment for a movement, most preferred first. An experienced lifter starts
@@ -45,6 +75,12 @@ const supportOnly: readonly EquipmentItem[] = ["bench", "pull_up_bar"];
 
 function isBodyweight(exercise: CatalogExercise): boolean {
   return exercise.equipment.every((item) => supportOnly.includes(item));
+}
+
+// A bodyweight exercise that needs nothing at all (not even a bar), other than trunk work,
+// which has no loaded form worth preferring: a rotating slot still ranks it last.
+function isFloorBodyweight(exercise: CatalogExercise): boolean {
+  return exercise.equipment.length === 0 && exercise.pattern !== "core";
 }
 
 // The database catalog carries no role, so it is read from catalog.ts by slug.
@@ -91,162 +127,51 @@ const substitutes: Readonly<Partial<Record<MovementPattern, readonly MovementPat
   horizontal_pull: ["vertical_pull"],
   vertical_pull: ["horizontal_pull"],
 };
-type DayTemplate = Readonly<{ name: string; objective: string; slots: readonly Slot[] }>;
+const clamp = (value: number, [low, high]: readonly [number, number]) =>
+  Math.min(high, Math.max(low, value));
 
-const fullBodyA: DayTemplate = {
-  name: "Full body A",
-  objective: "Squat, press and row patterns with a hinge, at a repeatable effort.",
-  slots: [["squat"], ["horizontal_push"], ["horizontal_pull", "vertical_pull"], ["hinge"], [
-    "core",
-  ], ["lateral_raise", "biceps"]],
-};
-const fullBodyB: DayTemplate = {
-  name: "Full body B",
-  objective: "Hinge, overhead press and pulling, with single-leg work.",
-  slots: [
-    ["hinge"],
-    ["vertical_push", "horizontal_push"],
-    ["vertical_pull", "horizontal_pull"],
-    [
-      "lunge",
-      "squat",
-    ],
-    ["core"],
-    ["triceps", "calves"],
-  ],
-};
-const fullBodyC: DayTemplate = {
-  name: "Full body C",
-  objective: "A second squat and press day with arm and trunk accessories.",
-  slots: [["squat", "lunge"], ["horizontal_push"], ["horizontal_pull"], ["hinge"], ["biceps"], [
-    "core",
-  ]],
-};
-const upperA: DayTemplate = {
-  name: "Upper A",
-  objective: "Horizontal pressing and pulling first, then shoulders and arms.",
-  slots: [
-    ["horizontal_push"],
-    ["horizontal_pull"],
-    ["vertical_push"],
-    [
-      "vertical_pull",
-      "horizontal_pull",
-    ],
-    ["lateral_raise", "rear_delts"],
-    ["triceps"],
-    ["biceps"],
-  ],
-};
-const upperB: DayTemplate = {
-  name: "Upper B",
-  objective: "Vertical pulling and pressing first, then upper-back and arm work.",
-  slots: [
-    ["vertical_pull", "horizontal_pull"],
-    ["vertical_push", "horizontal_push"],
-    [
-      "horizontal_pull",
-    ],
-    ["horizontal_push"],
-    ["rear_delts", "lateral_raise"],
-    ["biceps"],
-    ["triceps"],
-  ],
-};
-const lowerA: DayTemplate = {
-  name: "Lower A",
-  objective: "Squat-led lower body with a hinge and single-leg work.",
-  slots: [["squat"], ["hinge"], ["lunge"], ["hamstring_curl", "hinge"], ["calves"], ["core"]],
-};
-const lowerB: DayTemplate = {
-  name: "Lower B",
-  objective: "Hinge-led lower body with quad and hamstring accessories.",
-  slots: [
-    ["hinge"],
-    ["squat", "lunge"],
-    ["quads_isolation", "lunge"],
-    [
-      "hamstring_curl",
-      "hinge",
-    ],
-    ["calves"],
-    ["core"],
-  ],
-};
-const push: DayTemplate = {
-  name: "Push",
-  objective: "Chest, shoulders and triceps.",
-  slots: [
-    ["horizontal_push"],
-    ["vertical_push"],
-    ["chest_fly", "horizontal_push"],
-    [
-      "lateral_raise",
-    ],
-    ["triceps"],
-    ["core"],
-  ],
-};
-const pull: DayTemplate = {
-  name: "Pull",
-  objective: "Back, rear shoulders and biceps.",
-  slots: [
-    ["vertical_pull", "horizontal_pull"],
-    ["horizontal_pull"],
-    [
-      "rear_delts",
-      "horizontal_pull",
-    ],
-    ["biceps"],
-    ["core"],
-  ],
-};
-const legs: DayTemplate = {
-  name: "Legs",
-  objective: "Squat, hinge and single-leg work with leg accessories.",
-  slots: [["squat"], ["hinge"], ["lunge"], ["quads_isolation", "squat"], [
-    "hamstring_curl",
-    "hinge",
-  ], ["calves"]],
-};
-
-const templates: Readonly<Record<Split, (days: number) => DayTemplate[]>> = {
-  full_body: (days) => [fullBodyA, fullBodyB, fullBodyC].slice(0, days),
-  upper_lower: () => [upperA, lowerA, upperB, lowerB],
-  upper_lower_push_pull_legs: () => [upperA, lowerA, push, pull, legs],
-  push_pull_legs: () => [
-    push,
-    pull,
-    legs,
-    { ...push, name: "Push 2" },
-    { ...pull, name: "Pull 2" },
-    { ...legs, name: "Legs 2" },
-  ],
-};
-
+/**
+ * Reps, effort and rest for one exercise, from the coaching standard
+ * (_shared/training/standard/prescription.ts), inside the policy's limits. Choices where the
+ * standard and the policy differ are in ALGORITHMS §9:
+ * - beginners and every non-strength goal use the standard's hypertrophy or novice reps;
+ * - strength rest is 180 s, 240 s (the policy cap, below the standard's 300 s) in sessions of 90
+ *   minutes or more, and 120 s in sessions of 45 minutes or less, which cannot hold more;
+ * - hypertrophy compound rest is the standard's 90 s in sessions of 45 minutes or less, else 120 s.
+ * Under `moderate_until_cleared` the emphasis is never strength and effort stays at RPE 7.
+ */
 function prescription(
   exercise: CatalogExercise,
   policies: PlanPolicies,
 ): Omit<PlanExercise, "slug" | "sets" | "notes"> {
   const { answers, training } = policies;
-  const strength = answers.goal === "strength";
-  const beginner = answers.experience === "beginner";
+  const moderate = policies.screening === "moderate_until_cleared";
+  const emphasis = moderate ? "hypertrophy" : goalEmphasis.value[answers.goal];
+  const kind = exercise.compound ? "compound" : "isolation";
+  const [repMin, repMax] = repRanges[emphasis][answers.experience][kind].value;
   // Short sleep starts the block half a point easier (trainingPolicy).
   const lighter = training.startLighter ? 0.5 : 0;
-  if (exercise.compound) {
-    return {
-      rep_min: strength ? 4 : beginner ? 8 : 6,
-      rep_max: strength ? 6 : beginner ? 12 : 10,
-      target_rpe: (beginner ? 7.5 : 8) - lighter,
-      // A session of 45 minutes or less keeps rests at two minutes, so it can
-      // still cover its movement patterns.
-      rest_seconds: Math.min(
-        training.restSeconds[1],
-        answers.sessionMinutes <= 45 ? 120 : strength ? 180 : 150,
-      ),
-    };
-  }
-  return { rep_min: 10, rep_max: 15, target_rpe: 8 - lighter, rest_seconds: 75 };
+  const [repsLeftLow, repsLeftHigh] = targetRepsInReserve[answers.experience].value;
+  // A compound lift stops mid-range of the standard's reps left, an isolation exercise at 2.
+  const repsLeft = exercise.compound
+    ? (repsLeftLow + repsLeftHigh) / 2
+    : Math.min(repsLeftHigh, Math.max(repsLeftLow, 2));
+  const effort = Math.min(10 - repsLeft, moderate ? moderateEffortRpe : 10) - lighter;
+  const [restLow, restHigh] = restSeconds[emphasis][kind].value;
+  const minutes = answers.sessionMinutes;
+  const rest = !exercise.compound
+    ? 75
+    : emphasis === "strength"
+    ? minutes >= 90 ? restHigh : minutes > 45 ? restLow : 120
+    : minutes <= 45
+    ? restLow
+    : 120;
+  return {
+    rep_min: repMin,
+    rep_max: repMax,
+    target_rpe: effort,
+    rest_seconds: clamp(rest, training.restSeconds),
+  };
 }
 
 /** Weekly sets per target muscle (the catalog's first muscle). */
@@ -371,7 +296,136 @@ function topUpPriorities(
   return days;
 }
 
+/** Hard sets one exercise may reach when the weekly volume is spread (the policy allows 5). */
+const sharedSetsCap = (exercise: CatalogExercise, strength: boolean) =>
+  strength || !exercise.compound ? 3 : 4;
+
+/** The bonus a main lift gets over an accessory when two additions would help equally. */
+const tierBonus: Readonly<Record<SlotTier, number>> = { main: 0.3, support: 0.2, accessory: 0 };
+
+/**
+ * Spreads the sessions' spare sets over the week toward the standard's volume. Every chosen
+ * exercise starts at 2 sets and the main lifts first reach 3. Then, one set at a time, the
+ * addition that helps the muscles furthest below their weekly target most (indirect sets count
+ * 0.5) is made, a main lift before an accessory when they help equally; once every target is met
+ * or out of reach, spare room goes toward the stretch target (hypertrophy emphasis only). An
+ * addition must keep the session set budget, session length, exercise count, the policy's weekly
+ * maximum for the exercise's target muscle and the standard's maximum for that muscle counting
+ * indirect sets; when none helps, the sets stay as they are. The plan the sessions start from is
+ * not trimmed: it can pass the standard's maximum for a muscle that many exercises train
+ * indirectly (glutes), which only the policy's direct count limits.
+ */
+function spreadSets(
+  workouts: PlanWorkout[],
+  tiers: ReadonlyMap<string, SlotTier>,
+  policies: PlanPolicies,
+  limit: number,
+): PlanWorkout[] {
+  const { answers, training, catalog } = policies;
+  const bySlug = new Map(catalog.map((exercise) => [exercise.slug, exercise]));
+  const strength = policies.screening !== "moderate_until_cleared" &&
+    goalEmphasis.value[answers.goal] === "strength";
+  const trained = [...new Set(catalog.flatMap((exercise) => exercise.muscles))];
+  const emphasis = strength ? "strength" : "hypertrophy";
+  let targets = weeklyTargets(emphasis, answers.experience, trained);
+  const ceiling = weeklySetsPerMuscle.maximum[answers.experience].value;
+  const days = workouts.map((workout) => ({ ...workout, exercises: [...workout.exercises] }));
+  const fits = (exercises: PlanExercise[]) =>
+    exercises.reduce((total, exercise) => total + exercise.sets, 0) <=
+      training.setBudgetPerSession && estimateWorkoutMinutes(exercises) <= limit;
+  const tierOf = (day: number, slug: string) => tiers.get(`${day}|${slug}`) ?? "accessory";
+  // The score of one more set on an exercise, or null when that set is not allowed: the
+  // exercise is at its set cap, or the set would pass the policy's weekly maximum for the target
+  // muscle or the standard's maximum for any muscle it trains, or the session cannot hold it.
+  const addition = (
+    d: number,
+    index: number,
+    direct: ReadonlyMap<string, number>,
+    weekly: ReadonlyMap<string, number>,
+  ): number | null => {
+    const planned = days[d].exercises[index];
+    const entry = bySlug.get(planned.slug);
+    if (!entry || planned.sets >= sharedSetsCap(entry, strength)) return null;
+    if ((direct.get(entry.muscles[0]) ?? 0) + 1 > training.maxWeeklySetsPerMuscle) return null;
+    let score = 0;
+    const worked = entry.muscles[0];
+    if (!supportingMuscles.includes(worked) && (weekly.get(worked) ?? 0) + 1 > ceiling) return null;
+    for (const [muscle, weight] of setWeights(entry)) {
+      const current = weekly.get(muscle) ?? 0;
+      const target = targets[muscle] ?? 0;
+      if (target > current) score += weight * (target - current) / target;
+    }
+    const next = [...days[d].exercises];
+    next[index] = { ...planned, sets: planned.sets + 1 };
+    return fits(next) ? score : null;
+  };
+  const add = (d: number, index: number) => {
+    days[d].exercises[index] = {
+      ...days[d].exercises[index],
+      sets: days[d].exercises[index].sets + 1,
+    };
+  };
+
+  // The main lifts first reach 3 sets, whatever the targets say: the standard's 2-3 sets an
+  // exercise for strength, and the work that earns most of a session's effect for the rest.
+  days.forEach((day, d) =>
+    day.exercises.forEach((planned, index) => {
+      if (tierOf(d, planned.slug) !== "main" || planned.sets >= 3) return;
+      const score = addition(
+        d,
+        index,
+        weeklySetsByMuscle(days, catalog),
+        fractionalWeeklySets(days, catalog),
+      );
+      if (score !== null) add(d, index);
+    })
+  );
+
+  let stretched = false;
+  for (;;) {
+    const direct = weeklySetsByMuscle(days, catalog);
+    const weekly = fractionalWeeklySets(days, catalog);
+    let best: { day: number; index: number; score: number } | null = null;
+    days.forEach((day, d) => {
+      day.exercises.forEach((planned, index) => {
+        const score = addition(d, index, direct, weekly);
+        if (score === null || score <= 0) return;
+        const total = score + tierBonus[tierOf(d, planned.slug)];
+        if (!best || total > best.score) best = { day: d, index, score: total };
+      });
+    });
+    if (!best) {
+      // Every target is met or out of reach: spare room goes toward the stretch target.
+      if (strength || stretched) return days;
+      stretched = true;
+      targets = weeklyTargets(emphasis, answers.experience, trained, true);
+      continue;
+    }
+    const { day, index } = best as { day: number; index: number; score: number };
+    add(day, index);
+  }
+}
+
+const profileText = {
+  strength: "strength",
+  size: "muscle size",
+  aesthetic: "a muscular, defined look",
+  lean: "losing fat while keeping muscle",
+  general: "general fitness at moderate effort",
+} as const;
+
+const splitText = {
+  full_body: "Full-body sessions",
+  upper_lower: "An upper / lower split",
+  upper_lower_push_pull_legs: "Upper, lower, push, pull and legs sessions",
+  push_pull_legs: "A push / pull / legs split, twice through",
+} as const;
+
 export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
+  // Contract 8: a plan is never built while the outcome says to see a professional first.
+  if (screeningBlocksPlan(policies.screening)) {
+    throw new PlanBlockedByScreeningError("see_professional");
+  }
   const { answers, training, nutrition } = policies;
   const allowed = rankExercises(
     allowedExercises(
@@ -382,40 +436,55 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
     ),
     answers.experience,
   );
-  const days = templates[training.split](answers.trainingWeekdays.length);
+  const template = weekTemplate({
+    split: training.split,
+    goal: answers.goal,
+    experience: answers.experience,
+    sessionMinutes: answers.sessionMinutes,
+    moderate: policies.screening === "moderate_until_cleared",
+  }, answers.trainingWeekdays.length);
   const usedThisWeek = new Set<string>();
   const weeklySets = new Map<string, number>();
+  const tiers = new Map<string, SlotTier>();
   const limit = answers.sessionMinutes + training.sessionOverrunMinutes;
 
-  const built: PlanWorkout[] = days.map((day, index) => {
+  const built: PlanWorkout[] = template.days.map((day, dayIndex) => {
     const exercises: PlanExercise[] = [];
     let sessionSets = 0;
-    const slotCount = Math.min(training.maxExercisesPerSession, day.slots.length);
-    const defaultSets = Math.min(
-      3,
-      Math.max(2, Math.floor(training.setBudgetPerSession / slotCount)),
-    );
+    let accessories = 0;
     for (const slot of day.slots) {
       if (exercises.length >= training.maxExercisesPerSession) break;
+      if (
+        slot.tier === "accessory" && template.accessoryLimit !== null &&
+        accessories >= template.accessoryLimit
+      ) continue;
       const fill = (patterns: readonly MovementPattern[]) =>
         patterns.flatMap((pattern) =>
           allowed.filter((exercise) =>
             exercise.pattern === pattern && !exercises.some((item) => item.slug === exercise.slug)
           )
         );
-      const own = fill(slot);
-      const pool = own.length ? own : fill(slot.flatMap((pattern) => substitutes[pattern] ?? []));
+      const own = fill(slot.patterns);
+      const pool = own.length
+        ? own
+        : fill(slot.patterns.flatMap((pattern) => substitutes[pattern] ?? []));
       // An exercise for a focus muscle still short of its weekly minimum comes
       // first, the least-served focus muscle (then the athlete's focus order)
       // before the others, then a loaded exercise before a bodyweight one;
-      // otherwise the slot's pattern order holds.
+      // otherwise the slot's pattern order holds. A rotating slot (core work,
+      // the second vertical pull of a week) puts a compound first and ignores
+      // loaded versus bodyweight for trunk work and bar exercises, so it moves
+      // through the forms it has; a floor exercise (no equipment) still ranks last.
       const focus = training.priorityMinimums;
       const grade = (exercise: CatalogExercise) => {
         const index = focus.findIndex((item) =>
           item.muscle === exercise.muscles[0] && (weeklySets.get(item.muscle) ?? 0) < item.sets
         );
         const served = index >= 0 ? weeklySets.get(focus[index].muscle) ?? 0 : Infinity;
-        return [served, index >= 0 ? index : focus.length, isBodyweight(exercise) ? 1 : 0];
+        const form = slot.rotate
+          ? [exercise.compound ? 0 : 1, isFloorBodyweight(exercise) ? 1 : 0]
+          : [isBodyweight(exercise) ? 1 : 0];
+        return [served, index >= 0 ? index : focus.length, ...form];
       };
       const candidates = pool.sort((a, b) => compareKeys(grade(a), grade(b)));
       const top = candidates[0];
@@ -434,10 +503,9 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
         training.maxWeeklySetsPerMuscle - (weeklySets.get(target) ?? 0),
       );
       const base = prescription(choice, policies);
-      // Full prescription first; in a short session, fewer sets and then a
-      // shorter rest, so the session still covers its movement patterns.
+      // Two sets first (spreadSets adds more); in a short session, a shorter
+      // rest, so the session still covers its movement patterns.
       const variants: PlanExercise[] = [
-        { slug: choice.slug, sets: defaultSets, ...base, notes: "" },
         { slug: choice.slug, sets: 2, ...base, notes: "" },
         {
           slug: choice.slug,
@@ -452,12 +520,14 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
       );
       if (!fit) continue;
       exercises.push(fit);
+      tiers.set(`${dayIndex}|${choice.slug}`, slot.tier);
+      if (slot.tier === "accessory") accessories++;
       sessionSets += fit.sets;
       usedThisWeek.add(choice.slug);
       weeklySets.set(target, (weeklySets.get(target) ?? 0) + fit.sets);
     }
     return {
-      weekday: answers.trainingWeekdays[index],
+      weekday: answers.trainingWeekdays[dayIndex],
       name: day.name,
       objective: day.objective,
       warm_up: "Five minutes of easy movement, then two lighter sets of the first exercise.",
@@ -465,7 +535,12 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
       exercises,
     };
   });
-  const workouts = topUpPriorities(built, policies, allowed, limit);
+  const workouts = spreadSets(
+    topUpPriorities(built, policies, allowed, limit),
+    tiers,
+    policies,
+    limit,
+  );
 
   const [low, high] = nutrition.calories;
   const calories = Math.round((low + high) / 2 / 10) * 10;
@@ -511,8 +586,9 @@ export function buildRulesPlan(policies: PlanPolicies): OnboardingPlan {
     changed_from_current_plan: [],
     progression:
       "When every set reaches the top of its rep range at the target effort, add a small amount of load next session.",
-    rationale:
-      "A balanced split for your training days, using only exercises your equipment allows, within Tracend's volume and effort limits.",
+    rationale: `${splitText[template.split]} for ${
+      profileText[template.profile]
+    }, using only exercises your equipment allows, within Tracend's volume and effort limits.`,
     expected_benefit: "A clear starting plan that can be measured before it changes.",
     downside: "Targets are first estimates and need two to three weeks of data to refine.",
     confidence: "medium",
