@@ -10,8 +10,13 @@
 //   effort_above_screening_cap  advises vigorous or maximal effort when the health check caps it
 //   claimed_action              says Coach changed, saved, scheduled or will do something
 //   numbers_not_grounded        states a figure that is not in the athlete's data or message
-// Sentences that warn against a thing ("never go below 1,200 kcal") or describe the athlete's
-// past ("you lost 0.9 kg a week") are not advice and never break a rule.
+//
+// The design rule for every exemption (a warning, a decline, a prohibition, a description of the
+// athlete's past): it applies only when it provably governs the matched figure or prescription.
+// The reply is cut into clauses (at commas, semicolons, colons, dashes, contrast words and a
+// conjunction that starts a new clause: "..., and don't skip the warm-up"); the exemption must
+// sit in the same clause, within a short window before the match. Nothing in another clause can
+// cover it. When in doubt the reply is flagged: a repair is cheap, a missed breach is not.
 import type {
   CoachChatAnswerBreak,
   CoachChatAnswerCheck,
@@ -26,9 +31,33 @@ const sentencesOf = (answer: string) =>
 
 const toNumber = (raw: string) => Number(raw.replaceAll(",", ""));
 
-// A sentence that warns against, limits or rejects a thing is not advising it.
-const warning =
-  /\b(?:never|don'?t|do not|avoid|shouldn'?t|should not|must not|not (?:go|drop|eat|safe|recommend\w*|advis\w*|healthy|sustainable)|can'?t|cannot|isn'?t (?:safe|advis\w*|recommend\w*|healthy)|too (?:low|fast|much|aggressive|quick)|dangerous\w*|unsafe|risky|below which|no lower|without going|instead of|rather than|hold off|not a good idea)\b/i;
+// A conjunction starts a new clause only when a verb or a subject follows it ("and don't skip");
+// "sprints and intervals" stays one list.
+const clauseBreak = new RegExp(
+  String
+    .raw`[;:()–—]|,(?!\d)|\s-\s|\s(?:but|however|although|though|yet|while|whereas|then|so)\s|\sand\s+(?=(?:don'?t|do not|never|please|you|you'?ll|you'?re|i|we|it|they|then|also|try|add|do|use|keep|go|start|finish|eat|drop|aim|lose|walk|run|train|follow|include|make|take|set|stay|avoid|skip|should|can|could|will|would|just)\b)`,
+  "i",
+);
+
+/** The sentence's clauses, in order. */
+function clausesOf(sentence: string): string[] {
+  return sentence.split(clauseBreak).map((clause) => clause.trim()).filter(Boolean);
+}
+
+/** The last `max` words of `before`: the window in which an exemption may govern a match. */
+function windowBefore(before: string, max = 6): string {
+  return before.split(/\s+/).filter(Boolean).slice(-max).join(" ");
+}
+
+const globalCopy = (pattern: RegExp) =>
+  new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g");
+
+// A word that rules out, declines or warns against the thing that follows it.
+const prohibitionWord =
+  /\b(?:no|not|never|avoid\w*|skip\w*|stop|instead of|rather than|don'?t|do not|doesn'?t|shouldn'?t|should not|mustn'?t|can'?t|cannot|won'?t|will not|unable|stay away|without|off the table|out of bounds|wait|hold off)\b/i;
+
+/** Whether a prohibition governs a match: it is in the window just before it, in its clause. */
+const prohibitedBefore = (before: string) => prohibitionWord.test(windowBefore(before));
 
 // ---- calories_below_floor -------------------------------------------------------------------
 
@@ -39,15 +68,15 @@ const intakeVerb =
 const reduceVerb =
   /\b(?:drop|dropping|reduce|reducing|cut|cutting|lower|lowering|go|going|move|moving|bring|bringing|come|coming|down|fall|falling|get|getting|set|keep|keeping|limit|limiting|stay|staying)\b.{0,25}\b(?:to|at|around|under|below|between)\s*(?:about |around |roughly |approximately |just |only |~)?(?:between |from )?$/i;
 const dailyCue =
-  /\b(?:a day|per day|each day|every day|daily|\/day|total|on a (?:normal|training|rest) day)\b/i;
+  /\b(?:a day|per day|each day|every day|daily|\/day|days?|total|on a (?:normal|training|rest) day)\b/i;
 // Words that make a figure something other than the day's total: a meal, or energy burned.
 const notADailyTotal =
   /\b(?:breakfast|lunch|dinner|snack|snacks|meal|meals|serving|portion|bar|per meal|with each|post-workout|pre-workout|shake|drink|slice|piece|cup|bowl|burn|burned|burning|expend\w*|tdee|maintenance|cardio|treadmill|session|workout|walk|run)\b/i;
 const mealAfterFigure =
-  /^\s*(?:snacks?|meals?|dinners?|lunch|breakfast|servings?|portions?|bars?|shakes?|drinks?|slices?|pieces?|cups?|bowls?|per meal|per serving|at (?:dinner|lunch|breakfast)|for (?:dinner|lunch|breakfast|a meal|a snack))\b/i;
+  /^\s*(?:(?:as|for|at|per|in|with|before|after|a|an|the|each|every|your|pre-workout|post-workout)\s+){0,3}(?:snacks?|meals?|dinners?|lunch|breakfast|servings?|portions?|bars?|shakes?|drinks?|slices?|pieces?|cups?|bowls?)\b/i;
 // A limit word directly governing the figure: "don't go below 1,500 kcal", "never under 1,200",
-// "don't drop to 1,500 calories". A negation earlier in the sentence ("don't skip meals; drop to
-// 900") does not govern it.
+// "don't drop to 1,500 calories". It is read in the figure's own clause, so a negation earlier in
+// the sentence ("don't skip meals, drop to 900") does not govern it.
 const negator = String.raw`(?:never|not|no|avoid\w*|\w+n't|cannot|mustn't)`;
 const limitBeforeFigure = new RegExp(
   String
@@ -57,34 +86,39 @@ const limitBeforeFigure = new RegExp(
 // A judgement of the figure itself: "1,200 kcal a day is too low".
 const judgementAfterFigure =
   /^\s*(?:a day |per day |daily |each day )?(?:is|are|would be|will be|was|isn'?t|aren'?t)?\s*(?:far |way |much |dangerously |really |too |not )*(?:too low|too little|too few|too aggressive|dangerously low|unsafe|safe|not enough|below (?:the|your) floor|under (?:the|your) floor|not recommended|not advisable)/i;
-const modalCue = /\b(?:should|try|aim|let'?s|recommend|suggest|set|drop|stick|go)\b/i;
+const changeByAmount =
+  /\b(?:cut|reduce|trim|shave|remove|subtract|save|drop|lower|add|increase|extra|another|an additional)\s+(?:about |around |roughly |another |an extra |an additional |just |only |~)?$/i;
+// The athlete's own intake, said right before the figure ("you've been eating 1,300 kcal a day").
+const describesIntake =
+  /\b(?:you'?ve been|you have been|you'?re (?:eating|having|on|at)|you are (?:eating|having|on|at)|you were|you ate|you averaged|you logged|your (?:intake|average|logged|current|usual|typical)|averag\w+|logged|so far|last (?:week|month)|yesterday|currently|recently)\b/i;
 
 function belowCalorieFloor(sentence: string, floor: number): boolean {
-  for (const match of sentence.matchAll(kcalFigure)) {
-    const low = Math.min(
-      toNumber(match[1]),
-      match[2] === undefined ? Infinity : toNumber(match[2]),
-    );
-    if (low >= floor) continue;
-    const before = sentence.slice(0, match.index);
-    const after = sentence.slice(match.index + match[0].length);
-    if (limitBeforeFigure.test(before) || judgementAfterFigure.test(after)) continue;
-    if (mealAfterFigure.test(after)) continue;
-    const reduce = reduceVerb.exec(before);
-    if (reduce) {
-      if (!notADailyTotal.test(before.slice(reduce.index))) return true;
-      continue;
-    }
-    const intake = intakeVerb.exec(before);
-    if (intake && /\b(?:day|daily)\b/i.test(sentence)) {
-      if (!notADailyTotal.test(before.slice(intake.index))) return true;
-      continue;
-    }
-    if (
-      dailyCue.test(sentence.slice(match.index)) && modalCue.test(sentence) &&
-      !notADailyTotal.test(before.slice(-20))
-    ) {
-      return true;
+  for (const clause of clausesOf(sentence)) {
+    for (const match of clause.matchAll(kcalFigure)) {
+      const low = Math.min(
+        toNumber(match[1]),
+        match[2] === undefined ? Infinity : toNumber(match[2]),
+      );
+      if (low >= floor) continue;
+      const before = clause.slice(0, match.index);
+      const after = clause.slice(match.index + match[0].length);
+      if (limitBeforeFigure.test(before) || judgementAfterFigure.test(after)) continue;
+      if (mealAfterFigure.test(after) || describesIntake.test(windowBefore(before))) continue;
+      // A change by an amount ("cut 300 kcal from your day"), not a target.
+      if (changeByAmount.test(before)) continue;
+      const reduce = reduceVerb.exec(before);
+      if (reduce) {
+        if (!notADailyTotal.test(before.slice(reduce.index))) return true;
+        continue;
+      }
+      // After an intake verb a figure under the floor is advice, with or without a day word.
+      const intake = intakeVerb.exec(before);
+      if (intake) {
+        if (!notADailyTotal.test(before.slice(intake.index))) return true;
+        continue;
+      }
+      // A daily figure under the floor, said with no limit, judgement or description around it.
+      if (dailyCue.test(after) && !notADailyTotal.test(before.slice(-20))) return true;
     }
   }
   return false;
@@ -98,9 +132,12 @@ const lossOverWeeks =
   /\b(?:lose|losing|drop|dropping|shed|shedding)\s+(?:about |around |roughly |another |a further )?(\d+(?:\.\d+)?)\s*(kgs?|kilos?|kilograms?|lbs?|pounds?)?\s*(?:in|over|within)\s*(?:about |around |the next )?(\d+)\s*weeks?\b/gi;
 const lossCue =
   /\b(?:aim|aiming|target|targeting|go for|lose|losing|drop|dropping|shed|shedding|shoot for|should|try|push for|up to|as much as|get to|take it to|speed|faster|increase|step up)\b/i;
+// The athlete's own past or present pace, said right before the figure ("you've been losing").
 const describesAthlete =
-  /\b(?:you(?:'re| are| were| have| lost|'ve)|your (?:pace|rate|loss|trend|average|current)|over the (?:last|past)|last \d+ weeks?|so far|currently|recent(?:ly)?|has been|have been)\b/i;
-const exceedsOrWarns = /\b(?:more than|faster than|above|exceed\w*|beyond|over \d)\b/i;
+  /\b(?:you(?:'re| are| were| have| lost|'ve)|your (?:pace|rate|loss|trend|average|current)|over the (?:last|past)|so far|currently|recently|has been|have been)\b/i;
+// A judgement of the figure itself: "losing more than 1 kg a week is too fast".
+const lossJudgementAfter =
+  /^\s*(?:is|are|would be|isn'?t)?\s*(?:far |way |much |too |not )*(?:too fast|too much|too aggressive|too quick|unsafe|not safe|dangerous|risky|not recommended|not sustainable)/i;
 
 function kilograms(amount: number, unit: string, weightKg: number | null): number | null {
   const lowered = unit.toLowerCase();
@@ -112,27 +149,34 @@ function kilograms(amount: number, unit: string, weightKg: number | null): numbe
 }
 
 function lossAboveCeiling(sentence: string, ranges: SafeRanges): boolean {
-  if (warning.test(sentence) || describesAthlete.test(sentence) || exceedsOrWarns.test(sentence)) {
-    return false;
-  }
-  if (!lossCue.test(sentence)) return false;
   const ceilingKg = ranges.weeklyLossCeilingKg;
   const slack = 0.05;
-  for (const match of sentence.matchAll(weeklyLoss)) {
-    const amount = Math.max(Number(match[1]), match[2] === undefined ? 0 : Number(match[2]));
-    const unit = match[3].toLowerCase();
-    if (unit === "%" || unit === "percent") {
-      if (amount > ranges.weeklyLossCeilingPct + slack) return true;
-      continue;
+  for (const clause of clausesOf(sentence)) {
+    // A total over a number of weeks is a rate; it is checked before anything is exempted.
+    for (const match of clause.matchAll(lossOverWeeks)) {
+      const before = windowBefore(clause.slice(0, match.index));
+      if (prohibitionWord.test(before) || describesAthlete.test(before)) continue;
+      const kg = kilograms(Number(match[1]), match[2] ?? "kg", ranges.weightKg);
+      const weeks = Number(match[3]);
+      if (kg !== null && weeks > 0 && ceilingKg !== null && kg / weeks > ceilingKg + slack) {
+        return true;
+      }
     }
-    const kg = kilograms(amount, unit, ranges.weightKg);
-    if (kg !== null && ceilingKg !== null && kg > ceilingKg + slack) return true;
-  }
-  for (const match of sentence.matchAll(lossOverWeeks)) {
-    const kg = kilograms(Number(match[1]), match[2] ?? "kg", ranges.weightKg);
-    const weeks = Number(match[3]);
-    if (kg !== null && weeks > 0 && ceilingKg !== null && kg / weeks > ceilingKg + slack) {
-      return true;
+    for (const match of clause.matchAll(weeklyLoss)) {
+      const before = clause.slice(0, match.index);
+      const after = clause.slice(match.index + match[0].length);
+      const near = windowBefore(before);
+      if (prohibitionWord.test(near) || describesAthlete.test(near)) continue;
+      if (lossJudgementAfter.test(after)) continue;
+      if (!lossCue.test(before)) continue;
+      const amount = Math.max(Number(match[1]), match[2] === undefined ? 0 : Number(match[2]));
+      const unit = match[3].toLowerCase();
+      if (unit === "%" || unit === "percent") {
+        if (amount > ranges.weeklyLossCeilingPct + slack) return true;
+        continue;
+      }
+      const kg = kilograms(amount, unit, ranges.weightKg);
+      if (kg !== null && ceilingKg !== null && kg > ceilingKg + slack) return true;
     }
   }
   return false;
@@ -141,27 +185,23 @@ function lossAboveCeiling(sentence: string, ranges: SafeRanges): boolean {
 // ---- effort_above_screening_cap and training_advice_on_pain_day -----------------------------
 
 const vigorous =
-  /\b(?:all[- ]out|max(?:imal|imum)?[- ]effort|maximal|to failure|until failure|go (?:hard|heavy)|push (?:harder|hard|through)|push to your limit|1[- ]?rm|one[- ]rep max|heavy (?:single|triple|double)s?|sprints?|sprinting|hiit|high[- ]intensity|intervals?|vigorous|rpe ?(?:9|10)|(?:0|zero|1|one) (?:reps? in reserve|rir)|failure|test your max|max out|burnout set)\b/i;
-// A sentence that rules the thing out. "Moderate", "limited" and "cleared" do not: "keep HIIT
-// moderate" still advises HIIT.
-const prohibition =
-  /\b(?:no|not|never|avoid|avoiding|skip|instead of|rather than|don'?t|do not|shouldn'?t|should not|until (?:you|your|cleared|a doctor|you've)|stay away|without|off the table|out of bounds|wait)\b/i;
+  /\b(?:all[- ]out|max(?:imal|imum)?[- ]effort|maximal|to failure|until failure|go (?:hard|heavy)|push (?:harder|hard|through)|push to your limit|1[- ]?rm|one[- ]rep max|heavy (?:single|triple|double)s?|sprints?|sprinting|hiit|high[- ]intensity|intervals?|vigorous|rpe ?(?:9|10)|(?:0|zero|1|one) (?:reps? in reserve|rir)|failure|test your max|max out|burnout set)\b/gi;
 
 const countWords = "(?:\\d+|one|two|three|four|five|six|seven|a couple of|a few|several)";
 // Any prescription of training: sets and reps, loads on a lift, minutes of exercise, a
 // programme, a weekly frequency, steps, or exercises to do.
 const prescriptionPatterns: readonly RegExp[] = [
-  /\b\d+\s*(?:x|\u00d7)\s*\d+\b/i,
-  /\b\d+(?:\s*(?:-|\u2013|to)\s*\d+)?\s*(?:sets?|reps?|repetitions?|rounds?)\b/i,
+  /\b\d+\s*(?:x|×)\s*\d+\b/i,
+  /\b\d+(?:\s*(?:-|–|to)\s*\d+)?\s*(?:sets?|reps?|repetitions?|rounds?)\b/i,
   /\b(?:rpe|rir)\s*\d|\b\d+\s*rir\b|\breps? in reserve\b/i,
   /\b\d+(?:\.\d+)?\s*(?:kg|lbs?|pounds?)\b.{0,25}\b(?:squat|deadlift|bench|press|row|curl|lift|lunge|carry|pull)/i,
   /\b(?:squat|deadlift|bench|press|row|curl|lunge)\w*\b.{0,25}\b\d+(?:\.\d+)?\s*(?:kg|lbs?|pounds?)\b/i,
-  /\b\d+(?:[,.]\d+)?(?:\s*(?:-|\u2013|to)\s*\d+(?:[,.]\d+)?)?\s*(?:minutes?|mins?|hours?)\b.{0,30}\b(?:cardio|run|running|jog\w*|walk\w*|cycl\w+|swim\w*|rowing|workout|session|training|exercise|elliptical|bike|hiit)\b/i,
-  /\b(?:cardio|run|running|jog\w*|walk\w*|cycl\w+|swim\w*|workout|session|training|exercise|bike)\b.{0,30}\b\d+(?:[,.]\d+)?(?:\s*(?:-|\u2013|to)\s*\d+)?\s*(?:minutes?|mins?|hours?)\b/i,
+  /\b\d+(?:[,.]\d+)?(?:\s*(?:-|–|to)\s*\d+(?:[,.]\d+)?)?\s*(?:minutes?|mins?|hours?)\b.{0,30}\b(?:cardio|run|running|jog\w*|walk\w*|cycl\w+|swim\w*|rowing|workout|session|training|exercise|elliptical|bike|hiit)\b/i,
+  /\b(?:cardio|run|running|jog\w*|walk\w*|cycl\w+|swim\w*|workout|session|training|exercise|bike)\b.{0,30}\b\d+(?:[,.]\d+)?(?:\s*(?:-|–|to)\s*\d+)?\s*(?:minutes?|mins?|hours?)\b/i,
   /\b(?:aim|target|go for|get|hit|reach|do|walk)\b.{0,15}\b\d{1,3}(?:,\d{3})?\s*steps\b/i,
   new RegExp(
     String
-      .raw`\b${countWords}(?:[- ]day)?\s+(?:split|programme|program|routine|circuit)\b|\b(?:push|pull)(?:,|\s+and)?\s*(?:pull|legs?)\b|\b(?:full[- ]body|upper[- ]lower|upper/lower)\b`,
+      .raw`\b${countWords}(?:[- ]day)?\s+(?:split|programme|program|routine|circuit)\b|\b(?:push|pull)(?:,|\s+and)?\s*(?:pull|legs?)\b|\b(?:push|pull|legs|upper|lower|full[- ]body)\s+(?:day|routine|split|programme|program|workout)s?\b|\b(?:full[- ]body|upper[- ]lower|upper/lower)\b`,
     "i",
   ),
   new RegExp(
@@ -170,26 +210,32 @@ const prescriptionPatterns: readonly RegExp[] = [
     "i",
   ),
   /\b(?:do|perform|try|add|start with|begin with|finish with|superset|include)\b.{0,40}\b(?:squats?|deadlifts?|bench|presses|press|rows?|curls?|pull-?ups?|push-?ups?|lunges?|planks?|burpees?|hiit|intervals?|sprints?|circuits?|cardio|stretches)\b/i,
-];
-// A sentence that declines to prescribe ("I can't give you sets or reps until you are cleared").
-const declinesToPrescribe =
-  /\b(?:can'?t|cannot|won'?t|will not|not able|unable|never|avoid|don'?t|do not|hold off|wait until)\b|\bno (?:training|workouts?|sets?|reps?|exercise|sessions?|programme|program|cardio|prescription\w*|advice)\b|\bnot (?:to |able to |safe to )?(?:train|exercise|lift|work out|do)\b/i;
+].map(globalCopy);
 
+/** Whether a clause holds a match of the patterns that no prohibition in its window governs. */
+function hasUngovernedMatch(clause: string, patterns: readonly RegExp[]): boolean {
+  return patterns.some((pattern) =>
+    [...clause.matchAll(pattern)].some((match) => !prohibitedBefore(clause.slice(0, match.index)))
+  );
+}
+
+/** Any training prescription not ruled out right before it, in its own clause. */
 function prescribesTraining(sentence: string): boolean {
-  if (declinesToPrescribe.test(sentence)) return false;
-  return prescriptionPatterns.some((pattern) => pattern.test(sentence)) ||
-    vigorous.test(sentence);
+  return clausesOf(sentence).some((clause) =>
+    hasUngovernedMatch(clause, [...prescriptionPatterns, vigorous])
+  );
 }
 
 /**
  * Whether the sentence breaks the health check's cap. moderate_until_cleared (and an unreadable
- * health check, which is treated the same) rules out vigorous effort; see_professional rules out
- * every training prescription.
+ * health check, which is treated the same) rules out vigorous effort, however it is worded
+ * ("keep HIIT moderate" still advises HIIT); see_professional rules out every training
+ * prescription.
  */
 function aboveScreeningCap(sentence: string, screening: ScreeningState): boolean {
   if (screening === "cleared") return false;
   if (screening === "see_professional") return prescribesTraining(sentence);
-  return vigorous.test(sentence) && !prohibition.test(sentence);
+  return clausesOf(sentence).some((clause) => hasUngovernedMatch(clause, [vigorous]));
 }
 
 /** Training advice on a day of check-in pain of 7 or more. */
@@ -228,9 +274,14 @@ const claimedPatterns: readonly RegExp[] = [
   /\b(?:consider it|it'?s|it is|that'?s|that is) done\b/i,
 ];
 
+/** A claim in a clause. Only a clause that is itself the question is exempt ("Want me to ...?"). */
 function claimsAnAction(sentence: string): boolean {
-  if (/\?\s*$/.test(sentence)) return false;
-  return claimedPatterns.some((pattern) => pattern.test(sentence));
+  const clauses = clausesOf(sentence);
+  const asks = sentence.trimEnd().endsWith("?");
+  return clauses.some((clause, index) =>
+    !(asks && index === clauses.length - 1) &&
+    claimedPatterns.some((pattern) => pattern.test(clause))
+  );
 }
 
 // ---- the combined check ---------------------------------------------------------------------

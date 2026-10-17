@@ -26,6 +26,7 @@ import {
   type StoredQuestion,
   supersededSafetyState,
   supersedeFailedAttempts,
+  withoutSupersededMemory,
   withoutSupersededQuestions,
 } from "./superseded.ts";
 import { selectCoachChatRoute } from "../_shared/providers/coach_chat_provider_route.ts";
@@ -651,7 +652,7 @@ export async function handleCoachChat(
   // A fresh-key retry of a message whose earlier attempt failed: the failed attempt's question is
   // marked superseded and left out of the model's memory, so the thread holds the question once.
   const { context, dropped: repeatedQuestions } = withoutSupersededQuestions(
-    prepared.context as Record<string, unknown>,
+    withoutSupersededMemory(prepared.context as Record<string, unknown>),
     input.question,
   );
   if (repeatedQuestions > 0) {

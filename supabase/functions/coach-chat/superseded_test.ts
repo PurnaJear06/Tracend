@@ -5,6 +5,7 @@ import {
   earlierAttempts,
   supersedeFailedAttempts,
   unansweredCopies,
+  withoutSupersededMemory,
   withoutSupersededQuestions,
 } from "./superseded.ts";
 
@@ -150,4 +151,40 @@ Deno.test("a turn still running is never superseded; a lost one is, by the same 
   // A failed attempt is replaced at any age.
   const failed = store({ a: { state: "failed" } }, [copies[0]]);
   assertEquals(await supersedeFailedAttempts(failed.value, now), 1);
+});
+
+Deno.test("memory on every turn drops superseded questions: by state when carried, else by repetition", () => {
+  const context = {
+    recent_messages: [
+      user("Plan?"),
+      user("Plan?"),
+      assistant("Here is the plan."),
+      { role: "user", content: "Marked", safety_state: "unavailable" },
+      { role: "user", content: "Fine", safety_state: null },
+      assistant("Ok."),
+      user("Ask twice"),
+      assistant("Answer"),
+      user("Ask twice"),
+      assistant("Answer again"),
+    ],
+    recent_other_conversations: [user("Old"), user("  Old "), assistant("Reply")],
+    other: "kept",
+  };
+  const cleaned = withoutSupersededMemory(context);
+  assertEquals(cleaned.recent_messages, [
+    user("Plan?"),
+    assistant("Here is the plan."),
+    { role: "user", content: "Fine", safety_state: null },
+    assistant("Ok."),
+    user("Ask twice"),
+    assistant("Answer"),
+    user("Ask twice"),
+    assistant("Answer again"),
+  ]);
+  assertEquals(cleaned.recent_other_conversations, [user("  Old "), assistant("Reply")]);
+  assertEquals(cleaned.other, "kept");
+  assertEquals(context.recent_messages.length, 10, "the original is not changed");
+  const clean = { recent_messages: [user("a"), assistant("b")] };
+  assertEquals(withoutSupersededMemory(clean), clean);
+  assertEquals(withoutSupersededMemory({}), {});
 });

@@ -673,6 +673,16 @@ audit (1, 2, 3, 6 deterministic part, 7, 15).
   `safety_state` and untrimmed text count, and removes the unanswered copies from `recent_messages` before the
   model sees them. No SQL. **For the app:** hide user messages with `safety_state = 'unavailable'`
   in the thread (a marked row is a failed attempt the retry replaced).
+- **Exemption rule (second review):** every exemption (negation, conditional, educational,
+  prohibition, warning, decline, description of the athlete's past) must provably govern its
+  match: same clause, short window before it, no `and`/`but`/comma between (clauses are cut by
+  `clausesOf` in `reply_guard.ts` and `clausesOf`/`stretchBefore` in `red_flags.ts`); a possessive or
+  self-report defeats the conditional/educational skips; a bare "if" is no longer a conditional.
+  `exemptions_adversarial_test.ts` is the table (message or reply, expected hit or pass) every new
+  exemption must be added to. A negated list across a comma ("no chest pain, dizziness or
+  fainting") is now a hit: a false referral is cheap.
+- **Superseded memory on every turn** (`withoutSupersededMemory`): see the spec; the retry-turn
+  cleanup (`withoutSupersededQuestions`) stays for the current question.
 - **Coaching principles digest**: registered first in `coach_context/registry.ts` (stable, cached
   block); persona line added; legacy parity digests recorded again on purpose.
 - **Open**: the sets and reps a coach prescribes as advice are not checked (see the spec);

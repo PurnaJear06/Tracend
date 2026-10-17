@@ -96,6 +96,33 @@ export function earlierAttempts(
   return found;
 }
 
+/**
+ * The model's memory without superseded questions, on every turn (frozen v8 builds the memory
+ * from the thread, so a failed attempt's question keeps coming back on later turns). A message
+ * that carries `safety_state: "unavailable"` is dropped, if the context carries it. The context's
+ * memory entries are only role and content, so otherwise a user message that is immediately
+ * followed by an identical user message is dropped: the first of the two never got a reply.
+ */
+export function withoutSupersededMemory(context: Record<string, unknown>): Record<string, unknown> {
+  let cleaned = context;
+  for (const key of ["recent_messages", "recent_other_conversations"]) {
+    const list = context[key];
+    if (!Array.isArray(list)) continue;
+    const kept = list.filter((item, index) => {
+      const message = (item && typeof item === "object" ? item : {}) as Message & {
+        safety_state?: unknown;
+      };
+      if (message.safety_state === supersededSafetyState) return false;
+      const next = list[index + 1] as Message | undefined;
+      return !(message.role === "user" && next?.role === "user" &&
+        typeof message.content === "string" && typeof next.content === "string" &&
+        message.content.trim() === next.content.trim());
+    });
+    if (kept.length !== list.length) cleaned = { ...cleaned, [key]: kept };
+  }
+  return cleaned;
+}
+
 /** What the retry needs from the database; the handler builds it from the service client. */
 export type AttemptStore = Readonly<{
   /** The earlier attempts at this question (see `earlierAttempts`). */

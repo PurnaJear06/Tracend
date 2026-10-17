@@ -308,11 +308,17 @@ every prompt) with `safety_state: "limited"` (`refused` for self-harm and for th
 requests below), no model call, no tokens and no cost; it does not need AI consent, takes no
 budget place and renders no context. The screen reports on what the athlete says about
 themselves, so it skips a symptom that is negated ("no chest pain"; the negation ends at a
-contrast such as just, only, but, except, though, however or although, and at clause punctuation,
-and carries over a comma only into a short list of symptoms, so "no chest pain, just dizzy" is a
-hit while "no chest pain, dizziness or fainting" is not), conditional ("what if I feel
-dizzy") or asked about as a topic ("how do I avoid dizziness when cutting"); every other phrasing
-leans toward a hit, because a miss answers a red flag with coaching and a false alarm costs one
+contrast such as just, only, but, except, though, however or although, at clause punctuation and
+at a comma, so "no chest pain, just dizzy" and "no chest pain, dizziness or fainting" are hits and
+"no chest pain or dizziness" is not), conditional ("what if I feel
+dizzy"; only "what if", "suppose", "in case", "should I ever" or "hypothetically" directly before
+the symptom, never a bare "if") or asked about as a topic ("how do I avoid dizziness when
+cutting"). **Design rule for every exemption, here and in the reply guard:** it applies only when
+it provably governs the matched symptom, prescription or figure: in the same clause, within a short
+window before the match, with no `and`, `but` or comma between. A possessive directly before the
+symptom ("my chest feels tight"), a self-report in the clause ("I get", "I feel"), or "it happens
+to me" anywhere in the message defeats the conditional and educational exemptions. Every other
+phrasing, and any doubt, leans toward a hit, because a miss answers a red flag with coaching and a false alarm costs one
 referral. It covers: chest pain, pressure or tightness; palpitations and a heartbeat that races at
 rest or skips; fainting, passing out, blacking out, collapse; dizziness and light-headedness;
 severe or sudden breathlessness and wheezing; signs of stroke (slurred speech, one-sided
@@ -865,7 +871,8 @@ routes stay available by settings alone for two weeks after the cutover.
   then reads every answer, with a finite validation rule and a specific repair instruction for
   each: `calories_below_floor` (advice to eat under the floor; only a limit word governing the figure,
   such as "don't go below 1,500 kcal", or a judgement of it, such as "1,200 kcal is too low",
-  exempts it, and a meal or burn word exempts it only when it governs that figure),
+  exempts it, and a meal or burn word exempts it only when it governs that figure; a below-floor
+  daily figure after an intake verb is flagged with or without a day word),
   `loss_rate_above_ceiling` (a loss
   faster than the ceiling), `effort_above_screening_cap` (vigorous or maximal effort under a
   screening cap), `claimed_action` (Coach says it changed, saved, updated, scheduled or will do
@@ -971,7 +978,11 @@ When the app does send the same text under a new key after a failed attempt, the
 question is marked superseded (`safety_state = "unavailable"` on that user message, the existing
 column that says a message got no valid reply) and left out of the model's memory, so the thread
 and the context hold the question once; a question the model did answer is kept. Readers of the
-thread should hide user messages with that state.
+thread should hide user messages with that state. Because frozen v8 rebuilds the memory from the
+thread on every turn, the model's memory is cleaned on every turn, not only on the retry: an entry
+that carries `safety_state: "unavailable"` is dropped, and since memory entries are only role and
+content, a user message immediately followed by an identical user message (the first never got a
+reply) is dropped too, in this thread and in other conversations.
 
 DeepSeek Coach chat accepts provider output only when `finish_reason` is `stop`. Empty content,
 `length` truncation, malformed JSON, and schema rejection receive at most one repair attempt. The

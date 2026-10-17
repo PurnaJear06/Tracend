@@ -419,3 +419,23 @@ Deno.test("a question that was not asked before reads and writes nothing about a
   assertEquals(result.updates, []);
   assert(!result.calls.includes("coach_chat_turn"));
 });
+
+Deno.test("a later, different question still gets memory without the superseded duplicate", async () => {
+  // The duplicate is in the memory; this turn asks something else, so it is not a retry.
+  const result = await run("What should I eat?", {
+    prepared: {
+      replayed: false,
+      context: {
+        coaching_date: "2026-10-17",
+        recent_messages: [
+          { role: "user", content: "How is my week?" },
+          { role: "user", content: "How is my week?" },
+          { role: "assistant", content: "Fine." },
+        ],
+      },
+    },
+  });
+  assertEquals(result.status, 200);
+  assertEquals(result.updates, []);
+  assert(!result.calls.includes("coach_chat_turn"));
+});

@@ -78,6 +78,9 @@ const hits: readonly (readonly [string, RedFlagCategory])[] = [
   ["if I feel dizzy again should I keep training", "dizziness"],
   ["I didn't train today and felt dizzy", "dizziness"],
   ["I'm not sure if I fainted or got dizzy", "collapse"],
+  ["no chest pain, dizziness, or fainting", "collapse"],
+  ["what should I do if I ever feel chest tightness on a run", "chest"],
+  ["what if I get dizzy during intervals", "dizziness"],
   // A negation does not carry across a contrast
   ["No chest pain, just dizzy", "dizziness"],
   ["No chest pain just dizzy", "dizziness"],
@@ -136,8 +139,6 @@ const ordinary = [
   "without any chest pain I finished the session",
   "I haven't had any numbness since last month",
   "no pain, no sharp pain, just soreness",
-  "no chest pain, dizziness, or fainting",
-  "no chest pain, dizziness or fainting",
   "no chest pain or dizziness, just tired legs",
   "no dizziness, no chest pain, just sore",
   "never dizzy, never faint, just hungry on a cut",
@@ -148,8 +149,6 @@ const ordinary = [
   "how can I prevent feeling lightheaded on a deficit",
   "what causes dizziness during workouts?",
   "what are the signs of overtraining",
-  "what should I do if I ever feel chest tightness on a run",
-  "what if I get dizzy during intervals",
   // Ordinary talk that mentions the body
   "my legs are sore",
   "I'm so sore after leg day, can I train?",

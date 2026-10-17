@@ -179,7 +179,13 @@ function clausesOf(text: string): string[] {
   return text.split(clauseBreak).map((part) => part.trim()).filter(Boolean);
 }
 
-// Words that end a negation's reach: a conjunction or a contrast ("no chest pain, just dizzy").
+// The design rule for every exemption below (negation, conditional, educational): it applies only
+// when it provably governs the matched symptom. It must sit in the same clause (the message is cut
+// at punctuation, `but`, `however`, `although`, `though`, `except`), within a short window before
+// the match, with no conjunction, contrast word or comma between. When in doubt the message is a
+// hit: a false referral is cheap and a missed one is not.
+
+// Words that end an exemption's reach: a conjunction or a contrast ("no chest pain, just dizzy").
 const scopeBreakers = new Set([
   "and",
   "but",
@@ -218,105 +224,67 @@ const negationCues = new Set([
   "nothing",
   "denies",
 ]);
-// Words that make the stretch after a comma a statement of its own, not another item of a list.
-const statementWords = new Set([
-  "i",
-  "i'm",
-  "im",
-  "i've",
-  "ive",
-  "my",
-  "me",
-  "feel",
-  "feels",
-  "felt",
-  "feeling",
-  "get",
-  "gets",
-  "got",
-  "getting",
-  "have",
-  "has",
-  "had",
-  "having",
-  "am",
-  "is",
-  "are",
-  "was",
-  "were",
-  "keep",
-  "kept",
-  "started",
-  "noticed",
-  "with",
-  "since",
-  "at",
-  "on",
-]);
-// After a list, what follows the symptom says it is happening ("no chest pain, dizzy when I run").
-const happeningAfter =
-  /^\W*(?:when|while|after|during|since|every|whenever|at\b|on\b|today|yesterday|again|a lot|often|sometimes|all the time|lately|recently)/;
+
+const cleanToken = (raw: string) => raw.replace(/^[("']+|[,)"'?]+$/g, "");
 
 /**
- * True when a negation governs the symptom that follows `before`: "no chest pain or dizziness".
- * The reach ends at a conjunction or a contrast (just, only, but, except, though, however), at
- * clause punctuation (the clause is cut there), and at a comma unless what follows it is another
- * item of the list ("no chest pain, dizziness, or fainting"): a short run of words with no verb,
- * that is not followed by words saying it is happening.
+ * The last `max` words before a match that belong to its own stretch: the walk back stops at a
+ * comma or a breaker word (`and`, `but`, `just`, `only`, ...), so nothing past them can govern it.
  */
-function negated(before: string, after: string): boolean {
+function stretchBefore(before: string, max: number): string[] {
   const tokens = before.split(" ").filter(Boolean);
-  let uncertain = false;
-  let crossedComma = false;
-  let segmentWords = 0;
-  let segmentStatement = false;
-  for (let index = tokens.length - 1, steps = 0; index >= 0 && steps < 10; index--, steps++) {
-    const raw = tokens[index];
-    const token = raw.replace(/^[("']+|[,)"'?]+$/g, "");
-    if (scopeBreakers.has(token)) return false;
-    if (uncertainWords.has(token)) uncertain = true;
-    if (negationCues.has(token) || token.endsWith("n't")) {
-      if (uncertain) return false;
-      return !(crossedComma && happeningAfter.test(after));
-    }
-    if (raw.endsWith(",")) {
-      if (segmentWords > 3 || segmentStatement) return false;
-      crossedComma = true;
-      segmentWords = 0;
-      segmentStatement = false;
-    }
-    if (token !== "or" && token !== "nor") segmentWords++;
-    if (statementWords.has(token)) segmentStatement = true;
+  const stretch: string[] = [];
+  for (let index = tokens.length - 1; index >= 0 && stretch.length < max; index--) {
+    const token = cleanToken(tokens[index]);
+    if (scopeBreakers.has(token) || tokens[index].endsWith(",")) break;
+    stretch.unshift(token);
+  }
+  return stretch;
+}
+
+/** True when a negation word governs the symptom: "no chest pain or dizziness". */
+function negated(before: string): boolean {
+  const stretch = stretchBefore(before, 8);
+  for (let index = stretch.length - 1; index >= 0; index--) {
+    const token = stretch[index];
+    if (uncertainWords.has(token)) return false;
+    if (negationCues.has(token) || token.endsWith("n't")) return true;
   }
   return false;
 }
 
-const conditionalCue =
-  /\b(?:in case|what if|suppose|whenever|should i ever)\b|(?<!(?:sure|know|certain|wonder|wondering|idea|unsure) )\bif\b/;
-const experienceCue =
-  /\b(?:again|today|yesterday|last night|this morning|earlier|just now|just|already|recently|since|still|keeps?|kept|every time)\b/;
+// A supposition placed directly before the symptom. A bare "if" is not one: "if I run more than
+// 10 minutes I get chest pain" is a report.
+const conditionalCue = /\b(?:what if|suppose|in case|should i ever|hypothetically|imagine if)\b/;
 const educationCue =
-  /\b(?:avoid|avoiding|prevent|preventing|prevention|minimi[sz]e|minimi[sz]ing|reduce|reducing|what causes|causes? of|what is|what are|what's|define|meaning of|signs? of|symptoms? of|difference between|common cause|explain|tell me about)\b|\b(?:does|do|can|could|will|would)\b.{0,40}\bcause\b/;
-const ownershipCue =
-  /\b(?:i|i'm|im|i've|ive|we)\s+(?:(?:just|also|still|really|always|sometimes|often|actually|almost|nearly|suddenly|keep|kept)\s+)*(?:felt|feel|feeling|get|getting|got|have|having|had|am|was|been|passed|fainted|blacked|collapsed|started|noticed|experienc\w+|suffer\w*|woke)\b/;
+  /\b(?:avoid|avoiding|prevent|preventing|prevention|minimi[sz]e|minimi[sz]ing|reduce|reducing|what causes|causes? of|what is|what are|what's|define|meaning of|signs? of|symptoms? of|difference between|common cause|explain|tell me about|cause|causes)\b/;
+// The athlete's own symptom: "my chest feels tight", or a self-report anywhere in the clause.
+const selfReport =
+  /\b(?:i|we)\s+(?:(?:just|also|still|really|always|sometimes|often|actually|almost|nearly|suddenly|ever|keep|kept)\s+)*(?:felt|feel|feeling|get|getting|got|have|having|had|am|was|been|passed|fainted|blacked|collapsed|started|noticed|experienc\w+|suffer\w*|woke|become|became)\b|\b(?:i'm|im|i've|ive)\s+(?:feeling|having|getting|been|dizzy|faint|lightheaded|short|numb)\b/;
+// Said anywhere in the message, it makes a question about the symptom a report of it.
+const happensToMe = /\bhappens? to me\b|\bkeeps? happening\b|\bit happens\b|\bthis happens\b/;
 
 /** Whether the athlete is reporting the symptom, not denying it, supposing it or asking about it. */
-function reported(clause: string, index: number, length: number): boolean {
+function reported(clause: string, index: number, message: string): boolean {
   const before = clause.slice(0, index);
-  if (negated(before, clause.slice(index + length))) return false;
-  if (conditionalCue.test(before) && !experienceCue.test(clause)) return false;
-  if (educationCue.test(clause) && !ownershipCue.test(clause)) return false;
+  if (negated(before)) return false;
+  const owned = stretchBefore(before, 3).some((word) => word === "my" || word === "me") ||
+    selfReport.test(clause) || happensToMe.test(message);
+  if (owned) return true;
+  if (conditionalCue.test(stretchBefore(before, 5).join(" "))) return false;
+  if (educationCue.test(stretchBefore(before, 7).join(" "))) return false;
   return true;
 }
 
 /** The most urgent red flag the athlete reports in this message, or null. */
 export function screenMessage(question: string): RedFlagHit | null {
-  const clauses = clausesOf(normalizeMessage(question));
+  const normalized = normalizeMessage(question);
+  const clauses = clausesOf(normalized);
   for (const candidate of rules) {
     for (const clause of clauses) {
       if (candidate.unless?.test(clause)) continue;
       for (const match of clause.matchAll(candidate.pattern)) {
-        if (reported(clause, match.index, match[0].length)) {
+        if (reported(clause, match.index, normalized)) {
           return { category: candidate.category, rule: candidate.id, source: "message" };
         }
       }
