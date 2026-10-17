@@ -65,12 +65,12 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 2 | B1 | training-engine | Catalog v2 and coaching-standard rule data | 21 | B0 | merged | #118 |
 | 3 | U3 | ui | Launch speed: tabs load on first open, shared reads, photo decode size, measured baseline | — | — | merged | #126 |
 | 3 | B2 | training-engine | Templates by goal × days × experience; fractional volume | — | B1 | merged | #127 |
-| 3 | B3 | training-engine | Progression from actual sets; hub 1.7; Train shows targets | 23 | B2 | building | |
+| 3 | B3 | training-engine | Progression from actual sets; hub 1.7; Train shows targets | 23 | B2 | merged | #132 |
 | 3 | B6 | training-engine | Screening gate (own words, ACSM 2015 method) | 26 | B1 | merged | #128 |
-| 3 | B7 | training-engine | Goal phase review, athlete-set targets, no projection as a goal in Coach chat | 27 | B2 | review | |
-| 3 | C3 | workout-hr | Heart-rate profile, zones, recovery, sleeping HR (shadow) | 33 | C2 | building | |
+| 3 | B7 | training-engine | Goal phase review, athlete-set targets, no projection as a goal in Coach chat | 27 | B2 | merged | #136 |
+| 3 | C3 | workout-hr | Heart-rate profile, zones, recovery, sleeping HR (shadow) | 33 | C2 | merged | #133 |
 | 3 | D2 | ios-widgets | Today and Lock Screen widgets | — | D1 | todo | |
-| 3 | E2 | research-library | Ingestion, the first 30 sources and the retrieval test set | 42 | E1 | building | |
+| 3 | E2 | research-library | Ingestion, the first 30 sources and the retrieval test set | 42 | E1 | merged | #135 |
 | 3 | E3 | research-library | Library inside Coach chat | 43 | A6, E2 | todo | |
 | 3 | A8 | ai-gateway | Coach proposals: Coach proposes a change in chat, rules compute it, the athlete approves with one tap | 18 | A6, B7 | todo | |
 | 3 | A9 | ai-gateway | Coach safety and honesty: pre-model red-flag screen, numbers grounding, safety floors, plain error messages, local date, no-plan chat | 19 | B7 | todo | |
@@ -547,7 +547,7 @@ own words with the citation and link. Free public articles from certification bo
 NSCA) may be summarised in our own words with a link; their textbooks, course modules and exam
 material are never used. Every source records its licence and why it was chosen; the full list goes
 in the handoff for the owner to review. Ingestion must reach production through the normal deploy
-(no manual production steps): content as files in the repo, loaded by migration 42, embeddings
+(no manual production steps; the deploy workflow sets the embedder's address in Vault): content as files in the repo, loaded by migration 42, embeddings
 filled server-side with `gte-small`. Build the retrieval test set (about 40 athlete questions, each
 with the sources a good answer needs) and report recall in the top 8 with the real search.
 
@@ -744,3 +744,4 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
   and none below the healthy-BMI floor, no claimed actions, short replies. Registers the first
   Contract 7 contributor (`goal_phase`) and changes the coach-chat prompt, so its parity digests
   are recorded again.
+- 2026-10-17: round 2 merged: B3 (#132), C3 (#133), E2 (#135, the deploy now sets `library_embed_url`; 122 chunks embedding in production), and B7 (#136). Each had a Codex or Claude Opus review and fixes.
