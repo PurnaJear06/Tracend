@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/coach/coach_errors.dart';
 import 'package:tracend/shared/shared_reads.dart';
@@ -321,7 +325,16 @@ class SupabaseCoachRepository
         .select()
         .eq('thread_id', threadId)
         .order('created_at');
-    return rows.map(_messageFromJson).toList();
+    // A question the server marked superseded (`safety_state` unavailable on
+    // a user row: a failed or lost attempt that its retry replaced) is not
+    // part of the conversation; the retry stands in for it.
+    return rows
+        .map(_messageFromJson)
+        .where(
+          (message) =>
+              !(message.role == 'user' && message.safetyState == 'unavailable'),
+        )
+        .toList();
   }
 
   @override
@@ -367,9 +380,10 @@ class SupabaseCoachRepository
     });
   }
 
-  /// The account time zone Coach answers in. A lookup that fails before any
-  /// response (offline) is a lost connection, like the call after it; the
-  /// database's own refusals keep their type.
+  /// The account time zone Coach answers in. A lookup that fails in transport
+  /// (no connection, a timeout) is a lost connection, like the call after it;
+  /// a refusal from the session or the database keeps its type, so an expired
+  /// session reads as one.
   Future<String> _accountTimezone() async {
     try {
       final account = await _client
@@ -377,10 +391,13 @@ class SupabaseCoachRepository
           .select('timezone')
           .single();
       return account['timezone'] as String? ?? 'UTC';
-    } on PostgrestException {
-      rethrow;
     } on Object catch (error) {
-      throw FunctionsFetchException(details: error);
+      if (error is SocketException ||
+          error is http.ClientException ||
+          error is TimeoutException) {
+        throw FunctionsFetchException(details: error);
+      }
+      rethrow;
     }
   }
 

@@ -602,11 +602,14 @@ branch (`claude/a9-coach-guardrails`). This half:
   Note for the server half: `coach-chat` reserves budget before it looks up a replay, so a retry of
   a finished turn at the monthly limit gets 429 instead of its stored answer; a turn the function
   lost answers 409 for that key until the server gives up on it (`turn_lost`).
-  A fresh-key Retry shows the question again because the server saved the failed attempt's
-  question when it started (`record_coach_chat_question`), so the thread, and the model's
-  context, hold it twice; only a same-key replay is one bubble. "Review AI coaching" reloads the
+  The server saves a question when its turn starts, so a fresh-key Retry leaves the failed
+  attempt's copy in the thread; #143 marks it superseded (`safety_state` "unavailable" on that
+  user row) and leaves it out of the model's context. The app hides user rows in that state when
+  it loads a thread (`loadMessages`, the single place), and a Retry always reuses the pending
+  bubble, so the screen and a reloaded thread both show the question once. "Review AI coaching" reloads the
   consent controller first. A send with no connection (even the time-zone lookup) is the offline
-  failure.
+  failure; an expired session (gateway 401 with an integer `code`, `AuthException`,
+  PostgREST 401 / `PGRST301`) is the session-expired message.
 - **Local date (18).** Migration `20261017170019_coach_chat_local_date_no_plan.sql` makes
   `prepare_coach_chat` use `private.local_date_for` and pick the snapshot by `features.local_date`.
 - **No plan (22).** `prepare_daily_coaching`'s body moved to `private.prepare_daily_coaching_core`
@@ -617,7 +620,7 @@ branch (`claude/a9-coach-guardrails`). This half:
   `coach_chat_provider.ts` (no plan, the reason, the screening outcome and date; no plan advice),
   and note `active_plan` is now null for these athletes.
 - **One gate (26).** The base function no longer checks USD 5 or 30 a day; `reserve_ai_budget(_v2)`
-  is the gate and reads `private.ai_budget_limits`. `budget_warning` follows the same row, at 80% of the stop; `get_my_ai_budget_state` moves from half to 80% in the same migration (an edit of the unmerged migration).
+  is the gate and reads `private.ai_budget_limits`. `budget_warning` follows the same row, at 80% of the stop (it was the literal USD 3); `get_my_ai_budget_state` moves from half the stop to 80% in the same migration.
 - **Verification.** pgTAP `coach_chat_local_date_no_plan_test.sql` (the local database could not be
   started here: Colima is not running; CI runs it). Time cannot be set in pgTAP, so the local date
   is checked in UTC+14 and UTC-11, one of which is always on another UTC day.

@@ -97,6 +97,11 @@ final Map<String, _Expected> _cases = {
     diagnostic: 'Beta diagnostic: HTTP 401 · invalid_session',
     retryable: false,
   ),
+  'gateway_invalid_jwt': _expect(
+    'Your session has expired. Sign in again to keep talking to Coach.',
+    diagnostic: 'Beta diagnostic: HTTP 401 · Invalid JWT',
+    retryable: false,
+  ),
   'request_in_progress': _expect(
     'Coach is still working on your last message. Give it a few seconds, '
     'then retry.',
@@ -239,12 +244,18 @@ class _Server {
     this.body = const <String, dynamic>{},
     this.offline = false,
     this.accountOffline = false,
+    this.accountResponse,
+    this.messages = const <Map<String, dynamic>>[],
   });
 
   int status;
   Object? body;
   bool offline;
   bool accountOffline;
+
+  /// When set, the account lookup answers with this status and body.
+  ({int status, Object body})? accountResponse;
+  List<Map<String, dynamic>> messages;
   final chatBodies = <Map<String, dynamic>>[];
 
   late final client = SupabaseClient(
@@ -260,7 +271,12 @@ class _Server {
       switch (request.url.path) {
         case '/rest/v1/user_accounts':
           if (accountOffline) throw http.ClientException('offline');
+          if (accountResponse case final response?) {
+            return json(response.body, response.status);
+          }
           return json({'timezone': 'Asia/Kolkata'});
+        case '/rest/v1/coach_messages':
+          return json(messages);
         case '/functions/v1/coach-chat':
           if (offline) throw http.ClientException('offline');
           chatBodies.add(jsonDecode(request.body) as Map<String, dynamic>);
@@ -412,6 +428,79 @@ void main() {
         ),
       );
       expect(server.chatBodies, isEmpty);
+    });
+
+    test('an expired session at the time-zone lookup is the session failure, '
+        'not offline', () async {
+      for (final response in [
+        (
+          status: 401,
+          body: {'code': 'PGRST301', 'message': 'JWT expired'} as Object,
+        ),
+        (status: 401, body: {'code': '401', 'message': 'Invalid JWT'}),
+      ]) {
+        final server = _Server(accountResponse: response);
+        final repository = SupabaseCoachRepository(
+          server.client,
+          now: () => _now,
+        );
+        await expectLater(
+          repository.sendMessage(_threadId, 'How am I doing?'),
+          throwsA(
+            isA<CoachUnavailableException>()
+                .having((e) => e.code, 'code', 'session_expired')
+                .having((e) => e.retryable, 'retryable', isFalse)
+                .having((e) => e.message, 'message', contains('session')),
+          ),
+        );
+        expect(server.chatBodies, isEmpty);
+      }
+    });
+
+    test(
+      'another database refusal at the lookup is not called offline',
+      () async {
+        final server = _Server(
+          accountResponse: (status: 500, body: {'message': 'boom'}),
+        );
+        final repository = SupabaseCoachRepository(
+          server.client,
+          now: () => _now,
+        );
+        await expectLater(
+          repository.sendMessage(_threadId, 'How am I doing?'),
+          throwsA(
+            isA<CoachUnavailableException>()
+                .having((e) => e.code, 'code', isNull)
+                .having((e) => e.retrySameKey, 'same key', isFalse),
+          ),
+        );
+      },
+    );
+
+    test('a thread hides the questions the server marked superseded', () async {
+      Map<String, dynamic> row(String id, String role, String? state) => {
+        'id': id,
+        'thread_id': _threadId,
+        'role': role,
+        'content': 'text $id',
+        'created_at': '2026-10-17T12:00:0${id.length}Z',
+        'safety_state': ?state,
+      };
+      final server = _Server(
+        messages: [
+          row('a', 'user', 'unavailable'),
+          row('bb', 'user', null),
+          row('ccc', 'assistant', 'unavailable'),
+          row('dddd', 'user', 'allowed'),
+        ],
+      );
+      final repository = SupabaseCoachRepository(
+        server.client,
+        now: () => _now,
+      );
+      final loaded = await repository.loadMessages(_threadId);
+      expect([for (final message in loaded) message.id], ['bb', 'ccc', 'dddd']);
     });
 
     test('a lost connection is a retryable Coach failure', () async {
@@ -626,7 +715,7 @@ void main() {
     });
 
     testWidgets('Retry after the server answered with a failure is a new '
-        'turn: the saved question of the failed one stays', (tester) async {
+        'turn that stands in for the failed one', (tester) async {
       await tall(tester);
       final repository = _ScriptedRepository([
         coachChatFailure(
@@ -643,9 +732,9 @@ void main() {
 
       expect(repository.keys.length, 2);
       expect(repository.keys[1], isNot(repository.keys[0]));
-      // The server saved the first attempt's question when it started, so
-      // the thread has it twice; the screen shows what the thread holds.
-      expect(find.text('How am I doing?'), findsNWidgets(2));
+      // The server marks the failed attempt's saved question superseded and
+      // the thread hides it, so the retry stands in for it on screen too.
+      expect(find.text('How am I doing?'), findsOneWidget);
       expect(find.text('Done.'), findsOneWidget);
       await tester.pumpAndSettle(TracendToast.visibleFor);
     });

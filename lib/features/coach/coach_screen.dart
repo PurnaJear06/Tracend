@@ -316,13 +316,13 @@ class _CoachScreenState extends State<CoachScreen> {
     final replays = retrying != null && retrying.reuseKey
         ? retrying.replays + 1
         : 0;
-    // A repeated key is the same turn, so its question stays one bubble. A
-    // new key is a new turn: the server saved the failed attempt's question
-    // when that turn started, so the thread holds both and so does the screen.
+    // A retry stands in for the failed attempt, whatever key it uses: with a
+    // new key the server marks the failed attempt's saved question
+    // superseded, and the thread view hides it, so one bubble is what the
+    // thread shows.
     final pending = _messages.lastOrNull;
     final local =
         retrying != null &&
-            retrying.reuseKey &&
             pending != null &&
             pending.role == 'user' &&
             pending.id.startsWith('pending-') &&

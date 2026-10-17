@@ -743,7 +743,7 @@ snapshot made for an athlete with a plan is not reused after the plan is gone, o
 has no spending limit of its own: `coach-chat` reserves budget before preparing anything
 (`reserve_ai_budget`, which reads `private.ai_budget_limits`), and `budget_warning` is true when the
 month's spend (recorded and reserved) reaches 80% of `per_person_monthly_usd`, the same threshold as
-`get_my_ai_budget_state().warning` (both were half the stop before migration code 19).
+`get_my_ai_budget_state().warning` (before migration code 19 chat's warning was the literal USD 3 and the budget state's was half the stop).
 
 An athlete with no active plan or no active nutrition target can still chat (a plan is needed
 for the daily decision, `prepare_daily_coaching`, which still raises `approved plan required`;

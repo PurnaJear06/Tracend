@@ -49,6 +49,9 @@ class CoachUnavailableException implements Exception {
   String toString() => message;
 }
 
+const _sessionExpired =
+    'Your session has expired. Sign in again to keep talking to Coach.';
+
 const _genericFailure =
     'Coach is unavailable right now. Your approved plan is unchanged.';
 
@@ -161,6 +164,16 @@ CoachUnavailableException coachChatFailure(
       retrySameKey: true,
     );
   }
+  if (error is AuthException ||
+      (error is PostgrestException &&
+          (error.code == 'PGRST301' || error.code == '401'))) {
+    return CoachUnavailableException(
+      _sessionExpired,
+      code: 'session_expired',
+      diagnostic: 'Beta diagnostic: session · ${_rawText(error)}',
+      retryable: false,
+    );
+  }
   if (error is! FunctionException) {
     return CoachUnavailableException(
       'Coach couldn’t answer. Your approved plan is unchanged.',
@@ -179,15 +192,20 @@ CoachUnavailableException coachChatFailure(
   final Map<String, dynamic> body = details is Map
       ? Map<String, dynamic>.from(details)
       : const {};
-  final errorName = body['error'] as String?;
-  final code = body['code'] as String?;
-  final reason = body['reason'] as String?;
+  // The Supabase gateway answers a bad JWT with {"code": 401, "message": ...},
+  // an integer code, so every field is read as a string only when it is one.
+  String? text(Object? value) => value is String ? value : null;
+  final errorName = text(body['error']);
+  final code = text(body['code']);
+  final reason = text(body['reason']);
+  final gatewayMessage = text(body['message']);
   final retryAfter = _retryAfter(body['retry_after_seconds']);
   final diagnostic = [
     'Beta diagnostic: HTTP $status',
     ?errorName,
     ?code,
     ?reason,
+    if (errorName == null && code == null) ?gatewayMessage,
     if (body.isEmpty && details != null && '$details'.isNotEmpty)
       _rawText(details),
   ].join(' · ');
@@ -227,10 +245,7 @@ CoachUnavailableException coachChatFailure(
   if (status == 401 ||
       errorName == 'authentication_required' ||
       errorName == 'invalid_session') {
-    return fail(
-      'Your session has expired. Sign in again to keep talking to Coach.',
-      retryable: false,
-    );
+    return fail(_sessionExpired, retryable: false);
   }
   if (errorName == 'chat_in_progress' || code == 'request_in_progress') {
     return fail(

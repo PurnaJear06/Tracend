@@ -545,9 +545,10 @@ three separate autonomous chatbots.
   connection, a gateway timeout or a turn still running repeats that key (at most twice), so a
   server that finished after the app gave up returns its answer instead of running again and
   charging twice, and the question stays one bubble. **Retry** after the server did answer with a
-  failure (or `turn_lost`), and **Retry** on a data summary, is a new turn with a new key: the
-  server saved the failed attempt's question when it started, so the thread, and the next
-  question’s context, hold it twice, and the screen shows both. **Review AI coaching** reloads the
+  failure (or `turn_lost`), and **Retry** on a data summary, is a new turn with a new key. The server saves a question when
+  its turn starts and marks a failed attempt's copy superseded when the retry arrives; the thread
+  view hides superseded questions, and a retry of a failed send stands in for it on screen too.
+  **Review AI coaching** reloads the
   consent first, so a grant for an older notice cannot hide the notice the server now requires.
 - **Near the limit.** When the server reports `budget_warning` (this month’s spend is 80% of the
   athlete’s monthly Coach limit), a line under the newest reply says "Heads up: you’re approaching
