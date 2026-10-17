@@ -1055,6 +1055,31 @@ initial plan (§4.4), **Use as my focus** (§9) and the Coach's **Remember this 
 preference?** prompt, which saves a durable preference only on **Save** (**Dismiss** saves nothing).
 **Planned (coaching platform, chunk B4):** a same-day readiness adjustment with one-tap approval.
 
+### 10.1 Coach proposal card (A8)
+
+`Coach asks in chat → Proposal card → Approve / Not now / Change it → Result → Undo for 7 days`
+
+When rules accept a change Coach asked for, the chat shows a card under the reply. It is the one
+place a Coach suggestion can be applied, and only the athlete's tap applies it:
+
+- The card says it was proposed by Coach and checked by Tracend, shows the confidence, the reason in
+  plain words, **Now** and **After** side by side (calories and macros, the phase, the sessions with
+  their days, exercises and minutes), the downside, what it is based on (collapsed) and when it
+  expires. A temporary change states the day it ends and that the regular plan returns after it.
+- **Approve** opens a confirm sheet ("Apply this change?", "You can undo it for 7 days"). Applying
+  writes a new version; the Train, Nutrition and Today screens reload.
+- **Not now** records the answer and changes nothing. **Change it** records the answer and sends a
+  follow-up message to Coach ("I want to change this: …").
+- After approval the card shows **Applied**, the undo deadline and an **Undo** button. Undo restores
+  the earlier plan, targets or goal as a new version. If a later change replaced it, the card says
+  it can no longer be undone from here.
+- A proposal that expired, or whose plan, targets or goal changed meanwhile, is never applied: the
+  card says what happened and to ask Coach again.
+- A request the rules refuse (a calorie target under the floor, too little logging, a screening cap)
+  gets no card; Coach replies with the plain reason.
+- The card carries no model or company name (D11). It renders from a proposal the caller has or
+  loads one by id (`CoachProposalLoader`); the chat connects a message to a proposal id.
+
 ## 11. Weekly Review
 
 Use an editorial sequence rather than a dashboard wall:

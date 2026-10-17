@@ -763,6 +763,54 @@ audit (1, 2, 3, 6 deterministic part, 7, 15).
   safety notes ("not an AI answer" only for rows no model wrote; a model-written refusal keeps its
   AI label).
 
+### A8 part 1: Coach proposals (code 18, `claude/a8-coach-proposals`)
+
+Coach proposes a change in chat; rules compute it; the athlete approves with one tap; a new
+version and an audit event are written; the athlete can undo for seven days. Part 1 is the engine,
+storage, approval flow and app card. Part 2 (the lead, after A10 merges) wires chat to it; the
+integration contract is in the program plan's "Contract requests".
+
+- **Migration `20261018100018_coach_proposals.sql`** (additive): `change_proposals` 3.0 columns
+  (`proposal_kind`, `proposal_payload`, `before_snapshot`, `after_snapshot`, `basis`,
+  `source_message_id`, `ends_on`, `applied_at`, `undo_until`, `undone_at`, `applied_changes`),
+  `feature_snapshot_id` nullable for 3.0 only, the payload check relaxed for 3.0;
+  `training_plan_versions.ends_on`, `block_kind`, `restores_version_id`;
+  `user_goals.source_proposal_id`. RPCs: `get_coach_proposal_inputs_v1`,
+  `persist_coach_proposal_v1` (service role), `get_my_coach_proposals_v1`,
+  `respond_to_coach_proposal_v1`, `undo_coach_proposal_v1`. pgTAP:
+  `supabase/tests/database/coach_proposals_test.sql` (80 assertions: storing and refusing, reads
+  and RLS, approve and undo for nutrition, schedule, block and goal, expiry, stale basis,
+  replaced proposals, decline and change, the end of a block, the undo window, a stricter health
+  check, deletion). No new table, so the privacy export (`change_proposals`, `audit_events`,
+  `training_plan_versions`, `user_goals`) and account deletion (cascade) already cover it.
+- **Engine** `supabase/functions/_shared/coach_proposals/`: `intent.ts` (strict closed
+  vocabulary), `build.ts` (`buildCoachProposal`, pure), `nutrition.ts`, `goal.ts`, `training.ts`
+  (block, schedule, swap, intensity or focus phase, next session), `plan_rules.ts` (reuses the
+  rules plan, B2 templates and the coaching standard), `state.ts` (database payloads to athlete
+  state), `service.ts` (`proposeCoachChange`), `refusals.ts` (plain reasons). Tests: 46 in
+  `build_test.ts`, `service_test.ts`, `intent_test.ts`, including the owner's cases (home for 10 to
+  15 days, 4 days a week for 2 months, a diet break, 1,200 kcal refused with the floor reason, a
+  lighter session tomorrow) and a mirror of the database's payload checks.
+- **Persist path:** a service-role RPC, not an Edge Function. The builder runs inside coach-chat, so
+  a function would add a deploy, a hop and one more thing to verify live for nothing.
+- **Temporary blocks end by a job and by reads.** Reads alone would need every reader of the active
+  plan (hub, Today, workout start, Coach context) to know about blocks, and several belong to other
+  chunks. So the block's version carries `ends_on`; an hourly job (`tracend-end-plan-blocks`) and
+  every proposal read or answer restore the previous plan as a new version. The gap is at most an
+  hour after the athlete's midnight.
+- **App** `lib/features/coach/proposals/`: model, repository, `CoachProposalCard` and
+  `CoachProposalLoader`; `lib/shared/plan_changes.dart` (`PlanChanges`, held by the shell, listened to
+  by Train, Nutrition and Today). Contract fixtures: `coach_proposals_v1_0.json`,
+  `respond_to_coach_proposal_v1_0.json`, `undo_coach_proposal_v1_0.json`.
+- **Gates (decision for the owner):** eligibility gates calorie cuts below maintenance, a new
+  fat-loss phase, a strength phase and a heavier session. Easing off and life-driven changes are not
+  gated. AI_SAFETY_SPEC §6 says why.
+- **Removed:** nothing. Part 1 replaces no code; the Coach persona's "you have no tools" rule (A9)
+  stays until part 2 lets chat claim a waiting proposal.
+- **Open:** after a diet break ends, resuming a deficit is a new proposal (nothing reverts by
+  itself); hub history for sessions logged on a block's workouts follows the active version, as
+  after any re-plan; the deload is an in-house rule until B5.
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

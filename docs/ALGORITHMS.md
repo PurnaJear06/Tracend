@@ -804,6 +804,7 @@ general = change_review_allowed  if training_eligible OR nutrition_eligible
 | Onboarding plan      | `policy_version`       | `onboarding-policy-v2` |
 | Exercise catalog     | `catalog_version`      | `catalog-v1` |
 | Onboarding proposal  | `schema_version`       | `2.0`        |
+| Coach proposal       | `schema_version`       | `3.0`        |
 
 ### Rules
 
@@ -1063,3 +1064,51 @@ Code: `health_history.ts` (server) and `lib/features/health/health_baseline.dart
   session set budget drops a fifth and the RPE ceiling 0.5 (`startLighter`) for the first block,
   and a note says why.
 
+
+## 10. Coach Proposal Rules (`_shared/coach_proposals`, 2026-10)
+
+Code: `supabase/functions/_shared/coach_proposals/`. Every number in a Coach proposal comes from
+the rules below or from the onboarding policy (§9); the model chooses an intent. The refusals and
+the approval flow are in AI_SAFETY_SPEC §6 ("Coach proposals").
+
+- **Maintenance energy:** the middle of the policy's TDEE range (`nutritionPolicy`, §9), rounded to
+  10 kcal. A diet break and a maintenance phase use it.
+- **Calorie step:** "lower" or "raise" without a figure moves the target 5% of the current target,
+  rounded to 10 kcal, never below the floor and never above 15% over the top of the TDEE range (the
+  top of the muscle-gain range, §9). A figure the athlete asked for is used as given if it passes
+  the same limits.
+- **Limits on any target:** at least the calorie floor (the higher of the sex-based minimum and the
+  resting energy); at most 6,000 kcal; at most the surplus cap; a loss of at most 1% of body weight
+  a week (`goalPhaseThresholds.fastRatePctPerWeek`), where the weekly loss is the gap to
+  maintenance × 7 ÷ 7,700 kcal per kg (the 3,500 kcal per pound rule of thumb, used only to size a
+  gap, never to set a target); no loss target at BMI under 19.5.
+- **Macros:** protein in the middle of the policy range, fat at a quarter of the calories inside the
+  policy's minimum and maximum, carbohydrate the remainder (at least 20 g); macros add up to the
+  calories within 5%.
+- **Fat-loss phase:** the gentler end of the fat-loss range (−10% of TDEE); needs the nutrition
+  change gate (§7) and a goal phase review that does not already call for a maintenance period.
+- **Diet break:** 2 weeks (`goalPhaseThresholds.dietBreakWeeks`, the 2-week breaks of the MATADOR
+  intermittent arm) at maintenance energy, only in a fat-loss goal or cut phase. The goal stays fat
+  loss; nutrition does not revert by itself at the end.
+- **Target weight and date:** at least the weight at BMI 18.5 for the athlete's height (§5), on the
+  right side of the current weight for the phase, a date within three years, and a pace within the
+  1% a week ceiling (otherwise the earliest date that fits is given).
+- **Temporary block:** up to 42 days, starting when approved (a start date at most 2 days ahead).
+  Sessions are the rules plan (§9) for the equipment left (bodyweight, or the portable equipment the
+  athlete owns), on the athlete's training days, inside the same weekly volume, effort and length
+  limits. The block's last day is the end date given; the regular plan returns the day after.
+- **Schedule:** the rules plan for the new days (kept where possible, new days placed furthest from
+  the others) and length; loads of exercises that stay are carried over; the block length given is
+  the review period, and the schedule stays until changed.
+- **Swap:** only a B1 catalog substitute of the exercise, owned equipment, an allowed movement, and
+  no harsher than the original on the knee, back or shoulder; same sets, reps and effort; no
+  starting load; weekly sets for the new target muscle stay inside the policy maximum.
+- **Deload:** half the sets of every exercise (rounded up, at least 1) at effort 7 or lower, for 1 to
+  8 weeks (an in-house choice in the range coaches use; B5 replaces it with the full deload rule).
+  **Moderate** caps effort at 7. A **strength** or **size** phase rebuilds the week for that goal
+  for 1 to 8 weeks.
+- **Next session:** the next planned session (or today's, until it is done). Lighter: one set fewer
+  on exercises with 3 or more sets, effort one point lower (not below 6), and the load one step
+  below the logged-set target. Heavier: one load step above the logged-set target, only where B3's
+  target is to add load or reps with high confidence. A step is the exercise's catalog load step.
+- **Expiry:** 72 hours; 24 hours for a next-session adjustment. Undo: 7 days.

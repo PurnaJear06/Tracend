@@ -193,6 +193,50 @@ Normally requires:
 When adherence is insufficient, the coach addresses obstacles rather than claiming the target
 failed. Changes outside configured safe ranges are rejected.
 
+### Coach proposals (A8)
+
+In chat Coach may ask for a change, so "I'll be away for two weeks" or "take a diet break" can end
+in an applied change without Coach ever applying it. The approval invariant (Architecture 2 and 3)
+holds at every step:
+
+1. **The model chooses an intent, nothing else.** A closed list of seven kinds (`temporary_block`,
+   `training_schedule`, `exercise_swap`, `intensity_or_phase`, `goal_or_phase`, `nutrition_targets`,
+   `next_session_adjustment`), parameters from closed vocabularies, dates, and a reason from a
+   closed list. The parser (`_shared/coach_proposals/intent.ts`) refuses any other key, kind or
+   value. A free-text note is kept only if it has no digit; otherwise it is dropped.
+2. **Rules compute every number.** `buildCoachProposal(intent, athleteState)` is pure
+   deterministic code. Sessions come from the rules plan (B1 catalog and substitutes, B2
+   templates, the coaching standard) validated against the onboarding policy; calories and
+   macros come from `nutritionPolicy`. A figure the athlete asked for (a calorie target, a target
+   weight) must appear in the athlete's own message, so the model cannot make one up, and is checked
+   against the same limits as a computed one.
+3. **Rules refuse, in plain words.** Refused: a calorie target under the floor (the higher of the
+   sex-based minimum and resting energy) or above the highest Tracend sets; a loss faster than 1%
+   of body weight a week; a cut, or any calorie reduction below maintenance, at BMI under 19.5; a
+   target weight under BMI 18.5; a cut after a run of loss that already calls for a maintenance
+   period or a diet break (the goal phase review, B7); any change under `see_professional`; a
+   strength phase or raised intensity under `moderate_until_cleared`; a weight older than 14 days;
+   a plan change while a temporary block runs.
+4. **Eligibility gates the moves that push harder.** A calorie cut below maintenance and a new fat-loss
+   phase need `evaluate_change_eligibility` to pass for nutrition (14 weight days, 80% logging, trend
+   r² 0.3). A strength phase and a heavier next session need it to pass for training (and a heavier
+   session only moves one load step above the logged-set target, only where those sets say add load, and
+   never with low confidence). Moves that ease off, or that the athlete asks for to fit their life (a
+   schedule, a travel block, a swap, a deload, a diet break, raising calories) are not gated, because
+   waiting for data would make them harder to ask for, not safer. The owner may tighten this.
+5. **Nothing is applied until the athlete taps.** `persist_coach_proposal_v1` stores a pending
+   proposal; `respond_to_coach_proposal_v1` (the athlete's own session, `auth.uid()`) re-checks that
+   it is pending and unexpired, that the active plan, nutrition target and goal are still the ones
+   it was computed from, and that the health check has not become stricter, then writes a **new
+   version** with `source_proposal_id`, the answer and an **audit event**. The Coach reply may not
+   claim a change was made; it may say a proposal is waiting for the athlete.
+6. **Undoable and self-ending.** Undo (seven days) restores what approval replaced as new versions;
+   it is refused once a later change replaced them. A temporary block carries its last day and the
+   version to restore; the regular plan returns by itself the day after.
+
+A diet break ends on its date but nutrition does not revert by itself: resuming a deficit is a new
+proposal the athlete approves, so no calorie change happens without a tap.
+
 ### Initial plan
 
 Onboarding output identifies assumptions, missing information, confidence, and constraint

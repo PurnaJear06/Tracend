@@ -1,0 +1,264 @@
+import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
+import { addDays } from "./common.ts";
+import { stateFixture, today, weightReadings } from "./fixtures.ts";
+import { type ProposalRpc, proposeCoachChange } from "./service.ts";
+import { parseAthleteState } from "./state.ts";
+
+const user = "00000000-0000-4000-8000-0000000000aa";
+
+/** The database payloads for the fixture athlete, as the three service-role RPCs return them. */
+function payloads() {
+  const state = stateFixture();
+  const plan = state.plan!;
+  return {
+    inputs: {
+      schema_version: "1.0",
+      local_date: today,
+      screening: "cleared",
+      profile: {
+        sex: "male",
+        birth_year: 1994,
+        height_cm: 176,
+        experience: "intermediate",
+        daily_activity: "mostly_sitting",
+        equipment: state.profile.equipment,
+        avoid_patterns: [],
+        training_days: [1, 3, 5],
+        session_minutes: 60,
+        priority_muscles: null,
+        strong_muscles: null,
+      },
+      plan: {
+        version_id: plan.versionId,
+        plan_id: plan.planId,
+        version_number: 1,
+        title: plan.title,
+        block_weeks: plan.blockWeeks,
+        ends_on: null,
+        block_kind: null,
+        workouts: plan.workouts.map((workout) => ({
+          name: workout.name,
+          objective: workout.objective,
+          weekday: workout.weekday,
+          estimated_minutes: workout.estimatedMinutes,
+          warm_up: workout.warmUp,
+          cool_down: workout.coolDown,
+          exercises: workout.exercises.map((exercise) => ({
+            slug: exercise.slug,
+            name: exercise.name,
+            sets: exercise.sets,
+            rep_min: exercise.repMin,
+            rep_max: exercise.repMax,
+            target_rpe: exercise.targetRpe,
+            rest_seconds: exercise.restSeconds,
+            notes: exercise.notes,
+            target_load_kg: exercise.targetLoadKg,
+          })),
+        })),
+      },
+      nutrition: {
+        version_id: state.nutrition!.versionId,
+        calories: 2300,
+        protein_g: 170,
+        carbohydrate_g: 240,
+        fat_g: 75,
+      },
+      goal: {
+        id: state.goal!.id,
+        goal_type: "fat_loss",
+        details: { description: "Lean out" },
+        activated_on: addDays(today, -40),
+      },
+      eligibility: {
+        training_eligible: true,
+        training_detail: "3 comparable sessions in last 14 days",
+        nutrition_eligible: true,
+        nutrition_detail: "24 weight days, 88% adherence, trend r2=0.61",
+      },
+      today_workout_done: false,
+    },
+    goalPhase: {
+      schema_version: "1.0",
+      height_cm: 176,
+      goal: {
+        goal_type: "fat_loss",
+        activated_on: addDays(today, -40),
+        target: {
+          weight_kg: null,
+          body_fat_pct_min: null,
+          body_fat_pct_max: null,
+          physique: null,
+          physique_note: null,
+          date: null,
+        },
+      },
+      readings: weightReadings(),
+    },
+    progression: { schema_version: "1.0", targets: [] },
+  };
+}
+
+type Call = { name: string; params: Record<string, unknown> };
+
+function fakeRpc(overrides: Record<string, { data?: unknown; error?: { code?: string } }> = {}) {
+  const data = payloads();
+  const calls: Call[] = [];
+  const rpc: ProposalRpc = (name, params) => {
+    calls.push({ name, params });
+    const override = overrides[name];
+    if (override) {
+      return Promise.resolve({ data: override.data ?? null, error: override.error ?? null });
+    }
+    const table: Record<string, unknown> = {
+      get_coach_proposal_inputs_v1: data.inputs,
+      get_goal_phase_inputs_v1: data.goalPhase,
+      get_progression_summary_v1: data.progression,
+      persist_coach_proposal_v1: {
+        schema_version: "1.0",
+        proposal_id: "p-1",
+        expires_at: "2026-10-21T10:00:00Z",
+      },
+    };
+    return Promise.resolve({ data: table[name], error: null });
+  };
+  return { rpc, calls };
+}
+
+const lowerIntent = { kind: "nutrition_targets", reason: "plateau", direction: "lower" };
+
+Deno.test("the payloads read into the athlete state the rules use", () => {
+  const data = payloads();
+  const state = parseAthleteState({ ...data, athleteMessage: "hi" })!;
+  assertEquals(state.today, today);
+  assertEquals(state.profile.age, 32);
+  assertEquals(state.profile.trainingWeekdays, [1, 3, 5]);
+  assertEquals(state.profile.priorityMuscles, []);
+  assertEquals(state.plan!.workouts.length, 3);
+  assertEquals(state.nutrition!.calories, 2300);
+  assertEquals(state.goal!.goalType, "fat_loss");
+  assertEquals(state.goalPhase.currentWeightKg !== null, true);
+  assertEquals(state.eligibility.nutritionEligible, true);
+  assertEquals(state.athleteMessage, "hi");
+});
+
+Deno.test("a payload that leaves out something the rules need yields no state", () => {
+  type Inputs = ReturnType<typeof payloads>["inputs"];
+  const broken = (change: (inputs: Inputs) => void) => {
+    const data = structuredClone(payloads());
+    change(data.inputs);
+    return parseAthleteState(data);
+  };
+  assertEquals(broken((i) => Reflect.deleteProperty(i.profile, "birth_year")), null);
+  assertEquals(broken((i) => (i.profile.sex = "robot")), null);
+  assertEquals(broken((i) => (i.screening = "maybe")), null);
+  assertEquals(broken((i) => (i.profile.training_days = [])), null);
+  assertEquals(broken((i) => Reflect.deleteProperty(i, "eligibility")), null);
+  assertEquals(broken((i) => (i.plan.workouts[0].exercises = [])), null);
+  assertEquals(broken((i) => (i.nutrition.calories = "lots" as unknown as number)), null);
+  assertEquals(broken((i) => (i.goal.goal_type = "world_peace")), null);
+  assertEquals(parseAthleteState({ inputs: null, goalPhase: null, progression: null }), null);
+  // No plan or goal is a valid state: the builders refuse with a reason.
+  const bare = broken((i) => {
+    Object.assign(i, { plan: null, goal: null, nutrition: null });
+  })!;
+  assertEquals([bare.plan, bare.goal, bare.nutrition], [null, null, null]);
+});
+
+Deno.test("a proposal is built from the rules and stored with its basis", async () => {
+  const { rpc, calls } = fakeRpc();
+  const result = await proposeCoachChange(rpc, {
+    userId: user,
+    intent: lowerIntent,
+    athleteMessage: "lower my calories a little",
+    sourceMessageId: "m-1",
+  });
+  assert(result.ok);
+  assertEquals(result.proposalId, "p-1");
+  assertEquals(result.kind, "nutrition_targets");
+  const persist = calls.find((call) => call.name === "persist_coach_proposal_v1")!;
+  assertEquals(persist.params.p_user_id, user);
+  assertEquals(persist.params.p_kind, "nutrition_targets");
+  assertEquals(persist.params.p_source_message_id, "m-1");
+  assertEquals(persist.params.p_expires_in_hours, 72);
+  assertEquals(
+    (persist.params.p_payload as { nutrition: { calories: number } }).nutrition.calories,
+    2190,
+  );
+  assertEquals(
+    (persist.params.p_basis as { nutrition_version_id: string }).nutrition_version_id,
+    stateFixture().nutrition!.versionId,
+  );
+  assertEquals(calls.filter((call) => call.name === "persist_coach_proposal_v1").length, 1);
+});
+
+Deno.test("a refusal is returned in plain words and nothing is stored", async () => {
+  const { rpc, calls } = fakeRpc();
+  const result = await proposeCoachChange(rpc, {
+    userId: user,
+    intent: { ...lowerIntent, requested_calories: 1200 },
+    athleteMessage: "Lower my calories to 1,200",
+  });
+  assert(!result.ok);
+  assertEquals(result.code, "below_calorie_floor");
+  assertStringIncludes(result.reason, "calorie floor");
+  assertEquals(calls.some((call) => call.name === "persist_coach_proposal_v1"), false);
+});
+
+Deno.test("an invalid intent never reaches the database", async () => {
+  const { rpc, calls } = fakeRpc();
+  const result = await proposeCoachChange(rpc, {
+    userId: user,
+    intent: { kind: "delete_everything" },
+    athleteMessage: "x",
+  });
+  assert(!result.ok);
+  assertEquals(result.code, "invalid_intent");
+  assertEquals(calls.length, 0);
+});
+
+Deno.test("an unreadable profile or a failing read is reported without a guess", async () => {
+  const profile = await proposeCoachChange(
+    fakeRpc({ get_coach_proposal_inputs_v1: { data: { profile: null } } }).rpc,
+    { userId: user, intent: lowerIntent, athleteMessage: "x" },
+  );
+  assert(!profile.ok);
+  assertEquals(profile.code, "profile_incomplete");
+  const failing = await proposeCoachChange(
+    fakeRpc({ get_goal_phase_inputs_v1: { error: { code: "XX000" } } }).rpc,
+    { userId: user, intent: lowerIntent, athleteMessage: "x" },
+  );
+  assert(!failing.ok);
+  assertEquals(failing.code, "unavailable");
+});
+
+Deno.test("a missing progression summary does not block a change", async () => {
+  const { rpc } = fakeRpc({ get_progression_summary_v1: { error: { code: "XX000" } } });
+  const result = await proposeCoachChange(rpc, {
+    userId: user,
+    intent: lowerIntent,
+    athleteMessage: "x",
+  });
+  assert(result.ok);
+});
+
+Deno.test("a plan that changed while the proposal was built is reported, other store errors are not leaked", async () => {
+  const changed = await proposeCoachChange(
+    fakeRpc({ persist_coach_proposal_v1: { error: { code: "55000" } } }).rpc,
+    { userId: user, intent: lowerIntent, athleteMessage: "x" },
+  );
+  assert(!changed.ok);
+  assertEquals(changed.code, "plan_changed");
+  const other = await proposeCoachChange(
+    fakeRpc({ persist_coach_proposal_v1: { error: { code: "22023" } } }).rpc,
+    { userId: user, intent: lowerIntent, athleteMessage: "x" },
+  );
+  assert(!other.ok);
+  assertEquals(other.code, "unavailable");
+  assert(!other.reason.includes("22023"));
+  const malformed = await proposeCoachChange(
+    fakeRpc({ persist_coach_proposal_v1: { data: { nope: true } } }).rpc,
+    { userId: user, intent: lowerIntent, athleteMessage: "x" },
+  );
+  assert(!malformed.ok);
+  assertEquals(malformed.code, "unavailable");
+});

@@ -308,6 +308,19 @@ Explicit user approval → transactional RPC → new active version
 Training Coach, Nutrition Coach, and Head Coach are fields in one response, not autonomous
 processes.
 
+### Coach proposals (A8)
+
+A Coach chat turn may end in a proposal. The model returns an intent (a kind and closed-vocabulary
+parameters); `proposeCoachChange` (`_shared/coach_proposals/service.ts`, called by coach-chat in
+the same process, no model call, no budget) reads the athlete's state with three service-role
+RPCs, builds the proposal with pure rules, and stores it with `persist_coach_proposal_v1`. A plain
+service-role RPC stores it because the builder already runs inside coach-chat; a separate Edge
+Function would add a deploy, a network hop and a second place to verify live for no gain. The
+athlete approves with `respond_to_coach_proposal_v1` under their own session (new plan, target or
+goal version, audit event) and can undo with `undo_coach_proposal_v1` for seven days. A temporary
+block is an active plan version that carries its last day and the version to restore; an hourly
+job and the proposal reads end it, so the regular plan returns without a model or a client.
+
 ### Deterministic feature engine
 
 Versioned TypeScript and SQL functions calculate:

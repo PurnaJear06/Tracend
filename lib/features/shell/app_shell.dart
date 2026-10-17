@@ -24,6 +24,7 @@ import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/plan_changes.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -100,9 +101,14 @@ class _AppShellState extends State<AppShell> {
   /// way to "Check in to start your day".
   final _checkInGate = CheckInGate();
 
+  /// Announces an approved or undone Coach proposal to the screens that show
+  /// the plan, the targets and the goal.
+  final _planChanges = PlanChanges();
+
   @override
   void dispose() {
     _checkInGate.dispose();
+    _planChanges.dispose();
     super.dispose();
   }
 
@@ -208,6 +214,7 @@ class _AppShellState extends State<AppShell> {
         onOpenTrain: () => _selectTab(1),
         aiConsent: widget.aiConsent,
         checkInGate: _checkInGate,
+        planChanges: _planChanges,
       ),
       () => TrainScreen(
         key: const ValueKey('tab_train'),
@@ -216,6 +223,7 @@ class _AppShellState extends State<AppShell> {
         coach: _coach,
         health: _health,
         onOpenAccount: _openAccount,
+        planChanges: _planChanges,
       ),
       () => CoachScreen(
         key: const ValueKey('tab_coach'),
@@ -226,6 +234,7 @@ class _AppShellState extends State<AppShell> {
         key: const ValueKey('tab_nutrition'),
         repository: _nutrition,
         coach: _coach,
+        planChanges: _planChanges,
       ),
       () => ProgressScreen(
         key: const ValueKey('tab_progress'),

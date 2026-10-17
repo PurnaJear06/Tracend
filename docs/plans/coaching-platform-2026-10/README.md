@@ -677,7 +677,55 @@ notice when new data goes to the AI provider, AI_SAFETY_SPEC), and non-judgement
 
 ## Contract requests
 
-None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
+(A2's consent-granularity request was resolved by Contract 1 v2.)
+
+**A8 part 1 → part 2 (Coach proposals; A8 asks the lead to wire it after A10 merges).** Part 1 is
+the engine, storage, approval flow and app card. It does not touch `coach-chat`, the chat provider
+or contract, `_shared/coach_context` or `_evals`. Part 2 connects chat to it:
+
+1. **Entry point.** `proposeCoachChange(rpc, { userId, intent, athleteMessage, sourceMessageId? })`
+   from `supabase/functions/_shared/coach_proposals/index.ts`. `rpc` is a service-role client's
+   `rpc` (the same `ProposalRpc` shape as the goal phase contributor). It makes no model call and
+   takes no budget. It returns `{ ok: true, proposalId, expiresAt, kind, title, endsOn }` or
+   `{ ok: false, code, reason }`; `reason` is plain words for the athlete and Coach may quote it.
+   `code` is a `RefusalCode` or `unavailable`.
+2. **Intent.** The chat model's JSON answer gains an optional `proposal_intent` object. Closed
+   vocabulary, parsed strictly by `parseCoachProposalIntent` (any other key or value invalidates
+   it): `kind` is one of `temporary_block`, `training_schedule`, `exercise_swap`,
+   `intensity_or_phase`, `goal_or_phase`, `nutrition_targets`, `next_session_adjustment`; `reason`
+   is one of `travel`, `time`, `fatigue`, `missed_sessions`, `illness_recovery`, `plateau`,
+   `preference`, `equipment_change`, `diet_fatigue`, `injury_caution`, `athlete_request`; optional
+   `note` (at most 140 characters, no digits, else dropped). Per kind: `temporary_block`
+   `setting` (`bodyweight` or `minimal_equipment`), `start_date`, `end_date`; `training_schedule`
+   `weeks` (1 to 12) and any of `days_per_week` (1 to 6), `weekdays` (ISO, 1 = Monday),
+   `session_minutes` (30 to 120); `exercise_swap` `from_slug` and optional `to_slug`;
+   `intensity_or_phase` `weeks` (1 to 8) and exactly one of `level` (`deload`, `moderate`,
+   `normal`) or `focus` (`strength`, `size`); `goal_or_phase` `phase` (`cut`, `maintenance`,
+   `diet_break`, `gain`) and optional `target_weight_kg`, `target_date`; `nutrition_targets`
+   `direction` (`lower`, `raise`, `maintenance`) and optional `requested_calories`;
+   `next_session_adjustment` `direction` (`lighter`, `heavier`) and `session` (`today`, `next`).
+   `requested_calories` and `target_weight_kg` must be a figure in the athlete's own message
+   (the builder checks `athleteMessage`), never one the model worked out.
+3. **Flow in a turn.** After the reply is validated, if `proposal_intent` is present, call
+   `proposeCoachChange` with the athlete's message and the id of the stored assistant message. On
+   `ok`, store `proposalId` on the reply so the app renders `CoachProposalLoader(proposalId)`
+   under it, and keep the reply text. On a refusal, replace or append the `reason` to the reply
+   (do not argue with it); on `unavailable`, tell the athlete the change could not be prepared.
+   The reply must never say the change was made (finding 6): at most "I've put a proposal below
+   for you to approve".
+4. **What Coach sees next turn.** The frozen `prepare_coach_chat_v8` lists the last three
+   `change_proposals` (kind, title, rationale, status), so the next turn knows how the athlete
+   answered; the A10 assembler can read `get_my_coach_proposals_v1` shaped data for "advice and
+   follow-through" (finding 17).
+5. **App.** `CoachProposalCard` / `CoachProposalLoader` (`lib/features/coach/proposals/`) render from
+   a proposal or an id and call `get_my_coach_proposals_v1`, `respond_to_coach_proposal_v1` and
+   `undo_coach_proposal_v1` themselves. The chat screen passes `onPlanChanged:
+   planChanges.announce` (the shell's `PlanChanges`, already handed to Train, Nutrition and Today)
+   and `onChangeIt: (p) => send(p.changeRequestMessage)`. No schema change is needed in
+   `coach_chat_v1`: a message carries the optional `proposal_id` (the message row has
+   `change_proposals.source_message_id`, so a thread can also find its proposals by message).
+6. **Not in part 1:** an eval case set for proposals (A11), the Coach prompt text that teaches the
+   intent (A10 owns the prompt), and a "proposals" memory block in the A10 context.
 
 ## Decisions log
 

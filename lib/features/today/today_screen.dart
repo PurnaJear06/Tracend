@@ -25,6 +25,7 @@ import 'package:tracend/features/today/widgets/today_hero.dart';
 import 'package:tracend/features/today/widgets/today_session_card.dart';
 import 'package:tracend/features/today/widgets/today_tiles.dart';
 import 'package:tracend/features/today/widgets/your_week_card.dart';
+import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
@@ -49,6 +50,7 @@ class TodayScreen extends StatefulWidget {
     this.onOpenTrain,
     this.aiConsent,
     this.checkInGate,
+    this.planChanges,
     super.key,
   });
 
@@ -83,6 +85,10 @@ class TodayScreen extends StatefulWidget {
   /// The shell's morning check-in gate. Today sets it while today's
   /// check-in is missing; without it, the hero offers a "Check in" chip.
   final CheckInGate? checkInGate;
+
+  /// Reloads the targets and today's brief when a Coach proposal changed the
+  /// plan, the targets or the goal.
+  final PlanChanges? planChanges;
 
   @override
   State<TodayScreen> createState() => _TodayScreenState();
@@ -132,13 +138,23 @@ class _TodayScreenState extends State<TodayScreen> {
   @override
   void dispose() {
     widget.aiConsent?.removeListener(_consentChanged);
+    widget.planChanges?.removeListener(_planChanged);
     super.dispose();
+  }
+
+  void _planChanged() {
+    if (!mounted) return;
+    setState(() {
+      _targets = widget.nutrition.loadTargets();
+      _brief = _loadBrief();
+    });
   }
 
   @override
   void initState() {
     super.initState();
     widget.aiConsent?.addListener(_consentChanged);
+    widget.planChanges?.addListener(_planChanged);
     _reloadHealth();
     _targets = widget.nutrition.loadTargets();
     _meals = _loadMeals();
