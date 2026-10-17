@@ -193,7 +193,7 @@ Contract 8).
   in `rules_plan_test.ts` moved to the new exercise mixes. The loaded-beats-bodyweight sweep now
   exempts trunk work and the pull-up family, which rotate by design.
 
-**B6 (review; screening gate; migration 26; app change; stacked on #127).**
+**B6 (review; screening gate; migration 26; app change; B2 (#127) is on main).**
 
 - **Questions and mapping** (ACSM 2015 preparticipation logic, our own words; plain wording, no
   diagnosis). Four yes/no questions in a new onboarding step, **Health check**, right after the
@@ -232,7 +232,7 @@ Contract 8).
   changes. The app mirrors no rule: it shows what the server returns. A draft past the step
   without answers returns to it. Contract fixture `test/contract/fixtures/record_screening_v1_0.json`
   with a complete-key-list test.
-- **Server wiring** (stacked on B2, #127; the lead granted `onboarding-plan/handler.ts`). The
+- **Server wiring** (built on B2, #127, now on main; the lead granted `onboarding-plan/handler.ts`). The
   handler reads the stored outcome through `OnboardingStore.screening()` (the newest
   `onboarding_screenings` row for the user; no row is `cleared`) once per request and passes it as
   the last argument of `policiesFor`, `preparePlan` (gateway.ts, one optional argument added) and
