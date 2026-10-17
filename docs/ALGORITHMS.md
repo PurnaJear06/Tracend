@@ -496,11 +496,15 @@ working sets the session's completed sets with reps > 0 at the session's top loa
              (warm-ups, back-off sets and unticked sets are not working sets)
 rir(set)     set.rir, else 10 - set.rpe (0 to 5), else unknown
 rir_target   10 - target_rpe, rounded (2 when the plan sets no RPE)
-step         exercise_catalog.load_step_kg; none for assisted exercises, bands, benches, bars
-             and exercises without a catalog link (those progress by reps only)
+step         exercise_catalog.load_step_kg; none for bands, benches, bars and exercises
+             without a catalog link (those progress by reps only)
+assisted     assisted-* slug or "assisted ..." name: the load is machine help, the working
+             load is the least help (0 = unassisted, kept), add_load = max(0, help - step)
+             (nothing left at 0: hold), lower = help + step
 
 first match wins, on the latest session (s1) and the two before it (s2, s3):
-  pain flagged on s1                            -> hold
+  pain flagged on s1 or on any later performance
+    (even one with no completed set)            -> hold
   days since s1 >= 28 and a step exists         -> lower: load - step, reps = range minimum
   days since s1 >= 14                           -> hold
   skipped after s1                              -> hold

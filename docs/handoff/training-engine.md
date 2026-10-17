@@ -303,7 +303,8 @@ Contract 8).
 - **Rules** (history is the athlete's completed sessions only; the working sets of a session are its
   completed sets at the top load, so warm-ups, back-off sets and unticked sets never count). For the
   latest session, first match wins:
-  1. pain flagged: hold;
+  1. pain flagged on that session, or on any later performance of the exercise even with no
+     completed set logged that day: hold;
   2. 28 days or more away: lower one step (hold when the exercise has no load step); 14 days or more:
      hold;
   3. skipped after the last logged session: hold;
@@ -316,10 +317,13 @@ Contract 8).
   8. every set at the top of the range: add exactly one load step and restart at the bottom of the
      range (hold at the top without a step: needs a harder variation);
   9. otherwise add one rep (the standard's `repsAddedPerSession`) to the weakest set, up to the top.
-  The load step is `exercise_catalog.load_step_kg` (B1). Assisted exercises, bands, benches, bars
-  and exercises without a catalog link have no step, so they progress by reps only. A target is
-  never more than one step above the last logged load and its reps are always inside the plan's
-  range (pgTAP sweeps both). Reps in reserve come from `rir`, else from `rpe` (10 minus RPE); when a
+  The load step is `exercise_catalog.load_step_kg` (B1). Bands, benches, bars and exercises without
+  a catalog link have no step, so they progress by reps only. **Assisted exercises** (`assisted-*`
+  slug, else a name starting "assisted") log machine help as the load, ranked as
+  `get_my_exercise_history` ranks it: the working load is the least help, 0 is a real value
+  (unassisted), so progressing reduces the help by one step (never below 0; at 0 it holds) and
+  lowering adds one step of help. A target is never more than one step from the last logged load
+  and its reps are always inside the plan's range (pgTAP sweeps both). Reps in reserve come from `rir`, else from `rpe` (10 minus RPE); when a
   working set has neither, `confidence` is `low` and the target is not blocked by it.
 - **D9.** Heart rate is not an input anywhere; a Deno test fails if the migration's code mentions
   heart rate.
@@ -332,7 +336,10 @@ Contract 8).
 - **Train.** Each exercise with a target reads "3 × 6 to 8 · next 75 kg × 6" in the list; its sheet
   shows a **Next target** tile in place of **Today** and one sentence of why ("Every set reached the
   top of the range last time. Add weight and start the reps again."); the workout screen starts each
-  set from the target, before last time's set ("Your next target"). VoiceOver reads the target.
+  set from the target, before last time's set ("Your next target"). VoiceOver reads the target. An
+  assisted exercise reads as help, as the workout screen words it: "next 15 kg help × 6" or
+  "Unassisted × 8", "15 kilograms of help" in VoiceOver, and the reasons say "less help" and "a step
+  more help" (`isAssistedPlanned` in `train_parts.dart`; `test/train_next_target_test.dart`).
   Reason codes this build does not know show the target without a sentence. Older builds ignore
   `next_targets`.
 - **Tests.** `progression/targets_test.ts` and `contributors/progression_test.ts` (Deno, 19 tests),

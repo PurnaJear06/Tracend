@@ -12,8 +12,13 @@
 -- rises by one step of the exercise's loading implement (exercise_catalog.
 -- load_step_kg, never more) only when every working set reached the top of the
 -- range with at least the planned reps in reserve. A shortfall, a grinding set,
--- pain, a skipped session or time away holds the target or lowers it. An
--- exercise without logged sets gets no target and keeps the plan's prescription.
+-- pain, a skipped session or time away holds the target or lowers it. A pain flag
+-- on a later performance holds the target even when no set was logged that day.
+-- An assisted exercise (assisted-* slug or "assisted ..." name) logs machine help
+-- as its load, as get_my_exercise_history ranks it: less help is harder and 0 is
+-- unassisted, so progressing reduces the help (never below 0) and lowering adds
+-- it. An exercise without logged sets gets no target and keeps the plan's
+-- prescription.
 
 create function private.progression_rules()
 returns jsonb language sql immutable set search_path = '' as $$
@@ -23,7 +28,9 @@ revoke all on function private.progression_rules() from public, anon, authentica
 
 -- p_sessions: up to three logged sessions of the exercise, latest first. Each is
 -- {load_kg, sets, min_reps, total_reps, min_rir, effort_known, pain, local_date}
--- describing the working sets (completed, at the session's top load).
+-- describing the working sets (completed, at the session's top load; for an
+-- assisted exercise the least help). p_pain_since: pain was flagged on a later
+-- performance of the exercise, even one with no completed set.
 -- Returns null without a session, else {action, reason, load_kg, reps, sets, confidence}.
 create function private.progression_decision(
   p_set_count integer,
@@ -33,6 +40,8 @@ create function private.progression_decision(
   p_step_kg numeric,
   p_gap_days integer,
   p_skipped_since boolean,
+  p_pain_since boolean,
+  p_assisted boolean,
   p_sessions jsonb
 ) returns jsonb language plpgsql immutable set search_path = '' as $$
 declare
@@ -53,21 +62,25 @@ declare
   v_reason text;
   v_load_out numeric;
   v_reps integer;
+  v_lower_load numeric;
 begin
   if p_sessions is null or jsonb_typeof(p_sessions) <> 'array'
      or jsonb_array_length(p_sessions) = 0 then
     return null;
   end if;
-  v_can_lower := v_load is not null and v_step is not null and v_load - v_step > 0;
+  -- Assisted: lowering adds help (always possible); otherwise the load must stay above 0.
+  v_can_lower := v_load is not null and v_step is not null
+    and (coalesce(p_assisted, false) or v_load - v_step > 0);
+  v_lower_load := case when coalesce(p_assisted, false) then v_load + v_step else v_load - v_step end;
   v_hold_reps := least(p_rep_max, greatest(p_rep_min, v_min_reps));
   v_load_out := v_load;
   v_reps := v_hold_reps;
 
-  if coalesce((s1 ->> 'pain')::boolean, false) then
+  if coalesce((s1 ->> 'pain')::boolean, false) or coalesce(p_pain_since, false) then
     v_action := 'hold'; v_reason := 'pain';
   elsif p_gap_days >= (rules ->> 'lower_after_gap_days')::integer and v_can_lower then
     v_action := 'lower'; v_reason := 'away';
-    v_load_out := v_load - v_step; v_reps := p_rep_min;
+    v_load_out := v_lower_load; v_reps := p_rep_min;
   elsif p_gap_days >= (rules ->> 'hold_after_gap_days')::integer then
     v_action := 'hold'; v_reason := 'away';
   elsif p_skipped_since then
@@ -76,7 +89,7 @@ begin
     if s2 is not null and (s2 ->> 'min_reps')::integer < p_rep_min
        and nullif(s2 ->> 'load_kg', '')::numeric is not distinct from v_load and v_can_lower then
       v_action := 'lower'; v_reason := 'below_range';
-      v_load_out := v_load - v_step; v_reps := p_rep_min;
+      v_load_out := v_lower_load; v_reps := p_rep_min;
     else
       v_action := 'hold'; v_reason := 'below_range'; v_reps := p_rep_min;
     end if;
@@ -86,7 +99,7 @@ begin
         and (s1 ->> 'total_reps')::integer <= (s3 ->> 'total_reps')::integer then
     if v_can_lower then
       v_action := 'lower'; v_reason := 'stall';
-      v_load_out := v_load - v_step; v_reps := p_rep_min;
+      v_load_out := v_lower_load; v_reps := p_rep_min;
     else
       v_action := 'hold'; v_reason := 'stall';
     end if;
@@ -95,9 +108,11 @@ begin
   elsif v_min_rir is not null and v_min_rir < v_rir_target then
     v_action := 'hold'; v_reason := 'effort';
   elsif v_min_reps >= p_rep_max then
-    if v_step is not null and v_load is not null then
+    if v_step is not null and v_load is not null and (not coalesce(p_assisted, false) or v_load > 0) then
       v_action := 'add_load'; v_reason := 'top_of_range';
-      v_load_out := v_load + v_step; v_reps := p_rep_min;
+      v_load_out := case when coalesce(p_assisted, false) then greatest(0, v_load - v_step)
+        else v_load + v_step end;
+      v_reps := p_rep_min;
     else
       v_action := 'hold'; v_reason := 'top_no_step'; v_reps := p_rep_max;
     end if;
@@ -112,7 +127,8 @@ begin
     'confidence', case when coalesce((s1 ->> 'effort_known')::boolean, false)
       then 'high' else 'low' end);
 end $$;
-revoke all on function private.progression_decision(integer, integer, integer, numeric, numeric, integer, boolean, jsonb)
+revoke all on function private.progression_decision(
+  integer, integer, integer, numeric, numeric, integer, boolean, boolean, boolean, jsonb)
   from public, anon, authenticated;
 
 -- One target per exercise of the athlete's active plan that has logged sets in
@@ -131,16 +147,16 @@ with rules as (
     e.set_count, e.rep_min, e.rep_max, e.target_rpe,
     private.exercise_name_key(e.display_name_snapshot) as name_key,
     private.exercise_name_key(c.name) as catalog_name_key,
-    case when coalesce(e.exercise_slug like 'assisted-%',
-        private.exercise_name_key(e.display_name_snapshot) like 'assisted %')
-      then null else c.load_step_kg end as step_kg
+    coalesce(e.exercise_slug like 'assisted-%',
+      private.exercise_name_key(e.display_name_snapshot) like 'assisted %') as assisted,
+    c.load_step_kg as step_kg
   from public.training_plan_versions v
   join public.planned_workouts w on w.plan_version_id = v.id and w.user_id = v.user_id
   join public.planned_exercises e on e.planned_workout_id = w.id and e.user_id = w.user_id
   left join public.exercise_catalog c on c.slug = e.exercise_slug
   where v.user_id = p_user and v.status = 'active'
 ), perf as (
-  select pl.planned_exercise_id, p.id as performance_id, p.status, p.pain_flag,
+  select pl.planned_exercise_id, pl.assisted, p.id as performance_id, p.status, p.pain_flag,
     s.local_date, s.completed_at, s.id as session_id
   from planned pl
   join public.exercise_performances p on p.user_id = p_user
@@ -157,16 +173,22 @@ with rules as (
         and private.exercise_name_key(coalesce(p.performed_name, pe.display_name_snapshot))
             = pl.name_key)
 ), logged as (
-  select pf.planned_exercise_id, pf.session_id, pf.local_date, pf.completed_at, pf.pain_flag,
-    nullif(es.load_kg, 0) as load_kg, es.repetitions,
+  select pf.planned_exercise_id, pf.assisted, pf.session_id, pf.local_date, pf.completed_at,
+    pf.pain_flag,
+    -- Assisted: the load is machine help and 0 is unassisted, so it is kept.
+    case when pf.assisted then es.load_kg else nullif(es.load_kg, 0) end as load_kg,
+    es.repetitions,
     case when es.rir is not null then es.rir::integer
       when es.rpe is not null then greatest(0, least(5, round(10 - es.rpe)::integer)) end as rir
   from perf pf
   join public.exercise_sets es on es.exercise_performance_id = pf.performance_id
     and es.user_id = p_user and es.completed and es.repetitions > 0
-  where pf.status <> 'skipped'
+  where pf.status <> 'skipped' and (not pf.assisted or es.load_kg is not null)
 ), topped as (
-  select l.*, max(l.load_kg) over (partition by l.planned_exercise_id, l.session_id) as top_load
+  -- The top load is the heaviest; for an assisted exercise the least help.
+  select l.*, case when l.assisted
+      then min(l.load_kg) over (partition by l.planned_exercise_id, l.session_id)
+      else max(l.load_kg) over (partition by l.planned_exercise_id, l.session_id) end as top_load
   from logged l
 ), sessions as (
   select t.planned_exercise_id, t.session_id, t.local_date, t.completed_at, t.top_load,
@@ -185,6 +207,7 @@ with rules as (
   from sessions s
 ), recent as (
   select r.planned_exercise_id, max(r.local_date) filter (where r.rn = 1) as latest_date,
+    max(r.completed_at) filter (where r.rn = 1) as latest_completed_at,
     jsonb_agg(jsonb_build_object(
       'local_date', r.local_date, 'load_kg', r.top_load, 'sets', r.sets,
       'min_reps', r.min_reps, 'total_reps', r.total_reps, 'min_rir', r.min_rir,
@@ -205,7 +228,13 @@ from (
     select private.progression_decision(pl.set_count, pl.rep_min, pl.rep_max, pl.target_rpe,
       pl.step_kg, (select d from today) - rc.latest_date,
       exists (select 1 from perf sk where sk.planned_exercise_id = pl.planned_exercise_id
-        and sk.status = 'skipped' and sk.local_date > rc.latest_date),
+        and sk.status = 'skipped'
+        and (sk.local_date, sk.completed_at) > (rc.latest_date, rc.latest_completed_at)),
+      -- Pain on a later performance counts even when no set was logged that day.
+      exists (select 1 from perf pn where pn.planned_exercise_id = pl.planned_exercise_id
+        and pn.pain_flag
+        and (pn.local_date, pn.completed_at) > (rc.latest_date, rc.latest_completed_at)),
+      pl.assisted,
       rc.sess) as decision
   ) d
   where d.decision is not null

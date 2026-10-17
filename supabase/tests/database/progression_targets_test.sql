@@ -14,9 +14,11 @@ $$;
 
 -- 3 sets of 6 to 8 at RPE 8 (two reps in reserve), 2.5 kg step, 3 days since the last session.
 create function pg_temp.decide(p_sessions jsonb, p_gap integer default 3,
-  p_skipped boolean default false, p_step numeric default 2.5)
+  p_skipped boolean default false, p_step numeric default 2.5, p_pain_since boolean default false,
+  p_assisted boolean default false)
 returns jsonb language sql as $$
-  select private.progression_decision(3, 6, 8, 8, p_step, p_gap, p_skipped, p_sessions)
+  select private.progression_decision(3, 6, 8, 8, p_step, p_gap, p_skipped, p_pain_since,
+    p_assisted, p_sessions)
 $$;
 
 select is(pg_temp.decide('[]'::jsonb), null, 'no logged session, no target');
@@ -79,6 +81,33 @@ select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 8, 24)), 3, true)
 select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 8, 24, 2, true, true)))->>'reason', 'pain',
   'a pain flag holds');
 
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 8, 24)), 3, false, 2.5, true),
+  '{"action":"hold","reason":"pain","load_kg":80,"reps":8,"sets":3,"confidence":"high"}'::jsonb,
+  'pain flagged on a later performance holds, however good the last logged session was');
+
+-- Assisted exercises: the load is machine help, so less is harder and 0 is unassisted.
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(20, 3, 8, 24)), 3, false, 5, false, true),
+  '{"action":"add_load","reason":"top_of_range","load_kg":15,"reps":6,"sets":3,"confidence":"high"}'::jsonb,
+  'assisted, every set at the top: one step less help');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(2.5, 3, 8, 24)), 3, false, 5, false, true)->>'load_kg',
+  '0', 'less help never goes below zero');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(0, 3, 8, 24)), 3, false, 5, false, true),
+  '{"action":"hold","reason":"top_no_step","load_kg":0,"reps":8,"sets":3,"confidence":"high"}'::jsonb,
+  'an unassisted exercise has no less help to give: the load stays 0');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(20, 3, 4, 15), pg_temp.sess(20, 3, 5, 16)), 3,
+    false, 5, false, true)->>'load_kg', '25', 'twice below the range adds one step of help');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(0, 3, 4, 15), pg_temp.sess(0, 3, 5, 16)), 3,
+    false, 5, false, true)->>'load_kg', '5', 'and an unassisted lifter can be given help');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(20, 3, 8, 24)), 28, false, 5, false, true)->>'load_kg',
+  '25', '28 days away adds one step of help');
+select is((
+  select count(*) from generate_series(1, 12) reps, generate_series(1, 4) sets,
+    unnest(array[null, 0, 1, 2, 3, 5]::integer[]) rir, generate_series(0, 30, 7) gap,
+    unnest(array[true, false]) skipped, unnest(array[true, false]) pain
+  where (pg_temp.decide(jsonb_build_array(pg_temp.sess(20, sets, reps, reps * sets, rir)),
+          gap, skipped, 5, pain, true)->>'load_kg')::numeric not between 15 and 25
+), 0::bigint, 'assisted help moves by at most one step either way');
+
 -- Steps, bodyweight, unknown effort.
 select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 8, 24)), 3, false, null),
   '{"action":"hold","reason":"top_no_step","load_kg":80,"reps":8,"sets":3,"confidence":"high"}'::jsonb,
@@ -130,7 +159,13 @@ insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_o
   ('b3400000-0000-4000-8000-000000000002', 'b3000000-0000-4000-8000-000000000001',
    'b3300000-0000-4000-8000-000000000001', 2, 'Cable fly', 2, 10, 12, 60, null),
   ('b3400000-0000-4000-8000-000000000003', 'b3000000-0000-4000-8000-000000000001',
-   'b3300000-0000-4000-8000-000000000001', 3, 'Push-up', 2, 10, 20, 60, 'push-up');
+   'b3300000-0000-4000-8000-000000000001', 3, 'Push-up', 2, 10, 20, 60, 'push-up'),
+  ('b3400000-0000-4000-8000-000000000004', 'b3000000-0000-4000-8000-000000000001',
+   'b3300000-0000-4000-8000-000000000001', 4, 'Assisted pull-up', 2, 6, 10, 90, 'assisted-pull-up'),
+  ('b3400000-0000-4000-8000-000000000005', 'b3000000-0000-4000-8000-000000000001',
+   'b3300000-0000-4000-8000-000000000001', 5, 'Assisted chin-up', 2, 6, 8, 90, null),
+  ('b3400000-0000-4000-8000-000000000006', 'b3000000-0000-4000-8000-000000000001',
+   'b3300000-0000-4000-8000-000000000001', 6, 'Dumbbell curl', 3, 8, 12, 60, 'dumbbell-curl');
 
 create temporary table t as
   select private.local_date_for('b3000000-0000-4000-8000-000000000001') as today;
@@ -155,9 +190,9 @@ begin
   returning id into sid;
   for ex in select value from jsonb_array_elements(p_exercises) loop
     insert into public.exercise_performances(user_id, workout_session_id, planned_exercise_id,
-      exercise_order, status, performance_kind)
+      exercise_order, status, performance_kind, pain_flag)
     values ('b3000000-0000-4000-8000-000000000001', sid, (ex->>'planned')::uuid,
-      (ex->>'order')::smallint, 'performed', 'prescribed')
+      (ex->>'order')::smallint, 'performed', 'prescribed', coalesce((ex->>'pain')::boolean, false))
     returning id into pid;
     n := 0;
     for st in select value from jsonb_array_elements(ex->'sets') loop
@@ -178,7 +213,14 @@ select pg_temp.log_session((select today - 14 from t), 'completed',
 select pg_temp.log_session((select today - 7 from t), 'completed',
   '[{"order":1,"planned":"b3400000-0000-4000-8000-000000000001",
      "sets":[[8,60,3],[8,60,3],[8,60,3],[12,40,4],[5,70,0,false]]},
-    {"order":2,"planned":"b3400000-0000-4000-8000-000000000002","sets":[[10,15],[10,15]]}]');
+    {"order":2,"planned":"b3400000-0000-4000-8000-000000000002","sets":[[10,15],[10,15]]},
+    {"order":4,"planned":"b3400000-0000-4000-8000-000000000004","sets":[[10,20],[10,15],[10,15]]},
+    {"order":5,"planned":"b3400000-0000-4000-8000-000000000005","sets":[[8,0],[8,0]]}]');
+-- Curls went well, then a later session flagged pain on them without logging a set.
+select pg_temp.log_session((select today - 8 from t), 'completed',
+  '[{"order":6,"planned":"b3400000-0000-4000-8000-000000000006","sets":[[12,10,3],[12,10,3],[12,10,3]]}]');
+select pg_temp.log_session((select today - 3 from t), 'completed',
+  '[{"order":6,"planned":"b3400000-0000-4000-8000-000000000006","pain":true,"sets":[]}]');
 -- A session still in progress does not count.
 select pg_temp.log_session((select today from t), 'in_progress',
   '[{"order":1,"planned":"b3400000-0000-4000-8000-000000000001","sets":[[8,100,0]]}]');
@@ -204,7 +246,7 @@ select is((select array(select k from jsonb_object_keys(j->'next_targets'->0) k 
   array['action', 'basis', 'confidence', 'exercise_key', 'load_kg', 'name', 'planned_exercise_id',
     'reason', 'reps', 'sets'],
   'a target reports exactly these keys');
-select is((select jsonb_array_length(j->'next_targets') from hub), 2,
+select is((select jsonb_array_length(j->'next_targets') from hub), 5,
   'an exercise without logged sets gets no target (the plan''s prescription stands)');
 select is((select j->'next_targets'->0->>'name' from hub), 'Barbell bench press',
   'targets follow the plan order');
@@ -222,6 +264,18 @@ select is((select (j->'next_targets'->1) - 'basis' - 'planned_exercise_id' from 
   '{"name":"Cable fly","exercise_key":"cable fly","action":"add_reps","reason":"within_range",
     "load_kg":15,"reps":11,"sets":2,"confidence":"low"}'::jsonb,
   'fly without reps in reserve: one more rep, lower confidence');
+select is((select (j->'next_targets'->2) - 'basis' - 'planned_exercise_id' from hub),
+  '{"name":"Assisted pull-up","exercise_key":"assisted-pull-up","action":"add_load",
+    "reason":"top_of_range","load_kg":10,"reps":6,"sets":2,"confidence":"low"}'::jsonb,
+  'assisted pull-up: mixed help, the least help (15 kg) is the working load, so one step less');
+select is((select (j->'next_targets'->3) - 'basis' - 'planned_exercise_id' from hub),
+  '{"name":"Assisted chin-up","exercise_key":"assisted chin-up","action":"hold","reason":"top_no_step",
+    "load_kg":0,"reps":8,"sets":2,"confidence":"low"}'::jsonb,
+  'an unassisted set is a real load of 0, not a missing one');
+select is((select (j->'next_targets'->4) - 'basis' - 'planned_exercise_id' from hub),
+  '{"name":"Dumbbell curl","exercise_key":"dumbbell-curl","action":"hold","reason":"pain",
+    "load_kg":10,"reps":12,"sets":3,"confidence":"high"}'::jsonb,
+  'a later pain flag with no sets holds the earlier successful curls');
 select is((select j->'next_targets'->0->>'planned_exercise_id' from hub),
   'b3400000-0000-4000-8000-000000000001', 'a target names its planned exercise');
 select is((select j->'workouts'->0->'exercises'->0->>'target_load_kg' from hub), null,
@@ -241,7 +295,7 @@ select ok(has_function_privilege('service_role', 'public.get_progression_summary
 select ok(not has_function_privilege('authenticated', 'private.next_session_targets(uuid)', 'execute')
   and not has_function_privilege('anon', 'private.next_session_targets(uuid)', 'execute')
   and not has_function_privilege('authenticated',
-    'private.progression_decision(integer, integer, integer, numeric, numeric, integer, boolean, jsonb)',
+    'private.progression_decision(integer, integer, integer, numeric, numeric, integer, boolean, boolean, boolean, jsonb)',
     'execute'),
   'the target functions are private');
 

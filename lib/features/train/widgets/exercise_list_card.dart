@@ -39,9 +39,16 @@ String exerciseSpeech(PlannedExercise exercise) {
   final next = exercise.nextTarget;
   if (next != null) {
     final load = next.loadKg;
-    final target = load == null
-        ? '${next.reps} reps'
-        : '${formatKg(load)} kilograms for ${next.reps} reps';
+    final String target;
+    if (load == null) {
+      target = '${next.reps} reps';
+    } else if (isAssistedPlanned(exercise)) {
+      target = load == 0
+          ? 'unassisted for ${next.reps} reps'
+          : '${formatKg(load)} kilograms of help for ${next.reps} reps';
+    } else {
+      target = '${formatKg(load)} kilograms for ${next.reps} reps';
+    }
     return '$sets, next target $target';
   }
   final load = exercise.targetLoadKg;

@@ -165,3 +165,30 @@ Deno.test("the hub keeps every 1.6 line and adds only the schema version and nex
     "'next_targets',private.next_session_targets(auth.uid())",
   ]);
 });
+
+Deno.test("an assisted target reads as help, and its reasons are about help", () => {
+  const [assisted] = parseProgressionSummary(payload([target({
+    exercise_key: "assisted-pull-up",
+    name: "Assisted pull-up",
+    load_kg: 15,
+    reps: 6,
+    sets: 2,
+  })]));
+  assertEquals(describeTargetPrescription(assisted), "15 kg help x 6 reps, 2 sets");
+  assertStringIncludes(describeTarget(assisted), "the help is reduced by one step");
+  assertStringIncludes(describeLastSession(assisted), "60 kg help");
+  const [unassisted] = parseProgressionSummary(payload([target({
+    exercise_key: "assisted chin-up",
+    name: "Assisted chin-up",
+    action: "hold",
+    reason: "top_no_step",
+    load_kg: 0,
+  })]));
+  assertEquals(describeTargetPrescription(unassisted), "unassisted, 5 reps, 3 sets");
+  const [lowered] = parseProgressionSummary(payload([target({
+    exercise_key: "assisted-pull-up",
+    action: "lower",
+    reason: "stall",
+  })]));
+  assertStringIncludes(describeTarget(lowered), "the help goes up one step");
+});
