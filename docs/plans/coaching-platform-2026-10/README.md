@@ -330,6 +330,15 @@ with a plain `vector` argument came back from a restore executable by `anon` and
 `{chunk_id, source_id, title, year, url, section, body, header, score}`. `filters` may hold
 `region` and `topics` (text arrays). `match_count` is capped at 8.
 
+**Version 2 (E3, migration code 43, for the lead's approval).** `search_library_v2(query_text,
+query_embedding, match_count, filters, target_user_id uuid default null)` replaces v1, which is
+dropped (nothing deployed called it). Full-text search ORs the terms of the question; fusion is
+reciprocal rank fusion with k = 50; rows add `source_key` (the manifest key Coach cites) and carry
+`schema_version` 2; at most three rows per source; `match_count` is capped at 10 (null means 8);
+`target_user_id` limits the sources to the athlete's regions (global plus the country in the account
+locale, and `IN` for an Indian time zone) when `filters` names no region. Details: DATA_MODEL.md
+section 12.
+
 ### Contract 7: Coach context contributor (A6 defines the host, E3/C3/B3 add contributors)
 
 ```ts
@@ -343,6 +352,12 @@ type CoachContextContributor = Readonly<{
 
 The host renders contributors after the frozen athlete file, in a fixed order, each clipped to its
 budget, labelled as reference data that never overrides Tracend rules or the athlete's data.
+
+**Version 1.1 (E3, for the lead's approval).** `render`'s input gains the optional
+`previousQuestions?: readonly string[]`: the athlete's own earlier questions in the conversation,
+newest first, current question excluded. The library uses it to give a follow-up a topic; a
+contributor that does not need it ignores it. Coach chat's evidence also gains the source `library`
+(an evidence item whose `code` is a library source id shown in the turn; `coach_chat_v1.ts`).
 
 ### Contract 8: Screening outcome (B6 produces, B2 reads)
 
