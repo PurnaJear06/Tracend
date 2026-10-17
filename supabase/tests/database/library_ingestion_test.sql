@@ -244,7 +244,7 @@ select throws_ok($$select public.library_store_embeddings_v1('  ', '[]'::jsonb)$
   'a blank model name is refused');
 select throws_ok($$select public.library_store_embeddings_v1('gte-small', '{}'::jsonb)$$, '22023', null,
   'items that are not an array are refused');
-select ok(exists (select 1 from public.search_library_v1(null, (pg_temp.embedding_json(7)::text)::public.library_embedding, 1, null)
+select ok(exists (select 1 from public.search_library_v2(null, (pg_temp.embedding_json(7)::text)::public.library_embedding, 1, null)
   where chunk_id = (select chunk_id from first_chunk)),
   'search finds the stored embedding as its nearest match');
 

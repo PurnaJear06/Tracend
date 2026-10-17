@@ -13,6 +13,12 @@ export type CoachContextInput = Readonly<{
   question: string;
   /** The coaching date of the prepared context (YYYY-MM-DD). */
   localDate: string;
+  /**
+   * The athlete's own earlier questions in this conversation, newest first, without the current
+   * one (Contract 7 v1.1, chunk E3). The library uses them to give a follow-up a topic. Optional:
+   * a contributor that does not need them ignores it.
+   */
+  previousQuestions?: readonly string[];
 }>;
 
 export type CoachContextContributor = Readonly<{

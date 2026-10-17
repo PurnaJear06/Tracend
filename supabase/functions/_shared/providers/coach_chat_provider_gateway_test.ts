@@ -12,7 +12,8 @@ import {
 import { isSupportedSchema } from "../ai/json_schema.ts";
 import { anthropicSchema } from "../ai/adapters/anthropic.ts";
 import { evalProfiles } from "../../_evals/fixtures.ts";
-import { renderCoachContext } from "../coach_context/host.ts";
+import { type CoachContributions, renderCoachContext } from "../coach_context/host.ts";
+import { createLibraryContributor } from "../library/retrieval.ts";
 import {
   buildCoachChatGatewayPrompt,
   chooseCoachChatRoute,
@@ -64,6 +65,7 @@ async function run(
     context?: Record<string, unknown>;
     route?: AiRoute;
     consentVendor?: "anthropic" | "deepseek" | null;
+    contributions?: CoachContributions;
   } = {},
 ) {
   let index = 0;
@@ -78,6 +80,7 @@ async function run(
         contextKind: classifyQuestion(question),
         route,
         consentVendor: options.consentVendor === undefined ? "anthropic" : options.consentVendor,
+        ...(options.contributions ? { contributions: options.contributions } : {}),
       }, { fetch: fake.fetch });
     } catch (error) {
       return error as CoachChatUnavailableError;
@@ -563,4 +566,166 @@ Deno.test("an intent survives a lookup round and is dropped from an interim answ
   }, { fetch: fake.fetch });
   assertEquals(fake.sent.length, 2);
   assertEquals(generation.proposalIntent, intent);
+});
+
+// ---- the library (E3) ---------------------------------------------------------------------
+
+const volumeChunk = {
+  sourceId: "schoenfeld_2017_weekly_volume",
+  header: "Source: Schoenfeld et al. 2017, Weekly volume. Section: Results.",
+  body:
+    "Ten or more sets per muscle per week gave more growth than fewer. Adults should aim for 150 minutes of moderate activity a week.",
+};
+
+async function withLibrary(question: string, rows = [volumeChunk]) {
+  return await renderCoachContext([
+    createLibraryContributor({
+      embed: () => () => Promise.resolve([0.1, 0.2]),
+      search: () => Promise.resolve(rows),
+    }),
+  ], { userId: "athlete-1", question, localDate: "2026-10-18" });
+}
+
+const libraryEvidence = (code: string) => ({
+  code,
+  label: "Schoenfeld et al. 2017, weekly volume",
+  source: "library",
+});
+
+Deno.test("library prompt: the excerpts follow the cached block and the rules say how to cite", async () => {
+  const contributions = await withLibrary("How many sets per week?");
+  const prompt = buildCoachChatGatewayPrompt(
+    "How many sets per week?",
+    rich(),
+    "general",
+    contributions,
+  );
+  const [cached, turn, question] = prompt.messages[0].content.map((part) =>
+    part.type === "text" ? part.text : ""
+  );
+  assert(!cached.includes('source="library"'), "retrieved text never joins the cached prefix");
+  assertStringIncludes(turn, '<reference_data source="library">');
+  assertStringIncludes(turn, "[source: schoenfeld_2017_weekly_volume]");
+  assertEquals(question, "User's message:\nHow many sets per week?");
+  const rules = prompt.system[0].type === "text" ? prompt.system[0].text : "";
+  assertStringIncludes(rules, "# Using the research library");
+  assertStringIncludes(rules, 'source "library"');
+});
+
+Deno.test("the gateway schema accepts a library citation by any id and data evidence by permitted codes only", () => {
+  type Item = {
+    properties: { code: { enum?: string[] }; source: { enum: string[] } };
+  };
+  const schema = coachChatGatewaySchema(["RECOVERY_BELOW_BASELINE"]);
+  const items = (schema.properties.evidence.items as unknown as { anyOf: Item[] }).anyOf;
+  assertEquals(items.length, 2);
+  assertEquals(items[0].properties.code.enum, ["RECOVERY_BELOW_BASELINE"]);
+  assert(!items[0].properties.source.enum.includes("library"));
+  assertEquals(items[1].properties.source.enum, ["library"]);
+  assertEquals(items[1].properties.code.enum, undefined);
+});
+
+Deno.test("a reply that cites a source it was shown is accepted with its evidence", async () => {
+  const contributions = await withLibrary("How many sets per week?");
+  const good = answer({
+    answer: "Ten or more weekly sets per muscle is where the research points.",
+    evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")],
+  });
+  const { result, sent } = await run(() => claudeAnswer(good), {
+    question: "How many sets per week?",
+    contributions,
+  });
+  if (result instanceof Error) throw result;
+  assertEquals(sent.length, 1);
+  assertEquals(result.answer.evidence, [libraryEvidence("schoenfeld_2017_weekly_volume")]);
+});
+
+Deno.test("a citation of a source that was not shown is repaired, then answered without it", async () => {
+  const contributions = await withLibrary("How many sets per week?");
+  const invented = answer({
+    answer: "Ten or more weekly sets per muscle is where the research points.",
+    evidence: [libraryEvidence("made_up_2019_claim")],
+  });
+  const repaired = answer({
+    answer: "Ten or more weekly sets per muscle is where the research points.",
+    evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")],
+  });
+  const { result, sent } = await run(
+    (_, index) => claudeAnswer(index === 0 ? invented : repaired),
+    {
+      question: "How many sets per week?",
+      contributions,
+    },
+  );
+  if (result instanceof Error) throw result;
+  assertEquals(sent.length, 2);
+  assertEquals(result.attempts.map((a) => [a.attempt, a.outcome, a.rule]), [
+    ["initial", "invalid", "citation_not_retrieved"],
+    ["repair", "valid", undefined],
+  ]);
+  const repairText = body(sent[1]).messages[0].content.at(-1)!.text;
+  assertStringIncludes(repairText, "rule=citation_not_retrieved");
+  assertStringIncludes(repairText, "was not shown in the library reference data");
+});
+
+Deno.test("two bad citations in a row end in the data summary path", async () => {
+  const contributions = await withLibrary("How many sets per week?");
+  const invented = answer({ evidence: [libraryEvidence("made_up_2019_claim")] });
+  const { result } = await run(() => claudeAnswer(invented), {
+    question: "How many sets per week?",
+    contributions,
+  });
+  assert(result instanceof CoachChatUnavailableError);
+  assertEquals(result.metadata.initialRule, "citation_not_retrieved");
+  assertEquals(result.metadata.repairRule, "citation_not_retrieved");
+});
+
+Deno.test("when retrieval found nothing no library citation is accepted", async () => {
+  const none = await withLibrary("How many sets per week?", []);
+  assertEquals(none.volatile, "");
+  const citing = answer({ evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")] });
+  const { result, sent } = await run((_, index) => claudeAnswer(index === 0 ? citing : answer()), {
+    question: "How many sets per week?",
+    contributions: none,
+  });
+  if (result instanceof Error) throw result;
+  assertEquals(sent.length, 2);
+  assertEquals(result.answer.evidence[0].code, "RECOVERY_BELOW_BASELINE");
+});
+
+Deno.test("a source id printed in the reply text must have been shown", async () => {
+  const contributions = await withLibrary("How many sets per week?");
+  const printed = answer({
+    answer: "Ten or more weekly sets help [made_up_2019_claim].",
+    evidence: [],
+  });
+  const { result, sent } = await run((_, index) => claudeAnswer(index === 0 ? printed : answer()), {
+    question: "How many sets per week?",
+    contributions,
+  });
+  if (result instanceof Error) throw result;
+  assertEquals(sent.length, 2);
+  assertEquals(result.attempts[0].rule, "citation_not_retrieved");
+});
+
+Deno.test("a figure that only an excerpt holds is grounded; without the excerpt it is refused", async () => {
+  const contributions = await withLibrary("How much activity do adults need?");
+  const text = answer({
+    answer: "Guidance for adults is about 150 minutes of moderate activity a week.",
+    evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")],
+  });
+  const withChunk = await run(() => claudeAnswer(text), {
+    question: "How much activity do adults need?",
+    contributions,
+  });
+  if (withChunk.result instanceof Error) throw withChunk.result;
+  assertEquals(withChunk.sent.length, 1);
+  const uncited = answer({
+    answer: "Guidance for adults is about 150 minutes of moderate activity a week.",
+  });
+  const without = await run(() => claudeAnswer(uncited), {
+    question: "How much activity do adults need?",
+  });
+  assert(without.result instanceof CoachChatUnavailableError);
+  assertEquals(without.result.metadata.initialRule, "numbers_not_grounded");
 });

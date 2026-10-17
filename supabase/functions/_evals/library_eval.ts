@@ -1,7 +1,9 @@
 // Retrieval evaluation for the research library: for each question in library_questions.json,
-// embed it with the real gte-small model, run the real hybrid search (search_library_v1, top 8)
-// and score recall of the sources a good answer needs. Also scores full-text-only and
-// vector-only searches, to show what the hybrid adds. Synthetic questions, no athlete data.
+// build the query Coach chat builds (a follow-up borrows the topic of the earlier question), embed
+// it with the real gte-small model, run the real hybrid search (search_library_v2, top 8, with the
+// region of the athlete asking) and score recall of the sources a good answer needs. Also scores
+// full-text-only and vector-only searches, to show what the hybrid adds, and checks that a source
+// for another country never reaches an athlete outside it. Synthetic questions, no athlete data.
 //
 // It needs a database whose chunks are all embedded and an Edge runtime serving library-embed
 // (local stack: `supabase start`, apply migrations, `supabase functions serve --no-verify-jwt`,
@@ -18,12 +20,14 @@
 // prints one table of recall@8 and MRR per search mode and kind. A no_answer question is not
 // scored: the search returns its nearest chunks whatever the question, so the table lists the
 // sources it brought back for review; whether Coach then declines is graded by the answer bank.
-// Exits non-zero when, for the hybrid search, mean recall in the top 8 falls under EVAL_MIN_RECALL
+// This is E3's retrieval gate. Exits non-zero when a regional source reaches an athlete outside its
+// region, or, for the hybrid search, mean recall in the top 8 falls under EVAL_MIN_RECALL
 // (default 0.8), mean recall on the multi-source questions under EVAL_MIN_MULTI_RECALL (default
 // 0.7), or MRR under EVAL_MIN_MRR (default 0.5). The last two are first estimates: the first run
 // that measures them sets the floor to keep.
 
 import { librarySources } from "../../library/index.ts";
+import { libraryRetrievalQuery } from "../_shared/library/query.ts";
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
   type LibraryQuestion,
@@ -47,7 +51,8 @@ if (serviceKey === "" || workerSecret === "") {
 }
 
 const questions = questionFile.questions as LibraryQuestion[];
-const keyByUrl = new Map(librarySources.map((source) => [source.url, source.slug]));
+const regionsOf = new Map(librarySources.map((source) => [source.slug, source.region]));
+const defaultRegion = ["global"];
 
 async function post(path: string, bearer: string, body: unknown): Promise<unknown> {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -74,22 +79,20 @@ async function embed(texts: string[]): Promise<number[][]> {
   return embeddings;
 }
 
-type Hit = Readonly<{ url: string }>;
+type Hit = Readonly<{ source_key: string }>;
 
 async function search(
   text: string | null,
   embedding: number[] | null,
+  region: readonly string[],
 ): Promise<string[]> {
-  const rows = await post("/rest/v1/rpc/search_library_v1", serviceKey, {
+  const rows = await post("/rest/v1/rpc/search_library_v2", serviceKey, {
     query_text: text,
     query_embedding: embedding,
     match_count: 8,
-    filters: null,
+    filters: { region },
   }) as Hit[];
-  return rows.flatMap((row) => {
-    const key = keyByUrl.get(row.url);
-    return key === undefined ? [] : [key];
-  });
+  return rows.map((row) => row.source_key);
 }
 
 const status = await post("/rest/v1/rpc/library_status_v1", serviceKey, {}) as {
@@ -105,16 +108,28 @@ if (status.chunks === 0 || status.embedded_chunks !== status.chunks) {
   Deno.exit(2);
 }
 
-const embeddings = await embed(questions.map((question) => question.text));
+const queries = questions.map((question) =>
+  libraryRetrievalQuery(question.text, question.previous ?? []).text
+);
+const embeddings = await embed(queries);
 const modes = {
   hybrid: [] as QuestionScore[],
   text_only: [] as QuestionScore[],
   vector_only: [] as QuestionScore[],
 };
+const leaks: string[] = [];
 for (const [index, question] of questions.entries()) {
-  modes.hybrid.push(scoreQuestion(question, await search(question.text, embeddings[index])));
-  modes.text_only.push(scoreQuestion(question, await search(question.text, null)));
-  modes.vector_only.push(scoreQuestion(question, await search(null, embeddings[index])));
+  const region = question.region ?? defaultRegion;
+  const hybrid = await search(queries[index], embeddings[index], region);
+  modes.hybrid.push(scoreQuestion(question, hybrid));
+  modes.text_only.push(scoreQuestion(question, await search(queries[index], null, region)));
+  modes.vector_only.push(scoreQuestion(question, await search(null, embeddings[index], region)));
+  // A source for another country must not reach an athlete outside it.
+  for (const key of hybrid) {
+    if (!regionsOf.get(key)?.some((code) => region.includes(code))) {
+      leaks.push(`${question.id}: ${key}`);
+    }
+  }
 }
 
 console.log(`\n${renderTable(modes)}`);
@@ -129,7 +144,14 @@ for (const score of modes.hybrid.filter((entry) => entry.kind === "no_answer")) 
 
 const hybrid = summarise(modes.hybrid);
 const multi = summariseKind(modes.hybrid, "multi_source");
+const followUp = summariseKind(modes.hybrid, "follow_up");
+console.log(
+  `\nFollow-up questions: ${followUp.questions}, mean recall ${followUp.meanRecall.toFixed(3)}`,
+);
+console.log(`Regional sources shown to athletes outside their region: ${leaks.length}`);
+for (const leak of leaks) console.log(`  ${leak}`);
 const failures = [
+  leaks.length > 0 && `${leaks.length} regional sources reached the wrong athletes`,
   hybrid.meanRecall < minRecall &&
   `mean recall ${hybrid.meanRecall.toFixed(3)} is under ${minRecall}`,
   multi.meanRecall < minMultiRecall &&

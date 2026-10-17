@@ -53,11 +53,14 @@ export const coachChatPreferredLengths = Object.freeze({
 });
 
 export const coachChatSafetyStates = ["allowed", "limited", "refused", "unavailable"] as const;
-export const coachChatEvidenceSources = [
+/** Evidence that cites a permitted code for the athlete's data. */
+export const coachChatDataEvidenceSources = [
   "feature_snapshot",
   "policy_evaluation",
   "coach_context",
 ] as const;
+/** Every source a reply's evidence may name; `library` cites a source id shown this turn (E3). */
+export const coachChatEvidenceSources = [...coachChatDataEvidenceSources, "library"] as const;
 
 export const coachChatValidationRules = [
   "json_syntax",
@@ -95,6 +98,7 @@ export const coachChatValidationRules = [
   "weight_below_healthy_floor",
   "projection_without_target",
   "numbers_not_grounded",
+  "citation_not_retrieved",
   "calories_below_floor",
   "loss_rate_above_ceiling",
   "effort_above_screening_cap",
@@ -197,10 +201,16 @@ function visibleText(answer: Record<string, unknown>): string[] {
   return texts;
 }
 
+/**
+ * `shownLibrarySources` are the library source ids Coach was shown this turn. Evidence from the
+ * `library` source cites one of them, and only one of them; every other source cites a permitted
+ * code. With nothing shown, a library citation is always invalid.
+ */
 export function parseCoachChatAnswer(
   value: unknown,
   permittedEvidence: readonly string[],
   answerCheck?: CoachChatAnswerCheck,
+  shownLibrarySources: ReadonlySet<string> = new Set(),
 ): CoachChatAnswerV2 {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     invalid("invalid_root", "$");
@@ -287,7 +297,11 @@ export function parseCoachChatAnswer(
     if (Object.keys(evidence).sort().join(",") !== "code,label,source") {
       invalid("evidence_unexpected_keys", path);
     }
-    if (typeof evidence.code !== "string" || !permittedEvidence.includes(evidence.code)) {
+    if (evidence.source === "library") {
+      if (typeof evidence.code !== "string" || !shownLibrarySources.has(evidence.code)) {
+        invalid("citation_not_retrieved", `${path}.code`);
+      }
+    } else if (typeof evidence.code !== "string" || !permittedEvidence.includes(evidence.code)) {
       invalid("evidence_code_not_permitted", `${path}.code`);
     }
     if (typeof evidence.label !== "string") invalid("evidence_label_invalid", `${path}.label`);

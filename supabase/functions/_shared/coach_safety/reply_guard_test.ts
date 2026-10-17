@@ -15,7 +15,12 @@ const goalPhase = renderGoalPhasePayload(ownerGoalPhasePayload, "2026-10-14")!;
 
 function check(
   answer: string,
-  options: { screening?: ScreeningState; question?: string; painEscalated?: boolean } = {},
+  options: {
+    screening?: ScreeningState;
+    question?: string;
+    painEscalated?: boolean;
+    shownLibrarySources?: ReadonlySet<string>;
+  } = {},
 ) {
   const question = options.question ?? "What should I do?";
   const result = coachReplyCheck({
@@ -23,6 +28,7 @@ function check(
     screening: options.screening ?? "cleared",
     ground: numberGroundOf([file, goalPhase, question]),
     weightClaim: weightClaimCheckFor(context, question),
+    shownLibrarySources: options.shownLibrarySources,
   })(answer);
   return result as CoachChatAnswerBreak | null;
 }
@@ -322,4 +328,25 @@ Deno.test("training_advice_on_pain_day: no training prescription on a day of che
   ) {
     assert(!broken(reply, { painEscalated: true }).includes("training_advice_on_pain_day"), reply);
   }
+});
+
+Deno.test("citation_not_retrieved: a source id in the text that Coach was not shown", () => {
+  const shown = new Set(["schoenfeld_2017_weekly_volume"]);
+  assertEquals(
+    broken("Ten sets a week is a sound target [made_up_2019_claim].", {
+      shownLibrarySources: shown,
+    }),
+    ["citation_not_retrieved"],
+  );
+  // With nothing retrieved, any printed id is a citation of nothing.
+  assertEquals(broken("Ten sets a week is a sound target [schoenfeld_2017_weekly_volume]."), [
+    "citation_not_retrieved",
+  ]);
+  assertEquals(
+    broken("Ten sets a week is a sound target [schoenfeld_2017_weekly_volume].", {
+      shownLibrarySources: shown,
+    }),
+    [],
+  );
+  assertEquals(broken("Ten sets a week is a sound target.", { shownLibrarySources: shown }), []);
 });

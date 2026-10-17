@@ -10,6 +10,9 @@
 //   effort_above_screening_cap  advises vigorous or maximal effort when the health check caps it
 //   claimed_action              says Coach changed, saved, scheduled or will do something
 //   numbers_not_grounded        states a figure that is not in the athlete's data or message
+//   citation_not_retrieved      names a library source that Coach was not shown this turn (here:
+//                               a source id written in the text; an evidence item that cites one is
+//                               refused by parseCoachChatAnswer)
 //
 // The design rule for every exemption (a warning, a decline, a prohibition, a description of the
 // athlete's past): it applies only when it provably governs the matched figure or prescription.
@@ -23,6 +26,7 @@ import type {
   CoachChatValidationRule,
 } from "../contracts/coach_chat_v1.ts";
 import type { ScreeningState } from "../coach_context/contributors/screening.ts";
+import { unshownKeysIn } from "../library/retrieval.ts";
 import { type NumberGround, ungroundedNumbers } from "./numbers_check.ts";
 import type { SafeRanges } from "./safe_ranges.ts";
 
@@ -293,6 +297,8 @@ export type ReplyCheckInputs = Readonly<{
   ground: NumberGround;
   /** The goal phase check (training/goal_phase/guard.ts): runs first and keeps its own rules. */
   weightClaim: (answer: string) => CoachChatValidationRule | null;
+  /** The library source ids Coach was shown this turn; a printed id outside it breaks a rule. */
+  shownLibrarySources?: ReadonlySet<string>;
 }>;
 
 function listIn(figures: readonly string[]): string {
@@ -324,6 +330,8 @@ export function coachReplyCheck(inputs: ReplyCheckInputs): CoachChatAnswerCheck 
     if (has(claimsAnAction)) broken.push("claimed_action");
     const ungrounded = ungroundedNumbers(answer, inputs.ground);
     if (ungrounded.length > 0) broken.push("numbers_not_grounded");
+    const unshown = unshownKeysIn(answer, inputs.shownLibrarySources ?? new Set());
+    if (unshown.length > 0) broken.push("citation_not_retrieved");
     if (broken.length === 0) return null;
     return {
       rule: broken[0],

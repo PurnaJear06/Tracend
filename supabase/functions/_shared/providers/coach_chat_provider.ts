@@ -5,7 +5,7 @@ import {
   type CoachChatAnswerV1,
   type CoachChatAnswerV2,
   CoachChatAnswerValidationError,
-  coachChatEvidenceSources,
+  coachChatDataEvidenceSources,
   coachChatPreferredLengths,
   coachChatSafetyStates,
   type CoachChatValidationRule,
@@ -21,6 +21,7 @@ import { type RedFlagHit, screenTurn } from "../coach_safety/red_flags.ts";
 import { referralFor, safetyReferralModel } from "../coach_safety/referrals.ts";
 import { numberGroundOf } from "../coach_safety/numbers_check.ts";
 import { coachReplyCheck } from "../coach_safety/reply_guard.ts";
+import { shownLibraryKeysIn } from "../library/retrieval.ts";
 import { renderSafeRanges, safeRangesOf } from "../coach_safety/safe_ranges.ts";
 import { screeningStateOf } from "../coach_context/contributors/screening.ts";
 import {
@@ -218,7 +219,7 @@ export function buildCoachChatAnswerSchema(permittedEvidence: readonly string[])
           properties: {
             code: { type: "string", enum: codeEnum },
             label: { type: "string", maxLength: coachChatAnswerLimits.evidenceLabelMaxLength },
-            source: { type: "string", enum: coachChatEvidenceSources },
+            source: { type: "string", enum: coachChatDataEvidenceSources },
           },
           required: ["code", "label", "source"],
         },
@@ -1286,6 +1287,7 @@ export function coachReplyCheckFor(
     screening: screeningStateOf(contributions),
     ground: numberGroundOf([file, contributed, ...lookedUp, question, ...athleteMessages(context)]),
     weightClaim: weightClaimCheckFor(context, question),
+    shownLibrarySources: shownLibraryKeysIn(contributions),
   });
 }
 
@@ -1420,6 +1422,17 @@ const proposalContract = "\n# Proposing a change\n" +
   "- Ask for one change at a time. Leave proposal_intent out when no change is being asked for.\n" +
   "- The proposals section of the context says what is waiting for an answer, what was answered and what has ended. Never propose again what is waiting. After a diet break or a block has ended, suggest the next step.\n";
 
+// The library rules the gateway path adds (E3). Retrieval puts excerpts in the volatile part of the
+// prompt; Coach cites them in evidence with the source id, and the reply guard refuses a citation of
+// an id that was not shown. The library ranks last: Tracend's calculations, the athlete's confirmed
+// facts and the athlete's own words come first. Today's DeepSeek path retrieves nothing, so it never
+// carries this block.
+const libraryContract = "\n# Using the research library\n" +
+  "- The research library reference data holds excerpts of published sources found for this question: general guidance for healthy adults, in our own words. They rank last. Tracend's calculations come first, then the athlete's confirmed facts, then what the athlete told you, then the library. Where an excerpt disagrees with the athlete's plan, targets, the Safe Ranges or the screening rule, those win; say so rather than hiding the difference.\n" +
+  '- Use an excerpt to explain why and to ground advice in words. When you rely on one, add an evidence item with source "library", the source id from its square brackets as the code (exactly as written) and a short label that names the source the way a reader would ("Schoenfeld et al. 2017, weekly volume"). Cite only ids that appear in the library reference data of this request. When there is none, or no excerpt bears on the question, cite nothing and do not say you have a source.\n' +
+  "- Never print source ids in the answer text. Never write that research or a study shows something that no excerpt supports, and never fill a gap in the library from memory: say what the library does not cover.\n" +
+  "- Quote an excerpt's figure only as that source's guidance (for example \"the position stand suggests ...\"), never as the athlete's own number or target. Rules and the athlete's plan decide every number the athlete acts on.\n";
+
 function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string {
   switch (rule) {
     case "weight_below_healthy_floor":
@@ -1442,6 +1455,8 @@ function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string 
       return "No more lookups are available this turn. Return the final answer now, without data_requests, from the context and the looked-up rows you already have. Say plainly what you could not check.\n";
     case "claimed_action":
       return "Remove every claim or promise that you changed, saved, updated, scheduled or will do something: you cannot change anything yourself. Say what the athlete can do in the app instead (for example, set a target on Progress, Set your target), or, when a proposal is going to the athlete, that it is a proposal they can approve. A plan change happens only when the athlete approves it.\n";
+    case "citation_not_retrieved":
+      return 'Remove every citation of a library source that was not shown in the library reference data of this request. Use only the source ids in square brackets there: an evidence item with source "library" and that id as its code. Never write source ids in the answer text. If no excerpt supports a sentence, soften or remove it; do not fill the gap from memory.\n';
     case "numbers_not_grounded":
       return `These figures are not in the athlete file, the calculated sections, the Safe Ranges, the reference data or the athlete's message${
         detail ? `: ${detail}` : ""
@@ -1481,7 +1496,7 @@ export function coachChatInstructions(
   withProposals = false,
 ): string {
   return coachChatPersona + nullContract + answerContractText(permittedEvidence) +
-    goalPhaseContract + (withLookups ? lookupContract : "") +
+    goalPhaseContract + libraryContract + (withLookups ? lookupContract : "") +
     (withProposals ? proposalContract : "");
 }
 

@@ -136,7 +136,7 @@ frameworks, or unrelated SDKs without a current requirement. Prefer Supabase-nat
 API/RPC, Edge Functions, Storage, Queues, Cron.
 
 Research library (decision D3, 2026-10-15): `pgvector` in Postgres is allowed for the research
-library only (`private.library_*`, `search_library_v1`): open papers, guidelines and in-house
+library only (`private.library_*`, `search_library_v2`): open papers, guidelines and in-house
 summaries in our own words, embedded with Supabase's built-in `gte-small` inside Edge Functions.
 Paid course material (K11, NASM, ACE) is never stored. No user data is embedded. Rules still decide
 every number.

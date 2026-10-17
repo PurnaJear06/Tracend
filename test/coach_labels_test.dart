@@ -83,6 +83,7 @@ void main() {
       'Tracend safety rules',
     );
     expect(coachEvidenceSourceLabel('coach_context'), 'Your coaching context');
+    expect(coachEvidenceSourceLabel('library'), 'Research library');
     expect(coachReasoningStepLabel('training_age'), 'Training experience');
     expect(coachReasoningStepLabel('recovery_status'), 'Recovery');
     expect(coachReasoningStepLabel('sleep_debt'), 'Sleep debt');

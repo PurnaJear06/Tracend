@@ -121,3 +121,49 @@ Deno.test("chat answer reports reasoning limits from shared constants", () => {
   assertEquals(error.path, "reasoning_chain[0].value");
   assertEquals(error.limit, coachChatAnswerLimits.reasoningValueMaxLength);
 });
+
+const libraryAnswer = (code: string, source = "library") => ({
+  answer: "Ten or more weekly sets is where the research points.",
+  evidence: [{ code, label: "Schoenfeld et al. 2017, weekly volume", source }],
+  missing_data: [],
+  safety_state: "allowed",
+  suggested_follow_ups: [],
+});
+
+Deno.test("library evidence cites a source id that was shown this turn, and only one", () => {
+  const shown = new Set(["schoenfeld_2017_weekly_volume"]);
+  const parsed = parseCoachChatAnswer(
+    libraryAnswer("schoenfeld_2017_weekly_volume"),
+    ["APPROVED_PLAN_ACTIVE"],
+    undefined,
+    shown,
+  );
+  assertEquals(parsed.evidence[0].source, "library");
+  for (
+    const [code, sources] of [["made_up_2019_claim", shown], ["APPROVED_PLAN_ACTIVE", shown], [
+      "schoenfeld_2017_weekly_volume",
+      new Set<string>(),
+    ]] as const
+  ) {
+    const error = assertThrows(
+      () => parseCoachChatAnswer(libraryAnswer(code), ["APPROVED_PLAN_ACTIVE"], undefined, sources),
+      CoachChatAnswerValidationError,
+    );
+    assertEquals(error.rule, "citation_not_retrieved");
+    assertEquals(error.path, "evidence[0].code");
+  }
+});
+
+Deno.test("a shown library id is not a permitted code for data evidence", () => {
+  const error = assertThrows(
+    () =>
+      parseCoachChatAnswer(
+        libraryAnswer("schoenfeld_2017_weekly_volume", "coach_context"),
+        ["APPROVED_PLAN_ACTIVE"],
+        undefined,
+        new Set(["schoenfeld_2017_weekly_volume"]),
+      ),
+    CoachChatAnswerValidationError,
+  );
+  assertEquals(error.rule, "evidence_code_not_permitted");
+});

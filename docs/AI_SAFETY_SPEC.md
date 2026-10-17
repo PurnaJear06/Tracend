@@ -965,7 +965,8 @@ routes stay available by settings alone for two weeks after the cutover.
   screening cap), `claimed_action` (Coach says it changed, saved, updated, scheduled or will do
   something, or offers to: it has no tools, so the repair says what the athlete can do in the app),
   `training_advice_on_pain_day` (any training prescription on a day of check-in pain of 7 or
-  more) and `numbers_not_grounded`. Every rule reads everything the athlete can see: the answer,
+  more), `numbers_not_grounded` and `citation_not_retrieved` (a library source id the turn did not
+  show; §11.2). Every rule reads everything the athlete can see: the answer,
   the follow-up chips, the missing-data notes, the evidence labels and the reasoning chain, in one
   pass. Sentences that warn against a thing ("never go below ...") or
   describe the athlete's own past ("you lost 0.9 kg a week") are not advice. A reply that breaks
@@ -1058,6 +1059,50 @@ adapter still sends no tools.
   message (`coach_messages.lookups`), with the guard rules each attempt broke and any fallback code
   (`coach_messages.guard_faults`), so the lead can query what Coach looked at and why a turn fell
   back.
+
+### 11.2 The research library in every Coach reply (E3)
+
+Coach chat on the gateway route searches the research library for every turn that reaches a model
+and shows Coach the chunks it found. The library never decides a number; it grounds explanations.
+
+- **Retrieval.** The `library` contributor (`_shared/library/retrieval.ts`, registered last, volatile
+  slot) builds the query from the athlete's question; a follow-up with no topic of its own ("And on
+  rest days?", "Is that enough?") gets the topic of the athlete's last real question added
+  (`_shared/library/query.ts`, deterministic, no model call). It embeds the query with `gte-small`
+  (the same model that embedded the chunks; the Edge runtime provides it) and calls
+  `search_library_v2` with the athlete's id, so the search is limited to global sources and the
+  sources for the athlete's country (an `IN` source reaches only athletes in India; DATA_MODEL.md
+  section 12). The block holds up to 8 chunks, whole chunks only, within 9,000 characters, each
+  starting `[source: <id>]` with the stable manifest key.
+- **When retrieval does not happen or fails.** A red-flag turn (a symptom, or a training question
+  on a pain day) is answered by the fixed referral and retrieves nothing. The contributor runs
+  inside the host's 4-second limit; a search that fails or is slow leaves the library out and Coach
+  answers without it, and a question that cannot be embedded is searched by its words alone. Today's
+  DeepSeek path has neither the evidence field nor the block, so it does not retrieve.
+- **Precedence.** Tracend's calculations, then the athlete's confirmed facts, then what the athlete
+  said, then the library. The rules tell Coach that where an excerpt disagrees with the plan, the
+  targets, the Safe Ranges or the screening rule, those win and it says so. A figure in an excerpt
+  is quoted only as that source's guidance, never as the athlete's own number or target.
+- **Citations.** Coach cites a source it relies on as an evidence item with `source: "library"`,
+  the source id as `code` and a short label (the app shows it in the evidence disclosure with the
+  other evidence). The id must be one the turn showed: `parseCoachChatAnswer` refuses any other with
+  rule `citation_not_retrieved` (the retrieved ids are not in the output schema because they change
+  every turn and the schema is part of the prompt cache key), and the reply guard refuses a source
+  id printed in the text that was not shown (Coach is told not to print ids). A turn with no
+  retrieved chunk accepts no library citation at all. The refusal is repaired once with the rule
+  named; a second failure ends in the labelled data summary, like every other rule.
+- **Numbers.** The retrieved block is a contributor block, so the numbers check treats its figures
+  as given (a guideline figure quoted from a shown excerpt passes); a figure that no excerpt and
+  nothing else holds is still refused.
+- **No memory from the model.** The rules tell Coach not to write that research shows something no
+  excerpt supports and not to fill a gap from memory: it says what the library does not cover.
+- **Observability.** The contributor's outcome (rendered, empty, failed, timeout) is logged with
+  the other contributors (`coach_context_contributors`); a search that ran without its embedding
+  logs `library_retrieval_degraded`. Neither carries the question or any chunk.
+- **Evaluation.** `_evals/library_eval.ts` (recall of the expected sources in the top 8, MRR, follow-ups,
+  and regional isolation) runs the real search on every labelled run of `coach-eval.yml`; the answer
+  bank's `library` category (Claude gateway route only) grades citations and honesty on fixed chunks;
+  `library_head_to_head.ts` compares retrieval with the whole library in the prefix.
 
 ## 12. Validation and Failure Handling
 
@@ -1190,7 +1235,8 @@ without quality gain opens review. Changes remain versioned and tested.
 The MVP uses structured state and bounded summaries. Vector RAG over user data is added only after
 the gates in [ARCHITECTURE.md](./ARCHITECTURE.md) pass. The research library of open sources and
 in-house summaries (decision D3, ARCHITECTURE.md section 11) is the one retrieval source allowed
-now. Retrieval cannot override confirmed facts or policy.
+now; Coach chat retrieves from it on every turn (§11.2). Retrieval cannot override confirmed facts
+or policy.
 
 Bounded lookups of the athlete's own records (§11.1) are not an agent: a closed read-only
 catalogue, a hard cap of two rounds, no writes and no background runs.
