@@ -14,8 +14,8 @@ import {
 const questions = questionFile.questions as LibraryQuestion[];
 const ofKind = (kind: string) => questions.filter((question) => questionKind(question) === kind);
 
-Deno.test("the question set holds the original questions, multi-source questions and no-answer questions", () => {
-  assertEquals(ofKind("single").length, 42);
+Deno.test("the question set holds the single-topic questions, multi-source questions and no-answer questions", () => {
+  assert(ofKind("single").length >= 42, `${ofKind("single").length} single-topic`);
   assert(ofKind("multi_source").length >= 15, `${ofKind("multi_source").length} multi-source`);
   assert(ofKind("no_answer").length >= 10, `${ofKind("no_answer").length} no-answer`);
   assertEquals(new Set(questions.map((question) => question.id)).size, questions.length);

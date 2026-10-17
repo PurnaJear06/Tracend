@@ -808,7 +808,7 @@ in `supabase/functions/_evals/`.
   round itself with rows from the case. The lookup names are in `coach_bank/lookups.ts`; reconcile
   them with A10's field names at merge. Until A10's loop exists the live run fails these cases
   (nothing asks for data), which is the point.
-- **Retrieval** (`library_eval.ts`, `library_eval_metrics.ts`, `library_questions.json`): 42 original,
+- **Retrieval** (`library_eval.ts`, `library_eval_metrics.ts`, `library_questions.json`): 61 single-topic (42 original and the 19 from E2.1),
   15 multi-source and 10 no-answer questions; recall@8 and MRR per search mode and kind, printed as
   a table. It needs the database and the real embeddings, so it runs in the `library-retrieval` job
   of `coach-eval.yml` (local stack, `functions serve`, embed loop), not in the Deno job; the CI

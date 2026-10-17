@@ -13,7 +13,7 @@ name: Coach Eval
 #     dead ends, latency, spend and the prompt cache. Each run makes 17 calls unless `max_calls`
 #     or the `EVAL_MAX_CALLS` variable says otherwise: one prompt from each category, rotating
 #     prompts and athletes; "all" runs every prompt for every athlete.
-#   - Library retrieval (library_eval.ts): the 67 questions through the real hybrid search on a
+#   - Library retrieval (library_eval.ts): the 86 questions through the real hybrid search on a
 #     local Supabase stack with the real gte-small embeddings, scored as recall@8 and MRR. It
 #     needs the database and the embedding model, so it cannot run in the Deno job.
 #

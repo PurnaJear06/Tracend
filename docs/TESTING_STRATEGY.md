@@ -132,7 +132,7 @@ accepted as a permanent retry.
   through an OpenAI-compatible router as a cheap smoke test, which says nothing about production
   latency;
 - the library retrieval bank (`library_eval.ts`, job `library-retrieval` of the same workflow)
-  scores 67 questions (42 single-topic, 15 multi-source, 10 outside the library) through the real
+  scores 86 questions (61 single-topic, 15 multi-source, 10 outside the library) through the real
   hybrid search: recall@8 and MRR per search mode and kind. It needs the database and the real
   embeddings, so only the question set and the metrics are tested in the Deno job;
 - Coach-chat provider tests require `finish_reason=stop`, cover truncation, empty/malformed and
