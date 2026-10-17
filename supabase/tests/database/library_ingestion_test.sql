@@ -1,5 +1,5 @@
 begin;
-select plan(52);
+select plan(76);
 
 -- Start from a library with no embeddings, as production does right after the migration.
 update private.library_chunks set embedding = null, embedding_model = null;
@@ -85,6 +85,65 @@ select ok(public.library_worker_authorized_v1(private.library_worker_secret()),
 select ok(not public.library_worker_authorized_v1('wrong'), 'a wrong secret does not');
 select ok(not public.library_worker_authorized_v1(''), 'an empty secret does not');
 select ok(not public.library_worker_authorized_v1(null), 'a missing secret does not');
+
+-- Embed target ------------------------------------------------------------------------------------
+-- The kick posts only to a URL an operator stored in Vault. net.http_request_queue is pg_net's
+-- queue: a post made inside this transaction is visible here and rolled back with it.
+create temporary table queue_before(n bigint);
+insert into queue_before select count(*) from net.http_request_queue;
+
+select is((select count(*) from vault.secrets where name = 'library_embed_url'), 0::bigint,
+  'a fresh database has no embed URL');
+select lives_ok($$select private.library_embed_kick()$$, 'the kick runs without a URL');
+select is((select count(*) from net.http_request_queue), (select n from queue_before),
+  'and posts nothing while no URL is stored');
+
+select throws_ok($$select private.library_set_embed_url(null)$$, '22023', null, 'a missing URL is refused');
+select throws_ok($$select private.library_set_embed_url('http://abcdefghijklmnopqrst.supabase.co/functions/v1/library-embed')$$,
+  '22023', null, 'a plain http URL is refused');
+select throws_ok($$select private.library_set_embed_url('https://abcdefghijklmnopqrs.supabase.co/functions/v1/library-embed')$$,
+  '22023', null, 'a project reference of 19 letters is refused');
+select throws_ok($$select private.library_set_embed_url('https://ABCDEFGHIJKLMNOPQRST.supabase.co/functions/v1/library-embed')$$,
+  '22023', null, 'and one in capitals');
+select throws_ok($$select private.library_set_embed_url('https://abcdefghijklmnopqrst.supabase.co.example.com/functions/v1/library-embed')$$,
+  '22023', null, 'another host is refused');
+select throws_ok($$select private.library_set_embed_url('https://abcdefghijklmnopqrst.supabase.co/functions/v1/health-check')$$,
+  '22023', null, 'another function is refused');
+select throws_ok($$select private.library_set_embed_url('https://abcdefghijklmnopqrst.supabase.co/functions/v1/library-embed/')$$,
+  '22023', null, 'and a trailing slash');
+select is((select count(*) from vault.secrets where name = 'library_embed_url'), 0::bigint,
+  'a refused URL stores nothing');
+
+select lives_ok($$select private.library_set_embed_url('https://abcdefghijklmnopqrst.supabase.co/functions/v1/library-embed')$$,
+  'a project URL is accepted');
+select is((select decrypted_secret from vault.decrypted_secrets where name = 'library_embed_url'),
+  'https://abcdefghijklmnopqrst.supabase.co/functions/v1/library-embed', 'and stored in Vault');
+update queue_before set n = (select count(*) from net.http_request_queue);
+select lives_ok($$select private.library_embed_kick()$$, 'the kick runs with a URL');
+select is((select count(*) from net.http_request_queue), (select n + 1 from queue_before),
+  'and posts once while chunks wait');
+select is((select url from net.http_request_queue order by id desc limit 1),
+  'https://abcdefghijklmnopqrst.supabase.co/functions/v1/library-embed', 'to the stored URL');
+
+select lives_ok($$select private.library_set_embed_url('https://tsrqponmlkjihgfedcba.supabase.co/functions/v1/library-embed')$$,
+  'setting the URL again is accepted');
+select is((select count(*) from vault.secrets where name = 'library_embed_url'), 1::bigint,
+  'and keeps one secret');
+select is((select decrypted_secret from vault.decrypted_secrets where name = 'library_embed_url'),
+  'https://tsrqponmlkjihgfedcba.supabase.co/functions/v1/library-embed', 'with the new value');
+
+select vault.update_secret((select id from vault.secrets where name = 'library_embed_url'), ' ');
+update queue_before set n = (select count(*) from net.http_request_queue);
+select lives_ok($$select private.library_embed_kick()$$, 'the kick runs with a blank URL');
+select is((select count(*) from net.http_request_queue), (select n from queue_before),
+  'and posts nothing');
+
+select ok(has_function_privilege('service_role', 'private.library_set_embed_url(text)', 'execute'),
+  'the service role can set the embed URL');
+select ok(not has_function_privilege('anon', 'private.library_set_embed_url(text)', 'execute'),
+  'visitors cannot');
+select ok(not has_function_privilege('authenticated', 'private.library_set_embed_url(text)', 'execute'),
+  'and neither can app users');
 
 -- Pending chunks ----------------------------------------------------------------------------------
 select is((select count(*) from public.library_pending_chunks_v1(3)), 3::bigint, 'a batch is as large as asked');

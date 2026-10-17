@@ -258,21 +258,57 @@ grant execute on function public.library_status_v1() to service_role;
 -- embeds only what fits in an Edge Function's CPU limit (about a dozen chunks), so cron calls
 -- it every minute until none are left. pg_net sends the request in the background. If the
 -- function is not deployed yet (migrations run before the function deploy) the call fails and
--- the next run tries again. The project URL is the
--- production project's; a local database sends the same call to it with a secret production
--- does not know, which production refuses.
+-- the next run tries again.
+--
+-- The target URL is not in this file. It lives in the Vault secret library_embed_url, which only
+-- the deploy workflow sets (private.library_set_embed_url). A database without that secret (a
+-- local or CI database, or a restore) sends nothing anywhere.
+
+-- Stores the project's library-embed URL in Vault, creating or updating the secret. Refuses
+-- anything but https://<20 lowercase letters>.supabase.co/functions/v1/library-embed.
+create function private.library_set_embed_url(url text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  secret_id uuid;
+begin
+  if url is null or url !~ '^https://[a-z]{20}\.supabase\.co/functions/v1/library-embed$' then
+    raise exception 'url must be https://<project ref>.supabase.co/functions/v1/library-embed'
+      using errcode = '22023';
+  end if;
+  select s.id into secret_id from vault.secrets s where s.name = 'library_embed_url';
+  if secret_id is null then
+    perform vault.create_secret(url, 'library_embed_url', 'Target URL of the library-embed Edge Function');
+  else
+    perform vault.update_secret(secret_id, url);
+  end if;
+end
+$$;
+revoke all on function private.library_set_embed_url(text) from public, anon, authenticated;
+grant execute on function private.library_set_embed_url(text) to service_role;
+
 create function private.library_embed_kick()
 returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  target_url text;
 begin
+  select s.decrypted_secret into target_url
+  from vault.decrypted_secrets s where s.name = 'library_embed_url';
+  if target_url is null or btrim(target_url) = '' then
+    return;
+  end if;
   if not exists (select 1 from private.library_chunks c where c.embedding is null) then
     return;
   end if;
   perform net.http_post(
-    url := 'https://qsfzzsjenopqqqhvpyaw.supabase.co/functions/v1/library-embed',
+    url := target_url,
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || private.library_worker_secret()
