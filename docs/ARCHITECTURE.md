@@ -113,7 +113,9 @@ brief, with the plan's targets and the check-in state, to `TodayWidgetPublisher`
 `test/contract/fixtures/today_widget_snapshot_v1.json`), skips an unchanged one for five minutes,
 and sends it through `HomeWidgetBridge` (channel `tracend/home_widgets`: `write`, `clear`,
 `takePendingTab`; native `ios/Runner/Native/HomeWidgetBridge.swift`), which validates it, stores it
-and calls `WidgetCenter.reloadAllTimelines()`. The widgets only read the snapshot, decide staleness
+and calls `WidgetCenter.reloadAllTimelines()`. The snapshot is one file in the group's container,
+excluded from backups. Today reloads on resume when its brief is over 30 minutes old or from
+another day. The widgets only read the snapshot, decide staleness
 from it (older than its `stale_after_seconds`, or another local day) and never call the network or
 calculate anything. A tap opens `tracend://today` or `tracend://train`; `SceneDelegate` hands the
 URL to `HomeWidgetBridge.open`, and `AppShell` reads it with `takePendingTab`. The Lock Screen

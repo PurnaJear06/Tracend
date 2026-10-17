@@ -5,9 +5,9 @@ import WidgetKit
 /// The Home Screen and Lock Screen widgets behind the `tracend/home_widgets`
 /// channel (`lib/shared/home_widgets/home_widget_bridge.dart`).
 ///
-/// `write` stores Today's snapshot in the app group
-/// (`ios/Shared/TodayWidgetStore.swift`) and asks iOS to redraw the widgets;
-/// `clear` removes it. The widgets only read it and never call the network.
+/// `write` stores Today's snapshot as a file in the app group's container,
+/// excluded from backups (`ios/Shared/TodayWidgetStore.swift`), and asks iOS
+/// to redraw the widgets; `clear` removes it. The widgets only read it and never call the network.
 /// A tap on a widget arrives as `tracend://today` or `tracend://train`
 /// (`open`); the tab is kept for a minute for `takePendingTab`, and a running
 /// app is told with `tabRequested`.
@@ -27,19 +27,20 @@ enum HomeWidgetBridge {
     channel.setMethodCallHandler { call, result in
       switch call.method {
       case "write":
+        guard TodayWidgetStore.isAvailable else {
+          result(FlutterError(code: "no_app_group", message: nil, details: nil))
+          return
+        }
         guard
           let snapshot = (call.arguments as? [String: Any])?["snapshot"] as? String,
-          let data = snapshot.data(using: .utf8)
+          let data = snapshot.data(using: .utf8),
+          TodayWidgetSnapshot.decode(data) != nil
         else {
           result(FlutterError(code: "invalid_snapshot", message: nil, details: nil))
           return
         }
-        guard TodayWidgetSnapshot.decode(data) != nil else {
-          result(FlutterError(code: "invalid_snapshot", message: nil, details: nil))
-          return
-        }
         guard TodayWidgetStore.write(json: data) else {
-          result(FlutterError(code: "no_app_group", message: nil, details: nil))
+          result(FlutterError(code: "write_failed", message: nil, details: nil))
           return
         }
         WidgetCenter.shared.reloadAllTimelines()

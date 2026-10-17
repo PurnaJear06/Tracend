@@ -23,6 +23,7 @@ import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
 import 'live_activity/fake_workout_activity_bridge.dart';
 
@@ -132,6 +133,7 @@ void main() {
       '2026-10-01T00:00:00Z',
     );
     await preferences.setString('tracend_theme_mode', 'dark');
+    await preferences.setBool(TodayWidgetPublisher.lockScreenNumbersKey, true);
     await preferences.setString(
       '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1',
       '{}',
@@ -168,6 +170,11 @@ void main() {
       isNotNull,
     );
     expect(await preferences.getString('tracend_theme_mode'), 'dark');
+    // The Lock Screen widget choice goes with the account.
+    expect(
+      await preferences.getBool(TodayWidgetPublisher.lockScreenNumbersKey),
+      isNull,
+    );
     expect(
       await preferences.getString(
         '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1',
@@ -199,6 +206,10 @@ void main() {
   /// A refused session may belong to an account that still exists: only the
   /// open Coach thread is forgotten.
   Future<void> expectAthleteDataKept() async {
+    expect(
+      await preferences.getBool(TodayWidgetPublisher.lockScreenNumbersKey),
+      isTrue,
+    );
     expect(
       await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
       isNotNull,

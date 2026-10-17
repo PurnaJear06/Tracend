@@ -4,6 +4,7 @@ import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/today/today_session_progress.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_motion.dart';
 
@@ -65,22 +66,10 @@ class TodaySessionCard extends StatelessWidget {
       );
     }
 
-    final exercises = [
-      for (final item in (workout['exercises'] as List? ?? const []))
-        if (item is Map)
-          (
-            order: (item['order'] as num?)?.toInt() ?? 0,
-            name: item['name'] as String? ?? 'Exercise',
-            sets: ((item['set_count'] as num?)?.toInt() ?? 0).clamp(0, 12),
-          ),
-    ];
+    final progress = TodaySessionProgress.of(brief);
     final session = brief.todaySession;
-    final total = exercises.fold<int>(0, (sum, e) => sum + e.sets);
-    final logged = exercises.fold<int>(
-      0,
-      (sum, e) =>
-          sum + (session?.completedSets[e.order] ?? 0).clamp(0, e.sets).toInt(),
-    );
+    final total = progress.total;
+    final logged = progress.logged;
     final name = workout['name'] as String? ?? 'Workout';
     final status = session == null
         ? workoutSummary(workout)
@@ -107,15 +96,9 @@ class TodaySessionCard extends StatelessWidget {
           const SizedBox(height: TracendSpacing.sm),
           _SetStrip(
             exercises: [
-              for (final e in exercises)
+              for (final e in progress.exercises)
                 if (e.sets > 0)
-                  (
-                    name: e.name,
-                    sets: e.sets,
-                    done: (session?.completedSets[e.order] ?? 0)
-                        .clamp(0, e.sets)
-                        .toInt(),
-                  ),
+                  (name: e.name, sets: e.sets, done: progress.doneFor(e)),
             ],
           ),
         ],

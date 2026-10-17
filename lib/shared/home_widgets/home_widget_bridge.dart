@@ -94,7 +94,7 @@ class MethodChannelHomeWidgetBridge implements HomeWidgetBridge {
 
   /// Calls the native side and leaves a breadcrumb with the method only,
   /// never the snapshot. A native error carries a fixed code only
-  /// (`invalid_snapshot`, `no_app_group`), and only the code is logged.
+  /// (`invalid_snapshot`, `no_app_group`, `write_failed`), and only the code is logged.
   Future<T?> _invoke<T>(String method, Map<String, Object>? arguments) async {
     T? result;
     try {

@@ -6,6 +6,7 @@ import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
 /// Auth's codes for a session that can never be used again: its user was
 /// deleted, it was revoked, or its refresh token is gone.
@@ -56,21 +57,24 @@ class LocalAccountData {
   /// still goes ahead.
   Future<void> clear(String? userId) async {
     try {
+      // The Lock Screen widget choice belongs to the phone, not an athlete,
+      // but a deleted account leaves nothing of its choices behind.
+      final owned = <String>{TodayWidgetPublisher.lockScreenNumbersKey};
       if (userId != null) {
         final healthPrefix = HealthPreferenceKeys.prefix(userId);
         final historyMonth = SupabaseHealthBaselineSource.historyMonthKey(
           userId,
         );
-        final owned = (await _preferences.getKeys())
-            .where(
-              (key) =>
-                  key.startsWith(healthPrefix) ||
-                  key == historyMonth ||
-                  WorkoutLocalKeys.owns(userId, key),
-            )
-            .toSet();
-        if (owned.isNotEmpty) await _preferences.clear(allowList: owned);
+        owned.addAll(
+          (await _preferences.getKeys()).where(
+            (key) =>
+                key.startsWith(healthPrefix) ||
+                key == historyMonth ||
+                WorkoutLocalKeys.owns(userId, key),
+          ),
+        );
       }
+      await _preferences.clear(allowList: owned);
     } catch (e) {
       debugPrint('Non-critical error: athlete preferences not cleared: $e');
     }

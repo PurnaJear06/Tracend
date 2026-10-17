@@ -126,8 +126,13 @@ class _AppShellState extends State<AppShell> {
     bridge: widget.homeWidgets,
   );
 
+  /// Counts the taps on widgets that brought the app forward; Today reloads
+  /// on each if its brief is old.
+  final _widgetTaps = ValueNotifier<int>(0);
+
   @override
   void dispose() {
+    _widgetTaps.dispose();
     widget.homeWidgets.stopListeningForTab(_openRequestedTab);
     unawaited(_widgetPublisher.dispose());
     _checkInGate.dispose();
@@ -140,6 +145,7 @@ class _AppShellState extends State<AppShell> {
   Future<void> _openRequestedTab() async {
     final tab = await widget.homeWidgets.takePendingTab();
     if (tab == null || !mounted) return;
+    _widgetTaps.value++;
     _selectTab(switch (tab) {
       HomeWidgetTab.today => 0,
       HomeWidgetTab.train => 1,
@@ -258,6 +264,7 @@ class _AppShellState extends State<AppShell> {
         checkInGate: _checkInGate,
         planChanges: _planChanges,
         widgetPublisher: _widgetPublisher,
+        widgetTaps: _widgetTaps,
       ),
       () => TrainScreen(
         key: const ValueKey('tab_train'),

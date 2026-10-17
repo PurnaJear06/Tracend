@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/features/today/today_session_progress.dart';
 import 'package:tracend/features/train/workout_draft.dart' show formatKg;
 
 /// What the Today and Lock Screen widgets show, as the compact, versioned
@@ -57,41 +58,22 @@ class TodayWidgetSnapshot {
     required bool lockScreenNumbers,
     required DateTime now,
   }) {
+    final progress = TodaySessionProgress.of(brief);
     final workout = brief.workout;
-    final rows = [
-      for (final item in (workout?['exercises'] as List? ?? const []))
-        if (item is Map) Map<String, dynamic>.from(item),
-    ];
-    final session = brief.todaySession;
-    var total = 0;
-    var logged = 0;
-    for (final row in rows) {
-      final sets = ((row['set_count'] as num?)?.toInt() ?? 0).clamp(0, 12);
-      total += sets;
-      logged += (session?.completedSets[(row['order'] as num?)?.toInt()] ?? 0)
-          .clamp(0, sets);
-    }
-    final state = workout == null
-        ? 'rest'
-        : session == null
-        ? 'planned'
-        : session.completed
-        ? 'completed'
-        : 'in_progress';
     return TodayWidgetSnapshot._(
       generatedAt: now,
       localDate: brief.localDate,
-      sessionState: state,
+      sessionState: progress.state,
       sessionName: workout == null
           ? null
           : _text(workout['name'], fallback: 'Workout'),
-      setsLogged: logged,
-      setsTotal: total,
+      setsLogged: progress.logged,
+      setsTotal: progress.total,
       exercises: [
-        for (final row in rows.take(maxExercises))
+        for (final exercise in progress.exercises.take(maxExercises))
           (
-            name: _text(row['name'], fallback: 'Exercise'),
-            target: _target(row),
+            name: _text(exercise.name, fallback: 'Exercise'),
+            target: _target(exercise.row),
           ),
       ],
       recovery: brief.computed?.scores.recovery,

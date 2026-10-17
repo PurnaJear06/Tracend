@@ -195,10 +195,17 @@ Island check passed on 2026-10-15. What exists:
   (`TodayScreen._loadBrief` hands the brief over; the newest publish wins), skips an unchanged
   snapshot for five minutes, owns the Lock Screen choice (`home_widgets_lock_screen_numbers` in
   `SharedPreferencesAsync`, default off) and clears the snapshot on `dispose` (AppShell going away).
-  `Phase2Gate` also clears it on sign-out, account deletion and a refused session.
+  `Phase2Gate` also clears it on sign-out, account deletion and a refused session; deleting the
+  account also removes the Lock Screen choice (`LocalAccountData.clear`). `TodayScreen` reloads its
+  brief, targets and meals when the app resumes (or a widget tap brings it forward) if the last load
+  is over 30 minutes old or from another local day, and that load is what gets published.
+  `TodaySessionProgress` (`lib/features/today/`) is the one reading of the session's state and sets,
+  shared by the session card and the snapshot.
 - **Bridge** `home_widget_bridge.dart` + `ios/Runner/Native/HomeWidgetBridge.swift`, channel
-  `tracend/home_widgets`: `write` (decodes the JSON, refuses anything but v1 with
-  `invalid_snapshot`, stores it in the group's `UserDefaults`, `WidgetCenter.reloadAllTimelines()`),
+  `tracend/home_widgets`: `write` (answers `no_app_group` when the group's container does not exist, refuses anything but v1
+  with `invalid_snapshot`, stores it as the file `today_widget_snapshot.json` in the container, excluded
+  from backups and protected until first unlock, answers `write_failed` if that fails, then
+  `WidgetCenter.reloadAllTimelines()`),
   `clear`, `takePendingTab`; iOS calls `tabRequested` when a widget is tapped.
 - **Deep links.** None existed. `Info.plist` now registers the `tracend` URL scheme and sets
   `FlutterDeepLinkingEnabled` = NO (Flutter would otherwise try to route the URL as a Navigator route).

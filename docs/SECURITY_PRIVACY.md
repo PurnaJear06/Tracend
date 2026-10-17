@@ -465,9 +465,11 @@ that the Done button sends back. Sign-out, account deletion and a session Auth r
 exception to the rule above, made because the D2 brief asks for Lock Screen widgets, and bounded by an
 off-by-default choice. The
 `TracendWidgets` extension draws Home Screen and Lock Screen widgets from a snapshot the app writes
-to the app group `group.com.tracend.app` (`UserDefaults`, key `today_widget_snapshot`) each time
-Today loads. The app group is how the widget process reads it; the widgets never call the network,
-hold no token, and the snapshot never leaves the phone.
+to the app group `group.com.tracend.app` as one file (`today_widget_snapshot.json` in the group's
+container) each time Today loads. The app group is how the widget process reads it. The file is
+excluded from iCloud and Finder backups (`isExcludedFromBackup`) and protected until first unlock
+(the Lock Screen widgets read it while the phone is locked), so the snapshot never leaves the
+phone; the widgets never call the network and hold no token.
 
 - **What it holds.** The brief's local date; the session's state, plan name and set counts; up to
   three plan exercises with their targets ("4 × 6–8 · 82.5 kg"); the recovery score; calories and
@@ -486,7 +488,10 @@ hold no token, and the snapshot never leaves the phone.
   check-in) once the phone is unlocked, and are marked `privacySensitive` so iOS redacts them where
   it hides sensitive content on a locked phone (StandBy). Removing the widget removes the exposure.
 - **Lifetime.** The snapshot is removed on sign-out, account deletion, a session Auth refused and
-  when the app's screens go away; widgets then read "Open Tracend to refresh". It is also treated as
+  when the app's screens go away; widgets then read "Open Tracend to refresh". Deleting the
+  account also removes the Lock Screen choice from the phone. Coming back to the app after half an
+  hour, or on a new local day, reloads Today and writes a new snapshot; an old one is never
+  written again. It is also treated as
   stale after 12 hours or on another day: no number is drawn from it.
 - **Deep links.** `tracend://today` and `tracend://train` only switch tab; the native side accepts
   nothing else, and Flutter's own deep-link routing is off (`FlutterDeepLinkingEnabled` = NO). A
