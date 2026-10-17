@@ -21,12 +21,15 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   names. Next: the owner's cutover. Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and
-  fractional volume (#127), B6 screening gate (#128, migration 26). Round 2 building (2026-10-17): B3 progression. Handoff: [`training-engine.md`](./handoff/training-engine.md).
+  fractional volume (#127), B6 screening gate (#128, migration 26). Round 2 merged (2026-10-17): B3 progression from logged sets, hub 1.7 (#132); B7 goal phase review,
+  athlete-set targets and no projection as a goal (#136). Next: round 3 (A9, A11, A10, E3, A8, D2). Handoff: [`training-engine.md`](./handoff/training-engine.md).
 - workout-hr: C1 live (#104). C2 merged (#123: per-set Apple Watch heart-rate summaries,
-  migration 32; raw samples stay on the phone); the owner's Watch check is pending. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
+  migration 32; raw samples stay on the phone); the owner's Watch check is pending. C3 merged (#133): heart-rate profile, zones, recovery, sleeping
+  heart rate in shadow. Handoff: [`workout-hr.md`](./handoff/workout-hr.md).
 - ios-widgets: D0 live (#112). D1 merged (#121: Done, Skip and +30s on the Lock Screen and in the
   Dynamic Island); the owner's device check is pending. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
-- research-library: E1 live (#109: pgvector, library tables, `search_library_v1`, D3 doc rule). E2 (knowledge base, first 30 sources, retrieval test set) building (2026-10-17). Handoff: [`research-library.md`](./handoff/research-library.md).
+- research-library: E1 live (#109: pgvector, library tables, `search_library_v1`, D3 doc rule). E2 merged (#135): 35 sources, 122 chunks embedded in production
+  by `library-embed`, retrieval test set (hybrid recall 0.93). Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.
