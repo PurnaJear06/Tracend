@@ -46,33 +46,6 @@ returns integer language sql immutable set search_path = '' as $$
 $$;
 revoke all on function private.screening_rank(text) from public, anon, authenticated;
 
--- The athlete's current outcome: the newest row, or cleared when never screened.
-create function private.current_screening_outcome(target_user_id uuid)
-returns text language sql stable set search_path = '' as $$
-  select coalesce((
-    select s.outcome from public.onboarding_screenings s
-    where s.user_id = target_user_id order by s.screened_at desc, s.id desc limit 1
-  ), 'cleared')
-$$;
-revoke all on function private.current_screening_outcome(uuid) from public, anon, authenticated;
-
--- Refuses (55000) a plan the current outcome does not allow: nothing at all under
--- see_professional, and nothing built as a less strict outcome under moderate_until_cleared.
--- built_under is the outcome recorded in the plan's snapshot; none means cleared.
-create function private.assert_screening_allows(target_user_id uuid, built_under text)
-returns void language plpgsql stable set search_path = '' as $$
-declare
-  current_outcome text := private.current_screening_outcome(target_user_id);
-begin
-  if current_outcome = 'see_professional' then
-    raise exception 'a health professional must clear this athlete first' using errcode = '55000';
-  end if;
-  if private.screening_rank(current_outcome) > private.screening_rank(built_under) then
-    raise exception 'the plan was built before the health check changed' using errcode = '55000';
-  end if;
-end $$;
-revoke all on function private.assert_screening_allows(uuid, text) from public, anon, authenticated;
-
 create table public.onboarding_screenings (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.user_accounts(id) on delete cascade,
@@ -105,6 +78,33 @@ revoke all on public.onboarding_screenings from anon, authenticated;
 grant select on public.onboarding_screenings to authenticated;
 
 -- 2. Record -----------------------------------------------------------------------------------
+
+-- The athlete's current outcome: the newest row, or cleared when never screened.
+create function private.current_screening_outcome(target_user_id uuid)
+returns text language sql stable set search_path = '' as $$
+  select coalesce((
+    select s.outcome from public.onboarding_screenings s
+    where s.user_id = target_user_id order by s.screened_at desc, s.id desc limit 1
+  ), 'cleared')
+$$;
+revoke all on function private.current_screening_outcome(uuid) from public, anon, authenticated;
+
+-- Refuses (55000) a plan the current outcome does not allow: nothing at all under
+-- see_professional, and nothing built as a less strict outcome under moderate_until_cleared.
+-- built_under is the outcome recorded in the plan's snapshot; none means cleared.
+create function private.assert_screening_allows(target_user_id uuid, built_under text)
+returns void language plpgsql stable set search_path = '' as $$
+declare
+  current_outcome text := private.current_screening_outcome(target_user_id);
+begin
+  if current_outcome = 'see_professional' then
+    raise exception 'a health professional must clear this athlete first' using errcode = '55000';
+  end if;
+  if private.screening_rank(current_outcome) > private.screening_rank(built_under) then
+    raise exception 'the plan was built before the health check changed' using errcode = '55000';
+  end if;
+end $$;
+revoke all on function private.assert_screening_allows(uuid, text) from public, anon, authenticated;
 
 create function public.record_screening_v1(
   exercises_regularly boolean,
