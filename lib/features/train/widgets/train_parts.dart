@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/train/widgets/muscle_map.dart';
+import 'package:tracend/features/train/workout_logic.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 
 /// Small pieces the Train screen and its sheets share.
@@ -64,9 +65,88 @@ String repRange(PlannedExercise exercise) => exercise.repMin == exercise.repMax
     ? '${exercise.repMin}'
     : '${exercise.repMin} to ${exercise.repMax}';
 
-/// "3 × 8 to 10 at 72.5 kg", or without a load when the plan sets none.
+/// Whether [exercise]'s load is machine help, by the server's rule.
+bool isAssistedPlanned(PlannedExercise exercise) =>
+    isAssistedExercise(slug: exercise.exerciseSlug, name: exercise.name);
+
+/// "62.5 kg × 5", "11 reps" for an exercise logged without a load, and, for
+/// an [assisted] exercise (the load is machine help), "20 kg help × 8" or
+/// "Unassisted × 8" as the workout screen words it.
+String nextTargetText(NextTarget target, {bool assisted = false}) {
+  final load = target.loadKg;
+  if (load == null) return '${target.reps} reps';
+  if (assisted) {
+    return load == 0
+        ? 'Unassisted × ${target.reps}'
+        : '${formatKg(load)} kg help × ${target.reps}';
+  }
+  return '${formatKg(load)} kg × ${target.reps}';
+}
+
+/// Why the target is what it is, in the athlete's words. Null for a reason
+/// code this build does not know: the target still shows, unexplained.
+String? nextTargetWhy(NextTarget target, {bool assisted = false}) {
+  final lowered = target.action == NextTargetAction.lower;
+  final text = switch (target.reason) {
+    'top_of_range' =>
+      assisted
+          ? 'Every set reached the top of the range last time. Use less help '
+                'and start the reps again.'
+          : 'Every set reached the top of the range last time. Add weight and '
+                'start the reps again.',
+    'within_range' =>
+      assisted
+          ? 'Add one rep to your weakest set before using less help.'
+          : 'Add one rep to your weakest set before adding weight.',
+    'top_no_step' =>
+      'You are at the top of the range. Try a harder variation to keep '
+          'progressing.',
+    'incomplete' =>
+      'You finished fewer sets than planned. Repeat last time first.',
+    'effort' => 'Last time was close to your limit. Repeat the weight.',
+    'below_range' =>
+      lowered
+          ? (assisted
+                ? 'Reps stayed below the range twice, so you get a step more '
+                      'help.'
+                : 'Reps stayed below the range twice, so the weight comes '
+                      'down a step.')
+          : 'Reps dropped below the range. Aim for the bottom of the range '
+                'at this weight.',
+    'stall' =>
+      lowered
+          ? (assisted
+                ? 'Three sessions without progress at this help, so you get a '
+                      'step more help.'
+                : 'Three sessions without progress at this weight, so it '
+                      'comes down a step.')
+          : 'Three sessions without progress at this weight. Repeat it.',
+    'away' =>
+      lowered
+          ? (assisted
+                ? 'You have been away a while, so you get a step more help.'
+                : 'You have been away a while, so the weight comes down a '
+                      'step.')
+          : 'You have been away a while. Repeat your last result.',
+    'skipped' => 'You skipped this last time. Repeat your last result.',
+    'pain' =>
+      'Pain was flagged last time. Repeat your last result and keep it '
+          'comfortable.',
+    _ => null,
+  };
+  if (text == null || !target.lowConfidence) return text;
+  return '$text Reps left were not logged, so check it feels right.';
+}
+
+/// "3 × 8 to 10 at 72.5 kg", or without a load when the plan sets none. With
+/// a next target from the sets logged: "3 × 8 to 10 · next 75 kg × 8".
 String exerciseLine(PlannedExercise exercise) {
   final base = '${exercise.setCount} × ${repRange(exercise)}';
+  final next = exercise.nextTarget;
+  if (next != null) {
+    final assisted = isAssistedPlanned(exercise);
+    return '$base · next ${nextTargetText(next, assisted: assisted)}';
+  }
   final load = exercise.targetLoadKg;
   return load == null ? base : '$base at ${formatKg(load)} kg';
 }

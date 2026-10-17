@@ -881,7 +881,18 @@ Sleep quality:
 
 ### Read-model versions
 
-- `get_my_training_hub` 1.6: plan dates, exercise muscles, completion source and `daily_load`.
+- `get_my_training_hub` 1.7: `next_targets` (below) added to 1.6's plan dates, exercise muscles,
+  completion source and `daily_load`. Every 1.6 key is unchanged.
+  - `next_targets`: one entry per active-plan exercise with logged sets in the last 180 days, in
+    plan order: `planned_exercise_id`, `exercise_key` (catalog slug, else the name key), `name`,
+    `action` (`add_load`, `add_reps`, `hold`, `lower`), `reason` (`top_of_range`, `within_range`,
+    `top_no_step`, `incomplete`, `effort`, `below_range`, `stall`, `away`, `skipped`, `pain`),
+    `load_kg` (null without a load), `reps`, `sets`, `confidence` (`high`, or `low` when reps in
+    reserve were not logged for every working set) and `basis` (`last_date`; `recent`, up to three
+    sessions latest first, each `local_date`, `load_kg`, `sets`, `min_reps`, `total_reps`,
+    `min_rir`, `effort_known`, `pain`). An exercise without logged sets has no entry.
+  - `get_progression_summary_v1(p_user_id)` (service role only) returns `{schema_version: '1.0',
+    targets}` with the same entries, for Coach context.
 - `get_my_daily_brief` 1.8:
   - `recovery_previous` (yesterday's stored `recovery_score`);
   - `plan` (the active plan's `title`, `version_number`, `block_weeks` and `week_number`, weeks

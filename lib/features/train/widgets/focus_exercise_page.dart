@@ -463,6 +463,7 @@ class _FocusExercisePageState extends State<FocusExercisePage>
       final source = switch (suggestion.source) {
         SetSuggestionSource.entered => null,
         SetSuggestionSource.earlierSet => 'From your last set',
+        SetSuggestionSource.nextTarget => 'Your next target',
         SetSuggestionSource.lastTime => 'From last time',
         SetSuggestionSource.plan => 'From your plan',
       };

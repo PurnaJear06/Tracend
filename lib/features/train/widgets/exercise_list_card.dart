@@ -36,6 +36,21 @@ class ExerciseListCard extends StatelessWidget {
 /// The exercise line in words VoiceOver reads naturally.
 String exerciseSpeech(PlannedExercise exercise) {
   final sets = '${exercise.setCount} sets of ${repRange(exercise)} reps';
+  final next = exercise.nextTarget;
+  if (next != null) {
+    final load = next.loadKg;
+    final String target;
+    if (load == null) {
+      target = '${next.reps} reps';
+    } else if (isAssistedPlanned(exercise)) {
+      target = load == 0
+          ? 'unassisted for ${next.reps} reps'
+          : '${formatKg(load)} kilograms of help for ${next.reps} reps';
+    } else {
+      target = '${formatKg(load)} kilograms for ${next.reps} reps';
+    }
+    return '$sets, next target $target';
+  }
   final load = exercise.targetLoadKg;
   return load == null ? sets : '$sets at ${formatKg(load)} kilograms';
 }

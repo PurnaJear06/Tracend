@@ -275,6 +275,9 @@ enum SetSuggestionSource {
   /// The set done before it in this workout.
   earlierSet,
 
+  /// The next-session target worked out from the sets logged last time.
+  nextTarget,
+
   /// The same set in the last session with this exercise.
   lastTime,
 
@@ -307,8 +310,8 @@ HistorySet? lastTimeSet(ExerciseHistory? history, int index) {
 }
 
 /// The starting values for set [index] of [draft]: what the athlete entered,
-/// else the set done before it in this workout, else last time, else the
-/// plan. The athlete confirms them by finishing the set.
+/// else the set done before it in this workout, else the next target worked
+/// out from last time's sets, else last time, else the plan. The athlete confirms them by finishing the set.
 SetSuggestion suggestSet(
   ExerciseDraft draft,
   int index,
@@ -331,6 +334,13 @@ SetSuggestion suggestSet(
       earlier.load,
       earlier.reps,
       SetSuggestionSource.earlierSet,
+    );
+  } else if (draft.exercise.nextTarget != null) {
+    final target = draft.exercise.nextTarget!;
+    (load, reps, source) = (
+      _text(target.loadKg),
+      '${target.reps}',
+      SetSuggestionSource.nextTarget,
     );
   } else if (last != null && last.repetitions != null) {
     (load, reps, source) = (
