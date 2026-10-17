@@ -557,8 +557,12 @@ tables with RLS, pgTAP, privacy export and deletion. A small zones view in the a
 contributor (`heart_rate.ts`, not registered yet).
 
 **Later rounds (recorded now).** E2 builds a retrieval test set with its first 30 sources: about 40
-athlete questions, each with the sources a good answer needs. E3 connects the library to Coach only
-if that set passes: recall of the expected sources in the top 8, every citation pointing at a
+athlete questions, each with the sources a good answer needs. E3 makes the library shape every Coach
+reply (owner, 2026-10-17): the coaching principles digest from E2 sits in the cached stable prefix of
+every Coach chat and daily decision prompt, and every Coach chat turn retrieves from the library
+before answering, not only questions that ask why. E5 does the same for plan explanations and the
+onboarding plan prompt. Rules and validators still bound every number. E3 ships only
+if the retrieval test set passes: recall of the expected sources in the top 8, every citation pointing at a
 retrieved chunk, and no unsupported claim in the eval; when retrieval is slow or fails, Coach
 answers without it (the Contract 7 host's time limit). Before the external beta, the lead repeats
 U3's device measurements against the recorded budgets.
@@ -622,3 +626,7 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
 - 2026-10-17: round 2 = B3, C3, E2. E2 gets migration code 42. Owner direction: the library is a
   knowledge base for how to train, built from the best open evidence; NASM/ACE/NSCA public articles
   may be summarised in our own words, never their textbooks or course material.
+- 2026-10-17 (owner): the knowledge base shapes every Coach response, as a certified coach's training
+  would. E2 adds a coaching principles digest (our own words, about 1,200–1,800 tokens, cited) for
+  the cached prefix of Coach chat and the daily decision; E3 retrieves on every Coach turn; E5
+  covers plan explanations and the onboarding plan prompt. Rules and validators still bound numbers.
