@@ -54,6 +54,9 @@ void main() {
       await tester.pumpAndSettle();
       _expectNoLayoutException(tester, tab);
     }
+    // Coach opens now, not at launch, and its stored-thread read (no plugin
+    // in tests) gives up after one second; let that timer finish.
+    await tester.pump(const Duration(seconds: 2));
   });
 }
 

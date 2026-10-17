@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
+import 'package:tracend/features/progress/widgets/cover_resize_image.dart';
 import 'package:tracend/features/progress/widgets/physique_check_widgets.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/formatting.dart';
@@ -388,30 +389,45 @@ class PhotoSetsSheet extends StatelessWidget {
 
 /// Private viewer with short-lived signed URLs (60-second expiry), shown in
 /// a sheet titled "Private photo set".
+///
+/// Photos are stored up to 1800 px wide but show about 225 points wide, so
+/// each decodes at the size [BoxFit.cover] needs for its box (layout size
+/// times the device pixel ratio) instead of at full size. The decode size
+/// follows the photo's own aspect ratio, so landscape and square photos from
+/// the library stay as sharp as portrait ones.
 class PrivatePhotoViewer extends StatelessWidget {
   const PrivatePhotoViewer({required this.urls, super.key});
 
   final List<String> urls;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 300,
-    child: ListView.separated(
-      scrollDirection: Axis.horizontal,
-      itemCount: urls.length,
-      separatorBuilder: (_, _) => const SizedBox(width: TracendSpacing.sm),
-      itemBuilder: (_, i) => ClipRRect(
-        borderRadius: BorderRadius.circular(TracendRadii.card),
-        child: AspectRatio(
-          aspectRatio: 3 / 4,
-          child: Image.network(
-            urls[i],
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) =>
-                const Center(child: Text('Photo unavailable')),
+  Widget build(BuildContext context) {
+    final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+    return SizedBox(
+      height: 300,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: urls.length,
+        separatorBuilder: (_, _) => const SizedBox(width: TracendSpacing.sm),
+        itemBuilder: (_, i) => ClipRRect(
+          borderRadius: BorderRadius.circular(TracendRadii.card),
+          child: AspectRatio(
+            aspectRatio: 3 / 4,
+            child: LayoutBuilder(
+              builder: (context, constraints) => Image(
+                image: CoverResizeImage(
+                  NetworkImage(urls[i]),
+                  width: (constraints.maxWidth * pixelRatio).round(),
+                  height: (constraints.maxHeight * pixelRatio).round(),
+                ),
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) =>
+                    const Center(child: Text('Photo unavailable')),
+              ),
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }

@@ -234,6 +234,79 @@ home-indicator zone. Owner chose an iOS 26 style floating glass capsule.
   `test/app_shell_test.dart` checks the real shell uses the frame.
 - Device check: Flutter change, so install from the merged `main` commit.
 
+## Launch speed (U3, 2026-10-17)
+
+Cause: `AppShell` built all five tabs in one `IndexedStack`, so every tab started its reads at
+launch (22 repository reads in the fixture shell, behind the one first paint of Today).
+
+- `lib/features/shell/app_shell.dart`: a tab is built the first time it is selected and stays built
+  (state, scroll and keys kept); Today builds at launch. `onOpenNutrition` / `onOpenTrain` go
+  through `_selectTab`, so they mount their tab too. The shell also takes an optional
+  `AppShellRepositories` (marked `@visibleForTesting`) so the test can count reads; the app leaves
+  it null.
+- `lib/shared/shared_reads.dart` (`SharedReads`): a caller that arrives while the same read is
+  running joins it; a finished read is never reused (no cache); a repository's writes run inside
+  `afterWrite`, which forgets running reads when the write ends, so a read begun after a write
+  cannot be served from before it. Used for `SupabaseCoachRepository.loadLatest` (`generate`
+  invalidates) and `SupabaseNutritionRepository.loadTargets` / `loadMeals(date)` /
+  `loadSchedule(date)` (meal photo analysis, manual and scheduled saves, fixture meal, confirm and
+  delete invalidate). Callers are unchanged. The three duplicated reads are Today, Train and
+  Nutrition asking for the latest decision, and Today and Nutrition asking for targets, today's
+  meals and today's schedule. The brief keeps its own `SharedDailyBriefRepository`.
+- `PrivatePhotoViewer` (`photo_widgets.dart`) decodes each photo through `CoverResizeImage`
+  (`cover_resize_image.dart`) instead of up to 1800 px. The box is 225 x 300 pt (675 x 900 px at
+  3x). Once the decoder has read the header, `coverDecodeSize` scales the photo's own size by the
+  larger of box width / photo width and box height / photo height, so `BoxFit.cover` never upscales:
+  a portrait 3:4 photo decodes at 675 x 900, a 1800 x 1200 landscape at 1350 x 900, a square at
+  900 x 900. A photo smaller than the box keeps its own size. Width-only `cacheWidth` was rejected
+  because it left landscape and square library photos upscaled and blurry. No layout or wording
+  change.
+
+Reads, counted by `test/perf/tab_reads_test.dart` (fake repositories, fixture shell, 390x844):
+
+| Moment | Before | After |
+| --- | --- | --- |
+| Launch (Today visible) | 22 | 6 |
+| First open of Train | 0 | 4 (brief, latest decision, training hub 28 days, Health status) |
+| First open of Coach | 0 | 0 (it reads on its own actions) |
+| First open of Nutrition | 0 | 5 (targets, summary, meals, schedule, latest decision) |
+| First open of Progress | 0 | 9 (brief, measurements, summary, photo sets, weekly review and job, training hub 84 days, physique provider and latest check) |
+| Returning to any tab | 0 | 0 |
+
+The work did not vanish: Train, Nutrition and Progress now read when first opened instead of at
+launch, and Today (the launch tab) no longer waits behind them. The sharing matters when two
+screens ask inside one request window (a quick tap right after launch, or a pull to refresh while
+another tab's read is in flight); `test/perf/shared_reads_test.dart` proves it against a held
+HTTP server (one request for three coach reads, one each for targets, meals and schedule, none
+after a finished read, none across a write). The fixture shell cannot show it because fake
+repositories answer at once. The live shell also does more at launch than the fixture one
+(Health auto sync, the check-in replay); those paths are unchanged.
+
+Checked for reliance on a tab being built early:
+
+- Live Activity and Dynamic Island: `WorkoutActivityBridge` is created in `phase_2_gate.dart`,
+  above the shell; the workout events, the rest timer and `SetHeartRateRecorder` start from
+  `ActiveWorkoutScreen`, which is pushed as a route from Train or Today. No tab builds them.
+- HealthKit sync: `TodayScreen` runs the auto sync and the check-in replay, and Today builds at
+  launch. Train only reads the stored Health status.
+- A workout finished from Today (or Train) never refreshed the other tabs before this change.
+  A tab not yet opened now loads fresh when first opened; one already opened behaves as before.
+- Consent listeners: Today and Coach add and remove their own `aiConsent` listener in
+  `initState` / `dispose`; an unbuilt Coach reads the current answer when it builds.
+- The check-in gate (`CheckInGate`) belongs to the shell and is fed by Today, which is built at
+  launch.
+
+Tests: `test/perf/tab_reads_test.dart` (launch reads only Today's; each tab reads on first open and
+never when returned to; a built tab keeps its state), `test/perf/shared_reads_test.dart`,
+`test/perf/photo_decode_test.dart` (the viewer's box size at 2x and 3x, and decoded size for
+landscape, square and portrait photos).
+
+Lead to check on device (profile build; the budgets go into TESTING_STRATEGY §6): cold launch to
+Today, switching to each tab for the first time (a short loading state now shows where the tab
+used to be ready), Progress scroll, the photo viewer (a landscape or square library photo should be as sharp
+as a portrait camera photo), Coach, a full workout.
+Flutter change, so install from the merged `main` commit.
+
 ## Deferred
 
 - Move a workout to another day (schedule-override table, RPC, audit).
