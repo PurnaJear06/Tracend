@@ -39,7 +39,7 @@ comment on table public.sleeping_heart_rate_nights is
 comment on column public.sleeping_heart_rate_nights.local_date is
   'The local date the night ends on, the same day Apple Health sleep is attributed to.';
 comment on column public.sleeping_heart_rate_nights.lowest_bpm is
-  'The lowest mean heart rate of any 10-minute slot of the night, not a single reading.';
+  'The lowest mean heart rate of any 10-minute slot of the night that holds at least 2 readings, never a single reading.';
 comment on column public.sleeping_heart_rate_nights.coverage is
   'Share (0 to 1) of the 10-minute slots of the night that have heart-rate readings.';
 
@@ -105,8 +105,12 @@ grant execute on function public.persist_sleeping_heart_rate_v1(jsonb) to authen
 
 -- What the profile maths needs for one athlete on one date: the birth year, the resting heart
 -- rate of the last 14 days (Apple Health values between 30 and 120), the per-set summaries of the
--- last 60 days for the recovery trend (newest first, at most 400) and the ten highest set peaks
--- of the last 365 days for the observed maximum. Discarded workouts are left out. No sleeping
+-- last 60 days for the recovery trend (newest first, at most 400) and the ten highest trusted set
+-- peaks of the last 365 days for the observed maximum. A peak is trusted (Watch workout, 8+
+-- readings, 60%+ coverage, 120 bpm up to the age ceiling, 210 with no age) BEFORE the limit, so
+-- untrusted higher peaks cannot crowd out a valid lower one. The ceiling here is the Tanaka formula
+-- plus 20 plus 1 (a superset of the exact check, which the profile code applies on the rounded
+-- formula); the code stays the single judge of the exact value. Discarded workouts are left out. No sleeping
 -- heart rate (shadow mode).
 create function private.heart_rate_inputs(target_user uuid, as_of date)
 returns jsonb language sql stable set search_path = '' as $$
@@ -151,6 +155,12 @@ returns jsonb language sql stable set search_path = '' as $$
         join public.workout_sessions w on w.id = p.workout_session_id and w.user_id = p.user_id
         where h.user_id = target_user and w.state <> 'abandoned' and h.peak_bpm is not null
           and w.local_date between as_of - 364 and as_of
+          and h.source = 'watch_workout' and h.sample_count >= 8 and h.coverage >= 0.6
+          and h.peak_bpm between 120 and coalesce((
+            select 229 - 0.7 * (extract(year from as_of) - prof.birth_year)
+            from public.user_profiles prof
+            where prof.user_id = target_user
+              and extract(year from as_of) - prof.birth_year between 16 and 90), 210)
         order by h.peak_bpm desc, w.local_date desc, h.exercise_set_id
         limit 10) r), '[]'::jsonb));
 $$;

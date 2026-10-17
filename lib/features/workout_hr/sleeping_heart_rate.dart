@@ -25,6 +25,11 @@ const sleepCoverageSlot = Duration(minutes: 10);
 const minimumSleepingReadings = 20;
 const minimumSleepingCoverage = 0.5;
 
+/// A 10-minute slot counts towards the night's lowest only with this many
+/// readings, so one low reading never stands for the night. A night with no
+/// such slot has no row.
+const minimumSlotReadings = 2;
+
 /// Readings outside this range are not sleeping heart rates (a sensor fault).
 const _lowestBpm = 30;
 const _highestBpm = 200;
@@ -229,8 +234,10 @@ SleepingHeartRateNight? summariseSleepingHeartRate(
       : (values[middle - 1] + values[middle]) / 2;
   final slotMeans = [
     for (final readings in slots.values)
-      readings.reduce((a, b) => a + b) / readings.length,
+      if (readings.length >= minimumSlotReadings)
+        readings.reduce((a, b) => a + b) / readings.length,
   ]..sort();
+  if (slotMeans.isEmpty) return null;
   final medianBpm = median.round();
   final lowestBpm = slotMeans.first.round();
   return SleepingHeartRateNight(

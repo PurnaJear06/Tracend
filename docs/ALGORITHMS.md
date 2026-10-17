@@ -517,7 +517,7 @@ sets a load or a prescription (D9). Sleeping heart rate is **not** an input (D10
   (Cole et al. 1999, N Engl J Med 341:1351–1357) has no threshold for lifting sets, so none is used.
 - **Sleeping heart rate (shadow):** per night from Apple Health sleep (sessions joined across gaps up
   to 1 hour, dated by the day they end, at least 3 hours asleep, awake time removed): the median of
-  readings asleep, the lowest mean of any 10-minute slot, readings, minutes asleep and coverage of
+  readings asleep, the lowest mean of any 10-minute slot holding at least 2 readings (a night with none has no row), readings, minutes asleep and coverage of
   10-minute slots. A night is stored only with at least 20 readings and 50% coverage. No score uses it.
 
 ### Literature

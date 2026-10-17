@@ -130,7 +130,7 @@ open the summary again.
 
 - Migration `20261017110233_heart_rate_profile.sql` (code 33, re-stamp before handoff): table
   `sleeping_heart_rate_nights` (RLS on and forced, owner select only; one derived row per night:
-  median, lowest 10-minute mean, readings, minutes asleep, coverage), `persist_sleeping_heart_rate_v1`
+  median, lowest 10-minute mean with 2+ readings, readings, minutes asleep, coverage), `persist_sleeping_heart_rate_v1`
   (security definer, authenticated, 1 to 14 nights, 22023 on invalid values, `schema_version` 1.0),
   `get_my_heart_rate_inputs_v1(local_date)` (own data, 1.0) and `get_heart_rate_inputs_v1(user, date)`
   (service role only, the same object). The inputs hold the birth year, 14 days of resting heart rate,
@@ -171,8 +171,16 @@ open the summary again.
   heart_rate_profile_test.dart`, `sleeping_heart_rate_test.dart`, `heart_rate_zones_view_test.dart`,
   `health_card_zones_test.dart`; `test/contract/heart_rate_profile_contract_test.dart` with fixtures
   `heart_rate_inputs_v1_0.json` and `persist_sleeping_heart_rate_v1_0.json`.
-- Not done (owner or lead): `Info.plist` purpose string still reads "selected activity, recovery and
-  workout heart-rate data"; it does not name sleeping heart rate (the file is not C3's).
+- Review fixes (GPT 5.6 Sol review of #133): (1) `SleepingHeartRateRecorder.record` is bound to the
+  athlete signed in when it starts: it checks the signed-in id before the RPC and before marking nights
+  final, and sends nothing if another account signed in during the reads (test: switch account).
+  (2) `private.heart_rate_inputs` applies the peak trust rules before `limit 10` (source, 8+ readings,
+  60%+ coverage, 120 bpm up to the age ceiling + 1, 210 with no age), so ten untrusted higher peaks
+  cannot hide a valid lower one (pgTAP case added; migration 33 is not on main, so it was edited in
+  place). (3) The nightly lowest uses only 10-minute slots with at least 2 readings; a night with no
+  such slot is not sent (`lowest_bpm` is NOT NULL). Sleeping heart rate has no TypeScript copy, so
+  `profile_cases.json` is unaffected. (4) `NSHealthShareUsageDescription` in `Info.plist` now names
+  overnight (sleeping) heart-rate data (granted to C3 for this one change); SECURITY_PRIVACY §4 mirrors it.
 
 Owner device check after install (a build from `main` once the migration is deployed): open Account,
 Apple Health, tap Refresh (allow Heart Rate in the Apple Health sheet if it shows). With 3 or more

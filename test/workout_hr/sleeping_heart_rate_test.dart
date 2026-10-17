@@ -53,6 +53,7 @@ List<HeartRateSample> _readings(
 class _FakeReader implements HeartRateReader {
   List<HeartRateSample> samples = [];
   bool failing = false;
+  void Function()? onRead;
   final reads = <(DateTime, DateTime)>[];
 
   @override
@@ -61,6 +62,7 @@ class _FakeReader implements HeartRateReader {
   @override
   Future<List<HeartRateSample>> readSamples(DateTime from, DateTime to) async {
     reads.add((from, to));
+    onRead?.call();
     if (failing) throw StateError('cannot read');
     return [
       for (final sample in samples)
@@ -193,6 +195,31 @@ void main() {
       expect(summary.sampleCount, 92);
     });
 
+    test('a slot with one reading never sets the lowest', () {
+      // 55 bpm every 5 minutes; the 05:00-05:10 slot keeps only a single
+      // reading of 40, which must not count as the night's lowest.
+      final readings = [
+        for (final r in _readings(_at(15, 23), _at(16, 7), bpm: (_) => 55))
+          if (r.at == _at(16, 5))
+            HeartRateSample(at: r.at, bpm: 40)
+          else if (r.at != _at(16, 5, 5))
+            r,
+      ];
+      final summary = summariseSleepingHeartRate(night, readings)!;
+      expect(summary.lowestBpm, 55);
+      expect(summary.medianBpm, 55);
+    });
+
+    test('a night where no slot has two readings has no row', () {
+      expect(
+        summariseSleepingHeartRate(
+          night,
+          _readings(_at(15, 23), _at(16, 7), everyMinutes: 10),
+        ),
+        isNull,
+      );
+    });
+
     test('too few readings or too little coverage gives no row', () {
       expect(
         summariseSleepingHeartRate(
@@ -288,6 +315,60 @@ void main() {
       await recorder.record(_night());
       expect(repository.saved, hasLength(3));
       expect(reader.reads.length, reads);
+    });
+
+    test('another account signing in during the reads saves nothing', () async {
+      String? current = 'user-1';
+      final switching = SleepingHeartRateRecorder(
+        reader: reader..onRead = () => current = 'user-2',
+        repository: repository,
+        preferences: SharedPreferencesAsync(),
+        userId: () => current,
+        clock: () => now,
+      );
+      await switching.record(_night());
+      expect(reader.reads, isNotEmpty);
+      expect(repository.saved, isEmpty);
+      // Nothing is marked final for either account.
+      final prefs = SharedPreferencesAsync();
+      expect(
+        await prefs.getStringList('tracend.sleeping_heart_rate.final.user-1'),
+        isNull,
+      );
+      expect(
+        await prefs.getStringList('tracend.sleeping_heart_rate.final.user-2'),
+        isNull,
+      );
+    });
+
+    test('signing out during the reads saves nothing', () async {
+      String? current = 'user-1';
+      final signingOut = SleepingHeartRateRecorder(
+        reader: reader..onRead = () => current = null,
+        repository: repository,
+        preferences: SharedPreferencesAsync(),
+        userId: () => current,
+        clock: () => now,
+      );
+      await signingOut.record(_night());
+      expect(repository.saved, isEmpty);
+    });
+
+    test('the same account throughout still saves', () async {
+      var checks = 0;
+      final steady = SleepingHeartRateRecorder(
+        reader: reader,
+        repository: repository,
+        preferences: SharedPreferencesAsync(),
+        userId: () {
+          checks += 1;
+          return 'user-1';
+        },
+        clock: () => now,
+      );
+      await steady.record(_night());
+      expect(repository.saved, hasLength(1));
+      expect(checks, greaterThanOrEqualTo(3));
     });
 
     test('nobody signed in means nothing happens', () async {

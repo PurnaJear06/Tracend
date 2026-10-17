@@ -4,7 +4,7 @@
 -- (validation, upsert, isolation), get_my_heart_rate_inputs_v1 and get_heart_rate_inputs_v1 (complete
 -- key lists, what is included and left out, the service-role-only grant) and account deletion.
 begin;
-select plan(69);
+select plan(72);
 
 insert into auth.users(id, role) values
   ('c3300000-0000-4000-8000-000000000001', 'authenticated'),
@@ -199,6 +199,32 @@ select throws_ok($$select public.get_my_heart_rate_inputs_v1(current_date + 5)$$
 select public.abandon_workout((select id from flow where name = 'a'));
 select is(public.get_my_heart_rate_inputs_v1()->'sets', '[]'::jsonb, 'a discarded workout adds no sets');
 select is(public.get_my_heart_rate_inputs_v1()->'peak_candidates', '[]'::jsonb, 'and no peaks');
+
+-- Trust is applied before the limit on peak candidates --------------------------------------------
+-- A has no trusted peak but ten untrusted higher ones (5 with few readings, 5 poorly covered), one
+-- trusted peak above the age ceiling (born 1990: 183 + 20 = 203) and one valid lower one.
+
+insert into flow select 'b', public.start_workout('c3330000-0000-4000-8000-000000000001',
+  current_date, 'UTC', 'c3350000-0000-4000-8000-000000000002');
+select public.sync_workout_draft((select id from flow where name = 'b'), 1,
+  jsonb_build_object('exercises', jsonb_build_array(jsonb_build_object(
+    'order', 1, 'status', 'performed', 'sets', (
+      select jsonb_agg(jsonb_build_object('number', n, 'repetitions', '8', 'load_kg', '60', 'completed', true)
+        order by n) from generate_series(1, 12) n)))));
+select public.persist_set_heart_rate_v1((select id from flow where name = 'b'), (
+  select jsonb_agg(case
+      when n <= 5 then pg_temp.summary(n, 200 + n, '{"sample_count":5}')
+      when n <= 10 then pg_temp.summary(n, 200 + n, '{"coverage":0.4}')
+      when n = 11 then pg_temp.summary(n, 210)
+      else pg_temp.summary(n, 190) end order by n)
+  from generate_series(1, 12) n));
+
+select is((select jsonb_array_length(public.get_my_heart_rate_inputs_v1()->'peak_candidates')), 1,
+  'only the trusted peak within the age ceiling is a candidate');
+select is((select (public.get_my_heart_rate_inputs_v1()->'peak_candidates'->0->>'peak_bpm')::integer), 190,
+  'a valid lower peak is not crowded out by ten untrusted higher ones');
+select is((select jsonb_array_length(public.get_my_heart_rate_inputs_v1()->'sets')), 12,
+  'while the recovery sets are not filtered by trust');
 
 -- Another athlete --------------------------------------------------------------------------------
 

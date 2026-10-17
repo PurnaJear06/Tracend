@@ -68,7 +68,8 @@ class SleepingHeartRateRecorder {
       'tracend.sleeping_heart_rate.final.$userId';
 
   /// Reads and saves the recent nights found in [samples]. Never throws: the
-  /// sync that called it must not fail because of a shadow measurement.
+  /// sync that called it must not fail because of a shadow measurement. The
+  /// athlete signed in when it starts is the only one it saves for.
   Future<void> record(List<RawHealthSample> samples) async {
     try {
       final userId = _userId();
@@ -93,7 +94,13 @@ class SleepingHeartRateRecorder {
         if (summary != null) summaries.add(summary);
       }
       if (summaries.isEmpty) return;
+      // The reads above take a while and this runs unawaited after a sync, so
+      // another account may have signed in meanwhile. The save uses whoever is
+      // signed in when it runs; these summaries belong to the athlete the
+      // sync was for. Stop if that is no longer the signed-in athlete.
+      if (_userId() != userId) return;
       final saved = await repository.persist(summaries);
+      if (_userId() != userId) return;
       for (final summary in summaries) {
         final night = nights.firstWhere(
           (n) => n.localDate == summary.localDate,

@@ -145,7 +145,7 @@ AI consent is enforced on the server, per purpose:
 
 - **Per-set heart rate (C2, Contract 4).** After the athlete finishes a workout, the app asks Apple
   Health for read access to heart rate (the sheet shows only while the choice is undecided; the
-  purpose string names workout heart-rate data) and reads the Apple Watch's heart-rate samples for
+  purpose string names workout and overnight (sleeping) heart-rate data) and reads the Apple Watch's heart-rate samples for
   the minutes around the sets, through a HealthKit anchored query on the phone. It works out one
   summary per set from the set's stored start and end plus the following 60 seconds (start, peak and
   end beats per minute, the drop 30 and 60 seconds after the end, coverage, sample count, and
@@ -167,8 +167,9 @@ AI consent is enforced on the server, per purpose:
   new: after an Apple Health sync the phone reads the heart-rate samples taken asleep for the last
   7 nights (the sleep samples the sync already read give the nights; the same heart-rate read access
   is used and the Health sheet asks for it only when the athlete taps Connect or Refresh) and sends
-  one summary per night with `persist_sleeping_heart_rate_v1`: the median, the lowest 10-minute mean,
-  the number of readings, the minutes asleep and the share of the night covered. Raw samples and
+  one summary per night with `persist_sleeping_heart_rate_v1`: the median, the lowest 10-minute mean (slots with at least 2 readings),
+  the number of readings, the minutes asleep and the share of the night covered. The save is bound to the athlete signed in when the sync
+  began: if another account signs in during the reads, nothing is sent. Raw samples and
   their times never leave the phone and are never logged; the Sentry breadcrumb carries only the
   number of nights saved. The rows live in `sleeping_heart_rate_nights` (owner-read RLS, writes only
   through the RPC, exported by `privacy-export`, deleted with the account). **They are in shadow
