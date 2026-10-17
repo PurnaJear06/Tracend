@@ -22,6 +22,7 @@ import 'package:tracend/features/train/widgets/week_summary_card.dart';
 import 'package:tracend/features/train/widgets/workout_hero.dart';
 import 'package:tracend/features/train/workout_detail_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
 import 'package:tracend/shared/widgets/tracend_confirm.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
@@ -42,8 +43,12 @@ class TrainScreen extends StatefulWidget {
     this.health,
     this.onOpenAccount,
     this.now,
+    this.planChanges,
     super.key,
   });
+
+  /// Reloads the hub when a Coach proposal changed the plan.
+  final PlanChanges? planChanges;
   final WorkoutRepository? repository;
   final DailyBriefRepository? brief;
   final CoachRepository coach;
@@ -115,6 +120,17 @@ class _TrainScreenState extends State<TrainScreen> {
     _readiness = _loadReadiness()..ignore();
     _loadHub();
     _fetchCandidate();
+    widget.planChanges?.addListener(_planChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.planChanges?.removeListener(_planChanged);
+    super.dispose();
+  }
+
+  void _planChanged() {
+    if (mounted) unawaited(_refresh());
   }
 
   // ---------------------------------------------------------------------------

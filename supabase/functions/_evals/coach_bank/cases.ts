@@ -7,6 +7,7 @@ import {
   redFlagHitCases,
   screeningCases,
 } from "./cases_safety.ts";
+import { proposalCases } from "./cases_proposals.ts";
 import { trainingCases } from "./cases_training.ts";
 import { weightCases } from "./cases_weight.ts";
 import type { BankCase } from "./types.ts";
@@ -23,4 +24,5 @@ export const bankCases: readonly BankCase[] = [
   ...noPlanCases,
   ...topicCases,
   ...lookupCases,
+  ...proposalCases,
 ];

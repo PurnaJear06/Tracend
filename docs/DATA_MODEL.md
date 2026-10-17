@@ -189,6 +189,14 @@ returns the target and `min_target_weight_kg`; both return `schema_version "1.0"
 `get_goal_phase_inputs_v1(uuid)` is service role only and feeds the Coach goal phase review. Only
 the athlete sets a target; the model has no path to these functions.
 
+**Phase (A8).** An approved Coach proposal that changes the phase (`cut`, `maintenance`,
+`diet_break`, `gain`) supersedes the active goal and inserts a new active goal row with
+`details.phase`, `phase_started_on` and (for a diet break) `phase_ends_on`, and a new
+`user_goals.source_proposal_id` naming the proposal. `activated_at` is carried over unless the goal
+type changed, so "weeks into the goal" keeps counting through a diet break. A target in the
+proposal replaces the old target keys; without one the old target stays. Undo inserts the earlier
+goal again as a new row.
+
 ### `user_constraints` (Not built)
 
 The logical design holds equipment, schedule constraints, exercise limitations, dietary pattern,
@@ -401,7 +409,14 @@ generic seed.
 
 Immutable versions: plan, version number, status, block weeks (1–24), sessions per week,
 prescription object, rationale, source proposal, approval time, and effective date. A partial
-unique index allows one active version per user. When an active version is inserted for a plan
+unique index allows one active version per user. A temporary block (A8) is an ordinary active
+version with `ends_on` (its last day), `block_kind` (`temporary_block`, `intensity`, `focus` or
+`next_session`) and `restores_version_id` (the version it replaced); the three are set together
+or not at all. After `ends_on` the replaced version returns as a **new** version
+(`private.end_plan_block`), by an hourly job (`tracend-end-plan-blocks`) and by every Coach
+proposal read and answer, which end a due block for the caller first. Versions only grow: approval,
+undo and the end of a block all insert a version and supersede the old one, and nothing is edited
+in place. When an active version is inserted for a plan
 whose source is not `ai`, `rules` or `imported`, a trigger seeds the generic planned workouts
 deterministically; seeding does not modify the approved version.
 
@@ -756,6 +771,15 @@ records such as plan versions and goals are the athlete's local days, `private.l
 - `private.nutrition_day_totals` and `private.nutrition_complete_day_rules` define a complete
   logging day (ALGORITHMS.md section 6); `evaluate_change_eligibility` averages complete days only.
 
+`coach_messages.proposal_id` (nullable, A8) points at the Coach proposal an assistant reply
+introduced (`on delete set null`). `link_coach_proposal_v1` (service role) sets it once the reply is
+stored and sets `change_proposals.source_message_id` the other way; the thread load returns it, so
+the card shows live and on reload. `get_coach_proposals_context_v1(user, local_date)` (service role)
+feeds the Coach context: the running block and its last day, the goal phase and its end date (a
+phase or block that has ended is reported as ended), proposals waiting and how recent ones were
+answered.
+
+
 ### `coach_context_snapshots`
 
 The prepared Coach context for one question or decision: thread, schema version, trigger kind
@@ -857,6 +881,50 @@ proposal is stored and again when it is approved. v1 approval refuses 2.0 propos
 > **Planned (Phase 4 / B4, Contract 5):** same-day readiness adjustments
 > (`get_my_day_adjustment_v1`, `respond_to_day_adjustment_v1`), answered by the athlete with an
 > audit event (migration code 24).
+
+**Coach proposals (3.0, chunk A8).** Coach asks for a change in chat; rules compute it and the
+athlete approves it with one tap. A 3.0 row has no feature snapshot (`feature_snapshot_id` is now
+nullable; 1.0 and 2.0 rows still require one) and adds `proposal_kind` (`temporary_block`,
+`training_schedule`, `exercise_swap`, `intensity_or_phase`, `goal_or_phase`, `nutrition_targets`,
+`next_session_adjustment`), `proposal_payload` (`{training?, nutrition?, goal?}`: what approval
+writes), `before_snapshot` and `after_snapshot` (the card's rows and sessions), `basis` (the active
+training, nutrition and goal version ids and the screening outcome it was computed from),
+`source_message_id` (the chat message, set null if the message is deleted), `ends_on`,
+`applied_at`, `undo_until` (seven days after approval), `undone_at` and `applied_changes` (the ids
+approval created and replaced, and the profile values it changed, for undo). `proposed_training` and
+`proposed_nutrition` hold a short summary, so the frozen Coach context still lists the proposal and
+how the athlete answered. The payload's structure and bounds are checked by
+`private.is_valid_coach_proposal_row` (training, nutrition, goal), and `persist_coach_proposal_v1`
+also refuses calories under the sex minimum, a target weight below BMI 18.5 and a basis that is no
+longer current. A newer pending proposal replaces an open one that would change the same thing.
+
+| RPC | Caller | Purpose |
+| --- | --- | --- |
+| `get_coach_proposal_inputs_v1(uuid)` | service role | profile, screening outcome, active plan with sessions, nutrition, goal, change-eligibility gates, whether today's session is done |
+| `persist_coach_proposal_v1(...)` | service role | stores one pending proposal, expires the ones it replaces, writes `coach_proposal_created` |
+| `get_my_coach_proposals_v1(p_proposal_id, p_limit)` | athlete | the card: status, rationale, before and after, `can_undo`; ends a due block first |
+| `respond_to_coach_proposal_v1(proposal_id, action, note)` | athlete | `approve`, `decline` or `change`; approve re-checks pending, expiry, basis and screening and writes the new version(s) |
+| `undo_coach_proposal_v1(proposal_id)` | athlete | restores what approval replaced, as new versions, within seven days |
+
+All return `schema_version "1.0"`. Approval records a proposal as `expired` (and reports the
+reason) when it is past `expires_at`, when the active plan, nutrition or goal is no longer the one
+in `basis`, when a temporary block's last day has passed, or when a block is already running; it
+also runs again what the build checked. `basis.gates` names the change-eligibility gates the build
+required (`nutrition_change`, `training_change`), and both persist and approval run them; persist
+stores `weight_check_kg` (the newest weight reading) and `profile_check` (the profile fields the
+rules read), and approval expires the proposal when the weight has moved by more than 1% or any
+profile field differs. Approval also re-checks the calorie minimum and that every catalog slug is
+still active. Reasons: `expired`, `plan_changed`, `nutrition_changed`, `goal_changed`,
+`not_eligible`, `below_minimum`, `catalog_changed`, `profile_changed`, `weight_changed`,
+`block_over`, `block_running`. It raises 55000 when the health check became stricter since the
+proposal was built. Undo restores the profile only for values still as the proposal set them
+(`applied_changes.profile_after`), holds the returning plan to the current health check (effort 7 or
+lower under `moderate_until_cleared`, as when a block ends) and raises 55000 under
+`see_professional`. `get_coach_proposal_inputs_v1` ends a due block first, so an ended block is never
+read as running. Undo reports
+`superseded` when a later change replaced the versions the proposal created, and
+`undo_window_ended` after seven days, instead of raising. Audit events: `coach_proposal_created`,
+`_accepted`, `_declined`, `_changed`, `_expired`, `_undone` and `coach_proposal_block_ended`.
 
 ### `change_responses`
 

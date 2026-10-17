@@ -66,6 +66,7 @@ import {
 } from "../_shared/coach_context/registry.ts";
 import { coachServiceRpc } from "../_shared/coach_context/service_source.ts";
 import { createLookupRunner } from "../_shared/coach_lookups/runner.ts";
+import { proposeFromChat } from "../_shared/coach_proposals/chat.ts";
 import { guardFaultsOf, lookupTrace, recordTurnTrace } from "./turn_trace.ts";
 
 export const coachChatResponseSchemaVersion = "1.1";
@@ -268,6 +269,8 @@ export function coachChatReplayResponse(
           missing_data: message.missing_data ?? [],
           safety_state: message.safety_state,
           suggested_follow_ups: [],
+          // The proposal the first attempt introduced, when the turn row carries it.
+          ...(typeof message.proposal_id === "string" ? { proposal_id: message.proposal_id } : {}),
         },
         replayed: true,
       },
@@ -634,6 +637,13 @@ export async function handleCoachChat(
         input.thread_id,
       ).order("created_at");
       replay.body.messages = data ?? [];
+      // The stored reply knows its proposal even when the turn row does not: the replayed answer
+      // shows its card.
+      const replayed = replay.body.message as Record<string, unknown> | undefined;
+      const stored = (data ?? []).find((row: Record<string, unknown>) => row.id === replayed?.id);
+      if (replayed && typeof stored?.proposal_id === "string") {
+        replayed.proposal_id = stored.proposal_id;
+      }
     }
     log.info("coach_chat_replayed", { status: replay.status });
     return reply(replay.status, replay.body);
@@ -817,6 +827,7 @@ export async function handleCoachChat(
         contributions,
         budget: budget.attemptBudget,
         lookups: createLookupRunner((name, params) => coachServiceRpc(name, params), auth.userId),
+        proposals: true,
       })
       : await generateCoachChat(
         input.question,
@@ -834,6 +845,21 @@ export async function handleCoachChat(
         source: generation.safety.source,
       });
     }
+    // A proposal the model asked for (A8): only after every reply guard has passed, never from a
+    // referral, and the engine decides. A refusal is appended to the reply in plain words.
+    const proposed = await proposeFromChat(
+      (name, params) => auth.serviceClient.rpc(name, params),
+      auth.userId,
+      input.question,
+      generation,
+    );
+    const finalAnswer = proposed.answer;
+    if (proposed.kind !== "none") {
+      log.info("coach_chat_proposal", {
+        outcome: proposed.kind,
+        code: proposed.kind === "refused" ? proposed.code : "none",
+      });
+    }
     log.info("persist_coach_chat_result", {
       snapshot_id: (prepared.feature_snapshot_id as string) ?? "null",
       policy_id: (prepared.policy_evaluation_id as string) ?? "null",
@@ -848,7 +874,7 @@ export async function handleCoachChat(
       request_idempotency_key: input.idempotency_key,
       snapshot_id: prepared.feature_snapshot_id,
       policy_id: prepared.policy_evaluation_id,
-      answer_payload: generation.answer,
+      answer_payload: finalAnswer,
       run_latency_ms: Math.round(performance.now() - chatStart),
       run_provider: generation.provider,
       run_model: generation.model,
@@ -900,7 +926,7 @@ export async function handleCoachChat(
       context,
       coachingDate,
       input.question,
-      generation.answer?.answer as string | undefined,
+      finalAnswer.answer,
     );
     const sessionSnapshotIds: string[] = [];
     if (prepared.coach_context_snapshot_id) {
@@ -913,6 +939,19 @@ export async function handleCoachChat(
       thread_id_param: input.thread_id,
       key_snapshot_ids: sessionSnapshotIds,
     });
+
+    if (proposed.kind === "proposed") {
+      // The reply is stored; point it at its proposal so the thread shows the card, live and on
+      // reload. A failure leaves a stored proposal with no card; it expires unanswered.
+      const { error: linkError } = await auth.serviceClient.rpc("link_coach_proposal_v1", {
+        p_user_id: auth.userId,
+        p_message_id: persisted.assistant_message_id,
+        p_proposal_id: proposed.proposalId,
+      });
+      if (linkError) {
+        log.warn("coach_chat_proposal_link_failed", { code: linkError.code ?? "none" });
+      }
+    }
 
     const traced = await recordTurnTrace(
       auth.serviceClient,
@@ -936,7 +975,8 @@ export async function handleCoachChat(
         model_provider: generation.provider,
         model: generation.model,
         ...(supportsDataSummary(input) ? { answer_source: "model" } : {}),
-        ...generation.answer,
+        ...finalAnswer,
+        ...(proposed.kind === "proposed" ? { proposal_id: proposed.proposalId } : {}),
       },
       budget_warning: prepared.budget_warning,
       replayed: false,

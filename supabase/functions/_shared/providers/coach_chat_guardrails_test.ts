@@ -127,7 +127,7 @@ Deno.test("a claimed action is repaired to what the athlete can do in the app", 
   ]);
   if (result instanceof Error) throw result;
   assertStringIncludes(repairText(sent[1]), "rule=claimed_action");
-  assertStringIncludes(repairText(sent[1]), "you have no tools");
+  assertStringIncludes(repairText(sent[1]), "you cannot change anything yourself");
   assertStringIncludes(repairText(sent[1]), "Set your target");
 });
 
@@ -261,7 +261,7 @@ Deno.test("every prompt states the safe-range, screening, red-flag and number ru
   assertStringIncludes(rules, "screening reference data");
   assertStringIncludes(rules, "answered before they reach you");
   assertStringIncludes(rules, "A check rejects any reply that states a number");
-  assertStringIncludes(rules, "You have no tools");
+  assertStringIncludes(rules, "You cannot change anything yourself");
 });
 
 const noPlan = (extra: Record<string, unknown> = {}) => ({

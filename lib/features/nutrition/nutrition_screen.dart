@@ -15,6 +15,7 @@ import 'package:tracend/features/nutrition/widgets/nutrition_insight_card.dart';
 import 'package:tracend/features/nutrition/widgets/nutrition_sheets.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/formatting.dart';
+import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/date_pill_strip.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/premium_gradient_card.dart';
@@ -79,9 +80,12 @@ class NutritionScreen extends StatefulWidget {
     this.repository = const FixtureNutritionRepository(),
     this.coach = const FixtureCoachRepository(),
     this.pickPhoto = _pickWithImagePicker,
+    this.planChanges,
     super.key,
   });
 
+  /// Reloads the targets when a Coach proposal changed them.
+  final PlanChanges? planChanges;
   final NutritionRepository repository;
   final CoachRepository coach;
   final MealPhotoPicker pickPhoto;
@@ -121,6 +125,17 @@ class _NutritionScreenState extends State<NutritionScreen> {
     _decision = widget.coach.loadLatest();
     _refresh();
     _loadMealPhotoNotice();
+    widget.planChanges?.addListener(_planChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.planChanges?.removeListener(_planChanged);
+    super.dispose();
+  }
+
+  void _planChanged() {
+    if (mounted) unawaited(_refresh());
   }
 
   Future<void> _loadMealPhotoNotice() async {

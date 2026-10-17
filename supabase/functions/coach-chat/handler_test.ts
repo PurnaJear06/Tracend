@@ -23,6 +23,7 @@ type Body = {
     model: string;
     model_provider: string;
     safety_state: string;
+    proposal_id?: string;
   };
 };
 
@@ -56,6 +57,7 @@ type StoredRow = {
   content: string;
   safety_state: string | null;
   created_at: string;
+  proposal_id?: string | null;
 };
 
 async function run(question: string, setup: Setup) {
@@ -550,4 +552,26 @@ Deno.test("a referral without context keeps its own safety state", async () => {
     assertEquals(result.status, 200, question);
     assertEquals(result.body.message!.safety_state, state, question);
   }
+});
+
+Deno.test("a replayed answer shows its card: the stored reply's proposal id rides on the message", async () => {
+  const result = await run("How did my week go?", {
+    prepared: { replayed: false, context: { coaching_date: "2026-10-17" } },
+    savedQuestionAt: new Date().toISOString(),
+    turns: { [key]: answeredTurn },
+    stored: [{
+      id: "44444444-4444-4444-8444-444444444444",
+      user_id: "user-1",
+      thread_id: threadId,
+      role: "assistant",
+      idempotency_key: key,
+      content: "Keep today's session as planned.",
+      safety_state: "allowed",
+      created_at: "2026-10-17T09:00:00Z",
+      proposal_id: "55555555-5555-4555-8555-555555555555",
+    }],
+  });
+  assertEquals(result.status, 200);
+  assertEquals(result.body.replayed, true);
+  assertEquals(result.body.message!.proposal_id, "55555555-5555-4555-8555-555555555555");
 });

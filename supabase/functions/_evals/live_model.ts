@@ -95,6 +95,8 @@ export function gatewayGenerate(
       consentVendor: coachRoute.vendor,
       ...(contributions ? { contributions } : {}),
       ...(lookups ? { lookups } : {}),
+      // Production offers proposals on the gateway route, so the bank measures with them.
+      proposals: true,
     }, deps);
 }
 

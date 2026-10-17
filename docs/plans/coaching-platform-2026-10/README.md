@@ -72,7 +72,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 3 | D2 | ios-widgets | Today and Lock Screen widgets | — | D1 | todo | |
 | 3 | E2 | research-library | Ingestion, the first 30 sources and the retrieval test set | 42 | E1 | merged | #135 |
 | 3 | E3 | research-library | Library inside Coach chat | 43 | A6, E2 | todo | |
-| 3 | A8 | ai-gateway | Coach proposals: Coach proposes a change in chat, rules compute it, the athlete approves with one tap | 18 | A6, B7 | todo | |
+| 3 | A8 | ai-gateway | Coach proposals: Coach proposes a change in chat (`proposal_intent`), rules compute every number, the athlete approves with one tap, a new version and an audit event are written, undo for 7 days; temporary blocks end by themselves | 18 | A6, B7 | todo | |
 | 3 | A9 | ai-gateway | Coach safety and honesty: pre-model red-flag screen, numbers grounding, safety floors, plain error messages, local date, no-plan chat | 19 | B7 | merged | #143, #142 |
 | 3 | A10 | ai-gateway | Coach memory: confirmed facts, athlete state, coach notes, a new context assembler (v9) | 20 | B7, A9 | todo | |
 | 3 | A11 | ai-gateway | Coach eval bank: synthetic athletes that gate every Coach change | — | B7 | todo | |
@@ -677,7 +677,13 @@ notice when new data goes to the AI provider, AI_SAFETY_SPEC), and non-judgement
 
 ## Contract requests
 
-None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
+(A2's consent-granularity request was resolved by Contract 1 v2.)
+
+None open. A8's request (wire Coach chat to the proposal engine after A10) was resolved in the same
+pull request as part 1 (#148): coach-chat calls `proposeCoachChange` after every reply guard has
+passed, stores `proposalId` on the assistant message (`coach_messages.proposal_id`, set by
+`link_coach_proposal_v1`), and the thread renders `CoachProposalLoader` under the reply. Details:
+`docs/handoff/ai-gateway.md` ("A8: Coach proposals") and AI_SAFETY_SPEC §6.
 
 ## Decisions log
 

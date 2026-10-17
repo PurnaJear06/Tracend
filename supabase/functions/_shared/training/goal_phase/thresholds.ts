@@ -61,6 +61,15 @@ export const goalPhaseThresholds = Object.freeze({
     sources: ["byrne_2018", "trexler_2014"],
     inHouse: true,
   }),
+  dietBreakWeeks: threshold({
+    value: 2,
+    unit: "weeks",
+    basis: "The intermittent arm of the main trial alternated two weeks of energy restriction " +
+      "with two weeks at energy balance. A diet break proposed in Coach chat lasts the same two " +
+      "weeks at maintenance calories.",
+    sources: ["byrne_2018"],
+    inHouse: true,
+  }),
   longDeficitMinimumLossPct: threshold({
     value: 5,
     unit: "% of start weight",

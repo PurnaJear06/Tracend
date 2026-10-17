@@ -483,3 +483,25 @@ Deno.test("a saved question's age is read from its timestamp, and unknown when i
     assertEquals(questionAgeMs(bad, now), null);
   }
 });
+
+Deno.test("a retried request returns the proposal its first attempt introduced", () => {
+  const turn = {
+    state: "answered",
+    model_provider: "anthropic",
+    model: "claude-haiku-5-5",
+    message: {
+      id: "44444444-4444-4444-8444-444444444444",
+      content: "Here's a proposal you can approve below.",
+      safety_state: "allowed",
+      created_at: "2026-10-18T08:00:00Z",
+      proposal_id: "55555555-5555-4555-8555-555555555555",
+    },
+  };
+  const message = coachChatReplayResponse(turn, true).body.message as Record<string, unknown>;
+  assertEquals(message.proposal_id, "55555555-5555-4555-8555-555555555555");
+  const plain = coachChatReplayResponse(
+    { ...turn, message: { ...turn.message, proposal_id: undefined } },
+    true,
+  ).body.message as Record<string, unknown>;
+  assertEquals("proposal_id" in plain, false);
+});

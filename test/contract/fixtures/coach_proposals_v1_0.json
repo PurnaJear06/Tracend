@@ -1,0 +1,230 @@
+{
+  "proposals": [
+    {
+      "after": {
+        "rows": [
+          {
+            "label": "Phase",
+            "value": "Diet break until 31 Oct"
+          },
+          {
+            "label": "Calories",
+            "value": "2,240 kcal"
+          },
+          {
+            "label": "Protein",
+            "value": "165 g"
+          },
+          {
+            "label": "Carbs",
+            "value": "250 g"
+          },
+          {
+            "label": "Fat",
+            "value": "70 g"
+          }
+        ]
+      },
+      "applied_at": null,
+      "before": {
+        "rows": [
+          {
+            "label": "Phase",
+            "value": "Fat loss"
+          },
+          {
+            "label": "Calories",
+            "value": "2,300 kcal"
+          },
+          {
+            "label": "Protein",
+            "value": "170 g"
+          },
+          {
+            "label": "Carbs",
+            "value": "240 g"
+          },
+          {
+            "label": "Fat",
+            "value": "75 g"
+          }
+        ]
+      },
+      "benefit": "Time at maintenance to recover and keep your progress.",
+      "can_undo": false,
+      "confidence": "low",
+      "created_at": "2026-10-18T09:00:00+00:00",
+      "downside": "Fat loss pauses while you are at maintenance. Your training plan is unchanged.",
+      "ends_on": "2026-10-31",
+      "evidence": [
+        {
+          "code": "NUTRITION_POLICY_V2",
+          "label": "Tracend's calorie floor and protein and fat ranges for you",
+          "source": "policy_evaluation"
+        },
+        {
+          "code": "GOAL_PHASE_REVIEW",
+          "label": "Your weight history for the current goal",
+          "source": "policy_evaluation"
+        }
+      ],
+      "expires_at": "2026-10-21T09:00:00+00:00",
+      "id": "7a0c2a52-6b1e-4f43-9a54-0f1f3f6c1a01",
+      "kind": "goal_or_phase",
+      "rationale": "Dieting has been wearing on you. A 2-week diet break at maintenance, 2,240 kcal a day, until 31 Oct. Your fat-loss goal stays; Coach will suggest the next step before the break ends.",
+      "source_message_id": "3b1f0a8e-4a52-4a5e-8a63-5c7f6f1d2b02",
+      "status": "pending",
+      "title": "Take a diet break",
+      "undo_until": null,
+      "undone_at": null
+    },
+    {
+      "after": {
+        "rows": [
+          {
+            "label": "Plan",
+            "value": "Bodyweight block until 30 Oct"
+          },
+          {
+            "label": "Sessions",
+            "value": "3 sessions a week"
+          },
+          {
+            "label": "Equipment",
+            "value": "bodyweight only"
+          },
+          {
+            "label": "Ends",
+            "value": "30 Oct"
+          }
+        ],
+        "sessions": [
+          {
+            "exercises": 5,
+            "minutes": 51,
+            "name": "Full body A",
+            "weekday": 1
+          },
+          {
+            "exercises": 6,
+            "minutes": 59,
+            "name": "Full body B",
+            "weekday": 3
+          },
+          {
+            "exercises": 5,
+            "minutes": 51,
+            "name": "Full body C",
+            "weekday": 5
+          }
+        ]
+      },
+      "applied_at": "2026-10-17T09:05:00+00:00",
+      "before": {
+        "rows": [
+          {
+            "label": "Plan",
+            "value": "Structured continuation block"
+          },
+          {
+            "label": "Sessions",
+            "value": "3 sessions a week"
+          },
+          {
+            "label": "Equipment",
+            "value": "Your usual setup"
+          }
+        ],
+        "sessions": [
+          {
+            "exercises": 6,
+            "minutes": 60,
+            "name": "Full body A",
+            "weekday": 1
+          },
+          {
+            "exercises": 6,
+            "minutes": 60,
+            "name": "Full body B",
+            "weekday": 3
+          },
+          {
+            "exercises": 6,
+            "minutes": 57,
+            "name": "Full body C",
+            "weekday": 5
+          }
+        ]
+      },
+      "benefit": "You keep training on the same days without the gym.",
+      "can_undo": true,
+      "confidence": "medium",
+      "created_at": "2026-10-17T09:00:00+00:00",
+      "downside": "Bodyweight work can't load strength movements as heavily, so strength may stall for the block. Your loads are still there when the block ends.",
+      "ends_on": "2026-10-30",
+      "evidence": [
+        {
+          "code": "TRAINING_STANDARD",
+          "label": "Tracend's weekly volume, effort and rest limits for your experience",
+          "source": "policy_evaluation"
+        },
+        {
+          "code": "ACTIVE_PLAN",
+          "label": "Your current plan",
+          "source": "plan_version"
+        }
+      ],
+      "expires_at": "2026-10-20T09:00:00+00:00",
+      "id": "7a0c2a52-6b1e-4f43-9a54-0f1f3f6c1a02",
+      "kind": "temporary_block",
+      "rationale": "You're away from your usual setup. Until 30 Oct your sessions use bodyweight only, with the same weekly volume limits as your plan. Your current plan comes back the day after.",
+      "source_message_id": null,
+      "status": "accepted",
+      "title": "Bodyweight block until 30 Oct",
+      "undo_until": "2026-10-24T09:05:00+00:00",
+      "undone_at": null
+    },
+    {
+      "after": {
+        "rows": [
+          {
+            "label": "Calories",
+            "value": "2,190 kcal"
+          }
+        ]
+      },
+      "applied_at": null,
+      "before": {
+        "rows": [
+          {
+            "label": "Calories",
+            "value": "2,300 kcal"
+          }
+        ]
+      },
+      "benefit": "A steadier pace of fat loss that your recent logging supports.",
+      "can_undo": false,
+      "confidence": "medium",
+      "created_at": "2026-10-10T09:00:00+00:00",
+      "downside": "Less food each day can make training and hunger harder; the target is rechecked as your weight and logging come in.",
+      "ends_on": null,
+      "evidence": [
+        {
+          "code": "NUTRITION_POLICY_V2",
+          "label": "Tracend's calorie floor and protein and fat ranges for you",
+          "source": "policy_evaluation"
+        }
+      ],
+      "expires_at": "2026-10-13T09:00:00+00:00",
+      "id": "7a0c2a52-6b1e-4f43-9a54-0f1f3f6c1a03",
+      "kind": "nutrition_targets",
+      "rationale": "Progress has stalled. Your daily target goes lower to 2,190 kcal, inside the limits Tracend sets for you (floor 1,746 kcal).",
+      "source_message_id": null,
+      "status": "expired",
+      "title": "Lower your calories",
+      "undo_until": null,
+      "undone_at": null
+    }
+  ],
+  "schema_version": "1.0"
+}

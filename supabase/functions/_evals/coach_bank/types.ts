@@ -2,6 +2,7 @@
 // prepared Coach context plus the reference-data contributors that turn renders), one question,
 // and what a good reply must and must not do. Nothing here is a real athlete.
 import type { RedFlagCategory } from "../../_shared/coach_safety/red_flags.ts";
+import type { ProposalKind, RefusalCode } from "../../_shared/coach_proposals/types.ts";
 
 export type Turn = Readonly<{ role: "user" | "assistant"; content: string }>;
 
@@ -21,6 +22,7 @@ export const bankCategories = [
   "phrasing",
   "topics",
   "lookups",
+  "proposals",
 ] as const;
 export type BankCategory = typeof bankCategories[number];
 
@@ -86,6 +88,23 @@ export type LookupExpectation =
     maxSpanDays?: number;
   }>;
 
+/**
+ * What the reply's `proposal_intent` (A8) must be. `none`: the reply must not propose anything.
+ * `intent`: the intent must parse, be of this kind and hold these fields (camel case, as the
+ * engine reads them); `refusedWith` names the refusal the rules give when the intent is run for
+ * the standard athlete (a reply that refuses to propose and says why is also accepted when
+ * `orNone` is set).
+ */
+export type ProposalExpectation =
+  | Readonly<{ kind: "none" }>
+  | Readonly<{
+    kind: "intent";
+    intent: ProposalKind;
+    has?: Readonly<Record<string, unknown>>;
+    refusedWith?: RefusalCode;
+    orNone?: boolean;
+  }>;
+
 export type Expect = Readonly<{
   /**
    * The red-flag screen's verdict on the turn, no model involved: a category, a list of them, or
@@ -107,6 +126,8 @@ export type Expect = Readonly<{
   /** Dated rows of the lookup the reply must cite, at least this many distinct dates. */
   citesRows?: number;
   lookup?: LookupExpectation;
+  /** The proposal the reply must (or must not) carry. Without it, a reply must carry none. */
+  proposal?: ProposalExpectation;
 }>;
 
 export type ExampleReply = Readonly<{
@@ -115,6 +136,8 @@ export type ExampleReply = Readonly<{
   fails?: string;
   /** The data requests the example's first answer carried. */
   requests?: readonly DataRequest[];
+  /** The `proposal_intent` the example's answer carried. */
+  intent?: unknown;
 }>;
 
 export type BankCase = Readonly<{
@@ -128,6 +151,8 @@ export type BankCase = Readonly<{
   good?: readonly string[];
   /** The data requests the good replies' first answer carried (lookup cases). */
   goodRequests?: readonly DataRequest[];
+  /** The `proposal_intent` the good replies carried (proposal cases). */
+  goodIntent?: unknown;
   bad?: readonly ExampleReply[];
 }>;
 
@@ -156,6 +181,8 @@ export type Reply = Readonly<{
   answer: string;
   safetyState: string;
   dataRequests: readonly DataRequest[];
+  /** The model's `proposal_intent`, as written; undefined when it proposed nothing. */
+  proposalIntent?: unknown;
   costUsd: number;
   latencyMs: number;
   failureCode?: string;

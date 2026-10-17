@@ -182,6 +182,7 @@ class CoachMessage {
     this.answerSource,
     this.diagnostic,
     this.nearBudgetLimit = false,
+    this.proposalId,
   });
 
   /// Parses a stored `coach_messages` row or a coach-chat response message.
@@ -216,6 +217,7 @@ class CoachMessage {
           ? CoachChatDiagnostic.fromJson(Map<String, dynamic>.from(diagnostic))
           : null,
       nearBudgetLimit: row['budget_warning'] == true,
+      proposalId: row['proposal_id'] as String?,
     );
   }
 
@@ -239,6 +241,11 @@ class CoachMessage {
   /// The server's `budget_warning` on the response that carried this reply:
   /// the athlete is nearing this month's Coach allowance. Never stored.
   final bool nearBudgetLimit;
+
+  /// The Coach proposal this reply introduced (A8): the thread shows its card
+  /// under the reply, live and when it is reloaded. Null for every other
+  /// message.
+  final String? proposalId;
 
   /// A labeled deterministic reply from the athlete's data, served when the
   /// model could not answer. Never the Coach AI's own answer.

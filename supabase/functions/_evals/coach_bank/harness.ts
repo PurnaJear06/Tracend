@@ -93,6 +93,9 @@ function replyFrom(
     answer: generation.answer.answer,
     safetyState: generation.answer.safety_state,
     dataRequests: requests,
+    ...(generation.proposalIntent === undefined
+      ? {}
+      : { proposalIntent: generation.proposalIntent }),
     costUsd,
     latencyMs: Math.round(performance.now() - started),
   };

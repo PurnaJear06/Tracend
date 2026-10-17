@@ -476,3 +476,91 @@ Deno.test("a legacy failure is still priced from its own attempts", () => {
   const legacy = new CoachChatUnavailableError("deepseek", "deepseek-flash", "provider_timeout");
   assertEquals(coachChatFailureUsage(legacy).estimatedCostUsd, 0);
 });
+
+// ---- proposals (A8) ---------------------------------------------------------------------------
+
+const intent = {
+  kind: "nutrition_targets",
+  reason: "plateau",
+  direction: "lower",
+};
+
+Deno.test("proposals are offered only when asked for, in the schema and the rules", () => {
+  const without = coachChatGatewaySchema([], true) as { properties: Record<string, unknown> };
+  assertEquals("proposal_intent" in without.properties, false);
+  const withIntent = coachChatGatewaySchema([], true, true) as {
+    properties: Record<string, unknown>;
+    required: string[];
+  };
+  assert("proposal_intent" in withIntent.properties);
+  assert(!withIntent.required.includes("proposal_intent"), "the intent is optional");
+  assert(isSupportedSchema(withIntent));
+  const prompt = (proposals: boolean) =>
+    buildCoachChatGatewayPrompt(
+      "Take a diet break",
+      rich(),
+      "general",
+      undefined,
+      undefined,
+      undefined,
+      proposals,
+    ).system.map((part) => part.type === "text" ? part.text : "").join("");
+  assertStringIncludes(prompt(true), "# Proposing a change");
+  assertStringIncludes(prompt(true), "proposal you can approve");
+  assert(!prompt(false).includes("# Proposing a change"));
+});
+
+Deno.test("the model's intent is handed on untouched and is not part of the stored answer", async () => {
+  const fake = fakeFetch(() => claudeAnswer(answer({ proposal_intent: intent })));
+  const generation = await generateCoachChatViaGateway({
+    question: "Lower my calories a little",
+    context: rich(),
+    contextKind: "general",
+    route: haiku(),
+    consentVendor: "anthropic",
+    proposals: true,
+  }, { fetch: fake.fetch });
+  assertEquals(generation.proposalIntent, intent);
+  assertEquals("proposal_intent" in generation.answer, false);
+});
+
+Deno.test("without proposals an intent is an unexpected key and is repaired away", async () => {
+  const { result, sent } = await run((_, index) =>
+    claudeAnswer(index === 0 ? answer({ proposal_intent: intent }) : answer())
+  );
+  if (result instanceof Error) throw result;
+  assertEquals(sent.length, 2);
+  assertEquals(result.proposalIntent, undefined);
+});
+
+Deno.test("an intent survives a lookup round and is dropped from an interim answer", async () => {
+  const lookups = () =>
+    Promise.resolve({ text: "Lookup: weights\n2026-10-01 80 kg", grounds: ["80 kg"], counts: [] });
+  const asked = {
+    data_requests: [{ lookup: "weights", from: "2026-10-01", to: "2026-10-10", filter: null }],
+    proposal_intent: intent,
+    answer: "Checking your weights.",
+    evidence: [],
+    missing_data: [],
+    safety_state: "allowed",
+    suggested_follow_ups: [],
+  };
+  const fake = fakeFetch((_) =>
+    claudeAnswer(
+      JSON.stringify(
+        fake.sent.length === 1 ? asked : JSON.parse(answer({ proposal_intent: intent })),
+      ),
+    )
+  );
+  const generation = await generateCoachChatViaGateway({
+    question: "How has my weight moved, and lower my calories",
+    context: rich(),
+    contextKind: "general",
+    route: haiku(),
+    consentVendor: "anthropic",
+    proposals: true,
+    lookups: lookups as never,
+  }, { fetch: fake.fetch });
+  assertEquals(fake.sent.length, 2);
+  assertEquals(generation.proposalIntent, intent);
+});
