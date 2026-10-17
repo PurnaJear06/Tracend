@@ -247,6 +247,37 @@ Contract 8).
   answers only feed the snapshot and the app's restore. Tests: handler (cleared/no row, moderate
   with an RPE cap and its own hash, see_professional with nothing spent in both modes), gateway
   (policies carry the outcome), Flutter (refused plan shows the guidance).
+- **A stricter outcome ends what was built under a weaker one** (review fix; all in migration 26,
+  additive, same signatures, `schema_version` unchanged, so older builds keep working; no
+  screening row means cleared and nothing changes for that athlete). Helpers in `private`
+  (no client grant): `screening_rank` (cleared 0, moderate 1, see_professional 2),
+  `current_screening_outcome` (newest row, else cleared) and `assert_screening_allows(user,
+  built_under)`, which raises 55000 for `see_professional` ("a health professional must clear
+  this athlete first") and for a current outcome stricter than the one the plan was built under
+  ("the plan was built before the health check changed"; built-under is the snapshot's
+  `screening` field, absent meaning cleared). Where it is enforced:
+  - `record_screening_v1`: when it stores a stricter outcome it expires the athlete's pending
+    2.0 proposals built under a less strict one and supersedes a running generation, so a plan
+    started while cleared cannot outlive the symptoms recorded afterwards.
+  - `persist_onboarding_proposal_v3` (`create or replace`, body as in 20261002110000 plus the
+    guard): a worker that finishes after the outcome changed cannot store a plan.
+  - `respond_to_onboarding_proposal_v2` (`create or replace`, body as in 20261002110000 plus the
+    guard, on accept only): `see_professional` refuses approval and `moderate_until_cleared`
+    refuses a plan built as cleared; reject and revision still work. The 55000 is read by the app
+    as "this proposal can no longer be answered" and answered with a rebuild, which the Edge
+    Function then builds as moderate (or refuses).
+  - `get_my_screening_v1()` (authenticated, `schema_version "1.0"`) returns the current screening;
+    on reopening, when the draft points past the health check, the app reads it and a stored
+    `see_professional` returns to the check instead of resuming the generation or the proposal.
+    If it cannot be read the app resumes, and the server still refuses at approval.
+  - pgTAP `onboarding_screening_gate_test.sql`: symptoms after a cleared plan (pending proposal
+    expired, cannot be approved), a running generation superseded, `see_professional` and moderate
+    refusals at store and approval, reject still allowed, a cleared plan stays approvable, a
+    moderate plan built as moderate is approved, no row is unaffected, grants checked with
+    `has_function_privilege`.
+  - Stale response: while the answers are being recorded `_answerScreening` ignores changes
+    (pointer and VoiceOver), and the response is applied only when the answers still equal the
+    submitted ones. Widget tests cover both the lock and the reopening.
 - **Open.** (a) Should a professional's clearance override a current symptom? Today it does not
   (conservative). (b) The question texts and "regularly" definition (30 minutes, 3 days, 3 months)
   are ours; a coach or the owner should review them. (c) Re-screening later (a yearly or

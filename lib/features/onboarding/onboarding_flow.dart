@@ -597,15 +597,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           _healthImport = healthImport as String;
         }
         final screening = ScreeningAnswers.fromJson(payload['screening']);
-        if (screening != null) {
-          _exercisesRegularly = screening.exercisesRegularly;
-          _knownCondition = screening.knownCondition;
-          _symptoms = screening.symptoms;
-          _clearedByProfessional =
-              screening.knownCondition && !screening.symptoms
-              ? screening.clearedByProfessional
-              : null;
-        }
+        _applyScreening(screening);
         var restored = _sectionKeys.indexOf(draft.currentSection);
         if (restored < 0) {
           restored = _legacySections[draft.currentSection] ?? _eligibilityStep;
@@ -623,6 +615,19 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         if (restored > 0) _step = restored;
         _aboutPassed = _step > _aboutStep;
         resumeGeneration = _step == _proposalStep;
+        // The server may hold a newer, stricter health check than the draft
+        // (the athlete went back and answered again): a stop is honoured
+        // before any plan is resumed. The server refuses to approve such a
+        // plan anyway.
+        if (_step > _screeningStep) {
+          final stored = await _blockingScreening();
+          if (stored != null) {
+            _applyScreening(stored.answers);
+            _screeningOutcome = stored.outcome;
+            _step = _screeningStep;
+            resumeGeneration = false;
+          }
+        }
       }
       _restoreFailed = false;
     } catch (e) {
@@ -635,6 +640,30 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     if (resumeGeneration && mounted) unawaited(_resumeGeneration());
     if (_step == _questionsStep && mounted) unawaited(_fetchQuestions());
     if (mounted && _healthImport != 'skipped') unawaited(_loadHealthFacts());
+  }
+
+  /// The athlete's stored screening when it says to see a professional first;
+  /// null otherwise, or when it cannot be read.
+  Future<StoredScreening?> _blockingScreening() async {
+    try {
+      final stored = await widget.repository.loadScreening().timeout(
+        const Duration(seconds: 15),
+      );
+      return stored.outcome == ScreeningOutcome.seeProfessional ? stored : null;
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      return null;
+    }
+  }
+
+  void _applyScreening(ScreeningAnswers? answers) {
+    if (answers == null) return;
+    _exercisesRegularly = answers.exercisesRegularly;
+    _knownCondition = answers.knownCondition;
+    _symptoms = answers.symptoms;
+    _clearedByProfessional = answers.knownCondition && !answers.symptoms
+        ? answers.clearedByProfessional
+        : null;
   }
 
   /// Reopened with Apple Health already connected (an earlier run, or a sync
@@ -1069,10 +1098,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         await widget.repository.recordEligibilityAndConsent(eligible: true);
       }
       if (_step == _screeningStep && _screeningOutcome == null) {
-        final record = await widget.repository.recordScreening(
-          _screeningAnswers!,
-        );
+        final submitted = _screeningAnswers!;
+        final record = await widget.repository.recordScreening(submitted);
         if (!mounted) return;
+        // The choices are locked while this runs; if the answers differ anyway,
+        // the response belongs to answers that are no longer on screen.
+        if (_screeningAnswers != submitted) return;
         setState(() => _screeningOutcome = record.outcome);
         // Anything but cleared shows its guidance first; moderate effort goes
         // on with a second Continue, a professional first does not.
@@ -1535,11 +1566,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   /// Answers change the question set and clear the server's outcome, so the
   /// next Continue records them again.
-  void _answerScreening(VoidCallback change) => setState(() {
-    change();
-    _screeningOutcome = null;
-    _error = null;
-  });
+  void _answerScreening(VoidCallback change) {
+    // Locked while an answer is being recorded, so the response always belongs
+    // to the answers on screen (this also stops VoiceOver actions, which skip
+    // the pointer lock below).
+    if (_saving) return;
+    setState(() {
+      change();
+      _screeningOutcome = null;
+      _error = null;
+    });
+  }
 
   Widget _screeningQuestion({
     required String label,
@@ -1554,11 +1591,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         padding: const EdgeInsets.only(bottom: TracendSpacing.xs),
         child: Text(hint, style: Theme.of(context).textTheme.bodySmall),
       ),
-      _SingleChoice<bool>(
-        label: label,
-        options: const [(true, 'Yes'), (false, 'No')],
-        selected: value,
-        onChanged: onChanged,
+      // Locked while the answers are being recorded, so the response always
+      // belongs to the answers on screen.
+      IgnorePointer(
+        ignoring: _saving,
+        child: _SingleChoice<bool>(
+          label: label,
+          options: const [(true, 'Yes'), (false, 'No')],
+          selected: value,
+          onChanged: onChanged,
+        ),
       ),
     ],
   );

@@ -50,6 +50,22 @@ class ScreeningAnswers {
     'cleared_by_professional': clearedByProfessional,
   };
 
+  @override
+  bool operator ==(Object other) =>
+      other is ScreeningAnswers &&
+      other.exercisesRegularly == exercisesRegularly &&
+      other.knownCondition == knownCondition &&
+      other.symptoms == symptoms &&
+      other.clearedByProfessional == clearedByProfessional;
+
+  @override
+  int get hashCode => Object.hash(
+    exercisesRegularly,
+    knownCondition,
+    symptoms,
+    clearedByProfessional,
+  );
+
   /// The answers saved in a draft, or null when the draft has none (an older
   /// build) or they are incomplete.
   static ScreeningAnswers? fromJson(Object? json) {
@@ -91,5 +107,34 @@ class ScreeningRecord {
       throw const FormatException('The screening answer is not readable.');
     }
     return ScreeningRecord(outcome: outcome, screenedAt: screenedAt);
+  }
+}
+
+/// What `get_my_screening_v1` answers: the athlete's current screening on the
+/// server, which may be newer than the draft (the athlete went back and
+/// answered again).
+class StoredScreening {
+  const StoredScreening({required this.outcome, required this.answers});
+
+  final ScreeningOutcome outcome;
+
+  /// Null when the athlete was never screened.
+  final ScreeningAnswers? answers;
+
+  /// Throws a [FormatException] for an answer this build cannot read.
+  factory StoredScreening.fromJson(Object? json) {
+    if (json is! Map) {
+      throw const FormatException('The screening answer is not an object.');
+    }
+    final outcome = ScreeningOutcome.fromWire(json['outcome']);
+    if (outcome == null) {
+      throw const FormatException('The screening answer is not readable.');
+    }
+    return StoredScreening(
+      outcome: outcome,
+      answers: json['screened'] == true
+          ? ScreeningAnswers.fromJson(json)
+          : null,
+    );
   }
 }

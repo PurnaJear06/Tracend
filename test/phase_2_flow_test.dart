@@ -408,6 +408,66 @@ void main() {
       expect(find.text('Allow AI coaching?'), findsNothing);
     });
 
+    testWidgets('answers stay as submitted while the server is recording them', (
+      tester,
+    ) async {
+      final repository = await openCheck(tester);
+      repository.screeningDelay = Completer<void>();
+      await _answerScreening(tester, [true, false, false]);
+      await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+      await tester.pump();
+      expect(repository.screenings, hasLength(1));
+
+      // A tap on a symptom answer while the server is still answering changes
+      // nothing.
+      final symptom = find.text('Yes').at(2);
+      await tester.tap(symptom, warnIfMissed: false);
+      await tester.pump();
+
+      repository.screeningDelay!.complete();
+      await tester.pumpAndSettle();
+      // The cleared response belongs to the answers that were submitted, which
+      // are still the ones on screen and in the saved draft.
+      expect(find.text('Allow AI coaching?'), findsOneWidget);
+      expect(repository.screenings.single.symptoms, isFalse);
+      expect(repository.savedPayload?['screening'], {
+        'exercises_regularly': true,
+        'known_disease': false,
+        'symptoms': false,
+        'cleared_by_professional': false,
+      });
+      expect(repository.screenings, hasLength(1));
+    });
+
+    testWidgets('a stop recorded after the draft was saved is honoured on '
+        'reopening', (tester) async {
+      final repository =
+          _FakeOnboardingRepository(
+              draft: _draft('proposal'),
+              generations: [_running, _succeeded],
+            )
+            ..storedScreening = const StoredScreening(
+              outcome: ScreeningOutcome.seeProfessional,
+              answers: ScreeningAnswers(
+                exercisesRegularly: true,
+                knownCondition: false,
+                symptoms: true,
+                clearedByProfessional: false,
+              ),
+            );
+      await _pump(tester, repository);
+      expect(find.text('A quick health check.'), findsOneWidget);
+      expect(
+        find.text('Please see a health professional first.'),
+        findsOneWidget,
+      );
+      // The plan the draft pointed at is not resumed.
+      expect(find.text('Your plan'), findsNothing);
+      expect(repository.startCalls, 0);
+      await _continue(tester);
+      expect(find.text('Allow AI coaching?'), findsNothing);
+    });
+
     testWidgets('a plan refused for screening sends the athlete back to it', (
       tester,
     ) async {
@@ -1816,10 +1876,24 @@ class _FakeOnboardingRepository implements OnboardingRepository {
   /// The server refuses to build a plan for the stored health check.
   bool blockedByScreening = false;
 
+  /// What the server holds as the athlete's current screening; null is never
+  /// screened.
+  StoredScreening? storedScreening;
+
+  /// When set, recording the health check waits for it (the server still
+  /// answering).
+  Completer<void>? screeningDelay;
+
+  @override
+  Future<StoredScreening> loadScreening() async =>
+      storedScreening ??
+      const StoredScreening(outcome: ScreeningOutcome.cleared, answers: null);
+
   @override
   Future<ScreeningRecord> recordScreening(ScreeningAnswers answers) async {
     if (failScreening) throw Exception('offline');
     screenings.add(answers);
+    await screeningDelay?.future;
     final outcome =
         screeningOutcome ??
         (answers.symptoms

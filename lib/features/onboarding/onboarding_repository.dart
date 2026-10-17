@@ -450,6 +450,9 @@ abstract interface class OnboardingRepository {
   /// Answering the same again adds no record.
   Future<ScreeningRecord> recordScreening(ScreeningAnswers answers);
 
+  /// The athlete's current screening on the server.
+  Future<StoredScreening> loadScreening();
+
   /// Starts (or returns) the plan generation for the saved draft.
   /// Throws [OnboardingAnswersIncomplete] when answers are missing and
   /// [OnboardingPlanInfeasible] when no safe plan fits them.
@@ -595,6 +598,10 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
     );
     return ScreeningRecord.fromJson(result);
   }
+
+  @override
+  Future<StoredScreening> loadScreening() async =>
+      StoredScreening.fromJson(await _client.rpc('get_my_screening_v1'));
 
   @override
   Future<OnboardingQuestions> askQuestions() async {
