@@ -698,8 +698,15 @@ never presented as the whole journey.
    12 weeks or more with a loss of at least 10%. The two loss rules judge the confirmed continuous loss
    (its weeks and its % from its high point) whenever one exists, else the goal phase; the
    reason text names the date the run began (the first reading when there is no separate run).
-   "Still falling" reads the recent rate, else the confirmed run's average rate when the latest
-   reading is fresh (14 days; a stale run says nothing about now), else the phase average, so a sparse history whose phase rose but whose run fell is still judged. The
+   "Still falling" reads the recent rate, else the confirmed run's average rate, else the phase
+   average, so a sparse history whose phase rose but whose run fell is still judged. **One
+   staleness rule:** when the latest reading is older than 14 days, no rate of any kind (recent,
+   run or phase) counts as losing now, so the rate-driven outcomes (`slow_down`, the 16-week and
+   10% rules, BMI near the floor) cannot fire; only the absolute-state reasons (BMI below 18.5,
+   target reached) can, and their text names the reading's date. The text Coach sees never says
+   "now" or "current" for a weight: it reads "latest recorded weight 74.4 kg (DATE, N days ago)" in
+   the history, run and phase lines, fresh or stale, and a stale average rate carries a note that
+   it is not evidence of the present trend. The
    history and the run are shown even when the goal is days old and the phase has no rate yet. The pace rule (`slow_down`) and the precedence of the
    outcomes are unchanged.
 3. `slow_down`: a loss above 1% of body weight a week after at least three weeks.

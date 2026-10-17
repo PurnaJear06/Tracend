@@ -197,6 +197,7 @@ const emptySummary = (input: GoalPhaseInputs): Omit<
   | "history"
   | "continuousLoss"
   | "latestReadingStale"
+  | "latestReadingAgeDays"
 > => ({
   goalType: input.goalType,
   phaseStart: null,
@@ -250,6 +251,7 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
       phaseStartSource: activation === null ? null : "goal_activation",
       readingsUsed: 0,
       latestReadingStale: false,
+      latestReadingAgeDays: null,
       history: null,
       continuousLoss: null,
       excluded,
@@ -275,6 +277,7 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
     bmi,
     readingsUsed: phase.length,
     latestReadingStale: stale,
+    latestReadingAgeDays: Math.max(0, (dayIndex(input.today) ?? 0) - last.day),
     history: null,
     continuousLoss: null,
     excluded,

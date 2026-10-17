@@ -27,6 +27,10 @@ export function describeGoalTarget(target: GoalTarget): string {
   return parts.join(", ");
 }
 
+function ago(days: number | null): string {
+  return days === null ? "" : days === 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago`;
+}
+
 export function renderGoalPhase(
   summary: GoalPhaseSummary,
   review: GoalPhaseReview,
@@ -47,6 +51,9 @@ export function renderGoalPhase(
         `weights in them are from that day, not today.`,
     );
   }
+  const latest = `latest recorded weight ${summary.currentWeightKg} kg (${summary.currentDate}, ${
+    ago(summary.latestReadingAgeDays)
+  })`;
   const history = summary.history;
   const run = summary.continuousLoss;
   if (history !== null) {
@@ -56,7 +63,7 @@ export function renderGoalPhase(
           ? `the newest ${maxInputReadings} readings, from ${history.startDate} (older readings may exist)`
           : "all weight readings"
       }: ${history.startWeightKg} kg on ${history.startDate} ` +
-        `(median of the first readings) to now ${summary.currentWeightKg} kg: ` +
+        `(median of the first readings) to ${latest}: ` +
         `${signed(history.changeKg)} kg (${signed(history.changePct)}%) over ${history.weeks} ` +
         `weeks, ${history.readingsUsed} readings` +
         (history.sparse
@@ -68,8 +75,8 @@ export function renderGoalPhase(
   }
   if (run !== null && run.startDate !== history?.startDate) {
     lines.push(
-      `- Continuous loss: from the high of ${run.startWeightKg} kg on ${run.startDate} to now ` +
-        `${summary.currentWeightKg} kg: ${signed(run.changeKg)} kg (${signed(run.changePct)}%) ` +
+      `- Continuous loss: from the high of ${run.startWeightKg} kg on ${run.startDate} to ` +
+        `${latest}: ${signed(run.changeKg)} kg (${signed(run.changePct)}%) ` +
         `over ${run.weeks} weeks` +
         (run.beganBeforeGoalPhase ? "" : "; the weight rose before it fell") +
         (run.confirmed ? "." : "; sparse readings, trend not confirmed."),
@@ -82,28 +89,36 @@ export function renderGoalPhase(
           ? `Goal phase (${goal}, since ${summary.phaseStart}): `
           : ""
       }Start ${summary.startWeightKg} kg (${summary.firstReadingDate}, median of the first readings) ` +
-        `to now ${summary.currentWeightKg} kg (${summary.currentDate}, median of the last readings): ` +
+        `to ${latest}: ` +
         `${signed(summary.changeKg)} kg (${signed(summary.changePct)}%) over ${summary.weeks} ` +
         `weeks, ${summary.readingsUsed} readings.`,
     );
     const recent = summary.recentRateKgPerWeek === null
       ? ""
       : `; last 4 weeks ${signed(summary.recentRateKgPerWeek)} kg a week`;
+    const staleNote = summary.latestReadingStale
+      ? ` These rates end at the latest reading, ${ago(summary.latestReadingAgeDays)}; they are ` +
+        `not evidence of the present trend.`
+      : "";
     lines.push(
       `- Average rate ${signed(summary.weeklyRateKg!)} kg a week (${
         signed(summary.weeklyRatePct!)
-      }% of start weight)${recent}.`,
+      }% of start weight)${recent}.${staleNote}`,
     );
   } else if (summary.currentWeightKg !== null) {
     lines.push(
-      `- Latest weight ${summary.currentWeightKg} kg (${summary.currentDate}); not enough readings ` +
+      `- Latest recorded weight ${summary.currentWeightKg} kg (${summary.currentDate}, ${
+        ago(summary.latestReadingAgeDays)
+      }); not enough readings ` +
         `since the goal began to show a change or a rate.`,
     );
   } else {
     lines.push("- No weight readings since the goal began.");
   }
   if (summary.bmi !== null) {
-    lines.push(`- BMI now ${summary.bmi} (height ${summary.heightCm} cm).`);
+    lines.push(
+      `- BMI ${summary.bmi} at the latest recorded weight (height ${summary.heightCm} cm).`,
+    );
   }
   lines.push(
     summary.hasTarget

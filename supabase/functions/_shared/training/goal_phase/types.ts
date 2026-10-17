@@ -103,6 +103,8 @@ export type GoalPhaseSummary = Readonly<{
   readingsUsed: number;
   /** The latest reading is older than the freshness limit (staleReadingDays). */
   latestReadingStale: boolean;
+  /** Whole days from the latest reading to the coaching date, or null without a reading. */
+  latestReadingAgeDays: number | null;
   history: RecordedHistory | null;
   continuousLoss: ContinuousLoss | null;
   excluded: readonly ExcludedReading[];

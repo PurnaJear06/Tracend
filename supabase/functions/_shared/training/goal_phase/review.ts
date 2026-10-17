@@ -33,14 +33,21 @@ function targetReached(summary: GoalPhaseSummary): ReviewReason | null {
   return reached
     ? {
       code: "target_weight_reached",
-      detail: `current ${current} kg is at the target of ${target} kg`,
+      detail:
+        `the latest recorded weight, ${current} kg on ${summary.currentDate}, is at the target ` +
+        `of ${target} kg`,
       sources: [],
     }
     : null;
 }
 
-/** The pace now, in kg a week: the recent fit when there is one, else the phase average. */
+/**
+ * The pace now, in kg a week: the recent fit when there is one, else the phase average. A stale
+ * latest reading says nothing about the present: no rate of any kind counts as losing now, so
+ * only the absolute-state reasons (BMI floor, target reached) can fire.
+ */
 function currentPace(summary: GoalPhaseSummary): number | null {
+  if (summary.latestReadingStale) return null;
   return summary.recentRateKgPerWeek ?? summary.weeklyRateKg;
 }
 
@@ -54,9 +61,9 @@ function confirmedRun(summary: GoalPhaseSummary): ContinuousLoss | null {
  * judge (the continuous loss when there is one, else the goal phase).
  */
 function lossPace(summary: GoalPhaseSummary): number | null {
-  // A run's average says the weight is falling now only when the run ends at a fresh reading.
-  const run = summary.latestReadingStale ? null : confirmedRun(summary);
-  return summary.recentRateKgPerWeek ?? run?.weeklyRateKg ?? summary.weeklyRateKg;
+  if (summary.latestReadingStale) return null;
+  return summary.recentRateKgPerWeek ?? confirmedRun(summary)?.weeklyRateKg ??
+    summary.weeklyRateKg;
 }
 
 function maintenanceReasons(summary: GoalPhaseSummary): ReviewReason[] {
@@ -67,13 +74,15 @@ function maintenanceReasons(summary: GoalPhaseSummary): ReviewReason[] {
   if (bmi !== null && bmi < limits.bmiHealthyFloor.value) {
     reasons.push({
       code: "bmi_below_healthy_range",
-      detail: `BMI ${bmi} is below ${limits.bmiHealthyFloor.value}, the underweight range`,
+      detail: `BMI ${bmi} at the latest recorded weight (${summary.currentDate}) is below ` +
+        `${limits.bmiHealthyFloor.value}, the underweight range`,
       sources: ["who_2004"],
     });
   } else if (bmi !== null && bmi < limits.bmiNearFloor.value && stillLosing) {
     reasons.push({
       code: "bmi_near_healthy_floor",
-      detail: `BMI ${bmi} is close to ${limits.bmiHealthyFloor.value} and weight is still falling`,
+      detail: `BMI ${bmi} at the latest recorded weight (${summary.currentDate}) is close to ` +
+        `${limits.bmiHealthyFloor.value} and weight is still falling`,
       sources: ["who_2004", "tracend_in_house"],
     });
   }

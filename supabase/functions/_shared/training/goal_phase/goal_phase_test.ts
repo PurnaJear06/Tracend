@@ -52,11 +52,11 @@ Deno.test("the owner's case renders the totals, the exclusion and the outcome as
   const text = renderGoalPhase(payloadSummary, reviewGoalPhase(payloadSummary))!;
   assertStringIncludes(text, "-15.2 kg (-16.9%)");
   assertStringIncludes(text, "Start 90 kg (2026-06-03");
-  assertStringIncludes(text, "now 74.8 kg (2026-10-13");
+  assertStringIncludes(text, "latest recorded weight 74.8 kg (2026-10-13, 1 day ago)");
   assertStringIncludes(text, "Excluded reading");
   assertStringIncludes(text, "60 kg on 2026-07-02");
   assertStringIncludes(text, "Review outcome: consider_maintenance_or_diet_break (no target set)");
-  assertStringIncludes(text, "BMI now 23.1");
+  assertStringIncludes(text, "BMI 23.1 at the latest recorded weight");
   assertStringIncludes(text, "Target: none set");
   assert(!text.includes("86.2"), "the stale goal weight never reaches the phase summary");
 });
@@ -101,7 +101,7 @@ Deno.test("goal activated a month into the cut: Coach sees the history beside th
   assertStringIncludes(
     text,
     "Recorded history, all weight readings: 90 kg on 2026-06-03 (median of the first readings) " +
-      "to now 74.8 kg: -15.2 kg (-16.9%) over 18.9 weeks",
+      "to latest recorded weight 74.8 kg (2026-10-13, 1 day ago): -15.2 kg (-16.9%) over 18.9 weeks",
   );
   assertStringIncludes(text, "one continuous loss");
   assertStringIncludes(text, "Goal phase (fat loss, since 2026-07-03): Start 83 kg (2026-07-09");
@@ -196,7 +196,7 @@ Deno.test("weight rose, then fell: the continuous loss starts at the high point"
   const text = renderGoalPhase(during, review)!;
   assertStringIncludes(
     text,
-    "Continuous loss: from the high of 80 kg on 2026-02-23 to now 66 kg: -14 kg (-17.5%) over 18 " +
+    "Continuous loss: from the high of 80 kg on 2026-02-23 to latest recorded weight 66 kg (2026-06-29, 1 day ago): -14 kg (-17.5%) over 18 " +
       "weeks; the weight rose before it fell.",
   );
   assert(!text.includes("Recorded history"));
@@ -469,7 +469,7 @@ Deno.test("every rendered change equals the rendered start minus the rendered cu
     const text = renderGoalPhase(summary, reviewGoalPhase(summary))!;
     for (const line of text.split("\n")) {
       const match = line.match(
-        /^- .*?(\d+(?:\.\d+)?) kg (?:on|\().*? to now (\d+(?:\.\d+)?) kg[^:]*: ([+-]?\d+(?:\.\d+)?) kg/,
+        /^- .*?(\d+(?:\.\d+)?) kg (?:on|\().*? to latest recorded weight (\d+(?:\.\d+)?) kg[^:]*: ([+-]?\d+(?:\.\d+)?) kg/,
       );
       if (!match) continue;
       const [start, current, change] = [match[1], match[2], match[3]].map(Number);
@@ -479,6 +479,82 @@ Deno.test("every rendered change equals the rendered start minus the rendered cu
     }
   }
   assert(checked >= 6, `${checked} lines checked`);
+});
+
+Deno.test("a stale latest reading: no rate counts as losing now and the text never says now", () => {
+  const rising = weekly("2026-01-05", [70, 72, 74, 76, 78, 80, 82, 84, 85]);
+  const falling = weekly("2026-03-02", [
+    84,
+    83,
+    82,
+    81,
+    80,
+    79,
+    78,
+    77,
+    76,
+    75,
+    74,
+    73,
+    72,
+    71,
+    70,
+  ]);
+  const cases: GoalPhaseInputs[] = [
+    // The owner's cut, reviewed three months after the last weigh-in.
+    { ...lateGoalInputs, today: "2027-01-20" },
+    { ...longCutInputs, today: "2027-01-20" },
+    // Gain then cut, and a fast loss: both rate-driven when fresh.
+    inputs({ readings: [...rising, ...falling], activatedOn: "2026-01-05", today: "2026-08-01" }),
+    inputs({
+      readings: weekly("2026-09-08", [85, 83.9, 82.8, 81.6, 80.5, 79.4]),
+      activatedOn: "2026-09-08",
+      today: "2026-11-10",
+      target: { ...longCutInputs.target, weightKg: 70 },
+    }),
+    // A BMI near the floor and still falling when fresh.
+    inputs({
+      readings: weekly("2026-09-01", [62, 61.5, 61, 60.5, 60]),
+      activatedOn: "2026-09-01",
+      today: "2026-10-14",
+      target: { ...longCutInputs.target, weightKg: 55 },
+    }),
+  ];
+  for (const input of cases) {
+    const summary = summarizeGoalPhase(input);
+    assertEquals(summary.latestReadingStale, true);
+    const review = reviewGoalPhase(summary);
+    const rateCodes = [
+      "long_continuous_deficit",
+      "large_total_loss",
+      "bmi_near_healthy_floor",
+      "fast_sustained_loss",
+    ];
+    for (const reason of review.reasons) assert(!rateCodes.includes(reason.code), reason.code);
+    assert(review.outcome !== "slow_down");
+    const text = renderGoalPhase(summary, review)!;
+    assert(!/\b(now|current|currently)\b/i.test(text), text);
+    assertStringIncludes(text, "latest recorded weight");
+    assertStringIncludes(text, "days ago");
+  }
+  // Absolute-state reasons still fire, labelled with the reading's date.
+  const under = summarizeGoalPhase(inputs({
+    readings: weekly("2026-09-01", [60, 59.5, 59, 58.5, 58]),
+    activatedOn: "2026-09-01",
+    today: "2026-12-01",
+  }));
+  const review = reviewGoalPhase(under);
+  assertEquals(review.reasons.map((r) => r.code), ["bmi_below_healthy_range"]);
+  assertStringIncludes(review.reasons[0].detail, "latest recorded weight (2026-09-29)");
+  const reached = summarizeGoalPhase(inputs({
+    readings: weekly("2026-09-01", [82, 80, 78, 76.4, 76.3]),
+    activatedOn: "2026-09-01",
+    today: "2026-12-01",
+    target: { ...longCutInputs.target, weightKg: 76 },
+  }));
+  const done = reviewGoalPhase(reached);
+  assertEquals(done.outcome, "target_reached");
+  assertStringIncludes(done.reasons[0].detail, "76.3 kg on 2026-09-29");
 });
 
 Deno.test("a lone implausible reading is excluded; two readings or a steady fall are not", () => {
@@ -591,6 +667,7 @@ Deno.test("a BMI below the healthy floor, or near it and still falling, is maint
     heightCm: 180,
     readings: weekly("2026-09-01", [62, 61.5, 61, 60.5, 60]),
     activatedOn: "2026-09-01",
+    today: "2026-09-30",
     target: { ...longCutInputs.target, weightKg: 55 },
   }));
   assertEquals(below.bmi, 18.5);
@@ -599,6 +676,7 @@ Deno.test("a BMI below the healthy floor, or near it and still falling, is maint
   const under = summarizeGoalPhase(inputs({
     readings: weekly("2026-09-01", [60, 59.5, 59, 58.5, 58]),
     activatedOn: "2026-09-01",
+    today: "2026-09-30",
     target: { ...longCutInputs.target, weightKg: 55 },
   }));
   assertEquals(reviewGoalPhase(under).reasons[0].code, "bmi_below_healthy_range");
@@ -607,6 +685,7 @@ Deno.test("a BMI below the healthy floor, or near it and still falling, is maint
   const holding = summarizeGoalPhase(inputs({
     readings: weekly("2026-09-01", [62, 62, 62.1, 62, 62]),
     activatedOn: "2026-09-01",
+    today: "2026-09-30",
     target: { ...longCutInputs.target, weightKg: 62 },
   }));
   assertEquals(reviewGoalPhase(holding).outcome, "target_reached");
