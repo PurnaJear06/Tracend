@@ -688,7 +688,10 @@ first reading.
    (at least 0.1 kg a week), any of BMI below 19.5, 16 weeks or more with a loss of at least 5%,
    12 weeks or more with a loss of at least 10%. The two loss rules judge the continuous loss
    (its weeks and its % from its high point) whenever one exists, else the goal phase; the
-   reason text names the date the run began. The pace rule (`slow_down`) and the precedence of the
+   reason text names the date the run began (the first reading when there is no separate run).
+   "Still falling" reads the recent rate, else the run's average rate (the phase average when
+   there is no run), so a sparse history whose phase rose but whose run fell is still judged. The
+   history and the run are shown even when the goal is days old and the phase has no rate yet. The pace rule (`slow_down`) and the precedence of the
    outcomes are unchanged.
 3. `slow_down`: a loss above 1% of body weight a week after at least three weeks.
 4. `ask_target`: the goal has no weight, body-fat range or physique target.

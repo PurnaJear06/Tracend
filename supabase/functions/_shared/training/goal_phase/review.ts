@@ -44,9 +44,18 @@ function currentPace(summary: GoalPhaseSummary): number | null {
   return summary.recentRateKgPerWeek ?? summary.weeklyRateKg;
 }
 
+/**
+ * The pace the loss rules read: the recent fit, else the average of the window those rules
+ * judge (the continuous loss when there is one, else the goal phase).
+ */
+function lossPace(summary: GoalPhaseSummary): number | null {
+  return summary.recentRateKgPerWeek ?? summary.continuousLoss?.weeklyRateKg ??
+    summary.weeklyRateKg;
+}
+
 function maintenanceReasons(summary: GoalPhaseSummary): ReviewReason[] {
   const reasons: ReviewReason[] = [];
-  const pace = currentPace(summary);
+  const pace = lossPace(summary);
   const stillLosing = pace !== null && pace <= -limits.stillLosingKgPerWeek.value;
   const bmi = summary.bmi;
   if (bmi !== null && bmi < limits.bmiHealthyFloor.value) {
@@ -68,7 +77,7 @@ function maintenanceReasons(summary: GoalPhaseSummary): ReviewReason[] {
   const run = summary.continuousLoss;
   const weeks = run?.weeks ?? summary.weeks;
   const changePct = run?.changePct ?? summary.changePct;
-  const since = run?.startDate ?? summary.phaseStart;
+  const since = run?.startDate ?? summary.firstReadingDate;
   if (stillLosing && weeks !== null && changePct !== null) {
     if (
       weeks >= limits.longDeficitWeeks.value &&

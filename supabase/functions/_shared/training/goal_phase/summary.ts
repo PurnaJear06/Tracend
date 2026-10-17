@@ -166,6 +166,7 @@ function continuousLoss(
     changeKg,
     changePct: round((changeKg / startWeightKg) * 100, 1),
     weeks: round(weeks, 1),
+    weeklyRateKg: round(changeKg / weeks, 2),
     beganBeforeGoalPhase: startIndex < firstIndex,
   };
 }
@@ -255,9 +256,19 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
   const weeks = (last.day - first.day) / 7;
   if (phase.length < 2 || weeks < minimumRateWeeks) {
     if (phase.length >= 2) notes.push(`less than ${minimumRateWeeks} weeks of readings; no rate`);
+    // The recorded history does not depend on the phase having a rate.
+    const phaseStart = round(smoothed(phase, true), 1);
     return {
       ...common,
-      startWeightKg: round(smoothed(phase, true), 1),
+      startWeightKg: phaseStart,
+      history: recordedHistory(clean, last, first.day, current),
+      continuousLoss: continuousLoss(
+        clean,
+        clean.length - phase.length,
+        last,
+        current,
+        phaseStart,
+      ),
       confidence: "low",
       notes,
     };

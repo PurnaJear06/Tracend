@@ -64,6 +64,8 @@ export type ContinuousLoss = Readonly<{
   changeKg: number;
   changePct: number;
   weeks: number;
+  /** Average kg a week over the run; negative is a loss. */
+  weeklyRateKg: number;
   beganBeforeGoalPhase: boolean;
 }>;
 

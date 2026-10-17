@@ -184,6 +184,7 @@ Deno.test("weight rose, then fell: the continuous loss starts at the high point"
     changeKg: -14,
     changePct: -17.5,
     weeks: 18,
+    weeklyRateKg: -0.78,
     beganBeforeGoalPhase: false,
   });
   const review = reviewGoalPhase(during);
@@ -245,6 +246,80 @@ Deno.test("a small rebound does not end the run; a large one does", () => {
   assertEquals(large.continuousLoss?.startDate, "2026-03-02");
   assertEquals(large.continuousLoss?.startWeightKg, 85);
   assertEquals(large.continuousLoss?.beganBeforeGoalPhase, false);
+});
+
+Deno.test("a newly activated goal still shows the whole history, before it has a rate", () => {
+  // Two readings in the first days of the goal: under two weeks, so no phase rate.
+  const days = summarizeGoalPhase({ ...lateGoalInputs, activatedOn: "2026-10-10" });
+  assertEquals(days.weeks, null);
+  assertEquals(days.weeklyRateKg, null);
+  assertEquals(days.history?.startDate, "2026-06-03");
+  assertEquals(days.history?.startWeightKg, 90);
+  assertEquals(days.history?.changeKg, -15.1);
+  assertEquals(days.continuousLoss?.startDate, "2026-06-03");
+  // One reading since the goal began: the same.
+  const one = summarizeGoalPhase({ ...lateGoalInputs, activatedOn: "2026-10-12" });
+  assertEquals(one.readingsUsed, 1);
+  assertEquals(one.changeKg, null);
+  assertEquals(one.history?.changePct, -16.9);
+  const text = renderGoalPhase(one, reviewGoalPhase(one))!;
+  assertStringIncludes(text, "Recorded history, all weight readings: 90 kg on 2026-06-03");
+  // The 19-week cut is judged even though the goal is days old.
+  assertEquals(reviewGoalPhase(one).outcome, "consider_maintenance_or_diet_break");
+});
+
+Deno.test("sparse readings: the pace of a later run, not the whole phase, says it is still falling", () => {
+  // Up 15 kg over 15 weeks, then down every 4 weeks to 76.6 kg; the phase as a whole rose.
+  const gain = weekly("2026-01-05", [
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+  ]);
+  const cut = [83.8, 82.6, 81.4, 80.2, 79, 77.8, 76.6].map((kg, index) => ({
+    date: new Date(Date.parse("2026-05-18T00:00:00Z") + index * 28 * 86_400_000)
+      .toISOString().slice(0, 10),
+    kg,
+  }));
+  const summary = summarizeGoalPhase(inputs({
+    readings: [...gain, ...cut],
+    activatedOn: "2026-01-05",
+    today: "2026-10-31",
+  }));
+  assertEquals(summary.recentRateKgPerWeek, null);
+  assert(summary.weeklyRateKg! > 0, "the phase as a whole rose");
+  assertEquals(summary.continuousLoss?.startDate, "2026-04-20");
+  assertEquals(summary.continuousLoss?.startWeightKg, 85);
+  assertEquals(summary.continuousLoss?.weeks, 28);
+  assertEquals(summary.continuousLoss?.weeklyRateKg, -0.3);
+  const review = reviewGoalPhase(summary);
+  assertEquals(review.outcome, "consider_maintenance_or_diet_break");
+  assertEquals(review.reasons.map((r) => r.code), ["long_continuous_deficit"]);
+});
+
+Deno.test("a goal that predates the first reading names the first reading as the start", () => {
+  const summary = summarizeGoalPhase(inputs({ activatedOn: "2025-01-01" }));
+  assertEquals(summary.phaseStart, "2025-01-01");
+  assertEquals(summary.firstReadingDate, "2026-06-03");
+  assertEquals(summary.continuousLoss, null);
+  const review = reviewGoalPhase(summary);
+  assertEquals(review.outcome, "consider_maintenance_or_diet_break");
+  for (const reason of review.reasons) {
+    assertStringIncludes(reason.detail, "since 2026-06-03");
+    assert(!reason.detail.includes("2025-01-01"), reason.detail);
+  }
 });
 
 Deno.test("a lone implausible reading is excluded; two readings or a steady fall are not", () => {
