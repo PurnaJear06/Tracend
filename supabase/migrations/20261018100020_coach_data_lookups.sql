@@ -7,7 +7,7 @@
 -- 4. get_coach_plan_state_v1                 baseline: the plan, this week, next targets
 --    get_coach_nutrition_state_v1            baseline: the week's complete days, today's meals
 --    get_coach_data_index_v1                 baseline: what data exists and its date range
--- 5. coach_lookup_<name>_v1 (eleven)         on-demand lookups over a date range
+-- 5. coach_lookup_<name>_v1 (ten)         on-demand lookups over a date range
 --
 -- Every function here is SECURITY DEFINER, read-only, granted to service_role only and returns
 -- schema_version. The user id is always the authenticated request's, set by the Edge Function;
@@ -373,9 +373,6 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       'weekly_reviews', (select jsonb_build_object('first', min(r.review_week),
           'last', max(r.review_week), 'count', count(*))
         from public.progress_reviews r where r.user_id = p_user_id),
-      'physique', (select jsonb_build_object('first', min(a.created_at::date),
-          'last', max(a.created_at::date), 'count', count(*))
-        from public.physique_analyses a where a.user_id = p_user_id and a.result is not null),
       'health_history', (select jsonb_build_object('first', min(hm.month), 'last', max(hm.month),
           'count', count(*)) from public.health_history_months hm where hm.user_id = p_user_id)));
 $$;
@@ -753,27 +750,6 @@ returns jsonb language sql stable security definer set search_path = '' as $$
         'nutrition', r.summary -> 'nutrition', 'progress', r.summary -> 'progress',
         'missing_data', r.summary -> 'missing_data') order by r.review_week desc)
       from (select * from rows_all order by review_week desc limit 12) r), '[]'::jsonb));
-$$;
-
--- Physique checks (a visual estimate from photos, not a measurement) made in the range, newest 5.
-create function public.coach_lookup_physique_v1(
-  p_user_id uuid, p_from date, p_to date, p_filter text default null)
-returns jsonb language sql stable security definer set search_path = '' as $$
-  with rows_all as (
-    select a.created_at, a.result, a.confirmed_muscles, a.confirmed_at
-    from public.physique_analyses a
-    where a.user_id = p_user_id and a.result is not null
-      and a.created_at::date between greatest(p_from, p_to - 399) and p_to
-    order by a.created_at desc limit 6
-  )
-  select jsonb_build_object(
-    'schema_version', '1.0', 'lookup', 'physique', 'from', greatest(p_from, p_to - 399),
-    'to', p_to, 'truncated', (select count(*) > 5 from rows_all),
-    'checks', coalesce((select jsonb_agg(jsonb_build_object('checked_on', r.created_at::date,
-        'priorities', r.result -> 'development_priorities',
-        'observations', r.result -> 'observations', 'limitations', r.result -> 'limitations',
-        'confirmed_muscles', to_jsonb(r.confirmed_muscles)) order by r.created_at desc)
-      from (select * from rows_all order by created_at desc limit 5) r), '[]'::jsonb));
 $$;
 
 -- The monthly Apple Health summary imported at onboarding (workouts, sleep, weight), for the

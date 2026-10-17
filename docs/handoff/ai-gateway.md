@@ -769,7 +769,7 @@ Branch `claude/a10-athlete-state`. Changes no frozen function (`prepare_coach_ch
 `build_coach_athlete_context`). Findings 8, 9, 10, 12, 13, 14, 16 (partly), 20, 24 and "What B7
 would miss" item 8 of the Coach audit.
 
-- **Lookups** (`_shared/coach_lookups/`): a closed catalogue of eleven read-only lookups, each a
+- **Lookups** (`_shared/coach_lookups/`): a closed catalogue of ten read-only lookups, each a
   `SECURITY DEFINER` RPC for `service_role` (migration `20261018100020_coach_data_lookups.sql`).
   The answer may carry `data_requests: [{lookup, from, to, filter}]`; the gateway path validates
   them (`validateDataRequests`: known lookup, real dates, at most 400 days, at most 4 a round, filter
@@ -804,9 +804,10 @@ would miss" item 8 of the Coach audit.
 - **Tests**: `coach_chat_lookups_test.ts` (the owner's two cases, validator, rounds, budget, red flag
   before lookups, grounding), `coach_chat_persona_test.ts` (recorded replies), contributor tests,
   `catalogue_test.ts`, `render_test.ts`, `turn_trace_test.ts`, pgTAP `coach_data_lookups_test.sql`.
-- **Open**: the physique lookup sends a text summary derived from photos to the Coach provider; the
-  photo notice says photos never go to the coaching provider (a summary is not a photo) but the AI
-  notice wording may need a line. Lookups need the gateway route; the legacy path has none.
+- **Left out on purpose**: a physique lookup (a text summary of photo checks). Sending it to the Coach
+  provider is new data reaching the AI, which needs an accepted notice line the owner has not
+  approved. It returns (RPC, catalogue entry, index line, tests) together with that notice line once
+  the owner approves it. Lookups need the gateway route; the legacy path has none.
 
 ## Next agent starts here
 

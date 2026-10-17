@@ -15,7 +15,6 @@ const payload = {
     plan_history: domain("2026-06-03", "2026-09-01", 3),
     goals: domain("2026-06-03", "2026-06-03", 1),
     weekly_reviews: { first: null, last: null, count: 0 },
-    physique: { first: null, last: null, count: 0 },
     health_history: domain("2025-10-01", "2026-09-01", 12),
   },
 };
@@ -25,7 +24,7 @@ Deno.test("the index lists each kind of record with its first and last date and 
   assertStringIncludes(text, "- workouts: 2026-06-03 to 2026-10-15, 61 completed workouts");
   assertStringIncludes(text, "- meals: 2026-06-10 to 2026-10-17, 90 days with confirmed meals");
   assertStringIncludes(text, "- health_history: 2025-10-01 to 2026-09-01, 12 months imported");
-  assertStringIncludes(text, "No records yet for: weekly_reviews, physique.");
+  assertStringIncludes(text, "No records yet for: weekly_reviews.");
   assertStringIncludes(text, "exercise_history reads one exercise out of the workouts.");
   assertEquals(text.length <= dataIndexContributorBudgetChars, true);
 });

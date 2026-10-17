@@ -95,13 +95,6 @@ export const coachLookupCatalogue = [
     filterMeaning: "",
   },
   {
-    name: "physique",
-    rpc: "coach_lookup_physique_v1",
-    summary: "physique checks (a visual estimate from photos, newest 5) in the range",
-    filter: "none",
-    filterMeaning: "",
-  },
-  {
     name: "health_history",
     rpc: "coach_lookup_health_history_v1",
     summary:

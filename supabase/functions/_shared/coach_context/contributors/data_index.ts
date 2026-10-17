@@ -22,7 +22,6 @@ const nouns: Readonly<Record<string, string>> = {
   plan_history: "training plan versions",
   goals: "goals",
   weekly_reviews: "weekly reviews",
-  physique: "physique checks",
   health_history: "months imported from Apple Health at onboarding",
 };
 

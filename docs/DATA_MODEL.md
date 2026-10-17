@@ -747,9 +747,9 @@ Read-only `SECURITY DEFINER` functions, granted to `service_role` only, each ret
   targets from `get_progression_summary_v1`), `get_coach_nutrition_state_v1` (the week's days with
   complete flags, the target, the schedule with what is logged, what was eaten today, where meals
   came from), `get_coach_data_index_v1` (first and last date and count per kind of record).
-- Lookups, `(p_user_id, p_from, p_to, p_filter)`, range cut to 400 days, rows capped:
+- Lookups (ten), `(p_user_id, p_from, p_to, p_filter)`, range cut to 400 days, rows capped:
   `coach_lookup_workouts_v1`, `_exercise_history_v1`, `_meals_v1`, `_body_v1`, `_check_ins_v1`,
-  `_recovery_v1`, `_plan_history_v1`, `_goals_v1`, `_weekly_reviews_v1`, `_physique_v1`,
+  `_recovery_v1`, `_plan_history_v1`, `_goals_v1`, `_weekly_reviews_v1`,
   `_health_history_v1`. Check-in notes are cut to 300 characters; a goal returns its target keys only
   (never the free-form details).
 - `private.nutrition_day_totals` and `private.nutrition_complete_day_rules` define a complete

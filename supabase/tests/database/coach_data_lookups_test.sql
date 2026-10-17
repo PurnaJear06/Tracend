@@ -1,7 +1,7 @@
 begin;
 select no_plan();
 
--- A10: complete logging days, change eligibility, the Coach baseline RPCs, the eleven lookups and
+-- A10: complete logging days, change eligibility, the Coach baseline RPCs, the ten lookups and
 -- the turn trace columns (migration 20261018100020_coach_data_lookups.sql).
 
 insert into auth.users(id, role) values
@@ -197,7 +197,7 @@ select is(public.get_coach_nutrition_state_v1('a1000000-0000-4000-8000-000000000
 select is((select array(select k from jsonb_object_keys(
     public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)->'domains') k
     order by k collate "C")),
-  array['body', 'check_ins', 'goals', 'health_history', 'meals', 'physique', 'plan_history', 'recovery',
+  array['body', 'check_ins', 'goals', 'health_history', 'meals', 'plan_history', 'recovery',
     'weekly_reviews', 'workouts'], 'the index covers every kind of record');
 select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)
     ->'domains'->'workouts', jsonb_build_object('first', current_date - 40, 'last', current_date - 5,
@@ -224,14 +224,6 @@ insert into public.user_goals(user_id, goal_type, status, details, activated_at)
 insert into public.progress_reviews(user_id, review_week, schema_version, summary) values
   ('a1000000-0000-4000-8000-000000000001', current_date - 7, '1.0',
    '{"outcome_code":"week_observed","training":{"planned_sessions":2,"completed_workouts":1,"completed_sets":9,"adherence_percent":50},"recovery":{"check_in_days":3},"nutrition":{"confirmed_days":4},"next_focus_code":"continue_approved_plan","missing_data":[]}');
-insert into public.progress_photo_sets(id, user_id, captured_on, capture_protocol_version, timing_context,
-  status) values
-  ('a1900000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000001', current_date - 3,
-   'standard-v1', 'morning', 'draft');
-insert into public.physique_analyses(user_id, baseline_photo_set_id, current_photo_set_id, result) values
-  ('a1000000-0000-4000-8000-000000000001', 'a1900000-0000-4000-8000-000000000001',
-   'a1900000-0000-4000-8000-000000000001',
-   '{"schema_version":"1.0","development_priorities":[{"muscle":"chest","confidence":"medium","reason":"Upper chest looks less full."}],"observations":["Back width stands out."],"photo_issues":[],"limitations":"Photos cannot show strength."}');
 insert into public.health_history_months(user_id, month, workouts, strength_workouts, workout_minutes,
   sleep_nights, sleep_minutes_avg, weight_days, weight_kg_avg, data_days) values
   ('a1000000-0000-4000-8000-000000000001', date_trunc('month', current_date - 100)::date, 12, 8, 700, 20,
@@ -333,12 +325,6 @@ select is(pg_temp.keys(public.coach_lookup_weekly_reviews_v1('a1000000-0000-4000
 select is(public.coach_lookup_weekly_reviews_v1('a1000000-0000-4000-8000-000000000001', current_date - 30,
     current_date, null)->'reviews'->0->>'outcome_code', 'week_observed', 'a review reports its outcome');
 
-select is(pg_temp.keys(public.coach_lookup_physique_v1('a1000000-0000-4000-8000-000000000001',
-    current_date - 30, current_date, null)),
-  array['checks', 'from', 'lookup', 'schema_version', 'to', 'truncated'], 'physique: key list');
-select is(public.coach_lookup_physique_v1('a1000000-0000-4000-8000-000000000001', current_date - 30,
-    current_date, null)->'checks'->0->'priorities'->0->>'muscle', 'chest', 'a check reports its priorities');
-
 select is(pg_temp.keys(public.coach_lookup_health_history_v1('a1000000-0000-4000-8000-000000000001',
     current_date - 400, current_date, null)),
   array['from', 'lookup', 'months', 'schema_version', 'to', 'truncated'], 'health history: key list');
@@ -404,14 +390,14 @@ select is(public.coach_lookup_goals_v1('a1000000-0000-4000-8000-000000000002', c
 select is((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and (p.proname like 'coach\_lookup\_%\_v1'
       or p.proname in ('get_coach_plan_state_v1', 'get_coach_nutrition_state_v1', 'get_coach_data_index_v1'))),
-  14::bigint, 'fourteen functions: eleven lookups and three baseline reads');
+  13::bigint, 'thirteen functions: ten lookups and three baseline reads');
 select is((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and (p.proname like 'coach\_lookup\_%\_v1'
       or p.proname in ('get_coach_plan_state_v1', 'get_coach_nutrition_state_v1', 'get_coach_data_index_v1'))
       and has_function_privilege('service_role', p.oid, 'execute')
       and not has_function_privilege('authenticated', p.oid, 'execute')
       and not has_function_privilege('anon', p.oid, 'execute')
-      and p.prosecdef), 14::bigint, 'each is SECURITY DEFINER and only the service role calls it');
+      and p.prosecdef), 13::bigint, 'each is SECURITY DEFINER and only the service role calls it');
 select ok(not has_function_privilege('authenticated',
     'private.nutrition_day_totals(uuid, date, date)', 'execute'), 'the day totals are private');
 
@@ -437,6 +423,10 @@ select is((select count(*) from public.coach_messages where guard_faults is not 
 select throws_ok($$update public.coach_messages set guard_faults = array['x']$$, '42501', null,
   'and nobody writes it from the app');
 reset role;
+
+select ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'coach_lookup_physique_v1'),
+  'there is no physique lookup: that data reaches the Coach provider only under an accepted notice');
 
 select * from finish();
 rollback;

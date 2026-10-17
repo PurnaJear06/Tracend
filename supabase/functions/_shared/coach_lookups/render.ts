@@ -237,24 +237,6 @@ function weeklyReviews(body: Json): { lines: string[]; rows: number } {
   return { lines, rows: reviews.length };
 }
 
-function physique(body: Json): { lines: string[]; rows: number } {
-  const checks = list(body.checks);
-  const lines = checks.map((check) => {
-    const priorities = list(check.priorities).map((item) =>
-      `${val(item.muscle)} (${val(item.confidence)} confidence: ${val(item.reason)})`
-    ).join("; ");
-    const confirmed = Array.isArray(check.confirmed_muscles) && check.confirmed_muscles.length
-      ? `; the athlete confirmed ${check.confirmed_muscles.join(", ")} as focus`
-      : "";
-    return `- ${
-      val(check.checked_on)
-    } (a visual estimate from photos, not a measurement): develop ${
-      priorities || "—"
-    }${confirmed}. Limitations: ${val(check.limitations)}`;
-  });
-  return { lines, rows: checks.length };
-}
-
 function healthHistory(body: Json): { lines: string[]; rows: number } {
   const months = list(body.months);
   const lines = months.map((month) =>
@@ -279,7 +261,6 @@ const renderers: Readonly<Record<string, (body: Json) => { lines: string[]; rows
   plan_history: planHistory,
   goals,
   weekly_reviews: weeklyReviews,
-  physique,
   health_history: healthHistory,
 };
 

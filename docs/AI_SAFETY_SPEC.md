@@ -952,9 +952,9 @@ records, for any day or period, when the question needs it. This is **not an age
 calling**. The mechanism is part of the JSON answer, so it works with any provider and the Claude
 adapter still sends no tools.
 
-- **A closed catalogue** (`_shared/coach_lookups/catalogue.ts`): eleven lookups (`workouts`,
+- **A closed catalogue** (`_shared/coach_lookups/catalogue.ts`): ten lookups (`workouts`,
   `exercise_history`, `meals`, `body`, `check_ins`, `recovery`, `plan_history`, `goals`,
-  `weekly_reviews`, `physique`, `health_history`). Each is one `SECURITY DEFINER` RPC granted to
+  `weekly_reviews`, `health_history`). Each is one `SECURITY DEFINER` RPC granted to
   `service_role` only, read-only, with a `schema_version`, a row cap and a range clamp.
 - **The model names a lookup, a range and a filter; nothing else.** The answer may carry
   `data_requests: [{lookup, from, to, filter}]` instead of a final answer. The athlete's id is bound

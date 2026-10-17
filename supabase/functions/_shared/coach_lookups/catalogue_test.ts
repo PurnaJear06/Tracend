@@ -22,9 +22,9 @@ const refused = (raw: unknown) => {
   return checked.reason;
 };
 
-Deno.test("the catalogue is a closed list: eleven lookups, each with its own RPC", () => {
-  assertEquals(coachLookupNames.length, 11);
-  assertEquals(new Set(coachLookupCatalogue.map((spec) => spec.rpc)).size, 11);
+Deno.test("the catalogue is a closed list: ten lookups, each with its own RPC", () => {
+  assertEquals(coachLookupNames.length, 10);
+  assertEquals(new Set(coachLookupCatalogue.map((spec) => spec.rpc)).size, 10);
   for (const spec of coachLookupCatalogue) {
     assertEquals(spec.rpc, `coach_lookup_${spec.name}_v1`);
   }
@@ -52,6 +52,14 @@ Deno.test("unknown lookups and unknown keys are refused", () => {
   assertStringIncludes(refused("body"), "non-empty list");
   assertStringIncludes(refused([]), "non-empty list");
   assertStringIncludes(refused([null]), "must be an object");
+});
+
+Deno.test("the physique lookup is not offered: summaries of photos reach the Coach provider only under an accepted notice", () => {
+  assertEquals(coachLookupNames.includes("physique" as never), false);
+  assertStringIncludes(
+    refused([{ lookup: "physique", from: "2026-08-01", to: today }]),
+    "unknown lookup",
+  );
 });
 
 Deno.test("an oversized range is refused: 400 days pass, 401 do not", () => {
@@ -86,7 +94,7 @@ Deno.test("more than four requests in a round are refused; repeats are merged", 
       request("recovery"),
       request("check_ins"),
       request("goals"),
-      request("physique"),
+      request("weekly_reviews"),
     ]),
     "at most 4 requests",
   );
