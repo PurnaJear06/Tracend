@@ -91,7 +91,11 @@ class SleepingHeartRateRecorder {
       for (final night in nights) {
         final readings = await _readNight(night);
         final summary = summariseSleepingHeartRate(night, readings);
-        if (summary != null) summaries.add(summary);
+        // The server refuses a night outside its bounds; leave such a night
+        // out here so it cannot cost the others their save.
+        if (summary != null && summary.withinServerBounds) {
+          summaries.add(summary);
+        }
       }
       if (summaries.isEmpty) return;
       // The reads above take a while and this runs unawaited after a sync, so

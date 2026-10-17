@@ -78,7 +78,7 @@ void main() {
   group('persist_sleeping_heart_rate_v1 1.0', () {
     test('carries its schema version and complete key list', () {
       final json = _fixture('persist_sleeping_heart_rate_v1_0');
-      expect(json.keys.toSet(), {'schema_version', 'saved'});
+      expect(json.keys.toSet(), {'schema_version', 'saved', 'skipped'});
       expect(json['schema_version'], '1.0');
     });
 

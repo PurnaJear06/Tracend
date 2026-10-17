@@ -295,6 +295,43 @@ void main() {
       expect(repository.saved, isEmpty);
     });
 
+    test('a night outside the server bounds is not sent', () async {
+      // About 24000 readings asleep: the server accepts at most 20000.
+      reader.samples = [
+        for (var i = 0; i < 25000; i++)
+          HeartRateSample(at: _at(15, 23).add(Duration(seconds: i)), bpm: 52),
+      ];
+      await recorder.record(_night());
+      expect(repository.saved, isEmpty);
+    });
+
+    test('the server bounds are checked on every field', () {
+      SleepingHeartRateNight night({
+        int median = 52,
+        int lowest = 46,
+        int samples = 84,
+        int asleep = 430,
+        double coverage = 0.8,
+      }) => SleepingHeartRateNight(
+        localDate: '2026-10-16',
+        medianBpm: median,
+        lowestBpm: lowest,
+        sampleCount: samples,
+        asleepMinutes: asleep,
+        coverage: coverage,
+      );
+      expect(night().withinServerBounds, isTrue);
+      expect(night(samples: 20000).withinServerBounds, isTrue);
+      expect(night(samples: 20001).withinServerBounds, isFalse);
+      expect(night(asleep: 1440).withinServerBounds, isTrue);
+      expect(night(asleep: 1441).withinServerBounds, isFalse);
+      expect(night(asleep: 0).withinServerBounds, isFalse);
+      expect(night(median: 201).withinServerBounds, isFalse);
+      expect(night(lowest: 29).withinServerBounds, isFalse);
+      expect(night(lowest: 60).withinServerBounds, isFalse);
+      expect(night(coverage: 1.1).withinServerBounds, isFalse);
+    });
+
     test('a failing read or save never throws', () async {
       reader.failing = true;
       await recorder.record(_night());

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tracend/features/health/health_data_source.dart';
@@ -37,6 +38,7 @@ class SupabaseHealthRepository
     HealthDataSource? source,
     DateTime Function()? now,
     SleepingHeartRateRecorder? sleepingHeartRate,
+    HeartRateReader? heartRateReader,
   }) : _client = client,
        _state = HealthPreferences(
          preferences,
@@ -45,10 +47,12 @@ class SupabaseHealthRepository
        ),
        _source = source ?? HealthKitDataSource(),
        _now = now ?? DateTime.now,
+       _heartRateReader =
+           heartRateReader ?? const MethodChannelHeartRateReader(),
        _sleepingHeartRate =
            sleepingHeartRate ??
            SleepingHeartRateRecorder(
-             reader: const MethodChannelHeartRateReader(),
+             reader: heartRateReader ?? const MethodChannelHeartRateReader(),
              repository: SupabaseSleepingHeartRateRepository(client),
              preferences: preferences,
              userId: () => client.auth.currentUser?.id,
@@ -61,6 +65,7 @@ class SupabaseHealthRepository
   final HealthPreferences _state;
   final HealthDataSource _source;
   final DateTime Function() _now;
+  final HeartRateReader _heartRateReader;
   final SleepingHeartRateRecorder _sleepingHeartRate;
 
   @override
@@ -165,7 +170,11 @@ class SupabaseHealthRepository
     // plugin's types do not include. Asking here, when the athlete taps
     // Connect or Refresh, shows Apple's sheet only while the choice is
     // undecided; a plain background sync never asks.
-    await const MethodChannelHeartRateReader().requestAccess();
+    try {
+      await _heartRateReader.requestAccess();
+    } catch (e) {
+      debugPrint('Non-critical error: heart-rate access not requested: $e');
+    }
     return sync();
   }
 

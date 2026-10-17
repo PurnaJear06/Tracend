@@ -188,6 +188,21 @@ class SleepingHeartRateNight {
   /// Share (0 to 1) of the night's 10-minute slots that have readings.
   final double coverage;
 
+  /// Whether the server's checks would accept this night: 30 to 200 beats,
+  /// the lowest not above the median, 1 to 20000 readings, 1 to 1440 minutes
+  /// asleep and a coverage of 0 to 1.
+  bool get withinServerBounds =>
+      medianBpm >= 30 &&
+      medianBpm <= 200 &&
+      lowestBpm >= 30 &&
+      lowestBpm <= medianBpm &&
+      sampleCount >= 1 &&
+      sampleCount <= 20000 &&
+      asleepMinutes >= 1 &&
+      asleepMinutes <= 1440 &&
+      coverage >= 0 &&
+      coverage <= 1;
+
   Map<String, Object> toJson() => {
     'local_date': localDate,
     'median_bpm': medianBpm,

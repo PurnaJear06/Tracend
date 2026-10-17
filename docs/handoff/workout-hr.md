@@ -131,10 +131,10 @@ open the summary again.
 - Migration `20261017110233_heart_rate_profile.sql` (code 33, re-stamp before handoff): table
   `sleeping_heart_rate_nights` (RLS on and forced, owner select only; one derived row per night:
   median, lowest 10-minute mean with 2+ readings, readings, minutes asleep, coverage), `persist_sleeping_heart_rate_v1`
-  (security definer, authenticated, 1 to 14 nights, 22023 on invalid values, `schema_version` 1.0),
+  (security definer, authenticated, 1 to 14 nights; an invalid night is skipped and counted in `skipped`, a null or malformed list raises 22023; `schema_version` 1.0),
   `get_my_heart_rate_inputs_v1(local_date)` (own data, 1.0) and `get_heart_rate_inputs_v1(user, date)`
   (service role only, the same object). The inputs hold the birth year, 14 days of resting heart rate,
-  60 days of per-set summaries and the 10 highest peaks of 365 days; no sleeping heart rate. The profile
+  the usable per-set summaries of two 28-day windows (filtered first, 200 per window) and the 10 highest peaks of 365 days; no sleeping heart rate. The profile
   is not stored: it is computed on demand. `privacy-export` lists the new table; account deletion
   removes it through the `user_accounts` cascade (pgTAP proves it). pgTAP `heart_rate_profile_test.sql`.
 - Maths (twins: `lib/features/workout_hr/heart_rate_profile.dart`,
@@ -171,6 +171,15 @@ open the summary again.
   heart_rate_profile_test.dart`, `sleeping_heart_rate_test.dart`, `heart_rate_zones_view_test.dart`,
   `health_card_zones_test.dart`; `test/contract/heart_rate_profile_contract_test.dart` with fixtures
   `heart_rate_inputs_v1_0.json` and `persist_sleeping_heart_rate_v1_0.json`.
+- Review fixes (Claude Opus review of #133): (1) `private.heart_rate_inputs` filters the recovery sets to
+  the usable ones (60 s drop, end heart rate, 60%+ coverage) and caps each 28-day window at 200 on its own,
+  instead of one newest-first limit of 400 over everything (pgTAP: a heavy-volume case). (2)
+  `SupabaseHealthRepository.connectAndSync` wraps the heart-rate access request in try/catch (logged as
+  non-critical) so it can never stop the sync; the reader is injectable (test: a throwing reader, the sync
+  still runs). (3) The phone drops a night outside the server bounds (`withinServerBounds`) before sending, and
+  `persist_sleeping_heart_rate_v1` skips an invalid night per item and returns `skipped` (additive, still
+  `schema_version` 1.0; fixture updated). (4) A null `nights` raises 22023. (5) DATA_MODEL states the `local_date`
+  rule (at most one day after the server's date). The migration is not on main, so it was edited in place.
 - Review fixes (GPT 5.6 Sol review of #133): (1) `SleepingHeartRateRecorder.record` is bound to the
   athlete signed in when it starts: it checks the signed-in id before the RPC and before marking nights
   final, and sends nothing if another account signed in during the reads (test: switch account).

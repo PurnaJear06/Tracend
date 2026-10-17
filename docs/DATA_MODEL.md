@@ -510,7 +510,7 @@ are stored and that no function other than the save mentions the table.
 
 | Column | Type | Rule |
 |---|---|---|
-| `local_date` | date | the local day the night ends on (the day Apple Health sleep is attributed to); not in the future, not over 400 days old |
+| `local_date` | date | the local day the night ends on (the day Apple Health sleep is attributed to); at most one day after the server's date (timezones ahead of UTC), not over 400 days old |
 | `median_bpm` | smallint | median of the readings taken asleep, 30–200 |
 | `lowest_bpm` | smallint | the lowest mean of any 10-minute slot asleep that holds at least 2 readings (never one reading; a night with no such slot is not sent), 30–200, not above the median |
 | `sample_count` | integer | readings asleep, 1–20000 (the phone sends a night only with at least 20) |
@@ -520,7 +520,9 @@ are stored and that no function other than the save mentions the table.
 
 RLS is on and forced (select own rows only; no direct insert, update or delete).
 `persist_sleeping_heart_rate_v1(nights)` (security definer, authenticated, 1 to 14 nights) upserts per
-night and returns `{schema_version: "1.0", saved}`; invalid values raise 22023. The privacy export lists
+night and returns `{schema_version: "1.0", saved, skipped}`. A night with an invalid value is skipped and
+counted in `skipped` (one bad night does not lose the others, and the phone also drops a night outside
+these bounds before sending); a request that is null, not a list or not 1 to 14 nights raises 22023. The privacy export lists
 the table and account deletion removes it through the cascade.
 
 **Heart-rate profile inputs (C3).** The profile (resting heart rate, estimated maximum, zones,
@@ -531,8 +533,9 @@ date within 2 days of today) and, for the Coach's contributor, `get_heart_rate_i
 local_date)` (service role only). Both return the same object, `schema_version` 1.0:
 `{schema_version, as_of, birth_year, resting: [{local_date, bpm}], sets: [...], peak_candidates: [...]}`.
 `resting` holds Apple Health resting heart rate of the last 14 days between 30 and 120 bpm, oldest first;
-`sets` the per-set summaries (above) of the last 60 days, newest first, at most 400, each with its
-workout's `local_date`; `peak_candidates` the 10 sets with the highest *trusted* peaks of the last 365 days: the trust rules
+`sets` the recovery sets, newest first: per-set summaries (above) with a 60-second drop, an end heart rate
+and 60%+ coverage, from the last 28 days and the 28 days before, each window capped at 200 on its own after
+that filter, each with its workout's `local_date`; `peak_candidates` the 10 sets with the highest *trusted* peaks of the last 365 days: the trust rules
 (Watch workout, 8+ readings, 60%+ coverage, 120 bpm up to the age ceiling, 210 with no age) are applied
 before the limit, so untrusted higher peaks never crowd out a valid lower one. The SQL ceiling is the
 formula + 21 (a superset of the exact check), and the profile code applies the exact one.

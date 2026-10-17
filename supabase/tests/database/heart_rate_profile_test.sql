@@ -4,7 +4,7 @@
 -- (validation, upsert, isolation), get_my_heart_rate_inputs_v1 and get_heart_rate_inputs_v1 (complete
 -- key lists, what is included and left out, the service-role-only grant) and account deletion.
 begin;
-select plan(72);
+select plan(78);
 
 insert into auth.users(id, role) values
   ('c3300000-0000-4000-8000-000000000001', 'authenticated'),
@@ -45,6 +45,20 @@ insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_o
   ('c3340000-0000-4000-8000-000000000002', 'c3300000-0000-4000-8000-000000000001',
    'c3330000-0000-4000-8000-000000000002', 1, 'Heart intervals', 12, 6, 8, 90);
 
+-- Three workouts for the heavy-volume case: ten exercises of twelve sets twice (recent) and one
+-- exercise of twelve sets (prior).
+insert into public.planned_workouts(id, user_id, plan_version_id, workout_order, name, objective,
+  preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance)
+select ('c3330000-0000-4000-8000-00000000000' || n)::uuid, 'c3300000-0000-4000-8000-000000000001',
+  'c3320000-0000-4000-8000-000000000001', n, 'Volume ' || n, 'Volume', n, 60, 'Warm up', 'Cool down'
+from generate_series(3, 5) n;
+insert into public.planned_exercises(user_id, planned_workout_id, exercise_order,
+  display_name_snapshot, set_count, rep_min, rep_max, rest_seconds)
+select 'c3300000-0000-4000-8000-000000000001', ('c3330000-0000-4000-8000-00000000000' || w)::uuid,
+  e, 'Volume lift ' || e, 12, 6, 8, 60
+from generate_series(3, 5) w, generate_series(1, 10) e
+where w < 5 or e = 1;
+
 create temporary table flow(name text primary key, id uuid);
 create temporary table h(j jsonb);
 grant all on flow, h to authenticated;
@@ -63,6 +77,25 @@ returns jsonb language sql as $$
     'peak_bpm', peak, 'end_bpm', 108, 'drop_30s_bpm', 12, 'drop_60s_bpm', 25, 'coverage', 0.92,
     'sample_count', 41, 'source', 'watch_workout') || extra;
 $$;
+
+-- Logs a workout on a past day with `exercises` exercises of twelve finished sets and saves a
+-- summary for each set.
+create function pg_temp.volume(planned uuid, days_ago integer, idem uuid, exercises integer)
+returns void language plpgsql as $$
+declare session_id uuid; e integer;
+begin
+  session_id := public.start_workout(planned, current_date - days_ago, 'UTC', idem);
+  perform public.sync_workout_draft(session_id, 1, jsonb_build_object('exercises', (
+    select jsonb_agg(jsonb_build_object('order', x, 'status', 'performed', 'sets', (
+      select jsonb_agg(jsonb_build_object('number', n, 'repetitions', '8', 'load_kg', '60',
+        'completed', true) order by n) from generate_series(1, 12) n)) order by x)
+    from generate_series(1, exercises) x)));
+  for e in 1..exercises loop
+    perform public.persist_set_heart_rate_v1(session_id, (
+      select jsonb_agg(pg_temp.summary(n, 150, jsonb_build_object('exercise_order', e)) order by n)
+      from generate_series(1, 12) n));
+  end loop;
+end $$;
 
 -- Shape ----------------------------------------------------------------------------------------
 
@@ -148,29 +181,36 @@ select throws_ok($$select pg_temp.save('{"a":1}')$$, '22023', null, 'nights must
 select throws_ok($$select pg_temp.save('[]')$$, '22023', null, 'and not empty');
 select throws_ok($$select pg_temp.save((select jsonb_agg(pg_temp.night(n)) from generate_series(1, 15) n))$$,
   '22023', null, 'and at most 14 nights');
-select throws_ok($$select pg_temp.save('[1]')$$, '22023', null, 'each night is an object');
-select throws_ok($$select pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"local_date":"yesterday"}')))$$,
-  '22023', null, 'a date must be a date');
-select throws_ok($$select pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"local_date":"2026-13-45"}')))$$,
-  '22023', null, 'a real one');
-select throws_ok($$select pg_temp.save(jsonb_build_array(pg_temp.night(-5)))$$,
-  '22023', null, 'a night in the future is refused');
-select throws_ok($$select pg_temp.save(jsonb_build_array(pg_temp.night(500)))$$,
-  '22023', null, 'and one from over a year ago');
-select throws_ok($$select pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"median_bpm":20}')))$$,
-  '22023', null, 'a median below 30 is refused');
-select throws_ok($$select pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"median_bpm":52.5}')))$$,
-  '22023', null, 'and a fraction of a beat');
-select throws_ok($$select pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"lowest_bpm":60}')))$$,
-  '22023', null, 'a lowest above the median is refused');
-select throws_ok($$select pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"coverage":1.5}')))$$,
-  '22023', null, 'coverage above 1 is refused');
-select throws_ok($$select pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"sample_count":0}')))$$,
-  '22023', null, 'a night with no readings is refused');
-select throws_ok($$select pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"asleep_minutes":null}')))$$,
-  '22023', null, 'and one with no sleep length');
-select is((select median_bpm from public.sleeping_heart_rate_nights where local_date = current_date - 2),
-  52::smallint, 'a refused batch changes nothing');
+select throws_ok($$select pg_temp.save(null)$$, '22023', null, 'a missing list is refused');
+select is(pg_temp.save('[1]'), '{"schema_version":"1.0","saved":0,"skipped":1}'::jsonb,
+  'a night that is not an object is skipped and counted');
+select is(pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"local_date":"yesterday"}'))), '{"schema_version":"1.0","saved":0,"skipped":1}'::jsonb,
+  'a date must be a date');
+select is(pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"local_date":"2026-13-45"}'))), '{"schema_version":"1.0","saved":0,"skipped":1}'::jsonb,
+  'a real one');
+select is(pg_temp.save(jsonb_build_array(pg_temp.night(-5))), '{"schema_version":"1.0","saved":0,"skipped":1}'::jsonb,
+  'a night in the future is refused');
+select is(pg_temp.save(jsonb_build_array(pg_temp.night(500))), '{"schema_version":"1.0","saved":0,"skipped":1}'::jsonb,
+  'and one from over a year ago');
+select is(pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"median_bpm":20}'))), '{"schema_version":"1.0","saved":0,"skipped":1}'::jsonb,
+  'a median below 30 is refused');
+select is(pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"median_bpm":52.5}'))), '{"schema_version":"1.0","saved":0,"skipped":1}'::jsonb,
+  'and a fraction of a beat');
+select is(pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"lowest_bpm":60}'))), '{"schema_version":"1.0","saved":0,"skipped":1}'::jsonb,
+  'a lowest above the median is refused');
+select is(pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"coverage":1.5}'))), '{"schema_version":"1.0","saved":0,"skipped":1}'::jsonb,
+  'coverage above 1 is refused');
+select is(pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"sample_count":0}'))), '{"schema_version":"1.0","saved":0,"skipped":1}'::jsonb,
+  'a night with no readings is refused');
+select is(pg_temp.save(jsonb_build_array(pg_temp.night(1, '{"asleep_minutes":null}'))), '{"schema_version":"1.0","saved":0,"skipped":1}'::jsonb,
+  'and one with no sleep length');
+select is((select median_bpm from public.sleeping_heart_rate_nights where local_date = current_date - 1),
+  55::smallint, 'a skipped night changes nothing');
+select is(pg_temp.save(jsonb_build_array(pg_temp.night(4), pg_temp.night(5, '{"median_bpm":20}'), pg_temp.night(6))),
+  '{"schema_version":"1.0","saved":2,"skipped":1}'::jsonb, 'one bad night does not cost the others theirs');
+select is((select array_agg(local_date order by local_date) from public.sleeping_heart_rate_nights
+    where local_date in (current_date - 4, current_date - 5, current_date - 6)),
+  array[current_date - 6, current_date - 4], 'and the good nights are stored');
 
 -- Inputs: the athlete's own -----------------------------------------------------------------------
 
@@ -232,8 +272,27 @@ select is((select jsonb_array_length(public.get_my_heart_rate_inputs_v1()->'peak
   'only the trusted peak within the age ceiling is a candidate');
 select is((select (public.get_my_heart_rate_inputs_v1()->'peak_candidates'->0->>'peak_bpm')::integer), 190,
   'a valid lower peak is not crowded out by ten untrusted higher ones');
-select is((select jsonb_array_length(public.get_my_heart_rate_inputs_v1()->'sets')), 12,
-  'while the recovery sets are not filtered by trust');
+select is((select jsonb_array_length(public.get_my_heart_rate_inputs_v1()->'sets')), 7,
+  'while the recovery sets are those with a drop, an end and 60%+ coverage, not filtered by trust');
+
+-- Heavy volume: the cap applies per 28-day window, after the filter ------------------------------
+-- Two recent workouts of 120 sets each (240, plus the 7 above), and one prior workout of 12 sets.
+
+select pg_temp.volume('c3330000-0000-4000-8000-000000000003', 3, 'c3350000-0000-4000-8000-000000000003', 10);
+select pg_temp.volume('c3330000-0000-4000-8000-000000000004', 4, 'c3350000-0000-4000-8000-000000000004', 10);
+select pg_temp.volume('c3330000-0000-4000-8000-000000000005', 40, 'c3350000-0000-4000-8000-000000000005', 1);
+delete from h;
+insert into h select public.get_my_heart_rate_inputs_v1();
+
+select is((select count(*) from h, jsonb_array_elements(j->'sets') e
+    where (e->>'local_date')::date >= current_date - 27), 200::bigint,
+  'the recent window is capped at 200');
+select is((select count(*) from h, jsonb_array_elements(j->'sets') e
+    where (e->>'local_date')::date < current_date - 27), 12::bigint,
+  'and does not crowd out the prior window');
+select ok((select bool_and((e->>'coverage')::numeric >= 0.6 and e->>'drop_60s_bpm' is not null
+      and e->>'end_bpm' is not null) from h, jsonb_array_elements(j->'sets') e),
+  'unusable sets are left out before the cap, so they never use it up');
 
 -- Another athlete --------------------------------------------------------------------------------
 
