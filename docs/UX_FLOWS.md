@@ -91,6 +91,7 @@ Account
 ├── Health: Apple Health
 ├── Appearance
 ├── Notifications (reminders, rest timer alerts)
+├── Widgets (health numbers on the Lock Screen)
 ├── AI coach: AI coaching, AI usage this month, Coach conversations
 └── Privacy: Export data, Consent history, Delete account
 ```
@@ -437,7 +438,26 @@ minute · sharpens today's call") with an arrow, and **Not today** under it. Sav
 are remembered on the phone for that date. The gate never locks the plan: "Not today" always lets
 the athlete through.
 
-**Planned (coaching platform, chunk D2):** Today and Lock Screen widgets.
+**Widgets (coaching platform, chunk D2).** Today also lives on the Home Screen and the Lock Screen
+(`ios/TracendWidgets/`; visuals in DESIGN_SYSTEM §3.7). Each time Today's brief loads, the app writes
+a compact snapshot to the app group; the widgets only read it and never call the network.
+
+- **Small:** today's session ("Rest day" when none) with where it stands ("Not started", "6 of 14
+  sets", "Done · 14 sets", "Nothing planned"), and the recovery score ("--" when not scored).
+- **Medium:** the same, plus the first three exercises with their plan targets ("4 × 6–8 · 82.5
+  kg"), calories and protein against the plan's targets, and "Checked in" or "Check-in due".
+- **Lock Screen:** circular, the recovery score on a ring; rectangular, the session, recovery and
+  protein against its target; inline, the session and recovery.
+- **Age.** Home Screen widgets show how old the snapshot is. A snapshot older than 12 hours, or from
+  another day, shows no numbers and reads **Open Tracend to refresh**; so does a widget before Today
+  has ever loaded, and after sign-out. The widgets reflect the last time Today loaded, not a live
+  feed: a meal logged in Nutrition shows once Today next loads (pull to refresh).
+- **Taps.** Every widget opens Today (`tracend://today`), except a planned or started session, which
+  opens Train: the medium widget's exercise list and the Lock Screen rectangular widget
+  (`tracend://train`). The app switches to that tab on launch or return; the request expires after
+  a minute.
+- **Lock Screen numbers are off until chosen** (**Account › Widgets**, §13). Off, the Lock Screen
+  widgets show only "Tracend" and "Lock Screen numbers are off" (a lock glyph in the circular one).
 
 ### Quick check-in
 
@@ -1151,6 +1171,11 @@ Account is one iOS inset-grouped settings page:
   (**Turn on rest timer alerts?**), and only **Continue** leads to the iOS permission request.
   **Not now**, off or a denied permission keeps the rest timer in the app only, and a denial
   points to iOS Settings. There is no in-app haptics toggle; the iOS setting governs haptics.
+- **Widgets:** one switch row, **Health numbers on the Lock Screen**, off until chosen ("Off · Lock
+  Screen widgets show Tracend and nothing else"; on: "recovery, today's session and protein show
+  while the phone is locked"). Turning it off removes the numbers from what the widgets read at once.
+  The footnote says anyone holding the locked phone can read Lock Screen widgets, and that Home
+  Screen widgets show the day once the phone is unlocked.
 - **AI coach:** **AI coaching** (on, or "Off · plans and logging still work"), **AI usage this
   month**, and **Coach conversations** (a sheet; deleting a conversation asks with a destructive
   confirm, **Delete thread**). The footnote says provider keys stay on Tracend's server. The AI

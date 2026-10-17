@@ -323,7 +323,10 @@ The MVP may provide local or push reminders for scheduled workouts, check-ins, m
 weekly review, and pending proposals. Notifications must not reveal sensitive health or physique
 details on the lock screen. The rest-timer alert and Live Activity are described in section 4.5.
 
-**Planned (Phase 3, D2):** Today and Lock Screen widgets.
+**Widgets (Phase 3, D2).** Today and Lock Screen widgets show today's session, recovery, the first
+exercises with their targets, calories and protein against the plan, and the check-in state, from a
+snapshot the app writes when Today loads. Lock Screen numbers are off until the athlete turns them
+on in Account (SECURITY_PRIVACY §10). Notifications themselves still reveal nothing sensitive.
 
 ### 5.6 Feedback and auditability
 
