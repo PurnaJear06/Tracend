@@ -659,12 +659,37 @@ spanning 14 days). BMI is weight over height squared when height is known. Confi
 with eight or more readings over at least four weeks and a known activation date, low when the
 latest reading is older than 14 days or fewer than three readings exist.
 
+**Recorded history (B7.1).** The goal is often activated well after the weight started to fall
+(production case: goal activated 3 July, first weight 90.0 kg on 3 June, 74.8 kg on 13 October:
+-15.2 kg and -16.9% over 18.9 weeks, against -8.2 kg and 13.7 weeks inside the goal). The summary
+therefore also carries a `history` block over every kept reading (the implausible-reading
+exclusion applies): the first reading's date and smoothed weight (median of up to three readings
+within seven days, like the phase start), change in kg and %, weeks and reading count. It is
+present only when the first reading is at least 7 days before the first reading of the goal phase
+(`historyMinimumLeadDays`), so a history equal to the goal phase adds no second line. Coach sees
+both blocks with their dates, the history first.
+
+**Continuous loss.** `continuousLoss` is the run of falling weight that ends now. Walking back from
+the current weight, each higher smoothed reading moves the run's start back to it; the walk stops
+at a reading lower than the high so far by more than 3% (`continuousRunTolerancePct`, the day-to-day
+scatter), because the weight was rising before that (a gain phase or a rebound). So after a gain
+the run starts at the high point, and a diet-break rise under 3% does not end it. It is kept only
+when it differs from the goal phase: a start before the goal phase must also sit at least 3%
+above the phase's start weight (a flat stretch before the goal is not a loss that began earlier),
+and a start after the phase began (weight rose, then fell inside the goal) is kept as it is. The
+run needs a loss and at least 2 weeks. Its start, weight, change, weeks and whether it began before the goal are rendered
+as "Continuous loss", or folded into the history line ("one continuous loss") when it starts at the
+first reading.
+
 **Review outcomes**, first match wins:
 
 1. `target_reached`: the target weight is met within 0.5 kg in the goal's direction.
 2. `consider_maintenance_or_diet_break`: BMI below 18.5, or, while the weight is still falling
    (at least 0.1 kg a week), any of BMI below 19.5, 16 weeks or more with a loss of at least 5%,
-   12 weeks or more with a loss of at least 10%.
+   12 weeks or more with a loss of at least 10%. The two loss rules judge the continuous loss
+   (its weeks and its % from its high point) whenever one exists, else the goal phase; the
+   reason text names the date the run began. The pace rule (`slow_down`) and the precedence of the
+   outcomes are unchanged.
 3. `slow_down`: a loss above 1% of body weight a week after at least three weeks.
 4. `ask_target`: the goal has no weight, body-fat range or physique target.
 5. `continue`.
@@ -678,7 +703,7 @@ even beside a safety outcome.
 | 1% of body weight a week | Athletes keeping muscle lose 0.5 to 1% a week; 1.4% a week lost lean mass | Helms 2014; Garthe 2011 |
 | 16 weeks, 5% | A 16-week continuous deficit; intermittent arms lost more; 3 to 5% is clinically meaningful | Byrne 2018; Trexler 2014; Jensen 2014 |
 | 10% at 12 weeks | Top of the 5 to 10% first-goal range | Jensen 2014 |
-| 19.5, 3 weeks, 0.1 kg, 0.5 kg, 3%, 1.5%, 12 weeks, 14 days | Tracend in-house values | listed for owner review in `docs/handoff/training-engine.md` |
+| 19.5, 3 weeks, 0.1 kg, 0.5 kg, 3%, 1.5%, 12 weeks, 14 days, 3% run tolerance, 7 days history lead | Tracend in-house values | listed for owner review in `docs/handoff/training-engine.md` |
 
 Sources and DOIs live in `goal_phase/sources.ts` (each checked against Crossref, 2026-10-17).
 

@@ -62,8 +62,13 @@ function maintenanceReasons(summary: GoalPhaseSummary): ReviewReason[] {
       sources: ["who_2004", "tracend_in_house"],
     });
   }
-  const weeks = summary.weeks;
-  const changePct = summary.changePct;
+  // The loss is judged over the continuous run of falling weight when it differs from the goal
+  // phase (it began before the goal, or the weight rose first): the athlete's body does not
+  // know the date the goal was activated.
+  const run = summary.continuousLoss;
+  const weeks = run?.weeks ?? summary.weeks;
+  const changePct = run?.changePct ?? summary.changePct;
+  const since = run?.startDate ?? summary.phaseStart;
   if (stillLosing && weeks !== null && changePct !== null) {
     if (
       weeks >= limits.longDeficitWeeks.value &&
@@ -71,8 +76,8 @@ function maintenanceReasons(summary: GoalPhaseSummary): ReviewReason[] {
     ) {
       reasons.push({
         code: "long_continuous_deficit",
-        detail: `${weeks} weeks of falling weight (${changePct}% since the start); a ` +
-          `continuous deficit this long is usually broken up`,
+        detail: `${weeks} weeks of falling weight since ${since} (${changePct}% from the start ` +
+          `of the run); a continuous deficit this long is usually broken up`,
         sources: ["byrne_2018", "trexler_2014", "jensen_2014"],
       });
     }
@@ -82,7 +87,7 @@ function maintenanceReasons(summary: GoalPhaseSummary): ReviewReason[] {
     ) {
       reasons.push({
         code: "large_total_loss",
-        detail: `${changePct}% of body weight lost since the start of the phase`,
+        detail: `${Math.abs(changePct)}% of body weight lost since ${since}`,
         sources: ["jensen_2014", "tracend_in_house"],
       });
     }

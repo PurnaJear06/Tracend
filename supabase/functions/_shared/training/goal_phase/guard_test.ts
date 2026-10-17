@@ -39,6 +39,8 @@ Deno.test("history, warnings, targets and the athlete's own numbers pass", () =>
       "Your weight is 74.8 kg today.",
       "Do not go below 60 kg in the next 6 weeks.",
       "You lost 15 kg over the goal phase.",
+      "Since 3 June your recorded weight went from 90 kg to 74.8 kg over 19 weeks, 15.2 kg in all.",
+      "Your goal phase started at 83 kg on 9 July and you are at 74.8 kg today.",
       "You would be at 75 kg if you hold this week.",
     ]
   ) {

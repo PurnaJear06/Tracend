@@ -42,6 +42,31 @@ export type ExcludedReading = Readonly<{
 
 export type PhaseConfidence = "high" | "medium" | "low";
 
+/** Every recorded weight reading, from the first one; present only when it starts before the phase. */
+export type RecordedHistory = Readonly<{
+  startDate: string;
+  startWeightKg: number;
+  /** Current minus start, in kg; negative is a loss. */
+  changeKg: number;
+  changePct: number;
+  weeks: number;
+  readingsUsed: number;
+}>;
+
+/**
+ * The run of falling weight that ends now, from its high point (a rise smaller than the
+ * tolerance does not end it). Present only when it differs from the goal phase: it began before
+ * the goal phase, or after the phase began (weight rose, then fell).
+ */
+export type ContinuousLoss = Readonly<{
+  startDate: string;
+  startWeightKg: number;
+  changeKg: number;
+  changePct: number;
+  weeks: number;
+  beganBeforeGoalPhase: boolean;
+}>;
+
 export type GoalPhaseSummary = Readonly<{
   hasGoal: boolean;
   goalType: string | null;
@@ -68,6 +93,8 @@ export type GoalPhaseSummary = Readonly<{
   hasTarget: boolean;
   target: GoalTarget;
   readingsUsed: number;
+  history: RecordedHistory | null;
+  continuousLoss: ContinuousLoss | null;
   excluded: readonly ExcludedReading[];
   confidence: PhaseConfidence;
   notes: readonly string[];

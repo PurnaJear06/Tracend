@@ -408,6 +408,27 @@ card; no frozen SQL function changed.
   a refused target with no active goal says so.
 - **Parity digests.** `coach_chat_parity_test.ts` records the new legacy request digests: the
   persona, the goal-phase rules and the goal-details wording changed on purpose.
+- **B7.1 (recorded history, 2026-10-17; review).** Production reply: "over the goal phase since
+  2026-07-04 you've gone from about 86.2 kg to 74.4 kg, a loss of 11.8 kg (13.7%)". True for the
+  goal window, but the weight record starts 3 June at 90.0 kg (-15.2 kg, -16.9% to 74.8 kg), and
+  the athlete says "since I started". TypeScript only (`get_goal_phase_inputs_v1` already returns
+  the newest 400 readings of every source; no migration). `summarizeGoalPhase` adds `history`
+  (first reading, smoothed like the phase start, change, weeks; only when it starts 7 or more days
+  before the phase) and `continuousLoss` (the run of falling weight ending now, from its high
+  point; a rise above 3% ends it, so a gain phase before a cut is excluded; kept only when it
+  differs from the goal phase). The long-deficit and large-loss rules judge the continuous loss
+  when present (an athlete 13.7 weeks into the goal but 18.9 weeks into a cut is judged at 18.9;
+  outcome precedence unchanged). The contributor text shows "Recorded history" and "Goal phase
+  (type, since date)" with explicit dates (about 1,350 characters of the 2,200 on the owner's
+  shape); the precedence label is untouched, so no parity digest changed. Tests: owner's shape
+  with the goal activated 3 July, gain then cut, a small versus a large rebound, a flat stretch
+  before the goal, history equal to the phase, one or no reading before activation, the reply
+  check on history sentences, and an eval on the rendered prompt. Open: (a) a plateau inside a
+  run does not end it (only a rise above 3% does), so a hold at maintenance followed by a restart
+  counts as one run until the weight rises; (b) the run tolerance (3%) and the history lead
+  (7 days) are in-house values for owner review; (c) the persona line about change windows still
+  names "the goal-phase reference data" as the source for whole-journey change, which now
+  includes the recorded history, so its wording is unchanged.
 - **In-house thresholds for owner or coach review** (`goal_phase/thresholds.ts`, `inHouse: true`):
   BMI 19.5 as "near the floor" while still falling; 3 weeks before a fast pace counts as sustained;
   16 weeks and 5% loss as a long continuous deficit (the trial arm length and the guideline's

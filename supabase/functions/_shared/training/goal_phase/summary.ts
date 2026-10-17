@@ -5,10 +5,12 @@ import { bmiOf, hasGoalTarget } from "./bmi.ts";
 import { dayIndex, median, round } from "./math.ts";
 import { goalPhaseThresholds as limits } from "./thresholds.ts";
 import type {
+  ContinuousLoss,
   ExcludedReading,
   GoalPhaseInputs,
   GoalPhaseSummary,
   PhaseConfidence,
+  RecordedHistory,
   WeightReading,
 } from "./types.ts";
 
@@ -103,9 +105,74 @@ function recentSlope(points: readonly Point[]): number | null {
   return round((covariance / variance) * 7, 2);
 }
 
+/**
+ * The recorded history, when the first reading is at least a week before the phase's first
+ * reading (so it says something the phase does not). The start is smoothed like the phase start.
+ */
+function recordedHistory(
+  clean: readonly Point[],
+  last: Point,
+  firstDay: number,
+  current: number,
+): RecordedHistory | null {
+  const lead = firstDay - clean[0].day;
+  if (lead < limits.historyMinimumLeadDays.value) return null;
+  const startWeightKg = round(smoothed(clean, true), 1);
+  const changeKg = round(current - startWeightKg, 1);
+  return {
+    startDate: clean[0].date,
+    startWeightKg,
+    changeKg,
+    changePct: round((changeKg / startWeightKg) * 100, 1),
+    weeks: round((last.day - clean[0].day) / 7, 1),
+    readingsUsed: clean.length,
+  };
+}
+
+/**
+ * The run of falling weight that ends now. Walking back from the current weight, every higher
+ * smoothed reading moves the start back to it; the walk stops at a reading lower than the high
+ * so far by more than the tolerance (the weight was rising before that, a gain phase or a
+ * rebound), so the run starts at the high point. It is returned only when it differs from the goal
+ * phase: an earlier start must sit at least the tolerance above the phase start (a flat stretch
+ * before the goal is not a loss), and a later start (weight rose, then fell) is kept as is.
+ */
+function continuousLoss(
+  clean: readonly Point[],
+  firstIndex: number,
+  last: Point,
+  current: number,
+  phaseStart: number,
+): ContinuousLoss | null {
+  const tolerance = limits.continuousRunTolerancePct.value / 100;
+  let high = current;
+  let startIndex = clean.length - 1;
+  for (let index = clean.length - 2; index >= 0; index--) {
+    const kg = smoothed(clean.slice(index), true);
+    if (kg > high) {
+      high = kg;
+      startIndex = index;
+    } else if (kg < high * (1 - tolerance)) break;
+  }
+  if (startIndex === firstIndex) return null;
+  if (startIndex < firstIndex && high < phaseStart * (1 + tolerance)) return null;
+  const weeks = (last.day - clean[startIndex].day) / 7;
+  const changeKg = round(current - high, 1);
+  if (weeks < minimumRateWeeks || changeKg >= 0) return null;
+  const startWeightKg = round(high, 1);
+  return {
+    startDate: clean[startIndex].date,
+    startWeightKg,
+    changeKg,
+    changePct: round((changeKg / startWeightKg) * 100, 1),
+    weeks: round(weeks, 1),
+    beganBeforeGoalPhase: startIndex < firstIndex,
+  };
+}
+
 const emptySummary = (input: GoalPhaseInputs): Omit<
   GoalPhaseSummary,
-  "hasGoal" | "confidence" | "notes" | "excluded" | "readingsUsed"
+  "hasGoal" | "confidence" | "notes" | "excluded" | "readingsUsed" | "history" | "continuousLoss"
 > => ({
   goalType: input.goalType,
   phaseStart: null,
@@ -157,6 +224,8 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
       phaseStart: activation === null ? null : input.activatedOn,
       phaseStartSource: activation === null ? null : "goal_activation",
       readingsUsed: 0,
+      history: null,
+      continuousLoss: null,
       excluded,
       confidence: "low",
       notes,
@@ -177,6 +246,8 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
     currentDate: last.date,
     bmi,
     readingsUsed: phase.length,
+    history: null,
+    continuousLoss: null,
     excluded,
   };
   if (input.heightCm === null) notes.push("height unknown; BMI not calculated");
@@ -196,6 +267,7 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
   const changeKg = round(current - start, 1);
   const weeklyRateKg = round((current - start) / weeks, 2);
   const slope = recentSlope(phase);
+  const firstIndex = clean.length - phase.length;
   let confidence: PhaseConfidence = "medium";
   if (phase.length >= 8 && weeks >= 4 && activation !== null && !stale) confidence = "high";
   if (stale || phase.length < 3) confidence = "low";
@@ -204,6 +276,8 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
   return {
     ...common,
     startWeightKg: start,
+    history: recordedHistory(clean, last, first.day, current),
+    continuousLoss: continuousLoss(clean, firstIndex, last, current, start),
     changeKg,
     changePct: round((changeKg / start) * 100, 1),
     weeks: round(weeks, 1),

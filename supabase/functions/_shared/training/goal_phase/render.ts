@@ -32,8 +32,8 @@ export function renderGoalPhase(
 ): string | null {
   if (!summary.hasGoal) return null;
   const lines = [
-    "Goal phase review, calculated by Tracend from the athlete's weight readings since the goal " +
-    "began (not from the goal's saved weight):",
+    "Goal phase review, calculated by Tracend from the athlete's recorded weight readings (not " +
+    "from the goal's saved weight):",
   ];
   const goal = summary.goalType?.replaceAll("_", " ") ?? "unknown";
   lines.push(
@@ -46,9 +46,32 @@ export function renderGoalPhase(
         `weights in them are from that day, not today.`,
     );
   }
+  const history = summary.history;
+  const run = summary.continuousLoss;
+  if (history !== null) {
+    lines.push(
+      `- Recorded history, all weight readings: ${history.startWeightKg} kg on ${history.startDate} ` +
+        `(median of the first readings) to now ${summary.currentWeightKg} kg: ` +
+        `${signed(history.changeKg)} kg (${signed(history.changePct)}%) over ${history.weeks} ` +
+        `weeks, ${history.readingsUsed} readings` +
+        (run?.startDate === history.startDate ? "; one continuous loss." : "."),
+    );
+  }
+  if (run !== null && run.startDate !== history?.startDate) {
+    lines.push(
+      `- Continuous loss: from the high of ${run.startWeightKg} kg on ${run.startDate} to now ` +
+        `${summary.currentWeightKg} kg: ${signed(run.changeKg)} kg (${signed(run.changePct)}%) ` +
+        `over ${run.weeks} weeks` +
+        (run.beganBeforeGoalPhase ? "." : "; the weight rose before it fell."),
+    );
+  }
   if (summary.changeKg !== null && summary.changePct !== null && summary.weeks !== null) {
     lines.push(
-      `- Start ${summary.startWeightKg} kg (${summary.firstReadingDate}, median of the first readings) ` +
+      `- ${
+        history !== null || run !== null
+          ? `Goal phase (${goal}, since ${summary.phaseStart}): `
+          : ""
+      }Start ${summary.startWeightKg} kg (${summary.firstReadingDate}, median of the first readings) ` +
         `to now ${summary.currentWeightKg} kg (${summary.currentDate}, median of the last readings): ` +
         `${signed(summary.changeKg)} kg (${signed(summary.changePct)}%) over ${summary.weeks} ` +
         `weeks, ${summary.readingsUsed} readings.`,
