@@ -72,6 +72,7 @@ jobs:
           - coach-decide
           - health-check
           - health-sync
+          - library-embed
           - meal-analyze
           - meal-media-retention
           - onboarding-plan
