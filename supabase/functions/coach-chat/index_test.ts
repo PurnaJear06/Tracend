@@ -14,7 +14,9 @@ import {
   coachChatPreparationFailureCode,
   coachChatReplayResponse,
   coachChatResponseSchemaVersion,
+  coachChatTurnStaleAfterMs,
   detectPreferenceStatement,
+  questionAgeMs,
   supportsDataSummary,
 } from "./index.ts";
 import { routeFor } from "../_shared/ai/fakes.ts";
@@ -427,4 +429,57 @@ Deno.test("the legacy vendor is the configured provider, and none when nothing i
   assertEquals(legacyCoachChatVendor(new Map<string, string>()), null);
   assertEquals(legacyCoachChatVendor(withProvider("mock", [])), null);
   assertEquals(legacyCoachChatVendor(withProvider("deepseek", [])), null);
+});
+
+Deno.test("a turn still open after the function's time limit and a margin is lost, not running", () => {
+  assertEquals(coachChatTurnStaleAfterMs, 70_000);
+  // Young, or age unknown: still running as far as anyone can tell.
+  for (const age of [null, 0, 5_000, coachChatTurnStaleAfterMs]) {
+    assertEquals(
+      coachChatReplayResponse({ state: "in_progress" }, true, age).status,
+      409,
+      `${age}`,
+    );
+    assertEquals(coachChatReplayResponse(undefined, true, age).status, 409, `${age}`);
+  }
+  // Older than the limit: the same answer for every retry of that key, so the app stops waiting.
+  for (const turn of [{ state: "in_progress" }, undefined]) {
+    const lost = coachChatReplayResponse(turn, true, coachChatTurnStaleAfterMs + 1);
+    assertEquals(lost, {
+      status: 503,
+      body: {
+        schema_version: "1.1",
+        error: "chat_unavailable",
+        code: "turn_lost",
+        retry_after_seconds: null,
+        replayed: true,
+      },
+    });
+    assertEquals(coachChatReplayResponse(turn, false, 10 * 60_000), lost);
+  }
+});
+
+Deno.test("age never turns an answered or failed turn into a lost one", () => {
+  const answered = {
+    state: "answered",
+    model_provider: "deepseek",
+    model: "deepseek-flash",
+    message: { id: "55555555-5555-4555-8555-555555555555", content: "Hi", safety_state: "allowed" },
+  };
+  assertEquals(coachChatReplayResponse(answered, true, 10 * 60_000).status, 200);
+  const failed = coachChatReplayResponse(
+    { state: "failed", failure_code: "provider_timeout" },
+    true,
+    10 * 60_000,
+  );
+  assertEquals((failed.body as Record<string, unknown>).code, "provider_timeout");
+});
+
+Deno.test("a saved question's age is read from its timestamp, and unknown when it cannot be", () => {
+  const now = Date.parse("2026-10-17T10:00:00Z");
+  assertEquals(questionAgeMs("2026-10-17T09:58:00Z", now), 120_000);
+  assertEquals(questionAgeMs("2026-10-17T09:58:00.250+00:00", now), 119_750);
+  for (const bad of [undefined, null, "", "not a date", 42]) {
+    assertEquals(questionAgeMs(bad, now), null);
+  }
 });

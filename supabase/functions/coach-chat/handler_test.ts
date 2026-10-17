@@ -1,0 +1,221 @@
+// The Coach chat request handler, offline: a fake authenticated client records every RPC, so the
+// order of the steps (replay before budget), the 429 reason, the lost-turn answer and the
+// red-flag shortcut (no consent check, no budget place) are checked on the real handler.
+import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
+import { captureLogs } from "../_shared/ai/fakes.ts";
+import { handleCoachChat } from "./index.ts";
+import type { CoachChatBudgetLedger } from "./budget_ledger.ts";
+import type { requireAuth } from "../_shared/auth.ts";
+
+const threadId = "11111111-1111-4111-8111-111111111111";
+const key = "22222222-2222-4222-8222-222222222222";
+
+type Call = readonly [string, Record<string, unknown>];
+
+type Body = {
+  schema_version?: string;
+  error?: string;
+  code?: string;
+  reason?: string;
+  replayed?: boolean;
+  message?: {
+    answer: string;
+    model: string;
+    model_provider: string;
+    safety_state: string;
+  };
+};
+
+type Setup = Readonly<{
+  prepared: unknown;
+  /** The error `reserve_ai_budget` raises, or null to accept. */
+  refuse?: string | null;
+  savedQuestionAt?: string | null;
+}>;
+
+async function run(question: string, setup: Setup) {
+  const calls: Call[] = [];
+  const rpc = (name: string, args: Record<string, unknown>) => {
+    calls.push([name, args]);
+    switch (name) {
+      case "has_ai_coaching_consent":
+        return Promise.resolve({ data: true, error: null });
+      case "reserve_ai_budget":
+        return Promise.resolve(
+          setup.refuse
+            ? { data: null, error: { message: setup.refuse } }
+            : { data: "reservation-1", error: null },
+        );
+      case "prepare_coach_chat_v8":
+        return Promise.resolve({ data: setup.prepared, error: null });
+      case "persist_coach_chat_result":
+        return Promise.resolve({
+          data: { assistant_message_id: "33333333-3333-4333-8333-333333333333" },
+          error: null,
+        });
+      default:
+        return Promise.resolve({ data: null, error: null });
+    }
+  };
+  const table = (rows: unknown) => {
+    const chain: Record<string, unknown> = {
+      select: () => chain,
+      eq: () => chain,
+      order: () => Promise.resolve({ data: rows, error: null }),
+      maybeSingle: () =>
+        Promise.resolve({
+          data: setup.savedQuestionAt ? { created_at: setup.savedQuestionAt } : null,
+          error: null,
+        }),
+    };
+    return chain;
+  };
+  const authenticate = (() =>
+    Promise.resolve({
+      userId: "user-1",
+      userEmail: undefined,
+      serviceClient: { rpc, from: () => table([]) },
+      userClient: { from: () => table([{ id: "m1" }]) },
+    })) as unknown as typeof requireAuth;
+  const held: { current?: CoachChatBudgetLedger } = {};
+  const logged = await captureLogs(async () => {
+    try {
+      return await handleCoachChat(
+        new Request("https://example.test/coach-chat", {
+          method: "POST",
+          headers: { Authorization: "Bearer synthetic" },
+          body: JSON.stringify({
+            schema_version: "1.1",
+            thread_id: threadId,
+            question,
+            timezone: "UTC",
+            idempotency_key: key,
+          }),
+        }),
+        held,
+        authenticate,
+      );
+    } finally {
+      await held.current?.release();
+    }
+  });
+  const response = logged.result;
+  return {
+    status: response.status,
+    body: await response.json() as Body,
+    calls: calls.map(([name]) => name),
+    lines: logged.lines,
+  };
+}
+
+const answeredTurn = {
+  state: "answered",
+  model_provider: "anthropic",
+  model: "claude-haiku-5-5",
+  message: {
+    id: "44444444-4444-4444-8444-444444444444",
+    content: "Keep today's session as planned.",
+    evidence: [],
+    missing_data: [],
+    safety_state: "allowed",
+    created_at: "2026-10-17T09:00:00Z",
+  },
+};
+
+Deno.test("a finished turn is replayed without taking budget, even at the monthly limit", async () => {
+  const result = await run("How did my week go?", {
+    prepared: { replayed: true, turn: answeredTurn },
+    refuse: "monthly cost limit reached",
+  });
+  assertEquals(result.status, 200);
+  assertEquals(result.body.replayed, true);
+  assertEquals(result.body.message!.answer, "Keep today's session as planned.");
+  assert(!result.calls.includes("reserve_ai_budget"), result.calls.join());
+  assert(result.calls.includes("prepare_coach_chat_v8"));
+});
+
+Deno.test("a new turn at a limit gets 429 with the reason, after the context step", async () => {
+  for (
+    const [message, reason] of [
+      ["monthly cost limit reached", "monthly_cost_limit"],
+      ["daily rate limit reached", "daily_rate_limit"],
+      ["global monthly cost limit reached", "global_monthly_cost_limit"],
+    ] as const
+  ) {
+    const result = await run("How did my week go?", {
+      prepared: { replayed: false, context: { coaching_date: "2026-10-17" } },
+      refuse: message,
+    });
+    assertEquals(result.status, 429);
+    assertEquals(result.body.error, "ai_usage_limit");
+    assertEquals(result.body.reason, reason);
+    assert(
+      result.calls.indexOf("prepare_coach_chat_v8") < result.calls.indexOf("reserve_ai_budget"),
+      result.calls.join(),
+    );
+    assert(!result.calls.includes("record_coach_chat_question"), "the turn never started");
+  }
+});
+
+Deno.test("an unexplained refusal is a 429 without a reason", async () => {
+  const result = await run("How did my week go?", {
+    prepared: { replayed: false, context: { coaching_date: "2026-10-17" } },
+    refuse: "something else",
+  });
+  assertEquals(result.status, 429);
+  assertEquals(result.body, { schema_version: "1.1", error: "ai_usage_limit" });
+});
+
+Deno.test("a turn still running answers 409; a lost one answers 503 turn_lost", async () => {
+  const running = await run("How did my week go?", {
+    prepared: { replayed: true, turn: { state: "in_progress" } },
+    savedQuestionAt: new Date(Date.now() - 5_000).toISOString(),
+  });
+  assertEquals(running.status, 409);
+  assertEquals(running.body.error, "chat_in_progress");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const lost = await run("How did my week go?", {
+      prepared: { replayed: true, turn: { state: "in_progress" } },
+      savedQuestionAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+    });
+    assertEquals(lost.status, 503);
+    assertEquals(lost.body.code, "turn_lost");
+    assertEquals(lost.body.replayed, true);
+    assert(!lost.calls.includes("reserve_ai_budget"));
+  }
+});
+
+Deno.test("a lost turn whose age cannot be read stays a 409", async () => {
+  const result = await run("How did my week go?", {
+    prepared: { replayed: true, turn: { state: "in_progress" } },
+    savedQuestionAt: null,
+  });
+  assertEquals(result.status, 409);
+});
+
+Deno.test("a red flag is answered with the referral: no consent check, no budget place, no log of the message", async () => {
+  const result = await run("I fainted at the gym yesterday", {
+    prepared: { replayed: false, context: { coaching_date: "2026-10-17" } },
+    refuse: "monthly cost limit reached",
+  });
+  assertEquals(result.status, 200);
+  assertEquals(result.body.message!.model, "deterministic-safety-v1");
+  assertEquals(result.body.message!.model_provider, "mock");
+  assertEquals(result.body.message!.safety_state, "limited");
+  assert(result.body.message!.answer.includes("emergency number"));
+  assert(!result.calls.includes("has_ai_coaching_consent"), result.calls.join());
+  assert(!result.calls.includes("reserve_ai_budget"), result.calls.join());
+  const logs = result.lines.join("\n");
+  assert(logs.includes("coach_chat_red_flag"));
+  assert(logs.includes('"rule":"faint"'));
+  assert(!logs.includes("gym"), "the message is never logged");
+});
+
+Deno.test("an ordinary question still checks consent and takes a budget place first", async () => {
+  const result = await run("How did my week go?", {
+    prepared: { replayed: false, context: { coaching_date: "2026-10-17" } },
+    refuse: "daily rate limit reached",
+  });
+  assert(result.calls.includes("has_ai_coaching_consent"));
+  assertEquals(result.status, 429);
+});

@@ -94,9 +94,27 @@ export const coachChatValidationRules = [
   "reasoning_evidence_not_permitted",
   "weight_below_healthy_floor",
   "projection_without_target",
+  "numbers_not_grounded",
+  "calories_below_floor",
+  "loss_rate_above_ceiling",
+  "effort_above_screening_cap",
+  "claimed_action",
 ] as const;
 
 export type CoachChatValidationRule = typeof coachChatValidationRules[number];
+
+/**
+ * What a reply check found wrong. `rule` is the first rule broken (it is logged); `rules` lists
+ * every rule broken, so one repair can fix them all. `detail` is prose for the repair
+ * instruction only (for example the numbers that were not grounded): it holds athlete content, so
+ * it never reaches a log, a telemetry record or Sentry. `count` is a number safe to log.
+ */
+export type CoachChatAnswerBreak = Readonly<{
+  rule: CoachChatValidationRule;
+  rules?: readonly CoachChatValidationRule[];
+  detail?: string;
+  count?: number;
+}>;
 
 export class CoachChatAnswerValidationError extends Error {
   constructor(
@@ -104,6 +122,9 @@ export class CoachChatAnswerValidationError extends Error {
     readonly path: string,
     readonly limit?: number,
     readonly actual?: number,
+    readonly rules: readonly CoachChatValidationRule[] = [rule],
+    /** Repair instruction only; never logged. */
+    readonly detail?: string,
   ) {
     super(`invalid_chat_answer:${rule}:${path}`);
     this.name = "CoachChatAnswerValidationError";
@@ -145,9 +166,12 @@ export function parseCoachChatRequest(value: unknown): CoachChatRequestV1 {
 
 /**
  * A deterministic check of the answer text against facts Tracend holds (for example a future
- * body weight the athlete's goal does not support). It returns the rule the answer breaks.
+ * body weight the athlete's goal does not support, or a number the athlete's data does not
+ * contain). It returns the rule the answer breaks, or null.
  */
-export type CoachChatAnswerCheck = (answer: string) => CoachChatValidationRule | null;
+export type CoachChatAnswerCheck = (
+  answer: string,
+) => CoachChatValidationRule | CoachChatAnswerBreak | null;
 
 export function parseCoachChatAnswer(
   value: unknown,
@@ -304,7 +328,17 @@ export function parseCoachChatAnswer(
       }
     }
   }
-  const broken = answerCheck?.(answer.answer);
-  if (broken) invalid(broken, "answer");
+  const found = answerCheck?.(answer.answer);
+  if (found) {
+    const broken: CoachChatAnswerBreak = typeof found === "string" ? { rule: found } : found;
+    throw new CoachChatAnswerValidationError(
+      broken.rule,
+      "answer",
+      broken.count === undefined ? undefined : 0,
+      broken.count,
+      broken.rules ?? [broken.rule],
+      broken.detail,
+    );
+  }
   return answer as unknown as CoachChatAnswerV2;
 }

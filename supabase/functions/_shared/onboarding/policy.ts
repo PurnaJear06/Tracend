@@ -63,11 +63,29 @@ export const nutritionBounds = Object.freeze({
   fatG: [20, 300] as const,
 });
 
-const sexFloorKcal: Readonly<Record<Sex, number>> = Object.freeze({
+export const sexFloorKcal: Readonly<Record<Sex, number>> = Object.freeze({
   female: 1200,
   male: 1500,
   unspecified: 1500,
 });
+
+/**
+ * The lowest daily calorie target Tracend sets: the sex-based minimum, or the resting energy when
+ * that is higher (the lower of the two equations when sex is unspecified). Coach chat's Safe
+ * Ranges section and its reply check use the same value.
+ */
+export function calorieFloorKcal(
+  sex: Sex,
+  weightKg: number,
+  heightCm: number,
+  age: number,
+): number {
+  const equations: ("male" | "female")[] = sex === "unspecified" ? ["female", "male"] : [sex];
+  const bmrLow = Math.min(
+    ...equations.map((equation) => mifflinStJeor(equation, weightKg, heightCm, age)),
+  );
+  return Math.max(sexFloorKcal[sex], Math.round(bmrLow));
+}
 
 export type NutritionPolicy = Readonly<{
   /** BMR by equation; one value per applicable sex equation. */
@@ -107,7 +125,7 @@ export function nutritionPolicy(answers: OnboardingAnswers): NutritionPolicy {
   const tdeeLow = bmrLow * factor + training;
   const tdeeHigh = bmrHigh * factor + training;
   const [adjustLow, adjustHigh] = goalCalorieAdjustments[goal];
-  const floor = Math.max(sexFloorKcal[sex], Math.round(bmrLow));
+  const floor = calorieFloorKcal(sex, weightKg, heightCm, age);
   // From BMI 30, protein and the fat minimum follow the weight at BMI 25, so
   // they track lean mass instead of total weight.
   const bmi = weightKg / ((heightCm / 100) ** 2);
