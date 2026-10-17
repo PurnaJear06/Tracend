@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:tracend/features/onboarding/onboarding_screening.dart';
 
 class OnboardingDraft {
   const OnboardingDraft({
@@ -77,6 +78,13 @@ class OnboardingAnswersIncomplete implements Exception {
   const OnboardingAnswersIncomplete(this.missing);
 
   final List<String> missing;
+}
+
+/// The athlete's health check says to see a health professional first, so the
+/// server builds no plan and asks no model (422
+/// `onboarding_screening_see_professional`).
+class OnboardingScreeningBlocked implements Exception {
+  const OnboardingScreeningBlocked();
 }
 
 /// No safe plan fits these answers (for example, the equipment and the
@@ -438,6 +446,13 @@ abstract interface class OnboardingRepository {
   Future<void> recordEligibilityAndConsent({required bool eligible});
   Future<void> saveGoal(String goal);
 
+  /// Records the pre-plan health check and returns the server's outcome.
+  /// Answering the same again adds no record.
+  Future<ScreeningRecord> recordScreening(ScreeningAnswers answers);
+
+  /// The athlete's current screening on the server.
+  Future<StoredScreening> loadScreening();
+
   /// Starts (or returns) the plan generation for the saved draft.
   /// Throws [OnboardingAnswersIncomplete] when answers are missing and
   /// [OnboardingPlanInfeasible] when no safe plan fits them.
@@ -571,6 +586,24 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
   }
 
   @override
+  Future<ScreeningRecord> recordScreening(ScreeningAnswers answers) async {
+    final result = await _client.rpc(
+      'record_screening_v1',
+      params: {
+        'exercises_regularly': answers.exercisesRegularly,
+        'known_disease': answers.knownCondition,
+        'symptoms': answers.symptoms,
+        'cleared_by_professional': answers.clearedByProfessional,
+      },
+    );
+    return ScreeningRecord.fromJson(result);
+  }
+
+  @override
+  Future<StoredScreening> loadScreening() async =>
+      StoredScreening.fromJson(await _client.rpc('get_my_screening_v1'));
+
+  @override
   Future<OnboardingQuestions> askQuestions() async {
     try {
       final result = await _client.functions
@@ -597,6 +630,9 @@ class SupabaseOnboardingRepository implements OnboardingRepository {
       }
       if (details['error'] == 'onboarding_plan_infeasible') {
         throw OnboardingPlanInfeasible(strings(details['change']));
+      }
+      if (details['error'] == 'onboarding_screening_see_professional') {
+        throw const OnboardingScreeningBlocked();
       }
       // No saved draft with a path: the starting point is what is missing.
       if (details['error'] == 'onboarding_draft_incomplete') {

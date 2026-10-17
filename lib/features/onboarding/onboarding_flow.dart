@@ -10,6 +10,7 @@ import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/onboarding/health_activity.dart';
 import 'package:tracend/features/onboarding/onboarding_proposal_view.dart';
 import 'package:tracend/features/onboarding/onboarding_repository.dart';
+import 'package:tracend/features/onboarding/onboarding_screening.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
@@ -71,6 +72,7 @@ class OnboardingFlow extends StatefulWidget {
 class _OnboardingFlowState extends State<OnboardingFlow> {
   static const _sections = [
     'Eligibility',
+    'Health check',
     'AI',
     'Path',
     'Goal',
@@ -88,6 +90,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   ];
   static const _sectionKeys = [
     'eligibility',
+    'screening',
     'ai',
     'path',
     'goal',
@@ -107,20 +110,21 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// Sections saved by builds before 2026-10 map onto the new steps.
   static const _legacySections = {'context': _aboutStep};
   static const _eligibilityStep = 0;
-  static const _aiStep = 1;
-  static const _pathStep = 2;
-  static const _goalStep = 3;
-  static const _healthStep = 4;
-  static const _aboutStep = 5;
-  static const _scheduleStep = 6;
-  static const _equipmentStep = 7;
-  static const _foodStep = 8;
-  static const _trainingStep = 9;
-  static const _liftsStep = 10;
-  static const _focusStep = 11;
-  static const _reviewStep = 12;
-  static const _questionsStep = 13;
-  static const _proposalStep = 14;
+  static const _screeningStep = 1;
+  static const _aiStep = 2;
+  static const _pathStep = 3;
+  static const _goalStep = 4;
+  static const _healthStep = 5;
+  static const _aboutStep = 6;
+  static const _scheduleStep = 7;
+  static const _equipmentStep = 8;
+  static const _foodStep = 9;
+  static const _trainingStep = 10;
+  static const _liftsStep = 11;
+  static const _focusStep = 12;
+  static const _reviewStep = 13;
+  static const _questionsStep = 14;
+  static const _proposalStep = 15;
 
   /// How long the questions or the plan wait for the usual months to be sent
   /// before going ahead without them.
@@ -263,6 +267,17 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   bool _privacy = false;
   bool? _aiChoice;
 
+  /// The health check answers; null until answered. The clearance question is
+  /// asked only with a known condition and no current symptom.
+  bool? _exercisesRegularly;
+  bool? _knownCondition;
+  bool? _symptoms;
+  bool? _clearedByProfessional;
+
+  /// What the server answered for the current answers; null until recorded,
+  /// and again after any answer changes.
+  ScreeningOutcome? _screeningOutcome;
+
   /// The answer already stored, so passing the step again adds no record.
   bool? _aiRecorded;
   int _step = _eligibilityStep;
@@ -388,6 +403,25 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   static double _half(double kg) => (kg * 2).round() / 2;
 
+  /// Asked only with a known condition and no current symptom; with a symptom
+  /// the outcome is already settled.
+  bool get _asksClearance => _knownCondition == true && _symptoms == false;
+
+  /// The four answers once every question shown has been answered.
+  ScreeningAnswers? get _screeningAnswers {
+    final exercises = _exercisesRegularly;
+    final condition = _knownCondition;
+    final symptoms = _symptoms;
+    if (exercises == null || condition == null || symptoms == null) return null;
+    if (_asksClearance && _clearedByProfessional == null) return null;
+    return ScreeningAnswers(
+      exercisesRegularly: exercises,
+      knownCondition: condition,
+      symptoms: symptoms,
+      clearedByProfessional: _asksClearance && _clearedByProfessional == true,
+    );
+  }
+
   Map<String, dynamic> get _payload {
     final weekdays = _weekdays.toList()..sort();
     return {
@@ -411,6 +445,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       'constraints': _constraints.text.trim(),
       if (_avoidAnswered) 'avoid_patterns': _avoid.toList()..sort(),
       'health_import': ?_healthImport,
+      if (_screeningAnswers case final screening?)
+        'screening': screening.toJson(),
       if (_path == 'experienced') ...{
         'current_plan': _currentPlan.text.trim(),
         'training_years': ?_years,
@@ -560,6 +596,8 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         if (const ['connected', 'skipped', 'empty'].contains(healthImport)) {
           _healthImport = healthImport as String;
         }
+        final screening = ScreeningAnswers.fromJson(payload['screening']);
+        _applyScreening(screening);
         var restored = _sectionKeys.indexOf(draft.currentSection);
         if (restored < 0) {
           restored = _legacySections[draft.currentSection] ?? _eligibilityStep;
@@ -569,10 +607,27 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         if (restored > _aboutStep && !payload.containsKey('sex')) {
           restored = _aboutStep;
         }
+        // A draft from before the health check was asked continues from it.
+        if (restored > _screeningStep && screening == null) {
+          restored = _screeningStep;
+        }
         if (_skips(restored)) restored = _focusStep;
         if (restored > 0) _step = restored;
         _aboutPassed = _step > _aboutStep;
         resumeGeneration = _step == _proposalStep;
+        // The server may hold a newer, stricter health check than the draft
+        // (the athlete went back and answered again): a stop is honoured
+        // before any plan is resumed. The server refuses to approve such a
+        // plan anyway.
+        if (_step > _screeningStep) {
+          final stored = await _blockingScreening();
+          if (stored != null) {
+            _applyScreening(stored.answers);
+            _screeningOutcome = stored.outcome;
+            _step = _screeningStep;
+            resumeGeneration = false;
+          }
+        }
       }
       _restoreFailed = false;
     } catch (e) {
@@ -585,6 +640,30 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     if (resumeGeneration && mounted) unawaited(_resumeGeneration());
     if (_step == _questionsStep && mounted) unawaited(_fetchQuestions());
     if (mounted && _healthImport != 'skipped') unawaited(_loadHealthFacts());
+  }
+
+  /// The athlete's stored screening when it says to see a professional first;
+  /// null otherwise, or when it cannot be read.
+  Future<StoredScreening?> _blockingScreening() async {
+    try {
+      final stored = await widget.repository.loadScreening().timeout(
+        const Duration(seconds: 15),
+      );
+      return stored.outcome == ScreeningOutcome.seeProfessional ? stored : null;
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+      return null;
+    }
+  }
+
+  void _applyScreening(ScreeningAnswers? answers) {
+    if (answers == null) return;
+    _exercisesRegularly = answers.exercisesRegularly;
+    _knownCondition = answers.knownCondition;
+    _symptoms = answers.symptoms;
+    _clearedByProfessional = answers.knownCondition && !answers.symptoms
+        ? answers.clearedByProfessional
+        : null;
   }
 
   /// Reopened with Apple Health already connected (an earlier run, or a sync
@@ -868,6 +947,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               : 'Add your ${labels.join(', ')} to build your plan.';
         });
         return true;
+      case OnboardingScreeningBlocked():
+        // The health check's stop, shown on the check itself.
+        setState(() {
+          _saving = false;
+          _asking = false;
+          _step = _screeningStep;
+          _screeningOutcome = ScreeningOutcome.seeProfessional;
+          _error = null;
+        });
+        return true;
       case OnboardingPlanUnavailable():
         setState(() {
           _saving = false;
@@ -964,6 +1053,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   }
 
   int _stepForMissing(List<String> missing) {
+    if (missing.contains('screening')) return _screeningStep;
     if (missing.contains('path')) return _pathStep;
     if (missing.contains('current_plan') ||
         missing.contains('training_years')) {
@@ -1007,6 +1097,18 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       if (_step == _eligibilityStep) {
         await widget.repository.recordEligibilityAndConsent(eligible: true);
       }
+      if (_step == _screeningStep && _screeningOutcome == null) {
+        final submitted = _screeningAnswers!;
+        final record = await widget.repository.recordScreening(submitted);
+        if (!mounted) return;
+        // The choices are locked while this runs; if the answers differ anyway,
+        // the response belongs to answers that are no longer on screen.
+        if (_screeningAnswers != submitted) return;
+        setState(() => _screeningOutcome = record.outcome);
+        // Anything but cleared shows its guidance first; moderate effort goes
+        // on with a second Continue, a professional first does not.
+        if (record.outcome != ScreeningOutcome.cleared) return;
+      }
       if (_step == _aiStep &&
           _aiNoticeReady &&
           _aiChoice != null &&
@@ -1045,6 +1147,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   bool _isStepValid() => switch (_step) {
     _eligibilityStep => _adult && !_needsClinicalSupport && _terms && _privacy,
+    _screeningStep =>
+      _screeningAnswers != null &&
+          _screeningOutcome != ScreeningOutcome.seeProfessional,
     // Without a server notice nothing can be answered: onboarding goes on
     // with AI coaching off and the plan from Tracend's rules.
     _aiStep => !_aiNoticeReady || _aiChoice != null,
@@ -1075,6 +1180,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     return switch (_step) {
       _eligibilityStep =>
         'Confirm adult eligibility, terms, and privacy to continue.',
+      _screeningStep =>
+        _screeningOutcome == ScreeningOutcome.seeProfessional
+            ? 'Tracend cannot build a plan until a health professional has cleared you to exercise.'
+            : 'Answer each question to continue.',
       _aiStep => 'Choose whether to allow AI coaching.',
       _pathStep => 'Choose the onboarding path that fits you.',
       _goalStep => 'Choose what your first block should prioritize.',
@@ -1354,6 +1463,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   Widget _stepBody() => switch (_step) {
     _eligibilityStep => _eligibility(),
+    _screeningStep => _screening(),
     _aiStep => _aiCoaching(),
     _pathStep => _pathSelection(),
     _goalStep => _goalSelection(),
@@ -1451,6 +1561,134 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
           ),
         ],
       ),
+    ],
+  );
+
+  /// Answers change the question set and clear the server's outcome, so the
+  /// next Continue records them again.
+  void _answerScreening(VoidCallback change) {
+    // Locked while an answer is being recorded, so the response always belongs
+    // to the answers on screen (this also stops VoiceOver actions, which skip
+    // the pointer lock below).
+    if (_saving) return;
+    setState(() {
+      change();
+      _screeningOutcome = null;
+      _error = null;
+    });
+  }
+
+  Widget _screeningQuestion({
+    required String label,
+    required String hint,
+    required bool? value,
+    required ValueChanged<bool> onChanged,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _label(label),
+      Padding(
+        padding: const EdgeInsets.only(bottom: TracendSpacing.xs),
+        child: Text(hint, style: Theme.of(context).textTheme.bodySmall),
+      ),
+      // Locked while the answers are being recorded, so the response always
+      // belongs to the answers on screen.
+      IgnorePointer(
+        ignoring: _saving,
+        child: _SingleChoice<bool>(
+          label: label,
+          options: const [(true, 'Yes'), (false, 'No')],
+          selected: value,
+          onChanged: onChanged,
+        ),
+      ),
+    ],
+  );
+
+  Widget _screening() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _heading(
+        'A quick health check.',
+        'Four short questions so your first plan starts at a sensible level. This is not a medical check and Tracend does not diagnose anything.',
+      ),
+      _screeningQuestion(
+        label: 'Do you exercise regularly now?',
+        hint:
+            'Planned exercise of about 30 minutes or more, on at least 3 days a week, for the last 3 months.',
+        value: _exercisesRegularly,
+        onChanged: (value) =>
+            _answerScreening(() => _exercisesRegularly = value),
+      ),
+      _screeningQuestion(
+        label:
+            'Do you know you have a heart, diabetes or other metabolic, or kidney condition?',
+        hint:
+            'One that a doctor or another health professional has told you about.',
+        value: _knownCondition,
+        onChanged: (value) => _answerScreening(() => _knownCondition = value),
+      ),
+      _screeningQuestion(
+        label: 'Do you notice any of these right now?',
+        hint:
+            'Chest pain or pressure, breathlessness at rest or with light effort, dizziness or fainting, swollen ankles, a racing or skipping heartbeat, or cramping leg pain when you walk.',
+        value: _symptoms,
+        onChanged: (value) => _answerScreening(() => _symptoms = value),
+      ),
+      if (_asksClearance)
+        _screeningQuestion(
+          label: 'Has a health professional said you are fine to exercise?',
+          hint: 'A doctor, nurse or other qualified professional.',
+          value: _clearedByProfessional,
+          onChanged: (value) =>
+              _answerScreening(() => _clearedByProfessional = value),
+        ),
+      if (_screeningOutcome == ScreeningOutcome.seeProfessional) ...[
+        const SizedBox(height: TracendSpacing.lg),
+        Semantics(
+          liveRegion: true,
+          child: TracendCard(
+            raised: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Please see a health professional first.',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: TracendSpacing.xs),
+                Text(
+                  'From your answers, it is best to check with a doctor or another health professional before you start exercising. Tracend cannot build a plan until then. Come back and answer again once you have been cleared. If you have chest pain, severe breathlessness or fainting now, get medical help straight away.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+      if (_screeningOutcome == ScreeningOutcome.moderateUntilCleared) ...[
+        const SizedBox(height: TracendSpacing.lg),
+        Semantics(
+          liveRegion: true,
+          child: TracendCard(
+            raised: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your plan will stay at moderate effort.',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: TracendSpacing.xs),
+                Text(
+                  'Until a health professional has said you are fine to exercise, Tracend keeps every session at a comfortable effort, with no all-out sets. Talk to your doctor when you can, then update this answer.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     ],
   );
 

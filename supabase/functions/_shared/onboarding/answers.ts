@@ -6,6 +6,11 @@ import {
   type Muscle,
   muscles,
 } from "./catalog.ts";
+import {
+  parseScreeningAnswers,
+  type ScreeningAnswers,
+  screeningSnapshot,
+} from "../training/screening/screening.ts";
 
 // The reviewed onboarding answers an onboarding plan is built from, parsed
 // from onboarding_drafts.payload. Old drafts (before 2026-10) lack the body,
@@ -117,6 +122,11 @@ export type OnboardingAnswers = Readonly<{
   /** Answers to the coach's follow-up questions for exactly these answers. */
   followUps: readonly FollowUp[];
   revisionNote: string;
+  /**
+   * The pre-exercise screening answers (B6). Absent for drafts from app builds that do not ask;
+   * the plan then reads as cleared (Contract 8).
+   */
+  screening?: ScreeningAnswers;
 }>;
 
 export type AnswersResult =
@@ -240,6 +250,10 @@ export function parseOnboardingAnswers(
     : null;
   if (avoidPatterns === null && limitations) missing.push("avoid_patterns");
 
+  // Screening is optional (older app builds never send it), but a malformed answer asks again.
+  const screening = parseScreeningAnswers(payload.screening);
+  if (screening.kind === "invalid") missing.push("screening");
+
   const years = trainingYears.find((item) => item === payload.training_years) ?? null;
 
   if (missing.length) return { ok: false, missing };
@@ -276,6 +290,7 @@ export function parseOnboardingAnswers(
         ? followUpList(payload.follow_ups)
         : [],
       revisionNote: text(payload.revision_note),
+      ...(screening.kind === "answers" ? { screening: screening.answers } : {}),
     },
   };
 }
@@ -312,5 +327,7 @@ export function answersSnapshot(answers: OnboardingAnswers): Record<string, unkn
     strong_muscles: answers.strongMuscles,
     follow_ups: answers.followUps,
     revision_note: answers.revisionNote,
+    // Only when answered, so snapshots (and their hashes) of drafts without it stay as they were.
+    ...(answers.screening ? { screening: screeningSnapshot(answers.screening) } : {}),
   };
 }

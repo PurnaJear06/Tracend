@@ -193,8 +193,98 @@ Contract 8).
   in `rules_plan_test.ts` moved to the new exercise mixes. The loaded-beats-bodyweight sweep now
   exempts trunk work and the pull-up family, which rotate by design.
 
+**B6 (review; screening gate; migration 26; app change; B2 (#127) is on main).**
+
+- **Questions and mapping** (ACSM 2015 preparticipation logic, our own words; plain wording, no
+  diagnosis). Four yes/no questions in a new onboarding step, **Health check**, right after the
+  boundary and terms: exercises regularly now; knows of a heart, metabolic or kidney condition;
+  notices a sign or symptom now; and, only with a known condition and no symptom, a professional
+  has cleared them. `screeningOutcome` (`_shared/training/screening/screening.ts`, pure, 16-row
+  table test): any symptom gives `see_professional` (even after an earlier clearance: the
+  symptom is current); a known condition with no clearance gives `see_professional` when not
+  exercising regularly and `moderate_until_cleared` when exercising regularly; everything else is
+  `cleared`. `outcome.ts` (Contract 8) is unchanged. Missing screening reads as `cleared`
+  (`screeningOutcomeOf`).
+- **Where the answers live.** The app saves them in the onboarding draft payload (`screening`:
+  `exercises_regularly`, `known_disease`, `symptoms`, `cleared_by_professional`), and
+  `parseOnboardingAnswers` reads them into the optional `OnboardingAnswers.screening`. Absent
+  (an older app build) is fine; present but malformed asks again (`missing: ["screening"]`, 422,
+  the app reopens the step). `answersSnapshot` adds `screening` (answers + outcome) only when
+  present, so snapshots and hashes of drafts without it are unchanged and changing an answer
+  builds new questions and a new plan.
+- **Schema** (`20261017050226_onboarding_screening.sql`, additive). `public.onboarding_screenings`:
+  `id`, `user_id` (cascade from `user_accounts`), the four answers, `outcome`, `screened_at`.
+  Rows are only added (a new row per distinct set of answers); the newest row is current; no row
+  is `cleared`. A check constraint (`private.screening_outcome`) keeps a stored outcome in line
+  with its answers. RLS enabled and forced, owner read (`user_id = auth.uid()`), no client
+  insert/update/delete. `record_screening_v1(exercises_regularly, known_disease, symptoms,
+  cleared_by_professional default false)` (authenticated, security definer) works out the outcome
+  in the database, adds no row for the same answers as the newest row, audits
+  `onboarding_screening_recorded` (outcome only) and returns `{schema_version "1.0", outcome,
+  screened_at}`. The SQL rule and the TS rule carry the same sixteen-row table in their tests.
+- **Export and deletion.** `privacy-export` lists `onboarding_screenings` (`dataTables`, with a
+  test); account deletion cascades from `user_accounts` (pgTAP deletes the auth user and counts
+  rows). SECURITY_PRIVACY, DATA_MODEL, PRD, AI_SAFETY_SPEC and UX_FLOWS §4.1 updated.
+- **App.** New step key `screening` (index 1; other steps shift by one, drafts restore by key).
+  Continue calls `record_screening_v1`; `cleared` goes on, `moderate_until_cleared` shows "Your
+  plan will stay at moderate effort." and goes on with a second Continue, `see_professional`
+  shows "Please see a health professional first." and keeps Continue closed until an answer
+  changes. The app mirrors no rule: it shows what the server returns. A draft past the step
+  without answers returns to it. Contract fixture `test/contract/fixtures/record_screening_v1_0.json`
+  with a complete-key-list test.
+- **Server wiring** (built on B2, #127, now on main; the lead granted `onboarding-plan/handler.ts`). The
+  handler reads the stored outcome through `OnboardingStore.screening()` (the newest
+  `onboarding_screenings` row for the user; no row is `cleared`) once per request and passes it as
+  the last argument of `policiesFor`, `preparePlan` (gateway.ts, one optional argument added) and
+  `generateOnboardingProposal`. `see_professional` answers 422
+  `onboarding_screening_see_professional` from the pre-check, in both plan and questions mode,
+  before the claim, consent, budget, any model call or a generation row, so it cannot surface as
+  `generation_failed`; the same request is refused every time. A limiting outcome is added to the
+  generation snapshot (`screening`) so a changed outcome builds a new plan; a cleared athlete's
+  snapshot and hash are unchanged. The Dart repository maps the code to
+  `OnboardingScreeningBlocked`, and the flow returns to the health check showing "Please see a
+  health professional first.". The stored row, not the draft, decides the outcome; the draft's
+  answers only feed the snapshot and the app's restore. Tests: handler (cleared/no row, moderate
+  with an RPE cap and its own hash, see_professional with nothing spent in both modes), gateway
+  (policies carry the outcome), Flutter (refused plan shows the guidance).
+- **A stricter outcome ends what was built under a weaker one** (review fix; all in migration 26,
+  additive, same signatures, `schema_version` unchanged, so older builds keep working; no
+  screening row means cleared and nothing changes for that athlete). Helpers in `private`
+  (no client grant): `screening_rank` (cleared 0, moderate 1, see_professional 2),
+  `current_screening_outcome` (newest row, else cleared) and `assert_screening_allows(user,
+  built_under)`, which raises 55000 for `see_professional` ("a health professional must clear
+  this athlete first") and for a current outcome stricter than the one the plan was built under
+  ("the plan was built before the health check changed"; built-under is the snapshot's
+  `screening` field, absent meaning cleared). Where it is enforced:
+  - `record_screening_v1`: when it stores a stricter outcome it expires the athlete's pending
+    2.0 proposals built under a less strict one and supersedes a running generation, so a plan
+    started while cleared cannot outlive the symptoms recorded afterwards.
+  - `persist_onboarding_proposal_v3` (`create or replace`, body as in 20261002110000 plus the
+    guard): a worker that finishes after the outcome changed cannot store a plan.
+  - `respond_to_onboarding_proposal_v2` (`create or replace`, body as in 20261002110000 plus the
+    guard, on accept only): `see_professional` refuses approval and `moderate_until_cleared`
+    refuses a plan built as cleared; reject and revision still work. The 55000 is read by the app
+    as "this proposal can no longer be answered" and answered with a rebuild, which the Edge
+    Function then builds as moderate (or refuses).
+  - `get_my_screening_v1()` (authenticated, `schema_version "1.0"`) returns the current screening;
+    on reopening, when the draft points past the health check, the app reads it and a stored
+    `see_professional` returns to the check instead of resuming the generation or the proposal.
+    If it cannot be read the app resumes, and the server still refuses at approval.
+  - pgTAP `onboarding_screening_gate_test.sql`: symptoms after a cleared plan (pending proposal
+    expired, cannot be approved), a running generation superseded, `see_professional` and moderate
+    refusals at store and approval, reject still allowed, a cleared plan stays approvable, a
+    moderate plan built as moderate is approved, no row is unaffected, grants checked with
+    `has_function_privilege`.
+  - Stale response: while the answers are being recorded `_answerScreening` ignores changes
+    (pointer and VoiceOver), and the response is applied only when the answers still equal the
+    submitted ones. Widget tests cover both the lock and the reopening.
+- **Open.** (a) Should a professional's clearance override a current symptom? Today it does not
+  (conservative). (b) The question texts and "regularly" definition (30 minutes, 3 days, 3 months)
+  are ours; a coach or the owner should review them. (c) Re-screening later (a yearly or
+  after-injury prompt) is not built.
+
 ## Next agent starts here
 
-B6 (screening gate, Phase 3) produces the Contract 8 outcome and wires it through the handler (see
-"For B6 / the lead" in the B2 section). B3 (progression and deloads, Phase 3 round 2) builds on the
-templates and `setWeights`/`fractionalWeeklySets`. The briefs are in the program doc.
+B3 (progression and deloads, Phase 3 round 2) builds on the templates and
+`setWeights`/`fractionalWeeklySets`. B6's server wiring is done (see the B6 section). The briefs are in
+the program doc.

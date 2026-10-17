@@ -13,6 +13,7 @@ import {
   onboardingGatewayRoute,
   resolveOnboardingModel,
 } from "../_shared/providers/onboarding_plan_provider.ts";
+import { screeningOutcomes } from "../_shared/training/screening/outcome.ts";
 import { captureException } from "../_shared/sentry.ts";
 import {
   type GenerationClaim,
@@ -48,6 +49,15 @@ function supabaseStore(
       });
       if (error) throw error;
       return data as GenerationClaim;
+    },
+    async screening() {
+      const { data, error } = await client.from("onboarding_screenings")
+        .select("outcome").eq("user_id", userId)
+        .order("screened_at", { ascending: false }).order("id", { ascending: false }).limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      // No row: never screened (an account or app build from before the screening).
+      return screeningOutcomes.find((outcome) => outcome === data?.outcome) ?? "cleared";
     },
     async loadCatalog() {
       const { data, error } = await client.from("exercise_catalog")

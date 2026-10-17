@@ -35,6 +35,17 @@ The MVP excludes users who disclose pregnancy, an active eating disorder, a cond
 medical nutrition, a serious or acute injury, or a need for clinical rehabilitation. The app must
 explain the boundary and direct the user to an appropriate qualified professional.
 
+**Pre-exercise screening (B6).** Before the first plan, four plain questions follow the
+preparticipation logic of the ACSM 2015 guidance, in Tracend's own words: whether the athlete
+exercises regularly now, whether they know of a heart, metabolic or kidney condition, whether they
+notice signs or symptoms of one right now, and (only with a known condition and no symptom)
+whether a professional has cleared them to exercise. Any current symptom, or no regular exercise
+with a known condition and no clearance, means no plan until a health professional has cleared the
+athlete; regular exercise with a known condition and no clearance builds a plan capped at moderate
+effort (no strength emphasis, at least 3 reps in reserve, no vigorous conditioning); everything
+else is cleared. The answers, the outcome and the date are stored and exported. Tracend never
+diagnoses or names a condition. Accounts and app builds that never answered read as cleared.
+
 **Planned (Phase 4, E4; D5):** a global audience, with regional nutrition and body-measure modules
 (India ICMR-NIN, US DGA, UK NICE, Australia) chosen by the athlete's region.
 

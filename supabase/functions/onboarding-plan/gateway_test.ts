@@ -127,6 +127,7 @@ function harness(options: {
       ),
     loadCatalog: () => Promise.resolve(catalog),
     timezone: () => Promise.resolve("UTC"),
+    screening: () => Promise.resolve("cleared"),
     loadHealth: () => Promise.resolve({ days: [], workouts: [] }),
     loadHealthHistory: () => Promise.resolve([]),
     claimQuestions: (hash) => {
@@ -840,4 +841,17 @@ Deno.test("every eval athlete is feasible and the eval's default routes are usab
     );
     assertEquals(questions.kind, "ready", name);
   }
+});
+
+Deno.test("the gateway prompt and policies carry the screening outcome", () => {
+  const route = planRoute();
+  const answers = answersFor(syntheticDrafts.plan);
+  const moderate = preparePlan(route, answers, catalog, null, null, "moderate_until_cleared");
+  const cleared = preparePlan(route, answers, catalog, null, null);
+  assertEquals(moderate.kind, "ready");
+  assertEquals(cleared.kind, "ready");
+  if (moderate.kind !== "ready" || cleared.kind !== "ready") return;
+  assertEquals(moderate.prepared.policies.screening, "moderate_until_cleared");
+  assertEquals(cleared.prepared.policies.screening, undefined);
+  assert(moderate.prepared.system !== cleared.prepared.system, "the prompt names the cap");
 });
