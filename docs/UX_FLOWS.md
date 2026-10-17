@@ -507,14 +507,57 @@ three separate autonomous chatbots.
   reply otherwise. **Retry** appears when the reply ends the conversation, and it keeps whatever
   the user is typing.
 - **Other failures** (sign-in, database, limits, network) show one inline message under the
-  question that failed, in place of the reply: what happened in plain words ("Coach couldn’t
-  answer. Your approved plan is unchanged."; a timeout says "Coach took too long to respond.
-  Please try again."), then the raw diagnostic as a small second line, and **Retry**. A toast
-  ("Coach couldn’t answer") marks the moment; it never carries the only copy of the error. During
-  the private beta the diagnostic line shows the raw text, including the HTTP status and the
-  server's stable code, so the owner can see where a failure comes from (owner decision,
-  2026-09-27). The server never sends parser messages, provider bodies, prompts, or health
-  context.
+  question that failed, in place of the reply: what happened in plain, specific words, then the raw
+  diagnostic as a small second line, and **Retry** where asking again can help. The Coach function
+  answers errors with a non-2xx status, and the app reads its error, code and reason (A9). Each
+  has its own sentence:
+  - **Limits** (429 `ai_usage_limit` with `reason` `monthly_cost_limit`, `daily_rate_limit` or
+    `global_monthly_cost_limit`; the same two reasons inside a 422 context-preparation failure):
+    "You’ve reached this month’s Coach limit. It resets on 1 Nov." (the first of next month,
+    00:00 UTC, shown as a date in the athlete’s own clock), "You’ve used all of today’s Coach
+    messages. The limit resets at 5:30 am tomorrow.", or "Coach has reached its shared limit for
+    this month." An unrecognised reason says "Coach has reached its usage limit for now." No Retry.
+  - **AI coaching permission** (403 `ai_consent_required`): "Coach needs your permission to use AI
+    before it can answer." with **Review AI coaching** and no Retry; 503 `ai_consent_unavailable`
+    says the setting could not be checked and offers Retry.
+  - **Session** (401): "Your session has expired. Sign in again to keep talking to Coach."
+  - **Context preparation** (422 `context_preparation_failed`, reason `thread_not_found`,
+    `invalid_chat_request`, `account_not_found`, `invalid_timezone`, `chat_context_too_large`,
+    anything else): each says what to do ("Start a new one", "Shorten it
+    and send it again"); an unknown reason says Coach could not prepare the data and offers Retry.
+  - **Provider** (503 `provider_*`): "Coach couldn’t complete that response. Please try again.",
+    "Coach took too long to respond.", "Coach is busy right now." A retry delay from the server
+    (`retry_after_seconds`) turns the composer into a countdown ("Coach is busy. Try again in 3s")
+    and hides Retry until it ends.
+  - **Timeout, lost connection, gateway timeout, a turn still running** (409): "Coach took too long
+    to answer. Retry will pick up the answer if it finished in the meantime."; "Tracend can’t
+    reach Coach. Check your connection, then retry."; "Coach is still working on your last
+    message."; and, when the server gives up on a turn that never finished (503 `turn_lost`),
+    "That message didn’t finish. Send it again." whose Retry is a new turn.
+  - Anything else: "Coach couldn’t answer. Your approved plan is unchanged." with the raw text.
+  A toast ("Coach couldn’t answer") marks the moment; it never carries the only copy of the error.
+  During the private beta the diagnostic line shows the raw text, including the HTTP status and the
+  server's stable code, reason or error ("Beta diagnostic: HTTP 422 · chat_unavailable ·
+  context_preparation_failed · monthly_cost_limit"), so the owner can see where a failure comes
+  from (owner decision, 2026-09-27). The server never sends parser messages, provider bodies,
+  prompts, or health context.
+- **Safe retry.** Each question is sent with an idempotency key. **Retry** after a timeout, a lost
+  connection, a gateway timeout or a turn still running repeats that key (at most twice), so a
+  server that finished after the app gave up returns its answer instead of running again and
+  charging twice, and the question stays one bubble. **Retry** after the server did answer with a
+  failure (or `turn_lost`), and **Retry** on a data summary, is a new turn with a new key. The server saves a question when
+  its turn starts and marks a failed attempt's copy superseded when the retry arrives; the thread
+  view hides superseded questions, and a retry of a failed send stands in for it on screen too.
+  **Review AI coaching** reloads the
+  consent first, so a grant for an older notice cannot hide the notice the server now requires.
+- **Near the limit.** When the server reports `budget_warning` (this month’s spend is 80% of the
+  athlete’s monthly Coach limit), a line under the newest reply says "Heads up: you’re approaching
+  this month’s Coach limit. It resets on 1 Nov."
+- **Without a plan.** Coach answers an athlete who has no active plan or nutrition target, including
+  one told to see a professional first (screening outcome `see_professional`): the context says
+  there is no plan and why, and Coach can still answer questions and suggest next steps, but not
+  cite or change a plan. A new conversation then offers "What can you help me with?", "Why don’t I
+  have a plan yet?" and "What should I do next?" instead of the plan questions.
 - **Coaching context.** A new conversation shows an expandable **Your coaching context** card
   before its first message; an ongoing conversation shows no cards above it. It lists approved
   plan, goal/profile, Apple Health, check-ins, confirmed nutrition, completed Tracend workouts,
@@ -1102,7 +1145,7 @@ provider request identifiers, raw errors, provider or model names, or another us
 Values are operational estimates, not invoices or subscription quotas, and the footnote says so.
 This month's cost is shown against the warning and stop limits **from the server budget state
 only** (never hard-coded), as a meter with a tick at the warning threshold and in the Account row
-("$0.42 of $2.00 · warning at $1.00"). Dollars show two decimals; a cost above zero that would
+("$0.42 of $3.00 · warning at $2.40"). Dollars show two decimals; a cost above zero that would
 round to nothing reads **<$0.01**, never **$0.00**. **Refresh usage** refetches the live summary.
 When budget fields are unavailable the screen degrades to run counts and estimates without
 threshold claims; when usage cannot load the row reads "AI usage unavailable".

@@ -273,7 +273,11 @@ class _ChatRepository
   @override
   Future<List<CoachMessage>> loadMessages(String threadId) async => const [];
   @override
-  Future<CoachMessage> sendMessage(String threadId, String question) async {
+  Future<CoachMessage> sendMessage(
+    String threadId,
+    String question, {
+    String? idempotencyKey,
+  }) async {
     sent = true;
     return CoachMessage(
       id: 'answer-1',

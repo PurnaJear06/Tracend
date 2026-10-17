@@ -70,7 +70,7 @@ class CoachComposer extends StatelessWidget {
                     textInputAction: TextInputAction.newline,
                     decoration: InputDecoration(
                       hintText: cooldownActive
-                          ? 'Limit reached. Try again in ${cooldownRemaining}s'
+                          ? 'Coach is busy. Try again in ${cooldownRemaining}s'
                           : 'Ask your Coach',
                       hintMaxLines: 1,
                       counterText: '',

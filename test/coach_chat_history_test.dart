@@ -703,7 +703,11 @@ class _HistoryRepository implements CoachRepository, CoachChatRepository {
       Future.value(_messages[threadId] ?? const []);
 
   @override
-  Future<CoachMessage> sendMessage(String threadId, String question) {
+  Future<CoachMessage> sendMessage(
+    String threadId,
+    String question, {
+    String? idempotencyKey,
+  }) {
     sent.add((threadId, question));
     if (!_threads.any((thread) => thread.id == threadId)) {
       _threads.insert(0, _thread(threadId, question));

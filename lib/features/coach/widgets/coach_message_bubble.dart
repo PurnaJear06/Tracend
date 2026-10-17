@@ -138,6 +138,15 @@ class _CoachReply extends StatelessWidget {
         message.missingData.isNotEmpty ||
         reasoning.isNotEmpty;
     final provider = !summary ? message.modelProvider : null;
+    // "Not an AI answer" only for what the server wrote without a model: a
+    // data summary or a deterministic referral. A refusal a model wrote is an
+    // AI answer, so it keeps its provider label under the safety styling.
+    final noModel =
+        summary ||
+        aiAnswerLabel(
+          provider: message.modelProvider,
+          model: message.model,
+        ).endsWith('not AI');
     return Semantics(
       container: true,
       label: referral
@@ -148,10 +157,10 @@ class _CoachReply extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (summary) ...[
+          if (summary || referral) ...[
             StatusChip(
               label: referral
-                  ? 'Safety note · not an AI answer'
+                  ? (noModel ? 'Safety note · not an AI answer' : 'Safety note')
                   : 'Data summary · not an AI answer',
               icon: referral ? CupertinoIcons.heart : CupertinoIcons.doc_text,
               tone: referral ? StatusTone.neutral : StatusTone.caution,
@@ -402,17 +411,23 @@ class CoachRetryButton extends StatelessWidget {
 /// A turn that failed, shown in place of the Coach's reply under the
 /// question it answers: what happened in plain words, then the raw beta
 /// diagnostic as a small second line, and Retry when it can be asked again.
+/// A failure with its own way out (reviewing AI coaching consent) offers it
+/// as [actionLabel].
 class CoachTurnError extends StatelessWidget {
   const CoachTurnError({
     required this.message,
     this.diagnostic,
     this.onRetry,
+    this.actionLabel,
+    this.onAction,
     super.key,
   });
 
   final String message;
   final String? diagnostic;
   final VoidCallback? onRetry;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -456,6 +471,10 @@ class CoachTurnError extends StatelessWidget {
         if (onRetry != null) ...[
           const SizedBox(height: TracendSpacing.xxs),
           CoachRetryButton(onPressed: onRetry),
+        ],
+        if (actionLabel != null && onAction != null) ...[
+          const SizedBox(height: TracendSpacing.xxs),
+          OutlinedButton(onPressed: onAction, child: Text(actionLabel!)),
         ],
       ],
     );

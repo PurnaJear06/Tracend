@@ -50,7 +50,11 @@ class _GatedCoach implements CoachRepository, CoachChatRepository {
   Future<List<CoachMessage>> loadMessages(String threadId) async => const [];
 
   @override
-  Future<CoachMessage> sendMessage(String threadId, String question) async {
+  Future<CoachMessage> sendMessage(
+    String threadId,
+    String question, {
+    String? idempotencyKey,
+  }) async {
     sent++;
     return CoachMessage(
       id: 'answer',

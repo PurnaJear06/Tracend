@@ -90,7 +90,7 @@ Every limit below is enforced server-side in SQL and counts every account. Sourc
 
 | Limit | Value | Where |
 | --- | --- | --- |
-| Monthly warning, per athlete | half the hard stop, USD 1.50 (shown, not enforced) | `get_my_ai_budget_state` |
+| Monthly warning, per athlete | 80% of the hard stop, USD 2.40 (shown, not enforced) | `get_my_ai_budget_state`, and `budget_warning` in Coach chat |
 | Monthly hard stop, per athlete | USD 3 | `private.ai_budget_limits.per_person_monthly_usd`, read by `reserve_ai_budget`, `reserve_ai_budget_v2`, `assert_owner_ai_budget` |
 | Daily requests, per athlete | 30, shared by Coach chat, daily decisions, meal photos, physique checks and onboarding | same |
 | Global monthly stop, all accounts | USD 50 (confirm at cutover) | `private.ai_budget_limits.global_monthly_usd` |

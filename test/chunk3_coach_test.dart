@@ -211,7 +211,11 @@ class _ChatRepository
   Future<List<CoachMessage>> loadMessages(String threadId) async => const [];
 
   @override
-  Future<CoachMessage> sendMessage(String threadId, String question) async {
+  Future<CoachMessage> sendMessage(
+    String threadId,
+    String question, {
+    String? idempotencyKey,
+  }) async {
     sentQuestions.add(question);
     return CoachMessage(
       id: 'answer-1',
@@ -232,9 +236,12 @@ class _ChatRepository
 
 class _ChatFailureRepository extends _ChatRepository {
   @override
-  Future<CoachMessage> sendMessage(String threadId, String question) =>
-      throw const CoachUnavailableException(
-        'Coach couldn’t complete that response. Please try again.',
-        code: 'provider_response_invalid',
-      );
+  Future<CoachMessage> sendMessage(
+    String threadId,
+    String question, {
+    String? idempotencyKey,
+  }) => throw const CoachUnavailableException(
+    'Coach couldn’t complete that response. Please try again.',
+    code: 'provider_response_invalid',
+  );
 }
