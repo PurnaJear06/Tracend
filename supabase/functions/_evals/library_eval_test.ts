@@ -5,8 +5,8 @@ import { type LibraryQuestion, scoreQuestion, summarise } from "./library_eval_m
 
 const questions = questionFile.questions as LibraryQuestion[];
 
-Deno.test("the question set is about forty realistic questions with known expected sources", () => {
-  assert(questions.length >= 38 && questions.length <= 45, `${questions.length} questions`);
+Deno.test("the question set is a few dozen realistic questions with known expected sources", () => {
+  assert(questions.length >= 38 && questions.length <= 80, `${questions.length} questions`);
   assertEquals(new Set(questions.map((question) => question.id)).size, questions.length);
   const keys = new Set(librarySources.map((source) => source.slug));
   for (const question of questions) {

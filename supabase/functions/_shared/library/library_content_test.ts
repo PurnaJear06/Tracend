@@ -5,8 +5,8 @@ import { sourceBlock } from "./migration_sql.ts";
 
 const kinds = new Set(["paper", "guideline", "position_stand", "summary"]);
 
-Deno.test("the library holds about thirty to forty sources with unique keys", () => {
-  assert(librarySources.length >= 30 && librarySources.length <= 45, `${librarySources.length}`);
+Deno.test("the library holds a few dozen sources with unique keys", () => {
+  assert(librarySources.length >= 30 && librarySources.length <= 70, `${librarySources.length}`);
   const keys = librarySources.map((source) => source.slug);
   assertEquals(new Set(keys).size, keys.length);
   const dois = librarySources.flatMap((source) => source.doi === null ? [] : [source.doi]);
@@ -75,6 +75,18 @@ Deno.test("the sources cover every area the knowledge base was asked to cover", 
       "recovery",
       "screening",
       "joint-friendly",
+      "diet-break",
+      "metabolic-adaptation",
+      "low-energy-availability",
+      "weight-maintenance",
+      "behaviour-change",
+      "habits",
+      "alcohol",
+      "detraining",
+      "home-training",
+      "older-adults",
+      "menstrual-cycle",
+      "india",
     ]
   ) {
     assert(count(topic) >= 1, `no source covers ${topic}`);

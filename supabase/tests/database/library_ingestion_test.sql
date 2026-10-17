@@ -27,7 +27,8 @@ select is((select count(*) from private.library_chunks where token_count > 512),
 select is((select count(*) from private.library_chunks where embedding is not null), 0::bigint,
   'chunks load without embeddings');
 select is((select count(*) from (select distinct unnest(region) r from private.library_sources) x
-  where r not in ('global', 'US')), 0::bigint, 'regions are global or the one US guideline');
+  where r not in ('global', 'US', 'IN')), 0::bigint,
+  'regions are global or the one US or Indian guideline');
 select ok(exists (select 1 from private.library_sources where doi = '10.1186/s12970-017-0177-8'
   and licence like 'CC BY%'), 'a known source loaded with its DOI and licence');
 select ok((select bool_and(topics <> '{}') from private.library_sources), 'every source has topics');
