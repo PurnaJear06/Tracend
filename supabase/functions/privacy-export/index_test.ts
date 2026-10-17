@@ -9,6 +9,10 @@ Deno.test("the export includes each set's heart-rate summary", () => {
   assert(dataTables.includes("exercise_set_heart_rate"));
 });
 
+Deno.test("the export includes the sleeping heart rate kept in shadow mode", () => {
+  assert(dataTables.includes("sleeping_heart_rate_nights"));
+});
+
 Deno.test("the export includes the pre-exercise screening answers", () => {
   assert(dataTables.includes("onboarding_screenings"));
 });

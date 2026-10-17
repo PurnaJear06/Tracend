@@ -1033,6 +1033,15 @@ plan. **Not built yet:** links to source data, charts, and a proposed-adjustment
   (and once in onboarding).
 - Revocation keeps manual features usable and explains iOS settings.
 - Sync shows date range and last success instead of an indefinite spinner.
+- **Heart-rate zones (C3).** The Apple Health sheet in Account, once Apple Health is connected, ends
+  with a small "Heart-rate zones" section under the signals: one line with resting heart rate and the
+  maximum ("Resting 59 bpm · Max 183 bpm, estimated from your age", or "from your workouts" once a
+  trusted workout peak is higher), the five zones (Z1 Easy to Z5 Maximum) as bpm ranges, one recovery
+  line ("heart rate falls 28 bpm in the first minute, improving (+6 bpm against the 4 weeks
+  before)") and "For information only. Heart rate never changes your loads." Missing data is said
+  plainly and no zone is drawn: fewer than 3 recent days of resting heart rate, no birth year and no
+  trusted workout peak, or fewer than 6 tracked sets in a window ("not enough tracked sets yet"). The
+  section is hidden while the server cannot be read. Sleeping heart rate is not shown anywhere (D10).
 
 ## 13. Privacy, Export, and Deletion
 

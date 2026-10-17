@@ -1,0 +1,3301 @@
+[
+  {
+    "name": "formula from age with resting and zones",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [],
+      "peak_candidates": [
+        {
+          "local_date": "2026-10-12",
+          "start_bpm": 110,
+          "peak_bpm": 176,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ]
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": 176,
+        "observed_on": "2026-10-12"
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 121,
+          "high_bpm": 132
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 133,
+          "high_bpm": 145
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 146,
+          "high_bpm": 157
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 158,
+          "high_bpm": 170
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 171,
+          "high_bpm": 183
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": null,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 0,
+        "prior_sets": 0
+      }
+    }
+  },
+  {
+    "name": "a trusted higher peak replaces the formula",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [],
+      "peak_candidates": [
+        {
+          "local_date": "2026-10-08",
+          "start_bpm": 110,
+          "peak_bpm": 190,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-14",
+          "start_bpm": 110,
+          "peak_bpm": 184,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ]
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": 190,
+        "basis": "observed",
+        "formula_bpm": 183,
+        "observed_bpm": 190,
+        "observed_on": "2026-10-08"
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 125,
+          "high_bpm": 137
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 138,
+          "high_bpm": 150
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 151,
+          "high_bpm": 163
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 164,
+          "high_bpm": 176
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 177,
+          "high_bpm": 190
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": null,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 0,
+        "prior_sets": 0
+      }
+    }
+  },
+  {
+    "name": "a spike above formula plus 20 is refused",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [],
+      "peak_candidates": [
+        {
+          "local_date": "2026-10-15",
+          "start_bpm": 110,
+          "peak_bpm": 215,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ]
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 121,
+          "high_bpm": 132
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 133,
+          "high_bpm": 145
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 146,
+          "high_bpm": 157
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 158,
+          "high_bpm": 170
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 171,
+          "high_bpm": 183
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": null,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 0,
+        "prior_sets": 0
+      }
+    }
+  },
+  {
+    "name": "few readings, low coverage and background peaks are refused",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [],
+      "peak_candidates": [
+        {
+          "local_date": "2026-10-16",
+          "start_bpm": 110,
+          "peak_bpm": 190,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 5,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-15",
+          "start_bpm": 110,
+          "peak_bpm": 191,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.4,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-14",
+          "start_bpm": 110,
+          "peak_bpm": 192,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "background"
+        }
+      ]
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 121,
+          "high_bpm": 132
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 133,
+          "high_bpm": 145
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 146,
+          "high_bpm": 157
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 158,
+          "high_bpm": 170
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 171,
+          "high_bpm": 183
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": null,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 0,
+        "prior_sets": 0
+      }
+    }
+  },
+  {
+    "name": "a missing peak value is skipped",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [],
+      "peak_candidates": [
+        {
+          "local_date": "2026-10-16",
+          "start_bpm": null,
+          "peak_bpm": null,
+          "end_bpm": null,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ]
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 121,
+          "high_bpm": 132
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 133,
+          "high_bpm": 145
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 146,
+          "high_bpm": 157
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 158,
+          "high_bpm": 170
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 171,
+          "high_bpm": 183
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": null,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 0,
+        "prior_sets": 0
+      }
+    }
+  },
+  {
+    "name": "no birth year and no peaks leaves the maximum missing",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": null,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [],
+      "peak_candidates": []
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": null,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": null,
+        "basis": "missing",
+        "formula_bpm": null,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [],
+      "zones_missing": "no_max",
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": null,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 0,
+        "prior_sets": 0
+      }
+    }
+  },
+  {
+    "name": "no birth year with a trusted peak uses the peak",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": null,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [],
+      "peak_candidates": [
+        {
+          "local_date": "2026-10-13",
+          "start_bpm": 110,
+          "peak_bpm": 185,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ]
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": null,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": 185,
+        "basis": "observed",
+        "formula_bpm": null,
+        "observed_bpm": 185,
+        "observed_on": "2026-10-13"
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 122,
+          "high_bpm": 134
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 135,
+          "high_bpm": 146
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 147,
+          "high_bpm": 159
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 160,
+          "high_bpm": 171
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 172,
+          "high_bpm": 185
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": null,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 0,
+        "prior_sets": 0
+      }
+    }
+  },
+  {
+    "name": "no birth year caps a peak at 210",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": null,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [],
+      "peak_candidates": [
+        {
+          "local_date": "2026-10-13",
+          "start_bpm": 110,
+          "peak_bpm": 214,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ]
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": null,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": null,
+        "basis": "missing",
+        "formula_bpm": null,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [],
+      "zones_missing": "no_max",
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": null,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 0,
+        "prior_sets": 0
+      }
+    }
+  },
+  {
+    "name": "an age outside the formula leaves the maximum missing",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 2015,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [],
+      "peak_candidates": []
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": null,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": null,
+        "basis": "missing",
+        "formula_bpm": null,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [],
+      "zones_missing": "no_max",
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": null,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 0,
+        "prior_sets": 0
+      }
+    }
+  },
+  {
+    "name": "fewer than three resting days leaves zones missing",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        }
+      ],
+      "sets": [],
+      "peak_candidates": []
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": null,
+        "days": 2
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [],
+      "zones_missing": "no_resting",
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": null,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 0,
+        "prior_sets": 0
+      }
+    }
+  },
+  {
+    "name": "old and out-of-range resting values are ignored",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-09-27",
+          "bpm": 50
+        },
+        {
+          "local_date": "2026-10-16",
+          "bpm": 150
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 20
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 60
+        }
+      ],
+      "sets": [],
+      "peak_candidates": []
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": 60,
+        "days": 3
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 122,
+          "high_bpm": 133
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 134,
+          "high_bpm": 145
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 146,
+          "high_bpm": 157
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 158,
+          "high_bpm": 170
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 171,
+          "high_bpm": 183
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": null,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 0,
+        "prior_sets": 0
+      }
+    }
+  },
+  {
+    "name": "a narrow reserve gives no zones",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": null,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 118
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 119
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 120
+        }
+      ],
+      "sets": [],
+      "peak_candidates": [
+        {
+          "local_date": "2026-10-16",
+          "start_bpm": 110,
+          "peak_bpm": 121,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ]
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": null,
+      "resting": {
+        "bpm": 119,
+        "days": 3
+      },
+      "max": {
+        "bpm": 121,
+        "basis": "observed",
+        "formula_bpm": null,
+        "observed_bpm": 121,
+        "observed_on": "2026-10-16"
+      },
+      "zones": [],
+      "zones_missing": "narrow_reserve",
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": null,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 0,
+        "prior_sets": 0
+      }
+    }
+  },
+  {
+    "name": "recovery improving",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [
+        {
+          "local_date": "2026-10-16",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-11",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-17",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-16",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ],
+      "peak_candidates": []
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 121,
+          "high_bpm": 132
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 133,
+          "high_bpm": 145
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 146,
+          "high_bpm": 157
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 158,
+          "high_bpm": 170
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 171,
+          "high_bpm": 183
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "improving",
+        "recent_drop_60s_bpm": 30,
+        "prior_drop_60s_bpm": 24,
+        "change_bpm": 6,
+        "recent_sets": 6,
+        "prior_sets": 6
+      }
+    }
+  },
+  {
+    "name": "recovery slower",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [
+        {
+          "local_date": "2026-10-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 18,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 18,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 18,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 18,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-11",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 18,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-10",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 18,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-09",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 18,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-16",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 25,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 25,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 25,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 25,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 25,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-11",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 25,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-10",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 25,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-09",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 25,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ],
+      "peak_candidates": []
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 121,
+          "high_bpm": 132
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 133,
+          "high_bpm": 145
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 146,
+          "high_bpm": 157
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 158,
+          "high_bpm": 170
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 171,
+          "high_bpm": 183
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "slower",
+        "recent_drop_60s_bpm": 18,
+        "prior_drop_60s_bpm": 25,
+        "change_bpm": -7,
+        "recent_sets": 7,
+        "prior_sets": 8
+      }
+    }
+  },
+  {
+    "name": "recovery steady",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [
+        {
+          "local_date": "2026-10-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 26,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 26,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 26,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 26,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-11",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 26,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-10",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 26,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-18",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-17",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-16",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ],
+      "peak_candidates": []
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 121,
+          "high_bpm": 132
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 133,
+          "high_bpm": 145
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 146,
+          "high_bpm": 157
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 158,
+          "high_bpm": 170
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 171,
+          "high_bpm": 183
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "steady",
+        "recent_drop_60s_bpm": 26,
+        "prior_drop_60s_bpm": 24,
+        "change_bpm": 2,
+        "recent_sets": 6,
+        "prior_sets": 6
+      }
+    }
+  },
+  {
+    "name": "recovery needs six sets in both windows",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [
+        {
+          "local_date": "2026-10-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 26,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 26,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 26,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 26,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-11",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 26,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-10",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 26,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-18",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-17",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-16",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ],
+      "peak_candidates": []
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 121,
+          "high_bpm": 132
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 133,
+          "high_bpm": 145
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 146,
+          "high_bpm": 157
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 158,
+          "high_bpm": 170
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 171,
+          "high_bpm": 183
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "not_enough_data",
+        "recent_drop_60s_bpm": 26,
+        "prior_drop_60s_bpm": null,
+        "change_bpm": null,
+        "recent_sets": 6,
+        "prior_sets": 5
+      }
+    }
+  },
+  {
+    "name": "recovery ignores sets that never raised the heart rate or were poorly covered",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [
+        {
+          "local_date": "2026-10-16",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-11",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-17",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-16",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-09",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 70,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 2,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-08",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 70,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 2,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-07",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 70,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 2,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-06",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 70,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 2,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-08",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 1,
+          "coverage": 0.5,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-07",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 1,
+          "coverage": 0.5,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-06",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 1,
+          "coverage": 0.5,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-05",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 1,
+          "coverage": 0.5,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-07",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": null,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-06",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": null,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-05",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": null,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-04",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": null,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-08-08",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 99,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-08-07",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 99,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-08-06",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 99,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-08-05",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 99,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ],
+      "peak_candidates": []
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 121,
+          "high_bpm": 132
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 133,
+          "high_bpm": 145
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 146,
+          "high_bpm": 157
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 158,
+          "high_bpm": 170
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 171,
+          "high_bpm": 183
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "improving",
+        "recent_drop_60s_bpm": 30,
+        "prior_drop_60s_bpm": 24,
+        "change_bpm": 6,
+        "recent_sets": 6,
+        "prior_sets": 6
+      }
+    }
+  },
+  {
+    "name": "recovery without resting counts sets ending at 100 bpm or more",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [],
+      "sets": [
+        {
+          "local_date": "2026-10-16",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-11",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-17",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-16",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 99,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 1,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-11",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 99,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 1,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-10",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 99,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 1,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ],
+      "peak_candidates": []
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": null,
+        "days": 0
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [],
+      "zones_missing": "no_resting",
+      "recovery": {
+        "state": "improving",
+        "recent_drop_60s_bpm": 30,
+        "prior_drop_60s_bpm": 24,
+        "change_bpm": 6,
+        "recent_sets": 6,
+        "prior_sets": 6
+      }
+    }
+  },
+  {
+    "name": "even counts use the middle pair",
+    "inputs": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "birth_year": 1990,
+      "resting": [
+        {
+          "local_date": "2026-10-16",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-15",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-14",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-13",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-12",
+          "bpm": 61
+        },
+        {
+          "local_date": "2026-10-11",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-10",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-09",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-08",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-07",
+          "bpm": 60
+        },
+        {
+          "local_date": "2026-10-06",
+          "bpm": 59
+        },
+        {
+          "local_date": "2026-10-05",
+          "bpm": 58
+        },
+        {
+          "local_date": "2026-10-04",
+          "bpm": 57
+        },
+        {
+          "local_date": "2026-10-03",
+          "bpm": 60
+        }
+      ],
+      "sets": [
+        {
+          "local_date": "2026-10-16",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 20,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 21,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 25,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 30,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 31,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-10-11",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 40,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-17",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-16",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-15",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-14",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-13",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        },
+        {
+          "local_date": "2026-09-12",
+          "start_bpm": 110,
+          "peak_bpm": 150,
+          "end_bpm": 140,
+          "drop_30s_bpm": 12,
+          "drop_60s_bpm": 24,
+          "coverage": 0.9,
+          "sample_count": 20,
+          "source": "watch_workout"
+        }
+      ],
+      "peak_candidates": []
+    },
+    "expected": {
+      "schema_version": "1.0",
+      "as_of": "2026-10-17",
+      "age_years": 36,
+      "resting": {
+        "bpm": 59,
+        "days": 13
+      },
+      "max": {
+        "bpm": 183,
+        "basis": "age_formula",
+        "formula_bpm": 183,
+        "observed_bpm": null,
+        "observed_on": null
+      },
+      "zones": [
+        {
+          "zone": 1,
+          "label": "Easy",
+          "low_bpm": 121,
+          "high_bpm": 132
+        },
+        {
+          "zone": 2,
+          "label": "Aerobic",
+          "low_bpm": 133,
+          "high_bpm": 145
+        },
+        {
+          "zone": 3,
+          "label": "Tempo",
+          "low_bpm": 146,
+          "high_bpm": 157
+        },
+        {
+          "zone": 4,
+          "label": "Hard",
+          "low_bpm": 158,
+          "high_bpm": 170
+        },
+        {
+          "zone": 5,
+          "label": "Maximum",
+          "low_bpm": 171,
+          "high_bpm": 183
+        }
+      ],
+      "zones_missing": null,
+      "recovery": {
+        "state": "improving",
+        "recent_drop_60s_bpm": 27.5,
+        "prior_drop_60s_bpm": 24,
+        "change_bpm": 3.5,
+        "recent_sets": 6,
+        "prior_sets": 6
+      }
+    }
+  }
+]

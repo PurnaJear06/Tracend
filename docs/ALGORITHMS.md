@@ -484,6 +484,53 @@ its own reference.
 - Foster, C. (1998). Monitoring training in athletes with reference to overtraining syndrome. *Med
   Sci Sports Exerc* 30(7), 1164–1168.
 
+### Heart-Rate Profile (C3, 2026-10)
+
+Deterministic arithmetic over stored summaries; code lives twice (Dart
+`lib/features/workout_hr/heart_rate_profile.dart`, TypeScript
+`supabase/functions/_shared/training/heart_rate/profile.ts`) and both must give the results in
+`profile_cases.json`. Heart rate informs (rest, cardio dosing, recovery talk, a question); it never
+sets a load or a prescription (D9). Sleeping heart rate is **not** an input (D10, shadow mode).
+
+- **Resting heart rate:** the median of the Apple Health daily values of the last 14 days (values
+  30–120 bpm), from at least 3 days; otherwise missing.
+- **Estimated maximum:** Tanaka, Monahan and Seals (2001): `208 - 0.7 x age`, rounded, for ages 16 to
+  90 (their sample was 18 to 81, residual about 10 bpm); no birth year or an age outside the range
+  gives no formula. An **observed peak** replaces it when it is the highest trusted peak and is above
+  the formula. A set peak is trusted only when the set came from a Watch workout (`watch_workout`),
+  has at least 8 readings and covered at least 60% of the set and the minute after it, and is at least
+  120 bpm and at most the formula plus 20 bpm (two residuals; 210 bpm with no age). Wrist sensors spike,
+  so a peak above that ceiling is ignored, not clipped. Lifting sets rarely reach a true maximum, so the
+  formula usually stands until a hard effort exceeds it. With neither, the maximum is missing.
+- **Zones:** heart-rate reserve (Karvonen, Kentala and Mustala 1957): `resting + fraction x (max -
+  resting)` at 50, 60, 70, 80, 90 and 100% of reserve, five zones (Easy, Aerobic, Tempo, Hard,
+  Maximum), the five-zone layout common to heart-rate watches; the anchors agree with the ACSM
+  Guidelines (moderate 40–59% of reserve, vigorous 60–89%, near-maximal 90% and above). Cut points are
+  rounded to whole beats; each zone ends one beat below the next one's start, the last at the maximum.
+  Below 50% is no zone. Zones need a resting heart rate and a maximum with a reserve of at least 20 bpm;
+  otherwise the reason (`no_resting`, `no_max`, `narrow_reserve`) is shown and no zone is drawn.
+- **Recovery after sets:** the median `drop_60s_bpm` of qualifying sets in the last 28 days against the
+  28 days before, both from at least 6 sets. A set qualifies with a 60-second drop, coverage of at least
+  60% and an end heart rate at least 20 bpm above resting (100 bpm when resting is unknown). A change of
+  3 bpm or more is "improving" or "slower"; less is "steady"; fewer sets in either window is "not enough
+  data". It is a trend of the athlete against themselves; one-minute recovery after maximal exercise
+  (Cole et al. 1999, N Engl J Med 341:1351–1357) has no threshold for lifting sets, so none is used.
+- **Sleeping heart rate (shadow):** per night from Apple Health sleep (sessions joined across gaps up
+  to 1 hour, dated by the day they end, at least 3 hours asleep, awake time removed): the median of
+  readings asleep, the lowest mean of any 10-minute slot, readings, minutes asleep and coverage of
+  10-minute slots. A night is stored only with at least 20 readings and 50% coverage. No score uses it.
+
+### Literature
+
+- Tanaka, H., Monahan, K.D., Seals, D.R. (2001). Age-predicted maximal heart rate revisited. *J Am
+  Coll Cardiol* 37(1), 153–156.
+- Karvonen, M.J., Kentala, E., Mustala, O. (1957). The effects of training on heart rate: a
+  longitudinal study. *Ann Med Exp Biol Fenn* 35(3), 307–315.
+- Cole, C.R., Blackstone, E.H., Pashkow, F.J., Snader, C.E., Lauer, M.S. (1999). Heart-rate recovery
+  immediately after exercise as a predictor of mortality. *N Engl J Med* 341(18), 1351–1357.
+- ACSM (2021). *ACSM's Guidelines for Exercise Testing and Prescription*, 11th ed., intensity
+  classification by percent of heart-rate reserve.
+
 ---
 
 ## 5. Weight Trend
