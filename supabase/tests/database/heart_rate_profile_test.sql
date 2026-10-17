@@ -35,6 +35,15 @@ insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_o
   display_name_snapshot, set_count, rep_min, rep_max, rest_seconds) values
   ('c3340000-0000-4000-8000-000000000001', 'c3300000-0000-4000-8000-000000000001',
    'c3330000-0000-4000-8000-000000000001', 1, 'Heart press', 3, 6, 8, 90);
+-- A second workout with twelve sets, for the trusted-peak case (sets must exist to be saved).
+insert into public.planned_workouts(id, user_id, plan_version_id, workout_order, name, objective,
+  preferred_weekday, estimated_minutes, warm_up_guidance, cool_down_guidance) values
+  ('c3330000-0000-4000-8000-000000000002', 'c3300000-0000-4000-8000-000000000001',
+   'c3320000-0000-4000-8000-000000000001', 2, 'Intervals', 'Peaks', 3, 50, 'Warm up', 'Cool down');
+insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_order,
+  display_name_snapshot, set_count, rep_min, rep_max, rest_seconds) values
+  ('c3340000-0000-4000-8000-000000000002', 'c3300000-0000-4000-8000-000000000001',
+   'c3330000-0000-4000-8000-000000000002', 1, 'Heart intervals', 12, 6, 8, 90);
 
 create temporary table flow(name text primary key, id uuid);
 create temporary table h(j jsonb);
@@ -204,7 +213,7 @@ select is(public.get_my_heart_rate_inputs_v1()->'peak_candidates', '[]'::jsonb, 
 -- A has no trusted peak but ten untrusted higher ones (5 with few readings, 5 poorly covered), one
 -- trusted peak above the age ceiling (born 1990: 183 + 20 = 203) and one valid lower one.
 
-insert into flow select 'b', public.start_workout('c3330000-0000-4000-8000-000000000001',
+insert into flow select 'b', public.start_workout('c3330000-0000-4000-8000-000000000002',
   current_date, 'UTC', 'c3350000-0000-4000-8000-000000000002');
 select public.sync_workout_draft((select id from flow where name = 'b'), 1,
   jsonb_build_object('exercises', jsonb_build_array(jsonb_build_object(
