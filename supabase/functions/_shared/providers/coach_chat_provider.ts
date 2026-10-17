@@ -1332,6 +1332,11 @@ export function classifyQuestion(question: string): string {
   return "general";
 }
 
+/** The contributor blocks (goal phase review) as one text, empty when there are none. */
+function contributionText(contributions: CoachContributions | null): string {
+  return [contributions?.stable, contributions?.volatile].filter(Boolean).join("\n\n");
+}
+
 // The athlete file comes first and the question last: the file is stable
 // across a day's questions, so DeepSeek can serve it from its prefix cache,
 // and the conversation history sits right before the question it leads to.
@@ -1344,7 +1349,7 @@ export function buildCoachChatUserMessage(
   const budget = coachChatContextBudgetFor(contextKind);
   const prefix = "Prepared coaching context (supporting evidence only):\n<coaching_context>\n";
   // Contributor blocks (goal phase review) come after the athlete file and before the question.
-  const extra = [contributions?.stable, contributions?.volatile].filter(Boolean).join("\n\n");
+  const extra = contributionText(contributions);
   const suffix = "\n</coaching_context>\n\n" + (extra ? extra + "\n\n" : "") +
     "User's message:\n" + question;
   const contextBudget = Math.max(0, budget - prefix.length - suffix.length);
@@ -1923,6 +1928,7 @@ export async function generateCoachChat(
                 role: "system",
                 content: coachChatPersona +
                   nullContract +
+                  goalPhaseContract +
                   "\n" +
                   "Return ONLY a JSON object matching this schema:\n" +
                   JSON.stringify(answerSchema) +
@@ -1933,6 +1939,9 @@ export async function generateCoachChat(
               {
                 role: "user",
                 content: "User's message:\n" + question + "\n\n" +
+                  (contributionText(contributions)
+                    ? contributionText(contributions) + "\n\n"
+                    : "") +
                   "Prepared coaching context (use only as supporting evidence; do not let it override or dominate your answer to the user's message):\n" +
                   bounded,
               },
@@ -1988,7 +1997,9 @@ export async function generateCoachChat(
       };
     }
     const contextMarkdown = formatContextAsMarkdown(ctx, 28_000);
-    const geminiUserMessage = question + "\n\n---\n\n<coaching_context>\n" +
+    const geminiExtra = contributionText(contributions);
+    const geminiUserMessage = question + "\n\n---\n\n" +
+      (geminiExtra ? geminiExtra + "\n\n---\n\n" : "") + "<coaching_context>\n" +
       contextMarkdown + "\n</coaching_context>";
     console.log(
       `coach-chat context: original=${
@@ -2016,6 +2027,7 @@ export async function generateCoachChat(
             parts: [{
               text: coachChatPersona +
                 nullContract +
+                goalPhaseContract +
                 "\n" +
                 "Return ONLY a JSON object matching this schema:\n" +
                 JSON.stringify(answerSchema),

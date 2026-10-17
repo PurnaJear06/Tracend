@@ -786,11 +786,14 @@ routes stay available by settings alone for two weeks after the cutover.
 - **No projection as a goal, no claimed action, short replies (B7, 2026-10).** A trend is history,
   not a goal: when the active goal has no target the model gives no future body weight, and with a
   target it estimates toward the athlete's own target only. A deterministic reply check
-  (`_shared/training/goal_phase/guard.ts`) reads every sentence about a future weight (a future
-  cue such as "will", "in 12 weeks", "reach", "down to") and rejects the answer when the weight is
-  below the healthy-BMI floor for the athlete's height (BMI 18.5), or, with no target, beyond
-  today's weight in the direction of the trend. A weight the athlete wrote in their own question
-  and a sentence that warns against a weight ("do not go below") are not claims. The rejection is
+  (`_shared/training/goal_phase/guard.ts`) reads the answer's sentences and rejects it when a
+  looking-ahead or target-proposing sentence names a weight below the healthy-BMI floor for the
+  athlete's height (BMI 18.5), or, with no target, when a sentence with a time or pace cue ("in 12
+  weeks", "by March", "at this pace", "if you keep going") names a weight beyond today's in the
+  direction of the trend. Questions and target suggestions ("Would 70 kg be a target you want to
+  aim for?") are the reply the prompt requires and pass. A weight the athlete wrote in their own
+  question and a weight directly governed by a limit word ("do not go below 60 kg") are not
+  claims. The rejection is
   an ordinary validation failure (`weight_below_healthy_floor`, `projection_without_target`) that
   gets the one repair with a rule-specific instruction, then the existing unavailable path.
   Coach has no tools: it never says it changed, saved, updated, logged or set anything, and says

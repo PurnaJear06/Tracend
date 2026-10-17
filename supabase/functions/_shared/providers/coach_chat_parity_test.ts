@@ -4,8 +4,8 @@
 // with the digest recorded from the pre-A6 code (commit 477da79). A digest changes only when the
 // legacy request changes, which A6 forbids; a later chunk that changes it on purpose records the
 // new digests and says so in its pull request. B7 (goal phase review) did: it adds the goal-phase
-// rules, the no-tools and brevity persona rules and the goal-details rendering, and records the
-// digests again.
+// rules, the no-tools and brevity persona rules and the goal-details rendering, and (for the rich athlete, whose goal weight is set) the
+// calculators' kilogram rows that stop at the goal weight, and records the digests again.
 
 import { assertEquals } from "jsr:@std/assert@1.0.14";
 import { route } from "../ai/routes.ts";
@@ -104,12 +104,12 @@ Deno.test("no route settings: the DeepSeek request is byte-identical to the pre-
 // Per athlete (rich, no_watch, new_user): weekly question, plan-change question, weekly question
 // with history; each the first request and its repair.
 const preA6Requests: readonly string[] = [
-  "e0186e4baec48c1b6233449e4d2af1d4845cd33bb06b4e7742c05f43ecf711cf",
-  "056a0dcb67a253ddf877344cc00dc5ea7bbf545381915682f40bbfec65232d9f",
-  "753f65e56c60f2c5463e28d456ea1d7dd98e80729f26a077820735297f6a2fef",
-  "d53167e00fafd602972cf344a104338bde21e8a0b7e8413273d14b29078440ed",
-  "d52851434ace710565b6a184a4fee682d076cc6fa1bd0bfebb280261b1842921",
-  "61fecb67dc17c70bef3856405b52a2a6dba347daab3a5bfbea4d9ec9081ff316",
+  "6276178fa7cebe814a1483872d9171df3039b751a9c5f9c1daeaffdf51f79e8e",
+  "da2448771bdd747d3b69b2604cf18838e8b92b21867ebd67065ef6edd82d5a9d",
+  "4f1880184d50b1a379894ba01f8d7085c2df1141f493478b671dab21ded79064",
+  "38dfc1d7312893fa6fcf0f53dec3ebfbcd3a55028c137ca9f04129cab3abdb55",
+  "55e6f43074c24a2751294f396fd7a2f25e8eeea6bb0e924f075c64e0282ff2c2",
+  "d80dc5c24395d3e18e85adcd12779f5e27fc63dec85f256b67c9983da5360f68",
   "63839f30a02f16b672b7010646fec7f88cf86a87eaba9280bb00812c0c52e732",
   "770123bb7501f5a69b91187de857c7e5d39f4ba4fe0e4204a5221e36fdaf529d",
   "bfe88f4978d64eaa37d62da051248ff2e5d5ae0300a8ec6031157f4771f616fa",

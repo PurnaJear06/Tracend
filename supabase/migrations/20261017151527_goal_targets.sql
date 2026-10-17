@@ -179,12 +179,25 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       order by g.priority, g.activated_at desc nulls last limit 1),
     'readings', (select coalesce(jsonb_agg(jsonb_build_object('date', r.measured_on, 'kg', r.weight_kg)
         order by r.measured_on, r.created_at), '[]'::jsonb)
-      from (select bm.measured_on, bm.created_at, bm.weight_kg
+      from (
+        -- Body measurements (an amended reading is replaced by its amendment), plus HealthKit
+        -- daily weights only on dates with no body measurement: the same sources and
+        -- precedence as the chat calculators (docs/ALGORITHMS.md section 5).
+        select bm.measured_on, bm.created_at, bm.weight_kg
         from public.body_measurements bm
-        where bm.user_id = p_user_id
+        where bm.user_id = p_user_id and bm.weight_kg is not null
           and not exists (select 1 from public.body_measurements newer
             where newer.user_id = bm.user_id and newer.amended_from_id = bm.id)
-        order by bm.measured_on desc, bm.created_at desc limit 400) r));
+        union all
+        select dhs.local_date, dhs.last_synced_at, dhs.weight_kg
+        from public.daily_health_summaries dhs
+        where dhs.user_id = p_user_id and dhs.weight_kg is not null
+          and not exists (select 1 from public.body_measurements m
+            where m.user_id = dhs.user_id and m.measured_on = dhs.local_date
+              and m.weight_kg is not null
+              and not exists (select 1 from public.body_measurements newer
+                where newer.user_id = m.user_id and newer.amended_from_id = m.id))
+        order by measured_on desc, created_at desc limit 400) r));
 $$;
 revoke all on function public.get_goal_phase_inputs_v1(uuid) from public, anon, authenticated;
 grant execute on function public.get_goal_phase_inputs_v1(uuid) to service_role;

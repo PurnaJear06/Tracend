@@ -1,5 +1,5 @@
 begin;
-select plan(47);
+select plan(49);
 
 -- A has a 180 cm profile and a fat-loss goal that began on 1 June, with a stale weight in its
 -- details; B has no height; C has no goal. 
@@ -27,6 +27,14 @@ insert into public.body_measurements(id, user_id, measured_on, source, weight_kg
 insert into public.body_measurements(id, user_id, measured_on, source, weight_kg, amended_from_id) values
   ('c2720000-0000-4000-8000-000000000004', 'c2700000-0000-4000-8000-000000000001', '2026-07-02', 'manual', 83.0,
    'c2720000-0000-4000-8000-000000000002');
+
+-- HealthKit daily weights count only on dates with no body measurement.
+insert into public.daily_health_summaries(user_id, local_date, timezone, present_types, source_refs,
+  source_checksum, completeness, observed_through, last_synced_at, weight_kg) values
+  ('c2700000-0000-4000-8000-000000000001', '2026-08-01', 'UTC', array['weight'], '[]'::jsonb,
+   repeat('a', 64), 'partial', now(), now(), 80.5),
+  ('c2700000-0000-4000-8000-000000000001', '2026-10-13', 'UTC', array['weight'], '[]'::jsonb,
+   repeat('b', 64), 'partial', now(), now(), 99.0);
 
 -- Grants ---------------------------------------------------------------------------------------
 
@@ -68,7 +76,11 @@ select is(public.get_goal_phase_inputs_v1('c2700000-0000-4000-8000-000000000001'
 select is(public.get_goal_phase_inputs_v1('c2700000-0000-4000-8000-000000000001') -> 'goal' ->> 'goal_type',
   'fat_loss', 'and its type');
 select is(jsonb_array_length(public.get_goal_phase_inputs_v1('c2700000-0000-4000-8000-000000000001') -> 'readings'),
-  3, 'an amended reading is replaced by its amendment');
+  4, 'an amended reading is replaced by its amendment, and a HealthKit weight is added');
+select is(public.get_goal_phase_inputs_v1('c2700000-0000-4000-8000-000000000001') -> 'readings' -> 2 ->> 'kg',
+  '80.50', 'a HealthKit weight counts on a date with no body measurement');
+select is(public.get_goal_phase_inputs_v1('c2700000-0000-4000-8000-000000000001') -> 'readings' -> 3 ->> 'kg',
+  '74.80', 'and never on a date that has one');
 select is(public.get_goal_phase_inputs_v1('c2700000-0000-4000-8000-000000000001') -> 'readings' -> 1 ->> 'kg',
   '83.00', 'the amended value is the one returned');
 select is(public.get_goal_phase_inputs_v1('c2700000-0000-4000-8000-000000000001') -> 'goal' -> 'target' ->> 'weight_kg',

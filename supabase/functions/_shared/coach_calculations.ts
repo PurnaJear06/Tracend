@@ -308,18 +308,22 @@ function calculateWeight(ctx: Record<string, unknown>, today: number): WeightCal
   const floor = healthyFloorWeightKg(num(obj(ctx.profile_context).height_cm));
   const aboveFloor = (kg: number) => floor === null || kg >= floor;
   if (goalAhead && !targetValues.includes(goal)) targetValues.push(goal);
-  const targets: WeightProjectionRow[] = targetValues
-    .sort((a, b) => direction < 0 ? b - a : a - b)
-    .map((target) => {
-      const weeks = weeksTo(target);
-      return {
-        target_kg: target,
-        weeks_low: Math.max(1, Math.round(Math.min(...weeks))),
-        weeks_high: Math.max(1, Math.round(Math.max(...weeks))),
-        goal: goalAhead && target === goal,
-      };
-    })
-    .filter((row) => row.weeks_low <= projectionMaxWeeks && aboveFloor(row.target_kg));
+  // Without a target weight still ahead there are no kilogram rows at all, only the pace; with
+  // one, rows stop at the target (nothing lower is projected).
+  const beyondGoal = (kg: number) => goal !== null && (direction < 0 ? kg < goal : kg > goal);
+  const targets: WeightProjectionRow[] =
+    (!goalAhead ? [] : targetValues.filter((kg) => !beyondGoal(kg)))
+      .sort((a, b) => direction < 0 ? b - a : a - b)
+      .map((target) => {
+        const weeks = weeksTo(target);
+        return {
+          target_kg: target,
+          weeks_low: Math.max(1, Math.round(Math.min(...weeks))),
+          weeks_high: Math.max(1, Math.round(Math.max(...weeks))),
+          goal: goalAhead && target === goal,
+        };
+      })
+      .filter((row) => row.weeks_low <= projectionMaxWeeks && aboveFloor(row.target_kg));
   const horizons: WeightHorizonRow[] = !goalAhead ? [] : projectionHorizonsWeeks.map((weeks) => {
     const values = rates.map((r) => latest.kg + r.rate * weeks);
     return {
@@ -545,16 +549,22 @@ export function formatCoachCalculations(calc: CoachCalculations | null): string 
     }
     if (w.projection) {
       const p = w.projection;
-      s += `- Projection (estimate; assumes the pace of ${
-        range(p.kg_per_week_low, p.kg_per_week_high, "kg/week")
-      } from the ${p.windows.map((d) => `${d / 7}-week`).join(" and ")} trend continues):\n`;
-      for (const row of p.targets) {
-        s += `  - reach ${row.target_kg} kg${row.goal ? " (goal)" : ""}: about ${
-          range(row.weeks_low, row.weeks_high, row.weeks_high === 1 ? "week" : "weeks")
-        }\n`;
-      }
-      for (const row of p.horizons) {
-        s += `  - in ${row.weeks} weeks: about ${range(row.kg_low, row.kg_high, "kg")}\n`;
+      const pace = range(p.kg_per_week_low, p.kg_per_week_high, "kg/week");
+      const windows = p.windows.map((d) => `${d / 7}-week`).join(" and ");
+      if (!p.targets.length && !p.horizons.length) {
+        s +=
+          `- Current pace: ${pace} (${windows} trend). No target weight is ahead, so no future weight is projected.\n`;
+      } else {
+        s +=
+          `- Projection (estimate; assumes the pace of ${pace} from the ${windows} trend continues):\n`;
+        for (const row of p.targets) {
+          s += `  - reach ${row.target_kg} kg${row.goal ? " (goal)" : ""}: about ${
+            range(row.weeks_low, row.weeks_high, row.weeks_high === 1 ? "week" : "weeks")
+          }\n`;
+        }
+        for (const row of p.horizons) {
+          s += `  - in ${row.weeks} weeks: about ${range(row.kg_low, row.kg_high, "kg")}\n`;
+        }
       }
     } else if (w.trends.length) {
       s += `- Projection: not calculated (${w.projection_unavailable_reason})\n`;

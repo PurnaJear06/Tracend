@@ -615,8 +615,9 @@ model quotes these instead of doing its own arithmetic. Windows end on the coach
   lists the weeks to each of the next 10 whole kilograms in the trend's direction (plus a goal
   weight, if one is stored), capped at 104 weeks, and the weight expected in 4, 8, 12 and 26
   weeks. **B7:** a trend is history, not a goal, so the "weight in N weeks" rows appear only while
-  the athlete's own target weight is still ahead of the current weight, and no row (kilogram or
-  horizon) goes below the healthy-BMI floor (BMI 18.5 at `height_cm`; with no height the floor is
+  the athlete's own target weight is still ahead of the current weight; the "reach N kg" rows also
+  appear only then and stop at the target; no row (kilogram or horizon) goes below the healthy-BMI
+  floor (BMI 18.5 at `height_cm`; with no height the floor is
   unknown and only the target rule applies). With no target weight the section shows the pace and
   nothing about a future weight.
 - **Training:** sessions, minutes, completed sets, volume, average RPE and average session length
@@ -638,8 +639,9 @@ are deterministic and reach Coach as a Contract 7 contributor (`goal_phase`, vol
 characters); the model explains the outcome and never sets it.
 
 **Inputs** (`get_goal_phase_inputs_v1`, service role): the active goal (type, the date it was
-activated in the athlete's time zone, target), `height_cm`, and every current weight reading (an
-amended reading is replaced by its amendment; newest 400). The goal's saved `current_weight_kg` is
+activated in the athlete's time zone, target), `height_cm`, and every current weight reading (body
+measurements with a weight, an amended reading replaced by its amendment, plus HealthKit daily
+weights only on dates with no body measurement, as above; newest 400). The goal's saved `current_weight_kg` is
 never a start weight.
 
 **Implausible readings.** A reading is excluded when it is further from the reading before it and
@@ -680,9 +682,12 @@ even beside a safety outcome.
 
 Sources and DOIs live in `goal_phase/sources.ts` (each checked against Crossref, 2026-10-17).
 
-**Reply check.** After every Coach answer a deterministic check refuses a sentence about a future
-weight that is below the healthy-BMI floor, or (with no target) beyond today's weight in the
-direction of the trend. See `docs/AI_SAFETY_SPEC.md` section 11.
+**Reply check.** After every Coach answer a deterministic check refuses a sentence that is below
+the healthy-BMI floor and looks ahead or proposes a target, or (with no target) a sentence with a
+time or pace cue ("in 12 weeks", "by March", "at this pace", "if you keep going") naming a weight
+beyond today's in the direction of the trend. Questions and sentences that propose a target ("aim
+for 70 kg", "a goal of 72 kg") are not forecasts unless they also carry a pace cue. A limit word
+("below", "under", "less than") excuses only the weight it directly governs. See `docs/AI_SAFETY_SPEC.md` section 11.
 
 ### Literature
 

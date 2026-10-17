@@ -94,3 +94,65 @@ Deno.test("the check reads its facts from the prepared Coach context", () => {
     null,
   );
 });
+
+Deno.test("asking for a target may name a weight; a forecast may not", () => {
+  const ask = "How am I doing?";
+  for (
+    const sentence of [
+      "Would something like 70 kg be a target you want to aim for?",
+      "Many people at your height could aim for 70–72 kg.",
+      "A goal weight of 72 kg would be a sensible place to start.",
+      "What weight do you want to reach, maybe 72 kg?",
+    ]
+  ) {
+    assertEquals(weightClaimViolation(sentence, ask, noTarget), null, sentence);
+  }
+  assertEquals(
+    weightClaimViolation(
+      "Aim for 66 kg and at this pace you will get there in 12 weeks.",
+      ask,
+      noTarget,
+    ),
+    "projection_without_target",
+  );
+});
+
+Deno.test("a target suggestion below the healthy floor is still refused", () => {
+  const ask = "How am I doing?";
+  assertEquals(
+    weightClaimViolation("Would 55 kg be a target you want to aim for?", ask, noTarget),
+    "weight_below_healthy_floor",
+  );
+  assertEquals(
+    weightClaimViolation("You could aim for 52 kg.", ask, withTarget),
+    "weight_below_healthy_floor",
+  );
+});
+
+Deno.test("a warning word only excuses the weight it governs", () => {
+  const ask = "How am I doing?";
+  assertEquals(
+    weightClaimViolation(
+      "If you don't change anything you will be at 66.5 kg in 12 weeks.",
+      ask,
+      noTarget,
+    ),
+    "projection_without_target",
+  );
+  assertEquals(
+    weightClaimViolation(
+      "Never let your weight fall under 60 kg, and at this rate you would be at 66 kg in 12 weeks.",
+      ask,
+      noTarget,
+    ),
+    "projection_without_target",
+  );
+  assertEquals(
+    weightClaimViolation("Do not go below 60 kg in the next 6 weeks.", ask, noTarget),
+    null,
+  );
+  assertEquals(
+    weightClaimViolation("Stay under 75 kg, and avoid dropping below 60 kg.", ask, noTarget),
+    null,
+  );
+});

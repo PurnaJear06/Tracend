@@ -53,7 +53,10 @@ Deno.test("the six-week window gives no future weight and no projection without 
   const weight = calculateCoachNumbers(longCutContext)!.weight!;
   assertEquals(weight.latest_kg, 74.8);
   assertEquals(weight.projection?.horizons ?? [], []);
+  assertEquals(weight.projection?.targets ?? [], []);
   const text = formatCoachCalculations(calculateCoachNumbers(longCutContext));
+  assert(!/reach \d+(\.\d+)? kg/.test(text), "no 'reach N kg' rows");
+  assertStringIncludes(text, "No target weight is ahead");
   assert(!/in \d+ weeks: about/.test(text), "no 'in N weeks' weight");
 });
 

@@ -27,39 +27,54 @@ const weightPattern = new RegExp(
   "gi",
 );
 
-const futureCue = new RegExp(
+const numberWord =
+  "(?:\\d+(?:\\s*(?:-|–|to)\\s*\\d+)?|a|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|a few|a couple of)";
+const months =
+  "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+
+// A claim about where the weight will be: a time ("in 12 weeks", "by March") or a pace cue.
+const timeCue = new RegExp(
   [
-    "\\bwill\\b",
-    "\\bwould\\b",
-    "'ll\\b",
-    "\\bcould\\b",
-    "\\bgoing to\\b",
-    "\\bproject(?:ed|ion|ing)?\\b",
-    "\\bon track\\b",
+    `\\bin (?:about |around |roughly |another |just |only )?(?:the next )?${numberWord} ?(?:days?|weeks?|months?|years?)\\b`,
+    `\\bwithin (?:the next )?${numberWord}\\b`,
+    `\\bby (?:the )?(?:end|then|week|month|next|christmas|summer|winter|spring|autumn|fall|\\d|${months}\\b)`,
     "\\bat (?:this|that|the same|the current) (?:pace|rate)\\b",
-    "\\bby (?:the )?(?:end|then|week|month|next|christmas|summer|winter|spring|autumn|fall|\\d)",
-    "\\bin (?:about |around |roughly |another |just )?(?:the next )?\\d+(?:\\s*(?:-|–|to)\\s*\\d+)? ?(?:days?|weeks?|months?)\\b",
-    "\\bwithin\\b",
-    "\\breach(?:ing)?\\b",
-    "\\bhit(?:ting)?\\b",
-    "\\bend(?:ing)? up\\b",
-    "\\bdown to\\b",
-    "\\bget(?:ting)? to\\b",
+    "\\bif you (?:keep|continue|carry on|stay|maintain)\\b",
+    "\\bkeep(?:ing)? (?:going|this up|up)\\b",
+    "\\bon track\\b",
+    "\\bproject(?:ed|ion|ing)?\\b",
+    "\\bextrapolat",
   ].join("|"),
   "i",
 );
 
-// A sentence that warns against a weight is a limit, not a prediction.
-const warning =
-  /\b(?:below|under|beneath|less than|lower than|don'?t|do not|never|avoid|shouldn'?t|should not|stop at|not go)\b/i;
+// The subset of cues that read the trend forward, which a target proposal does not excuse.
+const paceCue =
+  /\bat (?:this|that|the same|the current) (?:pace|rate)\b|\bif you (?:keep|continue|carry on|stay|maintain)\b|\bon track\b|\bproject(?:ed|ion|ing)?\b|\bextrapolat/i;
+
+// Where the sentence looks ahead at all (used for the healthy-floor rule).
+const lookAhead = new RegExp(
+  `${timeCue.source}|\\bwill\\b|\\bwould\\b|'ll\\b|\\bcould\\b|\\bgoing to\\b|\\breach(?:ing)?\\b|\\bhit(?:ting)?\\b|\\bend(?:ing)? up\\b|\\bdown to\\b|\\bget(?:ting)? to\\b`,
+  "i",
+);
+
+// A sentence that proposes a target to the athlete is the "ask for a target" reply, not a forecast.
+const targetProposal = /\b(?:target|aim|aiming|goal)\b/i;
+
+// A limit: the weight is directly governed by "below", "under", "less than" and the like.
+const limitBefore =
+  /\b(?:below|under|beneath|less than|lower than|stop at)\s+(?:about |around |roughly |~)?$/i;
 
 function toKg(amount: number, unit: string): number {
   return /^(?:lb|pound)/i.test(unit) ? amount / 2.20462 : amount;
 }
 
-function weightsIn(sentence: string): number[] {
+/** Weights in a sentence, in kg; weights that are the object of a limit word are left out. */
+function weightsIn(sentence: string, includeLimits = true): number[] {
   const found: number[] = [];
   for (const match of sentence.matchAll(weightPattern)) {
+    const before = sentence.slice(0, match.index);
+    if (!includeLimits && limitBefore.test(before)) continue;
     for (const raw of [match[1], match[2]]) {
       if (raw === undefined) continue;
       const kg = toKg(Number(raw.replace(",", ".")), match[3]);
@@ -78,14 +93,17 @@ export function weightClaimViolation(
   const own = weightsIn(question);
   const theirs = (kg: number) => own.some((value) => Math.abs(value - kg) < 0.5);
   for (const sentence of answer.split(/(?<=[.!?])\s+|\n+/)) {
-    if (!futureCue.test(sentence) || warning.test(sentence)) continue;
-    for (const kg of weightsIn(sentence)) {
+    const asksOrProposes = sentence.trim().endsWith("?") ||
+      (targetProposal.test(sentence) && !paceCue.test(sentence));
+    const forwardLooking = lookAhead.test(sentence) || targetProposal.test(sentence);
+    for (const kg of weightsIn(sentence, false)) {
       if (theirs(kg)) continue;
-      if (context.floorKg !== null && kg < context.floorKg - 0.05) {
+      if (forwardLooking && context.floorKg !== null && kg < context.floorKg - 0.05) {
         return "weight_below_healthy_floor";
       }
       if (
-        !context.hasTarget && context.currentKg !== null && (
+        !context.hasTarget && !asksOrProposes && timeCue.test(sentence) &&
+        context.currentKg !== null && (
           (context.direction < 0 && kg <= context.currentKg - 1) ||
           (context.direction > 0 && kg >= context.currentKg + 1)
         )

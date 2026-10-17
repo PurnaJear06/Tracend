@@ -7,6 +7,7 @@ import {
   buildCoachChatUserMessage,
   coachChatInstructions,
   formatGoalDetails,
+  generateCoachChat,
   repairContractText,
 } from "./coach_chat_provider.ts";
 import { weightClaimCheckFor } from "../training/goal_phase/guard.ts";
@@ -81,4 +82,70 @@ Deno.test("the goal phase rules are in every prompt", () => {
   assertStringIncludes(rules, "A weight trend is history, not a goal");
   assertStringIncludes(rules, "current_weight_kg");
   assertStringIncludes(rules, "consider_maintenance_or_diet_break");
+});
+
+const goalPhaseBlock = {
+  stable: "",
+  volatile: '<reference_data source="goal_phase">\nGOAL-PHASE-MARKER\n</reference_data>',
+  outcomes: [],
+};
+
+const okBody = (shape: "groq" | "gemini") => {
+  const content = JSON.stringify(answer("You are at 74.8 kg. What is your target?"));
+  return JSON.stringify(
+    shape === "groq"
+      ? {
+        choices: [{ message: { content } }],
+        usage: { prompt_tokens: 500, completion_tokens: 50 },
+      }
+      : {
+        candidates: [{ content: { parts: [{ text: content }] } }],
+        usageMetadata: { promptTokenCount: 500, candidatesTokenCount: 50 },
+      },
+  );
+};
+
+async function sentBody(env: Record<string, string>, shape: "groq" | "gemini"): Promise<string> {
+  for (const [key, value] of Object.entries(env)) Deno.env.set(key, value);
+  try {
+    let body = "";
+    const fetcher = (_url: unknown, init?: RequestInit) => {
+      body = String(init?.body ?? "");
+      return Promise.resolve(new Response(okBody(shape), { status: 200 }));
+    };
+    await generateCoachChat(
+      "Hello",
+      longCutContext,
+      "general",
+      fetcher as unknown as typeof fetch,
+      undefined,
+      goalPhaseBlock,
+    );
+    return body;
+  } finally {
+    for (const key of Object.keys(env)) Deno.env.delete(key);
+  }
+}
+
+Deno.test("the Groq request carries the goal-phase block and its rules", async () => {
+  const body = await sentBody({
+    COACH_AI_ENABLED: "true",
+    COACH_MODEL_PROVIDER: "groq",
+    GROQ_API_KEY: "synthetic-key",
+    GROQ_MODEL: "qwen/qwen3.6-27b",
+  }, "groq");
+  assertStringIncludes(body, "GOAL-PHASE-MARKER");
+  assertStringIncludes(body, "A weight trend is history, not a goal");
+});
+
+Deno.test("the Gemini request carries the goal-phase block and its rules", async () => {
+  const body = await sentBody({
+    COACH_AI_ENABLED: "true",
+    COACH_MODEL_PROVIDER: "gemini",
+    GEMINI_PAID_DATA_TERMS_ACCEPTED: "true",
+    GEMINI_API_KEY: "synthetic-key",
+    GEMINI_MODEL: "gemini-3.5-flash",
+  }, "gemini");
+  assertStringIncludes(body, "GOAL-PHASE-MARKER");
+  assertStringIncludes(body, "A weight trend is history, not a goal");
 });

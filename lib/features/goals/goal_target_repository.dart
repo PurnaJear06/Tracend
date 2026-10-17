@@ -10,6 +10,21 @@ class GoalTargetException implements Exception {
   String toString() => 'GoalTargetException: $message';
 }
 
+/// What to tell the athlete when the server refuses a target. 22023 carries a
+/// plain-language reason (for example a weight below the healthy range), 55000
+/// means there is no active goal, and anything else is a connection or session
+/// problem.
+String goalTargetErrorMessage(PostgrestException error) {
+  if (error.code == '22023' && error.message.isNotEmpty) {
+    return '${error.message[0].toUpperCase()}${error.message.substring(1)}.';
+  }
+  if (error.code == '55000') {
+    return 'You have no active goal to set a target for. Finish setting up '
+        'your plan first.';
+  }
+  return 'Could not save your target. Check your connection and try again.';
+}
+
 /// Reads and sets the target of the athlete's active goal. Setting is the
 /// athlete's act alone: nothing here is reachable from a model answer.
 abstract interface class GoalTargetRepository {
@@ -61,11 +76,7 @@ class SupabaseGoalTargetRepository implements GoalTargetRepository {
       debugPrint('Non-critical error: $error');
       // 22023 carries a plain-language reason (for example a weight below the
       // healthy range); anything else is a connection or session problem.
-      throw GoalTargetException(
-        error.code == '22023' && error.message.isNotEmpty
-            ? '${error.message[0].toUpperCase()}${error.message.substring(1)}.'
-            : 'Could not save your target. Check your connection and try again.',
-      );
+      throw GoalTargetException(goalTargetErrorMessage(error));
     }
     final state = GoalTargetState.fromJson(value);
     if (state == null) {

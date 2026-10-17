@@ -398,6 +398,14 @@ card; no frozen SQL function changed.
   `_evals/coach_chat_eval_goal_phase_test.ts` (6-week window, stale goal detail, 60 kg outlier,
   healthy BMI with no target, length rule) assert on the rendered prompt and calculators; no model
   call.
+- **Review fixes (Opus review of #136).** The calculators emit no kilogram rows at all without a
+  target weight still ahead (only the pace), and rows stop at the target; the reply check limits
+  `projection_without_target` to sentences with a time or pace cue, passes questions and target
+  suggestions ("aim for 70 kg") and applies a limit word only to the weight it governs, while
+  `weight_below_healthy_floor` still covers every looking-ahead or target sentence; the Groq and
+  Gemini branches receive the contributor blocks and the goal-phase rules; `get_goal_phase_inputs_v1`
+  adds HealthKit daily weights on dates without a body measurement and skips rows without a weight;
+  a refused target with no active goal says so.
 - **Parity digests.** `coach_chat_parity_test.ts` records the new legacy request digests: the
   persona, the goal-phase rules and the goal-details wording changed on purpose.
 - **In-house thresholds for owner or coach review** (`goal_phase/thresholds.ts`, `inHouse: true`):

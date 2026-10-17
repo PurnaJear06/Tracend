@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/goals/goal_target.dart';
 import 'package:tracend/features/goals/goal_target_repository.dart';
@@ -164,5 +165,30 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('goal-target-save')), findsOneWidget);
+  });
+
+  test('a refusal is explained in plain words', () {
+    expect(
+      goalTargetErrorMessage(
+        const PostgrestException(
+          message: 'target weight is below the healthy range for this height',
+          code: '22023',
+        ),
+      ),
+      'Target weight is below the healthy range for this height.',
+    );
+    expect(
+      goalTargetErrorMessage(
+        const PostgrestException(
+          message: 'there is no active goal',
+          code: '55000',
+        ),
+      ),
+      contains('no active goal'),
+    );
+    expect(
+      goalTargetErrorMessage(const PostgrestException(message: 'x')),
+      contains('Check your connection'),
+    );
   });
 }

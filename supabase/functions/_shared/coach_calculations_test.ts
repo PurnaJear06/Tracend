@@ -51,9 +51,6 @@ Deno.test("weight trend and projection match the rich eval athlete's reference r
     74,
     73,
     72,
-    71,
-    70,
-    69,
   ]);
   assertEquals(projection.targets[0].weeks_low, 1);
   assertEquals(projection.horizons[0], { weeks: 4, kg_low: 76.5, kg_high: 76.5 });
@@ -62,6 +59,7 @@ Deno.test("weight trend and projection match the rich eval athlete's reference r
 Deno.test("projection range spans the 4- and 8-week paces when both point the same way", () => {
   const calc = calculateCoachNumbers({
     coaching_date: date,
+    active_goal: { goal_type: "fat_loss", details: { target_weight_kg: 76 } },
     // 4 weeks: -0.5 kg/week; the 8-week fit is gentler because of older readings.
     weight_series_8w: weights([
       [0, 80],
