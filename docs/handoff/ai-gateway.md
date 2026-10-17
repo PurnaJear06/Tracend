@@ -591,9 +591,9 @@ branch (`claude/a9-coach-guardrails`). This half:
   `lib/features/coach/coach_errors.dart` (`coachChatFailure`) maps every response `coach-chat` can
   send (fixture `test/contract/fixtures/coach_chat_error_responses_v1.json`, tests in
   `test/coach_chat_errors_test.dart`) to a plain sentence, the raw diagnostic, and flags (can
-  retry, retry with the same key, needs consent). A 429 `ai_usage_limit` has no reason; the
-  repository reads `get_my_ai_budget_state` to say monthly or daily, and takes a `reason` from the
-  body when the function sends one. The cooldown now ends on its last tick (the stream's done event
+  retry, retry with the same key, needs consent). A 429 `ai_usage_limit` carries `reason`
+  (server half, #143), which names the limit; there is no budget-state lookup. `turn_lost` (503)
+  says "That message didn't finish. Send it again." and its Retry is a new turn. The cooldown now ends on its last tick (the stream's done event
   never arrived under the test clock). `budget_warning` shows as a note under the newest reply.
 - **Safe retry (25).** `CoachChatRepository.sendMessage(..., {idempotencyKey})`. The screen keeps the
   key of a failed send: Retry repeats it after a timeout, a lost connection, a gateway timeout or a
@@ -601,7 +601,12 @@ branch (`claude/a9-coach-guardrails`). This half:
   returns a finished turn for the same key (`prepared.replayed`, `coachChatReplayResponse`).
   Note for the server half: `coach-chat` reserves budget before it looks up a replay, so a retry of
   a finished turn at the monthly limit gets 429 instead of its stored answer; a turn the function
-  lost stays "in progress" and answers 409 for that key until the app gives up on it.
+  lost answers 409 for that key until the server gives up on it (`turn_lost`).
+  A fresh-key Retry shows the question again because the server saved the failed attempt's
+  question when it started (`record_coach_chat_question`), so the thread, and the model's
+  context, hold it twice; only a same-key replay is one bubble. "Review AI coaching" reloads the
+  consent controller first. A send with no connection (even the time-zone lookup) is the offline
+  failure.
 - **Local date (18).** Migration `20261017170019_coach_chat_local_date_no_plan.sql` makes
   `prepare_coach_chat` use `private.local_date_for` and pick the snapshot by `features.local_date`.
 - **No plan (22).** `prepare_daily_coaching`'s body moved to `private.prepare_daily_coaching_core`
@@ -612,7 +617,7 @@ branch (`claude/a9-coach-guardrails`). This half:
   `coach_chat_provider.ts` (no plan, the reason, the screening outcome and date; no plan advice),
   and note `active_plan` is now null for these athletes.
 - **One gate (26).** The base function no longer checks USD 5 or 30 a day; `reserve_ai_budget(_v2)`
-  is the gate and reads `private.ai_budget_limits`. `budget_warning` follows the same row.
+  is the gate and reads `private.ai_budget_limits`. `budget_warning` follows the same row, at 80% of the stop; `get_my_ai_budget_state` moves from half to 80% in the same migration (an edit of the unmerged migration).
 - **Verification.** pgTAP `coach_chat_local_date_no_plan_test.sql` (the local database could not be
   started here: Colima is not running; CI runs it). Time cannot be set in pgTAP, so the local date
   is checked in UTC+14 and UTC-11, one of which is always on another UTC day.

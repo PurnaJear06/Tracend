@@ -1,5 +1,5 @@
 begin;
-select plan(30);
+select plan(34);
 
 -- Coach chat uses the athlete's own date, has one budget gate, and works without a plan
 -- (migration 20261017170019).
@@ -178,17 +178,40 @@ select ok((select result->'context' is not null from calls where label = 'b1'),
 select is((select result->>'budget_warning' from calls where label = 'p1'), 'false',
   'an athlete with no spend gets no budget warning');
 select is((select result->>'budget_warning' from calls where label = 'b1'), 'true',
-  'an athlete past half the stop gets the warning');
+  'an athlete past 80% of the stop gets the warning');
 
--- The warning follows the limits row, not a literal.
-update private.ai_budget_limits set per_person_monthly_usd = 20;
+-- The warning follows the limits row, at 80% of the stop, in the chat context and in the
+-- athlete's budget state alike. Athlete 4 has USD 6.20: 80% of an USD 8 stop is 6.40 (half would
+-- be 4.00), 80% of an USD 7 stop is 5.60.
+update private.ai_budget_limits set per_person_monthly_usd = 8;
 set local role service_role;
 insert into calls select 'b2', public.prepare_coach_chat(
   'a9000000-0000-4000-8000-000000000004', 'a9400000-0000-4000-8000-000000000004',
   'Hello again', 'UTC', gen_random_uuid());
 reset role;
 select is((select result->>'budget_warning' from calls where label = 'b2'), 'false',
-  'raising the limit in the one limits row clears the warning');
+  'USD 6.20 is below 80% of an USD 8 stop, so there is no warning');
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a9000000-0000-4000-8000-000000000004';
+select is((public.get_my_ai_budget_state()->>'warning_threshold_usd')::numeric, 6.4::numeric,
+  'the budget state puts the warning at 80% of the stop');
+select is((public.get_my_ai_budget_state()->>'warning')::boolean, false,
+  'and agrees that USD 6.20 is not yet a warning');
+reset role;
+
+update private.ai_budget_limits set per_person_monthly_usd = 7;
+set local role service_role;
+insert into calls select 'b3', public.prepare_coach_chat(
+  'a9000000-0000-4000-8000-000000000004', 'a9400000-0000-4000-8000-000000000004',
+  'Hello a third time', 'UTC', gen_random_uuid());
+reset role;
+select is((select result->>'budget_warning' from calls where label = 'b3'), 'true',
+  'USD 6.20 is past 80% of an USD 7 stop, so the chat warns');
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a9000000-0000-4000-8000-000000000004';
+select is((public.get_my_ai_budget_state()->>'warning')::boolean, true,
+  'and the budget state agrees');
+reset role;
 
 select * from finish();
 rollback;

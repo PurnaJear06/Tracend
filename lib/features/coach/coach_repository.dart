@@ -330,19 +330,16 @@ class SupabaseCoachRepository
     String question, {
     String? idempotencyKey,
   }) async {
-    final account = await _client
-        .from('user_accounts')
-        .select('timezone')
-        .single();
     final FunctionResponse response;
     try {
+      final timezone = await _accountTimezone();
       response = await _client.functions
           .invoke(
             'coach-chat',
             body: coachChatRequestBody(
               threadId: threadId,
               question: question,
-              timezone: account['timezone'] as String? ?? 'UTC',
+              timezone: timezone,
               idempotencyKey: idempotencyKey ?? _uuid.v4(),
             ),
           )
@@ -350,13 +347,7 @@ class SupabaseCoachRepository
     } on Object catch (error) {
       // functions_client throws on every non-2xx status, so the function's
       // error code and reason are in the exception, not in a response.
-      throw coachChatFailure(
-        error,
-        now: _now(),
-        budget: error is FunctionException && error.status == 429
-            ? await _budgetState()
-            : null,
-      );
+      throw coachChatFailure(error, now: _now());
     }
     if (response.data is! Map) {
       throw coachChatFailure(
@@ -376,15 +367,20 @@ class SupabaseCoachRepository
     });
   }
 
-  /// The athlete's budget state, to tell which limit a 429 reached. Without
-  /// it the message names no limit.
-  Future<Map<String, dynamic>?> _budgetState() async {
+  /// The account time zone Coach answers in. A lookup that fails before any
+  /// response (offline) is a lost connection, like the call after it; the
+  /// database's own refusals keep their type.
+  Future<String> _accountTimezone() async {
     try {
-      return Map<String, dynamic>.from(
-        await _client.rpc('get_my_ai_budget_state') as Map,
-      );
-    } on Object {
-      return null;
+      final account = await _client
+          .from('user_accounts')
+          .select('timezone')
+          .single();
+      return account['timezone'] as String? ?? 'UTC';
+    } on PostgrestException {
+      rethrow;
+    } on Object catch (error) {
+      throw FunctionsFetchException(details: error);
     }
   }
 

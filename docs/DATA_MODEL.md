@@ -742,8 +742,8 @@ server's UTC date. The day's `daily` feature snapshot is picked by its `features
 snapshot made for an athlete with a plan is not reused after the plan is gone, or the reverse. It
 has no spending limit of its own: `coach-chat` reserves budget before preparing anything
 (`reserve_ai_budget`, which reads `private.ai_budget_limits`), and `budget_warning` is true when the
-month's spend (recorded and reserved) reaches half of `per_person_monthly_usd`, the same threshold as
-`get_my_ai_budget_state().warning`.
+month's spend (recorded and reserved) reaches 80% of `per_person_monthly_usd`, the same threshold as
+`get_my_ai_budget_state().warning` (both were half the stop before migration code 19).
 
 An athlete with no active plan or no active nutrition target can still chat (a plan is needed
 for the daily decision, `prepare_daily_coaching`, which still raises `approved plan required`;

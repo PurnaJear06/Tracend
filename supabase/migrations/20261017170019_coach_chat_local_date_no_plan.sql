@@ -11,8 +11,10 @@
 --    literals. coach-chat reserves a place through reserve_ai_budget(_v2) before it prepares
 --    anything, and that gate reads private.ai_budget_limits (USD 3 per athlete, owner
 --    decision 2026-10-16). The literals are gone: that reservation is the only gate. The
---    budget_warning the app shows now follows the same limits row, from half the stop, the
---    definition get_my_ai_budget_state uses.
+--    budget_warning the app shows now follows the same limits row, from 80% of the stop (it was
+--    the literal USD 3). get_my_ai_budget_state is redefined at the end with the same 80%
+--    (owner decision, coaching platform A9; it was half the stop), so the chat context and
+--    the Usage screen agree.
 -- 3. prepare_daily_coaching raised 'approved plan required', so an athlete with no active
 --    plan and nutrition target (including the see_professional screening outcome, which
 --    builds none) could not chat at all. Its body moves to
@@ -289,7 +291,7 @@ begin
     'feature_snapshot_id',prepared->>'feature_snapshot_id',
     'policy_evaluation_id',prepared->>'policy_evaluation_id',
     'policy_outcome',prepared->>'policy_outcome','context',context_payload,
-    'budget_warning',(select t.monthly_cost>=l.per_person_monthly_usd/2
+    'budget_warning',(select t.monthly_cost>=l.per_person_monthly_usd*0.8
       from private.ai_usage_totals(target_user_id) t,private.ai_budget_limits l));
 end $$;
 
@@ -392,3 +394,18 @@ revoke all on function public.prepare_coach_chat_v7(uuid,uuid,text,text,uuid,tex
   from public, anon, authenticated;
 grant execute on function public.prepare_coach_chat_v7(uuid,uuid,text,text,uuid,text)
   to service_role;
+
+-- From 20261016004017: the warning moves from half the stop to 80% of it, and nothing else
+-- changes (same signature, grants and fields).
+create or replace function public.get_my_ai_budget_state()
+returns jsonb language sql security definer set search_path='' stable as $$
+select jsonb_build_object('schema_version','1.0','period','current_month',
+  'estimated_cost_usd',totals.monthly_cost,
+  'warning_threshold_usd',lim.per_person_monthly_usd * 0.8,
+  'hard_stop_usd',lim.per_person_monthly_usd,
+  'warning',totals.monthly_cost >= lim.per_person_monthly_usd * 0.8,
+  'blocked',totals.monthly_cost >= lim.per_person_monthly_usd,
+  'today_requests',totals.today_requests,
+  'daily_limit',30)
+from private.ai_usage_totals(auth.uid()) totals, private.ai_budget_limits lim;
+$$;

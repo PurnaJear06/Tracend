@@ -62,8 +62,8 @@ set local "request.jwt.claim.sub" = 'a7000000-0000-4000-8000-000000000002';
 select is((public.get_my_ai_budget_state()->>'schema_version'), '1.0', 'the budget state is versioned');
 select is((public.get_my_ai_budget_state()->>'hard_stop_usd')::numeric, 3::numeric,
   'the app is told the stop is USD 3');
-select is((public.get_my_ai_budget_state()->>'warning_threshold_usd')::numeric, 1.5::numeric,
-  'the warning is half the stop');
+select is((public.get_my_ai_budget_state()->>'warning_threshold_usd')::numeric, 2.4::numeric,
+  'the warning is 80% of the stop');
 select is((public.get_my_ai_budget_state()->>'blocked')::boolean, true,
   'USD 3 of spend and places is blocked');
 select is((public.get_my_ai_budget_state()->>'daily_limit')::int, 30, 'the daily limit is unchanged');

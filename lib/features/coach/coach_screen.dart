@@ -112,8 +112,19 @@ class _CoachScreenState extends State<CoachScreen> {
 
   void _consentChanged() => setState(() {});
 
-  Future<void> _reviewAiCoaching() =>
-      showAiCoachingConsentSheet(context, widget.aiConsent!);
+  /// Reloads the consent first: when the server refused for a notice the
+  /// athlete's grant does not cover, the controller still says granted, and
+  /// the sheet could not accept the new notice.
+  Future<void> _reviewAiCoaching() async {
+    final consent = widget.aiConsent!;
+    try {
+      await consent.load();
+    } catch (e) {
+      debugPrint('Non-critical error: $e');
+    }
+    if (!mounted) return;
+    await showAiCoachingConsentSheet(context, consent);
+  }
 
   @override
   void initState() {
@@ -305,10 +316,13 @@ class _CoachScreenState extends State<CoachScreen> {
     final replays = retrying != null && retrying.reuseKey
         ? retrying.replays + 1
         : 0;
-    // A retry of a failed send asks under the question already on screen.
+    // A repeated key is the same turn, so its question stays one bubble. A
+    // new key is a new turn: the server saved the failed attempt's question
+    // when that turn started, so the thread holds both and so does the screen.
     final pending = _messages.lastOrNull;
     final local =
         retrying != null &&
+            retrying.reuseKey &&
             pending != null &&
             pending.role == 'user' &&
             pending.id.startsWith('pending-') &&

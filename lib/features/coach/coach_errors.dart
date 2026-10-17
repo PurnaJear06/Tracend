@@ -102,41 +102,27 @@ String coachBudgetWarningMessage(DateTime now) =>
 
 enum _Limit { monthly, daily, shared, unknown }
 
-String _limitMessage(_Limit limit, DateTime now, int? dailyLimit) =>
-    switch (limit) {
-      _Limit.monthly =>
-        'You’ve reached this month’s Coach limit. It resets on '
-            '${_monthlyResetText(now)}.',
-      _Limit.daily =>
-        'You’ve used ${dailyLimit == null ? 'all' : 'all $dailyLimit'} of '
-            'today’s Coach messages. The limit resets at '
-            '${_dailyResetText(now)}.',
-      _Limit.shared =>
-        'Coach has reached its shared limit for this month. It resets on '
-            '${_monthlyResetText(now)}.',
-      _Limit.unknown =>
-        'Coach has reached its usage limit for now. Please try again later.',
-    };
+String _limitMessage(_Limit limit, DateTime now) => switch (limit) {
+  _Limit.monthly =>
+    'You’ve reached this month’s Coach limit. It resets on '
+        '${_monthlyResetText(now)}.',
+  _Limit.daily =>
+    'You’ve used all of today’s Coach messages. The limit resets at '
+        '${_dailyResetText(now)}.',
+  _Limit.shared =>
+    'Coach has reached its shared limit for this month. It resets on '
+        '${_monthlyResetText(now)}.',
+  _Limit.unknown =>
+    'Coach has reached its usage limit for now. Please try again later.',
+};
 
-/// Which limit a 429 means. The function names it in `reason` when it can;
-/// otherwise the athlete's own budget state (`get_my_ai_budget_state`) says
-/// whether the month or the day is used up.
-_Limit _limitFor(String? reason, Map<String, dynamic>? budget) {
-  switch (reason) {
-    case 'monthly_cost_limit':
-      return _Limit.monthly;
-    case 'daily_rate_limit':
-      return _Limit.daily;
-    case 'global_monthly_cost_limit':
-      return _Limit.shared;
-  }
-  if (budget == null) return _Limit.unknown;
-  if (budget['blocked'] == true) return _Limit.monthly;
-  final today = budget['today_requests'];
-  final limit = budget['daily_limit'];
-  if (today is num && limit is num && today >= limit) return _Limit.daily;
-  return _Limit.unknown;
-}
+/// Which limit a 429 means, from the `reason` the function sends with it.
+_Limit _limitFor(String? reason) => switch (reason) {
+  'monthly_cost_limit' => _Limit.monthly,
+  'daily_rate_limit' => _Limit.daily,
+  'global_monthly_cost_limit' => _Limit.shared,
+  _ => _Limit.unknown,
+};
 
 int? _retryAfter(Object? raw) => switch (raw) {
   final int seconds when seconds > 0 => seconds,
@@ -152,13 +138,10 @@ String _rawText(Object? details) {
 /// What a failed coach-chat call means for the athlete. [error] is what the
 /// call threw: a [FunctionException] (the function answered with an error, or
 /// the request never got a response), a [TimeoutException] from the app's own
-/// 45-second limit, or anything else. [budget] is the athlete's
-/// `get_my_ai_budget_state`, read only after a 429 so the message can say
-/// which limit was reached.
+/// 45-second limit, or anything else.
 CoachUnavailableException coachChatFailure(
   Object error, {
   required DateTime now,
-  Map<String, dynamic>? budget,
 }) {
   if (error is CoachUnavailableException) return error;
   if (error is TimeoutException) {
@@ -225,15 +208,7 @@ CoachUnavailableException coachChatFailure(
   );
 
   if (status == 429 || errorName == 'ai_usage_limit') {
-    final dailyLimit = budget?['daily_limit'];
-    return fail(
-      _limitMessage(
-        _limitFor(reason, budget),
-        now,
-        dailyLimit is num ? dailyLimit.toInt() : null,
-      ),
-      retryable: false,
-    );
+    return fail(_limitMessage(_limitFor(reason), now), retryable: false);
   }
   if (errorName == 'ai_consent_required') {
     return fail(
@@ -267,16 +242,11 @@ CoachUnavailableException coachChatFailure(
   if (code == 'context_preparation_failed') {
     return switch (reason) {
       'daily_rate_limit' => fail(
-        _limitMessage(_Limit.daily, now, null),
+        _limitMessage(_Limit.daily, now),
         retryable: false,
       ),
       'monthly_cost_limit' => fail(
-        _limitMessage(_Limit.monthly, now, null),
-        retryable: false,
-      ),
-      'approved_plan_required' => fail(
-        'Coach needs an approved plan to look at. Finish setting up your plan '
-        'in Train, then ask again.',
+        _limitMessage(_Limit.monthly, now),
         retryable: false,
       ),
       'thread_not_found' => fail(
@@ -316,6 +286,11 @@ CoachUnavailableException coachChatFailure(
   }
   if (errorName == 'chat_rejected') {
     return fail('Coach’s answer couldn’t be saved. Please try again.');
+  }
+  if (code == 'turn_lost') {
+    // The first attempt never finished and the server gave up on it; its key
+    // would only answer turn_lost again, so Retry starts a new turn.
+    return fail('That message didn’t finish. Send it again.');
   }
   if (code == 'provider_rate_limited') {
     return fail('Coach is busy right now. Please try again in a moment.');

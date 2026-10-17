@@ -28,8 +28,8 @@ String get _monthlyReset =>
 
 final _monthlyLimit =
     'You’ve reached this month’s Coach limit. It resets on $_monthlyReset.';
-final _dailyLimit = RegExp(
-  r'^You’ve used all 30 of today’s Coach messages\. The limit resets at '
+final _dailyLimitText = RegExp(
+  r'^You’ve used all of today’s Coach messages\. The limit resets at '
   r'\d{1,2}:\d{2} (am|pm) (today|tomorrow)\.$',
 );
 const _tryAgain = 'Please try again in a moment.';
@@ -58,15 +58,27 @@ _Expected _expect(
 
 /// What the athlete reads for every response in the error fixture.
 final Map<String, _Expected> _cases = {
-  'usage_limit': _expect(
+  'usage_limit_unknown_reason': _expect(
     'Coach has reached its usage limit for now. Please try again later.',
     diagnostic: 'Beta diagnostic: HTTP 429 · ai_usage_limit',
     retryable: false,
   ),
-  'usage_limit_monthly_reason': _expect(
+  'usage_limit_monthly': _expect(
     _monthlyLimit,
     diagnostic:
         'Beta diagnostic: HTTP 429 · ai_usage_limit · monthly_cost_limit',
+    retryable: false,
+  ),
+  'usage_limit_daily': _expect(
+    _dailyLimitText,
+    diagnostic: 'Beta diagnostic: HTTP 429 · ai_usage_limit · daily_rate_limit',
+    retryable: false,
+  ),
+  'usage_limit_shared': _expect(
+    'Coach has reached its shared limit for this month. It resets on '
+    '$_monthlyReset.',
+    diagnostic:
+        'Beta diagnostic: HTTP 429 · ai_usage_limit · global_monthly_cost_limit',
     retryable: false,
   ),
   'consent_required': _expect(
@@ -93,10 +105,7 @@ final Map<String, _Expected> _cases = {
     sameKey: true,
   ),
   'daily_rate_limit': _expect(
-    RegExp(
-      r'^You’ve used all of today’s Coach messages\. The limit resets at '
-      r'\d{1,2}:\d{2} (am|pm) (today|tomorrow)\.$',
-    ),
+    _dailyLimitText,
     diagnostic:
         'Beta diagnostic: HTTP 422 · chat_unavailable · '
         'context_preparation_failed · daily_rate_limit',
@@ -107,14 +116,6 @@ final Map<String, _Expected> _cases = {
     diagnostic:
         'Beta diagnostic: HTTP 422 · chat_unavailable · '
         'context_preparation_failed · monthly_cost_limit',
-    retryable: false,
-  ),
-  'approved_plan_required': _expect(
-    'Coach needs an approved plan to look at. Finish setting up your plan in '
-    'Train, then ask again.',
-    diagnostic:
-        'Beta diagnostic: HTTP 422 · chat_unavailable · '
-        'context_preparation_failed · approved_plan_required',
     retryable: false,
   ),
   'thread_not_found': _expect(
@@ -174,6 +175,10 @@ final Map<String, _Expected> _cases = {
     diagnostic:
         'Beta diagnostic: HTTP 503 · chat_unavailable · provider_timeout',
   ),
+  'turn_lost': _expect(
+    'That message didn’t finish. Send it again.',
+    diagnostic: 'Beta diagnostic: HTTP 503 · chat_unavailable · turn_lost',
+  ),
   'provider_rate_limited': _expect(
     'Coach is busy right now. $_tryAgain',
     diagnostic:
@@ -232,14 +237,14 @@ class _Server {
   _Server({
     this.status = 200,
     this.body = const <String, dynamic>{},
-    this.budget = const <String, dynamic>{},
     this.offline = false,
+    this.accountOffline = false,
   });
 
   int status;
   Object? body;
-  Map<String, dynamic> budget;
   bool offline;
+  bool accountOffline;
   final chatBodies = <Map<String, dynamic>>[];
 
   late final client = SupabaseClient(
@@ -254,9 +259,8 @@ class _Server {
       );
       switch (request.url.path) {
         case '/rest/v1/user_accounts':
+          if (accountOffline) throw http.ClientException('offline');
           return json({'timezone': 'Asia/Kolkata'});
-        case '/rest/v1/rpc/get_my_ai_budget_state':
-          return json(budget);
         case '/functions/v1/coach-chat':
           if (offline) throw http.ClientException('offline');
           chatBodies.add(jsonDecode(request.body) as Map<String, dynamic>);
@@ -314,27 +318,6 @@ void main() {
       );
     });
 
-    test('a 429 names the limit from the athlete’s budget state', () {
-      final monthly = coachChatFailure(
-        _http(fixture['usage_limit']!),
-        now: _now,
-        budget: {'blocked': true, 'today_requests': 4, 'daily_limit': 30},
-      );
-      expect(monthly.message, _monthlyLimit);
-      final daily = coachChatFailure(
-        _http(fixture['usage_limit']!),
-        now: _now,
-        budget: {'blocked': false, 'today_requests': 30, 'daily_limit': 30},
-      );
-      expect(daily.message, matches(_dailyLimit));
-      final neither = coachChatFailure(
-        _http(fixture['usage_limit']!),
-        now: _now,
-        budget: {'blocked': false, 'today_requests': 3, 'daily_limit': 30},
-      );
-      expect(neither.message, contains('usage limit for now'));
-    });
-
     test('the monthly reset is the first of next month, 00:00 UTC', () {
       expect(
         coachMonthlyReset(DateTime.utc(2026, 10, 17, 12)),
@@ -383,7 +366,7 @@ void main() {
   group('SupabaseCoachRepository.sendMessage', () {
     final fixture = _fixture();
 
-    for (final name in _cases.keys.where((name) => name != 'usage_limit')) {
+    for (final name in _cases.keys) {
       test(
         '$name arrives as a Coach failure, not a generic exception',
         () async {
@@ -413,18 +396,9 @@ void main() {
       );
     }
 
-    test('a 429 reads the budget state to say which limit', () async {
-      final response = fixture['usage_limit']!;
-      final server = _Server(
-        status: response.status,
-        body: response.body,
-        budget: {
-          'schema_version': '1.0',
-          'blocked': true,
-          'today_requests': 2,
-          'daily_limit': 30,
-        },
-      );
+    test('a send with no connection at all is a retryable Coach failure, '
+        'not a generic one', () async {
+      final server = _Server(accountOffline: true, offline: true);
       final repository = SupabaseCoachRepository(
         server.client,
         now: () => _now,
@@ -432,13 +406,12 @@ void main() {
       await expectLater(
         repository.sendMessage(_threadId, 'How am I doing?'),
         throwsA(
-          isA<CoachUnavailableException>().having(
-            (e) => e.message,
-            'message',
-            _monthlyLimit,
-          ),
+          isA<CoachUnavailableException>()
+              .having((e) => e.code, 'code', 'offline')
+              .having((e) => e.retrySameKey, 'same key', isTrue),
         ),
       );
+      expect(server.chatBodies, isEmpty);
     });
 
     test('a lost connection is a retryable Coach failure', () async {
@@ -653,7 +626,7 @@ void main() {
     });
 
     testWidgets('Retry after the server answered with a failure is a new '
-        'turn', (tester) async {
+        'turn: the saved question of the failed one stays', (tester) async {
       await tall(tester);
       final repository = _ScriptedRepository([
         coachChatFailure(
@@ -670,7 +643,71 @@ void main() {
 
       expect(repository.keys.length, 2);
       expect(repository.keys[1], isNot(repository.keys[0]));
-      expect(find.text('How am I doing?'), findsOneWidget);
+      // The server saved the first attempt's question when it started, so
+      // the thread has it twice; the screen shows what the thread holds.
+      expect(find.text('How am I doing?'), findsNWidgets(2));
+      expect(find.text('Done.'), findsOneWidget);
+      await tester.pumpAndSettle(TracendToast.visibleFor);
+    });
+
+    testWidgets('Retry after a lost turn starts a new turn with a new key', (
+      tester,
+    ) async {
+      await tall(tester);
+      final repository = _ScriptedRepository([
+        coachChatFailure(_http(fixture['turn_lost']!), now: _now),
+        _answer('Done.'),
+      ]);
+      await tester.pumpWidget(app(repository));
+      await tester.pumpAndSettle();
+      await ask(tester, 'How am I doing?');
+      expect(find.text('That message didn’t finish. Send it again.'), findsOne);
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+
+      expect(repository.keys[1], isNot(repository.keys[0]));
+      expect(find.text('Done.'), findsOneWidget);
+      await tester.pumpAndSettle(TracendToast.visibleFor);
+    });
+
+    testWidgets('Review AI coaching reloads the consent, so a grant for an '
+        'older notice cannot hide the new one', (tester) async {
+      await tall(tester);
+      final repository = _ScriptedRepository([
+        coachChatFailure(_http(fixture['consent_required']!), now: _now),
+      ]);
+      // The app holds a grant; the server's current notice says undecided.
+      final consent = AiCoachingConsentController(
+        FixtureAiCoachingConsentRepository(AiCoachingChoice.undecided),
+        initial: AiCoachingChoice.granted,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: Scaffold(
+            body: CoachScreen(
+              repository: repository,
+              threadMemory: _NoMemory(),
+              aiConsent: consent,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await ask(tester, 'How am I doing?');
+      expect(consent.granted, isTrue);
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(CoachTurnError),
+          matching: find.text('Review AI coaching'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(consent.granted, isFalse);
+      expect(find.text('AI coaching is off'), findsWidgets);
+      expect(find.text('AI coaching is on'), findsNothing);
       await tester.pumpAndSettle(TracendToast.visibleFor);
     });
 

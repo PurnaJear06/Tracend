@@ -1,19 +1,35 @@
 {
   "description": "Every error response coach-chat can send, as the Edge Function builds them (supabase/functions/coach-chat/index.ts and _shared/auth.ts). Flutter maps each to a plain sentence (test/coach_chat_errors_test.dart).",
   "cases": {
-    "usage_limit": {
+    "usage_limit_unknown_reason": {
       "status": 429,
       "body": {
         "schema_version": "1.1",
         "error": "ai_usage_limit"
       }
     },
-    "usage_limit_monthly_reason": {
+    "usage_limit_monthly": {
       "status": 429,
       "body": {
         "schema_version": "1.1",
         "error": "ai_usage_limit",
         "reason": "monthly_cost_limit"
+      }
+    },
+    "usage_limit_daily": {
+      "status": 429,
+      "body": {
+        "schema_version": "1.1",
+        "error": "ai_usage_limit",
+        "reason": "daily_rate_limit"
+      }
+    },
+    "usage_limit_shared": {
+      "status": 429,
+      "body": {
+        "schema_version": "1.1",
+        "error": "ai_usage_limit",
+        "reason": "global_monthly_cost_limit"
       }
     },
     "consent_required": {
@@ -61,15 +77,6 @@
         "error": "chat_unavailable",
         "code": "context_preparation_failed",
         "reason": "monthly_cost_limit"
-      }
-    },
-    "approved_plan_required": {
-      "status": 422,
-      "body": {
-        "schema_version": "1.1",
-        "error": "chat_unavailable",
-        "code": "context_preparation_failed",
-        "reason": "approved_plan_required"
       }
     },
     "thread_not_found": {
@@ -180,6 +187,14 @@
     "gateway_timeout": {
       "status": 546,
       "body": "upstream timed out"
+    },
+    "turn_lost": {
+      "status": 503,
+      "body": {
+        "schema_version": "1.1",
+        "error": "chat_unavailable",
+        "code": "turn_lost"
+      }
     }
   }
 }
