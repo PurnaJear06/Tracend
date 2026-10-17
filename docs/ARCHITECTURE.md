@@ -626,6 +626,20 @@ coaching-principles digest of the sources is exported for the Coach's stable pro
 > **Planned (coaching platform):** the library inside Coach chat (Phase 3 / E3), regional modules chosen by the athlete's region (Phase 4 / E4,
 > D5), and plan explanations citing sources (Phase 4 / E5).
 
+### Bounded Coach data lookups (A10)
+
+Coach chat on the gateway route can read the athlete's own records on demand: the model returns
+`data_requests` (a lookup name from a closed catalogue, a date range of at most 400 days, an optional
+filter) in its JSON answer, the Edge Function validates them and calls a read-only `SECURITY DEFINER`
+RPC granted to `service_role` for the authenticated athlete, and calls the model again with the dated
+rows. At most 2 rounds; each extra model call has its own budget place; the red-flag screen runs
+before everything and every guard runs on the final answer. It is bounded, read-only and in-request:
+not an autonomous agent (no writes, no background runs, a hard cap on rounds) and not native tool
+calling (the gateway sends no tools, so the provider can be swapped). The always-on baseline stays
+small: the goal phase, the screening, today's or the next session with targets and home
+alternatives, this week's complete-day nutrition and an index of what exists; everything else comes
+from lookups. See AI_SAFETY_SPEC §11.1.
+
 ### Add vector retrieval over user data only when all are true
 
 - meaningful unstructured history exists;

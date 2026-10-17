@@ -12,6 +12,7 @@
 import { route } from "../_shared/ai/routes.ts";
 import type { AiCallDeps, AiRoute } from "../_shared/ai/types.ts";
 import type { CoachContributions } from "../_shared/coach_context/host.ts";
+import type { CoachLookupRunner } from "../_shared/coach_lookups/runner.ts";
 import {
   type CoachChatGeneration,
   type CoachChatTiming,
@@ -26,6 +27,8 @@ export type GenerateInput = Readonly<{
   context: Record<string, unknown>;
   contextKind: string;
   contributions: CoachContributions | null;
+  /** Runs the lookups the model asks for (gateway path only; today's DeepSeek path has none). */
+  lookups?: CoachLookupRunner;
 }>;
 
 export type Generate = (input: GenerateInput) => Promise<CoachChatGeneration>;
@@ -83,7 +86,7 @@ export function gatewayGenerate(
   strong: () => AiRoute | null = () => route("coach_chat_strong"),
   deps: AiCallDeps = {},
 ): Generate {
-  return ({ question, context, contextKind, contributions }) =>
+  return ({ question, context, contextKind, contributions, lookups }) =>
     generateCoachChatViaGateway({
       question,
       context,
@@ -91,6 +94,7 @@ export function gatewayGenerate(
       route: selectCoachChatRoute(question, coachRoute, strong, coachRoute.vendor).route,
       consentVendor: coachRoute.vendor,
       ...(contributions ? { contributions } : {}),
+      ...(lookups ? { lookups } : {}),
     }, deps);
 }
 

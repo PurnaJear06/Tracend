@@ -45,6 +45,8 @@ export type Contributors = Readonly<{
   screening?: ScreeningSetting | "unreadable" | null;
   /** A get_goal_phase_inputs_v1 payload, or null for none. */
   goalPhase?: unknown | null;
+  /** A get_coach_nutrition_state_v1 payload for the nutrition_state contributor, or none. */
+  nutritionState?: unknown;
   /** Rows a data lookup returns, by lookup name (see lookups.ts); empty without lookups. */
   lookupRows?: Readonly<Record<string, readonly LookupRow[]>>;
 }>;

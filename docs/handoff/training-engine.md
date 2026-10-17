@@ -327,12 +327,11 @@ Contract 8).
   working set has neither, `confidence` is `low` and the target is not blocked by it.
 - **D9.** Heart rate is not an input anywhere; a Deno test fails if the migration's code mentions
   heart rate.
-- **Coach context (Contract 7).** `_shared/coach_context/contributors/progression.ts`
-  (`createProgressionContributor(source)`, volatile slot, 2,400 characters) renders the targets as
-  reference lines. It reads `public.get_progression_summary_v1(p_user_id)` (`{schema_version: '1.0',
-  targets}`, service role only, checked with `has_function_privilege`) through
-  `progressionSourceFromRpc`. It is **not registered**: the lead adds it to `registry.ts` in round 3
-  with `progressionSourceFromRpc((name, params) => serviceClient.rpc(name, params))`.
+- **Coach context (Contract 7).** The targets reach Coach through the `training_plan` contributor
+  (A10, `_shared/coach_context/contributors/training_plan.ts`), which reads
+  `public.get_progression_summary_v1(p_user_id)` (`{schema_version: '1.0', targets}`, service role
+  only, checked with `has_function_privilege`) inside `get_coach_plan_state_v1` and renders each
+  target beside its planned exercise. The standalone `progression` contributor was removed.
 - **Train.** Each exercise with a target reads "3 × 6 to 8 · next 75 kg × 6" in the list; its sheet
   shows a **Next target** tile in place of **Today** and one sentence of why ("Every set reached the
   top of the range last time. Add weight and start the reps again."); the workout screen starts each
@@ -342,7 +341,7 @@ Contract 8).
   more help" (`isAssistedPlanned` in `train_parts.dart`; `test/train_next_target_test.dart`).
   Reason codes this build does not know show the target without a sentence. Older builds ignore
   `next_targets`.
-- **Tests.** `progression/targets_test.ts` and `contributors/progression_test.ts` (Deno, 19 tests),
+- **Tests.** `progression/targets_test.ts` (Deno) and `contributors/training_plan_test.ts` (A10),
   pgTAP `progression_targets_test.sql` (decision table, invariants, real logged sets through the hub,
   exact key lists, grants), `training_hub_contract_test.dart` (v1.7 fixture `training_hub_v1_7.json`:
   full key lists, parsing, older payloads, Train lines, set suggestions).

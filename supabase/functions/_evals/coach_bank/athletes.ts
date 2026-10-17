@@ -54,9 +54,24 @@ export function withCheckIn(context: Context, patch: Context): Context {
   return { ...context, latest_check_in: latest, check_ins_14d: [latest, ...rest] };
 }
 
-export function withNutritionDay(context: Context, day: Context): Context {
-  const days = Array.isArray(context.nutrition_daily_28d) ? context.nutrition_daily_28d : [];
-  return { ...context, nutrition_daily_28d: [day, ...days] };
+/**
+ * An athlete whose newest nutrition day is partly logged (a `get_coach_nutrition_state_v1`
+ * payload with that one incomplete day), as the nutrition_state contributor reads it.
+ */
+export function partialNutritionDay(context: Context, day: Context): Athlete {
+  const target = obj(context.nutrition_targets);
+  return athlete(context, {
+    nutritionState: {
+      schema_version: "1.0",
+      local_date: context.coaching_date,
+      target: Object.keys(target).length ? target : null,
+      rules: { min_meals: 3, min_target_share: 0.7 },
+      days: [{ ...day, meals: day.confirmed_meals, complete: false }],
+      schedule: [],
+      eaten_today: [],
+      sources: { window_days: 14, meals: 0, photo_estimate: 0, from_schedule: 0, typed_in: 0 },
+    },
+  });
 }
 
 export function withPreference(

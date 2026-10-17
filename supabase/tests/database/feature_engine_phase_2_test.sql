@@ -372,7 +372,7 @@ select is(
   (public.evaluate_change_eligibility(
     'aaaaaaaa-1111-4111-8111-111111111111', current_date
   )->>'eligibility_version'),
-  'eligibility-v1',
+  'eligibility-v2',
   '39: eligibility returns correct version'
 );
 

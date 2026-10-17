@@ -60,7 +60,13 @@ import {
   renderCoachContext,
   validateCoachContextContributors,
 } from "../_shared/coach_context/host.ts";
-import { coachContextContributors } from "../_shared/coach_context/registry.ts";
+import {
+  coachContextContributors,
+  coachContextContributorsFor,
+} from "../_shared/coach_context/registry.ts";
+import { coachServiceRpc } from "../_shared/coach_context/service_source.ts";
+import { createLookupRunner } from "../_shared/coach_lookups/runner.ts";
+import { guardFaultsOf, lookupTrace, recordTurnTrace } from "./turn_trace.ts";
 
 export const coachChatResponseSchemaVersion = "1.1";
 // Request 1.1 (current app) gets response 1.2: answer_source on every message
@@ -789,7 +795,7 @@ export async function handleCoachChat(
     // Both paths render the contributors (the goal phase review is not tied to the gateway). A
     // referral shows the model nothing, so it renders none.
     const contributions = redFlag ? noCoachContributions : await renderCoachContext(
-      coachContextContributors,
+      coachContextContributorsFor(coachRoute !== null),
       {
         userId: auth.userId,
         question: input.question,
@@ -810,6 +816,7 @@ export async function handleCoachChat(
         consentVendor,
         contributions,
         budget: budget.attemptBudget,
+        lookups: createLookupRunner((name, params) => coachServiceRpc(name, params), auth.userId),
       })
       : await generateCoachChat(
         input.question,
@@ -907,6 +914,17 @@ export async function handleCoachChat(
       key_snapshot_ids: sessionSnapshotIds,
     });
 
+    const traced = await recordTurnTrace(
+      auth.serviceClient,
+      auth.userId,
+      persisted.assistant_message_id,
+      {
+        guardFaults: guardFaultsOf(generation.attempts),
+        lookups: lookupTrace(generation.lookups),
+      },
+    );
+    if (!traced) log.warn("coach_chat_trace_not_stored");
+
     const responsePayload: Record<string, unknown> = {
       schema_version: supportsDataSummary(input)
         ? coachChatDataSummaryResponseSchemaVersion
@@ -933,6 +951,7 @@ export async function handleCoachChat(
       context_kind: contextKind,
       ai_path: generation.safety ? "safety" : coachRoute ? "gateway" : "legacy",
       route_feature: coachRoute?.feature ?? "none",
+      lookups: lookupTrace(generation.lookups),
       replayed: false,
       attempts: generation.attempts.map((attempt) => ({
         attempt: attempt.attempt,
@@ -1067,9 +1086,19 @@ export async function handleCoachChat(
         failureCode: storeError.code ?? "unknown",
       });
     }
+    const traced = await recordTurnTrace(
+      auth.serviceClient,
+      auth.userId,
+      storeError ? undefined : stored?.assistant_message_id,
+      {
+        guardFaults: guardFaultsOf(unavailable.metadata.attempts ?? [], unavailable.failureReason),
+        lookups: lookupTrace(unavailable.metadata.lookups),
+      },
+    );
     log.info("coach_chat_data_summary_served", {
       failure_code: unavailable.failureReason,
       stored: !storeError,
+      trace_stored: traced,
     });
     return reply(
       200,

@@ -763,6 +763,52 @@ audit (1, 2, 3, 6 deterministic part, 7, 15).
   safety notes ("not an AI answer" only for rows no model wrote; a model-written refusal keeps its
   AI label).
 
+### A10 part 1: Coach looks up the athlete's data, plus a lean baseline (migration code 20)
+
+Branch `claude/a10-athlete-state`. Changes no frozen function (`prepare_coach_chat_v8`,
+`build_coach_athlete_context`). Findings 8, 9, 10, 12, 13, 14, 16 (partly), 20, 24 and "What B7
+would miss" item 8 of the Coach audit.
+
+- **Lookups** (`_shared/coach_lookups/`): a closed catalogue of ten read-only lookups, each a
+  `SECURITY DEFINER` RPC for `service_role` (migration `20261018100020_coach_data_lookups.sql`).
+  The answer may carry `data_requests: [{lookup, from, to, filter}]`; the gateway path validates
+  them (`validateDataRequests`: known lookup, real dates, at most 400 days, at most 4 a round, filter
+  rules), runs them with the athlete's id bound by `coach-chat/index.ts`, and calls the model again
+  with a dated, labelled `<looked_up_data>` block after the question. At most 2 rounds. Each extra
+  call reserves its own budget place (`CoachChatAttemptBudget.reserveAttempt(usd, kind)`, kind
+  `repair` or `lookup`; it replaces `reserveRepair`). With no place, the model's interim sentence is
+  the answer if it passes the guards, else the data summary. A refused request or a third round is
+  an invalid answer (new rules `lookup_request_invalid`, `lookup_rounds_exceeded`) and the repair
+  must answer. The looked-up text grounds the numbers check (`coachReplyCheckFor(..., lookedUp)`).
+  Today's DeepSeek path has no lookups (`coachChatInstructions(permitted, withLookups)`).
+- **Baseline contributors**, registered after the goal phase: `training_plan` (today's or the next
+  session with sets, reps, rest, loads, B3 targets, last logged set, the week, sets a week by
+  muscle, equipment and catalog home alternatives from `_shared/training/home_alternatives.ts`),
+  `nutrition_state` (complete days, today's meals) and `data_index`. The unregistered `progression`
+  contributor is folded into `training_plan` and deleted. `goal_phase` now uses the shared
+  service-role caller (`coach_context/service_source.ts`).
+- **Complete logging days** (ALGORITHMS.md section 6): 3 confirmed meals or 70% of the target.
+  `evaluate_change_eligibility` is redefined (copied from its only definition) to average complete
+  days and report `complete_days`. `compute_daily_metrics` still averages logged days (it feeds the
+  daily score the app shows); changing it is a separate decision.
+- **Persona**: answer first with named exercises, data only when it changes the advice, no repeated
+  cautions, about 120 words (200 for a routine), home routines from the home options. The A9
+  safety and honesty rules are unchanged. The legacy parity digests were recorded again on purpose.
+- **Observability**: `coach_messages.guard_faults` and `.lookups` (names and counts, no content),
+  written by `coach-chat/turn_trace.ts` with the service role after the message is stored.
+- **Removed**: the `progression` contributor and its test; the athlete-file sections "Today's
+  Check-In", "Latest Weekly Review", the schedule line, "Today's Meals", "Logged Nutrition",
+  "7-Day Nutrition Compliance", "Nutrition Adherence", "Training Week Structure"; the nutrition
+  calculation and its line in "Calculated by Tracend"; `reserveRepair`; the duplicate client
+  builder in the goal-phase contributor.
+- **Tests**: `coach_chat_lookups_test.ts` (the owner's two cases, validator, rounds, budget, red flag
+  before lookups, grounding), `coach_chat_persona_test.ts` (recorded replies), contributor tests,
+  `catalogue_test.ts`, `render_test.ts`, `turn_trace_test.ts`, pgTAP `coach_data_lookups_test.sql`.
+- **Left out on purpose**: a physique lookup (a text summary of photo checks). Sending it to the Coach
+  provider is new data reaching the AI, which needs an accepted notice line the owner has not
+  approved. It returns (RPC, catalogue entry, index line, tests) together with that notice line once
+  the owner approves it. Lookups need the gateway route; the legacy path has none.
+
 ### A11: Coach eval bank (`claude/a11-coach-eval-bank`, no migration)
 
 Every Coach change must pass the bank (program doc, "Eval bank (A11)"). It has three parts and lives
@@ -802,12 +848,14 @@ in `supabase/functions/_evals/`.
   `EVAL_MAX_USD` (default 3) stops and fails the run. The tone judge (`judge.ts`) is off unless
   `EVAL_JUDGE_MODEL` is set; it must be a different model, sees only the question and the reply,
   and stays ungated until it has been checked against about 30 human labels.
-- **Data lookups (A10 design update).** The answer may carry `data_requests: [{lookup, from, to,
-  filter?}]`; the server runs them and asks again, at most 2 rounds. The bank grades the request
-  (lookup name, dates, filter) and that the final answer cites dated rows; it follows one lookup
-  round itself with rows from the case. The lookup names are in `coach_bank/lookups.ts`; reconcile
-  them with A10's field names at merge. Until A10's loop exists the live run fails these cases
-  (nothing asks for data), which is the point.
+- **Data lookups (reconciled with A10 part 1).** The bank uses the production loop
+  (`generateCoachChatViaGateway`): the harness passes a `CoachLookupRunner` that serves the case's
+  rows (`coach_bank/lookups.ts`, `bankLookupRunner`) and records the requests the loop validated, so
+  the bank grades the lookup name, dates and filter the model asked for and that the final answer
+  cites dated rows. It no longer simulates a second round. Lookup names are the catalogue's
+  (`exercise_history`, `meals`). The partial-day cases now give the nutrition_state contributor a
+  payload (`partialNutritionDay`), because the athlete file no longer carries per-logged-day
+  nutrition.
 - **Retrieval** (`library_eval.ts`, `library_eval_metrics.ts`, `library_questions.json`): 61 single-topic (42 original and the 19 from E2.1),
   15 multi-source and 10 no-answer questions; recall@8 and MRR per search mode and kind, printed as
   a table. It needs the database and the real embeddings, so it runs in the `library-retrieval` job

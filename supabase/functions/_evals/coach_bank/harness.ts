@@ -1,6 +1,6 @@
 // Runs bank cases: builds the turn exactly as coach-chat does (athlete file plus the reference-data
-// contributors), asks the model through the production path, follows at most one data-lookup
-// round, and grades the reply. A case that expects a red-flag hit never reaches a model: the
+// contributors), asks the model through the production path (which runs the data-lookup rounds), and grades the
+// reply. A case that expects a red-flag hit never reaches a model: the
 // screen answers it, as in production.
 import {
   type CoachContextContributor,
@@ -8,6 +8,7 @@ import {
   renderCoachContext,
 } from "../../_shared/coach_context/host.ts";
 import { createGoalPhaseContributor } from "../../_shared/coach_context/contributors/goal_phase.ts";
+import { createNutritionStateContributor } from "../../_shared/coach_context/contributors/nutrition_state.ts";
 import { createScreeningContributor } from "../../_shared/coach_context/contributors/screening.ts";
 import { coachingPrinciplesContributor } from "../../_shared/library/principles.ts";
 import { buildCoachChatDataSummary } from "../../_shared/coach_chat_fallback.ts";
@@ -19,7 +20,7 @@ import {
 } from "../../_shared/providers/coach_chat_provider.ts";
 import type { Generate } from "../live_model.ts";
 import { type Prepared } from "./graders.ts";
-import { allLookupRows, dataRequestsOf, renderLookupRows } from "./lookups.ts";
+import { allLookupRows, bankLookupRunner } from "./lookups.ts";
 import type { BankCase, DataRequest, Reply, Turn } from "./types.ts";
 
 /** A prepared case, with the contributor text the model sees before any lookup. */
@@ -41,6 +42,9 @@ function contributorsOf(bank: BankCase): CoachContextContributor[] {
         )
     ),
   );
+  if (contributors.nutritionState) {
+    list.push(createNutritionStateContributor(() => Promise.resolve(contributors.nutritionState)));
+  }
   if (contributors.goalPhase) {
     list.push(createGoalPhaseContributor(() => Promise.resolve(contributors.goalPhase)));
   }
@@ -95,28 +99,23 @@ function replyFrom(
 }
 
 /**
- * One answer to a prepared case. When the first answer asks for data and the case supplies the
- * rows, the second round carries them and its answer is the final one (the server loop, which
- * allows two rounds).
+ * One answer to a prepared case. The production loop does the lookups: when the model asks for
+ * data, the loop validates the request and calls the bank's runner, which serves the case's rows
+ * and records what was asked; the model is called again with them (at most two rounds). The reply
+ * carries the requests the loop accepted.
  */
 export async function answer(p: PreparedRun, generate: Generate): Promise<Reply> {
   const started = performance.now();
-  const contextKind = classifyQuestion(p.question);
-  const ask = (contributions: CoachContributions) =>
-    generate({
+  const requested: DataRequest[] = [];
+  try {
+    const generation = await generate({
       question: p.question,
       context: structuredClone(p.context),
-      contextKind,
-      contributions,
+      contextKind: classifyQuestion(p.question),
+      contributions: p.firstRound,
+      lookups: bankLookupRunner(p.bank.athlete().contributors.lookupRows ?? {}, requested),
     });
-  try {
-    const first = await ask(p.firstRound);
-    const requests = dataRequestsOf(first.answer);
-    const rows = p.bank.athlete().contributors.lookupRows;
-    const fetched = requests.length > 0 && rows ? renderLookupRows(requests, rows) : null;
-    if (fetched === null) return replyFrom(first, requests, first.estimatedCostUsd, started);
-    const second = await ask(withVolatile(p.firstRound, lookupBlock(fetched)));
-    return replyFrom(second, requests, first.estimatedCostUsd + second.estimatedCostUsd, started);
+    return replyFrom(generation, requested, generation.estimatedCostUsd, started);
   } catch (error) {
     const latencyMs = Math.round(performance.now() - started);
     if (error instanceof CoachChatUnavailableError) {

@@ -54,6 +54,29 @@ inside budgets that already exist.
 Sonnet 5.5 as the stronger Coach route still fits one budget reservation (USD 0.50) with these
 blocks; `coach_chat_provider_route_test.ts` fails if a larger block ever pushes it over.
 
+## Plan, Nutrition, Index and Lookups (A10)
+
+Coach no longer gets everything about the athlete on every turn. A lean baseline is always on; the
+rest of the athlete's records come from lookups the model asks for (AI_SAFETY_SPEC section 11.1).
+
+| Piece | Where | Size | Notes |
+| --- | --- | --- | --- |
+| `training_plan` contributor | Volatile contributor, after the goal phase | up to 7,000 characters (budget 7,000; about 3,500 for a four-session plan) | Today's or the next session with each exercise's sets, reps, rest, load, next target and last logged set; the other sessions compactly; sets a week by muscle; equipment; catalog home alternatives. Replaces the unregistered `progression` contributor and the athlete file's "Training Week Structure". |
+| `nutrition_state` contributor | Volatile | up to 3,200 characters | The week's complete days (k of n), complete-day averages, partial days, today's schedule and meals, meal sources. Replaces the athlete file's per-logged-day nutrition lines, "Logged Nutrition", "7-Day Nutrition Compliance", "Nutrition Adherence", today's meals and the schedule line. |
+| `data_index` contributor | Volatile, gateway route only | up to 1,600 characters | First and last date and count per kind of record. Left out on today's DeepSeek path, which has no lookups. |
+| Looked-up rows | After the question, one labelled block per round | up to 5,000 characters per lookup, 4 lookups a round, 2 rounds (at most 40,000 characters in one turn). Whole rows only, newest first; the heading says "showing the newest N of M rows" when some were cut | Not part of the cached prefix. Each lookup call is a separate model call with its own reservation. |
+| Lookup instructions | System prompt, gateway route only | about 3,200 characters | Inside the 16,000-character instructions reserve. |
+
+Removed from the athlete file because a contributor or a lookup replaces them: "Today's Check-In"
+(mislabelled when old; the dated check-in table stays), "Latest Weekly Review" (the SQL value is
+a JSON object the renderer dropped; the `weekly_reviews` lookup serves it), the nutrition schedule
+line, "Today's Meals", "Logged Nutrition", "7-Day Nutrition Compliance", "Nutrition Adherence",
+"Training Week Structure" and the per-logged-day line in "Calculated by Tracend".
+
+The worst-case reservation counts the contributors' budgets (`coachContextMaxChars`) plus the
+athlete file and the instructions; a lookup round reserves from its actual prompt. Sonnet 5.5 still
+fits one reservation (`coach_chat_provider_route_test.ts`).
+
 ## Budget Layering
 
 ```

@@ -100,6 +100,8 @@ export const coachChatValidationRules = [
   "effort_above_screening_cap",
   "training_advice_on_pain_day",
   "claimed_action",
+  "lookup_request_invalid",
+  "lookup_rounds_exceeded",
 ] as const;
 
 export type CoachChatValidationRule = typeof coachChatValidationRules[number];

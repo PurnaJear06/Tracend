@@ -12,6 +12,8 @@
 // cache; what changes every turn comes after the breakpoint.
 
 import {
+  type CoachChatAnswerCheck,
+  coachChatAnswerLimits,
   type CoachChatAnswerV2,
   CoachChatAnswerValidationError,
   coachChatEvidenceSources,
@@ -19,6 +21,14 @@ import {
   parseCoachChatAnswer,
 } from "../contracts/coach_chat_v1.ts";
 import { call } from "../ai/gateway.ts";
+import {
+  coachLookupNames,
+  type DataRequest,
+  maxLookupRounds,
+  validateDataRequests,
+} from "../coach_lookups/catalogue.ts";
+import type { CoachLookupRunner, LookupCount } from "../coach_lookups/runner.ts";
+
 import { screenTurn } from "../coach_safety/red_flags.ts";
 import { costUsd, modelSpec } from "../ai/models.ts";
 import type { AiCallDeps, AiContent, AiMessage, AiRoute, AiUsage, AiVendor } from "../ai/types.ts";
@@ -56,14 +66,32 @@ import {
  * parseCoachChatAnswer then checks every limit and citation with the exact rule that failed,
  * which the repair attempt needs. Nullable evidence ids are an anyOf with null.
  */
-export function coachChatGatewaySchema(permittedEvidence: readonly string[]) {
+export function coachChatGatewaySchema(
+  permittedEvidence: readonly string[],
+  withLookups = false,
+) {
   const codes = [...new Set(permittedEvidence)];
   const codeEnum = codes.length > 0 ? codes : ["__NO_PERMITTED_EVIDENCE__"];
   const strings = { type: "array", items: { type: "string" } };
+  const dataRequests = {
+    type: "array",
+    items: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        lookup: { type: "string", enum: [...coachLookupNames] },
+        from: { type: "string" },
+        to: { type: "string" },
+        filter: { anyOf: [{ type: "string" }, { type: "null" }] },
+      },
+      required: ["lookup", "from", "to"],
+    },
+  };
   return {
     type: "object",
     additionalProperties: false,
     properties: {
+      ...(withLookups ? { data_requests: dataRequests } : {}),
       answer: { type: "string" },
       evidence: {
         type: "array",
@@ -112,6 +140,18 @@ export type CoachChatGatewayPrompt = Readonly<{ system: AiContent[]; messages: A
 export type CoachChatRepair = Readonly<{ issue: ValidationIssue; candidate: string | null }>;
 
 /**
+ * Lookups in a request: whether this turn may ask for them, the labelled sections already
+ * returned (one per round) and whether the rounds are used up, so the model must answer.
+ */
+export type CoachChatLookupPrompt = Readonly<{
+  sections: readonly string[];
+  closed: boolean;
+}>;
+
+const lookupsClosed =
+  "No more lookups are available this turn. Answer now, without data_requests, from the context and the rows above, and say plainly what you could not check.";
+
+/**
  * The cache-friendly request for one question. The athlete file keeps the budget of today's
  * path (96,000 characters, 128,000 for a plan change, wrappers and question reserved first);
  * contributors bring their own budgets.
@@ -122,6 +162,7 @@ export function buildCoachChatGatewayPrompt(
   contextKind: string,
   contributions: CoachContributions = noCoachContributions,
   repair?: CoachChatRepair,
+  lookups?: CoachChatLookupPrompt,
 ): CoachChatGatewayPrompt {
   const permitted = permittedEvidenceOf(context);
   const wrappers = fileOpen.length + fileClose.length + recentOpen.length + recentClose.length +
@@ -141,9 +182,11 @@ export function buildCoachChatGatewayPrompt(
   const content: AiContent[] = [{ type: "text", text: stable, cache: true }];
   if (turn) content.push({ type: "text", text: turn });
   content.push({ type: "text", text: questionLead + question });
+  for (const section of lookups?.sections ?? []) content.push({ type: "text", text: section });
+  if (lookups?.closed) content.push({ type: "text", text: lookupsClosed });
   if (repair) content.push({ type: "text", text: repairText(repair, permitted) });
   return {
-    system: [{ type: "text", text: coachChatInstructions(permitted) }],
+    system: [{ type: "text", text: coachChatInstructions(permitted, lookups !== undefined) }],
     messages: [{ role: "user", content }],
   };
 }
@@ -241,13 +284,14 @@ export function chooseCoachChatRoute(
 
 /**
  * The turn's budget places, one per attempt, so every request sent is covered at its own worst
- * case. The first attempt's place is taken before the turn starts; `reserveRepair` takes the
- * repair's before it is sent and returns false when it is refused. `inFlight` tells the budget
+ * case. The first attempt's place is taken before the turn starts; `reserveAttempt` takes a
+ * repair's or a lookup round's before it is sent and returns false when it is refused. `inFlight` tells the budget
  * that a sent request timed out with no usage reported, so it may have been billed and its
  * place must stay open.
  */
 export type CoachChatAttemptBudget = Readonly<{
-  reserveRepair(usd: number): Promise<boolean>;
+  /** The place for a repair or a lookup round's call, taken before it is sent. */
+  reserveAttempt(usd: number, kind: CoachChatAttempt): Promise<boolean>;
   inFlight(attempt: CoachChatAttempt): void;
 }>;
 
@@ -260,12 +304,19 @@ export type CoachChatGatewayInput = Readonly<{
   consentVendor: AiVendor | null;
   contributions?: CoachContributions;
   budget?: CoachChatAttemptBudget;
+  /**
+   * Runs the lookups the model asks for (read-only, bound to the authenticated athlete). Without
+   * it the model is not offered lookups.
+   */
+  lookups?: CoachLookupRunner;
 }>;
 
 type Attempted = Readonly<{
   telemetry: CoachChatAttemptTelemetry;
   usage: AiUsage | null;
   answer?: CoachChatAnswerV2;
+  /** The model asked for data instead of answering. */
+  lookup?: Readonly<{ requests: readonly DataRequest[]; interim: unknown }>;
   model?: string;
   failure?: Readonly<{
     reason: CoachChatFailureCode;
@@ -280,7 +331,22 @@ function issueOf(error: unknown): ValidationIssue {
     : { rule: "json_syntax", path: "$" };
 }
 
-/** Answers one question through the gateway, with one repair attempt for an invalid answer. */
+/** The model's `data_requests` when it asked for data; a stripped copy of its JSON either way. */
+function lookupAsk(json: unknown): { requests: unknown; rest: unknown } | null {
+  if (!json || typeof json !== "object" || Array.isArray(json) || !("data_requests" in json)) {
+    return null;
+  }
+  const { data_requests: requests, ...rest } = json as Record<string, unknown>;
+  return { requests, rest };
+}
+
+/**
+ * Answers one question through the gateway. An invalid answer gets one repair attempt. When the
+ * model asks for data (`data_requests`) the server validates the request, runs the lookups
+ * (read-only, for this athlete only) and calls the model again with the rows, at most
+ * `maxLookupRounds` times; every extra call has its own budget place, and when none is
+ * available the model's interim sentence, which says what it could not check, is the answer.
+ */
 export async function generateCoachChatViaGateway(
   input: CoachChatGatewayInput,
   deps: AiCallDeps = {},
@@ -292,8 +358,17 @@ export async function generateCoachChatViaGateway(
 
   const permitted = permittedEvidenceOf(context);
   const contributions = input.contributions ?? noCoachContributions;
-  const answerCheck = coachReplyCheckFor(context, question, contributions);
-  const schema = coachChatGatewaySchema(permitted);
+  const coachingDate = typeof context.coaching_date === "string" ? context.coaching_date : "";
+  // The rows looked up so far ground the numbers check: a figure in them is the athlete's own.
+  // Only lines the server produced from the records count, never the model's own request text.
+  const sections: string[] = [];
+  const grounds: string[] = [];
+  const lookupsRun: LookupCount[] = [];
+  let answerCheck = coachReplyCheckFor(context, question, contributions, grounds);
+  // One call of a lookup round gets half an initial attempt, and a round starts only when that
+  // much of the turn's deadline is left, so sequential calls cannot run past it.
+  const lookupCallMs = Math.round(timing.initialAttemptMs / 2);
+  const schema = coachChatGatewaySchema(permitted, input.lookups !== undefined);
   const deadline = Date.now() + timing.totalDeadlineMs;
   const attempts: CoachChatAttemptTelemetry[] = [];
   let spentUsd = 0;
@@ -308,12 +383,25 @@ export async function generateCoachChatViaGateway(
       finishReason: attempts.at(-1)?.finishReason,
       attempts: [...attempts],
       costUsd: spentUsd,
+      ...(lookupsRun.length ? { lookups: [...lookupsRun] } : {}),
       ...extra,
     });
 
+  const lookupPrompt = (closed: boolean): CoachChatLookupPrompt | undefined =>
+    input.lookups ? { sections: [...sections], closed } : undefined;
+  const promptFor = (repair?: CoachChatRepair, closed = false) =>
+    buildCoachChatGatewayPrompt(
+      question,
+      context,
+      contextKind,
+      contributions,
+      repair,
+      lookupPrompt(closed || repair !== undefined),
+    );
+
   let prompt: CoachChatGatewayPrompt;
   try {
-    prompt = buildCoachChatGatewayPrompt(question, context, contextKind, contributions);
+    prompt = promptFor();
   } catch (error) {
     throw new CoachChatUnavailableError(
       route.vendor,
@@ -330,6 +418,7 @@ export async function generateCoachChatViaGateway(
   const attempt = async (
     kind: CoachChatAttempt,
     request: CoachChatGatewayPrompt,
+    mayAskForData: boolean,
   ): Promise<Attempted | null> => {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
@@ -340,13 +429,13 @@ export async function generateCoachChatViaGateway(
         failure: { reason: "provider_timeout", retryAfterSeconds: null },
       };
     }
-    if (kind === "repair" && input.budget) {
+    if (kind !== "initial" && input.budget) {
       const worst = coachChatAttemptWorstCaseUsd(route, promptChars(request));
       if (worst === null || worst > coachChatReservationCapUsd) {
         repairSkipped = "reservation_over_cap";
         return null;
       }
-      if (!await input.budget.reserveRepair(worst)) {
+      if (!await input.budget.reserveAttempt(worst, kind)) {
         repairSkipped = "reservation_refused";
         return null;
       }
@@ -359,7 +448,9 @@ export async function generateCoachChatViaGateway(
       output: { kind: "json", schema },
       consentVendor: input.consentVendor,
       // The route's own limit, cut to what is left of the turn's total deadline.
-      signal: AbortSignal.timeout(Math.min(route.timeoutMs, remaining)),
+      signal: AbortSignal.timeout(
+        Math.min(route.timeoutMs, remaining, kind === "lookup" ? lookupCallMs : Infinity),
+      ),
     }, deps);
     const usage = result.usage;
     // A sent request that timed out without usage may have been billed: its place stays open.
@@ -397,8 +488,39 @@ export async function generateCoachChatViaGateway(
           },
         };
       }
+      let json = result.json;
+      const asked = input.lookups ? lookupAsk(json) : null;
+      if (asked) {
+        const empty = Array.isArray(asked.requests) && asked.requests.length === 0;
+        if (!empty) {
+          // A third round, or requests the catalogue refuses, are an invalid answer: the repair
+          // attempt (which may not ask again) must answer.
+          const check = mayAskForData ? validateDataRequests(asked.requests, coachingDate) : null;
+          if (check?.ok) {
+            return {
+              telemetry: telemetry("lookup"),
+              usage,
+              model: result.model,
+              lookup: { requests: check.requests, interim: asked.rest },
+            };
+          }
+          issue = check
+            ? { rule: "lookup_request_invalid", path: "data_requests", detail: check.reason }
+            : { rule: "lookup_rounds_exceeded", path: "data_requests" };
+          return {
+            telemetry: telemetry("invalid", loggableIssue(issue)),
+            usage,
+            failure: {
+              reason: "provider_response_invalid",
+              retryAfterSeconds: null,
+              repair: { issue, candidate: result.text },
+            },
+          };
+        }
+        json = asked.rest;
+      }
       try {
-        const answer = parseCoachChatAnswer(result.json, permitted, answerCheck);
+        const answer = parseCoachChatAnswer(json, permitted, answerCheck);
         return { telemetry: telemetry("valid"), usage, answer, model: result.model };
       } catch (error) {
         issue = issueOf(error);
@@ -475,38 +597,102 @@ export async function generateCoachChatViaGateway(
     attempts.push(attempted.telemetry);
     spentUsd += attempted.usage?.costUsd ?? 0;
   };
-  const success = (attempted: Attempted): CoachChatGeneration => ({
-    answer: attempted.answer!,
+  const success = (attempted: Attempted, answer: CoachChatAnswerV2): CoachChatGeneration => ({
+    answer,
     provider: route.vendor,
     model: attempted.model ?? route.model,
     inputUnits: attempts.reduce((sum, item) => sum + (item.promptTokens ?? 0), 0),
     outputUnits: attempts.reduce((sum, item) => sum + item.completionTokens, 0),
     estimatedCostUsd: Math.round(spentUsd * 1e9) / 1e9,
     attempts: [...attempts],
+    ...(lookupsRun.length ? { lookups: [...lookupsRun] } : {}),
   });
 
-  const first = (await attempt("initial", prompt))!;
-  record(first);
-  if (first.answer) return success(first);
-  const repair = first.failure?.repair;
+  // What the model said when it asked for data: an interim sentence about what it is checking. It
+  // is the answer when a lookup round cannot finish (no budget, no time, a failed call), and it is
+  // checked against only what the model had seen when it wrote it.
+  let pending:
+    | Readonly<{
+      json: unknown;
+      check: CoachChatAnswerCheck;
+      requests: readonly DataRequest[];
+    }>
+    | null = null;
+  const interimAnswer = (): CoachChatAnswerV2 | null => {
+    if (!pending) return null;
+    try {
+      const interim = parseCoachChatAnswer(pending.json, permitted, pending.check);
+      const unchecked = `Could not check: ${
+        pending.requests.map((request) => `${request.lookup} ${request.from} to ${request.to}`)
+          .join("; ")
+      }`.slice(0, 300);
+      return {
+        ...interim,
+        missing_data: [...interim.missing_data, unchecked].slice(
+          0,
+          coachChatAnswerLimits.missingDataMaxItems,
+        ),
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  let current = (await attempt("initial", prompt, true))!;
+  record(current);
+  // Lookup rounds: run what the model asked for, then call it again with the rows.
+  let rounds = 0;
+  let lookupStopped = false;
+  while (current.lookup && input.lookups) {
+    pending = {
+      json: current.lookup.interim,
+      check: answerCheck,
+      requests: current.lookup.requests,
+    };
+    if (deadline - Date.now() < lookupCallMs) {
+      lookupStopped = true;
+      break;
+    }
+    rounds += 1;
+    const round = await input.lookups(current.lookup.requests);
+    sections.push(round.text);
+    grounds.push(...round.grounds);
+    lookupsRun.push(...round.counts);
+    answerCheck = coachReplyCheckFor(context, question, contributions, grounds);
+    const closed = rounds >= maxLookupRounds;
+    const next = await attempt("lookup", promptFor(undefined, closed), !closed);
+    if (!next) {
+      lookupStopped = true;
+      break;
+    }
+    current = next;
+    record(current);
+  }
+  if (current.answer) return success(current, current.answer);
+  if (lookupStopped) {
+    const interim = interimAnswer();
+    if (interim) return success(current, interim);
+    throw unavailable("provider_response_invalid", null, { repairSkipped });
+  }
+  const repair = current.failure?.repair;
   if (!repair) {
-    throw unavailable(first.failure!.reason, first.failure!.retryAfterSeconds);
+    // A failed lookup call (timeout, refusal, provider error): the interim sentence answers.
+    const interim = rounds > 0 ? interimAnswer() : null;
+    if (interim) return success(current, interim);
+    throw unavailable(current.failure!.reason, current.failure!.retryAfterSeconds);
   }
   const initialRule = { initialRule: repair.issue.rule, initialPath: repair.issue.path };
 
-  const second = await attempt(
-    "repair",
-    buildCoachChatGatewayPrompt(question, context, contextKind, contributions, repair),
-  );
+  const second = await attempt("repair", promptFor(repair, true), false);
   if (!second) {
-    // The repair was never sent, so the first attempt's failure stands.
-    throw unavailable(first.failure!.reason, first.failure!.retryAfterSeconds, {
+    // The repair was never sent, so the earlier failure stands.
+    throw unavailable(current.failure!.reason, current.failure!.retryAfterSeconds, {
       ...initialRule,
       repairSkipped,
     });
   }
   record(second);
-  if (second.answer) return success(second);
+  if (second.answer) return success(second, second.answer);
   const repairIssue = second.failure?.repair?.issue;
   throw unavailable(second.failure!.reason, second.failure!.retryAfterSeconds, {
     ...initialRule,

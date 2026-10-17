@@ -353,7 +353,7 @@ const benchRequest: DataRequest = {
   lookup: lookupNames.exerciseHistory,
   from: "2026-08-01",
   to: "2026-10-14",
-  filter: { exercise: "bench press" },
+  filter: "bench press",
 };
 
 const mealRows = [

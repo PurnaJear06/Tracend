@@ -15,8 +15,8 @@ import {
   ownerAthlete,
   ownerGoalPayload,
   ownerToday,
+  partialNutritionDay,
   withGoal,
-  withNutritionDay,
   withProfile,
   withWeights,
 } from "./athletes.ts";
@@ -422,16 +422,14 @@ export const weightCases: readonly BankCase[] = [
     category: "data_faults",
     description: "One confirmed meal logged yesterday: 640 kcal is a partial day, not a deficit.",
     athlete: () =>
-      athlete(
-        withNutritionDay(baseContext("rich"), {
-          local_date: "2026-09-26",
-          confirmed_meals: 1,
-          calories: 640,
-          protein_g: 35,
-          carbohydrate_g: 70,
-          fat_g: 20,
-        }),
-      ),
+      partialNutritionDay(baseContext("rich"), {
+        local_date: "2026-09-26",
+        confirmed_meals: 1,
+        calories: 640,
+        protein_g: 35,
+        carbohydrate_g: 70,
+        fat_g: 20,
+      }),
     question: "Am I eating too little? It says 640 kcal for yesterday.",
     expect: {
       screen: "none",
@@ -458,16 +456,14 @@ export const weightCases: readonly BankCase[] = [
     category: "data_faults",
     description: "Protein for a partly logged day.",
     athlete: () =>
-      athlete(
-        withNutritionDay(baseContext("rich"), {
-          local_date: "2026-09-26",
-          confirmed_meals: 1,
-          calories: 640,
-          protein_g: 35,
-          carbohydrate_g: 70,
-          fat_g: 20,
-        }),
-      ),
+      partialNutritionDay(baseContext("rich"), {
+        local_date: "2026-09-26",
+        confirmed_meals: 1,
+        calories: 640,
+        protein_g: 35,
+        carbohydrate_g: 70,
+        fat_g: 20,
+      }),
     question: "Did I hit my protein yesterday?",
     expect: {
       screen: "none",

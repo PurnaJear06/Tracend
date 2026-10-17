@@ -243,37 +243,6 @@ Deno.test("watch metrics average measured days only and need 3 days a week for a
   assertStringIncludes(text, "| HRV (ms) | 41.2 (3 d) | 50 (1 d) | — |");
 });
 
-Deno.test("nutrition averages cover logged days and compare with targets", () => {
-  const calc = calculateCoachNumbers({
-    coaching_date: date,
-    nutrition_targets: { calories: 1900, protein_g: 150 },
-    nutrition_daily_28d: [
-      { local_date: daysAgo(1), calories: 1800, protein_g: 140, carbohydrate_g: 200, fat_g: 60 },
-      { local_date: daysAgo(3), calories: 2001, protein_g: 151, carbohydrate_g: 210, fat_g: 70 },
-      { local_date: daysAgo(20), calories: 1500, protein_g: 100, carbohydrate_g: 150, fat_g: 50 },
-    ],
-  })!;
-  assertEquals(calc.nutrition!.last_7_days, {
-    days_logged: 2,
-    calories: 1901,
-    protein_g: 146,
-    carbohydrate_g: 205,
-    fat_g: 65,
-  });
-  assertEquals(calc.nutrition!.last_28_days.days_logged, 3);
-  const text = formatCoachCalculations(calc);
-  assertStringIncludes(
-    text,
-    "- Last 7 days: 2 days logged; per logged day 1901 kcal energy (target 1900, +1), 146 g protein (target 150, -4), 205 g carbohydrate, 65 g fat",
-  );
-  assertStringIncludes(
-    formatCoachCalculations(
-      calculateCoachNumbers({ coaching_date: date, nutrition_daily_28d: [] }),
-    ),
-    "- Last 7 days: no days with confirmed meals",
-  );
-});
-
 Deno.test("the Coach context carries the calculated section instead of a second weight slope", () => {
   const rich = evalProfiles().find((p) => p.id === "rich")!;
   const markdown = formatContextAsMarkdown(rich.context, 96_000);
