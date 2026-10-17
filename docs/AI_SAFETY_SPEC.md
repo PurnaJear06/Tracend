@@ -783,6 +783,28 @@ routes stay available by settings alone for two weeks after the cutover.
 - When a question is ambiguous or needs a detail the context lacks, the coach answers what the data
   supports and asks one short clarifying question, offering likely replies as suggested follow-ups.
   The reply returns with the next turn through the conversation history.
+- **No projection as a goal, no claimed action, short replies (B7, 2026-10).** A trend is history,
+  not a goal: when the active goal has no target the model gives no future body weight, and with a
+  target it estimates toward the athlete's own target only. A deterministic reply check
+  (`_shared/training/goal_phase/guard.ts`) reads every sentence about a future weight (a future
+  cue such as "will", "in 12 weeks", "reach", "down to") and rejects the answer when the weight is
+  below the healthy-BMI floor for the athlete's height (BMI 18.5), or, with no target, beyond
+  today's weight in the direction of the trend. A weight the athlete wrote in their own question
+  and a sentence that warns against a weight ("do not go below") are not claims. The rejection is
+  an ordinary validation failure (`weight_below_healthy_floor`, `projection_without_target`) that
+  gets the one repair with a rule-specific instruction, then the existing unavailable path.
+  Coach has no tools: it never says it changed, saved, updated, logged or set anything, and says
+  what the athlete can do in the app instead; the athlete alone sets a target (Progress, **Set
+  your target**), and Coach asks for one when the goal phase review says `ask_target`. Coach states
+  the window of any change it claims (its context holds a limited window of history) and never
+  says "since you started" or "overall" beyond its data; the goal-phase reference data, which
+  names its own start date, is the one source for change across the whole goal phase. Replies run
+  about 120 words, at most three bullets and one question, longer only when the athlete asks for
+  detail. Goal details are shown to the model only from a short whitelist of free-text note keys,
+  labelled as entered when the goal was written; weights and other measurements in them are never
+  shown. Reference data from a contributor outranks a saved goal detail or an older note when a
+  figure Tracend calculated from the athlete's records disagrees; it never outranks Tracend's
+  rules.
 - Every coach-chat provider uses one shared coach persona (coaching approach, communication style,
   hard boundaries), followed by the null contract and the output accuracy/validation contract so the
   contract's rules take precedence.

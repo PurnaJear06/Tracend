@@ -67,6 +67,7 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 3 | B2 | training-engine | Templates by goal × days × experience; fractional volume | — | B1 | merged | #127 |
 | 3 | B3 | training-engine | Progression from actual sets; hub 1.7; Train shows targets | 23 | B2 | building | |
 | 3 | B6 | training-engine | Screening gate (own words, ACSM 2015 method) | 26 | B1 | merged | #128 |
+| 3 | B7 | training-engine | Goal phase review, athlete-set targets, no projection as a goal in Coach chat | 27 | B2 | review | |
 | 3 | C3 | workout-hr | Heart-rate profile, zones, recovery, sleeping HR (shadow) | 33 | C2 | building | |
 | 3 | D2 | ios-widgets | Today and Lock Screen widgets | — | D1 | todo | |
 | 3 | E2 | research-library | Ingestion, the first 30 sources and the retrieval test set | 42 | E1 | building | |
@@ -737,3 +738,9 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
   yet; a head-to-head against the whole library in the cached prefix); A9 guardrails; A10 memory
   with athlete controls; A11 eval bank gating every Coach change; no agent or memory frameworks.
   A9 (code 19) and A10 (code 20) added.
+- 2026-10-17: B7 added after the owner's Coach chat showed a 15 kg loss reported as "7 kg" and
+  projected into a future weight. Goal phase review in Coach chat (deterministic summary, five
+  outcomes with cited basis), athlete-set targets (migration 27), no projection without a target
+  and none below the healthy-BMI floor, no claimed actions, short replies. Registers the first
+  Contract 7 contributor (`goal_phase`) and changes the coach-chat prompt, so its parity digests
+  are recorded again.

@@ -607,12 +607,18 @@ model quotes these instead of doing its own arithmetic. Windows end on the coach
   HealthKit daily weights only on dates without a body measurement; identical readings count
   once), over 4 weeks (28 days) and 8 weeks (56 days), reported in kg/week. A window needs
   readings on at least 4 days spanning at least 14 days; otherwise no trend is given.
+  **B7:** a reading that cannot be real against its neighbours is excluded before any window is
+  fitted (the rule below) and listed as "Excluded reading" in the section.
 - **Weight projection (labeled estimate):** the current pace is the 4-week trend (the 8-week trend
   when the 4-week one lacks readings). The other window widens the range only when it points the
   same way. Under 0.05 kg/week the weight counts as stable and no date is projected. The section
   lists the weeks to each of the next 10 whole kilograms in the trend's direction (plus a goal
   weight, if one is stored), capped at 104 weeks, and the weight expected in 4, 8, 12 and 26
-  weeks.
+  weeks. **B7:** a trend is history, not a goal, so the "weight in N weeks" rows appear only while
+  the athlete's own target weight is still ahead of the current weight, and no row (kilogram or
+  horizon) goes below the healthy-BMI floor (BMI 18.5 at `height_cm`; with no height the floor is
+  unknown and only the target rule applies). With no target weight the section shows the pace and
+  nothing about a future weight.
 - **Training:** sessions, minutes, completed sets, volume, average RPE and average session length
   for the last 7 days, the previous 7 days and the last 28 days; the week-over-week session and
   volume change; the 28-day pace per week next to the plan's sessions per week.
@@ -623,6 +629,60 @@ model quotes these instead of doing its own arithmetic. Windows end on the coach
   and 28 days, and the difference from each nutrition target.
 - Rounding is half away from zero, like PostgreSQL `round(numeric, n)`, so the averages match the
   SQL ones already in the file.
+
+### Goal phase review (B7, 2026-10)
+
+`supabase/functions/_shared/training/goal_phase/**`. Coach chat saw about six weeks of weight, called
+a 15 kg loss "7 kg" and projected a weight the athlete read as advice. The phase summary and review
+are deterministic and reach Coach as a Contract 7 contributor (`goal_phase`, volatile slot, 2,200
+characters); the model explains the outcome and never sets it.
+
+**Inputs** (`get_goal_phase_inputs_v1`, service role): the active goal (type, the date it was
+activated in the athlete's time zone, target), `height_cm`, and every current weight reading (an
+amended reading is replaced by its amendment; newest 400). The goal's saved `current_weight_kg` is
+never a start weight.
+
+**Implausible readings.** A reading is excluded when it is further from the reading before it and
+the reading after it than `neighbour_kg x (3% + 1.5% x weeks between them)`. An end reading is
+judged against its one nearest believed neighbour. Fewer than three readings are never judged.
+Excluded readings are reported, never silently dropped. The same rule runs in the Coach calculators
+(`weightReadings` in `coach_calculations.ts`).
+
+**Summary.** Phase start is the goal activation date (the first reading when it is unknown). Start
+and current weight are the median of up to three readings within seven days of the first and last
+reading in the phase. Change is current minus start, in kg and as a percentage of the start;
+weeks are first to last reading; the average rate is change over weeks (kg and % of start weight a
+week); the recent rate is the least-squares slope of the last 28 days (at least three readings
+spanning 14 days). BMI is weight over height squared when height is known. Confidence is high
+with eight or more readings over at least four weeks and a known activation date, low when the
+latest reading is older than 14 days or fewer than three readings exist.
+
+**Review outcomes**, first match wins:
+
+1. `target_reached`: the target weight is met within 0.5 kg in the goal's direction.
+2. `consider_maintenance_or_diet_break`: BMI below 18.5, or, while the weight is still falling
+   (at least 0.1 kg a week), any of BMI below 19.5, 16 weeks or more with a loss of at least 5%,
+   12 weeks or more with a loss of at least 10%.
+3. `slow_down`: a loss above 1% of body weight a week after at least three weeks.
+4. `ask_target`: the goal has no weight, body-fat range or physique target.
+5. `continue`.
+
+`needs_target` is true whenever a goal has no target, whatever the outcome, so Coach asks for one
+even beside a safety outcome.
+
+| Value | Basis | Source |
+| --- | --- | --- |
+| BMI floor 18.5 | Bottom of the healthy adult range; targets and projections never go below it | WHO 2004 |
+| 1% of body weight a week | Athletes keeping muscle lose 0.5 to 1% a week; 1.4% a week lost lean mass | Helms 2014; Garthe 2011 |
+| 16 weeks, 5% | A 16-week continuous deficit; intermittent arms lost more; 3 to 5% is clinically meaningful | Byrne 2018; Trexler 2014; Jensen 2014 |
+| 10% at 12 weeks | Top of the 5 to 10% first-goal range | Jensen 2014 |
+| 19.5, 3 weeks, 0.1 kg, 0.5 kg, 3%, 1.5%, 12 weeks, 14 days | Tracend in-house values | listed for owner review in `docs/handoff/training-engine.md` |
+
+Sources and DOIs live in `goal_phase/sources.ts` (each checked against Crossref, 2026-10-17).
+
+**Reply check.** After every Coach answer a deterministic check refuses a sentence about a future
+weight that is below the healthy-BMI floor, or (with no target) beyond today's weight in the
+direction of the trend. See `docs/AI_SAFETY_SPEC.md` section 11.
 
 ### Literature
 
