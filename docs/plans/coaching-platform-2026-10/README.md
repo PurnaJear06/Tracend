@@ -71,11 +71,16 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 3 | D2 | ios-widgets | Today and Lock Screen widgets | — | D1 | todo | |
 | 3 | E2 | research-library | Ingestion, the first 30 sources and the retrieval test set | 42 | E1 | building | |
 | 3 | E3 | research-library | Library inside Coach chat | 43 | A6, E2 | todo | |
+| 3 | A8 | ai-gateway | Coach proposals: Coach proposes a change in chat, rules compute it, the athlete approves with one tap | 18 | A6, B7 | todo | |
 | 4 | B4 | training-engine | Same-day readiness adjustment, one-tap approval | 24 | B3, C3 | todo | |
 | 4 | B5 | training-engine | Deloads, cardio dosing, joint rules, pain check, red flags | 25 | B3 | todo | |
 | 4 | C4 | workout-hr | Watch-workout prompt, load signals for the engine | — | C3 | todo | |
 | 4 | E4 | research-library | Regional modules | 44 | E3 | todo | |
 | 4 | E5 | research-library | Plan explanations citing sources | — | E3, B3 | todo | |
+
+| 5 | L1 | lifestyle | Lifestyle log: alcohol, smoking and vaping, cannabis and other substances (during beta) | 51 | beta start | todo | |
+| 5 | L2 | lifestyle | Hydration: water target and log, Apple Health water | 52 | beta start | todo | |
+| 5 | L3 | lifestyle | Health history: conditions and medications in onboarding (structured, not report analysis) | 53 | beta start | todo | |
 
 **Iteration 1 merge order:** P0 → B0 → A1 → C1 → A2 → E1 → D0 → W1.
 
@@ -556,6 +561,16 @@ heart-rate reserve, and recovery after sets. Sleeping heart rate is computed and
 tables with RLS, pgTAP, privacy export and deletion. A small zones view in the app, and a Contract 7
 contributor (`heart_rate.ts`, not registered yet).
 
+**A8: Coach proposals (round 3, with E3; owner, 2026-10-17).** Coach gets hands with a safety
+check. In chat, Coach may propose a structured change: goal or phase (cut, maintenance, diet break,
+gain) and target, calorie and protein targets, training days or session length, an exercise swap,
+or overall plan intensity. Deterministic rules turn the proposal into the exact numbers and refuse
+anything outside the policy, the standard or the screening outcome; the model never writes a number
+that becomes durable. The athlete sees a card with the before and after and taps Approve or Not now;
+approval creates a new plan or goal version with an audit event and can be undone (Architecture 2
+and 3). Reuse the onboarding proposal versioning, `evaluate_change_eligibility` and B7's goal target
+RPC. Migration code 18.
+
 **Later rounds (recorded now).** E2 builds a retrieval test set with its first 30 sources: about 40
 athlete questions, each with the sources a good answer needs. E3 makes the library shape every Coach
 reply (owner, 2026-10-17): the coaching principles digest from E2 sits in the cached stable prefix of
@@ -566,6 +581,27 @@ if the retrieval test set passes: recall of the expected sources in the top 8, e
 retrieved chunk, and no unsupported claim in the eval; when retrieval is slow or fails, Coach
 answers without it (the Contract 7 host's time limit). Before the external beta, the lead repeats
 U3's device measurements against the recorded budgets.
+
+## Phase 5: during the beta (owner, 2026-10-17)
+
+These ship between beta test rounds, not before the first one. Each is sensitive data: its own
+consent line, RLS, export and deletion, never sent to AI without the athlete's AI consent (a new
+notice when new data goes to the AI provider, AI_SAFETY_SPEC), and non-judgemental wording.
+
+- **L1 lifestyle log.** Alcohol (drinks and time; the calories also count in nutrition; Apple
+  Health has a number-of-alcoholic-beverages type), smoking and vaping (count per day), cannabis
+  and other substances (optional, private, never required). Used only as evidence: it can explain a
+  poor night, a higher resting heart rate or a recovery dip, and lowers confidence. Coach never
+  diagnoses, never advises on drug use beyond health effects, and points to support resources.
+- **L2 hydration.** A daily water target (from the plan, body weight and activity) and a quick log,
+  read from and written to Apple Health water.
+- **L3 health history.** Structured conditions and medications in onboarding, extending B6.
+  Medications matter for coaching: beta-blockers, for example, blunt heart rate and break C3's
+  zones. Uploading or analysing medical reports stays excluded (CLAUDE.md MVP boundary) unless the
+  owner changes that rule.
+- **Candidates for the owner to decide:** menstrual-cycle tracking (Apple Health cycle data;
+  training and recovery effects), caffeine (timing against sleep), illness and sick days, travel
+  and shift work.
 
 ## Review loop (every chunk)
 
@@ -630,3 +666,6 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
   would. E2 adds a coaching principles digest (our own words, about 1,200–1,800 tokens, cited) for
   the cached prefix of Coach chat and the daily decision; E3 retrieves on every Coach turn; E5
   covers plan explanations and the onboarding plan prompt. Rules and validators still bound numbers.
+- 2026-10-17 (owner): A8 Coach proposals added to round 3. Phase 5 (during the beta): L1 lifestyle
+  log (alcohol, smoking, substances), L2 hydration, L3 health history; medical-report analysis stays
+  excluded unless the owner changes the MVP rule.
