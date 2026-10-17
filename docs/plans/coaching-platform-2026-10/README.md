@@ -3,7 +3,7 @@
 **Status:** approved by the owner on 2026-10-15. Iteration 1 (Phase 0 + Phase 1) is merged and
 live; the owner's device check passed on 2026-10-15. Iteration 2 (Phase 2) is merged (2026-10-16); the
 Claude cutover follows `docs/runbooks/phase2-claude-cutover.md`. Iteration 3 (Phase 3) round 1
-(U3, B2, B6) started on 2026-10-17.
+(U3, B2, B6) merged on 2026-10-17; rounds 2 and 3 are next.
 
 This is the single source of truth for every agent working on the program. Read it fully before
 touching code. If this document and an authority doc (`docs/*.md`) disagree, stop and report the
@@ -63,10 +63,10 @@ Strict order between phases. Chunks inside a phase run in parallel. Status value
 | 2 | D1 | ios-widgets | Live Activity with Done / Skip / +30s | — | C1, D0 | merged | #121 |
 | 2 | C2 | workout-hr | Native heart-rate reader, per-set summaries | 32 | C1, D0 | merged | #123 |
 | 2 | B1 | training-engine | Catalog v2 and coaching-standard rule data | 21 | B0 | merged | #118 |
-| 3 | U3 | ui | Launch speed: tabs load on first open, shared reads, photo decode size, measured baseline | — | — | building | |
-| 3 | B2 | training-engine | Templates by goal × days × experience; fractional volume | — | B1 | building | |
+| 3 | U3 | ui | Launch speed: tabs load on first open, shared reads, photo decode size, measured baseline | — | — | merged | #126 |
+| 3 | B2 | training-engine | Templates by goal × days × experience; fractional volume | — | B1 | merged | #127 |
 | 3 | B3 | training-engine | Progression from actual sets; hub 1.7; Train shows targets | 23 | B2 | todo | |
-| 3 | B6 | training-engine | Screening gate (own words, ACSM 2015 method) | 26 | B1 | building | |
+| 3 | B6 | training-engine | Screening gate (own words, ACSM 2015 method) | 26 | B1 | merged | #128 |
 | 3 | C3 | workout-hr | Heart-rate profile, zones, recovery, sleeping HR (shadow) | 33 | C2 | todo | |
 | 3 | D2 | ios-widgets | Today and Lock Screen widgets | — | D1 | todo | |
 | 3 | E2 | research-library | Ingestion and the first 30 sources | — | E1 | todo | |
@@ -571,3 +571,6 @@ None open. (A2's consent-granularity request was resolved by Contract 1 v2.)
   added after the owner's GPT review found every tab loading at launch; E2/E3 gain a retrieval test
   set and a pass gate; a device speed check comes before the external beta. Contract 8 (screening
   outcome) added. Reviews use the Codex CLI on the owner's ChatGPT plan.
+- 2026-10-17: round 1 merged (#125 kickoff, #126 U3, #127 B2, #128 B6) after Codex review fixes:
+  cover-sized photo decoding (U3); a stricter screening expires plans built under a weaker one and
+  approval re-checks the current outcome (B6).
