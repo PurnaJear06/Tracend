@@ -258,6 +258,8 @@ Deno.test("lowering calories to 1,200 is refused: the reason is appended and not
   assertEquals(result.linked, undefined);
   assertEquals(result.body.message.proposal_id, undefined);
   assertStringIncludes(result.body.message.answer, "below your calorie floor");
+  // The lead-in that promised a card is gone: the reply never points at one that is not there.
+  assertEquals(result.body.message.answer.includes("proposal"), false);
   // The appended reason is what was stored, so the thread reloads with it.
   assertStringIncludes(
     String(
@@ -303,7 +305,9 @@ Deno.test("an invalid intent is dropped: the reply is kept and nothing is stored
   assertEquals(result.status, 200);
   assertEquals(result.persisted, undefined);
   assertEquals(result.body.message.proposal_id, undefined);
-  assertStringIncludes(result.body.message.answer, "isn't one I can turn into a plan change");
+  assertStringIncludes(result.body.message.answer, "couldn't turn that into a change");
+  assertEquals(result.body.message.answer.includes("proposal you can approve"), false);
+  assertEquals(result.body.message.answer.includes("requested_calories"), false);
 });
 
 Deno.test("an answer that claims the change was made is repaired, never stored as is", async () => {
@@ -314,4 +318,11 @@ Deno.test("an answer that claims the change was made is repaired, never stored a
   // The fake model repeats the same claim on the repair, so the turn ends without a model answer.
   assertEquals(result.persisted, undefined);
   assert(!String(JSON.stringify(result.stored ?? {})).includes("I've updated"));
+});
+
+Deno.test("a reply that promises a proposal but sends no intent loses the promise", async () => {
+  const result = await turn("Take a diet break", { ...JSON.parse(answerText()) });
+  assertEquals(result.persisted, undefined);
+  assertEquals(result.body.message.proposal_id, undefined);
+  assertEquals(result.body.message.answer, "No change has been put forward.");
 });

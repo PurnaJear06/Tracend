@@ -803,6 +803,14 @@ storage, approval flow and app card. Part 2 (same PR, after A10 merged) wires ch
   `action-update-plan`, and a `proposal_intent` grader on every reply (an unasked intent fails;
   an asked one must parse, be of the right kind and be accepted, or refused with the expected code,
   by the rules for the standard athlete).
+- Review fixes (#148): a note is kept only if it is in the athlete's message; approval re-runs
+  the gates, calorie minimum, catalog and the stored weight and profile checks; the nutrition
+  builder refuses under `see_professional`; persist errors map to distinct reasons by message;
+  `get_coach_proposal_inputs_v1` ends due blocks first (volatile); undo holds the plan to the
+  health check and leaves later profile edits alone; the invalid-intent reply is a fixed sentence;
+  promise sentences are stripped when nothing is stored; replays carry `proposal_id`;
+  `is_valid_coach_training` returns false for a missing mode. Removed: the unused
+  `coach_proposals/index.ts` barrel and `buildFromRawIntent`.
 - Removed or replaced: the persona line "You have no tools", the matching repair wording, the
   bank's `action-update-plan` expectation that Coach says it cannot change the plan (it now
   proposes), and the contract-request entry for part 2.

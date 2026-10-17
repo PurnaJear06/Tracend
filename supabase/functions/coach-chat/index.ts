@@ -269,6 +269,8 @@ export function coachChatReplayResponse(
           missing_data: message.missing_data ?? [],
           safety_state: message.safety_state,
           suggested_follow_ups: [],
+          // The proposal the first attempt introduced, when the turn row carries it.
+          ...(typeof message.proposal_id === "string" ? { proposal_id: message.proposal_id } : {}),
         },
         replayed: true,
       },
@@ -635,6 +637,13 @@ export async function handleCoachChat(
         input.thread_id,
       ).order("created_at");
       replay.body.messages = data ?? [];
+      // The stored reply knows its proposal even when the turn row does not: the replayed answer
+      // shows its card.
+      const replayed = replay.body.message as Record<string, unknown> | undefined;
+      const stored = (data ?? []).find((row: Record<string, unknown>) => row.id === replayed?.id);
+      if (replayed && typeof stored?.proposal_id === "string") {
+        replayed.proposal_id = stored.proposal_id;
+      }
     }
     log.info("coach_chat_replayed", { status: replay.status });
     return reply(replay.status, replay.body);

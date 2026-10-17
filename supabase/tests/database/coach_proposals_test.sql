@@ -1,5 +1,5 @@
 begin;
-select plan(90);
+select plan(108);
 
 -- Coach proposals (migration 18): rules compute a change, Coach stores it as a pending proposal, the
 -- athlete approves it with one tap (a new version and an audit event) and can undo it for seven days.
@@ -76,6 +76,27 @@ create function pg_temp.store(uid uuid, kind text, payload jsonb, basis jsonb,
     payload, basis, ends_on, hours) ->> 'proposal_id')::uuid;
 $$;
 
+-- The same basis, under the moderate health check section 11 records.
+create function pg_temp.basis_m(uid uuid, with_training boolean, with_nutrition boolean,
+  with_goal boolean) returns jsonb language sql as $$
+  select pg_temp.basis(uid, with_training, with_nutrition, with_goal)
+    || '{"screening":"moderate_until_cleared"}'::jsonb;
+$$;
+
+-- A three-day schedule built on one exercise, with the profile it sets.
+create function pg_temp.schedule(slug text, minutes integer) returns jsonb language sql as $$
+  select jsonb_build_object('training', jsonb_build_object('mode', 'new_version',
+    'title', 'Schedule', 'block_weeks', 8,
+    'weekly_structure', (select jsonb_agg(jsonb_build_object('workout_order', n, 'name', 'Day ' || n,
+      'objective', 'Train', 'preferred_weekday', d, 'estimated_minutes', 40,
+      'warm_up_guidance', 'w', 'cool_down_guidance', 'c', 'exercises', jsonb_build_array(
+        jsonb_build_object('exercise_order', 1, 'slug', slug, 'name', 'Exercise', 'sets', 3,
+          'rep_min', 8, 'rep_max', 12, 'target_rpe', 7, 'rest_seconds', 90, 'notes', ''))))
+      from (values (1, 1), (2, 3), (3, 5)) as t(n, d)),
+    'profile', jsonb_build_object('training_days', jsonb_build_array(1, 3, 5),
+      'session_minutes', minutes)));
+$$;
+
 select pg_temp.athlete('a8000000-0000-4000-8000-000000000001', repeat('1', 64));
 select pg_temp.athlete('a8000000-0000-4000-8000-000000000002', repeat('2', 64));
 create temporary table p(name text primary key, id uuid);
@@ -140,6 +161,14 @@ select throws_ok($$select pg_temp.store('a8000000-0000-4000-8000-000000000001', 
       "rep_min":8,"rep_max":12,"target_rpe":7,"rest_seconds":90,"notes":""}]}]}}',
     pg_temp.basis('a8000000-0000-4000-8000-000000000001', true, false, false))$$,
   '22023', 'coach proposal is invalid', 'an exercise outside the catalog is refused');
+select throws_ok($$select pg_temp.store('a8000000-0000-4000-8000-000000000001', 'nutrition_targets',
+    '{"nutrition":{"calories":2000,"protein_g":140,"carbohydrate_g":215,"fat_g":65,"rationale":"x"}}',
+    pg_temp.basis('a8000000-0000-4000-8000-000000000001', false, true, false) || '{"gates":["nutrition_change"]}')$$,
+  '55000', 'not enough logged data for this change', 'a change that needs logged evidence is refused without it');
+select is(private.is_valid_coach_training('{"title":"No mode"}'), false,
+  'a training payload with no mode is invalid, not unknown');
+select is(private.is_valid_coach_proposal_row('training_schedule', '{}', '{}',
+    '{"training":{"title":"No mode"}}'), false, 'and so is a proposal row that carries it');
 
 -- 2. Reading ------------------------------------------------------------------------------------------------
 
@@ -402,6 +431,27 @@ select is(public.undo_coach_proposal_v1((select id from p where name = 'block'))
   'a block that already ended cannot be undone');
 reset role;
 
+-- A block whose last day has passed is never shown as running to the proposal engine.
+insert into p select 'block2', pg_temp.store('a8000000-0000-4000-8000-000000000001', 'temporary_block',
+  jsonb_build_object('training', jsonb_build_object('mode', 'block', 'block_kind', 'temporary_block',
+    'title', 'Second block', 'block_weeks', 1,
+    'ends_on', private.local_date_for('a8000000-0000-4000-8000-000000000001') + 3,
+    'weekly_structure', '[{"workout_order":1,"name":"Home A","objective":"Bodyweight","preferred_weekday":2,
+      "estimated_minutes":30,"warm_up_guidance":"w","cool_down_guidance":"c","exercises":[
+      {"exercise_order":1,"slug":"bodyweight-squat","name":"Bodyweight squat","sets":3,"rep_min":10,"rep_max":15,
+       "target_rpe":7,"rest_seconds":60,"notes":""}]}]'::jsonb)),
+  pg_temp.basis('a8000000-0000-4000-8000-000000000001', true, false, false), private.local_date_for('a8000000-0000-4000-8000-000000000001') + 3);
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a8000000-0000-4000-8000-000000000001';
+select public.respond_to_coach_proposal_v1((select id from p where name = 'block2'), 'approve');
+reset role;
+update public.training_plan_versions set ends_on = private.local_date_for('a8000000-0000-4000-8000-000000000001') - 1
+where user_id = 'a8000000-0000-4000-8000-000000000001' and status = 'active';
+select is(public.get_coach_proposal_inputs_v1('a8000000-0000-4000-8000-000000000001') -> 'plan' ->> 'block_kind', null,
+  'an ended block is not reported as running');
+select is(public.get_coach_proposal_inputs_v1('a8000000-0000-4000-8000-000000000001') -> 'plan' ->> 'ends_on', null,
+  'and the regular plan is the active one');
+
 -- 9. A diet break: the goal and the targets move together ---------------------------------------------------------------
 
 insert into p select 'break', pg_temp.store('a8000000-0000-4000-8000-000000000001', 'goal_or_phase',
@@ -522,8 +572,108 @@ select throws_ok($$select pg_temp.store('a8000000-0000-4000-8000-000000000001', 
     pg_temp.basis('a8000000-0000-4000-8000-000000000001', false, true, false))$$,
   '55000', 'the plan was built before the health check changed', 'nor can one be stored on the old basis');
 select is((select count(*)::integer from public.change_proposals
-    where user_id = 'a8000000-0000-4000-8000-000000000001' and schema_version = '3.0'), 11,
+    where user_id = 'a8000000-0000-4000-8000-000000000001' and schema_version = '3.0'), 12,
   'the athlete has all their proposals');
+-- 11. Approval checks again what the build checked ---------------------------------------------------------------------
+
+insert into p select 'moved', pg_temp.store('a8000000-0000-4000-8000-000000000001', 'nutrition_targets',
+  '{"nutrition":{"calories":2000,"protein_g":140,"carbohydrate_g":215,"fat_g":65,"rationale":"Seven."}}',
+  pg_temp.basis_m('a8000000-0000-4000-8000-000000000001', false, true, false));
+update public.change_proposals set basis = jsonb_set(basis, '{weight_check_kg}', '40')
+where id = (select id from p where name = 'moved');
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a8000000-0000-4000-8000-000000000001';
+select is(public.respond_to_coach_proposal_v1((select id from p where name = 'moved'), 'approve') ->> 'reason',
+  'weight_changed', 'a weight that moved since the proposal was made expires it');
+reset role;
+
+insert into p select 'profile', pg_temp.store('a8000000-0000-4000-8000-000000000001', 'nutrition_targets',
+  '{"nutrition":{"calories":2000,"protein_g":140,"carbohydrate_g":215,"fat_g":65,"rationale":"Eight."}}',
+  pg_temp.basis_m('a8000000-0000-4000-8000-000000000001', false, true, false));
+update public.user_profiles set height_cm = 171 where user_id = 'a8000000-0000-4000-8000-000000000001';
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a8000000-0000-4000-8000-000000000001';
+select is(public.respond_to_coach_proposal_v1((select id from p where name = 'profile'), 'approve') ->> 'reason',
+  'profile_changed', 'so does a profile value the rules read');
+reset role;
+
+insert into p select 'minimum', pg_temp.store('a8000000-0000-4000-8000-000000000001', 'nutrition_targets',
+  '{"nutrition":{"calories":2000,"protein_g":140,"carbohydrate_g":215,"fat_g":65,"rationale":"Nine."}}',
+  pg_temp.basis_m('a8000000-0000-4000-8000-000000000001', false, true, false));
+update public.change_proposals set proposal_payload = jsonb_set(proposal_payload, '{nutrition}',
+  '{"calories":1100,"protein_g":100,"carbohydrate_g":100,"fat_g":30,"rationale":"Low."}')
+where id = (select id from p where name = 'minimum');
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a8000000-0000-4000-8000-000000000001';
+select is(public.respond_to_coach_proposal_v1((select id from p where name = 'minimum'), 'approve') ->> 'reason',
+  'below_minimum', 'calories under the minimum are refused at approval too');
+reset role;
+
+insert into p select 'gate', pg_temp.store('a8000000-0000-4000-8000-000000000001', 'nutrition_targets',
+  '{"nutrition":{"calories":2000,"protein_g":140,"carbohydrate_g":215,"fat_g":65,"rationale":"Ten."}}',
+  pg_temp.basis_m('a8000000-0000-4000-8000-000000000001', false, true, false));
+update public.change_proposals set basis = basis || '{"gates":["nutrition_change"]}'
+where id = (select id from p where name = 'gate');
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a8000000-0000-4000-8000-000000000001';
+select is(public.respond_to_coach_proposal_v1((select id from p where name = 'gate'), 'approve') ->> 'reason',
+  'not_eligible', 'a gate the build required must still pass at approval');
+reset role;
+select is(private.coach_gates_pass('a8000000-0000-4000-8000-000000000001', '[]', current_date), true, 'no gate always passes');
+select is(private.coach_gates_pass('a8000000-0000-4000-8000-000000000001', '["nutrition_change"]', current_date), false,
+  'a gate without the logged evidence does not');
+select is(private.coach_gates_pass('a8000000-0000-4000-8000-000000000001', '["something_else"]', current_date), false,
+  'an unknown gate does not');
+
+insert into p select 'catalog', pg_temp.store('a8000000-0000-4000-8000-000000000001', 'training_schedule',
+  pg_temp.schedule('dumbbell-floor-press', 40), pg_temp.basis_m('a8000000-0000-4000-8000-000000000001', true, false, false));
+update public.exercise_catalog set status = 'retired', retired_at = now()
+where slug = 'dumbbell-floor-press';
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a8000000-0000-4000-8000-000000000001';
+select is(public.respond_to_coach_proposal_v1((select id from p where name = 'catalog'), 'approve') ->> 'reason',
+  'catalog_changed', 'an exercise retired since the proposal was made expires it');
+reset role;
+
+-- Undo holds the earlier plan to the current health check and leaves later profile edits alone.
+insert into p select 'undo_a', pg_temp.store('a8000000-0000-4000-8000-000000000001', 'training_schedule',
+  pg_temp.schedule('goblet-squat', 40), pg_temp.basis_m('a8000000-0000-4000-8000-000000000001', true, false, false));
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a8000000-0000-4000-8000-000000000001';
+select public.respond_to_coach_proposal_v1((select id from p where name = 'undo_a'), 'approve');
+reset role;
+update public.user_profiles set session_minutes = 50 where user_id = 'a8000000-0000-4000-8000-000000000001';
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a8000000-0000-4000-8000-000000000001';
+select is(public.undo_coach_proposal_v1((select id from p where name = 'undo_a')) ->> 'status', 'undone',
+  'the schedule is undone');
+reset role;
+select ok((select max(e.target_rpe) <= 7 from public.planned_exercises e
+    join public.planned_workouts w on w.id = e.planned_workout_id
+    join public.training_plan_versions v on v.id = w.plan_version_id
+    where v.user_id = 'a8000000-0000-4000-8000-000000000001' and v.status = 'active'),
+  'the plan that returns is held to the moderate health check');
+select is((select session_minutes from public.user_profiles where user_id = 'a8000000-0000-4000-8000-000000000001'), 50::smallint,
+  'a value the athlete changed since is left alone');
+select is((select training_days::text from public.user_profiles where user_id = 'a8000000-0000-4000-8000-000000000001'), '{2,5}',
+  'and a value still as the proposal set it goes back');
+
+insert into p select 'undo_b', pg_temp.store('a8000000-0000-4000-8000-000000000001', 'training_schedule',
+  pg_temp.schedule('goblet-squat', 40), pg_temp.basis_m('a8000000-0000-4000-8000-000000000001', true, false, false));
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a8000000-0000-4000-8000-000000000001';
+select public.respond_to_coach_proposal_v1((select id from p where name = 'undo_b'), 'approve');
+reset role;
+insert into public.onboarding_screenings(user_id, exercises_regularly, known_disease, symptoms,
+  cleared_by_professional, outcome, screened_at)
+values ('a8000000-0000-4000-8000-000000000001', true, false, true, false, 'see_professional', now() + interval '1 minute');
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'a8000000-0000-4000-8000-000000000001';
+select throws_ok($$select public.undo_coach_proposal_v1((select id from p where name = 'undo_b'))$$,
+  '55000', 'a health professional must clear this athlete first',
+  'nothing is restored while a health professional must clear the athlete');
+reset role;
+
 delete from public.user_accounts where id = 'a8000000-0000-4000-8000-000000000001';
 select is((select count(*)::integer from public.change_proposals
     where user_id = 'a8000000-0000-4000-8000-000000000001'), 0, 'deleting the account removes them');

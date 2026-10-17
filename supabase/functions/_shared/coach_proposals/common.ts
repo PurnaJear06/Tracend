@@ -176,12 +176,16 @@ export function minutesFor(exercises: readonly { sets: number; rest_seconds: num
   return estimateWorkoutMinutes(exercises);
 }
 
-export function basisOf(state: AthleteState): ProposalBasis {
+export function basisOf(
+  state: AthleteState,
+  gates: ProposalBasis["gates"] = [],
+): ProposalBasis {
   return {
     training_version_id: state.plan?.versionId ?? null,
     nutrition_version_id: state.nutrition?.versionId ?? null,
     goal_id: state.goal?.id ?? null,
     screening: state.screening,
+    gates,
   };
 }
 

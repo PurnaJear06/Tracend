@@ -5,7 +5,9 @@ import { calorieFloorKcal } from "../onboarding/policy.ts";
 import { summarizeGoalPhase } from "../training/goal_phase/summary.ts";
 import { noGoalTarget } from "../training/goal_phase/types.ts";
 import type { ProgressionTarget } from "../training/progression/targets.ts";
-import { buildCoachProposal, buildFromRawIntent } from "./build.ts";
+import { buildCoachProposal } from "./build.ts";
+import { parseCoachProposalIntent } from "./intent.ts";
+import { refusals } from "./refusals.ts";
 import { addDays } from "./common.ts";
 import { baseAnswers, planFor, stateFixture, today, weightReadings } from "./fixtures.ts";
 import { nutritionBasis } from "./nutrition.ts";
@@ -17,6 +19,12 @@ import type {
   NutritionChange,
   TrainingChange,
 } from "./types.ts";
+
+/** The model's raw intent through the parser and the builder, as the service does. */
+function buildFromRawIntent(raw: unknown, state: AthleteState): BuildResult {
+  const parsed = parseCoachProposalIntent(raw);
+  return parsed.ok ? buildCoachProposal(parsed.intent, state) : refusals.invalidIntent();
+}
 
 function proposalOf(result: BuildResult): CoachProposal {
   if (!result.ok) throw new Error(`refused: ${result.code}: ${result.reason}`);
@@ -271,6 +279,8 @@ Deno.test("nothing changes the plan while the health check says see a profession
     { kind: "intensity_or_phase", reason: "fatigue", level: "deload", weeks: 1 },
     { kind: "goal_or_phase", reason: "athlete_request", phase: "maintenance" },
     { kind: "next_session_adjustment", reason: "fatigue", direction: "lighter", session: "next" },
+    { kind: "nutrition_targets", reason: "plateau", direction: "lower" },
+    { kind: "nutrition_targets", reason: "diet_fatigue", direction: "raise" },
   ];
   for (const intent of intents) {
     assertEquals(refusalOf(buildCoachProposal(intent, state)).code, "screening_see_professional");
@@ -985,11 +995,12 @@ Deno.test("every proposal is complete, serialisable and based on the current ver
     assert(proposal.downside.length > 0 && proposal.downside.length <= 1000);
     assert(proposal.evidence.length > 0);
     assert(proposal.expiresInHours > 0 && proposal.expiresInHours <= 72);
-    assertEquals(proposal.basis, {
+    assertEquals({ ...proposal.basis, gates: [] }, {
       training_version_id: state.plan!.versionId,
       nutrition_version_id: state.nutrition!.versionId,
       goal_id: state.goal!.id,
       screening: "cleared",
+      gates: [],
     });
     assertNotEquals(JSON.stringify(proposal.before), JSON.stringify(proposal.after));
     if (proposal.payload.nutrition) assertNutritionObeysRules(proposal.payload.nutrition, state);
@@ -1162,4 +1173,69 @@ Deno.test("a light athlete's floor is the sex minimum", () => {
   }, state));
   assertEquals(refused.code, "below_calorie_floor");
   assertStringIncludes(refused.reason, "1,200 kcal");
+});
+
+Deno.test("a move that pushes harder carries the eligibility gate approval will run again", () => {
+  const plan = stateFixture().plan!;
+  const slug = plan.workouts[0].exercises.find((exercise) =>
+    loadStepKgFor(catalogBySlug.get(exercise.slug!)!) !== null
+  )!.slug!;
+  const state = withMessage("lower to 2100", { progression: [progression(slug, 80, "add_load")] });
+  const gates = (intent: CoachProposalIntent) =>
+    proposalOf(buildCoachProposal(intent, state)).basis.gates;
+  assertEquals(gates({ kind: "nutrition_targets", reason: "plateau", direction: "lower" }), [
+    "nutrition_change",
+  ]);
+  assertEquals(
+    gates({ kind: "nutrition_targets", reason: "diet_fatigue", direction: "raise" }),
+    [],
+  );
+  assertEquals(
+    gates({ kind: "nutrition_targets", reason: "diet_fatigue", direction: "maintenance" }),
+    [],
+  );
+  assertEquals(gates({ kind: "goal_or_phase", reason: "athlete_request", phase: "cut" }), [
+    "nutrition_change",
+  ]);
+  assertEquals(gates({ kind: "goal_or_phase", reason: "diet_fatigue", phase: "diet_break" }), []);
+  assertEquals(
+    gates({ kind: "intensity_or_phase", reason: "plateau", focus: "strength", weeks: 6 }),
+    ["training_change"],
+  );
+  assertEquals(
+    gates({ kind: "intensity_or_phase", reason: "plateau", focus: "size", weeks: 6 }),
+    [],
+  );
+  assertEquals(
+    gates({
+      kind: "next_session_adjustment",
+      reason: "athlete_request",
+      direction: "heavier",
+      session: "next",
+    }),
+    ["training_change"],
+  );
+  assertEquals(
+    gates({
+      kind: "next_session_adjustment",
+      reason: "fatigue",
+      direction: "lighter",
+      session: "next",
+    }),
+    [],
+  );
+  assertEquals(gates({ kind: "training_schedule", reason: "time", daysPerWeek: 4, weeks: 8 }), []);
+});
+
+Deno.test("an invalid intent gets one fixed sentence, never the parser's words", () => {
+  const refused = refusalOf(
+    buildFromRawIntent(
+      { kind: "temporary_block", reason: "travel", setting: "moon" },
+      stateFixture(),
+    ),
+  );
+  assertEquals(refused.code, "invalid_intent");
+  assertEquals(refused.reason, refusals.invalidIntent().reason);
+  assert(!refused.reason.includes("setting"));
+  assert(!refused.reason.includes("vocabulary"));
 });

@@ -21,33 +21,64 @@ export function mayPropose(generation: CoachChatGeneration): boolean {
     generation.answer.safety_state === "allowed";
 }
 
+/** A sentence that tells the athlete a proposal, or its checking, is on the way. */
+const promisesProposal =
+  /\bproposals?\b|\bapprove\b[^.!?]*\bbelow\b|\bTracend (?:checks|works out)\b/i;
+
+/** What the reply says when taking the promise out leaves nothing. */
+export const nothingProposedText = "No change has been put forward.";
+
+/**
+ * The reply with every sentence that promises a proposal removed. Used whenever no proposal was
+ * stored, so the reply never points at a card that is not there.
+ */
+export function withoutProposalPromise(text: string): string {
+  const pieces = text.split(/((?<=[.!?])\s+)/);
+  let kept = "";
+  for (let index = 0; index < pieces.length; index += 2) {
+    if (promisesProposal.test(pieces[index])) continue;
+    kept += pieces[index] + (pieces[index + 1] ?? "");
+  }
+  return kept.trim();
+}
+
+const withText = (answer: CoachChatAnswerV2, text: string): CoachChatAnswerV2 => ({
+  ...answer,
+  answer: text.slice(0, coachChatAnswerLimits.answerMaxLength),
+});
+
 export async function proposeFromChat(
   rpc: ProposalRpc,
   userId: string,
   athleteMessage: string,
   generation: CoachChatGeneration,
 ): Promise<ChatProposalOutcome> {
-  if (!mayPropose(generation)) return { kind: "none", answer: generation.answer };
+  // A referral says nothing about proposals; everything else that stores none must not promise one.
+  if (generation.safety !== undefined) return { kind: "none", answer: generation.answer };
+  const answer = generation.answer;
+  const stripped = withoutProposalPromise(answer.answer);
+  if (!mayPropose(generation)) {
+    return {
+      kind: "none",
+      answer: stripped === answer.answer
+        ? answer
+        : withText(answer, stripped || nothingProposedText),
+    };
+  }
   const result = await proposeCoachChange(rpc, {
     userId,
     intent: generation.proposalIntent,
     athleteMessage,
   });
-  if (result.ok) {
-    return { kind: "proposed", answer: generation.answer, proposalId: result.proposalId };
-  }
-  const answer = generation.answer;
-  const joined = `${answer.answer.trimEnd()}\n\n${result.reason}`;
+  if (result.ok) return { kind: "proposed", answer, proposalId: result.proposalId };
+  // The model's lead-in promised a card; the reason stands in its place.
+  const lead = stripped.slice(
+    0,
+    Math.max(0, coachChatAnswerLimits.answerMaxLength - result.reason.length - 2),
+  );
   return {
     kind: "refused",
     code: result.code,
-    answer: {
-      ...answer,
-      answer: joined.length <= coachChatAnswerLimits.answerMaxLength
-        ? joined
-        : `${
-          answer.answer.slice(0, coachChatAnswerLimits.answerMaxLength - result.reason.length - 2)
-        }\n\n${result.reason}`,
-    },
+    answer: withText(answer, lead ? `${lead}\n\n${result.reason}` : result.reason),
   };
 }

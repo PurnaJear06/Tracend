@@ -2,9 +2,7 @@
 // proposal (every number computed by rules) or a plain refusal. Nothing here reads a clock, a
 // database or a model.
 import { buildGoalOrPhase } from "./goal.ts";
-import { parseCoachProposalIntent } from "./intent.ts";
 import { buildNutritionTargets } from "./nutrition.ts";
-import { refusals } from "./refusals.ts";
 import {
   buildExerciseSwap,
   buildIntensityOrPhase,
@@ -31,12 +29,4 @@ export function buildCoachProposal(intent: CoachProposalIntent, state: AthleteSt
     case "next_session_adjustment":
       return buildNextSessionAdjustment(intent, state);
   }
-}
-
-/** Parses the model's raw intent, then builds. An intent outside the vocabulary is refused. */
-export function buildFromRawIntent(raw: unknown, state: AthleteState): BuildResult {
-  const parsed = parseCoachProposalIntent(raw);
-  return parsed.ok
-    ? buildCoachProposal(parsed.intent, state)
-    : refusals.invalidIntent(parsed.problem);
 }

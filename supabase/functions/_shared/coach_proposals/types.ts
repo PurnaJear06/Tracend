@@ -312,6 +312,11 @@ export type ProposalBasis = Readonly<{
   nutrition_version_id: string | null;
   goal_id: string | null;
   screening: ScreeningOutcome;
+  /**
+   * The change-eligibility gates the build required (nutrition_change, training_change). Approval
+   * runs them again and expires the proposal when one no longer passes.
+   */
+  gates: readonly ("nutrition_change" | "training_change")[];
 }>;
 
 export type CoachProposal = Readonly<{
@@ -369,6 +374,8 @@ export const refusalCodes = [
   "invalid_intent",
   "profile_incomplete",
   "plan_changed",
+  "screening_changed",
+  "evidence_changed",
 ] as const;
 export type RefusalCode = typeof refusalCodes[number];
 

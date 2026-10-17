@@ -184,6 +184,7 @@ export function buildNutritionTargets(
   intent: Extract<CoachProposalIntent, { kind: "nutrition_targets" }>,
   state: AthleteState,
 ): BuildResult {
+  if (state.screening === "see_professional") return refusals.seeProfessional();
   if (!state.nutrition) return refusals.noNutrition();
   const basis = nutritionBasis(state);
   if ("ok" in basis) return basis;
@@ -250,7 +251,7 @@ export function buildNutritionTargets(
     before: { rows: nutritionRowsBefore(state.nutrition) },
     after: { rows: nutritionRowsAfter(change) },
     payload: { nutrition: change },
-    basis: basisOf(state),
+    basis: basisOf(state, gated ? ["nutrition_change"] : []),
   };
   return { ok: true, proposal };
 }

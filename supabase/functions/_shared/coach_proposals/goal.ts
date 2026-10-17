@@ -240,7 +240,7 @@ export function buildGoalOrPhase(
       ],
     },
     payload: { goal: change, nutrition },
-    basis: basisOf(state),
+    basis: basisOf(state, gated ? ["nutrition_change"] : []),
   };
   return { ok: true, proposal };
 }

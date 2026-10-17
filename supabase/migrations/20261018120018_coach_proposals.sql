@@ -47,7 +47,7 @@ alter table public.change_proposals add constraint change_proposals_snapshot_req
 -- stored; an exercise from an older plan may have no slug.
 create function private.is_valid_coach_training(training jsonb)
 returns boolean language sql immutable set search_path = '' as $$
-  select jsonb_typeof(training) = 'object'
+  select coalesce(jsonb_typeof(training) = 'object'
     and training ->> 'mode' in ('new_version', 'block', 'end_block')
     and case training ->> 'mode'
       when 'end_block' then true
@@ -105,7 +105,7 @@ returns boolean language sql immutable set search_path = '' as $$
         )
         and (select count(distinct w ->> 'workout_order') = count(*)
           from jsonb_array_elements(training -> 'weekly_structure') w)
-    end;
+    end, false);
 $$;
 revoke all on function private.is_valid_coach_training(jsonb) from public, anon, authenticated;
 
@@ -323,6 +323,21 @@ revoke all on function private.clone_plan_version(uuid, uuid, uuid, text)
 
 -- 7. Temporary blocks end -----------------------------------------------------------------------
 
+-- Holds a restored plan to the athlete's current health check: under moderate_until_cleared no
+-- exercise asks for more than effort 7. Used wherever an earlier plan returns (a block ends, an
+-- undo), because that plan may have been approved under a weaker check.
+create function private.hold_plan_to_screening(p_user uuid, p_version uuid)
+returns void language plpgsql set search_path = '' as $$
+begin
+  if private.current_screening_outcome(p_user) = 'moderate_until_cleared' then
+    update public.planned_exercises e set target_rpe = least(e.target_rpe, 7)
+    from public.planned_workouts w
+    where w.plan_version_id = p_version and e.planned_workout_id = w.id
+      and e.user_id = p_user and e.target_rpe is not null;
+  end if;
+end $$;
+revoke all on function private.hold_plan_to_screening(uuid, uuid) from public, anon, authenticated;
+
 -- Ends one active block: the version it replaced returns as a new version. Under a stricter health
 -- check than the one the plan was approved under, the returning plan is held to moderate effort.
 create function private.end_plan_block(p_version uuid)
@@ -337,12 +352,7 @@ begin
   restored_id := private.clone_plan_version(
     block.restores_version_id, block.user_id, block.source_proposal_id,
     'Your temporary change ended, so your regular plan is back.');
-  if private.current_screening_outcome(block.user_id) = 'moderate_until_cleared' then
-    update public.planned_exercises e set target_rpe = least(e.target_rpe, 7)
-    from public.planned_workouts w
-    where w.plan_version_id = restored_id and e.planned_workout_id = w.id
-      and e.user_id = block.user_id and e.target_rpe is not null;
-  end if;
+  perform private.hold_plan_to_screening(block.user_id, restored_id);
   insert into public.audit_events(user_id, action_code, target_type, target_id, outcome, metadata)
   values (block.user_id, 'coach_proposal_block_ended', 'training_plan_version', restored_id,
     'succeeded', jsonb_build_object('schema_version', '1.0', 'ended_version_id', block.id,
@@ -393,6 +403,55 @@ returns uuid language sql stable set search_path = '' as $$
 $$;
 revoke all on function private.active_goal_id(uuid) from public, anon, authenticated;
 
+-- The newest weight reading (an amended reading is replaced by its amendment), or null.
+create function private.latest_weight_kg(p_user uuid)
+returns numeric language sql stable set search_path = '' as $$
+  select r.weight_kg from (
+    select bm.measured_on as taken_on, bm.created_at as taken_at, bm.weight_kg
+    from public.body_measurements bm
+    where bm.user_id = p_user and bm.weight_kg is not null
+      and not exists (select 1 from public.body_measurements newer
+        where newer.user_id = bm.user_id and newer.amended_from_id = bm.id)
+    union all
+    select dhs.local_date, dhs.last_synced_at, dhs.weight_kg
+    from public.daily_health_summaries dhs
+    where dhs.user_id = p_user and dhs.weight_kg is not null
+  ) r order by r.taken_on desc, r.taken_at desc limit 1;
+$$;
+revoke all on function private.latest_weight_kg(uuid) from public, anon, authenticated;
+
+-- The profile fields the rules read. A proposal stores them when it is made and expires when
+-- any has changed by the time it is answered.
+create function private.coach_profile_check(p_user uuid)
+returns jsonb language sql stable set search_path = '' as $$
+  select to_jsonb(x) from (
+    select p.sex, p.height_cm, p.birth_year, p.daily_activity, p.experience_level, p.equipment,
+      p.avoid_patterns, p.training_days, p.session_minutes
+    from public.user_profiles p where p.user_id = p_user) x;
+$$;
+revoke all on function private.coach_profile_check(uuid) from public, anon, authenticated;
+
+-- True when every change-eligibility gate a proposal was built under still passes.
+create function private.coach_gates_pass(p_user uuid, p_gates jsonb, p_date date)
+returns boolean language plpgsql stable set search_path = '' as $$
+declare
+  eligibility jsonb;
+  gate text;
+begin
+  if p_gates is null or jsonb_typeof(p_gates) <> 'array' or jsonb_array_length(p_gates) = 0 then
+    return true;
+  end if;
+  eligibility := public.evaluate_change_eligibility(p_user, p_date);
+  for gate in select jsonb_array_elements_text(p_gates) loop
+    if gate not in ('nutrition_change', 'training_change')
+      or coalesce((eligibility -> gate ->> 'eligible')::boolean, false) is not true then
+      return false;
+    end if;
+  end loop;
+  return true;
+end $$;
+revoke all on function private.coach_gates_pass(uuid, jsonb, date) from public, anon, authenticated;
+
 create function public.persist_coach_proposal_v1(
   p_user_id uuid,
   p_kind text,
@@ -415,6 +474,7 @@ declare
   new_expires timestamptz;
   nutrition jsonb := p_payload -> 'nutrition';
   summary_training jsonb;
+  stored_basis jsonb;
 begin
   if p_user_id is null or not exists (select 1 from public.user_accounts where id = p_user_id) then
     raise exception 'account not found' using errcode = 'P0002';
@@ -472,6 +532,15 @@ begin
     raise exception 'the plan changed while the proposal was built' using errcode = '55000';
   end if;
 
+  if not private.coach_gates_pass(p_user_id, p_basis -> 'gates', private.local_date_for(p_user_id))
+  then
+    raise exception 'not enough logged data for this change' using errcode = '55000';
+  end if;
+  -- What the rules checked, kept with the proposal: approval refuses once any has moved.
+  stored_basis := p_basis || jsonb_build_object(
+    'weight_check_kg', private.latest_weight_kg(p_user_id),
+    'profile_check', private.coach_profile_check(p_user_id));
+
   -- A newer proposal replaces an open one that would change the same thing.
   update public.change_proposals set status = 'expired'
   where user_id = p_user_id and status = 'pending' and schema_version = '3.0'
@@ -490,7 +559,7 @@ begin
     p_user_id, null, '3.0', summary_training, coalesce(nutrition - 'rationale', '{}'::jsonb),
     p_evidence, p_rationale, p_benefit, p_downside, p_confidence,
     private.local_date_for(p_user_id), new_expires,
-    p_kind, p_payload, p_before, p_after, p_basis, p_source_message_id, p_ends_on
+    p_kind, p_payload, p_before, p_after, stored_basis, p_source_message_id, p_ends_on
   ) returning id into new_id;
 
   insert into public.audit_events(user_id, action_code, target_type, target_id, outcome, metadata)
@@ -641,6 +710,19 @@ begin
       where n.user_id = auth.uid() and n.status = 'active') then 'nutrition_changed'
     when goal_change is not null and proposal.basis ->> 'goal_id' is distinct from
       private.active_goal_id(auth.uid())::text then 'goal_changed'
+    when not private.coach_gates_pass(auth.uid(), proposal.basis -> 'gates', today)
+      then 'not_eligible'
+    when nutrition_change is not null
+      and (nutrition_change ->> 'calories')::integer < private.calorie_minimum_for(auth.uid())
+      then 'below_minimum'
+    when training is not null and training ->> 'mode' <> 'end_block'
+      and not private.coach_training_uses_catalog(training) then 'catalog_changed'
+    when proposal.basis -> 'profile_check' is distinct from
+      private.coach_profile_check(auth.uid()) then 'profile_changed'
+    when proposal.basis ->> 'weight_check_kg' is not null
+      and coalesce(abs(private.latest_weight_kg(auth.uid())
+        - (proposal.basis ->> 'weight_check_kg')::numeric)
+        > 0.01 * (proposal.basis ->> 'weight_check_kg')::numeric, true) then 'weight_changed'
     when training ->> 'mode' = 'block' and (training ->> 'ends_on')::date < today then 'block_over'
     when training ->> 'mode' in ('new_version', 'block') and exists (
       select 1 from public.training_plan_versions v
@@ -711,6 +793,9 @@ begin
               from jsonb_array_elements_text(training -> 'profile' -> 'training_days') value),
             session_minutes = (training -> 'profile' ->> 'session_minutes')::smallint
           where user_id = auth.uid();
+          applied := applied || jsonb_build_object('profile_after', jsonb_build_object(
+            'training_days', training -> 'profile' -> 'training_days',
+            'session_minutes', training -> 'profile' -> 'session_minutes'));
         end if;
       end if;
       applied := applied || jsonb_build_object('training_version_id', new_version_id);
@@ -849,15 +934,28 @@ begin
   applied := proposal.applied_changes;
 
   if applied ? 'previous_training_version_id' then
+    if private.current_screening_outcome(auth.uid()) = 'see_professional' then
+      raise exception 'a health professional must clear this athlete first' using errcode = '55000';
+    end if;
     restored_training := private.clone_plan_version(
       (applied ->> 'previous_training_version_id')::uuid, auth.uid(), proposal.id,
       'You undid a change from Coach, so your earlier plan is back.');
-    if applied ? 'profile_before' then
-      update public.user_profiles set
-        training_days = array(select value::smallint
-          from jsonb_array_elements_text(applied -> 'profile_before' -> 'training_days') value),
-        session_minutes = (applied -> 'profile_before' ->> 'session_minutes')::smallint
-      where user_id = auth.uid();
+    -- The earlier plan may have been approved under a weaker health check.
+    perform private.hold_plan_to_screening(auth.uid(), restored_training);
+    -- A profile value the athlete changed since is theirs: only values still as the proposal set
+    -- them go back.
+    if applied ? 'profile_before' and applied ? 'profile_after' then
+      update public.user_profiles p set
+        training_days = case
+          when to_jsonb(p.training_days) = applied -> 'profile_after' -> 'training_days'
+          then array(select value::smallint
+            from jsonb_array_elements_text(applied -> 'profile_before' -> 'training_days') value)
+          else p.training_days end,
+        session_minutes = case
+          when to_jsonb(p.session_minutes) = applied -> 'profile_after' -> 'session_minutes'
+          then (applied -> 'profile_before' ->> 'session_minutes')::smallint
+          else p.session_minutes end
+      where p.user_id = auth.uid();
     end if;
   end if;
 
@@ -911,7 +1009,7 @@ grant execute on function public.undo_coach_proposal_v1(uuid) to authenticated;
 -- change-eligibility gates and whether today's session is done. Weight readings and next-session
 -- targets come from get_goal_phase_inputs_v1 and get_progression_summary_v1. Service role only.
 create function public.get_coach_proposal_inputs_v1(p_user_id uuid)
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
+returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   today date := private.local_date_for(p_user_id);
   eligibility jsonb;
@@ -919,6 +1017,8 @@ begin
   if p_user_id is null or not exists (select 1 from public.user_accounts where id = p_user_id) then
     raise exception 'account not found' using errcode = 'P0002';
   end if;
+  -- A block whose last day has passed is ended first, so it is never shown or enforced as running.
+  perform private.end_ended_plan_blocks(p_user_id);
   eligibility := public.evaluate_change_eligibility(p_user_id, today);
   return jsonb_build_object(
     'schema_version', '1.0',
@@ -1010,7 +1110,8 @@ returns jsonb language sql stable security definer set search_path = '' as $$
         'started_on', v.effective_date, 'ends_on', v.ends_on)
       from public.training_plan_versions v
       join public.training_plans tp on tp.id = v.plan_id and tp.user_id = v.user_id
-      where v.user_id = p_user_id and v.status = 'active' and v.ends_on is not null),
+      where v.user_id = p_user_id and v.status = 'active' and v.ends_on is not null
+        and v.ends_on >= p_local_date),
     'phase', (select jsonb_build_object('phase', g.details ->> 'phase',
         'started_on', g.details ->> 'phase_started_on', 'ends_on', g.details ->> 'phase_ends_on')
       from public.user_goals g where g.id = private.active_goal_id(p_user_id)

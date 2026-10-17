@@ -159,6 +159,19 @@ export const refusals = {
       "plan_changed",
       "Your plan changed while I was preparing this. Ask again and I'll start from the latest.",
     ),
-  invalidIntent: (problem: string) =>
-    refuse("invalid_intent", `That request isn't one I can turn into a plan change (${problem}).`),
+  screeningChanged: () =>
+    refuse(
+      "screening_changed",
+      "Your health check changed while I was preparing this, so I can't put it forward. Once it's up to date, ask again.",
+    ),
+  evidenceChanged: () =>
+    refuse(
+      "evidence_changed",
+      "The logged data this change rests on changed while I was preparing it. Ask again and I'll check it afresh.",
+    ),
+  invalidIntent: () =>
+    refuse(
+      "invalid_intent",
+      "I couldn't turn that into a change I can put forward. Tell me what you'd like to change and I'll try again.",
+    ),
 } as const;

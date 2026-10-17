@@ -33,6 +33,7 @@ import type {
   CoachProposal,
   CoachProposalIntent,
   DisplayRow,
+  ProposalBasis,
   ProposalEvidence,
   TrainingChange,
   TrainingPayloadExercise,
@@ -98,6 +99,7 @@ function build(
     evidence?: ProposalEvidence[];
     endsOn?: string | null;
     expiresInHours?: number;
+    gates?: ProposalBasis["gates"];
     beforeRows: DisplayRow[];
     afterRows: DisplayRow[];
     beforeSessions: ReturnType<typeof sessionSummary>;
@@ -120,7 +122,7 @@ function build(
       before: { rows: fields.beforeRows, sessions: fields.beforeSessions },
       after: { rows: fields.afterRows, sessions: fields.afterSessions },
       payload: { training: fields.change },
-      basis: basisOf(state),
+      basis: basisOf(state, fields.gates ?? []),
     },
   };
 }
@@ -526,6 +528,7 @@ export function buildIntensityOrPhase(
       : "A focused block on volume for muscle size.",
     downside: "Other qualities get less attention during the phase.",
     confidence: "medium",
+    gates: focus === "strength" ? ["training_change"] : [],
     endsOn,
     beforeRows: [
       {
@@ -669,6 +672,7 @@ export function buildNextSessionAdjustment(
       : "A heavier session is harder to recover from; stop sets early if form slips.",
     confidence: "medium",
     expiresInHours: proposalExpiryHours.next_session,
+    gates: intent.direction === "heavier" ? ["training_change"] : [],
     endsOn: date,
     evidence: [{
       code: "LOGGED_SETS",

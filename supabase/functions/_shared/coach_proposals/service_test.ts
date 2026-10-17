@@ -7,7 +7,9 @@ const user = "00000000-0000-4000-8000-0000000000aa";
 
 type Call = { name: string; params: Record<string, unknown> };
 
-function fakeRpc(overrides: Record<string, { data?: unknown; error?: { code?: string } }> = {}) {
+function fakeRpc(
+  overrides: Record<string, { data?: unknown; error?: { code?: string; message?: string } }> = {},
+) {
   const data = proposalRpcPayloads();
   const calls: Call[] = [];
   const rpc: ProposalRpc = (name, params) => {
@@ -168,4 +170,45 @@ Deno.test("a plan that changed while the proposal was built is reported, other s
   );
   assert(!malformed.ok);
   assertEquals(malformed.code, "unavailable");
+});
+
+Deno.test("a note is kept only when it is the athlete's own words", async () => {
+  const note = (athleteMessage: string, text: string) => {
+    const { rpc, calls } = fakeRpc();
+    return proposeCoachChange(rpc, {
+      userId: user,
+      intent: { ...lowerIntent, note: text },
+      athleteMessage,
+    }).then(() =>
+      String(calls.find((call) => call.name === "persist_coach_proposal_v1")!.params.p_rationale)
+    );
+  };
+  assertStringIncludes(
+    await note("I have slept   badly this week", "Slept badly"),
+    '"slept badly"',
+  );
+  const invented = await note("Please lower my calories", "feeling worn down");
+  assertEquals(invented.includes("worn down"), false);
+  assertEquals(invented.includes("In your words"), false);
+});
+
+Deno.test("a refused store is told by what the database said", async () => {
+  const stored = async (message: string) => {
+    const result = await proposeCoachChange(
+      fakeRpc({ persist_coach_proposal_v1: { error: { code: "55000", message } } }).rpc,
+      { userId: user, intent: lowerIntent, athleteMessage: "x" },
+    );
+    assert(!result.ok);
+    return result.code;
+  };
+  assertEquals(
+    await stored("a health professional must clear this athlete first"),
+    "screening_see_professional",
+  );
+  assertEquals(
+    await stored("the plan was built before the health check changed"),
+    "screening_changed",
+  );
+  assertEquals(await stored("not enough logged data for this change"), "evidence_changed");
+  assertEquals(await stored("the plan changed while the proposal was built"), "plan_changed");
 });

@@ -230,9 +230,21 @@ holds at every step:
    it was computed from, and that the health check has not become stricter, then writes a **new
    version** with `source_proposal_id`, the answer and an **audit event**. The Coach reply may not
    claim a change was made; it may say a proposal is waiting for the athlete.
+   Approval also runs again what the build checked: the eligibility gates the build required, the
+   calorie minimum, that every exercise is still in the catalog, that the profile fields and the
+   newest weight (within 1%) are as they were when the proposal was made. A proposal that no longer
+   passes is marked expired with a plain reason and never applied.
+
 6. **Undoable and self-ending.** Undo (seven days) restores what approval replaced as new versions;
    it is refused once a later change replaced them. A temporary block carries its last day and the
    version to restore; the regular plan returns by itself the day after.
+
+**Words in a proposal.** A free-text `note` is quoted as "in your words" only when it is a piece
+of the athlete's own message (checked in `service.ts` before anything is built); otherwise it is
+dropped. A refused or invalid intent gets a fixed plain sentence, never the parser's wording. When
+no proposal is stored, every sentence of the reply that promises one ("Here's a proposal you can
+approve below", "Tracend works out…") is removed, and the refusal's reason takes its place, so a
+reply never points at a card that is not there.
 
 **In chat.** On the gateway route the answer may carry an optional `proposal_intent` (closed
 vocabulary above; the schema enumerates the kinds, reasons and settings, the parser checks every

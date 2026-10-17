@@ -909,7 +909,19 @@ longer current. A newer pending proposal replaces an open one that would change 
 All return `schema_version "1.0"`. Approval records a proposal as `expired` (and reports the
 reason) when it is past `expires_at`, when the active plan, nutrition or goal is no longer the one
 in `basis`, when a temporary block's last day has passed, or when a block is already running; it
-raises 55000 when the health check became stricter since the proposal was built. Undo reports
+also runs again what the build checked. `basis.gates` names the change-eligibility gates the build
+required (`nutrition_change`, `training_change`), and both persist and approval run them; persist
+stores `weight_check_kg` (the newest weight reading) and `profile_check` (the profile fields the
+rules read), and approval expires the proposal when the weight has moved by more than 1% or any
+profile field differs. Approval also re-checks the calorie minimum and that every catalog slug is
+still active. Reasons: `expired`, `plan_changed`, `nutrition_changed`, `goal_changed`,
+`not_eligible`, `below_minimum`, `catalog_changed`, `profile_changed`, `weight_changed`,
+`block_over`, `block_running`. It raises 55000 when the health check became stricter since the
+proposal was built. Undo restores the profile only for values still as the proposal set them
+(`applied_changes.profile_after`), holds the returning plan to the current health check (effort 7 or
+lower under `moderate_until_cleared`, as when a block ends) and raises 55000 under
+`see_professional`. `get_coach_proposal_inputs_v1` ends a due block first, so an ended block is never
+read as running. Undo reports
 `superseded` when a later change replaced the versions the proposal created, and
 `undo_window_ended` after seven days, instead of raising. Audit events: `coach_proposal_created`,
 `_accepted`, `_declined`, `_changed`, `_expired`, `_undone` and `coach_proposal_block_ended`.
