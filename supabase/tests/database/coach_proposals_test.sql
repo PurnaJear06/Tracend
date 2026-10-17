@@ -405,7 +405,7 @@ reset role;
 -- 9. A diet break: the goal and the targets move together ---------------------------------------------------------------
 
 insert into p select 'break', pg_temp.store('a8000000-0000-4000-8000-000000000001', 'goal_or_phase',
-  jsonb_build_object('goal', jsonb_build_object('goal_type', 'recomposition', 'phase', 'diet_break',
+  jsonb_build_object('goal', jsonb_build_object('goal_type', 'muscle_gain', 'phase', 'diet_break',
       'phase_started_on', private.local_date_for('a8000000-0000-4000-8000-000000000001'),
       'phase_ends_on', private.local_date_for('a8000000-0000-4000-8000-000000000001') + 13),
     'nutrition', '{"calories":2200,"protein_g":140,"carbohydrate_g":255,"fat_g":65,"rationale":"Maintenance."}'::jsonb),
