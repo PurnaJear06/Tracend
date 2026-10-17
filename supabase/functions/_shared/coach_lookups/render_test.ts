@@ -33,6 +33,46 @@ Deno.test("exercise history: dated rows, the plan, and Tracend's next target", (
   );
 });
 
+Deno.test("an assisted exercise reads as help: the least help is the top set and there is no one-rep max", () => {
+  const { text } = renderLookup(
+    request("exercise_history", "2026-08-01", "2026-09-27", "pull-up"),
+    {
+      ...exerciseHistoryPayload,
+      sessions: [
+        {
+          local_date: "2026-09-01",
+          name: "Assisted pull-up",
+          assisted: true,
+          top_load_kg: 20,
+          top_reps: 8,
+          sets: 3,
+          e1rm_kg: null,
+          min_rir: 2,
+        },
+        {
+          local_date: "2026-09-08",
+          name: "Assisted pull-up",
+          assisted: true,
+          top_load_kg: 0,
+          top_reps: 6,
+          sets: 3,
+          e1rm_kg: null,
+          min_rir: 1,
+        },
+      ],
+      planned: [],
+      next_targets: [],
+    },
+  );
+  assertStringIncludes(
+    text,
+    "2026-09-01 Assisted pull-up (assisted): least help 20 kg help x 8, 3 sets",
+  );
+  assertStringIncludes(text, "2026-09-08 Assisted pull-up (assisted): least help unassisted x 6");
+  assert(!text.includes("one-rep max"));
+  assert(!text.includes("heaviest"));
+});
+
 Deno.test("workouts: planned against logged sets with load, reps in reserve and heart rate", () => {
   const { text } = renderLookup(request("workouts", "2026-10-01", "2026-10-17"), workoutsPayload);
   assertStringIncludes(text, "- 2026-10-14 Leg day, 58 min, effort 8");

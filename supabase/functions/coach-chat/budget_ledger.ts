@@ -67,9 +67,14 @@ export class CoachChatBudgetLedger {
     return true;
   }
 
-  /** A request of this attempt may have been billed with no usage known: its place stays open. */
+  /**
+   * A request of this attempt kind may have been billed with no usage known: its place stays open.
+   * Only the newest place of that kind is the request in flight; an earlier one (the first lookup
+   * round, when the second timed out) was answered and settles with the rest.
+   */
   keepAttempt(attempt: CoachChatAttempt): void {
-    for (const place of this.#places) if (place.attempt === attempt) place.budget.keep();
+    const inFlight = this.#places.findLast((place) => place.attempt === attempt);
+    inFlight?.budget.keep();
   }
 
   /** Every place stays open, as when the turn's cost could not be recorded. */

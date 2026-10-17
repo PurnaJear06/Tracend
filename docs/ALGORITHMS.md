@@ -816,7 +816,7 @@ general = change_review_allowed  if training_eligible OR nutrition_eligible
 | Baselines function   | `engine_version`       | `baseline-v2`|
 | Daily metrics        | `feature_engine_version` | `daily-v2`  |
 | Daily scoring JSON   | `schema_version`       | `2.2`        |
-| Eligibility          | `policy_version`       | `eligibility-v1` |
+| Eligibility          | `policy_version`       | `eligibility-v2` (A10: nutrition adherence averages complete logging days; v1 rows stay as written) |
 | Training hub RPC     | `schema_version`       | `1.5`        |
 | Daily brief RPC      | `schema_version`       | `1.6`        |
 | Onboarding plan      | `policy_version`       | `onboarding-policy-v2` |

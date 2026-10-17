@@ -69,6 +69,41 @@ Deno.test("a session already logged today is not offered again: the next one is"
   assertStringIncludes(text, "The next planned session: Upper day (Sunday");
 });
 
+Deno.test("a workout finished earlier this week is not prescribed again in today's slot", () => {
+  // Push day (Saturday's slot) was done on Thursday ahead of time.
+  const payload = ownersPlanPayload();
+  (payload.completed_this_week as unknown[]).push({
+    planned_workout_id: "w-push",
+    local_date: "2026-10-15",
+  });
+  const text = renderTrainingPlan(parsePlanState(payload))!;
+  assertStringIncludes(
+    text,
+    "Today's planned session, Push day, was already done this week (2026-10-15); it is not prescribed again.",
+  );
+  assertStringIncludes(text, "The next planned session: Upper day (Sunday");
+  assert(!text.includes("Today's planned session: Push day"));
+  assert(!text.includes("1. Barbell bench press"));
+});
+
+Deno.test("with nothing later in the week, a session missed earlier is offered before next week's", () => {
+  const payload = ownersPlanPayload();
+  payload.weekday = 7;
+  payload.local_date = "2026-10-18";
+  // Pull (Monday) and Leg (Wednesday) are done; Push (Saturday) was missed; Upper is today's slot.
+  (payload.completed_this_week as unknown[]).push({
+    planned_workout_id: "w-upper",
+    local_date: "2026-10-18",
+  });
+  const focus = pickFocusSession(parsePlanState(payload)!);
+  assertEquals(focus.session?.name, "Push day");
+  assertEquals(focus.missed, true);
+  assertStringIncludes(
+    renderTrainingPlan(parsePlanState(payload))!,
+    "A session from earlier this week is still undone: Push day",
+  );
+});
+
 Deno.test("a rest day points at the next session, and the end of the week at next week's first", () => {
   const rest = parsePlanState({ ...ownersPlanPayload(), weekday: 2 })!;
   // Leg day (Wednesday) is already done this week, so the next one is Saturday's.

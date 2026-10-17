@@ -74,7 +74,7 @@
     }
   },
   "eligibility_jsonb": {
-    "eligibility_version": "eligibility-v1",
+    "eligibility_version": "eligibility-v2",
     "training_change": {
       "eligible": false,
       "reason": "insufficient_evidence",

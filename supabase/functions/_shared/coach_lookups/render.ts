@@ -62,13 +62,22 @@ function workouts(body: Json): { lines: string[]; rows: number } {
 
 function exerciseHistory(body: Json): { lines: string[]; rows: number } {
   const sessions = list(body.sessions);
-  const lines = sessions.map((session) =>
-    `- ${val(session.local_date)} ${val(session.name)}: heaviest set ${
+  const lines = sessions.map((session) => {
+    if (session.assisted === true) {
+      // Machine help is the load: the top set is the least help, and there is no one-rep max.
+      const help = Number(session.top_load_kg) === 0
+        ? "unassisted"
+        : `${val(session.top_load_kg)} kg help`;
+      return `- ${val(session.local_date)} ${val(session.name)} (assisted): least help ${help} x ${
+        val(session.top_reps)
+      }, ${val(session.sets)} sets, fewest reps in reserve ${val(session.min_rir)}`;
+    }
+    return `- ${val(session.local_date)} ${val(session.name)}: heaviest set ${
       has(session.top_load_kg) ? `${session.top_load_kg} kg x ` : ""
     }${val(session.top_reps)}, ${val(session.sets)} sets, estimated one-rep max ${
       withUnit(session.e1rm_kg, "kg")
-    }, fewest reps in reserve ${val(session.min_rir)}`
-  );
+    }, fewest reps in reserve ${val(session.min_rir)}`;
+  });
   const planned = list(body.planned).map((item) =>
     `Plan now: ${val(item.name)} ${item.sets} x ${item.rep_min}-${item.rep_max}, rest ${
       val(item.rest_seconds)

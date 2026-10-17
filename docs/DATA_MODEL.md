@@ -800,8 +800,8 @@ monotony, weight trend, macro adherence) and `eligibility` gates to the features
 
 ### `policy_evaluations`
 
-Immutable deterministic result: feature snapshot, policy version (`daily-v1` or
-`eligibility-v1`), outcome, triggered rule codes, and permitted and prohibited actions.
+Immutable deterministic result: feature snapshot, policy version (`daily-v1`,
+`eligibility-v1` or `eligibility-v2`, the complete-day adherence of A10), outcome, triggered rule codes, and permitted and prohibited actions.
 
 ### `model_runs`
 

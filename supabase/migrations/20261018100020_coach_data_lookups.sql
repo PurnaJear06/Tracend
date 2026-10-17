@@ -24,10 +24,12 @@ alter table public.coach_messages
   add column lookups text[],
   add constraint coach_messages_guard_faults_check check (guard_faults is null or (
     cardinality(guard_faults) <= 12
-    and array_to_string(guard_faults, ' ') ~ '^[a-z0-9_: ]{0,600}$')),
+    and char_length(array_to_string(guard_faults, ' ')) <= 600
+    and array_to_string(guard_faults, ' ') ~ '^[a-z0-9_: ]*$')),
   add constraint coach_messages_lookups_check check (lookups is null or (
     cardinality(lookups) <= 12
-    and array_to_string(lookups, ' ') ~ '^[a-z0-9_: ]{0,600}$'));
+    and char_length(array_to_string(lookups, ' ')) <= 600
+    and array_to_string(lookups, ' ') ~ '^[a-z0-9_: ]*$'));
 
 -- 2. Complete logging days -----------------------------------------------------------------------
 
@@ -71,7 +73,15 @@ revoke all on function private.nutrition_day_totals(uuid, date, date)
 
 -- The definition from 20260724000001_feature_engine_baselines.sql, unchanged except the nutrition
 -- adherence: it averages the complete days of the last 14 only (a breakfast-only day no longer
--- counts as a 1,200 kcal deficit) and the result reports how many days that was.
+-- counts as a 1,200 kcal deficit) and the result reports how many days that was. The formula
+-- changed, so the version is bumped (docs/ALGORITHMS.md section 8, rule 1 and rule 5): the stored
+-- policy_version check accepts eligibility-v2 beside the v1 rows already written.
+alter table public.policy_evaluations
+  drop constraint policy_evaluations_policy_version_check;
+alter table public.policy_evaluations
+  add constraint policy_evaluations_policy_version_check
+    check (policy_version in ('daily-v1', 'eligibility-v1', 'eligibility-v2'));
+
 create or replace function public.evaluate_change_eligibility(
   target_user_id uuid,
   coaching_date date
@@ -204,7 +214,7 @@ begin
   end if;
 
   return jsonb_build_object(
-    'eligibility_version', 'eligibility-v1',
+    'eligibility_version', 'eligibility-v2',
     'training_change', jsonb_build_object(
       'eligible', training_eligible,
       'reason', training_reason,
@@ -332,8 +342,23 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       'meals', (select jsonb_build_object('first', min(m.local_date), 'last', max(m.local_date),
           'count', count(distinct m.local_date)) from public.meals m
         where m.user_id = p_user_id and m.status = 'confirmed'),
-      'body', (select jsonb_build_object('first', min(b.measured_on), 'last', max(b.measured_on),
-          'count', count(*)) from public.body_measurements b where b.user_id = p_user_id),
+      -- The same readings as coach_lookup_body_v1: manual and HealthKit weights, an amended
+      -- reading replaced by its amendment, one count per date.
+      'body', (select jsonb_build_object('first', min(r.d), 'last', max(r.d), 'count', count(*))
+        from (
+          select b.measured_on as d from public.body_measurements b
+          where b.user_id = p_user_id
+            and not exists (select 1 from public.body_measurements newer
+              where newer.user_id = b.user_id and newer.amended_from_id = b.id)
+          union
+          select h.local_date from public.daily_health_summaries h
+          where h.user_id = p_user_id and h.weight_kg is not null
+            and not exists (select 1 from public.body_measurements m
+              where m.user_id = h.user_id and m.measured_on = h.local_date
+                and m.weight_kg is not null
+                and not exists (select 1 from public.body_measurements newer
+                  where newer.user_id = m.user_id and newer.amended_from_id = m.id))
+        ) r),
       'check_ins', (select jsonb_build_object('first', min(c.local_date), 'last', max(c.local_date),
           'count', count(*)) from public.daily_check_ins c
         where c.user_id = p_user_id and c.superseded_at is null),
@@ -421,6 +446,9 @@ $$;
 -- One exercise across the range, a row per session (oldest first, newest 40): the heaviest
 -- completed set with its reps, the estimated one-rep max (Epley, sets of 1 to 12 reps), the
 -- sets done and the fewest reps in reserve; plus the plan's prescription and next target.
+-- An assisted exercise (an assisted-* slug or an "assisted ..." name, as B3 detects it) logs
+-- machine help as its load: its top set is the LEAST help (0 is unassisted), it has no one-rep
+-- max, and the row says assisted so the load is read as help.
 -- The filter is required: an exercise slug or part of its name.
 create function public.coach_lookup_exercise_history_v1(
   p_user_id uuid, p_from date, p_to date, p_filter text default null)
@@ -432,7 +460,10 @@ begin
   end if;
   with perf as (
     select p.id as perf_id, s.local_date, coalesce(p.performed_name, pe.display_name_snapshot) as name,
-      p.exercise_slug
+      p.exercise_slug,
+      coalesce(p.exercise_slug like 'assisted-%',
+        private.exercise_name_key(coalesce(p.performed_name, pe.display_name_snapshot))
+          like 'assisted %') as assisted
     from public.workout_sessions s
     join public.exercise_performances p on p.workout_session_id = s.id and p.user_id = s.user_id
     left join public.planned_exercises pe on pe.id = p.planned_exercise_id and pe.user_id = p.user_id
@@ -441,18 +472,20 @@ begin
       and (p.exercise_slug = lower(p_filter)
         or position(lower(p_filter) in lower(coalesce(p.performed_name, pe.display_name_snapshot))) > 0)
   ), done as (
-    select pf.perf_id, es.load_kg, es.repetitions, es.rir
+    select pf.perf_id, pf.assisted, es.load_kg, es.repetitions, es.rir
     from perf pf join public.exercise_sets es on es.exercise_performance_id = pf.perf_id
       and es.user_id = p_user_id
     where es.completed and es.repetitions > 0
   ), top as (
     select distinct on (d.perf_id) d.perf_id, d.load_kg, d.repetitions
-    from done d order by d.perf_id, d.load_kg desc nulls last, d.repetitions desc
+    from done d order by d.perf_id,
+      case when d.assisted then d.load_kg else -d.load_kg end nulls last, d.repetitions desc
   ), rows_all as (
-    select pf.local_date, pf.name, t.load_kg as top_load_kg, t.repetitions as top_reps,
+    select pf.local_date, pf.name, pf.assisted, t.load_kg as top_load_kg, t.repetitions as top_reps,
       (select count(*) from done d where d.perf_id = pf.perf_id) as sets,
       (select max(round(d.load_kg * (1 + d.repetitions / 30.0), 1)) from done d
-        where d.perf_id = pf.perf_id and d.load_kg > 0 and d.repetitions between 1 and 12) as e1rm_kg,
+        where d.perf_id = pf.perf_id and not pf.assisted and d.load_kg > 0
+          and d.repetitions between 1 and 12) as e1rm_kg,
       (select min(d.rir) from done d where d.perf_id = pf.perf_id) as min_rir
     from perf pf join top t on t.perf_id = pf.perf_id
   ), newest as (select * from rows_all order by local_date desc limit 41)
@@ -461,7 +494,7 @@ begin
     'from', greatest(p_from, p_to - 399), 'to', p_to,
     'truncated', (select count(*) > 40 from newest),
     'sessions', coalesce((select jsonb_agg(jsonb_build_object('local_date', n.local_date,
-        'name', n.name, 'top_load_kg', n.top_load_kg, 'top_reps', n.top_reps, 'sets', n.sets,
+        'name', n.name, 'assisted', n.assisted, 'top_load_kg', n.top_load_kg, 'top_reps', n.top_reps, 'sets', n.sets,
         'e1rm_kg', n.e1rm_kg, 'min_rir', n.min_rir) order by n.local_date)
       from (select * from newest order by local_date desc limit 40) n), '[]'::jsonb),
     'planned', coalesce((select jsonb_agg(jsonb_build_object('name', e.display_name_snapshot,
@@ -542,7 +575,9 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       and dhs.local_date between greatest(p_from, p_to - 399) and p_to
       and not exists (select 1 from public.body_measurements m
         where m.user_id = dhs.user_id and m.measured_on = dhs.local_date
-          and m.weight_kg is not null)
+          and m.weight_kg is not null
+          and not exists (select 1 from public.body_measurements newer
+            where newer.user_id = m.user_id and newer.amended_from_id = m.id))
   ), tape as (
     select bm.measured_on, bm.waist_cm, bm.chest_cm, bm.hip_cm, bm.arm_cm, bm.thigh_cm
     from public.body_measurements bm
@@ -674,22 +709,28 @@ $$;
 create function public.coach_lookup_goals_v1(
   p_user_id uuid, p_from date, p_to date, p_filter text default null)
 returns jsonb language sql stable security definer set search_path = '' as $$
+  with goal_rows as (
+    select x.* from public.user_goals x where x.user_id = p_user_id
+      and (x.status = 'active'
+        or x.created_at::date between greatest(p_from, p_to - 399) and p_to)
+    order by x.created_at desc limit 11
+  ), screening_rows as (
+    select x.* from public.onboarding_screenings x where x.user_id = p_user_id
+      and x.screened_at::date between greatest(p_from, p_to - 399) and p_to
+    order by x.screened_at desc limit 11
+  )
   select jsonb_build_object(
     'schema_version', '1.0', 'lookup', 'goals', 'from', greatest(p_from, p_to - 399),
-    'to', p_to, 'truncated', false,
+    'to', p_to,
+    'truncated', (select count(*) > 10 from goal_rows) or (select count(*) > 10 from screening_rows),
     'goals', coalesce((select jsonb_agg(jsonb_build_object('goal_type', g.goal_type,
         'status', g.status, 'priority', g.priority, 'created_on', g.created_at::date,
         'activated_on', g.activated_at::date, 'target', private.goal_target_json(g.details))
         order by g.created_at desc)
-      from (select * from public.user_goals x where x.user_id = p_user_id
-          and (x.status = 'active'
-            or x.created_at::date between greatest(p_from, p_to - 399) and p_to)
-        order by x.created_at desc limit 10) g), '[]'::jsonb),
+      from (select * from goal_rows order by created_at desc limit 10) g), '[]'::jsonb),
     'screenings', coalesce((select jsonb_agg(jsonb_build_object('outcome', s.outcome,
         'screened_on', s.screened_at::date) order by s.screened_at desc)
-      from (select * from public.onboarding_screenings x where x.user_id = p_user_id
-          and x.screened_at::date between greatest(p_from, p_to - 399) and p_to
-        order by x.screened_at desc limit 10) s), '[]'::jsonb));
+      from (select * from screening_rows order by screened_at desc limit 10) s), '[]'::jsonb));
 $$;
 
 -- Weekly reviews for the weeks starting in the range, newest 12.

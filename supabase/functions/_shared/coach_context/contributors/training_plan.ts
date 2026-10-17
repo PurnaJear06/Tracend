@@ -123,31 +123,35 @@ const prescription = (exercise: PlanExercise) =>
     exercise.repMin === exercise.repMax ? exercise.repMin : `${exercise.repMin}-${exercise.repMax}`
   }`;
 
-/** What the athlete does next: today's session unless it is done, else the next one in the week. */
+/**
+ * What the athlete does next: today's session unless it was already done this week (today or
+ * earlier), else the next unfinished one later in the week, else one from earlier this week that is
+ * still undone, else next week's first. A workout finished this week is never prescribed again.
+ */
 export function pickFocusSession(state: PlanState): Readonly<{
   session: PlanSession | null;
   isToday: boolean;
+  /** Today's slot holds a session that is already done this week; `doneOn` is its date. */
   doneToday: PlanSession | null;
+  doneOn: string | null;
+  missed: boolean;
   nextWeek: boolean;
 }> {
-  const doneIds = new Set(state.completed.map((row) => row.id));
-  const doneTodayIds = new Set(
-    state.completed.filter((row) => row.localDate === state.localDate).map((row) => row.id),
-  );
-  const dated = state.sessions.filter((session) => session.weekday !== null);
+  const doneOnById = new Map(state.completed.map((row) => [row.id, row.localDate]));
+  const byDay = (a: PlanSession, b: PlanSession) => a.weekday! - b.weekday!;
+  const dated = state.sessions.filter((session) => session.weekday !== null).sort(byDay);
   const todays = dated.find((session) => session.weekday === state.weekday) ?? null;
-  const doneToday = todays && doneTodayIds.has(todays.id) ? todays : null;
-  if (todays && !doneToday) {
-    return { session: todays, isToday: true, doneToday: null, nextWeek: false };
+  const slotDone = todays && doneOnById.has(todays.id) ? todays : null;
+  const base = { doneToday: slotDone, doneOn: slotDone ? doneOnById.get(slotDone.id)! : null };
+  if (todays && !slotDone) {
+    return { ...base, session: todays, isToday: true, missed: false, nextWeek: false };
   }
-  const later =
-    dated.filter((session) => session.weekday! > state.weekday && !doneIds.has(session.id)).sort((
-      a,
-      b,
-    ) => a.weekday! - b.weekday!)[0];
-  if (later) return { session: later, isToday: false, doneToday, nextWeek: false };
-  const first = [...dated].sort((a, b) => a.weekday! - b.weekday!)[0] ?? null;
-  return { session: first, isToday: false, doneToday, nextWeek: true };
+  const unfinished = (session: PlanSession) => !doneOnById.has(session.id);
+  const later = dated.find((session) => session.weekday! > state.weekday && unfinished(session));
+  if (later) return { ...base, session: later, isToday: false, missed: false, nextWeek: false };
+  const missed = dated.find((session) => session.weekday! < state.weekday && unfinished(session));
+  if (missed) return { ...base, session: missed, isToday: false, missed: true, nextWeek: false };
+  return { ...base, session: dated[0] ?? null, isToday: false, missed: false, nextWeek: true };
 }
 
 function exerciseLine(
@@ -227,11 +231,17 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
       : "Finished this week (Monday to today): no session logged.",
   );
   if (focus.doneToday) {
-    lines.push(`Today's planned session, ${focus.doneToday.name}, is already logged as done.`);
+    lines.push(
+      focus.doneOn === state.localDate
+        ? `Today's planned session, ${focus.doneToday.name}, is already logged as done.`
+        : `Today's planned session, ${focus.doneToday.name}, was already done this week (${focus.doneOn}); it is not prescribed again.`,
+    );
   }
   if (focus.session) {
     const label = focus.isToday
       ? "Today's planned session"
+      : focus.missed
+      ? "A session from earlier this week is still undone"
       : focus.nextWeek
       ? "No session is left this week; the next one is next week's first"
       : "Today has no planned session. The next planned session";

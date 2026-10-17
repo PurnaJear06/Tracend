@@ -142,7 +142,7 @@ select ok(public.evaluate_change_eligibility('a1000000-0000-4000-8000-0000000000
 select is(public.evaluate_change_eligibility('a1000000-0000-4000-8000-000000000001', current_date)
     ->'nutrition_change'->>'eligible', 'false', 'and the gate stays closed on that evidence');
 select is(public.evaluate_change_eligibility('a1000000-0000-4000-8000-000000000001', current_date)
-    ->>'eligibility_version', 'eligibility-v1', 'the version string is unchanged');
+    ->>'eligibility_version', 'eligibility-v2', 'the formula changed, so the version is v2');
 select is(public.evaluate_change_eligibility('a1000000-0000-4000-8000-000000000002', current_date)
     ->'nutrition_change'->>'complete_days', '0', 'an athlete with no meals has no complete days');
 
@@ -344,6 +344,60 @@ select is(pg_temp.keys(public.coach_lookup_health_history_v1('a1000000-0000-4000
   array['from', 'lookup', 'months', 'schema_version', 'to', 'truncated'], 'health history: key list');
 select is(public.coach_lookup_health_history_v1('a1000000-0000-4000-8000-000000000001', current_date - 400,
     current_date, null)->'months'->0->>'workouts', '12', 'a month reports its workouts');
+
+-- Review fixes: assisted history, the body index, goals truncation ------------------------------
+
+-- An assisted exercise logs machine help as its load: the top set is the least help.
+insert into public.planned_exercises(id, user_id, planned_workout_id, exercise_order,
+  display_name_snapshot, set_count, rep_min, rep_max, rest_seconds, exercise_slug) values
+  ('a1400000-0000-4000-8000-000000000004', 'a1000000-0000-4000-8000-000000000001',
+   'a1300000-0000-4000-8000-000000000002', 2, 'Assisted pull-up', 3, 6, 10, 90, 'assisted-pull-up');
+select pg_temp.log_session(current_date - 3,
+  '[{"order":1,"planned":"a1400000-0000-4000-8000-000000000004","slug":"assisted-pull-up","sets":[[8,20,2],[8,15,2],[6,15,1]]}]');
+select is(public.coach_lookup_exercise_history_v1('a1000000-0000-4000-8000-000000000001', current_date - 60,
+    current_date, 'assisted')->'sessions'->0->>'top_load_kg', '15.00', 'assisted: the top set is the least help');
+select is(public.coach_lookup_exercise_history_v1('a1000000-0000-4000-8000-000000000001', current_date - 60,
+    current_date, 'assisted')->'sessions'->0->>'top_reps', '8', 'with its reps (the best of the sets at that help)');
+select is(public.coach_lookup_exercise_history_v1('a1000000-0000-4000-8000-000000000001', current_date - 60,
+    current_date, 'assisted')->'sessions'->0->>'e1rm_kg', null, 'and has no one-rep max');
+select is(public.coach_lookup_exercise_history_v1('a1000000-0000-4000-8000-000000000001', current_date - 60,
+    current_date, 'assisted')->'sessions'->0->>'assisted', 'true', 'the row says assisted');
+select is(public.coach_lookup_exercise_history_v1('a1000000-0000-4000-8000-000000000001', current_date - 60,
+    current_date, 'bench')->'sessions'->0->>'assisted', 'false', 'a loaded exercise is not assisted');
+
+-- The body index counts the same readings as the body lookup: an amended reading is replaced by its
+-- amendment, and a HealthKit weight counts only on a date with no body measurement.
+insert into public.body_measurements(id, user_id, measured_on, source, weight_kg) values
+  ('a1c00000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000001', current_date - 10, 'manual', 79.0);
+insert into public.body_measurements(user_id, measured_on, source, weight_kg, amended_from_id) values
+  ('a1000000-0000-4000-8000-000000000001', current_date - 10, 'manual', 79.4,
+   'a1c00000-0000-4000-8000-000000000001');
+insert into public.daily_health_summaries(user_id, local_date, timezone, present_types, source_refs,
+  source_checksum, completeness, observed_through, last_synced_at, weight_kg) values
+  ('a1000000-0000-4000-8000-000000000001', current_date - 10, 'UTC', array['weight'], '[]'::jsonb,
+   repeat('c', 64), 'partial', now(), now(), 79.1),
+  ('a1000000-0000-4000-8000-000000000001', current_date - 20, 'UTC', array['weight'], '[]'::jsonb,
+   repeat('d', 64), 'partial', now(), now(), 80.0);
+select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)
+    ->'domains'->'body', jsonb_build_object('first', current_date - 30, 'last', current_date - 2,
+    'count', 4), 'body index: dates of manual readings (amendment replaces its original) plus a HealthKit-only date');
+select is((select count(*) from jsonb_array_elements(public.coach_lookup_body_v1(
+    'a1000000-0000-4000-8000-000000000001', current_date - 60, current_date, null)->'weights') w),
+  4::bigint, 'and the body lookup lists the same four readings');
+select is((select w->>'kg' from jsonb_array_elements(public.coach_lookup_body_v1(
+    'a1000000-0000-4000-8000-000000000001', current_date - 60, current_date, null)->'weights') w
+    where w->>'date' = (current_date - 10)::text), '79.40', 'with the amended value, not the original or the watch');
+
+-- A list capped at 10 says so.
+insert into public.user_goals(user_id, goal_type, status, details, created_at)
+select 'a1000000-0000-4000-8000-000000000001', 'strength', 'superseded', '{}', now() - n * interval '1 minute'
+from generate_series(1, 11) n;
+select is(public.coach_lookup_goals_v1('a1000000-0000-4000-8000-000000000001', current_date - 90,
+    current_date, null)->>'truncated', 'true', 'goals: more than 10 rows set truncated');
+select is(jsonb_array_length(public.coach_lookup_goals_v1('a1000000-0000-4000-8000-000000000001',
+    current_date - 90, current_date, null)->'goals'), 10, 'and only 10 are shown');
+select is(public.coach_lookup_goals_v1('a1000000-0000-4000-8000-000000000002', current_date - 90,
+    current_date, null)->>'truncated', 'false', 'a short list is not truncated');
 
 -- Access --------------------------------------------------------------------------------------------
 
