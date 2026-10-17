@@ -1021,7 +1021,7 @@ One row per ingestion run: `id`, `started_at`, `finished_at` (null exactly while
 `running`), `status` (`running`, `succeeded`, `failed`), `source_count`, `chunk_count`, `error`
 (at most 2000 characters).
 
-#### Content and ingestion (E2, migration `20261017110842_library_content`)
+#### Content and ingestion (E2, migration `20261017150842_library_content`)
 
 Content lives in the repo as `supabase/library/sources/*.ts` (one object per source: metadata,
 licence, region, topics, why it was chosen, and a summary in Tracend's own words split into titled

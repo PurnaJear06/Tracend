@@ -84,7 +84,7 @@ the chunks.
 
 ## E2: knowledge base, part 1 (in review)
 
-Migration `20261017110842_library_content.sql` (code 42), the `library-embed` Edge Function,
+Migration `20261017150842_library_content.sql` (code 42), the `library-embed` Edge Function,
 35 sources in `supabase/library/`, a retrieval test set, and a coaching-principles digest.
 
 ### What shipped
