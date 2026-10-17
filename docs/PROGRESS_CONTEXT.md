@@ -57,7 +57,8 @@ Known gaps found:
 - The app's terms and privacy checkboxes don't link to the site pages.
 - Fixed 2026-10-17: the local gate `scripts/pre-deploy.sh` never ran `db reset` (a colour variable
   overwrote its `RESET` flag), so local pgTAP ran on a stale database. CI was unaffected. See the
-  backend handoff, "Local gate never reset the database".
+  backend handoff, "Local gate never reset the database". The gate's cleanup now stops only the
+  Colima and Supabase that run started, and a failed start fails the gate with a `✗` line.
 
 **Website and waitlist (2026-10-13):** the public website (`site/`, Astro, Cloudflare Pages at
 https://tracend.pages.dev) and a double opt-in waitlist on the production project (three

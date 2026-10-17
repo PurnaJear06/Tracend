@@ -501,9 +501,19 @@ privacy were recorded.
   check also coloured piped output and ignored `COLOUR_CLEAN=true` on a terminal).
 - **Agent use:** `--skip-colima --skip-reset` still starts Supabase, runs pgTAP and the production
   dry-run, so it needs a running container runtime. Without one, run `--deno-only` and
-  `--flutter-only` and rely on CI pgTAP. Every mode ends by stopping Colima and Supabase unless
-  `--no-cleanup` is passed. Colima cannot start from a `.claude/worktrees/…` checkout: the socket
-  paths `container.sh` builds from the checkout path exceed macOS's 104-character limit.
+  `--flutter-only` and rely on CI pgTAP. Colima cannot start from a `.claude/worktrees/…`
+  checkout: the socket paths `container.sh` builds from the checkout path exceed macOS's
+  104-character limit.
+- **Cleanup scope (same day):** cleanup used to stop Colima and Supabase in every mode, including
+  `--deno-only` and `--flutter-only`, which could stop a container runtime another session was
+  using. It now stops only what the run started: Supabase whenever the database step ran, Colima
+  unless `--skip-colima` was passed. `--deno-only` and `--flutter-only` stop nothing, and
+  `--no-cleanup` still keeps both running. A Colima that was already running when the gate called
+  `container.sh start` counts as started, so pass `--skip-colima` to keep a shared runtime up.
+- **Start failures (same day):** a failed `container.sh start` or `supabase.sh start` used to end
+  the script through `set -e` with no `✗` line and no cleanup. Each now prints
+  "Colima failed to start" or "Supabase failed to start", stops what the run started and exits 1,
+  as the `db reset` step does.
 
 ## Recorded follow-ups — out of scope
 

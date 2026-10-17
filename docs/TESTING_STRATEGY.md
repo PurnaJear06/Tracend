@@ -308,7 +308,9 @@ gracefully skipped.
 Run `./scripts/pre-deploy.sh` before handing a pull request to the owner. When the local database
 is unavailable, run `--deno-only` and `--flutter-only` and rely on CI pgTAP
 (`--skip-colima --skip-reset` still starts Supabase, so it needs a running container runtime).
-Every mode stops Colima and Supabase at the end unless `--no-cleanup` is passed. It executes:
+At the end it stops only what that run started: Supabase whenever step 1 ran, Colima unless
+`--skip-colima` was passed; `--deno-only` and `--flutter-only` stop nothing. `--no-cleanup` keeps
+both running. A failed Colima or Supabase start fails the gate. It executes:
 
 1. Colima + Supabase start → db reset (all migrations applied cleanly)
 2. pgTAP database tests

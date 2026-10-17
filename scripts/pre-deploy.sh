@@ -26,7 +26,7 @@ Exits non-zero on the first failure. Pass --help for options.
 Options:
   --skip-colima         Skip Colima start/stop (use if already running)
   --skip-reset          Skip 'supabase db reset' (use if DB is already current)
-  --no-cleanup          Keep Colima + Supabase running after the gate
+  --no-cleanup          Leave running the Colima + Supabase this run started
   --deno-only           Run only Deno (fmt + lint + test)
   --flutter-only        Run only Flutter (analyze + test + build)
   --db-only             Run only pgTAP (requires running Colima + Supabase)
@@ -71,6 +71,9 @@ info()  { echo -e "  ${C_CYAN}→${C_RESET} $*"; }
 step()  { echo -e "${C_BOLD}═══ $* ═══${C_RESET}"; }
 
 FAILURES=0
+# Set when this run starts a service, so cleanup never stops one another session started.
+STARTED_COLIMA=false
+STARTED_SUPABASE=false
 
 die() {
   fail "$*"
@@ -78,14 +81,23 @@ die() {
 }
 
 cleanup() {
-  if [[ "$CLEANUP" == "true" ]]; then
-    echo ""
-    step "CLEANUP"
+  if [[ "$CLEANUP" != "true" ]]; then
+    return
+  fi
+  if [[ "$STARTED_SUPABASE" != "true" ]] && [[ "$STARTED_COLIMA" != "true" ]]; then
+    return
+  fi
+  echo ""
+  step "CLEANUP"
+  if [[ "$STARTED_SUPABASE" == "true" ]]; then
     info "Stopping local Supabase ..."
     "$repo_root/scripts/supabase.sh" stop >/dev/null 2>&1 || true
+    pass "Supabase stopped"
+  fi
+  if [[ "$STARTED_COLIMA" == "true" ]]; then
     info "Stopping Colima ..."
     "$repo_root/scripts/container.sh" stop >/dev/null 2>&1 || true
-    pass "Colima + Supabase stopped"
+    pass "Colima stopped"
   fi
 }
 
@@ -95,17 +107,29 @@ if echo "$STEPS" | grep -q "pg"; then
 
   if [[ "$COLIMA" == "true" ]]; then
     info "Starting Colima ..."
-    "$repo_root/scripts/container.sh" start 2>&1 | while IFS= read -r line; do
+    STARTED_COLIMA=true
+    if "$repo_root/scripts/container.sh" start 2>&1 | while IFS= read -r line; do
       echo "    $line"
-    done
-    pass "Colima running"
+    done; then
+      pass "Colima running"
+    else
+      fail "Colima failed to start"
+      cleanup
+      exit 1
+    fi
   fi
 
   info "Starting Supabase ..."
-  "$repo_root/scripts/supabase.sh" start 2>&1 | while IFS= read -r line; do
+  STARTED_SUPABASE=true
+  if "$repo_root/scripts/supabase.sh" start 2>&1 | while IFS= read -r line; do
     echo "    $line"
-  done
-  pass "Supabase running"
+  done; then
+    pass "Supabase running"
+  else
+    fail "Supabase failed to start"
+    cleanup
+    exit 1
+  fi
 
   # Derive local Supabase URL + anon key for contract tests
   CONTRACT_URL="${CONTRACT_URL:-http://127.0.0.1:54321}"
