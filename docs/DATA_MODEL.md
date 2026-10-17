@@ -174,6 +174,21 @@ never stored.
 Goals with type, priority (1–5), status (`draft`, `active`, `superseded`), a `details` object
 with the goal's specifics such as a target weight (at most 16 KB), and activation time. Exactly one active goal is primary. At most 200 goals per user.
 
+**Goal target (B7).** The end point of a goal lives in `details` under `target_weight_kg`,
+`target_body_fat_pct_min`, `target_body_fat_pct_max`, `target_physique` (`visible_abs`,
+`more_definition`, `athletic_build`, `bigger_muscles`, `stronger`, `lean_and_toned`, `other`),
+`target_physique_note` (at most 120 characters), `target_date` and `target_set_at`, so the frozen
+Coach athlete file already carries it. Any other `details` weight (such as `current_weight_kg`) is
+the weight on the day the goal was written and is never a current or starting figure.
+`set_goal_target_v1(...)` (authenticated, `auth.uid()`, security definer) replaces the whole target
+on the active goal, requires a weight, a body-fat range or a physique goal (a date alone is not a
+target), refuses a weight outside 30 to 300 kg or below BMI 18.5 at `user_profiles.height_cm`, a
+reversed or out-of-range body-fat range, and a date that is not within the next three years, and
+writes a `goal_target_set` audit event naming only the kinds of target set. `get_goal_target_v1()`
+returns the target and `min_target_weight_kg`; both return `schema_version "1.0"`.
+`get_goal_phase_inputs_v1(uuid)` is service role only and feeds the Coach goal phase review. Only
+the athlete sets a target; the model has no path to these functions.
+
 ### `user_constraints` (Not built)
 
 The logical design holds equipment, schedule constraints, exercise limitations, dietary pattern,

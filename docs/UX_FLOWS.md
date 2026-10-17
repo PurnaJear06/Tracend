@@ -908,6 +908,16 @@ page and the physique check. It reads top to bottom as one answer, then detail:
    when it moves toward the active goal (`fat_loss` down, `muscle_gain` up); the arrow and the
    spoken "toward your goal" carry the same meaning. With no weigh-in it asks for the first one;
    with one in the period it asks for another before drawing a trend.
+   **Set your target (B7):** directly under the hero, a card appears only while the active goal has
+   no end point: **Set your target**, one line saying only the athlete sets it, and **Set target**.
+   The sheet takes one kind of target (**Weight**, **Body fat** or **Look**) and an optional date.
+   Weight shows the lowest healthy target for the athlete's height and refuses anything below it;
+   body fat takes a from and to percentage; **Look** offers a short list (visible abs, more
+   definition, athletic build, bigger muscles, stronger, lean and toned, something else) with an
+   optional note of up to 120 characters. A refusal from the server stays beside **Save target**.
+   Saving plays the `success` haptic and shows **Target saved**. Once a target exists the card shows
+   it with **Change target**. Without an active goal, or when the target cannot be read, nothing
+   shows. Coach asks for a target in chat when there is none and points to this card.
 3. **This week:** the weekly review card (§11).
 4. **Recent weigh-ins:** the newest three in one grouped list, each with its change from the one
    before; **See all** opens every weigh-in in a sheet. A row opens the read-only detail sheet.

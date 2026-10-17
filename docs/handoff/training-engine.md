@@ -12,7 +12,7 @@ Deterministic, coach-grade training rules: templates, progression from the sets 
 
 ## Chunks
 
-B0 (Phase 1); B1 (Phase 2); B2, B3, B6 (Phase 3); B4, B5 (Phase 4)
+B0 (Phase 1); B1 (Phase 2); B2, B3, B6, B7 (Phase 3); B4, B5 (Phase 4)
 
 ## State
 
@@ -353,6 +353,73 @@ Contract 8).
   B5's deload rules. (c) The decision looks at the heaviest working load only; a session logged at
   two loads is judged on the heavier. (d) Train shows the target, but Today's session card and the
   plan editor do not yet.
+**B7 (goal phase review, 2026-10-17; review).** Fixes a failure the owner hit in Coach chat: weight
+fell from 90 kg (3 June) to 74.8 kg (13 Oct), 15.2 kg or 16.9%, with the goal `fat_loss` and no
+target. Coach saw about six weeks of weight, said "7 kg" and extrapolated "about 66.5 kg in 12
+weeks", which the athlete read as advice. Migration 27 (additive), Edge Functions and one Progress
+card; no frozen SQL function changed.
+
+- **Deterministic review** (`_shared/training/goal_phase/**`, rules in `docs/ALGORITHMS.md` §5):
+  phase summary (start from goal activation, never the goal's saved weight; smoothed start and
+  current; change in kg and %; weeks; weekly rate; BMI; target present), the implausible-reading
+  rule (60 kg between 87 and 83 is excluded and reported), and the five outcomes `continue`,
+  `ask_target`, `consider_maintenance_or_diet_break`, `target_reached`, `slow_down`. Every reason
+  carries source ids; `sources.ts` holds six sources whose DOIs were checked against Crossref
+  (Garthe 2011, Helms 2014, Byrne 2018, Trexler 2014, the 2013 AHA/ACC/TOS guideline, WHO 2004).
+- **Contributor** `coach_context/contributors/goal_phase.ts`: volatile slot, 2,200 characters,
+  registered in `registry.ts`. It reads `get_goal_phase_inputs_v1` with a service-role client built
+  on first use. `coach-chat/index.ts` now renders the contributors on both the gateway and the
+  legacy path (the legacy path passes them into `buildCoachChatUserMessage`, between the athlete
+  file and the question).
+- **Owner-shaped test** (`goal_phase_test.ts`, synthetic data): start 90 kg, now 74.8 kg, change
+  -15.2 kg (-16.9%) over 18.9 weeks, BMI 23.1, the 60 kg reading excluded, outcome
+  `consider_maintenance_or_diet_break` (`long_continuous_deficit`, `large_total_loss`), `needs_target`.
+- **Athlete-set target.** `set_goal_target_v1`, `get_goal_target_v1` (both `schema_version "1.0"`)
+  and `get_goal_phase_inputs_v1` (service role). The target sits in `user_goals.details` beside
+  the `target_weight_kg` that onboarding already wrote, so the frozen athlete file carries it. RLS
+  by `auth.uid()`, audit event `goal_target_set` (kinds only), pgTAP `goal_targets_test.sql`
+  (grants through `has_function_privilege`, key-list test, refusals, cross-athlete). Contract
+  fixtures `goal_target_v1_0.json` and `goal_target_none_v1_0.json` with a key-list test in
+  `test/contract/goal_target_contract_test.dart`. App: `lib/features/goals/**`; the **Set your
+  target** card sits under the weight hero on Progress.
+- **Audit items.** (5) goal details render only from a whitelist of free-text note keys (weights
+  dropped) labelled "entered when the goal was written"; the goal-phase block states the date the
+  goal began; the target is read from the new `target_*` keys. The old reads of
+  `target_value`/`deadline` (never selected by the frozen SQL) are gone. (6) The contributor label
+  now says a figure Tracend calculated from the athlete's records outranks a saved goal detail or
+  an older note, and never overrides Tracend's rules. (7) `weightReadings` excludes implausible
+  readings from chat trends. (8) horizon rows need a target weight still ahead and never go below
+  the BMI 18.5 floor; the persona allows estimates only toward a set or stated target.
+  (9) No tools: Coach never says it changed, saved or set anything. (10) The persona no longer
+  claims a journey or training history; change claims state their window, except the goal phase.
+  (11) Replies about 120 words, three bullets, one question. (12) The reply check
+  (`guard.ts`): rejects a future weight below the floor, or beyond today's weight in the trend's
+  direction with no target, with a rule-specific repair line. (13) Evals in
+  `_evals/coach_chat_eval_goal_phase_test.ts` (6-week window, stale goal detail, 60 kg outlier,
+  healthy BMI with no target, length rule) assert on the rendered prompt and calculators; no model
+  call.
+- **Review fixes (Opus review of #136).** The calculators emit no kilogram rows at all without a
+  target weight still ahead (only the pace), and rows stop at the target; the reply check limits
+  `projection_without_target` to sentences with a time or pace cue, passes questions and target
+  suggestions ("aim for 70 kg") and applies a limit word only to the weight it governs, while
+  `weight_below_healthy_floor` still covers every looking-ahead or target sentence; the Groq and
+  Gemini branches receive the contributor blocks and the goal-phase rules; `get_goal_phase_inputs_v1`
+  adds HealthKit daily weights on dates without a body measurement and skips rows without a weight;
+  a refused target with no active goal says so.
+- **Parity digests.** `coach_chat_parity_test.ts` records the new legacy request digests: the
+  persona, the goal-phase rules and the goal-details wording changed on purpose.
+- **In-house thresholds for owner or coach review** (`goal_phase/thresholds.ts`, `inHouse: true`):
+  BMI 19.5 as "near the floor" while still falling; 3 weeks before a fast pace counts as sustained;
+  16 weeks and 5% loss as a long continuous deficit (the trial arm length and the guideline's
+  meaningful loss, combined by us); 10% over 12 weeks as a large loss (top of the guideline's first
+  goal, our checkpoint); 0.1 kg a week as "still losing"; 0.5 kg tolerance for a reached target;
+  3% plus 1.5% a week of gap as the implausible-reading allowance; 14 days as a stale reading.
+  Evidence-backed: BMI 18.5 (WHO) and 1% of body weight a week (Helms, Garthe).
+- **Open.** (a) The reply check is a pattern match on sentences with a future cue and a weight; a
+  reply that hides a projection in a table of numbers without a cue would pass (the persona and the
+  repair line still forbid it). (b) The target UI offers one kind of target at a time; the function
+  accepts several. (c) Reply length is a prompt rule, not validated. (d) A body-fat target is
+  stored and shown to Coach but no rule reaches it yet (no body-fat reading exists to compare).
 
 ## Next agent starts here
 

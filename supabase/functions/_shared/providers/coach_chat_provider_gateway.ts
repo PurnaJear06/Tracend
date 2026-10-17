@@ -19,6 +19,7 @@ import {
   parseCoachChatAnswer,
 } from "../contracts/coach_chat_v1.ts";
 import { call } from "../ai/gateway.ts";
+import { weightClaimCheckFor } from "../training/goal_phase/guard.ts";
 import { costUsd, modelSpec } from "../ai/models.ts";
 import type { AiCallDeps, AiContent, AiMessage, AiRoute, AiUsage, AiVendor } from "../ai/types.ts";
 import {
@@ -297,6 +298,7 @@ export async function generateCoachChatViaGateway(
   }
 
   const permitted = permittedEvidenceOf(context);
+  const answerCheck = weightClaimCheckFor(context, question);
   const schema = coachChatGatewaySchema(permitted);
   const contributions = input.contributions ?? noCoachContributions;
   const deadline = Date.now() + timing.totalDeadlineMs;
@@ -403,7 +405,7 @@ export async function generateCoachChatViaGateway(
         };
       }
       try {
-        const answer = parseCoachChatAnswer(result.json, permitted);
+        const answer = parseCoachChatAnswer(result.json, permitted, answerCheck);
         return { telemetry: telemetry("valid"), usage, answer, model: result.model };
       } catch (error) {
         issue = issueOf(error);

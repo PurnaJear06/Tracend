@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
+import 'package:tracend/features/goals/goal_target_repository.dart';
+import 'package:tracend/features/goals/widgets/goal_target_section.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/progress/widgets/measurement_widgets.dart';
@@ -63,6 +65,7 @@ class ProgressScreen extends StatefulWidget {
     this.training,
     this.brief,
     this.physique = const FixturePhysiqueCheckRepository(),
+    this.goalTargets = const FixtureGoalTargetRepository(),
     this.now = DateTime.now,
     this.pickPhoto = _pickWithImagePicker,
     super.key,
@@ -71,6 +74,9 @@ class ProgressScreen extends StatefulWidget {
   final TrainingHubRepository? training;
   final DailyBriefRepository? brief;
   final PhysiqueCheckRepository physique;
+
+  /// The goal's target: "Set your target" shows here while none exists.
+  final GoalTargetRepository goalTargets;
 
   /// Clock for the period window and relative dates.
   final DateTime Function() now;
@@ -283,6 +289,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
           ),
         ),
       ),
+      GoalTargetSection(repository: widget.goalTargets),
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -14,6 +14,7 @@ import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/nutrition/nutrition_screen.dart';
+import 'package:tracend/features/goals/goal_target_repository.dart';
 import 'package:tracend/features/progress/physique_check_repository.dart';
 import 'package:tracend/features/progress/progress_repository.dart';
 import 'package:tracend/features/progress/progress_screen.dart';
@@ -64,6 +65,7 @@ class AppShellRepositories {
     this.nutrition,
     this.progress,
     this.physique,
+    this.goalTargets,
     this.brief,
   });
 
@@ -72,6 +74,7 @@ class AppShellRepositories {
   final NutritionRepository? nutrition;
   final ProgressRepository? progress;
   final PhysiqueCheckRepository? physique;
+  final GoalTargetRepository? goalTargets;
 
   /// The unshared brief repository; the shell shares it between tabs.
   final DailyBriefRepository? brief;
@@ -90,6 +93,7 @@ class _AppShellState extends State<AppShell> {
   late final NutritionRepository _nutrition;
   late final ProgressRepository _progress;
   late final PhysiqueCheckRepository _physique;
+  late final GoalTargetRepository _goalTargets;
   late final DailyBriefRepository _brief;
 
   /// Today's morning check-in gate: while it is required, the tab bar gives
@@ -143,6 +147,11 @@ class _AppShellState extends State<AppShell> {
         (live
             ? SupabasePhysiqueCheckRepository(Supabase.instance.client)
             : const FixturePhysiqueCheckRepository());
+    _goalTargets =
+        injected?.goalTargets ??
+        (live
+            ? SupabaseGoalTargetRepository(Supabase.instance.client)
+            : const FixtureGoalTargetRepository());
     _brief = SharedDailyBriefRepository(
       injected?.brief ??
           (live
@@ -226,6 +235,7 @@ class _AppShellState extends State<AppShell> {
             : null,
         brief: _brief,
         physique: _physique,
+        goalTargets: _goalTargets,
       ),
     ];
 
