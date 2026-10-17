@@ -740,7 +740,8 @@ limits both to the message's owner.
 #### Coach data lookups and baseline reads (A10, migration code 20)
 
 Read-only `SECURITY DEFINER` functions, granted to `service_role` only, each returning
-`schema_version` `1.0` (the user id comes from the authenticated Edge Function call):
+`schema_version` `1.0` (the user id comes from the authenticated Edge Function call; dates of
+records such as plan versions and goals are the athlete's local days, `private.local_day`):
 
 - Baseline, `(p_user_id, p_local_date)`: `get_coach_plan_state_v1` (the active plan's sessions with
   exercises, the sessions finished this ISO week, equipment and movements to avoid, and the next
@@ -800,8 +801,8 @@ monotony, weight trend, macro adherence) and `eligibility` gates to the features
 
 ### `policy_evaluations`
 
-Immutable deterministic result: feature snapshot, policy version (`daily-v1`,
-`eligibility-v1` or `eligibility-v2`, the complete-day adherence of A10), outcome, triggered rule codes, and permitted and prohibited actions.
+Immutable deterministic result: feature snapshot, policy version (`daily-v1` or
+`eligibility-v1`), outcome, triggered rule codes, and permitted and prohibited actions.
 
 ### `model_runs`
 

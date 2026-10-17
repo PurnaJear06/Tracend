@@ -385,6 +385,31 @@ select is(jsonb_array_length(public.coach_lookup_goals_v1('a1000000-0000-4000-80
 select is(public.coach_lookup_goals_v1('a1000000-0000-4000-8000-000000000002', current_date - 90,
     current_date, null)->>'truncated', 'false', 'a short list is not truncated');
 
+-- A finished session carries its workout's identity, so it can be matched after a plan change.
+select is((select array(select k from jsonb_object_keys(public.get_coach_plan_state_v1(
+      'a1000000-0000-4000-8000-000000000001', current_date - 5)->'completed_this_week'->0) k
+    order by k collate "C")),
+  array['local_date', 'name', 'order', 'planned_workout_id', 'weekday'],
+  'a finished session reports its workout''s name, day and order');
+select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date - 5)
+    ->'completed_this_week'->0->>'name', 'Push day', 'by name');
+
+-- Dates of records are the athlete's local days, not UTC days: 20:00 UTC on 1 October is already
+-- 2 October at UTC+14, so a range of just that local day finds it.
+update public.user_accounts set timezone = 'Pacific/Kiritimati'
+where id = 'a1000000-0000-4000-8000-000000000002';
+select is(private.local_day('a1000000-0000-4000-8000-000000000002', timestamptz '2026-10-01 20:00:00+00'),
+  date '2026-10-02', 'local_day uses the account time zone');
+select is(private.local_day('a1000000-0000-4000-8000-000000000001', timestamptz '2026-10-01 20:00:00+00'),
+  date '2026-10-01', 'and UTC when the account has the default');
+insert into public.user_goals(user_id, goal_type, status, details, created_at) values
+  ('a1000000-0000-4000-8000-000000000002', 'strength', 'superseded', '{}', timestamptz '2026-10-01 20:00:00+00');
+select is(public.coach_lookup_goals_v1('a1000000-0000-4000-8000-000000000002', date '2026-10-02',
+    date '2026-10-02', null)->'goals'->0->>'created_on', '2026-10-02',
+  'a goal created at 20:00 UTC is found on the athlete''s next local day');
+select is(jsonb_array_length(public.coach_lookup_goals_v1('a1000000-0000-4000-8000-000000000002',
+    date '2026-10-01', date '2026-10-01', null)->'goals'), 0, 'and not on the UTC day');
+
 -- Access --------------------------------------------------------------------------------------------
 
 select is((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace

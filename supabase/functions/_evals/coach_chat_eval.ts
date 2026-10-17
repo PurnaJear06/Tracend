@@ -1,26 +1,20 @@
-// Live Coach chat evaluation: about 60 varied prompts x 3 synthetic athletes
-// through the production code path (classifyQuestion -> generateCoachChat ->
-// data-summary fallback) against the real DeepSeek model.
+// Live Coach chat operations evaluation: about 54 varied prompts x 3 synthetic athletes through
+// the production code path (classifyQuestion -> generateCoachChat -> data-summary fallback). It
+// gates what the answer bank (coach_bank/) does not: how often a model answer arrives, dead ends,
+// unpermitted evidence, latency, spend and the prompt cache. What a reply says is graded by the
+// bank.
 //
 //   DEEPSEEK_API_KEY=... ./scripts/deno.sh run --allow-env --allow-net --allow-read \
 //     --allow-write supabase/functions/_evals/coach_chat_eval.ts
 //
 // Optional: EVAL_REPEATS (default 2), EVAL_CONCURRENCY (default 4),
 // EVAL_REPORT_DIR (default .tooling/coach-evals/<timestamp>),
-// EVAL_MAX_CALLS (cheap sample: every safety prompt, then one prompt per other
-// category, rotating prompts and athletes), and EVAL_BASE_URL + EVAL_API_KEY
-// to send the same requests to an OpenAI-compatible router instead of
-// api.deepseek.com (EVAL_MODEL overrides the model name; a router run is a
-// smoke test, not production latency: it waits up to routerTiming for each
-// attempt and does not gate on latency).
+// EVAL_MAX_CALLS (cheap sample: one prompt per category, rotating prompts and athletes), and the
+// model settings in live_model.ts (a gateway route, a router, or DeepSeek).
 //
-// Gateway route (A6): when the AI_COACH_CHAT_* settings make a route (for example
-// AI_COACH_CHAT_PROVIDER=anthropic, AI_COACH_CHAT_MODEL=claude-haiku-5-5,
-// AI_COACH_CHAT_MAX_OUTPUT_TOKENS=4096, AI_COACH_CHAT_TIMEOUT_MS=30000 and ANTHROPIC_API_KEY),
-// the same prompts go through generateCoachChatViaGateway, the path coach-chat takes with those
-// settings. The run first asks one question twice and records both `ai_call` log lines, the
-// proof that a repeated question reads the cached prefix. EVAL_MAX_USD (default 1) stops new
-// calls once the run has spent that much at list prices.
+// With a gateway route the run first asks one question twice and records both `ai_call` log
+// lines, the proof that a repeated question reads the cached prefix. EVAL_MAX_USD (default 1)
+// stops new calls once the run has spent that much at list prices.
 // Exits non-zero when a merge gate fails. Synthetic data only.
 
 import prompts from "./prompts.json" with { type: "json" };
@@ -30,32 +24,22 @@ import {
   classifyQuestion,
   coachChatFailureUsage,
   type CoachChatGeneration,
-  type CoachChatTiming,
-  coachChatTiming,
   CoachChatUnavailableError,
-  generateCoachChat,
 } from "../_shared/providers/coach_chat_provider.ts";
-import { generateCoachChatViaGateway } from "../_shared/providers/coach_chat_provider_gateway.ts";
-import { route } from "../_shared/ai/routes.ts";
 import type { AiRoute } from "../_shared/ai/types.ts";
-
-type Generate = (
-  question: string,
-  context: Record<string, unknown>,
-  contextKind: string,
-) => Promise<CoachChatGeneration>;
+import {
+  type Generate,
+  hostSleep,
+  liveModelFromEnv,
+  routerTiming,
+  runAwake,
+} from "./live_model.ts";
 
 type EvalPrompt = Readonly<{
   id: string;
   category: string;
   text: string;
   history?: ReadonlyArray<Readonly<{ role: string; content: string }>>;
-  expect?: Readonly<{
-    estimate?: boolean;
-    clarify?: boolean;
-    safety?: readonly string[];
-    weeksRange?: Readonly<{ profile: string; min: number; max: number }>;
-  }>;
 }>;
 
 type Outcome = "model" | "boundary" | "data_summary" | "dead_end";
@@ -91,30 +75,9 @@ const cacheTokens = (attempts: CoachChatGeneration["attempts"]) => ({
 export const evalGates = Object.freeze({
   minModelAnswerRate: 0.97,
   maxDeadEnds: 0,
-  maxSafetyFailures: 0,
   maxUnpermittedEvidence: 0,
   maxP95LatencyMs: 25_000,
 });
-
-// Parses "13 weeks", "12-14 weeks", "about 3 months" into candidate week counts.
-export function weekEstimates(answer: string): number[] {
-  const values: number[] = [];
-  for (
-    const match of answer.matchAll(/(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)\s*weeks?/gi)
-  ) {
-    values.push(Number(match[1]), Number(match[2]));
-  }
-  for (const match of answer.matchAll(/(\d+(?:\.\d+)?)\s*weeks?/gi)) values.push(Number(match[1]));
-  for (
-    const match of answer.matchAll(/(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)\s*months?/gi)
-  ) {
-    values.push(Number(match[1]) * 4.345, Number(match[2]) * 4.345);
-  }
-  for (const match of answer.matchAll(/(\d+(?:\.\d+)?)\s*months?/gi)) {
-    values.push(Number(match[1]) * 4.345);
-  }
-  return values.filter((value) => Number.isFinite(value));
-}
 
 function percentile(values: readonly number[], p: number): number {
   if (!values.length) return 0;
@@ -122,44 +85,10 @@ function percentile(values: readonly number[], p: number): number {
   return sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)];
 }
 
-const deepseekChatUrl = "https://api.deepseek.com/v1/chat/completions";
-
-// A router adds its own queue and hop, so its replies often exceed the
-// production attempt limits: on 2026-09-28 NaraRouter's fastest reply took
-// 21 s and every other call hit the 28 s limit. Router runs wait longer so
-// they measure the answers rather than the router's speed.
-export const routerTiming: CoachChatTiming = Object.freeze({
-  totalDeadlineMs: 190_000,
-  initialAttemptMs: 120_000,
-  repairAttemptMs: 60_000,
-});
-
-// Sends the unchanged production request to another OpenAI-compatible
-// endpoint. Routers switch thinking with `reasoning_effort` rather than
-// DeepSeek's native `thinking` field, so a request that turns thinking off
-// also says so in their terms.
-export function routedFetch(baseUrl: string, fetcher: typeof fetch = fetch): typeof fetch {
-  const target = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  return (input, init) => {
-    if (String(input) !== deepseekChatUrl) return fetcher(input, init);
-    let body = init?.body;
-    if (typeof body === "string") {
-      const payload = JSON.parse(body);
-      if (payload.thinking?.type === "disabled" && payload.reasoning_effort === undefined) {
-        payload.reasoning_effort = "none";
-      }
-      body = JSON.stringify(payload);
-    }
-    return fetcher(target, { ...init, body });
-  };
-}
-
-// A cheap run. Safety-critical cases need a 100% pass rate, so every safety
-// prompt runs once and none is sampled away. The rest of maxCalls takes one
-// prompt per other category per round, rotating prompts within a category and
-// athletes across categories and rounds.
+// A cheap run: one prompt per category per round, rotating prompts within a category and athletes
+// across categories and rounds.
 export function sampleJobs<
-  T extends Readonly<{ profileId: string; category: string; promptId: string; safety: boolean }>,
+  T extends Readonly<{ profileId: string; category: string; promptId: string }>,
 >(jobs: readonly T[], maxCalls: number): T[] {
   if (!(maxCalls > 0) || maxCalls >= jobs.length) return [...jobs];
   const profiles = [...new Set(jobs.map((job) => job.profileId))];
@@ -174,30 +103,20 @@ export function sampleJobs<
     }
   };
 
-  const safetyPrompts = [...new Set(jobs.filter((j) => j.safety).map((j) => j.promptId))];
-  safetyPrompts.forEach((promptId, index) => {
-    const profileId = profiles[index % profiles.length];
-    pickFirst(
-      (j) => j.promptId === promptId && j.profileId === profileId,
-      (j) => j.promptId === promptId,
-    );
-  });
-
-  const others = jobs.filter((j) => !j.safety);
-  const categories = [...new Set(others.map((j) => j.category))];
+  const categories = [...new Set(jobs.map((j) => j.category))];
   for (let round = 0; picked.size < maxCalls; round++) {
     const before = picked.size;
     for (const [index, category] of categories.entries()) {
       if (picked.size >= maxCalls) break;
       const promptIds = [
-        ...new Set(others.filter((j) => j.category === category).map((j) => j.promptId)),
+        ...new Set(jobs.filter((j) => j.category === category).map((j) => j.promptId)),
       ];
       const promptId = promptIds[round % promptIds.length];
       const profileId = profiles[(index + round) % profiles.length];
       pickFirst(
         (j) => j.promptId === promptId && j.profileId === profileId,
         (j) => j.promptId === promptId,
-        (j) => j.category === category && !j.safety,
+        (j) => j.category === category,
       );
     }
     if (picked.size === before) break;
@@ -224,22 +143,16 @@ async function runOne(
     context_kind: contextKind,
   };
   try {
-    const generation = await generate(prompt.text, context, contextKind);
+    const generation = await generate({
+      question: prompt.text,
+      context,
+      contextKind,
+      contributions: null,
+    });
     const answer = generation.answer;
     const checks: Record<string, boolean> = {
       evidence_permitted: answer.evidence.every((e) => permitted.includes(e.code)),
     };
-    if (prompt.expect?.safety) {
-      checks.safety = prompt.expect.safety.includes(answer.safety_state);
-    }
-    if (prompt.expect?.estimate) checks.estimate_labeled = /estimat/i.test(answer.answer);
-    if (prompt.expect?.clarify) checks.asks_clarifying_question = answer.answer.includes("?");
-    const range = prompt.expect?.weeksRange;
-    if (range && range.profile === profile.id) {
-      checks.projection_in_range = weekEstimates(answer.answer).some((weeks) =>
-        weeks >= range.min && weeks <= range.max
-      );
-    }
     return {
       ...base,
       outcome: generation.provider === "mock" ? "boundary" : "model",
@@ -269,9 +182,7 @@ async function runOne(
         answer: summary.answer,
         cost_usd: coachChatFailureUsage(error).estimatedCostUsd,
         ...cacheTokens(error.metadata.attempts ?? []),
-        checks: prompt.expect?.safety
-          ? { safety: prompt.expect.safety.includes(summary.safety_state) }
-          : {},
+        checks: {},
       };
     }
     return {
@@ -283,23 +194,8 @@ async function runOne(
       cache_read_tokens: 0,
       cache_write_tokens: 0,
       prompt_tokens: 0,
-      checks: prompt.expect?.safety ? { safety: false } : {},
+      checks: {},
     };
-  }
-}
-
-// A Mac that sleeps mid-request kills the connection; the monotonic clock stops while it sleeps
-// and the wall clock does not. Such a run measures the host, not the model, so it runs again (at
-// most twice) and the summary counts the reruns.
-let hostSleepReruns = 0;
-async function runAwake(run: () => Promise<RunResult>): Promise<RunResult> {
-  for (let tries = 0;; tries++) {
-    const wall = Date.now();
-    const monotonic = performance.now();
-    const result = await run();
-    const sleptMs = Date.now() - wall - (performance.now() - monotonic);
-    if (sleptMs < 5_000 || tries >= 2) return result;
-    hostSleepReruns++;
   }
 }
 
@@ -329,55 +225,13 @@ async function aiCallLines<T>(run: () => Promise<T>): Promise<{ result: T; calls
   }
 }
 
-function gatewayGenerate(coachRoute: AiRoute): Generate {
-  return (question, context, contextKind) =>
-    generateCoachChatViaGateway({
-      question,
-      context,
-      contextKind,
-      route: coachRoute,
-      consentVendor: coachRoute.vendor,
-    });
-}
-
 async function main(): Promise<void> {
-  const coachRoute = route("coach_chat");
-  if (coachRoute) {
-    await runEvaluation({
-      generate: gatewayGenerate(coachRoute),
-      endpoint: `${coachRoute.providerLabel} gateway route`,
-      model: coachRoute.model,
-      router: false,
-      coachRoute,
-    });
-    return;
-  }
-  const baseUrl = Deno.env.get("EVAL_BASE_URL")?.trim() ?? "";
-  const apiKey = baseUrl ? Deno.env.get("EVAL_API_KEY") : Deno.env.get("DEEPSEEK_API_KEY");
-  if (!apiKey) {
-    console.error(
-      `${baseUrl ? "EVAL_API_KEY" : "DEEPSEEK_API_KEY"} is required. Nothing was sent.`,
-    );
+  const live = liveModelFromEnv();
+  if ("error" in live) {
+    console.error(live.error);
     Deno.exit(2);
   }
-  // The router key travels in the same Authorization header the provider builds.
-  Deno.env.set("DEEPSEEK_API_KEY", apiKey);
-  Deno.env.set("COACH_AI_ENABLED", "true");
-  Deno.env.set("COACH_MODEL_PROVIDER", "deepseek");
-  // NaraRouter lists the model as deepseek-v4-flash; DeepSeek itself as deepseek-flash.
-  const model = Deno.env.get("EVAL_MODEL")?.trim() ||
-    (baseUrl ? "deepseek-v4-flash" : "deepseek-flash");
-  Deno.env.set("DEEPSEEK_MODEL", model);
-  const endpoint = baseUrl ? new URL(baseUrl).host : new URL(deepseekChatUrl).host;
-  const fetcher = baseUrl ? routedFetch(baseUrl) : fetch;
-  const timing: CoachChatTiming = baseUrl ? routerTiming : coachChatTiming;
-  await runEvaluation({
-    generate: (question, context, contextKind) =>
-      generateCoachChat(question, context, contextKind, fetcher, timing),
-    endpoint,
-    model,
-    router: Boolean(baseUrl),
-  });
+  await runEvaluation(live);
 }
 
 async function runEvaluation(setup: {
@@ -405,7 +259,6 @@ async function runEvaluation(setup: {
         profileId: profile.id,
         category: prompt.category,
         promptId: prompt.id,
-        safety: Boolean(prompt.expect?.safety),
       }))
     )
   );
@@ -420,8 +273,12 @@ async function runEvaluation(setup: {
     const question = "How did my training go over the last two weeks?";
     for (let ask = 0; ask < 2; ask++) {
       const { calls } = await aiCallLines(() =>
-        generate(question, structuredClone(athlete.context), classifyQuestion(question))
-          .catch((error) => error)
+        generate({
+          question,
+          context: structuredClone(athlete.context),
+          contextKind: classifyQuestion(question),
+          contributions: null,
+        }).catch((error) => error)
       );
       cacheProof.push(...calls);
     }
@@ -453,7 +310,6 @@ async function runEvaluation(setup: {
   const count = (outcome: Outcome) => results.filter((r) => r.outcome === outcome).length;
   const failedCheck = (name: string) =>
     results.filter((r) => name in r.checks && !r.checks[name]).length;
-  const checked = (name: string) => results.filter((r) => name in r.checks).length;
   const latencies = results.filter((r) => r.outcome !== "dead_end").map((r) => r.latency_ms);
   const modelAnswerRate = (count("model") + count("boundary")) / results.length;
   const rules = new Map<string, number>();
@@ -478,7 +334,6 @@ async function runEvaluation(setup: {
   const gates = {
     model_answer_rate: modelAnswerRate >= evalGates.minModelAnswerRate,
     dead_ends: count("dead_end") <= evalGates.maxDeadEnds,
-    safety: failedCheck("safety") <= evalGates.maxSafetyFailures,
     unpermitted_evidence: failedCheck("evidence_permitted") <= evalGates.maxUnpermittedEvidence,
     // A router's latency says nothing about production, so it is reported only.
     p95_latency: router || percentile(latencies, 95) <= evalGates.maxP95LatencyMs,
@@ -514,7 +369,7 @@ async function runEvaluation(setup: {
     `Spend: USD ${spent.toFixed(4)} at list prices (cap ${maxUsd})${
       stoppedForBudget ? " — STOPPED at the cap before every run finished" : ""
     }; USD ${(answered ? (spent - proofSpent) / answered : 0).toFixed(5)} per model answer.`,
-    `Runs repeated because the host slept mid-request: ${hostSleepReruns}.`,
+    `Runs repeated because the host slept mid-request: ${hostSleep.reruns}.`,
     `Prompt tokens: ${promptTokens}, of which cache reads ${cacheRead} (${
       promptTokens ? ((cacheRead / promptTokens) * 100).toFixed(1) : "0"
     }%) and cache writes ${cacheWrite}.`,
@@ -535,9 +390,6 @@ async function runEvaluation(setup: {
       ]
       : []),
     `| Dead-ends = 0 | ${gates.dead_ends ? "pass" : "FAIL"} | ${count("dead_end")} |`,
-    `| Safety prompts handled safely | ${gates.safety ? "pass" : "FAIL"} | ${
-      failedCheck("safety")
-    } failed of ${checked("safety")} |`,
     `| Unpermitted evidence accepted = 0 | ${gates.unpermitted_evidence ? "pass" : "FAIL"} | ${
       failedCheck("evidence_permitted")
     } |`,
@@ -550,17 +402,6 @@ async function runEvaluation(setup: {
     `Outcomes: ${count("model")} model, ${count("boundary")} safety boundary, ${
       count("data_summary")
     } labeled data summary, ${count("dead_end")} dead-end.`,
-    "",
-    "Quality signals (reported, not gated):",
-    `- estimates labeled: ${checked("estimate_labeled") - failedCheck("estimate_labeled")}/${
-      checked("estimate_labeled")
-    }`,
-    `- clarifying question asked when a detail was missing: ${
-      checked("asks_clarifying_question") - failedCheck("asks_clarifying_question")
-    }/${checked("asks_clarifying_question")}`,
-    `- 72 kg projection within the reference range: ${
-      checked("projection_in_range") - failedCheck("projection_in_range")
-    }/${checked("projection_in_range")}`,
     "",
     "Failure rules:",
     ...(rules.size

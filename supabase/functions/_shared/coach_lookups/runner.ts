@@ -17,6 +17,8 @@ export type LookupCount = Readonly<{ lookup: string; rows: number }>;
 export type LookupRound = Readonly<{
   /** The labelled section appended to the next model call. */
   text: string;
+  /** The lines the numbers check may ground a reply on: the rows, never the model's request. */
+  grounds: readonly string[];
   counts: readonly LookupCount[];
 }>;
 
@@ -64,6 +66,7 @@ export function createLookupRunner(rpc: LookupRpc, userId: string): CoachLookupR
       .replace(closingTag, "<\\/looked_up_data");
     return {
       text: `${sectionHead}${body}\n</looked_up_data>`,
+      grounds: results.flatMap((result) => result.grounds),
       counts: requests.map((request, index) => ({
         lookup: request.lookup,
         rows: results[index].rows,

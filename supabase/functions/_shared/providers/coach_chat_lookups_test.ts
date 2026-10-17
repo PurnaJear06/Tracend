@@ -78,23 +78,35 @@ async function run(
     runner?: ReturnType<typeof lookupRig>["runner"];
     budget?: Parameters<typeof generateCoachChatViaGateway>[0]["budget"];
     contributions?: Awaited<ReturnType<typeof renderCoachContext>>;
+    timing?: Parameters<typeof generateCoachChatViaGateway>[2];
+    /** Answer every call after the given responses with a provider error. */
+    failAfter?: boolean;
   } = {},
 ) {
   let index = 0;
-  const fake = fakeFetch(() => claude(responses[Math.min(index++, responses.length - 1)]));
+  const fake = fakeFetch(() => {
+    const at = index++;
+    return at >= responses.length && options.failAfter
+      ? new Response("down", { status: 500 })
+      : claude(responses[Math.min(at, responses.length - 1)]);
+  });
   const question = options.question ?? "How did my bench go since August?";
   const logged = await captureLogs(async () => {
     try {
-      return await generateCoachChatViaGateway({
-        question,
-        context: options.context ?? rich(),
-        contextKind: classifyQuestion(question),
-        route: haiku(),
-        consentVendor: "anthropic",
-        lookups: options.runner,
-        budget: options.budget,
-        contributions: options.contributions,
-      }, { fetch: fake.fetch });
+      return await generateCoachChatViaGateway(
+        {
+          question,
+          context: options.context ?? rich(),
+          contextKind: classifyQuestion(question),
+          route: haiku(),
+          consentVendor: "anthropic",
+          lookups: options.runner,
+          budget: options.budget,
+          contributions: options.contributions,
+        },
+        { fetch: fake.fetch },
+        options.timing,
+      );
     } catch (error) {
       return error as CoachChatUnavailableError;
     }
@@ -348,4 +360,88 @@ Deno.test("an empty data_requests list is a final answer", async () => {
   generation(result);
   assertEquals(sent.length, 1);
   assertEquals(rig.calls.length, 0);
+});
+
+Deno.test("the model's own filter text grounds nothing: a figure it put in the filter is not the athlete's", async () => {
+  const rig = lookupRig();
+  const { result } = await run(
+    [
+      asking([{ ...benchRequest, filter: "bench 140 kg" }]),
+      final("Your bench reached 140 kg."),
+      final("Your bench reached 85 kg."),
+    ],
+    { runner: rig.runner },
+  );
+  const done = generation(result);
+  assertEquals(rig.calls[0].params.p_filter, "bench 140 kg");
+  assertEquals(done.attempts.map((attempt) => [attempt.attempt, attempt.outcome, attempt.rule]), [
+    ["initial", "lookup", undefined],
+    ["lookup", "invalid", "numbers_not_grounded"],
+    ["repair", "valid", undefined],
+  ]);
+});
+
+Deno.test("the period looked at is grounded, so the answer can name it", async () => {
+  const rig = lookupRig();
+  const { result } = await run(
+    [
+      asking([benchRequest]),
+      final("From 2026-08-01 to 2026-09-27 your heaviest bench set went from 80 kg to 85 kg."),
+    ],
+    { runner: rig.runner },
+  );
+  assertEquals(generation(result).attempts.at(-1)?.outcome, "valid");
+});
+
+Deno.test("the interim sentence is checked only against what the model had seen when it wrote it", async () => {
+  const rig = lookupRig();
+  // 99.2 appears only in the looked-up rows, which the model had not seen yet.
+  const { result } = await run(
+    [
+      asking([benchRequest], "Your estimated one-rep max is 99.2 kg, I am checking the rest."),
+    ],
+    {
+      runner: rig.runner,
+      budget: { reserveAttempt: () => Promise.resolve(false), inFlight: () => {} },
+    },
+  );
+  assert(result instanceof CoachChatUnavailableError);
+});
+
+Deno.test("a lookup call that fails after the rows were fetched ends with the interim sentence and says what was not checked", async () => {
+  const rig = lookupRig();
+  const { result, sent } = await run([asking([benchRequest])], {
+    runner: rig.runner,
+    failAfter: true,
+  });
+  const done = generation(result);
+  assert(sent.length >= 2);
+  assertEquals(done.answer.answer, "I am checking your records and have not seen them yet.");
+  assertEquals(done.answer.missing_data, [
+    "Could not check: exercise_history 2026-08-01 to 2026-09-27",
+  ]);
+  assertEquals(done.lookups, [{ lookup: "exercise_history", rows: 2 }]);
+});
+
+Deno.test("a failed lookup call with no usable interim sentence falls back as before", async () => {
+  const rig = lookupRig();
+  const { result } = await run([asking([benchRequest], "Up 987 kg.")], {
+    failAfter: true,
+    runner: rig.runner,
+  });
+  assert(result instanceof CoachChatUnavailableError);
+  assertEquals(result.failureReason, "provider_http_error");
+});
+
+Deno.test("a lookup round does not start when too little of the turn's deadline is left", async () => {
+  const rig = lookupRig();
+  const { result, sent } = await run([asking([benchRequest])], {
+    runner: rig.runner,
+    timing: { totalDeadlineMs: 2_000, initialAttemptMs: 28_000, repairAttemptMs: 10_000 },
+  });
+  const done = generation(result);
+  assertEquals(sent.length, 1);
+  assertEquals(rig.calls.length, 0);
+  assertEquals(done.answer.answer, "I am checking your records and have not seen them yet.");
+  assertEquals(done.answer.missing_data.length, 1);
 });

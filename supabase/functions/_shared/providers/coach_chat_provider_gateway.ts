@@ -12,6 +12,8 @@
 // cache; what changes every turn comes after the breakpoint.
 
 import {
+  type CoachChatAnswerCheck,
+  coachChatAnswerLimits,
   type CoachChatAnswerV2,
   CoachChatAnswerValidationError,
   coachChatEvidenceSources,
@@ -358,9 +360,14 @@ export async function generateCoachChatViaGateway(
   const contributions = input.contributions ?? noCoachContributions;
   const coachingDate = typeof context.coaching_date === "string" ? context.coaching_date : "";
   // The rows looked up so far ground the numbers check: a figure in them is the athlete's own.
+  // Only lines the server produced from the records count, never the model's own request text.
   const sections: string[] = [];
+  const grounds: string[] = [];
   const lookupsRun: LookupCount[] = [];
-  let answerCheck = coachReplyCheckFor(context, question, contributions, sections);
+  let answerCheck = coachReplyCheckFor(context, question, contributions, grounds);
+  // One call of a lookup round gets half an initial attempt, and a round starts only when that
+  // much of the turn's deadline is left, so sequential calls cannot run past it.
+  const lookupCallMs = Math.round(timing.initialAttemptMs / 2);
   const schema = coachChatGatewaySchema(permitted, input.lookups !== undefined);
   const deadline = Date.now() + timing.totalDeadlineMs;
   const attempts: CoachChatAttemptTelemetry[] = [];
@@ -441,7 +448,9 @@ export async function generateCoachChatViaGateway(
       output: { kind: "json", schema },
       consentVendor: input.consentVendor,
       // The route's own limit, cut to what is left of the turn's total deadline.
-      signal: AbortSignal.timeout(Math.min(route.timeoutMs, remaining)),
+      signal: AbortSignal.timeout(
+        Math.min(route.timeoutMs, remaining, kind === "lookup" ? lookupCallMs : Infinity),
+      ),
     }, deps);
     const usage = result.usage;
     // A sent request that timed out without usage may have been billed: its place stays open.
@@ -599,34 +608,77 @@ export async function generateCoachChatViaGateway(
     ...(lookupsRun.length ? { lookups: [...lookupsRun] } : {}),
   });
 
+  // What the model said when it asked for data: an interim sentence about what it is checking. It
+  // is the answer when a lookup round cannot finish (no budget, no time, a failed call), and it is
+  // checked against only what the model had seen when it wrote it.
+  let pending:
+    | Readonly<{
+      json: unknown;
+      check: CoachChatAnswerCheck;
+      requests: readonly DataRequest[];
+    }>
+    | null = null;
+  const interimAnswer = (): CoachChatAnswerV2 | null => {
+    if (!pending) return null;
+    try {
+      const interim = parseCoachChatAnswer(pending.json, permitted, pending.check);
+      const unchecked = `Could not check: ${
+        pending.requests.map((request) => `${request.lookup} ${request.from} to ${request.to}`)
+          .join("; ")
+      }`.slice(0, 300);
+      return {
+        ...interim,
+        missing_data: [...interim.missing_data, unchecked].slice(
+          0,
+          coachChatAnswerLimits.missingDataMaxItems,
+        ),
+      };
+    } catch {
+      return null;
+    }
+  };
+
   let current = (await attempt("initial", prompt, true))!;
   record(current);
   // Lookup rounds: run what the model asked for, then call it again with the rows.
   let rounds = 0;
+  let lookupStopped = false;
   while (current.lookup && input.lookups) {
+    pending = {
+      json: current.lookup.interim,
+      check: answerCheck,
+      requests: current.lookup.requests,
+    };
+    if (deadline - Date.now() < lookupCallMs) {
+      lookupStopped = true;
+      break;
+    }
     rounds += 1;
     const round = await input.lookups(current.lookup.requests);
     sections.push(round.text);
+    grounds.push(...round.grounds);
     lookupsRun.push(...round.counts);
-    answerCheck = coachReplyCheckFor(context, question, contributions, sections);
+    answerCheck = coachReplyCheckFor(context, question, contributions, grounds);
     const closed = rounds >= maxLookupRounds;
     const next = await attempt("lookup", promptFor(undefined, closed), !closed);
     if (!next) {
-      // No budget place for another call: the model's interim sentence, which says what it
-      // could not check, is the answer if it passes every check.
-      try {
-        const interim = parseCoachChatAnswer(current.lookup.interim, permitted, answerCheck);
-        return success(current, interim);
-      } catch {
-        throw unavailable("provider_response_invalid", null, { repairSkipped });
-      }
+      lookupStopped = true;
+      break;
     }
     current = next;
     record(current);
   }
   if (current.answer) return success(current, current.answer);
+  if (lookupStopped) {
+    const interim = interimAnswer();
+    if (interim) return success(current, interim);
+    throw unavailable("provider_response_invalid", null, { repairSkipped });
+  }
   const repair = current.failure?.repair;
   if (!repair) {
+    // A failed lookup call (timeout, refusal, provider error): the interim sentence answers.
+    const interim = rounds > 0 ? interimAnswer() : null;
+    if (interim) return success(current, interim);
     throw unavailable(current.failure!.reason, current.failure!.retryAfterSeconds);
   }
   const initialRule = { initialRule: repair.issue.rule, initialPath: repair.issue.path };

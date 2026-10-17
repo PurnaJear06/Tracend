@@ -86,6 +86,43 @@ Deno.test("a workout finished earlier this week is not prescribed again in today
   assert(!text.includes("1. Barbell bench press"));
 });
 
+Deno.test("a workout finished under an earlier plan version is matched by name, or by day and order", () => {
+  const withRow = (row: Record<string, unknown>) => {
+    const payload = ownersPlanPayload();
+    (payload.completed_this_week as unknown[]).push(row);
+    return renderTrainingPlan(parsePlanState(payload))!;
+  };
+  // Another version's id, the same name: Saturday's push day was done on Thursday.
+  const byName = withRow({
+    planned_workout_id: "old-version-push",
+    local_date: "2026-10-15",
+    name: "Push day",
+    weekday: 4,
+    order: 1,
+  });
+  assertStringIncludes(byName, "was already done this week (2026-10-15)");
+  assert(!byName.includes("1. Barbell bench press"));
+  // Renamed in the new version, but the same day and place in the week.
+  const byPlace = withRow({
+    planned_workout_id: "old-version-chest",
+    local_date: "2026-10-17",
+    name: "Chest and arms",
+    weekday: 6,
+    order: 3,
+  });
+  assertStringIncludes(byPlace, "is already logged as done");
+  // A workout with a different name, day and order does not hide today's.
+  const unrelated = withRow({
+    planned_workout_id: "old-version-core",
+    local_date: "2026-10-15",
+    name: "Core",
+    weekday: 4,
+    order: 9,
+  });
+  assertStringIncludes(unrelated, "Today's planned session: Push day");
+  assertStringIncludes(unrelated, "Core (2026-10-15)");
+});
+
 Deno.test("with nothing later in the week, a session missed earlier is offered before next week's", () => {
   const payload = ownersPlanPayload();
   payload.weekday = 7;

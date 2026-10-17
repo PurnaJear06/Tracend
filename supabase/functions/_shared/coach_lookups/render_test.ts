@@ -80,7 +80,7 @@ Deno.test("workouts: planned against logged sets with load, reps in reserve and 
     text,
     "Barbell back squat (planned 4 x 5-8): 80 kg x 8 (2 reps in reserve) [peak 152 bpm, 24 bpm lower after 60 s]; 80 kg x 7 (1 reps in reserve)",
   );
-  assertStringIncludes(text, "more rows exist than are shown");
+  assertStringIncludes(text, "more rows exist than the lookup returns");
 });
 
 Deno.test("meals: complete or partial per day, with the meals and where they came from", () => {
@@ -113,21 +113,91 @@ Deno.test("an empty range says so; an unreadable payload tells Coach it could no
   assertEquals(unreadable(request("body", "a", "b")).rows, 0);
 });
 
-Deno.test("one result never exceeds its character cap", () => {
-  const many = Array.from({ length: 60 }, (_, i) => ({
-    local_date: `2026-08-${String((i % 28) + 1).padStart(2, "0")}`,
-    name: "Barbell bench press",
+const session = (day: number) => ({
+  local_date: `2026-10-${String(day).padStart(2, "0")}`,
+  workout: "Leg day",
+  minutes: 58,
+  effort: 8,
+  energy: 4,
+  exercises: Array.from({ length: 6 }, (_, i) => ({
+    name: `Barbell back squat variation number ${i + 1}`,
+    status: "performed",
+    pain: false,
+    planned: { sets: 4, rep_min: 5, rep_max: 8 },
+    sets: Array.from({ length: 4 }, () => ({
+      reps: 8,
+      load_kg: 80,
+      rir: 2,
+      rpe: null,
+      done: true,
+      peak_bpm: 152,
+      drop_60s_bpm: 24,
+    })),
+  })),
+});
+
+Deno.test("a long result shows whole rows, newest first, and the heading counts what was shown", () => {
+  const sessions = Array.from({ length: 15 }, (_, i) => session(15 - i));
+  const { text, rows, grounds } = renderLookup(request("workouts", "2026-10-01", "2026-10-15"), {
+    ...workoutsPayload,
+    truncated: false,
+    sessions,
+  });
+  assert(text.length <= lookupResultMaxChars, `${text.length} characters`);
+  assert(rows > 0 && rows < 15, `${rows} rows shown`);
+  assertStringIncludes(text, `showing the newest ${rows} of 15 rows (the rest were cut for size)`);
+  // Exactly the rows counted are present, whole, newest first; none is cut mid-row.
+  const heads = text.split("\n").filter((line) => line.startsWith("- 2026-10-"));
+  assertEquals(heads.length, rows);
+  assertEquals(heads[0].slice(0, 12), "- 2026-10-15");
+  assertEquals(text.split("Barbell back squat variation number 6").length - 1, rows);
+  assertStringIncludes(grounds[0], `Rows shown: ${rows} of 15.`);
+});
+
+Deno.test("a result that fits says so and is not marked cut", () => {
+  const { text, rows } = renderLookup(
+    request("workouts", "2026-10-01", "2026-10-15"),
+    { ...workoutsPayload, truncated: false, sessions: [session(15), session(14)] },
+  );
+  assertEquals(rows, 2);
+  assertStringIncludes(text, ": 2 rows");
+  assert(!text.includes("showing the newest"));
+});
+
+Deno.test("exercise history rows run oldest to newest: the newest are the ones kept", () => {
+  const many = Array.from({ length: 40 }, (_, i) => ({
+    local_date: `2026-${String(1 + Math.floor(i / 28)).padStart(2, "0")}-${
+      String((i % 28) + 1).padStart(2, "0")
+    }`,
+    name: "Barbell bench press with a long descriptive name to use the budget",
     top_load_kg: 80,
     top_reps: 5,
     sets: 3,
     e1rm_kg: 93.3,
     min_rir: 2,
   }));
-  const { text } = renderLookup(request("exercise_history", "2026-01-01", "2026-10-17", "bench"), {
-    ...exerciseHistoryPayload,
-    sessions: many,
-  });
+  const { text, rows } = renderLookup(
+    request("exercise_history", "2026-01-01", "2026-12-31", "bench"),
+    { ...exerciseHistoryPayload, truncated: false, sessions: many },
+  );
   assert(text.length <= lookupResultMaxChars);
+  assert(rows < 40);
+  assertStringIncludes(text, `showing the newest ${rows} of 40 rows`);
+  assertStringIncludes(text, "- 2026-02-12 ");
+  assert(!text.includes("- 2026-01-01 "));
+  // The plan and the next target survive the cut.
+  assertStringIncludes(text, "Plan now:");
+});
+
+Deno.test("the grounds are the server's lines: the model's filter text is not among them", () => {
+  const { text, grounds } = renderLookup(
+    request("exercise_history", "2026-08-01", "2026-09-27", "bench 140 kg"),
+    exerciseHistoryPayload,
+  );
+  assertStringIncludes(text, 'filter "bench 140 kg"');
+  assert(!grounds.join("\n").includes("140"));
+  assertStringIncludes(grounds[0], "Period looked at: 2026-08-01 to 2026-09-27.");
+  assert(grounds.some((line) => line.includes("2026-09-10 Barbell bench press")));
 });
 
 Deno.test("the runner binds the athlete, calls one RPC per request and reports names and row counts", async () => {

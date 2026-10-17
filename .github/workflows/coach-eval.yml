@@ -1,30 +1,48 @@
 name: Coach Eval
 
-# Live Coach chat evaluation with synthetic athletes. On demand only and not a
-# required check. Before merging a Coach chat change, add the `coach-eval` label
-# to the pull request (runs that PR's code) or use Run workflow on main.
+# The live Coach evaluations. On demand only and not a required check. Before merging a Coach
+# change, add the `coach-eval` label to the pull request (runs that PR's code) or use Run
+# workflow on main. Every Coach pull request must pass the answer bank (docs/TESTING_STRATEGY.md).
 #
-# By default it calls DeepSeek (`DEEPSEEK_API_KEY` secret). Set the repository
-# variable `EVAL_BASE_URL` (for example https://router.bynara.id/v1) and the
-# `EVAL_API_KEY` secret to send the same requests through an OpenAI-compatible
-# router instead; `EVAL_MODEL` overrides the model name. A router run is a
-# smoke test: each attempt may wait up to 120 s and latency is reported, not
-# gated, because it is not production latency. Each run makes 17 calls unless
-# `max_calls` or the `EVAL_MAX_CALLS` variable says otherwise: all six safety
-# prompts (three are answered by the deterministic boundary at no cost) and
-# one prompt from each other category. Safety prompts always run in full;
-# "all" runs every prompt for every athlete.
+# Three parts:
+#   - Answer bank (supabase/functions/_evals/coach_bank/): about 100 synthetic athletes, each run
+#     3 times against the real model, graded by code. Safety categories allow zero failures; the
+#     others report a pass rate against a threshold. Its deterministic half (graders, red-flag
+#     cases, good and bad replies) already runs in the Deno job of ci.yml on every pull request.
+#   - Operations (coach_chat_eval.ts): about 54 prompts x 3 athletes for model-answer rate,
+#     dead ends, latency, spend and the prompt cache. Each run makes 17 calls unless `max_calls`
+#     or the `EVAL_MAX_CALLS` variable says otherwise: one prompt from each category, rotating
+#     prompts and athletes; "all" runs every prompt for every athlete.
+#   - Library retrieval (library_eval.ts): the 86 questions through the real hybrid search on a
+#     local Supabase stack with the real gte-small embeddings, scored as recall@8 and MRR. It
+#     needs the database and the embedding model, so it cannot run in the Deno job.
+#
+# The model is called as before: by default DeepSeek (`DEEPSEEK_API_KEY` secret). Set the
+# repository variable `EVAL_BASE_URL` (for example https://router.bynara.id/v1) and the
+# `EVAL_API_KEY` secret to send the same requests through an OpenAI-compatible router instead;
+# `EVAL_MODEL` overrides the model name. A router run is a smoke test: each attempt may wait up
+# to 120 s and latency is reported, not gated, because it is not production latency. To run the
+# bank on the Claude route Coach uses in production, run it locally with the AI_COACH_CHAT_*
+# settings and ANTHROPIC_API_KEY (live_model.ts); no Anthropic key is stored in this repository.
 on:
   workflow_dispatch:
     inputs:
       max_calls:
-        description: Runs to make (every safety prompt always runs), or "all"
+        description: Calls the operations evaluation makes (one prompt per category, rotating), or "all"
         required: false
         default: "17"
       repeats:
         description: Runs per prompt and athlete when max_calls is "all"
         required: false
         default: "2"
+      bank_repeats:
+        description: Runs of each answer bank case that reaches a model
+        required: false
+        default: "3"
+      bank_cases:
+        description: Comma-separated parts of case ids to run (empty runs the whole bank)
+        required: false
+        default: ""
   pull_request:
     types: [labeled]
 
@@ -40,7 +58,7 @@ jobs:
     name: Coach chat live evaluation
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'coach-eval'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -50,7 +68,25 @@ jobs:
         with:
           deno-version: "2.9.0"
 
-      - name: Run live evaluation
+      - name: Run the answer bank
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+          EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
+          EVAL_MODEL: ${{ vars.EVAL_MODEL }}
+          EVAL_REPEATS: ${{ inputs.bank_repeats || '3' }}
+          EVAL_CASES: ${{ inputs.bank_cases }}
+          EVAL_REPORT_DIR: eval-report/bank
+        run: |
+          hosts="api.deepseek.com"
+          if [ -n "$EVAL_BASE_URL" ]; then
+            hosts="$hosts,$(printf '%s' "$EVAL_BASE_URL" | sed -E 's#^https?://([^/]+).*#\1#')"
+          fi
+          deno run --allow-env --allow-net="$hosts" --allow-read --allow-write \
+            supabase/functions/_evals/coach_bank/run.ts
+
+      - name: Run the operations evaluation
+        if: ${{ !cancelled() }}
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
@@ -58,7 +94,7 @@ jobs:
           EVAL_MODEL: ${{ vars.EVAL_MODEL }}
           EVAL_MAX_CALLS: ${{ inputs.max_calls || vars.EVAL_MAX_CALLS || '17' }}
           EVAL_REPEATS: ${{ inputs.repeats || '2' }}
-          EVAL_REPORT_DIR: eval-report
+          EVAL_REPORT_DIR: eval-report/operations
         run: |
           hosts="api.deepseek.com"
           if [ -n "$EVAL_BASE_URL" ]; then
@@ -73,4 +109,85 @@ jobs:
         with:
           name: coach-eval-report
           path: eval-report
+          retention-days: 30
+
+  library-retrieval:
+    name: Library retrieval evaluation
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'coach-eval'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: "2.9.0"
+
+      - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
+        with:
+          version: "2.101.0"
+
+      - name: Install the PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-client
+
+      - name: Start the local Supabase stack with every migration
+        run: |
+          supabase start
+          supabase db reset
+
+      - name: Serve the embedding function
+        run: |
+          supabase functions serve --no-verify-jwt > functions.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+              http://127.0.0.1:54321/functions/v1/library-embed \
+              -H 'Content-Type: application/json' -d '{}' || true)
+            if [ "$code" = 401 ] || [ "$code" = 403 ]; then exit 0; fi
+            sleep 5
+          done
+          cat functions.log
+          echo '::error::library-embed did not start.'
+          exit 1
+
+      - name: Embed every chunk with the real model
+        run: |
+          secret=$(PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -tA \
+            -c 'select private.library_worker_secret()')
+          key=$(supabase status -o env | sed -n 's/^SERVICE_ROLE_KEY="\(.*\)"/\1/p')
+          echo "::add-mask::$secret"
+          echo "::add-mask::$key"
+          echo "EVAL_WORKER_SECRET=$secret" >> "$GITHUB_ENV"
+          echo "EVAL_SERVICE_KEY=$key" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 60); do
+            curl -sS -X POST http://127.0.0.1:54321/functions/v1/library-embed \
+              -H "Authorization: Bearer $secret" -H 'Content-Type: application/json' \
+              -d '{}' > /dev/null || true
+            status=$(curl -sS -X POST http://127.0.0.1:54321/rest/v1/rpc/library_status_v1 \
+              -H "apikey: $key" -H "Authorization: Bearer $key" \
+              -H 'Content-Type: application/json' -d '{}')
+            echo "$status"
+            chunks=$(printf '%s' "$status" | jq '.chunks')
+            embedded=$(printf '%s' "$status" | jq '.embedded_chunks')
+            if [ "$chunks" -gt 0 ] && [ "$chunks" = "$embedded" ]; then exit 0; fi
+            sleep 5
+          done
+          echo '::error::Not every chunk was embedded.'
+          exit 1
+
+      - name: Run the retrieval evaluation
+        run: |
+          deno run --allow-env --allow-net=127.0.0.1 --allow-read=supabase/functions/_evals \
+            supabase/functions/_evals/library_eval.ts | tee retrieval-report.txt
+          cat retrieval-report.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: library-retrieval-report
+          path: retrieval-report.txt
           retention-days: 30

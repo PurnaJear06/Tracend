@@ -150,7 +150,7 @@ export function renderNutritionState(state: NutritionState | null): string | nul
         partial.map((day) =>
           `${day.localDate} ${day.meals} ${
             day.meals === 1 ? "meal" : "meals"
-          }, ${day.calories} kcal`
+          }, ${day.calories} kcal, ${day.protein} g protein`
         ).join("; ") + ".",
     );
   }

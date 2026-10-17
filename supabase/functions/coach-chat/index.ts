@@ -60,7 +60,10 @@ import {
   renderCoachContext,
   validateCoachContextContributors,
 } from "../_shared/coach_context/host.ts";
-import { coachContextContributors } from "../_shared/coach_context/registry.ts";
+import {
+  coachContextContributors,
+  coachContextContributorsFor,
+} from "../_shared/coach_context/registry.ts";
 import { coachServiceRpc } from "../_shared/coach_context/service_source.ts";
 import { createLookupRunner } from "../_shared/coach_lookups/runner.ts";
 import { guardFaultsOf, lookupTrace, recordTurnTrace } from "./turn_trace.ts";
@@ -792,7 +795,7 @@ export async function handleCoachChat(
     // Both paths render the contributors (the goal phase review is not tied to the gateway). A
     // referral shows the model nothing, so it renders none.
     const contributions = redFlag ? noCoachContributions : await renderCoachContext(
-      coachContextContributors,
+      coachContextContributorsFor(coachRoute !== null),
       {
         userId: auth.userId,
         question: input.question,

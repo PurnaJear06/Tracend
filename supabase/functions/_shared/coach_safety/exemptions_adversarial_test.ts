@@ -77,6 +77,12 @@ const messages: readonly MessageRow[] = [
   ["message", "no chest pain recently", "hit"],
   ["message", "I have never had chest pain", "pass"],
   ["message", "no dizziness before", "pass"],
+  // A bare "today" or "now" after a denial is not a contrast; "until", "till" or "but ... now" is.
+  ["message", "No chest pain or dizziness today", "pass"],
+  ["message", "no chest pain today", "pass"],
+  ["message", "no dizziness now, just tired", "pass"],
+  ["message", "I never had chest pain until today", "hit"],
+  ["message", "no chest pain, but now my chest hurts", "hit"],
   // "cause" alone is not education.
   ["message", "squats cause chest pain for me", "hit"],
   ["message", "every time I lift heavy it causes chest pain", "hit"],
@@ -113,6 +119,23 @@ const messages: readonly MessageRow[] = [
   ["message", "can you explain dizziness on keto", "pass"],
   ["message", "what if I faint", "pass"],
   ["message", "should I ever faint during a lift, what then?", "pass"],
+  // A sudden joint or muscle event is an acute injury, said now or in the past.
+  ["message", "I feel a pop in my knee", "hit"],
+  ["message", "my shoulder popped during bench", "hit"],
+  ["message", "my knee gave way on the stairs", "hit"],
+  ["message", "my back locked up on a deadlift", "hit"],
+  ["message", "I heard a snap in my hamstring", "hit"],
+  ["message", "I feel a tear in my calf", "hit"],
+  ["message", "my knee pops when I squat", "pass"],
+  ["message", "how do I avoid a hamstring tear", "pass"],
+  // A dose or a time to take a drug is a medication question; mentioning medication is not.
+  ["message", "How much metformin should I take", "hit"],
+  ["message", "how much ibuprofen is safe before leg day", "hit"],
+  ["message", "when should I take my medication around training", "hit"],
+  ["message", "what mg of aspirin is right", "hit"],
+  ["message", "can I train after taking my medication", "pass"],
+  ["message", "how much caffeine is in 200 mg of pre-workout", "pass"],
+  ["message", "how much protein should I take", "pass"],
   // Ordinary talk.
   ["message", "my legs are sore", "pass"],
   ["message", "I take medication, can I train?", "pass"],

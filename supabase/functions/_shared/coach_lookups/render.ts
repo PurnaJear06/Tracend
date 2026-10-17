@@ -8,7 +8,26 @@ import { type DataRequest, lookupSpec } from "./catalogue.ts";
 /** Most characters of one lookup's text. */
 export const lookupResultMaxChars = 5_000;
 
-export type RenderedLookup = Readonly<{ text: string; rows: number }>;
+export type RenderedLookup = Readonly<{
+  /** What the model reads: a heading, then the rows. */
+  text: string;
+  /** Rows the model was shown. */
+  rows: number;
+  /**
+   * The lines the server produced from the records, for the numbers check: the rows shown, the
+   * counts and the period. Never the model's own filter text.
+   */
+  grounds: readonly string[];
+}>;
+
+/** A lookup's rows as units (a row with its detail lines), ahead of fitting them to the budget. */
+type Parts = Readonly<{
+  preface: string[];
+  units: string[][];
+  trailer: string[];
+  /** Units run oldest to newest, so the newest are the last ones. */
+  newestLast?: boolean;
+}>;
 
 type Json = Record<string, unknown>;
 
@@ -39,9 +58,9 @@ function setText(set: Json): string {
   return text;
 }
 
-function workouts(body: Json): { lines: string[]; rows: number } {
+function workouts(body: Json): Parts {
   const sessions = list(body.sessions);
-  const lines = sessions.flatMap((session) => {
+  const units = sessions.map((session) => {
     const head = `- ${val(session.local_date)} ${val(session.workout)}, ${
       withUnit(session.minutes, "min")
     }, effort ${val(session.effort)}`;
@@ -57,26 +76,30 @@ function workouts(body: Json): { lines: string[]; rows: number } {
     });
     return [head, ...exercises];
   });
-  return { lines, rows: sessions.length };
+  return { preface: [], units, trailer: [] };
 }
 
-function exerciseHistory(body: Json): { lines: string[]; rows: number } {
+function exerciseHistory(body: Json): Parts {
   const sessions = list(body.sessions);
-  const lines = sessions.map((session) => {
+  const units = sessions.map((session) => {
     if (session.assisted === true) {
       // Machine help is the load: the top set is the least help, and there is no one-rep max.
       const help = Number(session.top_load_kg) === 0
         ? "unassisted"
         : `${val(session.top_load_kg)} kg help`;
-      return `- ${val(session.local_date)} ${val(session.name)} (assisted): least help ${help} x ${
-        val(session.top_reps)
-      }, ${val(session.sets)} sets, fewest reps in reserve ${val(session.min_rir)}`;
+      return [
+        `- ${val(session.local_date)} ${val(session.name)} (assisted): least help ${help} x ${
+          val(session.top_reps)
+        }, ${val(session.sets)} sets, fewest reps in reserve ${val(session.min_rir)}`,
+      ];
     }
-    return `- ${val(session.local_date)} ${val(session.name)}: heaviest set ${
-      has(session.top_load_kg) ? `${session.top_load_kg} kg x ` : ""
-    }${val(session.top_reps)}, ${val(session.sets)} sets, estimated one-rep max ${
-      withUnit(session.e1rm_kg, "kg")
-    }, fewest reps in reserve ${val(session.min_rir)}`;
+    return [
+      `- ${val(session.local_date)} ${val(session.name)}: heaviest set ${
+        has(session.top_load_kg) ? `${session.top_load_kg} kg x ` : ""
+      }${val(session.top_reps)}, ${val(session.sets)} sets, estimated one-rep max ${
+        withUnit(session.e1rm_kg, "kg")
+      }, fewest reps in reserve ${val(session.min_rir)}`,
+    ];
   });
   const planned = list(body.planned).map((item) =>
     `Plan now: ${val(item.name)} ${item.sets} x ${item.rep_min}-${item.rep_max}, rest ${
@@ -85,10 +108,10 @@ function exerciseHistory(body: Json): { lines: string[]; rows: number } {
   );
   const targets = parseProgressionSummary({ schema_version: "1.0", targets: body.next_targets })
     .map((target) => `Next target (Tracend): ${describeTarget(target)}`);
-  return { lines: [...lines, ...planned, ...targets], rows: sessions.length };
+  return { preface: [], units, trailer: [...planned, ...targets], newestLast: true };
 }
 
-function meals(body: Json): { lines: string[]; rows: number } {
+function meals(body: Json): Parts {
   const days = list(body.days);
   const rules = rec(body.rules);
   const header =
@@ -116,10 +139,14 @@ function meals(body: Json): { lines: string[]; rows: number } {
       list(meal.foods).map((food) => `${val(food.name)} ${val(food.calories)} kcal`).join(", ")
     }`
   );
-  return { lines: [header, ...dayLines, ...mealLines], rows: days.length + mealLines.length };
+  return {
+    preface: [header],
+    units: [...dayLines, ...mealLines].map((line) => [line]),
+    trailer: [],
+  };
 }
 
-function bodyLookup(body: Json): { lines: string[]; rows: number } {
+function bodyLookup(body: Json): Parts {
   const weights = list(body.weights);
   const tape = list(body.measurements);
   const lines = [
@@ -130,10 +157,10 @@ function bodyLookup(body: Json): { lines: string[]; rows: number } {
       }, arm ${val(row.arm_cm)}, thigh ${val(row.thigh_cm)} (cm)`
     ),
   ];
-  return { lines, rows: weights.length + tape.length };
+  return singles(lines);
 }
 
-function checkIns(body: Json): { lines: string[]; rows: number } {
+function checkIns(body: Json): Parts {
   const rows = list(body.check_ins);
   const lines = rows.map((row) => {
     const note = String(row.note ?? "").trim() === ""
@@ -147,10 +174,10 @@ function checkIns(body: Json): { lines: string[]; rows: number } {
       row.available_to_train === false ? "not available to train" : "available to train"
     }${note}`;
   });
-  return { lines, rows: rows.length };
+  return singles(lines);
 }
 
-function recovery(body: Json): { lines: string[]; rows: number } {
+function recovery(body: Json): Parts {
   const days = list(body.days);
   const lines = days.map((day) =>
     `- ${val(day.local_date)}: sleep ${withUnit(day.sleep_minutes, "min")}, resting heart rate ${
@@ -159,14 +186,14 @@ function recovery(body: Json): { lines: string[]; rows: number } {
       val(day.recovery_score)
     }, sleep quality ${val(day.sleep_quality)}, load ratio ${val(day.acwr)}`
   );
-  return { lines, rows: days.length };
+  return singles(lines);
 }
 
-function planHistory(body: Json): { lines: string[]; rows: number } {
+function planHistory(body: Json): Parts {
   const training = list(body.training);
   const nutrition = list(body.nutrition);
-  const lines = [
-    ...training.flatMap((version) => [
+  const units = [
+    ...training.map((version) => [
       `- Plan v${val(version.version)} (${val(version.status)}), created ${
         val(version.created_on)
       }, effective ${val(version.effective_date)}: ${val(version.title)}, ${
@@ -180,20 +207,20 @@ function planHistory(body: Json): { lines: string[]; rows: number } {
         }`
       ),
     ]),
-    ...nutrition.map((target) =>
+    ...nutrition.map((target) => [
       `- Nutrition target v${val(target.version)} (${val(target.status)}), created ${
         val(target.created_on)
       }, effective ${val(target.effective_date)}: ${val(target.calories)} kcal, protein ${
         val(target.protein_g)
       } g, carbs ${val(target.carbohydrate_g)} g, fat ${val(target.fat_g)} g. Why: ${
         val(target.rationale)
-      }`
-    ),
+      }`,
+    ]),
   ];
-  return { lines, rows: training.length + nutrition.length };
+  return { preface: [], units, trailer: [] };
 }
 
-function goals(body: Json): { lines: string[]; rows: number } {
+function goals(body: Json): Parts {
   const goalRows = list(body.goals);
   const screenings = list(body.screenings);
   const lines = [
@@ -216,10 +243,10 @@ function goals(body: Json): { lines: string[]; rows: number } {
       `- Health check ${val(row.screened_on)}: ${val(row.outcome).replaceAll("_", " ")}`
     ),
   ];
-  return { lines, rows: goalRows.length + screenings.length };
+  return singles(lines);
 }
 
-function weeklyReviews(body: Json): { lines: string[]; rows: number } {
+function weeklyReviews(body: Json): Parts {
   const reviews = list(body.reviews);
   const lines = reviews.map((review) => {
     const training = rec(review.training);
@@ -234,10 +261,10 @@ function weeklyReviews(body: Json): { lines: string[]; rows: number } {
       val(review.next_focus_code).replaceAll("_", " ")
     }`;
   });
-  return { lines, rows: reviews.length };
+  return singles(lines);
 }
 
-function healthHistory(body: Json): { lines: string[]; rows: number } {
+function healthHistory(body: Json): Parts {
   const months = list(body.months);
   const lines = months.map((month) =>
     `- ${String(month.month ?? "").slice(0, 7)} (imported from Apple Health): ${
@@ -248,10 +275,17 @@ function healthHistory(body: Json): { lines: string[]; rows: number } {
       val(month.sleep_nights)
     } nights, weight ${withUnit(month.weight_kg_avg, "kg")} over ${val(month.weight_days)} days`
   );
-  return { lines, rows: months.length };
+  return singles(lines);
 }
 
-const renderers: Readonly<Record<string, (body: Json) => { lines: string[]; rows: number }>> = {
+/** One line per row. */
+const singles = (lines: string[]): Parts => ({
+  preface: [],
+  units: lines.map((line) => [line]),
+  trailer: [],
+});
+
+const renderers: Readonly<Record<string, (body: Json) => Parts>> = {
   workouts,
   exercise_history: exerciseHistory,
   meals,
@@ -264,17 +298,24 @@ const renderers: Readonly<Record<string, (body: Json) => { lines: string[]; rows
   health_history: healthHistory,
 };
 
-/** The heading of a result: what was asked, the range, and whether older rows were cut. */
-function heading(request: DataRequest, body: Json, rows: number): string {
+/** The heading of a result: what was asked, the period, how many rows are shown and why not all. */
+function heading(request: DataRequest, shown: number, total: number, sqlCut: boolean) {
   const range = `${request.from} to ${request.to}`;
   const filter = request.filter ? `, filter "${request.filter.replace(/"/g, "")}"` : "";
-  const cut = body.truncated === true
-    ? "; more rows exist than are shown (the newest are shown): ask for a narrower range for the rest"
+  const count = shown < total
+    ? `showing the newest ${shown} of ${total} rows (the rest were cut for size)`
+    : `${total} ${total === 1 ? "row" : "rows"}`;
+  const more = sqlCut
+    ? "; more rows exist than the lookup returns (the newest are shown): ask for a narrower range for the rest"
     : "";
-  return `### ${request.lookup} ${range}${filter}: ${rows} ${rows === 1 ? "row" : "rows"}${cut}`;
+  return `### ${request.lookup} ${range}${filter}: ${count}${more}`;
 }
 
-/** The text of a lookup's RPC payload, or a plain notice when the payload is not readable. */
+/**
+ * The text of a lookup's RPC payload. Whole rows are shown, newest first, until the character
+ * budget runs out; the heading then says how many of how many, so the model never believes it saw
+ * more than it did. An unreadable payload becomes a notice that Coach could not check.
+ */
 export function renderLookup(request: DataRequest, payload: unknown): RenderedLookup {
   const body = rec(payload);
   const render = renderers[request.lookup];
@@ -284,13 +325,32 @@ export function renderLookup(request: DataRequest, payload: unknown): RenderedLo
   ) {
     return unreadable(request);
   }
-  const { lines, rows } = render(body);
-  const empty = rows === 0 ? ["No records in this range."] : [];
-  const text = clipToBudget(
-    [heading(request, body, rows), ...empty, ...lines].join("\n"),
-    lookupResultMaxChars,
-  );
-  return { text, rows };
+  const parts = render(body);
+  const total = parts.units.length;
+  const sqlCut = body.truncated === true;
+  const fixed = [...parts.preface, ...parts.trailer].join("\n").length;
+  // Room for the widest heading, then rows: newest first (the last ones when the rows run
+  // oldest to newest).
+  let used = fixed + heading(request, total, total + 1, sqlCut).length + 40;
+  const kept: string[][] = [];
+  const order = parts.newestLast ? [...parts.units].reverse() : parts.units;
+  for (const unit of order) {
+    const size = unit.join("\n").length + 1;
+    if (used + size > lookupResultMaxChars) break;
+    kept.push(unit);
+    used += size;
+  }
+  const shown = parts.newestLast ? kept.reverse() : kept;
+  const lines = [...parts.preface, ...shown.flat(), ...parts.trailer];
+  const empty = total === 0 ? ["No records in this range."] : [];
+  return {
+    text: [heading(request, shown.length, total, sqlCut), ...empty, ...lines].join("\n"),
+    rows: shown.length,
+    grounds: [
+      `Period looked at: ${request.from} to ${request.to}. Rows shown: ${shown.length} of ${total}.`,
+      ...lines,
+    ],
+  };
 }
 
 /** Shown in place of a result the server could not read: Coach must say it could not check. */
@@ -299,5 +359,6 @@ export function unreadable(request: DataRequest): RenderedLookup {
     text: `### ${request.lookup} ${request.from} to ${request.to}: could not be read just now. ` +
       "Say you could not check it; do not guess.",
     rows: 0,
+    grounds: [],
   };
 }

@@ -6,7 +6,7 @@ import {
   renderCoachContext,
   validateCoachContextContributors,
 } from "./host.ts";
-import { coachContextContributors } from "./registry.ts";
+import { coachContextContributors, coachContextContributorsFor } from "./registry.ts";
 
 const input = { userId: "user-1", question: "How is my recovery?", localDate: "2026-09-27" };
 
@@ -148,4 +148,15 @@ Deno.test("the most a registry can add covers every label", async () => {
   ];
   const result = await renderCoachContext(list, input);
   assert(result.stable.length + result.volatile.length <= coachContextMaxChars(list));
+});
+
+Deno.test("the data index, which invites lookups, is rendered only on the gateway route", () => {
+  assertEquals(
+    coachContextContributorsFor(true).map((item) => item.id),
+    coachContextContributors.map((item) => item.id),
+  );
+  const legacy = coachContextContributorsFor(false).map((item) => item.id);
+  assertEquals(legacy.includes("data_index"), false);
+  assertEquals(legacy.includes("training_plan"), true);
+  validateCoachContextContributors(coachContextContributorsFor(false));
 });

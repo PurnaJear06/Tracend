@@ -923,9 +923,11 @@ routes stay available by settings alone for two weeks after the cutover.
   with a count and no content (`coach_chat_complete` and `coach_chat_failure` attempts:
   `rule`, `also_rules`, `actual`), so its false-positive rate can be measured from production.
   Guidance figures the model knows from memory are refused unless the context holds them. The
-  **coaching principles digest** (E2, `supabase/library/coaching_principles.ts`, about 6,600
-  characters of fixed text in Tracend's own words with its protein, volume, rest, activity, sleep
-  and hydration figures) is registered as the first stable contributor, so it sits in the cached
+  **coaching principles digest** (E2, `supabase/library/coaching_principles.ts`, about 7,000
+  characters of fixed text in Tracend's own words, version 2, with its protein, volume, rest,
+  activity, sleep, hydration and time-off figures, and short principles on long diets, diet
+  breaks, low energy availability, habits and training at home; region-specific guidance such as
+  the Indian guidelines stays out of it and is reached by retrieval under a region filter) is registered as the first stable contributor, so it sits in the cached
   prefix of every Coach chat prompt and its figures count as given; the persona tells Coach to
   quote them as guidance for healthy adults, never as the athlete's numbers, and to put the
   athlete's plan, targets and the Safe Ranges first. E3 adds retrieval on top.
@@ -974,7 +976,10 @@ adapter still sends no tools.
 - **Order of guards.** The deterministic red-flag screen runs first and answers before any model
   call or lookup. Every guard (safe ranges, screening cap, claimed actions, the numbers check, the
   goal-phase rules) runs on the final answer. The rows a lookup returned count as grounded for the
-  numbers check, because they are the athlete's own records.
+  numbers check, because they are the athlete's own records; the model's own request text (its
+  filter) never does. The interim sentence is checked only against what the model had seen when it
+  wrote it. A lookup call that fails, or a round that cannot start in the time left, also ends in
+  the interim sentence, with a note of what was not checked.
 - **Rows are reference data**, dated and labelled; athlete-written text in them (check-in notes) is
   untrusted data. A lookup that fails is reported to the model as unreadable and it must say it
   could not check.

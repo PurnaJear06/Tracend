@@ -3,7 +3,7 @@ import { goalPhaseContributor } from "./contributors/goal_phase.ts";
 import { screeningContributor } from "./contributors/screening.ts";
 import { trainingPlanContributor } from "./contributors/training_plan.ts";
 import { nutritionStateContributor } from "./contributors/nutrition_state.ts";
-import { dataIndexContributor } from "./contributors/data_index.ts";
+import { dataIndexContributor, dataIndexContributorId } from "./contributors/data_index.ts";
 import { coachingPrinciplesContributor } from "../library/principles.ts";
 
 // The contributors Coach chat renders, in their fixed order (Contract 7). The coaching principles
@@ -22,3 +22,16 @@ export const coachContextContributors: readonly CoachContextContributor[] = Obje
   nutritionStateContributor,
   dataIndexContributor,
 ]);
+
+/**
+ * The contributors for a turn. The data index invites the model to ask for lookups, which exist
+ * only on the gateway route; today's DeepSeek path has no `data_requests`, so it renders without
+ * the index.
+ */
+export function coachContextContributorsFor(
+  gatewayRoute: boolean,
+): readonly CoachContextContributor[] {
+  return gatewayRoute
+    ? coachContextContributors
+    : coachContextContributors.filter((contributor) => contributor.id !== dataIndexContributorId);
+}

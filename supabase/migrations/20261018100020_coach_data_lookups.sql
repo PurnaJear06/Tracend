@@ -69,18 +69,24 @@ $$;
 revoke all on function private.nutrition_day_totals(uuid, date, date)
   from public, anon, authenticated;
 
+-- The athlete's calendar day for a moment, in their account time zone (UTC when unset), so a
+-- range of dates filters records by the day the athlete lived, not the UTC day.
+create function private.local_day(p_user uuid, p_at timestamptz)
+returns date language sql stable set search_path = '' as $$
+  select (p_at at time zone coalesce((
+    select a.timezone from public.user_accounts a
+    join pg_catalog.pg_timezone_names z on z.name = a.timezone
+    where a.id = p_user), 'UTC'))::date;
+$$;
+revoke all on function private.local_day(uuid, timestamptz) from public, anon, authenticated;
+
 -- 3. Change eligibility --------------------------------------------------------------------------
 
 -- The definition from 20260724000001_feature_engine_baselines.sql, unchanged except the nutrition
 -- adherence: it averages the complete days of the last 14 only (a breakfast-only day no longer
 -- counts as a 1,200 kcal deficit) and the result reports how many days that was. The formula
--- changed, so the version is bumped (docs/ALGORITHMS.md section 8, rule 1 and rule 5): the stored
--- policy_version check accepts eligibility-v2 beside the v1 rows already written.
-alter table public.policy_evaluations
-  drop constraint policy_evaluations_policy_version_check;
-alter table public.policy_evaluations
-  add constraint policy_evaluations_policy_version_check
-    check (policy_version in ('daily-v1', 'eligibility-v1', 'eligibility-v2'));
+-- changed, so the version field in the result is bumped to eligibility-v2 (docs/ALGORITHMS.md
+-- section 8, rules 1 and 5).
 
 create or replace function public.evaluate_change_eligibility(
   target_user_id uuid,
@@ -269,10 +275,14 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       ) order by w.workout_order)
       from public.planned_workouts w join active a on a.version_id = w.plan_version_id
       where w.user_id = p_user_id), '[]'::jsonb),
+    -- A session finished under an earlier plan version still counts this week: it carries the
+    -- workout's name, day and order so it can be matched to the active plan's workouts.
     'completed_this_week', coalesce((select jsonb_agg(jsonb_build_object(
-        'planned_workout_id', s.planned_workout_id, 'local_date', s.local_date)
+        'planned_workout_id', s.planned_workout_id, 'local_date', s.local_date,
+        'name', cw.name, 'weekday', cw.preferred_weekday, 'order', cw.workout_order)
         order by s.local_date)
       from public.workout_sessions s
+      join public.planned_workouts cw on cw.id = s.planned_workout_id and cw.user_id = s.user_id
       where s.user_id = p_user_id and s.state = 'completed'
         and s.local_date between p_local_date - (extract(isodow from p_local_date)::integer - 1)
           and p_local_date), '[]'::jsonb),
@@ -364,11 +374,11 @@ returns jsonb language sql stable security definer set search_path = '' as $$
         where c.user_id = p_user_id and c.superseded_at is null),
       'recovery', (select jsonb_build_object('first', min(h.local_date), 'last', max(h.local_date),
           'count', count(*)) from public.daily_health_summaries h where h.user_id = p_user_id),
-      'plan_history', (select jsonb_build_object('first', min(v.created_at::date),
-          'last', max(v.created_at::date), 'count', count(*))
+      'plan_history', (select jsonb_build_object('first', min(private.local_day(p_user_id, v.created_at)),
+          'last', max(private.local_day(p_user_id, v.created_at)), 'count', count(*))
         from public.training_plan_versions v where v.user_id = p_user_id),
-      'goals', (select jsonb_build_object('first', min(g.created_at::date),
-          'last', max(g.created_at::date), 'count', count(*))
+      'goals', (select jsonb_build_object('first', min(private.local_day(p_user_id, g.created_at)),
+          'last', max(private.local_day(p_user_id, g.created_at)), 'count', count(*))
         from public.user_goals g where g.user_id = p_user_id),
       'weekly_reviews', (select jsonb_build_object('first', min(r.review_week),
           'last', max(r.review_week), 'count', count(*))
@@ -662,7 +672,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     join public.training_plans p on p.id = v.plan_id and p.user_id = v.user_id
     where v.user_id = p_user_id
       and (v.status = 'active'
-        or v.created_at::date between greatest(p_from, p_to - 399) and p_to)
+        or private.local_day(p_user_id, v.created_at) between greatest(p_from, p_to - 399) and p_to)
     order by v.created_at desc limit 7
   ), targets as (
     select s.version_number, s.status, s.calories, s.protein_g, s.carbohydrate_g, s.fat_g,
@@ -670,7 +680,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     from public.nutrition_target_sets s
     where s.user_id = p_user_id
       and (s.status = 'active'
-        or s.created_at::date between greatest(p_from, p_to - 399) and p_to)
+        or private.local_day(p_user_id, s.created_at) between greatest(p_from, p_to - 399) and p_to)
     order by s.created_at desc limit 13
   )
   select jsonb_build_object(
@@ -680,7 +690,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     'training', coalesce((select jsonb_agg(jsonb_build_object('version', v.version_number,
         'status', v.status, 'title', v.title, 'sessions_per_week', v.sessions_per_week,
         'block_weeks', v.block_weeks, 'effective_date', v.effective_date,
-        'created_on', v.created_at::date, 'rationale', left(v.rationale, 400),
+        'created_on', private.local_day(p_user_id, v.created_at), 'rationale', left(v.rationale, 400),
         'sessions', (select coalesce(jsonb_agg(jsonb_build_object('name', w.name,
             'weekday', w.preferred_weekday,
             'exercises', (select coalesce(jsonb_agg(jsonb_build_object('name',
@@ -696,7 +706,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     'nutrition', coalesce((select jsonb_agg(jsonb_build_object('version', t.version_number,
         'status', t.status, 'calories', t.calories, 'protein_g', t.protein_g,
         'carbohydrate_g', t.carbohydrate_g, 'fat_g', t.fat_g,
-        'effective_date', t.effective_date, 'created_on', t.created_at::date,
+        'effective_date', t.effective_date, 'created_on', private.local_day(p_user_id, t.created_at),
         'rationale', left(t.rationale, 300)) order by t.created_at desc)
       from (select * from targets order by created_at desc limit 12) t), '[]'::jsonb));
 $$;
@@ -709,11 +719,11 @@ returns jsonb language sql stable security definer set search_path = '' as $$
   with goal_rows as (
     select x.* from public.user_goals x where x.user_id = p_user_id
       and (x.status = 'active'
-        or x.created_at::date between greatest(p_from, p_to - 399) and p_to)
+        or private.local_day(p_user_id, x.created_at) between greatest(p_from, p_to - 399) and p_to)
     order by x.created_at desc limit 11
   ), screening_rows as (
     select x.* from public.onboarding_screenings x where x.user_id = p_user_id
-      and x.screened_at::date between greatest(p_from, p_to - 399) and p_to
+      and private.local_day(p_user_id, x.screened_at) between greatest(p_from, p_to - 399) and p_to
     order by x.screened_at desc limit 11
   )
   select jsonb_build_object(
@@ -721,12 +731,12 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     'to', p_to,
     'truncated', (select count(*) > 10 from goal_rows) or (select count(*) > 10 from screening_rows),
     'goals', coalesce((select jsonb_agg(jsonb_build_object('goal_type', g.goal_type,
-        'status', g.status, 'priority', g.priority, 'created_on', g.created_at::date,
-        'activated_on', g.activated_at::date, 'target', private.goal_target_json(g.details))
+        'status', g.status, 'priority', g.priority, 'created_on', private.local_day(p_user_id, g.created_at),
+        'activated_on', private.local_day(p_user_id, g.activated_at), 'target', private.goal_target_json(g.details))
         order by g.created_at desc)
       from (select * from goal_rows order by created_at desc limit 10) g), '[]'::jsonb),
     'screenings', coalesce((select jsonb_agg(jsonb_build_object('outcome', s.outcome,
-        'screened_on', s.screened_at::date) order by s.screened_at desc)
+        'screened_on', private.local_day(p_user_id, s.screened_at)) order by s.screened_at desc)
       from (select * from screening_rows order by screened_at desc limit 10) s), '[]'::jsonb));
 $$;
 

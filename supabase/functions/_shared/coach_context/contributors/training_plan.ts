@@ -44,6 +44,7 @@ export type PlanExercise = Readonly<{
 
 export type PlanSession = Readonly<{
   id: string;
+  order: number | null;
   name: string;
   weekday: number | null;
   minutes: number | null;
@@ -61,7 +62,14 @@ export type PlanState = Readonly<{
   sessionsPerWeek: number | null;
   sessions: readonly PlanSession[];
   /** Sessions finished this ISO week: planned workout id and date. */
-  completed: readonly Readonly<{ id: string; localDate: string }>[];
+  completed: readonly Readonly<{
+    id: string;
+    localDate: string;
+    /** The finished workout's name, day and order: it may belong to an earlier plan version. */
+    name: string;
+    weekday: number | null;
+    order: number | null;
+  }>[];
   targets: readonly ProgressionTarget[];
 }>;
 
@@ -75,6 +83,7 @@ export function parsePlanState(payload: unknown): PlanState | null {
   if (weekday === null || typeof body.local_date !== "string") return null;
   const sessions = list(body.sessions).map((session): PlanSession => ({
     id: str(session.planned_workout_id),
+    order: num(session.order),
     name: str(session.name),
     weekday: num(session.weekday),
     minutes: num(session.minutes),
@@ -109,6 +118,9 @@ export function parsePlanState(payload: unknown): PlanState | null {
     completed: list(body.completed_this_week).map((row) => ({
       id: str(row.planned_workout_id),
       localDate: str(row.local_date),
+      name: str(row.name),
+      weekday: num(row.weekday),
+      order: num(row.order),
     })),
     targets: parseProgressionSummary(body.progression),
   };
@@ -124,6 +136,21 @@ const prescription = (exercise: PlanExercise) =>
   }`;
 
 /**
+ * The date a session was finished this week, or null. A workout finished under an earlier plan
+ * version (the plan changed mid-week) is matched to the active plan's session by its id, else by
+ * name, else by day and order, so it is not prescribed again.
+ */
+export function finishedOn(state: PlanState, session: PlanSession): string | null {
+  const row = state.completed.find((item) =>
+    item.id === session.id ||
+    (item.name !== "" && item.name.toLowerCase() === session.name.toLowerCase()) ||
+    (item.weekday !== null && item.weekday === session.weekday && item.order !== null &&
+      item.order === session.order)
+  );
+  return row?.localDate ?? null;
+}
+
+/**
  * What the athlete does next: today's session unless it was already done this week (today or
  * earlier), else the next unfinished one later in the week, else one from earlier this week that is
  * still undone, else next week's first. A workout finished this week is never prescribed again.
@@ -137,16 +164,15 @@ export function pickFocusSession(state: PlanState): Readonly<{
   missed: boolean;
   nextWeek: boolean;
 }> {
-  const doneOnById = new Map(state.completed.map((row) => [row.id, row.localDate]));
   const byDay = (a: PlanSession, b: PlanSession) => a.weekday! - b.weekday!;
   const dated = state.sessions.filter((session) => session.weekday !== null).sort(byDay);
   const todays = dated.find((session) => session.weekday === state.weekday) ?? null;
-  const slotDone = todays && doneOnById.has(todays.id) ? todays : null;
-  const base = { doneToday: slotDone, doneOn: slotDone ? doneOnById.get(slotDone.id)! : null };
+  const slotDone = todays && finishedOn(state, todays) !== null ? todays : null;
+  const base = { doneToday: slotDone, doneOn: slotDone ? finishedOn(state, slotDone) : null };
   if (todays && !slotDone) {
     return { ...base, session: todays, isToday: true, missed: false, nextWeek: false };
   }
-  const unfinished = (session: PlanSession) => !doneOnById.has(session.id);
+  const unfinished = (session: PlanSession) => finishedOn(state, session) === null;
   const later = dated.find((session) => session.weekday! > state.weekday && unfinished(session));
   if (later) return { ...base, session: later, isToday: false, missed: false, nextWeek: false };
   const missed = dated.find((session) => session.weekday! < state.weekday && unfinished(session));
@@ -223,7 +249,7 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
   ];
   const done = state.completed.map((row) => {
     const session = state.sessions.find((item) => item.id === row.id);
-    return `${session?.name ?? "a session"} (${row.localDate})`;
+    return `${session?.name ?? (row.name || "a session")} (${row.localDate})`;
   });
   lines.push(
     done.length
@@ -256,7 +282,6 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
       ),
     );
   }
-  const doneIds = new Set(state.completed.map((row) => row.id));
   const rest = state.sessions.filter((session) =>
     session.id !== focus.session?.id && session.id !== focus.doneToday?.id
   );
@@ -264,7 +289,8 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
     lines.push("Other sessions in the plan (a day-by-day list; home options in brackets):");
     lines.push(
       ...rest.map((session) =>
-        compactSession(session, state) + (doneIds.has(session.id) ? " [done this week]" : "")
+        compactSession(session, state) +
+        (finishedOn(state, session) !== null ? " [done this week]" : "")
       ),
     );
   }

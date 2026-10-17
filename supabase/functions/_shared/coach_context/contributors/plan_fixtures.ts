@@ -160,8 +160,20 @@ export function ownersPlanPayload(): Record<string, unknown> {
       },
     ],
     completed_this_week: [
-      { planned_workout_id: "w-pull", local_date: "2026-10-12" },
-      { planned_workout_id: "w-legs", local_date: "2026-10-14" },
+      {
+        planned_workout_id: "w-pull",
+        local_date: "2026-10-12",
+        name: "Pull day",
+        weekday: 1,
+        order: 1,
+      },
+      {
+        planned_workout_id: "w-legs",
+        local_date: "2026-10-14",
+        name: "Leg day",
+        weekday: 3,
+        order: 2,
+      },
     ],
     progression: {
       schema_version: "1.0",

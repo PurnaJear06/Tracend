@@ -65,7 +65,7 @@ Deno.test("k of n days complete; only complete days are averaged; partial days a
   assertStringIncludes(text, "133 g protein (target 150, -17)");
   assertStringIncludes(
     text,
-    "Partial days (probably not fully logged; do not read them as low intake): 2026-10-17 1 meal, 380 kcal.",
+    "Partial days (probably not fully logged; do not read them as low intake): 2026-10-17 1 meal, 380 kcal, 30 g protein.",
   );
 });
 
