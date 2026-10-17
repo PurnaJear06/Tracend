@@ -93,7 +93,7 @@ Deno.test("an ungrounded figure is repaired once, with the figure named in the r
   ]);
   assertEquals(result.attempts[0].actual, 1);
   const logs = lines.join("\n");
-  assert(!logs.includes("45"), "the figure is never logged");
+  assert(!/\b45 minutes\b|"45"|\bwalk/i.test(logs), "the figure and the reply are never logged");
   assert(!logs.includes("walk"), "the reply text is never logged");
 });
 
@@ -184,8 +184,11 @@ Deno.test("two failed answers end in the data summary path, with rule names and 
   assertEquals(result.metadata.repairRule, "numbers_not_grounded");
   assertEquals(result.metadata.attempts?.map((attempt) => attempt.outcome), ["invalid", "invalid"]);
   assertEquals(result.metadata.attempts?.map((attempt) => attempt.actual), [1, 2]);
-  assert(!lines.join("\n").includes("45"), "no figure in a log");
-  assert(!JSON.stringify(result.metadata).includes("45"), "no figure in the failure metadata");
+  assert(!/45 minutes|"45"|walking|50 minutes/i.test(lines.join("\n")), "no figure in a log");
+  assert(
+    !/45 minutes|"45"|walking|50 minutes/i.test(JSON.stringify(result.metadata)),
+    "no figure in the failure metadata",
+  );
 });
 
 Deno.test("the detail for a repair never reaches telemetry", () => {

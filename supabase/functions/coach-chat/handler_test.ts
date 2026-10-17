@@ -35,14 +35,27 @@ type Setup = Readonly<{
   checkIn?: { local_date: string; pain_severity: number } | null;
   /** The athlete's AI consent (default granted). */
   consent?: boolean;
-  /** Earlier user messages with the same text (other keys), and what each attempt produced. */
-  copies?: { id: string; idempotency_key: string }[];
+  /** The thread's stored messages (coach_messages), filtered by the handler's own queries. */
+  stored?: StoredRow[];
+  /** What each attempt produced, by idempotency key (coach_chat_turn). */
   turns?: Record<string, unknown>;
 }>;
+
+type StoredRow = {
+  id: string;
+  user_id: string;
+  thread_id: string;
+  role: string;
+  idempotency_key: string | null;
+  content: string;
+  safety_state: string | null;
+  created_at: string;
+};
 
 async function run(question: string, setup: Setup) {
   const calls: Call[] = [];
   const updates: Record<string, unknown>[] = [];
+  const markedIds: string[] = [];
   const rpc = (name: string, args: Record<string, unknown>) => {
     calls.push([name, args]);
     switch (name) {
@@ -70,31 +83,61 @@ async function run(question: string, setup: Setup) {
         return Promise.resolve({ data: null, error: null });
     }
   };
-  const table = (name: string, rows: unknown) => {
+  // A small in-memory table that applies the handler's filters with SQL semantics: `neq` drops
+  // NULL, `eq` matches exactly. The handler's own queries decide what it reads.
+  const stored = (): StoredRow[] => [
+    ...(setup.stored ?? []),
+    ...(setup.savedQuestionAt
+      ? [{
+        id: "request-question",
+        user_id: "user-1",
+        thread_id: threadId,
+        role: "user",
+        idempotency_key: key,
+        content: "the request",
+        safety_state: null,
+        created_at: setup.savedQuestionAt,
+      }]
+      : []),
+  ];
+  const table = (name: string, fixed: unknown) => {
+    const filters: ((row: Record<string, unknown>) => boolean)[] = [];
+    const rowsNow = () =>
+      name === "coach_messages"
+        ? stored().filter((row) => filters.every((test) => test(row as never)))
+        : fixed;
     const chain: Record<string, unknown> = {
       select: () => chain,
-      eq: () => chain,
-      is: () => chain,
+      eq: (column: string, value: unknown) => {
+        filters.push((row) => row[column] === value);
+        return chain;
+      },
+      neq: (column: string, value: unknown) => {
+        filters.push((row) =>
+          row[column] !== null && row[column] !== undefined && row[column] !== value
+        );
+        return chain;
+      },
+      is: (column: string, value: null) => {
+        filters.push((row) => (row[column] ?? null) === value);
+        return chain;
+      },
+      in: (_column: string, ids: string[]) => {
+        markedIds.push(...ids);
+        return chain;
+      },
       limit: () => chain,
-      neq: () => chain,
-      in: () => chain,
+      order: () => chain,
       update: (payload: Record<string, unknown>) => {
         updates.push(payload);
         return chain;
       },
-      order: () => chain,
-      then: (resolve: (value: unknown) => unknown) =>
-        resolve({
-          data: name === "coach_messages" && setup.copies ? setup.copies : rows,
-          error: null,
-        }),
+      then: (resolve: (value: unknown) => unknown) => resolve({ data: rowsNow(), error: null }),
       maybeSingle: () =>
         Promise.resolve({
           data: name === "daily_check_ins"
             ? setup.checkIn ?? null
-            : setup.savedQuestionAt
-            ? { created_at: setup.savedQuestionAt }
-            : null,
+            : ((rowsNow() as unknown[])[0] ?? null),
           error: null,
         }),
     };
@@ -136,6 +179,7 @@ async function run(question: string, setup: Setup) {
     calls: calls.map(([name]) => name),
     lines: logged.lines,
     updates,
+    markedIds,
   };
 }
 
@@ -153,19 +197,22 @@ const answeredTurn = {
   },
 };
 
-Deno.test("a finished turn is replayed without taking budget, even at the monthly limit", async () => {
+Deno.test("a finished turn is replayed without budget or context work, even at the monthly limit", async () => {
   const result = await run("How did my week go?", {
-    prepared: { replayed: true, turn: answeredTurn },
+    prepared: { replayed: false, context: { coaching_date: "2026-10-17" } },
+    savedQuestionAt: new Date().toISOString(),
+    turns: { [key]: answeredTurn },
     refuse: "monthly cost limit reached",
   });
   assertEquals(result.status, 200);
   assertEquals(result.body.replayed, true);
   assertEquals(result.body.message!.answer, "Keep today's session as planned.");
   assert(!result.calls.includes("reserve_ai_budget"), result.calls.join());
-  assert(result.calls.includes("prepare_coach_chat_v8"));
+  assert(!result.calls.includes("prepare_coach_chat_v8"), result.calls.join());
+  assert(result.calls.includes("coach_chat_turn"));
 });
 
-Deno.test("a new turn at a limit gets 429 with the reason, after the context step", async () => {
+Deno.test("a new turn at a limit gets 429 with the reason and never runs context preparation", async () => {
   for (
     const [message, reason] of [
       ["monthly cost limit reached", "monthly_cost_limit"],
@@ -180,10 +227,8 @@ Deno.test("a new turn at a limit gets 429 with the reason, after the context ste
     assertEquals(result.status, 429);
     assertEquals(result.body.error, "ai_usage_limit");
     assertEquals(result.body.reason, reason);
-    assert(
-      result.calls.indexOf("prepare_coach_chat_v8") < result.calls.indexOf("reserve_ai_budget"),
-      result.calls.join(),
-    );
+    assert(result.calls.includes("reserve_ai_budget"));
+    assert(!result.calls.includes("prepare_coach_chat_v8"), result.calls.join());
     assert(!result.calls.includes("record_coach_chat_question"), "the turn never started");
   }
 });
@@ -199,27 +244,31 @@ Deno.test("an unexplained refusal is a 429 without a reason", async () => {
 
 Deno.test("a turn still running answers 409; a lost one answers 503 turn_lost", async () => {
   const running = await run("How did my week go?", {
-    prepared: { replayed: true, turn: { state: "in_progress" } },
+    prepared: { replayed: false, context: {} },
+    turns: { [key]: { state: "in_progress" } },
     savedQuestionAt: new Date(Date.now() - 5_000).toISOString(),
   });
   assertEquals(running.status, 409);
   assertEquals(running.body.error, "chat_in_progress");
   for (let attempt = 0; attempt < 2; attempt++) {
     const lost = await run("How did my week go?", {
-      prepared: { replayed: true, turn: { state: "in_progress" } },
+      prepared: { replayed: false, context: {} },
+      turns: { [key]: { state: "in_progress" } },
       savedQuestionAt: new Date(Date.now() - 5 * 60_000).toISOString(),
     });
     assertEquals(lost.status, 503);
     assertEquals(lost.body.code, "turn_lost");
     assertEquals(lost.body.replayed, true);
     assert(!lost.calls.includes("reserve_ai_budget"));
+    assert(!lost.calls.includes("prepare_coach_chat_v8"));
   }
 });
 
 Deno.test("a lost turn whose age cannot be read stays a 409", async () => {
   const result = await run("How did my week go?", {
-    prepared: { replayed: true, turn: { state: "in_progress" } },
-    savedQuestionAt: null,
+    prepared: { replayed: false, context: {} },
+    turns: { [key]: { state: "in_progress" } },
+    savedQuestionAt: "not a date",
   });
   assertEquals(result.status, 409);
 });
@@ -293,7 +342,22 @@ Deno.test("an old or mild check-in, or a question that is not about training, ta
   }
 });
 
-Deno.test("a fresh-key retry marks the failed attempt's question superseded and keeps an answered one", async () => {
+const stored = (
+  id: string,
+  extra: Partial<StoredRow> = {},
+): StoredRow => ({
+  id,
+  user_id: "user-1",
+  thread_id: threadId,
+  role: "user",
+  idempotency_key: `key-${id}`,
+  content: "How is my week?",
+  safety_state: null,
+  created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+  ...extra,
+});
+
+Deno.test("a fresh-key retry supersedes failed and lost attempts, and only those", async () => {
   const result = await run("How is my week?", {
     prepared: {
       replayed: false,
@@ -306,23 +370,37 @@ Deno.test("a fresh-key retry marks the failed attempt's question superseded and 
         ],
       },
     },
-    copies: [
-      { id: "failed-1", idempotency_key: "k-failed" },
-      { id: "answered-1", idempotency_key: "k-answered" },
+    stored: [
+      // Marked: a failed attempt (NULL state, as user messages are stored), an untrimmed copy,
+      // and a lost one (still open, well past the function's time limit).
+      stored("failed"),
+      stored("untrimmed", { content: "  How is my week?\n" }),
+      stored("lost"),
+      // Left alone: answered, still running, another text, already superseded, another thread,
+      // and another athlete (this request's own key is covered by the pure test).
+      stored("answered"),
+      stored("running", { created_at: new Date(Date.now() - 3_000).toISOString() }),
+      stored("other-text", { content: "What should I eat?" }),
+      stored("done", { safety_state: "unavailable" }),
+      stored("elsewhere", { thread_id: "99999999-9999-4999-8999-999999999999" }),
+      stored("stranger", { user_id: "user-2" }),
     ],
     turns: {
-      "k-failed": { state: "failed" },
-      "k-answered": { state: "answered", message: { answer_source: null } },
+      "key-failed": { state: "failed" },
+      "key-untrimmed": { state: "answered", message: { answer_source: "data_summary" } },
+      "key-lost": { state: "in_progress" },
+      "key-answered": { state: "answered", message: { answer_source: null } },
+      "key-running": { state: "in_progress" },
     },
   });
   assertEquals(result.status, 200);
+  assertEquals(result.markedIds.sort(), ["failed", "lost", "untrimmed"]);
   assertEquals(result.updates, [{ safety_state: "unavailable" }]);
-  assert(result.calls.includes("coach_chat_turn"));
   assert(
     result.calls.indexOf("coach_chat_turn") < result.calls.indexOf("record_coach_chat_question"),
     result.calls.join(),
   );
-  assert(result.lines.join("\n").includes('"marked":1'));
+  assert(result.lines.join("\n").includes('"marked":3'));
 });
 
 Deno.test("a question that was not asked before reads and writes nothing about attempts", async () => {

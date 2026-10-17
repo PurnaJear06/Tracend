@@ -20,6 +20,10 @@ import {
 } from "../_shared/providers/coach_chat_provider.ts";
 import {
   type AttemptStore,
+  coachChatTurnStaleAfterMs,
+  earlierAttempts,
+  questionAgeMs,
+  type StoredQuestion,
   supersededSafetyState,
   supersedeFailedAttempts,
   withoutSupersededQuestions,
@@ -219,26 +223,19 @@ export type CoachChatTurn = Readonly<{
   message?: Readonly<Record<string, unknown>> | null;
 }>;
 
-// A turn that has neither an answer nor a failure was started by a request that is still running
-// or was lost (the function was cut off). Its question was saved when it started, and the whole
-// request, model deadline included, ends within `coachChatTiming.totalDeadlineMs`, so a turn
-// still open this long after its question is lost, not running. The margin covers the work around
-// the model call (context preparation, persistence) and clock differences.
-export const coachChatTurnStaleAfterMs = coachChatTiming.totalDeadlineMs + 30_000;
-
 // A request retried with the same idempotency key gets what its first attempt
 // produced and never runs the model again. The question is saved when a turn
 // starts, so a saved question alone is not a completed reply: the turn is
 // answered, failed, or still in progress.
 //
-// A turn still in progress after `coachChatTurnStaleAfterMs` (`questionAgeMs`, the age of its saved
+// A turn still in progress after `coachChatTurnStaleAfterMs` (`ageMs`, the age of its saved
 // question) is lost: it answers 503 `turn_lost` once and for every retry of that key, so the app
 // stops waiting and sends the message again under a new key. Without an age, or while the turn is
 // young, it answers 409 as before.
 export function coachChatReplayResponse(
   turn: CoachChatTurn | null | undefined,
   dataSummarySupported: boolean,
-  questionAgeMs: number | null = null,
+  ageMs: number | null = null,
 ): { status: number; body: Record<string, unknown> } {
   const message = turn?.message;
   const isDataSummary = message?.answer_source === "data_summary";
@@ -279,7 +276,7 @@ export function coachChatReplayResponse(
       }),
     };
   }
-  if (questionAgeMs !== null && questionAgeMs > coachChatTurnStaleAfterMs) {
+  if (ageMs !== null && ageMs > coachChatTurnStaleAfterMs) {
     return {
       status: 503,
       body: versionedResponse({
@@ -342,15 +339,14 @@ function attemptStore(
 ): AttemptStore {
   return {
     async copies() {
-      const { data, error } = await client.from("coach_messages").select("id,idempotency_key")
+      // The state and the text are compared in code (superseded.ts): in SQL, `<>` drops the NULL
+      // `safety_state` that user messages normally have, and a row may be stored untrimmed.
+      const { data, error } = await client.from("coach_messages")
+        .select("id,idempotency_key,content,safety_state,created_at")
         .eq("user_id", userId).eq("thread_id", threadId).eq("role", "user")
-        .eq("content", question.trim()).neq("idempotency_key", currentKey)
-        .neq("safety_state", supersededSafetyState)
-        .order("created_at", { ascending: false }).limit(5);
+        .order("created_at", { ascending: false }).limit(40);
       if (error) throw new Error("copies unreadable");
-      return ((data ?? []) as { id: string; idempotency_key: string | null }[])
-        .filter((row) => typeof row.idempotency_key === "string")
-        .map((row) => ({ id: row.id, key: row.idempotency_key as string }));
+      return earlierAttempts((data ?? []) as StoredQuestion[], question, currentKey).slice(0, 5);
     },
     async turn(key) {
       const { data, error } = await client.rpc("coach_chat_turn", {
@@ -365,12 +361,6 @@ function attemptStore(
       if (error) throw new Error("mark failed");
     },
   };
-}
-
-/** How long ago a saved question was created, or null when it cannot be told. */
-export function questionAgeMs(createdAt: unknown, now: number = Date.now()): number | null {
-  const created = typeof createdAt === "string" ? Date.parse(createdAt) : NaN;
-  return Number.isNaN(created) ? null : now - created;
 }
 
 export function detectPreferenceStatement(question: string): string | null {
@@ -559,6 +549,66 @@ export async function handleCoachChat(
   );
   held.current = budget;
   const contextKind = classifyQuestion(input.question);
+
+  // A retry of a turn that already started is answered from what that turn produced. The lookup
+  // is two cheap reads (the saved question, then `coach_chat_turn`) and comes before the budget
+  // and before the heavy context step, so a finished turn is returned even at a spending limit
+  // and an athlete at the limit cannot trigger context preparation with every new key.
+  const replayResponse = async (
+    turn: CoachChatTurn | null | undefined,
+    createdAt: unknown,
+  ): Promise<Response> => {
+    const stillOpen = !turn || turn.state === "in_progress";
+    const replay = coachChatReplayResponse(
+      turn,
+      supportsDataSummary(input),
+      stillOpen ? questionAgeMs(createdAt) : null,
+    );
+    if (replay.status === 200) {
+      // Kept from the earlier replay response, which listed the thread.
+      const { data } = await auth.userClient.from("coach_messages").select().eq(
+        "thread_id",
+        input.thread_id,
+      ).order("created_at");
+      replay.body.messages = data ?? [];
+    }
+    log.info("coach_chat_replayed", { status: replay.status });
+    return reply(replay.status, replay.body);
+  };
+  const savedQuestionCreatedAt = async (): Promise<{ saved: boolean; createdAt: unknown }> => {
+    const { data } = await auth.serviceClient.from("coach_messages").select("created_at")
+      .eq("user_id", auth.userId).eq("idempotency_key", input.idempotency_key).maybeSingle();
+    return {
+      saved: data !== null && data !== undefined,
+      createdAt: (data as { created_at?: unknown } | null)?.created_at,
+    };
+  };
+  const earlier = await savedQuestionCreatedAt();
+  if (earlier.saved) {
+    const { data: turn, error: turnError } = await auth.serviceClient.rpc("coach_chat_turn", {
+      target_user_id: auth.userId,
+      request_idempotency_key: input.idempotency_key,
+    });
+    if (!turnError) return await replayResponse(turn as CoachChatTurn, earlier.createdAt);
+  }
+
+  // The gateway path reserves per attempt: this is the first attempt's worst case, and a repair
+  // reserves its own before it is sent. A referral calls no model and reserves nothing.
+  const reserved = redFlag
+    ? true
+    : coachRoute
+    ? await budget.reserveInitial(coachChatReservationUsd(coachRoute, coachContextContributors)!)
+    : await budget.reserveLegacy();
+  if (!reserved) {
+    return reply(
+      429,
+      versionedResponse({
+        error: "ai_usage_limit",
+        ...(budget.refusal ? { reason: budget.refusal } : {}),
+      }),
+    );
+  }
+
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
     "prepare_coach_chat_v8",
     {
@@ -593,47 +643,9 @@ export async function handleCoachChat(
       }),
     );
   }
+  // Another request saved the question between the lookup above and now.
   if (prepared.replayed) {
-    const savedQuestionCreatedAt = async (): Promise<unknown> => {
-      const { data } = await auth.serviceClient.from("coach_messages").select("created_at")
-        .eq("user_id", auth.userId).eq("idempotency_key", input.idempotency_key).maybeSingle();
-      return (data as { created_at?: unknown } | null)?.created_at;
-    };
-    const stillOpen = !prepared.turn || prepared.turn.state === "in_progress";
-    const replay = coachChatReplayResponse(
-      prepared.turn,
-      supportsDataSummary(input),
-      stillOpen ? questionAgeMs(await savedQuestionCreatedAt()) : null,
-    );
-    if (replay.status === 200) {
-      // Kept from the earlier replay response, which listed the thread.
-      const { data } = await auth.userClient.from("coach_messages").select().eq(
-        "thread_id",
-        input.thread_id,
-      ).order("created_at");
-      replay.body.messages = data ?? [];
-    }
-    log.info("coach_chat_replayed", { status: replay.status });
-    return reply(replay.status, replay.body);
-  }
-
-  // Reserved only now: a retry of a finished turn is answered above from its stored reply and
-  // must not need budget it will not spend. The gateway path reserves per attempt: this is the
-  // first attempt's worst case, and a repair reserves its own before it is sent. A referral calls
-  // no model and reserves nothing.
-  const reserved = redFlag
-    ? true
-    : coachRoute
-    ? await budget.reserveInitial(coachChatReservationUsd(coachRoute, coachContextContributors)!)
-    : await budget.reserveLegacy();
-  if (!reserved) {
-    return reply(
-      429,
-      versionedResponse({
-        error: "ai_usage_limit",
-        ...(budget.refusal ? { reason: budget.refusal } : {}),
-      }),
-    );
+    return await replayResponse(prepared.turn, (await savedQuestionCreatedAt()).createdAt);
   }
 
   // A fresh-key retry of a message whose earlier attempt failed: the failed attempt's question is

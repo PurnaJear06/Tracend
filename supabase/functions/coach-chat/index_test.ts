@@ -14,11 +14,10 @@ import {
   coachChatPreparationFailureCode,
   coachChatReplayResponse,
   coachChatResponseSchemaVersion,
-  coachChatTurnStaleAfterMs,
   detectPreferenceStatement,
-  questionAgeMs,
   supportsDataSummary,
 } from "./index.ts";
+import { coachChatTurnStaleAfterMs, questionAgeMs } from "./superseded.ts";
 import { routeFor } from "../_shared/ai/fakes.ts";
 import appDataSummaryFixture from "../../../test/contract/fixtures/coach_chat_data_summary_response_v1_2.json" with {
   type: "json",

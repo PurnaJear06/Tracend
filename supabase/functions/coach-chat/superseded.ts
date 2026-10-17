@@ -6,7 +6,23 @@
 // no valid reply), and the retry stands in for it. An attempt that was answered by the model
 // stays: the athlete really asked twice.
 
+import { coachChatTiming } from "../_shared/providers/coach_chat_provider.ts";
+
 export const supersededSafetyState = "unavailable";
+
+// A turn that has neither an answer nor a failure was started by a request that is still running
+// or was lost (the function was cut off). Its question was saved when it started, and the whole
+// request, model deadline included, ends within `coachChatTiming.totalDeadlineMs`, so a turn
+// still open this long after its question is lost, not running. The margin covers the work around
+// the model call (context preparation, persistence) and clock differences. The replay answer
+// (`turn_lost`) and superseding a failed attempt both use this rule.
+export const coachChatTurnStaleAfterMs = coachChatTiming.totalDeadlineMs + 30_000;
+
+/** How long ago a saved question was created, or null when it cannot be told. */
+export function questionAgeMs(createdAt: unknown, now: number = Date.now()): number | null {
+  const created = typeof createdAt === "string" ? Date.parse(createdAt) : NaN;
+  return Number.isNaN(created) ? null : now - created;
+}
 
 type Message = Readonly<{ role?: unknown; content?: unknown }>;
 
@@ -42,10 +58,48 @@ export function withoutSupersededQuestions(
   return { context: { ...context, recent_messages: recent }, dropped: copies.length };
 }
 
+/** A stored user message of the thread, as the retry reads it. */
+export type StoredQuestion = Readonly<{
+  id?: unknown;
+  idempotency_key?: unknown;
+  content?: unknown;
+  safety_state?: unknown;
+  created_at?: unknown;
+}>;
+
+export type EarlierAttempt = Readonly<{ id: string; key: string; createdAt: string | null }>;
+
+/**
+ * The earlier attempts at this question among a thread's stored user messages: the same text once
+ * trimmed (a row may be stored untrimmed), under another key, not already superseded. The state
+ * is read in code, not in a query: in SQL `safety_state <> 'unavailable'` drops the rows where it
+ * is NULL, which is how user messages are normally stored.
+ */
+export function earlierAttempts(
+  rows: readonly StoredQuestion[],
+  question: string,
+  currentKey: string,
+): EarlierAttempt[] {
+  const wanted = question.trim();
+  const found: EarlierAttempt[] = [];
+  for (const row of rows) {
+    if (typeof row.id !== "string" || typeof row.idempotency_key !== "string") continue;
+    if (row.idempotency_key === currentKey) continue;
+    if (typeof row.content !== "string" || row.content.trim() !== wanted) continue;
+    if (row.safety_state === supersededSafetyState) continue;
+    found.push({
+      id: row.id,
+      key: row.idempotency_key,
+      createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    });
+  }
+  return found;
+}
+
 /** What the retry needs from the database; the handler builds it from the service client. */
 export type AttemptStore = Readonly<{
-  /** The athlete's earlier user messages in this thread with the same text, other keys, not yet superseded. */
-  copies(): Promise<readonly Readonly<{ id: string; key: string }>[]>;
+  /** The earlier attempts at this question (see `earlierAttempts`). */
+  copies(): Promise<readonly EarlierAttempt[]>;
   /** What the first attempt under `key` produced (coach_chat_turn). */
   turn(key: string): Promise<
     Readonly<{ state?: string; message?: Readonly<{ answer_source?: unknown }> | null }> | null
@@ -55,16 +109,28 @@ export type AttemptStore = Readonly<{
 
 /**
  * Marks the failed or lost earlier attempts of this question as superseded; returns how many.
- * An attempt the model answered, or one whose state cannot be read, is left alone.
+ * An attempt the model answered, one still running, or one whose state or age cannot be read, is
+ * left alone.
  */
-export async function supersedeFailedAttempts(store: AttemptStore): Promise<number> {
+export async function supersedeFailedAttempts(
+  store: AttemptStore,
+  now: number = Date.now(),
+): Promise<number> {
   const marked: string[] = [];
   for (const copy of await store.copies()) {
     const turn = await store.turn(copy.key);
     if (!turn) continue;
-    const answeredByModel = turn.state === "answered" &&
-      turn.message?.answer_source !== "data_summary";
-    if (!answeredByModel) marked.push(copy.id);
+    if (turn.state === "answered") {
+      if (turn.message?.answer_source === "data_summary") marked.push(copy.id);
+      continue;
+    }
+    // Still open: a live request (a double tap, a client timeout) keeps its question; only a lost
+    // turn, older than the function's time limit plus a margin, is replaced.
+    if (turn.state === "in_progress") {
+      const age = questionAgeMs(copy.createdAt, now);
+      if (age === null || age <= coachChatTurnStaleAfterMs) continue;
+    }
+    marked.push(copy.id);
   }
   if (marked.length > 0) await store.mark(marked);
   return marked.length;

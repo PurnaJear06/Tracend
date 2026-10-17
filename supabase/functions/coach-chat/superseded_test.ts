@@ -1,6 +1,8 @@
 import { assertEquals } from "jsr:@std/assert@1.0.14";
 import {
   type AttemptStore,
+  coachChatTurnStaleAfterMs,
+  earlierAttempts,
   supersedeFailedAttempts,
   unansweredCopies,
   withoutSupersededQuestions,
@@ -41,9 +43,15 @@ Deno.test("the context keeps the history and loses only the failed copies", () =
   assertEquals(same.context, context);
 });
 
+const old = new Date(Date.now() - 10 * 60_000).toISOString();
+
 function store(
   turns: Record<string, unknown>,
-  copies = [{ id: "m1", key: "k1" }, { id: "m2", key: "k2" }, { id: "m3", key: "k3" }],
+  copies: { id: string; key: string; createdAt: string | null }[] = [
+    { id: "m1", key: "k1", createdAt: old },
+    { id: "m2", key: "k2", createdAt: old },
+    { id: "m3", key: "k3", createdAt: old },
+  ],
 ) {
   const marked: string[][] = [];
   const asked: string[] = [];
@@ -80,12 +88,66 @@ Deno.test("failed, lost and data-summary attempts are marked; a model answer is 
 
 Deno.test("an attempt whose state cannot be read is left alone, and nothing is written for none", async () => {
   const unreadable = store({ k1: null, k2: { state: "failed" } }, [
-    { id: "m1", key: "k1" },
-    { id: "m2", key: "k2" },
+    { id: "m1", key: "k1", createdAt: old },
+    { id: "m2", key: "k2", createdAt: old },
   ]);
   assertEquals(await supersedeFailedAttempts(unreadable.value), 1);
   assertEquals(unreadable.marked, [["m2"]]);
   const none = store({}, []);
   assertEquals(await supersedeFailedAttempts(none.value), 0);
   assertEquals(none.marked, []);
+});
+
+Deno.test("earlier attempts are chosen in code: NULL state, untrimmed text, other keys", () => {
+  const row = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    idempotency_key: `key-${id}`,
+    content: "How is my week?",
+    safety_state: null,
+    created_at: "2026-10-17T09:00:00Z",
+    ...extra,
+  });
+  const rows = [
+    row("null-state"),
+    row("allowed", { safety_state: "allowed" }),
+    row("untrimmed", { content: "\n  How is my week?  " }),
+    row("superseded", { safety_state: "unavailable" }),
+    row("other-text", { content: "How is my day?" }),
+    row("own-key", { idempotency_key: "current" }),
+    row("no-key", { idempotency_key: null }),
+    row("no-id", { id: 7 }),
+    row("no-content", { content: null }),
+    row("no-date", { created_at: undefined }),
+  ];
+  const found = earlierAttempts(rows, "  How is my week? ", "current");
+  assertEquals(found.map((attempt) => attempt.id), [
+    "null-state",
+    "allowed",
+    "untrimmed",
+    "no-date",
+  ]);
+  assertEquals(found[0], {
+    id: "null-state",
+    key: "key-null-state",
+    createdAt: "2026-10-17T09:00:00Z",
+  });
+  assertEquals(found[3].createdAt, null);
+});
+
+Deno.test("a turn still running is never superseded; a lost one is, by the same age rule as turn_lost", async () => {
+  const now = Date.parse("2026-10-17T10:00:00Z");
+  const at = (msAgo: number) => new Date(now - msAgo).toISOString();
+  const copies = [
+    { id: "double-tap", key: "a", createdAt: at(2_000) },
+    { id: "at-limit", key: "b", createdAt: at(coachChatTurnStaleAfterMs) },
+    { id: "lost", key: "c", createdAt: at(coachChatTurnStaleAfterMs + 1) },
+    { id: "no-age", key: "d", createdAt: null },
+  ];
+  const open = { state: "in_progress" };
+  const live = store({ a: open, b: open, c: open, d: open }, copies);
+  assertEquals(await supersedeFailedAttempts(live.value, now), 1);
+  assertEquals(live.marked, [["lost"]]);
+  // A failed attempt is replaced at any age.
+  const failed = store({ a: { state: "failed" } }, [copies[0]]);
+  assertEquals(await supersedeFailedAttempts(failed.value, now), 1);
 });

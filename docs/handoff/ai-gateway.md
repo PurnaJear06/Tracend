@@ -638,10 +638,12 @@ audit (1, 2, 3, 6 deterministic part, 7, 15).
   (`no_approved_plan` or `see_professional`), the health-check outcome and date, and "no
   plan-specific advice; general answers and next steps are fine". `active_plan` is null for these
   athletes, so no plan section renders. A context without `plan_status` renders as before.
-- **Replay before budget**: `coach-chat` now prepares the context (which finds a replay of the
-  idempotency key) before it reserves budget. A retry of a finished turn is answered from its
-  stored reply without a budget place, so it works at the monthly limit. A new turn that is
-  refused still starts nothing (the question is recorded only after the reservation).
+- **Order of a request**: consent, then a cheap replay lookup (the saved question for the key, then
+  `coach_chat_turn`), then the budget reservation, then the heavy `prepare_coach_chat_v8`. A retry of
+  a finished turn is answered from its stored reply with no budget place and no context work, so it
+  works at the monthly limit; an athlete at the limit gets 429 without triggering context
+  preparation or snapshot writes with each new key. (`prepare` still reports a replay that raced in
+  between.) The pain-7 check-in screen stays ahead of consent and budget.
 - **429 reason**: `{error: "ai_usage_limit", reason}` with `monthly_cost_limit`, `daily_rate_limit`
   or `global_monthly_cost_limit`, read from the database's refusal (`AiBudget.refusal`,
   `CoachChatBudgetLedger.refusal`); no `reason` when the database gave none.
@@ -666,7 +668,9 @@ audit (1, 2, 3, 6 deterministic part, 7, 15).
 - **Fresh-key retry** (`coach-chat/superseded.ts`): when the context's memory holds an unanswered
   copy of the question being asked, the handler asks `coach_chat_turn` about each earlier same-text
   attempt and sets `safety_state = 'unavailable'` on the user row of those that failed, were lost
-  or only got a data summary, and removes the unanswered copies from `recent_messages` before the
+  (still open past `coachChatTurnStaleAfterMs`, the `turn_lost` rule; a running turn is never
+  touched) or only got a data summary. The rows are chosen in code (`earlierAttempts`): NULL
+  `safety_state` and untrimmed text count, and removes the unanswered copies from `recent_messages` before the
   model sees them. No SQL. **For the app:** hide user messages with `safety_state = 'unavailable'`
   in the thread (a marked row is a failed attempt the retry replaced).
 - **Coaching principles digest**: registered first in `coach_context/registry.ts` (stable, cached
