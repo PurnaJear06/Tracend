@@ -301,6 +301,35 @@ screening makes no diagnosis. The answers, outcome and date are stored in
 `onboarding_screenings`; no row (an account or app build from before the screening) reads as
 `cleared`.
 
+**Red-flag screen in Coach chat (A9).** Before any Coach model call a deterministic screen
+(`_shared/coach_safety/red_flags.ts`) reads the athlete's message and, with the daily policy's
+`escalate` outcome, today's check-in. A hit returns a fixed referral (`referrals.ts`, kept out of
+every prompt) with `safety_state: "limited"` (`refused` for self-harm and for the unsupported
+requests below), no model call, no tokens and no cost; it does not need AI consent, takes no
+budget place and renders no context. The screen reports on what the athlete says about
+themselves, so it skips a symptom that is negated ("no chest pain"), conditional ("what if I feel
+dizzy") or asked about as a topic ("how do I avoid dizziness when cutting"); every other phrasing
+leans toward a hit, because a miss answers a red flag with coaching and a false alarm costs one
+referral. It covers: chest pain, pressure or tightness; palpitations and a heartbeat that races at
+rest or skips; fainting, passing out, blacking out, collapse; dizziness and light-headedness;
+severe or sudden breathlessness and wheezing; signs of stroke (slurred speech, one-sided
+weakness or numbness, drooping face, worst headache); coughing or vomiting blood or blood in the
+stool; dark or bloody urine after hard training; numbness and tingling in a limb; sharp, severe or
+sudden pain, a pop, tear or snap, a pain of 7/10 or more; purging, laxatives or diuretics for
+weight, binge-and-compensate, fasting for two or more days, a stated eating disorder; self-harm
+and suicidal statements. With pain of 7 or more on today's check-in (the policy's `escalate`
+outcome, `CHECK_IN_SAFETY_ESCALATION`), a question about training gets the referral too; food,
+sleep and recovery questions still reach the model, which is told in its Safe Ranges section to
+give no training advice that day. Urgent referrals (heart, fainting, breathing, stroke, blood,
+self-harm, eating) name the emergency number; pain and numbness referrals send the athlete to a
+doctor or physio before the area is trained again; the self-harm answer adds crisis lines. No
+referral diagnoses or reassures. Requests Tracend does not support (diagnosis, medical reports,
+rehabilitation, pregnancy and postpartum, medication advice and interactions) get the fixed
+clinical-boundary answer (`refused`). "I take medication, can I train?" and ordinary soreness are
+not hits. The wider screen behind the data summary (§12) includes every message this one catches.
+The log carries the rule that fired (`coach_chat_red_flag`: category, rule, source), never the
+message.
+
 The MVP does not support:
 
 - users under 18;
@@ -621,6 +650,8 @@ rules plan answers, with no follow-up questions, until the Claude route is set.
 calls it when `route(feature)` returns a complete route whose `AI_<FEATURE>_EVALUATED` is `true`;
 otherwise the feature runs today's path (§10.2) unchanged, and tests compare that path with
 recorded requests byte for byte. `library_context` is reserved for the research library.
+`coach_chat_strong` (`AI_COACH_CHAT_STRONG_*`) is Coach chat's optional second route for questions
+that need analysis (§11); unset, `coach_chat` answers them.
 
 - Settings are per feature: `AI_<FEATURE>_{PROVIDER,MODEL,BASE_URL,THINKING,EFFORT,
   MAX_OUTPUT_TOKENS,TIMEOUT_MS,EVALUATED,VENDOR}` plus the provider key (`ANTHROPIC_API_KEY`,
@@ -726,8 +757,8 @@ routes stay available by settings alone for two weeks after the cutover.
 - The model may reference only supplied catalog identifiers.
 - Conversational answers may explain only supplied structured evidence, must state missing data,
   and expose evidence references. The model receives at most 20 recent messages and no tools.
-  Deterministic pre-model rules refuse medical, emergency, pregnancy, eating-disorder, medication,
-  and rehabilitation requests.
+  The deterministic red-flag screen (§7) answers symptom reports and unsupported medical,
+  pregnancy, medication and rehabilitation requests before the model sees them.
 - **Null contract:** a `null` value in any model context (chat or decision) means the metric was
   NOT MEASURED that day. Context serialization MUST preserve nulls — stripping them let the model
   read a missing metric as absent history or zero. Empty arrays/objects stay pruned (absent ≠ not
@@ -808,6 +839,56 @@ routes stay available by settings alone for two weeks after the cutover.
   shown. Reference data from a contributor outranks a saved goal detail or an older note when a
   figure Tracend calculated from the athlete's records disagrees; it never outranks Tracend's
   rules.
+- **Safe ranges, screening, numbers and claimed actions (A9, 2026-10).** The athlete file carries a
+  deterministic **Safe Ranges** section (`_shared/coach_safety/safe_ranges.ts`): the calorie floor
+  (onboarding policy: the higher of the sex-based minimum, 1,200 kcal female or 1,500 male or
+  unspecified, and the athlete's resting energy), the weekly loss ceiling (1% of body weight, from
+  the goal phase thresholds), the healthy-weight floor (BMI 18.5 at the athlete's height), the
+  longest continuous cut (16 weeks, then a maintenance period or diet break) and, on a day of
+  check-in pain of 7 or more, a no-training-advice line. A stable `screening` contributor
+  (Contract 7, registered first) states the athlete's health-check outcome, its date and the rule
+  it implies: `moderate_until_cleared` keeps every suggestion at moderate effort (no maximal or
+  near-failure sets, no vigorous conditioning) and recommends clearance; `see_professional` means
+  no training prescriptions of any kind and a recommendation to get clearance first. No screening
+  row reads as cleared and renders nothing. The reply guard (`_shared/coach_safety/reply_guard.ts`)
+  then reads every answer, with a finite validation rule and a specific repair instruction for
+  each: `calories_below_floor` (advice to eat under the floor), `loss_rate_above_ceiling` (a loss
+  faster than the ceiling), `effort_above_screening_cap` (vigorous or maximal effort under a
+  screening cap), `claimed_action` (Coach says it changed, saved, updated, scheduled or will do
+  something, or offers to: it has no tools, so the repair says what the athlete can do in the app),
+  and `numbers_not_grounded`. Sentences that warn against a thing ("never go below ...") or
+  describe the athlete's own past ("you lost 0.9 kg a week") are not advice. A reply that breaks
+  several rules is repaired once with all of them named.
+- **Numbers check.** Every figure the athlete would read as fact about themselves (kg, kcal, %, g,
+  bpm, BMI, dates, minutes and hours above five, and any count above ten or decimal) must appear
+  in what Coach was given: the athlete file without the conversation memory (Coach's own earlier
+  words never ground a figure), the calculated sections, the Safe Ranges, the reference-data
+  blocks, the athlete's current message and their earlier messages. A projection is therefore
+  quotable only from the Calculated section's rows. Matching tolerates rounding: a reply may round
+  to the digits it writes (74 matches 73.6 to 74.4); a larger rounded figure (1,800, 2,000) matches
+  within half its step and at most 5%; the sign is ignored; the units must agree (12 weeks never
+  matches 11.8 kg); a given number with no unit (a table cell) matches any unit; a date must be a
+  date in the given text. Not checked: list numbers, ordinals, clock times, years, whole numbers
+  up to ten with no measurement unit, and prescription numbers a coach gives as advice (sets up to
+  ten, reps up to thirty, rest seconds, RPE and RIR, `3x8`, whole minutes up to five). One repair
+  names the unsupported figures (in the repair instruction only: they are athlete content and
+  never reach a log); a second failure ends in the labelled data summary (§12), like any other
+  validation failure. The check ships enforcing, and every fault is logged as a finite rule name
+  with a count and no content (`coach_chat_complete` and `coach_chat_failure` attempts:
+  `rule`, `also_rules`, `actual`), so its false-positive rate can be measured from production.
+  Guidance numbers the model knows from memory (for example a protein range per kilogram) are
+  refused unless the context holds them; the research library (E3) will put them in the context.
+- **No plan.** An athlete without an active plan or nutrition target (no plan approved yet, or a
+  health check that builds none) is chatted with in a general mode: the context carries
+  `plan_status` and the athlete file states there is no plan, the reason, the health-check outcome
+  and date, and that Coach gives no plan-specific advice (sessions, loads, calorie or protein
+  targets). General questions and next steps stay allowed.
+- **Second Coach route.** Questions about progress, body weight and goals, nutrition numbers and
+  the training plan (`coach_chat_provider_route.ts`, a rules classifier) use the route configured
+  as `AI_COACH_CHAT_STRONG_*` when it is set, evaluated and its vendor is the one the athlete's
+  accepted notice names; every other question, and every question when it is unset, uses the
+  `coach_chat` route. The budget reservation, the price and the stored provenance follow the route
+  that answers.
 - Every coach-chat provider uses one shared coach persona (coaching approach, communication style,
   hard boundaries), followed by the null contract and the output accuracy/validation contract so the
   contract's rules take precedence.
@@ -818,6 +899,8 @@ The invoking Supabase Edge Function validates schema, enums, ranges, evidence, p
 catalog references, coach-domain authority, prohibited content, escalation consistency, proposal
 freshness, and the authenticated user's authority.
 
+For Coach chat the validator also runs the reply guard (§11): the goal phase rules, the safe-range
+and screening rules, no claimed actions and the numbers check, each with its own finite rule.
 Invalid output is never partially applied. The system may attempt one targeted schema-repair retry
 and then returns a safe unavailable state while preserving logging and the active plan. The repair
 receives only a finite validation rule, JSON path, applicable limit/count, and the per-request
@@ -848,12 +931,16 @@ may concern a red flag or an unsupported population (symptoms, injury or pain, i
 or drugs, pregnancy, disordered eating or unsafe weight control, self-harm), the reply is a
 deterministic safety referral instead: no data, `safety_state: "limited"`, and a pointer to a
 clinician, physiotherapist or dietitian, or emergency services. That screen is deliberately broader
-than the pre-model boundary, because a false alarm only replaces numbers with the referral. Every
-other summary ends with the same referral in one line.
+than the pre-model red-flag screen (§7), because a false alarm only replaces numbers with the
+referral, and it includes everything that screen catches (it calls it), so the two cannot drift
+apart. Every other summary ends with the same referral in one line.
 
 A request retried with the same idempotency key receives what its first attempt produced (the
 stored answer, the original failure code, or 409 while it is still running) and never calls the
-model again.
+model again. The replay is looked up before any budget is reserved, so a finished turn is returned
+even at a spending limit. A turn that is neither answered nor failed more than 70 seconds after
+its question was saved (the 40-second model deadline plus a margin) was lost with its function and
+answers 503 `turn_lost` for that key, so the app can send the message again under a new key.
 
 DeepSeek Coach chat accepts provider output only when `finish_reason` is `stop`. Empty content,
 `length` truncation, malformed JSON, and schema rejection receive at most one repair attempt. The

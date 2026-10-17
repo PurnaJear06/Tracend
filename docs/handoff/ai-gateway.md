@@ -1,6 +1,6 @@
 # AI Gateway Handoff
 
-**As of:** 2026-10-15
+**As of:** 2026-10-17
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -12,7 +12,7 @@ Every AI call goes through one provider-neutral gateway (Contract 1). Claude Hai
 
 ## Chunks
 
-A1, A2 (Phase 1); A3–A7 (Phase 2)
+A1, A2 (Phase 1); A3–A7 (Phase 2); A9 server half (Phase 3, round 3)
 
 ## State
 
@@ -580,6 +580,82 @@ Nothing here changes production by itself except migration code 17 (the budget s
     is untouched here.
   - Final live evals were not rerun here: A3-A6 recorded theirs (their handoff sections); A7 added
     no model code.
+
+### A9: Coach safety and honesty guardrails (server half)
+
+Branch `claude/a9-coach-guardrails`. The app half (plain error messages, local dates, the no-plan
+chat mode and the budget gates, migration code 19) is the parallel branch
+`claude/a9-coach-app-errors` and owns `lib/features/coach/**`. This half changes no SQL and no
+frozen function (`prepare_coach_chat_v8`, `build_coach_athlete_context`). Findings are from the Coach
+audit (1, 2, 3, 6 deterministic part, 7, 15).
+
+- **Red-flag screen before the model** (`_shared/coach_safety/red_flags.ts`, `referrals.ts`;
+  AI_SAFETY_SPEC §7). Replaces the five-keyword `deterministicBoundary` (removed). It runs in
+  `coach-chat/index.ts` before consent and the budget reservation (a hit sends nothing, so it needs
+  no consent and takes no budget place, and contributors are not rendered), and again inside
+  `generateCoachChat` and `generateCoachChatViaGateway` with the context, where today's check-in
+  adds the `escalate` outcome (pain 7 or more, `CHECK_IN_SAFETY_ESCALATION`) for training
+  questions. A hit is stored like the old boundary reply (provider `mock`, model
+  `deterministic-safety-v1`, 0 tokens, USD 0; the app labels it "Tracend safety answer · not AI")
+  with `safety_state: limited` (`refused` for self-harm and unsupported requests). The log line is
+  `coach_chat_red_flag` with category, rule and source, never the message. Negation, conditionals
+  and educational questions are skipped; `red_flags_test.ts` holds 72 reported messages and 51
+  ordinary ones. The fallback screen (`mayConcernHealthRisk`) now includes this screen.
+  Eval prompts: only the six `safety-*` prompts hit; the other 54 reach the model.
+- **Safe Ranges** (`safe_ranges.ts`): calorie floor (new `calorieFloorKcal` in
+  `onboarding/policy.ts`, the same math `nutritionPolicy` uses; `sexFloorKcal` is now exported),
+  weekly loss ceiling (1% of body weight), healthy-weight floor (BMI 18.5), longest cut (16 weeks)
+  and the pain line, rendered in the athlete file after the profile (about 700 characters).
+- **Screening contributor** (`coach_context/contributors/screening.ts`, stable, 900 characters,
+  registered first). Reads the newest `onboarding_screenings` row with the service role. The reply
+  guard reads the outcome back from the rendered block (`screeningOutcomeIn`), so the model and the
+  guard use one value.
+- **Reply guard** (`reply_guard.ts`, `numbers_check.ts`): five new validation rules
+  (`calories_below_floor`, `loss_rate_above_ceiling`, `effort_above_screening_cap`,
+  `claimed_action`, `numbers_not_grounded`) next to B7's two. `CoachChatAnswerCheck` may now
+  return `{rule, rules, detail, count}`: `rules` lets one repair name every broken rule, `detail`
+  (the unsupported figures) goes into the repair instruction only, and `count` is logged as
+  `actual`. Telemetry and failure metadata carry rule names (`rule`, `also_rules`) and counts, never
+  figures. The check is enforcing from the first deploy. **Measure it:** in the Edge Function logs
+  count `coach_chat_complete` attempts with `rule: "numbers_not_grounded"` against all turns, and
+  `coach_chat_failure` with `initial_rule` or `repair_rule` `numbers_not_grounded` (a turn that
+  fell back to the data summary). If the repaired-turn rate is high, loosen the allow-list in
+  `numbers_check.ts` (`mustBeGrounded`) rather than switching the check off.
+- **Prompt**: new persona lines (red flags arrive pre-screened, the Safe Ranges, the screening
+  rule) and a stricter numbers line; the instructions grew from 7,265 to 8,582 characters.
+  **The legacy request digests in `coach_chat_parity_test.ts` were recorded again on purpose**
+  (persona, answer contract and the Safe Ranges section changed the request).
+- **Second route** (`coach_chat_provider_route.ts`; `coach_chat_strong` added to `aiFeatures`):
+  a rules classifier sends progress, body-weight and goal, nutrition-number and plan questions to
+  `AI_COACH_CHAT_STRONG_*` when it is set and `EVALUATED=true`, its reservation fits one budget
+  place (Sonnet 5.5 at 4,096 output tokens does) and the athlete's accepted notice names its
+  vendor; otherwise the default route answers (`coach_chat_strong_route_not_used` is logged for the
+  vendor case). Reservation, price and stored provenance follow the route that answers. Logs add
+  `route_feature`. Owner action: the runbook's step 3.1b.
+- **Plan status** (`renderPlanStatus` in `coach_chat_provider.ts`): when the chat context's
+  `plan_status` (app half, migration code 19) says there is no active plan or no nutrition target, the
+  athlete file gets a required "Plan Status" section after the Safe Ranges: no plan, the reason
+  (`no_approved_plan` or `see_professional`), the health-check outcome and date, and "no
+  plan-specific advice; general answers and next steps are fine". `active_plan` is null for these
+  athletes, so no plan section renders. A context without `plan_status` renders as before.
+- **Replay before budget**: `coach-chat` now prepares the context (which finds a replay of the
+  idempotency key) before it reserves budget. A retry of a finished turn is answered from its
+  stored reply without a budget place, so it works at the monthly limit. A new turn that is
+  refused still starts nothing (the question is recorded only after the reservation).
+- **429 reason**: `{error: "ai_usage_limit", reason}` with `monthly_cost_limit`, `daily_rate_limit`
+  or `global_monthly_cost_limit`, read from the database's refusal (`AiBudget.refusal`,
+  `CoachChatBudgetLedger.refusal`); no `reason` when the database gave none.
+- **Lost turns**: a turn with no answer and no failure whose saved question is older than
+  `coachChatTurnStaleAfterMs` (the 40 s model deadline plus 30 s, 70 s) answers 503
+  `chat_unavailable` with `code: "turn_lost"` and `replayed: true`, for that key every time. The
+  app should show "your last message didn't go through" and send it again under a new key (no SQL
+  change; the age is the question row's `created_at`). Younger turns, or an age that cannot be read,
+  still answer 409 `chat_in_progress`. `handler_test.ts` runs the real handler against a fake client.
+- **Open**: the sets and reps a coach prescribes as advice are not checked (see the spec);
+  sentences claiming an action that the model words in an unusual way will pass the regexes (the
+  persona rule is the main defence); `prepare_coach_chat_v8` still raises for an athlete with no
+  active plan, so a red-flag message from the athlete who most needs it gets the app half's no-plan
+  chat mode, not a referral, until that lands.
 
 ## Next agent starts here
 
