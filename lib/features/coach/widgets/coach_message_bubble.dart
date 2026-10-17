@@ -137,7 +137,7 @@ class _CoachReply extends StatelessWidget {
         message.evidence.isNotEmpty ||
         message.missingData.isNotEmpty ||
         reasoning.isNotEmpty;
-    final provider = !summary ? message.modelProvider : null;
+    final provider = !summary && !referral ? message.modelProvider : null;
     return Semantics(
       container: true,
       label: referral
@@ -148,7 +148,7 @@ class _CoachReply extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (summary) ...[
+          if (summary || referral) ...[
             StatusChip(
               label: referral
                   ? 'Safety note · not an AI answer'

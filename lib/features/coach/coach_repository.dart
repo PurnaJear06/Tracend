@@ -244,9 +244,12 @@ class CoachMessage {
   /// model could not answer. Never the Coach AI's own answer.
   bool get isDataSummary => answerSource == 'data_summary';
 
-  /// A data summary for a message that may concern a health risk: a safety
-  /// referral that carries no numbers from the athlete's data.
-  bool get isSafetyReferral => isDataSummary && safetyState == 'limited';
+  /// A safety referral that carries no numbers from the athlete's data: a
+  /// data summary for a message that may concern a health risk (`limited`), or
+  /// a reply refused for self-harm or scope (`refused`), whichever way it was
+  /// stored.
+  bool get isSafetyReferral =>
+      safetyState == 'refused' || (isDataSummary && safetyState == 'limited');
 }
 
 abstract interface class CoachChatRepository {

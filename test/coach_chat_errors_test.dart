@@ -298,6 +298,7 @@ class _Server {
 const _threadId = '11111111-1111-4111-8111-111111111111';
 
 void main() {
+  _safetyNoteTests();
   group('Coach chat failures reach the athlete as plain sentences', () {
     final fixture = _fixture();
 
@@ -901,6 +902,57 @@ void main() {
       // The send is answered (here by a scripted failure) in the same
       // conversation: the screen does not dead-end.
       expect(find.text('What can you help me with?'), findsOneWidget);
+    });
+  });
+}
+
+void _safetyNoteTests() {
+  Future<void> show(WidgetTester tester, CoachMessage message) =>
+      tester.pumpWidget(
+        MaterialApp(
+          theme: TracendTheme.dark,
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: CoachMessageBubble(message: message),
+            ),
+          ),
+        ),
+      );
+  CoachMessage reply({
+    required String state,
+    required String? source,
+    String provider = 'mock',
+  }) => CoachMessage(
+    id: 'r-$state-$source',
+    role: 'assistant',
+    content: 'Please talk to someone you trust or a professional.',
+    createdAt: DateTime(2026, 10, 17),
+    safetyState: state,
+    answerSource: source,
+    modelProvider: provider,
+  );
+
+  group('Safety notes', () {
+    testWidgets('a refused data summary is a safety note', (tester) async {
+      await show(tester, reply(state: 'refused', source: 'data_summary'));
+      expect(find.text('Safety note · not an AI answer'), findsOneWidget);
+      expect(find.text('Data summary · not an AI answer'), findsNothing);
+    });
+
+    testWidgets('a refused reply stored as a model row is a safety note', (
+      tester,
+    ) async {
+      await show(tester, reply(state: 'refused', source: null));
+      expect(find.text('Safety note · not an AI answer'), findsOneWidget);
+      expect(find.textContaining('AI answer ·'), findsNothing);
+    });
+
+    testWidgets('an ordinary data summary stays a data summary', (
+      tester,
+    ) async {
+      await show(tester, reply(state: 'unavailable', source: 'data_summary'));
+      expect(find.text('Data summary · not an AI answer'), findsOneWidget);
+      expect(find.text('Safety note · not an AI answer'), findsNothing);
     });
   });
 }
