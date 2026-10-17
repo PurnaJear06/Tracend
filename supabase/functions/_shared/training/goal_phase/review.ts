@@ -54,8 +54,9 @@ function confirmedRun(summary: GoalPhaseSummary): ContinuousLoss | null {
  * judge (the continuous loss when there is one, else the goal phase).
  */
 function lossPace(summary: GoalPhaseSummary): number | null {
-  return summary.recentRateKgPerWeek ?? confirmedRun(summary)?.weeklyRateKg ??
-    summary.weeklyRateKg;
+  // A run's average says the weight is falling now only when the run ends at a fresh reading.
+  const run = summary.latestReadingStale ? null : confirmedRun(summary);
+  return summary.recentRateKgPerWeek ?? run?.weeklyRateKg ?? summary.weeklyRateKg;
 }
 
 function maintenanceReasons(summary: GoalPhaseSummary): ReviewReason[] {

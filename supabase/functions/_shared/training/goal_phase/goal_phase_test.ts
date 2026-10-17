@@ -433,6 +433,54 @@ Deno.test("moving the activation date never changes the history or the run", () 
   }
 });
 
+Deno.test("a run's average pace is not evidence of losing now when the latest reading is stale", () => {
+  const gain = weekly("2026-01-05", [70, 72, 74, 76, 78, 80, 82, 84, 85]);
+  const cut = [83.8, 82.6, 81.4, 80.2, 79, 77.8, 76.6].map((kg, index) => ({
+    date: new Date(Date.parse("2026-03-23T00:00:00Z") + index * 28 * 86_400_000)
+      .toISOString().slice(0, 10),
+    kg,
+  }));
+  const at = (today: string) =>
+    summarizeGoalPhase(inputs({
+      readings: [...gain, ...cut],
+      activatedOn: "2026-01-05",
+      today,
+    }));
+  const fresh = at("2026-09-14");
+  assertEquals(fresh.continuousLoss?.confirmed, true);
+  assertEquals(fresh.recentRateKgPerWeek, null);
+  assertEquals(reviewGoalPhase(fresh).outcome, "consider_maintenance_or_diet_break");
+  const stale = at("2027-01-20");
+  assertEquals(stale.latestReadingStale, true);
+  assertEquals(reviewGoalPhase(stale).outcome, "ask_target");
+});
+
+Deno.test("every rendered change equals the rendered start minus the rendered current weight", () => {
+  const cases: GoalPhaseInputs[] = [
+    lateGoalInputs,
+    longCutInputs,
+    { ...lateGoalInputs, activatedOn: "2026-10-12" },
+    { ...lateGoalInputs, activatedOn: "2026-10-10" },
+    { ...lateGoalInputs, activatedOn: "2026-09-02" },
+  ];
+  let checked = 0;
+  for (const input of cases) {
+    const summary = summarizeGoalPhase(input);
+    const text = renderGoalPhase(summary, reviewGoalPhase(summary))!;
+    for (const line of text.split("\n")) {
+      const match = line.match(
+        /^- .*?(\d+(?:\.\d+)?) kg (?:on|\().*? to now (\d+(?:\.\d+)?) kg[^:]*: ([+-]?\d+(?:\.\d+)?) kg/,
+      );
+      if (!match) continue;
+      const [start, current, change] = [match[1], match[2], match[3]].map(Number);
+      assertEquals(Math.round((current - start) * 10) / 10, change, line);
+      assertEquals(current, summary.currentWeightKg, line);
+      checked++;
+    }
+  }
+  assert(checked >= 6, `${checked} lines checked`);
+});
+
 Deno.test("a lone implausible reading is excluded; two readings or a steady fall are not", () => {
   assertEquals(findImplausibleReadings(weekly("2026-01-01", [80, 79.5, 79])), []);
   assertEquals(findImplausibleReadings(weekly("2026-01-01", [80, 60])), []);

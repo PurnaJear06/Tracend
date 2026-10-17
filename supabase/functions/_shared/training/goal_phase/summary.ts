@@ -189,7 +189,14 @@ function continuousLoss(
 
 const emptySummary = (input: GoalPhaseInputs): Omit<
   GoalPhaseSummary,
-  "hasGoal" | "confidence" | "notes" | "excluded" | "readingsUsed" | "history" | "continuousLoss"
+  | "hasGoal"
+  | "confidence"
+  | "notes"
+  | "excluded"
+  | "readingsUsed"
+  | "history"
+  | "continuousLoss"
+  | "latestReadingStale"
 > => ({
   goalType: input.goalType,
   phaseStart: null,
@@ -242,6 +249,7 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
       phaseStart: activation === null ? null : input.activatedOn,
       phaseStartSource: activation === null ? null : "goal_activation",
       readingsUsed: 0,
+      latestReadingStale: false,
       history: null,
       continuousLoss: null,
       excluded,
@@ -252,10 +260,9 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
 
   const first = phase[0];
   const last = phase[phase.length - 1];
-  const current = round(smoothed(phase, false), 1);
-  // The history and the run end at the latest weight smoothed over all kept readings, so the
-  // goal's activation date never changes their figures.
-  const endWeight = round(smoothed(clean, false), 1);
+  // One current weight for the phase, the history and the run: the latest weight smoothed over
+  // all kept readings, so the goal's activation date never changes it and every change adds up.
+  const current = round(smoothed(clean, false), 1);
   const bmi = input.heightCm === null ? null : bmiOf(current, input.heightCm);
   const common = {
     ...base,
@@ -267,6 +274,7 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
     currentDate: last.date,
     bmi,
     readingsUsed: phase.length,
+    latestReadingStale: stale,
     history: null,
     continuousLoss: null,
     excluded,
@@ -281,12 +289,12 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
     return {
       ...common,
       startWeightKg: phaseStart,
-      history: recordedHistory(clean, last, first.day, endWeight, capped),
+      history: recordedHistory(clean, last, first.day, current, capped),
       continuousLoss: continuousLoss(
         clean,
         clean.length - phase.length,
         last,
-        endWeight,
+        current,
         phaseStart,
       ),
       confidence: "low",
@@ -307,8 +315,8 @@ export function summarizeGoalPhase(input: GoalPhaseInputs): GoalPhaseSummary {
   return {
     ...common,
     startWeightKg: start,
-    history: recordedHistory(clean, last, first.day, endWeight, capped),
-    continuousLoss: continuousLoss(clean, firstIndex, last, endWeight, start),
+    history: recordedHistory(clean, last, first.day, current, capped),
+    continuousLoss: continuousLoss(clean, firstIndex, last, current, start),
     changeKg,
     changePct: round((changeKg / start) * 100, 1),
     weeks: round(weeks, 1),

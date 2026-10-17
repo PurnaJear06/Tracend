@@ -662,7 +662,7 @@ latest reading is older than 14 days or fewer than three readings exist.
 **Recorded history (B7.1).** The goal is often activated well after the weight started to fall
 (production case: goal activated 3 July, first weight 90.0 kg on 3 June, 74.8 kg on 13 October:
 -15.2 kg and -16.9% over 18.9 weeks, against -8.2 kg and 13.7 weeks inside the goal). The summary
-therefore also carries a `history` block over every kept reading (the implausible-reading
+therefore also carries a `history` block over every kept reading, ending at the same current weight as the phase (the latest weight smoothed over all kept readings, so every rendered change equals start minus current) (the implausible-reading
 exclusion applies): the first reading's date and smoothed weight (median of up to three readings
 within seven days, like the phase start), change in kg and %, weeks and reading count. It is
 present only when the first reading is at least 7 days before the first reading of the goal phase
@@ -698,8 +698,8 @@ never presented as the whole journey.
    12 weeks or more with a loss of at least 10%. The two loss rules judge the confirmed continuous loss
    (its weeks and its % from its high point) whenever one exists, else the goal phase; the
    reason text names the date the run began (the first reading when there is no separate run).
-   "Still falling" reads the recent rate, else the run's average rate (the phase average when
-   there is no run), so a sparse history whose phase rose but whose run fell is still judged. The
+   "Still falling" reads the recent rate, else the confirmed run's average rate when the latest
+   reading is fresh (14 days; a stale run says nothing about now), else the phase average, so a sparse history whose phase rose but whose run fell is still judged. The
    history and the run are shown even when the goal is days old and the phase has no rate yet. The pace rule (`slow_down`) and the precedence of the
    outcomes are unchanged.
 3. `slow_down`: a loss above 1% of body weight a week after at least three weeks.
