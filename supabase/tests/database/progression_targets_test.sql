@@ -65,6 +65,16 @@ select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 6, 18), pg_temp.s
 select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 6, 18), pg_temp.sess(80, 3, 6, 18),
     pg_temp.sess(80, 3, 6, 19)), 3, false, null)->>'action', 'hold',
   'a stalled exercise without a load step holds');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 2, 7, 14), pg_temp.sess(80, 3, 6, 18),
+    pg_temp.sess(80, 3, 6, 18))),
+  '{"action":"hold","reason":"incomplete","load_kg":80,"reps":7,"sets":3,"confidence":"high"}'::jsonb,
+  'a session cut short is not a stall: hold, not lower');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 6, 18), pg_temp.sess(80, 3, 6, 18),
+    pg_temp.sess(80, 2, 5, 10)))->>'action', 'add_reps',
+  'an older cut-short session is compared per set: 6 a set beats 5, so no stall');
+select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 6, 18), pg_temp.sess(80, 3, 6, 18),
+    pg_temp.sess(80, 2, 8, 16)))->>'reason', 'stall',
+  'against an older cut-short session, fewer reps per set is still a stall');
 
 -- Time away, a skipped session and pain.
 select is(pg_temp.decide(jsonb_build_array(pg_temp.sess(80, 3, 8, 24)), 13)->>'action', 'add_load',

@@ -509,9 +509,9 @@ first match wins, on the latest session (s1) and the two before it (s2, s3):
   days since s1 >= 14                           -> hold
   skipped after s1                              -> hold
   min reps < range minimum                      -> twice at this load: lower; else hold at minimum
+  sets done < planned sets                      -> hold (a cut-short session is never a stall)
   3 sessions at one load, reps < range maximum,
-    total reps(s1) <= total reps(s3)            -> stall: lower (hold without a step)
-  sets done < planned sets                      -> hold
+    reps per set(s1) <= reps per set(s3)        -> stall: lower (hold without a step)
   min rir < rir_target                          -> hold
   min reps >= range maximum                     -> add_load: load + step, reps = range minimum
                                                    (hold at the maximum without a step)

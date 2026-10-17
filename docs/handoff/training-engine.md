@@ -310,9 +310,9 @@ Contract 8).
   3. skipped after the last logged session: hold;
   4. fewest reps below the plan's range: hold at the bottom of the range; twice in a row at the same
      load: lower one step;
-  5. three sessions at one load with no more total reps than the oldest of them (and not at the top
-     of the range): lower one step (hold without a step);
-  6. fewer sets than planned: hold;
+  5. fewer sets than planned: hold (a cut-short session is never read as a stall);
+  6. three sessions at one load with no more reps per set than the oldest of them (and not at the
+     top of the range): lower one step (hold without a step);
   7. fewest reps in reserve below the plan's (10 minus the target RPE, 2 when unset): hold;
   8. every set at the top of the range: add exactly one load step and restart at the bottom of the
      range (hold at the top without a step: needs a harder variation);

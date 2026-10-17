@@ -93,18 +93,20 @@ begin
     else
       v_action := 'hold'; v_reason := 'below_range'; v_reps := p_rep_min;
     end if;
+  elsif v_sets < p_set_count then
+    v_action := 'hold'; v_reason := 'incomplete';
+  -- A cut-short session is not a stall (handled above); the comparison is reps per set.
   elsif s3 is not null and v_min_reps < p_rep_max
         and nullif(s2 ->> 'load_kg', '')::numeric is not distinct from v_load
         and nullif(s3 ->> 'load_kg', '')::numeric is not distinct from v_load
-        and (s1 ->> 'total_reps')::integer <= (s3 ->> 'total_reps')::integer then
+        and (s1 ->> 'total_reps')::integer * (s3 ->> 'sets')::integer
+          <= (s3 ->> 'total_reps')::integer * (s1 ->> 'sets')::integer then
     if v_can_lower then
       v_action := 'lower'; v_reason := 'stall';
       v_load_out := v_lower_load; v_reps := p_rep_min;
     else
       v_action := 'hold'; v_reason := 'stall';
     end if;
-  elsif v_sets < p_set_count then
-    v_action := 'hold'; v_reason := 'incomplete';
   elsif v_min_rir is not null and v_min_rir < v_rir_target then
     v_action := 'hold'; v_reason := 'effort';
   elsif v_min_reps >= p_rep_max then
@@ -230,6 +232,8 @@ from (
       exists (select 1 from perf sk where sk.planned_exercise_id = pl.planned_exercise_id
         and sk.status = 'skipped'
         and (sk.local_date, sk.completed_at) > (rc.latest_date, rc.latest_completed_at)),
+      -- (workout_sessions.completed_at is never null for a completed session: a check
+      -- constraint ties them, so the row comparisons are never null.)
       -- Pain on a later performance counts even when no set was logged that day.
       exists (select 1 from perf pn where pn.planned_exercise_id = pl.planned_exercise_id
         and pn.pain_flag
