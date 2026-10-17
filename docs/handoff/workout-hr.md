@@ -128,7 +128,7 @@ open the summary again.
 **C3 (heart-rate profile, zones, recovery, sleeping heart rate in shadow mode): in review**
 (based on the kickoff PR #130). Heart rate informs; it never sets a load (D9).
 
-- Migration `20261017110233_heart_rate_profile.sql` (code 33, re-stamp before handoff): table
+- Migration `20261017150233_heart_rate_profile.sql` (code 33, re-stamp before handoff): table
   `sleeping_heart_rate_nights` (RLS on and forced, owner select only; one derived row per night:
   median, lowest 10-minute mean with 2+ readings, readings, minutes asleep, coverage), `persist_sleeping_heart_rate_v1`
   (security definer, authenticated, 1 to 14 nights; an invalid night is skipped and counted in `skipped`, a null or malformed list raises 22023; `schema_version` 1.0),

@@ -1,4 +1,4 @@
--- Heart-rate profile (chunk C3, migration 20261017110233_heart_rate_profile.sql).
+-- Heart-rate profile (chunk C3, migration 20261017150233_heart_rate_profile.sql).
 --
 -- Under test: sleeping_heart_rate_nights (RLS, grants, no raw samples), persist_sleeping_heart_rate_v1
 -- (validation, upsert, isolation), get_my_heart_rate_inputs_v1 and get_heart_rate_inputs_v1 (complete
