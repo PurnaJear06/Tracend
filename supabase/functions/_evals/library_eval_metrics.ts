@@ -1,5 +1,8 @@
 // Scoring for the library retrieval evaluation (library_eval.ts): recall of the sources a good
-// answer needs among the sources in the top results, and the mean reciprocal rank of the first one.
+// answer needs among the sources shown, the mean reciprocal rank of the first one, how often a
+// question outside the library is shown nothing (no-answer precision), and the sweep that
+// calibrates the relevance floor.
+import { passesRelevanceFloor, type RelevanceFloor } from "../_shared/library/retrieval.ts";
 
 /**
  * single: one topic's sources. multi_source: sources from two or three topics, so a good answer
@@ -103,8 +106,25 @@ export function summariseKind(scores: readonly QuestionScore[], kind: QuestionKi
 const percent = (value: number) => `${(value * 100).toFixed(0)}%`.padStart(4);
 
 /**
+ * How the search treats questions outside the library: `declined` of the `questions` no_answer
+ * questions were shown nothing. `precision` is that share (1 when there are none).
+ */
+export type NoAnswerSummary = Readonly<{ questions: number; declined: number; precision: number }>;
+
+export function summariseNoAnswer(scores: readonly QuestionScore[]): NoAnswerSummary {
+  const none = scores.filter((score) => score.kind === "no_answer");
+  const declined = none.filter((score) => score.retrieved.length === 0).length;
+  return {
+    questions: none.length,
+    declined,
+    precision: none.length === 0 ? 1 : declined / none.length,
+  };
+}
+
+/**
  * The results table: one row per search mode and question kind, recall in the top results, the
- * share with every source found, and MRR. A no_answer row only counts the questions.
+ * share with every source found, and MRR. The no_answer row gives no-answer precision: how many of
+ * those questions were shown nothing.
  */
 export function renderTable(modes: Readonly<Record<string, readonly QuestionScore[]>>): string {
   const lines = [
@@ -128,9 +148,13 @@ export function renderTable(modes: Readonly<Record<string, readonly QuestionScor
         }`,
       );
     }
-    const none = scores.filter((score) => score.kind === "no_answer").length;
-    if (none > 0) {
-      lines.push(`${mode.padEnd(11)}  no_answer  ${String(none).padStart(7)}  (not scored)`);
+    const none = summariseNoAnswer(scores);
+    if (none.questions > 0) {
+      lines.push(
+        `${mode.padEnd(11)}  no_answer  ${String(none.questions).padStart(7)}  shown nothing ${
+          percent(none.precision)
+        } (${none.declined} of ${none.questions})`,
+      );
     }
   }
   return lines.join("\n");
@@ -139,4 +163,84 @@ export function renderTable(modes: Readonly<Record<string, readonly QuestionScor
 /** The distinct sources a result list names, best first, at most `limit`. */
 export function topSources(retrieved: readonly string[], limit = 3): string[] {
   return [...new Set(retrieved)].slice(0, limit);
+}
+
+/** One result row as the evaluation keeps it: its source and the relevance the search reported. */
+export type ScoredHit = Readonly<{
+  sourceKey: string;
+  vectorDistance: number | null;
+  textRank: number | null;
+}>;
+
+/** The source keys of the hits a floor lets through, best first. */
+export function keysPassing(hits: readonly ScoredHit[], floor: RelevanceFloor): string[] {
+  return hits.filter((hit) => passesRelevanceFloor(hit, floor)).map((hit) => hit.sourceKey);
+}
+
+export type FloorPoint = Readonly<{
+  floor: RelevanceFloor;
+  meanRecall: number;
+  mrr: number;
+  noAnswerPrecision: number;
+  /** Answerable questions shown nothing at all. */
+  emptyAnswerable: number;
+}>;
+
+/**
+ * The results each candidate floor would give: every combination of a distance limit and a
+ * full-text rank, over the same hits (`hits[i]` are question i's rows, unfiltered).
+ */
+export function sweepFloors(
+  questions: readonly LibraryQuestion[],
+  hits: readonly (readonly ScoredHit[])[],
+  distances: readonly number[],
+  textRanks: readonly number[],
+): FloorPoint[] {
+  const points: FloorPoint[] = [];
+  for (const strongTextRank of textRanks) {
+    for (const maxVectorDistance of distances) {
+      const floor = { maxVectorDistance, strongTextRank };
+      const scores = questions.map((question, index) =>
+        scoreQuestion(question, keysPassing(hits[index], floor))
+      );
+      const summary = summarise(scores);
+      points.push({
+        floor,
+        meanRecall: summary.meanRecall,
+        mrr: summary.mrr,
+        noAnswerPrecision: summariseNoAnswer(scores).precision,
+        emptyAnswerable: scores.filter((score) =>
+          score.kind !== "no_answer" && score.retrieved.length === 0
+        ).length,
+      });
+    }
+  }
+  return points;
+}
+
+export function renderSweep(points: readonly FloorPoint[]): string {
+  const lines = [
+    "max distance  strong text rank  recall@8    MRR  no-answer shown nothing  answerable shown nothing",
+    "------------  ----------------  --------  -----  -----------------------  ------------------------",
+  ];
+  for (const point of points) {
+    const rank = Number.isFinite(point.floor.strongTextRank)
+      ? point.floor.strongTextRank.toFixed(2)
+      : "none";
+    lines.push(
+      `${point.floor.maxVectorDistance.toFixed(3).padStart(12)}  ${rank.padStart(16)}  ${
+        point.meanRecall.toFixed(3).padStart(8)
+      }  ${point.mrr.toFixed(3)}  ${percent(point.noAnswerPrecision).padStart(23)}  ${
+        String(point.emptyAnswerable).padStart(24)
+      }`,
+    );
+  }
+  return lines.join("\n");
+}
+
+/** The value at fraction `p` (0 to 1) of the sorted values, by nearest rank; NaN when empty. */
+export function percentile(values: readonly number[], p: number): number {
+  if (values.length === 0) return Number.NaN;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))];
 }

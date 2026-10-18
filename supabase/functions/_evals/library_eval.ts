@@ -1,14 +1,16 @@
 // Retrieval evaluation for the research library: for each question in library_questions.json,
 // build the query Coach chat builds (a follow-up borrows the topic of the earlier question), embed
-// it with the real gte-small model, run the real hybrid search (search_library_v2, top 8, with the
-// region of the athlete asking) and score recall of the sources a good answer needs. Also scores
-// full-text-only and vector-only searches, to show what the hybrid adds, and checks that a source
-// for another country never reaches an athlete outside it. Synthetic questions, no athlete data.
+// it with the real gte-small model, run the real hybrid search (search_library_v3, top 8, with the
+// region of the athlete asking) and score recall of the sources a good answer needs, before and
+// after the relevance floor Coach chat applies (retrieval.ts). Also scores full-text-only and
+// vector-only searches, to show what the hybrid adds, checks that a source for another country
+// never reaches an athlete outside it, and prints the sweep that calibrates the floor. Synthetic
+// questions, no athlete data.
 //
 // It needs a database whose chunks are all embedded and an Edge runtime serving library-embed
 // (local stack: `supabase start`, apply migrations, `supabase functions serve --no-verify-jwt`,
 // then wait until the status line below shows every chunk embedded; see docs/handoff/research-library.md
-// for the worktree-on-external-SSD workaround for `functions serve`).
+// for the worktree-on-external-SSD workaround for `functions serve`). CI runs it in coach-eval.yml.
 //
 //   EVAL_SERVICE_KEY=<service role key> EVAL_WORKER_SECRET=<library_worker_secret> \
 //     ./scripts/deno.sh run --allow-env --allow-net --allow-read=supabase/functions/_evals \
@@ -16,26 +18,35 @@
 //
 // EVAL_SUPABASE_URL defaults to http://127.0.0.1:54321. The worker secret is the Vault secret
 // `library_worker_secret` (select private.library_worker_secret() in the database).
-// Scores every question (single-topic, multi-source and no-answer, library_questions.json) and
-// prints one table of recall@8 and MRR per search mode and kind. A no_answer question is not
-// scored: the search returns its nearest chunks whatever the question, so the table lists the
-// sources it brought back for review; whether Coach then declines is graded by the answer bank.
-// This is E3's retrieval gate. Exits non-zero when a regional source reaches an athlete outside its
-// region, or, for the hybrid search, mean recall in the top 8 falls under EVAL_MIN_RECALL
-// (default 0.8), mean recall on the multi-source questions under EVAL_MIN_MULTI_RECALL (default
-// 0.7), or MRR under EVAL_MIN_MRR (default 0.5). The last two are first estimates: the first run
-// that measures them sets the floor to keep.
+//
+// Scores every question (single-topic, multi-source, follow-up and no-answer) and prints one table
+// of recall@8 and MRR per search mode and kind; a no-answer question scores whether it was shown
+// nothing (no-answer precision). This is E3's retrieval gate. Exits non-zero when a regional source
+// reaches an athlete outside its region, or, for the hybrid search with the floor, mean recall in
+// the top 8 falls under EVAL_MIN_RECALL (default 0.8), mean recall on the multi-source questions
+// under EVAL_MIN_MULTI_RECALL (default 0.7), MRR under EVAL_MIN_MRR (default 0.5), or no-answer
+// precision under EVAL_MIN_NO_ANSWER_PRECISION (default 0.7).
 
 import { librarySources } from "../../library/index.ts";
+import { embeddingModel } from "../_shared/library/embedding.ts";
+import { libraryRowsOf } from "../_shared/library/live.ts";
 import { libraryRetrievalQuery } from "../_shared/library/query.ts";
+import { libraryRelevanceFloor } from "../_shared/library/retrieval.ts";
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
+  keysPassing,
   type LibraryQuestion,
+  percentile,
+  questionKind,
   type QuestionScore,
+  renderSweep,
   renderTable,
+  type ScoredHit,
   scoreQuestion,
   summarise,
   summariseKind,
+  summariseNoAnswer,
+  sweepFloors,
   topSources,
 } from "./library_eval_metrics.ts";
 
@@ -45,6 +56,7 @@ const workerSecret = Deno.env.get("EVAL_WORKER_SECRET") ?? "";
 const minRecall = Number(Deno.env.get("EVAL_MIN_RECALL") ?? "0.8");
 const minMultiRecall = Number(Deno.env.get("EVAL_MIN_MULTI_RECALL") ?? "0.7");
 const minMrr = Number(Deno.env.get("EVAL_MIN_MRR") ?? "0.5");
+const minNoAnswer = Number(Deno.env.get("EVAL_MIN_NO_ANSWER_PRECISION") ?? "0.7");
 if (serviceKey === "" || workerSecret === "") {
   console.error("Set EVAL_SERVICE_KEY and EVAL_WORKER_SECRET.");
   Deno.exit(2);
@@ -79,20 +91,25 @@ async function embed(texts: string[]): Promise<number[][]> {
   return embeddings;
 }
 
-type Hit = Readonly<{ source_key: string }>;
-
 async function search(
   text: string | null,
   embedding: number[] | null,
   region: readonly string[],
-): Promise<string[]> {
-  const rows = await post("/rest/v1/rpc/search_library_v2", serviceKey, {
-    query_text: text,
-    query_embedding: embedding,
-    match_count: 8,
-    filters: { region },
-  }) as Hit[];
-  return rows.map((row) => row.source_key);
+): Promise<ScoredHit[]> {
+  const rows = libraryRowsOf(
+    await post("/rest/v1/rpc/search_library_v3", serviceKey, {
+      query_text: text,
+      query_embedding: embedding,
+      query_embedding_model: embedding === null ? null : embeddingModel,
+      match_count: 8,
+      filters: { region },
+    }),
+  );
+  return rows.map((row) => ({
+    sourceKey: row.sourceId,
+    vectorDistance: row.vectorDistance ?? null,
+    textRank: row.textRank ?? null,
+  }));
 }
 
 const status = await post("/rest/v1/rpc/library_status_v1", serviceKey, {}) as {
@@ -112,39 +129,104 @@ const queries = questions.map((question) =>
   libraryRetrievalQuery(question.text, question.previous ?? []).text
 );
 const embeddings = await embed(queries);
-const modes = {
-  hybrid: [] as QuestionScore[],
-  text_only: [] as QuestionScore[],
-  vector_only: [] as QuestionScore[],
+const hits = {
+  hybrid: [] as ScoredHit[][],
+  text: [] as ScoredHit[][],
+  vector: [] as ScoredHit[][],
 };
 const leaks: string[] = [];
 for (const [index, question] of questions.entries()) {
   const region = question.region ?? defaultRegion;
-  const hybrid = await search(queries[index], embeddings[index], region);
-  modes.hybrid.push(scoreQuestion(question, hybrid));
-  modes.text_only.push(scoreQuestion(question, await search(queries[index], null, region)));
-  modes.vector_only.push(scoreQuestion(question, await search(null, embeddings[index], region)));
+  hits.hybrid.push(await search(queries[index], embeddings[index], region));
+  hits.text.push(await search(queries[index], null, region));
+  hits.vector.push(await search(null, embeddings[index], region));
   // A source for another country must not reach an athlete outside it.
-  for (const key of hybrid) {
-    if (!regionsOf.get(key)?.some((code) => region.includes(code))) {
-      leaks.push(`${question.id}: ${key}`);
+  for (const hit of hits.hybrid[index]) {
+    if (!regionsOf.get(hit.sourceKey)?.some((code) => region.includes(code))) {
+      leaks.push(`${question.id}: ${hit.sourceKey}`);
     }
   }
 }
 
+const unfloored = { maxVectorDistance: Number.POSITIVE_INFINITY, strongTextRank: 0 };
+const scored = (rows: readonly ScoredHit[][], floor = unfloored): QuestionScore[] =>
+  questions.map((question, index) => scoreQuestion(question, keysPassing(rows[index], floor)));
+const modes = {
+  hybrid: scored(hits.hybrid),
+  hybrid_floor: scored(hits.hybrid, libraryRelevanceFloor),
+  text_only: scored(hits.text),
+  text_floor: scored(hits.text, libraryRelevanceFloor),
+  vector_only: scored(hits.vector),
+};
+
+console.log(
+  `\nRelevance floor: cosine distance at most ${libraryRelevanceFloor.maxVectorDistance}, or a text rank of at least ${libraryRelevanceFloor.strongTextRank}. "hybrid" and "text_only" are unfiltered (what search_library_v2 showed); "hybrid_floor" is what Coach chat shows; "text_floor" is the word-search fallback when the embedding fails.`,
+);
 console.log(`\n${renderTable(modes)}`);
-console.log("\nHybrid misses:");
-for (const score of modes.hybrid.filter((entry) => entry.missing.length > 0)) {
+console.log("\nHybrid misses with the floor:");
+for (const score of modes.hybrid_floor.filter((entry) => entry.missing.length > 0)) {
   console.log(`  ${score.id}: missing ${score.missing.join(", ")}`);
 }
-console.log("\nNo-answer questions (nearest sources the hybrid search returned):");
-for (const score of modes.hybrid.filter((entry) => entry.kind === "no_answer")) {
-  console.log(`  ${score.id}: ${topSources(score.retrieved).join(", ")}`);
+
+// How far the right chunks and the questions outside the library sit from the question.
+const nearest = (rows: readonly ScoredHit[], keys?: readonly string[]) => {
+  const distances = rows.filter((hit) => keys === undefined || keys.includes(hit.sourceKey))
+    .flatMap((hit) => hit.vectorDistance === null ? [] : [hit.vectorDistance]);
+  return distances.length === 0 ? null : Math.min(...distances);
+};
+const strongest = (rows: readonly ScoredHit[]) =>
+  Math.max(0, ...rows.flatMap((hit) => hit.textRank === null ? [] : [hit.textRank]));
+const answerable = questions.flatMap((question, index) =>
+  questionKind(question) === "no_answer" ? [] : [nearest(hits.hybrid[index], question.expected)]
+).filter((value): value is number => value !== null);
+const outside = questions.flatMap((question, index) =>
+  questionKind(question) === "no_answer" ? [nearest(hits.hybrid[index])] : []
+).filter((value): value is number => value !== null);
+const describe = (values: readonly number[]) =>
+  [0.1, 0.25, 0.5, 0.75, 0.9, 1].map((p) => `p${p * 100} ${percentile(values, p).toFixed(4)}`)
+    .join(", ");
+console.log("\nCosine distance of the nearest chunk of an expected source (answerable questions):");
+console.log(`  ${answerable.length} questions: ${describe(answerable)}`);
+console.log("Cosine distance of the nearest chunk (no-answer questions):");
+console.log(`  ${outside.length} questions: ${describe(outside)}`);
+console.log(
+  "\nNo-answer questions (nearest distance, strongest text rank, sources shown with the floor):",
+);
+for (const [index, question] of questions.entries()) {
+  if (questionKind(question) !== "no_answer") continue;
+  const shown = topSources(keysPassing(hits.hybrid[index], libraryRelevanceFloor));
+  console.log(
+    `  ${question.id}: ${nearest(hits.hybrid[index])?.toFixed(4) ?? "none"}, ${
+      strongest(hits.hybrid[index]).toFixed(3)
+    }, ${shown.length === 0 ? "nothing" : shown.join(", ")}`,
+  );
 }
 
-const hybrid = summarise(modes.hybrid);
-const multi = summariseKind(modes.hybrid, "multi_source");
-const followUp = summariseKind(modes.hybrid, "follow_up");
+const distanceSteps = Array.from({ length: 21 }, (_, step) => 0.1 + step * 0.01);
+console.log(
+  "\nFloor sweep, hybrid search (strong text rank 'none' keeps a row on its distance alone):",
+);
+console.log(
+  renderSweep(
+    sweepFloors(questions, hits.hybrid, distanceSteps, [
+      Number.POSITIVE_INFINITY,
+      0.05,
+      0.1,
+      0.15,
+      0.2,
+    ]),
+  ),
+);
+console.log("\nFloor sweep, word search alone (the fallback), by strong text rank:");
+console.log(
+  renderSweep(sweepFloors(questions, hits.text, [0], [0.01, 0.02, 0.05, 0.1, 0.15, 0.2])),
+);
+
+const floored = modes.hybrid_floor;
+const hybrid = summarise(floored);
+const multi = summariseKind(floored, "multi_source");
+const followUp = summariseKind(floored, "follow_up");
+const noAnswer = summariseNoAnswer(floored);
 console.log(
   `\nFollow-up questions: ${followUp.questions}, mean recall ${followUp.meanRecall.toFixed(3)}`,
 );
@@ -157,6 +239,8 @@ const failures = [
   multi.meanRecall < minMultiRecall &&
   `multi-source recall ${multi.meanRecall.toFixed(3)} is under ${minMultiRecall}`,
   hybrid.mrr < minMrr && `MRR ${hybrid.mrr.toFixed(3)} is under ${minMrr}`,
+  noAnswer.precision < minNoAnswer &&
+  `no-answer precision ${noAnswer.precision.toFixed(3)} is under ${minNoAnswer}`,
 ].filter((failure): failure is string => failure !== false);
 if (failures.length > 0) {
   console.error(`\n${failures.join("\n")}`);
