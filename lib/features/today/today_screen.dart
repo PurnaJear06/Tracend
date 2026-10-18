@@ -342,6 +342,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       brief: brief,
       targets: targets,
       checkedIn: _checkedIn(brief),
+      loadedAt: _briefLoadedAt,
     );
   }
 

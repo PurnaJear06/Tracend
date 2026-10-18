@@ -34,11 +34,14 @@ enum TodayWidgetStore {
   /// snapshot, excluded from backups there, and only then renamed into
   /// place, so the snapshot's path never holds a file a backup would copy.
   /// False when the app group is unavailable or any step failed; nothing is
-  /// left behind then.
+  /// left behind then. Also false, with the snapshot written, when a
+  /// temporary file an earlier write left behind could not be removed: old
+  /// data may still be readable, so the caller must not treat the files as
+  /// cleaned up.
   static func write(json: Data) -> Bool {
     guard let url = fileURL else { return false }
     // A write that was cut short can leave its temporary file behind.
-    removeLeftovers(in: url.deletingLastPathComponent())
+    let leftoversRemoved = removeLeftovers(in: url.deletingLastPathComponent())
     var temporary = url.deletingLastPathComponent()
       .appendingPathComponent(".\(fileName).\(UUID().uuidString).tmp")
     do {
@@ -63,7 +66,7 @@ enum TodayWidgetStore {
       clear()
       return false
     }
-    return true
+    return leftoversRemoved
   }
 
   /// Removes the stored snapshot and any temporary file a cut-short write

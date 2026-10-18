@@ -54,7 +54,13 @@ class TodayWidgetPublisher {
   final SharedPreferencesAsync? _preferences;
   final DateTime Function() _clock;
 
-  ({DailyBrief brief, NutritionTargets? targets, bool checkedIn})? _latest;
+  ({
+    DailyBrief brief,
+    NutritionTargets? targets,
+    bool checkedIn,
+    DateTime loadedAt,
+  })?
+  _latest;
   String? _writtenKey;
   DateTime? _writtenAt;
   bool? _lockScreenNumbers;
@@ -97,20 +103,35 @@ class TodayWidgetPublisher {
     return _eraser.erase();
   }
 
-  /// Writes the snapshot of the Today that just loaded.
+  /// Writes the snapshot of the Today that just loaded. [loadedAt] is when
+  /// [brief] arrived (now when null); the snapshot is stamped with it, also
+  /// when it is written again later, so its 12-hour and midnight expiry count
+  /// from the load and not from the rewrite.
   Future<void> publish({
     required DailyBrief brief,
     required NutritionTargets? targets,
     required bool checkedIn,
+    DateTime? loadedAt,
   }) {
-    final latest = (brief: brief, targets: targets, checkedIn: checkedIn);
+    final latest = (
+      brief: brief,
+      targets: targets,
+      checkedIn: checkedIn,
+      loadedAt: loadedAt ?? _clock(),
+    );
     _latest = latest;
     return _write(latest);
   }
 
   /// Whether the stored snapshot now matches [latest] and the choice.
   Future<bool> _write(
-    ({DailyBrief brief, NutritionTargets? targets, bool checkedIn}) latest, {
+    ({
+      DailyBrief brief,
+      NutritionTargets? targets,
+      bool checkedIn,
+      DateTime loadedAt,
+    })
+    latest, {
     bool force = false,
   }) async {
     final shown = await lockScreenNumbers();
@@ -123,7 +144,7 @@ class TodayWidgetPublisher {
       targets: latest.targets,
       checkedIn: latest.checkedIn,
       lockScreenNumbers: shown,
-      now: now,
+      now: latest.loadedAt,
     );
     final writtenAt = _writtenAt;
     if (!force &&
@@ -134,6 +155,7 @@ class TodayWidgetPublisher {
     }
     _writtenKey = snapshot.contentKey;
     _writtenAt = now;
+    final erasesAtWrite = _eraser.erases;
     final stored = await _bridge.write(jsonEncode(snapshot.toJson()));
     if (!stored) {
       // Whatever is stored is not this snapshot, so the next load writes.
@@ -141,7 +163,7 @@ class TodayWidgetPublisher {
       _writtenAt = null;
     } else if (!_disposed) {
       // The new file replaced whatever an earlier clear could not remove.
-      await _eraser.settle();
+      await _eraser.settle(erasesAtWrite);
     }
     return stored;
   }

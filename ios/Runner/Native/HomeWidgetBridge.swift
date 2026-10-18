@@ -41,11 +41,14 @@ enum HomeWidgetBridge {
           result(FlutterError(code: "invalid_snapshot", message: nil, details: nil))
           return
         }
-        guard TodayWidgetStore.write(json: data) else {
+        // The widgets redraw whatever was stored, also when the write reports
+        // a leftover file it could not remove.
+        let written = TodayWidgetStore.write(json: data)
+        WidgetCenter.shared.reloadAllTimelines()
+        guard written else {
           result(FlutterError(code: "write_failed", message: nil, details: nil))
           return
         }
-        WidgetCenter.shared.reloadAllTimelines()
         result(true)
       case "clear":
         let cleared = TodayWidgetStore.clear()

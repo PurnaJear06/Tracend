@@ -69,4 +69,22 @@ void main() {
     expect(bridge.calls, isEmpty);
     expect(bridge.stored, isNotNull);
   });
+
+  test(
+    'a write that began before a clear started does not settle it',
+    () async {
+      bridge.failClears = 2;
+      await eraser.erase();
+      final erasesAtWrite = eraser.erases;
+
+      // A clear starts (and fails) while that write was in flight.
+      bridge.failClears = 2;
+      await eraser.erase();
+      await eraser.settle(erasesAtWrite);
+      expect(await eraser.isPending(), isTrue);
+
+      await eraser.settle(eraser.erases);
+      expect(await eraser.isPending(), isFalse);
+    },
+  );
 }

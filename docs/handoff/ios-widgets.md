@@ -210,7 +210,11 @@ Island check passed on 2026-10-15. What exists:
   the publisher write its last snapshot again. An opt-out is saved as Off first; if the old numbers
   cannot be removed the switch still reads Off and a toast says the app is retrying. `Phase2Gate`
   owns the eraser and hands it to `AppShell`, so the retry and the publisher share it.
-  `TodayWidgetStore` also deletes leftover `.today_widget_snapshot.json.*.tmp` files on write and clear. The widget extension reads an empty or
+  `TodayWidgetStore` also deletes leftover `.today_widget_snapshot.json.*.tmp` files on write and clear.
+  A write answers false (snapshot stored, `write_failed`) when such a leftover cannot be removed, so
+  the pending flag is not settled; a write settles it only if no clear started since it began
+  (`HomeWidgetEraser.erases`). A snapshot written again (choice change, retried clear) keeps the
+  brief's original load time as `generated_at`, so the 12-hour and midnight expiry count from the load. The widget extension reads an empty or
   unreadable file as no data (`TodayWidgetStore.read`; `testAnEmptyFileIsNoData`).
   `RunnerTests` loads the snapshot fixture as a bundle resource.
   Nothing else clears it. Sign-out

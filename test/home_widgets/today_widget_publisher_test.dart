@@ -203,6 +203,38 @@ void main() {
     expect(await next.lockScreenNumbers(), isFalse);
   });
 
+  test('writing the last snapshot again keeps the load time', () async {
+    final eraser = HomeWidgetEraser(
+      bridge,
+      preferences: SharedPreferencesAsync(),
+    );
+    final shared = TodayWidgetPublisher(
+      bridge: bridge,
+      preferences: SharedPreferencesAsync(),
+      eraser: eraser,
+      clock: () => now,
+    );
+    await shared.publish(brief: _brief(), targets: _targets, checkedIn: true);
+    final loaded = bridge.stored!['generated_at_millis'] as int;
+    expect(loaded, now.millisecondsSinceEpoch);
+
+    // Hours later a choice change and a retried clear write it again; the
+    // brief is no younger, so its 12-hour expiry still counts from the load.
+    now = now.add(const Duration(hours: 3));
+    await shared.setLockScreenNumbers(true);
+    expect(bridge.stored!['generated_at_millis'], loaded);
+
+    bridge
+      ..failWrites = true
+      ..failClears = 2;
+    await shared.setLockScreenNumbers(false);
+    bridge.failWrites = false;
+    now = now.add(const Duration(hours: 2));
+    await eraser.retryPending();
+    await pumpEventQueue();
+    expect(bridge.stored!['generated_at_millis'], loaded);
+  });
+
   test(
     'a snapshot written over the old file settles a pending clear',
     () async {

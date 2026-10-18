@@ -22,6 +22,11 @@ class HomeWidgetEraser extends ChangeNotifier {
   final SharedPreferencesAsync? _preferences;
   bool _disposed = false;
 
+  /// How many clears have started. A snapshot written before the latest one
+  /// started did not replace what that clear is removing ([settle]).
+  int _erases = 0;
+  int get erases => _erases;
+
   @override
   void dispose() {
     _disposed = true;
@@ -43,6 +48,7 @@ class HomeWidgetEraser extends ChangeNotifier {
   /// Clears the snapshot, once more if the first try fails, and records a
   /// failure that survives both. True when no old data is left readable.
   Future<bool> erase() async {
+    _erases++;
     final cleared = await _bridge.clear() || await _bridge.clear();
     try {
       if (cleared) {
@@ -64,9 +70,11 @@ class HomeWidgetEraser extends ChangeNotifier {
   }
 
   /// A snapshot was written over the old file, so nothing old is left to
-  /// clear.
-  Future<void> settle() async {
-    if (!await isPending()) return;
+  /// clear. [erasesAtWrite] is [erases] when the write began: if a clear
+  /// started since, its outcome stands.
+  Future<void> settle(int erasesAtWrite) async {
+    if (erasesAtWrite != _erases || !await isPending()) return;
+    if (erasesAtWrite != _erases) return;
     try {
       await _store.remove(pendingKey);
     } catch (e) {
