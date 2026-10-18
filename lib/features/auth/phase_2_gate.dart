@@ -16,6 +16,7 @@ import 'package:tracend/features/shell/app_shell.dart';
 import 'package:tracend/shared/brand/tracend_intro.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
+import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 
 class Phase2Gate extends StatefulWidget {
@@ -46,7 +47,7 @@ class Phase2Gate extends StatefulWidget {
   State<Phase2Gate> createState() => _Phase2GateState();
 }
 
-class _Phase2GateState extends State<Phase2Gate> {
+class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   bool _loading = true;
   bool _authenticated = false;
   bool _onboardingComplete = false;
@@ -72,10 +73,15 @@ class _Phase2GateState extends State<Phase2Gate> {
   SupabaseClient get _client => widget.client ?? Supabase.instance.client;
   late final LocalAccountData _localData =
       widget.localData ?? LocalAccountData();
+  late final HomeWidgetEraser _widgetEraser = HomeWidgetEraser(
+    widget.homeWidgets,
+  );
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_widgetEraser.retryPending());
     if (widget.environment.hasSupabaseConfiguration) {
       _authEvents = _client.auth.onAuthStateChange.listen((state) {
         if (state.event != AuthChangeEvent.signedOut) return;
@@ -191,9 +197,15 @@ class _Phase2GateState extends State<Phase2Gate> {
     unawaited(_emptyWidgets());
   }
 
-  /// Empties the widgets, once more if the first try could not.
-  Future<void> _emptyWidgets() async {
-    if (!await widget.homeWidgets.clear()) await widget.homeWidgets.clear();
+  /// Empties the widgets; a clear that fails for good is kept and retried
+  /// on every launch and resume (`HomeWidgetEraser`).
+  Future<void> _emptyWidgets() => _widgetEraser.erase();
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_widgetEraser.retryPending());
+    }
   }
 
   /// Ends the session Auth refused, with no network needed; a deleted
@@ -215,6 +227,7 @@ class _Phase2GateState extends State<Phase2Gate> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _authEvents?.cancel();
     _aiConsent?.dispose();
     super.dispose();

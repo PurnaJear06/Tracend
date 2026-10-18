@@ -503,8 +503,9 @@ phone; the widgets never call the network and hold no token.
   hour, or on a new local day, reloads Today and writes a new snapshot; an old one is never
   written again. It is also treated as
   stale after 12 hours or on another day: no number is drawn from it. A removal the system refuses
-  empties the file instead (an empty file is no snapshot), is tried twice, and is tried again at
-  the next launch without a session.
+  empties the file instead (an empty file is no snapshot) and is tried twice. A clear that fails
+  both times is remembered on the phone and tried again on every launch and resume; until it works
+  nothing new is published, and an opt-out that could not remove the numbers stays On.
 - **Deep links.** `tracend://today` and `tracend://train` only switch tab; the native side accepts
   nothing else, and Flutter's own deep-link routing is off (`FlutterDeepLinkingEnabled` = NO). A
   request waits a minute for the app and then expires.

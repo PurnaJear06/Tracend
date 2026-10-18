@@ -8,6 +8,7 @@ import 'package:tracend/app/environment.dart';
 import 'package:tracend/app/theme/tracend_theme.dart';
 import 'package:tracend/features/account/account_screen.dart';
 import 'package:tracend/features/shell/app_shell.dart';
+import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
@@ -189,6 +190,36 @@ void main() {
 
       expect(await publisher.lockScreenNumbers(), isTrue);
       expect(find.textContaining('show while the phone is locked'), findsOne);
+    });
+
+    testWidgets('a removal that fails keeps the switch on and says so', (
+      tester,
+    ) async {
+      final publisher = await pumpAccount(tester);
+      await publisher.publish(
+        brief: DailyBrief(localDate: '2026-10-18'),
+        targets: null,
+        checkedIn: true,
+      );
+      await publisher.setLockScreenNumbers(true);
+      await tester.scrollUntilVisible(
+        find.text('Health numbers on the Lock Screen'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(tester.widget<Switch>(find.byType(Switch).last).value, isTrue);
+
+      bridge
+        ..failWrites = true
+        ..failClears = 2;
+      await tester.ensureVisible(find.byType(Switch).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(Switch).last);
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<Switch>(find.byType(Switch).last).value, isTrue);
+      expect(find.textContaining('Could not turn Lock Screen'), findsOneWidget);
+      expect(await publisher.lockScreenNumbers(), isTrue);
     });
 
     testWidgets('without widgets there is no Widgets section', (tester) async {

@@ -4,6 +4,7 @@ import 'package:shared_preferences_platform_interface/in_memory_shared_preferenc
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
+import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
 import 'fake_home_widget_bridge.dart';
@@ -149,6 +150,49 @@ void main() {
 
     expect(bridge.stored, isNull);
     expect(bridge.calls.where((call) => call == 'clear'), hasLength(2));
+  });
+
+  test('a removal that fails twice keeps the choice on and is kept', () async {
+    await publish();
+    await publisher.setLockScreenNumbers(true);
+
+    bridge
+      ..failWrites = true
+      ..failClears = 2;
+    final applied = await publisher.setLockScreenNumbers(false);
+
+    // The snapshot still holds the numbers, so Off must not be reported.
+    expect(applied, isFalse);
+    expect(await publisher.lockScreenNumbers(), isTrue);
+    expect(bridge.stored!['lock'], isNotNull);
+    expect(await HomeWidgetEraser(bridge).isPending(), isTrue);
+    final next = TodayWidgetPublisher(
+      bridge: bridge,
+      preferences: SharedPreferencesAsync(),
+      clock: () => now,
+    );
+    expect(await next.lockScreenNumbers(), isTrue);
+  });
+
+  test('nothing is published while a clear is pending', () async {
+    bridge.failClears = 2;
+    await publish();
+    await publisher.dispose();
+    expect(await HomeWidgetEraser(bridge).isPending(), isTrue);
+
+    final writes = bridge.writes;
+    final again = TodayWidgetPublisher(
+      bridge: bridge,
+      preferences: SharedPreferencesAsync(),
+      clock: () => now,
+    );
+    await again.publish(brief: _brief(), targets: _targets, checkedIn: true);
+    expect(bridge.writes, writes);
+
+    await HomeWidgetEraser(bridge).retryPending();
+    await again.publish(brief: _brief(), targets: _targets, checkedIn: true);
+    expect(bridge.writes, writes + 1);
+    expect(bridge.stored, isNotNull);
   });
 
   test('a failed write is tried again by the next load', () async {

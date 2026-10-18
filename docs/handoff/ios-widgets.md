@@ -181,10 +181,11 @@ Island check passed on 2026-10-15. What exists:
 
 - **New: the App Group `group.com.tracend.app`**, in `Runner.entitlements` and the new
   `TracendWidgets/TracendWidgets.entitlements`. It exists only so the widget process can read the
-  snapshot; the Live Activity still uses none. The free team registers the group on first signing
-  (see the device check). If signing refuses the capability, nothing else in the app changes: the
-  bridge answers `no_app_group`, the widgets read "Open Tracend to refresh", and Dart logs
-  the error code only.
+  snapshot; the Live Activity still uses none. App Groups are supported for this team: on
+  2026-10-18 team `CGLRSQ8G95` signed both Runner and TracendWidgets with `group.com.tracend.app`
+  (verified with `codesign`). If a build is ever signed without the group, nothing else in the app
+  changes: the bridge answers `no_app_group`, the widgets read "Open Tracend to refresh", and Dart
+  logs the error code only.
 - **Snapshot (Dart)** `lib/shared/home_widgets/today_widget_snapshot.dart`: `TodayWidgetSnapshot.build`
   turns the loaded `DailyBrief`, the plan's `NutritionTargets`, the check-in state and the Lock Screen
   choice into the v1 JSON (`schema_version`, `stale_after_seconds` = 43200, `local_date`, `session`
@@ -203,7 +204,12 @@ Island check passed on 2026-10-15. What exists:
   (`_showSignedOut`, idempotent) and drops any refresh still running (a refresh commits only if no
   session ended since it began); `_signOut` and `_endRejectedSession` no longer swap screens. `write`
   and `clear` answer a bool through Dart: a failed rewrite on opt-out removes the snapshot, a
-  failed clear is tried twice and again on a launch with no session.
+  failed clear is tried twice; a clear that fails twice sets a phone-wide flag
+  (`HomeWidgetEraser`, preference `home_widgets_clear_pending`) that is retried on every launch and
+  resume, blocks any new publish while set, and makes an opt-out that cannot remove the numbers
+  report failure: the switch stays On with a toast. The widget extension reads an empty or
+  unreadable file as no data (`TodayWidgetStore.read`; `testAnEmptyFileIsNoData`).
+  `RunnerTests` loads the snapshot fixture as a bundle resource.
   Nothing else clears it. Sign-out
   (`signOutAthlete`) and a refused session (`LocalAccountData.forgetSession`) forget the athlete's
   Lock Screen choice and the phone-wide key an earlier D2 build used; deleting the account removes
@@ -250,12 +256,10 @@ Island check passed on 2026-10-15. What exists:
   logged in Train shows after the next Today load. A medium widget with long exercise names truncates
   the name, not the target.
 
-**Test D2 on the device** (signed build from the branch, `./scripts/install-device.sh`; the free team
-registers the App Group on first signing):
+**Test D2 on the device** (signed build from the branch, `./scripts/install-device.sh`; the team
+already signs both targets with the App Group):
 
-1. Install. If signing stops on the App Group, open the project once in Xcode (Runner and
-   TracendWidgets targets, Signing & Capabilities, App Groups) so the free team registers
-   `group.com.tracend.app`, then install again.
+1. Install.
 2. Open Tracend and let Today load. Add the **Today** widget, small and medium, to the Home Screen
    (long-press, +). Small: session name, status, recovery score. Medium: the first three exercises
    with targets, calories and protein bars, "Checked in" or "Check-in due".

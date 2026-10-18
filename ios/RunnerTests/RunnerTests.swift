@@ -111,14 +111,13 @@ class RunnerTests: XCTestCase {
 /// The snapshot the app writes for the widgets, read from the same fixture
 /// the Flutter contract test pins (`test/contract/today_widget_snapshot_contract_test.dart`).
 final class TodayWidgetSnapshotTests: XCTestCase {
-  private static let fixtureURL = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .appendingPathComponent("test/contract/fixtures/today_widget_snapshot_v1.json")
-
+  /// The fixture is a resource of the test bundle (it also runs on a
+  /// device, where the source tree is not there).
   private func fixture() throws -> Data {
-    try Data(contentsOf: Self.fixtureURL)
+    let url = try XCTUnwrap(
+      Bundle(for: Self.self).url(forResource: "today_widget_snapshot_v1", withExtension: "json")
+    )
+    return try Data(contentsOf: url)
   }
 
   private func utc() -> Calendar {
@@ -183,6 +182,12 @@ final class TodayWidgetSnapshotTests: XCTestCase {
   func testGarbageIsRefused() {
     XCTAssertNil(TodayWidgetSnapshot.decode(Data("not json".utf8)))
     XCTAssertNil(TodayWidgetSnapshot.decode(Data("{}".utf8)))
+  }
+
+  /// A cleared snapshot that could not be removed is an empty file; the
+  /// widgets read it as no data, so they ask the athlete to open the app.
+  func testAnEmptyFileIsNoData() {
+    XCTAssertNil(TodayWidgetSnapshot.decode(Data()))
   }
 
   func testFreshWithinTwelveHoursOnTheSameDay() throws {

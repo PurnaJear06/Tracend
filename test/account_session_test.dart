@@ -24,6 +24,7 @@ import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
 import 'home_widgets/fake_home_widget_bridge.dart';
@@ -676,6 +677,52 @@ void main() {
 
       expect(homeWidgets.calls, ['clear', 'clear']);
       expect(homeWidgets.stored, isNull);
+    });
+
+    testWidgets(
+      'a clear that fails twice is retried on resume until it works',
+      (tester) async {
+        await openSignedIn(tester);
+        homeWidgets
+          ..stored = {'local_date': '2026-10-18'}
+          ..failClears = 4;
+
+        await tester.tap(find.text('Sign out'));
+        await settle(tester);
+        expect(homeWidgets.stored, isNotNull);
+        expect(await HomeWidgetEraser(homeWidgets).isPending(), isTrue);
+
+        Future<void> resume() async {
+          for (final state in [
+            AppLifecycleState.inactive,
+            AppLifecycleState.hidden,
+            AppLifecycleState.paused,
+            AppLifecycleState.hidden,
+            AppLifecycleState.inactive,
+            AppLifecycleState.resumed,
+          ]) {
+            tester.binding.handleAppLifecycleStateChanged(state);
+          }
+          await settle(tester);
+        }
+
+        // The first resume fails twice more; the next one works.
+        await resume();
+        expect(homeWidgets.stored, isNotNull);
+        await resume();
+        expect(homeWidgets.stored, isNull);
+        expect(await HomeWidgetEraser(homeWidgets).isPending(), isFalse);
+      },
+    );
+
+    testWidgets('a launch finishes a clear that failed before', (tester) async {
+      await preferences.setBool(HomeWidgetEraser.pendingKey, true);
+
+      await pumpGate(tester, server);
+      await settle(tester);
+
+      expect(homeWidgets.calls, contains('clear'));
+      expect(await HomeWidgetEraser(homeWidgets).isPending(), isFalse);
     });
 
     testWidgets('a launch with no session empties the widgets', (tester) async {

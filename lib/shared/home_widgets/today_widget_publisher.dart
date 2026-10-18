@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tracend/features/nutrition/nutrition_repository.dart';
 import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
+import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/home_widgets/today_widget_snapshot.dart';
 
 /// Writes Today's snapshot for the Home Screen and Lock Screen widgets
@@ -26,6 +27,7 @@ class TodayWidgetPublisher {
     DateTime Function() clock = DateTime.now,
   }) : _bridge = bridge,
        _key = lockScreenNumbersKeyFor(userId),
+       _eraser = HomeWidgetEraser(bridge, preferences: preferences),
        _preferences = preferences,
        _clock = clock;
 
@@ -44,6 +46,7 @@ class TodayWidgetPublisher {
 
   final HomeWidgetBridge _bridge;
   final String _key;
+  final HomeWidgetEraser _eraser;
   final SharedPreferencesAsync? _preferences;
   final DateTime Function() _clock;
 
@@ -70,24 +73,27 @@ class TodayWidgetPublisher {
 
   /// Saves the choice and redraws the widgets with it. Turning numbers off
   /// never leaves them readable: without a loaded Today to rebuild from, or
-  /// when the rewrite fails, the stored snapshot is removed instead.
-  Future<void> setLockScreenNumbers(bool shown) async {
+  /// when the rewrite fails, the stored snapshot is removed instead. If even
+  /// that fails the choice stays on and this answers false (the removal is
+  /// retried on every launch and resume, `HomeWidgetEraser`).
+  Future<bool> setLockScreenNumbers(bool shown) async {
+    final before = await lockScreenNumbers();
     _lockScreenNumbers = shown;
+    final latest = _latest;
+    final written = latest != null && await _write(latest, force: true);
+    if (!shown && !written) {
+      _forget();
+      if (!await _eraser.erase()) {
+        _lockScreenNumbers = before;
+        return false;
+      }
+    }
     try {
       await (_preferences ?? SharedPreferencesAsync()).setBool(_key, shown);
     } catch (e) {
       debugPrint('Non-critical error: widget setting not saved: $e');
     }
-    final latest = _latest;
-    final written = latest != null && await _write(latest, force: true);
-    if (!shown && !written) await _remove();
-  }
-
-  /// Removes the stored snapshot, trying once more when that fails. The next
-  /// Today load writes a fresh one that follows the choice.
-  Future<void> _remove() async {
-    _forget();
-    if (!await _bridge.clear()) await _bridge.clear();
+    return true;
   }
 
   /// Writes the snapshot of the Today that just loaded.
@@ -108,6 +114,8 @@ class TodayWidgetPublisher {
   }) async {
     final shown = await lockScreenNumbers();
     if (_disposed) return true;
+    // Nothing new while old data could still be readable.
+    if (await _eraser.isPending()) return false;
     final now = _clock();
     final snapshot = TodayWidgetSnapshot.build(
       brief: latest.brief,
@@ -145,6 +153,6 @@ class TodayWidgetPublisher {
   Future<void> dispose() async {
     _disposed = true;
     _forget();
-    await _bridge.clear();
+    await _eraser.erase();
   }
 }

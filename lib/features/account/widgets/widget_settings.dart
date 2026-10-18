@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tracend/features/account/widgets/account_widgets.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_haptics.dart';
+import 'package:tracend/shared/widgets/tracend_toast.dart';
 
 /// Account › Widgets: whether Lock Screen widgets show health numbers
 /// (UX_FLOWS.md §13, SECURITY_PRIVACY.md §10). Off until chosen. Turning it
@@ -35,7 +37,16 @@ class _WidgetSettingsState extends State<WidgetSettings> {
   Future<void> _set(bool shown) async {
     setState(() => _shown = shown);
     unawaited(TracendHaptics.light());
-    await widget.publisher.setLockScreenNumbers(shown);
+    final applied = await widget.publisher.setLockScreenNumbers(shown);
+    if (applied || !mounted) return;
+    // The numbers could not be taken off the Lock Screen yet: the switch
+    // stays On and Tracend tries again until they are gone.
+    setState(() => _shown = !shown);
+    TracendToast.show(
+      context,
+      'Could not turn Lock Screen numbers off yet. Tracend will keep trying.',
+      icon: CupertinoIcons.exclamationmark_triangle,
+    );
   }
 
   @override
