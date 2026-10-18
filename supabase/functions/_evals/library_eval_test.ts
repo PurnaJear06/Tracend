@@ -6,9 +6,12 @@ import questionFile from "./library_questions.json" with { type: "json" };
 import {
   floorGrid,
   keysPassing,
+  keywordGrid,
+  keywordKeysPassing,
   type LibraryQuestion,
   percentile,
   questionKind,
+  renderKeywordSweep,
   renderSweep,
   renderTable,
   scoreQuestion,
@@ -16,6 +19,7 @@ import {
   summariseKind,
   summariseNoAnswer,
   sweepFloors,
+  sweepKeywordFloors,
   topSources,
 } from "./library_eval_metrics.ts";
 
@@ -156,10 +160,12 @@ Deno.test("the summary averages recall and MRR over answerable questions only", 
 
 Deno.test("the table has a row per mode and kind, and gives no-answer precision", () => {
   const single = { id: "s", text: "?", expected: ["a"] };
+  const slang = { id: "c", text: "?", style: "colloquial" as const, expected: ["a"] };
   const multi = { id: "m", text: "?", kind: "multi_source" as const, expected: ["a", "b"] };
   const none = { id: "n", text: "?", kind: "no_answer" as const, expected: [] };
   const scores = [
     scoreQuestion(single, ["a"]),
+    scoreQuestion(slang, []),
     scoreQuestion(multi, ["b", "a"]),
     scoreQuestion(none, ["a"]),
   ];
@@ -168,6 +174,7 @@ Deno.test("the table has a row per mode and kind, and gives no-answer precision"
   assertStringIncludes(table, "MRR");
   assertStringIncludes(table, "hybrid       all scored");
   assertStringIncludes(table, "hybrid       multi_source");
+  assertStringIncludes(table, "hybrid       colloquial");
   assertStringIncludes(table, "hybrid       no_answer");
   assertStringIncludes(table, "shown nothing   0% (0 of 1)");
   assert(!table.includes("vector_only  multi_source"), "an empty kind has no row");
@@ -202,28 +209,59 @@ Deno.test("the floor sweep scores every floor of the grid on the same hits", () 
     ],
     [{ sourceKey: "z", vectorDistance: 0.16, textRank: 0.01 }],
   ];
-  assertEquals(
-    keysPassing(hits[0], { maxTopDistance: 0.13, maxVectorDistance: 0.18, strongTextRank: 0.1 }),
-    ["a", "b", "z"],
-  );
-  const grid = floorGrid([0.13, 0.17], [0.15, 0.18], [Number.POSITIVE_INFINITY, 0.1]);
-  assertEquals(grid.length, 6, "a row limit nearer than the top limit is skipped");
+  assertEquals(keysPassing(hits[0], { maxTopDistance: 0.13, maxVectorDistance: 0.18 }), ["a", "b"]);
+  const grid = floorGrid([0.13, 0.17], [0.15, 0.18]);
+  assertEquals(grid.length, 3, "a row limit nearer than the top limit is skipped");
   assert(grid.every((floor) => floor.maxVectorDistance >= floor.maxTopDistance));
   const points = sweepFloors([single, none], hits, grid);
-  const at = (top: number, row: number, rank: number) =>
+  const at = (top: number, row: number) =>
     points.find((point) =>
-      point.floor.maxTopDistance === top && point.floor.maxVectorDistance === row &&
-      point.floor.strongTextRank === rank
+      point.floor.maxTopDistance === top && point.floor.maxVectorDistance === row
     )!;
-  const tight = at(0.13, 0.15, Number.POSITIVE_INFINITY);
+  const tight = at(0.13, 0.15);
   assertEquals([tight.meanRecall, tight.noAnswerPrecision, tight.emptyAnswerable], [0.5, 1, 0]);
-  const loose = at(0.13, 0.18, Number.POSITIVE_INFINITY);
+  const loose = at(0.13, 0.18);
   assertEquals([loose.meanRecall, loose.mrr, loose.noAnswerPrecision], [1, 1, 1]);
-  assertEquals(at(0.17, 0.18, Number.POSITIVE_INFINITY).noAnswerPrecision, 0);
+  assertEquals(at(0.17, 0.18).noAnswerPrecision, 0);
   const table = renderSweep(points);
   assertStringIncludes(table, "top distance  row distance");
-  assertStringIncludes(table, "none");
   assertEquals(percentile([3, 1, 2, 4], 0.5), 2);
   assertEquals(percentile([3, 1, 2, 4], 1), 4);
   assert(Number.isNaN(percentile([], 0.5)));
+});
+
+Deno.test("the word-search sweep scores each keyword floor on the same hits and their text", () => {
+  const single = { id: "s", text: "?", expected: ["a"] };
+  const none = { id: "n", text: "?", kind: "no_answer" as const, expected: [] };
+  const hits = [
+    [
+      { sourceKey: "a", vectorDistance: null, textRank: 0.008, text: "Creatine and kidneys." },
+      { sourceKey: "z", vectorDistance: null, textRank: 0.001, text: "Other." },
+    ],
+    [{ sourceKey: "z", vectorDistance: null, textRank: 0.009, text: "Safe harbour." }],
+  ];
+  const queries = ["creatine kidneys", "creatine kidneys"];
+  const grid = keywordGrid([0.005, 0.01], [0, 0.5], [0.002]);
+  assertEquals(grid.length, 4);
+  const points = sweepKeywordFloors([single, none], hits, queries, grid);
+  const at = (rank: number, coverage: number) =>
+    points.find((point) =>
+      point.floor.minTopRank === rank && point.floor.minTopCoverage === coverage
+    )!;
+  // Rank alone lets the unrelated strong hit through; coverage stops it.
+  const rankOnly = at(0.005, 0);
+  assertEquals([rankOnly.meanRecall, rankOnly.noAnswerPrecision], [1, 0]);
+  const covered = at(0.005, 0.5);
+  assertEquals([covered.meanRecall, covered.noAnswerPrecision, covered.emptyAnswerable], [1, 1, 0]);
+  const strict = at(0.01, 0.5);
+  assertEquals([strict.meanRecall, strict.noAnswerPrecision, strict.emptyAnswerable], [0, 1, 1]);
+  assertEquals(
+    keywordKeysPassing(hits[0], queries[0], {
+      minTopRank: 0.005,
+      minTopCoverage: 0.5,
+      minRowRank: 0,
+    }),
+    ["a", "z"],
+  );
+  assertStringIncludes(renderKeywordSweep(points), "top rank  top coverage  row rank");
 });

@@ -2,7 +2,12 @@
 // answer needs among the sources shown, the mean reciprocal rank of the first one, how often a
 // question outside the library is shown nothing (no-answer precision), and the sweep that
 // calibrates the relevance floor.
-import { type RelevanceFloor, relevantRows } from "../_shared/library/retrieval.ts";
+import {
+  type KeywordFloor,
+  keywordRelevantRows,
+  type RelevanceFloor,
+  relevantRows,
+} from "../_shared/library/retrieval.ts";
 
 /**
  * single: one topic's sources. multi_source: sources from two or three topics, so a good answer
@@ -184,8 +189,19 @@ export function keysPassing(hits: readonly ScoredHit[], floor: RelevanceFloor): 
   return relevantRows(hits, floor).map((hit) => hit.sourceKey);
 }
 
-export type FloorPoint = Readonly<{
-  floor: RelevanceFloor;
+/** The source keys the word-search fallback's floor lets through, best first. */
+export function keywordKeysPassing(
+  hits: readonly ScoredHit[],
+  queryText: string,
+  floor: KeywordFloor,
+): string[] {
+  return keywordRelevantRows(hits, queryText, (hit) => hit.text ?? "", floor).map((hit) =>
+    hit.sourceKey
+  );
+}
+
+export type FloorPoint<Floor> = Readonly<{
+  floor: Floor;
   meanRecall: number;
   mrr: number;
   noAnswerPrecision: number;
@@ -193,62 +209,109 @@ export type FloorPoint = Readonly<{
   emptyAnswerable: number;
 }>;
 
+function pointOf<Floor>(
+  floor: Floor,
+  questions: readonly LibraryQuestion[],
+  keysOf: (index: number) => string[],
+): FloorPoint<Floor> {
+  const scores = questions.map((question, index) => scoreQuestion(question, keysOf(index)));
+  const summary = summarise(scores);
+  return {
+    floor,
+    meanRecall: summary.meanRecall,
+    mrr: summary.mrr,
+    noAnswerPrecision: summariseNoAnswer(scores).precision,
+    emptyAnswerable:
+      scores.filter((score) => score.kind !== "no_answer" && score.retrieved.length === 0).length,
+  };
+}
+
 /** The results each candidate floor would give, over the same hits (`hits[i]` are question i's). */
 export function sweepFloors(
   questions: readonly LibraryQuestion[],
   hits: readonly (readonly ScoredHit[])[],
   floors: readonly RelevanceFloor[],
-): FloorPoint[] {
-  return floors.map((floor) => {
-    const scores = questions.map((question, index) =>
-      scoreQuestion(question, keysPassing(hits[index], floor))
-    );
-    const summary = summarise(scores);
-    return {
-      floor,
-      meanRecall: summary.meanRecall,
-      mrr: summary.mrr,
-      noAnswerPrecision: summariseNoAnswer(scores).precision,
-      emptyAnswerable: scores.filter((score) =>
-        score.kind !== "no_answer" && score.retrieved.length === 0
-      ).length,
-    };
-  });
+): FloorPoint<RelevanceFloor>[] {
+  return floors.map((floor) =>
+    pointOf(floor, questions, (index) => keysPassing(hits[index], floor))
+  );
 }
 
-/** Every floor of the grid: each top distance with each row distance at least as far, and each rank. */
-export function floorGrid(
-  topDistances: readonly number[],
-  rowDistances: readonly number[],
-  textRanks: readonly number[],
-): RelevanceFloor[] {
-  return textRanks.flatMap((strongTextRank) =>
-    topDistances.flatMap((maxTopDistance) =>
-      rowDistances.filter((distance) => distance >= maxTopDistance).map((maxVectorDistance) => ({
-        maxTopDistance,
-        maxVectorDistance,
-        strongTextRank,
-      }))
+/**
+ * The same for the word-search fallback: `hits[i]` are question i's word-search results (with
+ * their text) and `queries[i]` the text it was searched with.
+ */
+export function sweepKeywordFloors(
+  questions: readonly LibraryQuestion[],
+  hits: readonly (readonly ScoredHit[])[],
+  queries: readonly string[],
+  floors: readonly KeywordFloor[],
+): FloorPoint<KeywordFloor>[] {
+  return floors.map((floor) =>
+    pointOf(
+      floor,
+      questions,
+      (index) => keywordKeysPassing(hits[index], queries[index], floor),
     )
   );
 }
 
-const rankText = (rank: number) => Number.isFinite(rank) ? rank.toFixed(4) : "none";
+/** Every floor of the grid: each top distance with each row distance at least as far. */
+export function floorGrid(
+  topDistances: readonly number[],
+  rowDistances: readonly number[],
+): RelevanceFloor[] {
+  return topDistances.flatMap((maxTopDistance) =>
+    rowDistances.filter((distance) => distance >= maxTopDistance).map((maxVectorDistance) => ({
+      maxTopDistance,
+      maxVectorDistance,
+    }))
+  );
+}
 
-export function renderSweep(points: readonly FloorPoint[]): string {
+/** Every keyword floor of the grid. */
+export function keywordGrid(
+  topRanks: readonly number[],
+  topCoverages: readonly number[],
+  rowRanks: readonly number[],
+): KeywordFloor[] {
+  return topRanks.flatMap((minTopRank) =>
+    topCoverages.flatMap((minTopCoverage) =>
+      rowRanks.map((minRowRank) => ({ minTopRank, minTopCoverage, minRowRank }))
+    )
+  );
+}
+
+const resultColumns = (point: FloorPoint<unknown>) =>
+  `${point.meanRecall.toFixed(3).padStart(8)}  ${point.mrr.toFixed(3)}  ${
+    percent(point.noAnswerPrecision).padStart(23)
+  }  ${String(point.emptyAnswerable).padStart(24)}`;
+
+export function renderSweep(points: readonly FloorPoint<RelevanceFloor>[]): string {
   const lines = [
-    "top distance  row distance  strong text rank  recall@8    MRR  no-answer shown nothing  answerable shown nothing",
-    "------------  ------------  ----------------  --------  -----  -----------------------  ------------------------",
+    "top distance  row distance  recall@8    MRR  no-answer shown nothing  answerable shown nothing",
+    "------------  ------------  --------  -----  -----------------------  ------------------------",
   ];
   for (const point of points) {
     lines.push(
       `${point.floor.maxTopDistance.toFixed(3).padStart(12)}  ${
         point.floor.maxVectorDistance.toFixed(3).padStart(12)
-      }  ${rankText(point.floor.strongTextRank).padStart(16)}  ${
-        point.meanRecall.toFixed(3).padStart(8)
-      }  ${point.mrr.toFixed(3)}  ${percent(point.noAnswerPrecision).padStart(23)}  ${
-        String(point.emptyAnswerable).padStart(24)
-      }`,
+      }  ${resultColumns(point)}`,
+    );
+  }
+  return lines.join("\n");
+}
+
+export function renderKeywordSweep(points: readonly FloorPoint<KeywordFloor>[]): string {
+  const lines = [
+    "top rank  top coverage  row rank  recall@8    MRR  no-answer shown nothing  answerable shown nothing",
+    "--------  ------------  --------  --------  -----  -----------------------  ------------------------",
+  ];
+  for (const point of points) {
+    lines.push(
+      `${point.floor.minTopRank.toFixed(4).padStart(8)}  ${
+        point.floor.minTopCoverage.toFixed(2).padStart(12)
+      }  ${point.floor.minRowRank.toFixed(4).padStart(8)}  ${resultColumns(point)}`,
     );
   }
   return lines.join("\n");

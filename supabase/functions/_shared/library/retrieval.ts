@@ -5,7 +5,7 @@ import type {
   ShownSource,
 } from "../coach_context/host.ts";
 import type { Embedder } from "./embedding.ts";
-import { libraryRetrievalQuery } from "./query.ts";
+import { libraryRetrievalQuery, topicTerms } from "./query.ts";
 
 // Library retrieval as a Contract 7 contributor (chunk E3): every Coach chat turn searches the
 // library for the athlete's question and shows Coach the chunks that are close enough to it, each
@@ -35,31 +35,49 @@ export const libraryEmbedDeadlineMs = 1_500;
  * sits farther away, and the second or third source of a multi-topic question sits farther than
  * the first:
  *
- * - `maxTopDistance`: the turn shows excerpts only when its nearest chunk is at most this far
- *   (or a strong full-text hit is among the rows). Past it the library has nothing for the
- *   question, and Coach is told so.
- * - `maxVectorDistance`: then every chunk at most this far is shown, with every strong full-text
- *   hit (`ts_rank` of at least `strongTextRank`) whatever its distance.
+ * - `maxTopDistance`: the turn shows excerpts only when its nearest chunk is at most this far.
+ *   Past it the library has nothing for the question, and Coach is told so.
+ * - `maxVectorDistance`: then every chunk at most this far is shown.
  *
- * Without an embedding (the word-search fallback) there is no distance, so only strong full-text
- * hits are shown.
+ * A full-text rank is no part of this floor: on the 106-source library a strong word match let
+ * through as many out-of-library questions as it rescued answerable ones (see the sweep in the
+ * handoff), so the distance alone decides.
  */
 export type RelevanceFloor = Readonly<{
   maxTopDistance: number;
   maxVectorDistance: number;
-  strongTextRank: number;
 }>;
-// Measured 2026-10-18 (82 answerable and 10 no-answer questions, 169 chunks): the nearest chunk of an
-// expected source sits at 0.077 to 0.181 (median 0.108); the nearest chunk of a no-answer question
-// at 0.143 to 0.199 (median 0.175). With these limits recall@8 is 0.911 (0.917 without a floor), MRR
-// 0.855 to 0.868 (0.868 to 0.880) and 8 of the 10 no-answer questions are shown nothing (none
-// without a floor). The
-// text rank adds nothing to the hybrid at 0.006 and keeps the word-search fallback at recall 0.614
-// with the same 8 of 10.
+// Calibrated 2026-10-18 on the calibration set (189 answerable and 30 no-answer questions, 351
+// chunks of 106 sources): the nearest chunk of an expected source sits at 0.074 to 0.187 (median
+// 0.106); the nearest chunk of a no-answer question at 0.147 to 0.245 (median 0.177). The values
+// below are the highest-recall floor that still leaves at least 80% of the no-answer questions
+// with nothing shown (the gate is 70%).
 export const libraryRelevanceFloor: RelevanceFloor = Object.freeze({
-  maxTopDistance: 0.16,
+  maxTopDistance: 0.155,
   maxVectorDistance: 0.19,
-  strongTextRank: 0.006,
+});
+
+/**
+ * The floor for the word-search fallback, used when the question could not be embedded (a
+ * timeout or library-embed down). There is no distance then, and a word match is a much weaker
+ * sign than a near embedding: a strong rank alone cannot tell a covered question from one outside
+ * the library (the answerable questions' strongest word match overlaps the others'). The fallback
+ * therefore also needs the strongest chunk to hold a good share of the question's topic words:
+ *
+ * - `minTopRank`: the best chunk's `ts_rank` must be at least this, or nothing is shown.
+ * - `minTopCoverage`: and that chunk must hold at least this share of the question's distinct
+ *   topic words (`termCoverage`).
+ * - `minRowRank`: then every chunk ranked at least this is shown.
+ */
+export type KeywordFloor = Readonly<{
+  minTopRank: number;
+  minTopCoverage: number;
+  minRowRank: number;
+}>;
+export const libraryKeywordFloor: KeywordFloor = Object.freeze({
+  minTopRank: 0.0055,
+  minTopCoverage: 0.35,
+  minRowRank: 0.002,
 });
 
 /** One chunk the search returned. */
@@ -101,6 +119,9 @@ export type LibrarySearch = (request: LibrarySearchRequest) => Promise<readonly 
 
 type Scored = Pick<LibraryRow, "vectorDistance" | "textRank">;
 
+const unscored = (rows: readonly Scored[]) =>
+  rows.every((row) => row.vectorDistance === undefined && row.textRank === undefined);
+
 /**
  * The rows relevant enough to show, best first (see `RelevanceFloor`). Rows that no query scored
  * (fixed rows in the answer bank carry neither score) are shown as given.
@@ -109,15 +130,46 @@ export function relevantRows<Row extends Scored>(
   rows: readonly Row[],
   floor: RelevanceFloor = libraryRelevanceFloor,
 ): Row[] {
-  if (rows.every((row) => row.vectorDistance === undefined && row.textRank === undefined)) {
-    return [...rows];
-  }
-  const strong = (row: Scored) =>
-    typeof row.textRank === "number" && row.textRank >= floor.strongTextRank;
+  if (unscored(rows)) return [...rows];
   const within = (row: Scored, limit: number) =>
     typeof row.vectorDistance === "number" && row.vectorDistance <= limit;
-  if (!rows.some((row) => strong(row) || within(row, floor.maxTopDistance))) return [];
-  return rows.filter((row) => strong(row) || within(row, floor.maxVectorDistance));
+  if (!rows.some((row) => within(row, floor.maxTopDistance))) return [];
+  return rows.filter((row) => within(row, floor.maxVectorDistance));
+}
+
+// Word stems are approximated by the first five letters, which is enough to match "sleeping" to
+// "sleep" and "proteins" to "protein" without a stemmer.
+const stemOf = (word: string) => word.slice(0, 5);
+
+/**
+ * The share (0 to 1) of the question's distinct topic words (query.ts `topicTerms`) that the text
+ * holds, matching on word stems. 0 for a question with no topic word.
+ */
+export function termCoverage(queryText: string, text: string): number {
+  const terms = [...new Set(topicTerms(queryText).map(stemOf))];
+  if (terms.length === 0) return 0;
+  const words = new Set((text.toLowerCase().match(/[a-z0-9]+/g) ?? []).map(stemOf));
+  return terms.filter((term) => words.has(term)).length / terms.length;
+}
+
+/**
+ * The rows to show when the search ran on the words alone (see `KeywordFloor`), best first.
+ * `textOf` gives a row's header and body, which the coverage is measured on.
+ */
+export function keywordRelevantRows<Row extends Scored>(
+  rows: readonly Row[],
+  queryText: string,
+  textOf: (row: Row) => string,
+  floor: KeywordFloor = libraryKeywordFloor,
+): Row[] {
+  if (unscored(rows)) return [...rows];
+  const rank = (row: Scored) => typeof row.textRank === "number" ? row.textRank : 0;
+  const top = rows[0];
+  if (
+    top === undefined || rank(top) < floor.minTopRank ||
+    termCoverage(queryText, textOf(top)) < floor.minTopCoverage
+  ) return [];
+  return rows.filter((row) => rank(row) >= floor.minRowRank);
 }
 
 const sourceIdPattern = /^[a-z0-9][a-z0-9_.-]{0,119}$/;
@@ -224,6 +276,7 @@ export type LibraryContributorDeps = Readonly<{
   now?: () => number;
 }>;
 
+const rowText = (row: LibraryRow) => `${row.header}\n${row.body}`;
 const roundTo = (value: number, places: number) => Number(value.toFixed(places));
 
 export function createLibraryContributor(deps: LibraryContributorDeps): CoachContextContributor {
@@ -266,7 +319,10 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
         embedding,
         matchCount: libraryMatchCount,
       });
-      const block = renderLibraryChunks(relevantRows(rows), libraryBudgetChars, embedding === null);
+      const shown = embedding === null
+        ? keywordRelevantRows(rows, query.text, rowText)
+        : relevantRows(rows);
+      const block = renderLibraryChunks(shown, libraryBudgetChars, embedding === null);
       const distances = rows.flatMap((row) =>
         typeof row.vectorDistance === "number" ? [row.vectorDistance] : []
       );

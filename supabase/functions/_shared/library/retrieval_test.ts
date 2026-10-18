@@ -3,9 +3,11 @@ import { renderCoachContext, validateCoachContextContributors } from "../coach_c
 import {
   createLibraryContributor,
   crossReferenceNote,
+  keywordRelevantRows,
   libraryBudgetChars,
   libraryContributorId,
   libraryEmbedDeadlineMs,
+  libraryKeywordFloor,
   libraryMatchCount,
   libraryNoMatchText,
   libraryRelevanceFloor,
@@ -14,6 +16,7 @@ import {
   libraryWordsOnlyText,
   relevantRows,
   renderLibraryChunks,
+  termCoverage,
   tracendReadingNote,
   unshownKeysIn,
 } from "./retrieval.ts";
@@ -145,7 +148,7 @@ Deno.test("only whole chunks that fit the budget are shown, and no chunk renders
 });
 
 Deno.test("excerpts show only when the nearest chunk is close; then every chunk within the row limit", () => {
-  const { maxTopDistance, maxVectorDistance, strongTextRank } = libraryRelevanceFloor;
+  const { maxTopDistance, maxVectorDistance } = libraryRelevanceFloor;
   assert(maxTopDistance <= maxVectorDistance);
   const at = (key: string, vectorDistance: number | null, textRank: number | null = 0) => ({
     key,
@@ -164,17 +167,9 @@ Deno.test("excerpts show only when the nearest chunk is close; then every chunk 
   // A question the library does not cover: nothing near enough, so nothing at all, even within
   // the row limit.
   assertEquals(relevantRows([at("b", between), at("c", maxTopDistance + 0.001)]), []);
-  // A strong full-text hit opens the gate and is shown whatever its distance.
-  assertEquals(
-    keys(relevantRows([at("b", between), at("t", 0.9, strongTextRank)])),
-    ["b", "t"],
-  );
-  // The word-search fallback: no distance, so only strong full-text hits.
-  assertEquals(
-    keys(relevantRows([at("t", null, strongTextRank), at("w", null, strongTextRank / 2)])),
-    ["t"],
-  );
-  assertEquals(relevantRows([at("w", null, strongTextRank / 2)]), []);
+  // A strong word match does not open the gate or rescue a far chunk: the distance alone decides.
+  assertEquals(relevantRows([at("t", 0.9, 0.5), at("u", maxTopDistance + 0.01, 0.5)]), []);
+  assertEquals(keys(relevantRows([at("a", maxTopDistance), at("t", 0.9, 0.5)])), ["a"]);
   // Rows no query scored (fixed rows in the answer bank) are shown as given.
   const unscored: { key: string; vectorDistance?: number; textRank?: number }[] = [
     { key: "f" },
@@ -182,6 +177,54 @@ Deno.test("excerpts show only when the nearest chunk is close; then every chunk 
   ];
   assertEquals(keys(relevantRows(unscored)), ["f", "g"]);
   assertEquals(relevantRows([]), []);
+});
+
+Deno.test("term coverage is the share of the question's topic words a text holds, by word stem", () => {
+  assertEquals(termCoverage("Protein, muscle, growth and strength?", "Protein and muscle."), 0.5);
+  assertEquals(termCoverage("Sleeping hours", "Sleep for hours."), 1);
+  assertEquals(termCoverage("creatine", "Nothing here."), 0);
+  assertEquals(termCoverage("what is that?", "Anything."), 0, "no topic word");
+  assertEquals(
+    termCoverage("Protein protein PROTEIN", "protein"),
+    1,
+    "a repeated word counts once",
+  );
+});
+
+Deno.test("the word-search fallback needs a strong, well-covered best chunk, then shows the ranked rows", () => {
+  const floor = libraryKeywordFloor;
+  const found = (key: string, textRank: number, text: string) => ({
+    key,
+    vectorDistance: null,
+    textRank,
+    text,
+  });
+  const keys = (items: { key: string }[]) => items.map((item) => item.key);
+  const keywordRows = (query: string, items: ReturnType<typeof found>[]) =>
+    keys(keywordRelevantRows(items, query, (item) => item.text));
+  const query = "creatine safe kidneys?";
+  const covered = "Creatine and the kidneys: safe.";
+  // The best chunk is strong and holds the question's words: it and the chunks ranked above the
+  // row limit show; a weaker chunk does not.
+  assertEquals(
+    keywordRows(query, [
+      found("a", floor.minTopRank, covered),
+      found("b", floor.minRowRank, "Other."),
+      found("c", floor.minRowRank / 2, "More."),
+    ]),
+    ["a", "b"],
+  );
+  // A strong rank with too few of the question's words is a coincidence: nothing.
+  assertEquals(keywordRows(query, [found("a", floor.minTopRank * 2, "Safe harbour.")]), []);
+  // Words held but a rank under the top limit: nothing.
+  assertEquals(keywordRows(query, [found("a", floor.minTopRank / 2, covered)]), []);
+  assertEquals(keywordRows(query, []), []);
+  // Rows no query scored are shown as given.
+  const unscored: { key: string; vectorDistance?: number; textRank?: number }[] = [
+    { key: "f" },
+    { key: "g" },
+  ];
+  assertEquals(keys(keywordRelevantRows(unscored, query, () => "")), ["f", "g"]);
 });
 
 Deno.test("the host passes the shown sources and each contributor's text on, from the rows", async () => {
@@ -395,6 +438,19 @@ Deno.test("rows past the relevance floor are dropped, and none left renders the 
   ], input);
   assertEquals(wordsOnly.texts.library, libraryWordsOnlyText);
   assertEquals(renderLibraryChunks([], 9_000, true).text, libraryWordsOnlyText);
+  // A strong word match that holds the question's words still shows on the words alone.
+  const creatine = {
+    ...row("kreider_2017_creatine", "Creatine is safe for healthy adults.", "Safety"),
+    vectorDistance: null,
+    textRank: libraryKeywordFloor.minTopRank,
+  };
+  const shownByWords = await renderCoachContext([
+    createLibraryContributor({
+      embed: () => () => Promise.reject(new Error("down")),
+      search: () => Promise.resolve([creatine]),
+    }),
+  ], input);
+  assertEquals(Object.keys(shownByWords.shown), ["kreider_2017_creatine"]);
 });
 
 Deno.test("an embedding prefetched at the start of the request is reused, within the same deadline", async () => {

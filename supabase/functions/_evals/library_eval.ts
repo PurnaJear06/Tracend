@@ -32,22 +32,27 @@
 // reaches an athlete outside its region, or, for the hybrid search with the floor, mean recall in
 // the top 8 falls under EVAL_MIN_RECALL (default 0.8), mean recall on the multi-source questions
 // under EVAL_MIN_MULTI_RECALL (default 0.7), MRR under EVAL_MIN_MRR (default 0.5), or no-answer
-// precision under EVAL_MIN_NO_ANSWER_PRECISION (default 0.7).
+// precision under EVAL_MIN_NO_ANSWER_PRECISION (default 0.7). The word-search fallback (the
+// embedding failed) has its own gates: recall under EVAL_MIN_KEYWORD_RECALL (default 0.55) or
+// no-answer precision under EVAL_MIN_KEYWORD_NO_ANSWER_PRECISION (default 0.7).
 
 import { librarySources } from "../../library/index.ts";
 import { embeddingModel } from "../_shared/library/embedding.ts";
 import { libraryRowsOf } from "../_shared/library/live.ts";
 import { libraryRetrievalQuery } from "../_shared/library/query.ts";
-import { libraryRelevanceFloor } from "../_shared/library/retrieval.ts";
+import { libraryKeywordFloor, libraryRelevanceFloor } from "../_shared/library/retrieval.ts";
 import holdoutFile from "./library_questions_holdout.json" with { type: "json" };
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
   floorGrid,
   keysPassing,
+  keywordGrid,
+  keywordKeysPassing,
   type LibraryQuestion,
   percentile,
   questionKind,
   type QuestionScore,
+  renderKeywordSweep,
   renderSweep,
   renderTable,
   type ScoredHit,
@@ -56,6 +61,7 @@ import {
   summariseKind,
   summariseNoAnswer,
   sweepFloors,
+  sweepKeywordFloors,
   topSources,
 } from "./library_eval_metrics.ts";
 
@@ -66,6 +72,8 @@ const minRecall = Number(Deno.env.get("EVAL_MIN_RECALL") ?? "0.8");
 const minMultiRecall = Number(Deno.env.get("EVAL_MIN_MULTI_RECALL") ?? "0.7");
 const minMrr = Number(Deno.env.get("EVAL_MIN_MRR") ?? "0.5");
 const minNoAnswer = Number(Deno.env.get("EVAL_MIN_NO_ANSWER_PRECISION") ?? "0.7");
+const minKeywordRecall = Number(Deno.env.get("EVAL_MIN_KEYWORD_RECALL") ?? "0.55");
+const minKeywordNoAnswer = Number(Deno.env.get("EVAL_MIN_KEYWORD_NO_ANSWER_PRECISION") ?? "0.7");
 if (serviceKey === "" || workerSecret === "") {
   console.error("Set EVAL_SERVICE_KEY and EVAL_WORKER_SECRET.");
   Deno.exit(2);
@@ -169,7 +177,6 @@ for (const [index, question] of questions.entries()) {
 const unfloored = {
   maxTopDistance: Number.POSITIVE_INFINITY,
   maxVectorDistance: Number.POSITIVE_INFINITY,
-  strongTextRank: 0,
 };
 const scored = (rows: readonly ScoredHit[][], floor = unfloored): QuestionScore[] =>
   questions.map((question, index) => scoreQuestion(question, keysPassing(rows[index], floor)));
@@ -177,13 +184,18 @@ const modes = {
   hybrid: scored(hits.hybrid),
   hybrid_floor: scored(hits.hybrid, libraryRelevanceFloor),
   text_only: scored(hits.text),
-  text_floor: scored(hits.text, libraryRelevanceFloor),
+  text_floor: questions.map((question, index) =>
+    scoreQuestion(
+      question,
+      keywordKeysPassing(hits.text[index], queries[index], libraryKeywordFloor),
+    )
+  ),
   vector_only: scored(hits.vector),
 };
 
 const floor = libraryRelevanceFloor;
 console.log(
-  `\nRelevance floor: excerpts only when the nearest chunk is within cosine distance ${floor.maxTopDistance}; then chunks within ${floor.maxVectorDistance}, and full-text hits ranked at least ${floor.strongTextRank}. "hybrid" and "text_only" are unfiltered (what search_library_v2 showed); "hybrid_floor" is what Coach chat shows; "text_floor" is the word-search fallback when the embedding fails.`,
+  `\nRelevance floor: excerpts only when the nearest chunk is within cosine distance ${floor.maxTopDistance}; then chunks within ${floor.maxVectorDistance}. Word-search fallback (no embedding): the best chunk needs a rank of at least ${libraryKeywordFloor.minTopRank} and ${libraryKeywordFloor.minTopCoverage} of the question's topic words; then chunks ranked at least ${libraryKeywordFloor.minRowRank}. "hybrid" and "text_only" are unfiltered (what search_library_v2 showed); "hybrid_floor" is what Coach chat shows; "text_floor" is the word-search fallback when the embedding fails.`,
 );
 console.log(`\n${renderTable(modes)}`);
 console.log("\nHybrid misses with the floor:");
@@ -244,44 +256,45 @@ if (!holdout) {
 
   const steps = (from: number, to: number, by: number) =>
     Array.from({ length: Math.round((to - from) / by) + 1 }, (_, step) => from + step * by);
-  const none = Number.POSITIVE_INFINITY;
-  console.log(
-    "\nFloor sweep, hybrid search: nearest-chunk limit by row limit ('none': no text rule):",
-  );
+  console.log("\nFloor sweep, hybrid search: nearest-chunk limit by row limit:");
   console.log(
     renderSweep(
       sweepFloors(
         questions,
         hits.hybrid,
-        floorGrid(steps(0.13, 0.18, 0.005), steps(0.15, 0.21, 0.01), [none]),
+        floorGrid(steps(0.13, 0.18, 0.005), steps(0.15, 0.21, 0.01)),
       ),
     ),
   );
-  console.log("\nFloor sweep, hybrid search: the strong text rank at the chosen distances:");
   console.log(
-    renderSweep(
-      sweepFloors(
+    "\nFloor sweep, word search alone (the fallback): best chunk's rank by its share of the question's topic words, row rank 0.002:",
+  );
+  console.log(
+    renderKeywordSweep(
+      sweepKeywordFloors(
         questions,
-        hits.hybrid,
-        floorGrid([floor.maxTopDistance], [floor.maxVectorDistance], [
-          none,
-          0.004,
-          0.006,
-          0.008,
-          0.01,
-          0.015,
-          0.02,
+        hits.text,
+        queries,
+        keywordGrid(steps(0.003, 0.008, 0.0005), [0, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5], [
+          0.002,
         ]),
       ),
     ),
   );
-  console.log("\nFloor sweep, word search alone (the fallback), by strong text rank:");
   console.log(
-    renderSweep(
-      sweepFloors(
+    "\nFloor sweep, word search alone: the row rank at the chosen top rank and coverage:",
+  );
+  console.log(
+    renderKeywordSweep(
+      sweepKeywordFloors(
         questions,
         hits.text,
-        floorGrid([0], [0], [0.002, 0.004, 0.006, 0.008, 0.01, 0.015]),
+        queries,
+        keywordGrid(
+          [libraryKeywordFloor.minTopRank],
+          [libraryKeywordFloor.minTopCoverage],
+          [0, 0.002, 0.003, 0.004, 0.005],
+        ),
       ),
     ),
   );
@@ -309,6 +322,8 @@ const hybrid = summarise(floored);
 const multi = summariseKind(floored, "multi_source");
 const followUp = summariseKind(floored, "follow_up");
 const noAnswer = summariseNoAnswer(floored);
+const keyword = summarise(modes.text_floor);
+const keywordNoAnswer = summariseNoAnswer(modes.text_floor);
 console.log(
   `\nFollow-up questions: ${followUp.questions}, mean recall ${followUp.meanRecall.toFixed(3)}`,
 );
@@ -323,6 +338,12 @@ const failures = [
   hybrid.mrr < minMrr && `MRR ${hybrid.mrr.toFixed(3)} is under ${minMrr}`,
   noAnswer.precision < minNoAnswer &&
   `no-answer precision ${noAnswer.precision.toFixed(3)} is under ${minNoAnswer}`,
+  keyword.meanRecall < minKeywordRecall &&
+  `word-search recall ${keyword.meanRecall.toFixed(3)} is under ${minKeywordRecall}`,
+  keywordNoAnswer.precision < minKeywordNoAnswer &&
+  `word-search no-answer precision ${
+    keywordNoAnswer.precision.toFixed(3)
+  } is under ${minKeywordNoAnswer}`,
 ].filter((failure): failure is string => failure !== false);
 if (failures.length > 0) {
   console.error(`\n${failures.join("\n")}`);
