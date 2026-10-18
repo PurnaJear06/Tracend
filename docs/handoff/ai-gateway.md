@@ -1066,8 +1066,8 @@ rules are AI_SAFETY_SPEC §11.2; the prompt budget is CONTEXT_BUDGET.md.
   (`coachContextContributorsFor`).
 - **The model stays out of coach-chat.** The question is embedded by `library-embed` (a `{"query"}`
   mode, worker-secret bearer read via `library_worker_secret_v1` and read again once on a 401,
-  1.5-second deadline counted from the start of the embedding, which coach-chat starts right after
-  the consent check); on a timeout, an error or a non-200 the search uses the words alone. coach-chat's import graph holds no
+  1.5-second deadline counted from the start of the embedding, which coach-chat starts after the
+  replay check and the budget reservation); on a timeout, an error or a non-200 the search uses the words alone. coach-chat's import graph holds no
   `Supabase.ai` code. `library-embed` and coach-chat deploy in the same run: until the new
   `library-embed` is live the query call gets a non-200 and falls back, which is safe.
 - **Reservation.** The contributors' worst case grows by 9,900 characters (36,274 in all), so a Sonnet
