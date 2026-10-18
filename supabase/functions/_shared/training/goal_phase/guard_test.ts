@@ -303,7 +303,6 @@ Deno.test("normal lift progression passes, and real body projection is still cau
       "Your bench is moving well. I would put you at 45 kg.",
       "Your bench is moving well. You will weigh 50 kg in 12 weeks.",
       "Your bench is moving well. Your body weight will drop to 52 kg.",
-      "Your bench is moving well.\n\nIf you keep this up you will hit 52.5 kg soon.",
       "Your bench is moving well. You'd land at 50 kg.",
       "Your bench is moving well. You could get down to 52 kg by March.",
     ]
@@ -314,4 +313,62 @@ Deno.test("normal lift progression passes, and real body projection is still cau
       answer,
     );
   }
+});
+
+Deno.test("a paragraph break ends the carried lift when the question names none", () => {
+  const floor = { currentKg: 74.8, floorKg: 59.9, hasTarget: true, direction: -1 } as const;
+  assertEquals(
+    weightClaimViolation(
+      "Your bench is moving well.\n\nIf you keep this up you will hit 52.5 kg soon.",
+      "How am I doing?",
+      floor,
+    ),
+    "weight_below_healthy_floor",
+  );
+  assertEquals(
+    weightClaimViolation(
+      "Your bench is moving well.\nIf you keep this up you will hit 52.5 kg soon.",
+      "How am I doing?",
+      floor,
+    ),
+    null,
+  );
+});
+
+Deno.test("an ambiguous progression verb is a load only when a lift is in context", () => {
+  const floor = { currentKg: 74.8, floorKg: 59.9, hasTarget: true, direction: -1 } as const;
+  // No lift in the sentence, the paragraph or the question: a body weight, fail closed.
+  for (
+    const [answer, ask] of [
+      ["You could go to 55 kg.", "How am I doing?"],
+      ["You could go to 55 kg.", "How can I cut weight faster?"],
+      ["You'll move up to 45 kg next week.", "How am I doing?"],
+      ["Next week you'll try 40 kg.", "What should I do next?"],
+      ["Then you could work up to 50 kg.", "How is my cut going?"],
+      ["You could add 55 kg.", "How am I doing?"],
+    ] as const
+  ) {
+    assertEquals(weightClaimViolation(answer, ask, floor), "weight_below_healthy_floor", answer);
+  }
+  // A lift in the question puts the whole answer in context.
+  for (
+    const answer of [
+      "You'll move up to 45 kg next week.",
+      "You could go to 55 kg.",
+      "Next week you'll try 40 kg.",
+      "Then you could work up to 50 kg.",
+    ]
+  ) {
+    assertEquals(
+      weightClaimViolation(answer, "How should I progress my bench?", floor),
+      null,
+      answer,
+    );
+  }
+  // A lift in the same sentence, or an unambiguous lifting verb, is a load on its own.
+  assertEquals(
+    weightClaimViolation("Your squat could go to 55 kg.", "How am I doing?", floor),
+    null,
+  );
+  assertEquals(weightClaimViolation("You could pull 55 kg.", "How am I doing?", floor), null);
 });

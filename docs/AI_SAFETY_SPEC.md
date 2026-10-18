@@ -937,9 +937,11 @@ routes stay available by settings alone for two weeks after the cutover.
   target, goal), a movement of the person ("get down to", "drop to"), projection or pace wording
   ("at this pace", "would put you at", "on track for", "heading to", "you'd land at") or "you" as
   the subject of a verb that lands on a weight ("you'll be at", "you will hit", "you could reach")
-  makes it a body weight when it is nearer than any load cue; a tie goes to the load. Load-progression verbs
-  ("try", "add", "attempt", "pull", "move up to", "work up to", "go to") are load cues, and where an
-  earlier sentence of the same paragraph or list names a lift, a figure with no load cue of its own
+  makes it a body weight when it is nearer than any load cue; a tie goes to the load. "Pull" is a lifting verb on its own. The
+  ambiguous progression verbs ("try", "add", "attempt", "move up to", "work up to", "go to") are
+  load cues only when a lift is in context: the sentence, an earlier sentence of its paragraph or
+  list, or the athlete's question for the turn ("How should I progress my bench?"); with no lift
+  anywhere "you could go to 55 kg" is a body weight. Where a lift is in context, a figure with no load cue of its own
   is read as that lift's load ("Your bench is moving well. Next week you'll try 40 kg.") unless
   wording about the person's weight (weigh, scale, body weight, "at this pace", "put you at",
   "land at", "get down to") is within two words of it. Weaker projection wording ("heading to",

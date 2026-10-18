@@ -180,7 +180,11 @@ const setQualifier = new Set([
   "third",
 ]);
 
-// Verbs that put a load on the bar: "you'll try 40 kg", "move up to 45 kg", "then go to 50 kg".
+// Verbs that put a load on the bar. "pull" is a lift by itself. The others read as a load only
+// when a lift is in context (the sentence, an earlier sentence of the paragraph, or the athlete's
+// question): "you'll try 40 kg" after "your bench is moving well" is a load, and "you could go to
+// 55 kg" with no lift anywhere is a body weight (fail closed).
+const liftVerbs = new Set(["pull", "pulls"]);
 const progressionWords = new Set([
   "add",
   "adds",
@@ -191,8 +195,6 @@ const progressionWords = new Set([
   "attempt",
   "attempts",
   "attempting",
-  "pull",
-  "pulls",
 ]);
 const progressionPhrases: readonly (readonly RegExp[])[] = [
   [/^(?:move|moves|moving|work|works|working)$/, /^up$/, /^to$/],
@@ -205,12 +207,12 @@ export function namesLift(sentence: string): boolean {
   return words.some((_, index) => isLoadWord(words, index));
 }
 
-function loadCuesIn(words: readonly Word[]): Cue[] {
+function loadCuesIn(words: readonly Word[], liftInContext: boolean): Cue[] {
   const cues: Cue[] = [];
   for (let i = 0; i < words.length; i++) {
-    if (isLoadWord(words, i) || progressionWords.has(words[i].text)) {
-      cues.push({ from: i, to: i });
-    }
+    if (isLoadWord(words, i) || liftVerbs.has(words[i].text)) cues.push({ from: i, to: i });
+    if (!liftInContext) continue;
+    if (progressionWords.has(words[i].text)) cues.push({ from: i, to: i });
     for (const phrase of progressionPhrases) {
       if (
         phrase.every((pattern, offset) => words[i + offset] && pattern.test(words[i + offset].text))
@@ -397,7 +399,8 @@ function nearest(distances: readonly (number | null)[]): number | null {
 export function weightFiguresIn(sentence: string, carriedLoad = false): WeightFigure[] {
   const words = wordsOf(sentence);
   const bodyCues = bodyCuesIn(words);
-  const loadCues = loadCuesIn(words);
+  // A lift in context: this sentence names one, or an earlier sentence or the question did.
+  const loadCues = loadCuesIn(words, carriedLoad || namesLift(sentence));
   const found: WeightFigure[] = [];
   for (const match of sentence.matchAll(weightPattern)) {
     const kgs = [match[1], match[2]].filter((raw): raw is string => raw !== undefined)

@@ -76,12 +76,17 @@ function bodyWeightsIn(sentence: string, carriedLoad: boolean): number[] {
 
 /**
  * The answer's sentences, each with whether an earlier sentence of its paragraph (or list) names a
- * lift: a figure there is read as that lift's load unless wording about the person's weight is
+ * lift, or the athlete's question names one: a figure there is read as that lift's load unless wording about the person's weight is
  * as near as two words away ("Your bench is moving well. Next week you'll try 40 kg.").
  */
-function* sentencesWithLift(answer: string): Generator<readonly [string, boolean]> {
+function* sentencesWithLift(
+  answer: string,
+  question: string,
+): Generator<readonly [string, boolean]> {
+  // A lift the athlete's question names is in context for every sentence of the answer.
+  const asked = namesLift(question);
   for (const paragraph of answer.split(/\n\s*\n/)) {
-    let carried = false;
+    let carried = asked;
     for (const sentence of paragraph.split(/(?<=[.!?])\s+|\n+/)) {
       yield [sentence, carried];
       carried ||= namesLift(sentence);
@@ -98,7 +103,7 @@ export function weightClaimViolation(
   // Every figure the athlete wrote is theirs, whatever it measures.
   const own = weightFiguresIn(question).flatMap((figure) => [...figure.kgs]);
   const theirs = (kg: number) => own.some((value) => Math.abs(value - kg) < 0.5);
-  for (const [sentence, carriedLoad] of sentencesWithLift(answer)) {
+  for (const [sentence, carriedLoad] of sentencesWithLift(answer, question)) {
     const asksOrProposes = sentence.trim().endsWith("?") ||
       (targetProposal.test(sentence) && !paceCue.test(sentence));
     const forwardLooking = lookAhead.test(sentence) || targetProposal.test(sentence);

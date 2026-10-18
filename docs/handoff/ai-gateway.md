@@ -1242,7 +1242,7 @@ to, instead), and a cut lead-in takes its whole list with it; a repeated closing
 (2) Pain stop rules are never repeats; on a turn that needs referral wording (also when the previous
 exchange was about a health risk) every caution stands; the repair hint never asks to drop a caution.
 (3) Institution initials with no year match only a source's id or title acronyms (case-sensitive), never
-its excerpt. (4) Lift progression: progression verbs are load cues, and a lift named earlier in the
+its excerpt. (4) Lift progression: "pull" is a load cue; "go to", "move up to", "try", "add" are load cues only with a lift in the sentence, the paragraph or the athlete's question (else the figure is a body weight); a lift named earlier in the
 paragraph or list carries to a sentence with no cue of its own unless weight-of-the-person wording is
 within two words; weaker projection wording does not override it. (5) A session duration is exempt only as
 advice (an imperative, or "you" with a modal): "you normally walk 45 minutes" and "your plan is a 45-minute
