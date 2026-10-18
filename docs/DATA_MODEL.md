@@ -1360,7 +1360,9 @@ for the deployed Coach chat until a cleanup migration). The same search as v2, w
   searchable term. `library_version` is `private.library_version()`, the same on every row.
 - Coach chat applies the relevance floor to these rows (`_shared/library/retrieval.ts`,
   `relevantRows`): excerpts are shown only when the nearest chunk is within the top limit, then every
-  chunk within the row limit and every strong full-text hit. The calibration is in
+  chunk within the row limit; a question searched by words alone (no embedding) uses
+  `keywordRelevantRows` on `text_rank` and the share of its topic words the best chunk holds. The
+  calibration is in
   `docs/handoff/research-library.md`.
 
 #### Dump-safe function signatures (all schemas we own)

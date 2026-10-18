@@ -41,7 +41,10 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   verified sources (106 in all, 351 chunks) and machine-readable licences with a verbatim flag, review date and supersession
   (migration `20261018170042_library_expansion.sql`). E3 merged (#150: the library in every
   Coach reply). E3.1 in review (engine production pass, migration 44): `search_library_v3` with
-  distances, a calibrated relevance floor, an explicit no-match line, evidence level and Tracend's-reading marks
+  distances, a relevance floor recalibrated on the 106-source library (219 calibration questions:
+  recall 0.855, 27 of 30 out-of-library questions shown nothing; the 55-question hold-out set gave
+  recall 0.897, 7 of 8, but multi-source recall 0.646 and word-search no-answer precision 63% miss
+  their gates), a word-search floor (recall 0.611, down from 0.795 unfloored), an explicit no-match line, evidence level and Tracend's-reading marks
   on excerpts, the embedding started with the request, a `library_retrieval` log line, the library
   version on each answer, a retire path, the retrieval gate on library pull requests and a deploy
   check. Handoff: [`research-library.md`](./handoff/research-library.md).

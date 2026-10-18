@@ -672,7 +672,7 @@ query from the question (a follow-up borrows the topic of the last real question
 embeds it with `gte-small` by calling the `library-embed` function (the only place the model loads;
 coach-chat starts that call at the beginning of the request, alongside the context preparation),
 searches for the athlete's region and renders up to 8 chunks that pass a calibrated relevance floor
-(the nearest chunk within cosine distance 0.16, then chunks within 0.19), each tagged with its stable
+(the nearest chunk within cosine distance 0.15, then chunks within 0.19), each tagged with its stable
 source id, its kind, year and evidence level, as a volatile block after the athlete data. When no
 chunk passes, the block says so and Coach cites nothing. Coach
 cites the sources it uses as `library` evidence, and a citation of an id that was not shown is a

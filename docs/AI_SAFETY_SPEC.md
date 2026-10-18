@@ -1131,11 +1131,14 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   embedded with the question's model. The block holds up to 8 chunks, whole chunks only, within
   9,000 characters, each starting `[source: <id>]` with the stable manifest key, then the kind of
   source, its year and its evidence level.
-- **Relevance floor.** Excerpts are shown only when the nearest chunk is within cosine distance 0.16
-  of the question (or a strong full-text hit is among the rows); then every chunk within 0.19 and
-  every strong full-text hit is shown (`relevantRows`, calibrated on the retrieval questions with the
-  real model: 8 of 10 questions outside the library are now shown nothing, recall 0.911 against
-  0.917 without a floor; `docs/handoff/research-library.md`). When nothing passes, the block says
+- **Relevance floor.** Excerpts are shown only when the nearest chunk is within cosine distance 0.15
+  of the question; then every chunk within 0.19 is shown (`relevantRows`, calibrated on 219
+  retrieval questions over the 106 sources with the real model: 27 of 30 questions outside the
+  library are shown nothing, recall 0.855 against 0.890 without a floor; the 55 hold-out questions
+  gave 7 of 8 and no recall loss; `docs/handoff/research-library.md`). When the question could not
+  be embedded, the word-search fallback shows rows only when its best chunk has a `ts_rank` of at
+  least 0.0055 and holds 35% of the question's topic words (`keywordRelevantRows`: recall 0.611, 22
+  of 30 shown nothing). When nothing passes, the block says
   that no library excerpt matched, that Coach must cite no library source and should say the evidence
   is not in Tracend's library rather than answer from memory; when the search ran on words alone it
   says Coach must not claim the library lacks the topic.

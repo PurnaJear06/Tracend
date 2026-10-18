@@ -591,8 +591,8 @@ not cite the new sources yet.
 - Region `GB` is new (UK CMOs). The account-region function already derives `GB` from an `en-GB`
   locale, so no SQL change was needed.
 - Not done here (other owners): retrieval does not yet read `supersededBy`, `verbatimAllowed` or
-  `lastReviewed` (they are not in the database), and `library_questions.json` has no questions for
-  the new sources, so recall on them is unmeasured.
+  `lastReviewed` (they are not in the database). Recall on the new sources is measured since E3.1
+  (below).
 
 ### Fact-check corrections (after review)
 
@@ -818,13 +818,21 @@ New sources, the licence field, new questions and the claim-support judge are ot
   Every TypeScript caller (`live.ts`, `library_eval.ts`, `library_head_to_head.ts`) uses v3 and
   parses rows with one function, `libraryRowsOf`.
 - **Relevance floor** (`relevantRows` in `_shared/library/retrieval.ts`, calibrated below). Two
-  limits on the cosine distance: the turn shows excerpts only when its nearest chunk is within 0.16
-  (or a strong full-text hit, `ts_rank` at least 0.006, is among the rows); then every chunk within
-  0.19 and every strong full-text hit is shown. One per-row limit could not separate the two sets:
-  the second or third source of a multi-topic question sits farther from it than the first, so a
-  row limit tight enough to drop the no-answer questions' chunks cost multi-source recall (0.852 at
-  0.16), while the gate on the nearest chunk costs almost nothing. Without an embedding (the
-  word-search fallback) there is no distance, so only strong full-text hits are shown.
+  limits on the cosine distance: the turn shows excerpts only when its nearest chunk is within 0.15;
+  then every chunk within 0.19 is shown. One per-row limit could not separate the two sets: the
+  second or third source of a multi-topic question sits farther from it than the first, so a row
+  limit tight enough to drop the no-answer questions' chunks cost multi-source recall, while the
+  gate on the nearest chunk costs far less. A full-text rank is no part of this floor: on the
+  106-source library a strong word match (`ts_rank` at least 0.006, as first calibrated on 49
+  sources) let through as many out-of-library questions as it rescued answerable ones, so the first
+  version's text rule was removed.
+- **Word-search fallback floor** (`keywordRelevantRows`, `libraryKeywordFloor`). With no embedding
+  there is no distance, and a word match is a weak sign: the strongest chunk of an answerable
+  question and of an out-of-library one overlap in `ts_rank`. The fallback therefore shows rows
+  only when the best chunk has a rank of at least 0.0055 **and** holds at least 35% of the
+  question's distinct topic words (`termCoverage`: `topicTerms` of the query, matched on the first
+  five letters of each word, so "sleeping" meets "sleep"); then every chunk ranked at least 0.002.
+  No new SQL: the coverage is measured in TypeScript on the returned header and body.
 - **Nothing passes: an explicit line.** The block then says no excerpt matched, that Coach must cite
   no library source and should say the evidence is not in Tracend's library rather than answering
   from memory (`libraryNoMatchText`). When the search ran on words alone it says the library could
@@ -889,47 +897,133 @@ New sources, the licence field, new questions and the claim-support judge are ot
 
 ### Relevance floor: calibration
 
-Measured with the real `gte-small` model in CI (Coach Eval, `retrieval_only`, runs 39099613784 and
-39100025122, then the pull request's own run 39100579666 with the chosen floor, 2026-10-18), 49
-sources, 169 chunks, all embedded, the 92 existing questions (61 single, 15 multi-source, 6
-follow-up, 10 no-answer). Recall and the no-answer counts were identical in every run; MRR moved by
-about 0.01 between runs (ties in the fused ranking), so it is given as a range. `library_eval.ts` prints the distances, the
-sweep and the before and after tables; "before" is the unfiltered v3 hybrid, which ranks exactly as
-v2 did.
+Re-measured 2026-10-18 on the merged library, after the first calibration (49 sources, 92
+questions) turned out too small: **106 sources, 351 chunks, all embedded, real `gte-small`**, in CI
+(Coach Eval, `retrieval_only`; the pull request's own runs 39108987328, 39109648904 and 39110180961,
+and a manual hold-out run 39110194476). `library_eval.ts` prints the distances, the sweeps and the
+tables.
 
-| | recall@8 | MRR | no-answer questions shown nothing |
+**Questions.** `library_questions.json` (the calibration set, which chooses every threshold) holds
+219 questions: the 92 older ones (written against the first 49 sources) and 127 written blind for the
+rest, from each source's title and topic and a lifter's point of view, never from its chunk text.
+189 are answerable (147 single-source, 28 multi-source, 14 follow-ups; 28 are colloquial: gym slang,
+typos, Indian English such as "how much protein for gaining in veg diet") and 30 are no-answer
+questions near the library but outside it (medication, injury rehabilitation, specific diseases,
+sport technique, pregnancy and postpartum, minors, eating disorders, medical reports). Every one of
+the 106 sources is the expected answer of at least one calibration question.
+`library_questions_holdout.json` holds 55 more (34 single, 8 multi-source, 5 follow-ups, 8
+no-answer; 5 colloquial), written separately and phrased differently: 20% of the 274. It is run
+once, with `EVAL_QUESTION_SET=holdout` (workflow input `question_set: holdout`), which prints the
+tables and gates but none of the tuning output. It chose nothing.
+
+**Calibration set** (hybrid search with the chosen floor is what Coach chat shows):
+
+| | recall@8 | MRR | no-answer shown nothing | colloquial recall |
+|---|---|---|---|---|
+| Hybrid, no floor (v2 behaviour) | 0.890 | 0.801 to 0.802 | 0 of 30 | 0.810 |
+| Hybrid, the first calibration's floor (0.16 / 0.19 / text 0.006) | 0.879 | 0.802 | 16 of 30 (53%) | 0.756 |
+| **Hybrid, floor 0.15 / 0.19** | **0.855** | **0.774** | **27 of 30 (90%)** | 0.667 |
+| Word search alone, no floor (old fallback) | 0.795 | 0.683 | 1 of 30 (3%) | 0.625 |
+| Word search alone, the first calibration's floor (rank 0.006 per row) | 0.521 | 0.519 | 20 of 30 (67%) | 0.125 |
+| **Word search alone, new floor (rank 0.0055, 35% of topic words)** | **0.611** | **0.549** | **22 of 30 (73%)** | 0.304 |
+
+By kind with the chosen hybrid floor: single 0.859 (0.904 without), multi-source 0.780 (unchanged),
+follow-up 0.964 (unchanged). Eight answerable questions are shown nothing. The three no-answer
+questions still shown excerpts are metformin (nearest chunk 0.1475), ACL rehabilitation (0.1468) and
+steroid cycles (0.1468): they sit as close to training and recovery chunks as covered questions do,
+so no distance separates them; the prompt's precedence and medical-boundary rules still apply.
+**The floor costs colloquial questions most** (0.810 to 0.667): typos and slang sit farther from the
+chunks. 0.155 / 0.19 would give 0.756 for them and 0.869 overall, at 77% to 80% of the no-answer
+questions (one question moved between runs); it is a one-line change if the owner prefers recall.
+
+Distances: the nearest chunk of an expected source is at 0.074 to 0.187 (p50 0.106, p90 0.140); the
+nearest chunk among the rows returned for a no-answer question is at 0.147 to 0.245 (p50 0.177,
+p10 0.1475). The two groups overlap: three no-answer questions sit at 0.147 to 0.150, while
+answerable questions reach 0.187. The nearest distance among the eight returned rows moves a little
+between runs, because chunk ids (which break ties in the fused ranking) are new at every database
+reset; recall and MRR moved by 0.001 to 0.01.
+
+Hybrid sweep (calibration set, run 39110180961): nearest-chunk limit by row limit. The no-answer
+share and the number of answerable questions shown nothing depend only on the nearest-chunk limit.
+No text rule is part of it (see above).
+
+| nearest-chunk limit | no-answer shown nothing | answerable shown nothing | row 0.150 | row 0.160 | row 0.170 | row 0.180 | row 0.190 | row 0.200 | row 0.210 |
+|---|---|---|---|---|---|---|---|---|---|
+| 0.130 | 100% | 31 | 0.743 | 0.757 | 0.765 | 0.771 | 0.771 | 0.771 | 0.771 |
+| 0.135 | 100% | 25 | 0.755 | 0.770 | 0.778 | 0.785 | 0.785 | 0.785 | 0.785 |
+| 0.140 | 100% | 18 | 0.772 | 0.790 | 0.803 | 0.810 | 0.810 | 0.810 | 0.810 |
+| 0.145 | 100% | 12 | 0.795 | 0.817 | 0.832 | 0.840 | 0.840 | 0.842 | 0.842 |
+| **0.150** | 90% | 8 | 0.802 | 0.832 | 0.848 | 0.855 | **0.855** | 0.858 | 0.858 |
+| 0.155 | 77% | 5 | | 0.835 | 0.859 | 0.869 | 0.869 | 0.871 | 0.871 |
+| 0.160 | 63% | 3 | | 0.843 | 0.869 | 0.879 | 0.879 | 0.882 | 0.882 |
+| 0.165 | 63% | 3 | | | 0.869 | 0.879 | 0.879 | 0.882 | 0.882 |
+| 0.170 | 63% | 3 | | | | 0.879 | 0.879 | 0.882 | 0.882 |
+| 0.175 | 60% | 3 | | | | 0.879 | 0.879 | 0.882 | 0.882 |
+| 0.180 | 43% | 3 | | | | 0.879 | 0.879 | 0.882 | 0.882 |
+
+Why 0.15 / 0.19: the highest recall that left at least 90% of the no-answer questions with nothing
+in both calibration runs (0.155 gave 77% in two of three runs, 80% in one). Row limits 0.18 to 0.21
+give the same recall within 0.003; 0.19 keeps a margin for the second source of multi-topic
+questions. The strong-text-rank rule removed from the floor, measured at 0.16 / 0.19: with it at
+0.006 the no-answer share fell from 67% to 53% for no recall gain (0.879 either way); at 0.004 it
+fell to 30%.
+
+Word-search sweep (calibration set): recall / no-answer shown nothing, by the best chunk's `ts_rank`
+(rows) and the share of the question's topic words it must hold (columns), row rank 0.002.
+
+| best chunk's rank | coverage 0 | 0.20 | 0.25 | 0.30 | **0.35** | 0.40 | 0.45 | 0.50 |
+|---|---|---|---|---|---|---|---|---|
+| 0.0030 | 0.779 / 10% | 0.754 / 20% | 0.739 / 33% | 0.712 / 43% | 0.669 / 60% | 0.654 / 60% | 0.590 / 70% | 0.590 / 70% |
+| 0.0035 | 0.776 / 13% | 0.751 / 20% | 0.736 / 33% | 0.709 / 43% | 0.667 / 60% | 0.652 / 60% | 0.590 / 70% | 0.590 / 70% |
+| 0.0040 | 0.771 / 23% | 0.751 / 30% | 0.736 / 37% | 0.709 / 43% | 0.667 / 60% | 0.652 / 60% | 0.590 / 70% | 0.590 / 70% |
+| 0.0045 | 0.729 / 37% | 0.713 / 40% | 0.701 / 43% | 0.686 / 50% | 0.654 / 63% | 0.650 / 63% | 0.590 / 73% | 0.590 / 73% |
+| 0.0050 | 0.694 / 57% | 0.683 / 57% | 0.671 / 57% | 0.656 / 60% | 0.635 / 70% | 0.632 / 70% | 0.576 / 77% | 0.576 / 77% |
+| **0.0055** | 0.645 / 63% | 0.639 / 63% | 0.634 / 63% | 0.622 / 67% | **0.611 / 73%** | 0.611 / 73% | 0.571 / 80% | 0.571 / 80% |
+| 0.0060 | 0.597 / 67% | 0.592 / 67% | 0.586 / 67% | 0.581 / 70% | 0.571 / 77% | 0.571 / 77% | 0.547 / 80% | 0.547 / 80% |
+| 0.0065 | 0.544 / 77% | 0.539 / 77% | 0.534 / 77% | 0.528 / 77% | 0.523 / 80% | 0.523 / 80% | 0.504 / 83% | 0.504 / 83% |
+| 0.0070 | 0.484 / 80% | 0.479 / 80% | 0.474 / 80% | 0.468 / 80% | 0.463 / 80% | 0.463 / 80% | 0.455 / 83% | 0.455 / 83% |
+| 0.0075 | 0.429 / 93% | 0.423 / 93% | 0.418 / 93% | 0.413 / 93% | 0.407 / 93% | 0.407 / 93% | 0.399 / 93% | 0.399 / 93% |
+| 0.0080 | 0.331 / 93% | 0.331 / 93% | 0.331 / 93% | 0.325 / 93% | 0.320 / 93% | 0.320 / 93% | 0.320 / 93% | 0.320 / 93% |
+
+The row rank (at 0.0055 and 0.35) changes little: 0 gives 0.611, 0.002 0.611, 0.003 0.608, 0.004
+0.601, 0.005 0.571, all at 73%. **The word-search fallback cannot be brought back to its unfloored
+recall (0.795) while most out-of-library questions show nothing.** The ts_rank of an answerable
+question's best chunk (p10 0.004) overlaps the no-answer questions' (p50 0.005, p90 0.007), and
+topic-word coverage separates them only partly. Coverage buys about 0.09 recall at a similar
+no-answer share (0.635 at 70% against 0.544 at 77% by rank alone), and the two-part form (best
+chunk, then rows) adds about 0.08 over the first calibration's per-row rank at the same 67%
+(0.597), but the fallback stays far below the main path.
+That is accepted because the fallback runs only when the embedding is unavailable, and its
+block then says Coach must not claim the library lacks the topic. Rank 0.005 with the same coverage
+gives 0.635 at exactly 70%; 0.0055 was chosen for margin over the gate.
+
+**Hold-out set** (run 39110194476, 55 questions, chosen floors, run once, no retuning):
+
+| | recall@8 | MRR | no-answer shown nothing |
 |---|---|---|---|
-| Hybrid, no floor (v2 behaviour) | 0.917 | 0.868 to 0.880 | 0 of 10 (0%) |
-| Hybrid with the floor (what Coach chat shows) | **0.911** | **0.855 to 0.868** | **8 of 10 (80%)** |
-| Word search alone, no floor (old fallback) | 0.860 | 0.773 | 0 of 10 |
-| Word search alone with the floor (new fallback) | 0.614 | 0.605 | 8 of 10 |
+| Hybrid, no floor | 0.897 | 0.822 | 0 of 8 |
+| **Hybrid, floor 0.15 / 0.19** | **0.897** | **0.822** | **7 of 8 (88%)** |
+| Word search alone, no floor | 0.805 | 0.673 | 0 of 8 |
+| **Word search alone, new floor** | **0.613** | **0.542** | **5 of 8 (63%)** |
 
-By kind with the floor: single 0.926, multi-source 0.811 (unchanged), follow-up 1.000. One
-answerable question is shown nothing (its nearest chunk is past 0.16). The two no-answer questions
-still shown excerpts are metformin (nearest 0.143) and ACL rehabilitation (0.147): both sit as close
-to training and recovery chunks as covered questions do, so no distance separates them; the prompt's
-precedence and medical-boundary rules still apply to them.
+By kind with the hybrid floor: single 0.941, multi-source 0.646 (8 questions; 0.646 without a floor
+too), follow-up 1.000, colloquial 1.000 (5 questions). The one no-answer question shown excerpts
+asks at what age children should start strength sessions (nearest 0.149). **Two gates are not met on
+the hold-out set**, and the run failed on them: multi-source recall 0.646 against 0.7, and
+word-search no-answer precision 0.625 against 0.7 (5 of 8; the calibration set gave 73%, 22 of 30).
+The floor did not cause the first (it equals the unfloored hybrid); the second is the fallback's
+limit described above, on only 8 questions. Neither gate was moved. Eight multi-source questions
+and eight no-answer questions are small samples, and the set was not tuned on; the calibration set
+passes every gate (recall 0.855, multi-source 0.780, MRR 0.774, no-answer 0.900, word-search recall
+0.611, word-search no-answer 0.733).
 
-Distances: the nearest chunk of an expected source is at 0.077 to 0.181 (p50 0.108, p90 0.139); the
-nearest chunk of a no-answer question at 0.143 to 0.199 (p50 0.175). Full-text ranks are small
-(normalisation 1, ORed terms): the strongest expected-source chunk per question has p50 0.0073 and
-at most 0.0131; no-answer questions reach at most 0.0073.
-
-Sweep (nearest-chunk limit / row limit, recall, MRR, no-answer shown nothing, answerable shown
-nothing): 0.14 / 0.19: 0.856, 0.827, 100%, 7; 0.15 / 0.19: 0.898, 0.855, 80%, 2; **0.16 / 0.19:
-0.911, 0.868, 80%, 1**; 0.17 / 0.19: 0.911, 0.868, 60%, 1; 0.18 / 0.19: 0.911, 0.868, 40%, 1. A
-single per-row limit: 0.15: 0.813 and 80%; 0.16: 0.852 and 80%; 0.19: 0.917 and 20%. 0.16 sits
-between the last answerable question it keeps (above 0.155) and the nearest excluded no-answer
-question (0.167). Row limits 0.18 to 0.21 give the same recall; 0.19 keeps a margin for the second
-source of multi-topic questions. Text rank: at 0.004 the hybrid's no-answer share falls to 30%; from
-0.006 up it changes nothing in the hybrid; for the fallback, 0.004 gives recall 0.785 and 40%, 0.006
-gives 0.614 and 80%, 0.008 gives 0.280 and 100%, so 0.006 keeps the fallback at the main path's
-no-answer precision.
-
-`library_eval.ts` now scores no-answer precision and gates on it (`EVAL_MIN_NO_ANSWER_PRECISION`,
-default 0.7), with recall 0.8, multi-source recall 0.7 and MRR 0.5 as before, all measured with the
-floor. Ten no-answer questions are few: re-run the sweep when the question set grows (another
-branch is adding questions) and move the limits only on that evidence.
+`library_eval.ts` gates, all measured with the floors: recall 0.8, multi-source recall 0.7, MRR 0.5,
+no-answer precision 0.7 (`EVAL_MIN_NO_ANSWER_PRECISION`), and for the word-search fallback recall 0.55
+(`EVAL_MIN_KEYWORD_RECALL`) and no-answer precision 0.7 (`EVAL_MIN_KEYWORD_NO_ANSWER_PRECISION`).
+The workflow step now runs with `pipefail`, so a gate failure fails the job (it used to be hidden by
+`tee`). Thirty no-answer questions are still few: one question is 3.3 points. Re-run the sweep when
+the library or the question set grows, on the calibration set only, and keep the hold-out set for
+confirming the result once.
 
 ### Not done, and why
 
@@ -953,7 +1047,11 @@ branch is adding questions) and move the limits only on that evidence.
 distances, the model filter, text ranks, the embedding-model requirement, evidence level and kind,
 regions, the content digest and when it changes, the version, loading and retiring, and the
 library version on a Coach answer) runs in CI. The legacy DeepSeek request digests
-(`coach_chat_parity_test.ts`) were recorded again because the digest's persona line changed.
+(`coach_chat_parity_test.ts`) were recorded again because the digest's persona line changed (the
+only prompt edits are the persona's digest line and two library-rule bullets; the structured-output
+schema is untouched, and `coach_chat_schema_test.ts` still passes: 0 optional keys, 0 unions, under
+3,100 bytes). The branch was rebased onto `main` after #151, #152 and #155; migration 44 still sorts
+after every migration there (`check-migration-order.sh origin/main`).
 
 ### After the deploy
 
