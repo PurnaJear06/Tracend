@@ -51,7 +51,7 @@ Deno.test("the database lapses exactly the volatile kinds", () => {
 
 Deno.test("the limits in the code are the limits in the database", () => {
   assertEquals(migration.includes(`>= ${maxActiveFacts} then`), true);
-  assertEquals(migration.includes(`not ranked.waiting and ranked.place > ${maxCoachNotes}`), true);
+  assertEquals(migration.includes(`ranked.place > ${maxCoachNotes}`), true);
   assertEquals(migration.includes(`interval '${coachNoteLifetimeDays} days')`), true);
   assertEquals(
     migration.includes(`char_length(subject) between 1 and ${maxFactSubjectChars}`),

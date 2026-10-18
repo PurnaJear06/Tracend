@@ -427,3 +427,13 @@ Deno.test("a due fact the athlete speaks of gets a still-true card, and only the
   const quiet = await turn("my left knee hurts again today", { facts: [fresh] });
   assertEquals(quiet.body.fact_suggestions, undefined);
 });
+
+Deno.test("a report that throws never turns a successful write into a failed one", async () => {
+  const reports: unknown[] = [];
+  await runInBackground(() => Promise.resolve("written"), (outcome) => {
+    reports.push(outcome);
+    throw new Error("log failed");
+  }, undefined);
+  // Reported once, as a success; the throw is swallowed, not reported again as a failure.
+  assertEquals(reports, [{ ok: true, value: "written" }]);
+});

@@ -828,14 +828,16 @@ after a reply, from rules and structured fields, never from the Coach's prose: `
 (`conversation`, or `advice` for a proposal the athlete answered), `note_date`, `summary` (a template
 sentence), `topics` and `concerns` (closed lists), `advice` and `commitments` (jsonb, at most 4 each),
 `follow_through` (`followed`, `partly`, `not_followed`, set once a week has passed), `message_ids`
-(the messages it came from), `proposal_id` and `expires_at` (60 days). An athlete keeps their 20 newest
-unexpired notes. A note for a conversation with `coach_threads.remember = false` is refused. Deleting
+(the messages it came from), `proposal_id` and `expires_at` (60 days). An athlete keeps at most 20 notes: the newest, except that a note still waiting for its
+follow-through check (a training-days commitment under 28 days old) is kept ahead of the others. A note for a conversation with `coach_threads.remember = false` is refused. Deleting
 a conversation deletes its notes. Forced RLS, read-only for authenticated; the athlete deletes a note
 with `delete_coach_note_v1`. Notes are untrusted when read back.
 
 `change_proposals` gains `memory_noted_at` (set once, never cleared) and `source_remembered` (copied
-from the conversation by a trigger when `source_message_id` is set, default true). "Forget
-everything" also marks answered proposals noted and removes the older preference, journal and
+from the conversation by a trigger when `source_message_id` is set; true for proposals that existed
+when the column was added, false for a new one until it is linked to a reply in a remembered
+conversation, so a proposal that never gets linked is never noted). "Forget
+everything" also marks every proposal made so far noted (answered or pending) and removes the older preference, journal and
 narrative sections from the athlete's stored `coach_context_snapshots` (with their checksum).
 
 `coach_threads.remember` (default true) marks a conversation the athlete asked Coach not to remember

@@ -1092,7 +1092,7 @@ adapter still sends no tools.
   (`change_proposals.memory_noted_at`, never cleared), so deleting a note, the cap or "Forget
   everything" cannot bring it back; a proposal made in a conversation that is not remembered
   (`source_remembered`, copied when the proposal is linked to its reply) is never noted, even after
-  that conversation is deleted. A note waiting for its check (up to 10) is kept beyond the 20-note cap.
+  that conversation is deleted. The cap is 20 notes in all: a note waiting for its check (a training-days commitment under 28 days old) is kept ahead of the others, so the oldest other notes go first.
 - **A chat the athlete asked Coach not to remember** gets no notes, no suggestions (the model is not
   offered the field), no search and no appearance in another chat. A red-flag turn writes nothing.
 - **Raw message search** is the `past_messages` lookup: the athlete's own earlier questions in

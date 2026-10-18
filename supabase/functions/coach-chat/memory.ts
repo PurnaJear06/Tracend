@@ -116,14 +116,16 @@ export function runInBackground<T>(
   runtime: EdgeRuntimeGlobal["EdgeRuntime"] = (globalThis as EdgeRuntimeGlobal).EdgeRuntime,
 ): Promise<void> {
   const done = (async () => {
+    let outcome: Parameters<typeof onDone>[0];
     try {
-      onDone({ ok: true, value: await work() });
+      outcome = { ok: true, value: await work() };
     } catch {
-      try {
-        onDone({ ok: false });
-      } catch {
-        // Logging must not fail either.
-      }
+      outcome = { ok: false };
+    }
+    try {
+      onDone(outcome);
+    } catch {
+      // A failing report must neither fail the work nor relabel its outcome.
     }
   })();
   runtime?.waitUntil(done);

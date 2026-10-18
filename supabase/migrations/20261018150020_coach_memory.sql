@@ -397,24 +397,25 @@ begin
     where id = p_proposal_id and user_id = p_user_id;
   end if;
 
-  -- The 20 newest notes stay. A note still waiting for its follow-through check (a training-days
-  -- commitment under 35 days old) stays too, up to the 10 newest, so a busy athlete's commitments
-  -- are not pushed out before the week they promised has been checked.
+  -- At most 20 notes stay. A note still waiting for its follow-through check (a training-days
+  -- commitment whose check can still run: under 28 days old) is kept before any other, so a busy
+  -- athlete's commitments are not pushed out before the week they promised has been checked; the
+  -- oldest other notes go first, and only if 20 are waiting does a waiting one go.
   delete from public.coach_notes n
   where n.user_id = p_user_id and (
     n.expires_at <= statement_timestamp()
     or n.id in (
       select ranked.id from (
-        select k.id, k.waiting,
-          row_number() over (partition by k.waiting order by k.created_at desc, k.id desc) as place
+        select k.id,
+          row_number() over (order by k.waiting desc, k.created_at desc, k.id desc) as place
         from (
           select c.id, c.created_at,
-            (c.follow_through is null and c.note_date >= statement_timestamp()::date - 35
+            (c.follow_through is null and c.note_date >= statement_timestamp()::date - 28
               and exists (select 1 from jsonb_array_elements(c.commitments || c.advice) e
                 where e ->> 'kind' = 'train_days')) as waiting
           from public.coach_notes c where c.user_id = p_user_id) k
       ) ranked
-      where (ranked.waiting and ranked.place > 10) or (not ranked.waiting and ranked.place > 20)));
+      where ranked.place > 20));
 
   return jsonb_build_object('schema_version', '1.0', 'stored', new_id is not null,
     'note_id', new_id, 'reason', case when new_id is null then 'already_noted' end);
@@ -428,10 +429,15 @@ grant execute on function public.persist_coach_note_v1(uuid, uuid, text, date, t
 -- may remember. memory_noted_at is set when the note is first written (or when the athlete forgets
 -- everything) and never cleared, so deleting a note, the 20-note cap or "Forget everything" can
 -- never bring a note back. source_remembered is copied from the conversation when the proposal is
--- linked to its reply, so it still holds after the conversation is deleted.
+-- linked to its reply, so it still holds after the conversation is deleted. Proposals that exist
+-- now were all made in conversations that Coach remembered, so they start as true; a proposal made
+-- from now on starts as false and becomes true only when its reply is in a remembered conversation,
+-- so one that never gets linked (the reply failed to store, the conversation was deleted mid-reply)
+-- is never turned into a note.
 alter table public.change_proposals
   add column memory_noted_at timestamptz,
   add column source_remembered boolean not null default true;
+alter table public.change_proposals alter column source_remembered set default false;
 
 create function private.copy_proposal_source_remembered()
 returns trigger language plpgsql security definer set search_path = '' as $$
@@ -596,11 +602,12 @@ begin
   delete from public.user_preferences where user_id = me;
   delete from public.coach_session_summaries where user_id = me;
   delete from public.coach_narrative_entries where user_id = me;
-  -- Answered proposals are not turned into notes again, and the stored copies of the older memory
-  -- sections are removed from the athlete's prepared contexts.
+  -- Every proposal made so far is marked noted, answered or still pending, so none of them is
+  -- turned into a note later (not even by expiring unanswered); a proposal made after this
+  -- is noted as usual. The stored copies of the older memory sections are removed from the
+  -- athlete's prepared contexts.
   update public.change_proposals set memory_noted_at = coalesce(memory_noted_at, now())
-  where user_id = me and schema_version = '3.0' and memory_noted_at is null
-    and (status <> 'pending' or expires_at <= statement_timestamp());
+  where user_id = me and schema_version = '3.0' and memory_noted_at is null;
   update public.coach_context_snapshots s
   set context = s.context - 'session_journal' - 'active_preferences' - 'coaching_narrative',
     context_checksum = encode(extensions.digest(convert_to(

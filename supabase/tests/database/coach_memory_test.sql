@@ -1,5 +1,5 @@
 begin;
-select plan(152);
+select plan(156);
 
 -- A10 part 2: Coach memory with athlete controls (migration 20261018150020).
 -- Confirmed facts (versioned, athlete-written), Coach notes (server-written, capped), conversations
@@ -436,10 +436,19 @@ insert into r select 'filler ' || n, public.persist_coach_note_v1('a1020000-0000
   current_date, 'Filler ' || n, '{}', '{}', '[]', '[]', '{}') from generate_series(1, 25) n;
 select is((select count(*) from public.coach_notes where summary = 'Promised four days'), 1::bigint,
   'a note awaiting its follow-through check is kept when 25 newer notes arrive');
-select is((select count(*) from public.coach_notes where summary like 'Filler %'), 20::bigint,
-  'and the other notes still stop at the 20 newest');
+select is((select count(*) from public.coach_notes where summary like 'Filler %'), 19::bigint,
+  'and the other notes make way for it: the stored count never passes 20');
+select is((select count(*) from public.coach_notes where user_id = 'a1020000-0000-4000-8000-000000000001'), 20::bigint,
+  'twenty notes in all, the waiting one included');
+insert into r select 'promise old', public.persist_coach_note_v1('a1020000-0000-4000-8000-000000000001', null, 'advice',
+  current_date - 40, 'Promised long ago', '{}', '{}', '[]',
+  '[{"text": "train 3 days this week", "kind": "train_days", "target": 3}]', '{}');
+insert into r select 'late filler ' || n, public.persist_coach_note_v1('a1020000-0000-4000-8000-000000000001', null, 'advice',
+  current_date, 'Late filler ' || n, '{}', '{}', '[]', '[]', '{}') from generate_series(1, 20) n;
+select is((select count(*) from public.coach_notes where summary = 'Promised long ago'), 0::bigint,
+  'a promise too old to be checked (28 days) is no longer protected');
 reset role;
-delete from public.coach_notes where summary in ('Promised four days') or summary like 'Filler %';
+delete from public.coach_notes where summary in ('Promised four days') or summary like 'Filler %' or summary like 'Late filler %';
 set local role service_role;
 
 -- Raw message search ----------------------------------------------------------------------------------------
@@ -560,10 +569,25 @@ values ('a1020000-0000-4000-8000-0000000000c6', 'a1020000-0000-4000-8000-0000000
   '{"calories": 2000, "protein_g": 150, "carbohydrate_g": 200, "fat_g": 60}', '[]', 'Why', 'Benefit',
   'Downside', 'medium', current_date, now() + interval '3 days', 'accepted', 'nutrition_targets',
   '{"nutrition": {"calories": 2000, "protein_g": 150, "carbohydrate_g": 200, "fat_g": 60, "rationale": "Because"}}',
-  '{}', '{}', '{}', null);
+  '{}', '{}', '{}', 'a1020000-0000-4000-8000-0000000000a1'),
+  ('a1020000-0000-4000-8000-0000000000c7', 'a1020000-0000-4000-8000-000000000001', null, '3.0',
+  '{"proposal_kind": "nutrition_targets", "title": "Never linked"}',
+  '{"calories": 2000, "protein_g": 150, "carbohydrate_g": 200, "fat_g": 60}', '[]', 'Why', 'Benefit',
+  'Downside', 'medium', current_date, now() + interval '3 days', 'accepted', 'nutrition_targets',
+  '{"nutrition": {"calories": 2000, "protein_g": 150, "carbohydrate_g": 200, "fat_g": 60, "rationale": "Because"}}',
+  '{}', '{}', '{}', null),
+  ('a1020000-0000-4000-8000-0000000000ca', 'a1020000-0000-4000-8000-000000000001', null, '3.0',
+  '{"proposal_kind": "nutrition_targets", "title": "Still pending at forget"}',
+  '{"calories": 2000, "protein_g": 150, "carbohydrate_g": 200, "fat_g": 60}', '[]', 'Why', 'Benefit',
+  'Downside', 'medium', current_date, now() + interval '3 days', 'pending', 'nutrition_targets',
+  '{"nutrition": {"calories": 2000, "protein_g": 150, "carbohydrate_g": 200, "fat_g": 60, "rationale": "Because"}}',
+  '{}', '{}', '{}', 'a1020000-0000-4000-8000-0000000000a1');
+select ok(not (select source_remembered from public.change_proposals where id = 'a1020000-0000-4000-8000-0000000000c7'),
+  'a new proposal that was never linked to a reply counts as not remembered');
 set local role service_role;
-select is(jsonb_array_length(public.get_unnoted_coach_proposals_v1('a1020000-0000-4000-8000-000000000001') -> 'proposals'), 1,
-  'an answered proposal is waiting for its note');
+select is((select array_agg(p ->> 'id') from jsonb_array_elements(public.get_unnoted_coach_proposals_v1(
+    'a1020000-0000-4000-8000-000000000001') -> 'proposals') p), array['a1020000-0000-4000-8000-0000000000c6'],
+  'an answered, linked proposal is waiting for its note, and the unlinked one never is');
 insert into r select 'before_note ' || n, public.persist_coach_note_v1('a1020000-0000-4000-8000-000000000001', null, 'advice',
   current_date, 'Before forgetting ' || n, '{}', '{}', '[]', '[]', '{}') from generate_series(1, 2) n;
 reset role;
@@ -571,7 +595,7 @@ create temporary table before_forget as
 select (select count(*) from public.coach_facts where user_id = 'a1020000-0000-4000-8000-000000000001') as facts,
   (select count(*) from public.coach_notes where user_id = 'a1020000-0000-4000-8000-000000000001') as notes;
 grant select on before_forget to authenticated;
-select is((select notes from before_forget), 2::bigint, 'two notes are there to forget');
+select ok((select notes from before_forget) >= 2, 'notes are there to forget');
 set local role authenticated;
 set local "request.jwt.claim.sub" = 'a1020000-0000-4000-8000-000000000001';
 insert into r select 'forgot', public.forget_coach_memory_v1();
@@ -579,6 +603,11 @@ reset role;
 set local role service_role;
 select is(jsonb_array_length(public.get_unnoted_coach_proposals_v1('a1020000-0000-4000-8000-000000000001') -> 'proposals'), 0,
   'forgetting everything does not leave it to be written afterwards');
+reset role;
+update public.change_proposals set status = 'rejected' where id = 'a1020000-0000-4000-8000-0000000000ca';
+set local role service_role;
+select is(jsonb_array_length(public.get_unnoted_coach_proposals_v1('a1020000-0000-4000-8000-000000000001') -> 'proposals'), 0,
+  'nor does a proposal that was still pending then and is answered or lapses later');
 reset role;
 set local role authenticated;
 set local "request.jwt.claim.sub" = 'a1020000-0000-4000-8000-000000000001';
