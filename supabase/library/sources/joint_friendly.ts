@@ -13,13 +13,15 @@ export const jointFriendlySources: readonly LibrarySource[] = [
     year: 2020,
     doi: "10.1177/2050312120901559",
     url: "https://doi.org/10.1177/2050312120901559",
-    licence: "CC BY-NC (open access); own-words summary, no text copied",
+    licence: "CC-BY-NC-4.0",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "hypertrophy", "joint-friendly", "exercise-selection"],
     evidenceLevel: "systematic review (6 studies)",
     kind: "paper",
     chosenBecause:
-      "Answers whether partial range of motion is a fair swap when a full range bothers a joint, using the best controlled evidence available.",
+      "Answers whether partial range of motion is a fair swap when a full range bothers a joint, using the best controlled evidence available. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",
@@ -44,13 +46,15 @@ export const jointFriendlySources: readonly LibrarySource[] = [
     year: 2014,
     doi: "10.1136/bjsports-2013-092538",
     url: "https://doi.org/10.1136/bjsports-2013-092538",
-    licence: "Publisher copyright (no open licence); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["injury-prevention", "joint-friendly", "strength", "training"],
     evidenceLevel: "systematic review and meta-analysis (25 trials)",
     kind: "paper",
     chosenBecause:
-      "The strongest evidence that regular strength training itself lowers injury risk, which supports telling users that building strength protects joints.",
+      "The strongest evidence that regular strength training itself lowers injury risk, which supports telling users that building strength protects joints. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",
@@ -74,13 +78,15 @@ export const jointFriendlySources: readonly LibrarySource[] = [
     year: 2016,
     doi: "10.1136/bjsports-2015-095788",
     url: "https://doi.org/10.1136/bjsports-2015-095788",
-    licence: "CC BY-NC (open access); own-words summary, no text copied",
+    licence: "CC-BY-NC-4.0",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["injury-prevention", "joint-friendly", "training", "progression", "load-management"],
     evidenceLevel: "narrative review and model",
     kind: "paper",
     chosenBecause:
-      "Explains why gradual load increases protect against injury and why too little training is also a risk, the logic behind Tracend's progression caps.",
+      "Explains why gradual load increases protect against injury and why too little training is also a risk, the logic behind Tracend's progression caps. Summarised from the abstract only.",
     sections: [
       {
         title: "The idea",

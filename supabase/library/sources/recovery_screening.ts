@@ -12,13 +12,15 @@ export const recoverySources: readonly LibrarySource[] = [
     year: 2015,
     doi: "10.5665/sleep.4716",
     url: "https://doi.org/10.5665/sleep.4716",
-    licence: "Publisher copyright (free to read in PubMed Central); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["sleep", "recovery", "health", "guidelines"],
     evidenceLevel: "expert consensus statement (15 experts)",
     kind: "guideline",
     chosenBecause:
-      "The clearest professional statement on how much sleep adults need, the baseline for any recovery advice.",
+      "The clearest professional statement on how much sleep adults need, the baseline for any recovery advice. Summarised from the full text.",
     sections: [
       {
         title: "The recommendation",
@@ -42,13 +44,15 @@ export const recoverySources: readonly LibrarySource[] = [
     year: 2021,
     doi: "10.1136/bjsports-2020-102025",
     url: "https://doi.org/10.1136/bjsports-2020-102025",
-    licence: "Publisher copyright (no open licence found); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["sleep", "recovery", "performance", "training"],
     evidenceLevel: "narrative review and expert consensus",
     kind: "paper",
     chosenBecause:
-      "Covers sleep specifically for people who train: how common sleep problems are, what hurts performance and why one-size-fits-all targets are unwise.",
+      "Covers sleep specifically for people who train: how common sleep problems are, what hurts performance and why one-size-fits-all targets are unwise. Summarised from the abstract only.",
     sections: [
       {
         title: "What athletes face",
@@ -77,13 +81,15 @@ export const recoverySources: readonly LibrarySource[] = [
     year: 2018,
     doi: "10.3389/fphys.2018.00403",
     url: "https://doi.org/10.3389/fphys.2018.00403",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["recovery", "soreness", "training"],
     evidenceLevel: "systematic review and meta-analysis (99 studies)",
     kind: "paper",
     chosenBecause:
-      "Compares popular recovery methods on soreness and fatigue, so Coach can say which ones have evidence and which do not.",
+      "Compares popular recovery methods on soreness and fatigue, so Coach can say which ones have evidence and which do not. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",
@@ -110,13 +116,15 @@ export const screeningSources: readonly LibrarySource[] = [
     year: 2015,
     doi: "10.1249/MSS.0000000000000664",
     url: "https://doi.org/10.1249/MSS.0000000000000664",
-    licence: "Publisher copyright (no open licence); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["screening", "safety", "health"],
     evidenceLevel: "expert roundtable consensus",
     kind: "guideline",
     chosenBecause:
-      "The professional basis for deciding who should check with a doctor before starting or stepping up exercise, central to Tracend's safety gate.",
+      "The professional basis for deciding who should check with a doctor before starting or stepping up exercise, central to Tracend's safety gate. Summarised from the abstract only.",
     sections: [
       {
         title: "Why the screening was changed",
@@ -141,13 +149,15 @@ export const screeningSources: readonly LibrarySource[] = [
     year: 2013,
     doi: null,
     url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC3596208/",
-    licence: "Publisher copyright (free to read in PubMed Central); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["screening", "safety", "health"],
     evidenceLevel: "evidence-based clearance tool (systematic reviews and consensus)",
     kind: "guideline",
     chosenBecause:
-      "Describes the widely used PAR-Q+ readiness questionnaire and its risk tiers, matching how Tracend's screening decides between proceed, moderate and refer.",
+      "Describes the widely used PAR-Q+ readiness questionnaire and its risk tiers, matching how Tracend's screening decides between proceed, moderate and refer. Summarised from the full text.",
     sections: [
       {
         title: "Why it replaced the old questionnaire",

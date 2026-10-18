@@ -12,13 +12,15 @@ export const behaviourChangeSources: readonly LibrarySource[] = [
     year: 2024,
     doi: "10.1136/bmj-2023-078713",
     url: "https://doi.org/10.1136/bmj-2023-078713",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["behaviour-change", "coaching-communication", "activity", "adherence", "motivation"],
     evidenceLevel: "systematic review and meta-analysis (97 randomised trials)",
     kind: "paper",
     chosenBecause:
-      "The strongest recent test of whether a motivational-interviewing coaching style raises activity, with a frank statement of how weak and short-lived the evidence is.",
+      "The strongest recent test of whether a motivational-interviewing coaching style raises activity, with a frank statement of how weak and short-lived the evidence is. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",
@@ -42,13 +44,15 @@ export const behaviourChangeSources: readonly LibrarySource[] = [
     year: 2010,
     doi: "10.1002/ejsp.674",
     url: "https://doi.org/10.1002/ejsp.674",
-    licence: "Publisher copyright (no open licence found); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["behaviour-change", "habits", "adherence", "consistency", "coaching-communication"],
     evidenceLevel: "observational study (96 volunteers over 12 weeks)",
     kind: "paper",
     chosenBecause:
-      "The standard study of how long a new daily habit takes to feel automatic, which answers 'how long until this becomes easy?' without a made-up number.",
+      "The standard study of how long a new daily habit takes to feel automatic, which answers 'how long until this becomes easy?' without a made-up number. Summarised from the abstract only.",
     sections: [
       {
         title: "What the study did",

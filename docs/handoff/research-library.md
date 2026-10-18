@@ -14,7 +14,7 @@ A hybrid (full-text plus gte-small vector) research library behind Coach answers
 
 E1 (Phase 1); E2, E3 (Phase 3); E4, E5 (Phase 4)
 
-E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged. E3 (the library in every Coach reply) is in review. See the sections below.
+E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged. E2.2 (57 more sources and machine-readable licences, 106 in all) is in review. E3 (the library in every Coach reply) is in review. See the sections below.
 
 ## State
 
@@ -240,7 +240,7 @@ also from the open full text), so a claim is limited to what that source says. N
 is stored, including the CC BY ones, because a short own-words summary is what Coach can quote and
 the NC/ND licences forbid copying. Licences are what each source is published under, from Europe
 PMC/Crossref; "Publisher copyright" means no open licence was found, so only a summary and a link
-are stored. 15 sources are CC BY, 3 CC BY-NC, 2 CC BY-NC-ND, 15 publisher copyright.
+are stored. 15 sources are CC BY, 3 CC BY-NC, 2 CC BY-NC-ND, 15 publisher copyright (as first recorded; E2.2 corrected Paluch 2022 to CC BY-NC-ND 4.0 and Helms 2014 to CC BY 2.0).
 
 Areas: Training 14, Joint-friendly 3, Nutrition 9, Cardio and activity 4, Recovery and sleep 3,
 Screening 2. Ten of B1's twelve external sources are reused (ACSM 2009, 2011, 2026; Schoenfeld 2017, 2021;
@@ -249,55 +249,55 @@ Iversen 2021; Pelland 2026; Singer 2024; Zourdos 2016; Robinson 2024). Baz-Valle
 
 | Key | Area | Citation | DOI or link | Licence | Region | Topics | Why chosen |
 |---|---|---|---|---|---|---|---|
-| acsm_2009_progression | Training | ACSM 2009 | doi:10.1249/MSS.0b013e3181915670 | Publisher copyright | global | training, strength, hypertrophy, progression, frequency, rest, intensity | The long-standing reference for how a lifter's training should progress with experience; Tracend's standard cites it, and Coach needs to explain where beginner and advanced advice differ. |
-| acsm_2026_resistance_prescription | Training | Currier et al. 2026 (ACSM) | doi:10.1249/MSS.0000000000003897 | CC BY-NC-ND | global | training, strength, hypertrophy, volume, intensity, progression, frequency | The newest and broadest synthesis of what actually changes results in resistance training; it updates the 2009 stand and is the best single reference for the question 'what matters and what does not'. |
-| schoenfeld_2017_weekly_volume | Training | Schoenfeld et al. 2017 | doi:10.1080/02640414.2016.1210197 | Publisher copyright | global | training, hypertrophy, volume | The classic answer to 'how many sets per week?'; Tracend's volume ranges cite it, so Coach needs a plain explanation of the dose-response finding and its limits. |
-| schoenfeld_2021_loading_continuum | Training | Schoenfeld et al. 2021 | doi:10.3390/sports9020032 | CC BY 4.0 | global | training, strength, hypertrophy, intensity | Explains why a wide span of rep ranges works, which is the evidence behind letting people train with loads they enjoy and tolerate; Tracend's rep-range rules cite it. |
-| pelland_2026_volume_frequency | Training | Pelland et al. 2026 | doi:10.1007/s40279-025-02344-w | Publisher copyright | global | training, hypertrophy, strength, volume, frequency | The most recent and detailed analysis of weekly volume and frequency together, showing diminishing returns; it keeps Coach from overselling 'more sets'. |
-| singer_2024_rest_intervals | Training | Singer et al. 2024 | doi:10.3389/fspor.2024.1429789 | CC BY 4.0 | global | training, hypertrophy, rest, time-efficient | Gives a practical, evidence-based answer to 'how long should I rest between sets?', which matters for time-pressed users. |
-| zourdos_2016_rir_scale | Training | Zourdos et al. 2016 | doi:10.1519/JSC.0000000000001049 | Publisher copyright | global | training, intensity, rir, progression | The origin of the repetitions-in-reserve effort scale that Tracend's plans use; Coach needs to explain what 'reps in reserve' means and how reliable it is. |
-| robinson_2024_proximity_to_failure | Training | Robinson et al. 2024 | doi:10.1007/s40279-024-02069-2 | Publisher copyright | global | training, hypertrophy, strength, intensity, rir | The best available analysis of how close to failure to train, the basis for Tracend's reps-in-reserve targets. |
-| iversen_2021_time_efficient | Training | Iversen et al. 2021 | doi:10.1007/s40279-021-01490-1 | CC BY 4.0 | global | training, time-efficient, volume, strength, hypertrophy, frequency | Directly answers the most common barrier, lack of time, with concrete choices on exercises, sets, warm-ups and techniques that save minutes. |
-| schoenfeld_2016_frequency_hypertrophy | Training | Schoenfeld et al. 2016 | doi:10.1007/s40279-016-0543-8 | Publisher copyright | global | training, hypertrophy, frequency | The reason Coach can say each muscle is best trained at least twice a week when volume is equal, a core split-design rule. |
-| grgic_2018_frequency_strength | Training | Grgic et al. 2018 | doi:10.1007/s40279-018-0872-x | Publisher copyright | global | training, strength, frequency, volume | Shows that for strength the benefit of training more often comes mostly from the extra volume, helping Coach advise people with limited gym days. |
-| bell_2023_deloading | Training | Bell et al. 2023 | doi:10.1186/s40798-023-00633-0 | CC BY 4.0 | global | training, deload, recovery, progression | Deloading is widely used but lightly researched; this is the only structured consensus, so it lets Coach describe deloads honestly as expert practice. |
-| lopez_2021_load_network | Training | Lopez et al. 2021 | doi:10.1249/MSS.0000000000002585 | CC BY-NC-ND | global | training, hypertrophy, strength, intensity, joint-friendly | Backs the advice that lighter loads still build muscle when taken to failure, important for people who need joint-friendlier training. |
-| schumann_2022_concurrent_training | Training | Schumann et al. 2022 | doi:10.1007/s40279-021-01587-7 | CC BY 4.0 | global | training, cardio, strength, hypertrophy, concurrent-training | Settles the common worry that cardio kills muscle gains, so Coach can advise people who want both. |
-| schoenfeld_2020_range_of_motion | Joint-friendly | Schoenfeld and Grgic 2020 | doi:10.1177/2050312120901559 | CC BY-NC | global | training, hypertrophy, joint-friendly, exercise-selection | Answers whether partial range of motion is a fair swap when a full range bothers a joint, using the best controlled evidence available. |
-| lauersen_2014_injury_prevention | Joint-friendly | Lauersen et al. 2014 | doi:10.1136/bjsports-2013-092538 | Publisher copyright | global | injury-prevention, joint-friendly, strength, training | The strongest evidence that regular strength training itself lowers injury risk, which supports telling users that building strength protects joints. |
-| gabbett_2016_training_load | Joint-friendly | Gabbett 2016 | doi:10.1136/bjsports-2015-095788 | CC BY-NC | global | injury-prevention, joint-friendly, training, progression, load-management | Explains why gradual load increases protect against injury and why too little training is also a risk, the logic behind Tracend's progression caps. |
-| jager_2017_protein | Nutrition | Jäger et al. 2017 (ISSN) | doi:10.1186/s12970-017-0177-8 | CC BY 4.0 | global | nutrition, protein, hypertrophy, body-composition, timing | The standard open position on daily protein for people who train; it grounds the protein targets Coach explains. |
-| kerksick_2017_nutrient_timing | Nutrition | Kerksick et al. 2017 (ISSN) | doi:10.1186/s12970-017-0189-4 | CC BY 4.0 | global | nutrition, timing, protein, carbohydrate, recovery | Answers the very common 'does meal timing matter?' with a clear order of priorities; useful for keeping advice proportionate. |
-| schoenfeld_2018_protein_per_meal | Nutrition | Schoenfeld and Aragon 2018 | doi:10.1186/s12970-018-0215-1 | CC BY 4.0 | global | nutrition, protein, timing, hypertrophy | Corrects the myth that the body can only use about 25 grams of protein per meal, so Coach can give sensible meal-by-meal protein advice. |
-| morton_2018_protein_supplementation | Nutrition | Morton et al. 2018 | doi:10.1136/bjsports-2017-097608 | CC BY-NC | global | nutrition, protein, hypertrophy, strength, supplements | The key evidence for the point where more protein stops adding muscle (about 1.6 g/kg/day), which sets a sensible ceiling for the advice. |
-| aragon_2017_diets_body_composition | Nutrition | Aragon et al. 2017 (ISSN) | doi:10.1186/s12970-017-0174-y | CC BY 4.0 | global | nutrition, energy-balance, body-composition, protein, fat-loss | The best open statement on how energy balance and diet style change body composition, backing Tracend's focus on calories, protein and adherence over diet branding. |
-| helms_2014_contest_prep | Nutrition | Helms et al. 2014 | doi:10.1186/1550-2783-11-20 | CC BY 4.0 | global | nutrition, energy-balance, body-composition, protein, fat-loss, supplements | The most practical open source on the rate of weight loss and diet make-up when a lean person wants to lose fat and keep muscle. |
-| kreider_2017_creatine | Nutrition | Kreider et al. 2017 (ISSN) | doi:10.1186/s12970-017-0173-z | CC BY 4.0 | global | nutrition, creatine, supplements, strength, safety | Creatine is the best-supported training supplement; this open position stand covers both benefit and safety, which Coach needs for honest answers. |
-| guest_2021_caffeine | Nutrition | Guest et al. 2021 (ISSN) | doi:10.1186/s12970-020-00383-4 | CC BY 4.0 | global | nutrition, caffeine, supplements, performance, sleep | Gives dose and timing guidance for the most widely used performance aid, plus the sleep and anxiety trade-offs Coach should mention. |
-| sawka_2007_fluid_replacement | Nutrition | Sawka et al. 2007 (ACSM) | doi:10.1249/mss.0b013e31802ca597 | Publisher copyright | global | nutrition, hydration, performance, safety | The main professional position on drinking before, during and after exercise, with a practical way to measure personal needs. |
-| acsm_2011_exercise_quantity | Cardio and activity | Garber et al. 2011 (ACSM) | doi:10.1249/MSS.0b013e318213fefb | Publisher copyright | global | cardio, activity, strength, flexibility, training, guidelines | A complete weekly template covering cardio, strength, balance and flexibility, plus the point that something is better than nothing; Tracend's standard cites it. |
-| who_2020_activity_guidelines | Cardio and activity | Bull et al. 2020 (WHO) | doi:10.1136/bjsports-2020-102955 | CC BY 4.0 | global | cardio, activity, strength, sedentary, guidelines | The international reference on how much activity adults need, and the safest public baseline for any country; free to read. |
-| piercy_2018_us_guidelines | Cardio and activity | Piercy et al. 2018 (US guidelines) | doi:10.1001/jama.2018.14854 | Publisher copyright | US | cardio, activity, strength, guidelines | The national guideline Americans meet in practice; useful for US users and for the point that the least active people gain the most from small increases. |
-| paluch_2022_daily_steps | Cardio and activity | Paluch et al. 2022 | doi:10.1016/S2468-2667(21)00302-9 | CC BY 4.0 | global | activity, steps, cardio, health | Gives an evidence-based answer to 'do I really need 10,000 steps?', a question the app's step data raises daily. |
-| watson_2015_sleep_duration | Recovery and sleep | Watson et al. 2015 (AASM and SRS) | doi:10.5665/sleep.4716 | Publisher copyright | global | sleep, recovery, health, guidelines | The clearest professional statement on how much sleep adults need, the baseline for any recovery advice. |
-| walsh_2021_sleep_athlete | Recovery and sleep | Walsh et al. 2021 | doi:10.1136/bjsports-2020-102025 | Publisher copyright | global | sleep, recovery, performance, training | Covers sleep specifically for people who train: how common sleep problems are, what hurts performance and why one-size-fits-all targets are unwise. |
-| dupuy_2018_recovery_techniques | Recovery and sleep | Dupuy et al. 2018 | doi:10.3389/fphys.2018.00403 | CC BY 4.0 | global | recovery, soreness, training | Compares popular recovery methods on soreness and fatigue, so Coach can say which ones have evidence and which do not. |
-| riebe_2015_screening | Screening | Riebe et al. 2015 (ACSM) | doi:10.1249/MSS.0000000000000664 | Publisher copyright | global | screening, safety, health | The professional basis for deciding who should check with a doctor before starting or stepping up exercise, central to Tracend's safety gate. |
-| bredin_2013_parq_plus | Screening | Bredin et al. 2013 | https://pmc.ncbi.nlm.nih.gov/articles/PMC3596208/ | Publisher copyright | global | screening, safety, health | Describes the widely used PAR-Q+ readiness questionnaire and its risk tiers, matching how Tracend's screening decides between proceed, moderate and refer. |
-| byrne_2018_matador | Energy balance | Byrne et al. 2018 (MATADOR) | doi:10.1038/ijo.2017.206 | CC BY-NC-ND | global | nutrition, energy-balance, fat-loss, diet-break, metabolic-adaptation | The best-known trial of planned breaks from dieting, so Coach can explain what a diet break is and what the evidence for it does and does not show. |
-| peos_2021_icecap | Energy balance | Peos et al. 2021 (ICECAP) | doi:10.1249/mss.0000000000002636 | Publisher copyright | global | nutrition, energy-balance, fat-loss, diet-break, training, hunger | The only trial of diet breaks in resistance-trained men and women, and it did not reproduce the extra fat loss seen in earlier work, which keeps Coach honest about breaks. |
-| trexler_2014_metabolic_adaptation | Energy balance | Trexler et al. 2014 | doi:10.1186/1550-2783-11-7 | CC BY 2.0 | global | nutrition, energy-balance, fat-loss, metabolic-adaptation, diet-break, weight-maintenance | Explains why fat loss slows and hunger rises on a long diet, the situation of anyone who has already lost a lot of weight and still wants to lose more. |
-| mountjoy_2023_reds | Energy balance | Mountjoy et al. 2023 (IOC) | doi:10.1136/bjsports-2023-106994 | Publisher copyright | global | nutrition, energy-balance, low-energy-availability, recovery, safety, fat-loss | The leading authority on the health risk of eating too little for the training done, which Coach needs for anyone cutting hard while training. |
-| varkevisser_2019_weight_loss_maintenance | Energy balance | Varkevisser et al. 2019 | doi:10.1111/obr.12772 | CC BY-NC-ND | global | nutrition, weight-maintenance, fat-loss, behaviour-change, adherence | The most careful review of what predicts keeping weight off, which tells Coach where to put attention once someone has lost a lot of weight. |
-| icmr_nin_2024_dietary_guidelines | Energy balance | ICMR-NIN 2024 | https://www.nin.res.in/dietaryguidelines/pdfjs/locale/DGI_2024.pdf | Publisher copyright (reproducing it in a product needs written permission) | IN | nutrition, protein, fat-loss, energy-balance, activity, guidelines, india | India's official food-based guidance, needed for users in India, and it differs from the sports-nutrition papers on BMI and protein powders in ways Coach must explain. |
-| vella_2010_alcohol_recovery | Energy balance | Vella and Cameron-Smith 2010 | doi:10.3390/nu2080781 | CC BY 3.0 | global | alcohol, recovery, nutrition, sleep, hydration, performance | A free review of what alcohol does to exercise performance and recovery, for the common question of whether drinking undoes training. |
-| zhu_2024_motivational_interviewing | Behaviour change | Zhu et al. 2024 | doi:10.1136/bmj-2023-078713 | CC BY 4.0 | global | behaviour-change, coaching-communication, activity, adherence, motivation | The strongest recent test of whether a motivational-interviewing coaching style raises activity, with a frank statement of how weak and short-lived the evidence is. |
-| lally_2010_habit_formation | Behaviour change | Lally et al. 2010 | doi:10.1002/ejsp.674 | Publisher copyright | global | behaviour-change, habits, adherence, consistency, coaching-communication | The standard study of how long a new daily habit takes to feel automatic, which answers 'how long until this becomes easy?' without a made-up number. |
-| mujika_2001_muscular_detraining | Special cases | Mujika and Padilla 2001 | doi:10.1097/00005768-200108000-00009 | Publisher copyright | global | detraining, training, strength, recovery, time-off | Directly answers 'will I lose my gains if I cannot train for a couple of weeks?' for trained people. |
-| bosquet_2013_training_cessation | Special cases | Bosquet et al. 2013 | doi:10.1111/sms.12047 | Publisher copyright | global | detraining, training, strength, time-off, older-adults | The broadest pooled analysis of how much strength is lost when resistance training stops and who loses it fastest. |
-| lopes_2019_elastic_resistance | Special cases | Lopes et al. 2019 | doi:10.1177/2050312119831116 | CC BY-NC | global | home-training, equipment, strength, training, minimal-equipment | Shows that resistance bands, which fit in a bag, build strength about as well as weights, which is the main question when a person must train away from a gym. |
-| fragala_2019_older_adults | Special cases | Fragala et al. 2019 (NSCA) | doi:10.1519/jsc.0000000000003230 | Publisher copyright | global | older-adults, strength, training, safety, guidelines | The most thorough professional position on resistance training for older adults, so Coach can explain why lifting matters with age. |
-| mcnulty_2020_menstrual_cycle | Special cases | McNulty et al. 2020 | doi:10.1007/s40279-020-01319-3 | CC BY 4.0 | global | women, menstrual-cycle, performance, training, individualisation | The best pooled answer to whether training should change across the menstrual cycle, which Coach is often asked. |
+| acsm_2009_progression | Training | ACSM 2009 | doi:10.1249/MSS.0b013e3181915670 | proprietary | global | training, strength, hypertrophy, progression, frequency, rest, intensity | The long-standing reference for how a lifter's training should progress with experience; Tracend's standard cites it, and Coach needs to explain where beginner and advanced advice differ. |
+| acsm_2026_resistance_prescription | Training | Currier et al. 2026 (ACSM) | doi:10.1249/MSS.0000000000003897 | CC-BY-NC-ND-4.0 | global | training, strength, hypertrophy, volume, intensity, progression, frequency | The newest and broadest synthesis of what actually changes results in resistance training; it updates the 2009 stand and is the best single reference for the question 'what matters and what does not'. |
+| schoenfeld_2017_weekly_volume | Training | Schoenfeld et al. 2017 | doi:10.1080/02640414.2016.1210197 | proprietary | global | training, hypertrophy, volume | The classic answer to 'how many sets per week?'; Tracend's volume ranges cite it, so Coach needs a plain explanation of the dose-response finding and its limits. |
+| schoenfeld_2021_loading_continuum | Training | Schoenfeld et al. 2021 | doi:10.3390/sports9020032 | CC-BY-4.0 | global | training, strength, hypertrophy, intensity | Explains why a wide span of rep ranges works, which is the evidence behind letting people train with loads they enjoy and tolerate; Tracend's rep-range rules cite it. |
+| pelland_2026_volume_frequency | Training | Pelland et al. 2026 | doi:10.1007/s40279-025-02344-w | proprietary | global | training, hypertrophy, strength, volume, frequency | The most recent and detailed analysis of weekly volume and frequency together, showing diminishing returns; it keeps Coach from overselling 'more sets'. |
+| singer_2024_rest_intervals | Training | Singer et al. 2024 | doi:10.3389/fspor.2024.1429789 | CC-BY-4.0 | global | training, hypertrophy, rest, time-efficient | Gives a practical, evidence-based answer to 'how long should I rest between sets?', which matters for time-pressed users. |
+| zourdos_2016_rir_scale | Training | Zourdos et al. 2016 | doi:10.1519/JSC.0000000000001049 | proprietary | global | training, intensity, rir, progression | The origin of the repetitions-in-reserve effort scale that Tracend's plans use; Coach needs to explain what 'reps in reserve' means and how reliable it is. |
+| robinson_2024_proximity_to_failure | Training | Robinson et al. 2024 | doi:10.1007/s40279-024-02069-2 | proprietary | global | training, hypertrophy, strength, intensity, rir | The best available analysis of how close to failure to train, the basis for Tracend's reps-in-reserve targets. |
+| iversen_2021_time_efficient | Training | Iversen et al. 2021 | doi:10.1007/s40279-021-01490-1 | CC-BY-4.0 | global | training, time-efficient, volume, strength, hypertrophy, frequency | Directly answers the most common barrier, lack of time, with concrete choices on exercises, sets, warm-ups and techniques that save minutes. |
+| schoenfeld_2016_frequency_hypertrophy | Training | Schoenfeld et al. 2016 | doi:10.1007/s40279-016-0543-8 | proprietary | global | training, hypertrophy, frequency | The reason Coach can say each muscle is best trained at least twice a week when volume is equal, a core split-design rule. |
+| grgic_2018_frequency_strength | Training | Grgic et al. 2018 | doi:10.1007/s40279-018-0872-x | proprietary | global | training, strength, frequency, volume | Shows that for strength the benefit of training more often comes mostly from the extra volume, helping Coach advise people with limited gym days. |
+| bell_2023_deloading | Training | Bell et al. 2023 | doi:10.1186/s40798-023-00633-0 | CC-BY-4.0 | global | training, deload, recovery, progression | Deloading is widely used but lightly researched; this is the only structured consensus, so it lets Coach describe deloads honestly as expert practice. |
+| lopez_2021_load_network | Training | Lopez et al. 2021 | doi:10.1249/MSS.0000000000002585 | CC-BY-NC-ND-4.0 | global | training, hypertrophy, strength, intensity, joint-friendly | Backs the advice that lighter loads still build muscle when taken to failure, important for people who need joint-friendlier training. |
+| schumann_2022_concurrent_training | Training | Schumann et al. 2022 | doi:10.1007/s40279-021-01587-7 | CC-BY-4.0 | global | training, cardio, strength, hypertrophy, concurrent-training | Settles the common worry that cardio kills muscle gains, so Coach can advise people who want both. |
+| schoenfeld_2020_range_of_motion | Joint-friendly | Schoenfeld and Grgic 2020 | doi:10.1177/2050312120901559 | CC-BY-NC-4.0 | global | training, hypertrophy, joint-friendly, exercise-selection | Answers whether partial range of motion is a fair swap when a full range bothers a joint, using the best controlled evidence available. |
+| lauersen_2014_injury_prevention | Joint-friendly | Lauersen et al. 2014 | doi:10.1136/bjsports-2013-092538 | proprietary | global | injury-prevention, joint-friendly, strength, training | The strongest evidence that regular strength training itself lowers injury risk, which supports telling users that building strength protects joints. |
+| gabbett_2016_training_load | Joint-friendly | Gabbett 2016 | doi:10.1136/bjsports-2015-095788 | CC-BY-NC-4.0 | global | injury-prevention, joint-friendly, training, progression, load-management | Explains why gradual load increases protect against injury and why too little training is also a risk, the logic behind Tracend's progression caps. |
+| jager_2017_protein | Nutrition | Jäger et al. 2017 (ISSN) | doi:10.1186/s12970-017-0177-8 | CC-BY-4.0 | global | nutrition, protein, hypertrophy, body-composition, timing | The standard open position on daily protein for people who train; it grounds the protein targets Coach explains. |
+| kerksick_2017_nutrient_timing | Nutrition | Kerksick et al. 2017 (ISSN) | doi:10.1186/s12970-017-0189-4 | CC-BY-4.0 | global | nutrition, timing, protein, carbohydrate, recovery | Answers the very common 'does meal timing matter?' with a clear order of priorities; useful for keeping advice proportionate. |
+| schoenfeld_2018_protein_per_meal | Nutrition | Schoenfeld and Aragon 2018 | doi:10.1186/s12970-018-0215-1 | CC-BY-4.0 | global | nutrition, protein, timing, hypertrophy | Corrects the myth that the body can only use about 25 grams of protein per meal, so Coach can give sensible meal-by-meal protein advice. |
+| morton_2018_protein_supplementation | Nutrition | Morton et al. 2018 | doi:10.1136/bjsports-2017-097608 | CC-BY-NC-4.0 | global | nutrition, protein, hypertrophy, strength, supplements | The key evidence for the point where more protein stops adding muscle (about 1.6 g/kg/day), which sets a sensible ceiling for the advice. |
+| aragon_2017_diets_body_composition | Nutrition | Aragon et al. 2017 (ISSN) | doi:10.1186/s12970-017-0174-y | CC-BY-4.0 | global | nutrition, energy-balance, body-composition, protein, fat-loss | The best open statement on how energy balance and diet style change body composition, backing Tracend's focus on calories, protein and adherence over diet branding. |
+| helms_2014_contest_prep | Nutrition | Helms et al. 2014 | doi:10.1186/1550-2783-11-20 | CC-BY-2.0 | global | nutrition, energy-balance, body-composition, protein, fat-loss, supplements | The most practical open source on the rate of weight loss and diet make-up when a lean person wants to lose fat and keep muscle. |
+| kreider_2017_creatine | Nutrition | Kreider et al. 2017 (ISSN) | doi:10.1186/s12970-017-0173-z | CC-BY-4.0 | global | nutrition, creatine, supplements, strength, safety | Creatine is the best-supported training supplement; this open position stand covers both benefit and safety, which Coach needs for honest answers. |
+| guest_2021_caffeine | Nutrition | Guest et al. 2021 (ISSN) | doi:10.1186/s12970-020-00383-4 | CC-BY-4.0 | global | nutrition, caffeine, supplements, performance, sleep | Gives dose and timing guidance for the most widely used performance aid, plus the sleep and anxiety trade-offs Coach should mention. |
+| sawka_2007_fluid_replacement | Nutrition | Sawka et al. 2007 (ACSM) | doi:10.1249/mss.0b013e31802ca597 | proprietary | global | nutrition, hydration, performance, safety | The main professional position on drinking before, during and after exercise, with a practical way to measure personal needs. |
+| acsm_2011_exercise_quantity | Cardio and activity | Garber et al. 2011 (ACSM) | doi:10.1249/MSS.0b013e318213fefb | proprietary | global | cardio, activity, strength, flexibility, training, guidelines | A complete weekly template covering cardio, strength, balance and flexibility, plus the point that something is better than nothing; Tracend's standard cites it. |
+| who_2020_activity_guidelines | Cardio and activity | Bull et al. 2020 (WHO) | doi:10.1136/bjsports-2020-102955 | CC-BY-4.0 | global | cardio, activity, strength, sedentary, guidelines | The international reference on how much activity adults need, and the safest public baseline for any country; free to read. |
+| piercy_2018_us_guidelines | Cardio and activity | Piercy et al. 2018 (US guidelines) | doi:10.1001/jama.2018.14854 | proprietary | US | cardio, activity, strength, guidelines | The national guideline Americans meet in practice; useful for US users and for the point that the least active people gain the most from small increases. |
+| paluch_2022_daily_steps | Cardio and activity | Paluch et al. 2022 | doi:10.1016/S2468-2667(21)00302-9 | CC-BY-NC-ND-4.0 | global | activity, steps, cardio, health | Gives an evidence-based answer to 'do I really need 10,000 steps?', a question the app's step data raises daily. |
+| watson_2015_sleep_duration | Recovery and sleep | Watson et al. 2015 (AASM and SRS) | doi:10.5665/sleep.4716 | proprietary | global | sleep, recovery, health, guidelines | The clearest professional statement on how much sleep adults need, the baseline for any recovery advice. |
+| walsh_2021_sleep_athlete | Recovery and sleep | Walsh et al. 2021 | doi:10.1136/bjsports-2020-102025 | proprietary | global | sleep, recovery, performance, training | Covers sleep specifically for people who train: how common sleep problems are, what hurts performance and why one-size-fits-all targets are unwise. |
+| dupuy_2018_recovery_techniques | Recovery and sleep | Dupuy et al. 2018 | doi:10.3389/fphys.2018.00403 | CC-BY-4.0 | global | recovery, soreness, training | Compares popular recovery methods on soreness and fatigue, so Coach can say which ones have evidence and which do not. |
+| riebe_2015_screening | Screening | Riebe et al. 2015 (ACSM) | doi:10.1249/MSS.0000000000000664 | proprietary | global | screening, safety, health | The professional basis for deciding who should check with a doctor before starting or stepping up exercise, central to Tracend's safety gate. |
+| bredin_2013_parq_plus | Screening | Bredin et al. 2013 | https://pmc.ncbi.nlm.nih.gov/articles/PMC3596208/ | proprietary | global | screening, safety, health | Describes the widely used PAR-Q+ readiness questionnaire and its risk tiers, matching how Tracend's screening decides between proceed, moderate and refer. |
+| byrne_2018_matador | Energy balance | Byrne et al. 2018 (MATADOR) | doi:10.1038/ijo.2017.206 | CC-BY-NC-ND-4.0 | global | nutrition, energy-balance, fat-loss, diet-break, metabolic-adaptation | The best-known trial of planned breaks from dieting, so Coach can explain what a diet break is and what the evidence for it does and does not show. |
+| peos_2021_icecap | Energy balance | Peos et al. 2021 (ICECAP) | doi:10.1249/mss.0000000000002636 | proprietary | global | nutrition, energy-balance, fat-loss, diet-break, training, hunger | The only trial of diet breaks in resistance-trained men and women, and it did not reproduce the extra fat loss seen in earlier work, which keeps Coach honest about breaks. |
+| trexler_2014_metabolic_adaptation | Energy balance | Trexler et al. 2014 | doi:10.1186/1550-2783-11-7 | CC-BY-2.0 | global | nutrition, energy-balance, fat-loss, metabolic-adaptation, diet-break, weight-maintenance | Explains why fat loss slows and hunger rises on a long diet, the situation of anyone who has already lost a lot of weight and still wants to lose more. |
+| mountjoy_2023_reds | Energy balance | Mountjoy et al. 2023 (IOC) | doi:10.1136/bjsports-2023-106994 | proprietary | global | nutrition, energy-balance, low-energy-availability, recovery, safety, fat-loss | The leading authority on the health risk of eating too little for the training done, which Coach needs for anyone cutting hard while training. |
+| varkevisser_2019_weight_loss_maintenance | Energy balance | Varkevisser et al. 2019 | doi:10.1111/obr.12772 | CC-BY-NC-ND-4.0 | global | nutrition, weight-maintenance, fat-loss, behaviour-change, adherence | The most careful review of what predicts keeping weight off, which tells Coach where to put attention once someone has lost a lot of weight. |
+| icmr_nin_2024_dietary_guidelines | Energy balance | ICMR-NIN 2024 | https://www.nin.res.in/dietaryguidelines/pdfjs/locale/DGI_2024.pdf | proprietary | IN | nutrition, protein, fat-loss, energy-balance, activity, guidelines, india | India's official food-based guidance, needed for users in India, and it differs from the sports-nutrition papers on BMI and protein powders in ways Coach must explain. |
+| vella_2010_alcohol_recovery | Energy balance | Vella and Cameron-Smith 2010 | doi:10.3390/nu2080781 | CC-BY-3.0 | global | alcohol, recovery, nutrition, sleep, hydration, performance | A free review of what alcohol does to exercise performance and recovery, for the common question of whether drinking undoes training. |
+| zhu_2024_motivational_interviewing | Behaviour change | Zhu et al. 2024 | doi:10.1136/bmj-2023-078713 | CC-BY-4.0 | global | behaviour-change, coaching-communication, activity, adherence, motivation | The strongest recent test of whether a motivational-interviewing coaching style raises activity, with a frank statement of how weak and short-lived the evidence is. |
+| lally_2010_habit_formation | Behaviour change | Lally et al. 2010 | doi:10.1002/ejsp.674 | proprietary | global | behaviour-change, habits, adherence, consistency, coaching-communication | The standard study of how long a new daily habit takes to feel automatic, which answers 'how long until this becomes easy?' without a made-up number. |
+| mujika_2001_muscular_detraining | Special cases | Mujika and Padilla 2001 | doi:10.1097/00005768-200108000-00009 | proprietary | global | detraining, training, strength, recovery, time-off | Directly answers 'will I lose my gains if I cannot train for a couple of weeks?' for trained people. |
+| bosquet_2013_training_cessation | Special cases | Bosquet et al. 2013 | doi:10.1111/sms.12047 | proprietary | global | detraining, training, strength, time-off, older-adults | The broadest pooled analysis of how much strength is lost when resistance training stops and who loses it fastest. |
+| lopes_2019_elastic_resistance | Special cases | Lopes et al. 2019 | doi:10.1177/2050312119831116 | CC-BY-NC-4.0 | global | home-training, equipment, strength, training, minimal-equipment | Shows that resistance bands, which fit in a bag, build strength about as well as weights, which is the main question when a person must train away from a gym. |
+| fragala_2019_older_adults | Special cases | Fragala et al. 2019 (NSCA) | doi:10.1519/jsc.0000000000003230 | proprietary | global | older-adults, strength, training, safety, guidelines | The most thorough professional position on resistance training for older adults, so Coach can explain why lifting matters with age. |
+| mcnulty_2020_menstrual_cycle | Special cases | McNulty et al. 2020 | doi:10.1007/s40279-020-01319-3 | CC-BY-4.0 | global | women, menstrual-cycle, performance, training, individualisation | The best pooled answer to whether training should change across the menstrual cycle, which Coach is often asked. |
 
 Owner review points: Helms 2014 is a contest-prep paper (an extreme case; the summary says so and
 repeats its eating-disorder warning); Piercy 2018 is tagged `US` (the others are `global`); the
@@ -392,6 +392,245 @@ stack); CI runs it.
 - MATADOR (Byrne 2018) found more fat loss with diet breaks in men with obesity; ICECAP (Peos 2021)
   found none in trained adults but less hunger. Both are summarised, and the digest calls a break a
   choice, not a promise.
+
+## E2.2: library expansion and machine-readable licences (in review)
+
+Branch `claude/library-expansion`, migration `20261018170042_library_expansion.sql` (code 42,
+additive: it only calls `private.library_replace_source`). Written from the 2026-10-18 RAG audit
+(P1-1 corpus gaps, the P3 licence item, the licensing section and its source plan).
+
+### What shipped
+
+- **Licence fields.** `LibrarySource.licence` is now a `LibraryLicence` identifier (`CC-BY-2.0`,
+  `CC-BY-3.0`, `CC-BY-4.0`, `CC-BY-NC-4.0`, `CC-BY-NC-ND-4.0`, `CC-BY-NC-SA-3.0-IGO`, `OGL-UK-3.0`,
+  `public-domain-us-gov`, `proprietary`) with `verbatimAllowed`, `lastReviewed` (ISO date) and an
+  optional `supersededBy`. The free text is gone from all 49 earlier sources. `chosenBecause` now
+  ends with what the summary was written from ("Summarised from the full text.", "... the abstract
+  only.", "... the full document ...", "... the official summary ..."). `acsm_2009_progression` is
+  `supersededBy: "acsm_2026_resistance_prescription"` (the field is stored in the content files
+  only; retrieval does not read it yet).
+- **Licence re-check of the 49.** Against Crossref, Europe PMC and the full-text licence tag:
+  Helms 2014 is CC BY 2.0 (was recorded as 4.0) and Paluch 2022 is CC BY-NC-ND 4.0 (was recorded
+  as CC BY 4.0; Crossref and the PMC article page both say NC-ND). The table above now shows
+  the identifiers.
+- **Tests** (`library_content_test.ts`): the cap is 30 to 150 sources; every licence is a known
+  identifier; `verbatimAllowed` is possible only for `CC-BY-2.0/3.0/4.0`, `OGL-UK-3.0` or
+  `public-domain-us-gov` (never NC, ND, SA or proprietary); `lastReviewed` is a real date; a
+  superseded source names a newer, non-superseded source; `chosenBecause` says what was read;
+  the area test covers the new topics and the `US`, `GB` and `IN` regions. pgTAP
+  `library_ingestion_test.sql` (plan 98) now expects `licence = 'CC-BY-4.0'` for the known source,
+  allows region `GB`, and checks every loaded licence is an identifier.
+- **57 new sources** in eight new files (`programming.ts`, `exercise_selection.ts`,
+  `body_composition.ts`, `supplements.ts`, `cardio_recovery.ts`, `populations.ts`,
+  `guidelines.ts`, `india.ts`), 106 in all, 351 chunks. The migration carries all 106 blocks: the
+  49 earlier ones differ only in the licence value (their chunks are byte-identical, so the loader
+  keeps their chunks and embeddings); the 57 new ones load without embeddings and
+  `library-embed` fills them after the deploy.
+- **Size.** The whole library renders to 199,715 characters, about 50,000 to 57,000 tokens, under
+  the 60,000-token line in `_evals/library_full_test.ts`. Headroom is now about 3,000 tokens: the
+  next expansion either trims or retires sources, or that line is revisited (retrieval does not
+  depend on it).
+
+### Licence policy (commercial app)
+
+- Every source: an own-words summary with a citation and link. No close paraphrase, no tables or
+  figures, no full texts stored or placed in prompts.
+- Short verbatim text only when `verbatimAllowed` is true (CC BY without NC/ND/SA, OGL v3, US
+  federal public domain), with attribution. Two entries quote a phrase this way: HHS 2018 ("start
+  low and go slow") and the UK CMOs ("some is good, more is better"); the rest quote nothing.
+- NC, ND, WHO IGO, ICMR-NIN and paywalled sources: summary only. ICMR-NIN and the Indian food
+  composition tables forbid reproduction in an electronic product without NIN's written
+  permission, so only individual facts with the citation are stored (five rounded protein values
+  from IFCT 2017; single figures from the 2020 requirements), never a table.
+- When records disagree, the more restrictive licence wins; unclear means `proprietary`.
+
+### Verification
+
+Every source was checked on 2026-10-18 against its Crossref record (title, authors, year, journal,
+licence URLs) and Europe PMC (identifiers, licence, abstract), and the open full text was read
+where it is lawful to read (Europe PMC, PMC, the publisher or the issuing body). Numbers come only
+from what was read. 37 were summarised from the full text or full document, 19 from the abstract
+only, and one (ICMR-NIN 2020) from NIN's official brief note because the full book is sold in
+print. Abstract-only entries say so in their "Practical reading and limits" section.
+
+### The 57 new sources
+
+| Key | Area | Citation | DOI or link | Licence | Verbatim | Region | Read from |
+|---|---|---|---|---|---|---|---|
+| williams_2017_periodised_strength | Programming | Williams et al. 2017 | doi:10.1007/s40279-017-0734-y | proprietary | no | global | abstract only |
+| moesgaard_2022_periodisation_volume_equated | Programming | Moesgaard et al. 2022 | doi:10.1007/s40279-021-01636-1 | proprietary | no | global | abstract only |
+| grgic_2017_linear_undulating_hypertrophy | Programming | Grgic et al. 2017 | doi:10.7717/peerj.3695 | CC-BY-4.0 | yes | global | full text |
+| helms_2018_rpe_vs_percentage | Programming | Helms et al. 2018 | doi:10.3389/fphys.2018.00247 | CC-BY-4.0 | yes | global | full text |
+| hickmott_2022_autoregulation | Programming | Hickmott et al. 2022 | doi:10.1186/s40798-021-00404-9 | CC-BY-4.0 | yes | global | full text |
+| halperin_2022_rir_prediction_accuracy | Programming | Halperin et al. 2022 | doi:10.1007/s40279-021-01559-x | proprietary | no | global | abstract only |
+| refalo_2023_failure_hypertrophy | Programming | Refalo et al. 2023 | doi:10.1007/s40279-022-01784-y | CC-BY-4.0 | yes | global | full text |
+| coleman_2024_deload_trial | Programming | Coleman et al. 2024 | doi:10.7717/peerj.16777 | CC-BY-4.0 | yes | global | full text |
+| travis_2020_powerlifting_taper | Programming | Travis et al. 2020 | doi:10.3390/sports8090125 | CC-BY-4.0 | yes | global | full text |
+| bosquet_2007_tapering | Programming | Bosquet et al. 2007 | doi:10.1249/mss.0b013e31806010e0 | proprietary | no | global | abstract only |
+| haugen_2023_free_weights_machines | Exercise selection and injury risk | Haugen et al. 2023 | doi:10.1186/s13102-023-00713-4 | CC-BY-4.0 | yes | global | full text |
+| wolf_2023_partial_full_rom | Exercise selection and injury risk | Wolf et al. 2023 | doi:10.47206/ijsc.v3i1.182 | CC-BY-4.0 | yes | global | full text |
+| kassiano_2022_exercise_variation | Exercise selection and injury risk | Kassiano et al. 2022 | doi:10.1519/JSC.0000000000004258 | proprietary | no | global | abstract only |
+| keogh_2017_weight_training_injuries | Exercise selection and injury risk | Keogh and Winwood 2017 | doi:10.1007/s40279-016-0575-0 | proprietary | no | global | abstract only |
+| lauersen_2018_strength_dose_injury | Exercise selection and injury risk | Lauersen et al. 2018 | doi:10.1136/bjsports-2018-099078 | proprietary | no | global | abstract only |
+| impellizzeri_2020_acwr_pitfalls | Exercise selection and injury risk | Impellizzeri et al. 2020 | doi:10.1123/ijspp.2019-0864 | proprietary | no | global | abstract only |
+| trommelen_2023_protein_dose | Body composition | Trommelen et al. 2023 | doi:10.1016/j.xcrm.2023.101324 | CC-BY-4.0 | yes | global | full text |
+| iraki_2019_offseason_bodybuilding | Body composition | Iraki et al. 2019 | doi:10.3390/sports7070154 | CC-BY-4.0 | yes | global | full text |
+| slater_2019_energy_surplus | Body composition | Slater et al. 2019 | doi:10.3389/fnut.2019.00131 | CC-BY-4.0 | yes | global | full text |
+| helms_2023_energy_surplus | Body composition | Helms et al. 2023 | doi:10.1186/s40798-023-00651-y | CC-BY-4.0 | yes | global | full text |
+| murphy_2022_energy_deficiency_lean_mass | Body composition | Murphy and Koehler 2022 | doi:10.1111/sms.14075 | CC-BY-NC-ND-4.0 | no | global | abstract only |
+| garthe_2011_weight_loss_rate | Body composition | Garthe et al. 2011 | doi:10.1123/ijsnem.21.2.97 | proprietary | no | global | abstract only |
+| barakat_2020_recomposition | Body composition | Barakat et al. 2020 | doi:10.1519/SSC.0000000000000584 | CC-BY-NC-ND-4.0 | no | global | full text |
+| pinckaers_2021_plant_protein | Body composition | Pinckaers et al. 2021 | doi:10.1007/s40279-021-01540-8 | CC-BY-4.0 | yes | global | full text |
+| hevia_larrain_2021_vegan_protein | Body composition | Hevia-Larraín et al. 2021 | doi:10.1007/s40279-021-01434-9 | proprietary | no | global | abstract only |
+| maughan_2018_ioc_supplements | Supplements | Maughan et al. 2018 (IOC) | doi:10.1136/bjsports-2018-099027 | CC-BY-NC-4.0 | no | global | full text |
+| antonio_2021_creatine_questions | Supplements | Antonio et al. 2021 | doi:10.1186/s12970-021-00412-w | CC-BY-4.0 | yes | global | full text |
+| kaviani_2020_creatine_vegetarians | Supplements | Kaviani et al. 2020 | doi:10.3390/ijerph17093041 | CC-BY-4.0 | yes | global | full text |
+| trexler_2015_beta_alanine | Supplements | Trexler et al. 2015 (ISSN) | doi:10.1186/s12970-015-0090-y | CC-BY-4.0 | yes | global | full text |
+| senefeld_2020_nitrate | Supplements | Senefeld et al. 2020 | doi:10.1249/mss.0000000000002363 | CC-BY-NC-ND-4.0 | no | global | full text |
+| wolfe_2017_bcaa | Supplements | Wolfe 2017 | doi:10.1186/s12970-017-0184-9 | CC-BY-4.0 | yes | global | full text |
+| nih_ods_2024_exercise_supplements | Supplements | NIH ODS 2024 | https://ods.od.nih.gov/factsheets/ExerciseAndAthleticPerformance-HealthProfessional/ | public-domain-us-gov | yes | global | full text |
+| wewege_2017_hiit_body_composition | Cardio, recovery and sleep | Wewege et al. 2017 | doi:10.1111/obr.12532 | proprietary | no | global | abstract only |
+| milanovic_2015_hiit_vo2max | Cardio, recovery and sleep | Milanović et al. 2015 | doi:10.1007/s40279-015-0365-0 | proprietary | no | global | abstract only |
+| mandsager_2018_cardiorespiratory_fitness_mortality | Cardio, recovery and sleep | Mandsager et al. 2018 | doi:10.1001/jamanetworkopen.2018.3605 | CC-BY-4.0 | yes | global | full text |
+| roberts_2015_cold_water_strength_adaptation | Cardio, recovery and sleep | Roberts et al. 2015 | doi:10.1113/JP270570 | proprietary | no | global | full text |
+| malta_2021_cold_water_training_adaptations | Cardio, recovery and sleep | Malta et al. 2021 | doi:10.1007/s40279-020-01362-0 | proprietary | no | global | abstract only |
+| craven_2022_sleep_loss_performance | Cardio, recovery and sleep | Craven et al. 2022 | doi:10.1007/s40279-022-01706-y | CC-BY-4.0 | yes | global | full text |
+| lamon_2021_sleep_deprivation_muscle_protein | Cardio, recovery and sleep | Lamon et al. 2021 | doi:10.14814/phy2.14660 | CC-BY-4.0 | yes | global | full text |
+| borde_2015_older_adults_dose_response | Older lifters, women, home and travel | Borde et al. 2015 | doi:10.1007/s40279-015-0385-9 | CC-BY-4.0 | yes | global | full text |
+| izquierdo_2021_icfsr_older_adults | Older lifters, women, home and travel | Izquierdo et al. 2021 (ICFSR) | doi:10.1007/s12603-021-1665-8 | CC-BY-4.0 | yes | global | full text |
+| bauer_2013_prot_age_protein | Older lifters, women, home and travel | Bauer et al. 2013 (PROT-AGE) | doi:10.1016/j.jamda.2013.05.021 | CC-BY-NC-ND-4.0 | no | global | abstract only |
+| roberts_2020_sex_differences_resistance_training | Older lifters, women, home and travel | Roberts et al. 2020 | doi:10.1519/JSC.0000000000003521 | proprietary | no | global | abstract only |
+| colenso_semple_2023_menstrual_cycle_resistance | Older lifters, women, home and travel | Colenso-Semple et al. 2023 | doi:10.3389/fspor.2023.1054542 | CC-BY-4.0 | yes | global | full text |
+| elliott_sale_2020_oral_contraceptives_performance | Older lifters, women, home and travel | Elliott-Sale et al. 2020 | doi:10.1007/s40279-020-01317-5 | CC-BY-4.0 | yes | global | full text |
+| kikuchi_2017_push_up_bench_press | Older lifters, women, home and travel | Kikuchi and Nakazato 2017 | doi:10.1016/j.jesf.2017.06.003 | CC-BY-NC-ND-4.0 | no | global | full text |
+| wiedenmann_2025_older_adults_training_modalities | Older lifters, women, home and travel | Wiedenmann et al. 2025 | doi:10.1159/000546346 | proprietary | no | global | abstract only |
+| spiering_2021_minimal_dose_maintenance | Older lifters, women, home and travel | Spiering et al. 2021 | doi:10.1519/JSC.0000000000003964 | proprietary | no | global | abstract only |
+| janse_van_rensburg_2021_travel_jet_lag | Older lifters, women, home and travel | Janse van Rensburg et al. 2021 | doi:10.1007/s40279-021-01502-0 | proprietary | no | global | full text |
+| hhs_2018_physical_activity_guidelines | National guidelines | HHS 2018 (Physical Activity Guidelines for Americans) | https://odphp.health.gov/sites/default/files/2019-09/Physical_Activity_Guidelines_2nd_edition.pdf | public-domain-us-gov | yes | US | full document |
+| usda_hhs_2026_dietary_guidelines | National guidelines | USDA and HHS 2026 (Dietary Guidelines for Americans) | https://cdn.realfood.gov/DGA.pdf | public-domain-us-gov | yes | US | full document |
+| uk_cmo_2026_activity_guidelines | National guidelines | UK CMOs 2026 | https://www.gov.uk/government/publications/physical-activity-guidelines-uk-chief-medical-officers-report/uk-chief-medical-officers-physical-activity-guidelines | OGL-UK-3.0 | yes | GB | full document |
+| icmr_nin_2020_nutrient_requirements | India | ICMR-NIN 2020 (RDA and EAR) | https://www.nin.res.in/rdabook/brief_note.pdf | proprietary | no | IN | official summary |
+| longvah_2017_ifct | India | Longvah et al. 2017 (IFCT) | https://nin.res.in/ebooks/IFCT2017.pdf | proprietary | no | IN | full document |
+| who_2004_asian_bmi | India | WHO expert consultation 2004 | doi:10.1016/S0140-6736(03)15268-3 | proprietary | no | IN | abstract only |
+| misra_2025_obesity_asian_indians | India | Misra et al. 2025 | doi:10.1016/j.dsx.2024.102989 | proprietary | no | IN | full text |
+| anjana_2014_indiab_activity | India | Anjana et al. 2014 (ICMR-INDIAB) | doi:10.1186/1479-5868-11-26 | CC-BY-2.0 | yes | IN | full text |
+
+### Coverage of the audit's gaps
+
+| Gap (audit P1-1) | Sources now covering it |
+|---|---|
+| Periodisation | williams_2017_periodised_strength, moesgaard_2022_periodisation_volume_equated, grgic_2017_linear_undulating_hypertrophy |
+| RPE/RIR and autoregulation | helms_2018_rpe_vs_percentage, hickmott_2022_autoregulation, halperin_2022_rir_prediction_accuracy, refalo_2023_failure_hypertrophy (plus zourdos_2016, robinson_2024) |
+| Deloads | coleman_2024_deload_trial (plus bell_2023_deloading) |
+| Peaking and tapering | travis_2020_powerlifting_taper, bosquet_2007_tapering |
+| Free weights vs machines, ROM, substitution | haugen_2023_free_weights_machines, wolf_2023_partial_full_rom, kassiano_2022_exercise_variation, wiedenmann_2025_older_adults_training_modalities |
+| Injury risk (non-rehab) and the ACWR critique | keogh_2017_weight_training_injuries, lauersen_2018_strength_dose_injury, impellizzeri_2020_acwr_pitfalls (against gabbett_2016_training_load) |
+| HIIT vs steady cardio, fitness | wewege_2017_hiit_body_composition, milanovic_2015_hiit_vo2max, mandsager_2018_cardiorespiratory_fitness_mortality |
+| Surplus, bulking, recomposition | slater_2019_energy_surplus, helms_2023_energy_surplus, iraki_2019_offseason_bodybuilding, barakat_2020_recomposition, murphy_2022_energy_deficiency_lean_mass, garthe_2011_weight_loss_rate |
+| Protein dose per meal | trommelen_2023_protein_dose |
+| Cold-water immersion | roberts_2015_cold_water_strength_adaptation, malta_2021_cold_water_training_adaptations |
+| Supplements beyond protein, creatine and caffeine | maughan_2018_ioc_supplements, antonio_2021_creatine_questions, trexler_2015_beta_alanine, senefeld_2020_nitrate, wolfe_2017_bcaa, nih_ods_2024_exercise_supplements |
+| Plant protein, creatine for vegetarians | pinckaers_2021_plant_protein, hevia_larrain_2021_vegan_protein, kaviani_2020_creatine_vegetarians |
+| Sleep loss | craven_2022_sleep_loss_performance, lamon_2021_sleep_deprivation_muscle_protein |
+| Older lifters | borde_2015_older_adults_dose_response, izquierdo_2021_icfsr_older_adults, bauer_2013_prot_age_protein, wiedenmann_2025_older_adults_training_modalities |
+| Women | roberts_2020_sex_differences_resistance_training, colenso_semple_2023_menstrual_cycle_resistance, elliott_sale_2020_oral_contraceptives_performance (no pregnancy content) |
+| Home, bodyweight, travel, minimal dose | kikuchi_2017_push_up_bench_press, wiedenmann_2025_older_adults_training_modalities, spiering_2021_minimal_dose_maintenance, janse_van_rensburg_2021_travel_jet_lag |
+| Verbatim-OK guidelines | hhs_2018_physical_activity_guidelines (US), usda_hhs_2026_dietary_guidelines (US, the 2025-2030 edition released January 2026), uk_cmo_2026_activity_guidelines (GB; first issued 2011, revised 2019, evidence updated July 2026 without changing the guidance) |
+| India | icmr_nin_2020_nutrient_requirements, longvah_2017_ifct, who_2004_asian_bmi, misra_2025_obesity_asian_indians, anjana_2014_indiab_activity |
+
+### Sources dropped or replaced
+
+- Viana 2019 (BJSM, interval training and fat loss) was retracted on 2020-12-15; it is not in the
+  library, and the Wewege 2017 entry says why.
+- Misra 2009 (Asian Indian obesity consensus, JAPI) has no DOI and an abstract with no cut-offs;
+  replaced by its 2025 revision (Misra et al., full text), which restates the 2009 figures.
+- Verified but left out to keep the size budget: Larsen 2021 (PeerJ, overlaps Hickmott 2022),
+  Impellizzeri 2021 (Sports Med, same case as the 2020 paper, mentioned there), Pallarés 2021
+  (ROM, covered by Wolf 2023), Momma 2022 (BJSM, strength activity and mortality, observational),
+  Grgic 2019 (caffeine umbrella; Guest 2021 covers caffeine), Jones 2018 (nitrate; Senefeld 2020
+  chosen for its open full text).
+- Not used: Peeling 2018 (short abstract, covered by the IOC statement), Pritchard 2015 (Travis
+  2020 covers tapering for strength), Janse van Rensburg 2020 (an editorial with no abstract).
+- Two DOIs suggested in the brief were wrong (Bosquet 2007 and Helms 2023); the correct ones
+  are in the table.
+
+### Where new sources strain the digest (owner review; `coaching_principles.ts` not edited)
+
+None contradicts a digest line outright; these refine it. The digest stays at version 2 and does
+not cite the new sources yet.
+
+- **Protein per meal.** The digest's "0.25 to 0.4 g per kg" per meal rests partly on a 20 to 25 g
+  ceiling; Trommelen 2023 found 100 g kept building muscle protein for longer with little extra
+  burned, and Iraki 2019 suggests 0.40 to 0.55 g per kg per meal. The entries keep spreading as a
+  sensible guide.
+- **Daily protein.** Barakat 2020 cites 2.6 to 3.5 g per kg of fat-free mass for recomposition;
+  the US 2025-2030 guidelines give 1.2 to 1.6 g per kg for the public; ICMR-NIN 2020 gives an
+  allowance of 0.83 g per kg. The entries explain the different purposes.
+- **ACWR.** Impellizzeri 2020 says no evidence supports using the acute:chronic ratio to manage
+  injury risk, which challenges how the Gabbett 2016 entry describes it; the digest's line on
+  gradual progression still holds. Consider a half-line in the digest or the Gabbett entry.
+- **Cold water.** The digest says cold eases soreness; Roberts 2015 and Malta 2021 add that
+  routine use after lifting can blunt strength and muscle gains.
+- **Bodyweight.** The digest says "bodyweight alone was not tested" (true of Lopes 2019);
+  Kikuchi 2017 and Wiedenmann 2025 now test it.
+- **Range of motion.** Wolf 2023 found little difference between partial and full range and no
+  clear upper versus lower body split, a refinement of the digest's legs-versus-arms wording.
+- **Time off.** Travis 2020 (two weeks or more off lowered maximums slightly) and Coleman 2024 (a
+  week off gave somewhat smaller strength gains) soften "a short break rarely undoes progress".
+- **Rest for older adults.** Borde 2015 found 60 seconds best for strength in older adults, from
+  only two studies.
+- **Periodisation.** Williams 2017 and Moesgaard 2022 find a small strength advantage, against
+  ACSM 2026's "no consistent effect"; both entries say so.
+
+### Owner review points
+
+- Agents read Misra 2025 from an institutional copy (CMC Vellore) and the NIH ODS fact sheet from
+  the Internet Archive snapshot of 2026-10-12 (the live site is behind a bot check).
+- Barakat 2020's CC BY-NC-ND rests on Crossref, OpenAlex and Semantic Scholar; the publisher page
+  shows no licence wording. It is summary-only either way.
+- Region `GB` is new (UK CMOs). The account-region function already derives `GB` from an `en-GB`
+  locale, so no SQL change was needed.
+- Not done here (other owners): retrieval does not yet read `supersededBy`, `verbatimAllowed` or
+  `lastReviewed` (they are not in the database), and `library_questions.json` has no questions for
+  the new sources, so recall on them is unmeasured.
+
+### Fact-check corrections (after review)
+
+An independent fact-check compared the summaries with the original papers; Codex added one item.
+All corrections are in the content files and the migration was regenerated (the 106 blocks and
+their hashes match the sources). No source was added.
+
+- **Wrong or unsupported claims.** Helms 2023 (the two surplus groups gained the same weight; the
+  logged surpluses did differ, and not everyone kept to theirs); Roberts 2015 (now read from the
+  full text: lower-body training, water about 10 °C waist-deep, experienced men; later work by Fyfe
+  2019 and Grgic 2022 shows a smaller cost, limited to immersing the trained limbs); Malta 2021
+  (Grgic 2022 cited as a caveat); Anjana 2014 (the 46 and 14 minute figures are averages among
+  those with active work or active travel, and the survey is "large, representative" rather than
+  "the largest"); Misra 2025 (body fat overrides BMI only below 23, no exception for muscular
+  people; weight-loss rate wording; collective author added); Haugen 2023 (participants "mostly
+  men", the counts did not add up).
+- **BMI boundary (Misra 2025).** The entry said a normal BMI is up to just under 23 but staged
+  obesity from "above 23", which looked like it left exactly 23.0 unclassified. The fact-check
+  against the paper settled it: the paper uses "more than 23" for the obesity stages and grades
+  23 to 24.9 as overweight Grade I, so the entry keeps "above 23" and now says a normal BMI is
+  18.5 to 22.99 with that grading note. Stage 1 also requires no obesity-related disease.
+- **Closer than allowed to a proprietary abstract.** Reworded: Impellizzeri 2020, Wiedenmann 2025,
+  WHO 2004 and Roberts 2020; Impellizzeri 2021 named as the follow-up.
+- **Smaller fixes.** UK CMO history (2011, 2019, evidence updated July 2026); US dietary guidelines
+  (full-fat dairy with no added sugars; the PDF's Shutterstock images are not covered by the
+  public-domain text); ICMR-NIN (protein figure is the same for sedentary, moderate and heavy
+  work; the 5 percent basal-rate cut adds to 2010's); IFCT (as-analysed wording, six-region mean
+  for most foods); Colenso-Semple 2023 (three of five reviews, ovulation assumptions);
+  Elliott-Sale 2020; Kikuchi 2017 (load roughly matched, men called untrained, evidence level);
+  Williams 2017; the IOC statement (Maughan); Refalo 2023 (subgroup figures, authors' extra
+  cases); Barakat 2020 (sleep evidence is from non-lifting overweight adults); the HHS link now
+  uses odphp.health.gov.
+
+### Gates
+
+`./scripts/deno.sh fmt --check supabase/functions`, `lint` and `test --allow-env --allow-net
+--allow-read=supabase/migrations,site/src/config.ts supabase/functions` pass (1,298 tests);
+`./scripts/check-migration-order.sh origin/main` passes. pgTAP runs only in CI.
 
 ## E3: the library shapes every Coach reply (in review)
 
@@ -568,3 +807,8 @@ E4 (regional modules) adds sources the same way as E2 (files plus a migration) a
 country on the profile so `private.library_regions_for_account` stops guessing from the locale and
 time zone. E5 (plan explanations citing sources) can reuse `libraryRetrievalQuery`, the contributor
 and the `library` evidence source. Run `retrieval_only` after any library or search change.
+
+After E2.2: add retrieval questions for the 57 new sources and measure recall once production has
+embedded them; decide whether retrieval should skip or down-rank `supersededBy` sources (the field
+lives in the content files only); the full-library render is near the 60,000-token line, so the
+next expansion needs a size decision first.

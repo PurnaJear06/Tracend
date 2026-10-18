@@ -13,13 +13,16 @@ export const trainingSources: readonly LibrarySource[] = [
     year: 2009,
     doi: "10.1249/MSS.0b013e3181915670",
     url: "https://doi.org/10.1249/MSS.0b013e3181915670",
-    licence: "Publisher copyright (no open licence); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
+    supersededBy: "acsm_2026_resistance_prescription",
     region: ["global"],
     topics: ["training", "strength", "hypertrophy", "progression", "frequency", "rest", "intensity"],
     evidenceLevel: "position stand",
     kind: "position_stand",
     chosenBecause:
-      "The long-standing reference for how a lifter's training should progress with experience; Tracend's standard cites it, and Coach needs to explain where beginner and advanced advice differ.",
+      "The long-standing reference for how a lifter's training should progress with experience; Tracend's standard cites it, and Coach needs to explain where beginner and advanced advice differ. Summarised from the abstract only.",
     sections: [
       {
         title: "What the position stand covers",
@@ -54,13 +57,15 @@ Suggested training frequency rises with experience: 2 to 3 days a week for begin
     year: 2026,
     doi: "10.1249/MSS.0000000000003897",
     url: "https://doi.org/10.1249/MSS.0000000000003897",
-    licence: "CC BY-NC-ND (open access); own-words summary, no text copied",
+    licence: "CC-BY-NC-ND-4.0",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "strength", "hypertrophy", "volume", "intensity", "progression", "frequency"],
     evidenceLevel: "position stand; overview of 137 systematic reviews",
     kind: "position_stand",
     chosenBecause:
-      "The newest and broadest synthesis of what actually changes results in resistance training; it updates the 2009 stand and is the best single reference for the question 'what matters and what does not'.",
+      "The newest and broadest synthesis of what actually changes results in resistance training; it updates the 2009 stand and is the best single reference for the question 'what matters and what does not'. Summarised from the abstract only.",
     sections: [
       {
         title: "What this position stand is",
@@ -99,13 +104,15 @@ Read this carefully: it says the effect was not consistent across reviews, not t
     year: 2017,
     doi: "10.1080/02640414.2016.1210197",
     url: "https://doi.org/10.1080/02640414.2016.1210197",
-    licence: "Publisher copyright (no open licence); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "hypertrophy", "volume"],
     evidenceLevel: "systematic review and meta-analysis (15 studies)",
     kind: "paper",
     chosenBecause:
-      "The classic answer to 'how many sets per week?'; Tracend's volume ranges cite it, so Coach needs a plain explanation of the dose-response finding and its limits.",
+      "The classic answer to 'how many sets per week?'; Tracend's volume ranges cite it, so Coach needs a plain explanation of the dose-response finding and its limits. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",
@@ -132,13 +139,15 @@ The authors described this as a graded dose-response relationship: more volume t
     year: 2021,
     doi: "10.3390/sports9020032",
     url: "https://doi.org/10.3390/sports9020032",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "strength", "hypertrophy", "intensity"],
     evidenceLevel: "narrative review",
     kind: "paper",
     chosenBecause:
-      "Explains why a wide span of rep ranges works, which is the evidence behind letting people train with loads they enjoy and tolerate; Tracend's rep-range rules cite it.",
+      "Explains why a wide span of rep ranges works, which is the evidence behind letting people train with loads they enjoy and tolerate; Tracend's rep-range rules cite it. Summarised from the abstract only.",
     sections: [
       {
         title: "The old rule and the challenge to it",
@@ -163,13 +172,15 @@ The authors described this as a graded dose-response relationship: more volume t
     year: 2026,
     doi: "10.1007/s40279-025-02344-w",
     url: "https://doi.org/10.1007/s40279-025-02344-w",
-    licence: "Publisher copyright (no open licence found); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "hypertrophy", "strength", "volume", "frequency"],
     evidenceLevel: "meta-regression of 67 studies",
     kind: "paper",
     chosenBecause:
-      "The most recent and detailed analysis of weekly volume and frequency together, showing diminishing returns; it keeps Coach from overselling 'more sets'.",
+      "The most recent and detailed analysis of weekly volume and frequency together, showing diminishing returns; it keeps Coach from overselling 'more sets'. Summarised from the abstract only.",
     sections: [
       {
         title: "What the analysis did",
@@ -198,13 +209,15 @@ The authors described this as a graded dose-response relationship: more volume t
     year: 2024,
     doi: "10.3389/fspor.2024.1429789",
     url: "https://doi.org/10.3389/fspor.2024.1429789",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "hypertrophy", "rest", "time-efficient"],
     evidenceLevel: "systematic review and Bayesian meta-analysis (9 studies)",
     kind: "paper",
     chosenBecause:
-      "Gives a practical, evidence-based answer to 'how long should I rest between sets?', which matters for time-pressed users.",
+      "Gives a practical, evidence-based answer to 'how long should I rest between sets?', which matters for time-pressed users. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",
@@ -231,13 +244,15 @@ The authors concluded that resting longer than about 60 seconds may give a small
     year: 2016,
     doi: "10.1519/JSC.0000000000001049",
     url: "https://doi.org/10.1519/JSC.0000000000001049",
-    licence: "Publisher copyright (no open licence); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "intensity", "rir", "progression"],
     evidenceLevel: "experimental study (29 lifters)",
     kind: "paper",
     chosenBecause:
-      "The origin of the repetitions-in-reserve effort scale that Tracend's plans use; Coach needs to explain what 'reps in reserve' means and how reliable it is.",
+      "The origin of the repetitions-in-reserve effort scale that Tracend's plans use; Coach needs to explain what 'reps in reserve' means and how reliable it is. Summarised from the abstract only.",
     sections: [
       {
         title: "What the study did",
@@ -262,13 +277,15 @@ The authors concluded that resting longer than about 60 seconds may give a small
     year: 2024,
     doi: "10.1007/s40279-024-02069-2",
     url: "https://doi.org/10.1007/s40279-024-02069-2",
-    licence: "Publisher copyright (no open licence found); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "hypertrophy", "strength", "intensity", "rir"],
     evidenceLevel: "series of meta-regressions",
     kind: "paper",
     chosenBecause:
-      "The best available analysis of how close to failure to train, the basis for Tracend's reps-in-reserve targets.",
+      "The best available analysis of how close to failure to train, the basis for Tracend's reps-in-reserve targets. Summarised from the abstract only.",
     sections: [
       {
         title: "What the analysis did",
@@ -295,13 +312,15 @@ For muscle size, the models agreed that growth increased as sets finished closer
     year: 2021,
     doi: "10.1007/s40279-021-01490-1",
     url: "https://doi.org/10.1007/s40279-021-01490-1",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "time-efficient", "volume", "strength", "hypertrophy", "frequency"],
     evidenceLevel: "narrative review",
     kind: "paper",
     chosenBecause:
-      "Directly answers the most common barrier, lack of time, with concrete choices on exercises, sets, warm-ups and techniques that save minutes.",
+      "Directly answers the most common barrier, lack of time, with concrete choices on exercises, sets, warm-ups and techniques that save minutes. Summarised from the abstract only.",
     sections: [
       {
         title: "Exercise choice",
@@ -330,13 +349,15 @@ For muscle size, the models agreed that growth increased as sets finished closer
     year: 2016,
     doi: "10.1007/s40279-016-0543-8",
     url: "https://doi.org/10.1007/s40279-016-0543-8",
-    licence: "Publisher copyright (no open licence); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "hypertrophy", "frequency"],
     evidenceLevel: "systematic review and meta-analysis (10 studies)",
     kind: "paper",
     chosenBecause:
-      "The reason Coach can say each muscle is best trained at least twice a week when volume is equal, a core split-design rule.",
+      "The reason Coach can say each muscle is best trained at least twice a week when volume is equal, a core split-design rule. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",
@@ -361,13 +382,15 @@ For muscle size, the models agreed that growth increased as sets finished closer
     year: 2018,
     doi: "10.1007/s40279-018-0872-x",
     url: "https://doi.org/10.1007/s40279-018-0872-x",
-    licence: "Publisher copyright (no open licence); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "strength", "frequency", "volume"],
     evidenceLevel: "systematic review and meta-analysis (22 studies)",
     kind: "paper",
     chosenBecause:
-      "Shows that for strength the benefit of training more often comes mostly from the extra volume, helping Coach advise people with limited gym days.",
+      "Shows that for strength the benefit of training more often comes mostly from the extra volume, helping Coach advise people with limited gym days. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",
@@ -392,13 +415,15 @@ For muscle size, the models agreed that growth increased as sets finished closer
     year: 2023,
     doi: "10.1186/s40798-023-00633-0",
     url: "https://doi.org/10.1186/s40798-023-00633-0",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "deload", "recovery", "progression"],
     evidenceLevel: "expert consensus (Delphi, 34 coaches)",
     kind: "paper",
     chosenBecause:
-      "Deloading is widely used but lightly researched; this is the only structured consensus, so it lets Coach describe deloads honestly as expert practice.",
+      "Deloading is widely used but lightly researched; this is the only structured consensus, so it lets Coach describe deloads honestly as expert practice. Summarised from the abstract only.",
     sections: [
       {
         title: "What the study was",
@@ -423,13 +448,15 @@ For muscle size, the models agreed that growth increased as sets finished closer
     year: 2021,
     doi: "10.1249/MSS.0000000000002585",
     url: "https://doi.org/10.1249/MSS.0000000000002585",
-    licence: "CC BY-NC-ND (open access); own-words summary, no text copied",
+    licence: "CC-BY-NC-ND-4.0",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "hypertrophy", "strength", "intensity", "joint-friendly"],
     evidenceLevel: "systematic review and network meta-analysis (28 studies)",
     kind: "paper",
     chosenBecause:
-      "Backs the advice that lighter loads still build muscle when taken to failure, important for people who need joint-friendlier training.",
+      "Backs the advice that lighter loads still build muscle when taken to failure, important for people who need joint-friendlier training. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",
@@ -454,13 +481,15 @@ For muscle size, the models agreed that growth increased as sets finished closer
     year: 2022,
     doi: "10.1007/s40279-021-01587-7",
     url: "https://doi.org/10.1007/s40279-021-01587-7",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["training", "cardio", "strength", "hypertrophy", "concurrent-training"],
     evidenceLevel: "systematic review and meta-analysis (43 studies)",
     kind: "paper",
     chosenBecause:
-      "Settles the common worry that cardio kills muscle gains, so Coach can advise people who want both.",
+      "Settles the common worry that cardio kills muscle gains, so Coach can advise people who want both. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",

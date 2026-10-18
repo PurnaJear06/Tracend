@@ -12,13 +12,15 @@ export const energyBalanceSources: readonly LibrarySource[] = [
     year: 2018,
     doi: "10.1038/ijo.2017.206",
     url: "https://doi.org/10.1038/ijo.2017.206",
-    licence: "CC BY-NC-ND (open access); own-words summary, no text copied",
+    licence: "CC-BY-NC-ND-4.0",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["nutrition", "energy-balance", "fat-loss", "diet-break", "metabolic-adaptation"],
     evidenceLevel: "randomised controlled trial (51 men with obesity)",
     kind: "paper",
     chosenBecause:
-      "The best-known trial of planned breaks from dieting, so Coach can explain what a diet break is and what the evidence for it does and does not show.",
+      "The best-known trial of planned breaks from dieting, so Coach can explain what a diet break is and what the evidence for it does and does not show. Summarised from the abstract only.",
     sections: [
       {
         title: "What the trial did",
@@ -43,13 +45,15 @@ export const energyBalanceSources: readonly LibrarySource[] = [
     year: 2021,
     doi: "10.1249/mss.0000000000002636",
     url: "https://doi.org/10.1249/mss.0000000000002636",
-    licence: "Publisher copyright (no open licence found); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["nutrition", "energy-balance", "fat-loss", "diet-break", "training", "hunger"],
     evidenceLevel: "randomised controlled trial (61 resistance-trained adults)",
     kind: "paper",
     chosenBecause:
-      "The only trial of diet breaks in resistance-trained men and women, and it did not reproduce the extra fat loss seen in earlier work, which keeps Coach honest about breaks.",
+      "The only trial of diet breaks in resistance-trained men and women, and it did not reproduce the extra fat loss seen in earlier work, which keeps Coach honest about breaks. Summarised from the abstract only.",
     sections: [
       {
         title: "What the trial did",
@@ -73,7 +77,9 @@ export const energyBalanceSources: readonly LibrarySource[] = [
     year: 2014,
     doi: "10.1186/1550-2783-11-7",
     url: "https://doi.org/10.1186/1550-2783-11-7",
-    licence: "CC BY 2.0 (open access); own-words summary",
+    licence: "CC-BY-2.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: [
       "nutrition",
@@ -86,7 +92,7 @@ export const energyBalanceSources: readonly LibrarySource[] = [
     evidenceLevel: "narrative review",
     kind: "paper",
     chosenBecause:
-      "Explains why fat loss slows and hunger rises on a long diet, the situation of anyone who has already lost a lot of weight and still wants to lose more.",
+      "Explains why fat loss slows and hunger rises on a long diet, the situation of anyone who has already lost a lot of weight and still wants to lose more. Summarised from the full text.",
     sections: [
       {
         title: "What happens in a long deficit",
@@ -122,13 +128,15 @@ export const energyBalanceSources: readonly LibrarySource[] = [
     year: 2023,
     doi: "10.1136/bjsports-2023-106994",
     url: "https://doi.org/10.1136/bjsports-2023-106994",
-    licence: "Publisher copyright (no open licence found); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["nutrition", "energy-balance", "low-energy-availability", "recovery", "safety", "fat-loss"],
     evidenceLevel: "expert consensus statement",
     kind: "guideline",
     chosenBecause:
-      "The leading authority on the health risk of eating too little for the training done, which Coach needs for anyone cutting hard while training.",
+      "The leading authority on the health risk of eating too little for the training done, which Coach needs for anyone cutting hard while training. Summarised from the abstract only.",
     sections: [
       {
         title: "What REDs is",
@@ -156,13 +164,15 @@ export const energyBalanceSources: readonly LibrarySource[] = [
     year: 2019,
     doi: "10.1111/obr.12772",
     url: "https://doi.org/10.1111/obr.12772",
-    licence: "CC BY-NC-ND (open access); own-words summary, no text copied",
+    licence: "CC-BY-NC-ND-4.0",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["nutrition", "weight-maintenance", "fat-loss", "behaviour-change", "adherence"],
     evidenceLevel: "systematic review (67 studies)",
     kind: "paper",
     chosenBecause:
-      "The most careful review of what predicts keeping weight off, which tells Coach where to put attention once someone has lost a lot of weight.",
+      "The most careful review of what predicts keeping weight off, which tells Coach where to put attention once someone has lost a lot of weight. Summarised from the full text.",
     sections: [
       {
         title: "What the review did",
@@ -186,14 +196,15 @@ export const energyBalanceSources: readonly LibrarySource[] = [
     year: 2024,
     doi: null,
     url: "https://www.nin.res.in/dietaryguidelines/pdfjs/locale/DGI_2024.pdf",
-    licence:
-      "Publisher copyright (ICMR-NIN; free to read online, reproducing it in a product needs written permission); own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-18",
     region: ["IN"],
     topics: ["nutrition", "protein", "fat-loss", "energy-balance", "activity", "guidelines", "india"],
     evidenceLevel: "national dietary guidelines",
     kind: "guideline",
     chosenBecause:
-      "India's official food-based guidance, needed for users in India, and it differs from the sports-nutrition papers on BMI and protein powders in ways Coach must explain.",
+      "India's official food-based guidance, needed for users in India, and it differs from the sports-nutrition papers on BMI and protein powders in ways Coach must explain. Summarised from the full document (guidelines 8, 9 and 10).",
     sections: [
       {
         title: "Body weight and weight loss",
@@ -221,13 +232,15 @@ export const energyBalanceSources: readonly LibrarySource[] = [
     year: 2010,
     doi: "10.3390/nu2080781",
     url: "https://doi.org/10.3390/nu2080781",
-    licence: "CC BY 3.0 (open access); own-words summary",
+    licence: "CC-BY-3.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["alcohol", "recovery", "nutrition", "sleep", "hydration", "performance"],
     evidenceLevel: "narrative review",
     kind: "paper",
     chosenBecause:
-      "A free review of what alcohol does to exercise performance and recovery, for the common question of whether drinking undoes training.",
+      "A free review of what alcohol does to exercise performance and recovery, for the common question of whether drinking undoes training. Summarised from the full text.",
     sections: [
       {
         title: "Effects on the body",

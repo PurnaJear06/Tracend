@@ -12,13 +12,15 @@ export const nutritionSources: readonly LibrarySource[] = [
     year: 2017,
     doi: "10.1186/s12970-017-0177-8",
     url: "https://doi.org/10.1186/s12970-017-0177-8",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["nutrition", "protein", "hypertrophy", "body-composition", "timing"],
     evidenceLevel: "position stand",
     kind: "position_stand",
     chosenBecause:
-      "The standard open position on daily protein for people who train; it grounds the protein targets Coach explains.",
+      "The standard open position on daily protein for people who train; it grounds the protein targets Coach explains. Summarised from the abstract only.",
     sections: [
       {
         title: "How much protein per day",
@@ -48,13 +50,15 @@ Higher intakes of about 2.3 to 3.1 grams per kilogram may help hold on to lean m
     year: 2017,
     doi: "10.1186/s12970-017-0189-4",
     url: "https://doi.org/10.1186/s12970-017-0189-4",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["nutrition", "timing", "protein", "carbohydrate", "recovery"],
     evidenceLevel: "position stand",
     kind: "position_stand",
     chosenBecause:
-      "Answers the very common 'does meal timing matter?' with a clear order of priorities; useful for keeping advice proportionate.",
+      "Answers the very common 'does meal timing matter?' with a clear order of priorities; useful for keeping advice proportionate. Summarised from the abstract only.",
     sections: [
       {
         title: "What matters first",
@@ -83,13 +87,15 @@ Higher intakes of about 2.3 to 3.1 grams per kilogram may help hold on to lean m
     year: 2018,
     doi: "10.1186/s12970-018-0215-1",
     url: "https://doi.org/10.1186/s12970-018-0215-1",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["nutrition", "protein", "timing", "hypertrophy"],
     evidenceLevel: "narrative review",
     kind: "paper",
     chosenBecause:
-      "Corrects the myth that the body can only use about 25 grams of protein per meal, so Coach can give sensible meal-by-meal protein advice.",
+      "Corrects the myth that the body can only use about 25 grams of protein per meal, so Coach can give sensible meal-by-meal protein advice. Summarised from the abstract only.",
     sections: [
       {
         title: "The myth being tested",
@@ -114,13 +120,15 @@ Higher intakes of about 2.3 to 3.1 grams per kilogram may help hold on to lean m
     year: 2018,
     doi: "10.1136/bjsports-2017-097608",
     url: "https://doi.org/10.1136/bjsports-2017-097608",
-    licence: "CC BY-NC (open access); own-words summary, no text copied",
+    licence: "CC-BY-NC-4.0",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["nutrition", "protein", "hypertrophy", "strength", "supplements"],
     evidenceLevel: "systematic review and meta-analysis (49 studies)",
     kind: "paper",
     chosenBecause:
-      "The key evidence for the point where more protein stops adding muscle (about 1.6 g/kg/day), which sets a sensible ceiling for the advice.",
+      "The key evidence for the point where more protein stops adding muscle (about 1.6 g/kg/day), which sets a sensible ceiling for the advice. Summarised from the abstract only.",
     sections: [
       {
         title: "What the review did",
@@ -144,13 +152,15 @@ Higher intakes of about 2.3 to 3.1 grams per kilogram may help hold on to lean m
     year: 2017,
     doi: "10.1186/s12970-017-0174-y",
     url: "https://doi.org/10.1186/s12970-017-0174-y",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["nutrition", "energy-balance", "body-composition", "protein", "fat-loss"],
     evidenceLevel: "position stand",
     kind: "position_stand",
     chosenBecause:
-      "The best open statement on how energy balance and diet style change body composition, backing Tracend's focus on calories, protein and adherence over diet branding.",
+      "The best open statement on how energy balance and diet style change body composition, backing Tracend's focus on calories, protein and adherence over diet branding. Summarised from the abstract only.",
     sections: [
       {
         title: "Fat loss and muscle gain run on energy balance",
@@ -179,13 +189,15 @@ Higher intakes of about 2.3 to 3.1 grams per kilogram may help hold on to lean m
     year: 2014,
     doi: "10.1186/1550-2783-11-20",
     url: "https://doi.org/10.1186/1550-2783-11-20",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-2.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["nutrition", "energy-balance", "body-composition", "protein", "fat-loss", "supplements"],
     evidenceLevel: "narrative review",
     kind: "paper",
     chosenBecause:
-      "The most practical open source on the rate of weight loss and diet make-up when a lean person wants to lose fat and keep muscle.",
+      "The most practical open source on the rate of weight loss and diet make-up when a lean person wants to lose fat and keep muscle. Summarised from the abstract only.",
     sections: [
       {
         title: "Rate of loss and macronutrients",
@@ -214,13 +226,15 @@ Higher intakes of about 2.3 to 3.1 grams per kilogram may help hold on to lean m
     year: 2017,
     doi: "10.1186/s12970-017-0173-z",
     url: "https://doi.org/10.1186/s12970-017-0173-z",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["nutrition", "creatine", "supplements", "strength", "safety"],
     evidenceLevel: "position stand",
     kind: "position_stand",
     chosenBecause:
-      "Creatine is the best-supported training supplement; this open position stand covers both benefit and safety, which Coach needs for honest answers.",
+      "Creatine is the best-supported training supplement; this open position stand covers both benefit and safety, which Coach needs for honest answers. Summarised from the full text.",
     sections: [
       {
         title: "What creatine does",
@@ -248,13 +262,15 @@ Higher intakes of about 2.3 to 3.1 grams per kilogram may help hold on to lean m
     year: 2021,
     doi: "10.1186/s12970-020-00383-4",
     url: "https://doi.org/10.1186/s12970-020-00383-4",
-    licence: "CC BY 4.0 (open access); own-words summary",
+    licence: "CC-BY-4.0",
+    verbatimAllowed: true,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["nutrition", "caffeine", "supplements", "performance", "sleep"],
     evidenceLevel: "position stand",
     kind: "position_stand",
     chosenBecause:
-      "Gives dose and timing guidance for the most widely used performance aid, plus the sleep and anxiety trade-offs Coach should mention.",
+      "Gives dose and timing guidance for the most widely used performance aid, plus the sleep and anxiety trade-offs Coach should mention. Summarised from the abstract only.",
     sections: [
       {
         title: "What caffeine does for training",
@@ -282,13 +298,15 @@ Higher intakes of about 2.3 to 3.1 grams per kilogram may help hold on to lean m
     year: 2007,
     doi: "10.1249/mss.0b013e31802ca597",
     url: "https://doi.org/10.1249/mss.0b013e31802ca597",
-    licence: "Publisher copyright (no open licence); stored as an own-words summary with citation",
+    licence: "proprietary",
+    verbatimAllowed: false,
+    lastReviewed: "2026-10-17",
     region: ["global"],
     topics: ["nutrition", "hydration", "performance", "safety"],
     evidenceLevel: "position stand",
     kind: "position_stand",
     chosenBecause:
-      "The main professional position on drinking before, during and after exercise, with a practical way to measure personal needs.",
+      "The main professional position on drinking before, during and after exercise, with a practical way to measure personal needs. Summarised from the abstract only.",
     sections: [
       {
         title: "Before and during exercise",
