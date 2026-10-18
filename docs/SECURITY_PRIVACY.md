@@ -465,7 +465,7 @@ ends it at its own limit (8 hours after it started). It carries nothing beyond t
 and next-set label above, plus the set's position in the workout (exercise order and set number)
 that the Done button sends back. Sign-out, account deletion and a session Auth refused end it, and the next launch ends any finished one left behind.
 
-**Exception: Today and Lock Screen widgets (chunk D2; owner to confirm).** This is the second
+**Exception: Today and Lock Screen widgets (chunk D2; owner approved 2026-10-18).** This is the second
 exception to the rule above, made because the D2 brief asks for Lock Screen widgets, and bounded by an
 off-by-default choice. The
 `TracendWidgets` extension draws Home Screen and Lock Screen widgets from a snapshot the app writes

@@ -243,7 +243,7 @@ Island check passed on 2026-10-15. What exists:
   Train). Visuals: DESIGN_SYSTEM §3.7.
 - **Account.** `lib/features/account/widgets/widget_settings.dart`: **Widgets › Health numbers on the
   Lock Screen**, off by default. SECURITY_PRIVACY §10 documents it as a second lock-screen
-  exception, marked "owner to confirm".
+  exception, approved by the owner on 2026-10-18.
 - **Tests:** `test/home_widgets/` (snapshot, publisher, flow, offline check-in), the sign-out and
   per-athlete choice cases in `test/account_session_test.dart`, `test/contract/today_widget_snapshot_contract_test.dart`
   with `fixtures/today_widget_snapshot_v1.json`, and `TodayWidgetSnapshotTests` in `RunnerTests.swift`
