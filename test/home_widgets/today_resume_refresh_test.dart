@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -201,6 +203,76 @@ void main() {
     expect(failing.loads, 2);
     expect(bridge.stored, isNotNull);
   });
+
+  testWidgets('a slow load from before midnight never overwrites the new day', (
+    tester,
+  ) async {
+    final held = _HeldBriefs();
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    now = DateTime(2026, 10, 18, 23, 59);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TracendTheme.dark,
+        home: Scaffold(
+          body: TodayScreen(
+            environment: _environment,
+            brief: held,
+            clock: () => now,
+            widgetPublisher: TodayWidgetPublisher(
+              bridge: bridge,
+              preferences: SharedPreferencesAsync(),
+              clock: () => now,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(held.requests, hasLength(1));
+
+    // Past midnight the first request is still open, so the return asks
+    // again; the new day's answer arrives first.
+    await _background(tester);
+    now = DateTime(2026, 10, 19, 0, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(held.requests, hasLength(2));
+
+    held.requests[1].complete(_brief('2026-10-19', protein: 80));
+    await tester.pumpAndSettle();
+    expect(bridge.stored!['local_date'], '2026-10-19');
+
+    held.requests[0].complete(_brief('2026-10-18', protein: 40));
+    await tester.pumpAndSettle();
+
+    expect(bridge.stored!['local_date'], '2026-10-19');
+    expect(nutrition()['protein_g'], 80);
+    expect(bridge.writes, 1);
+  });
+}
+
+DailyBrief _brief(String day, {required int protein}) => DailyBrief(
+  localDate: day,
+  workout: const {'name': 'Push day'},
+  checkIn: const {'energy': 3},
+  nutrition: {'calories': 1000, 'protein_g': protein},
+);
+
+/// Holds every request open until the test answers it.
+class _HeldBriefs implements DailyBriefRepository {
+  final requests = <Completer<DailyBrief>>[];
+
+  @override
+  Future<DailyBrief> load(DateTime date) {
+    final request = Completer<DailyBrief>();
+    requests.add(request);
+    return request.future;
+  }
 }
 
 class _FailingOnceBriefs implements DailyBriefRepository {

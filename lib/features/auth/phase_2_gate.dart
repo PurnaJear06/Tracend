@@ -33,12 +33,12 @@ class Phase2Gate extends StatefulWidget {
   /// The app's Supabase client unless a test provides one.
   final SupabaseClient? client;
 
-  /// The workout rest's Live Activity, ended whenever the session ends so
-  /// no rest outlives its athlete on the Lock Screen.
+  /// The workout rest's Live Activity, ended on every signed-out transition
+  /// so no rest outlives its athlete on the Lock Screen.
   final WorkoutActivityBridge liveActivity;
 
-  /// The Home Screen and Lock Screen widgets, emptied whenever the session
-  /// ends so no widget keeps a signed-out athlete's day.
+  /// The Home Screen and Lock Screen widgets, emptied on every signed-out
+  /// transition so no widget keeps a signed-out athlete's day.
   final HomeWidgetBridge homeWidgets;
   final LocalAccountData? localData;
 
@@ -73,11 +73,16 @@ class _Phase2GateState extends State<Phase2Gate> {
   void initState() {
     super.initState();
     if (widget.environment.hasSupabaseConfiguration) {
-      // A refresh token Auth refuses while the app is open (the account was
-      // deleted elsewhere) removes the session; the athlete lands on sign-in.
       _authEvents = _client.auth.onAuthStateChange.listen((state) {
-        if (state.event == AuthChangeEvent.signedOut &&
-            state.signOutReason != SignOutReason.userInitiated &&
+        if (state.event != AuthChangeEvent.signedOut) return;
+        // Every way a session ends passes here, whichever screen asked for
+        // it (or none did: a deletion settling after its sheet was closed),
+        // so no rest activity or widget keeps the athlete's day.
+        _clearSessionOutputs();
+        // A refresh token Auth refuses while the app is open (the account
+        // was deleted elsewhere) removes the session; the athlete lands on
+        // sign-in.
+        if (state.signOutReason != SignOutReason.userInitiated &&
             _authenticated) {
           unawaited(_endRejectedSession(_userId, accountDeleted: false));
         }
@@ -146,14 +151,19 @@ class _Phase2GateState extends State<Phase2Gate> {
     }
   }
 
+  /// Ends the rest's Live Activity and empties the widgets. Runs on every
+  /// signed-out transition and is the only place that does.
+  void _clearSessionOutputs() {
+    unawaited(widget.liveActivity.end());
+    unawaited(widget.homeWidgets.clear());
+  }
+
   /// Ends the session Auth refused and shows sign-in, with no network
   /// needed; a deleted account's local data goes too.
   Future<void> _endRejectedSession(
     String? userId, {
     required bool accountDeleted,
   }) async {
-    unawaited(widget.liveActivity.end());
-    unawaited(widget.homeWidgets.clear());
     await endRejectedSession(
       _client,
       _localData,
@@ -183,8 +193,6 @@ class _Phase2GateState extends State<Phase2Gate> {
   /// Signing out, and the end of an account deletion (Account calls this
   /// once the deletion settles).
   Future<void> _signOut() async {
-    unawaited(widget.liveActivity.end());
-    unawaited(widget.homeWidgets.clear());
     await signOutAthlete(_client, _localData, _userId);
     await _refresh();
   }

@@ -65,8 +65,8 @@ Island check passed on 2026-10-15. What exists:
   alert stay. Each activity call is sent before the rest alert is scheduled or cancelled and is
   never awaited, so a stop right after a start cannot overtake it. `ActiveWorkoutScreen` passes
   `nextLabel` (the existing "Set 2 of Bench press" label) and `exerciseName` (the exercise of the
-  set just done) and takes the bridge as `activity:`. `Phase2Gate` calls `end` on sign-out (which
-  account deletion also goes through, from Account) and when Auth refuses the session.
+  set just done) and takes the bridge as `activity:`. `Phase2Gate` calls `end` from its auth listener on
+  every signed-out transition (sign-out, account deletion, a refused session).
 - **Tests:** `test/live_activity/rest_timer_live_activity_test.dart` (controller ↔ fake bridge,
   including the stop-during-pending-alert race and `detach`),
   `test/contract/live_activity_channel_contract_test.dart` (mock channel),
@@ -192,11 +192,14 @@ Island check passed on 2026-10-15. What exists:
   `generated_at_millis`). Every value is one Today already shows; no free text. `lock` is null while
   Lock Screen numbers are off.
 - **Publisher** `today_widget_publisher.dart`: `TodayWidgetPublisher` writes on each brief load
-  (`TodayScreen._loadBrief` hands the brief over; the newest publish wins), skips an unchanged
+  (`TodayScreen._loadBrief` hands the brief over; the newest publish wins, and a brief load that
+  finishes after a newer one started is ignored), skips an unchanged
   snapshot for five minutes, owns the Lock Screen choice (`home_widgets_lock_screen_numbers.<user id>`
   in `SharedPreferencesAsync`, default off; `Phase2Gate` hands `AppShell` the user id, and the
   shell is keyed by it) and clears the snapshot on `dispose` (AppShell going away).
-  `Phase2Gate` also clears it on sign-out, account deletion and a refused session. Sign-out
+  `Phase2Gate`'s auth listener clears it, and ends the rest activity, on every signed-out
+  transition: sign-out, a refused session, and a deletion that settles after its sheet was closed
+  (Account then never calls the gate's sign-out). Nothing else clears it. Sign-out
   (`signOutAthlete`) and a refused session (`LocalAccountData.forgetSession`) forget the athlete's
   Lock Screen choice and the phone-wide key an earlier D2 build used; deleting the account removes
   both with the rest (`LocalAccountData.clear`). A saved check-in republishes the last brief at

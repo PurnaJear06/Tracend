@@ -249,9 +249,11 @@ void main() {
   }
 
   late FakeWorkoutActivityBridge liveActivity;
+  late FakeHomeWidgetBridge homeWidgets;
 
   Future<void> pumpGate(WidgetTester tester, _Server server) async {
     liveActivity = FakeWorkoutActivityBridge();
+    homeWidgets = FakeHomeWidgetBridge();
     await tester.pumpWidget(
       MaterialApp(
         theme: TracendTheme.light,
@@ -259,6 +261,7 @@ void main() {
           environment: _environment,
           client: server.client,
           liveActivity: liveActivity,
+          homeWidgets: homeWidgets,
         ),
       ),
     );
@@ -371,7 +374,8 @@ void main() {
       expect(server.client.auth.currentSession, isNull);
       expect(server.requests, isNot(contains('GET /rest/v1/user_accounts')));
       await expectAthleteDataCleared();
-      expect(liveActivity.methods, ['end']);
+      expect(liveActivity.methods, contains('end'));
+      expect(homeWidgets.calls, contains('clear'));
     });
 
     testWidgets(
@@ -393,7 +397,8 @@ void main() {
         expect(find.text('Connection needed'), findsNothing);
         expect(server.client.auth.currentSession, isNull);
         await expectAthleteDataKept();
-        expect(liveActivity.methods, ['end']);
+        expect(liveActivity.methods, contains('end'));
+        expect(homeWidgets.calls, contains('clear'));
       },
     );
 
@@ -413,6 +418,7 @@ void main() {
       expect(find.text('Connection needed'), findsOneWidget);
       expect(server.client.auth.currentSession, isNotNull);
       expect(liveActivity.calls, isEmpty);
+      expect(homeWidgets.calls, isEmpty);
       expect(
         await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
         isNotNull,
@@ -528,6 +534,112 @@ void main() {
 
       expect(find.byType(AiCoachingConsentScreen), findsOneWidget);
       expect(find.text('Allow AI coaching'), findsOneWidget);
+    });
+  });
+
+  group('widgets and the rest activity follow every sign-out', () {
+    late _Server server;
+
+    setUp(() async {
+      server = _Server()
+        ..answer('GET /auth/v1/user', 200, _user())
+        ..answer('GET /rest/v1/user_accounts', 200, {
+          'onboarding_state': 'in_progress',
+        })
+        ..answer('GET /rest/v1/onboarding_drafts', 200, <Object>[])
+        ..answer('GET /rest/v1/consent_records', 200, <Object>[])
+        ..answer('GET /rest/v1/deletion_requests', 200, <Object>[])
+        ..answer('POST /auth/v1/logout', 204, {});
+      await _storeSession(
+        server.client,
+        DateTime.now().add(const Duration(minutes: 50)),
+      );
+    });
+
+    /// Opens the gate with an athlete signed in, then forgets what opening
+    /// it did to the bridges so only the sign-out shows.
+    Future<void> openSignedIn(WidgetTester tester) async {
+      await pumpGate(tester, server);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      // The intro covers the app until it has played.
+      for (var second = 0; second < 6; second++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+      expect(find.byType(OnboardingFlow), findsOneWidget);
+      homeWidgets.calls.clear();
+      liveActivity.calls.clear();
+    }
+
+    /// Lets the auth event reach the gate and its bridge calls finish.
+    Future<void> settle(WidgetTester tester) async {
+      for (var round = 0; round < 3; round++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 100)),
+        );
+        await tester.pump(const Duration(seconds: 1));
+      }
+    }
+
+    testWidgets('the athlete signing out empties the widgets once', (
+      tester,
+    ) async {
+      await openSignedIn(tester);
+
+      await tester.tap(find.text('Sign out'));
+      await settle(tester);
+
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+      expect(homeWidgets.calls, ['clear']);
+      expect(liveActivity.methods, ['end']);
+      await expectWidgetChoiceForgotten();
+    });
+
+    testWidgets('a deletion settling after its sheet closed empties them', (
+      tester,
+    ) async {
+      await openSignedIn(tester);
+      homeWidgets.stored = {'local_date': '2026-10-18'};
+
+      // The sheet was dismissed mid-request, so Account never calls the
+      // gate's sign-out; the repository ends the session on its own.
+      server.answer('GET /auth/v1/user', 403, _userNotFound);
+      final outcome = await tester.runAsync(
+        () => SupabaseAccountDeletionRepository(server.client).confirm(),
+      );
+      await settle(tester);
+
+      expect(outcome, AccountDeletionOutcome.deleted);
+      expect(server.client.auth.currentSession, isNull);
+      expect(homeWidgets.stored, isNull);
+      expect(homeWidgets.calls, contains('clear'));
+      expect(liveActivity.methods, contains('end'));
+      await expectAthleteDataCleared();
+    });
+
+    testWidgets('a session Auth refuses while the app is open empties them', (
+      tester,
+    ) async {
+      await openSignedIn(tester);
+      homeWidgets.stored = {'local_date': '2026-10-18'};
+
+      server.answer('POST /auth/v1/token', 400, {
+        'code': 'refresh_token_not_found',
+        'msg': 'Invalid Refresh Token: Refresh Token Not Found',
+      });
+      await tester.runAsync(
+        () => server.client.auth.refreshSession().then<void>(
+          (_) {},
+          onError: (_) {},
+        ),
+      );
+      await settle(tester);
+
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+      expect(homeWidgets.stored, isNull);
+      expect(liveActivity.methods, contains('end'));
+      await expectAthleteDataKept();
     });
   });
 

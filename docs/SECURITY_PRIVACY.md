@@ -496,7 +496,8 @@ phone; the widgets never call the network and hold no token.
   check-in) once the phone is unlocked, and are marked `privacySensitive` so iOS redacts them where
   it hides sensitive content on a locked phone (StandBy). Removing the widget removes the exposure.
 - **Lifetime.** The snapshot is removed on sign-out, account deletion, a session Auth refused and
-  when the app's screens go away; widgets then read "Open Tracend to refresh". Deleting the
+  when the app's screens go away, on every signed-out transition whichever screen ended the
+  session (a deletion that settles after its sheet was closed included); widgets then read "Open Tracend to refresh". Deleting the
   account also removes the Lock Screen choice from the phone. Coming back to the app after half an
   hour, or on a new local day, reloads Today and writes a new snapshot; an old one is never
   written again. It is also treated as

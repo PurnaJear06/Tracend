@@ -137,8 +137,9 @@ sign-in**.
 
 `Launch → Restore session → Today`
 
-- Restore selected tab, scroll position, and safe in-progress drafts. Today the app always opens on
-  Today; an unfinished workout draft and an unsent check-in are kept per athlete and restored.
+- Restore selected tab, scroll position, and safe in-progress drafts. Today the app opens on Today,
+  or on Train when a tapped widget asked for it (below); an unfinished workout draft and an unsent
+  check-in are kept per athlete and restored.
   **Not built yet:** restoring the selected tab and scroll position.
 - Restoring asks Auth whether the account and session still exist; an access token alone stays
   valid for up to an hour after its account is deleted.
@@ -148,8 +149,9 @@ sign-in**.
 - A refused session for an account that may still exist keeps that athlete's unsent check-in and
   Apple Health sync state, stored per athlete so no other account can read them, for their next
   sign-in. When Auth says the account no longer exists, its local data is removed.
-- Resolve deep links only after authentication and authorization. The app handles no deep links
-  yet.
+- Resolve deep links only after authentication and authorization. The only links the app handles
+  are the widgets' `tracend://today` and `tracend://train` (§5, Widgets): they switch to that tab and do nothing else, the request waits a minute for the app
+  and then expires, and Flutter's own deep-link routing is off.
 
 ## 4. Onboarding
 

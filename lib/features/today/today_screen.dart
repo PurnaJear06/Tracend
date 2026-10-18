@@ -300,12 +300,18 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Which brief load started last. A load that finishes after a newer one
+  /// started (a slow request from before midnight, say) is ignored, so it
+  /// never overwrites the newer day's brief, gate or widgets.
+  int _briefLoads = 0;
+
   /// Loads the brief and, once it arrives, sets the check-in gate from it and
   /// hands it to the widgets.
   Future<DailyBrief> _loadBrief() {
+    final load = ++_briefLoads;
     final future = widget.brief.load(widget.clock());
     future.then((brief) {
-      if (!mounted) return;
+      if (!mounted || load != _briefLoads) return;
       _lastBrief = brief;
       _briefLoadedAt = widget.clock();
       _updateGate();
