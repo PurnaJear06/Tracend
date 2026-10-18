@@ -206,8 +206,11 @@ Island check passed on 2026-10-15. What exists:
   and `clear` answer a bool through Dart: a failed rewrite on opt-out removes the snapshot, a
   failed clear is tried twice; a clear that fails twice sets a phone-wide flag
   (`HomeWidgetEraser`, preference `home_widgets_clear_pending`) that is retried on every launch and
-  resume, blocks any new publish while set, and makes an opt-out that cannot remove the numbers
-  report failure: the switch stays On with a toast. The widget extension reads an empty or
+  resume until it works or a successful write replaces the file (`settle`); a retry that works makes
+  the publisher write its last snapshot again. An opt-out is saved as Off first; if the old numbers
+  cannot be removed the switch still reads Off and a toast says the app is retrying. `Phase2Gate`
+  owns the eraser and hands it to `AppShell`, so the retry and the publisher share it.
+  `TodayWidgetStore` also deletes leftover `.today_widget_snapshot.json.*.tmp` files on write and clear. The widget extension reads an empty or
   unreadable file as no data (`TodayWidgetStore.read`; `testAnEmptyFileIsNoData`).
   `RunnerTests` loads the snapshot fixture as a bundle resource.
   Nothing else clears it. Sign-out

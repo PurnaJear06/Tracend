@@ -504,8 +504,12 @@ phone; the widgets never call the network and hold no token.
   written again. It is also treated as
   stale after 12 hours or on another day: no number is drawn from it. A removal the system refuses
   empties the file instead (an empty file is no snapshot) and is tried twice. A clear that fails
-  both times is remembered on the phone and tried again on every launch and resume; until it works
-  nothing new is published, and an opt-out that could not remove the numbers stays On.
+  both times is remembered on the phone and tried again on every launch and resume, until it works
+  or a new snapshot is written over the old file. An opt-out is always saved as Off, so no snapshot
+  written later has numbers; if the numbers already in the file could not be removed, the switch
+  still reads Off, a message says the app is retrying, and the retry removes them (the widgets
+  then get a fresh snapshot without numbers). Leftover temporary files of an interrupted write are
+  deleted on every write and clear.
 - **Deep links.** `tracend://today` and `tracend://train` only switch tab; the native side accepts
   nothing else, and Flutter's own deep-link routing is off (`FlutterDeepLinkingEnabled` = NO). A
   request waits a minute for the app and then expires.

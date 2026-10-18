@@ -190,8 +190,9 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   }
 
   /// Ends the rest's Live Activity and empties the widgets. Runs on every
-  /// signed-out transition and is the only place that does (a launch with no
-  /// session retries the widgets' part).
+  /// signed-out transition, whichever screen ended the session. (The shell's
+  /// publisher also clears the snapshot as it goes away; both go through the
+  /// same eraser logic, and a launch with no session clears again.)
   void _clearSessionOutputs() {
     unawaited(widget.liveActivity.end());
     unawaited(_emptyWidgets());
@@ -229,6 +230,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _authEvents?.cancel();
+    _widgetEraser.dispose();
     _aiConsent?.dispose();
     super.dispose();
   }
@@ -305,6 +307,7 @@ class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
       aiConsent: aiConsent,
       health: health,
       homeWidgets: widget.homeWidgets,
+      widgetEraser: _widgetEraser,
       userId: _userId,
     );
   }

@@ -29,6 +29,7 @@ import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
+import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/plan_changes.dart';
 
@@ -40,6 +41,7 @@ class AppShell extends StatefulWidget {
     this.health,
     this.repositories,
     this.homeWidgets = const MethodChannelHomeWidgetBridge(),
+    this.widgetEraser,
     this.userId,
     super.key,
   });
@@ -63,6 +65,11 @@ class AppShell extends StatefulWidget {
   /// The Home Screen and Lock Screen widgets: Today writes their snapshot
   /// here, and a tap on a widget asks this shell for a tab.
   final HomeWidgetBridge homeWidgets;
+
+  /// The one eraser that retries a failed clear of the widgets' snapshot on
+  /// launch and resume; its publisher writes again once a retry works. Built
+  /// here when not given.
+  final HomeWidgetEraser? widgetEraser;
 
   /// The signed-in athlete, whose Lock Screen widget choice the widgets
   /// follow; null without a backend.
@@ -135,6 +142,7 @@ class _AppShellState extends State<AppShell> {
   /// Writes Today's snapshot for the widgets and keeps the Lock Screen choice.
   late final TodayWidgetPublisher _widgetPublisher = TodayWidgetPublisher(
     bridge: widget.homeWidgets,
+    eraser: widget.widgetEraser,
     userId: widget.userId,
   );
 

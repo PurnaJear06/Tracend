@@ -192,35 +192,36 @@ void main() {
       expect(find.textContaining('show while the phone is locked'), findsOne);
     });
 
-    testWidgets('a removal that fails keeps the switch on and says so', (
-      tester,
-    ) async {
-      final publisher = await pumpAccount(tester);
-      await publisher.publish(
-        brief: DailyBrief(localDate: '2026-10-18'),
-        targets: null,
-        checkedIn: true,
-      );
-      await publisher.setLockScreenNumbers(true);
-      await tester.scrollUntilVisible(
-        find.text('Health numbers on the Lock Screen'),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(tester.widget<Switch>(find.byType(Switch).last).value, isTrue);
+    testWidgets(
+      'a removal that fails leaves the switch off and says what is happening',
+      (tester) async {
+        final publisher = await pumpAccount(tester);
+        await publisher.publish(
+          brief: DailyBrief(localDate: '2026-10-18'),
+          targets: null,
+          checkedIn: true,
+        );
+        await publisher.setLockScreenNumbers(true);
+        await tester.scrollUntilVisible(
+          find.text('Health numbers on the Lock Screen'),
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(tester.widget<Switch>(find.byType(Switch).last).value, isTrue);
 
-      bridge
-        ..failWrites = true
-        ..failClears = 2;
-      await tester.ensureVisible(find.byType(Switch).last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byType(Switch).last);
-      await tester.pumpAndSettle();
+        bridge
+          ..failWrites = true
+          ..failClears = 2;
+        await tester.ensureVisible(find.byType(Switch).last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(Switch).last);
+        await tester.pumpAndSettle();
 
-      expect(tester.widget<Switch>(find.byType(Switch).last).value, isTrue);
-      expect(find.textContaining('Could not turn Lock Screen'), findsOneWidget);
-      expect(await publisher.lockScreenNumbers(), isTrue);
-    });
+        expect(tester.widget<Switch>(find.byType(Switch).last).value, isFalse);
+        expect(find.textContaining('Numbers are off'), findsOneWidget);
+        expect(await publisher.lockScreenNumbers(), isFalse);
+      },
+    );
 
     testWidgets('without widgets there is no Widgets section', (tester) async {
       _phone(tester);

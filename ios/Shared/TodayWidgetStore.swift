@@ -37,6 +37,8 @@ enum TodayWidgetStore {
   /// left behind then.
   static func write(json: Data) -> Bool {
     guard let url = fileURL else { return false }
+    // A write that was cut short can leave its temporary file behind.
+    removeLeftovers(in: url.deletingLastPathComponent())
     var temporary = url.deletingLastPathComponent()
       .appendingPathComponent(".\(fileName).\(UUID().uuidString).tmp")
     do {
@@ -64,21 +66,39 @@ enum TodayWidgetStore {
     return true
   }
 
-  /// Removes the stored snapshot. When it cannot be removed, the file is
+  /// Removes the stored snapshot and any temporary file a cut-short write
+  /// left beside it. When the snapshot cannot be removed, the file is
   /// overwritten with nothing, which no widget can read as a snapshot. False
-  /// only when the old data may still be readable; true also when nothing
-  /// was stored or shared.
+  /// only when old data may still be readable; true also when nothing was
+  /// stored or shared.
   @discardableResult
   static func clear() -> Bool {
-    guard let url = fileURL, FileManager.default.fileExists(atPath: url.path) else {
-      return true
-    }
+    guard let url = fileURL else { return true }
+    var cleared = removeLeftovers(in: url.deletingLastPathComponent())
+    guard FileManager.default.fileExists(atPath: url.path) else { return cleared }
     do {
       try FileManager.default.removeItem(at: url)
-      return true
     } catch {
-      return (try? Data().write(to: url)) != nil
+      cleared = ((try? Data().write(to: url)) != nil) && cleared
     }
+    return cleared
+  }
+
+  /// Deletes the temporary files `write` makes beside the snapshot
+  /// (`.today_widget_snapshot.json.<id>.tmp`). False if one could not be
+  /// removed.
+  @discardableResult
+  static func removeLeftovers(in directory: URL) -> Bool {
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+    var removed = true
+    for name in names where name.hasPrefix(".\(fileName).") && name.hasSuffix(".tmp") {
+      do {
+        try FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+      } catch {
+        removed = false
+      }
+    }
+    return removed
   }
 }
 

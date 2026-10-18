@@ -7,9 +7,11 @@ import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
 /// A clear is tried twice. When both fail, old data may still be readable,
 /// so a flag is kept on the phone (for the phone, not for an athlete: a
 /// signed-out athlete's snapshot is the next person's problem too) and the
-/// clear is tried again on every launch and resume until it works. While the
-/// flag is set nothing new is published (`TodayWidgetPublisher`).
-class HomeWidgetEraser {
+/// clear is tried again on every launch and resume until it works. A retry
+/// that works tells its listeners (the publisher, which writes its last
+/// snapshot again), and a snapshot written over the old file settles the
+/// flag too ([settle]).
+class HomeWidgetEraser extends ChangeNotifier {
   HomeWidgetEraser(this._bridge, {SharedPreferencesAsync? preferences})
     : _preferences = preferences;
 
@@ -18,6 +20,13 @@ class HomeWidgetEraser {
 
   final HomeWidgetBridge _bridge;
   final SharedPreferencesAsync? _preferences;
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
 
   SharedPreferencesAsync get _store => _preferences ?? SharedPreferencesAsync();
 
@@ -48,7 +57,20 @@ class HomeWidgetEraser {
   }
 
   /// Tries a clear that failed earlier; does nothing when none is pending.
+  /// Listeners hear when it worked, so the widgets get a snapshot again.
   Future<void> retryPending() async {
-    if (await isPending()) await erase();
+    if (!await isPending()) return;
+    if (await erase() && !_disposed) notifyListeners();
+  }
+
+  /// A snapshot was written over the old file, so nothing old is left to
+  /// clear.
+  Future<void> settle() async {
+    if (!await isPending()) return;
+    try {
+      await _store.remove(pendingKey);
+    } catch (e) {
+      debugPrint('Non-critical error: widget clear flag not saved: $e');
+    }
   }
 }

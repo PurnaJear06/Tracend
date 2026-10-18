@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
@@ -152,47 +154,100 @@ void main() {
     expect(bridge.calls.where((call) => call == 'clear'), hasLength(2));
   });
 
-  test('a removal that fails twice keeps the choice on and is kept', () async {
-    await publish();
-    await publisher.setLockScreenNumbers(true);
+  test('an opt-out whose removal fails twice is saved and retried', () async {
+    final eraser = HomeWidgetEraser(
+      bridge,
+      preferences: SharedPreferencesAsync(),
+    );
+    final shared = TodayWidgetPublisher(
+      bridge: bridge,
+      preferences: SharedPreferencesAsync(),
+      eraser: eraser,
+      clock: () => now,
+    );
+    await shared.publish(brief: _brief(), targets: _targets, checkedIn: true);
+    await shared.setLockScreenNumbers(true);
+    expect(bridge.stored!['lock'], isNotNull);
 
     bridge
       ..failWrites = true
       ..failClears = 2;
-    final applied = await publisher.setLockScreenNumbers(false);
+    final removed = await shared.setLockScreenNumbers(false);
 
-    // The snapshot still holds the numbers, so Off must not be reported.
-    expect(applied, isFalse);
-    expect(await publisher.lockScreenNumbers(), isTrue);
+    // The old numbers are still readable, so the athlete is told; but the
+    // choice is Off for good and a retry is waiting.
+    expect(removed, isFalse);
+    expect(await shared.lockScreenNumbers(), isFalse);
     expect(bridge.stored!['lock'], isNotNull);
-    expect(await HomeWidgetEraser(bridge).isPending(), isTrue);
+    expect(await eraser.isPending(), isTrue);
+
+    // The next resume's retry works; the widgets get a snapshot again, and
+    // it has no lock section.
+    bridge.failWrites = false;
+    await eraser.retryPending();
+    await pumpEventQueue();
+    expect(await eraser.isPending(), isFalse);
+    expect(bridge.stored!['lock'], isNull);
+
+    await shared.publish(
+      brief: _brief(protein: 120),
+      targets: _targets,
+      checkedIn: true,
+    );
+    expect(bridge.stored!['lock'], isNull);
     final next = TodayWidgetPublisher(
       bridge: bridge,
       preferences: SharedPreferencesAsync(),
       clock: () => now,
     );
-    expect(await next.lockScreenNumbers(), isTrue);
+    expect(await next.lockScreenNumbers(), isFalse);
   });
 
-  test('nothing is published while a clear is pending', () async {
-    bridge.failClears = 2;
-    await publish();
-    await publisher.dispose();
-    expect(await HomeWidgetEraser(bridge).isPending(), isTrue);
+  test(
+    'a snapshot written over the old file settles a pending clear',
+    () async {
+      bridge.failClears = 2;
+      await publish();
+      await publisher.dispose();
+      expect(await HomeWidgetEraser(bridge).isPending(), isTrue);
 
-    final writes = bridge.writes;
-    final again = TodayWidgetPublisher(
+      final again = TodayWidgetPublisher(
+        bridge: bridge,
+        preferences: SharedPreferencesAsync(),
+        clock: () => now,
+      );
+      await again.publish(brief: _brief(), targets: _targets, checkedIn: true);
+
+      expect(bridge.stored, isNotNull);
+      expect(await HomeWidgetEraser(bridge).isPending(), isFalse);
+    },
+  );
+
+  test('a publish still reading the choice when the app screens go away '
+      'writes nothing', () async {
+    final held = _HeldPreferences();
+    SharedPreferencesAsyncPlatform.instance = held;
+    final slow = TodayWidgetPublisher(
       bridge: bridge,
       preferences: SharedPreferencesAsync(),
       clock: () => now,
     );
-    await again.publish(brief: _brief(), targets: _targets, checkedIn: true);
-    expect(bridge.writes, writes);
+    held.hold = Completer<void>();
 
-    await HomeWidgetEraser(bridge).retryPending();
-    await again.publish(brief: _brief(), targets: _targets, checkedIn: true);
-    expect(bridge.writes, writes + 1);
-    expect(bridge.stored, isNotNull);
+    final publishing = slow.publish(
+      brief: _brief(),
+      targets: _targets,
+      checkedIn: true,
+    );
+    await slow.dispose();
+    expect(bridge.calls, ['clear']);
+
+    held.hold!.complete();
+    await publishing;
+    await pumpEventQueue();
+
+    expect(bridge.calls, ['clear']);
+    expect(bridge.stored, isNull);
   });
 
   test('a failed write is tried again by the next load', () async {
@@ -275,4 +330,17 @@ void main() {
     expect(bridge.stored, isNull);
     expect(bridge.calls.last, 'clear');
   });
+}
+
+/// Answers every read only once [hold] completes, as a slow store would.
+base class _HeldPreferences extends InMemorySharedPreferencesAsync {
+  _HeldPreferences() : super.empty();
+
+  Completer<void>? hold;
+
+  @override
+  Future<bool?> getBool(String key, SharedPreferencesOptions options) async {
+    await hold?.future;
+    return super.getBool(key, options);
+  }
 }

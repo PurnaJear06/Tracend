@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -24,12 +25,15 @@ class TodayWidgetPublisher {
     required HomeWidgetBridge bridge,
     String? userId,
     SharedPreferencesAsync? preferences,
+    HomeWidgetEraser? eraser,
     DateTime Function() clock = DateTime.now,
   }) : _bridge = bridge,
        _key = lockScreenNumbersKeyFor(userId),
-       _eraser = HomeWidgetEraser(bridge, preferences: preferences),
+       _eraser = eraser ?? HomeWidgetEraser(bridge, preferences: preferences),
        _preferences = preferences,
-       _clock = clock;
+       _clock = clock {
+    _eraser.addListener(_republish);
+  }
 
   /// The key an earlier build kept one choice under for the whole phone. It
   /// is never read for a signed-in athlete; sign-out removes it.
@@ -71,29 +75,26 @@ class TodayWidgetPublisher {
     return _lockScreenNumbers ??= stored;
   }
 
-  /// Saves the choice and redraws the widgets with it. Turning numbers off
-  /// never leaves them readable: without a loaded Today to rebuild from, or
-  /// when the rewrite fails, the stored snapshot is removed instead. If even
-  /// that fails the choice stays on and this answers false (the removal is
-  /// retried on every launch and resume, `HomeWidgetEraser`).
+  /// Saves the choice and redraws the widgets with it. The choice is saved
+  /// first, so no snapshot written later has numbers the athlete turned off.
+  /// Turning numbers off never leaves the old ones readable: without a loaded
+  /// Today to rebuild from, or when the rewrite fails, the stored snapshot is
+  /// removed instead. False when even that failed: the old numbers may still
+  /// be readable, and the removal is retried on every launch and resume
+  /// (`HomeWidgetEraser`).
   Future<bool> setLockScreenNumbers(bool shown) async {
-    final before = await lockScreenNumbers();
     _lockScreenNumbers = shown;
-    final latest = _latest;
-    final written = latest != null && await _write(latest, force: true);
-    if (!shown && !written) {
-      _forget();
-      if (!await _eraser.erase()) {
-        _lockScreenNumbers = before;
-        return false;
-      }
-    }
     try {
       await (_preferences ?? SharedPreferencesAsync()).setBool(_key, shown);
     } catch (e) {
       debugPrint('Non-critical error: widget setting not saved: $e');
     }
-    return true;
+    final latest = _latest;
+    final written = latest != null && await _write(latest, force: true);
+    if (shown || written) return true;
+    _writtenKey = null;
+    _writtenAt = null;
+    return _eraser.erase();
   }
 
   /// Writes the snapshot of the Today that just loaded.
@@ -113,9 +114,9 @@ class TodayWidgetPublisher {
     bool force = false,
   }) async {
     final shown = await lockScreenNumbers();
+    // The rest runs without waiting until the snapshot is sent, so a
+    // dispose that came while the choice was read is seen here.
     if (_disposed) return true;
-    // Nothing new while old data could still be readable.
-    if (await _eraser.isPending()) return false;
     final now = _clock();
     final snapshot = TodayWidgetSnapshot.build(
       brief: latest.brief,
@@ -138,8 +139,19 @@ class TodayWidgetPublisher {
       // Whatever is stored is not this snapshot, so the next load writes.
       _writtenKey = null;
       _writtenAt = null;
+    } else if (!_disposed) {
+      // The new file replaced whatever an earlier clear could not remove.
+      await _eraser.settle();
     }
     return stored;
+  }
+
+  /// A clear that failed earlier worked on a retry and took the snapshot
+  /// with it: write the last one again.
+  void _republish() {
+    final latest = _latest;
+    if (_disposed || latest == null) return;
+    unawaited(_write(latest, force: true));
   }
 
   void _forget() {
@@ -152,6 +164,7 @@ class TodayWidgetPublisher {
   /// screens (sign-out, account deletion), so no widget keeps their day.
   Future<void> dispose() async {
     _disposed = true;
+    _eraser.removeListener(_republish);
     _forget();
     await _eraser.erase();
   }

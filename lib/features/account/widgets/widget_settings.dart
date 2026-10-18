@@ -39,12 +39,12 @@ class _WidgetSettingsState extends State<WidgetSettings> {
     unawaited(TracendHaptics.light());
     final applied = await widget.publisher.setLockScreenNumbers(shown);
     if (applied || !mounted) return;
-    // The numbers could not be taken off the Lock Screen yet: the switch
-    // stays On and Tracend tries again until they are gone.
-    setState(() => _shown = !shown);
+    // The switch is off for good, but the numbers already on the Lock Screen
+    // could not be removed yet; Tracend retries until they are gone.
     TracendToast.show(
       context,
-      'Could not turn Lock Screen numbers off yet. Tracend will keep trying.',
+      'Numbers are off. Tracend could not remove the old ones from the Lock '
+      'Screen yet and is retrying.',
       icon: CupertinoIcons.exclamationmark_triangle,
     );
   }

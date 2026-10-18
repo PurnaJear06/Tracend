@@ -184,6 +184,25 @@ final class TodayWidgetSnapshotTests: XCTestCase {
     XCTAssertNil(TodayWidgetSnapshot.decode(Data("{}".utf8)))
   }
 
+  /// A write cut short leaves a hidden temporary file; clearing takes it,
+  /// and nothing else in the directory.
+  func testLeftoverTemporaryFilesAreRemoved() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("widget-store-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let leftover = directory.appendingPathComponent(
+      ".\(TodayWidgetStore.fileName).\(UUID().uuidString).tmp")
+    let other = directory.appendingPathComponent("other.json")
+    try Data("{}".utf8).write(to: leftover)
+    try Data("{}".utf8).write(to: other)
+
+    XCTAssertTrue(TodayWidgetStore.removeLeftovers(in: directory))
+
+    XCTAssertFalse(FileManager.default.fileExists(atPath: leftover.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: other.path))
+  }
+
   /// A cleared snapshot that could not be removed is an empty file; the
   /// widgets read it as no data, so they ask the athlete to open the app.
   func testAnEmptyFileIsNoData() {
