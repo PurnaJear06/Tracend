@@ -1,4 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.14";
+import { screenMessage } from "../coach_safety/red_flags.ts";
 import {
   isFollowUp,
   libraryRetrievalQuery,
@@ -103,4 +104,40 @@ Deno.test("earlier questions come from the athlete's messages, newest first", ()
   ]);
   assertEquals(previousQuestionsOf({}, "Hello"), []);
   assertEquals(previousQuestionsOf({ recent_messages: "nope" }, "Hello"), []);
+});
+
+Deno.test("a question that reported a symptom never lends its words to a follow-up", () => {
+  const symptom = "I get chest pain when I squat heavy";
+  assertEquals(screenMessage(symptom) !== null, true);
+  const query = libraryRetrievalQuery("And on rest days?", [
+    symptom,
+    "How much protein should I eat per day to build muscle?",
+  ]);
+  assertEquals(
+    query.text,
+    "And on rest days? How much protein should I eat per day to build muscle?",
+  );
+  // With nothing else to borrow, the follow-up is searched as it stands.
+  assertEquals(libraryRetrievalQuery("And on rest days?", [symptom]), {
+    text: "And on rest days?",
+    rewritten: false,
+  });
+  // The fallback to a follow-up of its own skips it too.
+  assertEquals(
+    libraryRetrievalQuery("Why?", [symptom, "Is that enough?"]).text,
+    "Why? Is that enough?",
+  );
+});
+
+Deno.test("a question that starts with why or how come has a topic of its own", () => {
+  for (
+    const question of [
+      "Why does creatine make me retain water?",
+      "How come my squat stalls every week?",
+      "Why should I rest between sets?",
+    ]
+  ) assertEquals(isFollowUp(question), false, question);
+  // Alone, with nothing else said, it still depends on the question before.
+  assertEquals(isFollowUp("Why?"), true);
+  assertEquals(isFollowUp("And why?"), true);
 });

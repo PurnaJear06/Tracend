@@ -1,4 +1,4 @@
-import type { CoachContextContributor } from "../coach_context/host.ts";
+import type { CoachContextContributor, RenderedBlock, ShownSource } from "../coach_context/host.ts";
 import { type Embedder } from "./embedder.ts";
 import { libraryRetrievalQuery } from "./query.ts";
 
@@ -14,10 +14,18 @@ export const libraryContributorId = "library";
 export const libraryMatchCount = 8;
 /** About 2,300 tokens. The average chunk is 600 characters, so eight rarely come near it. */
 export const libraryBudgetChars = 9_000;
+/**
+ * The most the question's embedding may take. A cold gte-small load can run far past it, and the
+ * host drops the whole block at 4 seconds; past this the search runs on the words alone.
+ */
+export const libraryEmbedDeadlineMs = 1_500;
 
 /** One chunk the search returned. */
 export type LibraryRow = Readonly<{
   sourceId: string;
+  /** The source's title and year, which label a citation of it. */
+  title: string;
+  year: number | null;
   header: string;
   body: string;
 }>;
@@ -35,21 +43,23 @@ export type LibrarySearch = (request: LibrarySearchRequest) => Promise<readonly 
 
 const sourceIdPattern = /^[a-z0-9][a-z0-9_.-]{0,119}$/;
 
-/** The marker that starts a chunk in the block; the citation guard reads the ids back from it. */
+/** The marker that starts a chunk in the block, so Coach can name the source it relies on. */
 const chunkMarker = (key: string) => `[source: ${key}]`;
 
 const intro =
   "Research library excerpts found for this question, each starting with its source id in square brackets. Cite a source only by an id listed here. A figure in an excerpt is guidance from that source, never the athlete's own number.";
 
 /**
- * The block's text: the introduction, then as many chunks as fit the budget, best first. Whole
- * chunks only, so the host never has to cut one. Null when there is nothing to show.
+ * The block: the introduction, then as many chunks as fit the budget, best first, with the sources
+ * they came from. Whole chunks only, so the host never has to cut one. Null when there is nothing
+ * to show.
  */
 export function renderLibraryChunks(
   rows: readonly LibraryRow[],
   budgetChars: number = libraryBudgetChars,
-): string | null {
+): RenderedBlock | null {
   const blocks: string[] = [];
+  const shown: Record<string, ShownSource> = {};
   let used = intro.length;
   for (const row of rows) {
     if (!sourceIdPattern.test(row.sourceId)) continue;
@@ -57,8 +67,19 @@ export function renderLibraryChunks(
     if (used + block.length + 2 > budgetChars) break;
     blocks.push(block);
     used += block.length + 2;
+    const earlier = shown[row.sourceId];
+    shown[row.sourceId] = {
+      label: earlier?.label ?? citationLabel(row),
+      text: earlier ? `${earlier.text}\n${block}` : block,
+    };
   }
-  return blocks.length === 0 ? null : `${intro}\n\n${blocks.join("\n\n")}`;
+  return blocks.length === 0 ? null : { text: `${intro}\n\n${blocks.join("\n\n")}`, shown };
+}
+
+/** "Title (year)", cut to the evidence label limit. */
+function citationLabel(row: LibraryRow): string {
+  const year = row.year === null ? "" : ` (${row.year})`;
+  return `${row.title.slice(0, 380 - year.length)}${year}`;
 }
 
 /** Contributor wiring: how the question becomes an embedding and how the search runs. */
@@ -66,7 +87,9 @@ export type LibraryContributorDeps = Readonly<{
   embed: () => Embedder;
   search: LibrarySearch;
   /** Told (by code, never by content) when retrieval ran without its embedding. */
-  degraded?: (code: "embedding_unavailable") => void;
+  degraded?: (code: "embedding_unavailable" | "embedding_timeout") => void;
+  /** How long the embedding may take; defaults to `libraryEmbedDeadlineMs`. */
+  embedDeadlineMs?: number;
 }>;
 
 export function createLibraryContributor(deps: LibraryContributorDeps): CoachContextContributor {
@@ -77,10 +100,24 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
     async render(input) {
       const query = libraryRetrievalQuery(input.question, input.previousQuestions ?? []);
       let embedding: number[] | null = null;
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        embedding = await deps.embed()(query.text);
+        const pending = Promise.resolve().then(() => deps.embed()(query.text));
+        // A late failure of an abandoned embedding must not surface as an unhandled rejection.
+        pending.catch(() => {});
+        const timedOut = new Promise<"timeout">((resolve) => {
+          timer = setTimeout(
+            () => resolve("timeout"),
+            deps.embedDeadlineMs ?? libraryEmbedDeadlineMs,
+          );
+        });
+        const result = await Promise.race([pending, timedOut]);
+        if (result === "timeout") deps.degraded?.("embedding_timeout");
+        else embedding = result;
       } catch {
         deps.degraded?.("embedding_unavailable");
+      } finally {
+        clearTimeout(timer);
       }
       const rows = await deps.search({
         userId: input.userId,
@@ -94,27 +131,6 @@ export function createLibraryContributor(deps: LibraryContributorDeps): CoachCon
 }
 
 // ---- citations ----------------------------------------------------------------------------
-
-const libraryBlock = /<reference_data source="library">([\s\S]*?)<\/reference_data>/;
-const chunkStart = /^\[source: ([a-z0-9][a-z0-9_.-]{0,119})\]/gm;
-
-/** The source ids in the library block of a text, read back from the markers `renderLibraryChunks` writes. */
-export function shownLibraryKeys(text: string | undefined): ReadonlySet<string> {
-  const block = libraryBlock.exec(text ?? "");
-  if (!block) return new Set();
-  return new Set([...block[1].matchAll(chunkStart)].map((match) => match[1]));
-}
-
-/**
- * The source ids Coach was shown this turn. The library renders in the volatile part of the
- * prompt; the stable part is read too, so the head-to-head evaluation can put the whole library
- * in the cached prefix and be graded by the same guard.
- */
-export function shownLibraryKeysIn(
-  contributions: Readonly<{ stable: string; volatile: string }> | null | undefined,
-): ReadonlySet<string> {
-  return shownLibraryKeys(`${contributions?.stable ?? ""}\n${contributions?.volatile ?? ""}`);
-}
 
 // A manifest key reads author_year_topic (for example schoenfeld_2017_weekly_volume): lower-case
 // words joined by underscores around a four-digit year, in square brackets.

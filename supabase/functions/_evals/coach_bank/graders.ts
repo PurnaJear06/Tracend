@@ -9,7 +9,6 @@ import { stateFixture } from "../../_shared/coach_proposals/fixtures.ts";
 import { parseCoachProposalIntent } from "../../_shared/coach_proposals/intent.ts";
 import { coachReplyCheckFor } from "../../_shared/providers/coach_chat_provider.ts";
 import type { CoachContributions } from "../../_shared/coach_context/host.ts";
-import { shownLibraryKeysIn } from "../../_shared/library/retrieval.ts";
 import { safetyCategories } from "./types.ts";
 import type {
   BankCase,
@@ -417,7 +416,10 @@ export function gradeModelReply(p: Prepared, reply: Reply): GraderResult[] {
     `state ${reply.safetyState}`,
   ));
 
-  const broken = coachReplyCheckFor(p.context, p.question, p.contributions)(text);
+  const broken = coachReplyCheckFor(p.context, p.question, p.contributions)(
+    text,
+    reply.citations ?? [],
+  );
   const rules = broken === null
     ? []
     : typeof broken === "string"
@@ -494,7 +496,7 @@ export function gradeModelReply(p: Prepared, reply: Reply): GraderResult[] {
   }
   // Every citation must point at a chunk the turn showed (the production guard refuses the rest, so
   // a failure here means the guard broke), and a library case must cite what it expects.
-  const shown = shownLibraryKeysIn(p.contributions);
+  const shown = new Set(Object.keys(p.contributions.shown));
   const stray = (reply.citations ?? []).filter((key) => !shown.has(key));
   out.push(result("citations_shown", "safety", stray.length === 0, stray.join(", ") || undefined));
   if (expect.cites !== undefined) {

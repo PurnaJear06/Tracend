@@ -1068,7 +1068,9 @@ and shows Coach the chunks it found. The library never decides a number; it grou
 - **Retrieval.** The `library` contributor (`_shared/library/retrieval.ts`, registered last, volatile
   slot) builds the query from the athlete's question; a follow-up with no topic of its own ("And on
   rest days?", "Is that enough?") gets the topic of the athlete's last real question added
-  (`_shared/library/query.ts`, deterministic, no model call). It embeds the query with `gte-small`
+  (`_shared/library/query.ts`, deterministic, no model call; an earlier question that reported a
+  symptom, and "Why?" or "How come ..." with a topic of its own, do not count as a follow-up topic). It
+  embeds the query with `gte-small`
   (the same model that embedded the chunks; the Edge runtime provides it) and calls
   `search_library_v2` with the athlete's id, so the search is limited to global sources and the
   sources for the athlete's country (an `IN` source reaches only athletes in India; DATA_MODEL.md
@@ -1077,7 +1079,9 @@ and shows Coach the chunks it found. The library never decides a number; it grou
 - **When retrieval does not happen or fails.** A red-flag turn (a symptom, or a training question
   on a pain day) is answered by the fixed referral and retrieves nothing. The contributor runs
   inside the host's 4-second limit; a search that fails or is slow leaves the library out and Coach
-  answers without it, and a question that cannot be embedded is searched by its words alone. Today's
+  answers without it. The embedding has its own deadline of 1.5 seconds: if it takes longer (a cold
+  model load) or fails, the search runs on the question's words alone (logged
+  `library_retrieval_degraded`) instead of the whole block being dropped at the host's limit. Today's
   DeepSeek path has neither the evidence field nor the block, so it does not retrieve.
 - **Precedence.** Tracend's calculations, then the athlete's confirmed facts, then what the athlete
   said, then the library. The rules tell Coach that where an excerpt disagrees with the plan, the
@@ -1091,9 +1095,17 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   id printed in the text that was not shown (Coach is told not to print ids). A turn with no
   retrieved chunk accepts no library citation at all. The refusal is repaired once with the rule
   named; a second failure ends in the labelled data summary, like every other rule.
-- **Numbers.** The retrieved block is a contributor block, so the numbers check treats its figures
-  as given (a guideline figure quoted from a shown excerpt passes); a figure that no excerpt and
-  nothing else holds is still refused.
+- **Numbers.** The library is kept out of the main numbers ground. A figure that only the library
+  holds is accepted only when the reply cites, in `evidence`, the source whose shown chunks contain
+  it (`coachReplyCheckFor` passes the cited ids to the check). In a sentence that states the
+  athlete's own target or tells them what to do ("your target is ...", "you should eat ...", "aim
+  for ...", "cut ... a day": `statesOwnTarget` in `reply_guard.ts`), the numbers must come from the
+  athlete's data and Tracend's calculations alone, never from the library and never from the
+  coaching principles digest, which grounds only general guidance. A figure nothing holds is
+  refused as before (`numbers_not_grounded`).
+- **Labels.** The label of a `library` citation is written by the server from the retrieved source's
+  title and year, keyed by the source id; what the model wrote is discarded, so a claim cannot be
+  attributed to a source under another name.
 - **No memory from the model.** The rules tell Coach not to write that research shows something no
   excerpt supports and not to fill a gap from memory: it says what the library does not cover.
 - **Observability.** The contributor's outcome (rendered, empty, failed, timeout) is logged with

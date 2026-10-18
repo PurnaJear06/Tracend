@@ -21,6 +21,21 @@ export type CoachContextInput = Readonly<{
   previousQuestions?: readonly string[];
 }>;
 
+/** A library source Coach was shown this turn: what a reply's evidence may cite, and how it reads. */
+export type ShownSource = Readonly<{
+  /** The label the app shows for a citation of this source: the retrieved title and year. */
+  label: string;
+  /** The text of the chunks shown for it; a figure in a reply is grounded by it only when cited. */
+  text: string;
+}>;
+
+/** A contributor's text with what it showed, for a contributor that shows citable sources. */
+export type RenderedBlock = Readonly<{
+  text: string;
+  /** Library sources shown in the text, by source id (E3). */
+  shown: Readonly<Record<string, ShownSource>>;
+}>;
+
 export type CoachContextContributor = Readonly<{
   /** Lower-case id, e.g. "library" or "heart_rate_profile"; unique in the registry. */
   id: string;
@@ -29,7 +44,7 @@ export type CoachContextContributor = Readonly<{
   /** Most characters of the contributor's own text; longer text is clipped. */
   budgetChars: number;
   /** The contributor's text, or null when it has nothing for this question. */
-  render(input: CoachContextInput): Promise<string | null>;
+  render(input: CoachContextInput): Promise<string | RenderedBlock | null>;
 }>;
 
 /** What happened to one contributor this turn; logged, never shown to the athlete. */
@@ -47,12 +62,18 @@ export type CoachContributions = Readonly<{
   /** Labelled blocks of the volatile contributors, in registry order; "" when none rendered. */
   volatile: string;
   outcomes: readonly CoachContextOutcome[];
+  /** Each rendered contributor's text (clipped, without its label), by contributor id. */
+  texts: Readonly<Record<string, string>>;
+  /** The library sources shown this turn, by source id; none when no contributor showed any. */
+  shown: Readonly<Record<string, ShownSource>>;
 }>;
 
 export const noCoachContributions: CoachContributions = Object.freeze({
   stable: "",
   volatile: "",
   outcomes: Object.freeze([]),
+  texts: Object.freeze({}),
+  shown: Object.freeze({}),
 });
 
 /** How long one contributor may take before the turn goes on without it. */
@@ -113,7 +134,12 @@ function label(id: string, text: string): string {
     `${text}\n</reference_data>`;
 }
 
-type Rendered = Readonly<{ outcome: CoachContextOutcome; block: string | null }>;
+type Rendered = Readonly<{
+  outcome: CoachContextOutcome;
+  block: string | null;
+  text?: string;
+  shown?: RenderedBlock["shown"];
+}>;
 
 async function renderOne(
   contributor: CoachContextContributor,
@@ -126,8 +152,9 @@ async function renderOne(
     timer = setTimeout(() => resolve("timeout"), timeoutMs);
   });
   try {
-    const text = await Promise.race([contributor.render(input), timedOut]);
-    if (text === "timeout") return { outcome: { ...base, outcome: "timeout" }, block: null };
+    const rendered = await Promise.race([contributor.render(input), timedOut]);
+    if (rendered === "timeout") return { outcome: { ...base, outcome: "timeout" }, block: null };
+    const text = typeof rendered === "object" && rendered !== null ? rendered.text : rendered;
     if (typeof text !== "string" || text.trim() === "") {
       return { outcome: { ...base, outcome: "empty" }, block: null };
     }
@@ -142,6 +169,11 @@ async function renderOne(
         clipped: clipped.length < safe.length,
       },
       block: label(contributor.id, clipped),
+      text: clipped,
+      // Sources stay citable only if the block was not cut.
+      ...(typeof rendered === "object" && rendered !== null && clipped.length === safe.length
+        ? { shown: rendered.shown }
+        : {}),
     };
   } catch {
     return { outcome: { ...base, outcome: "failed" }, block: null };
@@ -171,5 +203,9 @@ export async function renderCoachContext(
     stable: blocks("stable"),
     volatile: blocks("volatile"),
     outcomes: rendered.map((item) => item.outcome),
+    texts: Object.fromEntries(
+      rendered.flatMap((item) => item.text === undefined ? [] : [[item.outcome.id, item.text]]),
+    ),
+    shown: Object.assign({}, ...rendered.map((item) => item.shown ?? {})),
   };
 }

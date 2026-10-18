@@ -1,17 +1,18 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
 import { librarySources } from "../../library/index.ts";
-import { shownLibraryKeys } from "../_shared/library/retrieval.ts";
-import { fullLibraryBlock, fullLibrarySize, renderFullLibrary } from "./library_full.ts";
+import { fullLibraryShown, fullLibrarySize, renderFullLibrary } from "./library_full.ts";
 
 Deno.test("the full library names every source once, with the id the citation guard reads", () => {
   const text = renderFullLibrary();
   for (const source of librarySources) {
     assertEquals(text.split(`[source: ${source.slug}]`).length - 1, 1, source.slug);
   }
-  assertEquals(
-    [...shownLibraryKeys(fullLibraryBlock())].sort(),
-    librarySources.map((source) => source.slug).sort(),
-  );
+  const shown = fullLibraryShown();
+  assertEquals(Object.keys(shown).sort(), librarySources.map((source) => source.slug).sort());
+  for (const source of librarySources) {
+    assertStringIncludes(shown[source.slug].text, `[source: ${source.slug}]`);
+    assertStringIncludes(shown[source.slug].label, source.title);
+  }
   assertStringIncludes(text, "Cite a source only by an id listed here.");
 });
 

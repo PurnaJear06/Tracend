@@ -15,13 +15,14 @@ import { deepseekFlashPeakPricePerMillionUsd, isApprovedDeepseekModel } from "./
 import { calculateCoachNumbers, formatCoachCalculations } from "../coach_calculations.ts";
 import type { AiVendor } from "../ai/types.ts";
 import type { CoachContributions } from "../coach_context/host.ts";
+import { libraryContributorId as libraryId } from "../library/retrieval.ts";
+import { coachingPrinciplesContributorId as principlesId } from "../library/principles.ts";
 import { targetFromDetails, weightClaimCheckFor } from "../training/goal_phase/guard.ts";
 import { describeGoalTarget } from "../training/goal_phase/render.ts";
 import { type RedFlagHit, screenTurn } from "../coach_safety/red_flags.ts";
 import { referralFor, safetyReferralModel } from "../coach_safety/referrals.ts";
 import { numberGroundOf } from "../coach_safety/numbers_check.ts";
 import { coachReplyCheck } from "../coach_safety/reply_guard.ts";
-import { shownLibraryKeysIn } from "../library/retrieval.ts";
 import { renderSafeRanges, safeRangesOf } from "../coach_safety/safe_ranges.ts";
 import { screeningStateOf } from "../coach_context/contributors/screening.ts";
 import {
@@ -1280,14 +1281,22 @@ export function coachReplyCheckFor(
   contributions: CoachContributions | null,
   lookedUp: readonly string[] = [],
 ): CoachChatAnswerCheck {
-  const contributed = contributionText(contributions);
   const { file } = renderCoachContextParts(context, coachChatMaxContextBudget);
+  // The text of every contributor except the library, which a figure may use only when the reply
+  // cites the source (shown). The principles digest grounds general guidance but never a sentence
+  // that states the athlete's own target.
+  const texts = Object.entries(contributions?.texts ?? {}).filter(([id]) => id !== libraryId);
+  const athleteTexts = texts.filter(([id]) => id !== principlesId).map(([, text]) => text);
+  const athleteGiven = [file, ...athleteTexts, ...lookedUp, question, ...athleteMessages(context)];
   return coachReplyCheck({
     ranges: safeRangesOf(context),
     screening: screeningStateOf(contributions),
-    ground: numberGroundOf([file, contributed, ...lookedUp, question, ...athleteMessages(context)]),
+    ground: numberGroundOf([...athleteGiven, ...texts.map(([, text]) => text)]),
+    athleteGround: numberGroundOf(athleteGiven),
+    librarySources: Object.fromEntries(
+      Object.entries(contributions?.shown ?? {}).map(([id, source]) => [id, source.text]),
+    ),
     weightClaim: weightClaimCheckFor(context, question),
-    shownLibrarySources: shownLibraryKeysIn(contributions),
   });
 }
 
@@ -1431,7 +1440,7 @@ const libraryContract = "\n# Using the research library\n" +
   "- The research library reference data holds excerpts of published sources found for this question: general guidance for healthy adults, in our own words. They rank last. Tracend's calculations come first, then the athlete's confirmed facts, then what the athlete told you, then the library. Where an excerpt disagrees with the athlete's plan, targets, the Safe Ranges or the screening rule, those win; say so rather than hiding the difference.\n" +
   '- Use an excerpt to explain why and to ground advice in words. When you rely on one, add an evidence item with source "library", the source id from its square brackets as the code (exactly as written) and a short label that names the source the way a reader would ("Schoenfeld et al. 2017, weekly volume"). Cite only ids that appear in the library reference data of this request. When there is none, or no excerpt bears on the question, cite nothing and do not say you have a source.\n' +
   "- Never print source ids in the answer text. Never write that research or a study shows something that no excerpt supports, and never fill a gap in the library from memory: say what the library does not cover.\n" +
-  "- Quote an excerpt's figure only as that source's guidance (for example \"the position stand suggests ...\"), never as the athlete's own number or target. Rules and the athlete's plan decide every number the athlete acts on.\n";
+  "- Quote an excerpt's figure only as that source's guidance (for example \"the position stand suggests ...\"), and only when you cite that source in evidence: a figure that only an excerpt holds is refused otherwise. Never use an excerpt's or the principles digest's figure in a sentence that states the athlete's own target or tells them what to do (\"your target is ...\", \"you should eat ...\", \"cut ... a day\"): those figures come only from the athlete's data and Tracend's calculations. Rules and the athlete's plan decide every number the athlete acts on.\n";
 
 function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string {
   switch (rule) {
@@ -1460,7 +1469,7 @@ function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string 
     case "numbers_not_grounded":
       return `These figures are not in the athlete file, the calculated sections, the Safe Ranges, the reference data or the athlete's message${
         detail ? `: ${detail}` : ""
-      }. Remove each one, or replace it with a figure that is in the context. Never work out a figure yourself; describe it in words when the context holds no number.\n`;
+      }. Remove each one, or replace it with a figure that is in the context. A figure that only a library excerpt or the principles digest holds may appear only as that source's guidance (cite the library source in evidence) and never in a sentence that states the athlete's own target or tells them what to do. Never work out a figure yourself; describe it in words when the context holds no number.\n`;
     default:
       return "";
   }

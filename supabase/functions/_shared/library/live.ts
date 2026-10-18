@@ -12,8 +12,14 @@ const asRows = (data: unknown): LibraryRow[] =>
   (Array.isArray(data) ? data : []).flatMap((item) => {
     const row = item as Record<string, unknown> | null;
     return row && typeof row.source_key === "string" && typeof row.header === "string" &&
-        typeof row.body === "string"
-      ? [{ sourceId: row.source_key, header: row.header, body: row.body }]
+        typeof row.body === "string" && typeof row.title === "string"
+      ? [{
+        sourceId: row.source_key,
+        title: row.title,
+        year: typeof row.year === "number" ? row.year : null,
+        header: row.header,
+        body: row.body,
+      }]
       : [];
   });
 

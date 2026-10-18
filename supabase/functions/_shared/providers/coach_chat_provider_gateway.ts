@@ -29,7 +29,6 @@ import {
 } from "../coach_lookups/catalogue.ts";
 import type { CoachLookupRunner, LookupCount } from "../coach_lookups/runner.ts";
 import { proposalIntentJsonSchema } from "../coach_proposals/intent.ts";
-import { shownLibraryKeysIn } from "../library/retrieval.ts";
 
 import { screenTurn } from "../coach_safety/red_flags.ts";
 import { costUsd, modelSpec } from "../ai/models.ts";
@@ -395,7 +394,7 @@ export async function generateCoachChatViaGateway(
   const permitted = permittedEvidenceOf(context);
   const contributions = input.contributions ?? noCoachContributions;
   // The library sources Coach is shown this turn: the only ones its evidence may cite.
-  const shown = shownLibraryKeysIn(contributions);
+  const shown = contributions.shown;
   const coachingDate = typeof context.coaching_date === "string" ? context.coaching_date : "";
   // The rows looked up so far ground the numbers check: a figure in them is the athlete's own.
   // Only lines the server produced from the records count, never the model's own request text.

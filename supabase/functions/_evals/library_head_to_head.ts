@@ -20,14 +20,10 @@
 // Synthetic data only.
 import { renderCoachContext } from "../_shared/coach_context/host.ts";
 import { coachingPrinciplesContributor } from "../_shared/library/principles.ts";
-import {
-  createLibraryContributor,
-  type LibraryRow,
-  shownLibraryKeysIn,
-} from "../_shared/library/retrieval.ts";
+import { createLibraryContributor, type LibraryRow } from "../_shared/library/retrieval.ts";
 import { classifyQuestion } from "../_shared/providers/coach_chat_provider.ts";
 import { baseContext } from "./coach_bank/athletes.ts";
-import { fullLibraryBlock, fullLibrarySize } from "./library_full.ts";
+import { fullLibraryBlock, fullLibraryShown, fullLibrarySize } from "./library_full.ts";
 import { type ArmAnswer, renderHeadToHead, summariseArm } from "./library_head_to_head_metrics.ts";
 import { type LibraryQuestion, questionKind } from "./library_eval_metrics.ts";
 import { liveModelFromEnv } from "./live_model.ts";
@@ -79,9 +75,17 @@ const retrieval = createLibraryContributor({
       query_embedding: request.embedding,
       match_count: request.matchCount,
       filters: { region: ["global"] },
-    }) as { source_key: string; header: string; body: string }[];
+    }) as {
+      source_key: string;
+      title: string;
+      year: number | null;
+      header: string;
+      body: string;
+    }[];
     return rows.map((row): LibraryRow => ({
       sourceId: row.source_key,
+      title: row.title,
+      year: row.year,
       header: row.header,
       body: row.body,
     }));
@@ -117,7 +121,11 @@ for (const question of chosen) {
   };
   const withRetrieval = await renderCoachContext([coachingPrinciplesContributor, retrieval], input);
   const digest = await renderCoachContext([coachingPrinciplesContributor], input);
-  const withFull = { ...digest, stable: `${digest.stable}\n\n${fullLibraryBlock()}` };
+  const withFull = {
+    ...digest,
+    stable: `${digest.stable}\n\n${fullLibraryBlock()}`,
+    shown: fullLibraryShown(),
+  };
   for (
     const [arm, contributions] of [["retrieval", withRetrieval], [
       "full_library",
@@ -142,7 +150,7 @@ for (const question of chosen) {
           contextKind: classifyQuestion(question.text),
           contributions,
         });
-        const shown = shownLibraryKeysIn(contributions);
+        const shown = contributions.shown;
         const attempts = generation.attempts ?? [];
         const sum = (read: (a: (typeof attempts)[number]) => number | undefined) =>
           attempts.reduce((total, a) => total + (read(a) ?? 0), 0);
@@ -150,7 +158,7 @@ for (const question of chosen) {
           ...base,
           answered: true,
           cited: generation.answer.evidence.filter((item) =>
-            item.source === "library" && shown.has(item.code)
+            item.source === "library" && Object.hasOwn(shown, item.code)
           ).map((item) => item.code),
           cacheReadTokens: sum((a) => a.cacheReadTokens),
           cacheWriteTokens: sum((a) => a.cacheWriteTokens),

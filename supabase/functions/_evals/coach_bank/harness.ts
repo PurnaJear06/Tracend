@@ -38,6 +38,8 @@ export function libraryRowsOf(keys: readonly string[]): LibraryRow[] {
     if (!source) throw new Error(`unknown library source ${key}`);
     return chunkSource(source).map((chunk) => ({
       sourceId: source.slug,
+      title: source.title,
+      year: source.year,
       header: chunk.header,
       body: chunk.body,
     }));
@@ -79,6 +81,7 @@ function contributorsOf(bank: BankCase): CoachContextContributor[] {
 const withVolatile = (base: CoachContributions, block: string): CoachContributions => ({
   ...base,
   volatile: [base.volatile, block].filter(Boolean).join("\n\n"),
+  texts: { ...base.texts, data_lookup: block },
 });
 
 const lookupBlock = (text: string) =>

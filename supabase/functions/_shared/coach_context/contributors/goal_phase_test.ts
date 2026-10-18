@@ -20,7 +20,7 @@ Deno.test("the contributor is volatile and fits its budget on the owner's case",
   const contributor = createGoalPhaseContributor(() => Promise.resolve(longCutPayload));
   assertEquals(contributor.slot, "volatile");
   assertEquals(contributor.budgetChars, goalPhaseContributorBudgetChars);
-  const text = (await contributor.render(input))!;
+  const text = (await contributor.render(input)) as string;
   assert(text.length <= goalPhaseContributorBudgetChars, `${text.length} chars`);
   const rendered = await renderCoachContext([contributor], input);
   assertEquals(rendered.stable, "");
@@ -95,7 +95,7 @@ Deno.test("eight excluded readings, a long history and a long run still fit with
     readings,
   };
   const contributor = createGoalPhaseContributor(() => Promise.resolve(payload));
-  const text = (await contributor.render({ ...input, localDate: "2026-10-05" }))!;
+  const text = (await contributor.render({ ...input, localDate: "2026-10-05" })) as string;
   assert(text.length <= goalPhaseContributorBudgetChars, `${text.length} chars`);
   const rendered = await renderCoachContext([contributor], { ...input, localDate: "2026-10-05" });
   assertEquals(rendered.outcomes[0].clipped, false);

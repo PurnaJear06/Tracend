@@ -19,17 +19,28 @@ function check(
     screening?: ScreeningState;
     question?: string;
     painEscalated?: boolean;
-    shownLibrarySources?: ReadonlySet<string>;
+    /** The text shown for each library source, by id. */
+    library?: Readonly<Record<string, string>>;
+    /** The library sources the reply's evidence cites. */
+    cited?: readonly string[];
+    /** The coaching principles digest, which grounds general figures but not the athlete's own. */
+    digest?: string;
   } = {},
 ) {
   const question = options.question ?? "What should I do?";
   const result = coachReplyCheck({
     ranges: { ...safeRangesOf(context), painEscalated: options.painEscalated ?? false },
     screening: options.screening ?? "cleared",
-    ground: numberGroundOf([file, goalPhase, question]),
+    ground: numberGroundOf([
+      file,
+      goalPhase,
+      question,
+      ...(options.digest ? [options.digest] : []),
+    ]),
+    athleteGround: numberGroundOf([file, goalPhase, question]),
+    librarySources: options.library,
     weightClaim: weightClaimCheckFor(context, question),
-    shownLibrarySources: options.shownLibrarySources,
-  })(answer);
+  })(answer, options.cited);
   return result as CoachChatAnswerBreak | null;
 }
 
@@ -331,11 +342,9 @@ Deno.test("training_advice_on_pain_day: no training prescription on a day of che
 });
 
 Deno.test("citation_not_retrieved: a source id in the text that Coach was not shown", () => {
-  const shown = new Set(["schoenfeld_2017_weekly_volume"]);
+  const library = { schoenfeld_2017_weekly_volume: "Weekly sets." };
   assertEquals(
-    broken("Ten sets a week is a sound target [made_up_2019_claim].", {
-      shownLibrarySources: shown,
-    }),
+    broken("Ten sets a week is a sound target [made_up_2019_claim].", { library }),
     ["citation_not_retrieved"],
   );
   // With nothing retrieved, any printed id is a citation of nothing.
@@ -343,10 +352,66 @@ Deno.test("citation_not_retrieved: a source id in the text that Coach was not sh
     "citation_not_retrieved",
   ]);
   assertEquals(
-    broken("Ten sets a week is a sound target [schoenfeld_2017_weekly_volume].", {
-      shownLibrarySources: shown,
-    }),
+    broken("Ten sets a week is a sound target [schoenfeld_2017_weekly_volume].", { library }),
     [],
   );
-  assertEquals(broken("Ten sets a week is a sound target.", { shownLibrarySources: shown }), []);
+  assertEquals(broken("Ten sets a week is a sound target.", { library }), []);
+});
+
+const guideline = {
+  jager_2017_protein: "People who train need 1.4 to 2.0 grams of protein per kilogram.",
+};
+
+Deno.test("a figure only a library source holds is accepted when the reply cites that source", () => {
+  const reply = "The position stand puts it at about 1.4 to 2.0 g of protein per kg a day.";
+  assertEquals(broken(reply, { library: guideline, cited: ["jager_2017_protein"] }), []);
+  // Not cited, or cited another source that does not hold it: the figure is ungrounded.
+  assertEquals(broken(reply, { library: guideline }), ["numbers_not_grounded"]);
+  assertEquals(
+    broken(reply, {
+      library: { ...guideline, other_2020_source: "Sleep for 7 hours." },
+      cited: ["other_2020_source"],
+    }),
+    ["numbers_not_grounded"],
+  );
+  assertEquals(broken(reply), ["numbers_not_grounded"]);
+});
+
+Deno.test("a library figure never becomes the athlete's own target", () => {
+  const cited = ["jager_2017_protein"];
+  for (
+    const reply of [
+      "Your protein target is 1.4 to 2.0 g per kg a day.",
+      "You should eat 1.4 to 2.0 g of protein per kg a day.",
+      "Aim for 2.0 g of protein per kg.",
+      "Cut 1.4 g of protein per kg a day.",
+    ]
+  ) {
+    assertEquals(broken(reply, { library: guideline, cited }), ["numbers_not_grounded"], reply);
+  }
+  // The same figure as the source's guidance, next to a target that comes from the athlete's data.
+  assertEquals(
+    broken(
+      "The position stand puts it at 1.4 to 2.0 g of protein per kg a day. Your calorie target stays at 2000 kcal.",
+      { library: guideline, cited },
+    ),
+    [],
+  );
+});
+
+Deno.test("the principles digest grounds general guidance but not a sentence about the athlete's target", () => {
+  const digest = "Most people who train do well on 1.6 g of protein per kg a day.";
+  assertEquals(
+    broken("Guidance for people who train is about 1.6 g of protein per kg a day.", { digest }),
+    [],
+  );
+  assertEquals(
+    broken("Your protein target is 1.6 g per kg a day.", { digest }),
+    ["numbers_not_grounded"],
+  );
+  assertEquals(broken("You should eat 1.6 g of protein per kg a day.", { digest }), [
+    "numbers_not_grounded",
+  ]);
+  // A figure from the athlete's data is fine in a target sentence.
+  assertEquals(broken("Your calorie target is 2000 kcal.", { digest }), []);
 });

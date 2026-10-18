@@ -1,3 +1,5 @@
+import { screenMessage } from "../coach_safety/red_flags.ts";
+
 // The text Coach chat searches the library with (chunk E3). It is the athlete's question, except
 // that a follow-up ("And on rest days?", "Is that enough?") has no topic of its own, so the
 // topic of their last real question is added. This is deterministic on purpose: no model call
@@ -26,7 +28,7 @@ const stopWords: ReadonlySet<string> = new Set(
 // only when almost nothing else is said.
 const pointsBackStrongly = new RegExp(
   String
-    .raw`^\s*(?:and|but|so|also|then|what about|how about|what if|why|how come|and what|and how|what else)\b|` +
+    .raw`^\s*(?:and|but|so|also|then|what about|how about|what if|what else)\b|` +
     String.raw`\b(?:that|this|those|these|there|same|instead|else|again)\b`,
   "i",
 );
@@ -73,7 +75,11 @@ export function libraryRetrievalQuery(
 ): RetrievalQuery {
   const own = question.trim().slice(0, maxQuestionChars);
   if (!isFollowUp(question)) return { text: own, rewritten: false };
-  const earlier = previousQuestions.map((text) => text.trim()).filter((text) => text !== "");
+  // A question that reported a symptom is answered by the fixed referral and never lends its words
+  // to the next search.
+  const earlier = previousQuestions.map((text) => text.trim()).filter((text) =>
+    text !== "" && screenMessage(text) === null
+  );
   const anchor = earlier.find((text) => !isFollowUp(text)) ?? earlier[0];
   if (anchor === undefined) return { text: own, rewritten: false };
   return { text: `${own} ${anchor.slice(0, maxTopicChars)}`, rewritten: true };

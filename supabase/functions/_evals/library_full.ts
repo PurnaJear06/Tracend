@@ -4,31 +4,42 @@
 // the citation guard reads the same ids.
 import { librarySources } from "../../library/index.ts";
 import { chunkSource } from "../_shared/library/chunk.ts";
+import type { ShownSource } from "../_shared/coach_context/host.ts";
+
+const sourceText = (source: (typeof librarySources)[number]): string => {
+  const chunks = chunkSource(source);
+  // Every chunk's header repeats the source and the section; the full text states the source
+  // once and each section once, which is how the library would be written for a prefix.
+  const lines = [
+    `[source: ${source.slug}] ${source.label}, ${source.title} (${source.year}; ${source.evidenceLevel}; regions ${
+      source.region.join(", ")
+    })`,
+  ];
+  let section = "";
+  for (const chunk of chunks) {
+    if (chunk.section !== section) {
+      section = chunk.section;
+      lines.push(`Section: ${section}`);
+    }
+    lines.push(chunk.body);
+  }
+  return lines.join("\n");
+};
 
 /** The library as a stable, deterministic text: each source once, its chunks in order. */
 export function renderFullLibrary(): string {
-  const parts = librarySources.map((source) => {
-    const chunks = chunkSource(source);
-    // Every chunk's header repeats the source and the section; the full text states the source
-    // once and each section once, which is how the library would be written for a prefix.
-    const lines = [
-      `[source: ${source.slug}] ${source.label}, ${source.title} (${source.year}; ${source.evidenceLevel}; regions ${
-        source.region.join(", ")
-      })`,
-    ];
-    let section = "";
-    for (const chunk of chunks) {
-      if (chunk.section !== section) {
-        section = chunk.section;
-        lines.push(`Section: ${section}`);
-      }
-      lines.push(chunk.body);
-    }
-    return lines.join("\n");
-  });
+  const parts = librarySources.map(sourceText);
   return `The complete research library, source by source. Each source starts with its id in square brackets. Cite a source only by an id listed here. A figure in it is guidance from that source, never the athlete's own number.\n\n${
     parts.join("\n\n")
   }`;
+}
+
+/** Every source as shown, for the citation guard: by source id, with its label and text. */
+export function fullLibraryShown(): Readonly<Record<string, ShownSource>> {
+  return Object.fromEntries(librarySources.map((source) => [source.slug, {
+    label: `${source.title} (${source.year})`,
+    text: sourceText(source),
+  }]));
 }
 
 /** The full library as the stable block a prompt would carry (the host's label, no budget). */

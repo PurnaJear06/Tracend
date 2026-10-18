@@ -572,6 +572,8 @@ Deno.test("an intent survives a lookup round and is dropped from an interim answ
 
 const volumeChunk = {
   sourceId: "schoenfeld_2017_weekly_volume",
+  title: "Weekly volume",
+  year: 2017 as number | null,
   header: "Source: Schoenfeld et al. 2017, Weekly volume. Section: Results.",
   body:
     "Ten or more sets per muscle per week gave more growth than fewer. Adults should aim for 150 minutes of moderate activity a week.",
@@ -637,7 +639,11 @@ Deno.test("a reply that cites a source it was shown is accepted with its evidenc
   });
   if (result instanceof Error) throw result;
   assertEquals(sent.length, 1);
-  assertEquals(result.answer.evidence, [libraryEvidence("schoenfeld_2017_weekly_volume")]);
+  // The label is the retrieved source's title and year, whatever the model wrote.
+  assertEquals(result.answer.evidence, [{
+    ...libraryEvidence("schoenfeld_2017_weekly_volume"),
+    label: "Weekly volume (2017)",
+  }]);
 });
 
 Deno.test("a citation of a source that was not shown is repaired, then answered without it", async () => {
@@ -708,24 +714,47 @@ Deno.test("a source id printed in the reply text must have been shown", async ()
   assertEquals(result.attempts[0].rule, "citation_not_retrieved");
 });
 
-Deno.test("a figure that only an excerpt holds is grounded; without the excerpt it is refused", async () => {
-  const contributions = await withLibrary("How much activity do adults need?");
-  const text = answer({
+Deno.test("a figure only an excerpt holds is accepted when the reply cites that source, and only then", async () => {
+  const question = "How much activity do adults need?";
+  const contributions = await withLibrary(question);
+  const sentence = "Guidance for adults is about 150 minutes of moderate activity a week.";
+  const cited = answer({
+    answer: sentence,
+    evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")],
+  });
+  const withCitation = await run(() => claudeAnswer(cited), { question, contributions });
+  if (withCitation.result instanceof Error) throw withCitation.result;
+  assertEquals(withCitation.sent.length, 1);
+  // The excerpt was shown, but the reply does not cite it: the figure is not grounded.
+  const uncited = answer({ answer: sentence });
+  const shownNotCited = await run(() => claudeAnswer(uncited), { question, contributions });
+  assert(shownNotCited.result instanceof CoachChatUnavailableError);
+  assertEquals(shownNotCited.result.metadata.initialRule, "numbers_not_grounded");
+  // No excerpt at all.
+  const without = await run(() => claudeAnswer(uncited), { question });
+  assert(without.result instanceof CoachChatUnavailableError);
+  assertEquals(without.result.metadata.initialRule, "numbers_not_grounded");
+});
+
+Deno.test("a library figure stated as the athlete's own target is refused even when cited", async () => {
+  const question = "How much activity do I need?";
+  const contributions = await withLibrary(question);
+  const target = answer({
+    answer: "Your activity target is 150 minutes of moderate activity a week.",
+    evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")],
+  });
+  const guidance = answer({
     answer: "Guidance for adults is about 150 minutes of moderate activity a week.",
     evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")],
   });
-  const withChunk = await run(() => claudeAnswer(text), {
-    question: "How much activity do adults need?",
-    contributions,
-  });
-  if (withChunk.result instanceof Error) throw withChunk.result;
-  assertEquals(withChunk.sent.length, 1);
-  const uncited = answer({
-    answer: "Guidance for adults is about 150 minutes of moderate activity a week.",
-  });
-  const without = await run(() => claudeAnswer(uncited), {
-    question: "How much activity do adults need?",
-  });
-  assert(without.result instanceof CoachChatUnavailableError);
-  assertEquals(without.result.metadata.initialRule, "numbers_not_grounded");
+  const { result, sent } = await run(
+    (_, index) => claudeAnswer(index === 0 ? target : guidance),
+    { question, contributions },
+  );
+  if (result instanceof Error) throw result;
+  assertEquals(result.attempts.map((a) => [a.outcome, a.rule]), [
+    ["invalid", "numbers_not_grounded"],
+    ["valid", undefined],
+  ]);
+  assertEquals(sent.length, 2);
 });

@@ -440,6 +440,33 @@ Branch `claude/e3-library-in-coach`, migration `20261018140043_library_search_v2
   contributors. The `coachChatEvidenceSources` list gained `library`; the legacy provider schema uses
   the new `coachChatDataEvidenceSources` (the old three).
 
+### Review fixes (Opus review of #150, no P1s)
+
+- **Embedding deadline (P2).** The question's embedding races a 1.5-second deadline
+  (`libraryEmbedDeadlineMs`); on a timeout or a failure the search runs with `embedding: null`
+  (words alone) instead of the host's 4-second limit dropping the whole block. A cold gte-small load
+  (16.3 s locally in the E1 spike, about 70 ms after) therefore costs one turn its vector half, and the
+  load goes on in the background for the next. Not done: warming the session when the module loads,
+  because it would charge every coach-chat cold start (red-flag and non-retrieval turns too) with an
+  unmeasured model load. **Cold start and memory are not measured**: no test or document records
+  coach-chat's memory with gte-small loaded, and the E2 note that the local runtime cut library-embed
+  at about 1.1 s of CPU shows a first load could meet the CPU limit. After the deploy, check coach-chat's
+  logs for `library_retrieval_degraded` and for resource-limit errors, and roll back with
+  `./scripts/rollback-function.sh coach-chat` if the limit is hit.
+- **Library figures (P2).** The library is no longer in the main numbers ground. A figure only the library
+  holds is accepted when the reply cites the source whose shown chunks contain it, and in a sentence that
+  states the athlete's own target or prescription the numbers must come from the athlete's data and
+  calculations alone, never the library or the principles digest (AI_SAFETY_SPEC §11.2). The
+  contributor host now returns each contributor's text (`texts`) and the shown sources (`shown`:
+  id, label, chunk text) beside the blocks; `CoachChatAnswerCheck` takes the cited ids.
+- **Labels (P3).** The server overwrites a `library` citation's label with the retrieved source's title
+  and year (`parseCoachChatAnswer`).
+- **Red-flag follow-ups (P3).** An earlier question `screenMessage` flags is skipped when a follow-up
+  picks its topic.
+- **"Why" and "how come" (P3)** are no longer follow-up leads ("Why?" alone still has no topic of its own).
+- **Shown ids (P3).** They come from the contributor's rows (`RenderedBlock.shown`), not from parsing the
+  prompt text; `shownLibraryKeys` and `shownLibraryKeysIn` are removed.
+
 ### The gate (measured in CI, not locally)
 
 Colima is off limits for builders, so the recall gate runs in `coach-eval.yml`'s
