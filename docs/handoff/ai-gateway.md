@@ -1266,6 +1266,17 @@ when an overlap exists; the data index grows by about 250 when a plan exists.
   render never falls back to a name for a weekday-less one. pgTAP asserts `plan.id`,
   `days[].version_id`, `sessions[].version_id`, and walks a block's five points (before, during, last
   day, day after, after the clone); the contributor has the same five-point table.
+- Sixth review: which session a finished workout counts for is one resolution, `matchFinished`:
+  one workout finishes at most one session, a workout finishes the session with its own id, and a
+  workout finished under another plan version counts for a session whose own plan does not hold its
+  id (same name, nearest to the day it was done, else the same day and order). So a block approved
+  mid-week still counts Monday's old-plan workout, and restored sessions sharing a name do not finish
+  each other. Weekday-less sessions follow the plan in force. `training_plan_invariants_test.ts`
+  loops over thousands of block scenarios (any start weekday, end date, today from three days before
+  the block to three days after its end, same or different names, any subset finished under either
+  version) and asserts: nothing finished is undone, no make-up for a finished workout, nothing dated
+  after `ends_on` is the block's, and the contributor and the schedule lookup agree on done and
+  planned for every date.
 - Second review: a substituted exercise (`performance_kind` substituted or extra) has no catalog
   slug by design (`private.exercise_performance_slug`), so `private.coach_session_exercises`
   reports its slug as null and the "muscles unknown" caveat shows; it never borrows the planned

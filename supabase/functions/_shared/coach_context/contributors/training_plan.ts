@@ -19,6 +19,7 @@ import {
 import {
   addDays,
   buildWeekAhead,
+  dayOf,
   renderWeekAhead,
   type ScheduleNote,
   type SchedulePoint,
@@ -184,39 +185,86 @@ const prescription = (exercise: PlanExercise) =>
     exercise.repMin === exercise.repMax ? exercise.repMin : `${exercise.repMin}-${exercise.repMax}`
   }`;
 
-/** Whether the plan, or the plan a temporary block hands back to, holds a workout with this id. */
-function knownWorkout(state: PlanState, id: string): boolean {
-  return state.sessions.some((item) => item.id === id) ||
-    (state.afterBlock?.sessions.some((item) => item.id === id) ?? false);
-}
+export type FinishedWorkout = PlanState["completed"][number];
+
+const finishedCache = new WeakMap<PlanState, ReadonlyMap<string, FinishedWorkout>>();
+
+/** ISO weekday (1 is Monday) of a YYYY-MM-DD date. */
+const isoWeekday = (date: string) => ((dayOf(date) + 3) % 7) + 1;
 
 /**
- * Whether a finished workout (`row`: its id, name, day and order) is this session of the active
- * plan. The id decides when the plan holds it (the active plan, or the one a temporary block hands
- * back to). A workout finished under an earlier plan version has an id neither holds; only then is
- * it matched by name, else by day and order. Names are not unique, so a name never overrides an id
- * the plan knows.
+ * Which of the sessions in force this week each finished workout counts for, as a map from the
+ * session's id to the workout. One workout finishes at most one session, and a session is finished
+ * by at most one workout.
+ * - A workout finishes the session with its own id.
+ * - Otherwise it was finished under another plan version, and counts for a session of the plan in
+ *   force whose pool does not hold its id (inside a plan, a different id is a different workout,
+ *   whatever its name): the session with the same name, nearest to the day it was done, else the
+ *   one with the same day and order.
+ * Names are not unique and are never the only evidence against an id the plan knows.
  */
-export function isSameWorkout(
-  state: PlanState,
-  row: Readonly<{ id: string; name: string; weekday?: number | null; order?: number | null }>,
-  session: PlanSession,
-): boolean {
-  if (row.id === session.id) return true;
-  if (knownWorkout(state, row.id)) return false;
-  return (row.name !== "" && row.name.toLowerCase() === session.name.toLowerCase()) ||
-    (row.weekday != null && row.weekday === session.weekday && row.order != null &&
-      row.order === session.order);
+export function matchFinished(state: PlanState): ReadonlyMap<string, FinishedWorkout> {
+  const cached = finishedCache.get(state);
+  if (cached) return cached;
+  const candidates = weekSessions(state);
+  const poolHolding = (session: PlanSession): readonly PlanSession[] =>
+    state.afterBlock?.sessions.some((item) => item.id === session.id)
+      ? state.afterBlock.sessions
+      : state.sessions;
+  const result = new Map<string, FinishedWorkout>();
+  const rows = [...state.completed].sort((a, b) => a.localDate.localeCompare(b.localDate));
+  const placed = new Set<FinishedWorkout>();
+  for (const row of rows) {
+    const own = candidates.find((session) => session.id === row.id && !result.has(session.id));
+    if (own) {
+      result.set(own.id, row);
+      placed.add(row);
+    }
+  }
+  for (const row of rows) {
+    if (placed.has(row)) continue;
+    const eligible = candidates.filter((session) =>
+      !result.has(session.id) && !poolHolding(session).some((item) => item.id === row.id)
+    );
+    const doneWeekday = isoWeekday(row.localDate);
+    const sameName = row.name === ""
+      ? []
+      : eligible.filter((session) => session.name.toLowerCase() === row.name.toLowerCase());
+    const nearest = [...sameName].sort((a, b) =>
+      Math.abs((a.weekday ?? 99) - doneWeekday) - Math.abs((b.weekday ?? 99) - doneWeekday) ||
+      (a.weekday ?? 99) - (b.weekday ?? 99)
+    )[0];
+    const sameSlot = eligible.find((session) =>
+      row.weekday != null && row.weekday === session.weekday && row.order != null &&
+      row.order === session.order
+    );
+    const pick = nearest ?? sameSlot;
+    if (pick) {
+      result.set(pick.id, row);
+    }
+  }
+  finishedCache.set(state, result);
+  return result;
 }
 
-/**
- * The date a session was finished this week, or null. A workout finished under an earlier plan
- * version (the plan changed mid-week) is matched to the active plan's session (`isSameWorkout`),
- * so it is not prescribed again.
- */
+/** The date a session of the plan in force this week was finished, or null (`matchFinished`). */
 export function finishedOn(state: PlanState, session: PlanSession): string | null {
-  const row = state.completed.find((item) => isSameWorkout(state, item, session));
-  return row?.localDate ?? null;
+  return matchFinished(state).get(session.id)?.localDate ?? null;
+}
+
+/**
+ * The session a finished workout (by id, else by name) stands for, searching the plan and the plan
+ * a temporary block hands back to.
+ */
+function sessionOfWorkout(
+  state: PlanState,
+  row: Readonly<{ id: string; name: string }>,
+): PlanSession | undefined {
+  const all = [...state.sessions, ...(state.afterBlock?.sessions ?? [])];
+  return all.find((session) => session.id === row.id) ??
+    (row.name === ""
+      ? undefined
+      : all.find((session) => session.name.toLowerCase() === row.name.toLowerCase()));
 }
 
 const exercisesOf = (session: PlanSession): DayExercise[] =>
@@ -239,7 +287,10 @@ export function weekSessions(state: PlanState): readonly PlanSession[] {
   const week = [1, 2, 3, 4, 5, 6, 7].flatMap((weekday) =>
     poolOn(state, addDays(monday, weekday - 1)).filter((session) => session.weekday === weekday)
   );
-  return [...week, ...state.sessions.filter((session) => session.weekday === null)];
+  return [
+    ...week,
+    ...poolOn(state, state.localDate).filter((session) => session.weekday === null),
+  ];
 }
 
 /**
@@ -404,9 +455,7 @@ export function resolveSchedule(
   const yesterday = addDays(state.localDate, -1);
   for (const row of state.recent) {
     if (row.localDate !== yesterday && row.localDate !== state.localDate) continue;
-    const planned = [...state.sessions, ...(state.afterBlock?.sessions ?? [])].find((session) =>
-      isSameWorkout(state, row, session)
-    );
+    const planned = sessionOfWorkout(state, row);
     points.push({
       date: row.localDate,
       kind: "done",

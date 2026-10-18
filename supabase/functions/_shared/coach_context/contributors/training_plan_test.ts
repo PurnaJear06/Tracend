@@ -624,6 +624,8 @@ const blockToFullBody = (
 ) => {
   const payload = splitPlanPayload(weekday, []);
   const base = (payload.sessions as Record<string, unknown>[])[0];
+  // The block's sessions are push-ups and the restored plan's are squats, so a session read from
+  // the wrong pool shows in its muscles.
   const session = (id: string, name: string, day: number) => ({
     ...base,
     planned_workout_id: id,
@@ -633,8 +635,8 @@ const blockToFullBody = (
     exercises: [{
       planned_exercise_id: `e-${id}`,
       order: 1,
-      name: "Squat",
-      slug: "barbell-back-squat",
+      name: id.startsWith("b-") ? "Push-up" : "Squat",
+      slug: id.startsWith("b-") ? "push-up" : "barbell-back-squat",
       sets: 3,
       rep_min: 8,
       rep_max: 12,
@@ -757,4 +759,68 @@ Deno.test("a restored session finished yesterday with no logged exercises falls 
   }];
   const text = renderTrainingPlan(parsePlanState(payload))!;
   assertStringIncludes(lineOf(text, "- Thu 2026-10-15"), "done: Full body (glutes, quads)");
+});
+
+Deno.test("a block approved mid-week: Monday's workout finished under the old plan counts for the block's Monday slot", () => {
+  // Wednesday: the block (Full body on Monday, Wednesday, Friday) was approved today and runs to the
+  // 25th; Monday's Full body (r-1) was finished under the plan it replaced.
+  const payload = splitPlanPayload(3, []);
+  const base = (payload.sessions as Record<string, unknown>[])[0];
+  const session = (id: string, day: number) => ({
+    ...base,
+    planned_workout_id: id,
+    name: "Full body",
+    weekday: day,
+    order: day,
+    exercises: [{
+      planned_exercise_id: `e-${id}`,
+      order: 1,
+      name: "Squat",
+      slug: "barbell-back-squat",
+      sets: 3,
+      rep_min: 8,
+      rep_max: 12,
+    }],
+  });
+  payload.sessions = [1, 3, 5].map((day) => session(`b-${day}`, day));
+  payload.after_block = {
+    ends_on: "2026-10-25",
+    version_number: 1,
+    sessions: [1, 3, 5].map((day) => session(`r-${day}`, day)),
+  };
+  payload.completed_this_week = [{
+    planned_workout_id: "r-1",
+    local_date: "2026-10-12",
+    name: "Full body",
+    weekday: 1,
+    order: 1,
+  }];
+  payload.recent_completed = [];
+  const state = parsePlanState(payload)!;
+  assertEquals(pickFocusSession(state).undone, []);
+  const text = renderTrainingPlan(state)!;
+  assert(!text.includes("undone earlier this week"));
+  assert(!text.includes("A session from earlier this week is still undone"));
+  assertStringIncludes(text, "[done 2026-10-12]");
+});
+
+Deno.test("weekday-less sessions follow the plan in force too: after the block's last day, the restored plan's", () => {
+  const payload = blockToFullBody(5, [1, 2, 3], "2026-10-14");
+  (payload.sessions as Record<string, unknown>[]).push({
+    ...(payload.sessions as Record<string, unknown>[])[0],
+    planned_workout_id: "b-float",
+    name: "Block extra",
+    weekday: null,
+    order: 9,
+  });
+  (payload.after_block as { sessions: Record<string, unknown>[] }).sessions.push({
+    ...(payload.sessions as Record<string, unknown>[])[0],
+    planned_workout_id: "r-float",
+    name: "Restored extra",
+    weekday: null,
+    order: 9,
+  });
+  const text = renderTrainingPlan(parsePlanState(payload))!;
+  assertStringIncludes(text, "no set day, Restored extra");
+  assert(!text.includes("Block extra"));
 });
