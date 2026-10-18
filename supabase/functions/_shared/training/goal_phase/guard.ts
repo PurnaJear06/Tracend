@@ -9,6 +9,7 @@
 import { calculateCoachNumbers } from "../../coach_calculations.ts";
 import { hasGoalTarget, healthyFloorWeightKg } from "./bmi.ts";
 import { type GoalTarget, noGoalTarget } from "./types.ts";
+import { weightFiguresIn } from "./weight_figures.ts";
 
 export type WeightClaimRule = "weight_below_healthy_floor" | "projection_without_target";
 
@@ -19,13 +20,6 @@ export type WeightClaimContext = Readonly<{
   /** -1 weight falling, 1 rising, 0 flat or unknown. */
   direction: -1 | 0 | 1;
 }>;
-
-const kgWord = "(?:kg|kgs|kilos?|kilograms?)";
-const lbWord = "(?:lbs?|pounds?)";
-const weightPattern = new RegExp(
-  `(\\d{2,3}(?:[.,]\\d+)?)(?:\\s*(?:-|–|to)\\s*(\\d{2,3}(?:[.,]\\d+)?))?\\s*(${kgWord}|${lbWord})\\b`,
-  "gi",
-);
 
 const numberWord =
   "(?:\\d+(?:\\s*(?:-|–|to)\\s*\\d+)?|a|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|a few|a couple of)";
@@ -65,21 +59,17 @@ const targetProposal = /\b(?:target|aim|aiming|goal)\b/i;
 const limitBefore =
   /\b(?:below|under|beneath|less than|lower than|stop at)\s+(?:about |around |roughly |~)?$/i;
 
-function toKg(amount: number, unit: string): number {
-  return /^(?:lb|pound)/i.test(unit) ? amount / 2.20462 : amount;
-}
-
-/** Weights in a sentence, in kg; weights that are the object of a limit word are left out. */
-function weightsIn(sentence: string, includeLimits = true): number[] {
+/**
+ * Body weights in a sentence, in kg; weights that are the object of a limit word are left out.
+ * A figure counts only when its surroundings say it is a body weight (weight_figures.ts): a load
+ * on the bar ("overhead press is 55 kg x 6") is not one.
+ */
+function bodyWeightsIn(sentence: string): number[] {
   const found: number[] = [];
-  for (const match of sentence.matchAll(weightPattern)) {
-    const before = sentence.slice(0, match.index);
-    if (!includeLimits && limitBefore.test(before)) continue;
-    for (const raw of [match[1], match[2]]) {
-      if (raw === undefined) continue;
-      const kg = toKg(Number(raw.replace(",", ".")), match[3]);
-      if (kg >= 30 && kg <= 300) found.push(kg);
-    }
+  for (const figure of weightFiguresIn(sentence)) {
+    if (!figure.bodyWeight) continue;
+    if (limitBefore.test(figure.before)) continue;
+    for (const kg of figure.kgs) if (kg >= 30 && kg <= 300) found.push(kg);
   }
   return found;
 }
@@ -90,13 +80,14 @@ export function weightClaimViolation(
   question: string,
   context: WeightClaimContext,
 ): WeightClaimRule | null {
-  const own = weightsIn(question);
+  // Every figure the athlete wrote is theirs, whatever it measures.
+  const own = weightFiguresIn(question).flatMap((figure) => [...figure.kgs]);
   const theirs = (kg: number) => own.some((value) => Math.abs(value - kg) < 0.5);
   for (const sentence of answer.split(/(?<=[.!?])\s+|\n+/)) {
     const asksOrProposes = sentence.trim().endsWith("?") ||
       (targetProposal.test(sentence) && !paceCue.test(sentence));
     const forwardLooking = lookAhead.test(sentence) || targetProposal.test(sentence);
-    for (const kg of weightsIn(sentence, false)) {
+    for (const kg of bodyWeightsIn(sentence)) {
       if (theirs(kg)) continue;
       if (forwardLooking && context.floorKg !== null && kg < context.floorKg - 0.05) {
         return "weight_below_healthy_floor";

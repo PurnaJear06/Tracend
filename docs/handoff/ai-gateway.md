@@ -1175,6 +1175,60 @@ drifting again.
 afterwards). Check `coach_chat_complete` for `schema_sha` `274ee4fafead` and the first turn's
 latency; run `./scripts/verify-live-function.sh coach-chat` from the deployed commit.
 
+## Coach reply guards: lift loads, plans, studies, summaries, repeats (2026-10-18)
+
+Branch `claude/coach-reply-guards`, from the Coach simulator's findings. The answer schema is
+untouched (`coach_chat_schema_test.ts`: 0 optional, 0 unions, same bytes), and no model call is added:
+the one repair stays one, and the latency budget (initial 28 s, repair 10 s, 40 s turn, app waits 45 s)
+is unchanged.
+
+1. **Lift loads are not body weights** (`training/goal_phase/weight_figures.ts`, used by `guard.ts`).
+   "Next Upper B, overhead press is 55 kg x 6, and you will hit it ..." and "Your curl will go to 32.5
+   kg" returned `weight_below_healthy_floor` for a 58.6 kg floor and sent the athlete to the data
+   summary. The sentence is now tokenised into words and weight figures; a figure is a body weight
+   only when a body cue is nearer than any load cue (rep notation, an exercise name or catalog slug, a
+   barbell or lifting word). A time frame after the figure ("66.5 kg in 12 weeks") is the weakest body
+   cue and any load cue beats it. The old regex-only reading is gone; `guard.ts` keeps the two rules.
+2. **A requested plan keeps its answer** (`numbers_check.ts`, `reply_guard.ts` `cutReply`, gateway).
+   (a) A round whole number of minutes (10 to 90, in fives) beside a named activity ("30 min easy
+   walk", "walk 20 min", "a 45-minute session") is advice like rest seconds, not a claim about the
+   athlete; past or possessive wording, a dose over time ("a day"), no activity and anything over 90
+   minutes are still checked. Loads in kg stay checked. (b) When the repair still fails only
+   cuttable rules, or no repair can be sent, `cutReply` removes the sentences at fault and the
+   result must pass the whole check again and keep at least half the sentences, else the summary.
+   Guard fault `salvage:numbers_stripped` (also `study_stripped`, `closing_question_stripped`,
+   `repeat_stripped`) is written to `coach_messages.guard_faults`. Gateway only: today's DeepSeek path
+   keeps one repair and the summary.
+3. **Named studies** (`library/mentions.ts`, `parseCoachChatAnswer`). A shown source named in the text
+   ("Maughan 2018", "Kreider 2017", "the NIH fact sheet") is added to `evidence` by the server (label from
+   the retrieved title and year) and counts as cited for the numbers check. A study named that no shown
+   source matches is `citation_not_retrieved`: one repair that says drop the claim or name only the sources
+   shown, then the cut. A study the athlete named is exempt. `CoachChatAnswerCheck` gets a third argument,
+   the `answer` text alone.
+4. **The data summary stays in the thread** (migration `20261018190031_coach_chat_summary_in_thread.sql`,
+   `prepare_coach_chat_v10`, context `schema_version` 8.1). v10 wraps v9 and rebuilds `recent_messages`
+   with summaries in, each marked `answer_source: "data_summary"`; the prompt shows it as "TRACEND DATA
+   SUMMARY (the app's own reply ...)", its figures ground the next turn's numbers check, and the app's
+   weight trend is in kg/week (4-week calculated trend, else per-day times seven). Flutter reads
+   `answer_source` only, so `test/contract` fixtures are unchanged. The edge function now calls v10: merge
+   order is migration, then functions (deploy.yml does this); v8 and v9 stay callable.
+5. **No repeated closing question or sentence** (`coach_safety/repeats.ts`, rule
+   `repeats_previous_turn`). Dice coefficient of content words: closing questions at 0.7 (at least three
+   words each), other sentences at 0.8 (at least six). Safety wording is exempt (emergency wording
+   always; referral wording when the screening is not cleared, pain is 7 or more, or the question may be
+   about a health risk). The athlete asking the same thing again is exempt. One repair, then the cut.
+   No reply-length rule (waits for the Haiku measurement).
+
+Tests: `weight_figures` cases in `guard_test.ts`, `numbers_check_test.ts`, `repeats_test.ts`,
+`library/mentions_test.ts`, `reply_guard_test.ts` (cut), `providers/coach_chat_cuts_test.ts` (gateway),
+`providers/coach_chat_thread_summary_test.ts`, `coach_chat_fallback_test.ts`, the pgTAP file
+`coach_chat_summary_in_thread_test.sql`, and four eval-bank cases (`cases_replies.ts`). The bank grades a
+named shown source as cited, as the server does.
+
+Check after deploy: `model_runs`/`coach_messages.guard_faults` for `salvage:` entries and for
+`rule:repeats_previous_turn` and `rule:citation_not_retrieved` counts; a rising `salvage:` share means a
+rule is too strict, a rising `fallback:` share means the cut is not reached.
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

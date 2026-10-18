@@ -22,8 +22,14 @@ import { targetFromDetails, weightClaimCheckFor } from "../training/goal_phase/g
 import { describeGoalTarget } from "../training/goal_phase/render.ts";
 import { type RedFlagHit, screenTurn } from "../coach_safety/red_flags.ts";
 import { referralFor, safetyReferralModel } from "../coach_safety/referrals.ts";
+import { mayConcernHealthRisk } from "../coach_chat_fallback.ts";
 import { numberGroundOf } from "../coach_safety/numbers_check.ts";
-import { coachReplyCheck } from "../coach_safety/reply_guard.ts";
+import {
+  coachReplyCheck,
+  type CutReply,
+  cutReply,
+  type ReplyCheckInputs,
+} from "../coach_safety/reply_guard.ts";
 import { renderSafeRanges, safeRangesOf } from "../coach_safety/safe_ranges.ts";
 import { screeningStateOf } from "../coach_context/contributors/screening.ts";
 import {
@@ -124,6 +130,12 @@ export type CoachChatGeneration = Readonly<{
    * stored answer, and never saved without the athlete's confirmation.
    */
   factSuggestions?: unknown;
+  /**
+   * What was cut from the reply when it still broke only cuttable rules after the repair (see
+   * cutReply in reply_guard.ts): `numbers_stripped`, `study_stripped`,
+   * `closing_question_stripped`, `repeat_stripped`. Names only; they go to the turn trace.
+   */
+  cuts?: readonly string[];
 }>;
 
 export type CoachChatFailureCode =
@@ -1151,7 +1163,9 @@ export function renderCoachContextParts(
       const shown = content.length > 1_200
         ? `${content.slice(0, 300)} … ${content.slice(-900)}`
         : content;
-      s += `**${role}:** ${shown}\n`;
+      s += m.answer_source === appSummarySource
+        ? `**TRACEND DATA SUMMARY (the app's own reply, calculated from the athlete's data; not your words):** ${shown}\n`
+        : `**${role}:** ${shown}\n`;
     }
     return s;
   };
@@ -1272,6 +1286,39 @@ function athleteMessages(context: Record<string, unknown>): string[] {
     .map((message) => message.content as string);
 }
 
+/** Marks a message of the conversation memory that the app wrote, not Coach (the data summary). */
+const appSummarySource = "data_summary";
+
+/**
+ * The app's labelled data summaries in this conversation's memory. Tracend wrote them from the
+ * athlete's own data and showed them as such, so their figures are the athlete's and ground a
+ * reply's numbers on the next turn; Coach's own earlier words never do.
+ */
+function appSummaries(context: Record<string, unknown>): string[] {
+  return arr(context.recent_messages).map(obj).filter((message) =>
+    message.answer_source === appSummarySource && typeof message.content === "string"
+  ).map((message) => message.content as string);
+}
+
+/**
+ * The previous reply of Coach in this conversation, with the athlete's message before it: what
+ * the reply must not repeat. A data summary is the app's, not Coach's, so it is skipped.
+ */
+function previousExchange(
+  context: Record<string, unknown>,
+): Readonly<{ reply: string; question?: string }> | null {
+  const messages = arr(context.recent_messages).map(obj).filter((message) =>
+    typeof message.content === "string" && message.answer_source !== appSummarySource
+  );
+  const at = messages.findLastIndex((message) => message.role === "assistant");
+  if (at === -1) return null;
+  const before = messages.slice(0, at).findLast((message) => message.role === "user");
+  return {
+    reply: messages[at].content as string,
+    ...(before ? { question: before.content as string } : {}),
+  };
+}
+
 /**
  * The check every answer for this turn must pass (coach_safety/reply_guard.ts): the goal phase
  * rules, the Safe Ranges and screening rules, no claimed actions, and the numbers check against
@@ -1279,29 +1326,83 @@ function athleteMessages(context: Record<string, unknown>): string[] {
  * own earlier words never ground a figure), the contributor blocks, the rows Coach looked up this
  * turn, the question, and the athlete's earlier messages.
  */
-export function coachReplyCheckFor(
+export function replyCheckInputsFor(
   context: Record<string, unknown>,
   question: string,
   contributions: CoachContributions | null,
   lookedUp: readonly string[] = [],
-): CoachChatAnswerCheck {
+): ReplyCheckInputs {
   const { file } = renderCoachContextParts(context, coachChatMaxContextBudget);
   // The text of every contributor except the library, which a figure may use only when the reply
   // cites the source (shown). The principles digest grounds general guidance but never a sentence
   // that states the athlete's own target.
   const texts = Object.entries(contributions?.texts ?? {}).filter(([id]) => id !== libraryId);
   const athleteTexts = texts.filter(([id]) => id !== principlesId).map(([, text]) => text);
-  const athleteGiven = [file, ...athleteTexts, ...lookedUp, question, ...athleteMessages(context)];
-  return coachReplyCheck({
-    ranges: safeRangesOf(context),
-    screening: screeningStateOf(contributions),
+  const athleteGiven = [
+    file,
+    ...athleteTexts,
+    ...lookedUp,
+    question,
+    ...athleteMessages(context),
+    ...appSummaries(context),
+  ];
+  const ranges = safeRangesOf(context);
+  const screening = screeningStateOf(contributions);
+  const previous = previousExchange(context);
+  return {
+    ranges,
+    screening,
     ground: numberGroundOf([...athleteGiven, ...texts.map(([, text]) => text)]),
     athleteGround: numberGroundOf(athleteGiven),
     librarySources: Object.fromEntries(
       Object.entries(contributions?.shown ?? {}).map(([id, source]) => [id, source.text]),
     ),
+    libraryLabels: Object.fromEntries(
+      Object.entries(contributions?.shown ?? {}).map(([id, source]) => [id, source.label]),
+    ),
+    athleteText: [question, ...athleteMessages(context)],
+    ...(previous
+      ? {
+        repetition: {
+          previousReply: previous.reply,
+          previousQuestion: previous.question,
+          question,
+          // Referral wording is the turn's own when the health check is not cleared, today's
+          // pain is high, or the question may be about a health risk.
+          referralNeeded: screening !== "cleared" || ranges.painEscalated ||
+            mayConcernHealthRisk(question),
+        },
+      }
+      : {}),
     weightClaim: weightClaimCheckFor(context, question),
-  });
+  };
+}
+
+/** The check every answer for this turn must pass; see `replyCheckInputsFor` for its inputs. */
+export function coachReplyCheckFor(
+  context: Record<string, unknown>,
+  question: string,
+  contributions: CoachContributions | null,
+  lookedUp: readonly string[] = [],
+): CoachChatAnswerCheck {
+  return coachReplyCheck(replyCheckInputsFor(context, question, contributions, lookedUp));
+}
+
+/**
+ * Cuts a reply that failed only cuttable rules after the repair (reply_guard.ts, cutReply), with
+ * the same inputs as the check. The caller runs the full check on what it returns.
+ */
+export function coachReplyCutFor(
+  context: Record<string, unknown>,
+  question: string,
+  contributions: CoachContributions | null,
+  lookedUp: readonly string[] = [],
+): (
+  candidate: Record<string, unknown>,
+  rules: readonly CoachChatValidationRule[],
+) => CutReply | null {
+  const inputs = replyCheckInputsFor(context, question, contributions, lookedUp);
+  return (candidate, rules) => cutReply(inputs, candidate, rules);
 }
 
 // The athlete file comes first and the question last: the file is stable
@@ -1471,7 +1572,9 @@ function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string 
     case "claimed_action":
       return "Remove every claim or promise that you changed, saved, updated, scheduled or will do something: you cannot change anything yourself. Say what the athlete can do in the app instead (for example, set a target on Progress, Set your target), or, when a proposal is going to the athlete, that it is a proposal they can approve. A plan change happens only when the athlete approves it.\n";
     case "citation_not_retrieved":
-      return 'Remove every citation of a library source that was not shown in the library reference data of this request. Use only the source ids in square brackets there: an evidence item with source "library" and that id as its code. Never write source ids in the answer text. If no excerpt supports a sentence, soften or remove it; do not fill the gap from memory.\n';
+      return 'Remove every citation of a library source that was not shown in the library reference data of this request. That includes a study, guideline or fact sheet named in the text by its authors and year or by the institution that published it: name only the sources shown there. Use only the source ids in square brackets there: an evidence item with source "library" and that id as its code. Never write source ids in the answer text. If no excerpt supports a sentence, soften or remove it; do not fill the gap from memory.\n';
+    case "repeats_previous_turn":
+      return "Your reply repeats your previous reply in this conversation (see This Conversation): its closing question, or a sentence you already said, or both. Remove each repeat. End with a different question that moves the conversation on, or with no question. Say each caution once; do not say it again.\n";
     case "numbers_not_grounded":
       return `These figures are not in the athlete file, the calculated sections, the Safe Ranges, the reference data or the athlete's message${
         detail ? `: ${detail}` : ""

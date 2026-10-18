@@ -158,3 +158,87 @@ Deno.test("a warning word only excuses the weight it governs", () => {
     null,
   );
 });
+
+Deno.test("a load on a lift is never read as a body weight", () => {
+  const ask = "What is my next Upper B?";
+  for (
+    const sentence of [
+      "Next Upper B, overhead press is 55 kg x 6, and you will hit it if you keep the reps clean.",
+      "Your curl will go to 32.5 kg.",
+      "Next Upper B, overhead press is 55 kg × 6, and you will hit it if you keep the reps clean.",
+      "You will hit 55 kg for 6 on the overhead press.",
+      "You can get 50 kg for 8 reps on the lat pulldown next week.",
+      "You could reach 45 kg on overhead press in 6 weeks.",
+      "Your next target is 100 kg on the deadlift, and you will get there in 12 weeks.",
+      "Aim for a 100 kg deadlift in 16 weeks.",
+      "Your goal is a 100 kg deadlift by December.",
+      "You will squat 55 kg per side by March.",
+      "Load 20 kg plates and a 15 kg plate to make 55 kg on the bar.",
+      "Two 25 kg plates plus the bar gives you 70 kg, and next week you will add 2.5 kg.",
+      "Drop the load to 50 kg for the back-off set.",
+      "Drop the weight to 50 kg on the last set.",
+      "Back off to 40 kg for 10 reps, then work back up to 55 kg.",
+      "Your 1RM bench could be 60 kg by the end of the block.",
+      "Romanian deadlift: 55 kg this week and 62.5 kg in 3 weeks.",
+      "Hold 50 kg on the incline dumbbell press until all sets hit 8 reps.",
+    ]
+  ) {
+    assertEquals(weightClaimViolation(sentence, ask, noTarget), null, sentence);
+    assertEquals(
+      weightClaimViolation(sentence, ask, { ...noTarget, hasTarget: true }),
+      null,
+      sentence,
+    );
+  }
+});
+
+Deno.test("a body weight with a cue is still read, next to a lift", () => {
+  const ask = "How am I doing?";
+  assertEquals(
+    weightClaimViolation(
+      "Your bench could reach 80 kg, and at this pace you will weigh 55 kg in 10 weeks.",
+      ask,
+      withTarget,
+    ),
+    "weight_below_healthy_floor",
+  );
+  assertEquals(
+    weightClaimViolation("Keep lifting and you'll be at 55 kg in 10 weeks.", ask, withTarget),
+    "weight_below_healthy_floor",
+  );
+  assertEquals(
+    weightClaimViolation("You could get down to 52 kg by March.", ask, withTarget),
+    "weight_below_healthy_floor",
+  );
+  assertEquals(
+    weightClaimViolation("Your bodyweight will drop to 55 kg by summer.", ask, withTarget),
+    "weight_below_healthy_floor",
+  );
+  assertEquals(
+    weightClaimViolation("On the scale you should see 56 kg in 8 weeks.", ask, withTarget),
+    "weight_below_healthy_floor",
+  );
+  assertEquals(
+    weightClaimViolation("Your goal weight of 54 kg is possible in 12 weeks.", ask, withTarget),
+    "weight_below_healthy_floor",
+  );
+  assertEquals(
+    weightClaimViolation(
+      "With the deadlift at 140 kg you will weigh 66 kg in 12 weeks.",
+      ask,
+      noTarget,
+    ),
+    "projection_without_target",
+  );
+});
+
+Deno.test("a lift's load does not trip the projection rule either", () => {
+  assertEquals(
+    weightClaimViolation(
+      "Your squat will be 70 kg in 8 weeks if you keep adding 2.5 kg.",
+      "How am I doing?",
+      noTarget,
+    ),
+    null,
+  );
+});

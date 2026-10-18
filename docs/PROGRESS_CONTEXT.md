@@ -57,6 +57,17 @@ schema's shape, and a turn deadline counted from the request's start so the data
 returns inside the app's 45 s. Nothing changes for the app. Details: "Coach answer schema: one stable grammar" in
 [`ai-gateway.md`](./handoff/ai-gateway.md).
 
+**Coach reply guards (2026-10-18, branch `claude/coach-reply-guards`, PR open):** from the Coach
+simulator: a lift's load is no longer read as a body weight (55 kg on the overhead press was sending
+athletes to the data summary); a plan the athlete asked for keeps its answer (session lengths like "30
+min walk" are advice, and a reply that still fails only on figures, unshown sources or repeats is cut
+sentence by sentence instead of replaced by the data summary; loads and body-weight, calorie and
+medical figures are never let through); a shown study named in the text is attached to the evidence
+and one that was not shown is repaired; the app's data summary stays in the thread (migration
+`20261018190031`, `prepare_coach_chat_v10`, trend in kg/week); the same closing question or sentence on
+consecutive turns is repaired and then cut. Answer schema unchanged. Details: "Coach reply guards" in
+[`ai-gateway.md`](./handoff/ai-gateway.md); rules in `AI_SAFETY_SPEC.md` §11, §11.2 and §12.
+
 **Authority docs rewritten (2026-10-15):** the 13 authority docs were checked against `main` after
 Iteration 1. The addenda were folded in and the contradictions and stale facts were removed. Planned
 work is marked "Planned" and points at the program plan. No rule was changed. Rules that the code or

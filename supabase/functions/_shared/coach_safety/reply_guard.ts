@@ -13,8 +13,12 @@
 //                               a library figure without citing its source, or as the athlete's
 //                               own target
 //   citation_not_retrieved      names a library source that Coach was not shown this turn (here:
-//                               a source id written in the text; an evidence item that cites one is
+//                               a source id written in the text, or a study named by its authors
+//                               and year, or an institution's fact sheet or guidelines, that no
+//                               shown source matches; an evidence item that cites an unshown id is
 //                               refused by parseCoachChatAnswer)
+//   repeats_previous_turn       ends with the same (or nearly the same) question as the previous
+//                               reply, or says again a sentence of it (coach_safety/repeats.ts)
 //
 // The design rule for every exemption (a warning, a decline, a prohibition, a description of the
 // athlete's past): it applies only when it provably governs the matched figure or prescription.
@@ -22,12 +26,14 @@
 // conjunction that starts a new clause: "..., and don't skip the warm-up"); the exemption must
 // sit in the same clause, within a short window before the match. Nothing in another clause can
 // cover it. When in doubt the reply is flagged: a repair is cheap, a missed breach is not.
-import type {
-  CoachChatAnswerBreak,
-  CoachChatAnswerCheck,
-  CoachChatValidationRule,
+import {
+  type CoachChatAnswerBreak,
+  type CoachChatAnswerCheck,
+  type CoachChatValidationRule,
+  visibleText,
 } from "../contracts/coach_chat_v1.ts";
 import type { ScreeningState } from "../coach_context/contributors/screening.ts";
+import { namedShownSources, type ShownSources, unshownStudies } from "../library/mentions.ts";
 import { unshownKeysIn } from "../library/retrieval.ts";
 import {
   mergeGrounds,
@@ -35,6 +41,7 @@ import {
   numberGroundOf,
   ungroundedNumbers,
 } from "./numbers_check.ts";
+import { type RepeatInputs, repeatsOf } from "./repeats.ts";
 import type { SafeRanges } from "./safe_ranges.ts";
 
 const sentencesOf = (answer: string) =>
@@ -317,6 +324,15 @@ export type ReplyCheckInputs = Readonly<{
    * athlete's own target.
    */
   librarySources?: Readonly<Record<string, string>>;
+  /** The label shown for each library source, by source id (its title and year). */
+  libraryLabels?: Readonly<Record<string, string>>;
+  /**
+   * What the athlete wrote in this conversation. A study the athlete named themselves is theirs to
+   * ask about, so the reply naming it is not a citation of a source Coach was not shown.
+   */
+  athleteText?: readonly string[];
+  /** The previous reply and the turn's need for referral wording; none without a previous reply. */
+  repetition?: RepeatInputs;
   /** The goal phase check (training/goal_phase/guard.ts): runs first and keeps its own rules. */
   weightClaim: (answer: string) => CoachChatValidationRule | null;
 }>;
@@ -342,20 +358,50 @@ function listIn(figures: readonly string[]): string {
   return figures.slice(0, 6).join(", ");
 }
 
+/** The sources shown this turn, as the mention matcher reads them (label, and text for the author). */
+function shownOf(inputs: ReplyCheckInputs): ShownSources {
+  return Object.fromEntries(
+    Object.entries(inputs.librarySources ?? {}).map((
+      [id, text],
+    ) => [id, { label: inputs.libraryLabels?.[id] ?? id, text }]),
+  );
+}
+
+/** The grounds of the library sources a reply cites, by id, computed once. */
+function libraryGrounder(inputs: ReplyCheckInputs): (ids: readonly string[]) => NumberGround[] {
+  const grounds = new Map<string, NumberGround>();
+  return (ids) =>
+    ids.flatMap((id) => {
+      const text = inputs.librarySources?.[id];
+      if (text === undefined) return [];
+      if (!grounds.has(id)) grounds.set(id, numberGroundOf([text]));
+      return [grounds.get(id)!];
+    });
+}
+
+/**
+ * Studies and sources a text names that Coach was not shown this turn. A study the athlete named
+ * in this conversation is theirs to ask about and is left out.
+ */
+function unshownNames(inputs: ReplyCheckInputs, text: string, shown: ShownSources): string[] {
+  const athlete = new Set(
+    (inputs.athleteText ?? []).flatMap((message) => message.toLowerCase().split(/[^a-z0-9]+/)),
+  );
+  const names = unshownStudies(text, shown).filter((mention) =>
+    !mention.authors.some((author) => athlete.has(author))
+  ).map((mention) => [...mention.authors, mention.year ?? ""].join(" ").trim());
+  return [...names, ...unshownKeysIn(text, new Set(Object.keys(shown)))];
+}
+
 /**
  * The check Coach chat applies to every answer: the goal phase rules, the safe-range and
- * screening rules, no claimed actions, and the numbers check. It reports the first rule broken
- * and every other one, so a single repair can fix them together.
+ * screening rules, no claimed actions, the numbers check, the citations and the repeats. It
+ * reports the first rule broken and every other one, so a single repair can fix them together.
  */
 export function coachReplyCheck(inputs: ReplyCheckInputs): CoachChatAnswerCheck {
-  const libraryGrounds = new Map<string, NumberGround>();
-  const libraryGround = (id: string): NumberGround[] => {
-    const text = inputs.librarySources?.[id];
-    if (text === undefined) return [];
-    if (!libraryGrounds.has(id)) libraryGrounds.set(id, numberGroundOf([text]));
-    return [libraryGrounds.get(id)!];
-  };
-  return (answer, citedLibrarySources = []): CoachChatAnswerBreak | null => {
+  const libraryGround = libraryGrounder(inputs);
+  const shown = shownOf(inputs);
+  return (answer, citedLibrarySources = [], replyText): CoachChatAnswerBreak | null => {
     const broken: CoachChatValidationRule[] = [];
     const weight = inputs.weightClaim(answer);
     if (weight) broken.push(weight);
@@ -380,13 +426,18 @@ export function coachReplyCheck(inputs: ReplyCheckInputs): CoachChatAnswerCheck 
     const ungrounded = [
       ...ungroundedNumbers(
         other.join("\n"),
-        mergeGrounds(inputs.ground, ...citedLibrarySources.flatMap(libraryGround)),
+        mergeGrounds(inputs.ground, ...libraryGround(citedLibrarySources)),
       ),
       ...ungroundedNumbers(own.join("\n"), inputs.athleteGround ?? inputs.ground),
     ];
     if (ungrounded.length > 0) broken.push("numbers_not_grounded");
-    const unshown = unshownKeysIn(answer, new Set(Object.keys(inputs.librarySources ?? {})));
-    if (unshown.length > 0) broken.push("citation_not_retrieved");
+    if (unshownNames(inputs, answer, shown).length > 0) broken.push("citation_not_retrieved");
+    if (inputs.repetition) {
+      const repeats = repeatsOf(replyText ?? answer, inputs.repetition);
+      if (repeats.closing !== null || repeats.sentences.length > 0) {
+        broken.push("repeats_previous_turn");
+      }
+    }
     if (broken.length === 0) return null;
     return {
       rule: broken[0],
@@ -399,4 +450,153 @@ export function coachReplyCheck(inputs: ReplyCheckInputs): CoachChatAnswerCheck 
         : {}),
     };
   };
+}
+
+// ---- salvage: a reply that fails only these rules is cut, not thrown away ----------------------
+
+/** The rules a cut can fix: each is a fault of particular sentences, not of the whole reply. */
+const cuttableRules: readonly CoachChatValidationRule[] = [
+  "numbers_not_grounded",
+  "citation_not_retrieved",
+  "repeats_previous_turn",
+];
+
+/** Whether every rule broken is one a cut can fix. */
+export function isCuttable(rules: readonly CoachChatValidationRule[]): boolean {
+  return rules.length > 0 && rules.every((rule) => cuttableRules.includes(rule));
+}
+
+export type CutReply = Readonly<{
+  answer: Record<string, unknown>;
+  /** Finite names of what was cut, for the turn trace. */
+  cuts: readonly (
+    | "numbers_stripped"
+    | "study_stripped"
+    | "closing_question_stripped"
+    | "repeat_stripped"
+  )[];
+}>;
+
+const noticeFor = {
+  numbers_stripped: "Left out lines with figures that are not in your data.",
+  study_stripped: "Left out a line that named a source I was not shown.",
+} as const;
+
+// Sentence breaks, and the list markers that must stay with their sentence.
+const unitBreak = /(\n+|(?<=[.!?])(?<!(?:^|\n)[ \t]*\d{1,2}[.)])[ \t]+)/;
+const unitMarker = /^\s*(?:[-*•]|\d+[.)])\s+/;
+
+/** Removes the units a test flags, with the break after each; returns the rest. */
+function cutUnits(
+  text: string,
+  flagged: (unit: string) => boolean,
+): Readonly<{ text: string; units: number; kept: number }> {
+  const parts = text.split(unitBreak);
+  const out: string[] = [];
+  let units = 0;
+  let kept = 0;
+  for (let i = 0; i < parts.length; i += 2) {
+    const unit = parts[i];
+    if (unit.trim() === "") {
+      out.push(unit, parts[i + 1] ?? "");
+      continue;
+    }
+    units += 1;
+    if (flagged(unit.replace(unitMarker, "").trim())) continue;
+    kept += 1;
+    out.push(unit, parts[i + 1] ?? "");
+  }
+  return { text: out.join("").replace(/\n{3,}/g, "\n\n").trim(), units, kept };
+}
+
+/** A line left alone before a list that was cut away ("Here is the plan:"). */
+function withoutDanglingLead(text: string): string {
+  const lines = text.split("\n");
+  while (lines.length > 0 && /:\s*$/.test(lines[lines.length - 1])) lines.pop();
+  return lines.join("\n").trim();
+}
+
+/**
+ * Cuts the sentences that break the cuttable rules out of a reply that failed only those rules,
+ * deterministically: the sentences with a figure that is not in the athlete's data, those that
+ * name a source Coach was not shown, and the closing question or sentences that repeat the
+ * previous reply. The same cut runs on the follow-up chips, the notes on missing data and the
+ * reasoning steps. Nothing is rewritten and nothing is added except a note in `missing_data`
+ * saying a line was left out. Null when too little is left to be an answer (under half the
+ * sentences, or under 40 characters): the reply then ends in the data summary as before. The
+ * caller must still run the full check on the result.
+ */
+export function cutReply(
+  inputs: ReplyCheckInputs,
+  candidate: Record<string, unknown>,
+  rules: readonly CoachChatValidationRule[],
+): CutReply | null {
+  if (!isCuttable(rules) || typeof candidate.answer !== "string") return null;
+  const libraryGround = libraryGrounder(inputs);
+  const shown = shownOf(inputs);
+  const evidence = Array.isArray(candidate.evidence)
+    ? candidate.evidence as Record<string, unknown>[]
+    : [];
+  const declared = evidence.filter((item) => item.source === "library").map((item) =>
+    item.code as string
+  );
+  const cited = [
+    ...new Set([...declared, ...namedShownSources(visibleText(candidate).join("\n"), shown)]),
+  ];
+  const merged = mergeGrounds(inputs.ground, ...libraryGround(cited));
+  const repeats = rules.includes("repeats_previous_turn") && inputs.repetition
+    ? repeatsOf(candidate.answer, inputs.repetition)
+    : null;
+  const flaggedBy = (unit: string, answerText: boolean) => {
+    const reasons:
+      ("numbers_stripped" | "study_stripped" | "closing_question_stripped" | "repeat_stripped")[] =
+        [];
+    if (rules.includes("numbers_not_grounded")) {
+      const ground = statesOwnTarget(unit) ? inputs.athleteGround ?? inputs.ground : merged;
+      if (ungroundedNumbers(unit, ground).length > 0) reasons.push("numbers_stripped");
+    }
+    if (rules.includes("citation_not_retrieved") && unshownNames(inputs, unit, shown).length > 0) {
+      reasons.push("study_stripped");
+    }
+    if (answerText && repeats) {
+      if (unit === repeats.closing) reasons.push("closing_question_stripped");
+      else if (repeats.sentences.includes(unit)) reasons.push("repeat_stripped");
+    }
+    return reasons;
+  };
+
+  const cuts = new Set<CutReply["cuts"][number]>();
+  const mark = (unit: string, answerText: boolean) => {
+    const reasons = flaggedBy(unit, answerText);
+    for (const reason of reasons) cuts.add(reason);
+    return reasons.length > 0;
+  };
+  const main = cutUnits(candidate.answer, (unit) => mark(unit, true));
+  const answerText = withoutDanglingLead(main.text);
+  const keptUnits = answerText === "" ? 0 : cutUnits(answerText, () => false).units;
+  if (answerText.length < 40 || keptUnits * 2 < main.units) return null;
+
+  const strings = (value: unknown) =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  const keepString = (text: string) => !mark(text, false);
+  const reasoning = (Array.isArray(candidate.reasoning_chain) ? candidate.reasoning_chain : [])
+    .filter((item) => {
+      const step = item as Record<string, unknown>;
+      return keepString(`${step.step ?? ""} ${step.value ?? ""}`.trim());
+    });
+  const missingData = strings(candidate.missing_data).filter(keepString);
+  const notes = [...cuts].flatMap((cut) =>
+    cut === "numbers_stripped" || cut === "study_stripped" ? [noticeFor[cut]] : []
+  );
+  const cut: Record<string, unknown> = {
+    ...candidate,
+    answer: answerText,
+    suggested_follow_ups: strings(candidate.suggested_follow_ups).filter(keepString),
+    missing_data: [...missingData, ...notes],
+    evidence: evidence.filter((item) =>
+      item.source === "library" || keepString(String(item.label ?? ""))
+    ),
+  };
+  if (Array.isArray(candidate.reasoning_chain)) cut.reasoning_chain = reasoning;
+  return cuts.size === 0 ? null : { answer: cut, cuts: [...cuts] };
 }

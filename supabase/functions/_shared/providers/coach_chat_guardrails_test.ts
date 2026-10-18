@@ -190,7 +190,7 @@ Deno.test("under a screening cap, vigorous advice is repaired with the Rule line
 Deno.test("two failed answers end in the data summary path, with rule names and no content", async () => {
   const { result, lines } = await run([
     "You might walk 45 minutes a day.",
-    "Honestly, 45 minutes of walking, or 50 minutes.",
+    "Honestly, 47 minutes of walking, or 53 minutes.",
   ]);
   assert(result instanceof CoachChatUnavailableError);
   assertEquals(result.failureReason, "provider_response_invalid");
@@ -198,9 +198,9 @@ Deno.test("two failed answers end in the data summary path, with rule names and 
   assertEquals(result.metadata.repairRule, "numbers_not_grounded");
   assertEquals(result.metadata.attempts?.map((attempt) => attempt.outcome), ["invalid", "invalid"]);
   assertEquals(result.metadata.attempts?.map((attempt) => attempt.actual), [1, 2]);
-  assert(!/45 minutes|"45"|walking|50 minutes/i.test(lines.join("\n")), "no figure in a log");
+  assert(!/45 minutes|"45"|walking|53 minutes/i.test(lines.join("\n")), "no figure in a log");
   assert(
-    !/45 minutes|"45"|walking|50 minutes/i.test(JSON.stringify(result.metadata)),
+    !/45 minutes|"45"|walking|53 minutes/i.test(JSON.stringify(result.metadata)),
     "no figure in the failure metadata",
   );
 });

@@ -3,7 +3,7 @@ import type { CoachChatAnswerBreak } from "../contracts/coach_chat_v1.ts";
 import type { ScreeningState } from "../coach_context/contributors/screening.ts";
 import { weightClaimCheckFor } from "../training/goal_phase/guard.ts";
 import { numberGroundOf } from "./numbers_check.ts";
-import { coachReplyCheck } from "./reply_guard.ts";
+import { coachReplyCheck, cutReply } from "./reply_guard.ts";
 import { ownerContext, ownerGoalPhasePayload } from "./fixtures.ts";
 import { safeRangesOf } from "./safe_ranges.ts";
 import { renderCoachContextParts } from "../providers/coach_chat_provider.ts";
@@ -414,4 +414,95 @@ Deno.test("the principles digest grounds general guidance but not a sentence abo
   ]);
   // A figure from the athlete's data is fine in a target sentence.
   assertEquals(broken("Your calorie target is 2000 kcal.", { digest }), []);
+});
+
+// ---- citations by name, repeats and cuts ------------------------------------------------------
+
+const kreiderLibrary = {
+  maughan_2018_ioc_supplements:
+    "[source: maughan_2018_ioc_supplements] Creatine at 3 to 5 g a day is well studied.",
+};
+
+function inputsFor(extra: Partial<Parameters<typeof coachReplyCheck>[0]> = {}) {
+  const question = "What should I do?";
+  return {
+    ranges: { ...safeRangesOf(context), painEscalated: false },
+    screening: "cleared" as ScreeningState,
+    ground: numberGroundOf([file, goalPhase, question]),
+    athleteGround: numberGroundOf([file, goalPhase, question]),
+    weightClaim: weightClaimCheckFor(context, question),
+    librarySources: kreiderLibrary,
+    libraryLabels: { maughan_2018_ioc_supplements: "IOC consensus statement (2018)" },
+    ...extra,
+  };
+}
+
+Deno.test("citation_not_retrieved: a study named by authors and year that was not shown", () => {
+  const run = (answer: string, extra = {}) =>
+    ((coachReplyCheck(inputsFor(extra))(answer, [], answer)) as CoachChatAnswerBreak | null)
+      ?.rules ?? [];
+  assertEquals(run("Kreider 2017 found creatine helps."), ["citation_not_retrieved"]);
+  assertEquals(run("The WHO guidelines say to move more."), ["citation_not_retrieved"]);
+  assertEquals(run("Creatine is well studied."), []);
+  // Shown, or named by the athlete, or a date and not a study.
+  assertEquals(run("Maughan 2018 found creatine helps."), []);
+  assertEquals(
+    run("Kreider 2017 found creatine helps.", { athleteText: ["What does Kreider say?"] }),
+    [],
+  );
+  assertEquals(run("Since 2018 you have trained a lot."), []);
+});
+
+Deno.test("repeats_previous_turn: the closing question of the previous reply, asked again", () => {
+  const repetition = {
+    previousReply: "Sleep was fine. Want me to suggest two easy ways to close the protein gap?",
+    referralNeeded: false,
+  };
+  const run = (answer: string) =>
+    ((coachReplyCheck(inputsFor({ repetition }))(answer, [], answer)) as
+      | CoachChatAnswerBreak
+      | null)?.rules ?? [];
+  assertEquals(
+    run("Training is on track. Should I suggest two simple ways to close your protein gap?"),
+    ["repeats_previous_turn"],
+  );
+  assertEquals(run("Training is on track. Do you want to move leg day to Friday?"), []);
+  assertEquals(
+    coachReplyCheck(inputsFor())(
+      "Training is on track. Should I suggest two simple ways to close your protein gap?",
+    ),
+    null,
+  );
+});
+
+Deno.test("a cut removes the sentences at fault and nothing else", () => {
+  const cut = (answer: string, rules: Parameters<typeof cutReply>[2]) =>
+    cutReply(inputsFor(), {
+      answer,
+      evidence: [],
+      missing_data: [],
+      safety_state: "allowed",
+      suggested_follow_ups: ["Walk 37 minutes?", "Show my week"],
+      reasoning_chain: [],
+    }, rules);
+  const plan =
+    "Here is your plan:\n1. Walk 20 min after dinner.\n2. Squat 61.5 kg x 8 today.\n3. Sleep early.\nThat keeps the week simple and realistic for travel.";
+  const result = cut(plan, ["numbers_not_grounded"])!;
+  assertEquals(
+    result.answer.answer,
+    "Here is your plan:\n1. Walk 20 min after dinner.\n3. Sleep early.\nThat keeps the week simple and realistic for travel.",
+  );
+  assertEquals(result.answer.suggested_follow_ups, ["Show my week"]);
+  assertEquals(result.answer.missing_data, [
+    "Left out lines with figures that are not in your data.",
+  ]);
+  assertEquals(result.cuts, ["numbers_stripped"]);
+  // A lead-in left with nothing under it goes too, and a reply with too little left is not cut.
+  assertEquals(
+    cut("Here is your plan:\n1. Squat 61.5 kg x 8 today.", ["numbers_not_grounded"]),
+    null,
+  );
+  // A rule that is not about particular sentences is never cut.
+  assertEquals(cut(plan, ["numbers_not_grounded", "claimed_action"]), null);
+  assertEquals(cut(plan, ["calories_below_floor"]), null);
 });

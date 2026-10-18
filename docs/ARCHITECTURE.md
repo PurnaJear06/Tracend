@@ -429,12 +429,14 @@ question follows one path regardless of its wording:
    with averages, eight weeks of weights, 14 days of check-ins, 28 days of logged nutrition,
    today's meals, plan structure, proposals, reconciliations, data freshness), under a 90K
    whole-section size guard. Conversation memory is the ten newest messages of the thread and of
-   other threads, each capped at 2,000 characters keeping its ending, never a labeled data
-   summary. A long thread keeps fewer, newest messages rather than failing preparation. The
+   other threads, each capped at 2,000 characters keeping its ending. The labeled data summary is left out of
+   other threads and, since `prepare_coach_chat_v10`, kept in this thread, marked as the app's own
+   reply. A long thread keeps fewer, newest messages rather than failing preparation. The
    prepared file is stored in `coach_context_snapshots`.
    A10 part 2 adds `prepare_coach_chat_v9`, which calls v8 unchanged and then leaves out other
    conversations the athlete asked Coach not to remember and the older preference, journal and
-   narrative sections; coach-chat calls v9. Memory reaches the prompt through two contributors: the
+   narrative sections; v10 (2026-10-18) calls v9 and puts the app's data summaries back into this
+   thread's memory, marked; coach-chat calls v10. Memory reaches the prompt through two contributors: the
    athlete's confirmed facts (stable, before the volatile parts, so the prefix caches) and Coach's
    own notes (volatile, labelled untrusted). Precedence: Tracend's calculations, then confirmed
    facts, then the athlete's recent statements, then Coach's notes, then the library. After the reply

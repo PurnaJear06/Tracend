@@ -188,3 +188,19 @@ Deno.test("memory on every turn drops superseded questions: by state when carrie
   assertEquals(withoutSupersededMemory(clean), clean);
   assertEquals(withoutSupersededMemory({}), {});
 });
+
+Deno.test("a question that fell back to the app's data summary still reads as unanswered", () => {
+  const summary = {
+    role: "assistant",
+    content: "Latest weight: 78.4 kg.",
+    answer_source: "data_summary",
+  };
+  const recent = [user("How is my week?"), summary, user("How is my week?"), assistant("Fine.")];
+  assertEquals(unansweredCopies(recent, "How is my week?"), [0]);
+  const { context, dropped } = withoutSupersededQuestions(
+    { recent_messages: recent },
+    "How is my week?",
+  );
+  assertEquals(dropped, 1);
+  assertEquals(context.recent_messages, [summary, user("How is my week?"), assistant("Fine.")]);
+});

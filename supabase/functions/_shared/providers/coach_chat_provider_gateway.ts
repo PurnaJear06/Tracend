@@ -55,6 +55,7 @@ import {
   coachChatTiming,
   CoachChatUnavailableError,
   coachReplyCheckFor,
+  coachReplyCutFor,
   deterministicSafetyGeneration,
   issueOfValidationError,
   loggableIssue,
@@ -769,8 +770,13 @@ export async function generateCoachChatViaGateway(
     attempts.push(attempted.telemetry);
     spentUsd += attempted.usage?.costUsd ?? 0;
   };
-  const success = (attempted: Attempted, answer: CoachChatAnswerV2): CoachChatGeneration => ({
+  const success = (
+    attempted: Attempted,
+    answer: CoachChatAnswerV2,
+    cuts: readonly string[] = [],
+  ): CoachChatGeneration => ({
     answer,
+    ...(cuts.length ? { cuts } : {}),
     ...(attempted.proposalIntent === undefined ? {} : { proposalIntent: attempted.proposalIntent }),
     ...(attempted.factSuggestions === undefined
       ? {}
@@ -808,6 +814,48 @@ export async function generateCoachChatViaGateway(
           0,
           coachChatAnswerLimits.missingDataMaxItems,
         ),
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  // A reply that failed only cuttable rules (a figure not in the athlete's data, a source that was
+  // not shown, a repeat of the previous reply) after its repair, or whose repair could not be sent,
+  // is cut instead of thrown away: the sentences at fault go, and what is left must pass every
+  // check again and be enough of an answer (cutReply). The proposal and fact suggestions the
+  // model sent with the candidate are read as for any answer.
+  const cutFromRepair = (
+    failed: Attempted,
+  ): { attempted: Attempted; answer: CoachChatAnswerV2; cuts: readonly string[] } | null => {
+    const repair = failed.failure?.repair;
+    if (!repair || repair.candidate === null || repair.issue.path !== "answer") return null;
+    try {
+      const parts = splitGatewayAnswer(JSON.parse(repair.candidate));
+      if (!parts.answer || typeof parts.answer !== "object" || Array.isArray(parts.answer)) {
+        return null;
+      }
+      const rules = repair.issue.rules ?? [repair.issue.rule];
+      const cut = coachReplyCutFor(context, question, contributions, grounds)(
+        parts.answer as Record<string, unknown>,
+        rules,
+      );
+      if (!cut) return null;
+      const answer = parseCoachChatAnswer(cut.answer, permitted, answerCheck, shown);
+      const proposalIntent = input.proposals === true
+        ? intentFromModel(parts.proposalIntent)
+        : undefined;
+      const factSuggestions = input.factSuggestions === true
+        ? unlessEmpty(parts.factSuggestions)
+        : undefined;
+      return {
+        attempted: {
+          ...failed,
+          ...(proposalIntent === undefined ? {} : { proposalIntent }),
+          ...(factSuggestions === undefined ? {} : { factSuggestions }),
+        },
+        answer,
+        cuts: cut.cuts,
       };
     } catch {
       return null;
@@ -878,7 +926,10 @@ export async function generateCoachChatViaGateway(
 
   const second = await attempt("repair", promptFor(repair, true), false);
   if (!second) {
-    // The repair was never sent, so the earlier failure stands.
+    // The repair was never sent: the first reply is cut when only cuttable rules failed it,
+    // otherwise the earlier failure stands.
+    const cut = cutFromRepair(current);
+    if (cut) return success(cut.attempted, cut.answer, cut.cuts);
     throw unavailable(current.failure!.reason, current.failure!.retryAfterSeconds, {
       ...initialRule,
       repairSkipped,
@@ -886,6 +937,8 @@ export async function generateCoachChatViaGateway(
   }
   record(second);
   if (second.answer) return success(second, second.answer);
+  const cut = cutFromRepair(second);
+  if (cut) return success(cut.attempted, cut.answer, cut.cuts);
   const repairIssue = second.failure?.repair?.issue;
   throw unavailable(second.failure!.reason, second.failure!.retryAfterSeconds, {
     ...initialRule,

@@ -843,7 +843,10 @@ narrative sections from the athlete's stored `coach_context_snapshots` (with the
 `coach_threads.remember` (default true) marks a conversation the athlete asked Coach not to remember
 (`create_coach_thread_v2`): no notes, no suggested facts, excluded from `coach_lookup_past_messages_v1`
 and `search_coach_messages`, and left out of every other conversation's context by
-`prepare_coach_chat_v9`.
+`prepare_coach_chat_v9`. `prepare_coach_chat_v10` (migration `20261018190031`, context
+`schema_version` 8.1) wraps v9 and rebuilds `recent_messages` with the app's labelled data summaries
+in, each carrying `answer_source: "data_summary"` beside `role` and `content`; every other message
+keeps its shape. It rewrites the stored snapshot to match, as v9 does.
 
 ### `coach_narrative_entries` (never written)
 

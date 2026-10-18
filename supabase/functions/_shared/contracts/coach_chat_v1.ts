@@ -1,3 +1,5 @@
+import { namedShownSources, type ShownSources } from "../library/mentions.ts";
+
 // 1.1 clients render the labeled data-summary reply; 1.0 clients keep the 503.
 export const coachChatRequestSchemaVersions = ["1.0", "1.1"] as const;
 
@@ -99,6 +101,7 @@ export const coachChatValidationRules = [
   "projection_without_target",
   "numbers_not_grounded",
   "citation_not_retrieved",
+  "repeats_previous_turn",
   "calories_below_floor",
   "loss_rate_above_ceiling",
   "effort_above_screening_cap",
@@ -178,8 +181,13 @@ export function parseCoachChatRequest(value: unknown): CoachChatRequestV1 {
  */
 export type CoachChatAnswerCheck = (
   answer: string,
-  /** The library source ids the reply's evidence cites (E3). */
+  /**
+   * The library source ids the reply cites (E3): the evidence items it declares and the shown
+   * sources its text names, which the server attaches to the evidence.
+   */
   citedLibrarySources?: readonly string[],
+  /** The `answer` field alone, without the follow-ups, notes and labels that `answer` joins. */
+  replyText?: string,
 ) => CoachChatValidationRule | CoachChatAnswerBreak | null;
 
 /**
@@ -188,7 +196,7 @@ export type CoachChatAnswerCheck = (
  * action or an unsupported figure cannot sit in a field the check skips. Call after the shape is
  * validated.
  */
-function visibleText(answer: Record<string, unknown>): string[] {
+export function visibleText(answer: Record<string, unknown>): string[] {
   const texts: string[] = [answer.answer as string];
   const strings = (value: unknown) =>
     Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -214,7 +222,7 @@ export function parseCoachChatAnswer(
   value: unknown,
   permittedEvidence: readonly string[],
   answerCheck?: CoachChatAnswerCheck,
-  shownLibrarySources: Readonly<Record<string, Readonly<{ label: string }>>> = {},
+  shownLibrarySources: ShownSources = {},
 ): CoachChatAnswerV2 {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     invalid("invalid_root", "$");
@@ -371,10 +379,18 @@ export function parseCoachChatAnswer(
     }
   }
   // One pass over everything the athlete can read, not only `answer`.
-  const cited = (answer.evidence as Record<string, unknown>[]).filter((item) =>
+  const declared = (answer.evidence as Record<string, unknown>[]).filter((item) =>
     item.source === "library"
   ).map((item) => item.code as string);
-  const found = answerCheck?.(visibleText(answer).join("\n"), cited);
+  const text = visibleText(answer).join("\n");
+  // A shown source the text names ("Maughan 2018") but the evidence does not cite is cited for
+  // the reply: the server adds its evidence item, so the app shows the source, and the check
+  // reads the reply as citing it. Only while the evidence has room.
+  const named = namedShownSources(text, shownLibrarySources)
+    .filter((id) => !declared.includes(id))
+    .slice(0, Math.max(0, coachChatAnswerLimits.evidenceMaxItems - answer.evidence.length));
+  const cited = [...declared, ...named];
+  const found = answerCheck?.(text, cited, answer.answer);
   if (found) {
     const broken: CoachChatAnswerBreak = typeof found === "string" ? { rule: found } : found;
     throw new CoachChatAnswerValidationError(
@@ -389,10 +405,17 @@ export function parseCoachChatAnswer(
   if (cited.length === 0) return answer as unknown as CoachChatAnswerV2;
   return {
     ...answer,
-    evidence: (answer.evidence as Record<string, unknown>[]).map((item) =>
-      item.source === "library"
-        ? { ...item, label: shownLibrarySources[item.code as string].label }
-        : item
-    ),
+    evidence: [
+      ...(answer.evidence as Record<string, unknown>[]).map((item) =>
+        item.source === "library"
+          ? { ...item, label: shownLibrarySources[item.code as string].label }
+          : item
+      ),
+      ...named.map((code) => ({
+        code,
+        label: shownLibrarySources[code].label,
+        source: "library",
+      })),
+    ],
   } as unknown as CoachChatAnswerV2;
 }

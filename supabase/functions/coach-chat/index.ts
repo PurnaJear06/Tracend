@@ -618,7 +618,7 @@ export async function handleCoachChat(
   }
 
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
-    "prepare_coach_chat_v9",
+    "prepare_coach_chat_v10",
     {
       target_user_id: auth.userId,
       target_thread_id: input.thread_id,
@@ -638,7 +638,7 @@ export async function handleCoachChat(
   }
   if (prepareError || !prepared) {
     const reason = coachChatPreparationFailureCode(prepareError);
-    log.error("prepare_coach_chat_v9 failed", {
+    log.error("prepare_coach_chat_v10 failed", {
       error_code: prepareError?.code ?? "missing_prepared_context",
       reason,
     });
@@ -868,7 +868,7 @@ export async function handleCoachChat(
       auth.userId,
       persisted.assistant_message_id,
       {
-        guardFaults: guardFaultsOf(generation.attempts),
+        guardFaults: guardFaultsOf(generation.attempts, undefined, generation.cuts),
         lookups: lookupTrace(generation.lookups),
       },
     );

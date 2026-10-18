@@ -928,7 +928,18 @@ routes stay available by settings alone for two weeks after the cutover.
   direction of the trend. Questions and target suggestions ("Would 70 kg be a target you want to
   aim for?") are the reply the prompt requires and pass. A weight the athlete wrote in their own
   question and a weight directly governed by a limit word ("do not go below 60 kg") are not
-  claims. The rejection is
+  claims. A figure counts as a body weight only when its surroundings say so
+  (`goal_phase/weight_figures.ts`): the sentence is tokenised into words and weight figures, and
+  the nearest cue within five words decides. A figure written with rep notation ("55 kg x 6", "50
+  kg for 8", "60 kg per side") is a load; so is one nearest an exercise name or catalog slug
+  ("overhead press is 55 kg", "your curl will go to 32.5 kg"), a barbell word (plate, bar, rack) or
+  a lifting word (reps, load, 1RM); a tie goes to the load. A word about the person (weigh, body
+  weight, scale, BMI, height, target, goal), a movement of the person ("get down to", "drop to"),
+  "you" as the subject of a verb that lands on a weight ("you'll be at", "you will hit", "you
+  could reach") or, weakest, a time frame straight after the figure ("66.5 kg in 12 weeks") makes
+  it a body weight; with no cue it is not one. Both rules read only body weights, so a lift's
+  load below the floor (an overhead press at 55 kg for an athlete whose floor is 57 kg) never
+  sends the athlete to the data summary. The rejection is
   an ordinary validation failure (`weight_below_healthy_floor`, `projection_without_target`) that
   gets the one repair with a rule-specific instruction, then the existing unavailable path.
   Coach has no tools: it never says it changed, saved, updated, logged or set anything, and says
@@ -970,8 +981,9 @@ routes stay available by settings alone for two weeks after the cutover.
   screening cap), `claimed_action` (Coach says it changed, saved, updated, scheduled or will do
   something, or offers to: it has no tools, so the repair says what the athlete can do in the app),
   `training_advice_on_pain_day` (any training prescription on a day of check-in pain of 7 or
-  more), `numbers_not_grounded` and `citation_not_retrieved` (a library source id the turn did not
-  show; §11.2). Every rule reads everything the athlete can see: the answer,
+  more), `numbers_not_grounded`, `citation_not_retrieved` (a library source id or a named study
+  the turn did not show; §11.2) and `repeats_previous_turn` (§12, "Repeats"). Every rule reads
+  everything the athlete can see: the answer,
   the follow-up chips, the missing-data notes, the evidence labels and the reasoning chain, in one
   pass. Sentences that warn against a thing ("never go below ...") or
   describe the athlete's own past ("you lost 0.9 kg a week") are not advice. A reply that breaks
@@ -991,7 +1003,16 @@ routes stay available by settings alone for two weeks after the cutover.
   amount word before it ("around 2000") it is a measurement and is checked. Not checked: list
   numbers, ordinals, clock times, real years, whole numbers
   up to ten with no measurement unit, and prescription numbers a coach gives as advice (sets up to
-  ten, reps up to thirty, rest seconds, RPE and RIR, `3x8`, whole minutes up to five). One repair
+  ten, reps up to thirty, rest seconds, RPE and RIR, `3x8`, whole minutes up to five, and the
+  length of a session item in a plan: a whole number of minutes from 10 to 90 in steps of five
+  that says how long to do a named activity, such as "30 min easy walk", "walk for 20-30
+  minutes", "walk 20 min after dinner" or "a 45-minute session"; the named activity is what makes
+  it advice, so a duration of the athlete's own past or data ("your
+  walk was 30 min", "you did a 30 minute walk yesterday"), a duration with no activity beside it
+  ("you slept 450 minutes"), a dose over time ("walk 45 minutes a day"), a figure that is not a
+  round number of minutes, and anything over 90 minutes are still checked). Loads in kg, calories,
+  body weights, percentages and every other measurement are never exempt: a load Coach did not get
+  from the athlete's logged or planned loads in the context is a figure it invented. One repair
   names the unsupported figures (in the repair instruction only: they are athlete content and
   never reach a log); a second failure ends in the labelled data summary (§12), like any other
   validation failure. The check ships enforcing, and every fault is logged as a finite rule name
@@ -1149,7 +1170,21 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   every turn and the schema is part of the prompt cache key), and the reply guard refuses a source
   id printed in the text that was not shown (Coach is told not to print ids). A turn with no
   retrieved chunk accepts no library citation at all. The refusal is repaired once with the rule
-  named; a second failure ends in the labelled data summary, like every other rule.
+  named; a second failure is cut or ends in the labelled data summary (§12).
+- **Studies named in the text (2026-10-18).** Coach sometimes writes "Maughan 2018" or "the NIH fact
+  sheet" and leaves `evidence` empty, so the app shows no source. The guard reads the visible text
+  for a named study, generically and not from a list of sources: a capitalised surname beside a
+  year ("Maughan 2018", "Schoenfeld et al. (2017)", "Burke & Maughan, 2018") or an institution's
+  initials beside the kind of document it publishes ("NIH fact sheet", "ACSM position stand",
+  "WHO guidelines"; `library/mentions.ts`). A mention matches a source shown this turn by the words
+  of the source's id (author, year, topic), its title and the initials of its title ("International
+  Society of Sports Nutrition" is ISSN), and, for a mention with a year, the author's name in the
+  excerpt shown. When it matches, the server adds the source's evidence item to the reply (code the
+  source id, label the retrieved title and year, source `library`) when the evidence has room, and
+  the reply is read as citing it, so a figure only that source holds is grounded. When it matches
+  no shown source (or the year differs), the reply breaks `citation_not_retrieved` and the repair
+  tells Coach to drop the claim or name only the sources it was shown. A study the athlete named in
+  this conversation is theirs to ask about and is not refused.
 - **Numbers.** The library is kept out of the main numbers ground. A figure that only the library
   holds is accepted only when the reply cites, in `evidence`, the source whose shown chunks contain
   it (`coachReplyCheckFor` passes the cited ids to the check). In a sentence that states the
@@ -1187,6 +1222,44 @@ citation without adding facts or numbers. A live Coach chat must never delete in
 keep the prose, or present deterministic fallback text as a successful model answer; deterministic
 emergency and clinical-boundary refusals remain explicitly labeled safety responses.
 
+**Cutting a reply.** When the repair attempt still breaks only rules that are faults of particular
+sentences (`numbers_not_grounded`, `citation_not_retrieved` as a named study, `repeats_previous_turn`),
+or when a repair cannot be sent (no time or no budget place) and the first reply broke only those
+rules, the reply is cut instead of replaced by the data summary: `cutReply` (`reply_guard.ts`)
+removes, deterministically, the sentences (and list lines) that hold a figure that is not in the
+athlete's data, that name a source Coach was not shown, or that repeat the previous reply, from the
+answer, the follow-up chips, the missing-data notes, the reasoning steps and the evidence labels.
+Nothing is rewritten, nothing is added except one note in `missing_data` ("Left out lines with
+figures that are not in your data."), and a lead-in line left with nothing under it ("Here is the
+plan:") goes too. The cut reply must pass the whole check again (`parseCoachChatAnswer`), keep at
+least half of the answer's sentences and at least 40 characters, or the turn ends in the data
+summary as before. A cut never applies when any other rule failed (calorie floor, loss ceiling,
+effort cap, pain day, a claimed action, a projected or below-floor body weight), so it can never
+let an invented body weight, calorie or medical figure through. The proposal and fact suggestions
+the model sent with the reply are read as for any answer. The turn trace records what was cut
+(`guard_faults` entries `salvage:numbers_stripped`, `salvage:study_stripped`,
+`salvage:closing_question_stripped`, `salvage:repeat_stripped`). A cut deletes the faulty sentence,
+not just its citation, so the rule above (never delete invalid citations and keep the prose) still
+holds. The cut runs on the gateway route; today's DeepSeek path keeps one repair and the summary.
+
+**Repeats.** Coach must not close two turns running with the same question, or say the same
+sentence twice. `repeats_previous_turn` (`coach_safety/repeats.ts`) compares the reply's `answer`
+with the athlete's previous reply from Coach in the conversation (the app's data summary is not
+Coach's and is skipped). The closing question is the last sentence when it ends in "?"; it repeats
+when its content words (function words, figures and word endings dropped) have a Dice coefficient
+of at least 0.7 with the previous closing question, both having at least three content words. Any
+other sentence repeats when it has at least six content words and a Dice coefficient of at least
+0.8 with one sentence of the previous reply. Safety wording is never a repeat: emergency and
+red-flag wording (emergency number, chest pain, fainting, stroke, self-harm, crisis lines) always
+stands, and referral wording (doctor, physio, professional, clearance, "get it checked") stands
+when the turn needs it: the health check is not cleared, today's pain is 7 or more, or the
+question may be about a health risk (`mayConcernHealthRisk`). Otherwise the same "when to get it
+looked at" line is an ordinary repeat. An athlete asking the same thing again (their question
+and their previous one at least 0.7 similar) gets the same answer again. A repeat gets the one
+repair with the instruction to drop it; if it repeats again, or no repair can be sent, the
+repeated closing question and sentences are cut. There is no limit on the length of a reply here;
+that waits for a measurement with Haiku.
+
 **Labeled data summary.** For app builds that send request schema 1.1, the safe unavailable state
 is a deterministic data-summary reply instead of an error, so the athlete is never left at a dead
 end. It opens by saying the coach could not produce a full answer, copies every number verbatim
@@ -1194,7 +1267,15 @@ from the prepared context (no estimates), cites only permitted evidence, and car
 `safety_state: "unavailable"`, `answer_source: "data_summary"`, and a sanitized `diagnostic`
 (failure code and finite rule names). It is stored in the thread as an assistant message flagged
 `data_summary` and is never presented as the model's answer: not to the athlete, and not to the
-model, whose conversation memory leaves it out. Request schema 1.0 builds keep the 503.
+model. It stays in the conversation the model reads (`prepare_coach_chat_v10`, 2026-10-18), marked
+`answer_source: "data_summary"` and shown to the model as "TRACEND DATA SUMMARY (the app's own
+reply, calculated from the athlete's data; not your words)", so the next turn can refer to a
+number the app just showed. Its figures count as the athlete's data for the next turn's numbers
+check (Coach's own earlier words never do), it is not a previous reply for the repeats rule, and a
+question that fell back to one still reads as unanswered when the athlete sends it again. The
+summary shows the weight trend in kg a week (the unit Coach speaks in): the calculated 4-week
+trend of the readings, else the scoring engine's per-day trend times seven. Request schema 1.0
+builds keep the 503.
 
 The current app sends request 1.1 and labels the reply itself:
 

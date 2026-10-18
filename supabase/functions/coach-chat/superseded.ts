@@ -27,12 +27,13 @@ export function questionAgeMs(createdAt: unknown, now: number = Date.now()): num
   return Number.isNaN(created) ? null : now - created;
 }
 
-type Message = Readonly<{ role?: unknown; content?: unknown }>;
+type Message = Readonly<{ role?: unknown; content?: unknown; answer_source?: unknown }>;
 
 /**
  * Indexes of user messages in `recent` that repeat `question` and got no reply: the next message
- * is not an assistant message. A labelled data summary is never in the context's memory, so a
- * question that fell back to one reads as unanswered here.
+ * is not an assistant message. The app's labelled data summary (`answer_source: "data_summary"`)
+ * is in the context's memory, marked, but it is not Coach's reply, so a question that fell back to
+ * one still reads as unanswered here.
  */
 export function unansweredCopies(recent: unknown, question: string): number[] {
   if (!Array.isArray(recent)) return [];
@@ -43,7 +44,7 @@ export function unansweredCopies(recent: unknown, question: string): number[] {
     if (message.role !== "user" || typeof message.content !== "string") return;
     if (message.content.trim() !== wanted) return;
     const next = recent[index + 1] as Message | undefined;
-    if (next?.role !== "assistant") found.push(index);
+    if (next?.role !== "assistant" || next.answer_source === "data_summary") found.push(index);
   });
   return found;
 }
