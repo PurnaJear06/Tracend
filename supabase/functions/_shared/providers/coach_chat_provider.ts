@@ -136,6 +136,13 @@ export type CoachChatFailureCode =
 
 export type CoachChatTiming = Readonly<{
   totalDeadlineMs: number;
+  /**
+   * Gateway path only: the time from the handler's start by which every model call must be over,
+   * so the failed run can be recorded and the data summary returned inside the app's 45 s wait.
+   * It cuts the deadline when the work before the gateway (sign-in, consent, budget, context, the
+   * library search) was slow. Without it the deadline is `totalDeadlineMs` from the gateway's start.
+   */
+  requestDeadlineMs?: number;
   initialAttemptMs: number;
   repairAttemptMs: number;
   /**
@@ -148,6 +155,7 @@ export type CoachChatTiming = Readonly<{
 
 export const coachChatTiming: CoachChatTiming = Object.freeze({
   totalDeadlineMs: 40_000,
+  requestDeadlineMs: 38_000,
   initialAttemptMs: 28_000,
   repairAttemptMs: 10_000,
   initialRetryMinMs: 10_000,
@@ -166,7 +174,7 @@ export type CoachChatFailureMetadata = Readonly<{
   /** Gateway runs: the list-price cost of every attempt, from the gateway's usage. */
   costUsd?: number;
   /** Gateway runs: why a repair or a retry was not sent (its budget place was not available). */
-  repairSkipped?: "reservation_refused" | "reservation_over_cap";
+  repairSkipped?: "reservation_refused" | "reservation_over_cap" | "not_enough_time";
   /** Gateway runs: the lookups the turn ran before it failed (name and row count). */
   lookups?: readonly LookupCount[];
 }>;
@@ -737,6 +745,11 @@ export function renderPlanStatus(status: Record<string, unknown>): string | null
 export function renderCoachContextParts(
   ctx: Record<string, unknown>,
   maxLength: number,
+  /**
+   * The gateway's answer has no null (see coachChatGatewaySchema): a reasoning step with no
+   * evidence writes "". Today's DeepSeek path keeps null, and its request is byte-for-byte as before.
+   */
+  gateway = false,
 ): Readonly<{ file: string; recent: string }> {
   const out: string[] = [];
   const deferredHistory: string[] = [];
@@ -781,7 +794,8 @@ export function renderCoachContextParts(
   const evidence = arr(ctx.permitted_evidence);
   pushRequired(
     "## Evidence Contract\n" +
-      "Cite only these exact codes. If none supports a claim, leave evidence empty. A reasoning evidence_id must be one listed code or null.\n" +
+      "Cite only these exact codes. If none supports a claim, leave evidence empty. A reasoning evidence_id must be one listed code or " +
+      (gateway ? '"" when it cites none' : "null") + ".\n" +
       (evidence.length > 0 ? evidence.map((e) => `- ${str(e)}`).join("\n") : "- (none)") +
       "\n",
   );
@@ -1350,7 +1364,7 @@ export function issueOfValidationError(error: CoachChatAnswerValidationError): V
   };
 }
 
-function answerContractText(permittedEvidence: readonly string[]): string {
+function answerContractText(permittedEvidence: readonly string[], gateway = false): string {
   const allowed = permittedEvidence.length > 0 ? permittedEvidence.join(", ") : "(none)";
   const l = coachChatAnswerLimits;
   const p = coachChatPreferredLengths;
@@ -1358,7 +1372,9 @@ function answerContractText(permittedEvidence: readonly string[]): string {
     `- Keep items short: a reasoning step about ${p.reasoningStep} characters, its value about ${p.reasoningValue}, a follow-up about ${p.followUp}, a missing_data item about ${p.missingDataItem}.\n` +
     `- Hard limits: answer ${l.answerMaxLength} characters; evidence ${l.evidenceMaxItems} items (label ${l.evidenceLabelMaxLength}); missing_data ${l.missingDataMaxItems} items (${l.missingDataItemMaxLength} each); suggested_follow_ups ${l.followUpsMaxItems} items (${l.followUpMaxLength} each); reasoning_chain ${l.reasoningMaxItems} items (step ${l.reasoningStepMaxLength}, value ${l.reasoningValueMaxLength}).\n` +
     `- Permitted evidence codes for this request: ${allowed}. Cite only these codes exactly. Leave evidence empty when none applies.\n` +
-    "- Each reasoning evidence_id must be one permitted code or null.\n" +
+    `- Each reasoning evidence_id must be one permitted code or ${
+      gateway ? '"" when it cites none' : "null"
+    }.\n` +
     "- Numbers about the athlete's data come only from the prepared context (the athlete file, the Calculated by Tracend section, the Safe Ranges or a reference-data block) or from the athlete's own message, quoted with the same units and rounding. Never invent a measurement. Never work out a new total, difference, percentage, rate or date yourself, and never state a figure from memory (such as a guideline range) that the context does not hold: say the figure is not available, or describe it in words. A check rejects any reply that states a number which is not in what you were given.\n" +
     '- The "Calculated by Tracend" section holds exact results. When it has the average, change, trend or projection you need, quote it with its window instead of computing your own. Its projections are still estimates: call them estimates.\n' +
     "- You may give an estimate (for example, time to reach a target weight) only toward a target the athlete has set or states in their question, and only from the projection rows of the Calculated section or numbers the athlete states. Without a set target, give no future weight. Call an estimate an estimate, show its inputs and assumptions, and never present it as measured data. If the Calculated section has no row for it, say so instead of working one out.\n" +
@@ -1488,7 +1504,7 @@ export function repairContractText(
 // What an empty value looks like in the gateway answer. The answer's schema has no optional key and
 // no null (see coachChatGatewaySchema), so "nothing" is written out.
 const emptyValuesContract = "\n# The shape of your JSON\n" +
-  'Your JSON always has every key: data_requests, proposal_intent, fact_suggestions, answer, evidence, missing_data, safety_state, suggested_follow_ups and reasoning_chain. There is no null and no missing key: a list with nothing in it is [] and a text with nothing in it is "" (where a rule above says null, write ""). A reasoning_chain step that cites no evidence has evidence_id "". data_requests, proposal_intent and fact_suggestions are [] unless the rules for them in this prompt apply.\n';
+  'Your JSON always has every key: data_requests, proposal_intent, fact_suggestions, answer, evidence, missing_data, safety_state, suggested_follow_ups and reasoning_chain. There is no null and no missing key: a list with nothing in it is [] and a text with nothing in it is "". A reasoning_chain step that cites no evidence has evidence_id "". data_requests, proposal_intent and fact_suggestions are [] unless the rules for them in this prompt apply.\n';
 
 /**
  * The rules every Coach chat request carries: persona, data honesty and the answer contract for
@@ -1500,7 +1516,7 @@ export function coachChatInstructions(
   withProposals = false,
   withFactSuggestions = false,
 ): string {
-  return coachChatPersona + nullContract + answerContractText(permittedEvidence) +
+  return coachChatPersona + nullContract + answerContractText(permittedEvidence, true) +
     emptyValuesContract + goalPhaseContract + libraryContract +
     (withLookups ? lookupContract : "") +
     (withProposals ? proposalContract : "") +

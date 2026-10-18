@@ -460,6 +460,7 @@ export async function handleCoachChat(
   const correlationId = extractCorrelationId(request);
   const log = createLogger(correlationId);
   const started = performance.now();
+  const startedAtMs = Date.now();
   if (request.method !== "POST") {
     return reply(405, versionedResponse({ error: "method_not_allowed" }));
   }
@@ -754,6 +755,7 @@ export async function handleCoachChat(
         lookups: createLookupRunner((name, params) => coachServiceRpc(name, params), auth.userId),
         proposals: true,
         factSuggestions: remembered,
+        requestStartedAt: startedAtMs,
       })
       : await generateCoachChat(
         input.question,

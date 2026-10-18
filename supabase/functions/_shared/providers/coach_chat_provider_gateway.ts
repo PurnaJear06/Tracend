@@ -233,7 +233,7 @@ export function buildCoachChatGatewayPrompt(
     0,
     coachChatContextBudgetFor(contextKind) - wrappers - question.length,
   );
-  const { file, recent } = renderCoachContextParts(context, contextBudget);
+  const { file, recent } = renderCoachContextParts(context, contextBudget, true);
   if (file.length + recent.length + 1 > contextBudget) {
     throw new Error("required_context_exceeds_budget");
   }
@@ -393,6 +393,11 @@ export type CoachChatGatewayInput = Readonly<{
    * athlete asked Coach not to remember.
    */
   factSuggestions?: boolean;
+  /**
+   * When the handler began the request (epoch milliseconds). With `timing.requestDeadlineMs` it
+   * bounds the whole turn from then, not from the gateway's start.
+   */
+  requestStartedAt?: number;
 }>;
 
 type Attempted = Readonly<{
@@ -477,7 +482,18 @@ export async function generateCoachChatViaGateway(
   const schemaIdentity = await identifySchema(schema);
   const remembered = input.factSuggestions === true;
   const retryMs = timing.initialRetryMinMs;
-  const deadline = Date.now() + timing.totalDeadlineMs;
+  // The turn's deadline is the sooner of the total from now and, when the handler says when the
+  // request began, the request deadline from then: slow work before the gateway shortens the
+  // model's time instead of pushing the failure past the app's own wait.
+  const deadline = Math.min(
+    Date.now() + timing.totalDeadlineMs,
+    input.requestStartedAt !== undefined && timing.requestDeadlineMs !== undefined
+      ? input.requestStartedAt + timing.requestDeadlineMs
+      : Infinity,
+  );
+  // A repair or a retry that would get less than this is not sent: it could not finish, and it
+  // would hold a budget place for nothing.
+  const minAttemptMs = Math.round(timing.repairAttemptMs / 2);
   const attempts: CoachChatAttemptTelemetry[] = [];
   let spentUsd = 0;
 
@@ -532,7 +548,7 @@ export async function generateCoachChatViaGateway(
     mayAskForData: boolean,
     retry = false,
   ): Promise<Attempted | null> => {
-    const remaining = deadline - Date.now();
+    let remaining = deadline - Date.now();
     if (remaining <= 0) {
       // The deadline passed before this attempt: nothing was sent, so nothing is held.
       return {
@@ -540,6 +556,11 @@ export async function generateCoachChatViaGateway(
         usage: null,
         failure: { reason: "provider_timeout", retryAfterSeconds: null },
       };
+    }
+    const needsMinimum = kind === "repair" || retry;
+    if (needsMinimum && remaining < minAttemptMs) {
+      repairSkipped = "not_enough_time";
+      return null;
     }
     if ((kind !== "initial" || retry) && input.budget) {
       const worst = coachChatAttemptWorstCaseUsd(route, promptChars(request));
@@ -551,11 +572,24 @@ export async function generateCoachChatViaGateway(
         repairSkipped = "reservation_refused";
         return null;
       }
+      // The reservation is a database round trip: the clock moved while it ran. A place taken for
+      // an attempt that can no longer run is settled with the turn (it is not kept).
+      remaining = deadline - Date.now();
+      if (needsMinimum && remaining < minAttemptMs) {
+        repairSkipped = "not_enough_time";
+        return null;
+      }
+      if (remaining <= 0) {
+        repairSkipped = "not_enough_time";
+        return null;
+      }
     }
     // The route's own limit, cut to what is left of the turn's total deadline. The first attempt
     // also leaves the retry its time (see `coachChatRetryLeadMs`), when the deadline holds both.
+    // It does so only when the first attempt keeps twice the retry's time: a slow start to the
+    // request must not cut a normal call short for the sake of a retry that could not follow it.
     const leavesRetry = kind === "initial" && !retry && retryMs !== undefined &&
-      remaining >= 2 * retryMs + coachChatRetryLeadMs;
+      remaining >= 3 * retryMs + coachChatRetryLeadMs;
     const limitMs = Math.min(
       route.timeoutMs,
       leavesRetry ? remaining - retryMs! - coachChatRetryLeadMs : remaining,

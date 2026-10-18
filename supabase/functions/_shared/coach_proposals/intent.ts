@@ -301,7 +301,7 @@ function figure(text: string): number | string {
 /**
  * The model's `proposal_intent` list as the object parseCoachProposalIntent reads: `undefined`
  * when it asked for nothing (a missing or empty list), `null` when it is not one well-formed item
- * (more than one item, a name outside the list, a repeated name), which the parser then refuses. A param with
+ * (more than one item, a name outside the list, a name written twice even if a value is empty), which the parser then refuses. A param with
  * an empty value is left out; a figure is read from its text and `weekdays` from a comma list
  * ("1,3,5"). Every range and vocabulary check stays with the parser.
  */
@@ -313,11 +313,14 @@ export function intentFromModel(raw: unknown): unknown {
   const { params, note, ...head } = item;
   const intent: Record<string, unknown> = { ...head };
   if (typeof note === "string" && note !== "") intent.note = note;
+  // A name written twice is refused whatever its values are, empty ones included.
+  const seen = new Set<string>();
   for (const entry of params as unknown[]) {
     const pair = record(entry);
     if (!pair || typeof pair.name !== "string" || typeof pair.value !== "string") return null;
     if (!(proposalParamNames as readonly string[]).includes(pair.name)) return null;
-    if (Object.hasOwn(intent, pair.name)) return null;
+    if (Object.hasOwn(intent, pair.name) || seen.has(pair.name)) return null;
+    seen.add(pair.name);
     if (pair.value === "") continue;
     intent[pair.name] = pair.name === "weekdays"
       ? pair.value.split(",").map(figure)

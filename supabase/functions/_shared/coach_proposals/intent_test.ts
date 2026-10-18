@@ -223,6 +223,10 @@ Deno.test("a malformed list becomes null, which the parser refuses", () => {
       [{ ...item, params: [{ name: "__proto__", value: "x" }] }],
       [{ ...item, params: [{ name: "kind", value: "exercise_swap" }] }],
       [{ ...item, params: [{ name: "phase", value: 3 }] }],
+      // A name written twice is refused whatever its values, an empty one included.
+      [{ ...item, params: [{ name: "phase", value: "" }, { name: "phase", value: "cut" }] }],
+      [{ ...item, params: [{ name: "phase", value: "cut" }, { name: "phase", value: "" }] }],
+      [{ ...item, params: [{ name: "weeks", value: "" }, { name: "weeks", value: "" }] }],
     ]
   ) {
     assertEquals(intentFromModel(bad), null, JSON.stringify(bad));

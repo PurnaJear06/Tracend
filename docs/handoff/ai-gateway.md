@@ -1131,17 +1131,32 @@ athlete and day: the compile never hit the cache and ran past the route's 30 s t
 **One retry of a slow first call.** `coachChatTiming.initialRetryMinMs` (10,000 ms; unset means no
 retry, as in the eval harnesses' own timing objects). The initial attempt still waits for the route's
 own timeout (`AI_COACH_CHAT_TIMEOUT_MS`; a test pins that the route's value, not `initialAttemptMs`,
-governs the gateway path), but when the 40 s deadline can hold both it is cut to
-`remaining - 10 s - 0.5 s` (29.5 s for the 30 s route), so a timeout leaves the retry its time. After a
+governs the gateway path), but when the deadline can hold both and the first attempt keeps at least
+20 s, it is cut to `remaining - 10 s - 0.5 s` (about 29.5 s for the 30 s route on a fresh request), so
+a timeout leaves the retry its time. A slow start to the request leaves no such room and no retry. After a
 timeout with at least 10 s left the same request is sent once more (`attempts` then holds two
 `initial` entries, the first `timeout`, the second marked `retry`). Budget: the first timeout calls
 `inFlight`, so its place stays open (the request may have been billed; nothing records its cost); the
 retry takes its own place with `reserveAttempt(worstCase, "initial")` before it is sent, and a refused
 or over-cap place sends nothing (`repairSkipped` names why) and leaves the timeout as the failure. Two
 timeouts keep both places open; a retry that answers settles its own place with the recorded cost.
+**The deadline counts from the request's start.** The handler passes `requestStartedAt`, and the turn
+ends by `requestDeadlineMs` (38,000 ms) after it, or `totalDeadlineMs` (40 s) after the gateway
+starts if that is sooner. Sign-in, consent, budget, the prepare RPC, recording the question and the
+library search (up to 4 s) come before the gateway; two timeouts on top of them could otherwise pass
+the app's 45 s wait (`coach_repository.dart`) and the athlete would get a client timeout instead of the
+data summary. The 7 s that remain record the failed run and return the summary. A repair or a retry
+is not sent with less than half of `repairAttemptMs` (5 s) left, checked before and after its budget
+place is reserved, and a place taken for an attempt that then cannot run is settled with the turn
+(`repairSkipped: "not_enough_time"`). Today's DeepSeek path is not covered by this.
+
 Cost of a successful retry: the first place stays counted at its ceiling for the month (at most
 about USD 0.014 for Haiku), which can only over-count. Only a timeout is retried; lookup calls and
 repairs are not.
+
+**Evidence ids.** The gateway's athlete file and answer contract say a reasoning step with no evidence
+writes `""` (`renderCoachContextParts(…, gateway = true)`); today's DeepSeek file keeps "null", so
+its request bytes are unchanged.
 
 **Telemetry.** Each gateway attempt records `latencyMs`, `promptChars`, `schemaBytes`, `schemaSha`
 (first 12 hex characters of the SHA-256 of the converted schema), `remembered`, `routeTimeoutMs`,
