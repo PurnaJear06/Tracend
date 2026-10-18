@@ -1019,8 +1019,9 @@ in `supabase/functions/_evals/`.
   locally `AI_COACH_CHAT_PROVIDER=anthropic AI_COACH_CHAT_MODEL=claude-haiku-5-5
   AI_COACH_CHAT_MAX_OUTPUT_TOKENS=4096 AI_COACH_CHAT_TIMEOUT_MS=30000 ANTHROPIC_API_KEY=...
   ./scripts/deno.sh run --allow-env --allow-net --allow-read --allow-write supabase/functions/_evals/coach_bank/run.ts`
-  (`EVAL_CASES=owner-,fact-` runs a few cases). The workflow has no Anthropic key, so it runs the
-  bank through DeepSeek or the router; the Claude route runs locally until the owner adds a secret.
+  (`EVAL_CASES=owner-,fact-` runs a few cases). The workflow has no Anthropic key: with the eval
+  router (`EVAL_BASE_URL`, `EVAL_API_KEY`) it runs the bank on the production gateway path over the
+  router (see "Coach simulator" below), else on DeepSeek directly.
 - **Removed** (the bank supersedes them): the old `coach_chat_eval.ts` quality checks
   (`safety`, `estimate_labeled`, `asks_clarifying_question`, `projection_in_range`), `weekEstimates`,
   the `expect` blocks and the six `safety-*` prompts in `prompts.json` (now red-flag cases), the
@@ -1073,8 +1074,8 @@ rules are AI_SAFETY_SPEC §11.2; the prompt budget is CONTEXT_BUDGET.md.
   5.5 reservation is about USD 0.34 (0.32 before); Opus 5.5 was already over the cap.
 - **Eval.** `library_eval.ts` runs the real `search_library_v2` with the query Coach builds, follow-ups
   and regional isolation. The bank has a `library` category (6 cases, fixed chunks, graders
-  `citations_shown` and `cites_sources`, gateway route only: `run.ts` skips them on the DeepSeek or
-  router route). `library_head_to_head.ts` compares retrieval with the whole library in the prefix
+  `citations_shown` and `cites_sources`, gateway route only: `run.ts` skips them on the direct
+  DeepSeek path; since the Coach simulator chunk they run on the router gateway route). `library_head_to_head.ts` compares retrieval with the whole library in the prefix
   (not run: it needs an Anthropic key and the database).
 
 ### Coach answer schema: one stable grammar (incident 2026-10-18, `claude/coach-schema-flatten`, Refs FLUTTER-K)
@@ -1174,6 +1175,78 @@ drifting again.
 **Deploy note.** The first call after this ships compiles the new grammar once (cached for 24 h
 afterwards). Check `coach_chat_complete` for `schema_sha` `274ee4fafead` and the first turn's
 latency; run `./scripts/verify-live-function.sh coach-chat` from the deployed commit.
+
+### Coach simulator (`claude/coach-simulator`, no migration, eval only)
+
+The owner asked for Claude to test the Coach the way an athlete would, instead of testing on the
+phone and reporting back (complaints: repetitive "same checking stuff again" replies, replies that
+ignore the athlete's data, a Coach that cannot change the plan). Nothing in production changed.
+
+- **Router gateway route** (`live_model.ts`, `routerGatewayFromEnv`). The production gateway path
+  (`generateCoachChatViaGateway`: lookups, proposals, library citations, every guard) over the
+  eval router. The route is built by `route()` with `PROVIDER=openai_compatible`,
+  `VENDOR=router`, `MODEL=deepseek-v4-flash` (the carrier: the router entry of the price table
+  that gives the request fields), 4,096 output tokens and a 120 s attempt; `routerModelFetch`
+  then names the model that should answer. The Coach is `EVAL_COACH_MODEL`, else the production
+  model when the router lists it (`GET /models`, matched across spellings such as
+  `anthropic/claude-haiku-5.5`), else `EVAL_MODEL`, else the carrier, and every report says which
+  and why. **Production Coach chat model:** `claude-haiku-5-5` (`productionCoachModel`, from the
+  cutover runbook's "What moves" table; the optional strong route is not modelled). No production
+  secret was read. A Claude model over the router drops DeepSeek's `thinking` and the
+  temperature, as production's Claude request sends neither. Limits: the wire format is
+  OpenAI-compatible JSON mode with the schema in the system prompt, not the Messages API with
+  structured output, and the bank's spend is priced at the carrier's list price (the simulator
+  meters tokens and prices them at the played model's).
+- **The bank on the router.** `coach_bank/run.ts` uses the router gateway route whenever
+  `EVAL_BASE_URL` is set and no `AI_COACH_CHAT_*` route is, so on CI the six library cases (audit
+  P1-3), the lookup cases and the proposal cases run on the production path instead of being
+  skipped or answered by the legacy path.
+- **Harness reuse** (`coach_bank/harness.ts`). `renderTurn(athlete, question, previousQuestions,
+  {librarySearch})` and `answerTurn(turn, generate)` are the turn-level halves of `prepare` and
+  `answer`; the contributors now follow the registry's order and include `training_plan` and
+  `data_index` when the athlete gives their payloads (`Contributors.trainingPlan`,
+  `dataIndex`). Bank cases give neither, so their prompts are unchanged apart from the order of
+  `goal_phase` before `nutrition_state` and the notes after them, as production renders them.
+  The bank still renders no `coach_proposals` or `heart_rate_profile` block (production does).
+- **Simulator** (`_evals/coach_sim/`): `records.ts` generates months of records per persona
+  (sessions with every set, weigh-ins, meals with complete and partial days, check-ins with notes,
+  watch nights) and builds every view from them: the v8 athlete file, the contributor payloads
+  (plan state, nutrition state, goal phase, data index) and the lookup RPC payloads, which the
+  production `createLookupRunner` renders. `personas.ts`: Arjun (primary: 30, six years,
+  upper/lower, bench stuck at 100 kg since 20 August, cutting since 7 September, eggs and
+  chicken; last Tuesday 13 October was a 5-hour night, a skipped lunch and a ground-out bench;
+  his left knee feels off on split squats), Rohan (vegetarian, protein short of target), Meera
+  (44, two years, full body, travels, an achy knee), Kabir (back after six months off).
+  `scenarios.ts`: the eight scenarios, 6-7 messages each, 16 conversations; a fixed first
+  message, then the athlete model writes from the goal and a beat per message.
+  `library_search.ts`: the library stand-in, a word search over the real chunks for the athlete's
+  region (the vector search needs the database; `library_eval.ts` measures it).
+  `simulate.ts`: the loop; the thread is kept as coach-chat stores it (data summaries left out,
+  the newest 20 messages). A red-flag turn renders no contributor.
+- **Graders** (`coach_sim/graders.ts`): per turn the reply guard (with the lookup rows as
+  grounds, so the numbers check matches production), citations shown, the red-flag referral,
+  first attempt valid, length, format, banned phrases, recap, and new: `same_opening`,
+  `repeated_question`, `recurring_caveat` (a caveat the athlete did not raise, added unprompted in
+  two earlier replies too), `no_repeat` over the whole thread, `uses_data` (a figure or date from
+  the athlete's records, not echoed from the question, when the question is about their own
+  data), `plan_change_proposed` (a plan change asked for must carry an intent the proposal rules
+  read) and `proposal_valid`. Per conversation: the scenario's proposal kinds, lookups,
+  citations, phrases said and phrases never said (no diagnosis or rehab protocol on the knee, no
+  research figure made the athlete's target in the cut).
+- **Judges** (`coach_sim/judges.ts`): the expert-coach judge (specific, correct, not generic,
+  pushback, coach-like, 1-5, the biggest problem and what a 20-year coach would say) and the
+  claim-support judge (P1-3: each sentence that states research, against the excerpts of the
+  sources the reply cited: supported, partial or unsupported; a claim leaning on an uncited
+  source is unsupported). Both run on a model other than the Coach's (`assertDistinctJudge`;
+  default Sonnet 5.5 when the router lists it, `EVAL_SIM_JUDGE_MODEL` otherwise) and are reported,
+  never gated.
+- **Run it**: `Coach Eval`, Run workflow, `simulate` ticked (`sim_filter`, `sim_max_turns`);
+  never on a pull request. It prints the estimate first, stops new turns at `EVAL_SIM_MAX_USD`
+  (default 3), uploads `coach-simulation-report` (`simulation.md`, `simulation.json`) and writes
+  the scorecard and ranked problems to the job summary. Exit 1 only on a harness error or when no
+  Coach turn ran.
+- **Not measured here:** the vector search, the prompt cache, production latency and the Claude
+  Messages API request itself.
 
 ## Next agent starts here
 

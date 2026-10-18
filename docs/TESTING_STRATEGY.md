@@ -123,7 +123,29 @@ accepted as a permanent retry.
   ends. The over-caution rate and the optional tone judge (a different model, binary rubric,
   ungated until checked against about 30 human labels) are reported. Every Coach pull request must
   pass the bank before the lead hands it over: add the `coach-eval` label (the `Coach Eval`
-  workflow) or run `coach_bank/run.ts` locally, and say in the pull request which model ran;
+  workflow) or run `coach_bank/run.ts` locally, and say in the pull request which model ran. With
+  the eval router (`EVAL_BASE_URL`, `EVAL_API_KEY`) the bank runs the production gateway path over
+  the router, so the lookup, proposal and six library cases run too; the Coach is the production
+  model (`claude-haiku-5-5`) when the router lists it, and the run prints which model answered;
+- the simulated athletes (`supabase/functions/_evals/coach_sim/`, `Coach Eval` with `simulate`)
+  test the Coach the way an athlete would, so the owner does not have to test on the phone: four
+  personas with months of synthetic records (a 6-year lifter cutting with a bench plateau and an
+  Indian diet with eggs and chicken, a vegetarian 3-year lifter, a woman in her 40s with two
+  years of training, a lifter back from six months off) talk to Coach for 6-10 messages in eight
+  scenarios (a bench plateau and an 8-week programme change, a cut that keeps strength, a travel
+  week, "what did I do last Tuesday", a knee that feels off, a supplement and its research, a
+  follow-up that refers back, pushback). An athlete model writes the messages; the Coach answers
+  through the bank harness and the production gateway path (contributors, the production lookup
+  runner over the persona's records, proposal intent, red-flag screen, reply guards). Code graders
+  per turn (repeated openings, questions and caveats, use of the athlete's data, a plan change
+  that became a proposal, the reply guard and numbers check, citations, length and format) and
+  per conversation (the proposal, lookup, citation or phrase the scenario needs), an expert-coach
+  judge (five items, 1-5, and what a 20-year coach would say) and a claim-support judge (each
+  cited research sentence: supported, partial or unsupported against the excerpt shown; RAG audit
+  P1-3), both on a model other than the Coach's. The report (transcripts, scorecard, problems
+  ranked with the exact turn) is a workflow artifact; it gates nothing and fails only on a
+  harness error. Its loop, graders and judge parsing are tested in the Deno job with a stubbed
+  router;
 - the operations evaluation (`coach_chat_eval.ts`, same workflow) runs about 54 varied prompts × 3
   synthetic athletes for the model-answer rate (at least 97%), dead ends (none), unpermitted
   evidence (none) and p95 latency (under 25 s), and proves the prompt cache. A run makes 17 calls

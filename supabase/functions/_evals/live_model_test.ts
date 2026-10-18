@@ -1,6 +1,16 @@
-import { assertEquals } from "jsr:@std/assert@1.0.14";
+import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { claudeMessage, fakeFetch, jsonResponse, routeFor } from "../_shared/ai/fakes.ts";
-import { gatewayGenerate, routedFetch } from "./live_model.ts";
+import {
+  gatewayGenerate,
+  knownPrice,
+  matchModel,
+  normalizedModelId,
+  productionCoachModel,
+  routedFetch,
+  routerCarrierModel,
+  routerGatewayFromEnv,
+  routerModelFetch,
+} from "./live_model.ts";
 
 Deno.test("a router run changes only the URL and says thinking is off", async () => {
   let sent: { url: string; init?: RequestInit } | undefined;
@@ -80,4 +90,111 @@ Deno.test("a strong route at another vendor than the notice is skipped", async (
     OPENAI_COMPATIBLE_API_KEY_COACH_CHAT_STRONG: "synthetic-test-key",
   });
   assertEquals(await modelsUsed(["How is my progress on the cut?"], other), ["claude-haiku-5-5"]);
+});
+
+Deno.test("model ids compare across router spellings", () => {
+  assertEquals(normalizedModelId("anthropic/claude-haiku-5.5"), "claude-haiku-5-5");
+  assertEquals(normalizedModelId("deepseek/deepseek-v4-flash"), "deepseek-v4-flash");
+  const listed = ["gpt-5", "anthropic/claude-haiku-5.5", "deepseek-v4-flash"];
+  assertEquals(matchModel(listed, "claude-haiku-5-5"), "anthropic/claude-haiku-5.5");
+  assertEquals(matchModel(listed, "deepseek-v4-flash"), "deepseek-v4-flash");
+  assertEquals(matchModel(listed, "claude-sonnet-5-5"), null);
+  assertEquals(knownPrice("anthropic/claude-haiku-5.5")?.input, 0.1);
+  assertEquals(knownPrice("some-router-model"), null);
+});
+
+Deno.test("the router request names the played model with the fields that model takes", async () => {
+  const sent: Record<string, unknown>[] = [];
+  const usage: number[] = [];
+  const fetcher = (_input: string | URL | Request, init?: RequestInit) => {
+    sent.push(JSON.parse(String(init?.body)));
+    return Promise.resolve(
+      new Response(JSON.stringify({ usage: { prompt_tokens: 100, completion_tokens: 20 } }), {
+        status: 200,
+      }),
+    );
+  };
+  const request = {
+    method: "POST",
+    body: JSON.stringify({
+      model: "deepseek-v4-flash",
+      thinking: { type: "disabled" },
+      temperature: 0.1,
+      messages: [],
+    }),
+  };
+  await routerModelFetch("anthropic/claude-haiku-5.5", fetcher, (t) => usage.push(t.inputTokens))(
+    "https://router.example/v1/chat/completions",
+    request,
+  );
+  await routerModelFetch("deepseek-v4-flash", fetcher)(
+    "https://router.example/v1/chat/completions",
+    request,
+  );
+  await routerModelFetch("qwen/qwen3.8-27b", fetcher)(
+    "https://router.example/v1/chat/completions",
+    request,
+  );
+  assertEquals(sent[0], { model: "anthropic/claude-haiku-5.5", messages: [] });
+  assertEquals(sent[1], {
+    model: "deepseek-v4-flash",
+    thinking: { type: "disabled" },
+    temperature: 0.1,
+    reasoning_effort: "none",
+    messages: [],
+  });
+  assertEquals(sent[2], { model: "qwen/qwen3.8-27b", temperature: 0.1, messages: [] });
+  assertEquals(usage, [100]);
+});
+
+const routerEnv = (values: Record<string, string>) => (name: string) =>
+  ({ EVAL_BASE_URL: "https://router.example/v1", EVAL_API_KEY: "synthetic-test-key", ...values })[
+    name
+  ];
+
+const listing = (ids: string[] | null) => () =>
+  Promise.resolve(
+    ids === null
+      ? new Response("no", { status: 404 })
+      : new Response(JSON.stringify({ data: ids.map((id) => ({ id })) }), { status: 200 }),
+  );
+
+Deno.test("the router gateway route says which model plays the Coach and why", async () => {
+  const listed = await routerGatewayFromEnv(
+    routerEnv({}),
+    listing(["deepseek-v4-flash", "anthropic/claude-haiku-5.5"]),
+  );
+  assert(!("error" in listed));
+  assertEquals(listed.coachModel, "anthropic/claude-haiku-5.5");
+  assertEquals(listed.coachRoute.vendor, "router");
+  assertEquals(listed.coachRoute.model, routerCarrierModel);
+  assertEquals(listed.coachRoute.timeoutMs, 120_000);
+
+  const missing = await routerGatewayFromEnv(routerEnv({}), listing(["deepseek-v4-flash"]));
+  assert(!("error" in missing));
+  assertEquals(missing.coachModel, routerCarrierModel);
+  assertEquals(missing.production, false);
+  assertEquals(
+    missing.choice,
+    `the router does not list the production model ${productionCoachModel}; using deepseek-v4-flash`,
+  );
+
+  const unlisted = await routerGatewayFromEnv(
+    routerEnv({ EVAL_MODEL: "qwen/qwen3.8-27b" }),
+    listing(null),
+  );
+  assert(!("error" in unlisted));
+  assertEquals(unlisted.coachModel, "qwen/qwen3.8-27b");
+  assertEquals(unlisted.available, []);
+
+  const chosen = await routerGatewayFromEnv(
+    routerEnv({ EVAL_COACH_MODEL: "claude-haiku-5-5" }),
+    listing([]),
+  );
+  assert(!("error" in chosen));
+  assertEquals(chosen.coachModel, "claude-haiku-5-5");
+  assert(chosen.production);
+
+  const noKey = await routerGatewayFromEnv(routerEnv({ EVAL_API_KEY: "" }), listing([]));
+  assert("error" in noKey);
 });

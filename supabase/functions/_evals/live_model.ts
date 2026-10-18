@@ -1,5 +1,6 @@
 // How the live Coach evals reach a model, shared by coach_chat_eval.ts (operations: answer rate,
-// latency, cache) and coach_bank/run.ts (the answer bank).
+// latency, cache), coach_bank/run.ts (the answer bank) and coach_sim/run.ts (the simulated
+// athlete).
 //
 // Gateway route (A6, A9): when the AI_COACH_CHAT_* settings make a route (for example
 // AI_COACH_CHAT_PROVIDER=anthropic, AI_COACH_CHAT_MODEL=claude-haiku-5-5,
@@ -9,7 +10,16 @@
 // OpenAI-compatible router when EVAL_BASE_URL and EVAL_API_KEY are set (EVAL_MODEL overrides the
 // model name). A router run is a smoke test, not production latency: it waits up to routerTiming
 // for each attempt.
-import { route } from "../_shared/ai/routes.ts";
+//
+// Router gateway route (routerGatewayFromEnv): the production gateway path (lookups, proposals,
+// library citations, every guard) over the eval router. The route takes its request shape and
+// prices from routerCarrierModel, the router entry of the model table; routerModelFetch then
+// names the model that should answer: the production Coach model when the router lists it, else
+// EVAL_COACH_MODEL or EVAL_MODEL, else the carrier itself. The wire format is OpenAI-compatible
+// JSON mode, not the Claude Messages API production uses, so a run measures the model and the
+// production prompt, guards and loop, not the vendor's own request.
+import { costUsd, type ModelPrice, models, type TokenCounts } from "../_shared/ai/models.ts";
+import { type Env, route } from "../_shared/ai/routes.ts";
 import type { AiCallDeps, AiRoute } from "../_shared/ai/types.ts";
 import type { CoachContributions } from "../_shared/coach_context/host.ts";
 import type { CoachLookupRunner } from "../_shared/coach_lookups/runner.ts";
@@ -87,20 +97,239 @@ export function gatewayGenerate(
   coachRoute: AiRoute,
   strong: () => AiRoute | null = () => route("coach_chat_strong"),
   deps: AiCallDeps = {},
+  timing: CoachChatTiming = coachChatTiming,
 ): Generate {
   return ({ question, context, contextKind, contributions, lookups, factSuggestions }) =>
-    generateCoachChatViaGateway({
-      question,
-      context,
-      contextKind,
-      route: selectCoachChatRoute(question, coachRoute, strong, coachRoute.vendor).route,
-      consentVendor: coachRoute.vendor,
-      ...(contributions ? { contributions } : {}),
-      ...(lookups ? { lookups } : {}),
-      // Production offers proposals on the gateway route, so the bank measures with them.
-      proposals: true,
-      factSuggestions: factSuggestions !== false,
-    }, deps);
+    generateCoachChatViaGateway(
+      {
+        question,
+        context,
+        contextKind,
+        route: selectCoachChatRoute(question, coachRoute, strong, coachRoute.vendor).route,
+        consentVendor: coachRoute.vendor,
+        ...(contributions ? { contributions } : {}),
+        ...(lookups ? { lookups } : {}),
+        // Production offers proposals on the gateway route, so the bank measures with them.
+        proposals: true,
+        factSuggestions: factSuggestions !== false,
+      },
+      deps,
+      timing,
+    );
+}
+
+// ---- the router gateway route ---------------------------------------------------------------
+
+/**
+ * The model production Coach chat answers with: `AI_COACH_CHAT_MODEL` in the cutover runbook
+ * (docs/runbooks/phase2-claude-cutover.md, "What moves"), set on 2026-10-16. Read from the docs,
+ * never from the production secrets; the optional stronger route is not part of it.
+ */
+export const productionCoachModel = "claude-haiku-5-5";
+
+/** The model-table entry a router route is built on: its request fields and its list prices. */
+export const routerCarrierModel = "deepseek-v4-flash";
+
+/** Output tokens and attempt limit of a router Coach turn (production's 4,096; a router's wait). */
+export const routerCoachMaxOutputTokens = 4_096;
+export const routerCoachTimeoutMs = 120_000;
+
+/** A model id reduced for comparison: lower case, separators as "-", no vendor prefix. */
+export function normalizedModelId(id: string): string {
+  const flat = id.toLowerCase().replace(/[._:\s/]+/g, "-");
+  return flat.replace(/^(?:anthropic|deepseek|openai|google|qwen|groq)-(?=.)/, "");
+}
+
+/** The router's id for a model (an exact or normalized match), or null when it is not listed. */
+export function matchModel(available: readonly string[], wanted: string): string | null {
+  if (available.includes(wanted)) return wanted;
+  const target = normalizedModelId(wanted);
+  return available.find((id) => normalizedModelId(id) === target) ??
+    available.find((id) => normalizedModelId(id).endsWith(target)) ?? null;
+}
+
+/** The list price of a model the table knows (matched like matchModel), or null. */
+export function knownPrice(model: string): ModelPrice | null {
+  const key = matchModel(Object.keys(models), model) ??
+    Object.keys(models).find((name) => normalizedModelId(model).endsWith(normalizedModelId(name)));
+  return key ? models[key].price : null;
+}
+
+/** The model ids an OpenAI-compatible router lists (GET /models), or null when it cannot say. */
+export async function routerModels(
+  baseUrl: string,
+  apiKey: string,
+  fetcher: typeof fetch = fetch,
+): Promise<string[] | null> {
+  try {
+    const response = await fetcher(`${baseUrl.replace(/\/+$/, "")}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      return null;
+    }
+    const body = await response.json() as { data?: { id?: unknown }[] };
+    if (!Array.isArray(body.data)) return null;
+    return body.data.map((item) => item.id).filter((id): id is string => typeof id === "string");
+  } catch {
+    return null;
+  }
+}
+
+const isClaude = (model: string) => model.toLowerCase().includes("claude");
+const isDeepSeek = (model: string) => model.toLowerCase().includes("deepseek");
+
+/**
+ * Sends the gateway's router request with `model` in place of the carrier, and the request fields
+ * that model takes: a DeepSeek model keeps thinking off and says so in the router's terms; any
+ * other model drops DeepSeek's thinking field, and a Claude model also the temperature (Claude 5
+ * takes only default sampling, and production's request sends none). `onUsage` sees the tokens of
+ * every answer.
+ */
+export function routerModelFetch(
+  model: string,
+  fetcher: typeof fetch = fetch,
+  onUsage: (tokens: TokenCounts) => void = () => {},
+): typeof fetch {
+  return async (input, init) => {
+    let body = init?.body;
+    if (typeof body === "string") {
+      const payload = JSON.parse(body);
+      payload.model = model;
+      if (isDeepSeek(model)) {
+        if (payload.thinking?.type === "disabled" && payload.reasoning_effort === undefined) {
+          payload.reasoning_effort = "none";
+        }
+      } else {
+        delete payload.thinking;
+        if (isClaude(model)) delete payload.temperature;
+      }
+      body = JSON.stringify(payload);
+    }
+    const response = await fetcher(input, { ...init, body });
+    if (response.ok) {
+      try {
+        const usage = (await response.clone().json())?.usage;
+        if (usage && typeof usage === "object") onUsage(tokensOf(usage));
+      } catch {
+        // The gateway reads the body itself and reports an unreadable answer.
+      }
+    }
+    return response;
+  };
+}
+
+/** OpenAI-style usage as token counts, cached prompt tokens apart (as the gateway counts them). */
+export function tokensOf(usage: Record<string, unknown>): TokenCounts {
+  const count = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+  const prompt = count(usage.prompt_tokens);
+  const details = usage.prompt_tokens_details as Record<string, unknown> | undefined;
+  const cached = Math.min(
+    prompt,
+    count(usage.prompt_cache_hit_tokens) || count(details?.cached_tokens),
+  );
+  return {
+    inputTokens: prompt - cached,
+    outputTokens: count(usage.completion_tokens),
+    cacheReadTokens: cached,
+    cacheWriteTokens: 0,
+  };
+}
+
+/** A price for a model the table does not know: Sonnet-class, so an estimate never undercounts. */
+export const assumedPrice: ModelPrice = Object.freeze({
+  input: 3,
+  output: 15,
+  cacheRead: 3,
+  cacheWrite: 3,
+});
+
+/** The list-price cost of tokens for a model, and whether the price was assumed. */
+export function priceTokens(model: string, tokens: TokenCounts): { usd: number; assumed: boolean } {
+  const price = knownPrice(model);
+  return { usd: costUsd(price ?? assumedPrice, tokens), assumed: price === null };
+}
+
+export type RouterGateway =
+  & LiveModel
+  & Readonly<{
+    coachRoute: AiRoute;
+    /** The router's id of the model that answers as the Coach. */
+    coachModel: string;
+    /** Whether that is the production Coach model. */
+    production: boolean;
+    /** How the model was chosen, for the report. */
+    choice: string;
+    /** Every model id the router listed, empty when it could not list them. */
+    available: readonly string[];
+    baseUrl: string;
+    apiKey: string;
+    /** The gateway path with the Coach model, telling `onUsage` the tokens of every call. */
+    generateWith: (onUsage: (tokens: TokenCounts) => void) => Generate;
+  }>;
+
+/**
+ * The production gateway path over the eval router (EVAL_BASE_URL, EVAL_API_KEY). The Coach model
+ * is EVAL_COACH_MODEL when set, else the production model when the router lists it, else
+ * EVAL_MODEL or the carrier. Nothing here reads a production setting.
+ */
+export async function routerGatewayFromEnv(
+  env: Env = (name) => Deno.env.get(name),
+  fetcher: typeof fetch = fetch,
+): Promise<RouterGateway | { error: string }> {
+  const baseUrl = env("EVAL_BASE_URL")?.trim() ?? "";
+  const apiKey = env("EVAL_API_KEY")?.trim() ?? "";
+  if (!baseUrl || !apiKey) {
+    return { error: "EVAL_BASE_URL and EVAL_API_KEY are required. Nothing was sent." };
+  }
+  const coachRoute = route("coach_chat", (name) =>
+    ({
+      AI_COACH_CHAT_PROVIDER: "openai_compatible",
+      AI_COACH_CHAT_MODEL: routerCarrierModel,
+      AI_COACH_CHAT_VENDOR: "router",
+      AI_COACH_CHAT_BASE_URL: baseUrl,
+      AI_COACH_CHAT_MAX_OUTPUT_TOKENS: String(routerCoachMaxOutputTokens),
+      AI_COACH_CHAT_TIMEOUT_MS: String(routerCoachTimeoutMs),
+      OPENAI_COMPATIBLE_API_KEY_COACH_CHAT: apiKey,
+    } as Record<string, string>)[name]);
+  if (!coachRoute) return { error: `EVAL_BASE_URL is not an https API base: ${baseUrl}` };
+  const available = await routerModels(baseUrl, apiKey, fetcher) ?? [];
+  const override = env("EVAL_COACH_MODEL")?.trim();
+  const production = matchModel(available, productionCoachModel);
+  const fallback = env("EVAL_MODEL")?.trim() || routerCarrierModel;
+  const coachModel = override || production || fallback;
+  const choice = override
+    ? `EVAL_COACH_MODEL set to ${override}`
+    : production
+    ? `the router lists the production model ${productionCoachModel} as ${production}`
+    : available.length === 0
+    ? `the router did not list its models, so the production model ${productionCoachModel} could not be found; using ${fallback}`
+    : `the router does not list the production model ${productionCoachModel}; using ${fallback}`;
+  const generateWith = (onUsage: (tokens: TokenCounts) => void) =>
+    gatewayGenerate(
+      coachRoute,
+      () => null,
+      { fetch: routerModelFetch(coachModel, fetcher, onUsage) },
+      routerTiming,
+    );
+  return {
+    generate: generateWith(() => {}),
+    generateWith,
+    endpoint: `${new URL(baseUrl).host} gateway route`,
+    model: `${coachModel} (priced as ${routerCarrierModel})`,
+    models: [coachModel],
+    router: true,
+    coachRoute,
+    coachModel,
+    production: normalizedModelId(coachModel) === normalizedModelId(productionCoachModel),
+    choice,
+    available,
+    baseUrl,
+    apiKey,
+  };
 }
 
 /** The model the environment points at, or null (with a message) when no key is set. */

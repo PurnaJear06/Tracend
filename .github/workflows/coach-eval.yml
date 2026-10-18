@@ -19,13 +19,27 @@ name: Coach Eval
 #     0.8 or a regional source reaches an athlete outside its region. It needs the database and the
 #     embedding model, so it cannot run in the Deno job. Run it alone with `retrieval_only`.
 #
-# The model is called as before: by default DeepSeek (`DEEPSEEK_API_KEY` secret). Set the
-# repository variable `EVAL_BASE_URL` (for example https://router.bynara.id/v1) and the
-# `EVAL_API_KEY` secret to send the same requests through an OpenAI-compatible router instead;
-# `EVAL_MODEL` overrides the model name. A router run is a smoke test: each attempt may wait up
-# to 120 s and latency is reported, not gated, because it is not production latency. To run the
-# bank on the Claude route Coach uses in production, run it locally with the AI_COACH_CHAT_*
-# settings and ANTHROPIC_API_KEY (live_model.ts); no Anthropic key is stored in this repository.
+#   - Simulated athletes (supabase/functions/_evals/coach_sim/, Run workflow with `simulate`):
+#     four personas with months of synthetic records talk to Coach for 6-10 messages in eight
+#     scenarios (a bench plateau and a programme change, a cut, a travel week, "what did I do last
+#     Tuesday", a knee that feels off, a supplement and its research, a follow-up, pushback). Each
+#     turn is graded by code, an expert-coach judge and, for cited research, a claim-support
+#     judge, on a model other than the Coach's. Report only: the job fails on a harness error,
+#     never on quality. It never runs on a pull request. `sim_filter` picks conversations
+#     ("primary", "knee-off", "primary/bench-plateau"); `sim_max_turns` caps the messages; the
+#     run stops at `EVAL_SIM_MAX_USD` (repository variable, default 3) and prints its estimate
+#     first. Optional variables: `EVAL_SIM_COACH_MODEL`, `EVAL_SIM_ATHLETE_MODEL`,
+#     `EVAL_SIM_JUDGE_MODEL` (router model ids).
+#
+# Models: the repository variable `EVAL_BASE_URL` (for example https://router.bynara.id/v1) and
+# the `EVAL_API_KEY` secret are the eval router. With them the bank and the simulator run the
+# production gateway path over the router (live_model.ts, routerGatewayFromEnv), so lookups,
+# proposals and the library cases run too; the Coach is the production model
+# (`claude-haiku-5-5`) when the router lists it, else `EVAL_MODEL` or DeepSeek V4 Flash, and the
+# report says which. Without a router the bank and the operations evaluation call DeepSeek
+# directly (`DEEPSEEK_API_KEY` secret). A router run is a smoke test: each attempt may wait up to
+# 120 s and latency is reported, not gated, because it is not production latency. No Anthropic
+# key is stored in this repository.
 on:
   workflow_dispatch:
     inputs:
@@ -50,6 +64,19 @@ on:
         type: boolean
         required: false
         default: false
+      simulate:
+        description: Run only the simulated-athlete conversations (report only, eval router)
+        type: boolean
+        required: false
+        default: false
+      sim_filter:
+        description: Comma-separated parts of conversation ids, personas or scenarios (empty runs all)
+        required: false
+        default: ""
+      sim_max_turns:
+        description: Athlete messages per simulated conversation at most (1-10)
+        required: false
+        default: "6"
   pull_request:
     types: [labeled]
 
@@ -63,7 +90,7 @@ concurrency:
 jobs:
   coach-eval:
     name: Coach chat live evaluation
-    if: (github.event_name == 'workflow_dispatch' && !inputs.retrieval_only) || github.event.label.name == 'coach-eval'
+    if: (github.event_name == 'workflow_dispatch' && !inputs.retrieval_only && !inputs.simulate) || github.event.label.name == 'coach-eval'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -120,7 +147,7 @@ jobs:
 
   library-retrieval:
     name: Library retrieval evaluation
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'coach-eval'
+    if: (github.event_name == 'workflow_dispatch' && !inputs.simulate) || github.event.label.name == 'coach-eval'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -197,4 +224,47 @@ jobs:
         with:
           name: library-retrieval-report
           path: retrieval-report.txt
+          retention-days: 30
+
+  coach-simulator:
+    name: Coach simulated athletes
+    if: github.event_name == 'workflow_dispatch' && inputs.simulate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: "2.9.0"
+
+      - name: Run the simulated athletes
+        env:
+          EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+          EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
+          EVAL_MODEL: ${{ vars.EVAL_MODEL }}
+          EVAL_COACH_MODEL: ${{ vars.EVAL_SIM_COACH_MODEL }}
+          EVAL_ATHLETE_MODEL: ${{ vars.EVAL_SIM_ATHLETE_MODEL }}
+          EVAL_JUDGE_MODEL: ${{ vars.EVAL_SIM_JUDGE_MODEL }}
+          EVAL_MAX_USD: ${{ vars.EVAL_SIM_MAX_USD || '3' }}
+          EVAL_SIM_FILTER: ${{ inputs.sim_filter }}
+          EVAL_SIM_MAX_TURNS: ${{ inputs.sim_max_turns || '6' }}
+          EVAL_REPORT_DIR: sim-report
+        run: |
+          if [ -z "$EVAL_BASE_URL" ]; then
+            echo '::error::The simulator runs only on the eval router: set the EVAL_BASE_URL variable.'
+            exit 2
+          fi
+          host=$(printf '%s' "$EVAL_BASE_URL" | sed -E 's#^https?://([^/]+).*#\1#')
+          deno run --allow-env --allow-net="$host" --allow-read --allow-write \
+            supabase/functions/_evals/coach_sim/run.ts
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coach-simulation-report
+          path: sim-report
           retention-days: 30
