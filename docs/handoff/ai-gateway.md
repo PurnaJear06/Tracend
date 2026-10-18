@@ -1175,6 +1175,63 @@ drifting again.
 afterwards). Check `coach_chat_complete` for `schema_sha` `274ee4fafead` and the first turn's
 latency; run `./scripts/verify-live-function.sh coach-chat` from the deployed commit.
 
+### Coach sees the next 7 days and back-to-back muscles (`claude/coach-week-ahead`, migration 20261018190042)
+
+**Report (owner, Sunday 2026-10-18).** Coach checked the training, said what was left this week
+(the undone Thursday session of chest, delts and triceps) and never said that Monday trains the same
+muscles, so the athlete would train them on two days in a row. Evidence was `APPROVED_PLAN_ACTIVE`
+and `CHECK_IN_RECOVERY_MIXED`; the only lookup was `workouts`.
+
+**Root cause (confirmed on production data shape).** The plan has six sessions, Monday to Saturday,
+and no Sunday session. `pickFocusSession` (`training_plan.ts`) works inside the ISO week, so on
+Sunday it fell to "a session from earlier this week is still undone" and never looked past the
+week's end. The rest of the plan was a weekday-ordered list with no dates, and Monday carried
+`[done this week]` because last Monday's session was logged: Coach read tomorrow's session as done.
+Nothing computed which muscles two sessions share, and `get_coach_plan_state_v1` listed finished
+sessions only from Monday (`completed_this_week`), so on a Monday yesterday was invisible. The
+lookup validator also refused any range after the coaching date.
+
+**Fix.**
+- `_shared/training/schedule/muscles.ts`: the one exercise-to-muscle mapping (`sessionMuscles`,
+  catalog v2 primary muscles, a muscle counts at 2 direct sets: the standard's weekly minimum of 4
+  over its 2 sessions a week). Exported for other deterministic facts.
+- `_shared/training/schedule/week_ahead.ts`: the next 7 days from the athlete's coaching date
+  (`buildWeekAhead`), `consecutiveOverlaps` (a structured `MuscleOverlap[]`) and `renderOverlapFact`
+  (one compact line, or `null`), so the fact can move into a later block unchanged. An overlap is
+  two sessions, done or planned, on consecutive calendar dates that train a common muscle, where the
+  later one is today or within 2 days; the gap is `minimumDaysBetweenSessionsPerMuscle` (1, in
+  `standard/volume.ts`, ACSM 2011 and the library's guideline summary; sessions carry dates, not
+  times, so the rule counts days). No overlap, no line.
+- `training_plan` contributor: the block "Next 7 days from today" (date, weekday, session, muscles;
+  about 1,000 characters), placed right after the active-plan line. When today has no unfinished
+  session of its own and one from earlier this week is undone, it is today's make-up and is
+  scheduled on today, which is what Coach prescribes. Days after today take the session of their
+  weekday whatever was done earlier this week. The "Other sessions" tag now reads `[done <date>]`.
+  Budget 7,000 to 8,000 characters.
+- Migration `20261018190042_coach_schedule.sql` (forward-only, fields added, `schema_version` 1.0
+  to 1.1): `get_coach_plan_state_v1` adds `recent_completed` (yesterday's and today's finished
+  sessions with slugs and planned sets); `get_coach_data_index_v1` adds `schedule` (the active plan's
+  weekdays and start date); `coach_lookup_plan_history_v1` takes the filter `schedule` and returns
+  the plan laid over any range (`private.coach_plan_schedule`): per date the planned sessions, the
+  logged ones with their exercises, and the athlete's own `today`.
+- Lookup catalogue: `plan_history` takes an optional filter. `schedule` is the only filter that may
+  reach ahead (up to `maxScheduleAheadDays`, 90, after the coaching date); every other request is
+  still cut at the coaching date. The catalogue names are unchanged, so the structured-output schema
+  is unchanged (0 optional, 0 unions, same bytes; `coach_chat_schema_test.ts` passes untouched). The
+  data index says which weekdays the plan covers, from when, and how far ahead to ask. The renderer
+  keeps the earliest rows when a long range is cut and adds the overlap line.
+- No new evidence code: the schedule and the overlap come from the active plan, which
+  `APPROVED_PLAN_ACTIVE` already covers.
+- Eval bank: `sunday-chest-twice-back-to-back` (the bank now accepts a `trainingPlan` payload).
+
+**Cost.** The schedule block is about 1,000 characters (about 250 tokens) per turn, and 300 more
+when an overlap exists; the data index grows by about 250 when a plan exists.
+
+**Open.** The catalog has one `shoulders` group, so rear-delt work then side-delt work counts as
+shared (the owner counted delts too). A pgTAP run in CI covers the SQL; it was not run locally.
+After the deploy, ask Coach on a Sunday what is coming up and check `model_runs` and the `lookups`
+column for `plan_history`.
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

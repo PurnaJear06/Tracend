@@ -2,14 +2,23 @@
 // today?". It reads get_coach_plan_state_v1 (service role) and renders, with deterministic code,
 // today's planned session (or the next one) with each exercise's sets, reps, rest and plan load,
 // the next-session target Tracend computed from the sets the athlete logged (B3) and the last
-// logged result, the rest of the week by day, the plan's sets per muscle for the week, and catalog
-// alternatives for bodyweight and minimal home kit. Coach explains and chooses among these; it
-// never changes the plan or a target. Replaces the progression contributor (B3), which only
-// listed the targets.
+// logged result, the next seven days from the athlete's own date with each session's muscles and
+// any muscle trained on consecutive days (not bounded by the calendar week), the rest of the plan
+// by day, the plan's sets per muscle for the week, and catalog alternatives for bodyweight and
+// minimal home kit. Coach explains and chooses among these; it never changes the plan or a
+// target. Replaces the progression contributor (B3), which only listed the targets.
 import type { AvoidablePattern } from "../../onboarding/catalog.ts";
 import { avoidablePatterns } from "../../onboarding/catalog.ts";
 import { catalogV2BySlug } from "../../onboarding/catalog_v2.ts";
 import { homeAlternativesFor, minimalHomeKit } from "../../training/home_alternatives.ts";
+import { type DayExercise } from "../../training/schedule/muscles.ts";
+import {
+  addDays,
+  buildWeekAhead,
+  renderWeekAhead,
+  type SchedulePoint,
+  weekAheadDays,
+} from "../../training/schedule/week_ahead.ts";
 import {
   describeLastSession,
   describeTargetAdvice,
@@ -20,7 +29,7 @@ import type { CoachContextContributor } from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
 
 export const trainingPlanContributorId = "training_plan";
-export const trainingPlanContributorBudgetChars = 7_000;
+export const trainingPlanContributorBudgetChars = 8_000;
 
 type Json = Record<string, unknown>;
 const rec = (value: unknown): Json =>
@@ -69,6 +78,16 @@ export type PlanState = Readonly<{
     name: string;
     weekday: number | null;
     order: number | null;
+  }>[];
+  /**
+   * Sessions finished yesterday and today whatever the calendar week, with their exercises: the
+   * week-ahead schedule needs yesterday on a Monday. Empty from an older payload.
+   */
+  recent: readonly Readonly<{
+    id: string;
+    localDate: string;
+    name: string;
+    exercises: readonly DayExercise[];
   }>[];
   targets: readonly ProgressionTarget[];
 }>;
@@ -121,6 +140,15 @@ export function parsePlanState(payload: unknown): PlanState | null {
       name: str(row.name),
       weekday: num(row.weekday),
       order: num(row.order),
+    })),
+    recent: list(body.recent_completed).map((row) => ({
+      id: str(row.planned_workout_id),
+      localDate: str(row.local_date),
+      name: str(row.name),
+      exercises: list(row.exercises).map((exercise) => ({
+        slug: typeof exercise.slug === "string" ? exercise.slug : null,
+        sets: num(exercise.sets) ?? 0,
+      })),
     })),
     targets: parseProgressionSummary(body.progression),
   };
@@ -211,7 +239,7 @@ function homeText(exercise: PlanExercise, state: PlanState): string {
   return bits.length ? `Home: ${bits.join("; ")}.` : "Home: no catalog alternative.";
 }
 
-function compactSession(session: PlanSession, state: PlanState): string {
+function compactSession(session: PlanSession, state: PlanState, doneOn: string | null): string {
   const exercises = session.exercises.map((exercise) => {
     const home = homeAlternativesFor(exercise.slug, state.avoid);
     const options = [...home.bodyweight.slice(0, 1), ...home.minimal.slice(0, 1)];
@@ -219,7 +247,70 @@ function compactSession(session: PlanSession, state: PlanState): string {
       home.already ? " (home-ready)" : options.length ? ` (home: ${options.join(" / ")})` : ""
     }`;
   });
-  return `- ${dayName(session.weekday)}, ${session.name}: ${exercises.join("; ")}`;
+  return `- ${dayName(session.weekday)}, ${session.name}: ${exercises.join("; ")}${
+    doneOn === null ? "" : ` [done ${doneOn}]`
+  }`;
+}
+
+const exercisesOf = (session: PlanSession): DayExercise[] =>
+  session.exercises.map((exercise) => ({ slug: exercise.slug, sets: exercise.sets }));
+
+/**
+ * The sessions of the next seven days from the athlete's date, plus yesterday's and today's
+ * finished ones. The plan repeats weekly, so a day after today takes the session whose weekday it
+ * is whatever was done earlier this week (a Monday session finished this Monday is still
+ * tomorrow's when tomorrow is Monday). When today has no unfinished session of its own and one
+ * from earlier this week is undone, that session is today's make-up, which is what Coach
+ * prescribes today.
+ */
+export function schedulePoints(
+  state: PlanState,
+  focus: ReturnType<typeof pickFocusSession>,
+): SchedulePoint[] {
+  const points: SchedulePoint[] = [];
+  const yesterday = addDays(state.localDate, -1);
+  for (const row of state.recent) {
+    if (row.localDate !== yesterday && row.localDate !== state.localDate) continue;
+    const planned = state.sessions.find((session) =>
+      session.id === row.id || (row.name !== "" && session.name === row.name)
+    );
+    points.push({
+      date: row.localDate,
+      kind: "done",
+      name: row.name || planned?.name || "a session",
+      exercises: row.exercises.length > 0 ? row.exercises : planned ? exercisesOf(planned) : [],
+    });
+  }
+  const loggedToday = points.some((point) => point.date === state.localDate);
+  if (!loggedToday && focus.session) {
+    if (focus.isToday) {
+      points.push({
+        date: state.localDate,
+        kind: "planned",
+        name: focus.session.name,
+        exercises: exercisesOf(focus.session),
+      });
+    } else if (focus.missed) {
+      points.push({
+        date: state.localDate,
+        kind: "make_up",
+        name: `${dayName(focus.session.weekday)} session ${focus.session.name}`,
+        exercises: exercisesOf(focus.session),
+      });
+    }
+  }
+  for (let offset = 1; offset < weekAheadDays; offset += 1) {
+    const weekday = ((state.weekday - 1 + offset) % 7) + 1;
+    for (const session of state.sessions.filter((item) => item.weekday === weekday)) {
+      points.push({
+        date: addDays(state.localDate, offset),
+        kind: "planned",
+        name: session.name,
+        exercises: exercisesOf(session),
+      });
+    }
+  }
+  return points;
 }
 
 /** Sets a week of the plan gives each target muscle, from the catalog's first-listed muscle. */
@@ -263,6 +354,11 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
         : `Today's planned session, ${focus.doneToday.name}, was already done this week (${focus.doneOn}); it is not prescribed again.`,
     );
   }
+  lines.push(
+    ...renderWeekAhead(
+      buildWeekAhead(state.localDate, state.weekday, schedulePoints(state, focus)),
+    ),
+  );
   if (focus.session) {
     const label = focus.isToday
       ? "Today's planned session"
@@ -288,10 +384,7 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
   if (rest.length) {
     lines.push("Other sessions in the plan (a day-by-day list; home options in brackets):");
     lines.push(
-      ...rest.map((session) =>
-        compactSession(session, state) +
-        (finishedOn(state, session) !== null ? " [done this week]" : "")
-      ),
+      ...rest.map((session) => compactSession(session, state, finishedOn(state, session))),
     );
   }
   lines.push(`Sets a week by main muscle in the plan: ${weeklySets(state)}.`);

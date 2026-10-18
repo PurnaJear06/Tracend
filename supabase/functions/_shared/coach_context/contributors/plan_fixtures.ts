@@ -204,3 +204,136 @@ export function ownersPlanPayload(): Record<string, unknown> {
     },
   };
 }
+
+// A synthetic six-day split, Monday to Saturday, with Sunday free. Two sessions train chest, side
+// delts and triceps (Monday and Thursday) and Saturday trains shoulders: the shape behind the
+// 2026-10-18 report, where Coach prescribed the undone Thursday session on Sunday and never said
+// that Monday trains the same muscles.
+type Slot = readonly [slug: string, name: string, sets: number];
+
+const split: readonly Readonly<{ id: string; name: string; weekday: number; slots: Slot[] }>[] = [
+  {
+    id: "w-chest-a",
+    name: "Chest priority and side delts",
+    weekday: 1,
+    slots: [
+      ["barbell-bench-press", "Barbell bench press", 4],
+      ["incline-dumbbell-press", "Incline dumbbell press", 3],
+      ["cable-lateral-raise", "Cable lateral raise", 4],
+      ["cable-triceps-pressdown", "Cable triceps pressdown", 3],
+    ],
+  },
+  {
+    id: "w-legs-a",
+    name: "Legs A",
+    weekday: 2,
+    slots: [
+      ["barbell-back-squat", "Barbell back squat", 4],
+      ["leg-press", "Leg press", 3],
+      ["leg-extension", "Leg extension", 3],
+      ["standing-calf-raise", "Standing calf raise", 3],
+    ],
+  },
+  {
+    id: "w-pull",
+    name: "Pull and rear delts",
+    weekday: 3,
+    slots: [
+      ["lat-pulldown", "Lat pulldown", 4],
+      ["barbell-row", "Barbell row", 3],
+      ["face-pull", "Face pull", 3],
+      ["cable-curl", "Cable curl", 3],
+    ],
+  },
+  {
+    id: "w-chest-b",
+    name: "Chest volume and delts",
+    weekday: 4,
+    slots: [
+      ["dumbbell-bench-press", "Dumbbell bench press", 4],
+      ["pec-deck", "Pec deck", 3],
+      ["dumbbell-lateral-raise", "Dumbbell lateral raise", 4],
+      ["dumbbell-overhead-triceps-extension", "Overhead triceps extension", 3],
+    ],
+  },
+  {
+    id: "w-legs-b",
+    name: "Legs B",
+    weekday: 5,
+    slots: [
+      ["barbell-romanian-deadlift", "Romanian deadlift", 4],
+      ["lying-leg-curl", "Lying leg curl", 3],
+      ["barbell-hip-thrust", "Hip thrust", 3],
+      ["seated-calf-raise", "Seated calf raise", 3],
+    ],
+  },
+  {
+    id: "w-shoulders",
+    name: "Shoulder width",
+    weekday: 6,
+    slots: [
+      ["dumbbell-shoulder-press", "Dumbbell shoulder press", 3],
+      ["cable-lateral-raise", "Cable lateral raise", 4],
+      ["dumbbell-rear-delt-fly", "Rear delt fly", 3],
+      ["band-pull-apart", "Band pull-apart", 3],
+    ],
+  },
+];
+
+const sessionOf = (item: typeof split[number], order: number) => ({
+  planned_workout_id: item.id,
+  order,
+  name: item.name,
+  weekday: item.weekday,
+  minutes: 90,
+  exercises: item.slots.map(([slug, name, sets], index) =>
+    exercise(`${item.id}-${index + 1}`, index + 1, name, slug, sets, 8, 12, 90, 8, null)
+  ),
+});
+
+/** The date of an ISO weekday in the week of Monday 2026-10-12 (1 is Monday). */
+export const splitWeekDate = (weekday: number): string =>
+  new Date(Date.UTC(2026, 9, 11 + weekday)).toISOString().slice(0, 10);
+
+/**
+ * The split's plan state for a coaching date in the week of Monday 2026-10-12. `done` lists the
+ * workout ids finished this week, each on its own weekday's date; `yesterdayDone` and `todayDone`
+ * fill recent_completed, which the SQL gives whatever the calendar week.
+ */
+export function splitPlanPayload(
+  weekday: number,
+  done: readonly string[],
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const finished = (id: string) => split.find((item) => item.id === id)!;
+  const row = (id: string, date: string) => ({
+    planned_workout_id: id,
+    local_date: date,
+    name: finished(id).name,
+    weekday: finished(id).weekday,
+    order: split.indexOf(finished(id)) + 1,
+  });
+  const completed = done.map((id) => row(id, splitWeekDate(finished(id).weekday)));
+  const today = splitWeekDate(weekday);
+  const recent = completed.filter((item) =>
+    item.local_date === today || item.local_date === splitWeekDate(weekday - 1)
+  ).map((item) => ({
+    planned_workout_id: item.planned_workout_id,
+    local_date: item.local_date,
+    name: item.name,
+    exercises: finished(item.planned_workout_id).slots.map(([slug, , sets]) => ({ slug, sets })),
+  }));
+  return {
+    schema_version: "1.1",
+    local_date: today,
+    weekday,
+    equipment: ["dumbbells", "bench", "cables"],
+    avoid_patterns: [],
+    plan: { title: "Six day split", version_number: 3, sessions_per_week: 6 },
+    sessions: split.map((item, index) => sessionOf(item, index + 1)),
+    completed_this_week: completed,
+    recent_completed: recent,
+    progression: { schema_version: "1.0", targets: [] },
+    ...extra,
+  };
+}

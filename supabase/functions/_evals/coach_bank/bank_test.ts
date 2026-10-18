@@ -368,3 +368,12 @@ Deno.test("a case for a chat that is not remembered turns fact suggestions off",
   const off = prepared.get("memory-not-remembered-chat")!.bank.athlete().contributors.memory;
   assertEquals(off?.remember, false);
 });
+
+Deno.test("the Sunday chest case shows Coach tomorrow's session and the back-to-back muscles", () => {
+  const run = prepared.get("sunday-chest-twice-back-to-back")!;
+  assertStringIncludes(run.firstRound.volatile, "- Mon 2026-10-19 (tomorrow): Chest priority");
+  assertStringIncludes(
+    run.firstRound.volatile,
+    "Sun 2026-10-18 then Mon 2026-10-19: chest, shoulders, triceps",
+  );
+});

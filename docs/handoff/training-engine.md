@@ -441,6 +441,14 @@ card; no frozen SQL function changed.
   accepts several. (c) Reply length is a prompt rule, not validated. (d) A body-fat target is
   stored and shown to Coach but no rule reaches it yet (no body-fat reading exists to compare).
 
+### Week ahead and muscle overlap (2026-10-18, `claude/coach-week-ahead`)
+
+`_shared/training/schedule/muscles.ts` is the one exercise-to-primary-muscle mapping (a muscle counts
+at 2 direct sets); `week_ahead.ts` builds the next 7 days and the back-to-back muscle overlaps from
+it, and `standard/volume.ts` holds the rule value (`minimumDaysBetweenSessionsPerMuscle`, 1 day).
+B5 (deloads, joint rules) and the planned Watch-outs block should import these instead of mapping
+muscles again. Full account in [`ai-gateway.md`](./ai-gateway.md) and ALGORITHMS.md.
+
 ## Next agent starts here
 
 B4 (same-day readiness) and B5 (deloads, cardio dosing, joint rules) build on B3's targets

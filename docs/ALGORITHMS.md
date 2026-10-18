@@ -934,6 +934,26 @@ TDEE = BMR × daily-activity factor + training energy
   combinations of body size, age, activity, goal, sex and schedule; and it is valid with any one
   movement avoided.
 
+### Week ahead and back-to-back muscles (2026-10-18)
+
+Code: `supabase/functions/_shared/training/schedule/` (`muscles.ts`, `week_ahead.ts`); rule value
+`minimumDaysBetweenSessionsPerMuscle` in `training/standard/volume.ts`. Deterministic: the model
+explains the result and may offer a change as a proposal the athlete approves; it never decides it.
+
+- **Schedule.** The seven days from the athlete's coaching date (their own local date, not the
+  calendar week), one line each with the session and its muscles. The plan repeats weekly, so a
+  later day takes the session of its weekday whatever was done earlier this week. If today has no
+  unfinished session of its own and one from earlier this week is undone, that session is today's
+  make-up (it is what Coach prescribes today).
+- **Muscles of a session.** The catalog's primary muscles of each exercise, summed over its sets; a
+  muscle counts at 2 direct sets, the standard's weekly minimum (4) over its minimum sessions a week
+  (2). Exercises without catalog muscles are counted as unknown and said so.
+- **Overlap.** Two sessions, done or planned, on consecutive calendar dates (fewer days between
+  them than the standard's 1) that train a common muscle, where the later session is today or within
+  the next 2 days. A rest day between them ends the pair. Yesterday's finished session counts. The
+  data are dates, not times, so no hour count is used. The one `shoulders` group in the catalog means
+  side-delt and rear-delt work share. No overlap, no line.
+
 ### Templates and fractional volume (B2, 2026-10)
 
 Code: `supabase/functions/_shared/training/templates/` (the week's shape and volume counting),

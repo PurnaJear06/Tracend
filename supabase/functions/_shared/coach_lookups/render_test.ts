@@ -6,6 +6,7 @@ import {
   exerciseHistoryPayload,
   mealsPayload,
   request,
+  scheduleLookupPayload,
   workoutsPayload,
 } from "./lookup_fixtures.ts";
 import { lookupResultMaxChars, renderLookup, unreadable } from "./render.ts";
@@ -290,4 +291,58 @@ Deno.test("past messages: an empty search says so", () => {
     { schema_version: "1.0", lookup: "past_messages", truncated: false, messages: [] },
   );
   assertStringIncludes(text, "No records in this range.");
+});
+
+Deno.test("plan schedule: dated rows past and ahead, a missed session says not logged, overlaps follow", () => {
+  const { text, rows } = renderLookup(
+    request("plan_history", "2026-10-15", "2026-10-21", "schedule"),
+    scheduleLookupPayload,
+  );
+  assertEquals(rows, 4);
+  assertStringIncludes(
+    text,
+    '### plan_history 2026-10-15 to 2026-10-21, filter "schedule": 4 rows',
+  );
+  assertStringIncludes(text, "repeats every week from 2026-09-28");
+  assertStringIncludes(text, "- Thu 2026-10-15: planned Chest volume, not logged");
+  assertStringIncludes(text, "- Sun 2026-10-18 (today): done Chest volume (");
+  assertStringIncludes(text, "- Mon 2026-10-19: planned Chest priority (");
+  assertStringIncludes(text, "Days not listed have no session planned or logged.");
+  // A session planned but not logged on a past day did not happen, so it starts no pair; Sunday's
+  // done session and Monday's planned one share muscles.
+  assertStringIncludes(text, "Sun 2026-10-18 then Mon 2026-10-19: ");
+  assert(!text.includes("Thu 2026-10-15 then"));
+});
+
+Deno.test("plan schedule: the earliest rows are kept when the range is cut for size", () => {
+  const days = Array.from({ length: 300 }, (_, index) => {
+    const date = new Date(Date.UTC(2026, 9, 19 + index)).toISOString().slice(0, 10);
+    return {
+      date,
+      weekday: (index % 7) + 1,
+      planned: [{ name: "Chest priority", minutes: 90 }],
+      done: [],
+    };
+  });
+  const { text, rows } = renderLookup(
+    request("plan_history", "2026-10-19", "2027-08-14", "schedule"),
+    { ...scheduleLookupPayload, to: "2027-08-14", days },
+  );
+  assert(rows < 300);
+  assertStringIncludes(text, `showing the first ${rows} of 300 rows`);
+  assertStringIncludes(text, "- Mon 2026-10-19: planned Chest priority");
+  assert(text.length <= lookupResultMaxChars + 400);
+});
+
+Deno.test("plan history without the filter is unchanged", () => {
+  const { text } = renderLookup(request("plan_history", "2026-08-01", "2026-10-17"), {
+    schema_version: "1.1",
+    lookup: "plan_history",
+    from: "2026-08-01",
+    to: "2026-10-17",
+    truncated: false,
+    training: [],
+    nutrition: [],
+  });
+  assertStringIncludes(text, "### plan_history 2026-08-01 to 2026-10-17: 0 rows");
 });

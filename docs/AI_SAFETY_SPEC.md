@@ -1038,7 +1038,9 @@ adapter still sends no tools.
   by the Edge Function from the authenticated request when it builds the runner; it is never part of
   a request and never reaches the model's output.
 - **Validation before anything runs**: a known lookup, real dates, `from` not after `to`, at most
-  400 days, a range not wholly in the future (an end after the coaching date is cut to it), at most
+  400 days, a range not wholly in the future (an end after the coaching date is cut to it; the one
+  exception is `plan_history` with the filter `schedule`, which reads the plan and may end up to 90
+  days after it), at most
   4 requests a round, a required filter for `exercise_history`, filters of plain words only. A
   refused request is an invalid answer (rules `lookup_request_invalid`,
   `lookup_rounds_exceeded`): the one repair attempt must answer without lookups.

@@ -758,18 +758,23 @@ limits both to the message's owner.
 #### Coach data lookups and baseline reads (A10, migration code 20)
 
 Read-only `SECURITY DEFINER` functions, granted to `service_role` only, each returning
-`schema_version` `1.0` (the user id comes from the authenticated Edge Function call; dates of
+`schema_version` (`1.0`; `1.1` for the three changed by migration `20261018190042`; the user id comes from the authenticated Edge Function call; dates of
 records such as plan versions and goals are the athlete's local days, `private.local_day`):
 
 - Baseline, `(p_user_id, p_local_date)`: `get_coach_plan_state_v1` (the active plan's sessions with
-  exercises, the sessions finished this ISO week, equipment and movements to avoid, and the next
-  targets from `get_progression_summary_v1`), `get_coach_nutrition_state_v1` (the week's days with
+  exercises, the sessions finished this ISO week, the sessions finished yesterday and today with
+  their exercises and sets (`recent_completed`, whatever the week), equipment and movements to
+  avoid, and the next targets from `get_progression_summary_v1`), `get_coach_nutrition_state_v1` (the week's days with
   complete flags, the target, the schedule with what is logged, what was eaten today, where meals
-  came from), `get_coach_data_index_v1` (first and last date and count per kind of record).
+  came from), `get_coach_data_index_v1` (first and last date and count per kind of record, and `schedule`: the
+  active plan's weekdays and the date it took effect).
 - Lookups (ten), `(p_user_id, p_from, p_to, p_filter)`, range cut to 400 days, rows capped:
   `coach_lookup_workouts_v1`, `_exercise_history_v1`, `_meals_v1`, `_body_v1`, `_check_ins_v1`,
   `_recovery_v1`, `_plan_history_v1`, `_goals_v1`, `_weekly_reviews_v1`,
-  `_health_history_v1`. Check-in notes are cut to 300 characters; a goal returns its target keys only
+  `_health_history_v1`. `_plan_history_v1` with the filter `schedule` lays the active plan over the
+  range, past or ahead (`private.coach_plan_schedule`): per date the planned sessions, the finished
+  ones with their exercises, and the athlete's `today`; the range is the one lookup that may end
+  after the coaching date (the Edge Function allows 90 days). Check-in notes are cut to 300 characters; a goal returns its target keys only
   (never the free-form details).
 - `private.nutrition_day_totals` and `private.nutrition_complete_day_rules` define a complete
   logging day (ALGORITHMS.md section 6); `evaluate_change_eligibility` averages complete days only.

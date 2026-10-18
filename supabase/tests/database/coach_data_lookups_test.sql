@@ -151,9 +151,9 @@ select is(public.evaluate_change_eligibility('a1000000-0000-4000-8000-0000000000
 select is((select array(select k from jsonb_object_keys(
     public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date)) k order by k collate "C")),
   array['avoid_patterns', 'completed_this_week', 'equipment', 'local_date', 'plan', 'progression',
-    'schema_version', 'sessions', 'weekday'], 'the plan state reports exactly these keys');
+    'recent_completed', 'schema_version', 'sessions', 'weekday'], 'the plan state reports exactly these keys');
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date)
-    ->>'schema_version', '1.0', 'with a schema version');
+    ->>'schema_version', '1.1', 'with a schema version');
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date)
     ->'equipment', '["dumbbells","bench"]'::jsonb, 'equipment from the intake');
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date)
@@ -394,6 +394,63 @@ select is((select array(select k from jsonb_object_keys(public.get_coach_plan_st
 select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date - 5)
     ->'completed_this_week'->0->>'name', 'Push day', 'by name');
 
+-- Coach sees the next seven days (migration 20261018190042_coach_schedule.sql). Yesterday's and
+-- today's finished sessions are reported whatever the calendar week, with the sets they were
+-- planned with.
+select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date - 4)
+    ->'recent_completed'->0->>'name', 'Push day', 'a session finished yesterday is reported');
+select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date - 4)
+    ->'recent_completed'->0->'exercises'->0, '{"slug":"barbell-bench-press","sets":3}'::jsonb,
+  'with its exercises and planned sets');
+select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date - 5)
+    ->'recent_completed'->0->>'local_date', (current_date - 5)::text, 'and one finished today');
+select is(jsonb_array_length(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001',
+    current_date)->'recent_completed'), 0, 'nothing finished yesterday or today is an empty list');
+select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000002', current_date)
+    ->'recent_completed', '[]'::jsonb, 'an athlete without a plan has none');
+
+-- The index says which weekdays the plan covers and from when.
+select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)
+    ->>'schema_version', '1.1', 'the index has a schema version');
+select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)
+    ->'schedule'->>'starts_on', (current_date - 60)::text, 'the schedule starts when the plan took effect');
+select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000001', current_date)
+    ->'schedule'->'weekdays', (select jsonb_agg(d order by d) from unnest(array[
+      extract(isodow from current_date)::integer,
+      (extract(isodow from current_date)::integer % 7) + 1]) d), 'on the weekdays of its sessions');
+select is(public.get_coach_data_index_v1('a1000000-0000-4000-8000-000000000002', current_date)
+    ->'schedule', 'null'::jsonb, 'an athlete without a plan has no schedule');
+
+-- The plan laid over a range of dates, past and ahead: the filter "schedule" of plan_history.
+select is(pg_temp.keys(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date - 7, current_date + 7, 'schedule')),
+  array['days', 'filter', 'from', 'lookup', 'plan', 'schema_version', 'sessions', 'to', 'today',
+    'truncated'], 'schedule: key list');
+select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date - 7, current_date + 7, ' Schedule ')->>'filter', 'schedule',
+  'the filter is read without case or spaces');
+select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date - 7, current_date + 7, 'schedule')->>'today',
+  private.local_date_for('a1000000-0000-4000-8000-000000000001')::text, 'with the athlete''s own today');
+select is(jsonb_array_length(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date - 7, current_date + 7, 'schedule')->'days'), 6,
+  'three Push days, two Pull days ahead or behind, and the day the Push session was finished');
+select is((select count(*) from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+    'a1000000-0000-4000-8000-000000000001', current_date, current_date + 14, 'schedule')->'days') d
+    where d->>'date' > current_date::text and jsonb_array_length(d->'planned') = 1), 4::bigint,
+  'a range ahead lists the planned sessions of future dates');
+select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date - 5, current_date - 5, 'schedule')->'days'->0->'done'->0->>'name', 'Push day',
+  'a finished session is listed on its date');
+select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date - 5, current_date - 5, 'schedule')->'days'->0->'done'->0->'exercises'->0->>'slug',
+  'barbell-bench-press', 'with the exercises it was planned with');
+select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date - 90, current_date - 70, 'schedule')->'days', '[]'::jsonb,
+  'before the plan took effect and with nothing logged, no day is listed');
+select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000002',
+    current_date, current_date + 6, 'schedule')->'days', '[]'::jsonb,
+  'an athlete without a plan has no days');
 -- Dates of records are the athlete's local days, not UTC days: 20:00 UTC on 1 October is already
 -- 2 October at UTC+14, so a range of just that local day finds it.
 update public.user_accounts set timezone = 'Pacific/Kiritimati'

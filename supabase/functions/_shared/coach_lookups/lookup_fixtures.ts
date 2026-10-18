@@ -163,3 +163,45 @@ export const request = (
   to: string,
   filter: string | null = null,
 ): DataRequest => ({ lookup, from, to, filter });
+
+const chestDay = [
+  { slug: "barbell-bench-press", sets: 4 },
+  { slug: "cable-lateral-raise", sets: 3 },
+];
+const legDay = [{ slug: "barbell-back-squat", sets: 4 }, { slug: "leg-press", sets: 3 }];
+
+/**
+ * A plan_history payload for the filter "schedule": synthetic, today is Sunday 2026-10-18, the
+ * plan repeats Monday (chest), Tuesday (legs) and Thursday (chest) from 2026-09-28.
+ */
+export const scheduleLookupPayload = {
+  schema_version: "1.1",
+  lookup: "plan_history",
+  filter: "schedule",
+  from: "2026-10-15",
+  to: "2026-10-21",
+  today: "2026-10-18",
+  truncated: false,
+  plan: { version: 3, starts_on: "2026-09-28", sessions_per_week: 3 },
+  sessions: [
+    { name: "Chest priority", weekday: 1, exercises: chestDay },
+    { name: "Legs A", weekday: 2, exercises: legDay },
+    { name: "Chest volume", weekday: 4, exercises: chestDay },
+  ],
+  days: [
+    { date: "2026-10-15", weekday: 4, planned: [{ name: "Chest volume", minutes: 90 }], done: [] },
+    {
+      date: "2026-10-18",
+      weekday: 7,
+      planned: [],
+      done: [{ name: "Chest volume", exercises: chestDay }],
+    },
+    {
+      date: "2026-10-19",
+      weekday: 1,
+      planned: [{ name: "Chest priority", minutes: 90 }],
+      done: [],
+    },
+    { date: "2026-10-20", weekday: 2, planned: [{ name: "Legs A", minutes: 90 }], done: [] },
+  ],
+};

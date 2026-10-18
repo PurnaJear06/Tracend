@@ -12,6 +12,8 @@ export const maxLookupRounds = 2;
 export const maxRequestsPerRound = 4;
 export const maxLookupRangeDays = 400;
 export const maxLookupFilterChars = 60;
+/** How far past the coaching date a lookup that reads the plan's schedule may reach. */
+export const maxScheduleAheadDays = 90;
 
 export type CoachLookupSpec = Readonly<{
   name: string;
@@ -22,6 +24,11 @@ export type CoachLookupSpec = Readonly<{
   filter: "none" | "optional" | "required";
   /** What the filter means, for the model. Empty when the lookup takes none. */
   filterMeaning: string;
+  /**
+   * Set on the one lookup that can see forward: with this filter the range may end up to
+   * `maxScheduleAheadDays` after the coaching date. Every other request is cut at the coaching date.
+   */
+  reachesAheadWith?: string;
 }>;
 
 export const coachLookupCatalogue = [
@@ -76,9 +83,12 @@ export const coachLookupCatalogue = [
     name: "plan_history",
     rpc: "coach_lookup_plan_history_v1",
     summary:
-      "training plan versions (what was planned, when and why, newest 6) and nutrition target versions (newest 12)",
-    filter: "none",
-    filterMeaning: "",
+      "training plan versions (what was planned, when and why, newest 6) and nutrition target versions (newest 12); with the filter schedule, instead, the plan laid over the range day by day: the sessions planned for each date with their muscles, what was logged, and any muscle trained on consecutive days. The range may be in the past or up to " +
+      maxScheduleAheadDays + " days ahead",
+    filter: "optional",
+    filterMeaning:
+      "schedule for the day-by-day schedule of the dates (use it for what is coming up, next week or any past week); empty for the plan versions and nutrition targets",
+    reachesAheadWith: "schedule",
   },
   {
     name: "goals",
@@ -173,7 +183,8 @@ export function dayNumber(value: unknown): number | null {
  * The requests in a model answer's `data_requests`, or the reason they are refused: an unknown
  * lookup or key, a malformed or oversized range, a range wholly in the future, a missing or
  * malformed filter, too many requests. A range that ends after the coaching date is cut to it (no
- * record can be newer). A filter on a lookup that takes none is dropped. Repeats are merged.
+ * record can be newer), except the plan's schedule, which may reach `maxScheduleAheadDays` ahead.
+ * A filter on a lookup that takes none is dropped. Repeats are merged.
  */
 export function validateDataRequests(raw: unknown, localDate: string): DataRequestsCheck {
   const today = dayNumber(localDate);
@@ -206,7 +217,6 @@ export function validateDataRequests(raw: unknown, localDate: string): DataReque
     if (to - from + 1 > maxLookupRangeDays) {
       return { ok: false, reason: `${spec.name}: a range is at most ${maxLookupRangeDays} days` };
     }
-    if (from > today) return { ok: false, reason: `${spec.name}: the range is in the future` };
     let filter: string | null = null;
     if (spec.filter !== "none" && typeof entry.filter === "string" && entry.filter.trim() !== "") {
       const text = entry.filter.trim();
@@ -218,7 +228,11 @@ export function validateDataRequests(raw: unknown, localDate: string): DataReque
     if (spec.filter === "required" && filter === null) {
       return { ok: false, reason: `${spec.name}: a filter is required (${spec.filterMeaning})` };
     }
-    const clipped = new Date(Math.min(to, today) * 86_400_000).toISOString().slice(0, 10);
+    const reachesAhead = spec.reachesAheadWith !== undefined &&
+      filter?.toLowerCase() === spec.reachesAheadWith;
+    const last = today + (reachesAhead ? maxScheduleAheadDays : 0);
+    if (from > last) return { ok: false, reason: `${spec.name}: the range is in the future` };
+    const clipped = new Date(Math.min(to, last) * 86_400_000).toISOString().slice(0, 10);
     const request: DataRequest = {
       lookup: spec.name as CoachLookupName,
       from: entry.from as string,
