@@ -941,7 +941,12 @@ routes stay available by settings alone for two weeks after the cutover.
   progression verb ("try", "add", "move up to", "go to", "pull") is never a load cue. Figures
   written without the unit are read too: in a sentence about the person's weight, a bare number
   from 30 to 300 straight after "you'll be at" or "weigh" ("You'll be at 50 by March"), and a
-  written number with kilos or kg ("fifty kilos"), are body weights. The model is told to write
+  written number with kilos or kg ("fifty kilos"), are body weights. Stone ("8 stone", "7 st 12
+  lb"), "kilogrammes", markdown or a tilde around a number ("**50**", "~50"), full-width digits and
+  a letter O typed for a zero are read as the weights they are. Wording that puts a body weight
+  forward as a target or an end point with no look-ahead verb ("your ideal weight is 50 kg", "a
+  healthy finish line", "imagine yourself at", "many lifters your height sit at") and a duration
+  after the figure ("for 8 weeks", "x 12w") are checked against the floor too. The model is told to write
   every load in the accepted form ("bench 45 kg x 6", "squat 100 kg for 5", "deadlift 140 kg
   3x3"), and the repair for `weight_below_healthy_floor` and `projection_without_target` shows
   it: "you'll move up to 45 kg next week" fails once and is rewritten as "bench 45 kg x 6 next
@@ -1254,7 +1259,10 @@ plan:") goes too. The cut reply must pass the whole check again (`parseCoachChat
 least half of the answer's sentences and at least 40 characters, or the turn ends in the data
 summary as before. A sentence that introduces a list takes its whole list with it when it is cut. A cut also gives
 up, and the turn ends in the data summary, when it would remove a sentence that sets a rule or
-a limit or puts a condition on advice (a prohibition, stop or limit word (below, under, lower, less, cap, ceiling, within, "top out", "no higher", "at most", maximum, "ease off"), a symptom (including aches and flare-ups), "until", "unless",
+a limit or puts a condition on advice (a prohibition or limit in directive form ("don't", "never", "avoid", "no squatting";
+"keep it below", "stay under", "hold at or beneath", "or less", "cap", "ceiling", "top out", "no higher", "at most",
+"ease off"; a plain "no" or "not", or a comparison such as "3 bpm lower than last month", "within 137
+kcal of your target", "a max of 163 bpm" or "less than last week", is a fact and is cut), a symptom (including aches and flare-ups), "until", "unless",
 "only", "if", "but", "however", "up to", "instead"), because without it "for the next 13 days,
 skip all of these:" would leave a bare list of what to avoid; only a repeated closing question,
 which sets no rule, and a repeated plain sentence are cut without that test. A cut never applies

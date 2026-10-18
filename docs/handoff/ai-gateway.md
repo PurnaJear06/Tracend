@@ -1256,6 +1256,13 @@ pain-free and its symptoms throb, tender, twinge. All the reviews' probes are in
 advice (an imperative, or "you" with a modal): "you normally walk 45 minutes" and "your plan is a 45-minute
 walk" must be in the data.
 
+**Third review round (same PR).** Comparative and limit words (below, under, lower, less, within, max, plain
+no and not) make the cut give up only in directive form ("keep it below", "stay within", "or less", "don't",
+"no squatting"); the same words in a fact sentence ("3 bpm lower than last month", "a max of 163 bpm",
+"no small feat") no longer do. Body-weight reading gained stone, "kilogrammes", markdown and tilde around
+numbers, full-width digits, and target wording with no look-ahead verb ("your ideal weight is", "finish line",
+"imagine yourself at", "your height"). The reviewer probes are in `weight_guard_adversarial_test.ts`.
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

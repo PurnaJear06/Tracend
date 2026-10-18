@@ -19,7 +19,7 @@
 // and a written number with kilos or kg ("fifty kilos").
 import { exerciseCatalogV1 } from "../../onboarding/catalog.ts";
 
-const kgWord = "(?:kg|kgs|kilos?|kilograms?)";
+const kgWord = "(?:kg|kgs|kilos?|kilogram(?:me)?s?)";
 const lbWord = "(?:lbs?|pounds?)";
 const weightPattern = new RegExp(
   `(\\d{2,3}(?:[.,]\\d+)?)(?:\\s*(?:-|–|to)\\s*(\\d{2,3}(?:[.,]\\d+)?))?\\s*(${kgWord}|${lbWord})\\b`,
@@ -200,7 +200,7 @@ function exerciseBefore(words: readonly Word[], start: number): boolean {
 // ---- real rep or set notation, straight after the figure --------------------------------------
 
 const timeUnit =
-  "(?:weeks?|wks?|months?|days?|years?|blocks?|cycles?|meets?|hours?|hrs?|minutes?|mins?|seconds?|secs?|phases?|sessions?)";
+  "(?:(?:more |another |additional )?(?:weeks?|wks?|months?|days?|years?|blocks?|cycles?|meets?|hours?|hrs?|minutes?|mins?|seconds?|secs?|phases?|sessions?)|w|wk|wks|mo|d|y|yrs?)";
 const repNotationAfter = [
   // "x 6", "× 6", "*6", but not "x 2 weeks".
   new RegExp(
@@ -280,9 +280,34 @@ const bareBefore = new RegExp(
 
 type Hit = Readonly<{ start: number; end: number; kgs: readonly number[]; bare: boolean }>;
 
+// "8 stone", "7 st 12 lb": 6.35029 kg a stone.
+const stonePattern =
+  /\b(\d{1,2})\s*(?:st|stones?)\b(?:\s*(\d{1,2}(?:\.\d+)?)\s*(?:lbs?|pounds?)\b)?/gi;
+
+/**
+ * The sentence with markdown and tildes around numbers blanked ("**50**", "~50", "_50_"), same
+ * length, so offsets still point into the original.
+ */
+function plain(original: string): string {
+  // Full-width digits and a letter O typed for a zero ("5O kg") read as the digits they stand for.
+  const sentence = original
+    .replace(/[０-９]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0))
+    .replace(/(?<=\d)[Oo](?=\s*(?:kg|kgs|kilo|lbs?)\b)/g, "0");
+  return sentence.replace(
+    /(?<=^|[\s(])[*_~]+(?=\d)|(?<=\d)[*_~]+(?=$|[\s).,;:!?])/g,
+    (marks) => " ".repeat(marks.length),
+  );
+}
+
 function hitsIn(sentence: string): Hit[] {
   const hits: Hit[] = [];
+  for (const match of sentence.matchAll(stonePattern)) {
+    const kg = Number(match[1]) * 6.35029 + (match[2] ? Number(match[2]) / 2.20462 : 0);
+    hits.push({ start: match.index, end: match.index + match[0].length, kgs: [kg], bare: false });
+  }
   for (const match of sentence.matchAll(weightPattern)) {
+    // The pounds of "7 st 12 lb" belong to the stone figure.
+    if (hits.some((hit) => match.index >= hit.start && match.index < hit.end)) continue;
     const kgs = [match[1], match[2]].filter((raw): raw is string => raw !== undefined)
       .map((raw) => toKg(Number(raw.replace(",", ".")), match[3]));
     hits.push({ start: match.index, end: match.index + match[0].length, kgs, bare: false });
@@ -324,7 +349,8 @@ function hitsIn(sentence: string): Hit[] {
  * Every weight figure in the sentence, in kg, each marked as the athlete's body weight or not
  * (see the top of this file for the rule).
  */
-export function weightFiguresIn(sentence: string): WeightFigure[] {
+export function weightFiguresIn(original: string): WeightFigure[] {
+  const sentence = plain(original);
   const words = wordsOf(sentence);
   const bodyWordInSentence = bodyWords.test(sentence);
   return hitsIn(sentence).map((hit) => {

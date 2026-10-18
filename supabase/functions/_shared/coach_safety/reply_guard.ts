@@ -542,12 +542,22 @@ function cutUnits(
 // words that put a condition on, or a caveat after, a recommendation. Cutting such a sentence can
 // turn "skip these", "only if it doesn't hurt" or "stop at 17 days" into a plain recommendation, so
 // a cut that would remove one gives up and the turn ends in the data summary.
+// A prohibition is one only in directive form: "don't", "do not", "never", "avoid", "skip", "stop",
+// "no" with an activity ("no squatting"). A plain "no" or "not" in a fact ("no small feat", "not
+// far off your best") is not one.
+const directiveProhibition =
+  /\b(?:don'?t|do not|never|avoid\w*|skip\w*|stop\w*|shouldn'?t|should not|mustn'?t|must not|can'?t|cannot|won'?t|will not|unable|stay away|off the table|out of bounds|wait|hold off|instead of|rather than|not (?:recommended|advised|safe|allowed))\b|\bno\s+(?:\w+ing|squats?|lunges?|jumps?|sprints?|runs?|intervals?|lifting|training|exercise|cardio|workouts?|heavy)\b/i;
+// A comparative or limit word is a limit only in a directive: "keep it below", "stay under",
+// "hold the load at or beneath", "cap it", "go no lower", "aim for at most". In a fact it is a
+// comparison: "3 bpm lower than last month", "a max of 163 bpm", "within 137 kcal of your target".
+const directiveLimit =
+  /\b(?:keep|stay|stick|hold|go|aim|set|limit|remain|cap|top out)\b[^.!?]{0,30}\b(?:below|under|beneath|lower|less|fewer|within|max\w*|over|above|beyond|past)\b|\bor (?:lower|less|fewer|under|below)\b|\bat or (?:below|under|beneath)\b/i;
 const cautionWord = new RegExp(
-  `${prohibitionWord.source}|\\b(?:stop\\w*|avoid\\w*|skip\\w*|limit\\w*|careful\\w*|caution\\w*|pain\\w*|hurt\\w*|pinch\\w*|sharp|swell\\w*|dizz\\w*|numb\\w*|injur\\w*|sore\\w*|off the table|steer clear|below|under|beneath|lower|less|fewer|cap\\w*|ceiling|within|ease off|back off|ach(?:e|es|ed|ing)|flare\\w*|top(?:s|ped)? out|no (?:more|higher|longer)|at most|max\\w*)\\b`,
+  `${directiveProhibition.source}|${directiveLimit.source}|\\b(?:limit\\w*|careful\\w*|caution\\w*|pain\\w*|hurt\\w*|pinch\\w*|sharp|swell\\w*|dizz\\w*|numb\\w*|injur\\w*|sore\\w*|steer clear|cap(?:s|ped|ping)?|ceiling|ease off|back off|ach(?:e|es|ed|ing)|flare\\w*|top(?:s|ped)? out|no (?:more|higher|longer)|at most)\\b`,
   "i",
 );
 const conditionWord =
-  /\b(?:until|unless|except|only|provided|as long as|if|but|however|although|though|at most|no more than|no less than|up to|max\w*|instead|otherwise)\b/i;
+  /\b(?:until|unless|except|only|provided|as long as|if|but|however|although|though|no more than|no less than|instead|otherwise)\b/i;
 
 /** Whether removing a unit could change what is left from advice into something else. */
 function changesMeaning(removed: Removed): boolean {

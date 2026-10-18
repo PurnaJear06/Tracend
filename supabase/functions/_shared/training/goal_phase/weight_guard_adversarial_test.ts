@@ -104,6 +104,37 @@ const disguisedAsLifting = [
   "You'll be the same weight as the bar plus 50 kg.",
   "Bench day is good, you'll sit at 50 kg.",
   "You'll be at fifty-five kilos by June.",
+  "You'll be **50 kg** by March.",
+  "You'll be at **50** by March.",
+  "You'll be at ~50 by March.",
+  "You'll be *50 kg* soon.",
+  "You'll weigh\n50 kg by March.",
+  "You'll be at 50\nkg by March.",
+  "You'll be 50 kilogrammes by March.",
+  "You'll be 8 stone by March.",
+  "You'll be 7 st 12 lb by March.",
+  "You'll be 110 pounds by March.",
+  "You'll be 110lbs by March.",
+  "You'll be between 50 and 52 kg by March.",
+  "You'll be 50/52 kg by March.",
+  "You'll be 50 to 52 kg by March.",
+  "Press on to 50 kg x 1 more month.",
+  "Row 50 kg for 8 weeks.",
+  "Squat 50 kg x 12w.",
+  "Your ideal weight is 50 kg.",
+  "50 kg is a realistic end point for you.",
+  "A healthy finish line is 50 kg.",
+  "Ideal: 50 kg.",
+  "Imagine yourself at 50 kg.",
+  "Picture 50 kg on the scale by March.",
+  "Many lifters your height sit at 50 kg.",
+  "You'll be fifty-two kilos by March.",
+  "You'll be 5O kg by March.",
+  "You'll be ５０ kg by March.",
+  "You'll be 50 kg x leaner.",
+  "Squat 50 kg x 6, then you'll be 50 kg by March.",
+  "Curl up to 50 kg x 6 weeks of cutting.",
+  "Dropping to 50 kg x 2 is fine.",
   "Squat 100 kg x 5 and you'll weigh 55 kg.",
   "On the scale you will see 52 kg x 2 weeks from now.",
 ];
@@ -150,6 +181,8 @@ Deno.test("a load written as the exercise and its reps still passes", () => {
       "Your bench is moving well. Next week: bench 45 kg x 6.",
       "Back squat 45 kg sets of 6, and you will hit it soon.",
       "Squat 45 kg 3 x 5 by March.",
+      "Keep the squat 50 kg x 6 and you'll be lighter by March.",
+      "Bench 50 kg x 6 is where you'll be by March.",
     ]
   ) {
     for (const question of questions) {
@@ -214,6 +247,29 @@ Deno.test("a cut gives up on every limit the reviews found", () => {
   assert(kept.answer.answer?.toString().includes("below 4 of 10 pain"));
 });
 
+Deno.test("ordinary facts are cut, not a reason to give up", () => {
+  const facts = [
+    "Lower-body day: squat 61.5 kg x 8.",
+    "Aim for 137 g of protein a day.",
+    "Your sleep averaged 7.3 hours, which is a little under your usual.",
+    "Your resting heart rate is 3 bpm lower than last month.",
+    "That puts you within 137 kcal of your target.",
+    "You hit a max of 163 bpm on the run.",
+    "You walked 11,437 steps, no small feat.",
+    "That is not far off your best of 61.5 kg.",
+    "Steps were 8,437, less than last week.",
+    "Drink about 2.7 litres of water.",
+    "Your bench went up 2.5 kg since March.",
+  ];
+  const pre = "Your training week looks solid and recovery is on track for the block.\n";
+  const post = "\nFinish with some light stretching and a good dinner afterwards.";
+  for (const fact of facts) {
+    const result = cut(`${pre}${fact}${post}`);
+    assert(result !== null, fact);
+    assert(!result.answer.answer?.toString().includes(fact), fact);
+  }
+});
+
 // ---- the repeat probes ----------------------------------------------------------------------
 
 Deno.test("a stop rule for a symptom is never a repeat, however it is worded", () => {
@@ -238,4 +294,15 @@ Deno.test("a stop rule for a symptom is never a repeat, however it is worded", (
   // Not a stop rule for a symptom.
   assertEquals(isSafetyWording("If you feel faint, sit down.", false), true);
   assertEquals(isSafetyWording("Want me to suggest two easy ways to close the gap?", false), false);
+});
+
+Deno.test("stone, kilogrammes, markdown and look-alike digits are read as the weights they are", () => {
+  const kg = (sentence: string) => weightFiguresIn(sentence).map((f) => f.kgs[0].toFixed(1));
+  assertEquals(kg("You'll be 8 stone by March."), ["50.8"]);
+  assertEquals(kg("You'll be 7 st 12 lb by March."), ["49.9"]);
+  assertEquals(kg("You'll be 50 kilogrammes by March."), ["50.0"]);
+  assertEquals(kg("You'll be at **50** by March."), ["50.0"]);
+  assertEquals(kg("You'll be at ~50 by March."), ["50.0"]);
+  assertEquals(kg("You'll be ５０ kg by March."), ["50.0"]);
+  assertEquals(kg("You'll be 5O kg by March."), ["50.0"]);
 });
