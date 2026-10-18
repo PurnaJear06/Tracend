@@ -204,9 +204,12 @@ allergies, exclusions and disclosed eligibility restrictions, each with source, 
 optional expiry. Today equipment, movements to avoid, limitations and diet notes live on
 `user_profiles`.
 
-### `user_preferences`
+### `user_preferences` (superseded by `coach_facts`)
 
-Confirmed food, training, schedule, communication, notification and lifestyle preferences. Each row
+Since A10 part 2 nothing in Coach chat reads or writes this table (the confirmed preferences were
+copied into `coach_facts` when that table was created). Older app builds can still write it through
+`persist_coach_preference`; "Forget everything" empties it. Kept until the frozen `prepare_coach_chat_v8`
+is retired. Confirmed food, training, schedule, communication, notification and lifestyle preferences. Each row
 stores `category`, `key` (1–120 characters), `value` (1–200 characters), `provenance`
 (`onboarding`, `chat_statement`, `repeated_signal`, `manual`), `confirmed_at` and `superseded_at`.
 Only one active row per user and key; a new value supersedes the old one. Model-inferred
@@ -804,14 +807,53 @@ chat uses `private.prepare_daily_coaching_core` with `for_chat`). The context sa
 when never screened). `active_plan` and `nutrition_targets` are null, and
 `APPROVED_PLAN_ACTIVE` is not in `permitted_evidence`.
 
-### `coach_narrative_entries`
+### `coach_facts` and `coach_notes` (A10 part 2, migration code 20)
+
+**`coach_facts`** holds what the athlete confirmed for Coach, in a closed vocabulary: `kind` is one of
+`injury_limitation`, `schedule_constraint`, `equipment`, `food_like`, `food_dislike`, `allergy`,
+`exercise_like`, `exercise_dislike`, `coaching_style`, `other_preference` (goal, target and screening
+keep their own tables). Each row has a `subject` (short, lower case, 1 to 60 characters), a
+`statement` (the athlete's words, 1 to 200), a `source` (`athlete_typed`,
+`coach_suggestion_confirmed`, `onboarding`), `confirmed_at`, `reconfirm_at` (injuries 28 days and
+schedule constraints 90 days after confirmation, else null), `lineage_id` and `version`. A fact is
+versioned: an edit or "still true" supersedes the current row (`superseded_at`) and adds the next
+version; at most one active row per user, kind and subject; at most 60 active facts. Forced RLS,
+read-only for authenticated; every write is an athlete action through `save_coach_fact_v1`,
+`reconfirm_coach_fact_v1`, `delete_coach_fact_v1` (deletes every version) or
+`forget_coach_memory_v1`, each audited without the athlete's words. No Edge Function and no model
+writes a fact (Architecture 2).
+
+**`coach_notes`** holds Coach's own short notes, written by `persist_coach_note_v1` (service role)
+after a reply, from rules and structured fields, never from the Coach's prose: `entry_kind`
+(`conversation`, or `advice` for a proposal the athlete answered), `note_date`, `summary` (a template
+sentence), `topics` and `concerns` (closed lists), `advice` and `commitments` (jsonb, at most 4 each),
+`follow_through` (`followed`, `partly`, `not_followed`, set once a week has passed), `message_ids`
+(the messages it came from), `proposal_id` and `expires_at` (60 days). An athlete keeps at most 20 notes: the newest, except that a note still waiting for its
+follow-through check (a training-days commitment under 28 days old) is kept ahead of the others. A note for a conversation with `coach_threads.remember = false` is refused. Deleting
+a conversation deletes its notes. Forced RLS, read-only for authenticated; the athlete deletes a note
+with `delete_coach_note_v1`. Notes are untrusted when read back.
+
+`change_proposals` gains `memory_noted_at` (set once, never cleared) and `source_remembered` (copied
+from the conversation by a trigger when `source_message_id` is set; true for proposals that existed
+when the column was added, false for a new one until it is linked to a reply in a remembered
+conversation, so a proposal that never gets linked is never noted). "Forget
+everything" also marks every proposal made so far noted (answered or pending) and removes the older preference, journal and
+narrative sections from the athlete's stored `coach_context_snapshots` (with their checksum).
+
+`coach_threads.remember` (default true) marks a conversation the athlete asked Coach not to remember
+(`create_coach_thread_v2`): no notes, no suggested facts, excluded from `coach_lookup_past_messages_v1`
+and `search_coach_messages`, and left out of every other conversation's context by
+`prepare_coach_chat_v9`.
+
+### `coach_narrative_entries` (never written)
 
 Versioned coaching timeline phases owned by the user: `phase`, `headline` (deterministic one-
 sentence summary), `since`/`until` dates, `cause_snapshot_ids`, and `superseded_by` (version
 chain). At most one entry is ongoing (`until is null`). Forced RLS, read-only for authenticated.
 
-### `coach_session_summaries`
+### `coach_session_summaries` (superseded by `coach_notes`)
 
+Nothing writes this table since A10 part 2 (the per-turn summary recycled the Coach's own prose).
 Append-only deterministic daily journal entries: `coaching_date`, `summary` (1–2 sentences),
 `thread_id`, and `key_snapshot_ids`. Only the 30 newest entries per user are kept. Forced RLS,
 read-only for authenticated.
@@ -1237,18 +1279,23 @@ loader, the worker secret and the kick are not executable by any API role; `libr
 is executable by `service_role` only (and needs a direct SQL connection, because `private` is not
 exposed to the Data API).
 
-#### `public.search_library_v1(query_text, query_embedding, match_count, filters)`
+#### `public.search_library_v2(query_text, query_embedding, match_count, filters, target_user_id)`
 
-Contract 6 v1.1. Security definer, empty `search_path`, executable by `service_role` only. Takes
-the 30 best full-text matches (`websearch_to_tsquery('english', …)`, ranked by `ts_rank_cd`) and
-the 30 nearest embeddings (cosine distance) and merges them by reciprocal rank fusion:
-`score = Σ 1 / (60 + rank)` over the lists a chunk appears in. Returns up to `match_count` rows
-(clamped to 1–8, null = 8), best first, each
-`{schema_version: 1, chunk_id, source_id, title, year, url, section, body, header, score}`.
+Contract 6 v2 (E3, migration `20261018140043_library_search_v2`; it replaces and drops
+`search_library_v1`, which nothing deployed called). Security definer, empty `search_path`,
+executable by `service_role` only. Takes the 30 best full-text matches and the 30 nearest
+embeddings (cosine distance) and merges them by reciprocal rank fusion:
+`score = Σ 1 / (50 + rank)` over the lists a chunk appears in. Full-text search ORs the terms of the
+question: lower-cased words of letters and digits, stemmed by the English configuration with its
+stop words dropped, ranked by `ts_rank` (length-normalised). v1's `websearch_to_tsquery` ANDed every
+word, so a whole question matched almost nothing. Returns up to `match_count` rows (clamped to
+1–10, null = 8), best first, at most three per source, each
+`{schema_version: 2, chunk_id, source_id, source_key, title, year, url, section, body, header, score}`.
+`source_key` is the stable manifest key Coach cites; `source_id` differs in every database.
 
 - Only the first 1000 characters of `query_text` are used. A null or blank `query_text`, or one
-  of stop words or negations (`-creatine`) only, skips full-text search; a null
-  `query_embedding` skips vector search; both skipped returns no rows.
+  of stop words only, skips full-text search; a null `query_embedding` skips vector search; both
+  skipped returns no rows.
 - `query_embedding` is declared as `public.library_embedding`, a domain over
   `extensions.vector(384)`; callers pass the same JSON number array. Another size raises `22000`
   ("expected 384 dimensions").
@@ -1259,6 +1306,19 @@ the 30 nearest embeddings (cosine distance) and merges them by reciprocal rank f
   when its array overlaps the filter; an absent, null or empty array does not filter. Any other key
   or a non-text-array value raises `22023`. Sources that apply everywhere carry `global` in
   `region`, so a regional caller passes for example `["global", "IN"]`.
+- `target_user_id` (optional): when set and `filters` has no `region`, the search is limited to the
+  athlete's regions from `private.library_regions_for_account(uuid)` (not executable by any API
+  role): always `global`, plus the country in `user_accounts.locale` (`en-IN`, `en_US`) and `IN` for
+  the `Asia/Kolkata` and `Asia/Calcutta` time zones, because the app stores no country yet. An
+  unknown account gets `global` only. A source tagged `IN` therefore reaches only athletes in
+  India. When the app stores a country, change that one function.
+- `public.library_worker_secret_v1()` (same migration): returns the Vault worker secret
+  (`private.library_worker_secret()`), executable by `service_role` only. Coach chat uses it as the
+  bearer when it calls `library-embed` to embed the question, so gte-small never loads inside
+  coach-chat.
+- Coach does not filter by topic: the tags are free text, and a hard topic filter would drop the
+  second source of a question that spans topics. The `topics` filter stays for callers that know
+  what they want.
 
 #### Dump-safe function signatures (all schemas we own)
 

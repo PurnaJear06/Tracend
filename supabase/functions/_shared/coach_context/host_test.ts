@@ -24,15 +24,23 @@ Deno.test("the registry is valid and holds the contributors registered so far", 
   assertEquals(coachContextContributors.map((item) => item.id), [
     "coaching_principles",
     "screening",
+    "confirmed_facts",
     "goal_phase",
     "training_plan",
     "nutrition_state",
     "coach_proposals",
+    "heart_rate_profile",
+    "coach_notes",
     "data_index",
+    "library",
   ]);
   assertEquals(coachContextContributors.map((item) => item.slot), [
     "stable",
     "stable",
+    "stable",
+    "volatile",
+    "volatile",
+    "volatile",
     "volatile",
     "volatile",
     "volatile",
@@ -152,13 +160,15 @@ Deno.test("the most a registry can add covers every label", async () => {
   assert(result.stable.length + result.volatile.length <= coachContextMaxChars(list));
 });
 
-Deno.test("the data index, which invites lookups, is rendered only on the gateway route", () => {
+Deno.test("the data index and the library, which need the gateway's answer fields, render only on that route", () => {
   assertEquals(
     coachContextContributorsFor(true).map((item) => item.id),
     coachContextContributors.map((item) => item.id),
   );
   const legacy = coachContextContributorsFor(false).map((item) => item.id);
   assertEquals(legacy.includes("data_index"), false);
+  assertEquals(legacy.includes("library"), false);
   assertEquals(legacy.includes("training_plan"), true);
+  assertEquals(legacy.includes("heart_rate_profile"), true);
   validateCoachContextContributors(coachContextContributorsFor(false));
 });

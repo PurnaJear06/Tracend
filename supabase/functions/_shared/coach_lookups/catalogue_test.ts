@@ -22,9 +22,9 @@ const refused = (raw: unknown) => {
   return checked.reason;
 };
 
-Deno.test("the catalogue is a closed list: ten lookups, each with its own RPC", () => {
-  assertEquals(coachLookupNames.length, 10);
-  assertEquals(new Set(coachLookupCatalogue.map((spec) => spec.rpc)).size, 10);
+Deno.test("the catalogue is a closed list: eleven lookups, each with its own RPC", () => {
+  assertEquals(coachLookupNames.length, 11);
+  assertEquals(new Set(coachLookupCatalogue.map((spec) => spec.rpc)).size, 11);
   for (const spec of coachLookupCatalogue) {
     assertEquals(spec.rpc, `coach_lookup_${spec.name}_v1`);
   }
@@ -128,4 +128,19 @@ Deno.test("dayNumber accepts only real dates", () => {
   assertEquals(dayNumber("2026-02-29"), null);
   assertEquals(dayNumber("2026-1-1"), null);
   assertEquals(dayNumber(20260101), null);
+});
+
+Deno.test("past_messages needs words to search for and takes plain words only", () => {
+  assertEquals(
+    refused([{ lookup: "past_messages", from: "2026-09-01", to: today }]),
+    'past_messages: a filter is required (the words to find, such as "knee pain"; any of them matches)',
+  );
+  assertEquals(
+    ok([{ lookup: "past_messages", from: "2026-09-01", to: today, filter: "knee pain" }])[0].filter,
+    "knee pain",
+  );
+  assertStringIncludes(
+    refused([{ lookup: "past_messages", from: "2026-09-01", to: today, filter: "knee; drop" }]),
+    "plain words",
+  );
 });

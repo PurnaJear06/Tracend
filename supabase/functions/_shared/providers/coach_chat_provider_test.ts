@@ -522,7 +522,6 @@ function buildMassiveContext(): Record<string, unknown> {
         thread_id: `thread-${i}`,
       }),
     ),
-    fts_messages: messages.slice(0, 8),
   };
 }
 
@@ -658,7 +657,6 @@ Deno.test("CONTEXT BUDGET CONTRACT: all context kinds stay within compacted 32K 
       summary: longText.slice(0, 200),
       thread_id: `t-${i}`,
     })),
-    fts_messages: moderateMessages.slice(0, 5),
   };
 
   // Test multiple context kinds

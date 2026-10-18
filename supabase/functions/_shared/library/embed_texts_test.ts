@@ -4,6 +4,7 @@ import {
   EmbedTextsError,
   maxEmbedTextChars,
   maxEmbedTexts,
+  parseEmbedQuery,
   parseEmbedTexts,
 } from "./embed_texts.ts";
 
@@ -32,4 +33,21 @@ Deno.test("valid texts pass and invalid ones are refused", () => {
 Deno.test("texts are embedded in order", async () => {
   const result = await embedTexts((text) => Promise.resolve([text.length]), ["a", "bb"]);
   assertEquals(result, [[1], [2]]);
+});
+
+Deno.test("a query body carries one short question; any other body is not a query", () => {
+  assertEquals(parseEmbedQuery({ query: "How much protein?" }), "How much protein?");
+  assertEquals(parseEmbedQuery({}), null);
+  assertEquals(parseEmbedQuery({ texts: ["a"] }), null);
+  assertEquals(parseEmbedQuery(null), null);
+  for (
+    const bad of [{ query: "" }, { query: "  " }, { query: 5 }, {
+      query: "x".repeat(maxEmbedTextChars + 1),
+    }]
+  ) {
+    assertThrows(() => parseEmbedQuery(bad), EmbedTextsError);
+  }
+  // The batch mode is untouched by the new mode.
+  assertEquals(parseEmbedTexts({ query: "How much protein?" }), null);
+  assertEquals(parseEmbedTexts({ texts: ["a", "b"] }), ["a", "b"]);
 });

@@ -1,12 +1,13 @@
 import type { CoachContextContributor } from "../host.ts";
+import { coachServiceRpc } from "../service_source.ts";
+import { loadHeartRateInputs } from "../../training/heart_rate/inputs.ts";
 import {
   buildHeartRateProfile,
   type HeartRateInputs,
   type HeartRateProfile,
 } from "../../training/heart_rate/profile.ts";
 
-// Contract 7 contributor for the heart-rate profile (chunk C3). It is not registered yet: the lead
-// adds it to registry.ts with E3 in round 3, so the Coach prompt does not change in round 2.
+// Contract 7 contributor for the heart-rate profile (chunk C3), registered with E3.
 //
 // The text is computed by Tracend from Apple Watch summaries. It tells the Coach what is known and
 // what is missing, never a guess. Heart rate informs rest, cardio dosing and recovery questions;
@@ -87,7 +88,7 @@ export function renderHeartRateProfile(profile: HeartRateProfile): string | null
   return lines.join("\n");
 }
 
-/** The contributor, reading inputs through `load` (the lead wires the service-role loader). */
+/** The contributor, reading inputs through `load`. */
 export function createHeartRateContributor(load: HeartRateInputsLoader): CoachContextContributor {
   return Object.freeze({
     id: heartRateContributorId,
@@ -99,3 +100,18 @@ export function createHeartRateContributor(load: HeartRateInputsLoader): CoachCo
     },
   });
 }
+
+/** The registered contributor: it reads `get_heart_rate_inputs_v1` with the service role. */
+export const heartRateContributor: CoachContextContributor = createHeartRateContributor(
+  (userId, localDate) =>
+    loadHeartRateInputs(
+      {
+        rpc: async (name, args) => {
+          const { data, error } = await coachServiceRpc(name, args);
+          return { data, error: error ? { message: "heart_rate_inputs_unavailable" } : null };
+        },
+      },
+      userId,
+      localDate,
+    ),
+);

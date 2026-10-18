@@ -3,13 +3,20 @@
 
 /**
  * single: one topic's sources. multi_source: sources from two or three topics, so a good answer
- * needs chunks from each. no_answer: outside the library (medication, rehabilitation, pregnancy,
- * minors, medical diets, eating disorders, medical reports, drugs); nothing is expected, and a
- * good answer says the library does not cover it.
+ * needs chunks from each. follow_up: a question with no topic of its own that follows an earlier
+ * question (`previous`); it is searched with that question's topic and expects that question's
+ * sources. no_answer: outside the library (medication, rehabilitation, pregnancy, minors, medical
+ * diets, eating disorders, medical reports, drugs); nothing is expected, and a good answer says
+ * the library does not cover it.
  */
-export type QuestionKind = "single" | "multi_source" | "no_answer";
+export type QuestionKind = "single" | "multi_source" | "follow_up" | "no_answer";
 
-export const questionKinds: readonly QuestionKind[] = ["single", "multi_source", "no_answer"];
+export const questionKinds: readonly QuestionKind[] = [
+  "single",
+  "multi_source",
+  "follow_up",
+  "no_answer",
+];
 
 export type LibraryQuestion = Readonly<{
   id: string;
@@ -17,6 +24,10 @@ export type LibraryQuestion = Readonly<{
   kind?: QuestionKind;
   /** Manifest keys of the sources a good answer needs; empty for a no_answer question. */
   expected: readonly string[];
+  /** The athlete's earlier questions in the conversation, newest first (follow_up questions). */
+  previous?: readonly string[];
+  /** The regions of the athlete asking, for example ["global", "IN"]; default ["global"]. */
+  region?: readonly string[];
 }>;
 
 export type QuestionScore = Readonly<{
@@ -105,6 +116,7 @@ export function renderTable(modes: Readonly<Record<string, readonly QuestionScor
       ["all scored", summarise(scores)],
       ["single", summariseKind(scores, "single")],
       ["multi_source", summariseKind(scores, "multi_source")],
+      ["follow_up", summariseKind(scores, "follow_up")],
     ];
     for (const [label, summary] of rows) {
       if (summary.questions === 0) continue;

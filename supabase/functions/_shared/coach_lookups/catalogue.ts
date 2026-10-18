@@ -102,6 +102,14 @@ export const coachLookupCatalogue = [
     filter: "none",
     filterMeaning: "",
   },
+  {
+    name: "past_messages",
+    rpc: "coach_lookup_past_messages_v1",
+    summary:
+      "the athlete's own earlier questions in conversations they let Coach remember, found by their words (newest first among equal matches, 12 at most); use it when the notes are not enough to recall what they said",
+    filter: "required",
+    filterMeaning: 'the words to find, such as "knee pain"; any of them matches',
+  },
 ] as const satisfies readonly CoachLookupSpec[];
 
 export type CoachLookupName = typeof coachLookupCatalogue[number]["name"];

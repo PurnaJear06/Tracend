@@ -278,6 +278,13 @@ function healthHistory(body: Json): Parts {
   return singles(lines);
 }
 
+function pastMessages(body: Json): Parts {
+  const lines = list(body.messages).map((message) =>
+    `- ${val(message.local_date)}, the athlete wrote: ${quoted(message.content)}`
+  );
+  return singles(lines);
+}
+
 /** One line per row. */
 const singles = (lines: string[]): Parts => ({
   preface: [],
@@ -296,6 +303,7 @@ const renderers: Readonly<Record<string, (body: Json) => Parts>> = {
   goals,
   weekly_reviews: weeklyReviews,
   health_history: healthHistory,
+  past_messages: pastMessages,
 };
 
 /** The heading of a result: what was asked, the period, how many rows are shown and why not all. */

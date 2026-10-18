@@ -121,3 +121,96 @@ Deno.test("chat answer reports reasoning limits from shared constants", () => {
   assertEquals(error.path, "reasoning_chain[0].value");
   assertEquals(error.limit, coachChatAnswerLimits.reasoningValueMaxLength);
 });
+
+const libraryAnswer = (code: string, source = "library", label = "A label the model wrote") => ({
+  answer: "Ten or more weekly sets is where the research points.",
+  evidence: [{ code, label, source }],
+  missing_data: [],
+  safety_state: "allowed",
+  suggested_follow_ups: [],
+});
+
+const shownVolume = {
+  schoenfeld_2017_weekly_volume: { label: "Resistance training volume and growth (2017)" },
+};
+
+Deno.test("library evidence cites a source id that was shown this turn, and only one", () => {
+  const parsed = parseCoachChatAnswer(
+    libraryAnswer("schoenfeld_2017_weekly_volume"),
+    ["APPROVED_PLAN_ACTIVE"],
+    undefined,
+    shownVolume,
+  );
+  assertEquals(parsed.evidence[0].source, "library");
+  for (
+    const [code, sources] of [
+      ["made_up_2019_claim", shownVolume],
+      ["APPROVED_PLAN_ACTIVE", shownVolume],
+      ["toString", shownVolume],
+      ["schoenfeld_2017_weekly_volume", {}],
+    ] as const
+  ) {
+    const error = assertThrows(
+      () => parseCoachChatAnswer(libraryAnswer(code), ["APPROVED_PLAN_ACTIVE"], undefined, sources),
+      CoachChatAnswerValidationError,
+    );
+    assertEquals(error.rule, "citation_not_retrieved");
+    assertEquals(error.path, "evidence[0].code");
+  }
+});
+
+Deno.test("the server writes a library citation's label from the retrieved source, not the model", () => {
+  const answer = libraryAnswer("schoenfeld_2017_weekly_volume");
+  const parsed = parseCoachChatAnswer(answer, ["APPROVED_PLAN_ACTIVE"], undefined, shownVolume);
+  assertEquals(parsed.evidence, [{
+    code: "schoenfeld_2017_weekly_volume",
+    label: "Resistance training volume and growth (2017)",
+    source: "library",
+  }]);
+  // The model's own object is not changed, and other evidence keeps the model's label.
+  assertEquals(answer.evidence[0].label, "A label the model wrote");
+  const mixed = parseCoachChatAnswer(
+    {
+      ...answer,
+      evidence: [
+        { code: "APPROVED_PLAN_ACTIVE", label: "Plan is active", source: "coach_context" },
+        ...answer.evidence,
+      ],
+    },
+    ["APPROVED_PLAN_ACTIVE"],
+    undefined,
+    shownVolume,
+  );
+  assertEquals(mixed.evidence.map((item) => item.label), [
+    "Plan is active",
+    "Resistance training volume and growth (2017)",
+  ]);
+});
+
+Deno.test("the answer check is told which library sources the reply cites", () => {
+  const seen: (readonly string[] | undefined)[] = [];
+  parseCoachChatAnswer(
+    libraryAnswer("schoenfeld_2017_weekly_volume"),
+    ["APPROVED_PLAN_ACTIVE"],
+    (_, cited) => {
+      seen.push(cited);
+      return null;
+    },
+    shownVolume,
+  );
+  assertEquals(seen, [["schoenfeld_2017_weekly_volume"]]);
+});
+
+Deno.test("a shown library id is not a permitted code for data evidence", () => {
+  const error = assertThrows(
+    () =>
+      parseCoachChatAnswer(
+        libraryAnswer("schoenfeld_2017_weekly_volume", "coach_context"),
+        ["APPROVED_PLAN_ACTIVE"],
+        undefined,
+        shownVolume,
+      ),
+    CoachChatAnswerValidationError,
+  );
+  assertEquals(error.rule, "evidence_code_not_permitted");
+});

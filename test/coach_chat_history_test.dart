@@ -690,7 +690,7 @@ class _HistoryRepository implements CoachRepository, CoachChatRepository {
   }
 
   @override
-  Future<String> createThread() {
+  Future<String> createThread({bool remember = true}) {
     created++;
     final gate = createGate;
     createGate = null;

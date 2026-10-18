@@ -2,10 +2,9 @@
 // normalised. The runtime global only exists inside Supabase Edge Functions, so callers pass
 // the runtime in tests.
 
-export const embeddingModel = "gte-small";
-export const embeddingDimensions = 384;
+import { type Embedder, embeddingDimensions, embeddingModel } from "./embedding.ts";
 
-export type Embedder = (text: string) => Promise<number[]>;
+export { type Embedder, embeddingDimensions, embeddingModel };
 
 type SupabaseAiRuntime = Readonly<{
   Supabase?: Readonly<{

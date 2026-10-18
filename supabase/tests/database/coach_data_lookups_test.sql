@@ -415,14 +415,14 @@ select is(jsonb_array_length(public.coach_lookup_goals_v1('a1000000-0000-4000-80
 select is((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and (p.proname like 'coach\_lookup\_%\_v1'
       or p.proname in ('get_coach_plan_state_v1', 'get_coach_nutrition_state_v1', 'get_coach_data_index_v1'))),
-  13::bigint, 'thirteen functions: ten lookups and three baseline reads');
+  14::bigint, 'fourteen functions: eleven lookups (past_messages is A10 part 2) and three baseline reads');
 select is((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and (p.proname like 'coach\_lookup\_%\_v1'
       or p.proname in ('get_coach_plan_state_v1', 'get_coach_nutrition_state_v1', 'get_coach_data_index_v1'))
       and has_function_privilege('service_role', p.oid, 'execute')
       and not has_function_privilege('authenticated', p.oid, 'execute')
       and not has_function_privilege('anon', p.oid, 'execute')
-      and p.prosecdef), 13::bigint, 'each is SECURITY DEFINER and only the service role calls it');
+      and p.prosecdef), 14::bigint, 'each is SECURITY DEFINER and only the service role calls it');
 select ok(not has_function_privilege('authenticated',
     'private.nutrition_day_totals(uuid, date, date)', 'execute'), 'the day totals are private');
 

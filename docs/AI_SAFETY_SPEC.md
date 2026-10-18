@@ -965,7 +965,8 @@ routes stay available by settings alone for two weeks after the cutover.
   screening cap), `claimed_action` (Coach says it changed, saved, updated, scheduled or will do
   something, or offers to: it has no tools, so the repair says what the athlete can do in the app),
   `training_advice_on_pain_day` (any training prescription on a day of check-in pain of 7 or
-  more) and `numbers_not_grounded`. Every rule reads everything the athlete can see: the answer,
+  more), `numbers_not_grounded` and `citation_not_retrieved` (a library source id the turn did not
+  show; §11.2). Every rule reads everything the athlete can see: the answer,
   the follow-up chips, the missing-data notes, the evidence labels and the reasoning chain, in one
   pass. Sentences that warn against a thing ("never go below ...") or
   describe the athlete's own past ("you lost 0.9 kg a week") are not advice. A reply that breaks
@@ -1058,6 +1059,112 @@ adapter still sends no tools.
   message (`coach_messages.lookups`), with the guard rules each attempt broke and any fallback code
   (`coach_messages.guard_faults`), so the lead can query what Coach looked at and why a turn fell
   back.
+
+### 11.1a Coach memory (A10 part 2)
+
+- **Only the athlete writes a durable fact.** The model may return an optional `fact_suggestions`
+  (add, update or resolve, a kind from the closed list, a short subject, one plain statement, and the
+  id of the fact it concerns). The server checks each entry against the closed vocabulary and the
+  facts the athlete has saved, drops what does not fit, and sends the rest to the app as a card. A
+  fact is stored only when the athlete taps Confirm, through the athlete's own session. A suggestion
+  for a goal, target, condition, medication or measurement is outside the vocabulary.
+- **A contradiction is a question.** What the athlete says is also read by rules (statements about
+  likes, dislikes, allergies, injuries, equipment, schedule limits and coaching style). A statement
+  that contradicts a confirmed fact produces an update suggestion naming that fact, an injury that
+  has healed produces a resolve, and one that cuts across an allergy produces a review that offers
+  nothing to save. The Coach instructions say to ask and never act as if the fact had changed. The
+  model's own suggestions go through the same judgement: a taste that cuts across an allergy is a
+  review card, the opposite of a saved taste an update, a repeat is dropped, and the model can
+  never update or close an allergy (it becomes a review card). Each confirmed fact is shown to the
+  model with its id in square brackets, for `fact_id` only.
+- **Precedence.** Tracend's calculations, then the confirmed facts, then the athlete's recent
+  statements, then Coach's notes, then the library. Every item carries its date. A fact marked
+  re-check (an injury after 28 days, a schedule limit after 90) is asked about once, briefly; only
+  the two the scheduler picks are marked, and when the athlete speaks of one of them a "Still
+  true?" card calls `reconfirm_coach_fact_v1` on Confirm.
+- **Coach's notes are written by rules after the reply**, from the athlete's message, the evidence and
+  lookups the turn used and the proposals the athlete answered, with no model call. They are labelled
+  the Coach's own and untrusted, capped (20 newest, 60 days) and linked to their messages. A
+  proposal the athlete answered becomes an advice note; a week later a training schedule is checked
+  against the sessions logged, once the week has fully passed, and the result (followed, partly, not
+  followed) is added. The notes are written after the reply has gone out (`EdgeRuntime.waitUntil`), so
+  a memory failure never touches a stored reply. A proposal is turned into a note once
+  (`change_proposals.memory_noted_at`, never cleared), so deleting a note, the cap or "Forget
+  everything" cannot bring it back; a proposal made in a conversation that is not remembered
+  (`source_remembered`, copied when the proposal is linked to its reply) is never noted, even after
+  that conversation is deleted. The cap is 20 notes in all: a note waiting for its check (a training-days commitment under 28 days old) is kept ahead of the others, so the oldest other notes go first.
+- **A chat the athlete asked Coach not to remember** gets no notes, no suggestions (the model is not
+  offered the field), no search and no appearance in another chat. A red-flag turn writes nothing.
+- **Raw message search** is the `past_messages` lookup: the athlete's own earlier questions in
+  remembered chats, found by their words, at most 12 rows of 300 characters. Coach's replies are not
+  searched, so a wrong claim of the Coach's never returns as memory.
+- **Evaluation.** Bank cases cover a contradicted fact (knee, schedule, diet), a respected dislike, a
+  confirmed limit in a leg session, a follow-through check against Coach's own note and a chat that
+  is not remembered.
+
+### 11.2 The research library in every Coach reply (E3)
+
+Coach chat on the gateway route searches the research library for every turn that reaches a model
+and shows Coach the chunks it found. The library never decides a number; it grounds explanations.
+
+- **Retrieval.** The `library` contributor (`_shared/library/retrieval.ts`, registered last, volatile
+  slot) builds the query from the athlete's question; a follow-up with no topic of its own ("And on
+  rest days?", "Is that enough?") gets the topic of the athlete's last real question added
+  (`_shared/library/query.ts`, deterministic, no model call; an earlier question that reported a
+  symptom, and "Why?" or "How come ..." with a topic of its own, do not count as a follow-up topic). It
+  embeds the query with `gte-small`
+  (the same model that embedded the chunks) by calling the `library-embed` Edge Function
+  (`_shared/library/query_embedder.ts`; its `{"query": ...}` mode returns the 384-number vector), so
+  the model never loads inside coach-chat and a load that runs into the Edge CPU limit cannot kill
+  a Coach turn. The call is gated like the cron job's, with the library worker secret, which the
+  database keeps in Vault and hands only to the service role (`library_worker_secret_v1`); the body
+  is the question and nothing else, and neither function logs it. It then calls
+  `search_library_v2` with the athlete's id, so the search is limited to global sources and the
+  sources for the athlete's country (an `IN` source reaches only athletes in India; DATA_MODEL.md
+  section 12). The block holds up to 8 chunks, whole chunks only, within 9,000 characters, each
+  starting `[source: <id>]` with the stable manifest key.
+- **When retrieval does not happen or fails.** A red-flag turn (a symptom, or a training question
+  on a pain day) is answered by the fixed referral and retrieves nothing. The contributor runs
+  inside the host's 4-second limit; a search that fails or is slow leaves the library out and Coach
+  answers without it. The call to `library-embed` has its own deadline of 1.5 seconds: on a timeout, an
+  error or any status but 200 (a cold model load there, a secret mismatch, a deploy still in
+  progress) the search runs on the question's words alone (logged `library_retrieval_degraded`)
+  instead of the whole block being dropped at the host's limit. `library-embed` and coach-chat deploy
+  in the same workflow run, one after the other: until the new `library-embed` is live, coach-chat's
+  query call gets a non-200 and answers from word search, which is safe. Today's
+  DeepSeek path has neither the evidence field nor the block, so it does not retrieve.
+- **Precedence.** Tracend's calculations, then the athlete's confirmed facts, then what the athlete
+  said, then the library. The rules tell Coach that where an excerpt disagrees with the plan, the
+  targets, the Safe Ranges or the screening rule, those win and it says so. A figure in an excerpt
+  is quoted only as that source's guidance, never as the athlete's own number or target.
+- **Citations.** Coach cites a source it relies on as an evidence item with `source: "library"`,
+  the source id as `code` and a short label (the app shows it in the evidence disclosure with the
+  other evidence). The id must be one the turn showed: `parseCoachChatAnswer` refuses any other with
+  rule `citation_not_retrieved` (the retrieved ids are not in the output schema because they change
+  every turn and the schema is part of the prompt cache key), and the reply guard refuses a source
+  id printed in the text that was not shown (Coach is told not to print ids). A turn with no
+  retrieved chunk accepts no library citation at all. The refusal is repaired once with the rule
+  named; a second failure ends in the labelled data summary, like every other rule.
+- **Numbers.** The library is kept out of the main numbers ground. A figure that only the library
+  holds is accepted only when the reply cites, in `evidence`, the source whose shown chunks contain
+  it (`coachReplyCheckFor` passes the cited ids to the check). In a sentence that states the
+  athlete's own target or tells them what to do ("your target is ...", "you should eat ...", "aim
+  for ...", "cut ... a day": `statesOwnTarget` in `reply_guard.ts`), the numbers must come from the
+  athlete's data and Tracend's calculations alone, never from the library and never from the
+  coaching principles digest, which grounds only general guidance. A figure nothing holds is
+  refused as before (`numbers_not_grounded`).
+- **Labels.** The label of a `library` citation is written by the server from the retrieved source's
+  title and year, keyed by the source id; what the model wrote is discarded, so a claim cannot be
+  attributed to a source under another name.
+- **No memory from the model.** The rules tell Coach not to write that research shows something no
+  excerpt supports and not to fill a gap from memory: it says what the library does not cover.
+- **Observability.** The contributor's outcome (rendered, empty, failed, timeout) is logged with
+  the other contributors (`coach_context_contributors`); a search that ran without its embedding
+  logs `library_retrieval_degraded`. Neither carries the question or any chunk.
+- **Evaluation.** `_evals/library_eval.ts` (recall of the expected sources in the top 8, MRR, follow-ups,
+  and regional isolation) runs the real search on every labelled run of `coach-eval.yml`; the answer
+  bank's `library` category (Claude gateway route only) grades citations and honesty on fixed chunks;
+  `library_head_to_head.ts` compares retrieval with the whole library in the prefix.
 
 ## 12. Validation and Failure Handling
 
@@ -1190,7 +1297,8 @@ without quality gain opens review. Changes remain versioned and tested.
 The MVP uses structured state and bounded summaries. Vector RAG over user data is added only after
 the gates in [ARCHITECTURE.md](./ARCHITECTURE.md) pass. The research library of open sources and
 in-house summaries (decision D3, ARCHITECTURE.md section 11) is the one retrieval source allowed
-now. Retrieval cannot override confirmed facts or policy.
+now; Coach chat retrieves from it on every turn (§11.2). Retrieval cannot override confirmed facts
+or policy.
 
 Bounded lookups of the athlete's own records (§11.1) are not an agent: a closed read-only
 catalogue, a hard cap of two rounds, no writes and no background runs.

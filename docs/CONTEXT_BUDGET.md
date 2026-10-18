@@ -77,6 +77,24 @@ The worst-case reservation counts the contributors' budgets (`coachContextMaxCha
 athlete file and the instructions; a lookup round reserves from its actual prompt. Sonnet 5.5 still
 fits one reservation (`coach_chat_provider_route_test.ts`).
 
+## Library Retrieval and the Heart-Rate Profile (E3)
+
+| Piece | Where | Size | Notes |
+| --- | --- | --- | --- |
+| `heart_rate_profile` contributor | Volatile, after the proposals | up to 900 characters (budget 900) | Resting rate, maximum, zones and recovery after sets, from Apple Watch summaries (C3). Nothing renders without a profile. It was built in C3 and registered here. |
+| `library` contributor | Volatile, gateway route only, last in the registry (just before the question) | up to 9,000 characters (budget 9,000; about 2,300 tokens); eight chunks average about 5,200 characters with the introduction (the eight longest chunks in the library total 7,500) | The chunks `search_library_v2` returned for this question, whole chunks only, each starting `[source: <id>]`. Left out when the search fails or takes over 4 seconds, and on a red-flag turn. Not part of the cached prefix: it changes with every question. |
+| Library rules | System prompt, gateway route only | about 1,700 characters | "Using the research library": precedence, how to cite, no ids in the text, no gap filled from memory. Inside the 16,000-character instructions reserve. |
+| Library evidence in the schema | Output schema | a second `anyOf` branch for evidence items | `source: "library"` with any `code`; the ids shown change every turn, so they are checked after the answer (`citation_not_retrieved`), not listed in the schema, which would break the prompt cache for the turn. |
+
+The two contributors add 9,900 characters to the worst case: the contributors' total is now 36,274
+characters (25,825 before E3), so a Sonnet 5.5 reservation is about USD 0.34 (0.32 before), still under
+the USD 0.50 cap (`coach_chat_provider_route_test.ts`). Opus 5.5 was already over the cap and takes
+today's path.
+
+The coaching principles digest (E2) stays in the cached prefix as before. The whole library
+(85,000 characters, about 21,000 to 24,000 tokens) was measured against retrieval and is not in
+the prefix: see the head-to-head in `docs/handoff/research-library.md`.
+
 ## Budget Layering
 
 ```

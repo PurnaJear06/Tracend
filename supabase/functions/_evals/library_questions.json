@@ -1,5 +1,5 @@
 {
-  "description": "Realistic athlete questions with the library sources a good answer needs. No athlete data. Questions without a kind need one topic's sources; multi_source questions need sources from two or three topics; no_answer questions are outside the library (medication, rehabilitation, pregnancy, minors, medical diets, eating disorders, medical reports, drugs) and have no expected sources: a good answer says so.",
+  "description": "Realistic athlete questions with the library sources a good answer needs. No athlete data. follow_up questions carry the athlete's earlier questions (newest first) in `previous`: Coach searches a follow-up with the topic of the last real question. A question with `region` is asked by an athlete in that region; the others by one outside India. Questions without a kind need one topic's sources; multi_source questions need sources from two or three topics; no_answer questions are outside the library (medication, rehabilitation, pregnancy, minors, medical diets, eating disorders, medical reports, drugs) and have no expected sources: a good answer says so.",
   "questions": [
     {
       "id": "sets_per_week",
@@ -394,6 +394,10 @@
       "text": "What is a healthy BMI for an Indian adult?",
       "expected": [
         "icmr_nin_2024_dietary_guidelines"
+      ],
+      "region": [
+        "global",
+        "IN"
       ]
     },
     {
@@ -401,6 +405,10 @@
       "text": "Do Indian dietary guidelines say protein powders are necessary?",
       "expected": [
         "icmr_nin_2024_dietary_guidelines"
+      ],
+      "region": [
+        "global",
+        "IN"
       ]
     },
     {
@@ -649,6 +657,76 @@
       "kind": "no_answer",
       "text": "Which anabolic steroid cycle is best for a beginner?",
       "expected": []
+    },
+    {
+      "id": "fu_protein_rest_days",
+      "text": "And what about on rest days?",
+      "kind": "follow_up",
+      "previous": [
+        "How much protein should I eat per day to build muscle?"
+      ],
+      "expected": [
+        "jager_2017_protein",
+        "morton_2018_protein_supplementation"
+      ]
+    },
+    {
+      "id": "fu_protein_cutting",
+      "text": "What about when I am cutting?",
+      "kind": "follow_up",
+      "previous": [
+        "How much protein should I eat per day to build muscle?"
+      ],
+      "expected": [
+        "jager_2017_protein",
+        "morton_2018_protein_supplementation"
+      ]
+    },
+    {
+      "id": "fu_sleep_enough",
+      "text": "Is that enough?",
+      "kind": "follow_up",
+      "previous": [
+        "How many hours of sleep do I need?"
+      ],
+      "expected": [
+        "watson_2015_sleep_duration",
+        "walsh_2021_sleep_athlete"
+      ]
+    },
+    {
+      "id": "fu_failure_why",
+      "text": "Why?",
+      "kind": "follow_up",
+      "previous": [
+        "How close to failure should I take my sets?"
+      ],
+      "expected": [
+        "robinson_2024_proximity_to_failure"
+      ]
+    },
+    {
+      "id": "fu_creatine_safe",
+      "text": "And is it safe?",
+      "kind": "follow_up",
+      "previous": [
+        "Should I take creatine to get stronger?"
+      ],
+      "expected": [
+        "kreider_2017_creatine"
+      ]
+    },
+    {
+      "id": "fu_rest_chain",
+      "text": "Does that change for heavy lifts?",
+      "kind": "follow_up",
+      "previous": [
+        "Is that enough?",
+        "How long should I rest between sets for muscle growth?"
+      ],
+      "expected": [
+        "singer_2024_rest_intervals"
+      ]
     }
   ]
 }

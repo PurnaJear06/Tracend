@@ -12,7 +12,8 @@ import {
 import { isSupportedSchema } from "../ai/json_schema.ts";
 import { anthropicSchema } from "../ai/adapters/anthropic.ts";
 import { evalProfiles } from "../../_evals/fixtures.ts";
-import { renderCoachContext } from "../coach_context/host.ts";
+import { type CoachContributions, renderCoachContext } from "../coach_context/host.ts";
+import { createLibraryContributor } from "../library/retrieval.ts";
 import {
   buildCoachChatGatewayPrompt,
   chooseCoachChatRoute,
@@ -64,6 +65,7 @@ async function run(
     context?: Record<string, unknown>;
     route?: AiRoute;
     consentVendor?: "anthropic" | "deepseek" | null;
+    contributions?: CoachContributions;
   } = {},
 ) {
   let index = 0;
@@ -78,6 +80,7 @@ async function run(
         contextKind: classifyQuestion(question),
         route,
         consentVendor: options.consentVendor === undefined ? "anthropic" : options.consentVendor,
+        ...(options.contributions ? { contributions: options.contributions } : {}),
       }, { fetch: fake.fetch });
     } catch (error) {
       return error as CoachChatUnavailableError;
@@ -563,4 +566,271 @@ Deno.test("an intent survives a lookup round and is dropped from an interim answ
   }, { fetch: fake.fetch });
   assertEquals(fake.sent.length, 2);
   assertEquals(generation.proposalIntent, intent);
+});
+
+// ---- the library (E3) ---------------------------------------------------------------------
+
+const volumeChunk = {
+  sourceId: "schoenfeld_2017_weekly_volume",
+  title: "Weekly volume",
+  year: 2017 as number | null,
+  header: "Source: Schoenfeld et al. 2017, Weekly volume. Section: Results.",
+  body:
+    "Ten or more sets per muscle per week gave more growth than fewer. Adults should aim for 150 minutes of moderate activity a week.",
+};
+
+async function withLibrary(question: string, rows = [volumeChunk]) {
+  return await renderCoachContext([
+    createLibraryContributor({
+      embed: () => () => Promise.resolve([0.1, 0.2]),
+      search: () => Promise.resolve(rows),
+    }),
+  ], { userId: "athlete-1", question, localDate: "2026-10-18" });
+}
+
+const libraryEvidence = (code: string) => ({
+  code,
+  label: "Schoenfeld et al. 2017, weekly volume",
+  source: "library",
+});
+
+Deno.test("library prompt: the excerpts follow the cached block and the rules say how to cite", async () => {
+  const contributions = await withLibrary("How many sets per week?");
+  const prompt = buildCoachChatGatewayPrompt(
+    "How many sets per week?",
+    rich(),
+    "general",
+    contributions,
+  );
+  const [cached, turn, question] = prompt.messages[0].content.map((part) =>
+    part.type === "text" ? part.text : ""
+  );
+  assert(!cached.includes('source="library"'), "retrieved text never joins the cached prefix");
+  assertStringIncludes(turn, '<reference_data source="library">');
+  assertStringIncludes(turn, "[source: schoenfeld_2017_weekly_volume]");
+  assertEquals(question, "User's message:\nHow many sets per week?");
+  const rules = prompt.system[0].type === "text" ? prompt.system[0].text : "";
+  assertStringIncludes(rules, "# Using the research library");
+  assertStringIncludes(rules, 'source "library"');
+});
+
+Deno.test("the gateway schema accepts a library citation by any id and data evidence by permitted codes only", () => {
+  type Item = {
+    properties: { code: { enum?: string[] }; source: { enum: string[] } };
+  };
+  const schema = coachChatGatewaySchema(["RECOVERY_BELOW_BASELINE"]);
+  const items = (schema.properties.evidence.items as unknown as { anyOf: Item[] }).anyOf;
+  assertEquals(items.length, 2);
+  assertEquals(items[0].properties.code.enum, ["RECOVERY_BELOW_BASELINE"]);
+  assert(!items[0].properties.source.enum.includes("library"));
+  assertEquals(items[1].properties.source.enum, ["library"]);
+  assertEquals(items[1].properties.code.enum, undefined);
+});
+
+Deno.test("a reply that cites a source it was shown is accepted with its evidence", async () => {
+  const contributions = await withLibrary("How many sets per week?");
+  const good = answer({
+    answer: "Ten or more weekly sets per muscle is where the research points.",
+    evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")],
+  });
+  const { result, sent } = await run(() => claudeAnswer(good), {
+    question: "How many sets per week?",
+    contributions,
+  });
+  if (result instanceof Error) throw result;
+  assertEquals(sent.length, 1);
+  // The label is the retrieved source's title and year, whatever the model wrote.
+  assertEquals(result.answer.evidence, [{
+    ...libraryEvidence("schoenfeld_2017_weekly_volume"),
+    label: "Weekly volume (2017)",
+  }]);
+});
+
+Deno.test("a citation of a source that was not shown is repaired, then answered without it", async () => {
+  const contributions = await withLibrary("How many sets per week?");
+  const invented = answer({
+    answer: "Ten or more weekly sets per muscle is where the research points.",
+    evidence: [libraryEvidence("made_up_2019_claim")],
+  });
+  const repaired = answer({
+    answer: "Ten or more weekly sets per muscle is where the research points.",
+    evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")],
+  });
+  const { result, sent } = await run(
+    (_, index) => claudeAnswer(index === 0 ? invented : repaired),
+    {
+      question: "How many sets per week?",
+      contributions,
+    },
+  );
+  if (result instanceof Error) throw result;
+  assertEquals(sent.length, 2);
+  assertEquals(result.attempts.map((a) => [a.attempt, a.outcome, a.rule]), [
+    ["initial", "invalid", "citation_not_retrieved"],
+    ["repair", "valid", undefined],
+  ]);
+  const repairText = body(sent[1]).messages[0].content.at(-1)!.text;
+  assertStringIncludes(repairText, "rule=citation_not_retrieved");
+  assertStringIncludes(repairText, "was not shown in the library reference data");
+});
+
+Deno.test("two bad citations in a row end in the data summary path", async () => {
+  const contributions = await withLibrary("How many sets per week?");
+  const invented = answer({ evidence: [libraryEvidence("made_up_2019_claim")] });
+  const { result } = await run(() => claudeAnswer(invented), {
+    question: "How many sets per week?",
+    contributions,
+  });
+  assert(result instanceof CoachChatUnavailableError);
+  assertEquals(result.metadata.initialRule, "citation_not_retrieved");
+  assertEquals(result.metadata.repairRule, "citation_not_retrieved");
+});
+
+Deno.test("when retrieval found nothing no library citation is accepted", async () => {
+  const none = await withLibrary("How many sets per week?", []);
+  assertEquals(none.volatile, "");
+  const citing = answer({ evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")] });
+  const { result, sent } = await run((_, index) => claudeAnswer(index === 0 ? citing : answer()), {
+    question: "How many sets per week?",
+    contributions: none,
+  });
+  if (result instanceof Error) throw result;
+  assertEquals(sent.length, 2);
+  assertEquals(result.answer.evidence[0].code, "RECOVERY_BELOW_BASELINE");
+});
+
+Deno.test("a source id printed in the reply text must have been shown", async () => {
+  const contributions = await withLibrary("How many sets per week?");
+  const printed = answer({
+    answer: "Ten or more weekly sets help [made_up_2019_claim].",
+    evidence: [],
+  });
+  const { result, sent } = await run((_, index) => claudeAnswer(index === 0 ? printed : answer()), {
+    question: "How many sets per week?",
+    contributions,
+  });
+  if (result instanceof Error) throw result;
+  assertEquals(sent.length, 2);
+  assertEquals(result.attempts[0].rule, "citation_not_retrieved");
+});
+
+Deno.test("a figure only an excerpt holds is accepted when the reply cites that source, and only then", async () => {
+  const question = "How much activity do adults need?";
+  const contributions = await withLibrary(question);
+  const sentence = "Guidance for adults is about 150 minutes of moderate activity a week.";
+  const cited = answer({
+    answer: sentence,
+    evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")],
+  });
+  const withCitation = await run(() => claudeAnswer(cited), { question, contributions });
+  if (withCitation.result instanceof Error) throw withCitation.result;
+  assertEquals(withCitation.sent.length, 1);
+  // The excerpt was shown, but the reply does not cite it: the figure is not grounded.
+  const uncited = answer({ answer: sentence });
+  const shownNotCited = await run(() => claudeAnswer(uncited), { question, contributions });
+  assert(shownNotCited.result instanceof CoachChatUnavailableError);
+  assertEquals(shownNotCited.result.metadata.initialRule, "numbers_not_grounded");
+  // No excerpt at all.
+  const without = await run(() => claudeAnswer(uncited), { question });
+  assert(without.result instanceof CoachChatUnavailableError);
+  assertEquals(without.result.metadata.initialRule, "numbers_not_grounded");
+});
+
+Deno.test("a library figure stated as the athlete's own target is refused even when cited", async () => {
+  const question = "How much activity do I need?";
+  const contributions = await withLibrary(question);
+  const target = answer({
+    answer: "Your activity target is 150 minutes of moderate activity a week.",
+    evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")],
+  });
+  const guidance = answer({
+    answer: "Guidance for adults is about 150 minutes of moderate activity a week.",
+    evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")],
+  });
+  const { result, sent } = await run(
+    (_, index) => claudeAnswer(index === 0 ? target : guidance),
+    { question, contributions },
+  );
+  if (result instanceof Error) throw result;
+  assertEquals(result.attempts.map((a) => [a.outcome, a.rule]), [
+    ["invalid", "numbers_not_grounded"],
+    ["valid", undefined],
+  ]);
+  assertEquals(sent.length, 2);
+});
+
+// ---- fact suggestions (A10 part 2) -----------------------------------------------------------
+
+const suggestion = {
+  action: "add",
+  kind: "equipment",
+  subject: "kettlebells",
+  statement: "Has kettlebells at home",
+};
+
+Deno.test("fact suggestions are offered only when asked for, in the schema and the rules", () => {
+  const without = coachChatGatewaySchema([], true, true) as { properties: Record<string, unknown> };
+  assertEquals("fact_suggestions" in without.properties, false);
+  const withThem = coachChatGatewaySchema([], true, true, true) as {
+    properties: Record<string, unknown>;
+    required: string[];
+  };
+  assert("fact_suggestions" in withThem.properties);
+  assert(!withThem.required.includes("fact_suggestions"), "the suggestions are optional");
+  assert(isSupportedSchema(withThem));
+  const prompt = (on: boolean) =>
+    buildCoachChatGatewayPrompt(
+      "I bought a kettlebell",
+      rich(),
+      "general",
+      undefined,
+      undefined,
+      undefined,
+      true,
+      on,
+    ).system.map((part) => part.type === "text" ? part.text : "").join("");
+  assertStringIncludes(prompt(true), "# Suggesting something to remember");
+  assertStringIncludes(prompt(true), "You cannot save anything about the athlete");
+  assert(!prompt(false).includes("# Suggesting something to remember"));
+});
+
+Deno.test("the model's suggestions are handed on untouched and are not part of the stored answer", async () => {
+  const fake = fakeFetch(() => claudeAnswer(answer({ fact_suggestions: [suggestion] })));
+  const generation = await generateCoachChatViaGateway({
+    question: "I bought a kettlebell",
+    context: rich(),
+    contextKind: "general",
+    route: haiku(),
+    consentVendor: "anthropic",
+    factSuggestions: true,
+  }, { fetch: fake.fetch });
+  assertEquals(generation.factSuggestions, [suggestion]);
+  assertEquals("fact_suggestions" in generation.answer, false);
+  assertEquals(generation.proposalIntent, undefined);
+});
+
+Deno.test("without them, a suggestion is an unexpected key and is repaired away", async () => {
+  const { result, sent } = await run((_, index) =>
+    claudeAnswer(index === 0 ? answer({ fact_suggestions: [suggestion] }) : answer())
+  );
+  if (result instanceof Error) throw result;
+  assertEquals(sent.length, 2);
+  assertEquals(result.factSuggestions, undefined);
+});
+
+Deno.test("a proposal intent and fact suggestions travel together, each handed on separately", async () => {
+  const fake = fakeFetch(() =>
+    claudeAnswer(answer({ proposal_intent: intent, fact_suggestions: [suggestion] }))
+  );
+  const generation = await generateCoachChatViaGateway({
+    question: "Lower my calories, I bought a kettlebell",
+    context: rich(),
+    contextKind: "general",
+    route: haiku(),
+    consentVendor: "anthropic",
+    proposals: true,
+    factSuggestions: true,
+  }, { fetch: fake.fetch });
+  assertEquals(generation.proposalIntent, intent);
+  assertEquals(generation.factSuggestions, [suggestion]);
 });

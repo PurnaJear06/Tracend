@@ -53,11 +53,14 @@ export const coachChatPreferredLengths = Object.freeze({
 });
 
 export const coachChatSafetyStates = ["allowed", "limited", "refused", "unavailable"] as const;
-export const coachChatEvidenceSources = [
+/** Evidence that cites a permitted code for the athlete's data. */
+export const coachChatDataEvidenceSources = [
   "feature_snapshot",
   "policy_evaluation",
   "coach_context",
 ] as const;
+/** Every source a reply's evidence may name; `library` cites a source id shown this turn (E3). */
+export const coachChatEvidenceSources = [...coachChatDataEvidenceSources, "library"] as const;
 
 export const coachChatValidationRules = [
   "json_syntax",
@@ -95,6 +98,7 @@ export const coachChatValidationRules = [
   "weight_below_healthy_floor",
   "projection_without_target",
   "numbers_not_grounded",
+  "citation_not_retrieved",
   "calories_below_floor",
   "loss_rate_above_ceiling",
   "effort_above_screening_cap",
@@ -174,6 +178,8 @@ export function parseCoachChatRequest(value: unknown): CoachChatRequestV1 {
  */
 export type CoachChatAnswerCheck = (
   answer: string,
+  /** The library source ids the reply's evidence cites (E3). */
+  citedLibrarySources?: readonly string[],
 ) => CoachChatValidationRule | CoachChatAnswerBreak | null;
 
 /**
@@ -197,10 +203,18 @@ function visibleText(answer: Record<string, unknown>): string[] {
   return texts;
 }
 
+/**
+ * `shownLibrarySources` are the library sources Coach was shown this turn, by source id. Evidence
+ * from the `library` source cites one of them, and only one of them; every other source cites a
+ * permitted code. With nothing shown, a library citation is always invalid. The server writes the
+ * label of a library citation itself, from the retrieved source's title and year, so the model
+ * cannot attribute a claim to a source under another name.
+ */
 export function parseCoachChatAnswer(
   value: unknown,
   permittedEvidence: readonly string[],
   answerCheck?: CoachChatAnswerCheck,
+  shownLibrarySources: Readonly<Record<string, Readonly<{ label: string }>>> = {},
 ): CoachChatAnswerV2 {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     invalid("invalid_root", "$");
@@ -287,7 +301,11 @@ export function parseCoachChatAnswer(
     if (Object.keys(evidence).sort().join(",") !== "code,label,source") {
       invalid("evidence_unexpected_keys", path);
     }
-    if (typeof evidence.code !== "string" || !permittedEvidence.includes(evidence.code)) {
+    if (evidence.source === "library") {
+      if (typeof evidence.code !== "string" || !Object.hasOwn(shownLibrarySources, evidence.code)) {
+        invalid("citation_not_retrieved", `${path}.code`);
+      }
+    } else if (typeof evidence.code !== "string" || !permittedEvidence.includes(evidence.code)) {
       invalid("evidence_code_not_permitted", `${path}.code`);
     }
     if (typeof evidence.label !== "string") invalid("evidence_label_invalid", `${path}.label`);
@@ -353,7 +371,10 @@ export function parseCoachChatAnswer(
     }
   }
   // One pass over everything the athlete can read, not only `answer`.
-  const found = answerCheck?.(visibleText(answer).join("\n"));
+  const cited = (answer.evidence as Record<string, unknown>[]).filter((item) =>
+    item.source === "library"
+  ).map((item) => item.code as string);
+  const found = answerCheck?.(visibleText(answer).join("\n"), cited);
   if (found) {
     const broken: CoachChatAnswerBreak = typeof found === "string" ? { rule: found } : found;
     throw new CoachChatAnswerValidationError(
@@ -365,5 +386,13 @@ export function parseCoachChatAnswer(
       broken.detail,
     );
   }
-  return answer as unknown as CoachChatAnswerV2;
+  if (cited.length === 0) return answer as unknown as CoachChatAnswerV2;
+  return {
+    ...answer,
+    evidence: (answer.evidence as Record<string, unknown>[]).map((item) =>
+      item.source === "library"
+        ? { ...item, label: shownLibrarySources[item.code as string].label }
+        : item
+    ),
+  } as unknown as CoachChatAnswerV2;
 }

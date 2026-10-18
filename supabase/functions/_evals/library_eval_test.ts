@@ -1,5 +1,6 @@
 import { assert, assertAlmostEquals, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { librarySources } from "../../library/index.ts";
+import { isFollowUp, libraryRetrievalQuery } from "../_shared/library/query.ts";
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
   type LibraryQuestion,
@@ -18,6 +19,7 @@ Deno.test("the question set holds the single-topic questions, multi-source quest
   assert(ofKind("single").length >= 42, `${ofKind("single").length} single-topic`);
   assert(ofKind("multi_source").length >= 15, `${ofKind("multi_source").length} multi-source`);
   assert(ofKind("no_answer").length >= 10, `${ofKind("no_answer").length} no-answer`);
+  assert(ofKind("follow_up").length >= 6, `${ofKind("follow_up").length} follow-up`);
   assertEquals(new Set(questions.map((question) => question.id)).size, questions.length);
   assertEquals(
     new Set(questions.map((question) => question.text)).size,
@@ -39,11 +41,44 @@ Deno.test("every question is a question with known expected sources", () => {
         assert(question.expected.length >= 2 && question.expected.length <= 3, question.id);
         assert(new Set(question.expected).size === question.expected.length, question.id);
         break;
+      case "follow_up":
+        assert(question.expected.length >= 1 && question.expected.length <= 3, question.id);
+        assert((question.previous ?? []).length >= 1, `${question.id} has no earlier question`);
+        break;
       case "no_answer":
         assertEquals(question.expected, [], question.id);
         break;
     }
   }
+});
+
+Deno.test("a follow-up has no topic of its own, so Coach's query borrows the earlier question's", () => {
+  for (const question of ofKind("follow_up")) {
+    assert(isFollowUp(question.text), `${question.id} would be searched alone`);
+    const query = libraryRetrievalQuery(question.text, question.previous ?? []);
+    assert(query.rewritten, question.id);
+    assert(query.text.length > question.text.length, question.id);
+  }
+  for (const question of questions.filter((item) => questionKind(item) !== "follow_up")) {
+    assertEquals(question.previous, undefined, question.id);
+    assert(
+      !isFollowUp(question.text),
+      `${question.id} reads like a follow-up; Coach would add a topic to it`,
+    );
+  }
+});
+
+Deno.test("a question that names a region is asked from a region the library knows", () => {
+  const known = new Set(librarySources.flatMap((source) => source.region));
+  for (const question of questions.filter((item) => item.region !== undefined)) {
+    assert(question.region!.includes("global"), question.id);
+    for (const code of question.region!) assert(known.has(code), `${question.id}: ${code}`);
+  }
+  const india = questions.filter((item) =>
+    item.expected.includes("icmr_nin_2024_dietary_guidelines")
+  );
+  assert(india.length >= 2);
+  for (const question of india) assert(question.region?.includes("IN"), question.id);
 });
 
 Deno.test("questions carry no athlete data", () => {

@@ -1,3 +1,4 @@
+import { factSuggestionContract } from "../coach_memory/model_contract.ts";
 import { type AvoidablePattern, avoidablePatternLabels } from "../onboarding/catalog.ts";
 import {
   type CoachChatAnswerCheck,
@@ -5,7 +6,7 @@ import {
   type CoachChatAnswerV1,
   type CoachChatAnswerV2,
   CoachChatAnswerValidationError,
-  coachChatEvidenceSources,
+  coachChatDataEvidenceSources,
   coachChatPreferredLengths,
   coachChatSafetyStates,
   type CoachChatValidationRule,
@@ -15,6 +16,8 @@ import { deepseekFlashPeakPricePerMillionUsd, isApprovedDeepseekModel } from "./
 import { calculateCoachNumbers, formatCoachCalculations } from "../coach_calculations.ts";
 import type { AiVendor } from "../ai/types.ts";
 import type { CoachContributions } from "../coach_context/host.ts";
+import { libraryContributorId as libraryId } from "../library/retrieval.ts";
+import { coachingPrinciplesContributorId as principlesId } from "../library/principles.ts";
 import { targetFromDetails, weightClaimCheckFor } from "../training/goal_phase/guard.ts";
 import { describeGoalTarget } from "../training/goal_phase/render.ts";
 import { type RedFlagHit, screenTurn } from "../coach_safety/red_flags.ts";
@@ -99,6 +102,12 @@ export type CoachChatGeneration = Readonly<{
    * the proposal engine, which parses it strictly. Never part of the stored answer.
    */
   proposalIntent?: unknown;
+  /**
+   * The model's `fact_suggestions` (A10 part 2), exactly as it wrote them. Untrusted: the caller
+   * checks them against the closed vocabulary and the athlete's saved facts. Never part of the
+   * stored answer, and never saved without the athlete's confirmation.
+   */
+  factSuggestions?: unknown;
 }>;
 
 export type CoachChatFailureCode =
@@ -218,7 +227,7 @@ export function buildCoachChatAnswerSchema(permittedEvidence: readonly string[])
           properties: {
             code: { type: "string", enum: codeEnum },
             label: { type: "string", maxLength: coachChatAnswerLimits.evidenceLabelMaxLength },
-            source: { type: "string", enum: coachChatEvidenceSources },
+            source: { type: "string", enum: coachChatDataEvidenceSources },
           },
           required: ["code", "label", "source"],
         },
@@ -299,7 +308,7 @@ const coachChatPersona =
   "- The screening reference data, when present, is Tracend's own rule for this athlete's effort cap (not text the athlete wrote). Follow its Rule line exactly.\n" +
   '- For ordinary illness (fever/cold/cough): recommend rest and hydration, never "push through" or complete the workout.\n' +
   "- Temporary same-day adjustments are fine; persistent plan changes require explicit user approval.\n" +
-  "- Honor active_preferences — never suggest declined foods, exercises, or approaches.\n" +
+  "- Honor the confirmed facts (injuries, limits, allergies, equipment, foods and exercises the athlete avoids, how they want to be coached): never suggest what they rule out. Facts rank below Tracend's own calculations and above the Coach's notes.\n" +
   "- When safety_state is limited or refused, explain why clearly and redirect to what you can help with.\n";
 
 /**
@@ -389,13 +398,8 @@ const keyAbbreviations: Record<string, string> = {
   avg_daily_carbohydrate_g: "adc",
   avg_daily_fat_g: "adf",
   days_with_meals: "dwm",
-  coaching_narrative: "cn",
-  active_preferences: "ap",
-  session_journal: "sj",
-  fts_messages: "ftsm",
   phase: "ph",
   headline: "hl",
-  provenance: "prv",
   since: "sin",
   step: "stp",
   evidence_id: "eid",
@@ -482,7 +486,7 @@ function fitContextToLimit(bounded: string, maxLength: number, question: string)
   }
 
   // --- Tier 1: trim known high-volume free-text fields ---
-  const messageArrays = ["fts_messages", "ftsm", "recent_other_conversations"];
+  const messageArrays = ["recent_other_conversations"];
   for (const key of messageArrays) {
     const arr = (ctx as Record<string, unknown>)[key];
     if (Array.isArray(arr)) {
@@ -495,7 +499,7 @@ function fitContextToLimit(bounded: string, maxLength: number, question: string)
     }
   }
 
-  // Trim long narrative / journal summary strings.
+  // Trim long summary strings.
   const longTextKeys = ["summary", "headline", "proposed_training", "proposed_nutrition"];
   for (const key of longTextKeys) {
     const val = (ctx as Record<string, unknown>)[key];
@@ -895,19 +899,6 @@ export function renderCoachContextParts(
     push(s);
   }
 
-  // 3. Coaching Narrative
-  const narrative = obj(ctx.coaching_narrative);
-  if (Object.keys(narrative).length) {
-    const active = obj(narrative.active);
-    if (Object.keys(active).length) {
-      let s = "## Coaching Narrative\n";
-      s += `**${str(active.phase)}**: ${str(active.headline)}`;
-      if (active.since) s += ` (since ${str(active.since)})`;
-      s += "\n";
-      push(s);
-    }
-  }
-
   // 4b. Check-ins, last 14 days
   const checkIns = arr(ctx.check_ins_14d);
   if (checkIns.length) {
@@ -1111,17 +1102,6 @@ export function renderCoachContextParts(
     push(s);
   }
 
-  // 12. Session Journal (past coaching memory)
-  const journal = arr(ctx.session_journal);
-  if (journal.length) {
-    let s = "## Session History\n";
-    for (const entry of journal.slice(0, 5)) {
-      const e = obj(entry);
-      s += `- ${str(e.coaching_date)}: ${str(e.summary)}\n`;
-    }
-    deferredHistory.push(s);
-  }
-
   // 13. Conversation memory, oldest first. Long messages keep their ending,
   // where a coach's clarifying question usually sits.
   const renderMessages = (title: string, messages: unknown[], limit: number): string => {
@@ -1145,17 +1125,6 @@ export function renderCoachContextParts(
   const threadMessages = arr(ctx.recent_messages);
   if (threadMessages.length) {
     deferredHistory.push(renderMessages("This Conversation", threadMessages, 10));
-  }
-
-  // 14. Preferences
-  const prefs = arr(ctx.active_preferences);
-  if (prefs.length) {
-    let s = "## Preferences\n";
-    for (const pref of prefs.slice(0, 10)) {
-      const p = obj(pref);
-      s += `- ${str(p.category)}: ${str(p.key)} = ${str(p.value)} (${str(p.provenance)})\n`;
-    }
-    push(s);
   }
 
   // 15. Latest Decision
@@ -1279,12 +1248,21 @@ export function coachReplyCheckFor(
   contributions: CoachContributions | null,
   lookedUp: readonly string[] = [],
 ): CoachChatAnswerCheck {
-  const contributed = contributionText(contributions);
   const { file } = renderCoachContextParts(context, coachChatMaxContextBudget);
+  // The text of every contributor except the library, which a figure may use only when the reply
+  // cites the source (shown). The principles digest grounds general guidance but never a sentence
+  // that states the athlete's own target.
+  const texts = Object.entries(contributions?.texts ?? {}).filter(([id]) => id !== libraryId);
+  const athleteTexts = texts.filter(([id]) => id !== principlesId).map(([, text]) => text);
+  const athleteGiven = [file, ...athleteTexts, ...lookedUp, question, ...athleteMessages(context)];
   return coachReplyCheck({
     ranges: safeRangesOf(context),
     screening: screeningStateOf(contributions),
-    ground: numberGroundOf([file, contributed, ...lookedUp, question, ...athleteMessages(context)]),
+    ground: numberGroundOf([...athleteGiven, ...texts.map(([, text]) => text)]),
+    athleteGround: numberGroundOf(athleteGiven),
+    librarySources: Object.fromEntries(
+      Object.entries(contributions?.shown ?? {}).map(([id, source]) => [id, source.text]),
+    ),
     weightClaim: weightClaimCheckFor(context, question),
   });
 }
@@ -1420,6 +1398,17 @@ const proposalContract = "\n# Proposing a change\n" +
   "- Ask for one change at a time. Leave proposal_intent out when no change is being asked for.\n" +
   "- The proposals section of the context says what is waiting for an answer, what was answered and what has ended. Never propose again what is waiting. After a diet break or a block has ended, suggest the next step.\n";
 
+// The library rules the gateway path adds (E3). Retrieval puts excerpts in the volatile part of the
+// prompt; Coach cites them in evidence with the source id, and the reply guard refuses a citation of
+// an id that was not shown. The library ranks last: Tracend's calculations, the athlete's confirmed
+// facts and the athlete's own words come first. Today's DeepSeek path retrieves nothing, so it never
+// carries this block.
+const libraryContract = "\n# Using the research library\n" +
+  "- The research library reference data holds excerpts of published sources found for this question: general guidance for healthy adults, in our own words. They rank last. Tracend's calculations come first, then the athlete's confirmed facts, then what the athlete told you, then the library. Where an excerpt disagrees with the athlete's plan, targets, the Safe Ranges or the screening rule, those win; say so rather than hiding the difference.\n" +
+  '- Use an excerpt to explain why and to ground advice in words. When you rely on one, add an evidence item with source "library", the source id from its square brackets as the code (exactly as written) and a short label that names the source the way a reader would ("Schoenfeld et al. 2017, weekly volume"). Cite only ids that appear in the library reference data of this request. When there is none, or no excerpt bears on the question, cite nothing and do not say you have a source.\n' +
+  "- Never print source ids in the answer text. Never write that research or a study shows something that no excerpt supports, and never fill a gap in the library from memory: say what the library does not cover.\n" +
+  "- Quote an excerpt's figure only as that source's guidance (for example \"the position stand suggests ...\"), and only when you cite that source in evidence: a figure that only an excerpt holds is refused otherwise. Never use an excerpt's or the principles digest's figure in a sentence that states the athlete's own target or tells them what to do (\"your target is ...\", \"you should eat ...\", \"cut ... a day\"): those figures come only from the athlete's data and Tracend's calculations. Rules and the athlete's plan decide every number the athlete acts on.\n";
+
 function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string {
   switch (rule) {
     case "weight_below_healthy_floor":
@@ -1442,10 +1431,12 @@ function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string 
       return "No more lookups are available this turn. Return the final answer now, without data_requests, from the context and the looked-up rows you already have. Say plainly what you could not check.\n";
     case "claimed_action":
       return "Remove every claim or promise that you changed, saved, updated, scheduled or will do something: you cannot change anything yourself. Say what the athlete can do in the app instead (for example, set a target on Progress, Set your target), or, when a proposal is going to the athlete, that it is a proposal they can approve. A plan change happens only when the athlete approves it.\n";
+    case "citation_not_retrieved":
+      return 'Remove every citation of a library source that was not shown in the library reference data of this request. Use only the source ids in square brackets there: an evidence item with source "library" and that id as its code. Never write source ids in the answer text. If no excerpt supports a sentence, soften or remove it; do not fill the gap from memory.\n';
     case "numbers_not_grounded":
       return `These figures are not in the athlete file, the calculated sections, the Safe Ranges, the reference data or the athlete's message${
         detail ? `: ${detail}` : ""
-      }. Remove each one, or replace it with a figure that is in the context. Never work out a figure yourself; describe it in words when the context holds no number.\n`;
+      }. Remove each one, or replace it with a figure that is in the context. A figure that only a library excerpt or the principles digest holds may appear only as that source's guidance (cite the library source in evidence) and never in a sentence that states the athlete's own target or tells them what to do. Never work out a figure yourself; describe it in words when the context holds no number.\n`;
     default:
       return "";
   }
@@ -1479,10 +1470,12 @@ export function coachChatInstructions(
   permittedEvidence: readonly string[],
   withLookups = false,
   withProposals = false,
+  withFactSuggestions = false,
 ): string {
   return coachChatPersona + nullContract + answerContractText(permittedEvidence) +
-    goalPhaseContract + (withLookups ? lookupContract : "") +
-    (withProposals ? proposalContract : "");
+    goalPhaseContract + libraryContract + (withLookups ? lookupContract : "") +
+    (withProposals ? proposalContract : "") +
+    (withFactSuggestions ? factSuggestionContract : "");
 }
 
 function coachChatSystemPrompt(

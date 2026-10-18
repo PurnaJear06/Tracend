@@ -41,7 +41,7 @@ class _GatedCoach implements CoachRepository, CoachChatRepository {
   Future<List<CoachThread>> loadThreads() async => const [];
 
   @override
-  Future<String> createThread() async {
+  Future<String> createThread({bool remember = true}) async {
     await _wait();
     return 'thread-1';
   }

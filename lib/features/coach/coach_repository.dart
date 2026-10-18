@@ -80,17 +80,24 @@ class CoachThread {
     required this.id,
     required this.title,
     required this.updatedAt,
+    this.remember = true,
   });
 
   factory CoachThread.fromJson(Map<String, dynamic> json) => CoachThread(
     id: json['id'] as String,
     title: json['title'] as String,
     updatedAt: DateTime.parse(json['updated_at'] as String),
+    remember: json['remember'] as bool? ?? true,
   );
 
   final String id;
   final String title;
   final DateTime updatedAt;
+
+  /// False for a conversation the athlete chose not to have remembered: Coach
+  /// saves no notes or suggested facts from it, it is never searched, and no
+  /// other conversation sees it.
+  final bool remember;
 }
 
 class CoachContextSource {
@@ -261,7 +268,10 @@ class CoachMessage {
 
 abstract interface class CoachChatRepository {
   Future<List<CoachThread>> loadThreads();
-  Future<String> createThread();
+
+  /// Opens a conversation. With [remember] false it is one Coach does not
+  /// remember; the choice is made here and cannot change afterwards.
+  Future<String> createThread({bool remember = true});
   Future<List<CoachMessage>> loadMessages(String threadId);
 
   /// Asks the Coach. A [idempotencyKey] repeats an earlier attempt of the same
@@ -274,6 +284,12 @@ abstract interface class CoachChatRepository {
   Future<void> deleteThread(String threadId);
 }
 
+/// A repository that keeps the last coach-chat response body, for the fields
+/// beside the message (the fact suggestions).
+abstract interface class CoachRawResponses {
+  Future<Map<String, dynamic>?> loadLastRawResponse();
+}
+
 abstract interface class CoachRepository {
   Future<CoachDecision?> loadLatest();
   Future<CoachDecision> generate();
@@ -281,7 +297,11 @@ abstract interface class CoachRepository {
 }
 
 class SupabaseCoachRepository
-    implements CoachRepository, CoachChatRepository, CoachContextRepository {
+    implements
+        CoachRepository,
+        CoachChatRepository,
+        CoachContextRepository,
+        CoachRawResponses {
   SupabaseCoachRepository(this._client, {DateTime Function()? now})
     : _now = now ?? DateTime.now;
 
@@ -321,12 +341,19 @@ class SupabaseCoachRepository
   }
 
   @override
-  Future<String> createThread() async =>
+  Future<String> createThread({bool remember = true}) async {
+    final created = Map<String, dynamic>.from(
       await _client.rpc(
-            'create_coach_thread',
-            params: {'thread_title': 'New conversation'},
+            'create_coach_thread_v2',
+            params: {
+              'thread_title': 'New conversation',
+              'remember_chat': remember,
+            },
           )
-          as String;
+          as Map,
+    );
+    return created['thread_id'] as String;
+  }
 
   @override
   Future<List<CoachMessage>> loadMessages(String threadId) async {
@@ -418,24 +445,7 @@ class SupabaseCoachRepository
     }
   }
 
-  Future<void> confirmPreference({
-    required String category,
-    required String key,
-    required String value,
-    required String provenance,
-  }) async {
-    await _client.rpc(
-      'persist_coach_preference',
-      params: {
-        'target_user_id': _client.auth.currentUser?.id,
-        'category': category,
-        'pref_key': key,
-        'pref_value': value,
-        'provenance': provenance,
-      },
-    );
-  }
-
+  @override
   Future<Map<String, dynamic>?> loadLastRawResponse() async => _lastResponse;
 
   CoachMessage _messageFromJson(Map<String, dynamic> row) =>
@@ -516,7 +526,7 @@ class FixtureCoachRepository implements CoachRepository, CoachChatRepository {
   @override
   Future<List<CoachThread>> loadThreads() async => const [];
   @override
-  Future<String> createThread() async => 'fixture-thread';
+  Future<String> createThread({bool remember = true}) async => 'fixture-thread';
   @override
   Future<List<CoachMessage>> loadMessages(String threadId) async => const [];
   @override

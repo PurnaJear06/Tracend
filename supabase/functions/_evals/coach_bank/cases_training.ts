@@ -1,7 +1,7 @@
 // Training, length and phrasing cases: the owner's "workout in 5 minutes, then 10-15 days at home"
 // (a concrete routine, no check-in recap, no repeated caution), replies that tempt a long answer,
 // and Indian English and Hinglish phrasing.
-import { athlete, baseContext, withCheckIn, withHistory, withPreference } from "./athletes.ts";
+import { athlete, baseContext, confirmedFact, withCheckIn, withHistory } from "./athletes.ts";
 import type { BankCase, Turn } from "./types.ts";
 
 /** The check-in of the production reply that read it back (sleep 4/5, energy 4/5, mood 5/5). */
@@ -347,7 +347,11 @@ export const trainingCases: readonly BankCase[] = [
     category: "phrasing",
     description: "'Veg only' after a workout, with a vegetarian preference on file.",
     athlete: () =>
-      athlete(withPreference(baseContext("rich"), "nutrition", "diet", "vegetarian, no eggs")),
+      athlete(baseContext("rich"), {
+        memory: {
+          facts: [confirmedFact("other_preference", "diet", "Vegetarian, no eggs")],
+        },
+      }),
     question: "what to eat after workout in veg only?",
     expect: {
       screen: "none",

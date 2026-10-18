@@ -3,6 +3,8 @@
 // case's changes. Names, ids and numbers are invented.
 import { evalCoachingDate, evalProfiles } from "../fixtures.ts";
 import { longCutReadings } from "../../_shared/training/goal_phase/fixtures.ts";
+import type { CoachFact } from "../../_shared/coach_memory/facts.ts";
+import type { FactKind } from "../../_shared/coach_memory/vocabulary.ts";
 import type { Athlete, Contributors, Turn } from "./types.ts";
 
 type Context = Record<string, unknown>;
@@ -74,32 +76,31 @@ export function partialNutritionDay(context: Context, day: Context): Athlete {
   });
 }
 
-export function withPreference(
-  context: Context,
-  category: string,
-  key: string,
-  value: string,
-  provenance = "chat_statement",
-): Context {
-  const preferences = Array.isArray(context.active_preferences) ? context.active_preferences : [];
-  return {
-    ...context,
-    active_preferences: [...preferences, { category, key, value, provenance }],
-  };
-}
-
 /**
- * A fact the athlete confirmed (goal, injury, equipment, schedule, diet). In the v8 file the only
- * store for it is `active_preferences`, with provenance "confirmed_fact"; when the confirmed-facts
- * section of the v9 file ships (A10), this is the one place to change.
+ * A fact the athlete confirmed, as the memory holds it (A10 part 2). The case gives it to
+ * `athlete(context, { memory: { facts: [...] } })`; the real confirmed-facts contributor renders it.
  */
-export function withConfirmedFact(
-  context: Context,
-  category: string,
-  key: string,
-  value: string,
-): Context {
-  return withPreference(context, category, key, value, "confirmed_fact");
+export function confirmedFact(
+  kind: FactKind,
+  subject: string,
+  statement: string,
+  confirmedOn = "2026-09-01",
+  reconfirmOn: string | null = null,
+): CoachFact {
+  const id = `00000000-0000-4000-8000-${
+    String(1 + Array.from(subject).reduce((sum, ch) => sum + ch.charCodeAt(0), 0)).padStart(12, "0")
+  }`;
+  return {
+    id,
+    lineageId: id,
+    version: 1,
+    kind,
+    subject,
+    statement,
+    source: "athlete_typed",
+    confirmedOn,
+    reconfirmOn,
+  };
 }
 
 /** An athlete with no plan, targets or schedule yet. */

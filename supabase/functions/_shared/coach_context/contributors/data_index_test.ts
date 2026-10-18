@@ -26,6 +26,8 @@ Deno.test("the index lists each kind of record with its first and last date and 
   assertStringIncludes(text, "- health_history: 2025-10-01 to 2026-09-01, 12 months imported");
   assertStringIncludes(text, "No records yet for: weekly_reviews.");
   assertStringIncludes(text, "exercise_history reads one exercise out of the workouts.");
+  assertStringIncludes(text, "past_messages finds the athlete's own earlier questions");
+  assertEquals(text.includes("No records yet for: weekly_reviews, past_messages"), false);
   assertEquals(text.length <= dataIndexContributorBudgetChars, true);
 });
 
