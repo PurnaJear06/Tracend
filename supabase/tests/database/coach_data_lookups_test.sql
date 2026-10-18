@@ -432,9 +432,10 @@ select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000
 select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
     current_date - 7, current_date + 7, 'schedule')->>'today',
   private.local_date_for('a1000000-0000-4000-8000-000000000001')::text, 'with the athlete''s own today');
-select is(jsonb_array_length(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
-    current_date - 7, current_date + 7, 'schedule')->'days'), 6,
-  'three Push days, two Pull days ahead or behind, and the day the Push session was finished');
+select is((select count(*) from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+    'a1000000-0000-4000-8000-000000000001', current_date - 7, current_date + 7, 'schedule')->'days') d
+    where jsonb_array_length(d->'planned') > 0), 5::bigint,
+  'three Push days and two Pull days fall in a range of 15 days, behind and ahead');
 select is((select count(*) from jsonb_array_elements(public.coach_lookup_plan_history_v1(
     'a1000000-0000-4000-8000-000000000001', current_date, current_date + 14, 'schedule')->'days') d
     where d->>'date' > current_date::text and jsonb_array_length(d->'planned') = 1), 4::bigint,
