@@ -15,12 +15,15 @@ const quietOutcomes = new Set(["valid", "invalid", "lookup", "truncated"]);
 
 /**
  * Entries like `rule:numbers_not_grounded:2` (attempts that broke the rule), `outcome:repair_timeout`
- * (an attempt that never produced an answer) and `fallback:provider_response_invalid` (the turn
- * ended in the data summary). Empty when the turn was clean.
+ * (an attempt that never produced an answer), `salvage:numbers_stripped` (the reply was cut
+ * instead of falling back: its sentences with figures that are not in the athlete's data were
+ * removed) and `fallback:provider_response_invalid` (the turn ended in the data summary). Empty
+ * when the turn was clean.
  */
 export function guardFaultsOf(
   attempts: readonly CoachChatAttemptTelemetry[],
   fallbackCode?: string,
+  cuts: readonly string[] = [],
 ): string[] {
   const rules = new Map<string, number>();
   const outcomes = new Set<string>();
@@ -33,6 +36,7 @@ export function guardFaultsOf(
   const entries = [
     ...[...rules].map(([rule, count]) => `rule:${rule}:${count}`),
     ...[...outcomes].map((outcome) => `outcome:${outcome}`),
+    ...cuts.map((cut) => `salvage:${cut}`),
     ...(fallbackCode ? [`fallback:${fallbackCode}`] : []),
   ];
   return entries.slice(0, mostTraceEntries);

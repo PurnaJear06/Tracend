@@ -40,7 +40,12 @@ export const libraryCases: readonly BankCase[] = [
         fails: "reply_guard",
       },
       { reply: proteinRange, citations: ["made_up_2019_claim"], fails: "citations_shown" },
-      { reply: proteinRange, citations: [], fails: "cites_sources" },
+      {
+        reply:
+          "Research supports a daily protein intake per kg of body weight that is higher than the basic minimum, and your own daily target stays at 150 g in your plan. Does your intake get close?",
+        citations: [],
+        fails: "cites_sources",
+      },
     ],
   },
   {

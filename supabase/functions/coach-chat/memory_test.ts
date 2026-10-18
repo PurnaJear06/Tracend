@@ -71,7 +71,7 @@ async function turn(question: string, options: Options = {}) {
         return ok({ granted: true, provider: "anthropic", notice_version: "v1" });
       case "reserve_ai_budget_v2":
         return ok("reservation-1");
-      case "prepare_coach_chat_v9":
+      case "prepare_coach_chat_v10":
         return ok({
           replayed: false,
           context,

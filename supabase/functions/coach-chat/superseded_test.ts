@@ -188,3 +188,51 @@ Deno.test("memory on every turn drops superseded questions: by state when carrie
   assertEquals(withoutSupersededMemory(clean), clean);
   assertEquals(withoutSupersededMemory({}), {});
 });
+
+Deno.test("a question that fell back to the app's data summary still reads as unanswered", () => {
+  const summary = {
+    role: "assistant",
+    content: "Latest weight: 78.4 kg.",
+    answer_source: "data_summary",
+  };
+  const recent = [user("How is my week?"), summary, user("How is my week?"), assistant("Fine.")];
+  assertEquals(unansweredCopies(recent, "How is my week?"), [0]);
+  const { context, dropped } = withoutSupersededQuestions(
+    { recent_messages: recent },
+    "How is my week?",
+  );
+  assertEquals(dropped, 1);
+  // The summary that answered the dropped copy goes with it.
+  assertEquals(context.recent_messages, [user("How is my week?"), assistant("Fine.")]);
+});
+
+Deno.test("a superseded question and the summary after it leave the memory on later turns", () => {
+  const summary = (content: string) => ({
+    role: "assistant",
+    content,
+    answer_source: "data_summary",
+  });
+  const context = {
+    recent_messages: [
+      { role: "user", content: "How is my protein?", safety_state: "unavailable" },
+      summary("Protein target: 150 g."),
+      user("How is my protein?"),
+      summary("Protein target: 150 g, 5 of 7 days logged."),
+      user("And sleep?"),
+      summary("Sleep: 395 minutes."),
+    ],
+    recent_other_conversations: [
+      { role: "user", content: "Old", safety_state: "unavailable" },
+      summary("Old summary."),
+      assistant("Kept."),
+    ],
+  };
+  const cleaned = withoutSupersededMemory(context);
+  assertEquals(cleaned.recent_messages, [
+    user("How is my protein?"),
+    summary("Protein target: 150 g, 5 of 7 days logged."),
+    user("And sleep?"),
+    summary("Sleep: 395 minutes."),
+  ]);
+  assertEquals(cleaned.recent_other_conversations, [assistant("Kept.")]);
+});

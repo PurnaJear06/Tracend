@@ -626,7 +626,7 @@ export async function handleCoachChat(
   // follow-up is embedded later, with the earlier question the prepared context supplies.
   const libraryEmbedding = coachRoute && !redFlag ? prefetchLibrary(input.question) : null;
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
-    "prepare_coach_chat_v9",
+    "prepare_coach_chat_v10",
     {
       target_user_id: auth.userId,
       target_thread_id: input.thread_id,
@@ -646,7 +646,7 @@ export async function handleCoachChat(
   }
   if (prepareError || !prepared) {
     const reason = coachChatPreparationFailureCode(prepareError);
-    log.error("prepare_coach_chat_v9 failed", {
+    log.error("prepare_coach_chat_v10 failed", {
       error_code: prepareError?.code ?? "missing_prepared_context",
       reason,
     });
@@ -880,7 +880,7 @@ export async function handleCoachChat(
       auth.userId,
       persisted.assistant_message_id,
       {
-        guardFaults: guardFaultsOf(generation.attempts),
+        guardFaults: guardFaultsOf(generation.attempts, undefined, generation.cuts),
         lookups: lookupTrace(generation.lookups),
         libraryVersion: typeof libraryTrace?.library_version === "string"
           ? libraryTrace.library_version

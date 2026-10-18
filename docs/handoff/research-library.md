@@ -869,7 +869,7 @@ New sources, the licence field, new questions and the claim-support judge are ot
   rendering, so nothing is re-embedded. The system prompt tells Coach to present a marked excerpt as
   our reading.
 - **Latency** (P2-1). Coach chat starts the question's embedding after the replay check and the budget
-  reservation (`prefetchLibraryEmbedding` in `live.ts`), so it runs while `prepare_coach_chat_v9` runs; the contributor reuses it when its query is that text (every
+  reservation (`prefetchLibraryEmbedding` in `live.ts`), so it runs while `prepare_coach_chat_v10` runs; the contributor reuses it when its query is that text (every
   question that is not a follow-up; a follow-up's query needs the prepared context, so it is
   embedded then). The 1.5-second deadline counts from the start of the embedding, and the word
   search fallback is unchanged (Contract 7 v1.2: `queryEmbedding` on the contributor input).

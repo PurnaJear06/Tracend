@@ -1183,6 +1183,94 @@ drifting again.
 afterwards). Check `coach_chat_complete` for `schema_sha` `274ee4fafead` and the first turn's
 latency; run `./scripts/verify-live-function.sh coach-chat` from the deployed commit.
 
+## Coach reply guards: lift loads, plans, studies, summaries, repeats (2026-10-18)
+
+Branch `claude/coach-reply-guards`, from the Coach simulator's findings. The answer schema is
+untouched (`coach_chat_schema_test.ts`: 0 optional, 0 unions, same bytes), and no model call is added:
+the one repair stays one, and the latency budget (initial 28 s, repair 10 s, 40 s turn, app waits 45 s)
+is unchanged.
+
+1. **Lift loads are not body weights** (`training/goal_phase/weight_figures.ts`, used by `guard.ts`).
+   "Next Upper B, overhead press is 55 kg x 6, and you will hit it ..." and "Your curl will go to 32.5
+   kg" returned `weight_below_healthy_floor` for a 58.6 kg floor and sent the athlete to the data
+   summary. The sentence is now tokenised into words and weight figures; a figure is a body weight
+   only when a body cue is nearer than any load cue (rep notation, an exercise name or catalog slug, a
+   barbell or lifting word). Review fix: a figure with no load cue near it fails closed (it is a body
+   weight even with no body cue), and projection and pace wording ("at this pace", "would put you at",
+   "on track for", "heading to", "you'd land at") is a body cue; the floor rule's look-ahead cues include
+   them. The old regex-only reading is gone; `guard.ts` keeps the two rules.
+2. **A requested plan keeps its answer** (`numbers_check.ts`, `reply_guard.ts` `cutReply`, gateway).
+   (a) A round whole number of minutes (10 to 90, in fives) beside a named activity ("30 min easy
+   walk", "walk 20 min", "a 45-minute session") is advice like rest seconds, not a claim about the
+   athlete; past or possessive wording, a dose over time ("a day"), no activity and anything over 90
+   minutes are still checked. Loads in kg stay checked. (b) When the repair still fails only
+   cuttable rules, or no repair can be sent, `cutReply` removes the sentences at fault and the
+   result must pass the whole check again and keep at least half the sentences, else the summary.
+   Review fixes: salvage notices take their place first in `missing_data` (the contract's 12), library labels
+   are rebuilt from the retrieved title and year before the cut reads them (`salvage:label_rebuilt`), and a
+   plan item is exempt unless the wording gives the duration to the athlete's past or records, or makes it
+   a recurring dose ("every morning", "per session", "nightly", "three times a week"). Guard fault `salvage:numbers_stripped` (also `study_stripped`, `closing_question_stripped`,
+   `repeat_stripped`) is written to `coach_messages.guard_faults`. Gateway only: today's DeepSeek path
+   keeps one repair and the summary.
+3. **Named studies** (`library/mentions.ts`, `parseCoachChatAnswer`). A shown source named in the text
+   ("Maughan 2018", "Kreider 2017", "the NIH fact sheet") is added to `evidence` by the server (label from
+   the retrieved title and year) and counts as cited for the numbers check. A study named that no shown
+   source matches is `citation_not_retrieved`: one repair that says drop the claim or name only the sources
+   shown, then the cut. A study the athlete named is exempt. `CoachChatAnswerCheck` gets a third argument,
+   the `answer` text alone.
+4. **The data summary stays in the thread** (migration `20261018210031_coach_chat_summary_in_thread.sql`,
+   `prepare_coach_chat_v10`, context `schema_version` 8.1). v10 wraps v9 and rebuilds `recent_messages`
+   with summaries in, each marked `answer_source: "data_summary"`; the prompt shows it as "TRACEND DATA
+   SUMMARY (the app's own reply ...)", its figures ground the next turn's numbers check, and the app's
+   weight trend is in kg/week (4-week calculated trend, else per-day times seven). Review fix: v10 carries
+   `safety_state: "unavailable"` on a superseded user question, and `withoutSupersededMemory` drops it with the
+   data summary that followed it (later turns), as `withoutSupersededQuestions` does for the retry itself. Flutter reads
+   `answer_source` only, so `test/contract` fixtures are unchanged. The edge function now calls v10: merge
+   order is migration, then functions (deploy.yml does this); v8 and v9 stay callable.
+5. **No repeated closing question or sentence** (`coach_safety/repeats.ts`, rule
+   `repeats_previous_turn`). Dice coefficient of content words: closing questions at 0.7 (at least three
+   words each), other sentences at 0.8 (at least six). Safety wording is exempt (emergency wording
+   always; referral wording when the screening is not cleared, pain is 7 or more, or the question may be
+   about a health risk). The athlete asking the same thing again is exempt. One repair, then the cut.
+   No reply-length rule (waits for the Haiku measurement).
+
+Tests: `weight_figures` cases in `guard_test.ts`, `numbers_check_test.ts`, `repeats_test.ts`,
+`library/mentions_test.ts`, `reply_guard_test.ts` (cut), `providers/coach_chat_cuts_test.ts` (gateway),
+`providers/coach_chat_thread_summary_test.ts`, `coach_chat_fallback_test.ts`, the pgTAP file
+`coach_chat_summary_in_thread_test.sql`, and four eval-bank cases (`cases_replies.ts`). The bank grades a
+named shown source as cited, as the server does.
+
+Check after deploy: `model_runs`/`coach_messages.guard_faults` for `salvage:` entries and for
+`rule:repeats_previous_turn` and `rule:citation_not_retrieved` counts; a rising `salvage:` share means a
+rule is too strict, a rising `fallback:` share means the cut is not reached.
+
+**Second review round (same PR).** (1) The cut gives up (data summary) when it would remove a sentence that
+sets a rule, a limit or a condition (prohibition, stop, symptom, until, unless, only, if, but, however, up
+to, instead), and a cut lead-in takes its whole list with it; a repeated closing question stays cuttable.
+(2) Pain stop rules are never repeats; on a turn that needs referral wording (also when the previous
+exchange was about a health risk) every caution stands; the repair hint never asks to drop a caution.
+(3) Institution initials with no year match only a source's id or title acronyms (case-sensitive), never
+its excerpt. (4) Body weight fails closed: a kg figure is a load only as "exercise N kg x reps" (an exercise or slug within two
+words before it, rep or set notation straight after it that is not a duration, nothing about the person's
+weight before it); everything else is a body weight, including a bare number or a written "fifty kilos" in a
+sentence about the person's weight. No carry from earlier sentences or the question, no bar or plate branch,
+no progression verbs. The gateway prompt and the repair hints show the accepted form ("bench 45 kg x 6",
+"squat 100 kg for 5"). The floor rule's look-ahead gained "drop to", "lose ... to", "aim for", "until", "stay
+at", "hold at". The cut's limit words gained below, under, lower, less, cap, ceiling, within, ease off, back
+off, aches, flare-ups, "top out", "no higher", "at most", maximum; the repeat guard's stop words gained ease
+off, pull back, end the session, leave ... out, call it a day, pause, switch to, lay off, drop the weight,
+pain-free and its symptoms throb, tender, twinge. All the reviews' probes are in
+`goal_phase/weight_guard_adversarial_test.ts`. (5) A session duration is exempt only as
+advice (an imperative, or "you" with a modal): "you normally walk 45 minutes" and "your plan is a 45-minute
+walk" must be in the data.
+
+**Third review round (same PR).** Comparative and limit words (below, under, lower, less, within, max, plain
+no and not) make the cut give up only in directive form ("keep it below", "stay within", "or less", "don't",
+"no squatting"); the same words in a fact sentence ("3 bpm lower than last month", "a max of 163 bpm",
+"no small feat") no longer do. Body-weight reading gained stone, "kilogrammes", markdown and tilde around
+numbers, full-width digits, and target wording with no look-ahead verb ("your ideal weight is", "finish line",
+"imagine yourself at", "your height"). The reviewer probes are in `weight_guard_adversarial_test.ts`.
+
 ### Coach sees the next 7 days and back-to-back muscles (`claude/coach-week-ahead`, migration 20261018190042)
 
 **Report (owner, Sunday 2026-10-18).** Coach checked the training, said what was left this week
@@ -1303,6 +1391,11 @@ when an overlap exists; the data index grows by about 250 when a plan exists.
 
 **Open.** A pgTAP run in CI covers the SQL; it was not run locally. After the deploy, ask Coach on a
 Sunday what is coming up and check `model_runs` and the `lookups` column for `plan_history`.
+
+**Last review round (same PR).** (1) v10 carries `local_date` on a summary; its figures ground only a turn on the
+same coaching date; older summaries stay as dated text (pgTAP asserts the date). (2) An athlete-named study
+exempts only the same reference (surname and year, or institution initials and document kind). (3) Evidence
+labels never attach a source. (4) The repeat comparison keeps negation (opposite polarity is never a repeat).
 
 ## Next agent starts here
 

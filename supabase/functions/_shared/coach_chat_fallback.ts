@@ -1,3 +1,4 @@
+import { calculateCoachNumbers, roundTo } from "./coach_calculations.ts";
 import type { CoachChatAnswerV2 } from "./contracts/coach_chat_v1.ts";
 import { screenMessage } from "./coach_safety/red_flags.ts";
 
@@ -87,6 +88,24 @@ function evidenceLabel(code: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/**
+ * The 4-week weight trend in kg a week, the unit Coach speaks in: the calculated trend of the
+ * readings when there is one, otherwise the scoring engine's per-day trend times seven. Null when
+ * neither exists.
+ */
+function weeklyTrend(
+  context: Record<string, unknown>,
+  computed: Record<string, unknown>,
+): number | null {
+  const calculated = calculateCoachNumbers(context)?.weight?.trends.find((trend) =>
+    trend.window_days === 28
+  );
+  if (calculated) return calculated.kg_per_week;
+  const perDay = obj(computed.weight).trend_28d_kg_per_day;
+  if (computed.unavailable || !present(perDay) || !Number.isFinite(Number(perDay))) return null;
+  return roundTo(Number(perDay) * 7, 2);
+}
+
 export function buildCoachChatDataSummary(
   context: Record<string, unknown>,
   question: string,
@@ -144,8 +163,8 @@ export function buildCoachChatDataSummary(
   const latestWeight = obj(arr(context.weight_series_8w)[0]);
   if (present(latestWeight.weight_kg)) {
     let line = `Latest weight: ${latestWeight.weight_kg} kg on ${latestWeight.measured_on}.`;
-    const trend = obj(computed.weight).trend_28d_kg_per_day;
-    if (!computed.unavailable && present(trend)) line += ` 28-day trend: ${trend} kg/day.`;
+    const trend = weeklyTrend(context, computed);
+    if (trend !== null) line += ` 4-week trend: ${trend} kg/week.`;
     lines.push(line);
   }
 

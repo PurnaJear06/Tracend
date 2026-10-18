@@ -102,7 +102,8 @@ accepted as a permanent retry.
   kind, training totals and volume from completed sets only, amended weights replaced, the audit
   snapshot storing the delivered context, the question stored once before the model runs,
   DeepSeek failures recorded with finite rule names, and the labeled summary stored once. It also
-  proves a data summary never enters conversation memory, and that a long pre-v8 thread keeps its
+  proves a data summary never enters v8's conversation memory (v10 keeps it, marked:
+  `coach_chat_summary_in_thread_test.sql`, 11 assertions), and that a long pre-v8 thread keeps its
   newest ten messages (capped, question first) instead of failing with `chat context too large`,
   on v8 and on the v7 rollback path. A retried request reports its turn as answered (data summary
   or model answer), failed with its code, or in progress, and each watch average carries the days
