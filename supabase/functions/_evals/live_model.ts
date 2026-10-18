@@ -214,7 +214,16 @@ export type RouterFetchOptions = Readonly<{
   onError?: (error: WireError) => void;
   /** Strings that must never appear in a recorded body (the router key). */
   secrets?: readonly string[];
+  /**
+   * Waits before each retry of a call the router failed in passing (502, 503, 504, or no answer
+   * at all). The router is a hop of its own and has answered "temporarily unavailable" for minutes
+   * at a time; production's gateway has no such retry, so this is the harness's, not the Coach's.
+   */
+  retryDelaysMs?: readonly number[];
 }>;
+
+/** Statuses a router returns while an upstream model or the router itself is briefly down. */
+export const transientStatuses: ReadonlySet<number> = new Set([502, 503, 504]);
 
 const anthropicFinish: Readonly<Record<string, string>> = {
   end_turn: "stop",
@@ -263,17 +272,31 @@ export function routerModelFetch(
       }
       body = JSON.stringify(payload);
     }
-    let response: Response;
-    try {
-      response = await fetcher(input, { ...init, body });
-    } catch (error) {
-      const name = error instanceof Error ? error.name : "";
-      report(
-        abortNames.has(name) ? "timeout" : "network",
-        null,
-        error instanceof Error ? `${name}: ${error.message}` : "network",
-      );
-      throw error;
+    const delays = options.retryDelaysMs ?? [2_000, 6_000];
+    let response: Response | undefined;
+    for (let attempt = 0; response === undefined; attempt++) {
+      const retryable = attempt < delays.length && init?.signal?.aborted !== true;
+      try {
+        const answered = await fetcher(input, { ...init, body });
+        if (retryable && transientStatuses.has(answered.status)) {
+          await answered.body?.cancel().catch(() => undefined);
+          await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+          continue;
+        }
+        response = answered;
+      } catch (error) {
+        const name = error instanceof Error ? error.name : "";
+        if (retryable && !abortNames.has(name)) {
+          await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+          continue;
+        }
+        report(
+          abortNames.has(name) ? "timeout" : "network",
+          null,
+          error instanceof Error ? `${name}: ${error.message}` : "network",
+        );
+        throw error;
+      }
     }
     if (!response.ok) {
       report(

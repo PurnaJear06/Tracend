@@ -51,6 +51,8 @@ export type PreflightInput = Readonly<{
   fetcher?: typeof fetch;
   /** Modes to try in order (default: JSON mode first, then the others). */
   modes?: readonly ChatMode[];
+  /** Waits before the retries of a call the router failed in passing (default 5 s, then 15 s). */
+  retryDelaysMs?: readonly number[];
 }>;
 
 /**
@@ -77,6 +79,7 @@ export async function preflightCoach(
       const seen: { error?: WireError } = {};
       const options: RouterFetchOptions = {
         mode,
+        retryDelaysMs: input.retryDelaysMs ?? [5_000, 15_000],
         secrets: [input.apiKey],
         onError: (error) => {
           seen.error ??= error;
@@ -143,7 +146,7 @@ export async function preflightChat(
     const chat = routerChat(input.baseUrl, input.apiKey, {
       ...(input.fetcher ? { fetcher: input.fetcher } : {}),
       modeFor: () => mode,
-      retryDelayMs: 1_000,
+      retryDelayMs: input.retryDelaysMs?.[0] ?? 5_000,
       timeoutMs: 60_000,
     });
     const result = await chat({

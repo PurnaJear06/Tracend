@@ -32,7 +32,7 @@ export type RouterChat = (request: ChatRequest) => Promise<ChatResult>;
 export type RouterChatOptions = Readonly<{
   fetcher?: typeof fetch;
   timeoutMs?: number;
-  /** Wait before the one retry of a failed call. */
+  /** Wait before the first retry of a call that failed in passing (the second waits three times as long). */
   retryDelayMs?: number;
   /** The mode a model is asked in (default: JSON mode, max_tokens). */
   modeFor?: (model: string) => ChatMode;
@@ -47,7 +47,7 @@ const worthRetrying = (failure: Extract<ChatResult, { ok: false }>) =>
   (failure.status === null || failure.status >= 500 || failure.status === 429 ||
     failure.status === 408);
 
-/** A chat call to the router, retried once when it fails before an answer arrives. */
+/** A chat call to the router, retried twice when it fails before an answer arrives. */
 export function routerChat(
   baseUrl: string,
   apiKey: string,
@@ -147,11 +147,16 @@ export function routerChat(
     };
   };
   return async (request) => {
-    const first = await once(request);
-    if (first.ok || !worthRetrying(first)) return first;
-    await new Promise((resolve) => setTimeout(resolve, options.retryDelayMs ?? 3_000));
-    const second = await once(request);
-    return second.ok ? second : { ...second, costUsd: first.costUsd + second.costUsd };
+    // Two retries, after the delay and three times it, of a call the router failed in passing.
+    const delay = options.retryDelayMs ?? 3_000;
+    let spent = 0;
+    for (let attempt = 0;; attempt++) {
+      const result = await once(request);
+      if (result.ok) return result;
+      spent += result.costUsd;
+      if (attempt >= 2 || !worthRetrying(result)) return { ...result, costUsd: spent };
+      await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? delay : delay * 3));
+    }
   };
 }
 

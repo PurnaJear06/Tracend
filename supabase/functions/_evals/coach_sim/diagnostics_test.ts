@@ -297,3 +297,43 @@ Deno.test("an HTML error page from a CDN is reduced to its words, with who answe
   assertStringIncludes(result.body, "502: Bad gateway");
   assert(!result.body.includes("set-cookie"), "only the named headers are recorded");
 });
+
+Deno.test("a router that is briefly down is asked again; the error is recorded once, when it stays down", async () => {
+  const unavailable = () =>
+    new Response(
+      '{"error":{"type":"service_unavailable","message":"The model service is temporarily unavailable."}}',
+      {
+        status: 503,
+      },
+    );
+  const request = { method: "POST", body: JSON.stringify({ model: "x", messages: [] }) };
+  let calls = 0;
+  const errors: { status: number | null }[] = [];
+  const recovering = routerModelFetch(
+    "claude-haiku-5.5",
+    () =>
+      Promise.resolve(
+        ++calls < 3 ? unavailable() : new Response(
+          JSON.stringify({ choices: [{ message: { content: "{}" }, finish_reason: "stop" }] }),
+          { status: 200 },
+        ),
+      ),
+    undefined,
+    { retryDelaysMs: [0, 0], onError: (e) => errors.push(e) },
+  );
+  assertEquals(
+    (await recovering("https://router.example/v1/chat/completions", request)).status,
+    200,
+  );
+  assertEquals([calls, errors.length], [3, 0]);
+
+  calls = 0;
+  const down = routerModelFetch(
+    "claude-haiku-5.5",
+    () => Promise.resolve((calls++, unavailable())),
+    undefined,
+    { retryDelaysMs: [0, 0], onError: (e) => errors.push(e) },
+  );
+  assertEquals((await down("https://router.example/v1/chat/completions", request)).status, 503);
+  assertEquals([calls, errors.length, errors[0].status], [3, 1, 503]);
+});
