@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -26,6 +28,9 @@ import 'package:tracend/features/today/daily_brief_repository.dart';
 import 'package:tracend/features/today/today_screen.dart';
 import 'package:tracend/features/train/train_screen.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
+import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
+import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/plan_changes.dart';
 
 class AppShell extends StatefulWidget {
@@ -35,6 +40,9 @@ class AppShell extends StatefulWidget {
     this.aiConsent,
     this.health,
     this.repositories,
+    this.homeWidgets = const MethodChannelHomeWidgetBridge(),
+    this.widgetEraser,
+    this.userId,
     super.key,
   });
 
@@ -53,6 +61,19 @@ class AppShell extends StatefulWidget {
   /// it to count reads; the app leaves it null.
   @visibleForTesting
   final AppShellRepositories? repositories;
+
+  /// The Home Screen and Lock Screen widgets: Today writes their snapshot
+  /// here, and a tap on a widget asks this shell for a tab.
+  final HomeWidgetBridge homeWidgets;
+
+  /// The one eraser that retries a failed clear of the widgets' snapshot on
+  /// launch and resume; its publisher writes again once a retry works. Built
+  /// here when not given.
+  final HomeWidgetEraser? widgetEraser;
+
+  /// The signed-in athlete, whose Lock Screen widget choice the widgets
+  /// follow; null without a backend.
+  final String? userId;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -118,16 +139,44 @@ class _AppShellState extends State<AppShell> {
   /// the plan, the targets and the goal.
   final _planChanges = PlanChanges();
 
+  /// Writes Today's snapshot for the widgets and keeps the Lock Screen choice.
+  late final TodayWidgetPublisher _widgetPublisher = TodayWidgetPublisher(
+    bridge: widget.homeWidgets,
+    eraser: widget.widgetEraser,
+    userId: widget.userId,
+  );
+
+  /// Counts the taps on widgets that brought the app forward; Today reloads
+  /// on each if its brief is old.
+  final _widgetTaps = ValueNotifier<int>(0);
+
   @override
   void dispose() {
+    _widgetTaps.dispose();
+    widget.homeWidgets.stopListeningForTab(_openRequestedTab);
+    unawaited(_widgetPublisher.dispose());
     _checkInGate.dispose();
     _planChanges.dispose();
     super.dispose();
   }
 
+  /// Opens the tab a tapped widget asked for (`tracend://today`,
+  /// `tracend://train`).
+  Future<void> _openRequestedTab() async {
+    final tab = await widget.homeWidgets.takePendingTab();
+    if (tab == null || !mounted) return;
+    _widgetTaps.value++;
+    _selectTab(switch (tab) {
+      HomeWidgetTab.today => 0,
+      HomeWidgetTab.train => 1,
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    widget.homeWidgets.listenForTab(_openRequestedTab);
+    unawaited(_openRequestedTab());
     final injected = widget.repositories;
     final live = widget.environment.hasSupabaseConfiguration;
     _workouts =
@@ -209,6 +258,7 @@ class _AppShellState extends State<AppShell> {
             ? SupabaseAccountDeletionRepository(Supabase.instance.client)
             : const FixtureAccountDeletionRepository(),
         aiConsent: widget.aiConsent,
+        widgetPublisher: _widgetPublisher,
       ),
     ),
   );
@@ -239,6 +289,8 @@ class _AppShellState extends State<AppShell> {
         aiConsent: widget.aiConsent,
         checkInGate: _checkInGate,
         planChanges: _planChanges,
+        widgetPublisher: _widgetPublisher,
+        widgetTaps: _widgetTaps,
       ),
       () => TrainScreen(
         key: const ValueKey('tab_train'),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,6 +28,7 @@ import 'package:tracend/features/today/widgets/today_hero.dart';
 import 'package:tracend/features/today/widgets/today_session_card.dart';
 import 'package:tracend/features/today/widgets/today_tiles.dart';
 import 'package:tracend/features/today/widgets/your_week_card.dart';
+import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/plan_changes.dart';
 import 'package:tracend/shared/widgets/micro_motion.dart';
 import 'package:tracend/shared/widgets/pressable.dart';
@@ -52,6 +55,9 @@ class TodayScreen extends StatefulWidget {
     this.aiConsent,
     this.checkInGate,
     this.planChanges,
+    this.widgetPublisher,
+    this.widgetTaps,
+    this.clock = DateTime.now,
     super.key,
   });
 
@@ -91,11 +97,23 @@ class TodayScreen extends StatefulWidget {
   /// plan, the targets or the goal.
   final PlanChanges? planChanges;
 
+  /// Writes Today's snapshot for the Home Screen and Lock Screen widgets each
+  /// time the brief loads; null where there are no widgets.
+  final TodayWidgetPublisher? widgetPublisher;
+
+  /// Notifies when a tapped widget brought the app forward. Today then reloads
+  /// if what it shows is a day old or older than half an hour, so the widgets
+  /// are fresh by the time the athlete looks.
+  final Listenable? widgetTaps;
+
+  /// The time Today measures the age of its brief by.
+  final DateTime Function() clock;
+
   @override
   State<TodayScreen> createState() => _TodayScreenState();
 }
 
-class _TodayScreenState extends State<TodayScreen> {
+class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   late Future<HealthHistory> _healthHistory;
   late Future<DailyBrief> _brief;
   late Future<NutritionTargets?> _targets;
@@ -137,7 +155,43 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _reloadIfStale();
+  }
+
+  /// When the brief last arrived; null until the first one does.
+  DateTime? _briefLoadedAt;
+
+  /// A brief shown for longer than this, or from another day, is reloaded
+  /// when the app comes back to the front.
+  static const _staleBriefAfter = Duration(minutes: 30);
+
+  /// Returning to the app (or a tapped widget bringing it forward) reloads
+  /// the brief, targets and meals when none has arrived yet, the last one is
+  /// over half an hour old, or the local day has changed. The new brief is
+  /// what the widgets get: an old one is never written again.
+  void _reloadIfStale() {
+    if (!mounted) return;
+    final loadedAt = _briefLoadedAt;
+    final brief = _lastBrief;
+    final now = widget.clock();
+    final stale =
+        loadedAt == null ||
+        brief == null ||
+        now.difference(loadedAt) > _staleBriefAfter ||
+        brief.localDate != _dateKey(now);
+    if (!stale) return;
+    setState(() {
+      _targets = widget.nutrition.loadTargets();
+      _meals = _loadMeals();
+      _brief = _loadBrief();
+    });
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    widget.widgetTaps?.removeListener(_reloadIfStale);
     widget.aiConsent?.removeListener(_consentChanged);
     widget.planChanges?.removeListener(_planChanged);
     super.dispose();
@@ -154,6 +208,8 @@ class _TodayScreenState extends State<TodayScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    widget.widgetTaps?.addListener(_reloadIfStale);
     widget.aiConsent?.addListener(_consentChanged);
     widget.planChanges?.addListener(_planChanged);
     _reloadHealth();
@@ -244,15 +300,50 @@ class _TodayScreenState extends State<TodayScreen> {
     }
   }
 
-  /// Loads the brief and, once it arrives, sets the check-in gate from it.
+  /// Which brief load started last. A load that finishes after a newer one
+  /// started (a slow request from before midnight, say) is ignored, so it
+  /// never overwrites the newer day's brief, gate or widgets.
+  int _briefLoads = 0;
+
+  /// Loads the brief and, once it arrives, sets the check-in gate from it and
+  /// hands it to the widgets.
   Future<DailyBrief> _loadBrief() {
-    final future = widget.brief.load(DateTime.now());
+    final load = ++_briefLoads;
+    final future = widget.brief.load(widget.clock());
     future.then((brief) {
-      if (!mounted) return;
+      if (!mounted || load != _briefLoads) return;
       _lastBrief = brief;
+      _briefLoadedAt = widget.clock();
       _updateGate();
+      unawaited(_publishWidgets(brief));
     }, onError: (_) {});
     return future;
+  }
+
+  /// Newest publish wins: targets can arrive after the brief, and a slow
+  /// older publish must not overwrite a newer one.
+  int _publishes = 0;
+
+  /// Writes [brief] with the plan's targets and the check-in state for the
+  /// Home Screen and Lock Screen widgets. Without targets (they did not load)
+  /// only what was eaten shows. Silent: the widgets are a convenience.
+  Future<void> _publishWidgets(DailyBrief brief) async {
+    final publisher = widget.widgetPublisher;
+    if (publisher == null) return;
+    final publish = ++_publishes;
+    NutritionTargets? targets;
+    try {
+      targets = await _targets;
+    } catch (_) {
+      // Unknown targets leave the widgets showing what was eaten.
+    }
+    if (!mounted || publish != _publishes) return;
+    await publisher.publish(
+      brief: brief,
+      targets: targets,
+      checkedIn: _checkedIn(brief),
+      loadedAt: _briefLoadedAt,
+    );
   }
 
   bool _checkedIn(DailyBrief brief) =>
@@ -277,6 +368,8 @@ class _TodayScreenState extends State<TodayScreen> {
         _skippedOn = preferences.getString(_skippedKey);
       });
       _updateGate();
+      final brief = _lastBrief;
+      if (brief != null) unawaited(_publishWidgets(brief));
     } catch (_) {
       // Without stored days the gate follows the brief alone.
     }
@@ -456,6 +549,10 @@ class _TodayScreenState extends State<TodayScreen> {
       final day = _lastBrief?.localDate ?? _dateKey(DateTime.now());
       setState(() => _checkedInOn = day);
       _updateGate();
+      // The widgets say the check-in is done at once: the brief reloaded
+      // below can fail in the outage that queued the check-in.
+      final brief = _lastBrief;
+      if (brief != null) unawaited(_publishWidgets(brief));
       await _rememberDay(_checkedInKey, day);
     }
     if (mounted) {
@@ -503,6 +600,7 @@ class _TodayScreenState extends State<TodayScreen> {
         onSignOut: widget.onSignOut,
         health: widget.health,
         coach: widget.coach,
+        widgetPublisher: widget.widgetPublisher,
         memory: widget.environment.hasSupabaseConfiguration
             ? SupabaseCoachMemoryRepository(Supabase.instance.client)
             : const FixtureCoachMemoryRepository(),

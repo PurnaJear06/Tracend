@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "stale_after_seconds": 43200,
+  "local_date": "2026-10-18",
+  "session": {
+    "state": "in_progress",
+    "name": "Push day",
+    "sets_logged": 2,
+    "sets_total": 7,
+    "exercises": [
+      { "name": "Bench press", "target": "4 × 6–8 · 82.5 kg" },
+      { "name": "Overhead press", "target": "3 × 8–10 · 45 kg" }
+    ]
+  },
+  "recovery": 72,
+  "nutrition": {
+    "calories": 1240,
+    "calories_target": 2400,
+    "protein_g": 80,
+    "protein_target_g": 160
+  },
+  "check_in_done": true,
+  "lock": {
+    "session": "Push day",
+    "session_state": "in_progress",
+    "recovery": 72,
+    "protein_g": 80,
+    "protein_target_g": 160
+  },
+  "generated_at_millis": 1792308600000
+}

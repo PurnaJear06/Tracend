@@ -91,7 +91,8 @@ Account
 ├── Health: Apple Health
 ├── Appearance
 ├── Notifications (reminders, rest timer alerts)
-├── AI coach: AI coaching, AI usage this month, Coach conversations
+├── Widgets (health numbers on the Lock Screen)
+├── AI coach: AI coaching, AI usage this month, What Coach remembers, Coach conversations
 └── Privacy: Export data, Consent history, Delete account
 ```
 
@@ -136,8 +137,9 @@ sign-in**.
 
 `Launch → Restore session → Today`
 
-- Restore selected tab, scroll position, and safe in-progress drafts. Today the app always opens on
-  Today; an unfinished workout draft and an unsent check-in are kept per athlete and restored.
+- Restore selected tab, scroll position, and safe in-progress drafts. Today the app opens on Today,
+  or on Train when a tapped widget asked for it (below); an unfinished workout draft and an unsent
+  check-in are kept per athlete and restored.
   **Not built yet:** restoring the selected tab and scroll position.
 - Restoring asks Auth whether the account and session still exist; an access token alone stays
   valid for up to an hour after its account is deleted.
@@ -147,8 +149,9 @@ sign-in**.
 - A refused session for an account that may still exist keeps that athlete's unsent check-in and
   Apple Health sync state, stored per athlete so no other account can read them, for their next
   sign-in. When Auth says the account no longer exists, its local data is removed.
-- Resolve deep links only after authentication and authorization. The app handles no deep links
-  yet.
+- Resolve deep links only after authentication and authorization. The only links the app handles
+  are the widgets' `tracend://today` and `tracend://train` (§5, Widgets): they switch to that tab and do nothing else, the request waits a minute for the app
+  and then expires, and Flutter's own deep-link routing is off.
 
 ## 4. Onboarding
 
@@ -437,7 +440,29 @@ minute · sharpens today's call") with an arrow, and **Not today** under it. Sav
 are remembered on the phone for that date. The gate never locks the plan: "Not today" always lets
 the athlete through.
 
-**Planned (coaching platform, chunk D2):** Today and Lock Screen widgets.
+**Widgets (coaching platform, chunk D2).** Today also lives on the Home Screen and the Lock Screen
+(`ios/TracendWidgets/`; visuals in DESIGN_SYSTEM §3.7). Each time Today's brief loads, the app writes
+a compact snapshot to the app group; the widgets only read it and never call the network.
+
+- **Small:** today's session ("Rest day" when none) with where it stands ("Not started", "6 of 14
+  sets", "Done · 14 sets", "Nothing planned"), and the recovery score ("--" when not scored).
+- **Medium:** the same, plus the first three exercises with their plan targets ("4 × 6–8 · 82.5
+  kg"), calories and protein against the plan's targets, and "Checked in" or "Check-in due".
+- **Lock Screen:** circular, the recovery score on a ring; rectangular, the session, recovery and
+  protein against its target; inline, the session and recovery.
+- **Age.** Home Screen widgets show how old the snapshot is. A snapshot 12 hours old or older, or
+  from another day, shows no numbers and reads **Open Tracend to refresh** (from the 12-hour moment
+  or midnight itself, whichever comes first); so does a widget before Today
+  has ever loaded, and after sign-out. The widgets reflect the last time Today loaded, not a live
+  feed: a meal logged in Nutrition shows once Today next loads (pull to refresh). A saved check-in
+  is the exception: the widgets read "Checked in" at once, even when it was queued offline and the
+  brief cannot reload.
+- **Taps.** Every widget opens Today (`tracend://today`), except a planned or started session, which
+  opens Train: the medium widget's exercise list and the Lock Screen rectangular widget
+  (`tracend://train`). The circular and inline Lock Screen widgets always open Today. The app switches to that tab on launch or return; the request expires after
+  a minute.
+- **Lock Screen numbers are off until chosen** (**Account › Widgets**, §13). Off, the Lock Screen
+  widgets show only "Tracend" and "Lock Screen numbers are off" (a lock glyph in the circular one).
 
 ### Quick check-in
 
@@ -1151,6 +1176,13 @@ Account is one iOS inset-grouped settings page:
   (**Turn on rest timer alerts?**), and only **Continue** leads to the iOS permission request.
   **Not now**, off or a denied permission keeps the rest timer in the app only, and a denial
   points to iOS Settings. There is no in-app haptics toggle; the iOS setting governs haptics.
+- **Widgets:** one switch row, **Health numbers on the Lock Screen**, off until chosen ("Off · Lock
+  Screen widgets show Tracend and nothing else"; on: "recovery, today's session and protein show
+  while the phone is locked"). Turning it off removes the numbers from what the widgets read at once.
+  The choice is kept for the signed-in athlete on this phone and forgotten on sign-out, so another
+  athlete signing in starts with it off.
+  The footnote says anyone holding the locked phone can read Lock Screen widgets, and that Home
+  Screen widgets show the day once the phone is unlocked.
 - **AI coach:** **AI coaching** (on, or "Off · plans and logging still work"), **AI usage this
   month**, **What Coach remembers** (§13, memory) and **Coach conversations** (a sheet; deleting a conversation asks with a destructive
   confirm, **Delete thread**). The footnote says provider keys stay on Tracend's server. The AI

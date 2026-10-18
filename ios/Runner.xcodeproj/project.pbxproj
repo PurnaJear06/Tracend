@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
+		D2A70000000000000000F002 /* today_widget_snapshot_v1.json in Resources */ = {isa = PBXBuildFile; fileRef = D2A70000000000000000F001 /* today_widget_snapshot_v1.json */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		5BBF2DD7124B5BB8DE4D2A0C /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7958D1798B2176368236D6F1 /* Pods_RunnerTests.framework */; };
@@ -27,6 +28,14 @@
 		D1A700000000000000000011 /* RestActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A700000000000000000001 /* RestActivityIntents.swift */; };
 		D1A700000000000000000012 /* RestActivityIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A700000000000000000001 /* RestActivityIntents.swift */; };
 		D0A700000000000000000018 /* TracendWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D0A700000000000000000008 /* TracendWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D2A700000000000000000011 /* TodayWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000001 /* TodayWidgetSnapshot.swift */; };
+		D2A700000000000000000012 /* TodayWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000001 /* TodayWidgetSnapshot.swift */; };
+		D2A700000000000000000013 /* TodayWidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000002 /* TodayWidgetStore.swift */; };
+		D2A700000000000000000014 /* TodayWidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000002 /* TodayWidgetStore.swift */; };
+		D2A700000000000000000015 /* HomeWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000003 /* HomeWidgetBridge.swift */; };
+		D2A700000000000000000016 /* TodayTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000004 /* TodayTimeline.swift */; };
+		D2A700000000000000000017 /* TodayWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000005 /* TodayWidgets.swift */; };
+		D2A700000000000000000018 /* LockScreenWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2A700000000000000000006 /* LockScreenWidgets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,6 +83,7 @@
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
+		D2A70000000000000000F001 /* today_widget_snapshot_v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = today_widget_snapshot_v1.json; path = ../test/contract/fixtures/today_widget_snapshot_v1.json; sourceTree = SOURCE_ROOT; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		4DEF703E2FF42889007CABF1 /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
@@ -106,6 +116,13 @@
 		D0A700000000000000000007 /* TracendWidgets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = TracendWidgets.xcconfig; sourceTree = "<group>"; };
 		D0A700000000000000000008 /* TracendWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TracendWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0A700000000000000000009 /* ArchivoSemiCondensed-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = ArchivoSemiCondensed-ExtraBold.ttf; path = ../assets/fonts/ArchivoSemiCondensed-ExtraBold.ttf; sourceTree = SOURCE_ROOT; };
+		D2A700000000000000000001 /* TodayWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidgetSnapshot.swift; sourceTree = "<group>"; };
+		D2A700000000000000000002 /* TodayWidgetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidgetStore.swift; sourceTree = "<group>"; };
+		D2A700000000000000000003 /* HomeWidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetBridge.swift; sourceTree = "<group>"; };
+		D2A700000000000000000004 /* TodayTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayTimeline.swift; sourceTree = "<group>"; };
+		D2A700000000000000000005 /* TodayWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidgets.swift; sourceTree = "<group>"; };
+		D2A700000000000000000006 /* LockScreenWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenWidgets.swift; sourceTree = "<group>"; };
+		D2A700000000000000000007 /* TracendWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TracendWidgets.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -153,6 +170,7 @@
 			isa = PBXGroup;
 			children = (
 				331C807B294A618700263BE5 /* RunnerTests.swift */,
+				D2A70000000000000000F001 /* today_widget_snapshot_v1.json */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -223,6 +241,8 @@
 			children = (
 				D0A700000000000000000001 /* RestActivityAttributes.swift */,
 				D1A700000000000000000001 /* RestActivityIntents.swift */,
+				D2A700000000000000000001 /* TodayWidgetSnapshot.swift */,
+				D2A700000000000000000002 /* TodayWidgetStore.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -232,6 +252,7 @@
 			children = (
 				D0A700000000000000000002 /* WorkoutActivityBridge.swift */,
 				C2A700000000000000000002 /* HeartRateReader.swift */,
+				D2A700000000000000000003 /* HomeWidgetBridge.swift */,
 			);
 			path = Native;
 			sourceTree = "<group>";
@@ -242,7 +263,11 @@
 				D0A700000000000000000003 /* TracendWidgetsBundle.swift */,
 				D0A700000000000000000004 /* RestLiveActivity.swift */,
 				D0A700000000000000000005 /* TracendStyle.swift */,
+				D2A700000000000000000004 /* TodayTimeline.swift */,
+				D2A700000000000000000005 /* TodayWidgets.swift */,
+				D2A700000000000000000006 /* LockScreenWidgets.swift */,
 				D0A700000000000000000009 /* ArchivoSemiCondensed-ExtraBold.ttf */,
+				D2A700000000000000000007 /* TracendWidgets.entitlements */,
 				D0A700000000000000000006 /* Info.plist */,
 				D0A700000000000000000007 /* TracendWidgets.xcconfig */,
 			);
@@ -360,6 +385,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D2A70000000000000000F002 /* today_widget_snapshot_v1.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -498,6 +524,9 @@
 				D0A700000000000000000012 /* WorkoutActivityBridge.swift in Sources */,
 				C2A700000000000000000012 /* HeartRateReader.swift in Sources */,
 				D1A700000000000000000011 /* RestActivityIntents.swift in Sources */,
+				D2A700000000000000000011 /* TodayWidgetSnapshot.swift in Sources */,
+				D2A700000000000000000013 /* TodayWidgetStore.swift in Sources */,
+				D2A700000000000000000015 /* HomeWidgetBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -510,6 +539,11 @@
 				D0A700000000000000000015 /* RestLiveActivity.swift in Sources */,
 				D0A700000000000000000016 /* TracendStyle.swift in Sources */,
 				D1A700000000000000000012 /* RestActivityIntents.swift in Sources */,
+				D2A700000000000000000012 /* TodayWidgetSnapshot.swift in Sources */,
+				D2A700000000000000000014 /* TodayWidgetStore.swift in Sources */,
+				D2A700000000000000000016 /* TodayTimeline.swift in Sources */,
+				D2A700000000000000000017 /* TodayWidgets.swift in Sources */,
+				D2A700000000000000000018 /* LockScreenWidgets.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -816,6 +850,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = D0A700000000000000000007 /* TracendWidgets.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TracendWidgets/TracendWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = CGLRSQ8G95;
@@ -841,6 +876,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = D0A700000000000000000007 /* TracendWidgets.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TracendWidgets/TracendWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = CGLRSQ8G95;
@@ -864,6 +900,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = D0A700000000000000000007 /* TracendWidgets.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TracendWidgets/TracendWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = CGLRSQ8G95;

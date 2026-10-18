@@ -23,7 +23,11 @@ import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
+import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
+import 'home_widgets/fake_home_widget_bridge.dart';
 import 'live_activity/fake_workout_activity_bridge.dart';
 
 const _url = 'https://tracend-test.supabase.co';
@@ -132,6 +136,17 @@ void main() {
       '2026-10-01T00:00:00Z',
     );
     await preferences.setString('tracend_theme_mode', 'dark');
+    // An earlier build's one choice for the phone, this athlete's and
+    // another athlete's.
+    await preferences.setBool(TodayWidgetPublisher.lockScreenNumbersKey, true);
+    await preferences.setBool(
+      TodayWidgetPublisher.lockScreenNumbersKeyFor(_userId),
+      true,
+    );
+    await preferences.setBool(
+      TodayWidgetPublisher.lockScreenNumbersKeyFor(_otherUserId),
+      true,
+    );
     await preferences.setString(
       '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1',
       '{}',
@@ -151,6 +166,27 @@ void main() {
     });
   });
 
+  /// The athlete's Lock Screen choice and the phone-wide one are gone;
+  /// another athlete's stays theirs.
+  Future<void> expectWidgetChoiceForgotten() async {
+    expect(
+      await preferences.getBool(TodayWidgetPublisher.lockScreenNumbersKey),
+      isNull,
+    );
+    expect(
+      await preferences.getBool(
+        TodayWidgetPublisher.lockScreenNumbersKeyFor(_userId),
+      ),
+      isNull,
+    );
+    expect(
+      await preferences.getBool(
+        TodayWidgetPublisher.lockScreenNumbersKeyFor(_otherUserId),
+      ),
+      isTrue,
+    );
+  }
+
   Future<void> expectAthleteDataCleared() async {
     expect(
       await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
@@ -168,6 +204,8 @@ void main() {
       isNotNull,
     );
     expect(await preferences.getString('tracend_theme_mode'), 'dark');
+    // The Lock Screen widget choice goes with the account.
+    await expectWidgetChoiceForgotten();
     expect(
       await preferences.getString(
         '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1',
@@ -197,8 +235,9 @@ void main() {
   }
 
   /// A refused session may belong to an account that still exists: only the
-  /// open Coach thread is forgotten.
+  /// open Coach thread and the Lock Screen choice are forgotten.
   Future<void> expectAthleteDataKept() async {
+    await expectWidgetChoiceForgotten();
     expect(
       await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
       isNotNull,
@@ -212,9 +251,11 @@ void main() {
   }
 
   late FakeWorkoutActivityBridge liveActivity;
+  late FakeHomeWidgetBridge homeWidgets;
 
   Future<void> pumpGate(WidgetTester tester, _Server server) async {
     liveActivity = FakeWorkoutActivityBridge();
+    homeWidgets = FakeHomeWidgetBridge();
     await tester.pumpWidget(
       MaterialApp(
         theme: TracendTheme.light,
@@ -222,6 +263,7 @@ void main() {
           environment: _environment,
           client: server.client,
           liveActivity: liveActivity,
+          homeWidgets: homeWidgets,
         ),
       ),
     );
@@ -263,6 +305,57 @@ void main() {
     expect(isRejectedSession(const PostgrestException(message: 'x')), isFalse);
   });
 
+  group('signing out', () {
+    test(
+      'forgets the Lock Screen choice, so the next athlete starts off',
+      () async {
+        final server = _Server()..answer('POST /auth/v1/logout', 204, {});
+        await _storeSession(
+          server.client,
+          DateTime.now().add(const Duration(minutes: 50)),
+        );
+
+        await signOutAthlete(server.client, LocalAccountData(), _userId);
+
+        expect(server.requests, contains('POST /auth/v1/logout'));
+        expect(server.client.auth.currentSession, isNull);
+        await expectWidgetChoiceForgotten();
+        // Nothing else of the athlete's goes.
+        expect(
+          await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
+          isNotNull,
+        );
+        final next = TodayWidgetPublisher(
+          bridge: FakeHomeWidgetBridge(),
+          userId: _otherUserId,
+          preferences: preferences,
+        );
+        expect(await next.lockScreenNumbers(), isTrue);
+        final another = TodayWidgetPublisher(
+          bridge: FakeHomeWidgetBridge(),
+          userId: '33333333-3333-4333-8333-333333333333',
+          preferences: preferences,
+        );
+        expect(await another.lockScreenNumbers(), isFalse);
+      },
+    );
+
+    test('without Auth the session still ends on this device', () async {
+      final server = _Server();
+      server.routes['POST /auth/v1/logout'] = () =>
+          Future.error(http.ClientException('offline'));
+      await _storeSession(
+        server.client,
+        DateTime.now().add(const Duration(minutes: 50)),
+      );
+
+      await signOutAthlete(server.client, LocalAccountData(), _userId);
+
+      expect(server.client.auth.currentSession, isNull);
+      await expectWidgetChoiceForgotten();
+    });
+  });
+
   group('restoring a stored session', () {
     testWidgets('a deleted athlete lands on sign-in, not Connection needed', (
       tester,
@@ -283,7 +376,8 @@ void main() {
       expect(server.client.auth.currentSession, isNull);
       expect(server.requests, isNot(contains('GET /rest/v1/user_accounts')));
       await expectAthleteDataCleared();
-      expect(liveActivity.methods, ['end']);
+      expect(liveActivity.methods, contains('end'));
+      expect(homeWidgets.calls, contains('clear'));
     });
 
     testWidgets(
@@ -305,7 +399,8 @@ void main() {
         expect(find.text('Connection needed'), findsNothing);
         expect(server.client.auth.currentSession, isNull);
         await expectAthleteDataKept();
-        expect(liveActivity.methods, ['end']);
+        expect(liveActivity.methods, contains('end'));
+        expect(homeWidgets.calls, contains('clear'));
       },
     );
 
@@ -325,6 +420,7 @@ void main() {
       expect(find.text('Connection needed'), findsOneWidget);
       expect(server.client.auth.currentSession, isNotNull);
       expect(liveActivity.calls, isEmpty);
+      expect(homeWidgets.calls, isEmpty);
       expect(
         await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
         isNotNull,
@@ -440,6 +536,224 @@ void main() {
 
       expect(find.byType(AiCoachingConsentScreen), findsOneWidget);
       expect(find.text('Allow AI coaching'), findsOneWidget);
+    });
+  });
+
+  group('widgets and the rest activity follow every sign-out', () {
+    late _Server server;
+
+    setUp(() async {
+      server = _Server()
+        ..answer('GET /auth/v1/user', 200, _user())
+        ..answer('GET /rest/v1/user_accounts', 200, {
+          'onboarding_state': 'in_progress',
+        })
+        ..answer('GET /rest/v1/onboarding_drafts', 200, <Object>[])
+        ..answer('GET /rest/v1/consent_records', 200, <Object>[])
+        ..answer('GET /rest/v1/deletion_requests', 200, <Object>[])
+        ..answer('POST /auth/v1/logout', 204, {});
+      await _storeSession(
+        server.client,
+        DateTime.now().add(const Duration(minutes: 50)),
+      );
+    });
+
+    /// Opens the gate with an athlete signed in, then forgets what opening
+    /// it did to the bridges so only the sign-out shows.
+    Future<void> openSignedIn(WidgetTester tester) async {
+      await pumpGate(tester, server);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      // The intro covers the app until it has played.
+      for (var second = 0; second < 6; second++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+      expect(find.byType(OnboardingFlow), findsOneWidget);
+      homeWidgets.calls.clear();
+      liveActivity.calls.clear();
+    }
+
+    /// Lets the auth event reach the gate and its bridge calls finish.
+    Future<void> settle(WidgetTester tester) async {
+      for (var round = 0; round < 3; round++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 100)),
+        );
+        await tester.pump(const Duration(seconds: 1));
+      }
+    }
+
+    testWidgets('the athlete signing out empties the widgets once', (
+      tester,
+    ) async {
+      await openSignedIn(tester);
+
+      await tester.tap(find.text('Sign out'));
+      await settle(tester);
+
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+      expect(homeWidgets.calls, ['clear']);
+      expect(liveActivity.methods, ['end']);
+      await expectWidgetChoiceForgotten();
+    });
+
+    testWidgets('a deletion settling after its sheet closed empties them', (
+      tester,
+    ) async {
+      await openSignedIn(tester);
+      homeWidgets.stored = {'local_date': '2026-10-18'};
+
+      // The sheet was dismissed mid-request, so Account never calls the
+      // gate's sign-out; the repository ends the session on its own.
+      server.answer('GET /auth/v1/user', 403, _userNotFound);
+      final outcome = await tester.runAsync(
+        () => SupabaseAccountDeletionRepository(server.client).confirm(),
+      );
+      await settle(tester);
+
+      expect(outcome, AccountDeletionOutcome.deleted);
+      expect(server.client.auth.currentSession, isNull);
+      // Account never signed out, yet the gate left the signed-in app.
+      expect(find.byType(OnboardingFlow), findsNothing);
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+      expect(homeWidgets.stored, isNull);
+      expect(homeWidgets.calls, contains('clear'));
+      expect(liveActivity.methods, contains('end'));
+      await expectAthleteDataCleared();
+    });
+
+    testWidgets('a sign-out during a refresh is not undone by that refresh', (
+      tester,
+    ) async {
+      final answer = Completer<http.Response>();
+      server.routes['GET /rest/v1/user_accounts'] = () => answer.future;
+      await pumpGate(tester, server);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      // The refresh waits on the onboarding state when the session ends.
+      await tester.runAsync(
+        () => server.client.auth.signOut(scope: SignOutScope.local),
+      );
+      await settle(tester);
+
+      answer.complete(_json(200, {'onboarding_state': 'in_progress'}));
+      await settle(tester);
+      for (var second = 0; second < 6; second++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+      expect(find.byType(OnboardingFlow), findsNothing);
+      expect(find.byType(TracendLoader), findsNothing);
+    });
+
+    testWidgets('a sign-out is not hidden behind Connection needed', (
+      tester,
+    ) async {
+      server.routes['GET /auth/v1/user'] = () =>
+          Future.error(http.ClientException('offline'));
+      await pumpGate(tester, server);
+      await settle(tester);
+      expect(find.text('Connection needed'), findsOneWidget);
+
+      await tester.runAsync(
+        () => server.client.auth.signOut(scope: SignOutScope.local),
+      );
+      await settle(tester);
+
+      expect(find.text('Connection needed'), findsNothing);
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+    });
+
+    testWidgets('a clear that failed is tried again at once', (tester) async {
+      await openSignedIn(tester);
+      homeWidgets.failClears = 1;
+
+      await tester.tap(find.text('Sign out'));
+      await settle(tester);
+
+      expect(homeWidgets.calls, ['clear', 'clear']);
+      expect(homeWidgets.stored, isNull);
+    });
+
+    testWidgets(
+      'a clear that fails twice is retried on resume until it works',
+      (tester) async {
+        await openSignedIn(tester);
+        homeWidgets
+          ..stored = {'local_date': '2026-10-18'}
+          ..failClears = 4;
+
+        await tester.tap(find.text('Sign out'));
+        await settle(tester);
+        expect(homeWidgets.stored, isNotNull);
+        expect(await HomeWidgetEraser(homeWidgets).isPending(), isTrue);
+
+        Future<void> resume() async {
+          for (final state in [
+            AppLifecycleState.inactive,
+            AppLifecycleState.hidden,
+            AppLifecycleState.paused,
+            AppLifecycleState.hidden,
+            AppLifecycleState.inactive,
+            AppLifecycleState.resumed,
+          ]) {
+            tester.binding.handleAppLifecycleStateChanged(state);
+          }
+          await settle(tester);
+        }
+
+        // The first resume fails twice more; the next one works.
+        await resume();
+        expect(homeWidgets.stored, isNotNull);
+        await resume();
+        expect(homeWidgets.stored, isNull);
+        expect(await HomeWidgetEraser(homeWidgets).isPending(), isFalse);
+      },
+    );
+
+    testWidgets('a launch finishes a clear that failed before', (tester) async {
+      await preferences.setBool(HomeWidgetEraser.pendingKey, true);
+
+      await pumpGate(tester, server);
+      await settle(tester);
+
+      expect(homeWidgets.calls, contains('clear'));
+      expect(await HomeWidgetEraser(homeWidgets).isPending(), isFalse);
+    });
+
+    testWidgets('a launch with no session empties the widgets', (tester) async {
+      await pumpGate(tester, _Server());
+
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+      expect(homeWidgets.calls, ['clear']);
+    });
+
+    testWidgets('a session Auth refuses while the app is open empties them', (
+      tester,
+    ) async {
+      await openSignedIn(tester);
+      homeWidgets.stored = {'local_date': '2026-10-18'};
+
+      server.answer('POST /auth/v1/token', 400, {
+        'code': 'refresh_token_not_found',
+        'msg': 'Invalid Refresh Token: Refresh Token Not Found',
+      });
+      await tester.runAsync(
+        () => server.client.auth.refreshSession().then<void>(
+          (_) {},
+          onError: (_) {},
+        ),
+      );
+      await settle(tester);
+
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+      expect(homeWidgets.stored, isNull);
+      expect(liveActivity.methods, contains('end'));
+      await expectAthleteDataKept();
     });
   });
 

@@ -14,6 +14,7 @@ import 'package:tracend/features/account/widgets/coach_threads_sheet.dart';
 import 'package:tracend/features/account/widgets/consent_history_screen.dart';
 import 'package:tracend/features/account/widgets/notification_settings.dart';
 import 'package:tracend/features/account/widgets/profile_goals_screen.dart';
+import 'package:tracend/features/account/widgets/widget_settings.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
 import 'package:tracend/features/coach/memory/coach_memory_screen.dart';
@@ -21,6 +22,7 @@ import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/features/health/health_models.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/health/health_status_card.dart';
+import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/widgets/grouped_list.dart';
 import 'package:tracend/shared/widgets/tracend_scaffold.dart';
@@ -46,6 +48,7 @@ class AccountScreen extends StatefulWidget {
     this.exports = const FixturePrivacyExportRepository(),
     this.deletion = const FixtureAccountDeletionRepository(),
     this.aiConsent,
+    this.widgetPublisher,
     super.key,
   });
 
@@ -63,6 +66,10 @@ class AccountScreen extends StatefulWidget {
 
   /// Where AI coaching is turned on or off. Null without a backend.
   final AiCoachingConsentController? aiConsent;
+
+  /// Owns the Lock Screen widget choice. Null where there are no widgets to
+  /// set up, and then the Widgets section does not show.
+  final TodayWidgetPublisher? widgetPublisher;
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
@@ -116,6 +123,7 @@ class _AccountScreenState extends State<AccountScreen> {
         : TracendSpacing.gutter;
     final configured = widget.environment.hasSupabaseConfiguration;
     final aiConsent = widget.aiConsent;
+    final widgetPublisher = widget.widgetPublisher;
     return Scaffold(
       appBar: AppBar(title: const Text('Account')),
       body: SafeArea(
@@ -177,6 +185,10 @@ class _AccountScreenState extends State<AccountScreen> {
             ],
             const SectionLabel('Notifications'),
             NotificationSettings(repository: widget.notifications),
+            if (widgetPublisher != null) ...[
+              const SectionLabel('Widgets'),
+              WidgetSettings(publisher: widgetPublisher),
+            ],
             const SectionLabel('AI coach'),
             ListenableBuilder(
               listenable: Listenable.merge([?aiConsent]),

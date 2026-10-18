@@ -1,6 +1,6 @@
 # iOS Widgets and Live Activity Handoff
 
-**As of:** 2026-10-15
+**As of:** 2026-10-18
 
 Part of the coaching platform program:
 [`docs/plans/coaching-platform-2026-10/README.md`](../plans/coaching-platform-2026-10/README.md).
@@ -65,8 +65,8 @@ Island check passed on 2026-10-15. What exists:
   alert stay. Each activity call is sent before the rest alert is scheduled or cancelled and is
   never awaited, so a stop right after a start cannot overtake it. `ActiveWorkoutScreen` passes
   `nextLabel` (the existing "Set 2 of Bench press" label) and `exerciseName` (the exercise of the
-  set just done) and takes the bridge as `activity:`. `Phase2Gate` calls `end` on sign-out (which
-  account deletion also goes through, from Account) and when Auth refuses the session.
+  set just done) and takes the bridge as `activity:`. `Phase2Gate` calls `end` from its auth listener on
+  every signed-out transition (sign-out, account deletion, a refused session).
 - **Tests:** `test/live_activity/rest_timer_live_activity_test.dart` (controller ↔ fake bridge,
   including the stop-during-pending-alert race and `detach`),
   `test/contract/live_activity_channel_contract_test.dart` (mock channel),
@@ -177,6 +177,124 @@ Island check passed on 2026-10-15. What exists:
 11. Let a rest end, leave the phone for five minutes with the app in the background: "Rest done"
     may still show (nothing can dismiss it); tap Done set: the card goes and no set is ticked.
 
+**D2 in review** (branch `claude/d2-widgets`): Today and Lock Screen widgets.
+
+- **New: the App Group `group.com.tracend.app`**, in `Runner.entitlements` and the new
+  `TracendWidgets/TracendWidgets.entitlements`. It exists only so the widget process can read the
+  snapshot; the Live Activity still uses none. App Groups are supported for this team: on
+  2026-10-18 team `CGLRSQ8G95` signed both Runner and TracendWidgets with `group.com.tracend.app`
+  (verified with `codesign`). If a build is ever signed without the group, nothing else in the app
+  changes: the bridge answers `no_app_group`, the widgets read "Open Tracend to refresh", and Dart
+  logs the error code only.
+- **Snapshot (Dart)** `lib/shared/home_widgets/today_widget_snapshot.dart`: `TodayWidgetSnapshot.build`
+  turns the loaded `DailyBrief`, the plan's `NutritionTargets`, the check-in state and the Lock Screen
+  choice into the v1 JSON (`schema_version`, `stale_after_seconds` = 43200, `local_date`, `session`
+  with up to three exercise targets, `recovery`, `nutrition`, `check_in_done`, `lock`,
+  `generated_at_millis`). Every value is one Today already shows; no free text. `lock` is null while
+  Lock Screen numbers are off.
+- **Publisher** `today_widget_publisher.dart`: `TodayWidgetPublisher` writes on each brief load
+  (`TodayScreen._loadBrief` hands the brief over; the newest publish wins, and a brief load that
+  finishes after a newer one started is ignored), skips an unchanged
+  snapshot for five minutes, owns the Lock Screen choice (`home_widgets_lock_screen_numbers.<user id>`
+  in `SharedPreferencesAsync`, default off; `Phase2Gate` hands `AppShell` the user id, and the
+  shell is keyed by it) and clears the snapshot on `dispose` (AppShell going away).
+  `Phase2Gate`'s auth listener clears it, and ends the rest activity, on every signed-out
+  transition: sign-out, a refused session, and a deletion that settles after its sheet was closed
+  (Account then never calls the gate's sign-out). The same listener swaps the gate to sign-in
+  (`_showSignedOut`, idempotent) and drops any refresh still running (a refresh commits only if no
+  session ended since it began); `_signOut` and `_endRejectedSession` no longer swap screens. `write`
+  and `clear` answer a bool through Dart: a failed rewrite on opt-out removes the snapshot, a
+  failed clear is tried twice; a clear that fails twice sets a phone-wide flag
+  (`HomeWidgetEraser`, preference `home_widgets_clear_pending`) that is retried on every launch and
+  resume until it works or a successful write replaces the file (`settle`); a retry that works makes
+  the publisher write its last snapshot again. An opt-out is saved as Off first; if the old numbers
+  cannot be removed the switch still reads Off and a toast says the app is retrying. `Phase2Gate`
+  owns the eraser and hands it to `AppShell`, so the retry and the publisher share it.
+  `TodayWidgetStore` also deletes leftover `.today_widget_snapshot.json.*.tmp` files on write and clear.
+  A write answers false (snapshot stored, `write_failed`) when such a leftover cannot be removed, so
+  the pending flag is not settled; a write settles it only if no clear started since it began
+  (`HomeWidgetEraser.erases`). A snapshot written again (choice change, retried clear) keeps the
+  brief's original load time as `generated_at`, so the 12-hour and midnight expiry count from the load. The widget extension reads an empty or
+  unreadable file as no data (`TodayWidgetStore.read`; `testAnEmptyFileIsNoData`).
+  `RunnerTests` loads the snapshot fixture as a bundle resource.
+  Nothing else clears it. Sign-out
+  (`signOutAthlete`) and a refused session (`LocalAccountData.forgetSession`) forget the athlete's
+  Lock Screen choice and the phone-wide key an earlier D2 build used; deleting the account removes
+  both with the rest (`LocalAccountData.clear`). A saved check-in republishes the last brief at
+  once (`TodayScreen._openCheckIn`), so an offline check-in shows "Checked in" even when the
+  reload fails. `TodayScreen` reloads its
+  brief, targets and meals when the app resumes (or a widget tap brings it forward) if the last load
+  is over 30 minutes old or from another local day, and that load is what gets published.
+  `TodaySessionProgress` (`lib/features/today/`) is the one reading of the session's state and sets,
+  shared by the session card and the snapshot.
+- **Bridge** `home_widget_bridge.dart` + `ios/Runner/Native/HomeWidgetBridge.swift`, channel
+  `tracend/home_widgets`: `write` (answers `no_app_group` when the group's container does not exist, refuses anything but v1
+  with `invalid_snapshot`, stores it as the file `today_widget_snapshot.json` in the container, excluded
+  from backups and protected until first unlock (written to a temporary file in the container,
+  excluded there, then `rename`d into place and checked; a snapshot that is not excluded is
+  removed), answers `write_failed` if that fails, then
+  `WidgetCenter.reloadAllTimelines()`),
+  `clear` (removes the file, or empties it when removal fails; answers `clear_failed` only if the
+  old data may remain), `takePendingTab`; iOS calls `tabRequested` when a widget is tapped.
+- **Deep links.** None existed. `Info.plist` now registers the `tracend` URL scheme and sets
+  `FlutterDeepLinkingEnabled` = NO (Flutter would otherwise try to route the URL as a Navigator route).
+  `SceneDelegate` passes `connectionOptions.urlContexts` and `scene(_:openURLContexts:)` to
+  `HomeWidgetBridge.open`, which accepts `tracend://today` and `tracend://train` only, keeps the tab
+  for a minute and nudges Dart; `AppShell` calls `takePendingTab` on start and on each nudge.
+- **Swift shared files** (both targets): `ios/Shared/TodayWidgetSnapshot.swift` (Codable model,
+  `decode`, `isStale`, `staleDate`; stale from `staleDate` on, that moment included, because the
+  timeline's last entry is drawn at exactly it) and `ios/Shared/TodayWidgetStore.swift` (group storage and
+  `TracendLink`). **Extension:** `TodayTimeline.swift` (provider, entry; timeline = now plus the
+  stale moment, policy `.never`: the app asks for reloads), `TodayWidgets.swift` (small and
+  medium), `LockScreenWidgets.swift` (circular, rectangular, inline; only the rectangular one opens
+  Train). Visuals: DESIGN_SYSTEM §3.7.
+- **Account.** `lib/features/account/widgets/widget_settings.dart`: **Widgets › Health numbers on the
+  Lock Screen**, off by default. SECURITY_PRIVACY §10 documents it as a second lock-screen
+  exception, approved by the owner on 2026-10-18.
+- **Tests:** `test/home_widgets/` (snapshot, publisher, flow, offline check-in), the sign-out and
+  per-athlete choice cases in `test/account_session_test.dart`, `test/contract/today_widget_snapshot_contract_test.dart`
+  with `fixtures/today_widget_snapshot_v1.json`, and `TodayWidgetSnapshotTests` in `RunnerTests.swift`
+  reading the same fixture (not run in CI). The extension, the bridge and the XCTest logic were
+  type-checked with `swiftc -typecheck` and the staleness logic exercised in a host script; the
+  widgets' look and the App Group are only proven on the iPhone.
+- **Known limits.** The exercise lines are the plan's targets from the daily brief (sets, rep range,
+  load), not the training hub's progression `next_targets` (that needs the hub, a second read Today
+  does not make). The widgets show the last time Today loaded: a meal logged in Nutrition or a set
+  logged in Train shows after the next Today load. A medium widget with long exercise names truncates
+  the name, not the target.
+
+**Test D2 on the device** (signed build from the branch, `./scripts/install-device.sh`; the team
+already signs both targets with the App Group):
+
+1. Install.
+2. Open Tracend and let Today load. Add the **Today** widget, small and medium, to the Home Screen
+   (long-press, +). Small: session name, status, recovery score. Medium: the first three exercises
+   with targets, calories and protein bars, "Checked in" or "Check-in due".
+3. Compare every number with Today. Pull to refresh in Today after logging a meal: the widget
+   follows within a few seconds.
+4. Add the three **Today on the Lock Screen** widgets (Lock Screen › Customize). With Account ›
+   Widgets off (the default) they read "Tracend", "Lock Screen numbers are off" and a lock glyph.
+   Turn **Health numbers on the Lock Screen** on in Account: circular shows the recovery ring,
+   rectangular the session, recovery and protein, inline the session and recovery. Turn it off:
+   the numbers go from the Lock Screen at once.
+5. Tap each widget: small and medium open Today; the medium exercise list and the rectangular
+   Lock Screen widget open Train when a session is planned or started (Today on a rest day or a
+   finished session); the circular and inline Lock Screen widgets always open Today. Test with the
+   app in the background and with it force-quit.
+6. Staleness: turn on Airplane mode, leave the phone 12+ hours (or change the date forward a day):
+   every widget reads "Open Tracend to refresh" and shows no number. Open the app: they return.
+7. Sign out: all widgets read "Open Tracend to refresh" within a moment. Sign back in and open Today:
+   Account › Widgets › Health numbers on the Lock Screen is off again, and the Lock Screen widgets
+   read "Lock Screen numbers are off".
+8. Offline check-in: with Airplane mode on and the check-in not done, save the check-in. The medium
+   widget reads "Checked in" without Today reloading.
+9. Rest-timer Live Activity still works (start a workout, tick a set): the App Group changed
+   Runner's entitlements.
+10. Dark and light mode, and a large Dynamic Type size: the Home Screen widgets stay graphite with
+    lime, and no text overlaps.
+11. StandBy (iPhone on its side, charging): the Home Screen widget numbers hide or show as iOS
+    decides for sensitive content.
+
 **For D1.** C1's Contract 3 events (`RestStarted`, `RestAdjusted`) are emitted next to the
 controller calls, but the activity is driven only by `RestTimerController`. D1 must keep it that
 way: feed the Live Activity's buttons into C1's command sink (`SkipRest`, `AddRest`,
@@ -207,5 +325,7 @@ days like the app's.
 
 ## Next agent starts here
 
-After the owner's D1 device check: D2 (Today and Lock Screen widgets), Phase 3. C2 stacks on the
-D1 branch; its listener uses `WorkoutEventHub.events` only (the command sink is D1's).
+D2 (Today and Lock Screen widgets) is in review; the owner's device check is the list above. After
+it passes, the widgets chunk is done. Follow-ups worth a chunk if the owner wants them: use the
+training hub's progression `next_targets` for the medium widget's exercise lines, and a small
+interactive widget (iOS 17 buttons) for the check-in.

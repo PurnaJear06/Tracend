@@ -15,6 +15,8 @@ import 'package:tracend/features/onboarding/onboarding_repository.dart';
 import 'package:tracend/features/shell/app_shell.dart';
 import 'package:tracend/shared/brand/tracend_intro.dart';
 import 'package:tracend/shared/brand/tracend_loader.dart';
+import 'package:tracend/shared/home_widgets/home_widget_bridge.dart';
+import 'package:tracend/shared/home_widgets/home_widget_eraser.dart';
 import 'package:tracend/shared/live_activity/workout_activity_bridge.dart';
 
 class Phase2Gate extends StatefulWidget {
@@ -23,6 +25,7 @@ class Phase2Gate extends StatefulWidget {
     this.client,
     this.localData,
     this.liveActivity = const MethodChannelWorkoutActivityBridge(),
+    this.homeWidgets = const MethodChannelHomeWidgetBridge(),
     super.key,
   });
 
@@ -31,16 +34,20 @@ class Phase2Gate extends StatefulWidget {
   /// The app's Supabase client unless a test provides one.
   final SupabaseClient? client;
 
-  /// The workout rest's Live Activity, ended whenever the session ends so
-  /// no rest outlives its athlete on the Lock Screen.
+  /// The workout rest's Live Activity, ended on every signed-out transition
+  /// so no rest outlives its athlete on the Lock Screen.
   final WorkoutActivityBridge liveActivity;
+
+  /// The Home Screen and Lock Screen widgets, emptied on every signed-out
+  /// transition so no widget keeps a signed-out athlete's day.
+  final HomeWidgetBridge homeWidgets;
   final LocalAccountData? localData;
 
   @override
   State<Phase2Gate> createState() => _Phase2GateState();
 }
 
-class _Phase2GateState extends State<Phase2Gate> {
+class _Phase2GateState extends State<Phase2Gate> with WidgetsBindingObserver {
   bool _loading = true;
   bool _authenticated = false;
   bool _onboardingComplete = false;
@@ -59,21 +66,39 @@ class _Phase2GateState extends State<Phase2Gate> {
   /// Auth has already removed the session.
   String? _userId;
 
+  /// Counts the sessions that ended. A refresh that began before one ended
+  /// belongs to a session that is gone and commits nothing.
+  int _sessionsEnded = 0;
+
   SupabaseClient get _client => widget.client ?? Supabase.instance.client;
   late final LocalAccountData _localData =
       widget.localData ?? LocalAccountData();
+  late final HomeWidgetEraser _widgetEraser = HomeWidgetEraser(
+    widget.homeWidgets,
+  );
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_widgetEraser.retryPending());
     if (widget.environment.hasSupabaseConfiguration) {
-      // A refresh token Auth refuses while the app is open (the account was
-      // deleted elsewhere) removes the session; the athlete lands on sign-in.
       _authEvents = _client.auth.onAuthStateChange.listen((state) {
-        if (state.event == AuthChangeEvent.signedOut &&
+        if (state.event != AuthChangeEvent.signedOut) return;
+        // Every way a session ends passes here, whichever screen asked for
+        // it (or none did: a deletion settling after its sheet was closed):
+        // no rest activity or widget keeps the athlete's day, and the
+        // athlete lands on sign-in.
+        _clearSessionOutputs();
+        final userId = _userId;
+        final refused =
             state.signOutReason != SignOutReason.userInitiated &&
-            _authenticated) {
-          unawaited(_endRejectedSession(_userId, accountDeleted: false));
+            _authenticated;
+        _showSignedOut();
+        // A refresh token Auth refuses while the app is open (the account
+        // was deleted elsewhere) removes the session.
+        if (refused) {
+          unawaited(_endRejectedSession(userId, accountDeleted: false));
         }
       }, onError: (Object _) {});
       _refresh();
@@ -83,6 +108,8 @@ class _Phase2GateState extends State<Phase2Gate> {
   }
 
   Future<void> _refresh() async {
+    final sessionsEnded = _sessionsEnded;
+    bool ended() => !mounted || sessionsEnded != _sessionsEnded;
     setState(() {
       _loading = true;
       _error = null;
@@ -91,6 +118,8 @@ class _Phase2GateState extends State<Phase2Gate> {
       final client = _client;
       final session = client.auth.currentSession;
       if (session == null) {
+        // A widget snapshot a failed clear left behind goes now.
+        unawaited(_emptyWidgets());
         setState(() {
           _authenticated = false;
           _onboardingComplete = false;
@@ -111,17 +140,21 @@ class _Phase2GateState extends State<Phase2Gate> {
           );
           return;
         }
-        _userId = userId;
+        if (ended()) return;
         // Local dates on the server follow the device's time zone.
         await AccountTimeZone.supabase(client).sync();
+        if (ended()) return;
         final repository = SupabaseOnboardingRepository(client);
         final complete = await repository.isOnboardingComplete();
+        if (ended()) return;
         final aiConsent = _aiConsent ??= AiCoachingConsentController(
           SupabaseAiCoachingConsentRepository(client),
         );
         // A notice that cannot be loaded turns AI coaching off here and
         // leaves the app open; the screens that ask retry it themselves.
         await aiConsent.load();
+        if (ended()) return;
+        _userId = userId;
         // The usual months a later plan review compares with; never blocks.
         if (complete) unawaited(_baselineSource().refreshIfDue());
         setState(() {
@@ -131,36 +164,63 @@ class _Phase2GateState extends State<Phase2Gate> {
       }
     } catch (e) {
       debugPrint('Non-critical error: $e');
+      if (ended()) return;
       setState(() {
         _error =
             'The account state could not be loaded. Check the connection and retry.';
       });
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (!ended()) setState(() => _loading = false);
     }
   }
 
-  /// Ends the session Auth refused and shows sign-in, with no network
-  /// needed; a deleted account's local data goes too.
+  /// Leaves the app for sign-in: a refresh still running is dropped, and
+  /// the gate's transient state (loading, a connection error) goes with the
+  /// session, so nothing hides sign-in. Repeated events change nothing more.
+  void _showSignedOut() {
+    if (!mounted) return;
+    _sessionsEnded++;
+    setState(() {
+      _authenticated = false;
+      _onboardingComplete = false;
+      _userId = null;
+      _error = null;
+      _loading = false;
+    });
+  }
+
+  /// Ends the rest's Live Activity and empties the widgets. Runs on every
+  /// signed-out transition, whichever screen ended the session. (The shell's
+  /// publisher also clears the snapshot as it goes away; both go through the
+  /// same eraser logic, and a launch with no session clears again.)
+  void _clearSessionOutputs() {
+    unawaited(widget.liveActivity.end());
+    unawaited(_emptyWidgets());
+  }
+
+  /// Empties the widgets; a clear that fails for good is kept and retried
+  /// on every launch and resume (`HomeWidgetEraser`).
+  Future<void> _emptyWidgets() => _widgetEraser.erase();
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_widgetEraser.retryPending());
+    }
+  }
+
+  /// Ends the session Auth refused, with no network needed; a deleted
+  /// account's local data goes too. The auth listener shows sign-in.
   Future<void> _endRejectedSession(
     String? userId, {
     required bool accountDeleted,
   }) async {
-    unawaited(widget.liveActivity.end());
     await endRejectedSession(
       _client,
       _localData,
       userId,
       accountDeleted: accountDeleted,
     );
-    _userId = null;
-    if (!mounted) return;
-    setState(() {
-      _authenticated = false;
-      _onboardingComplete = false;
-      _error = null;
-      _loading = false;
-    });
   }
 
   HealthBaselineSource _baselineSource() => _baseline ??=
@@ -168,28 +228,26 @@ class _Phase2GateState extends State<Phase2Gate> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _authEvents?.cancel();
+    _widgetEraser.dispose();
     _aiConsent?.dispose();
     super.dispose();
   }
 
   /// Signing out, and the end of an account deletion (Account calls this
-  /// once the deletion settles).
+  /// once the deletion settles). The auth listener shows sign-in.
   Future<void> _signOut() async {
-    unawaited(widget.liveActivity.end());
-    try {
-      await _client.auth.signOut();
-    } catch (e) {
-      debugPrint('Non-critical error: $e');
-      await _client.auth.signOut(scope: SignOutScope.local);
-    }
-    await _refresh();
+    await signOutAthlete(_client, _localData, _userId);
   }
 
   @override
   Widget build(BuildContext context) {
     if (!widget.environment.hasSupabaseConfiguration) {
-      return AppShell(environment: widget.environment);
+      return AppShell(
+        environment: widget.environment,
+        homeWidgets: widget.homeWidgets,
+      );
     }
     if (!widget.environment.usesOwnerEmailPassword) {
       return const _GateMessage(
@@ -242,10 +300,15 @@ class _Phase2GateState extends State<Phase2Gate> {
       );
     }
     return AppShell(
+      // One shell per athlete: its widget publisher follows their choice.
+      key: ValueKey(_userId),
       environment: widget.environment,
       onSignOut: _signOut,
       aiConsent: aiConsent,
       health: health,
+      homeWidgets: widget.homeWidgets,
+      widgetEraser: _widgetEraser,
+      userId: _userId,
     );
   }
 }

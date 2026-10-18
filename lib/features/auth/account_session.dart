@@ -6,6 +6,7 @@ import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
 /// Auth's codes for a session that can never be used again: its user was
 /// deleted, it was revoked, or its refresh token is gone.
@@ -34,13 +35,16 @@ bool isDeletedUser(Object error) =>
     error is AuthApiException && error.code == 'user_not_found';
 
 /// What this device keeps for one athlete: Apple Health sync state, the
-/// month the usual months were sent, a check-in waiting to sync (all kept per
-/// athlete), and the Coach thread last open.
+/// month the usual months were sent, a check-in waiting to sync, the Lock
+/// Screen widget choice (all kept per athlete), and the Coach thread last
+/// open.
 ///
-/// A deleted account takes all of it. A refused session takes only the Coach
-/// thread: the account may still exist (signed out on another device, say),
+/// A deleted account takes all of it. A refused session takes the Coach
+/// thread and the Lock Screen choice, and signing out takes the Lock Screen
+/// choice: the account may still exist (signed out on another device, say),
 /// and its athlete gets their unsent check-in and sync state back on signing
-/// in. Nothing kept is readable by another account.
+/// in, but health numbers on the Lock Screen are chosen again. Nothing kept
+/// is readable by another account.
 class LocalAccountData {
   LocalAccountData({
     SharedPreferencesAsync? preferences,
@@ -56,21 +60,22 @@ class LocalAccountData {
   /// still goes ahead.
   Future<void> clear(String? userId) async {
     try {
+      final owned = _widgetChoiceKeys(userId);
       if (userId != null) {
         final healthPrefix = HealthPreferenceKeys.prefix(userId);
         final historyMonth = SupabaseHealthBaselineSource.historyMonthKey(
           userId,
         );
-        final owned = (await _preferences.getKeys())
-            .where(
-              (key) =>
-                  key.startsWith(healthPrefix) ||
-                  key == historyMonth ||
-                  WorkoutLocalKeys.owns(userId, key),
-            )
-            .toSet();
-        if (owned.isNotEmpty) await _preferences.clear(allowList: owned);
+        owned.addAll(
+          (await _preferences.getKeys()).where(
+            (key) =>
+                key.startsWith(healthPrefix) ||
+                key == historyMonth ||
+                WorkoutLocalKeys.owns(userId, key),
+          ),
+        );
       }
+      await _preferences.clear(allowList: owned);
     } catch (e) {
       debugPrint('Non-critical error: athlete preferences not cleared: $e');
     }
@@ -82,10 +87,28 @@ class LocalAccountData {
     });
   }
 
-  /// Forgets what belongs to the session rather than the athlete. Never
-  /// throws.
-  Future<void> forgetSession() =>
-      _removeLegacy({SharedPreferencesCoachThreadMemory.storageKey});
+  /// Forgets what belongs to the session rather than the athlete: the open
+  /// Coach thread and the Lock Screen choice. Never throws.
+  Future<void> forgetSession(String? userId) async {
+    await forgetWidgetChoice(userId);
+    await _removeLegacy({SharedPreferencesCoachThreadMemory.storageKey});
+  }
+
+  /// Forgets [userId]'s choice to show health numbers on the Lock Screen,
+  /// and the one choice an earlier build kept for the whole phone, so the
+  /// next athlete on this phone starts with numbers off. Never throws.
+  Future<void> forgetWidgetChoice(String? userId) async {
+    try {
+      await _preferences.clear(allowList: _widgetChoiceKeys(userId));
+    } catch (e) {
+      debugPrint('Non-critical error: widget setting not cleared: $e');
+    }
+  }
+
+  static Set<String> _widgetChoiceKeys(String? userId) => {
+    TodayWidgetPublisher.lockScreenNumbersKey,
+    TodayWidgetPublisher.lockScreenNumbersKeyFor(userId),
+  };
 
   Future<void> _removeLegacy(Set<String> keys) async {
     try {
@@ -111,7 +134,7 @@ Future<void> endRejectedSession(
   if (accountDeleted) {
     await localData.clear(userId);
   } else {
-    await localData.forgetSession();
+    await localData.forgetSession(userId);
   }
   try {
     await client.auth.signOut(scope: SignOutScope.local);
@@ -119,5 +142,23 @@ Future<void> endRejectedSession(
     // The stored session is removed before Auth is told; only that call
     // failed.
     debugPrint('Non-critical error: $e');
+  }
+}
+
+/// Signs the athlete out, the end of an account deletion included. The Lock
+/// Screen choice is forgotten first, so the next athlete on this phone never
+/// inherits it. When Auth cannot be reached, the session is removed from
+/// this device alone.
+Future<void> signOutAthlete(
+  SupabaseClient client,
+  LocalAccountData localData,
+  String? userId,
+) async {
+  await localData.forgetWidgetChoice(userId);
+  try {
+    await client.auth.signOut();
+  } catch (e) {
+    debugPrint('Non-critical error: $e');
+    await client.auth.signOut(scope: SignOutScope.local);
   }
 }

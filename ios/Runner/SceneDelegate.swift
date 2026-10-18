@@ -23,6 +23,7 @@ class SceneDelegate: FlutterSceneDelegate {
     configureTimeZone(on: flutterEngine.binaryMessenger)
     WorkoutActivityBridge.register(on: flutterEngine.binaryMessenger)
     HeartRateReader.register(on: flutterEngine.binaryMessenger)
+    HomeWidgetBridge.register(on: flutterEngine.binaryMessenger)
     registerSceneLifeCycle(with: flutterEngine)
 
     window?.rootViewController = FlutterViewController(
@@ -32,11 +33,26 @@ class SceneDelegate: FlutterSceneDelegate {
     )
     window?.makeKeyAndVisible()
 
+    openWidgetLinks(connectionOptions.urlContexts)
+
     super.scene(
       scene,
       willConnectTo: session,
       options: connectionOptions
     )
+  }
+
+  /// A tap on a Home Screen or Lock Screen widget opens the app with
+  /// `tracend://today` or `tracend://train`; Dart switches to that tab.
+  override func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+    openWidgetLinks(URLContexts)
+    super.scene(scene, openURLContexts: URLContexts)
+  }
+
+  private func openWidgetLinks(_ contexts: Set<UIOpenURLContext>) {
+    for context in contexts {
+      MainActor.assumeIsolated { HomeWidgetBridge.open(context.url) }
+    }
   }
 
   override func sceneDidDisconnect(_ scene: UIScene) {

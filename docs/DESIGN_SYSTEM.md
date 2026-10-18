@@ -219,6 +219,35 @@ in light and dark mode alike, so its text and lime keep the dark theme's contras
 - The countdown is `Text(timerInterval:)`, run by the system with the app closed. The activity
   shows no load, reps, effort or health value (UX_FLOWS.md §6).
 
+### 3.7 Today and Lock Screen widgets
+
+The Home Screen widgets (`ios/TracendWidgets/TodayWidgets.swift`) draw on the same graphite and
+lime as the Live Activity (§3.6), in light and dark mode alike, with `TracendStyle.swift`'s tokens
+and the Archivo number face:
+
+- **Small:** a `TODAY` kicker (11pt semibold, `textSecondary`, letter-spaced) with the snapshot's age
+  on the right (10pt, system-run relative time); the session name (17pt bold, `textPrimary`, two
+  lines at most) over its status (12pt, `textSecondary`); the recovery score at the bottom in the
+  number face at 40pt, lime, with "recovery" in `textSecondary`. An unscored day shows "--" in
+  `textSecondary`.
+- **Medium:** a 98pt left column (kicker, session, status, recovery at 34pt) and a right column: the
+  age, the first three exercises (name 12pt semibold, plan target 11pt `textSecondary`, one line
+  each), then calories and protein as two thin 4pt capsule bars (`raised` track, lime fill) under
+  a "1240/2400 kcal" line, then a 11pt check-in line (lime `checkmark.circle.fill` for "Checked
+  in", grey `circle` for "Check-in due"). A rest day shows no exercise list. Lime marks progress
+  and the score only.
+- **Open Tracend to refresh:** a stale, missing or unreadable snapshot is a lime `arrow.clockwise`
+  over "Open Tracend to refresh" (15pt semibold); no number is shown.
+- **Lock Screen:** the system tints these, so they use no custom color. Circular is a
+  `Gauge` of recovery 0 to 100 with "REC" over the score (`lock.fill` when numbers are off,
+  `arrow.clockwise` when stale). Rectangular is the session (`headline`), "Recovery 72"
+  (`caption`), a linear protein `ProgressView` and "80 / 160 g protein" (`caption2`); off, it is
+  "Tracend" over "Lock Screen numbers are off"; stale, "Tracend" over "Open Tracend to refresh".
+  Inline is "Push day · Rec 72".
+- Home Screen widgets mark their numbers `privacySensitive`, so iOS redacts them where it hides
+  sensitive content on a locked phone (StandBy).
+- VoiceOver reads "Recovery 72", "protein 80 of 160" and "Updated 2 hours ago" as single phrases.
+
 ## 4. Navigation
 
 The primary iOS tab bar has five labeled destinations:

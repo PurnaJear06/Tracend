@@ -236,6 +236,22 @@ The program's chunks ([plan](./plans/coaching-platform-2026-10/README.md)) add t
   missing native calls are swallowed. `test/live_activity/rest_timer_live_activity_test.dart`
   covers start, adjust, skip, end, leaving the workout, and a rest that ended while the app was
   closed. The Lock Screen and Dynamic Island are checked on the owner's iPhone.
+- **Today and Lock Screen widgets (D2):** `test/home_widgets/today_widget_snapshot_test.dart`
+  builds the snapshot from briefs (planned, under way, finished, rest day, no targets, unscored,
+  hidden and chosen Lock Screen numbers, the stale limit, no free text);
+  `today_widget_publisher_test.dart` covers the default-off choice, the choice kept per athlete,
+  what is rewritten and when (unchanged within five minutes is skipped), turning numbers on and off,
+  and the clear on leaving; `today_offline_check_in_test.dart` proves a check-in queued offline
+  marks the widgets done though the brief reload fails; `test/account_session_test.dart` proves
+  sign-out, a refused session and account deletion forget the Lock Screen choice;
+  `home_widgets_flow_test.dart` proves Today feeds the publisher, a tapped widget opens Train, the
+  shell clears the snapshot when it goes, and the Account row. The shape is pinned by
+  `test/contract/fixtures/today_widget_snapshot_v1.json`, compared with the app's output in
+  `test/contract/today_widget_snapshot_contract_test.dart` (which also plays the
+  `tracend/home_widgets` channel) and decoded by `TodayWidgetSnapshotTests` in
+  `ios/RunnerTests/RunnerTests.swift` (staleness by age and by day, the stale moment itself counted
+  as stale, schema refusal, links). The
+  Xcode tests are not run in CI; the widgets themselves are checked on the owner's iPhone.
 - **Research library (E1, E3):** `research_library_test.sql` covers pgvector, forced RLS with no
   API access, the indexes, `search_library_v2` grants, hybrid ranking by reciprocal rank fusion
   (k = 50), the ORed full-text terms, filters, the athlete's regions (`IN` sources reach only Indian
