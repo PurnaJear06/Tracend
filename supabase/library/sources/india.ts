@@ -81,7 +81,7 @@ A few single values show the scale. Per 100 g as analysed, red gram (toor) dal h
       {
         title: "Practical reading and limits",
         body:
-          `Because the values are for raw food, a cooked portion must be matched to its raw weight: weighing cooked dal, which has absorbed water, against the raw-dal figure would greatly overstate its protein and energy. Values are national averages, and a given batch or brand can differ. NIN's terms do not allow the tables to be reproduced in an electronic product without written permission, so Tracend stores only these individual facts with the citation.`,
+          `The values are per 100 g as analysed (raw, except the egg, which is boiled). Cooking changes weight and water, so a cooked portion carries less protein per 100 g than the raw figure: weighing cooked dal, which has absorbed water, against the raw-dal figure would greatly overstate its protein and energy, so match it to its raw weight. Values are national averages, and a given batch or brand can differ. NIN's terms do not allow the tables to be reproduced in an electronic product without written permission, so Tracend stores only these individual facts with the citation.`,
       },
     ],
   },
