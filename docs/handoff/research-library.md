@@ -833,6 +833,17 @@ New sources, the licence field, new questions and the claim-support judge are ot
   question's distinct topic words (`termCoverage`: `topicTerms` of the query, matched on the first
   five letters of each word, so "sleeping" meets "sleep"); then every chunk ranked at least 0.002.
   No new SQL: the coverage is measured in TypeScript on the returned header and body.
+- **Exact vector scan** (review fix). v3 never uses the HNSW index: an index scan returns the nearest
+  vectors of every model and filters by `embedding_model`, region and topic afterwards, so vectors of
+  an older model kept during a re-embedding could fill the candidate list and leave too few, or not
+  the nearest, rows. Production calls always carried a region, which already took the exact path;
+  the no-filter branch is gone, so all calls do. Chosen over a partial HNSW index per model (a new
+  index and a changed query for every model, and it still needs the region and topic filters) and
+  over pgvector's iterative scan (needs 0.8 and still approximates). At 351 chunks of 384
+  dimensions the scan is about 135,000 multiply-adds, well under a millisecond; it is the right
+  call into the low thousands of chunks, and the index would be worth revisiting beyond that.
+  `library_search_v3_test.sql` forces index scans on and puts 40 nearer old-model chunks in the
+  library: the current model's nearest rows still come back.
 - **Nothing passes: an explicit line.** The block then says no excerpt matched, that Coach must cite
   no library source and should say the evidence is not in Tracend's library rather than answering
   from memory (`libraryNoMatchText`). When the search ran on words alone it says the library could
@@ -840,7 +851,7 @@ New sources, the licence field, new questions and the claim-support judge are ot
   (`libraryWordsOnlyText`). The answer bank's `library-found-nothing` case now gets the same block
   production gives.
 - **Marker line** (P2-2, P2-3): `[source: <id>] <Kind>, <year>. Evidence: <evidence level>.` before
-  the header. A "Practical reading" section is marked "Tracend's reading of this source (our
+  the header. A "Practical reading" section, or any section whose title names Tracend's reading (for example "How it fits with other entries (Tracend's reading)"), is marked "Tracend's reading of this source (our
   interpretation and its limits), not a finding the source reports."; a chunk elsewhere that points
   to another entry ("see the ... entry", "in this library") is marked as holding Tracend's remark. 49
   of the 169 chunks are Practical reading sections and 1 more carries a cross-reference. Done in
@@ -891,8 +902,10 @@ New sources, the licence field, new questions and the claim-support judge are ot
   null, null, 3, null)`) returns rows.
 - **The retrieval gate runs on library pull requests** (P2-6). `coach-eval.yml`'s
   `library-retrieval` job also runs on a pull request (opened, pushed, reopened) that changes
-  `supabase/library/**`, `supabase/functions/_shared/library/**` or a migration that mentions the
-  library (a small `library-changes` job decides). It is not a required check. The model jobs keep
+  `supabase/library/**`, `supabase/functions/_shared/library/**`, `library-embed/**`, the library
+  evaluation and question files (`_evals/library_*`), the few shared modules the evaluation imports,
+  `supabase/config.toml`, this workflow, or a migration that mentions the library (a small
+  `library-changes` job decides). It is not a required check. The model jobs keep
   the label and manual runs; their concurrency group moved to the job.
 
 ### Relevance floor: calibration

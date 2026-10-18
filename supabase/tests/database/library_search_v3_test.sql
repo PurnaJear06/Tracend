@@ -1,5 +1,5 @@
 begin;
-select plan(38);
+select plan(40);
 
 -- search_library_v3, the content digest, the library version, retiring a source and the version on
 -- a Coach answer (migration 20261018170044). The fixtures assume an empty library.
@@ -164,6 +164,28 @@ set local "request.jwt.claim.sub" = '00000000-0000-4000-8000-0000000004c2';
 select throws_ok($$update public.coach_messages set library_version = 'fedcba9876543210'$$, '42501', null,
   'the app cannot write it');
 reset role;
+
+-- Mixed embedding models ----------------------------------------------------------------------------
+-- Forty chunks of an older model sit exactly on the question, nearer than every gte-small chunk. An
+-- index scan (forced here by turning sequential scans off) would fill its candidate list with them
+-- and the model filter would then leave nothing; the exact scan finds the gte-small chunks.
+insert into private.library_sources (id, manifest_key, title, year, url, licence, region, topics, evidence_level, kind)
+select ('00000000-0000-4000-8000-0000000005' || lpad(g::text, 2, '0'))::uuid, 'test-old-model-' || g,
+  'Old model source ' || g, 2019, 'https://example.test/old' || g, 'CC BY 4.0', '{global}', '{strength}',
+  'narrative review', 'paper'
+from generate_series(1, 40) g;
+insert into private.library_chunks (source_id, ordinal, section, body, token_count, embedding, embedding_model)
+select ('00000000-0000-4000-8000-0000000005' || lpad(g::text, 2, '0'))::uuid, 0, 'Results',
+  'Older notes ' || g || '.', 4, pg_temp.vec(3), 'old-model'
+from generate_series(1, 40) g;
+set local enable_seqscan = off;
+create temp table mixed on commit drop as
+select * from public.search_library_v3('', pg_temp.vec(3), 'gte-small', 8, null);
+reset enable_seqscan;
+select ok((select count(*) = 3 and bool_and(vector_distance is not null) from mixed),
+  'old-model vectors nearer than the question never crowd out the current model''s nearest rows');
+select ok((select bool_and(source_key not like 'test-old-model-%') from mixed),
+  'and none of them is returned');
 
 select * from finish();
 rollback;

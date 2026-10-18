@@ -6,7 +6,7 @@
 --
 --   1. public.search_library_v3: v2's hybrid search, plus per row the cosine distance to the
 --      question (vector_distance), the full-text rank (text_rank), the source's evidence level and
---      kind, and the library version. Vector search uses only chunks embedded with the model that
+--      kind, and the library version. Vector search is exact (no index scan) and uses only chunks embedded with the model that
 --      embedded the question (query_embedding_model), so a re-embedding with another model never
 --      compares vectors from two models. Coach chat drops rows past a calibrated relevance floor
 --      (supabase/functions/_shared/library/retrieval.ts), so the distances come back raw.
@@ -285,16 +285,13 @@ begin
     ) t;
   end if;
 
-  if query_embedding is not null and region_filter is null and topic_filter is null then
-    select coalesce(array_agg(v.id order by v.distance, v.id), '{}') into vector_ids
-    from (
-      select c.id, c.embedding operator(extensions.<=>) query_embedding as distance
-      from private.library_chunks c
-      where c.embedding is not null and c.embedding_model = query_embedding_model
-      order by distance
-      limit candidate_limit
-    ) v;
-  elsif query_embedding is not null then
+  -- Always an exact scan, never the HNSW index. An index scan returns the nearest vectors of every
+  -- model and applies the model, region and topic filters afterwards, so vectors of an older
+  -- model (kept until a re-embedding finishes) could fill the candidate list and leave too few,
+  -- or not the nearest, rows. The offset 0 keeps the filters ahead of the ordering. The library
+  -- is a few hundred chunks (a few thousand at most), so the scan costs milliseconds; the index
+  -- stays for search_library_v2.
+  if query_embedding is not null then
     select coalesce(array_agg(v.id order by v.distance, v.id), '{}') into vector_ids
     from (
       select m.id, m.embedding operator(extensions.<=>) query_embedding as distance
@@ -305,7 +302,7 @@ begin
         where c.embedding is not null and c.embedding_model = query_embedding_model
           and (region_filter is null or s.region && region_filter)
           and (topic_filter is null or s.topics && topic_filter)
-        offset 0 -- keeps the filter ahead of the ordering: exact, not an index scan
+        offset 0
       ) m
       order by distance, m.id
       limit candidate_limit

@@ -189,7 +189,10 @@ const kindNames: Readonly<Record<string, string>> = {
 // A section that holds Tracend's own reading of a source ("Practical reading and limits"), and a
 // remark that points to another library entry, are Tracend's words about the source, not what it
 // found. They are marked when shown, so nothing has to be re-embedded.
-const readingSection = /^practical reading\b/i;
+// Recognised from the section's own title: "Practical reading and limits", or any title that names
+// Tracend's reading ("How it fits with other entries (Tracend's reading)"). Such a section is
+// Tracend's throughout, even when its body also points to another entry.
+const readingSection = /^practical reading\b|\btracend['\u2019]s (?:own )?reading\b/i;
 const crossReference = /\bsee the [^.]{1,80}? entry\b|\bin this library\b/i;
 
 export const tracendReadingNote =

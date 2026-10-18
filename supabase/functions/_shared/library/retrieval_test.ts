@@ -1,4 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
+import { librarySources } from "../../../library/index.ts";
+import { chunkSource } from "./chunk.ts";
 import { renderCoachContext, validateCoachContextContributors } from "../coach_context/host.ts";
 import {
   createLibraryContributor,
@@ -104,6 +106,31 @@ Deno.test("Tracend's own reading of a source is marked as ours, not as the paper
   assertStringIncludes(seeEntry, crossReferenceNote);
   const finding = renderLibraryChunks([{ ...rows[0], section: "Results" }]).text;
   assert(!finding.includes(tracendReadingNote) && !finding.includes(crossReferenceNote));
+});
+
+Deno.test("a section titled as Tracend's reading is marked as ours even when its body points to another entry", () => {
+  const source = librarySources.find((item) => item.slug === "trommelen_2023_protein_dose")!;
+  const chunk = chunkSource(source).find((item) =>
+    item.section === "How it fits with other entries (Tracend's reading)"
+  )!;
+  // The real chunk: its body says "in this library", which alone would earn the weaker note.
+  assert(chunk.body.includes("in this library"));
+  const text = renderLibraryChunks([{
+    sourceId: source.slug,
+    title: source.title,
+    year: source.year,
+    header: chunk.header,
+    body: chunk.body,
+    section: chunk.section,
+  }]).text;
+  assertStringIncludes(text, tracendReadingNote);
+  assert(!text.includes(crossReferenceNote), "the weaker note is not used instead");
+  const marked = (section: string) =>
+    renderLibraryChunks([{ ...row("a_2020_one"), section }]).text.includes(tracendReadingNote);
+  assert(marked("Practical reading and limits"));
+  assert(marked("Where it fits (Tracend\u2019s own reading)"));
+  assert(!marked("Findings"));
+  assert(!marked("Limits of the reading"), "a title that merely contains the word is not enough");
 });
 
 Deno.test("the block names the sources it shows, with a label and the text shown for each", () => {
