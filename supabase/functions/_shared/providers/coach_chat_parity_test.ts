@@ -18,6 +18,8 @@
 // A8 (Coach proposals) did on purpose too: the persona's "You have no tools" line now reads "You
 // cannot change anything yourself" (the proposal rules themselves are gateway-only), and the
 // claimed-action repair hint says the same.
+// The E3 production pass did on purpose: the digest is shown without its source ids, so the persona
+// line for it no longer mentions them and says it names no citable source.
 
 import { assertEquals } from "jsr:@std/assert@1.0.14";
 import { route } from "../ai/routes.ts";
@@ -116,22 +118,22 @@ Deno.test("no route settings: the DeepSeek request is byte-identical to the pre-
 // Per athlete (rich, no_watch, new_user): weekly question, plan-change question, weekly question
 // with history; each the first request and its repair.
 const preA6Requests: readonly string[] = [
-  "0935c4aa55e0cc421b3dd5f882e451e9cf810e250c8f06e3f53676b3ec0f9016",
-  "5d7f8b93b7b3c3d67a0961539b1b622956255e58228dd893cbe59a3d193f0238",
-  "e5c51e7b8f98d937f80677efaef61c00964c714e398c91bb994c65f94e3de4a5",
-  "d06e98596e7dda96feeff6076d40e30800fa08dca2871b80c11cc7f5a9d485ae",
-  "616a7be37593f05420470a325814e3f4313bf46fb63344699f4cd7a2c1b13e2f",
-  "d1039ab9764b0d332fbe5a09c3be5c35bad8480463f03f3c2aad4443729971ad",
-  "ba99c3e523b39047c01889dce999a7bed31c818c64b48e4efde9ed69553e04f9",
-  "3a576951e6605ef81aa4c2a0640baa28d8da188a54cd7871db60688b4179861b",
-  "1c9b0a276545e8cd855ac2d14c2989c86e12cbf4b9b3a9c5fa8e201de33a6821",
-  "3aad918b6d351b98708d09094a7282c7682b0d6f19017cab3ac38b64f0da64c3",
-  "4fccd1e8ec2263795a3ed044abe3a3fdd117508264827302dd41b65b1f7f48f6",
-  "6e5e11c99e901288c6bd2086a5ca64d8b2585c8003ed6b3c94a2ac4de35fbb22",
-  "d5b0a8f96a6eccf769c330300264eb764e5dd3aa82d89d7d03c63ba34e7287b2",
-  "1f944595a2a52777a7fe0b769b74689be8a605eec005f21e7475a21a56cc9231",
-  "be46bcd0e7aea63eaf4bce15316f79d1969b6d09e0de80057373fc631a78cad1",
-  "797ef87fd806b17dabb497182a81fa48c931375001054489b892bfc24d6fbffa",
-  "b3969425c728a0116f20c3e144bec5f34c6784486e9f2ea47eff761225596018",
-  "ec38bccc930c8d57214e3b9ef155cb9f2f7c6bcbcf30443f045d522471bd387c",
+  "ebd6b19fa00d8c17425fa137a7f8f7182031113e46c85c5e3b3cb88de20f4a0f",
+  "803e6d333047f84bb50b761e26026ce385b39302f4466d519fcf78fd17356bca",
+  "a93ea7958cf9956fdbd16ee5d7768e8724d7b869a7ef5a1d532f1cda7f3bde92",
+  "d21a8f2d6deccf17eab6bcd9c8da4efd58d70f3f8a25c6098283ccd8f972e47a",
+  "30e5e4346ae139708ff7a05685875db8378ad3259656b741f3e256c92e969ca3",
+  "c1a0b1bc46870461b0aba727f5128a6894b92ab949049d884b6010bba688c543",
+  "d7d4ea188083dc343fd005d9dc691e0970ff53fd51736f3413382bd469b205fe",
+  "5077c1c8ed80b25fd27f5c4621faed33e38de734242be847e99d15e6ce43cc25",
+  "200c58516ad50ac56f9f8a7cc73c4612bc6e9a413d4fb540a1d8dd5af5dcfb49",
+  "110a65ca96a7a94f06b1ef5d77389eb9073a4c12c258f92f498a8b83328cab12",
+  "8473deacf47a615a3aca854ad2d162d19b35021001d515baa533f76a7fb8d2b3",
+  "6d3016e0e54b8040f8f2c86458a22e131e8e89d0f576361c7c30fd7fd4bf36c1",
+  "daa9931283d30e98fcb9ae5930f2c5c9aef30b370975e492b3bde7dc0204a53e",
+  "11d692aae0a2b87351f5b3db8dc4abcc299171e684fb8015105df744ed106812",
+  "8981bfc2e2292d105ddda15c522aaf712e79dc674f61e086ebf87d3678082f6c",
+  "5cdd0f12043a57ec0be184d73bc2933d3526d3f097ed12f2d9ab754fea27688b",
+  "6923504cb20d2e1f629ca91aefceec2f0ff7b0693e1f3cc976d10f31cd61f646",
+  "7e8ed33851b300512cca1f889b86bc03dbf83fbff496dee49c3d83e50493361b",
 ];

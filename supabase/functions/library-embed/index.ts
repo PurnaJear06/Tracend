@@ -7,6 +7,8 @@ import {
   parseEmbedQuery,
   parseEmbedTexts,
 } from "../_shared/library/embed_texts.ts";
+import { createReportGate, createWorkerAuthorizer } from "../_shared/library/embed_service.ts";
+import { createLogger } from "../_shared/logger.ts";
 import { captureException } from "../_shared/sentry.ts";
 
 // Fills missing library embeddings with the built-in gte-small model. A database cron job
@@ -16,10 +18,27 @@ import { captureException } from "../_shared/sentry.ts";
 // returns its vector: Coach chat's call, so that gte-small never loads inside coach-chat. The
 // question is not logged. The same secret gates every mode.
 // It never accepts a user session: the caller must present the worker secret that the
-// database generated in Vault, checked through library_worker_authorized_v1.
+// database generated in Vault, checked through library_worker_authorized_v1. An accepted secret is
+// remembered for a few minutes (embed_service.ts), so a Coach question does not wait for that check
+// on every call; a refused one always goes to the database.
 
-// Loaded on the first question and kept for the life of the isolate.
+function createService(supabaseUrl: string, serviceRoleKey: string) {
+  const client = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+  const authorized = createWorkerAuthorizer({
+    check: async (candidate) => {
+      const { data, error } = await client.rpc("library_worker_authorized_v1", { candidate });
+      if (error) throw new Error("authorization_check_failed");
+      return data === true;
+    },
+  });
+  return { client, authorized };
+}
+
+// Kept for the life of the isolate: the service client with its secret check, the model for
+// questions (loaded on the first one) and when a failure last went to Sentry.
+let service: ReturnType<typeof createService> | undefined;
 let queryEmbedder: Embedder | undefined;
+const reportFailure = createReportGate();
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
@@ -38,15 +57,10 @@ Deno.serve(async (request) => {
     return response(401, { error: "authentication_required" });
   }
 
-  const client = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+  const { client, authorized } = service ??= createService(supabaseUrl, serviceRoleKey);
 
   try {
-    const { data: authorized, error: authError } = await client.rpc(
-      "library_worker_authorized_v1",
-      { candidate: bearer },
-    );
-    if (authError) throw new Error("authorization_check_failed");
-    if (authorized !== true) return response(401, { error: "authentication_required" });
+    if (!(await authorized(bearer))) return response(401, { error: "authentication_required" });
 
     // A few short texts to embed (the retrieval evaluation), instead of the worker run.
     const body = await request.json().catch(() => null);
@@ -126,7 +140,17 @@ Deno.serve(async (request) => {
     });
   } catch (error) {
     if (error instanceof EmbedTextsError) return response(400, { error: "invalid_texts" });
-    captureException(error, { functionName: "library-embed", failureCode: "library_embed_failed" });
+    // Logged every time; sent to Sentry at most once per interval, since cron retries each minute.
+    const code = error instanceof Error && /^[a-z_]+$/.test(error.message)
+      ? error.message
+      : "unexpected";
+    createLogger().error("library_embed_failed", { code });
+    if (reportFailure()) {
+      captureException(error, {
+        functionName: "library-embed",
+        failureCode: "library_embed_failed",
+      });
+    }
     return response(500, { error: "library_embed_failed" });
   }
 });

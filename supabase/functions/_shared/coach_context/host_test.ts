@@ -175,6 +175,30 @@ Deno.test("the data index and the library, which need the gateway's answer field
   validateCoachContextContributors(coachContextContributorsFor(false));
 });
 
+Deno.test("a contributor's trace reaches the turn even when its block is clipped; others report none", async () => {
+  const trace = { embed_ms: 12, shown: ["a_2020_one"] };
+  const result = await renderCoachContext([
+    contributor(
+      "library",
+      "volatile",
+      () =>
+        Promise.resolve({
+          text: "x".repeat(300),
+          shown: { a_2020_one: { label: "A", text: "x" } },
+          trace,
+        }),
+      100,
+    ),
+    contributor("note", "volatile", () => Promise.resolve("plain text")),
+  ], input);
+  assertEquals(result.traces, { library: trace });
+  assertEquals(result.shown, {}, "a clipped block's sources are not citable");
+  const quiet = await renderCoachContext([
+    contributor("note", "volatile", () => Promise.resolve("t")),
+  ], input);
+  assertEquals(quiet.traces, {});
+});
+
 Deno.test("a long block loses whole trailing lines and says so", async () => {
   const text = Array.from({ length: 40 }, (_, index) => `line ${index} ${"y".repeat(20)}`).join(
     "\n",

@@ -13,7 +13,7 @@ import { isSupportedSchema } from "../ai/json_schema.ts";
 import { anthropicSchema } from "../ai/adapters/anthropic.ts";
 import { evalProfiles } from "../../_evals/fixtures.ts";
 import { type CoachContributions, renderCoachContext } from "../coach_context/host.ts";
-import { createLibraryContributor } from "../library/retrieval.ts";
+import { createLibraryContributor, libraryNoMatchText } from "../library/retrieval.ts";
 import {
   buildCoachChatGatewayPrompt,
   chooseCoachChatRoute,
@@ -953,7 +953,8 @@ Deno.test("two bad citations in a row end in the data summary path", async () =>
 
 Deno.test("when retrieval found nothing no library citation is accepted", async () => {
   const none = await withLibrary("How many sets per week?", []);
-  assertEquals(none.volatile, "");
+  assertStringIncludes(none.volatile, libraryNoMatchText);
+  assertEquals(none.shown, {});
   const citing = answer({ evidence: [libraryEvidence("schoenfeld_2017_weekly_volume")] });
   const { result, sent } = await run((_, index) => claudeAnswer(index === 0 ? citing : answer()), {
     question: "How many sets per week?",

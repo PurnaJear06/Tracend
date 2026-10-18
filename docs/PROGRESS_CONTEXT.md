@@ -37,9 +37,17 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   Lock Screen, Lock Screen numbers an off-by-default per-athlete choice, 12-hour expiry, snapshot
   excluded from backups and emptied on every sign-out. Handoff: [`ios-widgets.md`](./handoff/ios-widgets.md).
 - research-library: E1 live (#109: pgvector, library tables, `search_library_v1`, D3 doc rule). E2 merged (#135): 35 sources, 122 chunks embedded in production
-  by `library-embed`, retrieval test set (hybrid recall 0.93). E2.1 merged (14 gap sources). E2.2 in review (2026-10-18): 57 more
+  by `library-embed`, retrieval test set (hybrid recall 0.93). E2.1 merged (14 gap sources). E2.2 merged (#152): 57 more
   verified sources (106 in all, 351 chunks) and machine-readable licences with a verbatim flag, review date and supersession
-  (migration `20261018170042_library_expansion.sql`). Handoff: [`research-library.md`](./handoff/research-library.md).
+  (migration `20261018170042_library_expansion.sql`). E3 merged (#150: the library in every
+  Coach reply). E3.1 in review (engine production pass, migration 44): `search_library_v3` with
+  distances, a relevance floor recalibrated on the 106-source library (219 calibration questions:
+  recall 0.855, 27 of 30 out-of-library questions shown nothing; the 55-question hold-out set gave
+  recall 0.897, 7 of 8, but multi-source recall 0.646 and word-search no-answer precision 63% miss
+  their gates), a word-search floor (recall 0.611, down from 0.795 unfloored), an explicit no-match line, evidence level and Tracend's-reading marks
+  on excerpts, the embedding started with the request, a `library_retrieval` log line, the library
+  version on each answer, a retire path, the retrieval gate on library pull requests and a deploy
+  check. Handoff: [`research-library.md`](./handoff/research-library.md).
 - website: W1 merged (#108); the site publishes once the owner sets the `CONTACT_EMAIL` variable. Handoff: [`website.md`](./handoff/website.md).
 - ui: U3 launch speed merged (#126, 2026-10-17: tabs load on first open, launch reads 22 to 6,
   cover-sized photo decoding). Device speed budgets still to record.

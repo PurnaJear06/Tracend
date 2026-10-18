@@ -20,7 +20,9 @@
 // Synthetic data only.
 import { renderCoachContext } from "../_shared/coach_context/host.ts";
 import { coachingPrinciplesContributor } from "../_shared/library/principles.ts";
-import { createLibraryContributor, type LibraryRow } from "../_shared/library/retrieval.ts";
+import { embeddingModel } from "../_shared/library/embedding.ts";
+import { libraryRowsOf } from "../_shared/library/live.ts";
+import { createLibraryContributor } from "../_shared/library/retrieval.ts";
 import { classifyQuestion } from "../_shared/providers/coach_chat_provider.ts";
 import { baseContext } from "./coach_bank/athletes.ts";
 import { fullLibraryBlock, fullLibraryShown, fullLibrarySize } from "./library_full.ts";
@@ -69,27 +71,16 @@ const retrieval = createLibraryContributor({
     ((await post("/functions/v1/library-embed", workerSecret, { texts: [text] })) as {
       embeddings: number[][];
     }).embeddings[0],
-  search: async (request) => {
-    const rows = await post("/rest/v1/rpc/search_library_v2", serviceKey, {
-      query_text: request.text,
-      query_embedding: request.embedding,
-      match_count: request.matchCount,
-      filters: { region: ["global"] },
-    }) as {
-      source_key: string;
-      title: string;
-      year: number | null;
-      header: string;
-      body: string;
-    }[];
-    return rows.map((row): LibraryRow => ({
-      sourceId: row.source_key,
-      title: row.title,
-      year: row.year,
-      header: row.header,
-      body: row.body,
-    }));
-  },
+  search: async (request) =>
+    libraryRowsOf(
+      await post("/rest/v1/rpc/search_library_v3", serviceKey, {
+        query_text: request.text,
+        query_embedding: request.embedding,
+        query_embedding_model: request.embedding === null ? null : embeddingModel,
+        match_count: request.matchCount,
+        filters: { region: ["global"] },
+      }),
+    ),
 });
 
 const questions = (questionFile.questions as LibraryQuestion[]).filter((question) =>

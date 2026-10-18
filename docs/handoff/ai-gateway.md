@@ -1006,14 +1006,14 @@ in `supabase/functions/_evals/`.
   (`exercise_history`, `meals`). The partial-day cases now give the nutrition_state contributor a
   payload (`partialNutritionDay`), because the athlete file no longer carries per-logged-day
   nutrition.
-- **Retrieval** (`library_eval.ts`, `library_eval_metrics.ts`, `library_questions.json`): 61 single-topic (42 original and the 19 from E2.1),
-  15 multi-source and 10 no-answer questions; recall@8 and MRR per search mode and kind, printed as
+- **Retrieval** (`library_eval.ts`, `library_eval_metrics.ts`, `library_questions.json` and `library_questions_holdout.json`): 274 questions over the 106 sources
+  (the calibration set of 219 and a hold-out set of 55; single, multi-source, follow-up, colloquial and 38 no-answer); recall@8 and MRR per search mode and kind, printed as
   a table. It needs the database and the real embeddings, so it runs in the `library-retrieval` job
   of `coach-eval.yml` (local stack, `functions serve`, embed loop), not in the Deno job; the CI
-  half checks the question set and the metrics. A no-answer question is not scored (the search
-  returns its nearest chunks anyway): the table lists what came back, and the answer bank grades
-  whether Coach declines. Gates: recall 0.8, multi-source recall 0.7, MRR 0.5; the last two are
-  first estimates, set before any measurement.
+  half checks the question set and the metrics. A no-answer question scores whether the floor showed
+  nothing (no-answer precision); the answer bank grades whether Coach declines. Gates: recall 0.8,
+  multi-source recall 0.7, MRR 0.5, no-answer precision 0.7, and for the word-search fallback recall
+  0.55 and no-answer precision 0.7, all after the relevance floors.
 - **Run it**: `./scripts/deno.sh test --allow-env --allow-net --allow-read=supabase/migrations,site/src/config.ts supabase/functions/_evals`
   (deterministic, no key). Live: the `Coach Eval` workflow (label `coach-eval` or Run workflow) or
   locally `AI_COACH_CHAT_PROVIDER=anthropic AI_COACH_CHAT_MODEL=claude-haiku-5-5
@@ -1065,14 +1065,22 @@ rules are AI_SAFETY_SPEC §11.2; the prompt budget is CONTEXT_BUDGET.md.
   refer. The legacy (DeepSeek) route filters the library out like the data index
   (`coachContextContributorsFor`).
 - **The model stays out of coach-chat.** The question is embedded by `library-embed` (a `{"query"}`
-  mode, worker-secret bearer read once via `library_worker_secret_v1`, 1.5-second deadline); on a
-  timeout, an error or a non-200 the search uses the words alone. coach-chat's import graph holds no
+  mode, worker-secret bearer read via `library_worker_secret_v1` and read again once on a 401,
+  1.5-second deadline counted from the start of the embedding, which coach-chat starts after the
+  replay check and the budget reservation); on a timeout, an error or a non-200 the search uses the words alone. coach-chat's import graph holds no
   `Supabase.ai` code. `library-embed` and coach-chat deploy in the same run: until the new
   `library-embed` is live the query call gets a non-200 and falls back, which is safe.
 - **Reservation.** The contributors' worst case grows by 9,900 characters (36,274 in all), so a Sonnet
   5.5 reservation is about USD 0.34 (0.32 before); Opus 5.5 was already over the cap.
-- **Eval.** `library_eval.ts` runs the real `search_library_v2` with the query Coach builds, follow-ups
-  and regional isolation. The bank has a `library` category (6 cases, fixed chunks, graders
+- **Relevance floor (E3.1).** `search_library_v3` returns each row's cosine distance and text rank;
+  the contributor shows excerpts only when the nearest chunk is within 0.15, then chunks within 0.19
+  (`relevantRows`; the word-search fallback has its own floor, `keywordRelevantRows`). With nothing left it renders an explicit no-match line
+  (cite nothing, say the library does not cover it), or a keyword-only line when the embedding
+  failed. Marker lines carry kind, year and evidence level, and mark Tracend's own reading of a
+  source. One `library_retrieval` log line per turn; the library version is stored on the answer
+  (`coach_messages.library_version`). Details and calibration: `research-library.md`, E3.1.
+- **Eval.** `library_eval.ts` runs the real `search_library_v3` with the query Coach builds, follow-ups
+  and regional isolation, before and after the floor, with no-answer precision. The bank has a `library` category (6 cases, fixed chunks, graders
   `citations_shown` and `cites_sources`, gateway route only: `run.ts` skips them on the DeepSeek or
   router route). `library_head_to_head.ts` compares retrieval with the whole library in the prefix
   (not run: it needs an Anthropic key and the database).

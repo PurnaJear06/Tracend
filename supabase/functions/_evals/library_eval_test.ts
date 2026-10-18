@@ -1,31 +1,65 @@
 import { assert, assertAlmostEquals, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { librarySources } from "../../library/index.ts";
 import { isFollowUp, libraryRetrievalQuery } from "../_shared/library/query.ts";
+import holdoutFile from "./library_questions_holdout.json" with { type: "json" };
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
+  floorGrid,
+  keysPassing,
+  keywordGrid,
+  keywordKeysPassing,
   type LibraryQuestion,
+  percentile,
   questionKind,
+  renderKeywordSweep,
+  renderSweep,
   renderTable,
   scoreQuestion,
   summarise,
   summariseKind,
+  summariseNoAnswer,
+  sweepFloors,
+  sweepKeywordFloors,
   topSources,
 } from "./library_eval_metrics.ts";
 
-const questions = questionFile.questions as LibraryQuestion[];
-const ofKind = (kind: string) => questions.filter((question) => questionKind(question) === kind);
+const calibration = questionFile.questions as LibraryQuestion[];
+const holdout = holdoutFile.questions as LibraryQuestion[];
+// Every check on a question applies to both files: the hold-out set is only useful if it is as
+// well formed as the one the thresholds are chosen on.
+const questions = [...calibration, ...holdout];
+const ofKind = (kind: string, set: readonly LibraryQuestion[] = questions) =>
+  set.filter((question) => questionKind(question) === kind);
 
-Deno.test("the question set holds the single-topic questions, multi-source questions and no-answer questions", () => {
-  assert(ofKind("single").length >= 42, `${ofKind("single").length} single-topic`);
-  assert(ofKind("multi_source").length >= 15, `${ofKind("multi_source").length} multi-source`);
-  assert(ofKind("no_answer").length >= 10, `${ofKind("no_answer").length} no-answer`);
-  assert(ofKind("follow_up").length >= 6, `${ofKind("follow_up").length} follow-up`);
+Deno.test("the question sets cover the whole library with every kind of question", () => {
+  assert(ofKind("single").length >= 100, `${ofKind("single").length} single-topic`);
+  assert(ofKind("multi_source").length >= 25, `${ofKind("multi_source").length} multi-source`);
+  assert(ofKind("no_answer").length >= 30, `${ofKind("no_answer").length} no-answer`);
+  assert(ofKind("follow_up").length >= 12, `${ofKind("follow_up").length} follow-up`);
+  assert(
+    questions.filter((question) => question.style === "colloquial").length >= 25,
+    "colloquial questions",
+  );
+  assert(questions.length >= 240, `${questions.length} questions`);
   assertEquals(new Set(questions.map((question) => question.id)).size, questions.length);
   assertEquals(
     new Set(questions.map((question) => question.text)).size,
     questions.length,
     "a question is asked twice",
   );
+  // Every source is asked about in the calibration set, so the floor is chosen with all of them.
+  const asked = new Set(calibration.flatMap((question) => question.expected));
+  const unasked = librarySources.map((source) => source.slug).filter((key) => !asked.has(key));
+  assertEquals(unasked, [], "sources no calibration question expects");
+});
+
+Deno.test("the hold-out set is about a fifth of the questions and has every kind", () => {
+  const share = holdout.length / questions.length;
+  assert(share >= 0.15 && share <= 0.25, `hold-out share ${share.toFixed(2)}`);
+  for (const kind of ["single", "multi_source", "follow_up", "no_answer"]) {
+    assert(ofKind(kind, holdout).length >= 3, `hold-out ${kind}`);
+  }
+  assert(ofKind("no_answer", holdout).length >= 5);
 });
 
 Deno.test("every question is a question with known expected sources", () => {
@@ -124,12 +158,14 @@ Deno.test("the summary averages recall and MRR over answerable questions only", 
   );
 });
 
-Deno.test("the table has a row per mode and kind, and lists no-answer questions without scoring them", () => {
+Deno.test("the table has a row per mode and kind, and gives no-answer precision", () => {
   const single = { id: "s", text: "?", expected: ["a"] };
+  const slang = { id: "c", text: "?", style: "colloquial" as const, expected: ["a"] };
   const multi = { id: "m", text: "?", kind: "multi_source" as const, expected: ["a", "b"] };
   const none = { id: "n", text: "?", kind: "no_answer" as const, expected: [] };
   const scores = [
     scoreQuestion(single, ["a"]),
+    scoreQuestion(slang, []),
     scoreQuestion(multi, ["b", "a"]),
     scoreQuestion(none, ["a"]),
   ];
@@ -138,8 +174,94 @@ Deno.test("the table has a row per mode and kind, and lists no-answer questions 
   assertStringIncludes(table, "MRR");
   assertStringIncludes(table, "hybrid       all scored");
   assertStringIncludes(table, "hybrid       multi_source");
+  assertStringIncludes(table, "hybrid       colloquial");
   assertStringIncludes(table, "hybrid       no_answer");
-  assertStringIncludes(table, "(not scored)");
+  assertStringIncludes(table, "shown nothing   0% (0 of 1)");
   assert(!table.includes("vector_only  multi_source"), "an empty kind has no row");
   assertEquals(topSources(["a", "a", "b", "c", "d"]), ["a", "b", "c"]);
+});
+
+Deno.test("no-answer precision is the share of questions outside the library shown nothing", () => {
+  const none = { id: "n", text: "?", kind: "no_answer" as const, expected: [] };
+  const single = { id: "s", text: "?", expected: ["a"] };
+  const scores = [
+    scoreQuestion(none, []),
+    scoreQuestion(none, ["a"]),
+    scoreQuestion(none, []),
+    scoreQuestion(single, []),
+  ];
+  assertEquals(summariseNoAnswer(scores), { questions: 3, declined: 2, precision: 2 / 3 });
+  assertEquals(summariseNoAnswer([scoreQuestion(single, ["a"])]), {
+    questions: 0,
+    declined: 0,
+    precision: 1,
+  });
+});
+
+Deno.test("the floor sweep scores every floor of the grid on the same hits", () => {
+  const single = { id: "s", text: "?", expected: ["a", "b"] };
+  const none = { id: "n", text: "?", kind: "no_answer" as const, expected: [] };
+  const hits = [
+    [
+      { sourceKey: "a", vectorDistance: 0.12, textRank: 0 },
+      { sourceKey: "b", vectorDistance: 0.17, textRank: 0 },
+      { sourceKey: "z", vectorDistance: 0.3, textRank: 0.2 },
+    ],
+    [{ sourceKey: "z", vectorDistance: 0.16, textRank: 0.01 }],
+  ];
+  assertEquals(keysPassing(hits[0], { maxTopDistance: 0.13, maxVectorDistance: 0.18 }), ["a", "b"]);
+  const grid = floorGrid([0.13, 0.17], [0.15, 0.18]);
+  assertEquals(grid.length, 3, "a row limit nearer than the top limit is skipped");
+  assert(grid.every((floor) => floor.maxVectorDistance >= floor.maxTopDistance));
+  const points = sweepFloors([single, none], hits, grid);
+  const at = (top: number, row: number) =>
+    points.find((point) =>
+      point.floor.maxTopDistance === top && point.floor.maxVectorDistance === row
+    )!;
+  const tight = at(0.13, 0.15);
+  assertEquals([tight.meanRecall, tight.noAnswerPrecision, tight.emptyAnswerable], [0.5, 1, 0]);
+  const loose = at(0.13, 0.18);
+  assertEquals([loose.meanRecall, loose.mrr, loose.noAnswerPrecision], [1, 1, 1]);
+  assertEquals(at(0.17, 0.18).noAnswerPrecision, 0);
+  const table = renderSweep(points);
+  assertStringIncludes(table, "top distance  row distance");
+  assertEquals(percentile([3, 1, 2, 4], 0.5), 2);
+  assertEquals(percentile([3, 1, 2, 4], 1), 4);
+  assert(Number.isNaN(percentile([], 0.5)));
+});
+
+Deno.test("the word-search sweep scores each keyword floor on the same hits and their text", () => {
+  const single = { id: "s", text: "?", expected: ["a"] };
+  const none = { id: "n", text: "?", kind: "no_answer" as const, expected: [] };
+  const hits = [
+    [
+      { sourceKey: "a", vectorDistance: null, textRank: 0.008, text: "Creatine and kidneys." },
+      { sourceKey: "z", vectorDistance: null, textRank: 0.001, text: "Other." },
+    ],
+    [{ sourceKey: "z", vectorDistance: null, textRank: 0.009, text: "Safe harbour." }],
+  ];
+  const queries = ["creatine kidneys", "creatine kidneys"];
+  const grid = keywordGrid([0.005, 0.01], [0, 0.5], [0.002]);
+  assertEquals(grid.length, 4);
+  const points = sweepKeywordFloors([single, none], hits, queries, grid);
+  const at = (rank: number, coverage: number) =>
+    points.find((point) =>
+      point.floor.minTopRank === rank && point.floor.minTopCoverage === coverage
+    )!;
+  // Rank alone lets the unrelated strong hit through; coverage stops it.
+  const rankOnly = at(0.005, 0);
+  assertEquals([rankOnly.meanRecall, rankOnly.noAnswerPrecision], [1, 0]);
+  const covered = at(0.005, 0.5);
+  assertEquals([covered.meanRecall, covered.noAnswerPrecision, covered.emptyAnswerable], [1, 1, 0]);
+  const strict = at(0.01, 0.5);
+  assertEquals([strict.meanRecall, strict.noAnswerPrecision, strict.emptyAnswerable], [0, 1, 1]);
+  assertEquals(
+    keywordKeysPassing(hits[0], queries[0], {
+      minTopRank: 0.005,
+      minTopCoverage: 0.5,
+      minRowRank: 0,
+    }),
+    ["a", "z"],
+  );
+  assertStringIncludes(renderKeywordSweep(points), "top rank  top coverage  row rank");
 });
