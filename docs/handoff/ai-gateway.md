@@ -910,7 +910,7 @@ and `coach_notes`"), ARCHITECTURE (Coach chat), AI_SAFETY_SPEC 11.1a, UX_FLOWS 1
 
 - **Stores** (`20261018150020_coach_memory.sql`): `coach_facts` (versioned, athlete-written, closed
   kinds, 28/90-day re-confirm dates for injuries and schedule limits, 60 active at most),
-  `coach_notes` (rule-written, 20 newest, 60 days, linked to message ids, one per proposal),
+  `coach_notes` (rule-written, at most 20 with notes waiting for their check kept first, 60 days, linked to message ids, one per proposal),
   `coach_threads.remember`. The confirmed `user_preferences` were copied into `coach_facts` as
   `other_preference` (schedule as `schedule_constraint`). Athlete RPCs: `save_coach_fact_v1`,
   `reconfirm_coach_fact_v1`, `delete_coach_fact_v1`, `delete_coach_note_v1`, `forget_coach_memory_v1`,

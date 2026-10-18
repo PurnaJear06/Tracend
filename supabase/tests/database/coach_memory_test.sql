@@ -1,5 +1,5 @@
 begin;
-select plan(156);
+select plan(161);
 
 -- A10 part 2: Coach memory with athlete controls (migration 20261018150020).
 -- Confirmed facts (versioned, athlete-written), Coach notes (server-written, capped), conversations
@@ -441,14 +441,37 @@ select is((select count(*) from public.coach_notes where summary like 'Filler %'
 select is((select count(*) from public.coach_notes where user_id = 'a1020000-0000-4000-8000-000000000001'), 20::bigint,
   'twenty notes in all, the waiting one included');
 insert into r select 'promise old', public.persist_coach_note_v1('a1020000-0000-4000-8000-000000000001', null, 'advice',
-  current_date - 40, 'Promised long ago', '{}', '{}', '[]',
+  current_date - 30, 'Promised long ago', '{}', '{}', '[]',
   '[{"text": "train 3 days this week", "kind": "train_days", "target": 3}]', '{}');
 insert into r select 'late filler ' || n, public.persist_coach_note_v1('a1020000-0000-4000-8000-000000000001', null, 'advice',
   current_date, 'Late filler ' || n, '{}', '{}', '[]', '[]', '{}') from generate_series(1, 20) n;
 select is((select count(*) from public.coach_notes where summary = 'Promised long ago'), 0::bigint,
-  'a promise too old to be checked (28 days) is no longer protected');
+  'a promise 30 days old, past the 28 days the check looks back, is no longer protected');
+
+-- With 20 notes already waiting for their check, a new note that is not waiting is the one dropped.
 reset role;
-delete from public.coach_notes where summary in ('Promised four days') or summary like 'Filler %' or summary like 'Late filler %';
+delete from public.coach_notes where user_id = 'a1020000-0000-4000-8000-000000000001';
+set local role service_role;
+insert into r select 'waiting ' || n, public.persist_coach_note_v1('a1020000-0000-4000-8000-000000000001', null, 'advice',
+  current_date - 1, 'Waiting ' || n, '{}', '{}', '[]',
+  '[{"text": "train 3 days", "kind": "train_days", "target": 3}]', '{}') from generate_series(1, 20) n;
+select is((select count(*) from public.coach_notes where summary like 'Waiting %'), 20::bigint,
+  'twenty notes can wait for their check');
+insert into r select 'dropped', public.persist_coach_note_v1('a1020000-0000-4000-8000-000000000001', null, 'advice',
+  current_date, 'Dropped by the cap', '{}', '{}', '[]', '[]', '{}', 'a1020000-0000-4000-8000-0000000000c2');
+select is((select j - 'schema_version' from r where name = 'dropped'),
+  '{"stored": false, "note_id": null, "reason": "cap"}'::jsonb,
+  'a note the cap drops is reported as not stored, with the reason');
+select is((select count(*) from public.coach_notes where summary = 'Dropped by the cap'), 0::bigint, 'and is not there');
+select ok((select memory_noted_at is not null from public.change_proposals where id = 'a1020000-0000-4000-8000-0000000000c2'),
+  'its proposal stays marked noted, so it is not tried again');
+insert into r select 'invalid target', public.persist_coach_note_v1('a1020000-0000-4000-8000-000000000001', null, 'advice',
+  current_date, 'Target out of range', '{}', '{}', '[]',
+  '[{"text": "train 9 days", "kind": "train_days", "target": 9}]', '{}');
+select is((select j ->> 'reason' from r where name = 'invalid target'), 'cap',
+  'a commitment with no valid target is not waiting for a check, so it gets no protection');
+reset role;
+delete from public.coach_notes where summary in ('Promised four days') or summary like 'Filler %' or summary like 'Late filler %' or summary like 'Waiting %';
 set local role service_role;
 
 -- Raw message search ----------------------------------------------------------------------------------------

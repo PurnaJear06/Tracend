@@ -48,7 +48,7 @@ export async function loadMemoryContext(
   }
 }
 
-export type NoteWrite = "stored" | "not_remembered" | "already_noted" | "failed";
+export type NoteWrite = "stored" | "not_remembered" | "already_noted" | "capped" | "failed";
 
 /** Stores one note. The database refuses a conversation that is not remembered. */
 export async function persistNote(
@@ -73,7 +73,8 @@ export async function persistNote(
     if (error) return "failed";
     const result = rec(data);
     if (result.stored === true) return "stored";
-    return result.reason === "not_remembered" ? "not_remembered" : "already_noted";
+    if (result.reason === "not_remembered") return "not_remembered";
+    return result.reason === "cap" ? "capped" : "already_noted";
   } catch {
     return "failed";
   }

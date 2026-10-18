@@ -174,6 +174,14 @@ Deno.test("the database's refusal is reported, never thrown", async () => {
     (await recordMemoryAfterTurn(repeat.rpc, { userId: "u1", turn: turn() })).conversation,
     "already_noted",
   );
+  const capped = fakeRpc({
+    ...idle,
+    persist_coach_note_v1: () => ({ schema_version: "1.0", stored: false, reason: "cap" }),
+  });
+  assertEquals(
+    (await recordMemoryAfterTurn(capped.rpc, { userId: "u1", turn: turn() })).conversation,
+    "capped",
+  );
 });
 
 Deno.test("every failing call is counted and none stops the others", async () => {

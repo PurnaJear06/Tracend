@@ -348,9 +348,23 @@ returns jsonb language sql stable set search_path = '' as $$
 $$;
 revoke all on function private.coach_note_json(public.coach_notes) from public, anon, authenticated;
 
+-- True while a note still waits for its follow-through check: it holds a training-days target from
+-- 1 to 7, has not been checked, and is under 28 days old (the check looks back 28 days). Eviction
+-- and get_coach_follow_through_inputs_v1 both use it, so what is protected is what gets checked.
+create function private.coach_note_awaits_check(n public.coach_notes)
+returns boolean language sql stable set search_path = '' as $$
+  select n.follow_through is null
+    and n.note_date >= statement_timestamp()::date - 28
+    and exists (
+      select 1 from jsonb_array_elements(n.commitments || n.advice) e
+      where e ->> 'kind' = 'train_days' and e ->> 'target' ~ '^[1-7]$');
+$$;
+revoke all on function private.coach_note_awaits_check(public.coach_notes)
+  from public, anon, authenticated;
+
 -- Stores one note. Nothing is stored for a conversation that is not remembered (the answer says
 -- why), and the caller's message ids must be the athlete's own messages in that conversation. After
--- the insert the athlete keeps their 20 newest unexpired notes.
+-- the insert the athlete keeps at most 20 notes, the ones waiting for their follow-through check first.
 create function public.persist_coach_note_v1(
   p_user_id uuid, p_thread_id uuid, p_entry_kind text, p_note_date date, p_summary text,
   p_topics text[], p_concerns text[], p_advice jsonb, p_commitments jsonb,
@@ -409,14 +423,17 @@ begin
         select k.id,
           row_number() over (order by k.waiting desc, k.created_at desc, k.id desc) as place
         from (
-          select c.id, c.created_at,
-            (c.follow_through is null and c.note_date >= statement_timestamp()::date - 28
-              and exists (select 1 from jsonb_array_elements(c.commitments || c.advice) e
-                where e ->> 'kind' = 'train_days')) as waiting
+          select c.id, c.created_at, private.coach_note_awaits_check(c) as waiting
           from public.coach_notes c where c.user_id = p_user_id) k
       ) ranked
       where ranked.place > 20));
 
+  -- When 20 notes are already waiting for their check, a new note that is not waiting is the one
+  -- the cap drops. The answer says so; the proposal stays marked noted, so it is not retried.
+  if new_id is not null and not exists (select 1 from public.coach_notes where id = new_id) then
+    return jsonb_build_object('schema_version', '1.0', 'stored', false, 'note_id', null,
+      'reason', 'cap');
+  end if;
   return jsonb_build_object('schema_version', '1.0', 'stored', new_id is not null,
     'note_id', new_id, 'reason', case when new_id is null then 'already_noted' end);
 end $$;
@@ -519,9 +536,9 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       from jsonb_array_elements(n.commitments || n.advice) e
       where e ->> 'kind' = 'train_days') t
     where t.target is not null
-      and n.user_id = p_user_id and n.follow_through is null
+      and n.user_id = p_user_id and private.coach_note_awaits_check(n)
       and n.expires_at > statement_timestamp()
-      and n.note_date + 7 < p_today and n.note_date >= p_today - 28
+      and n.note_date + 7 < p_today
     order by n.note_date
     limit 5
   ) c;
