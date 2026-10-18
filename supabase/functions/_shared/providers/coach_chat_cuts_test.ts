@@ -278,8 +278,8 @@ Deno.test("a load without its exercise and reps is repaired into one that has th
   for (const rule of ["weight_below_healthy_floor", "projection_without_target"] as const) {
     assertStringIncludes(
       repairContractText({ rule, path: "answer" }, []),
-      "write it next to its exercise and reps",
+      "write it as the exercise, the load and the reps straight after",
     );
   }
-  assertStringIncludes(coachChatInstructions([]), "Write every lifting load next to its exercise");
+  assertStringIncludes(coachChatInstructions([]), "bench 45 kg x 6");
 });

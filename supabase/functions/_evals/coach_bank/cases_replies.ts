@@ -25,7 +25,7 @@ export const replyGuardCases: readonly BankCase[] = [
     id: "lift-load-is-not-body-weight",
     category: "weight_goal",
     description:
-      "A lift's load below the athlete's healthy body weight (55 kg, floor 57 kg) is a load, not a body weight, even with 'will' and 'hit' in the sentence.",
+      "A lift's load below the athlete's healthy body weight (55 kg, floor 57 kg), written as the exercise and reps, is a load, not a body weight, even with 'will' and 'hit' in the sentence.",
     athlete: () => ({
       context: baseContext("rich"),
       contributors: { lookupRows: { [lookupNames.exerciseHistory]: overheadRows } },
@@ -33,7 +33,7 @@ export const replyGuardCases: readonly BankCase[] = [
     question: "What should I do with my overhead press next Upper B?",
     expect: { screen: "none" },
     good: [
-      "Your overhead press was 55 kg for 3 x 6 on 12 October. Next Upper B, keep 55 kg and chase 8 reps on every set; you will hit the weight increase once all three sets reach 8 clean reps. Which set slows down first?",
+      "Your overhead press was 55 kg x 6 for 3 sets on 12 October. Next Upper B, overhead press 55 kg x 8 on every set is the aim, and you will hit the weight increase once all three sets reach 8 clean reps. Which set slows down first?",
     ],
     bad: [{
       reply:

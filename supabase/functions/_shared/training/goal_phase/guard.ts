@@ -48,7 +48,7 @@ const paceCue =
 
 // Where the sentence looks ahead at all (used for the healthy-floor rule).
 const lookAhead = new RegExp(
-  `${timeCue.source}|\\bwill\\b|\\bwould\\b|'ll\\b|\\bcould\\b|\\bgoing to\\b|\\breach(?:ing)?\\b|\\bhit(?:ting)?\\b|\\bend(?:ing)? up\\b|\\bends? at\\b|\\bdown to\\b|\\bget(?:ting)? to\\b|\\bhead(?:ing|ed|s)\\b|\\btrend(?:ing|s)? (?:to|toward|towards)\\b|\\b(?:put|puts|putting|leave|leaves|leaving) you\\b|\\bland(?:s|ing)?\\b|\\bexpect(?:ed|ing)?\\b|\\bwhere (?:it|this|that) (?:goes|ends|leads)\\b|\\bdrop(?:ping)?(?: down)? to\\b|\\blos(?:e|ing) [^.!?]{0,40}\\bto\\b|\\baim(?:ing)? for\\b|\\buntil you (?:reach|hit|get)\\b`,
+  `${timeCue.source}|\\bwill\\b|\\bwould\\b|'ll\\b|\\bcould\\b|\\bgoing to\\b|\\breach(?:ing)?\\b|\\bhit(?:ting)?\\b|\\bend(?:ing)? up\\b|\\bends? at\\b|\\bdown to\\b|\\bget(?:ting)? to\\b|\\bhead(?:ing|ed|s)\\b|\\btrend(?:ing|s)? (?:to|toward|towards)\\b|\\b(?:put|puts|putting|leave|leaves|leaving) you\\b|\\bland(?:s|ing)?\\b|\\bexpect(?:ed|ing)?\\b|\\bwhere (?:it|this|that) (?:goes|ends|leads)\\b|\\bdrop(?:ping)?(?: down)? to\\b|\\blos(?:e|ing) [^.!?]{0,40}\\bto\\b|\\baim(?:ing)? for\\b|\\buntil\\b|\\bstay(?:s|ing)? at\\b|\\bremain(?:s|ing)? at\\b|\\bhold(?:s|ing)? (?:at|around)\\b`,
   "i",
 );
 

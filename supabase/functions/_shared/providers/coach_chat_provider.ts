@@ -1496,9 +1496,9 @@ const goalPhaseContract = "\n# Goal phase and targets — never violate\n" +
   "- Outcome consider_maintenance_or_diet_break: say plainly that a maintenance period or a diet break is worth considering, with the reasons shown, before any advice to keep cutting. Outcome slow_down: say the pace is faster than the evidence supports. Outcome target_reached: say the target is reached and suggest holding that weight.\n";
 
 // The lifting-load rule the gateway path adds. The goal phase check cannot tell a load from a body
-// weight unless the load sits next to its exercise and reps, so the model is told to write it so.
+// weight unless the load is written as the exercise, the load and the reps straight after, so the model is told to write it so.
 const liftLoadContract = "\n# Lifting loads\n" +
-  '- Write every lifting load next to its exercise and reps, for example "bench 45 kg x 6" or "squat 100 kg for 5". A weight in kg with no exercise and reps beside it is read as the athlete\'s body weight, and a body weight below the healthy range is refused.\n';
+  '- Write every lifting load in this form: the exercise name, the load, then the reps straight after, for example "bench 45 kg x 6", "squat 100 kg for 5" or "deadlift 140 kg 3x3". A weight in kg without that form ("you\'ll move up to 45 kg", "45 kg on the bench") is read as the athlete\'s body weight, and a body weight below the healthy range is refused.\n';
 
 // The lookup rules the gateway path adds (A10). Lookups are bounded, read-only and in-request:
 // Coach names a lookup in the JSON answer, the server runs it and calls the model again with the
@@ -1558,9 +1558,9 @@ const libraryContract = "\n# Using the research library\n" +
 function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string {
   switch (rule) {
     case "weight_below_healthy_floor":
-      return 'Remove any future body weight below the healthy range for this athlete\'s height. Do not state or imply one. If a figure was a lifting load, not a body weight, write it next to its exercise and reps, for example "bench 45 kg x 6 next week", instead of on its own ("move up to 45 kg").\n';
+      return 'Remove any future body weight below the healthy range for this athlete\'s height. Do not state or imply one. If a figure was a lifting load, not a body weight, write it as the exercise, the load and the reps straight after, for example "bench 45 kg x 6 next week" or "squat 100 kg for 5", instead of on its own ("move up to 45 kg").\n';
     case "projection_without_target":
-      return 'Remove the projected future body weight: the goal has no target, and a trend is history, not a goal. Describe the trend as past change and ask the athlete for a target. If a figure was a lifting load, not a body weight, write it next to its exercise and reps, for example "bench 45 kg x 6 next week".\n';
+      return 'Remove the projected future body weight: the goal has no target, and a trend is history, not a goal. Describe the trend as past change and ask the athlete for a target. If a figure was a lifting load, not a body weight, write it as the exercise, the load and the reps straight after, for example "bench 45 kg x 6 next week" or "squat 100 kg for 5".\n';
     case "calories_below_floor":
       return "Remove the advice to eat below the calorie floor. Quote the floor from the Safe Ranges section and say why Tracend does not go lower.\n";
     case "loss_rate_above_ceiling":
