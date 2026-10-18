@@ -1,5 +1,5 @@
 begin;
-select plan(151);
+select plan(152);
 
 -- A10 part 2: Coach memory with athlete controls (migration 20261018150020).
 -- Confirmed facts (versioned, athlete-written), Coach notes (server-written, capped), conversations
@@ -564,6 +564,14 @@ values ('a1020000-0000-4000-8000-0000000000c6', 'a1020000-0000-4000-8000-0000000
 set local role service_role;
 select is(jsonb_array_length(public.get_unnoted_coach_proposals_v1('a1020000-0000-4000-8000-000000000001') -> 'proposals'), 1,
   'an answered proposal is waiting for its note');
+insert into r select 'before_note ' || n, public.persist_coach_note_v1('a1020000-0000-4000-8000-000000000001', null, 'advice',
+  current_date, 'Before forgetting ' || n, '{}', '{}', '[]', '[]', '{}') from generate_series(1, 2) n;
+reset role;
+create temporary table before_forget as
+select (select count(*) from public.coach_facts where user_id = 'a1020000-0000-4000-8000-000000000001') as facts,
+  (select count(*) from public.coach_notes where user_id = 'a1020000-0000-4000-8000-000000000001') as notes;
+grant select on before_forget to authenticated;
+select is((select notes from before_forget), 2::bigint, 'two notes are there to forget');
 set local role authenticated;
 set local "request.jwt.claim.sub" = 'a1020000-0000-4000-8000-000000000001';
 insert into r select 'forgot', public.forget_coach_memory_v1();
@@ -576,8 +584,9 @@ set local role authenticated;
 set local "request.jwt.claim.sub" = 'a1020000-0000-4000-8000-000000000001';
 select is((select array_agg(k order by k) from jsonb_object_keys((select j from r where name = 'forgot')) k),
   array['facts_deleted', 'notes_deleted', 'schema_version'], 'forgetting answers with exactly its contract keys');
-select ok((select (j ->> 'facts_deleted')::int > 0 and (j ->> 'notes_deleted')::int > 0 from r where name = 'forgot'),
-  'and counts what it removed');
+select is((select j - 'schema_version' from r where name = 'forgot'),
+  (select jsonb_build_object('facts_deleted', facts, 'notes_deleted', notes) from before_forget),
+  'and counts every version of every fact and every note it removed');
 select is((select count(*) from public.coach_facts) + (select count(*) from public.coach_notes)
     + (select count(*) from public.user_preferences) + (select count(*) from public.coach_session_summaries),
   0::bigint, 'every fact, note and older memory row is gone');
