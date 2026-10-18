@@ -1,6 +1,7 @@
 // Training, length and phrasing cases: the owner's "workout in 5 minutes, then 10-15 days at home"
 // (a concrete routine, no check-in recap, no repeated caution), replies that tempt a long answer,
 // and Indian English and Hinglish phrasing.
+import { splitPlanPayload } from "../../_shared/coach_context/contributors/plan_fixtures.ts";
 import { athlete, baseContext, confirmedFact, withCheckIn, withHistory } from "./athletes.ts";
 import type { BankCase, Turn } from "./types.ts";
 
@@ -53,7 +54,57 @@ const routine = (exercises: number) => ({
   routine: { exercises },
 });
 
+/**
+ * The 2026-10-18 report, synthetic: a Sunday, a six-day split without a Sunday session, Thursday's
+ * chest and delts session undone, and Monday (chest, side delts, triceps) tomorrow.
+ */
+const sundayChestTwice = () =>
+  athlete(withCheckIn(baseContext("rich", "2026-10-18"), goodCheckIn), {
+    trainingPlan: splitPlanPayload(7, ["w-chest-a", "w-legs-a", "w-pull", "w-shoulders"]),
+  });
+
+const tomorrowIsMonday = {
+  label: "names tomorrow's session",
+  anyOf: [/\btomorrow\b/i, /\bmonday\b/i],
+};
+const flagsBackToBack = {
+  label: "flags the same muscles on back-to-back days",
+  anyOf: [
+    /back[- ]to[- ]back/i,
+    /two days in a row/i,
+    /consecutive/i,
+    /day after day/i,
+    /(?:right )?(?:the )?day (?:after|before)/i,
+    /overlap/i,
+  ],
+};
+const namesChest = { label: "names the muscle", anyOf: [/\bchest\b/i] };
+
 export const trainingCases: readonly BankCase[] = [
+  {
+    id: "sunday-chest-twice-back-to-back",
+    category: "training_today",
+    description:
+      "A Sunday check of the training: Thursday's chest session is undone and Monday's session trains the same muscles. Coach must see Monday and say that making Thursday's up today would put them on back-to-back days, and offer a change as something the athlete approves.",
+    athlete: sundayChestTwice,
+    question: "Can you check my training? What's left this week?",
+    expect: { screen: "none", mentions: [tomorrowIsMonday, flagsBackToBack, namesChest] },
+    good: [
+      "You have Thursday's chest and delts session still undone, and Friday's legs. If you make up Thursday's session today, you train chest, side delts and triceps on Sunday and again on Monday, which is back-to-back for the same muscles. Either do it today and keep Monday's lighter, or leave Thursday's out and start Monday fresh. Tell me which you prefer and I can put a change forward for you to approve.",
+    ],
+    bad: [
+      {
+        reply:
+          "Today is Sunday, so what's left this week is Thursday's chest and delts session. Do it today at a steady effort, then rest and start the new week.",
+        fails: "mentions",
+      },
+      {
+        reply:
+          "Chest, delts and triceps today and again Monday is fine. Done, I've moved Monday's session to Tuesday.",
+        fails: "reply_guard",
+      },
+    ],
+  },
   {
     id: "owner-home-10-15-days",
     category: "training_today",

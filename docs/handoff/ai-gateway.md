@@ -1183,6 +1183,127 @@ drifting again.
 afterwards). Check `coach_chat_complete` for `schema_sha` `274ee4fafead` and the first turn's
 latency; run `./scripts/verify-live-function.sh coach-chat` from the deployed commit.
 
+### Coach sees the next 7 days and back-to-back muscles (`claude/coach-week-ahead`, migration 20261018190042)
+
+**Report (owner, Sunday 2026-10-18).** Coach checked the training, said what was left this week
+(the undone Thursday session of chest, delts and triceps) and never said that Monday trains the same
+muscles, so the athlete would train them on two days in a row. Evidence was `APPROVED_PLAN_ACTIVE`
+and `CHECK_IN_RECOVERY_MIXED`; the only lookup was `workouts`.
+
+**Root cause (confirmed on production data shape).** The plan has six sessions, Monday to Saturday,
+and no Sunday session. `pickFocusSession` (`training_plan.ts`) works inside the ISO week, so on
+Sunday it fell to "a session from earlier this week is still undone" and never looked past the
+week's end. The rest of the plan was a weekday-ordered list with no dates, and Monday carried
+`[done this week]` because last Monday's session was logged: Coach read tomorrow's session as done.
+Nothing computed which muscles two sessions share, and `get_coach_plan_state_v1` listed finished
+sessions only from Monday (`completed_this_week`), so on a Monday yesterday was invisible. The
+lookup validator also refused any range after the coaching date.
+
+**Fix.**
+- `_shared/training/schedule/muscles.ts`: the one exercise-to-muscle mapping (`sessionMuscles`,
+  catalog v2 primary muscles, a muscle counts at 2 direct sets: the standard's weekly minimum of 4
+  over its 2 sessions a week). Exported for other deterministic facts.
+- `_shared/training/schedule/week_ahead.ts`: the next 7 days from the athlete's coaching date
+  (`buildWeekAhead`), `consecutiveOverlaps` (a structured `MuscleOverlap[]`) and `renderOverlapFact`
+  (one compact line, or `null`), so the fact can move into a later block unchanged. An overlap is
+  two sessions, done or planned, on consecutive calendar dates that train a common muscle, where the
+  later one is today or within 2 days; the gap is `minimumDaysBetweenSessionsPerMuscle` (1, in
+  `standard/volume.ts`, ACSM 2011 and the library's guideline summary; sessions carry dates, not
+  times, so the rule counts days). No overlap, no line.
+- `training_plan` contributor: the block "Next 7 days from today" (date, weekday, session, muscles;
+  about 1,000 characters), placed right after the active-plan line. When today has no unfinished
+  session of its own and one from earlier this week is undone, it is today's make-up and is
+  scheduled on today, which is what Coach prescribes. Days after today take the session of their
+  weekday whatever was done earlier this week. The "Other sessions" tag now reads `[done <date>]`.
+  Budget 7,000 to 12,000 characters.
+- Migration `20261018190042_coach_schedule.sql` (forward-only, fields added, `schema_version` 1.0
+  to 1.1): `get_coach_plan_state_v1` adds `recent_completed` (yesterday's and today's finished
+  sessions with slugs and planned sets); `get_coach_data_index_v1` adds `schedule` (the active plan's
+  weekdays and start date); `coach_lookup_plan_history_v1` takes the filter `schedule` and returns
+  the plan laid over any range (`private.coach_plan_schedule`): per date the planned sessions, the
+  logged ones with their exercises, and the athlete's own `today`.
+- Lookup catalogue: `plan_history` takes an optional filter. `schedule` is the only filter that may
+  reach ahead (up to `maxScheduleAheadDays`, 90, after the coaching date); every other request is
+  still cut at the coaching date. The catalogue names are unchanged, so the structured-output schema
+  is unchanged (0 optional, 0 unions, same bytes; `coach_chat_schema_test.ts` passes untouched). The
+  data index says which weekdays the plan covers, from when, and how far ahead to ask. The renderer
+  keeps the earliest rows when a long range is cut and adds the overlap line.
+- No new evidence code: the schedule and the overlap come from the active plan, which
+  `APPROVED_PLAN_ACTIVE` already covers.
+- Eval bank: `sunday-chest-twice-back-to-back` (the bank now accepts a `trainingPlan` payload).
+
+**Cost.** The schedule block is about 1,000 characters (about 250 tokens) per turn, and 300 more
+when an overlap exists; the data index grows by about 250 when a plan exists.
+
+**Review fixes (same PR).**
+- The schedule is resolved once (`resolveSchedule`) and feeds both the lines and the overlap check.
+  Inside the athlete's ISO week a session already finished is not planned again (its slot reads
+  "already done this week, on <date>"); from next week on every session is planned. A session logged
+  today no longer hides today's planned session from the schedule.
+- `shoulders` is split by the catalog's movement pattern into "front and side delts" and "rear
+  delts" in `muscles.ts`, so a pull day with face pulls before a press day is not flagged.
+- An undone session is made up today only if it is not tomorrow's own session and shares no muscle
+  with tomorrow's; otherwise the day states what is undone and why nothing is set. The day line says
+  "undone earlier this week", a fact, not an order.
+- Budget: `training_plan` is 12,000 characters (seven sessions of nine exercises with long names is
+  about 9,900), the fixed parts (rules, sets a week, equipment, the 7-day schedule) come before the
+  lists, and the host now cuts a block by whole lines from the end and says so (`clipLinesToBudget`).
+  Total of all contributors 49,924 characters, a Sonnet 5.5 reservation about USD 0.36.
+- SQL: `private.coach_plan_schedule` is capped at 90 days after the athlete's today in SQL as well,
+  is no longer SECURITY DEFINER, and a pgTAP assertion shows anon and authenticated cannot run it;
+  finished sessions report the sets actually logged (`private.coach_session_exercises`), falling
+  back to the planned sets.
+- The schedule lookup shows the unknown-exercise caveat; duplicate date helper removed.
+- Third review: the schedule lookup resolves the plan version per date (a plan change shows from its
+  effective date and earlier dates keep the version superseded then; a temporary block's days are
+  marked and the days after its `ends_on` use `restores_version_id`'s sessions), and the plan state
+  hands the 7-day contributor the same restored sessions (`after_block`). The overlap line says
+  "consecutive days, with no rest day between": the data are dates, not times, so no wording
+  claims an hour or a part of a day.
+- Fourth review: the schedule render decides whether a finished workout answers a planned one against
+  that day's own plan version (a workout logged under the old version the morning a new one takes
+  effect is done once, not done and planned); versions are compared by id, since numbers repeat
+  across plans; `pickFocusSession`, the "Other sessions" list and the next-week fallback read the
+  plan in force on each date (after a block's `ends_on`, the restored sessions), and a line names
+  where the block hands back to. pgTAP pins the boundary days: the plan change's effective date and
+  the day before it, the block's first day, its last day and the day after.
+- Fifth review: the id guard in `isSameWorkout` also knows the restored plan's workout ids (restored
+  sessions sharing a name are not finished by each other); only sessions in force on today's date
+  can be undone or made up; the sets a week and the fallback for a finished session's exercises read
+  the plan in force; the schedule SQL returns every workout of a version, weekday or not, so the
+  render never falls back to a name for a weekday-less one. pgTAP asserts `plan.id`,
+  `days[].version_id`, `sessions[].version_id`, and walks a block's five points (before, during, last
+  day, day after, after the clone); the contributor has the same five-point table.
+- Sixth review: which session a finished workout counts for is one resolution, `matchFinished`:
+  one workout finishes at most one session, a workout finishes the session with its own id, and a
+  workout finished under another plan version counts for a session whose own plan does not hold its
+  id (same name, nearest to the day it was done, else the same day and order). So a block approved
+  mid-week still counts Monday's old-plan workout, and restored sessions sharing a name do not finish
+  each other. Weekday-less sessions follow the plan in force. `training_plan_invariants_test.ts`
+  loops over thousands of block scenarios (any start weekday, end date, today from three days before
+  the block to three days after its end, same or different names, any subset finished under either
+  version) and asserts: nothing finished is undone, no make-up for a finished workout, nothing dated
+  after `ends_on` is the block's, and the contributor and the schedule lookup agree on done and
+  planned for every date.
+- Seventh review: `matchFinished` is two-phase across all leftover workouts. First every leftover
+  takes the free session of the same name nearest to the day it was done; a name that exists but is
+  taken finishes nothing. Only then does a workout whose name no session has take the session in its
+  day and place. So after an ordinary mid-week reshuffle a renamed or repeated workout can no longer
+  spill onto another session (Pull stays undone). Pinned by the three reviewer scenarios, nearest-day,
+  order-of-doing and duplicate-log unit tests, and an invariant over every reshuffle of the plan that
+  also asserts which session each leftover finishes; each of slot-before-name, no nearest-day sort,
+  unsorted rows and a dropped taken check fails a test.
+- Second review: a substituted exercise (`performance_kind` substituted or extra) has no catalog
+  slug by design (`private.exercise_performance_slug`), so `private.coach_session_exercises`
+  reports its slug as null and the "muscles unknown" caveat shows; it never borrows the planned
+  exercise's slug. Planned workouts are keyed by id everywhere (RPC `id` and `planned_workout_id`,
+  contributor `isSameWorkout`, lookup render): names are not unique, and a name only matches a
+  workout finished under an earlier plan version whose id the active plan does not hold. A schedule
+  lookup that finds more than 8 overlaps lists 8 and says how many more there are.
+
+**Open.** A pgTAP run in CI covers the SQL; it was not run locally. After the deploy, ask Coach on a
+Sunday what is coming up and check `model_runs` and the `lookups` column for `plan_history`.
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

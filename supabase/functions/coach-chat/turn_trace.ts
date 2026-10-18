@@ -3,7 +3,7 @@
 // message content, a figure or a lookup's rows. They are stored on the assistant message
 // (coach_messages.guard_faults and .lookups, migration 20261018100020), so "why did that turn
 // fall back?" is a query on one row. The library version the turn searched (E3,
-// coach_messages.library_version, migration 20261018170044) says which library content the answer
+// coach_messages.library_version, migration 20261018200044) says which library content the answer
 // was shown.
 import type { CoachChatAttemptTelemetry } from "../_shared/providers/coach_chat_provider.ts";
 import type { LookupCount } from "../_shared/coach_lookups/runner.ts";

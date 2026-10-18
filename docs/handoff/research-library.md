@@ -804,7 +804,7 @@ model changes.
 
 ## E3.1: the engine's production pass (in review)
 
-Branch `claude/rag-engine`, migration `20261018170044_library_search_v3.sql` (code 44, additive).
+Branch `claude/rag-engine`, migration `20261018200044_library_search_v3.sql` (code 44, additive).
 The engine fixes from the 2026-10-18 RAG audit (P1-2, P2-1, P2-2, P2-3, P2-5, P2-6 and the P3 items).
 New sources, the licence field, new questions and the claim-support judge are other branches.
 

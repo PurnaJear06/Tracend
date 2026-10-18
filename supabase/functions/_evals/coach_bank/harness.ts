@@ -9,6 +9,7 @@ import {
 } from "../../_shared/coach_context/host.ts";
 import { createGoalPhaseContributor } from "../../_shared/coach_context/contributors/goal_phase.ts";
 import { createNutritionStateContributor } from "../../_shared/coach_context/contributors/nutrition_state.ts";
+import { createTrainingPlanContributor } from "../../_shared/coach_context/contributors/training_plan.ts";
 import { createScreeningContributor } from "../../_shared/coach_context/contributors/screening.ts";
 import { createConfirmedFactsContributor } from "../../_shared/coach_context/contributors/confirmed_facts.ts";
 import { createCoachNotesContributor } from "../../_shared/coach_context/contributors/coach_notes.ts";
@@ -74,6 +75,9 @@ function contributorsOf(bank: BankCase): CoachContextContributor[] {
   }
   if (contributors.nutritionState) {
     list.push(createNutritionStateContributor(() => Promise.resolve(contributors.nutritionState)));
+  }
+  if (contributors.trainingPlan) {
+    list.push(createTrainingPlanContributor(() => Promise.resolve(contributors.trainingPlan)));
   }
   if (contributors.goalPhase) {
     list.push(createGoalPhaseContributor(() => Promise.resolve(contributors.goalPhase)));

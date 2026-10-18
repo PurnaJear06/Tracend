@@ -6,6 +6,7 @@ const domain = (first: string, last: string, count: number) => ({ first, last, c
 const payload = {
   schema_version: "1.0",
   local_date: "2026-10-17",
+  schedule: { version: 3, starts_on: "2026-09-28", weekdays: [1, 2, 3, 4, 5, 6] },
   domains: {
     workouts: domain("2026-06-03", "2026-10-15", 61),
     meals: domain("2026-06-10", "2026-10-17", 90),
@@ -39,4 +40,15 @@ Deno.test("every index name is a lookup the catalogue knows", () => {
 
 Deno.test("an unreadable payload renders nothing", () => {
   assertEquals(renderDataIndex({ schema_version: "9" }, "2026-10-17"), null);
+});
+
+Deno.test("the index says which dates the plan covers and how far ahead to ask", () => {
+  const text = renderDataIndex(payload, "2026-10-17")!;
+  assertStringIncludes(
+    text,
+    'plan_history with filter "schedule": the active plan repeats every week on Monday, Tuesday, Wednesday, Thursday, Friday, Saturday from 2026-09-28; ask for any dates from then on, up to 2027-01-15',
+  );
+  assertEquals(text.length <= dataIndexContributorBudgetChars, true);
+  const without = renderDataIndex({ ...payload, schedule: null }, "2026-10-17")!;
+  assertEquals(without.includes('filter "schedule"'), false);
 });

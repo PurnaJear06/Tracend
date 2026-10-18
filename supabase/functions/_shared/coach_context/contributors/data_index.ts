@@ -2,12 +2,13 @@
 // it can look up and how far back each kind goes. It reads get_coach_data_index_v1 (service role):
 // per kind of record the first and last date and a count, nothing else. The rules for asking
 // (data_requests) are in the Coach instructions; the lookup names here are the catalogue's.
-import { coachLookupNames } from "../../coach_lookups/catalogue.ts";
+import { coachLookupNames, maxScheduleAheadDays } from "../../coach_lookups/catalogue.ts";
+import { addDays } from "../../training/schedule/week_ahead.ts";
 import type { CoachContextContributor } from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
 
 export const dataIndexContributorId = "data_index";
-export const dataIndexContributorBudgetChars = 1_600;
+export const dataIndexContributorBudgetChars = 1_900;
 
 type Json = Record<string, unknown>;
 const rec = (value: unknown): Json =>
@@ -24,6 +25,24 @@ const nouns: Readonly<Record<string, string>> = {
   weekly_reviews: "weekly reviews",
   health_history: "months imported from Apple Health at onboarding",
 };
+
+const weekdayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/** What the plan's schedule covers, or null when the athlete has no active plan. */
+function scheduleLine(value: unknown, localDate: string): string | null {
+  const schedule = rec(value);
+  const days = Array.isArray(schedule.weekdays)
+    ? schedule.weekdays.filter((day): day is number =>
+      Number.isInteger(day) && day >= 1 && day <= 7
+    )
+    : [];
+  if (typeof schedule.starts_on !== "string" || days.length === 0) return null;
+  return `- plan_history with filter "schedule": the active plan repeats every week on ${
+    days.map((day) => weekdayNames[day - 1]).join(", ")
+  } from ${schedule.starts_on.slice(0, 10)}; ask for any dates from then on, up to ${
+    addDays(localDate, maxScheduleAheadDays)
+  }, to see the days ahead.`;
+}
 
 /** The text for one index payload. Exposed for tests. */
 export function renderDataIndex(payload: unknown, localDate: string): string | null {
@@ -53,6 +72,7 @@ export function renderDataIndex(payload: unknown, localDate: string): string | n
     "sections above show only the recent part; anything else, or any other period, you can look up " +
     "with data_requests:",
     ...held,
+    scheduleLine(body.schedule, localDate) ?? "",
     empty.length ? `No records yet for: ${empty.join(", ")}.` : "",
     "exercise_history reads one exercise out of the workouts.",
     "past_messages finds the athlete's own earlier questions by their words.",

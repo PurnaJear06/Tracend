@@ -2,7 +2,7 @@ begin;
 select plan(44);
 
 -- search_library_v3, the content digest, the library version, retiring a source and the version on
--- a Coach answer (migration 20261018170044). The fixtures assume an empty library.
+-- a Coach answer (migration 20261018200044). The fixtures assume an empty library.
 delete from private.library_sources;
 
 -- A 384-dimension vector with 1 at position i and 0 elsewhere.
