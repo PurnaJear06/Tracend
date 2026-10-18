@@ -1124,7 +1124,7 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   a Coach turn. The call is gated like the cron job's, with the library worker secret, which the
   database keeps in Vault and hands only to the service role (`library_worker_secret_v1`); the body
   is the question and nothing else, and neither function logs it. Coach chat starts the embedding
-  right after the consent check, so it runs alongside the context preparation (a follow-up, whose
+  after the replay check and the budget reservation (a replay or a request at the usage limit never calls it), so it runs alongside the context preparation (a follow-up, whose
   query needs the prepared context, is embedded then). It then calls `search_library_v3` with the
   athlete's id, so the search is limited to global sources and the sources for the athlete's country
   (an `IN` source reaches only athletes in India; DATA_MODEL.md section 12), and compares only chunks

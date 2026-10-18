@@ -844,6 +844,17 @@ New sources, the licence field, new questions and the claim-support judge are ot
   call into the low thousands of chunks, and the index would be worth revisiting beyond that.
   `library_search_v3_test.sql` forces index scans on and puts 40 nearer old-model chunks in the
   library: the current model's nearest rows still come back.
+- **Loader and digest agree** (review fix). The digest includes each chunk's `token_count`, but the
+  loader compared only ordinal, section, header and body, so a re-load that changed only a token
+  count wrote nothing. Migration 44 redefines `private.library_replace_source` (same signature and
+  grants): a text change re-writes the chunks as before; a token-count-only change updates them in
+  place and keeps their embeddings. pgTAP covers it (the row, the digest, the version, the kept
+  embedding).
+- **Prefetch order** (review fix). Coach chat starts the question's embedding after the replay check
+  and the budget reservation, just before `prepare_coach_chat_v9` is awaited, so a replay or a
+  request at the usage limit never calls `library-embed` and the embedding still overlaps the context
+  preparation (the saving over starting it in the contributor is the context step, not the two
+  cheap reads before it). `handler_test.ts` checks the order and that a replay and a 429 start none.
 - **Nothing passes: an explicit line.** The block then says no excerpt matched, that Coach must cite
   no library source and should say the evidence is not in Tracend's library rather than answering
   from memory (`libraryNoMatchText`). When the search ran on words alone it says the library could
@@ -857,9 +868,8 @@ New sources, the licence field, new questions and the claim-support judge are ot
   of the 169 chunks are Practical reading sections and 1 more carries a cross-reference. Done in
   rendering, so nothing is re-embedded. The system prompt tells Coach to present a marked excerpt as
   our reading.
-- **Latency** (P2-1). Coach chat starts the question's embedding right after the consent check
-  (`prefetchLibraryEmbedding` in `live.ts`), so it runs while the replay check, the budget and
-  `prepare_coach_chat_v9` run; the contributor reuses it when its query is that text (every
+- **Latency** (P2-1). Coach chat starts the question's embedding after the replay check and the budget
+  reservation (`prefetchLibraryEmbedding` in `live.ts`), so it runs while `prepare_coach_chat_v9` runs; the contributor reuses it when its query is that text (every
   question that is not a follow-up; a follow-up's query needs the prepared context, so it is
   embedded then). The 1.5-second deadline counts from the start of the embedding, and the word
   search fallback is unchanged (Contract 7 v1.2: `queryEmbedding` on the contributor input).

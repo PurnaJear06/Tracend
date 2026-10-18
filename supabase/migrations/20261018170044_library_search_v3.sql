@@ -20,6 +20,8 @@
 --   4. private.library_retire_source(key): removes a source that left supabase/library/index.ts,
 --      with its chunks. Content migrations call it (build_migration.ts --retire), as they call
 --      library_replace_source for sources that are added or changed.
+--   5. private.library_replace_source is redefined to compare and write token_count too, so the
+--      loader and the digest agree.
 
 -- 2. Content digest -----------------------------------------------------------------------------
 
@@ -124,6 +126,86 @@ as $$
   from private.library_sources s
 $$;
 revoke all on function private.library_version() from public, anon, authenticated, service_role;
+
+-- The loader and the digest agree. The digest (above) covers each chunk's token_count, but the
+-- loader compared only ordinal, section, header and body, so a re-load that changed only a token
+-- count wrote nothing and the stored rows no longer matched the library files. Redefined here
+-- (same signature, same grants): a change to the text re-writes the chunks as before (their
+-- embeddings are then made again); a change to token counts alone updates them in place, since
+-- the embedding does not depend on the count. Each write refreshes the digest through its trigger.
+create or replace function private.library_replace_source(source_data jsonb, chunk_data jsonb)
+returns uuid
+language plpgsql
+set search_path = ''
+as $$
+declare
+  sid uuid;
+begin
+  insert into private.library_sources (
+    manifest_key, title, authors, year, doi, url, licence, region, topics, evidence_level, kind
+  )
+  values (
+    source_data ->> 'slug',
+    source_data ->> 'title',
+    array(select jsonb_array_elements_text(source_data -> 'authors')),
+    (source_data ->> 'year')::smallint,
+    source_data ->> 'doi',
+    source_data ->> 'url',
+    source_data ->> 'licence',
+    array(select jsonb_array_elements_text(source_data -> 'region')),
+    array(select jsonb_array_elements_text(source_data -> 'topics')),
+    source_data ->> 'evidence_level',
+    source_data ->> 'kind'
+  )
+  on conflict (manifest_key) do update set
+    title = excluded.title,
+    authors = excluded.authors,
+    year = excluded.year,
+    doi = excluded.doi,
+    url = excluded.url,
+    licence = excluded.licence,
+    region = excluded.region,
+    topics = excluded.topics,
+    evidence_level = excluded.evidence_level,
+    kind = excluded.kind
+  returning id into sid;
+
+  if (
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'ordinal', c.ordinal, 'section', c.section, 'header', c.header, 'body', c.body
+    ) order by c.ordinal), '[]'::jsonb)
+    from private.library_chunks c where c.source_id = sid
+  ) is distinct from (
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'ordinal', (e ->> 'ordinal')::integer, 'section', e ->> 'section',
+      'header', e ->> 'header', 'body', e ->> 'body'
+    ) order by (e ->> 'ordinal')::integer), '[]'::jsonb)
+    from jsonb_array_elements(chunk_data) e
+  ) then
+    delete from private.library_chunks c where c.source_id = sid;
+    insert into private.library_chunks (source_id, ordinal, section, header, body, token_count)
+    select
+      sid,
+      (e ->> 'ordinal')::integer,
+      e ->> 'section',
+      e ->> 'header',
+      e ->> 'body',
+      (e ->> 'token_count')::integer
+    from jsonb_array_elements(chunk_data) e;
+  else
+    update private.library_chunks c
+    set token_count = (e ->> 'token_count')::integer
+    from jsonb_array_elements(chunk_data) e
+    where c.source_id = sid
+      and c.ordinal = (e ->> 'ordinal')::integer
+      and c.token_count is distinct from (e ->> 'token_count')::integer;
+  end if;
+
+  return sid;
+end
+$$;
+revoke all on function private.library_replace_source(jsonb, jsonb)
+  from public, anon, authenticated, service_role;
 
 -- 4. Retiring a source --------------------------------------------------------------------------
 

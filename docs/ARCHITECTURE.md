@@ -670,7 +670,7 @@ coaching-principles digest of the sources sits in the Coach's stable prompt pref
 The library shapes every Coach reply on the gateway route (E3): the `library` contributor builds the
 query from the question (a follow-up borrows the topic of the last real question, deterministically),
 embeds it with `gte-small` by calling the `library-embed` function (the only place the model loads;
-coach-chat starts that call at the beginning of the request, alongside the context preparation),
+coach-chat starts that call once the replay check and the budget reservation have passed, alongside the context preparation),
 searches for the athlete's region and renders up to 8 chunks that pass a calibrated relevance floor
 (the nearest chunk within cosine distance 0.15, then chunks within 0.19), each tagged with its stable
 source id, its kind, year and evidence level, as a volatile block after the athlete data. When no

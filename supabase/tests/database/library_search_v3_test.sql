@@ -1,5 +1,5 @@
 begin;
-select plan(40);
+select plan(44);
 
 -- search_library_v3, the content digest, the library version, retiring a source and the version on
 -- a Coach answer (migration 20261018170044). The fixtures assume an empty library.
@@ -140,6 +140,24 @@ select private.library_replace_source(
   '[{"ordinal":0,"section":"S","header":"Source: A 2022. Section: S.","body":"One.","token_count":3},{"ordinal":1,"section":"S","header":"Source: A 2022. Section: S.","body":"Two.","token_count":3}]'::jsonb
 );
 select is(private.library_version(), (select version from after_load), 'loading the same content again keeps the version');
+-- A re-load that changes only a token count is written, refreshes the digest and the version, and
+-- keeps the chunk's embedding (the embedding does not depend on the count).
+update private.library_chunks set embedding = pg_temp.vec(5), embedding_model = 'gte-small'
+where source_id = (select id from loaded) and ordinal = 0;
+create temp table before_tokens on commit drop as
+select (select content_sha256 from private.library_sources where id = (select id from loaded)) as digest,
+  private.library_version() as version;
+select private.library_replace_source(
+  '{"slug":"test-loaded","title":"Loaded source","authors":["A"],"year":2022,"doi":null,"url":"https://example.test/loaded","licence":"CC BY 4.0","region":["global"],"topics":["sleep"],"evidence_level":"trial","kind":"paper"}'::jsonb,
+  '[{"ordinal":0,"section":"S","header":"Source: A 2022. Section: S.","body":"One.","token_count":4},{"ordinal":1,"section":"S","header":"Source: A 2022. Section: S.","body":"Two.","token_count":3}]'::jsonb
+);
+select is((select token_count from private.library_chunks where source_id = (select id from loaded) and ordinal = 0), 4,
+  'a token-count-only change is written');
+select isnt((select content_sha256 from private.library_sources where id = (select id from loaded)),
+  (select digest from before_tokens), 'it changes the source digest');
+select isnt(private.library_version(), (select version from before_tokens), 'and the library version');
+select ok((select embedding is not null and embedding_model = 'gte-small' from private.library_chunks
+  where source_id = (select id from loaded) and ordinal = 0), 'and keeps the chunk''s embedding');
 select is(private.library_retire_source('test-loaded'), true, 'retiring a source reports that it was removed');
 select is((select count(*) from private.library_chunks where source_id = (select id from loaded)), 0::bigint,
   'with its chunks');

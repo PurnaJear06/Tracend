@@ -458,6 +458,7 @@ export async function handleCoachChat(
   request: Request,
   held: { current?: CoachChatBudgetLedger },
   authenticate: typeof requireAuth = requireAuth,
+  prefetchLibrary: typeof prefetchLibraryEmbedding = prefetchLibraryEmbedding,
 ): Promise<Response> {
   const correlationId = extractCorrelationId(request);
   const log = createLogger(correlationId);
@@ -540,10 +541,6 @@ export async function handleCoachChat(
     }
     return reply(refusal.status, versionedResponse({ error: refusal.error }));
   }
-  // The library (gateway route only) embeds the question now, while the replay check, the budget
-  // and the context preparation run; the contributor waits for it within its own deadline. A
-  // follow-up is embedded later, with the earlier question the prepared context supplies.
-  const libraryEmbedding = coachRoute && !redFlag ? prefetchLibraryEmbedding(input.question) : null;
   const budget = new CoachChatBudgetLedger(
     (fn, args) => auth.serviceClient.rpc(fn, args),
     auth.userId,
@@ -623,6 +620,11 @@ export async function handleCoachChat(
     );
   }
 
+  // The library (gateway route only) embeds the question now: after the replay is resolved and the
+  // budget is reserved, so a replay or a request at a limit never costs a library-embed call, and
+  // while the context is prepared; the contributor waits for it within its own deadline. A
+  // follow-up is embedded later, with the earlier question the prepared context supplies.
+  const libraryEmbedding = coachRoute && !redFlag ? prefetchLibrary(input.question) : null;
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
     "prepare_coach_chat_v9",
     {
