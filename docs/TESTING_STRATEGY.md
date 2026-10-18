@@ -322,6 +322,12 @@ a manual review. The review must verify:
 shape matches what Edge Functions expect. When local Supabase is not running, these tests are
 gracefully skipped.
 
+**Model-schema guard** (`supabase/functions/_shared/providers/coach_chat_schema_test.ts`, offline).
+Builds the Coach answer schema as Claude receives it and fails if it has an optional property or a
+union (Claude's grammar compile grows with each and passed the route timeout on every turn on
+2026-10-18), if it exceeds its byte budget, or if its bytes differ between athletes, days,
+permitted evidence lists or conversations that are or are not remembered.
+
 ### Pre-Deploy Gate (CI Equivalent)
 
 Run `./scripts/pre-deploy.sh` before handing a pull request to the owner. Use

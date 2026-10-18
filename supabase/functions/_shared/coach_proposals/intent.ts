@@ -227,33 +227,103 @@ export function parseCoachProposalIntent(raw: unknown): IntentResult {
 }
 
 /**
- * The intent's shape for structured output (Claude enforces structure, not ranges: the parser
- * checks every range). Every field but `kind` and `reason` is optional.
+ * The fields an intent can carry besides `kind`, `reason` and `note`. The model writes them as a
+ * list of `{name, value}` pairs (below) instead of optional keys: Claude compiles a grammar for
+ * every optional field, and a closed list of names costs none.
+ */
+export const proposalParamNames = [
+  "setting",
+  "start_date",
+  "end_date",
+  "days_per_week",
+  "weekdays",
+  "session_minutes",
+  "weeks",
+  "from_exercise",
+  "to_exercise",
+  "level",
+  "focus",
+  "phase",
+  "target_weight_kg",
+  "target_date",
+  "direction",
+  "requested_calories",
+  "session",
+] as const;
+
+/**
+ * The `proposal_intent` key of the gateway answer, for structured output: always present, an empty
+ * list when no change is asked for, otherwise one item. Every property is required (no optional
+ * field, no union): `note` is "" and `params` is [] when there is nothing to say. Claude enforces
+ * structure, not ranges or counts: intentFromModel and the parser check everything else.
  */
 export const proposalIntentJsonSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    kind: { type: "string", enum: [...proposalKinds] },
-    reason: { type: "string", enum: [...proposalReasons] },
-    note: { type: "string" },
-    setting: { type: "string", enum: [...blockSettings] },
-    start_date: { type: "string" },
-    end_date: { type: "string" },
-    days_per_week: { type: "integer" },
-    weekdays: { type: "array", items: { type: "integer" } },
-    session_minutes: { type: "integer" },
-    weeks: { type: "integer" },
-    from_exercise: { type: "string" },
-    to_exercise: { type: "string" },
-    level: { type: "string", enum: [...intensityLevels] },
-    focus: { type: "string", enum: [...trainingFocuses] },
-    phase: { type: "string", enum: [...goalPhases] },
-    target_weight_kg: { type: "number" },
-    target_date: { type: "string" },
-    direction: { type: "string", enum: ["lower", "raise", "maintenance", "lighter", "heavier"] },
-    requested_calories: { type: "integer" },
-    session: { type: "string", enum: ["today", "next"] },
+  type: "array",
+  items: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      kind: { type: "string", enum: [...proposalKinds] },
+      reason: { type: "string", enum: [...proposalReasons] },
+      note: { type: "string" },
+      params: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            name: { type: "string", enum: [...proposalParamNames] },
+            value: { type: "string" },
+          },
+          required: ["name", "value"],
+        },
+      },
+    },
+    required: ["kind", "reason", "note", "params"],
   },
-  required: ["kind", "reason"],
 } as const;
+
+const numberParams: readonly string[] = [
+  "days_per_week",
+  "session_minutes",
+  "weeks",
+  "target_weight_kg",
+  "requested_calories",
+];
+const plainNumber = /^-?\d+(\.\d+)?$/;
+
+/** A figure written as text is a number; anything else stays text, which the parser refuses. */
+function figure(text: string): number | string {
+  const trimmed = text.trim();
+  return plainNumber.test(trimmed) ? Number(trimmed) : text;
+}
+
+/**
+ * The model's `proposal_intent` list as the object parseCoachProposalIntent reads: `undefined`
+ * when it asked for nothing (a missing or empty list), `null` when it is not one well-formed item
+ * (more than one item, a name outside the list, a repeated name), which the parser then refuses. A param with
+ * an empty value is left out; a figure is read from its text and `weekdays` from a comma list
+ * ("1,3,5"). Every range and vocabulary check stays with the parser.
+ */
+export function intentFromModel(raw: unknown): unknown {
+  if (raw === undefined || (Array.isArray(raw) && raw.length === 0)) return undefined;
+  if (!Array.isArray(raw) || raw.length !== 1) return null;
+  const item = record(raw[0]);
+  if (!item || !Array.isArray(item.params)) return null;
+  const { params, note, ...head } = item;
+  const intent: Record<string, unknown> = { ...head };
+  if (typeof note === "string" && note !== "") intent.note = note;
+  for (const entry of params as unknown[]) {
+    const pair = record(entry);
+    if (!pair || typeof pair.name !== "string" || typeof pair.value !== "string") return null;
+    if (!(proposalParamNames as readonly string[]).includes(pair.name)) return null;
+    if (Object.hasOwn(intent, pair.name)) return null;
+    if (pair.value === "") continue;
+    intent[pair.name] = pair.name === "weekdays"
+      ? pair.value.split(",").map(figure)
+      : numberParams.includes(pair.name)
+      ? figure(pair.value)
+      : pair.value;
+  }
+  return intent;
+}

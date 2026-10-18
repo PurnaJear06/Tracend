@@ -30,6 +30,9 @@ const question = "How did my training go this week?";
 const rich = () => structuredClone(evalProfiles().find((p) => p.id === "rich")!.context);
 
 const good = JSON.stringify({
+  data_requests: [],
+  proposal_intent: [],
+  fact_suggestions: [],
   answer: "Your recovery is **38/100**, so keep today's session light.",
   evidence: [{ code: "RECOVERY_BELOW_BASELINE", label: "Recovery 38", source: "coach_context" }],
   missing_data: [],
@@ -37,6 +40,12 @@ const good = JSON.stringify({
   suggested_follow_ups: [],
   reasoning_chain: [],
 });
+// A turn that may not retry its initial attempt (a timeout then ends it).
+const noRetry = { totalDeadlineMs: 40_000, initialAttemptMs: 28_000, repairAttemptMs: 10_000 };
+const hangs = (sent: Sent) =>
+  new Promise<Response>((_, reject) => {
+    sent.signal?.addEventListener("abort", () => reject(new DOMException("", "AbortError")));
+  });
 const answered = (text: string, usage: Record<string, unknown> = {}) =>
   jsonResponse(claudeMessage({ content: [{ type: "text", text }] }, usage));
 
@@ -158,13 +167,74 @@ Deno.test("a sent request that timed out with no usage keeps its place open", as
       new Promise<Response>((_, reject) => {
         sent.signal?.addEventListener("abort", () => reject(new DOMException("", "AbortError")));
       }),
-    { route: routeFor("coach_chat", { MODEL: "claude-haiku-5-5", TIMEOUT_MS: "1000" }) },
+    {
+      route: routeFor("coach_chat", { MODEL: "claude-haiku-5-5", TIMEOUT_MS: "1000" }),
+      timing: noRetry,
+    },
   );
   assert(result.error instanceof CoachChatUnavailableError);
   assertEquals(result.error.failureReason, "provider_timeout");
   assertEquals(result.sent.length, 1);
   assertEquals(result.reserved.map((r) => r.id), ["r1"]);
   assertEquals(result.settled, []);
+});
+
+const slowRoute = () => routeFor("coach_chat", { MODEL: "claude-haiku-5-5", TIMEOUT_MS: "1000" });
+
+Deno.test("a timed-out first attempt is sent again with its own place; the first stays open", async () => {
+  const result = await turn((sent, index) => index === 0 ? hangs(sent) : answered(good), {
+    route: slowRoute(),
+  });
+  assert(result.generation);
+  assertEquals(result.sent.length, 2);
+  assertEquals(result.generation.attempts.map((a) => [a.attempt, a.outcome, a.retry === true]), [
+    ["initial", "timeout", false],
+    ["initial", "valid", true],
+  ]);
+  // The request that timed out may have been billed: its place stays open. The retry has its own,
+  // which settles with the answer's recorded cost.
+  assertEquals(result.reserved.map((r) => r.id), ["r1", "r2"]);
+  assertEquals(result.settled, ["r2"]);
+  assert(
+    result.reserved.every((r) => r.ceilingUsd > 0 && r.ceilingUsd <= coachChatReservationCapUsd),
+  );
+});
+
+Deno.test("two timeouts end the turn as one provider_timeout and keep both places open", async () => {
+  const result = await turn((sent) => hangs(sent), { route: slowRoute() });
+  assert(result.error instanceof CoachChatUnavailableError);
+  assertEquals(result.error.failureReason, "provider_timeout");
+  assertEquals(result.sent.length, 2);
+  assertEquals(result.error.metadata.attempts?.map((a) => a.outcome), ["timeout", "timeout"]);
+  assertEquals(result.reserved.map((r) => r.id), ["r1", "r2"]);
+  assertEquals(result.settled, []);
+});
+
+Deno.test("a refused retry place sends nothing more and the timeout stands", async () => {
+  const result = await turn((sent) => hangs(sent), { route: slowRoute(), refuseFrom: 2 });
+  assert(result.error instanceof CoachChatUnavailableError);
+  assertEquals(result.error.failureReason, "provider_timeout");
+  assertEquals(result.error.metadata.repairSkipped, "reservation_refused");
+  assertEquals(result.sent.length, 1);
+  assertEquals(result.reserved.map((r) => r.id), ["r1"]);
+  assertEquals(result.settled, []);
+});
+
+Deno.test("with less than the retry's time left after a timeout, the turn ends", async () => {
+  const result = await turn((sent) => hangs(sent), {
+    route: slowRoute(),
+    timing: { ...noRetry, totalDeadlineMs: 10_900, initialRetryMinMs: 10_000 },
+  });
+  assert(result.error instanceof CoachChatUnavailableError);
+  assertEquals(result.sent.length, 1);
+  assertEquals(result.reserved.map((r) => r.id), ["r1"]);
+});
+
+Deno.test("only a timeout is retried: an unbilled provider error is not", async () => {
+  const result = await turn(() =>
+    jsonResponse({ type: "error", error: { type: "overloaded_error", message: "busy" } }, 529)
+  );
+  assertEquals(result.sent.length, 1);
 });
 
 Deno.test("a repair that times out keeps only the repair's place; the recorded first is settled", async () => {

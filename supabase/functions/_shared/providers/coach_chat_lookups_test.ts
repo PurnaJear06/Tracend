@@ -30,18 +30,28 @@ const haiku = () =>
 
 const final = (text: string, overrides: Record<string, unknown> = {}) =>
   JSON.stringify({
+    data_requests: [],
+    proposal_intent: [],
+    fact_suggestions: [],
     answer: text,
     evidence: [],
     missing_data: [],
     safety_state: "allowed",
     suggested_follow_ups: [],
+    reasoning_chain: [],
     ...overrides,
   });
 
+// A request with no filter text carries "": the schema has no optional field.
 const asking = (
   requests: unknown,
   interim = "I am checking your records and have not seen them yet.",
-) => final(interim, { data_requests: requests });
+) =>
+  final(interim, {
+    data_requests: Array.isArray(requests)
+      ? requests.map((request) => ({ filter: "", ...request }))
+      : requests,
+  });
 
 const benchRequest = {
   lookup: "exercise_history",
@@ -338,18 +348,12 @@ Deno.test("without a runner the model is not offered lookups", async () => {
   const { result, sent } = await run([final("Keep the planned session.")]);
   generation(result);
   assert(!systemOf(sent[0]).includes("Looking up the athlete's records"));
-  assertEquals(
-    "data_requests" in (coachChatGatewaySchema([], false).properties as Record<string, unknown>),
-    false,
-  );
 });
 
 Deno.test("the schema with lookups is one the gateway checks and Claude accepts", () => {
-  for (const permitted of [["APPROVED_PLAN_ACTIVE"], []]) {
-    const schema = coachChatGatewaySchema(permitted, true);
-    assert(isSupportedSchema(schema));
-    assert(anthropicSchema(schema) !== null);
-  }
+  const schema = coachChatGatewaySchema();
+  assert(isSupportedSchema(schema));
+  assert(anthropicSchema(schema) !== null);
 });
 
 Deno.test("an empty data_requests list is a final answer", async () => {

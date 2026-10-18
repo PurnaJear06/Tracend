@@ -37,14 +37,18 @@ const haiku = () =>
 const sonnet = () =>
   routeFor("coach_chat", { MODEL: "claude-sonnet-5-5", MAX_OUTPUT_TOKENS: "4096" });
 
+// A model answer in the gateway's shape: every key present, nothing written as an empty list or "".
 const answer = (overrides: Record<string, unknown> = {}) =>
   JSON.stringify({
+    data_requests: [],
+    proposal_intent: [],
+    fact_suggestions: [],
     answer: "Your recovery is **38/100**, so keep today's session light.",
     evidence: [{ code: "RECOVERY_BELOW_BASELINE", label: "Recovery 38", source: "coach_context" }],
     missing_data: [],
     safety_state: "allowed",
     suggested_follow_ups: ["What should I change today?"],
-    reasoning_chain: [{ step: "Recovery", value: "38/100", evidence_id: null }],
+    reasoning_chain: [{ step: "Recovery", value: "38/100", evidence_id: "" }],
     ...overrides,
   });
 
@@ -157,10 +161,75 @@ Deno.test("gateway prompt: stable contributors join the cached block, volatile o
 });
 
 Deno.test("the gateway schema is one the gateway checks and Claude accepts", () => {
-  for (const permitted of [["APPROVED_PLAN_ACTIVE"], []]) {
-    const schema = coachChatGatewaySchema(permitted);
-    assert(isSupportedSchema(schema));
-    assert(anthropicSchema(schema) !== null);
+  const schema = coachChatGatewaySchema();
+  assert(isSupportedSchema(schema));
+  assert(anthropicSchema(schema) !== null);
+});
+
+Deno.test('the answer keeps today\'s shape: a reasoning step with no evidence is null, not ""', async () => {
+  const { result } = await run(() =>
+    claudeAnswer(answer({
+      reasoning_chain: [
+        { step: "goal", value: "Cut", evidence_id: "" },
+        { step: "recovery", value: "38/100", evidence_id: "RECOVERY_BELOW_BASELINE" },
+      ],
+    }))
+  );
+  if (result instanceof Error) throw result;
+  assertEquals(result.answer.reasoning_chain, [
+    { step: "goal", value: "Cut", evidence_id: null },
+    { step: "recovery", value: "38/100", evidence_id: "RECOVERY_BELOW_BASELINE" },
+  ]);
+  assertEquals(Object.keys(result.answer).sort(), [
+    "answer",
+    "evidence",
+    "missing_data",
+    "reasoning_chain",
+    "safety_state",
+    "suggested_follow_ups",
+  ]);
+});
+
+Deno.test("an evidence code that is not permitted is a plain string to the schema and a repair to the parser", async () => {
+  const unpermitted = answer({
+    evidence: [{ code: "MADE_UP_CODE", label: "x", source: "coach_context" }],
+  });
+  const { result, sent } = await run((_, index) =>
+    claudeAnswer(index === 0 ? unpermitted : answer())
+  );
+  if (result instanceof Error) throw result;
+  assertEquals(sent.length, 2);
+  assertEquals(result.attempts.map((a) => [a.attempt, a.outcome, a.rule]), [
+    ["initial", "invalid", "evidence_code_not_permitted"],
+    ["repair", "valid", undefined],
+  ]);
+  const repair = body(sent[1]).messages[0].content.at(-1)!.text;
+  assertStringIncludes(repair, "rule=evidence_code_not_permitted");
+  assertStringIncludes(repair, "RECOVERY_BELOW_BASELINE");
+  // The same for a reasoning step's evidence id.
+  const step = answer({
+    reasoning_chain: [{ step: "a", value: "b", evidence_id: "MADE_UP_CODE" }],
+  });
+  const second = await run((_, index) => claudeAnswer(index === 0 ? step : answer()));
+  if (second.result instanceof Error) throw second.result;
+  assertEquals(second.result.attempts[0].rule, "reasoning_evidence_not_permitted");
+});
+
+Deno.test("the rules tell the model how an empty value is written, with or without the optional blocks", () => {
+  for (const on of [true, false]) {
+    const rules = buildCoachChatGatewayPrompt(
+      "q",
+      rich(),
+      "general",
+      undefined,
+      undefined,
+      on ? { sections: [], closed: false } : undefined,
+      on,
+      on,
+    ).system.map((part) => part.type === "text" ? part.text : "").join("");
+    assertStringIncludes(rules, "# The shape of your JSON");
+    assertStringIncludes(rules, "There is no null and no missing key");
+    assertStringIncludes(rules, 'evidence_id ""');
   }
 });
 
@@ -482,22 +551,24 @@ Deno.test("a legacy failure is still priced from its own attempts", () => {
 
 // ---- proposals (A8) ---------------------------------------------------------------------------
 
+// What the model writes (a list of one item, its fields as name/value pairs) and what the proposal
+// engine's parser reads.
+const modelIntent = [{
+  kind: "nutrition_targets",
+  reason: "plateau",
+  note: "",
+  params: [{ name: "direction", value: "lower" }],
+}];
 const intent = {
   kind: "nutrition_targets",
   reason: "plateau",
   direction: "lower",
 };
 
-Deno.test("proposals are offered only when asked for, in the schema and the rules", () => {
-  const without = coachChatGatewaySchema([], true) as { properties: Record<string, unknown> };
-  assertEquals("proposal_intent" in without.properties, false);
-  const withIntent = coachChatGatewaySchema([], true, true) as {
-    properties: Record<string, unknown>;
-    required: string[];
-  };
-  assert("proposal_intent" in withIntent.properties);
-  assert(!withIntent.required.includes("proposal_intent"), "the intent is optional");
-  assert(isSupportedSchema(withIntent));
+Deno.test("proposals are offered only when asked for, in the rules; the schema always has the key", () => {
+  const schema = coachChatGatewaySchema();
+  assert("proposal_intent" in schema.properties);
+  assert(schema.required.includes("proposal_intent"), "the key is required: empty means none");
   const prompt = (proposals: boolean) =>
     buildCoachChatGatewayPrompt(
       "Take a diet break",
@@ -513,8 +584,8 @@ Deno.test("proposals are offered only when asked for, in the schema and the rule
   assert(!prompt(false).includes("# Proposing a change"));
 });
 
-Deno.test("the model's intent is handed on untouched and is not part of the stored answer", async () => {
-  const fake = fakeFetch(() => claudeAnswer(answer({ proposal_intent: intent })));
+Deno.test("the model's intent is handed on in the engine's shape and is not part of the stored answer", async () => {
+  const fake = fakeFetch(() => claudeAnswer(answer({ proposal_intent: modelIntent })));
   const generation = await generateCoachChatViaGateway({
     question: "Lower my calories a little",
     context: rich(),
@@ -527,31 +598,42 @@ Deno.test("the model's intent is handed on untouched and is not part of the stor
   assertEquals("proposal_intent" in generation.answer, false);
 });
 
-Deno.test("without proposals an intent is an unexpected key and is repaired away", async () => {
-  const { result, sent } = await run((_, index) =>
-    claudeAnswer(index === 0 ? answer({ proposal_intent: intent }) : answer())
-  );
+Deno.test("without proposals an intent is dropped, and the answer needs no repair", async () => {
+  const { result, sent } = await run(() => claudeAnswer(answer({ proposal_intent: modelIntent })));
   if (result instanceof Error) throw result;
-  assertEquals(sent.length, 2);
+  assertEquals(sent.length, 1);
   assertEquals(result.proposalIntent, undefined);
+  assertEquals("proposal_intent" in result.answer, false);
+});
+
+Deno.test("an empty proposal_intent list is no intent; a malformed one reaches the parser as invalid", async () => {
+  const generate = async (proposalIntent: unknown) => {
+    const fake = fakeFetch(() => claudeAnswer(answer({ proposal_intent: proposalIntent })));
+    return await generateCoachChatViaGateway({
+      question: "Lower my calories a little",
+      context: rich(),
+      contextKind: "general",
+      route: haiku(),
+      consentVendor: "anthropic",
+      proposals: true,
+    }, { fetch: fake.fetch });
+  };
+  assertEquals((await generate([])).proposalIntent, undefined);
+  // Two items are not "one change at a time": null is refused by the parser, never guessed at.
+  assertEquals((await generate([...modelIntent, ...modelIntent])).proposalIntent, null);
 });
 
 Deno.test("an intent survives a lookup round and is dropped from an interim answer", async () => {
   const lookups = () =>
     Promise.resolve({ text: "Lookup: weights\n2026-10-01 80 kg", grounds: ["80 kg"], counts: [] });
   const asked = {
-    data_requests: [{ lookup: "weights", from: "2026-10-01", to: "2026-10-10", filter: null }],
-    proposal_intent: intent,
-    answer: "Checking your weights.",
-    evidence: [],
-    missing_data: [],
-    safety_state: "allowed",
-    suggested_follow_ups: [],
+    ...JSON.parse(answer({ proposal_intent: modelIntent, answer: "Checking your weights." })),
+    data_requests: [{ lookup: "body", from: "2026-10-01", to: "2026-10-10", filter: "" }],
   };
   const fake = fakeFetch((_) =>
     claudeAnswer(
       JSON.stringify(
-        fake.sent.length === 1 ? asked : JSON.parse(answer({ proposal_intent: intent })),
+        fake.sent.length === 1 ? asked : JSON.parse(answer({ proposal_intent: modelIntent })),
       ),
     )
   );
@@ -614,17 +696,18 @@ Deno.test("library prompt: the excerpts follow the cached block and the rules sa
   assertStringIncludes(rules, 'source "library"');
 });
 
-Deno.test("the gateway schema accepts a library citation by any id and data evidence by permitted codes only", () => {
-  type Item = {
-    properties: { code: { enum?: string[] }; source: { enum: string[] } };
+Deno.test("the gateway schema takes any evidence code as a string; the parser checks it", () => {
+  const schema = coachChatGatewaySchema();
+  const item = schema.properties.evidence.items as unknown as {
+    properties: { code: { type: string; enum?: string[] }; source: { enum: string[] } };
   };
-  const schema = coachChatGatewaySchema(["RECOVERY_BELOW_BASELINE"]);
-  const items = (schema.properties.evidence.items as unknown as { anyOf: Item[] }).anyOf;
-  assertEquals(items.length, 2);
-  assertEquals(items[0].properties.code.enum, ["RECOVERY_BELOW_BASELINE"]);
-  assert(!items[0].properties.source.enum.includes("library"));
-  assertEquals(items[1].properties.source.enum, ["library"]);
-  assertEquals(items[1].properties.code.enum, undefined);
+  assertEquals(item.properties.code, { type: "string" });
+  assertEquals(item.properties.source.enum, [
+    "feature_snapshot",
+    "policy_evaluation",
+    "coach_context",
+    "library",
+  ]);
 });
 
 Deno.test("a reply that cites a source it was shown is accepted with its evidence", async () => {
@@ -766,18 +849,13 @@ const suggestion = {
   kind: "equipment",
   subject: "kettlebells",
   statement: "Has kettlebells at home",
+  fact_id: "",
 };
 
-Deno.test("fact suggestions are offered only when asked for, in the schema and the rules", () => {
-  const without = coachChatGatewaySchema([], true, true) as { properties: Record<string, unknown> };
-  assertEquals("fact_suggestions" in without.properties, false);
-  const withThem = coachChatGatewaySchema([], true, true, true) as {
-    properties: Record<string, unknown>;
-    required: string[];
-  };
-  assert("fact_suggestions" in withThem.properties);
-  assert(!withThem.required.includes("fact_suggestions"), "the suggestions are optional");
-  assert(isSupportedSchema(withThem));
+Deno.test("fact suggestions are offered only when asked for, in the rules; the schema always has the key", () => {
+  const schema = coachChatGatewaySchema();
+  assert("fact_suggestions" in schema.properties);
+  assert(schema.required.includes("fact_suggestions"), "the key is required: empty means none");
   const prompt = (on: boolean) =>
     buildCoachChatGatewayPrompt(
       "I bought a kettlebell",
@@ -794,7 +872,7 @@ Deno.test("fact suggestions are offered only when asked for, in the schema and t
   assert(!prompt(false).includes("# Suggesting something to remember"));
 });
 
-Deno.test("the model's suggestions are handed on untouched and are not part of the stored answer", async () => {
+Deno.test("the model's suggestions are handed on as written and are not part of the stored answer", async () => {
   const fake = fakeFetch(() => claudeAnswer(answer({ fact_suggestions: [suggestion] })));
   const generation = await generateCoachChatViaGateway({
     question: "I bought a kettlebell",
@@ -809,18 +887,32 @@ Deno.test("the model's suggestions are handed on untouched and are not part of t
   assertEquals(generation.proposalIntent, undefined);
 });
 
-Deno.test("without them, a suggestion is an unexpected key and is repaired away", async () => {
-  const { result, sent } = await run((_, index) =>
-    claudeAnswer(index === 0 ? answer({ fact_suggestions: [suggestion] }) : answer())
+Deno.test("a conversation that is not remembered drops the suggestions without a repair", async () => {
+  const { result, sent } = await run(() =>
+    claudeAnswer(answer({ fact_suggestions: [suggestion] }))
   );
   if (result instanceof Error) throw result;
-  assertEquals(sent.length, 2);
+  assertEquals(sent.length, 1);
   assertEquals(result.factSuggestions, undefined);
+  assertEquals("fact_suggestions" in result.answer, false);
+});
+
+Deno.test("an empty fact_suggestions list is no suggestion", async () => {
+  const fake = fakeFetch(() => claudeAnswer(answer()));
+  const generation = await generateCoachChatViaGateway({
+    question: "I bought a kettlebell",
+    context: rich(),
+    contextKind: "general",
+    route: haiku(),
+    consentVendor: "anthropic",
+    factSuggestions: true,
+  }, { fetch: fake.fetch });
+  assertEquals(generation.factSuggestions, undefined);
 });
 
 Deno.test("a proposal intent and fact suggestions travel together, each handed on separately", async () => {
   const fake = fakeFetch(() =>
-    claudeAnswer(answer({ proposal_intent: intent, fact_suggestions: [suggestion] }))
+    claudeAnswer(answer({ proposal_intent: modelIntent, fact_suggestions: [suggestion] }))
   );
   const generation = await generateCoachChatViaGateway({
     question: "Lower my calories, I bought a kettlebell",

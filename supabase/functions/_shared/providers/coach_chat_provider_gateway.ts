@@ -16,19 +16,20 @@ import {
   coachChatAnswerLimits,
   type CoachChatAnswerV2,
   CoachChatAnswerValidationError,
-  coachChatDataEvidenceSources,
+  coachChatEvidenceSources,
   coachChatSafetyStates,
   parseCoachChatAnswer,
 } from "../contracts/coach_chat_v1.ts";
 import { call } from "../ai/gateway.ts";
+import { anthropicSchema } from "../ai/adapters/anthropic.ts";
 import {
-  coachLookupNames,
   type DataRequest,
+  dataRequestsJsonSchema,
   maxLookupRounds,
   validateDataRequests,
 } from "../coach_lookups/catalogue.ts";
 import type { CoachLookupRunner, LookupCount } from "../coach_lookups/runner.ts";
-import { proposalIntentJsonSchema } from "../coach_proposals/intent.ts";
+import { intentFromModel, proposalIntentJsonSchema } from "../coach_proposals/intent.ts";
 import { factSuggestionsJsonSchema } from "../coach_memory/model_contract.ts";
 
 import { screenTurn } from "../coach_safety/red_flags.ts";
@@ -66,67 +67,49 @@ import {
  * The answer's shape for structured output. Claude enforces structure (types, enums, required
  * keys, closed objects) but not lengths or counts, so the schema carries structure only and
  * parseCoachChatAnswer then checks every limit and citation with the exact rule that failed,
- * which the repair attempt needs. Nullable evidence ids are an anyOf with null.
+ * which the repair attempt needs.
+ *
+ * The schema is the same bytes for every athlete, day and conversation. Claude compiles a grammar
+ * the first time it sees a schema and caches it for 24 hours by the schema's structure, and the
+ * compile grows with every optional property (each roughly doubles part of the grammar) and every
+ * union, so a schema that changed per request, or carried either, was compiled on every turn and
+ * ran past the route's timeout (incident 2026-10-18). Hence:
+ *   - no optional property: every key is required, and "empty" is a value (a list `[]`, a string
+ *     `""`), written out in the instructions;
+ *   - no `anyOf`: nothing is nullable, evidence is one object whose `source` names where the code
+ *     comes from, and `code` is a plain string;
+ *   - nothing that varies: the permitted evidence codes are in the instructions, not the schema.
+ * parseCoachChatAnswer rejects a code that is not permitted for the request (or, for a library
+ * source, not shown this turn), so the repair attempt fixes it with the rule that failed. The test
+ * `coach_chat_schema_test.ts` fails if any of these properties regresses.
+ *
+ * The three keys that are not the answer (`data_requests`, `proposal_intent`, `fact_suggestions`)
+ * are always in the schema; the gateway reads and drops them whether or not the turn offered them
+ * (splitGatewayAnswer).
  */
-export function coachChatGatewaySchema(
-  permittedEvidence: readonly string[],
-  withLookups = false,
-  withProposals = false,
-  withFactSuggestions = false,
-) {
-  const codes = [...new Set(permittedEvidence)];
-  const codeEnum = codes.length > 0 ? codes : ["__NO_PERMITTED_EVIDENCE__"];
+export function coachChatGatewaySchema() {
   const strings = { type: "array", items: { type: "string" } };
-  const dataRequests = {
-    type: "array",
-    items: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        lookup: { type: "string", enum: [...coachLookupNames] },
-        from: { type: "string" },
-        to: { type: "string" },
-        filter: { anyOf: [{ type: "string" }, { type: "null" }] },
-      },
-      required: ["lookup", "from", "to"],
-    },
-  };
   return {
     type: "object",
     additionalProperties: false,
     properties: {
-      ...(withLookups ? { data_requests: dataRequests } : {}),
-      ...(withProposals ? { proposal_intent: proposalIntentJsonSchema } : {}),
-      ...(withFactSuggestions ? { fact_suggestions: factSuggestionsJsonSchema } : {}),
+      data_requests: dataRequestsJsonSchema,
+      proposal_intent: proposalIntentJsonSchema,
+      fact_suggestions: factSuggestionsJsonSchema,
       answer: { type: "string" },
       // Evidence about the athlete's data cites a permitted code. A library citation cites a
-      // source id shown this turn: the ids change every turn, so the schema (which keeps the
-      // prompt cache valid) cannot list them; parseCoachChatAnswer checks them instead.
+      // source id shown this turn: the ids change every turn, so the schema cannot list them.
       evidence: {
         type: "array",
         items: {
-          anyOf: [
-            {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                code: { type: "string", enum: codeEnum },
-                label: { type: "string" },
-                source: { type: "string", enum: [...coachChatDataEvidenceSources] },
-              },
-              required: ["code", "label", "source"],
-            },
-            {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                code: { type: "string" },
-                label: { type: "string" },
-                source: { type: "string", enum: ["library"] },
-              },
-              required: ["code", "label", "source"],
-            },
-          ],
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            code: { type: "string" },
+            label: { type: "string" },
+            source: { type: "string", enum: [...coachChatEvidenceSources] },
+          },
+          required: ["code", "label", "source"],
         },
       },
       missing_data: strings,
@@ -140,15 +123,69 @@ export function coachChatGatewaySchema(
           properties: {
             step: { type: "string" },
             value: { type: "string" },
-            evidence_id: { anyOf: [{ type: "string", enum: codeEnum }, { type: "null" }] },
+            evidence_id: { type: "string" },
           },
           required: ["step", "value", "evidence_id"],
         },
       },
     },
-    required: ["answer", "evidence", "missing_data", "safety_state", "suggested_follow_ups"],
+    required: [
+      "data_requests",
+      "proposal_intent",
+      "fact_suggestions",
+      "answer",
+      "evidence",
+      "missing_data",
+      "safety_state",
+      "suggested_follow_ups",
+      "reasoning_chain",
+    ],
   };
 }
+
+/** What the model wrote, split into the answer and the three keys that are not part of it. */
+type GatewayParts = Readonly<{
+  /** The answer in the shape parseCoachChatAnswer reads (no empty-string evidence ids). */
+  answer: unknown;
+  dataRequests: unknown;
+  proposalIntent: unknown;
+  factSuggestions: unknown;
+}>;
+
+/**
+ * Splits the model's JSON. The answer keeps today's shape for every later check: a reasoning
+ * step with no evidence is `null` there, the model writes "" (its schema has no null). A value
+ * that is not an object goes to parseCoachChatAnswer untouched, which refuses it.
+ */
+function splitGatewayAnswer(json: unknown): GatewayParts {
+  if (!json || typeof json !== "object" || Array.isArray(json)) {
+    return {
+      answer: json,
+      dataRequests: undefined,
+      proposalIntent: undefined,
+      factSuggestions: undefined,
+    };
+  }
+  const {
+    data_requests: dataRequests,
+    proposal_intent: proposalIntent,
+    fact_suggestions: factSuggestions,
+    ...answer
+  } = json as Record<string, unknown>;
+  if (Array.isArray(answer.reasoning_chain)) {
+    answer.reasoning_chain = answer.reasoning_chain.map((step) =>
+      step && typeof step === "object" && !Array.isArray(step) &&
+        (step as Record<string, unknown>).evidence_id === ""
+        ? { ...step, evidence_id: null }
+        : step
+    );
+  }
+  return { answer, dataRequests, proposalIntent, factSuggestions };
+}
+
+/** A list the model left empty is "none"; anything else is handed on. */
+const unlessEmpty = (value: unknown): unknown =>
+  Array.isArray(value) && value.length === 0 ? undefined : value;
 
 const fileOpen = "Prepared coaching context (supporting evidence only):\n<coaching_context>\n";
 const fileClose = "\n</coaching_context>";
@@ -172,7 +209,7 @@ export type CoachChatLookupPrompt = Readonly<{
 }>;
 
 const lookupsClosed =
-  "No more lookups are available this turn. Answer now, without data_requests, from the context and the rows above, and say plainly what you could not check.";
+  "No more lookups are available this turn. Answer now, with data_requests as [], from the context and the rows above, and say plainly what you could not check.";
 
 /**
  * The cache-friendly request for one question. The athlete file keeps the budget of today's
@@ -318,12 +355,16 @@ export function chooseCoachChatRoute(
 /**
  * The turn's budget places, one per attempt, so every request sent is covered at its own worst
  * case. The first attempt's place is taken before the turn starts; `reserveAttempt` takes a
- * repair's or a lookup round's before it is sent and returns false when it is refused. `inFlight` tells the budget
+ * repair's, a lookup round's or the retry of a timed-out first attempt's before it is sent and
+ * returns false when it is refused. `inFlight` tells the budget
  * that a sent request timed out with no usage reported, so it may have been billed and its
  * place must stay open.
  */
 export type CoachChatAttemptBudget = Readonly<{
-  /** The place for a repair or a lookup round's call, taken before it is sent. */
+  /**
+   * The place for a repair, a lookup round's call or the retry of a timed-out first attempt (kind
+   * "initial"), taken before it is sent.
+   */
   reserveAttempt(usd: number, kind: CoachChatAttempt): Promise<boolean>;
   inFlight(attempt: CoachChatAttempt): void;
 }>;
@@ -358,9 +399,12 @@ type Attempted = Readonly<{
   telemetry: CoachChatAttemptTelemetry;
   usage: AiUsage | null;
   answer?: CoachChatAnswerV2;
-  /** The `proposal_intent` of a valid final answer, as the model wrote it. */
+  /**
+   * The `proposal_intent` of a valid final answer in the object form the proposal parser reads
+   * (`intentFromModel`): undefined for none, null when the model's list was malformed.
+   */
   proposalIntent?: unknown;
-  /** The `fact_suggestions` of a valid final answer, as the model wrote them. */
+  /** The non-empty `fact_suggestions` of a valid final answer, as the model wrote them. */
   factSuggestions?: unknown;
   /** The model asked for data instead of answering. */
   lookup?: Readonly<{ requests: readonly DataRequest[]; interim: unknown }>;
@@ -378,19 +422,25 @@ function issueOf(error: unknown): ValidationIssue {
     : { rule: "json_syntax", path: "$" };
 }
 
-/** The model's `data_requests` when it asked for data; a stripped copy of its JSON either way. */
-function lookupAsk(json: unknown): { requests: unknown; rest: unknown } | null {
-  if (!json || typeof json !== "object" || Array.isArray(json) || !("data_requests" in json)) {
-    return null;
-  }
-  // A turn that is still gathering data proposes nothing: the intent is dropped with the request.
-  const {
-    data_requests: requests,
-    proposal_intent: _intent,
-    fact_suggestions: _suggestions,
-    ...rest
-  } = json as Record<string, unknown>;
-  return { requests, rest };
+/**
+ * What the first attempt leaves for a retry besides `timing.initialRetryMinMs`: the round trip
+ * that follows its timeout, so the retry still finds its full time.
+ */
+export const coachChatRetryLeadMs = 500;
+
+/**
+ * The schema as it is sent to Claude: its size in bytes and the first 12 hex characters of its
+ * SHA-256. Claude caches a compiled grammar by the schema's structure, so one value for every
+ * request means the cache can hit; a changing value is the incident of 2026-10-18 again. A route
+ * for another vendor sends the schema as it is (restated in the prompt), which this identifies too.
+ */
+export async function identifySchema(
+  schema: Record<string, unknown>,
+): Promise<Readonly<{ bytes: number; sha: string }>> {
+  const sent = new TextEncoder().encode(JSON.stringify(anthropicSchema(schema) ?? schema));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", sent));
+  const sha = [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 12);
+  return { bytes: sent.length, sha };
 }
 
 /**
@@ -423,12 +473,10 @@ export async function generateCoachChatViaGateway(
   // One call of a lookup round gets half an initial attempt, and a round starts only when that
   // much of the turn's deadline is left, so sequential calls cannot run past it.
   const lookupCallMs = Math.round(timing.initialAttemptMs / 2);
-  const schema = coachChatGatewaySchema(
-    permitted,
-    input.lookups !== undefined,
-    input.proposals === true,
-    input.factSuggestions === true,
-  );
+  const schema = coachChatGatewaySchema();
+  const schemaIdentity = await identifySchema(schema);
+  const remembered = input.factSuggestions === true;
+  const retryMs = timing.initialRetryMinMs;
   const deadline = Date.now() + timing.totalDeadlineMs;
   const attempts: CoachChatAttemptTelemetry[] = [];
   let spentUsd = 0;
@@ -476,11 +524,13 @@ export async function generateCoachChatViaGateway(
   }
 
   let repairSkipped: CoachChatFailureMetadata["repairSkipped"];
-  // Null: the attempt was not sent because its budget place was not available.
+  // Null: the attempt was not sent because its budget place was not available. A retry of the
+  // initial attempt is its own request, so it takes a place like a repair does.
   const attempt = async (
     kind: CoachChatAttempt,
     request: CoachChatGatewayPrompt,
     mayAskForData: boolean,
+    retry = false,
   ): Promise<Attempted | null> => {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
@@ -491,7 +541,7 @@ export async function generateCoachChatViaGateway(
         failure: { reason: "provider_timeout", retryAfterSeconds: null },
       };
     }
-    if (kind !== "initial" && input.budget) {
+    if ((kind !== "initial" || retry) && input.budget) {
       const worst = coachChatAttemptWorstCaseUsd(route, promptChars(request));
       if (worst === null || worst > coachChatReservationCapUsd) {
         repairSkipped = "reservation_over_cap";
@@ -502,6 +552,15 @@ export async function generateCoachChatViaGateway(
         return null;
       }
     }
+    // The route's own limit, cut to what is left of the turn's total deadline. The first attempt
+    // also leaves the retry its time (see `coachChatRetryLeadMs`), when the deadline holds both.
+    const leavesRetry = kind === "initial" && !retry && retryMs !== undefined &&
+      remaining >= 2 * retryMs + coachChatRetryLeadMs;
+    const limitMs = Math.min(
+      route.timeoutMs,
+      leavesRetry ? remaining - retryMs! - coachChatRetryLeadMs : remaining,
+      kind === "lookup" ? lookupCallMs : Infinity,
+    );
     const started = performance.now();
     const result = await call({
       route,
@@ -509,10 +568,7 @@ export async function generateCoachChatViaGateway(
       messages: request.messages,
       output: { kind: "json", schema },
       consentVendor: input.consentVendor,
-      // The route's own limit, cut to what is left of the turn's total deadline.
-      signal: AbortSignal.timeout(
-        Math.min(route.timeoutMs, remaining, kind === "lookup" ? lookupCallMs : Infinity),
-      ),
+      signal: AbortSignal.timeout(limitMs),
     }, deps);
     const usage = result.usage;
     // A sent request that timed out without usage may have been billed: its place stays open.
@@ -526,6 +582,13 @@ export async function generateCoachChatViaGateway(
       latencyMs: Math.round(performance.now() - started),
       finishReason: result.ok ? result.stop : result.reason,
       completionTokens: usage?.outputTokens ?? 0,
+      ...(retry ? { retry } : {}),
+      promptChars: promptChars(request),
+      schemaBytes: schemaIdentity.bytes,
+      schemaSha: schemaIdentity.sha,
+      remembered,
+      routeTimeoutMs: route.timeoutMs,
+      maxOutputTokens: route.maxOutputTokens,
       ...(usage
         ? {
           promptTokens: usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens,
@@ -550,52 +613,43 @@ export async function generateCoachChatViaGateway(
           },
         };
       }
-      let json = result.json;
-      // The intent is not part of the answer: it is read here and handed on untouched.
-      let proposalIntent: unknown;
-      let factSuggestions: unknown;
-      if (json && typeof json === "object" && !Array.isArray(json)) {
-        const rest = { ...(json as Record<string, unknown>) };
-        if (input.proposals === true) {
-          proposalIntent = rest.proposal_intent ?? undefined;
-          delete rest.proposal_intent;
-        }
-        if (input.factSuggestions === true) {
-          factSuggestions = rest.fact_suggestions ?? undefined;
-          delete rest.fact_suggestions;
-        }
-        json = rest;
-      }
-      const asked = input.lookups ? lookupAsk(json) : null;
-      if (asked) {
-        const empty = Array.isArray(asked.requests) && asked.requests.length === 0;
-        if (!empty) {
-          // A third round, or requests the catalogue refuses, are an invalid answer: the repair
-          // attempt (which may not ask again) must answer.
-          const check = mayAskForData ? validateDataRequests(asked.requests, coachingDate) : null;
-          if (check?.ok) {
-            return {
-              telemetry: telemetry("lookup"),
-              usage,
-              model: result.model,
-              lookup: { requests: check.requests, interim: asked.rest },
-            };
-          }
-          issue = check
-            ? { rule: "lookup_request_invalid", path: "data_requests", detail: check.reason }
-            : { rule: "lookup_rounds_exceeded", path: "data_requests" };
+      // The three keys that are not the answer are read here and handed on untouched. A turn that
+      // did not offer one of them drops it: lookups without a runner, proposals when the caller
+      // does not take them, suggestions for a conversation the athlete asked Coach not to remember.
+      const parts = splitGatewayAnswer(result.json);
+      const json = parts.answer;
+      const dataRequests = input.lookups ? unlessEmpty(parts.dataRequests) : undefined;
+      if (dataRequests !== undefined) {
+        // A third round, or requests the catalogue refuses, are an invalid answer: the repair
+        // attempt (which may not ask again) must answer.
+        const check = mayAskForData ? validateDataRequests(dataRequests, coachingDate) : null;
+        if (check?.ok) {
           return {
-            telemetry: telemetry("invalid", loggableIssue(issue)),
+            telemetry: telemetry("lookup"),
             usage,
-            failure: {
-              reason: "provider_response_invalid",
-              retryAfterSeconds: null,
-              repair: { issue, candidate: result.text },
-            },
+            model: result.model,
+            lookup: { requests: check.requests, interim: json },
           };
         }
-        json = asked.rest;
+        issue = check
+          ? { rule: "lookup_request_invalid", path: "data_requests", detail: check.reason }
+          : { rule: "lookup_rounds_exceeded", path: "data_requests" };
+        return {
+          telemetry: telemetry("invalid", loggableIssue(issue)),
+          usage,
+          failure: {
+            reason: "provider_response_invalid",
+            retryAfterSeconds: null,
+            repair: { issue, candidate: result.text },
+          },
+        };
       }
+      const proposalIntent = input.proposals === true
+        ? intentFromModel(parts.proposalIntent)
+        : undefined;
+      const factSuggestions = input.factSuggestions === true
+        ? unlessEmpty(parts.factSuggestions)
+        : undefined;
       try {
         const answer = parseCoachChatAnswer(json, permitted, answerCheck, shown);
         return {
@@ -728,6 +782,19 @@ export async function generateCoachChatViaGateway(
 
   let current = (await attempt("initial", prompt, true))!;
   record(current);
+  // One slow initial call does not fail the turn: when it timed out and enough of the deadline is
+  // left, the same request goes again with its own budget place (the first stays open, as the
+  // provider may have billed it). A retry the budget refuses leaves the timeout as the failure.
+  if (
+    retryMs !== undefined && current.failure?.reason === "provider_timeout" &&
+    deadline - Date.now() >= retryMs
+  ) {
+    const again = await attempt("initial", prompt, true, true);
+    if (again) {
+      current = again;
+      record(current);
+    }
+  }
   // Lookup rounds: run what the model asked for, then call it again with the rows.
   let rounds = 0;
   let lookupStopped = false;
@@ -767,7 +834,11 @@ export async function generateCoachChatViaGateway(
     // A failed lookup call (timeout, refusal, provider error): the interim sentence answers.
     const interim = rounds > 0 ? interimAnswer() : null;
     if (interim) return success(current, interim);
-    throw unavailable(current.failure!.reason, current.failure!.retryAfterSeconds);
+    throw unavailable(
+      current.failure!.reason,
+      current.failure!.retryAfterSeconds,
+      repairSkipped ? { repairSkipped } : {},
+    );
   }
   const initialRule = { initialRule: repair.issue.rule, initialPath: repair.issue.path };
 

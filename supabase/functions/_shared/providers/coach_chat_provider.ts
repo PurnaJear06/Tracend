@@ -83,6 +83,20 @@ export type CoachChatAttemptTelemetry = Readonly<{
   /** Gateway attempts: prompt tokens read from and written to the provider's cache. */
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+  /**
+   * Gateway attempts, for finding a slow call (numbers and a hash, never content): the request's
+   * characters, the schema's bytes and the first 12 hex characters of its SHA-256 (one value for
+   * every request, or Claude cannot reuse its compiled grammar), whether the conversation is
+   * remembered, and the route's timeout and output limit.
+   */
+  promptChars?: number;
+  schemaBytes?: number;
+  schemaSha?: string;
+  remembered?: boolean;
+  routeTimeoutMs?: number;
+  maxOutputTokens?: number;
+  /** The second send of the initial attempt, after the first timed out. */
+  retry?: boolean;
 }>;
 
 export type CoachChatGeneration = Readonly<{
@@ -98,8 +112,10 @@ export type CoachChatGeneration = Readonly<{
   /** The lookups the turn ran (name and row count, never the rows). */
   lookups?: readonly LookupCount[];
   /**
-   * The model's `proposal_intent` (A8), exactly as it wrote it. Untrusted: the caller passes it to
-   * the proposal engine, which parses it strictly. Never part of the stored answer.
+   * The model's `proposal_intent` (A8), converted by `intentFromModel` to the object form the
+   * proposal parser reads (undefined when it proposed nothing, null when its list was malformed).
+   * Untrusted: the caller passes it to the proposal engine, which parses it strictly. Never part of
+   * the stored answer.
    */
   proposalIntent?: unknown;
   /**
@@ -122,12 +138,19 @@ export type CoachChatTiming = Readonly<{
   totalDeadlineMs: number;
   initialAttemptMs: number;
   repairAttemptMs: number;
+  /**
+   * Gateway path only: the time the deadline must still hold for the initial attempt to be sent
+   * a second time after it timed out; the first attempt is cut short to leave it. Without it a
+   * timeout ends the turn.
+   */
+  initialRetryMinMs?: number;
 }>;
 
 export const coachChatTiming: CoachChatTiming = Object.freeze({
   totalDeadlineMs: 40_000,
   initialAttemptMs: 28_000,
   repairAttemptMs: 10_000,
+  initialRetryMinMs: 10_000,
 });
 
 export type CoachChatAttempt = "initial" | "lookup" | "repair";
@@ -142,7 +165,7 @@ export type CoachChatFailureMetadata = Readonly<{
   attempts?: readonly CoachChatAttemptTelemetry[];
   /** Gateway runs: the list-price cost of every attempt, from the gateway's usage. */
   costUsd?: number;
-  /** Gateway runs: why the repair attempt was not sent (its budget place was not available). */
+  /** Gateway runs: why a repair or a retry was not sent (its budget place was not available). */
   repairSkipped?: "reservation_refused" | "reservation_over_cap";
   /** Gateway runs: the lookups the turn ran before it failed (name and row count). */
   lookups?: readonly LookupCount[];
@@ -1358,9 +1381,9 @@ const goalPhaseContract = "\n# Goal phase and targets — never violate\n" +
 // Coach names a lookup in the JSON answer, the server runs it and calls the model again with the
 // rows. Today's DeepSeek path has no lookups, so it never carries this block.
 const lookupContract = "\n# Looking up the athlete's records\n" +
-  'The prepared context is a recent summary, not everything. Before you answer, you can look up any of the athlete\'s records for any period, read-only. To do so, return your JSON with a non-empty data_requests list instead of a final answer. Each item is {"lookup": a name below, "from": "YYYY-MM-DD", "to": "YYYY-MM-DD", "filter": text or null}. A range is at most 400 days, a round holds at most ' +
+  'The prepared context is a recent summary, not everything. Before you answer, you can look up any of the athlete\'s records for any period, read-only. To do so, return your JSON with a non-empty data_requests list instead of a final answer. Each item is {"lookup": a name below, "from": "YYYY-MM-DD", "to": "YYYY-MM-DD", "filter": the filter text, or "" when the lookup takes none}. A range is at most 400 days, a round holds at most ' +
   maxRequestsPerRound + " requests, and you get " + maxLookupRounds +
-  " rounds at most; the server then calls you again with the rows. In answer, put one short sentence saying what you are checking and that you have not seen it yet, with no figures; it is shown to the athlete only if the lookup cannot run. When you give a final answer, leave data_requests out.\n" +
+  " rounds at most; the server then calls you again with the rows. In answer, put one short sentence saying what you are checking and that you have not seen it yet, with no figures; it is shown to the athlete only if the lookup cannot run. When you give a final answer, data_requests is [].\n" +
   "Lookups:\n" + describeLookupCatalogue() + "\n" +
   "Rules:\n" +
   "- Look up what the question needs before you answer. Never guess a past day, lift, meal, weight or trend that the context does not hold: look it up, or say you did not check.\n" +
@@ -1374,8 +1397,8 @@ const lookupContract = "\n# Looking up the athlete's records\n" +
 // rules decide whether it is allowed, work out every number and show the athlete a proposal to
 // approve. Today's DeepSeek path has no proposals, so it never carries this block.
 const proposalContract = "\n# Proposing a change\n" +
-  'You cannot change the plan, the targets or the goal yourself, and you never say you did. When the athlete asks for a change that fits one of the kinds below, or agrees to one you suggested, return proposal_intent in your JSON next to the answer. Tracend then checks it against its own limits, works out every number itself and shows the athlete a proposal they approve with one tap, or says why it cannot be done. In answer, say in one short sentence, in words like "Here\'s a proposal you can approve below", what you are putting forward and why. Never write that you changed, updated, set or applied anything, never promise the result, and never state the numbers the proposal will hold.\n' +
-  'proposal_intent is {"kind": ..., "reason": ..., plus the fields of its kind}. Dates are YYYY-MM-DD, counted from the context date.\n' +
+  'You cannot change the plan, the targets or the goal yourself, and you never say you did. When the athlete asks for a change that fits one of the kinds below, or agrees to one you suggested, put one item in proposal_intent next to the answer. Tracend then checks it against its own limits, works out every number itself and shows the athlete a proposal they approve with one tap, or says why it cannot be done. In answer, say in one short sentence, in words like "Here\'s a proposal you can approve below", what you are putting forward and why. Never write that you changed, updated, set or applied anything, never promise the result, and never state the numbers the proposal will hold.\n' +
+  'proposal_intent is [] when no change is being asked for, otherwise a list of exactly one item {"kind": ..., "reason": ..., "note": ..., "params": [...]}. params holds the fields of the kind below as {"name": ..., "value": ...} pairs, with every value written as text: dates as YYYY-MM-DD, counted from the context date; figures as plain numbers ("8"); weekdays as a comma list ("1,3,5"). Send only the fields the kind needs.\n' +
   "Kinds:\n" +
   "- temporary_block: a spell away from the gym or the usual setup. setting (" +
   blockSettings.join(" | ") + "), start_date, end_date. For a range of days use the longer end.\n" +
@@ -1390,12 +1413,12 @@ const proposalContract = "\n# Proposing a change\n" +
   "- next_session_adjustment: direction (" + sessionDirections.join(" | ") +
   "), session (today | next).\n" +
   "reason is one of: " + proposalReasons.join(", ") +
-  ". An optional note holds a few plain words from the athlete and no digits.\n" +
+  '. note holds a few plain words from the athlete and no digits, or is "".\n' +
   "Rules:\n" +
   "- Propose only a change the athlete asked for or agreed to. A question about what to do, a general question and a plan explanation get an answer and no proposal.\n" +
   "- Never propose in a turn where the athlete reports pain, a symptom or a safety concern.\n" +
   "- Copy a figure into the intent only if the athlete wrote it in their message. Never choose a calorie, weight, load or set count yourself: Tracend does.\n" +
-  "- Ask for one change at a time. Leave proposal_intent out when no change is being asked for.\n" +
+  "- Ask for one change at a time. Return proposal_intent as [] when no change is being asked for.\n" +
   "- The proposals section of the context says what is waiting for an answer, what was answered and what has ended. Never propose again what is waiting. After a diet break or a block has ended, suggest the next step.\n";
 
 // The library rules the gateway path adds (E3). Retrieval puts excerpts in the volatile part of the
@@ -1428,7 +1451,7 @@ function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string 
         detail ? `: ${detail}` : ""
       }. Either return a corrected list (known lookup names, dates as YYYY-MM-DD, a range of at most 400 days, at most ${maxRequestsPerRound} requests) or, better, answer now from what you have and say what you could not check.\n`;
     case "lookup_rounds_exceeded":
-      return "No more lookups are available this turn. Return the final answer now, without data_requests, from the context and the looked-up rows you already have. Say plainly what you could not check.\n";
+      return "No more lookups are available this turn. Return the final answer now, with data_requests as [], from the context and the looked-up rows you already have. Say plainly what you could not check.\n";
     case "claimed_action":
       return "Remove every claim or promise that you changed, saved, updated, scheduled or will do something: you cannot change anything yourself. Say what the athlete can do in the app instead (for example, set a target on Progress, Set your target), or, when a proposal is going to the athlete, that it is a proposal they can approve. A plan change happens only when the athlete approves it.\n";
     case "citation_not_retrieved":
@@ -1462,6 +1485,11 @@ export function repairContractText(
     rules.map((rule) => repairRuleHint(rule, issue.detail)).join("");
 }
 
+// What an empty value looks like in the gateway answer. The answer's schema has no optional key and
+// no null (see coachChatGatewaySchema), so "nothing" is written out.
+const emptyValuesContract = "\n# The shape of your JSON\n" +
+  'Your JSON always has every key: data_requests, proposal_intent, fact_suggestions, answer, evidence, missing_data, safety_state, suggested_follow_ups and reasoning_chain. There is no null and no missing key: a list with nothing in it is [] and a text with nothing in it is "" (where a rule above says null, write ""). A reasoning_chain step that cites no evidence has evidence_id "". data_requests, proposal_intent and fact_suggestions are [] unless the rules for them in this prompt apply.\n';
+
 /**
  * The rules every Coach chat request carries: persona, data honesty and the answer contract for
  * the permitted evidence. Stable for an athlete's day, so it opens the cached prefix.
@@ -1473,7 +1501,8 @@ export function coachChatInstructions(
   withFactSuggestions = false,
 ): string {
   return coachChatPersona + nullContract + answerContractText(permittedEvidence) +
-    goalPhaseContract + libraryContract + (withLookups ? lookupContract : "") +
+    emptyValuesContract + goalPhaseContract + libraryContract +
+    (withLookups ? lookupContract : "") +
     (withProposals ? proposalContract : "") +
     (withFactSuggestions ? factSuggestionContract : "");
 }

@@ -660,8 +660,8 @@ cached prefix after a head-to-head (`docs/handoff/research-library.md`).
 ### Bounded Coach data lookups (A10)
 
 Coach chat on the gateway route can read the athlete's own records on demand: the model returns
-`data_requests` (a lookup name from a closed catalogue, a date range of at most 400 days, an optional
-filter) in its JSON answer, the Edge Function validates them and calls a read-only `SECURITY DEFINER`
+`data_requests` (a lookup name from a closed catalogue, a date range of at most 400 days, a filter
+that is "" when the lookup takes none; an empty list is a final answer) in its JSON answer, the Edge Function validates them and calls a read-only `SECURITY DEFINER`
 RPC granted to `service_role` for the authenticated athlete, and calls the model again with the dated
 rows. At most 2 rounds; each extra model call has its own budget place; the red-flag screen runs
 before everything and every guard runs on the final answer. It is bounded, read-only and in-request:

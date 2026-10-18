@@ -26,11 +26,15 @@ Deno.test("a router run changes only the URL and says thinking is off", async ()
 });
 
 const answerJson = JSON.stringify({
+  data_requests: [],
+  proposal_intent: [],
+  fact_suggestions: [],
   answer: "Keep it easy today.",
   evidence: [],
   missing_data: [],
   safety_state: "allowed",
   suggested_follow_ups: [],
+  reasoning_chain: [],
 });
 
 async function modelsUsed(

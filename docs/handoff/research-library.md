@@ -662,9 +662,10 @@ Branch `claude/e3-library-in-coach`, migration `20261018140043_library_search_v2
   citation. `parseCoachChatAnswer` refuses a library citation whose id was not shown this turn (new
   rule `citation_not_retrieved`; `shownLibraryKeysIn` reads the ids back from the rendered block),
   and the reply guard refuses an id printed in the text that was not shown. One repair, then the
-  labelled data summary, like every other rule. The output schema takes a library item with any
-  code (an `anyOf` branch) because the ids change every turn and a schema change would break the
-  prompt cache; data evidence still uses the day's enum. The app shows library evidence in the
+  labelled data summary, like every other rule. The output schema takes any evidence code as a
+  plain string because the ids change every turn (the permitted data codes and the shown library
+  ids are checked after the answer; the schema had an `anyOf` and the day's enum until the
+  2026-10-18 incident, see `ai-gateway.md`). The app shows library evidence in the
   existing evidence disclosure as "Research library" (`coach_labels.dart`).
 - **Rules in the prompt.** "Using the research library" (system prompt, gateway only): precedence
   (Tracend's calculations, confirmed facts, the athlete's words, then the library), cite by id, never

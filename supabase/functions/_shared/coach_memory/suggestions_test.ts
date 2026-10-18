@@ -300,3 +300,38 @@ Deno.test("the model can never update or close an allergy: the athlete is asked 
     ]);
   }
 });
+
+Deno.test('model suggestions in the schema\'s form: fact_id is "" for an add, and gives the same suggestion as no id', () => {
+  const saved = makeFact("injury_limitation", "left knee", "Left knee pain");
+  const add = {
+    action: "add",
+    kind: "equipment",
+    subject: "kettlebells",
+    statement: "Has kettlebells",
+  };
+  const asWritten = sanitizeModelSuggestions([{ ...add, fact_id: "" }], [saved]);
+  const before = sanitizeModelSuggestions([add], [saved]);
+  assertEquals(asWritten, before);
+  assertEquals(asWritten.suggestions[0].factId, null);
+  // The old null form still reads the same.
+  assertEquals(sanitizeModelSuggestions([{ ...add, fact_id: null }], [saved]), before);
+  // An add that names a fact, an update or a resolve with no fact id, are refused as before.
+  assertEquals(sanitizeModelSuggestions([{ ...add, fact_id: saved.id }], [saved]).dropped, 1);
+  for (const action of ["update", "resolve"]) {
+    assertEquals(
+      sanitizeModelSuggestions([{ ...add, action, fact_id: "" }], [saved]),
+      { suggestions: [], dropped: 1 },
+    );
+  }
+  const update = sanitizeModelSuggestions(
+    [{
+      action: "update",
+      kind: "injury_limitation",
+      subject: "left knee",
+      statement: "Only deep squats",
+      fact_id: saved.id,
+    }],
+    [saved],
+  );
+  assertEquals(update.suggestions[0].factId, saved.id);
+});

@@ -441,10 +441,10 @@ first and repair, recorded from the pre-A6 code).
   (`cache: true`); block 2 = memory, omitted-sections line, volatile contributors; block 3 = the
   question; a repair adds its instruction last, so it reuses the cache. `renderCoachContextParts`
   splits the one rendering; layout in `docs/CONTEXT_BUDGET.md`.
-- **Schema**: structure only (types, enums, closed objects; nullable evidence id as `anyOf` with
-  null). `parseCoachChatAnswer` checks limits and citations with the exact rule, so a repair
-  carries the rule and the candidate (the gateway returns no text for a schema failure, so that
-  repair goes without one).
+- **Schema**: structure only (types, enums, closed objects), one fixed shape with no optional key and
+  no union (see "Coach answer schema: one stable grammar" below). `parseCoachChatAnswer` checks
+  limits and citations with the exact rule, so a repair carries the rule and the candidate (the
+  gateway returns no text for a schema failure, so that repair goes without one).
 - **Failures** map to today's codes: rate limit → `provider_rate_limited` (retry-after, else 60),
   timeout → `provider_timeout`, overloaded/network/provider error → `provider_http_error`,
   refusal → `provider_response_invalid` (no repair), output-limit cut → `provider_response_truncated`.
@@ -770,11 +770,14 @@ version and an audit event are written; the athlete can undo for seven days. Par
 storage, approval flow and app card. Part 2 (same PR, after A10 merged) wires chat to it.
 
 **Part 2 (chat wiring).**
-- `proposal_intent` is an optional key of the gateway answer (`coachChatGatewaySchema(…, withProposals)`,
-  `CoachChatGatewayInput.proposals`, set by coach-chat and by the eval bank's `gatewayGenerate`).
+- `proposal_intent` is a key of the gateway answer: a list that is empty for no change and holds one
+  item otherwise (`{kind, reason, note, params: [{name, value}]}`; since 2026-10-18, see "Coach answer
+  schema: one stable grammar"). `CoachChatGatewayInput.proposals` (set by coach-chat and by the eval
+  bank's `gatewayGenerate`) decides whether the prompt offers it and whether the gateway keeps it.
   The gateway strips it before `parseCoachChatAnswer` (it is not part of the stored answer, also
-  when a lookup round came first) and returns it as `CoachChatGeneration.proposalIntent`, untrusted.
-  Not offered on the legacy DeepSeek path.
+  when a lookup round came first), converts it with `intentFromModel` to the object
+  `parseCoachProposalIntent` has always read and returns it as `CoachChatGeneration.proposalIntent`,
+  untrusted. Not offered on the legacy DeepSeek path.
 - coach-chat calls `proposeFromChat` (`_shared/coach_proposals/chat.ts`) after the reply guards, only
   for an `allowed` model answer without `generation.safety`. Stored: `link_coach_proposal_v1`
   after `persist_coach_chat_result` sets `coach_messages.proposal_id`; the live response message
@@ -863,7 +866,8 @@ would miss" item 8 of the Coach audit.
 
 - **Lookups** (`_shared/coach_lookups/`): a closed catalogue of ten read-only lookups, each a
   `SECURITY DEFINER` RPC for `service_role` (migration `20261018100020_coach_data_lookups.sql`).
-  The answer may carry `data_requests: [{lookup, from, to, filter}]`; the gateway path validates
+  The answer carries `data_requests: [{lookup, from, to, filter}]` (an empty list is a final answer,
+  `filter` is "" for none); the gateway path validates
   them (`validateDataRequests`: known lookup, real dates, at most 400 days, at most 4 a round, filter
   rules), runs them with the athlete's id bound by `coach-chat/index.ts`, and calls the model again
   with a dated, labelled `<looked_up_data>` block after the question. At most 2 rounds. Each extra
@@ -1044,10 +1048,10 @@ rules are AI_SAFETY_SPEC §11.2; the prompt budget is CONTEXT_BUDGET.md.
   contributor (C3) is registered with it (volatile, 900 characters).
 - **Answer contract.** Evidence items may carry `source: "library"` with a source id as the `code`
   (`coachChatEvidenceSources` gained `library`; `coachChatDataEvidenceSources` is the old three, which
-  the legacy provider schema keeps). The gateway schema's evidence `items` is an `anyOf`: data
-  evidence with the day's code enum, or a library item with any code. The shown ids change every
-  turn, so they are checked by `parseCoachChatAnswer` (a fourth argument, the set of ids the turn
-  showed), not listed in the schema.
+  the legacy provider schema keeps). Since 2026-10-18 the gateway schema's evidence `items` is one
+  object (`code` a plain string, `source` the four sources). The shown ids and the day's codes are
+  checked by `parseCoachChatAnswer` (a fourth argument, the set of ids the turn showed), not listed in
+  the schema.
 - **New rule `citation_not_retrieved`** (`coachChatValidationRules`): a library citation whose id the
   turn did not show (evidence, thrown by `parseCoachChatAnswer`), or a library source id printed in
   the text that was not shown (reply guard). Repair hint in `repairRuleHint`; it follows the usual
@@ -1072,6 +1076,89 @@ rules are AI_SAFETY_SPEC §11.2; the prompt budget is CONTEXT_BUDGET.md.
   `citations_shown` and `cites_sources`, gateway route only: `run.ts` skips them on the DeepSeek or
   router route). `library_head_to_head.ts` compares retrieval with the whole library in the prefix
   (not run: it needs an Anthropic key and the database).
+
+### Coach answer schema: one stable grammar (incident 2026-10-18, `claude/coach-schema-flatten`, Refs FLUTTER-K)
+
+**Incident.** From the release that added lookups, proposals and fact suggestions to the answer
+schema, every production `coach_chat` call on Haiku 5.5 timed out: `model_runs` showed
+`provider_timeout`, about 31.7 s and 0 tokens (twice on 2026-10-18), and no turn succeeded. Claude's
+structured outputs compile a grammar the first time they see a schema and cache it for 24 hours,
+keyed on the schema's structure. The compile roughly doubles part of the grammar for each optional
+property and has documented limits of 24 optional properties and 16 unions. Our schema had 24 optional
+properties and 4 `anyOf`s, and it listed the day's evidence codes in an enum, so it differed for each
+athlete and day: the compile never hit the cache and ran past the route's 30 s timeout.
+
+**The schema now** (`coachChatGatewaySchema()`, no arguments; measured on the converted schema that
+`anthropicSchema` sends):
+
+| | before | after |
+| --- | --- | --- |
+| optional properties | 24 | 0 |
+| `anyOf` unions | 4 | 0 |
+| size of the converted schema | 3,394 bytes with everything offered | 2,818 bytes |
+| varies with | the athlete's permitted codes, the offered blocks | nothing (`schema_sha` `274ee4fafead`) |
+
+- **Every key is required; "nothing" is a value.** `data_requests`, `proposal_intent`,
+  `fact_suggestions` and `reasoning_chain` are lists (`[]` for none); `filter`, `fact_id`, `note`,
+  `evidence_id` and a proposal param's `value` are strings (`""` for none). There is no null. The
+  system prompt says so once ("The shape of your JSON", `emptyValuesContract`) and the blocks that
+  offer lookups, proposals and suggestions use the same words.
+- **Evidence is one object**: `code` a plain string, `source` the four sources
+  (`coachChatEvidenceSources`). The permitted codes stay in the prompt (the Evidence Contract and the
+  answer contract); `parseCoachChatAnswer` rejects a code that is not permitted, or a library id not
+  shown this turn, with the exact rule, and the repair attempt fixes it.
+- **The three non-answer keys are always in the schema.** The gateway reads them with
+  `splitGatewayAnswer` and keeps each only when the turn offered it (`lookups` runner, `proposals`,
+  `factSuggestions`, which is false for a conversation the athlete asked Coach not to remember); the
+  rest is dropped without a repair. An empty list is "none".
+- **`proposal_intent`** is a list of at most one item `{kind, reason, note, params}` where `params` is
+  a list of `{name, value}` pairs (names in `proposalParamNames`, values text: dates `YYYY-MM-DD`,
+  figures as plain numbers, `weekdays` as "1,3,5"). `intentFromModel` (`coach_proposals/intent.ts`) is the
+  one place that converts it to the object form; `parseCoachProposalIntent` is unchanged and still
+  refuses everything outside the vocabulary and every range. An empty list is no intent; more than one
+  item, a name twice or a name outside the list gives `null`, which the parser refuses (the athlete is
+  told the change could not be prepared).
+- **`fact_suggestions`** entries have `fact_id: ""` for an add; `sanitizeModelSuggestions` reads "" as
+  none. `reasoning_chain` steps have `evidence_id: ""`; the gateway turns it into `null` before
+  `parseCoachChatAnswer`, so the stored and returned answer is unchanged. The Flutter contract
+  and its fixtures did not change (`test/contract` untouched), so no `schema_version` moved.
+- **Guards** (`_shared/providers/coach_chat_schema_test.ts`): the converted schema has 0 optional
+  properties and 0 unions, is at most 3,100 bytes, holds eight fixed enums, and the bytes the gateway
+  sends are identical for different permitted lists, remember flags and lookups; the telemetry hash
+  agrees. Adding a field means making it required, union-free and small; do not raise a limit
+  without checking the compile cost.
+
+**One retry of a slow first call.** `coachChatTiming.initialRetryMinMs` (10,000 ms; unset means no
+retry, as in the eval harnesses' own timing objects). The initial attempt still waits for the route's
+own timeout (`AI_COACH_CHAT_TIMEOUT_MS`; a test pins that the route's value, not `initialAttemptMs`,
+governs the gateway path), but when the 40 s deadline can hold both it is cut to
+`remaining - 10 s - 0.5 s` (29.5 s for the 30 s route), so a timeout leaves the retry its time. After a
+timeout with at least 10 s left the same request is sent once more (`attempts` then holds two
+`initial` entries, the first `timeout`, the second marked `retry`). Budget: the first timeout calls
+`inFlight`, so its place stays open (the request may have been billed; nothing records its cost); the
+retry takes its own place with `reserveAttempt(worstCase, "initial")` before it is sent, and a refused
+or over-cap place sends nothing (`repairSkipped` names why) and leaves the timeout as the failure. Two
+timeouts keep both places open; a retry that answers settles its own place with the recorded cost.
+Cost of a successful retry: the first place stays counted at its ceiling for the month (at most
+about USD 0.014 for Haiku), which can only over-count. Only a timeout is retried; lookup calls and
+repairs are not.
+
+**Telemetry.** Each gateway attempt records `latencyMs`, `promptChars`, `schemaBytes`, `schemaSha`
+(first 12 hex characters of the SHA-256 of the converted schema), `remembered`, `routeTimeoutMs`,
+`maxOutputTokens`, `retry` and the cache read and write tokens (`CoachChatAttemptTelemetry`). They are
+in the `coach_chat_complete` and `coach_chat_failure` log lines, as tags on the failure event in
+Sentry (`latency_ms`, `prompt_chars`, `schema_bytes`, `schema_sha`, `remembered`, `route_timeout_ms`,
+`max_output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `attempt_count`, taken from the last
+attempt) with every attempt under `extra.attempts`, and a successful turn that took more than 15 s
+sends a `coach_chat_slow_turn` warning (`captureMessage`, `coach-chat/attempt_telemetry.ts`). Numbers,
+names and the schema hash only; the Edge Sentry client builds each event from an allowlist and has no
+`beforeSend`, and the Flutter scrubber is untouched. Only failures and slow turns reach Sentry: a
+healthy turn is in the Edge Function logs. A second `schema_sha` in production means the schema is
+drifting again.
+
+**Deploy note.** The first call after this ships compiles the new grammar once (cached for 24 h
+afterwards). Check `coach_chat_complete` for `schema_sha` `274ee4fafead` and the first turn's
+latency; run `./scripts/verify-live-function.sh coach-chat` from the deployed commit.
 
 ## Next agent starts here
 
