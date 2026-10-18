@@ -1,6 +1,7 @@
 import { assert, assertAlmostEquals, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { librarySources } from "../../library/index.ts";
 import { isFollowUp, libraryRetrievalQuery } from "../_shared/library/query.ts";
+import holdoutFile from "./library_questions_holdout.json" with { type: "json" };
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
   floorGrid,
@@ -18,20 +19,43 @@ import {
   topSources,
 } from "./library_eval_metrics.ts";
 
-const questions = questionFile.questions as LibraryQuestion[];
-const ofKind = (kind: string) => questions.filter((question) => questionKind(question) === kind);
+const calibration = questionFile.questions as LibraryQuestion[];
+const holdout = holdoutFile.questions as LibraryQuestion[];
+// Every check on a question applies to both files: the hold-out set is only useful if it is as
+// well formed as the one the thresholds are chosen on.
+const questions = [...calibration, ...holdout];
+const ofKind = (kind: string, set: readonly LibraryQuestion[] = questions) =>
+  set.filter((question) => questionKind(question) === kind);
 
-Deno.test("the question set holds the single-topic questions, multi-source questions and no-answer questions", () => {
-  assert(ofKind("single").length >= 42, `${ofKind("single").length} single-topic`);
-  assert(ofKind("multi_source").length >= 15, `${ofKind("multi_source").length} multi-source`);
-  assert(ofKind("no_answer").length >= 10, `${ofKind("no_answer").length} no-answer`);
-  assert(ofKind("follow_up").length >= 6, `${ofKind("follow_up").length} follow-up`);
+Deno.test("the question sets cover the whole library with every kind of question", () => {
+  assert(ofKind("single").length >= 100, `${ofKind("single").length} single-topic`);
+  assert(ofKind("multi_source").length >= 25, `${ofKind("multi_source").length} multi-source`);
+  assert(ofKind("no_answer").length >= 30, `${ofKind("no_answer").length} no-answer`);
+  assert(ofKind("follow_up").length >= 12, `${ofKind("follow_up").length} follow-up`);
+  assert(
+    questions.filter((question) => question.style === "colloquial").length >= 25,
+    "colloquial questions",
+  );
+  assert(questions.length >= 240, `${questions.length} questions`);
   assertEquals(new Set(questions.map((question) => question.id)).size, questions.length);
   assertEquals(
     new Set(questions.map((question) => question.text)).size,
     questions.length,
     "a question is asked twice",
   );
+  // Every source is asked about in the calibration set, so the floor is chosen with all of them.
+  const asked = new Set(calibration.flatMap((question) => question.expected));
+  const unasked = librarySources.map((source) => source.slug).filter((key) => !asked.has(key));
+  assertEquals(unasked, [], "sources no calibration question expects");
+});
+
+Deno.test("the hold-out set is about a fifth of the questions and has every kind", () => {
+  const share = holdout.length / questions.length;
+  assert(share >= 0.15 && share <= 0.25, `hold-out share ${share.toFixed(2)}`);
+  for (const kind of ["single", "multi_source", "follow_up", "no_answer"]) {
+    assert(ofKind(kind, holdout).length >= 3, `hold-out ${kind}`);
+  }
+  assert(ofKind("no_answer", holdout).length >= 5);
 });
 
 Deno.test("every question is a question with known expected sources", () => {

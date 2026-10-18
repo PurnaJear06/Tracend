@@ -19,6 +19,13 @@
 // EVAL_SUPABASE_URL defaults to http://127.0.0.1:54321. The worker secret is the Vault secret
 // `library_worker_secret` (select private.library_worker_secret() in the database).
 //
+// Two question files. EVAL_QUESTION_SET=calibration (the default) reads library_questions.json,
+// the set the relevance floor and every threshold are chosen on, and prints the sweeps.
+// EVAL_QUESTION_SET=holdout reads library_questions_holdout.json, written blind and never used to
+// choose a threshold: it prints the table and the gates only, to confirm the chosen thresholds
+// once. EVAL_HITS_FILE=<path> (calibration only; needs --allow-write=<path>) saves every question's
+// search results as JSON, so a candidate rule can be tried offline without another run.
+//
 // Scores every question (single-topic, multi-source, follow-up and no-answer) and prints one table
 // of recall@8 and MRR per search mode and kind; a no-answer question scores whether it was shown
 // nothing (no-answer precision). This is E3's retrieval gate. Exits non-zero when a regional source
@@ -32,6 +39,7 @@ import { embeddingModel } from "../_shared/library/embedding.ts";
 import { libraryRowsOf } from "../_shared/library/live.ts";
 import { libraryRetrievalQuery } from "../_shared/library/query.ts";
 import { libraryRelevanceFloor } from "../_shared/library/retrieval.ts";
+import holdoutFile from "./library_questions_holdout.json" with { type: "json" };
 import questionFile from "./library_questions.json" with { type: "json" };
 import {
   floorGrid,
@@ -63,7 +71,15 @@ if (serviceKey === "" || workerSecret === "") {
   Deno.exit(2);
 }
 
-const questions = questionFile.questions as LibraryQuestion[];
+const questionSet = Deno.env.get("EVAL_QUESTION_SET") ?? "calibration";
+if (questionSet !== "calibration" && questionSet !== "holdout") {
+  console.error(`EVAL_QUESTION_SET must be calibration or holdout, not ${questionSet}.`);
+  Deno.exit(2);
+}
+const holdout = questionSet === "holdout";
+const hitsFile = holdout ? "" : Deno.env.get("EVAL_HITS_FILE") ?? "";
+const questions = (holdout ? holdoutFile : questionFile).questions as LibraryQuestion[];
+console.log(`Question set: ${questionSet}, ${questions.length} questions`);
 const regionsOf = new Map(librarySources.map((source) => [source.slug, source.region]));
 const defaultRegion = ["global"];
 
@@ -110,6 +126,7 @@ async function search(
     sourceKey: row.sourceId,
     vectorDistance: row.vectorDistance ?? null,
     textRank: row.textRank ?? null,
+    text: `${row.header}\n${row.body}`,
   }));
 }
 
@@ -208,64 +225,84 @@ for (const [index, question] of questions.entries()) {
   );
 }
 
-const strongestExpected = questions.flatMap((question, index) =>
-  questionKind(question) === "no_answer"
-    ? []
-    : [strongest(hits.text[index].filter((hit) => question.expected.includes(hit.sourceKey)))]
-);
-const strongestOutside = questions.flatMap((question, index) =>
-  questionKind(question) === "no_answer" ? [strongest(hits.text[index])] : []
-);
-console.log(
-  "\nStrongest text rank of an expected source's chunk (answerable questions, word search):",
-);
-console.log(`  ${strongestExpected.length} questions: ${describe(strongestExpected)}`);
-console.log("Strongest text rank of any chunk (no-answer questions, word search):");
-console.log(`  ${strongestOutside.length} questions: ${describe(strongestOutside)}`);
+// The tuning aids: only on the calibration set. The hold-out set confirms, it never tunes.
+if (!holdout) {
+  const strongestExpected = questions.flatMap((question, index) =>
+    questionKind(question) === "no_answer"
+      ? []
+      : [strongest(hits.text[index].filter((hit) => question.expected.includes(hit.sourceKey)))]
+  );
+  const strongestOutside = questions.flatMap((question, index) =>
+    questionKind(question) === "no_answer" ? [strongest(hits.text[index])] : []
+  );
+  console.log(
+    "\nStrongest text rank of an expected source's chunk (answerable questions, word search):",
+  );
+  console.log(`  ${strongestExpected.length} questions: ${describe(strongestExpected)}`);
+  console.log("Strongest text rank of any chunk (no-answer questions, word search):");
+  console.log(`  ${strongestOutside.length} questions: ${describe(strongestOutside)}`);
 
-const steps = (from: number, to: number, by: number) =>
-  Array.from({ length: Math.round((to - from) / by) + 1 }, (_, step) => from + step * by);
-const none = Number.POSITIVE_INFINITY;
-console.log(
-  "\nFloor sweep, hybrid search: nearest-chunk limit by row limit ('none': no text rule):",
-);
-console.log(
-  renderSweep(
-    sweepFloors(
-      questions,
-      hits.hybrid,
-      floorGrid(steps(0.13, 0.18, 0.005), steps(0.15, 0.21, 0.01), [none]),
+  const steps = (from: number, to: number, by: number) =>
+    Array.from({ length: Math.round((to - from) / by) + 1 }, (_, step) => from + step * by);
+  const none = Number.POSITIVE_INFINITY;
+  console.log(
+    "\nFloor sweep, hybrid search: nearest-chunk limit by row limit ('none': no text rule):",
+  );
+  console.log(
+    renderSweep(
+      sweepFloors(
+        questions,
+        hits.hybrid,
+        floorGrid(steps(0.13, 0.18, 0.005), steps(0.15, 0.21, 0.01), [none]),
+      ),
     ),
-  ),
-);
-console.log("\nFloor sweep, hybrid search: the strong text rank at the chosen distances:");
-console.log(
-  renderSweep(
-    sweepFloors(
-      questions,
-      hits.hybrid,
-      floorGrid([floor.maxTopDistance], [floor.maxVectorDistance], [
-        none,
-        0.004,
-        0.006,
-        0.008,
-        0.01,
-        0.015,
-        0.02,
-      ]),
+  );
+  console.log("\nFloor sweep, hybrid search: the strong text rank at the chosen distances:");
+  console.log(
+    renderSweep(
+      sweepFloors(
+        questions,
+        hits.hybrid,
+        floorGrid([floor.maxTopDistance], [floor.maxVectorDistance], [
+          none,
+          0.004,
+          0.006,
+          0.008,
+          0.01,
+          0.015,
+          0.02,
+        ]),
+      ),
     ),
-  ),
-);
-console.log("\nFloor sweep, word search alone (the fallback), by strong text rank:");
-console.log(
-  renderSweep(
-    sweepFloors(
-      questions,
-      hits.text,
-      floorGrid([0], [0], [0.002, 0.004, 0.006, 0.008, 0.01, 0.015]),
+  );
+  console.log("\nFloor sweep, word search alone (the fallback), by strong text rank:");
+  console.log(
+    renderSweep(
+      sweepFloors(
+        questions,
+        hits.text,
+        floorGrid([0], [0], [0.002, 0.004, 0.006, 0.008, 0.01, 0.015]),
+      ),
     ),
-  ),
-);
+  );
+}
+
+if (hitsFile !== "") {
+  await Deno.writeTextFile(
+    hitsFile,
+    JSON.stringify({
+      floor: libraryRelevanceFloor,
+      questions: questions.map((question, index) => ({
+        question,
+        query: queries[index],
+        hybrid: hits.hybrid[index].map(({ text: _, ...hit }) => hit),
+        text: hits.text[index],
+        vector: hits.vector[index].map(({ text: _, ...hit }) => hit),
+      })),
+    }),
+  );
+  console.log(`\nSearch results saved to ${hitsFile}`);
+}
 
 const floored = modes.hybrid_floor;
 const hybrid = summarise(floored);

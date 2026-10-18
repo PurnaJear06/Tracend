@@ -31,11 +31,14 @@ export type LibraryQuestion = Readonly<{
   previous?: readonly string[];
   /** The regions of the athlete asking, for example ["global", "IN"]; default ["global"]. */
   region?: readonly string[];
+  /** "colloquial": gym slang, typos or Indian-English phrasing; reported on its own line. */
+  style?: "colloquial";
 }>;
 
 export type QuestionScore = Readonly<{
   id: string;
   kind: QuestionKind;
+  style?: "colloquial";
   recall: number;
   /** 1 / (rank of the first expected source among the results), 0 when none was found. */
   reciprocalRank: number;
@@ -74,6 +77,7 @@ export function scoreQuestion(
   return {
     id: question.id,
     kind: questionKind(question),
+    ...(question.style === undefined ? {} : { style: question.style }),
     recall: question.expected.length === 0 ? 1 : found.length / question.expected.length,
     reciprocalRank: firstRank === 0 ? 0 : 1 / firstRank,
     found,
@@ -137,6 +141,7 @@ export function renderTable(modes: Readonly<Record<string, readonly QuestionScor
       ["single", summariseKind(scores, "single")],
       ["multi_source", summariseKind(scores, "multi_source")],
       ["follow_up", summariseKind(scores, "follow_up")],
+      ["colloquial", summarise(scores.filter((score) => score.style === "colloquial"))],
     ];
     for (const [label, summary] of rows) {
       if (summary.questions === 0) continue;
@@ -170,6 +175,8 @@ export type ScoredHit = Readonly<{
   sourceKey: string;
   vectorDistance: number | null;
   textRank: number | null;
+  /** The chunk's header and body, kept for the offline analysis of the word-search fallback. */
+  text?: string;
 }>;
 
 /** The source keys of the hits a floor lets through, best first. */
