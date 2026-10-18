@@ -48,7 +48,7 @@ async function turn(question: string, modelAnswer: Record<string, unknown>) {
         return reply({ granted: true, provider: "anthropic", notice_version: "v1" });
       case "reserve_ai_budget_v2":
         return reply("reservation-1");
-      case "prepare_coach_chat_v8":
+      case "prepare_coach_chat_v9":
         return reply({
           replayed: false,
           context,

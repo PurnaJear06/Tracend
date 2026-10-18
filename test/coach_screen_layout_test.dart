@@ -291,7 +291,7 @@ class _Repository
         ];
 
   @override
-  Future<String> createThread() async => 't2';
+  Future<String> createThread({bool remember = true}) async => 't2';
 
   @override
   Future<List<CoachMessage>> loadMessages(String threadId) async => messages;

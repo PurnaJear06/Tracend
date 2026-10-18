@@ -204,9 +204,12 @@ allergies, exclusions and disclosed eligibility restrictions, each with source, 
 optional expiry. Today equipment, movements to avoid, limitations and diet notes live on
 `user_profiles`.
 
-### `user_preferences`
+### `user_preferences` (superseded by `coach_facts`)
 
-Confirmed food, training, schedule, communication, notification and lifestyle preferences. Each row
+Since A10 part 2 nothing in Coach chat reads or writes this table (the confirmed preferences were
+copied into `coach_facts` when that table was created). Older app builds can still write it through
+`persist_coach_preference`; "Forget everything" empties it. Kept until the frozen `prepare_coach_chat_v8`
+is retired. Confirmed food, training, schedule, communication, notification and lifestyle preferences. Each row
 stores `category`, `key` (1–120 characters), `value` (1–200 characters), `provenance`
 (`onboarding`, `chat_statement`, `repeated_signal`, `manual`), `confirmed_at` and `superseded_at`.
 Only one active row per user and key; a new value supersedes the old one. Model-inferred
@@ -804,14 +807,53 @@ chat uses `private.prepare_daily_coaching_core` with `for_chat`). The context sa
 when never screened). `active_plan` and `nutrition_targets` are null, and
 `APPROVED_PLAN_ACTIVE` is not in `permitted_evidence`.
 
-### `coach_narrative_entries`
+### `coach_facts` and `coach_notes` (A10 part 2, migration code 20)
+
+**`coach_facts`** holds what the athlete confirmed for Coach, in a closed vocabulary: `kind` is one of
+`injury_limitation`, `schedule_constraint`, `equipment`, `food_like`, `food_dislike`, `allergy`,
+`exercise_like`, `exercise_dislike`, `coaching_style`, `other_preference` (goal, target and screening
+keep their own tables). Each row has a `subject` (short, lower case, 1 to 60 characters), a
+`statement` (the athlete's words, 1 to 200), a `source` (`athlete_typed`,
+`coach_suggestion_confirmed`, `onboarding`), `confirmed_at`, `reconfirm_at` (injuries 28 days and
+schedule constraints 90 days after confirmation, else null), `lineage_id` and `version`. A fact is
+versioned: an edit or "still true" supersedes the current row (`superseded_at`) and adds the next
+version; at most one active row per user, kind and subject; at most 60 active facts. Forced RLS,
+read-only for authenticated; every write is an athlete action through `save_coach_fact_v1`,
+`reconfirm_coach_fact_v1`, `delete_coach_fact_v1` (deletes every version) or
+`forget_coach_memory_v1`, each audited without the athlete's words. No Edge Function and no model
+writes a fact (Architecture 2).
+
+**`coach_notes`** holds Coach's own short notes, written by `persist_coach_note_v1` (service role)
+after a reply, from rules and structured fields, never from the Coach's prose: `entry_kind`
+(`conversation`, or `advice` for a proposal the athlete answered), `note_date`, `summary` (a template
+sentence), `topics` and `concerns` (closed lists), `advice` and `commitments` (jsonb, at most 4 each),
+`follow_through` (`followed`, `partly`, `not_followed`, set once a week has passed), `message_ids`
+(the messages it came from), `proposal_id` and `expires_at` (60 days). An athlete keeps at most 20 notes: the newest, except that a note still waiting for its
+follow-through check (a training-days commitment under 28 days old) is kept ahead of the others. A note for a conversation with `coach_threads.remember = false` is refused. Deleting
+a conversation deletes its notes. Forced RLS, read-only for authenticated; the athlete deletes a note
+with `delete_coach_note_v1`. Notes are untrusted when read back.
+
+`change_proposals` gains `memory_noted_at` (set once, never cleared) and `source_remembered` (copied
+from the conversation by a trigger when `source_message_id` is set; true for proposals that existed
+when the column was added, false for a new one until it is linked to a reply in a remembered
+conversation, so a proposal that never gets linked is never noted). "Forget
+everything" also marks every proposal made so far noted (answered or pending) and removes the older preference, journal and
+narrative sections from the athlete's stored `coach_context_snapshots` (with their checksum).
+
+`coach_threads.remember` (default true) marks a conversation the athlete asked Coach not to remember
+(`create_coach_thread_v2`): no notes, no suggested facts, excluded from `coach_lookup_past_messages_v1`
+and `search_coach_messages`, and left out of every other conversation's context by
+`prepare_coach_chat_v9`.
+
+### `coach_narrative_entries` (never written)
 
 Versioned coaching timeline phases owned by the user: `phase`, `headline` (deterministic one-
 sentence summary), `since`/`until` dates, `cause_snapshot_ids`, and `superseded_by` (version
 chain). At most one entry is ongoing (`until is null`). Forced RLS, read-only for authenticated.
 
-### `coach_session_summaries`
+### `coach_session_summaries` (superseded by `coach_notes`)
 
+Nothing writes this table since A10 part 2 (the per-turn summary recycled the Coach's own prose).
 Append-only deterministic daily journal entries: `coaching_date`, `summary` (1–2 sentences),
 `thread_id`, and `key_snapshot_ids`. Only the 30 newest entries per user are kept. Forced RLS,
 read-only for authenticated.

@@ -1060,6 +1060,48 @@ adapter still sends no tools.
   (`coach_messages.guard_faults`), so the lead can query what Coach looked at and why a turn fell
   back.
 
+### 11.1a Coach memory (A10 part 2)
+
+- **Only the athlete writes a durable fact.** The model may return an optional `fact_suggestions`
+  (add, update or resolve, a kind from the closed list, a short subject, one plain statement, and the
+  id of the fact it concerns). The server checks each entry against the closed vocabulary and the
+  facts the athlete has saved, drops what does not fit, and sends the rest to the app as a card. A
+  fact is stored only when the athlete taps Confirm, through the athlete's own session. A suggestion
+  for a goal, target, condition, medication or measurement is outside the vocabulary.
+- **A contradiction is a question.** What the athlete says is also read by rules (statements about
+  likes, dislikes, allergies, injuries, equipment, schedule limits and coaching style). A statement
+  that contradicts a confirmed fact produces an update suggestion naming that fact, an injury that
+  has healed produces a resolve, and one that cuts across an allergy produces a review that offers
+  nothing to save. The Coach instructions say to ask and never act as if the fact had changed. The
+  model's own suggestions go through the same judgement: a taste that cuts across an allergy is a
+  review card, the opposite of a saved taste an update, a repeat is dropped, and the model can
+  never update or close an allergy (it becomes a review card). Each confirmed fact is shown to the
+  model with its id in square brackets, for `fact_id` only.
+- **Precedence.** Tracend's calculations, then the confirmed facts, then the athlete's recent
+  statements, then Coach's notes, then the library. Every item carries its date. A fact marked
+  re-check (an injury after 28 days, a schedule limit after 90) is asked about once, briefly; only
+  the two the scheduler picks are marked, and when the athlete speaks of one of them a "Still
+  true?" card calls `reconfirm_coach_fact_v1` on Confirm.
+- **Coach's notes are written by rules after the reply**, from the athlete's message, the evidence and
+  lookups the turn used and the proposals the athlete answered, with no model call. They are labelled
+  the Coach's own and untrusted, capped (20 newest, 60 days) and linked to their messages. A
+  proposal the athlete answered becomes an advice note; a week later a training schedule is checked
+  against the sessions logged, once the week has fully passed, and the result (followed, partly, not
+  followed) is added. The notes are written after the reply has gone out (`EdgeRuntime.waitUntil`), so
+  a memory failure never touches a stored reply. A proposal is turned into a note once
+  (`change_proposals.memory_noted_at`, never cleared), so deleting a note, the cap or "Forget
+  everything" cannot bring it back; a proposal made in a conversation that is not remembered
+  (`source_remembered`, copied when the proposal is linked to its reply) is never noted, even after
+  that conversation is deleted. The cap is 20 notes in all: a note waiting for its check (a training-days commitment under 28 days old) is kept ahead of the others, so the oldest other notes go first.
+- **A chat the athlete asked Coach not to remember** gets no notes, no suggestions (the model is not
+  offered the field), no search and no appearance in another chat. A red-flag turn writes nothing.
+- **Raw message search** is the `past_messages` lookup: the athlete's own earlier questions in
+  remembered chats, found by their words, at most 12 rows of 300 characters. Coach's replies are not
+  searched, so a wrong claim of the Coach's never returns as memory.
+- **Evaluation.** Bank cases cover a contradicted fact (knee, schedule, diet), a respected dislike, a
+  confirmed limit in a leg session, a follow-through check against Coach's own note and a chat that
+  is not remembered.
+
 ### 11.2 The research library in every Coach reply (E3)
 
 Coach chat on the gateway route searches the research library for every turn that reaches a model

@@ -1152,7 +1152,7 @@ Account is one iOS inset-grouped settings page:
   **Not now**, off or a denied permission keeps the rest timer in the app only, and a denial
   points to iOS Settings. There is no in-app haptics toggle; the iOS setting governs haptics.
 - **AI coach:** **AI coaching** (on, or "Off · plans and logging still work"), **AI usage this
-  month**, and **Coach conversations** (a sheet; deleting a conversation asks with a destructive
+  month**, **What Coach remembers** (§13, memory) and **Coach conversations** (a sheet; deleting a conversation asks with a destructive
   confirm, **Delete thread**). The footnote says provider keys stay on Tracend's server. The AI
   coaching row names no provider (D11): "On · AI writes Coach answers".
 - **Privacy:** **Export data**, **Consent history** and **Delete account**, then **Sign out** at
@@ -1160,6 +1160,28 @@ Account is one iOS inset-grouped settings page:
 
 Sheets use the Tracend sheet, confirmations the destructive confirm, transient results a toast,
 and loading the brand loader.
+
+**What Coach remembers** (A10 part 2) is a pushed screen. Facts you confirmed come first, grouped by
+kind (injuries and limitations, schedule and life, equipment, foods and exercises you like or
+dislike, allergies, coaching style, other preferences). Each row shows the words, the date it was
+confirmed and where it came from (you typed it, Coach suggested it and you confirmed, or
+onboarding); an injury or schedule limit older than 28 or 90 days says **Check that this still
+applies**. Tapping a row opens a sheet with **Still true** (only for facts that lapse), **Edit** and
+**Delete** (a destructive confirm; it removes every version). **Add something Coach should know** opens
+the editor (a kind and your words, 200 characters). Under the facts are **Coach's notes** (date,
+a template sentence and, for advice, how it turned out), each with a delete control and a confirm.
+At the foot, **Forget everything** (destructive confirm; it deletes every fact and note and keeps
+your conversations). A save that fails keeps what you typed and says so; at 60 facts, adding is off
+with the reason.
+
+**Don't remember this chat** is a switch on a new conversation's empty state, off by default. It is
+chosen before the first message and cannot change. The conversation then shows "This chat isn't
+remembered" at its top and "Not remembered" in the conversation list; Coach saves no notes or
+suggested facts from it, never searches it and no other chat sees it.
+
+When Coach suggests a fact, a card follows the reply (**Remember this?**, **Update what Coach
+remembers?**, **Forget this?**, or **Check what Coach remembers** for an allergy): it shows the words
+and why, with **Confirm** and **Dismiss**. Nothing is saved until Confirm.
 
 **AI usage** shows only the authenticated user's sanitized current-period usage, estimated cost,
 and service availability: requests today against the daily limit, successful and failed requests

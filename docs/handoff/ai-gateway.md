@@ -901,6 +901,60 @@ would miss" item 8 of the Coach audit.
   approved. It returns (RPC, catalogue entry, index line, tests) together with that notice line once
   the owner approves it. Lookups need the gateway route; the legacy path has none.
 
+### A10 part 2: Coach memory with athlete controls (migration code 20, `claude/a10-coach-memory`)
+
+Changes no frozen function (`prepare_coach_chat_v8`, `build_coach_athlete_context`). Findings 16, 17
+and 23 of the Coach audit and "What B7 would miss" item 7. Authority text: DATA_MODEL ("`coach_facts`
+and `coach_notes`"), ARCHITECTURE (Coach chat), AI_SAFETY_SPEC 11.1a, UX_FLOWS 13, SECURITY_PRIVACY
+(export).
+
+- **Stores** (`20261018150020_coach_memory.sql`): `coach_facts` (versioned, athlete-written, closed
+  kinds, 28/90-day re-confirm dates for injuries and schedule limits, 60 active at most),
+  `coach_notes` (rule-written, at most 20 with notes waiting for their check kept first, 60 days, linked to message ids, one per proposal),
+  `coach_threads.remember`. The confirmed `user_preferences` were copied into `coach_facts` as
+  `other_preference` (schedule as `schedule_constraint`). Athlete RPCs: `save_coach_fact_v1`,
+  `reconfirm_coach_fact_v1`, `delete_coach_fact_v1`, `delete_coach_note_v1`, `forget_coach_memory_v1`,
+  `get_my_coach_memory_v1`, `create_coach_thread_v2`; `get_my_coach_threads` gains `remember`.
+  Service RPCs: `persist_coach_note_v1`, `get_coach_memory_context_v1`,
+  `get_unnoted_coach_proposals_v1`, `get_coach_follow_through_inputs_v1`,
+  `record_coach_note_follow_through_v1`, `coach_lookup_past_messages_v1`.
+- **`prepare_coach_chat_v9`** wraps v8: other conversations with `remember = false` are removed from
+  `recent_other_conversations` (and from the stored snapshot) and the preference, journal and
+  narrative sections are dropped. coach-chat calls v9; v8 stays for rollback.
+- **Code** (`_shared/coach_memory/`): `statements.ts` (closed-vocabulary claims), `contradictions.ts`,
+  `suggestions.ts` (deterministic and model suggestions, sanitised), `facts.ts` (parse, render,
+  re-confirm scheduler), `notes.ts` (note builder, advice notes, follow-through), `notes_render.ts`,
+  `store.ts` (`recordMemoryAfterTurn`), `model_contract.ts` (`fact_suggestions` schema and
+  instructions). Contributors `confirmed_facts` (stable) and `coach_notes` (volatile) share one read
+  (`contributors/memory_source.ts`). `coach-chat/memory.ts` joins it to the handler.
+- **Flow**: the handler reads whether the conversation is remembered (unreadable counts as no), reads
+  memory beside the contributors, and after the reply adds `fact_suggestions` (athlete's statement by
+  rules first, then the model's, at most two) and writes the note, waiting at most 2 s
+  (`EdgeRuntime.waitUntil` keeps it alive). A referral, a data summary or a conversation that is not
+  remembered writes nothing and the model is not offered the field.
+- **Review fixes** (PR #151): proposals are noted once (`memory_noted_at`) and a not-remembered source stays not remembered (`source_remembered`, trigger); notes waiting for follow-through (under 28 days) are kept first inside the 20-note cap; a new proposal starts as not remembered until linked, and Forget marks every proposal so far; follow-through waits until the week is over; notes are written in the background; model suggestions are judged like statements and see fact ids; the re-confirm scheduler marks at most two facts and drives a "Still true?" card; "Forget everything" also clears the stored contexts' older sections; plain soreness and "feels better" no longer make chips.
+- **Lookup**: `past_messages` joins the catalogue (eleven lookups); the index mentions it.
+- **App**: Account, **What Coach remembers** (`lib/features/coach/memory/`); the **Don't remember
+  this chat** switch and notices on Coach; `FactSuggestionChip` replaces the preference chip.
+- **Removed**: `buildSessionSummary`, `detectPreferenceStatement`, the per-turn
+  `persist_coach_session_summary` call, the `search_coach_messages` call and `fts_messages`, the
+  `preference_prompt` response key, `PreferencePromptChip`, `confirmPreference`, the provider's
+  Coaching Narrative, Session History and Preferences sections and their key abbreviations, the
+  eval bank's `withPreference` and `withConfirmedFact`, and the old tests of the first two. The
+  legacy parity digests were recorded again on purpose (the persona line about preferences changed
+  and those sections are gone). `persist_coach_preference`, `persist_coach_session_summary`,
+  `search_coach_messages` and the three older tables stay in the database for older builds and the
+  frozen v8; a cleanup migration can drop them after the next app build is the oldest in use.
+- **Tests**: `_shared/coach_memory/*_test.ts` (vocabulary parity with the migration, claims,
+  contradictions, scheduler, note builder, store), contributor and handler tests
+  (`coach-chat/memory_test.ts`), gateway tests for `fact_suggestions`, four bank cases plus the three
+  converted fact cases, pgTAP `coach_memory_test.sql`, Flutter widget tests for every memory action,
+  the thread switch and the suggestion card, and contract tests with fixtures.
+- **Limits worth knowing**: matching is by words, not meaning, so a claim phrased in an unusual way is
+  not suggested (the model's `fact_suggestions` covers some of those); follow-through is checked only
+  for training days; existing facts migrated from `user_preferences` are vague (`other_preference`)
+  until the athlete retypes them.
+
 ### A11: Coach eval bank (`claude/a11-coach-eval-bank`, no migration)
 
 Every Coach change must pass the bank (program doc, "Eval bank (A11)"). It has three parts and lives

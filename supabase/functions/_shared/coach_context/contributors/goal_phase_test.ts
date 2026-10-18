@@ -62,11 +62,13 @@ Deno.test("the registry holds the goal phase contributor after the screening and
   assertEquals(coachContextContributors.map((c) => c.id), [
     "coaching_principles",
     "screening",
+    "confirmed_facts",
     "goal_phase",
     "training_plan",
     "nutrition_state",
     "coach_proposals",
     "heart_rate_profile",
+    "coach_notes",
     "data_index",
     "library",
   ]);

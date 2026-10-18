@@ -47,7 +47,7 @@ class _Chat implements CoachRepository, CoachChatRepository {
   ];
 
   @override
-  Future<String> createThread() async => 't1';
+  Future<String> createThread({bool remember = true}) async => 't1';
 
   @override
   Future<List<CoachMessage>> loadMessages(String threadId) async => messages;

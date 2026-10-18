@@ -6,6 +6,8 @@ import { nutritionStateContributor } from "./contributors/nutrition_state.ts";
 import { proposalsContributor } from "./contributors/proposals.ts";
 import { dataIndexContributor, dataIndexContributorId } from "./contributors/data_index.ts";
 import { heartRateContributor } from "./contributors/heart_rate.ts";
+import { confirmedFactsContributor } from "./contributors/confirmed_facts.ts";
+import { coachNotesContributor } from "./contributors/coach_notes.ts";
 import { coachingPrinciplesContributor } from "../library/principles.ts";
 import { libraryContributor } from "../library/live.ts";
 import { libraryContributorId } from "../library/retrieval.ts";
@@ -13,8 +15,11 @@ import { libraryContributorId } from "../library/retrieval.ts";
 // The contributors Coach chat renders, in their fixed order (Contract 7). The coaching principles
 // digest (E2), the screening (A9), the goal phase (B7), the plan (A10: today's or the next session
 // with targets and home alternatives), the week's nutrition (A10), the proposals and phases (A8) and the index of what Coach can
-// look up (A10) are registered, with the heart-rate profile (C3) and the library (E3: the chunks
-// found for this turn's question). Everything else the athlete's records hold comes from lookups
+// look up (A10) are registered, with the heart-rate profile (C3), the athlete's confirmed facts
+// (A10 part 2, stable: they change only when the athlete changes them), the Coach's own notes
+// (A10 part 2, untrusted and capped) and the library (E3: the chunks found for this turn's
+// question). Precedence when they disagree: Tracend's calculations, then the confirmed facts,
+// then the athlete's recent statements, then the Coach's notes, then the library. Everything else the athlete's records hold comes from lookups
 // on demand (coach_lookups/). Order is part of the prompt: a stable contributor placed before
 // another keeps the cached prefix of the ones before it, so the fixed digest comes first, then the
 // screening, which changes only when the athlete answers the health check again. The library is
@@ -22,11 +27,13 @@ import { libraryContributorId } from "../library/retrieval.ts";
 export const coachContextContributors: readonly CoachContextContributor[] = Object.freeze([
   coachingPrinciplesContributor,
   screeningContributor,
+  confirmedFactsContributor,
   goalPhaseContributor,
   trainingPlanContributor,
   nutritionStateContributor,
   proposalsContributor,
   heartRateContributor,
+  coachNotesContributor,
   dataIndexContributor,
   libraryContributor,
 ]);

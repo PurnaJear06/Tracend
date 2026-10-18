@@ -29,6 +29,8 @@ export type GenerateInput = Readonly<{
   contributions: CoachContributions | null;
   /** Runs the lookups the model asks for (gateway path only; today's DeepSeek path has none). */
   lookups?: CoachLookupRunner;
+  /** False for a conversation the athlete asked Coach not to remember (no fact suggestions). */
+  factSuggestions?: boolean;
 }>;
 
 export type Generate = (input: GenerateInput) => Promise<CoachChatGeneration>;
@@ -86,7 +88,7 @@ export function gatewayGenerate(
   strong: () => AiRoute | null = () => route("coach_chat_strong"),
   deps: AiCallDeps = {},
 ): Generate {
-  return ({ question, context, contextKind, contributions, lookups }) =>
+  return ({ question, context, contextKind, contributions, lookups, factSuggestions }) =>
     generateCoachChatViaGateway({
       question,
       context,
@@ -97,6 +99,7 @@ export function gatewayGenerate(
       ...(lookups ? { lookups } : {}),
       // Production offers proposals on the gateway route, so the bank measures with them.
       proposals: true,
+      factSuggestions: factSuggestions !== false,
     }, deps);
 }
 

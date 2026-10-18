@@ -1,3 +1,4 @@
+import { factSuggestionContract } from "../coach_memory/model_contract.ts";
 import { type AvoidablePattern, avoidablePatternLabels } from "../onboarding/catalog.ts";
 import {
   type CoachChatAnswerCheck,
@@ -101,6 +102,12 @@ export type CoachChatGeneration = Readonly<{
    * the proposal engine, which parses it strictly. Never part of the stored answer.
    */
   proposalIntent?: unknown;
+  /**
+   * The model's `fact_suggestions` (A10 part 2), exactly as it wrote them. Untrusted: the caller
+   * checks them against the closed vocabulary and the athlete's saved facts. Never part of the
+   * stored answer, and never saved without the athlete's confirmation.
+   */
+  factSuggestions?: unknown;
 }>;
 
 export type CoachChatFailureCode =
@@ -301,7 +308,7 @@ const coachChatPersona =
   "- The screening reference data, when present, is Tracend's own rule for this athlete's effort cap (not text the athlete wrote). Follow its Rule line exactly.\n" +
   '- For ordinary illness (fever/cold/cough): recommend rest and hydration, never "push through" or complete the workout.\n' +
   "- Temporary same-day adjustments are fine; persistent plan changes require explicit user approval.\n" +
-  "- Honor active_preferences — never suggest declined foods, exercises, or approaches.\n" +
+  "- Honor the confirmed facts (injuries, limits, allergies, equipment, foods and exercises the athlete avoids, how they want to be coached): never suggest what they rule out. Facts rank below Tracend's own calculations and above the Coach's notes.\n" +
   "- When safety_state is limited or refused, explain why clearly and redirect to what you can help with.\n";
 
 /**
@@ -391,13 +398,8 @@ const keyAbbreviations: Record<string, string> = {
   avg_daily_carbohydrate_g: "adc",
   avg_daily_fat_g: "adf",
   days_with_meals: "dwm",
-  coaching_narrative: "cn",
-  active_preferences: "ap",
-  session_journal: "sj",
-  fts_messages: "ftsm",
   phase: "ph",
   headline: "hl",
-  provenance: "prv",
   since: "sin",
   step: "stp",
   evidence_id: "eid",
@@ -484,7 +486,7 @@ function fitContextToLimit(bounded: string, maxLength: number, question: string)
   }
 
   // --- Tier 1: trim known high-volume free-text fields ---
-  const messageArrays = ["fts_messages", "ftsm", "recent_other_conversations"];
+  const messageArrays = ["recent_other_conversations"];
   for (const key of messageArrays) {
     const arr = (ctx as Record<string, unknown>)[key];
     if (Array.isArray(arr)) {
@@ -497,7 +499,7 @@ function fitContextToLimit(bounded: string, maxLength: number, question: string)
     }
   }
 
-  // Trim long narrative / journal summary strings.
+  // Trim long summary strings.
   const longTextKeys = ["summary", "headline", "proposed_training", "proposed_nutrition"];
   for (const key of longTextKeys) {
     const val = (ctx as Record<string, unknown>)[key];
@@ -897,19 +899,6 @@ export function renderCoachContextParts(
     push(s);
   }
 
-  // 3. Coaching Narrative
-  const narrative = obj(ctx.coaching_narrative);
-  if (Object.keys(narrative).length) {
-    const active = obj(narrative.active);
-    if (Object.keys(active).length) {
-      let s = "## Coaching Narrative\n";
-      s += `**${str(active.phase)}**: ${str(active.headline)}`;
-      if (active.since) s += ` (since ${str(active.since)})`;
-      s += "\n";
-      push(s);
-    }
-  }
-
   // 4b. Check-ins, last 14 days
   const checkIns = arr(ctx.check_ins_14d);
   if (checkIns.length) {
@@ -1113,17 +1102,6 @@ export function renderCoachContextParts(
     push(s);
   }
 
-  // 12. Session Journal (past coaching memory)
-  const journal = arr(ctx.session_journal);
-  if (journal.length) {
-    let s = "## Session History\n";
-    for (const entry of journal.slice(0, 5)) {
-      const e = obj(entry);
-      s += `- ${str(e.coaching_date)}: ${str(e.summary)}\n`;
-    }
-    deferredHistory.push(s);
-  }
-
   // 13. Conversation memory, oldest first. Long messages keep their ending,
   // where a coach's clarifying question usually sits.
   const renderMessages = (title: string, messages: unknown[], limit: number): string => {
@@ -1147,17 +1125,6 @@ export function renderCoachContextParts(
   const threadMessages = arr(ctx.recent_messages);
   if (threadMessages.length) {
     deferredHistory.push(renderMessages("This Conversation", threadMessages, 10));
-  }
-
-  // 14. Preferences
-  const prefs = arr(ctx.active_preferences);
-  if (prefs.length) {
-    let s = "## Preferences\n";
-    for (const pref of prefs.slice(0, 10)) {
-      const p = obj(pref);
-      s += `- ${str(p.category)}: ${str(p.key)} = ${str(p.value)} (${str(p.provenance)})\n`;
-    }
-    push(s);
   }
 
   // 15. Latest Decision
@@ -1503,10 +1470,12 @@ export function coachChatInstructions(
   permittedEvidence: readonly string[],
   withLookups = false,
   withProposals = false,
+  withFactSuggestions = false,
 ): string {
   return coachChatPersona + nullContract + answerContractText(permittedEvidence) +
     goalPhaseContract + libraryContract + (withLookups ? lookupContract : "") +
-    (withProposals ? proposalContract : "");
+    (withProposals ? proposalContract : "") +
+    (withFactSuggestions ? factSuggestionContract : "");
 }
 
 function coachChatSystemPrompt(

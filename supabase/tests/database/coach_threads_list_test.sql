@@ -65,8 +65,8 @@ select is(
 select is(
   (select array_agg(key order by key)
    from jsonb_object_keys(public.get_my_coach_threads()->'threads'->0) as key),
-  array['id', 'last_message_at', 'title', 'updated_at'],
-  'each thread carries id, title, last_message_at and updated_at');
+  array['id', 'last_message_at', 'remember', 'title', 'updated_at'],
+  'each thread carries id, title, last_message_at, updated_at and remember');
 
 -- 4.
 set local "request.jwt.claim.sub" = 'c2a20000-0003-4001-8001-0000000000a3';

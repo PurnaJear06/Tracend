@@ -35,7 +35,7 @@ export function renderDataIndex(payload: unknown, localDate: string): string | n
   const held: string[] = [];
   const empty: string[] = [];
   for (const name of coachLookupNames) {
-    if (name === "exercise_history") continue;
+    if (name === "exercise_history" || name === "past_messages") continue;
     const domain = rec(domains[name]);
     const count = typeof domain.count === "number" ? domain.count : 0;
     if (count === 0 || typeof domain.first !== "string" || typeof domain.last !== "string") {
@@ -55,6 +55,7 @@ export function renderDataIndex(payload: unknown, localDate: string): string | n
     ...held,
     empty.length ? `No records yet for: ${empty.join(", ")}.` : "",
     "exercise_history reads one exercise out of the workouts.",
+    "past_messages finds the athlete's own earlier questions by their words.",
   ].filter(Boolean).join("\n");
 }
 

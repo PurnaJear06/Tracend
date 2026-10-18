@@ -758,3 +758,79 @@ Deno.test("a library figure stated as the athlete's own target is refused even w
   ]);
   assertEquals(sent.length, 2);
 });
+
+// ---- fact suggestions (A10 part 2) -----------------------------------------------------------
+
+const suggestion = {
+  action: "add",
+  kind: "equipment",
+  subject: "kettlebells",
+  statement: "Has kettlebells at home",
+};
+
+Deno.test("fact suggestions are offered only when asked for, in the schema and the rules", () => {
+  const without = coachChatGatewaySchema([], true, true) as { properties: Record<string, unknown> };
+  assertEquals("fact_suggestions" in without.properties, false);
+  const withThem = coachChatGatewaySchema([], true, true, true) as {
+    properties: Record<string, unknown>;
+    required: string[];
+  };
+  assert("fact_suggestions" in withThem.properties);
+  assert(!withThem.required.includes("fact_suggestions"), "the suggestions are optional");
+  assert(isSupportedSchema(withThem));
+  const prompt = (on: boolean) =>
+    buildCoachChatGatewayPrompt(
+      "I bought a kettlebell",
+      rich(),
+      "general",
+      undefined,
+      undefined,
+      undefined,
+      true,
+      on,
+    ).system.map((part) => part.type === "text" ? part.text : "").join("");
+  assertStringIncludes(prompt(true), "# Suggesting something to remember");
+  assertStringIncludes(prompt(true), "You cannot save anything about the athlete");
+  assert(!prompt(false).includes("# Suggesting something to remember"));
+});
+
+Deno.test("the model's suggestions are handed on untouched and are not part of the stored answer", async () => {
+  const fake = fakeFetch(() => claudeAnswer(answer({ fact_suggestions: [suggestion] })));
+  const generation = await generateCoachChatViaGateway({
+    question: "I bought a kettlebell",
+    context: rich(),
+    contextKind: "general",
+    route: haiku(),
+    consentVendor: "anthropic",
+    factSuggestions: true,
+  }, { fetch: fake.fetch });
+  assertEquals(generation.factSuggestions, [suggestion]);
+  assertEquals("fact_suggestions" in generation.answer, false);
+  assertEquals(generation.proposalIntent, undefined);
+});
+
+Deno.test("without them, a suggestion is an unexpected key and is repaired away", async () => {
+  const { result, sent } = await run((_, index) =>
+    claudeAnswer(index === 0 ? answer({ fact_suggestions: [suggestion] }) : answer())
+  );
+  if (result instanceof Error) throw result;
+  assertEquals(sent.length, 2);
+  assertEquals(result.factSuggestions, undefined);
+});
+
+Deno.test("a proposal intent and fact suggestions travel together, each handed on separately", async () => {
+  const fake = fakeFetch(() =>
+    claudeAnswer(answer({ proposal_intent: intent, fact_suggestions: [suggestion] }))
+  );
+  const generation = await generateCoachChatViaGateway({
+    question: "Lower my calories, I bought a kettlebell",
+    context: rich(),
+    contextKind: "general",
+    route: haiku(),
+    consentVendor: "anthropic",
+    proposals: true,
+    factSuggestions: true,
+  }, { fetch: fake.fetch });
+  assertEquals(generation.proposalIntent, intent);
+  assertEquals(generation.factSuggestions, [suggestion]);
+});

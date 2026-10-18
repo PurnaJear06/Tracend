@@ -1,0 +1,14 @@
+{
+  "fact_suggestions": [
+    {
+      "action": "update",
+      "kind": "food_like",
+      "subject": "mushrooms",
+      "statement": "Likes mushrooms",
+      "fact_id": "7b2a4d63-8e1f-4c9b-8d32-6f5e4c3b2a11",
+      "previous": "Dislikes mushrooms",
+      "reason": "This differs from “Dislikes mushrooms”, which you confirmed on 2026-09-02.",
+      "origin": "athlete_statement"
+    }
+  ]
+}

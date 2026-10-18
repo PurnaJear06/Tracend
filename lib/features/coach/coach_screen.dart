@@ -7,13 +7,16 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:tracend/app/theme/tracend_tokens.dart';
 import 'package:tracend/features/coach/coach_repository.dart';
 import 'package:tracend/features/coach/coach_thread_memory.dart';
+import 'package:tracend/features/coach/memory/coach_memory.dart';
+import 'package:tracend/features/coach/memory/coach_memory_repository.dart';
+import 'package:tracend/features/coach/memory/fact_suggestion.dart';
 import 'package:tracend/features/coach/proposals/coach_proposal_card.dart';
 import 'package:tracend/features/coach/proposals/coach_proposal_repository.dart';
 import 'package:tracend/features/coach/widgets/coach_composer.dart';
 import 'package:tracend/features/coach/widgets/coach_context_card.dart';
 import 'package:tracend/features/coach/widgets/coach_message_bubble.dart';
 import 'package:tracend/features/coach/widgets/coach_thinking_indicator.dart';
-import 'package:tracend/features/coach/widgets/preference_prompt_chip.dart';
+import 'package:tracend/features/coach/widgets/fact_suggestion_chip.dart';
 import 'package:tracend/features/consent/ai_coaching_consent.dart';
 import 'package:tracend/shared/formatting.dart';
 import 'package:tracend/shared/plan_changes.dart';
@@ -53,6 +56,7 @@ class CoachScreen extends StatefulWidget {
     this.aiConsent,
     this.proposals,
     this.planChanges,
+    this.memory,
     super.key,
   });
   final CoachRepository repository;
@@ -61,6 +65,10 @@ class CoachScreen extends StatefulWidget {
   /// Reads and answers the proposals Coach makes (A8). Null without a backend,
   /// where Coach makes none.
   final CoachProposalRepository? proposals;
+
+  /// Saves what the athlete confirms when Coach suggests a fact. Null without a
+  /// backend, where Coach suggests none.
+  final CoachMemoryRepository? memory;
 
   /// Announced when an approved or undone proposal changed the plan, the
   /// targets or the goal, so the screens that show them reload.
@@ -93,6 +101,14 @@ class _CoachScreenState extends State<CoachScreen> {
   /// created by the first send, so opening Coach never leaves an empty thread.
   String? _threadId;
 
+  /// The choice on a new conversation: Coach does not remember it. Applied
+  /// when the first send creates the thread, and fixed from then on.
+  bool _rememberChat = true;
+
+  /// Whether the open conversation is remembered. False shows the notice at
+  /// the top of the conversation.
+  bool _threadRemembered = true;
+
   /// Changes whenever the user switches conversations (New or opening one).
   /// A send finishes only in the conversation it started in: if the user has
   /// moved on, its new thread is not selected and its reply is not shown
@@ -113,7 +129,10 @@ class _CoachScreenState extends State<CoachScreen> {
 
   /// The last send failed; shown under its question.
   _TurnFailure? _turnFailure;
-  Map<String, dynamic>? _preferencePrompt;
+  List<CoachFactSuggestion> _factSuggestions = const [];
+
+  /// The suggestion being saved after Confirm.
+  CoachFactSuggestion? _confirming;
   StreamSubscription<int>? _cooldownSubscription;
   int? _cooldownRemaining;
 
@@ -207,6 +226,9 @@ class _CoachScreenState extends State<CoachScreen> {
       setState(() {
         _threads = threads;
         _threadId = threadId;
+        _threadRemembered = threads
+            .where((thread) => thread.id == threadId)
+            .every((thread) => thread.remember);
         _messages = messages;
         _loadingChat = false;
       });
@@ -229,9 +251,12 @@ class _CoachScreenState extends State<CoachScreen> {
       _view++;
       _loadingChat = true;
       _threadId = id;
+      _threadRemembered = _threads
+          .where((thread) => thread.id == id)
+          .every((thread) => thread.remember);
       _error = null;
       _turnFailure = null;
-      _preferencePrompt = null;
+      _factSuggestions = const [];
       _budgetWarning = false;
     });
     unawaited(widget.threadMemory.remember(id));
@@ -258,10 +283,12 @@ class _CoachScreenState extends State<CoachScreen> {
   void _newThread() => setState(() {
     _view++;
     _threadId = null;
+    _rememberChat = true;
+    _threadRemembered = true;
     _messages = const [];
     _error = null;
     _turnFailure = null;
-    _preferencePrompt = null;
+    _factSuggestions = const [];
     _budgetWarning = false;
   });
 
@@ -273,16 +300,23 @@ class _CoachScreenState extends State<CoachScreen> {
     int view,
     String question,
   ) async {
-    final id = await chat.createThread();
+    final remember = _rememberChat;
+    final id = await chat.createThread(remember: remember);
     if (mounted && _view == view) {
       unawaited(widget.threadMemory.remember(id));
       setState(() {
         _threadId = id;
+        _threadRemembered = remember;
         // A list requested before this thread existed would drop it, so it
         // no longer applies; this send's own refresh brings the server list.
         _threadsRequest++;
         _threads = [
-          CoachThread(id: id, title: question, updatedAt: DateTime.now()),
+          CoachThread(
+            id: id,
+            title: question,
+            updatedAt: DateTime.now(),
+            remember: remember,
+          ),
           ..._threads,
         ];
       });
@@ -351,7 +385,7 @@ class _CoachScreenState extends State<CoachScreen> {
       if (!_messages.contains(local)) _messages = [..._messages, local];
       _sending = true;
       _turnFailure = null;
-      _preferencePrompt = null;
+      _factSuggestions = const [];
     });
     _scrollToEnd();
     final started = DateTime.now();
@@ -380,12 +414,11 @@ class _CoachScreenState extends State<CoachScreen> {
         question,
         idempotencyKey: key,
       );
-      Map<String, dynamic>? prompt;
-      if (chat is SupabaseCoachRepository) {
-        final raw = await chat.loadLastRawResponse();
-        if (raw != null && raw['preference_prompt'] is Map) {
-          prompt = Map<String, dynamic>.from(raw['preference_prompt'] as Map);
-        }
+      var suggestions = const <CoachFactSuggestion>[];
+      if (chat is CoachRawResponses) {
+        suggestions = CoachFactSuggestion.listFromResponse(
+          await (chat as CoachRawResponses).loadLastRawResponse(),
+        );
       }
       final elapsed = DateTime.now().difference(started);
       if (chat is SupabaseCoachRepository &&
@@ -397,7 +430,7 @@ class _CoachScreenState extends State<CoachScreen> {
         setState(() {
           if (_view == view) {
             _messages = [..._messages, answer];
-            _preferencePrompt = prompt;
+            _factSuggestions = suggestions;
             _budgetWarning = answer.nearBudgetLimit;
           }
           _sending = false;
@@ -486,24 +519,61 @@ class _CoachScreenState extends State<CoachScreen> {
     });
   }
 
-  Future<void> _savePreference(Map<String, dynamic> prompt) async {
-    setState(() => _preferencePrompt = null);
-    final chat = _chat;
-    if (chat is! SupabaseCoachRepository) return;
+  /// The athlete tapped Confirm: only now is anything written, as their own
+  /// action. An update replaces the saved fact it names; a resolve deletes it.
+  Future<void> _confirmSuggestion(CoachFactSuggestion suggestion) async {
+    final memory = widget.memory;
+    if (memory == null || _confirming != null) return;
+    setState(() => _confirming = suggestion);
     try {
-      await chat.confirmPreference(
-        category: prompt['category'] as String? ?? 'food',
-        key: prompt['key'] as String? ?? '',
-        value: prompt['value'] as String? ?? '',
-        provenance: prompt['provenance'] as String? ?? 'chat_statement',
+      if (suggestion.action == CoachFactSuggestionAction.resolve) {
+        await memory.deleteFact(suggestion.factId!);
+      } else if (suggestion.action == CoachFactSuggestionAction.reconfirm) {
+        await memory.reconfirmFact(suggestion.factId!);
+      } else {
+        await memory.saveFact(
+          kind: suggestion.kind,
+          subject: suggestion.subject,
+          statement: suggestion.statement,
+          source: CoachFactSource.coachSuggestionConfirmed,
+          supersedes: suggestion.factId,
+        );
+      }
+      if (!mounted) return;
+      TracendToast.show(
+        context,
+        suggestion.action == CoachFactSuggestionAction.resolve
+            ? 'Coach forgot it'
+            : suggestion.action == CoachFactSuggestionAction.reconfirm
+            ? 'Confirmed again'
+            : 'Saved to what Coach remembers',
       );
+      setState(() {
+        _factSuggestions = [
+          for (final item in _factSuggestions)
+            if (item != suggestion) item,
+        ];
+        _confirming = null;
+      });
     } catch (e) {
       debugPrint('Non-critical error: $e');
       if (mounted) {
-        setState(() => _error = 'The preference could not be saved.');
+        setState(() {
+          _confirming = null;
+          _error = isFactLimitError(e)
+              ? 'You have saved the most Coach keeps. Delete a fact first.'
+              : 'It could not be saved. Nothing was changed.';
+        });
       }
     }
   }
+
+  void _dismissSuggestion(CoachFactSuggestion suggestion) => setState(() {
+    _factSuggestions = [
+      for (final item in _factSuggestions)
+        if (item != suggestion) item,
+    ];
+  });
 
   Future<bool> _confirmDelete() => showTracendConfirm(
     context,
@@ -713,7 +783,6 @@ class _CoachScreenState extends State<CoachScreen> {
     final colors = context.tracendColors;
     final textTheme = Theme.of(context).textTheme;
     final failure = _turnFailure;
-    final prompt = _preferencePrompt;
     return [
       if (_error != null) ...[
         _Notice(_error!),
@@ -743,6 +812,10 @@ class _CoachScreenState extends State<CoachScreen> {
         ),
         const SizedBox(height: TracendSpacing.lg),
       ],
+      if (!_loadingChat && !_threadRemembered) ...[
+        const _NotRememberedNotice(),
+        const SizedBox(height: TracendSpacing.md),
+      ],
       if (_loadingChat)
         const _ConversationSkeleton()
       else if (_messages.isEmpty) ...[
@@ -753,6 +826,28 @@ class _CoachScreenState extends State<CoachScreen> {
           style: textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
         ),
         const SizedBox(height: TracendSpacing.md),
+        // The choice is made before the first message and cannot change after.
+        if (_threadId == null)
+          TracendGroupedList(
+            children: [
+              TracendListRow(
+                title: 'Don’t remember this chat',
+                subtitle:
+                    'Coach saves no notes or facts from it, never searches it '
+                    'and no other chat sees it.',
+                trailing: Semantics(
+                  label: 'Don’t remember this chat',
+                  child: CupertinoSwitch(
+                    value: !_rememberChat,
+                    onChanged: _sending
+                        ? null
+                        : (value) => setState(() => _rememberChat = !value),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        if (_threadId == null) const SizedBox(height: TracendSpacing.md),
         // What the Coach can see, shown once on a new conversation rather
         // than above every one. Today's decision lives on Today.
         if (_contextStatus != null) ...[
@@ -833,16 +928,16 @@ class _CoachScreenState extends State<CoachScreen> {
           child: CoachThinkingIndicator(),
         ),
       ],
-      if (prompt != null) ...[
-        const SizedBox(height: TracendSpacing.lg),
-        PreferencePromptChip(
-          category: prompt['category'] as String? ?? 'food',
-          prefKey: prompt['key'] as String? ?? '',
-          value: prompt['value'] as String? ?? '',
-          onConfirm: () => _savePreference(prompt),
-          onDismiss: () => setState(() => _preferencePrompt = null),
-        ),
-      ],
+      if (widget.memory != null)
+        for (final suggestion in _factSuggestions) ...[
+          const SizedBox(height: TracendSpacing.lg),
+          FactSuggestionChip(
+            suggestion: suggestion,
+            busy: _confirming == suggestion,
+            onConfirm: () => _confirmSuggestion(suggestion),
+            onDismiss: () => _dismissSuggestion(suggestion),
+          ),
+        ],
     ];
   }
 }
@@ -917,10 +1012,50 @@ class _ThreadRow extends StatelessWidget {
           color: colors.surface,
           child: TracendListRow(
             title: _title(thread.title),
-            subtitle: open ? 'Open now · $updated' : updated,
+            subtitle: [
+              if (open) 'Open now',
+              updated,
+              if (!thread.remember) 'Not remembered',
+            ].join(' · '),
             onTap: onOpen,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Shown at the top of a conversation the athlete asked Coach not to
+/// remember.
+class _NotRememberedNotice extends StatelessWidget {
+  const _NotRememberedNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tracendColors;
+    return MergeSemantics(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(
+              CupertinoIcons.eye_slash,
+              size: 18,
+              color: colors.textSecondary,
+            ),
+          ),
+          const SizedBox(width: TracendSpacing.xs),
+          Expanded(
+            child: Text(
+              'This chat isn’t remembered. Coach saves no notes or facts from '
+              'it, and other chats can’t see it.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+            ),
+          ),
+        ],
       ),
     );
   }
