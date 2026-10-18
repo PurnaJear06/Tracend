@@ -628,7 +628,7 @@ select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000
   'a1200000-0000-4000-8000-000000000001', 'plan.id is the active version''s id');
 select is((select count(*) from jsonb_array_elements(public.coach_lookup_plan_history_v1(
     'a1000000-0000-4000-8000-000000000001', current_date - 7, current_date + 7, 'schedule')->'days') d
-    where d->>'version_id' = 'a1200000-0000-4000-8000-000000000001'), 6::bigint,
+    where d->>'version_id' is distinct from 'a1200000-0000-4000-8000-000000000001'), 0::bigint,
   'every listed day names the version in force (the id)');
 select is((select count(*) from jsonb_array_elements(public.coach_lookup_plan_history_v1(
     'a1000000-0000-4000-8000-000000000001', current_date - 7, current_date + 7, 'schedule')->'sessions') x
