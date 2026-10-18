@@ -469,11 +469,13 @@ select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000
 -- plan says 3 sets of bench press; 2 were logged).
 select pg_temp.log_session(current_date - 3,
   '[{"order":1,"planned":"a1400000-0000-4000-8000-000000000001","slug":"barbell-bench-press","sets":[[8,75,3],[8,75,3]]}]');
-select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date - 2)
-    ->'recent_completed'->0->'exercises'->0, '{"slug":"barbell-bench-press","sets":2}'::jsonb,
-  'the logged sets are reported');
-select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
-    current_date - 3, current_date - 3, 'schedule')->'days'->0->'done'->0->'exercises'->0,
+select is((select e from jsonb_array_elements(public.get_coach_plan_state_v1(
+      'a1000000-0000-4000-8000-000000000001', current_date - 2)->'recent_completed') r,
+      jsonb_array_elements(r->'exercises') e where e->>'slug' = 'barbell-bench-press'),
+  '{"slug":"barbell-bench-press","sets":2}'::jsonb, 'the logged sets are reported');
+select is((select e from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+      'a1000000-0000-4000-8000-000000000001', current_date - 3, current_date - 3, 'schedule')->'days'->0
+      ->'done') d, jsonb_array_elements(d->'exercises') e where e->>'slug' = 'barbell-bench-press'),
   '{"slug":"barbell-bench-press","sets":2}'::jsonb, 'and so does the schedule lookup');
 
 -- The private helpers are not callable by the app's roles.
