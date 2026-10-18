@@ -22,7 +22,13 @@ import { costUsd, type ModelPrice, models, type TokenCounts } from "../_shared/a
 import { type Env, route } from "../_shared/ai/routes.ts";
 import type { AiCallDeps, AiRoute } from "../_shared/ai/types.ts";
 import { type ChatMode, defaultChatMode, jsonObjectIn } from "./coach_sim/wire.ts";
-import { excerpt, headerNote, htmlText, type WireError } from "./coach_sim/diagnostics.ts";
+import {
+  excerpt,
+  headerNote,
+  htmlText,
+  schemaProblem,
+  type WireError,
+} from "./coach_sim/diagnostics.ts";
 import type { CoachContributions } from "../_shared/coach_context/host.ts";
 import type { CoachLookupRunner } from "../_shared/coach_lookups/runner.ts";
 import {
@@ -32,7 +38,10 @@ import {
   generateCoachChat,
 } from "../_shared/providers/coach_chat_provider.ts";
 import { selectCoachChatRoute } from "../_shared/providers/coach_chat_provider_route.ts";
-import { generateCoachChatViaGateway } from "../_shared/providers/coach_chat_provider_gateway.ts";
+import {
+  coachChatGatewaySchema,
+  generateCoachChatViaGateway,
+} from "../_shared/providers/coach_chat_provider_gateway.ts";
 
 export type GenerateInput = Readonly<{
   question: string;
@@ -215,6 +224,11 @@ export type RouterFetchOptions = Readonly<{
   /** Strings that must never appear in a recorded body (the router key). */
   secrets?: readonly string[];
   /**
+   * The answer schema. A reply that parses but does not match it is reported with the first path
+   * that does not (the gateway itself only says `invalid_output`); the reply is not changed.
+   */
+  schema?: Record<string, unknown>;
+  /**
    * Waits before each retry of a call the router failed in passing (502, 503, 504, or no answer
    * at all). The router is a hop of its own and has answered "temporarily unavailable" for minutes
    * at a time; production's gateway has no such retry, so this is the harness's, not the Coach's.
@@ -326,6 +340,30 @@ export function routerModelFetch(
       report("no_choices", response.status, raw);
       return response;
     }
+    // A router may answer in parts, or hand the JSON over as a tool call (a finish reason of
+    // `tool_calls`, which the gateway does not know). The text is the content, else the arguments
+    // of the first tool call; the shape is always reported so the cause is on record.
+    let text = textOf(message.content);
+    const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+    const toolArguments = argumentsOf(toolCalls[0]);
+    let changed = false;
+    if (toolCalls.length > 0 || String(choice.finish_reason) === "tool_calls") {
+      report(
+        "finish",
+        response.status,
+        `finish_reason=${String(choice.finish_reason)}; content ${
+          text.trim() === "" ? "empty" : `${text.length} chars`
+        }; tool_calls ${JSON.stringify(toolCalls).slice(0, 160)}`,
+      );
+      if (text.trim() === "" && toolArguments !== null) {
+        text = toolArguments;
+        changed = true;
+      }
+      if (jsonObjectIn(text) && String(choice.finish_reason) === "tool_calls") {
+        choice.finish_reason = "stop";
+        changed = true;
+      }
+    }
     // The gateway reads only OpenAI's finish reasons; a router that passes Claude's own through
     // (end_turn, max_tokens) is translated, anything else is reported and left as it is.
     const finish = anthropicFinish[String(choice.finish_reason)];
@@ -333,21 +371,46 @@ export function routerModelFetch(
     else if (!["stop", "length", "content_filter"].includes(String(choice.finish_reason))) {
       report("finish", response.status, `finish_reason=${String(choice.finish_reason)}`);
     }
-    let changed = Boolean(finish);
-    if (!mode.responseFormat && typeof message.content === "string") {
-      let parses = true;
+    changed ||= Boolean(finish);
+    if (text.trim() !== "") {
+      let parsed: unknown = null;
       try {
-        JSON.parse(message.content);
+        parsed = JSON.parse(text);
       } catch {
-        parses = false;
+        // Cleaned below.
       }
-      const object = parses ? null : jsonObjectIn(message.content);
-      if (object) {
-        message.content = JSON.stringify(object);
-        changed = true;
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        const object = jsonObjectIn(text);
+        if (object) {
+          // A model that wraps its JSON in a fence or a sentence is a router matter (production's
+          // structured output cannot); the gateway's strict parse gets the bare object.
+          if (mode.responseFormat) {
+            report(
+              "wrapped",
+              response.status,
+              `JSON came wrapped; cleaned. start: ${excerpt(text.slice(0, 120), secrets)}`,
+            );
+          }
+          text = JSON.stringify(object);
+          parsed = object;
+          changed = true;
+        } else if (String(choice.finish_reason) !== "length") {
+          report(
+            "unreadable",
+            response.status,
+            `no JSON object in the reply (${text.length} chars): ${
+              excerpt(text.slice(0, 150), secrets)
+            } ... ${excerpt(text.slice(-100), secrets)}`,
+          );
+        }
+      }
+      if (options.schema && parsed && typeof parsed === "object") {
+        const problem = schemaProblem(parsed, options.schema);
+        if (problem) report("schema", response.status, problem);
       }
     }
     if (changed) {
+      message.content = text;
       return new Response(JSON.stringify(payload), {
         status: response.status,
         statusText: response.statusText,
@@ -356,6 +419,29 @@ export function routerModelFetch(
     }
     return response;
   };
+}
+
+/** The text of a message's content: a string, or the text parts of a list. */
+export function textOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((part) =>
+    typeof part === "string"
+      ? part
+      : part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string"
+      ? (part as { text: string }).text
+      : ""
+  ).join("");
+}
+
+/** The arguments of a tool call as the text of a JSON object, or null when there are none. */
+export function argumentsOf(call: unknown): string | null {
+  const fn = call && typeof call === "object"
+    ? (call as { function?: { arguments?: unknown } }).function
+    : undefined;
+  const args = fn?.arguments;
+  if (typeof args === "string") return jsonObjectIn(args) ? args : null;
+  return args && typeof args === "object" && !Array.isArray(args) ? JSON.stringify(args) : null;
 }
 
 /** OpenAI-style usage as token counts, cached prompt tokens apart (as the gateway counts them). */
@@ -465,6 +551,7 @@ export async function routerGatewayFromEnv(
           fetch: routerModelFetch(played.model, fetcher, onUsage, {
             mode: played.mode,
             secrets: [apiKey],
+            schema: coachChatGatewaySchema(),
             ...(onError ? { onError } : {}),
           }),
         },

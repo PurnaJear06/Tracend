@@ -2,10 +2,13 @@
 // and never gates on it, but a run whose models did not answer measures nothing: the job fails when
 // the Coach route errors on too many turns, the judges give no verdicts, or the athlete model cannot
 // write. Pure functions over the finished run, so they are tested without a network.
+import type { ProviderError } from "./diagnostics.ts";
 import type { ConversationRun } from "./simulate.ts";
 
 /** The share of Coach turns that may end in a provider error before the run is a failure. */
 export const providerErrorLimit = 0.2;
+/** The share of judge calls that may fail (any way) before the judges are not trusted. */
+export const judgeFailureLimit = 0.1;
 /** The share of conversations the athlete model may fail to continue. */
 export const athleteFailureLimit = 0.2;
 
@@ -57,6 +60,7 @@ export function harnessStats(runs: readonly ConversationRun[]): HarnessStats {
 export function harnessFailures(
   runs: readonly ConversationRun[],
   judgesEnabled: boolean,
+  errors: readonly ProviderError[] = [],
 ): string[] {
   const stats = harnessStats(runs);
   const reasons: string[] = [];
@@ -77,6 +81,25 @@ export function harnessFailures(
   if (judgesEnabled && stats.modelAnswers > 0 && stats.expertVerdicts === 0) {
     reasons.push(
       `The expert judge produced no verdicts (${stats.judgeCalls} judged turns of ${stats.modelAnswers} model answers).`,
+    );
+  }
+  // A judge that ran out of output tokens gave no verdict; counting that as a pass or hiding it
+  // behind the others would mislead, so any such call is a harness error.
+  const truncated = errors.filter((e) => e.source === "judge" && e.kind === "truncated").length;
+  if (judgesEnabled && truncated > 0) {
+    reasons.push(
+      `${truncated} judge calls ran into their output limit and gave no verdict; raise judgeMaxTokens.`,
+    );
+  }
+  const judgeCalls = stats.judgeCalls + stats.claimCalls;
+  const judgeVerdicts = stats.expertVerdicts + stats.claimVerdicts;
+  if (
+    judgesEnabled && judgeCalls > 0 && (judgeCalls - judgeVerdicts) / judgeCalls > judgeFailureLimit
+  ) {
+    reasons.push(
+      `${judgeCalls - judgeVerdicts} of ${judgeCalls} judge calls gave no verdict (limit ${
+        judgeFailureLimit * 100
+      }%).`,
     );
   }
   if (judgesEnabled && stats.claimCalls > 0 && stats.claimVerdicts === 0) {

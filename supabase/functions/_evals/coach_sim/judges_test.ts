@@ -100,6 +100,7 @@ Deno.test("a judge call reports its cost and a failure in place of a verdict", a
       model: "judge",
       tokens: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
       costUsd: 0.01,
+      finishReason: "stop",
     });
   const verdict = await judgeExpert(answering, "judge", {
     digest: "",

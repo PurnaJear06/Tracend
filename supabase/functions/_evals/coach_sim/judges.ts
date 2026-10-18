@@ -125,9 +125,18 @@ export function parseExpertVerdict(text: string): ExpertVerdict | null {
   };
 }
 
+/**
+ * Output tokens of one judge call. A Claude judge thinks before it writes, and the thinking counts
+ * against the limit: at 700 and 900 tokens Opus 5.5 ran out before writing a word in 11 of 30
+ * calls (run 39103483975). The report shows the most a call used, so the limit can be checked.
+ */
+export const judgeMaxTokens = 3_000;
+
 export type JudgeCall<T> = Readonly<{
   verdict: T | null;
   costUsd: number;
+  /** Output tokens the call used (thinking included), when it answered. */
+  outputTokens?: number;
   failure?: string;
   /** The wire error of a failed call, for the error log. */
   error?: WireError;
@@ -136,6 +145,7 @@ export type JudgeCall<T> = Readonly<{
 const failedCall = (result: Extract<ChatResult, { ok: false }>): JudgeCall<never> => ({
   verdict: null,
   costUsd: result.costUsd,
+  ...(result.kind === "truncated" ? { outputTokens: judgeMaxTokens } : {}),
   failure: `${result.reason}${result.body ? `: ${result.body}` : ""}`,
   error: result,
 });
@@ -148,18 +158,21 @@ export async function judgeExpert(
   const result = await chat({
     model,
     ...expertPrompt(input),
-    maxTokens: 700,
+    maxTokens: judgeMaxTokens,
     json: true,
     source: "judge",
   });
   if (!result.ok) return failedCall(result);
   const verdict = parseExpertVerdict(result.text);
-  return verdict ? { verdict, costUsd: result.costUsd } : {
-    verdict: null,
-    costUsd: result.costUsd,
-    failure: "unreadable verdict",
-    error: { status: 200, kind: "unreadable", body: excerpt(result.text) },
-  };
+  return verdict
+    ? { verdict, costUsd: result.costUsd, outputTokens: result.tokens.outputTokens }
+    : {
+      verdict: null,
+      costUsd: result.costUsd,
+      outputTokens: result.tokens.outputTokens,
+      failure: "unreadable verdict",
+      error: { status: 200, kind: "unreadable", body: excerpt(result.text) },
+    };
 }
 
 // ---- claim support (P1-3) -------------------------------------------------------------------
@@ -234,16 +247,19 @@ export async function judgeClaims(
   const result = await chat({
     model,
     ...claimPrompt(input),
-    maxTokens: 900,
+    maxTokens: judgeMaxTokens,
     json: true,
     source: "judge",
   });
   if (!result.ok) return failedCall(result);
   const claims = parseClaims(result.text, input);
-  return claims ? { verdict: claims, costUsd: result.costUsd } : {
-    verdict: null,
-    costUsd: result.costUsd,
-    failure: "unreadable verdict",
-    error: { status: 200, kind: "unreadable", body: excerpt(result.text) },
-  };
+  return claims
+    ? { verdict: claims, costUsd: result.costUsd, outputTokens: result.tokens.outputTokens }
+    : {
+      verdict: null,
+      costUsd: result.costUsd,
+      outputTokens: result.tokens.outputTokens,
+      failure: "unreadable verdict",
+      error: { status: 200, kind: "unreadable", body: excerpt(result.text) },
+    };
 }

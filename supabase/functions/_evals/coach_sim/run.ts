@@ -11,7 +11,7 @@
 //
 // Only in GitHub Actions (coach-eval.yml, Run workflow with `simulate`): it needs EVAL_BASE_URL and
 // EVAL_API_KEY, the eval router. Optional: EVAL_SIM_FILTER (comma-separated parts of conversation
-// ids, personas or scenarios), EVAL_SIM_MAX_TURNS (default 6, at most 10), EVAL_MAX_USD (default
+// ids, personas or scenarios), EVAL_SIM_MAX_TURNS (default 3, at most 10; lowered to fit the cap, never below 2), EVAL_MAX_USD (default
 // 3), EVAL_CONCURRENCY (default 3), EVAL_COACH_MODEL, EVAL_ATHLETE_MODEL, EVAL_JUDGE_MODEL (any
 // router model id; the judge must differ from the Coach) and EVAL_REPORT_DIR.
 import type { TokenCounts } from "../../_shared/ai/models.ts";
@@ -26,7 +26,7 @@ import {
   routerModelEntry,
 } from "../live_model.ts";
 import { summariseErrors } from "./diagnostics.ts";
-import { assertDistinctJudge } from "./judges.ts";
+import { assertDistinctJudge, judgeMaxTokens } from "./judges.ts";
 import {
   decidePreflight,
   idCandidates,
@@ -43,6 +43,7 @@ import {
   defaultChatMode,
   judgePreferences,
   pickModel,
+  pickModels,
   routerChat,
 } from "./router_client.ts";
 import { type Conversation, openingFor, selectConversations } from "./scenarios.ts";
@@ -59,6 +60,8 @@ export type EstimateInput = Readonly<{
   coachModel: string;
   athleteModel: string;
   judgeModel: string | null;
+  /** Judge every Nth Coach reply (default every reply). */
+  judgeEvery?: number;
   /** Prompt tokens of a first Coach call for the persona. */
   promptTokens: (persona: PersonaId) => number;
 }>;
@@ -73,12 +76,14 @@ const tokens = (input: number, output: number): TokenCounts => ({
 /**
  * What a run should cost at list prices, before it starts. Per Coach turn: 1.6 calls (lookup
  * rounds and repairs) of the persona's prompt plus 1,000 tokens of looked-up rows, and 900 output
- * tokens; per athlete message 1,500 in and 150 out; per judged turn 2,500 in and 450 out, and a
- * claim check on a third of the turns. No prompt cache is assumed.
+ * tokens; per athlete message 1,500 in and 150 out; per judged turn 4,000 in and 2,000 out (a
+ * Claude judge's thinking counts as output), and a claim check on a third of the judged turns
+ * (3,000 in, 1,500 out). No prompt cache is assumed.
  */
 export function estimateRun(input: EstimateInput): { usd: number; turns: number } {
   let usd = 0;
   let turns = 0;
+  const every = input.judgeEvery ?? 1;
   for (const conversation of input.conversations) {
     const count = Math.min(conversation.scenario.turns, input.maxTurns, maxTurnsLimit);
     turns += count;
@@ -86,11 +91,64 @@ export function estimateRun(input: EstimateInput): { usd: number; turns: number 
     usd += count * priceTokens(input.coachModel, tokens(Math.round(prompt * 1.6) + 1_000, 900)).usd;
     usd += (count - 1) * priceTokens(input.athleteModel, tokens(1_500, 150)).usd;
     if (input.judgeModel) {
-      usd += count * priceTokens(input.judgeModel, tokens(2_500, 450)).usd;
-      usd += (count / 3) * priceTokens(input.judgeModel, tokens(2_500, 500)).usd;
+      const judged = Math.ceil(count / every);
+      usd += judged * priceTokens(input.judgeModel, tokens(4_000, 2_000)).usd;
+      usd += (judged / 3) * priceTokens(input.judgeModel, tokens(3_000, 1_500)).usd;
     }
   }
   return { usd: Math.round(usd * 10_000) / 10_000, turns };
+}
+
+/** The share of the cap an estimate may use: the estimate is a list-price guess, not a bound. */
+export const capShare = 0.85;
+/** The fewest messages per conversation a fitted run keeps: a second message tests the follow-up. */
+export const fewestTurns = 2;
+
+export type Fit = Readonly<{
+  maxTurns: number;
+  judgeEvery: number;
+  estimateUsd: number;
+  /** Coach turns the run plans at that size. */
+  turns: number;
+  /** Whether the estimate is within capShare of the cap. */
+  fits: boolean;
+}>;
+
+/**
+ * The biggest run that fits the cap, so that every conversation runs instead of the last ones
+ * being skipped: from the requested messages per conversation down to two, each judged on every
+ * reply and then on every other one; when none fits, two messages and the first reply judged (the
+ * cap still stops it, and the report says so).
+ */
+export function fitRun(
+  input: Omit<EstimateInput, "maxTurns" | "judgeEvery">,
+  requested: number,
+  maxUsd: number,
+): Fit {
+  const floor = Math.min(requested, fewestTurns);
+  for (let turns = requested; turns >= floor; turns--) {
+    for (const judgeEvery of input.judgeModel ? [1, 2] : [1]) {
+      const estimate = estimateRun({ ...input, maxTurns: turns, judgeEvery });
+      if (estimate.usd <= maxUsd * capShare) {
+        return {
+          maxTurns: turns,
+          judgeEvery,
+          estimateUsd: estimate.usd,
+          turns: estimate.turns,
+          fits: true,
+        };
+      }
+    }
+  }
+  const judgeEvery = input.judgeModel ? 2 : 1;
+  const estimate = estimateRun({ ...input, maxTurns: floor, judgeEvery });
+  return {
+    maxTurns: floor,
+    judgeEvery,
+    estimateUsd: estimate.usd,
+    turns: estimate.turns,
+    fits: false,
+  };
 }
 
 /** The prompt tokens of the first Coach call for each persona in the run (no model involved). */
@@ -130,6 +188,9 @@ const integer = (raw: string | undefined, fallback: number, min: number, max: nu
   return Number.isInteger(value) && value >= min && value <= max ? value : fallback;
 };
 
+/** Coach models tried, in order, when the production model has no working request at the router. */
+const coachFallbacks: readonly string[] = ["claude-sonnet-5-5"];
+
 async function main(): Promise<void> {
   const env = (name: string) => Deno.env.get(name)?.trim() || undefined;
   const routed = await routerGatewayFromEnv();
@@ -142,24 +203,8 @@ async function main(): Promise<void> {
     console.error("EVAL_SIM_FILTER matched no conversation.");
     Deno.exit(2);
   }
-  const maxTurns = integer(env("EVAL_SIM_MAX_TURNS"), 6, 1, maxTurnsLimit);
+  const requestedTurns = integer(env("EVAL_SIM_MAX_TURNS"), 3, 1, maxTurnsLimit);
   const maxUsd = Number(env("EVAL_MAX_USD") ?? "3");
-  let coachModel = routed.coachModel;
-  // When the router cannot list its models, the athlete is the Coach's model, which it serves.
-  const athleteModel = env("EVAL_ATHLETE_MODEL") ??
-    (routed.available.length
-      ? pickModel(routed.available, athletePreferences, [coachModel]) ?? coachModel
-      : coachModel);
-  const judgeModel = env("EVAL_JUDGE_MODEL") ??
-    pickModel(routed.available, judgePreferences, [coachModel]);
-  try {
-    if (judgeModel) assertDistinctJudge(judgeModel, coachModel);
-  } catch (error) {
-    console.error((error as Error).message);
-    Deno.exit(2);
-  }
-  const judgeNote = judgeModel ? "" : "the router lists no model other than the Coach's";
-
   const reportDir = env("EVAL_REPORT_DIR") ??
     `.tooling/coach-evals/simulation-${new Date().toISOString().replace(/[:.]/g, "-")}`;
   await Deno.mkdir(reportDir, { recursive: true });
@@ -167,10 +212,67 @@ async function main(): Promise<void> {
   // One tiny request per model, in the mode the run will use; the other modes and spellings are
   // tried when it fails. A model with no working request stops the run before it spends anything.
   const route = { baseUrl: routed.baseUrl, apiKey: routed.apiKey };
-  const [coachCheck, athleteCheck] = await Promise.all([
-    preflightCoach({ ...route, candidates: idCandidates(routed.available, coachModel) }),
-    preflightChat({ ...route, role: "athlete", model: athleteModel }),
-  ]);
+  let coachCheck = await preflightCoach({
+    ...route,
+    candidates: idCandidates(routed.available, routed.coachModel),
+  });
+  const wanted = coachCheck.wanted;
+  let coachChoice = routed.choice;
+  let production = routed.production;
+  // The production model is asked for first. When the router has no working request for it (it
+  // answered 502 for hours on 2026-10-18) and nobody named a Coach model, the run is played by
+  // the next model on the list instead of not running; the report says so on its first line.
+  if (coachCheck.working === null && !env("EVAL_COACH_MODEL") && routed.production) {
+    const fallback = pickModel(routed.available, coachFallbacks, [routed.coachModel]);
+    if (fallback) {
+      const second = await preflightCoach({
+        ...route,
+        candidates: idCandidates(routed.available, fallback),
+      });
+      if (second.working) {
+        const last = coachCheck.attempts.at(-1);
+        coachChoice = `${routed.choice}, but it had no working request at the router (${
+          last ? `${last.status === null ? "no response" : `HTTP ${last.status}`}` : "no attempt"
+        } in every mode and spelling), so ${second.working.model} played`;
+        production = false;
+        coachCheck = { ...second, attempts: [...coachCheck.attempts, ...second.attempts] };
+      }
+    }
+  }
+  let coachModel = coachCheck.working?.model ?? routed.coachModel;
+  // When the router cannot list its models, the athlete is the Coach's model, which it serves.
+  const athleteModel = env("EVAL_ATHLETE_MODEL") ??
+    (routed.available.length
+      ? pickModel(routed.available, athletePreferences, [coachModel]) ?? coachModel
+      : coachModel);
+  const sizes = await promptTokensByPersona(conversations);
+  const promptTokens = (persona: PersonaId) => sizes.get(persona) ?? 10_000;
+  const sizeFor = (judge: string | null) =>
+    fitRun(
+      { conversations, coachModel, athleteModel, judgeModel: judge, promptTokens },
+      requestedTurns,
+      maxUsd,
+    );
+  // The judge is the strongest listed model other than the Coach that the cap can pay for, with
+  // every conversation running. When none can be paid for there is no judge, and the report says
+  // so: the conversations all run, graded by code.
+  const judgeCandidates = env("EVAL_JUDGE_MODEL")
+    ? [env("EVAL_JUDGE_MODEL")!]
+    : pickModels(routed.available, judgePreferences, [coachModel]);
+  let judgeModel: string | null = env("EVAL_JUDGE_MODEL") ??
+    judgeCandidates.find((candidate) => sizeFor(candidate).fits) ?? null;
+  try {
+    if (judgeModel) assertDistinctJudge(judgeModel, coachModel);
+  } catch (error) {
+    console.error((error as Error).message);
+    Deno.exit(2);
+  }
+  let judgeNote = judgeCandidates.length === 0
+    ? "the router lists no model other than the Coach's"
+    : `no judge among ${
+      judgeCandidates.join(", ")
+    } fits the USD ${maxUsd} cap with every conversation running`;
+  const athleteCheck = await preflightChat({ ...route, role: "athlete", model: athleteModel });
   const judgeCheck: PreflightResult | null = judgeModel === null
     ? null
     : judgeModel === athleteModel
@@ -178,15 +280,16 @@ async function main(): Promise<void> {
     : await preflightChat({ ...route, role: "judge", model: judgeModel });
   const checks = [coachCheck, athleteCheck, ...(judgeCheck ? [judgeCheck] : [])];
   const preflight = [
-    `The router's listing for \`${coachCheck.wanted}\`: ${await routerModelEntry(
+    `The router's listing for \`${wanted}\`: ${await routerModelEntry(
       routed.baseUrl,
       routed.apiKey,
-      coachCheck.wanted,
+      wanted,
     )}`,
     ...renderPreflight(checks),
   ];
   console.log(["Preflight:", ...preflight].join("\n"));
-  const decision = decidePreflight(checks);
+  // A judge is report-only: one with no working request is dropped, the Coach and the athlete are not.
+  const decision = decidePreflight(checks.filter((check) => check.role !== "judge"));
   if (!decision.proceed) {
     await Deno.writeTextFile(
       `${reportDir}/preflight.json`,
@@ -210,33 +313,44 @@ async function main(): Promise<void> {
   }
   const played = coachCheck.working!;
   coachModel = played.model;
+  let judgeWorking = judgeCheck;
+  if (judgeCheck && judgeCheck.working === null) {
+    judgeNote = `the judge ${judgeModel} had no working request (see Preflight)`;
+    judgeModel = null;
+    judgeWorking = null;
+  }
   const modes = new Map<string, ChatMode>();
-  for (const check of [athleteCheck, ...(judgeCheck ? [judgeCheck] : [])]) {
+  for (const check of [athleteCheck, ...(judgeWorking ? [judgeWorking] : [])]) {
     modes.set(check.working!.model, check.working!.mode);
   }
 
-  const sizes = await promptTokensByPersona(conversations);
-  const estimate = estimateRun({
-    conversations,
-    maxTurns,
-    coachModel,
-    athleteModel,
-    judgeModel,
-    promptTokens: (persona) => sizes.get(persona) ?? 10_000,
-  });
+  const fit = sizeFor(judgeModel);
+  const sizing =
+    `Sized to the cap so that every conversation runs: ${fit.maxTurns} athlete messages per conversation (asked for ${requestedTurns}), ${
+      judgeModel
+        ? `judging ${fit.judgeEvery === 1 ? "every reply" : "every other reply"}`
+        : "no judges"
+    }; estimate USD ${fit.estimateUsd.toFixed(4)} against ${
+      capShare * 100
+    }% of the USD ${maxUsd} cap${
+      fit.fits
+        ? ""
+        : " (DOES NOT FIT: the cap will stop the run and later conversations may be short)"
+    }.`;
   const assumedPrices = [coachModel, athleteModel, judgeModel].filter((m): m is string =>
     m !== null && knownPrice(m) === null
   );
   console.log(
     [
-      `Coach: ${coachModel} (${routed.choice}).`,
+      `Coach: ${coachModel} (${coachChoice}).`,
       `Athlete: ${athleteModel}. Judges: ${judgeModel ?? `off (${judgeNote})`}.`,
       `Router models listed: ${routed.available.length || "none"}.`,
-      `${conversations.length} conversations, up to ${estimate.turns} Coach turns. Estimated cost USD ${
-        estimate.usd.toFixed(4)
+      `${conversations.length} conversations, up to ${fit.turns} Coach turns. Estimated cost USD ${
+        fit.estimateUsd.toFixed(4)
       } at list prices${
         assumedPrices.length ? ` (assumed prices for ${assumedPrices.join(", ")})` : ""
       }; cap USD ${maxUsd}.`,
+      sizing,
     ].join("\n"),
   );
 
@@ -249,23 +363,27 @@ async function main(): Promise<void> {
       modeFor: (model) => modes.get(model) ?? defaultChatMode,
     }),
     conversations,
-    maxTurns,
+    maxTurns: fit.maxTurns,
+    judgeEvery: fit.judgeEvery,
     maxUsd,
     concurrency: integer(env("EVAL_CONCURRENCY"), 3, 1, 8),
   });
-  const failures = harnessFailures(result.conversations, judgeModel !== null);
+  const failures = harnessFailures(result.conversations, judgeModel !== null, result.errors);
   const text = renderReport(result.conversations, result.spend, result.stoppedForBudget, {
     coachModel,
-    coachChoice: routed.choice,
+    coachChoice,
     productionModel: productionCoachModel,
-    production: routed.production,
+    production,
     athleteModel,
     judgeModel,
     judgeNote,
     endpoint: new URL(routed.baseUrl).host,
     maxUsd,
-    maxTurns,
-    estimateUsd: estimate.usd,
+    maxTurns: fit.maxTurns,
+    estimateUsd: fit.estimateUsd,
+    judgeOutputTokens: result.judgeOutputTokens,
+    judgeMaxTokens,
+    sizing,
     assumedPrices,
     preflight,
     errors: result.errors,

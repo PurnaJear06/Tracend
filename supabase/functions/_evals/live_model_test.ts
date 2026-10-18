@@ -1,5 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { claudeMessage, fakeFetch, jsonResponse, routeFor } from "../_shared/ai/fakes.ts";
+import { coachChatGatewaySchema } from "../_shared/providers/coach_chat_provider_gateway.ts";
+import type { WireError } from "./coach_sim/diagnostics.ts";
 import {
   gatewayGenerate,
   knownPrice,
@@ -197,4 +199,92 @@ Deno.test("the router gateway route says which model plays the Coach and why", a
 
   const noKey = await routerGatewayFromEnv(routerEnv({ EVAL_API_KEY: "" }), listing([]));
   assert("error" in noKey);
+});
+
+const goodAnswer = {
+  data_requests: [],
+  proposal_intent: [],
+  fact_suggestions: [],
+  answer: "ok",
+  evidence: [],
+  missing_data: [],
+  safety_state: "allowed",
+  suggested_follow_ups: [],
+  reasoning_chain: [],
+};
+
+async function throughRouter(choice: Record<string, unknown>, onError: (e: WireError) => void) {
+  const send = routerModelFetch(
+    "claude-haiku-5.5",
+    () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ choices: [choice], usage: { prompt_tokens: 10, completion_tokens: 5 } }),
+          { status: 200 },
+        ),
+      ),
+    undefined,
+    { onError, schema: coachChatGatewaySchema() },
+  );
+  const response = await send("https://router.example/v1/chat/completions", {
+    method: "POST",
+    body: JSON.stringify({ model: "x", messages: [], response_format: { type: "json_object" } }),
+  });
+  return (await response.json()).choices[0] as {
+    finish_reason: string;
+    message: { content: string };
+  };
+}
+
+Deno.test("a JSON answer handed over as a tool call reaches the gateway as the content", async () => {
+  const errors: WireError[] = [];
+  const choice = await throughRouter({
+    finish_reason: "tool_calls",
+    message: {
+      content: null,
+      tool_calls: [{ function: { name: "json", arguments: JSON.stringify(goodAnswer) } }],
+    },
+  }, (e) => errors.push(e));
+  assertEquals(choice.finish_reason, "stop");
+  assertEquals(JSON.parse(choice.message.content), goodAnswer);
+  // The cause stays on record: the finish reason and the shape of the message.
+  assertEquals(errors.map((e) => e.kind), ["finish"]);
+  assert(errors[0].body.includes("finish_reason=tool_calls; content empty"), errors[0].body);
+});
+
+Deno.test("a tool call with nothing to read is left as the gateway rejects it, and reported", async () => {
+  const errors: WireError[] = [];
+  const choice = await throughRouter(
+    { finish_reason: "tool_calls", message: { content: "", tool_calls: [] } },
+    (e) => errors.push(e),
+  );
+  assertEquals(choice.finish_reason, "tool_calls");
+  assertEquals(errors.map((e) => e.kind), ["finish", "finish"]);
+});
+
+Deno.test("JSON wrapped in a fence is cleaned and reported; a reply off the schema names the path", async () => {
+  const errors: WireError[] = [];
+  const cleaned = await throughRouter({
+    finish_reason: "stop",
+    message: { content: "Here you go:\n```json\n" + JSON.stringify(goodAnswer) + "\n```" },
+  }, (e) => errors.push(e));
+  assertEquals(JSON.parse(cleaned.message.content), goodAnswer);
+  assertEquals(errors.map((e) => e.kind), ["wrapped"]);
+
+  errors.length = 0;
+  const { evidence: _evidence, ...missing } = goodAnswer;
+  const untouched = await throughRouter(
+    { finish_reason: "stop", message: { content: JSON.stringify(missing) } },
+    (e) => errors.push(e),
+  );
+  assertEquals(JSON.parse(untouched.message.content), missing, "the reply is not repaired");
+  assertEquals(errors, [{ kind: "schema", status: 200, body: "$.evidence is missing" }]);
+
+  errors.length = 0;
+  const shape = await throughRouter({
+    finish_reason: "stop",
+    message: { content: JSON.stringify({ ...goodAnswer, proposal_intent: { kind: "x" } }) },
+  }, (e) => errors.push(e));
+  assertEquals(JSON.parse(shape.message.content).proposal_intent, { kind: "x" });
+  assertEquals(errors.map((e) => e.body), ["$.proposal_intent does not match (object)"]);
 });

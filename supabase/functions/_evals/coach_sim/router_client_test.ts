@@ -5,6 +5,7 @@ import {
   jsonObjectIn,
   judgePreferences,
   pickModel,
+  pickModels,
   routerChat,
 } from "./router_client.ts";
 
@@ -119,4 +120,79 @@ Deno.test("models are picked by preference from what the router lists, never an 
   );
   // When the router cannot list its models, the first preference that is not excluded.
   assertEquals(pickModel([], judgePreferences, ["claude-sonnet-5-5"]), "claude-opus-5-5");
+});
+
+const withChoice = (choice: Record<string, unknown>) =>
+  new Response(
+    JSON.stringify({
+      model: "m",
+      choices: [choice],
+      usage: { prompt_tokens: 100, completion_tokens: 700 },
+    }),
+    { status: 200 },
+  );
+
+Deno.test("an answer that ran into max_tokens is a truncation, not an empty or half verdict", async () => {
+  for (const content of ["", '{"scores": {"spec']) {
+    let calls = 0;
+    const chat = routerChat("https://router.example/v1", "k", {
+      fetcher: () => {
+        calls++;
+        return Promise.resolve(
+          withChoice({ message: { content }, finish_reason: "length" }),
+        );
+      },
+      retryDelayMs: 0,
+    });
+    const result = await chat({
+      model: "claude-opus-5.5",
+      system: "s",
+      user: "u",
+      maxTokens: 700,
+      json: true,
+      source: "judge",
+    });
+    assert(!result.ok);
+    assertEquals(result.kind, "truncated");
+    assertEquals(calls, 1, "a truncated call is not asked again at the same limit");
+    assert(result.costUsd > 0, "the billed tokens are counted");
+    assert(result.body.includes("completion_tokens=700 max_tokens=700"), result.body);
+  }
+});
+
+Deno.test("a JSON answer handed over as a tool call is read from its arguments", async () => {
+  const chat = routerChat("https://router.example/v1", "k", {
+    fetcher: () =>
+      Promise.resolve(
+        withChoice({
+          message: {
+            content: null,
+            tool_calls: [{ function: { name: "json", arguments: '{"message":"hi"}' } }],
+          },
+          finish_reason: "tool_calls",
+        }),
+      ),
+    retryDelayMs: 0,
+  });
+  const result = await chat({
+    model: "m",
+    system: "s",
+    user: "u",
+    maxTokens: 100,
+    json: true,
+    source: "athlete",
+  });
+  assert(result.ok);
+  assertEquals(result.text, '{"message":"hi"}');
+});
+
+Deno.test("pickModels lists every listed preference in order, without the excluded model", () => {
+  const listed = ["claude-opus-5.5", "claude-sonnet-5.5", "deepseek-v4-flash", "gemini-3.5-flash"];
+  assertEquals(pickModels(listed, judgePreferences, ["claude-sonnet-5-5"]), [
+    "claude-opus-5.5",
+    "gemini-3.5-flash",
+    "deepseek-v4-flash",
+  ]);
+  assertEquals(pickModels(listed, judgePreferences, ["claude-opus-5-5"])[0], "claude-sonnet-5.5");
+  assertEquals(pickModels([], ["a", "b"], ["a"]), ["b"]);
 });

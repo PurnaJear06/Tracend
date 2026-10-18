@@ -95,7 +95,8 @@ export async function nextAthleteMessage(
     const result = await chat({ model, ...prompt, maxTokens, json: true, source: "athlete" });
     costUsd += result.costUsd;
     if (!result.ok) {
-      const empty = result.kind === "empty" || result.kind === "no_choices";
+      const empty = result.kind === "empty" || result.kind === "no_choices" ||
+        result.kind === "truncated";
       last = {
         message: null,
         costUsd,

@@ -58,6 +58,8 @@ export type SimulationOptions = Readonly<{
   maxTurns: number;
   /** New Coach turns and judge calls stop once the run has spent this much. */
   maxUsd: number;
+  /** Judge every Nth Coach reply (the first of each N; default every reply). */
+  judgeEvery?: number;
   concurrency?: number;
 }>;
 
@@ -91,6 +93,8 @@ export type SimulationResult = Readonly<{
   stoppedForBudget: boolean;
   /** Every failed model call (Coach, athlete, judges) with where it happened. */
   errors: readonly ProviderError[];
+  /** Output tokens of every judge call that answered or ran out (thinking included). */
+  judgeOutputTokens: readonly number[];
 }>;
 
 /** This many Coach turns ending in a provider error, with no model answer yet, stop the run. */
@@ -104,6 +108,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
   const spend: Spend = { coach: 0, athlete: 0, judges: 0 };
   let stoppedForBudget = false;
   const errors: ProviderError[] = [];
+  const judgeOutputTokens: number[] = [];
   let coachErrorTurns = 0;
   let coachAnswers = 0;
   const overBudget = () => {
@@ -262,7 +267,10 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
       const judgeFailures: string[] = [];
       let expert: ExpertVerdict | undefined;
       let claims: readonly Claim[] | undefined;
-      if (options.judgeModel && record.reply.outcome === "model" && !overBudget()) {
+      if (
+        options.judgeModel && record.reply.outcome === "model" &&
+        (number - 1) % (options.judgeEvery ?? 1) === 0 && !overBudget()
+      ) {
         const judged = await judgeExpert(options.chat, options.judgeModel, {
           digest,
           coachBrief: scenario.coachBrief,
@@ -272,6 +280,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
           lookedUp: record.lookedUp,
         });
         judgeCost += judged.costUsd;
+        if (judged.outputTokens !== undefined) judgeOutputTokens.push(judged.outputTokens);
         if (judged.verdict) expert = judged.verdict;
         else {
           judgeFailures.push(`expert: ${judged.failure}`);
@@ -286,6 +295,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
             excerpts: Object.fromEntries(cited.map((key) => [key, contributions.shown[key].text])),
           });
           judgeCost += checked.costUsd;
+          if (checked.outputTokens !== undefined) judgeOutputTokens.push(checked.outputTokens);
           if (checked.verdict) claims = checked.verdict;
           else {
             judgeFailures.push(`claims: ${checked.failure}`);
@@ -341,5 +351,6 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
     spend,
     stoppedForBudget,
     errors: errors.slice(0, 500),
+    judgeOutputTokens,
   };
 }

@@ -1,4 +1,5 @@
 // When a run is a harness failure: the thresholds, on hand-built conversation runs.
+import type { ProviderError } from "./diagnostics.ts";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
 import type { ConversationRun, TurnRun } from "./simulate.ts";
 import { athleteFailureLimit, harnessFailures, providerErrorLimit } from "./verdict.ts";
@@ -73,11 +74,17 @@ Deno.test("every Coach turn failing is reported as one", () => {
 Deno.test("a judge with no verdicts fails the run only when judges are on", () => {
   const noVerdict = () => turn({ judgeFailures: ["expert: http 400: nope"] });
   const failures = harnessFailures([run([noVerdict(), noVerdict()])], true);
-  assertEquals(failures.length, 1);
+  assertEquals(failures.length, 2);
   assertStringIncludes(failures[0], "expert judge produced no verdicts");
+  assertStringIncludes(failures[1], "2 of 2 judge calls gave no verdict");
   assertEquals(harnessFailures([run([noVerdict(), noVerdict()])], false), []);
-  // One verdict among failures is enough: the judge works.
-  assertEquals(harnessFailures([run([noVerdict(), good()])], true), []);
+  // A judge that fails more than one call in ten is not trusted, even with some verdicts.
+  assertStringIncludes(
+    harnessFailures([run([noVerdict(), good()])], true).join("\n"),
+    "1 of 2 judge calls gave no verdict",
+  );
+  const sound = Array.from({ length: 10 }, () => good());
+  assertEquals(harnessFailures([run([noVerdict(), ...sound])], true), []);
   // The claim judge failing every call is reported, an empty verdict is not a failure.
   const claimFail = () => turn({ expert: true, judgeFailures: ["claims: http 500: down"] });
   assertStringIncludes(
@@ -104,4 +111,23 @@ Deno.test("an exception in the simulator and a run with no turn fail it", () => 
     "Harness error in c: TypeError: boom",
   );
   assertStringIncludes(harnessFailures([run([], "budget")], true).join("\n"), "No Coach turn ran");
+});
+
+Deno.test("a judge call that ran out of output tokens is a harness error, never a pass", () => {
+  const cut: ProviderError = {
+    source: "judge",
+    model: "claude-opus-5.5",
+    status: 200,
+    kind: "truncated",
+    body: "finish_reason=length completion_tokens=3000 max_tokens=3000",
+  };
+  const sound = Array.from({ length: 20 }, () => good());
+  assertEquals(harnessFailures([run(sound)], true, []), []);
+  assertStringIncludes(
+    harnessFailures([run(sound)], true, [cut]).join("\n"),
+    "1 judge calls ran into their output limit",
+  );
+  // The Coach hitting its own limit is a finding about the Coach, not the harness.
+  assertEquals(harnessFailures([run(sound)], true, [{ ...cut, source: "coach" }]), []);
+  assertEquals(harnessFailures([run(sound)], false, [cut]), []);
 });

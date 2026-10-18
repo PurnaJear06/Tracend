@@ -20,7 +20,8 @@ name: Coach Eval
 #     embedding model, so it cannot run in the Deno job. Run it alone with `retrieval_only`.
 #
 #   - Simulated athletes (supabase/functions/_evals/coach_sim/, Run workflow with `simulate`):
-#     four personas with months of synthetic records talk to Coach for 6-10 messages in eight
+#     four personas with months of synthetic records talk to Coach for 2-3 messages (default 3,
+#     fitted to the cap so every conversation runs) in eight
 #     scenarios (a bench plateau and a programme change, a cut, a travel week, "what did I do last
 #     Tuesday", a knee that feels off, a supplement and its research, a follow-up, pushback). Each
 #     turn is graded by code, an expert-coach judge and, for cited research, a claim-support
@@ -31,9 +32,11 @@ name: Coach Eval
 #     verdicts, or an athlete model that cannot continue. Every failed call records its HTTP status
 #     and the first 300 characters of its body, redacted, in simulation.json. It never runs on a
 #     pull request. `sim_filter` picks conversations
-#     ("primary", "knee-off", "primary/bench-plateau"); `sim_max_turns` caps the messages; the
-#     run stops at `EVAL_SIM_MAX_USD` (repository variable, default 3) and prints its estimate
-#     first. Optional variables: `EVAL_SIM_COACH_MODEL`, `EVAL_SIM_ATHLETE_MODEL`,
+#     ("primary", "knee-off", "primary/bench-plateau"); `sim_max_turns` caps the messages (the
+#     run lowers it, and then how many replies are judged, until the estimate fits 85% of
+#     `EVAL_SIM_MAX_USD`, repository variable, default 3; it prints the estimate first and stops at
+#     the cap). When the production Coach model has no working request at the router, Sonnet 5.5
+#     plays instead and the report says so. Optional variables: `EVAL_SIM_COACH_MODEL`, `EVAL_SIM_ATHLETE_MODEL`,
 #     `EVAL_SIM_JUDGE_MODEL` (router model ids).
 #
 # Models: the repository variable `EVAL_BASE_URL` (for example https://router.bynara.id/v1) and
@@ -83,9 +86,9 @@ on:
         required: false
         default: ""
       sim_max_turns:
-        description: Athlete messages per simulated conversation at most (1-10)
+        description: Athlete messages per simulated conversation at most (1-10; the run may lower it to fit the cap)
         required: false
-        default: "6"
+        default: "3"
   pull_request:
     types: [labeled]
 
@@ -259,7 +262,7 @@ jobs:
           EVAL_JUDGE_MODEL: ${{ vars.EVAL_SIM_JUDGE_MODEL }}
           EVAL_MAX_USD: ${{ vars.EVAL_SIM_MAX_USD || '3' }}
           EVAL_SIM_FILTER: ${{ inputs.sim_filter }}
-          EVAL_SIM_MAX_TURNS: ${{ inputs.sim_max_turns || '6' }}
+          EVAL_SIM_MAX_TURNS: ${{ inputs.sim_max_turns || '3' }}
           EVAL_REPORT_DIR: sim-report
         run: |
           if [ -z "$EVAL_BASE_URL" ]; then

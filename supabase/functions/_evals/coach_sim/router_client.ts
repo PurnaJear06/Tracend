@@ -4,7 +4,7 @@
 // its price table. Cost is counted at the model's list price when the table knows it, else at an
 // assumed Sonnet-class price, so the estimate never undercounts.
 import type { TokenCounts } from "../../_shared/ai/models.ts";
-import { normalizedModelId, priceTokens, tokensOf } from "../live_model.ts";
+import { argumentsOf, normalizedModelId, priceTokens, textOf, tokensOf } from "../live_model.ts";
 import { type CallSource, excerpt, headerNote, htmlText, type WireError } from "./diagnostics.ts";
 import { type ChatMode, defaultChatMode } from "./wire.ts";
 
@@ -22,7 +22,14 @@ export type ChatRequest = Readonly<{
 }>;
 
 export type ChatResult =
-  | Readonly<{ ok: true; text: string; model: string; tokens: TokenCounts; costUsd: number }>
+  | Readonly<{
+    ok: true;
+    text: string;
+    model: string;
+    tokens: TokenCounts;
+    costUsd: number;
+    finishReason: string;
+  }>
   | Readonly<
     { ok: false; reason: string; costUsd: number } & WireError
   >;
@@ -43,7 +50,7 @@ const isDeepSeek = (model: string) => model.toLowerCase().includes("deepseek");
 
 /** A failure worth asking again: no answer, or a server or rate-limit answer. */
 const worthRetrying = (failure: Extract<ChatResult, { ok: false }>) =>
-  failure.kind !== "empty" && failure.kind !== "no_choices" &&
+  failure.kind !== "empty" && failure.kind !== "no_choices" && failure.kind !== "truncated" &&
   (failure.status === null || failure.status >= 500 || failure.status === 429 ||
     failure.status === 408);
 
@@ -126,14 +133,31 @@ export function routerChat(
     if (!choice) {
       return fail("no_choices", response.status, raw, "no choices in the answer", costUsd);
     }
-    const text = (choice.message as Record<string, unknown> | undefined)?.content;
-    if (typeof text !== "string" || text.trim() === "") {
+    const message = choice.message as Record<string, unknown> | undefined;
+    const finishReason = String(choice.finish_reason);
+    // An answer that ran into max_tokens is cut off, whatever text came back: a verdict read from
+    // it would be a guess, so it is a failure of its own (and the output tokens were billed).
+    if (finishReason === "length" || finishReason === "max_tokens") {
+      return fail(
+        "truncated",
+        response.status,
+        `finish_reason=${finishReason} completion_tokens=${tokens.outputTokens} max_tokens=${request.maxTokens}; text so far ${
+          textOf(message?.content).length
+        } chars`,
+        "truncated at max_tokens",
+        costUsd,
+      );
+    }
+    // A router may hand a JSON answer over as a tool call; the arguments are the text then.
+    let text = textOf(message?.content);
+    if (text.trim() === "" && Array.isArray(message?.tool_calls)) {
+      text = argumentsOf(message.tool_calls[0]) ?? "";
+    }
+    if (text.trim() === "") {
       return fail(
         "empty",
         response.status,
-        `empty content; finish_reason=${
-          String(choice.finish_reason)
-        } completion_tokens=${tokens.outputTokens} max_tokens=${request.maxTokens}`,
+        `empty content; finish_reason=${finishReason} completion_tokens=${tokens.outputTokens} max_tokens=${request.maxTokens}`,
         "empty answer",
         costUsd,
       );
@@ -144,6 +168,7 @@ export function routerChat(
       model: typeof payload.model === "string" ? payload.model : request.model,
       tokens,
       costUsd,
+      finishReason,
     };
   };
   return async (request) => {
@@ -161,30 +186,43 @@ export function routerChat(
 }
 
 /**
- * The first model in `preferences` the router lists (matched like the gateway route's model),
- * skipping any in `exclude`; when the router could not list its models, the first preference not
- * excluded. Null when nothing fits.
+ * Every model in `preferences` the router lists (matched like the gateway route's model), in
+ * preference order and without repeats, skipping any in `exclude`; when the router could not list
+ * its models, the preferences not excluded.
  */
+export function pickModels(
+  available: readonly string[],
+  preferences: readonly string[],
+  exclude: readonly string[],
+): string[] {
+  const excluded = new Set(exclude.map(normalizedModelId));
+  const allowed = (id: string) => !excluded.has(normalizedModelId(id));
+  if (available.length === 0) return preferences.filter(allowed);
+  const usable = available.filter(allowed);
+  const found: string[] = [];
+  for (const wanted of preferences) {
+    const target = normalizedModelId(wanted);
+    const match = usable.find((id) => normalizedModelId(id) === target) ??
+      usable.find((id) => normalizedModelId(id).endsWith(target)) ??
+      usable.find((id) => normalizedModelId(id).startsWith(target));
+    if (match && !found.includes(match)) found.push(match);
+  }
+  return found;
+}
+
+/** The first model in `preferences` the router lists (see pickModels), or null when nothing fits. */
 export function pickModel(
   available: readonly string[],
   preferences: readonly string[],
   exclude: readonly string[],
 ): string | null {
-  const excluded = new Set(exclude.map(normalizedModelId));
-  const allowed = (id: string) => !excluded.has(normalizedModelId(id));
-  if (available.length === 0) return preferences.find(allowed) ?? null;
-  const usable = available.filter(allowed);
-  for (const wanted of preferences) {
-    const target = normalizedModelId(wanted);
-    const found = usable.find((id) => normalizedModelId(id) === target) ??
-      usable.find((id) => normalizedModelId(id).endsWith(target)) ??
-      usable.find((id) => normalizedModelId(id).startsWith(target));
-    if (found) return found;
-  }
-  return null;
+  return pickModels(available, preferences, exclude)[0] ?? null;
 }
 
-/** Judges: a strong model, never the Coach's own. */
+/**
+ * Judges, strongest first, never the Coach's own. The run takes the first that fits its cap (a
+ * dear Coach such as Sonnet leaves no room for an Opus judge, so the cheaper ones come after).
+ */
 export const judgePreferences: readonly string[] = [
   "claude-sonnet-5-5",
   "claude-opus-5-5",
@@ -192,6 +230,7 @@ export const judgePreferences: readonly string[] = [
   "gemini-3.5-pro",
   "gemini-3-pro",
   "deepseek-v4-pro",
+  "gemini-3.5-flash",
   "qwen3.8",
   "deepseek-v4-flash",
 ];

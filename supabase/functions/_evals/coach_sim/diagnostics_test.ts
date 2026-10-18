@@ -121,7 +121,7 @@ Deno.test("a network failure and an empty answer are recorded too", async () => 
       Promise.resolve(
         new Response(
           JSON.stringify({
-            choices: [{ message: { content: "" }, finish_reason: "length" }],
+            choices: [{ message: { content: "" }, finish_reason: "stop" }],
             usage: { completion_tokens: 300 },
           }),
           { status: 200 },
@@ -139,7 +139,7 @@ Deno.test("a network failure and an empty answer are recorded too", async () => 
   });
   assert(!blank.ok);
   assertEquals(blank.kind, "empty");
-  assertStringIncludes(blank.body, "finish_reason=length");
+  assertStringIncludes(blank.body, "finish_reason=stop");
   assertStringIncludes(blank.body, "completion_tokens=300");
 });
 
@@ -229,6 +229,7 @@ Deno.test("an empty athlete answer is asked for once more with a bigger budget, 
           model: request.model,
           tokens: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
           costUsd: 0.001,
+          finishReason: "stop",
         },
       );
     },

@@ -27,13 +27,18 @@ const completion = (content: string, model: string) =>
     { status: 200, headers: { "content-type": "application/json" } },
   );
 
+// The production answer schema (coachChatGatewaySchema): every key is present, empty is [] or "".
 const coachAnswer = (answer: string, extra: Record<string, unknown> = {}) =>
   JSON.stringify({
+    data_requests: [],
+    proposal_intent: [],
+    fact_suggestions: [],
     answer,
     evidence: [],
     missing_data: [],
     safety_state: "allowed",
     suggested_follow_ups: [],
+    reasoning_chain: [],
     ...extra,
   });
 
@@ -94,7 +99,7 @@ function fakeRouter() {
             lookup: "workouts",
             from: "2026-10-13",
             to: "2026-10-13",
-            filter: null,
+            filter: "",
           }],
         }),
         model,
@@ -105,12 +110,12 @@ function fakeRouter() {
         coachAnswer(
           "Here's a proposal you can approve below: a strength block with lower reps on the bench for eight weeks. Tracend sets the loads from your logs.",
           {
-            proposal_intent: {
+            proposal_intent: [{
               kind: "intensity_or_phase",
               reason: "plateau",
-              focus: "strength",
-              weeks: 8,
-            },
+              note: "",
+              params: [{ name: "focus", value: "strength" }, { name: "weeks", value: "8" }],
+            }],
           },
         ),
         model,
@@ -226,11 +231,16 @@ Deno.test("the report names the models, ranks the problems and holds every trans
     assumedPrices: [],
     preflight: [],
     errors: [],
+    judgeOutputTokens: [800, 1_900],
+    judgeMaxTokens: 3_000,
+    sizing: "Sized to the cap so that every conversation runs: 3 athlete messages.",
     harnessFailures: [],
   });
   assertStringIncludes(text, "Coach played by `anthropic/claude-haiku-5.5`");
   assertStringIncludes(text, "used the production model");
   assertStringIncludes(text, "## Problems, ranked");
+  assertStringIncludes(text, "Judge output per call (thinking included), limit 3000");
+  assertStringIncludes(text, "Sized to the cap so that every conversation runs");
   assertStringIncludes(text, "primary/bench-plateau, turn 3: same_opening");
   assertStringIncludes(text, "### primary/last-tuesday");
   assertStringIncludes(text, "A 20-year coach would say: Drop to triples");
@@ -259,6 +269,7 @@ const stubChat: RouterChat = (request) =>
     model: request.model,
     tokens: { inputTokens: 10, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 },
     costUsd: 0.0001,
+    finishReason: "stop",
   });
 
 function stubOptions(

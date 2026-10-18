@@ -3,6 +3,8 @@
 // headers and the key itself are never recorded. Used by the Coach, athlete and judge calls and by
 // the preflight, and summarised in the report.
 
+import { matchesSchema } from "../../_shared/ai/json_schema.ts";
+
 /** The most characters of a response body kept. */
 export const bodyExcerptChars = 300;
 
@@ -12,8 +14,24 @@ export type CallSource = "coach" | "athlete" | "judge";
 export type WireError = Readonly<{
   /** The HTTP status, null when no response arrived. */
   status: number | null;
-  /** http: a non-2xx answer; network / timeout: no answer; unreadable, no_choices, empty: a 2xx answer without a reply. */
-  kind: "http" | "network" | "timeout" | "unreadable" | "no_choices" | "empty" | "finish";
+  /**
+   * http: a non-2xx answer; network / timeout: no answer; unreadable, no_choices, empty: a 2xx
+   * answer without a reply; finish: a finish reason the gateway does not know (a router's
+   * `tool_calls`, with the shape of the message); truncated: the answer ran into max_tokens;
+   * wrapped: the JSON came inside a fence or prose and was cleaned to the bare object; schema: the
+   * JSON does not match the answer schema (the first path that does not).
+   */
+  kind:
+    | "http"
+    | "network"
+    | "timeout"
+    | "unreadable"
+    | "no_choices"
+    | "empty"
+    | "finish"
+    | "truncated"
+    | "wrapped"
+    | "schema";
   /** The redacted start of the body, or a short description. */
   body: string;
 }>;
@@ -141,4 +159,42 @@ export function renderErrorSummary(errors: readonly ProviderError[]): string[] {
       g.body ? `: ${g.body.replaceAll("|", "\\|")}` : ""
     }`
   );
+}
+
+type JsonSchema = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * Where a value first departs from a schema, as a path and a reason, or null when it matches. Used
+ * to say why a router's JSON-mode reply would be rejected by the gateway, which only says
+ * `invalid_output`.
+ */
+export function schemaProblem(value: unknown, schema: JsonSchema, path = "$"): string | null {
+  if (matchesSchema(value, schema)) return null;
+  if (schema.type === "object" && isRecord(value)) {
+    const properties = isRecord(schema.properties) ? schema.properties : {};
+    for (const key of Array.isArray(schema.required) ? schema.required : []) {
+      if (!Object.hasOwn(value, String(key))) return `${path}.${key} is missing`;
+    }
+    if (schema.additionalProperties === false) {
+      const extra = Object.keys(value).find((key) => !Object.hasOwn(properties, key));
+      if (extra !== undefined) return `${path}.${extra} is not in the schema`;
+    }
+    for (const [key, sub] of Object.entries(properties)) {
+      if (Object.hasOwn(value, key) && isRecord(sub)) {
+        const found = schemaProblem(value[key], sub, `${path}.${key}`);
+        if (found) return found;
+      }
+    }
+  }
+  if (schema.type === "array" && Array.isArray(value) && isRecord(schema.items)) {
+    for (const [index, item] of value.entries()) {
+      const found = schemaProblem(item, schema.items, `${path}[${index}]`);
+      if (found) return found;
+    }
+  }
+  const shown = typeof value === "string" ? JSON.stringify(value.slice(0, 40)) : typeof value;
+  return `${path} does not match (${shown})`;
 }

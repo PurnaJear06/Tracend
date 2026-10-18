@@ -27,6 +27,12 @@ export type ReportHeader = Readonly<{
   preflight: readonly string[];
   /** Every failed model call of the run. */
   errors: readonly ProviderError[];
+  /** Output tokens of every judge call (thinking included), to check the judges' limit. */
+  judgeOutputTokens: readonly number[];
+  /** The judges' output limit per call. */
+  judgeMaxTokens: number;
+  /** How the run was sized to the cap (turns per conversation, judged turns). */
+  sizing: string;
   /** Why the run is a harness failure, empty when it is sound. */
   harnessFailures: readonly string[];
 }>;
@@ -237,6 +243,11 @@ function transcript(run: ConversationRun): string[] {
   return lines;
 }
 
+const quantile = (values: readonly number[], q: number) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+};
+
 const mean = (values: readonly number[]) =>
   values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length;
 
@@ -314,6 +325,16 @@ export function renderReport(
     }. Estimate before the run: USD ${usd(header.estimateUsd)}; cap USD ${header.maxUsd}${
       stoppedForBudget ? " (STOPPED at the cap: some conversations are short)" : ""
     }. At most ${header.maxTurns} athlete messages per conversation.`,
+    header.sizing,
+    ...(header.judgeOutputTokens.length
+      ? [
+        `Judge output per call (thinking included), limit ${header.judgeMaxTokens}: median ${
+          quantile(header.judgeOutputTokens, 0.5)
+        }, 90th percentile ${quantile(header.judgeOutputTokens, 0.9)}, largest ${
+          Math.max(...header.judgeOutputTokens)
+        } over ${header.judgeOutputTokens.length} calls.`,
+      ]
+      : []),
     `${runs.length} conversations, ${turns.length} Coach turns: ${
       outcome("model")
     } model answers, ${outcome("boundary")} referrals, ${outcome("data_summary")} data summaries, ${
