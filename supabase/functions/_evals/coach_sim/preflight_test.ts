@@ -7,6 +7,8 @@ import {
   preflightCoach,
   renderPreflight,
 } from "./preflight.ts";
+import { coachChatGatewaySchema } from "../../_shared/providers/coach_chat_provider_gateway.ts";
+import { chatModes, structuredMode } from "./wire.ts";
 
 // Built at run time so the repository holds no key-shaped literal.
 const key = `sk-nry-${"a1B2c3D4".repeat(4)}`;
@@ -149,4 +151,37 @@ Deno.test("the judge and the athlete are checked the way the run asks them", asy
   assertEquals(judge.working?.mode.responseFormat, false);
   assertEquals(sent[0].response_format, { type: "json_object" });
   assertEquals(judge.attempts.map((a) => a.status), [400, 200]);
+});
+
+Deno.test("the Coach is asked with the answer schema first and keeps it when the router takes it", async () => {
+  const schema = coachChatGatewaySchema();
+  const { fetcher, sent } = router(() => completion('{"ok": true}'));
+  const result = await preflightCoach({
+    ...route,
+    fetcher,
+    schema,
+    modes: [structuredMode, ...chatModes],
+    candidates: ["claude-sonnet-5.5"],
+  });
+  assertEquals(result.working?.mode, structuredMode);
+  assertEquals(sent.length, 1);
+  assertEquals((sent[0].response_format as { type: string }).type, "json_schema");
+  assertStringIncludes(renderPreflight([result]).join("\n"), "structured output");
+});
+
+Deno.test("a router that rejects json_schema falls back to the JSON object mode", async () => {
+  const { fetcher } = router((body) =>
+    (body.response_format as { type: string }).type === "json_schema"
+      ? rejection(400, "json_schema is not supported")
+      : completion('{"ok": true}')
+  );
+  const result = await preflightCoach({
+    ...route,
+    fetcher,
+    schema: coachChatGatewaySchema(),
+    modes: [structuredMode, ...chatModes],
+    candidates: ["claude-sonnet-5.5"],
+  });
+  assertEquals(result.working?.mode, chatModes[0]);
+  assertEquals(result.attempts.map((a) => [a.ok, a.status]), [[false, 400], [true, 200]]);
 });

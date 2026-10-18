@@ -82,7 +82,7 @@ export const scenarios: readonly Scenario[] = [
       "Thank briefly and ask what to do in your next upper session.",
     ],
     coachBrief:
-      "Read the bench history (stuck at 100 kg for 3-4 reps with 0-1 reps in reserve since late August, during a calorie deficit) and the close-grip stall; name a likely cause (the deficit, no variation, grinding to failure); propose a concrete 8-week change through a proposal (for example a different rep range or bench frequency, a variation, an intensity block) rather than describing one; keep the cut in view and set an honest expectation (holding strength in a cut is a win).",
+      "Read the bench history (stuck at 100 kg for 3-4 reps with 0-1 reps in reserve since late August, during a calorie deficit) and the dumbbell bench stall on Upper B; name a likely cause (the deficit, no variation, grinding to failure); propose a concrete 8-week change through a proposal (for example a different rep range or bench frequency, a variation, an intensity block) rather than describing one; keep the cut in view and set an honest expectation (holding strength in a cut is a win).",
     expect: {
       proposal: ["training_schedule", "intensity_or_phase", "exercise_swap"],
       lookups: ["exercise_history", "workouts"],
@@ -111,8 +111,9 @@ export const scenarios: readonly Scenario[] = [
     ],
     coachBrief:
       "Use the weight trend and the logged days (complete versus partial); the rate should be judged against the goal and the Safe Ranges; targets come from Tracend's rules and the athlete's plan, never from a study's figure; a research range is quoted as that source's guidance; partial days are not intake; keep training heavy, protein high, and changes go through a proposal.",
+    // No lookup is expected: the weight trend and the nutrition averages are in the prompt, and a
+    // reply that quotes them (the uses_data check) answers from the athlete's records.
     expect: {
-      lookups: ["body", "meals"],
       forbids: [libraryTargetAsOwn],
     },
   },

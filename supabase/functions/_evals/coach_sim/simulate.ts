@@ -10,23 +10,27 @@ import { noCoachContributions } from "../../_shared/coach_context/host.ts";
 import { createLookupRunner, type LookupRound } from "../../_shared/coach_lookups/runner.ts";
 import type { CoachLookupRunner } from "../../_shared/coach_lookups/runner.ts";
 import { screenTurn } from "../../_shared/coach_safety/red_flags.ts";
+import { stateFixture } from "../../_shared/coach_proposals/fixtures.ts";
+import { coachReplyCheckFor } from "../../_shared/providers/coach_chat_provider.ts";
 import { previousQuestionsOf } from "../../_shared/library/query.ts";
 import { answerTurn, renderTurn } from "../coach_bank/harness.ts";
 import type { DataRequest, GraderResult, Turn } from "../coach_bank/types.ts";
 import { type Generate, priceTokens, runPool } from "../live_model.ts";
 import {
   describeStatus,
+  isCreditsError,
   type ProviderError,
   summariseErrors,
   type WireError,
 } from "./diagnostics.ts";
 import { providerErrorCodes } from "./verdict.ts";
 import { nextAthleteMessage } from "./athlete.ts";
-import { gradeConversation, gradeTurn, type TurnRecord } from "./graders.ts";
+import { athleteDataText, gradeConversation, gradeTurn, type TurnRecord } from "./graders.ts";
 import { type Claim, type ExpertVerdict, judgeClaims, judgeExpert } from "./judges.ts";
 import { wordSearch } from "./library_search.ts";
-import { dataDigest, personaById } from "./personas.ts";
-import { recordsRpc } from "./records.ts";
+import { inspectAnswers, type Rejection } from "./rejections.ts";
+import { personaById } from "./personas.ts";
+import { proposalStateOf, recordsRpc } from "./records.ts";
 import type { RouterChat } from "./router_client.ts";
 import { type Conversation, openingFor } from "./scenarios.ts";
 
@@ -41,12 +45,14 @@ export const spentUsd = (spend: Spend) => spend.coach + spend.athlete + spend.ju
 
 export type SimulationOptions = Readonly<{
   /**
-   * The gateway path with the Coach model; `onUsage` sees the tokens of every Coach call and
-   * `onError` every failed one (its status and redacted body).
+   * The gateway path with the Coach model; `onUsage` sees the tokens of every Coach call,
+   * `onError` every failed one (its status and redacted body) and `onAnswer` the text of every
+   * answer the model gave, whether the guard kept it or not.
    */
   coach: (
     onUsage: (tokens: TokenCounts) => void,
     onError: (error: WireError) => void,
+    onAnswer: (text: string) => void,
   ) => Generate;
   coachModel: string;
   athleteModel: string;
@@ -70,6 +76,8 @@ export type TurnRun =
     expert?: ExpertVerdict;
     claims?: readonly Claim[];
     judgeFailures: readonly string[];
+    /** The attempts the reply check refused this turn, with the figures it named. */
+    rejected: readonly Rejection[];
     costs: Readonly<{ coach: number; athlete: number; judges: number }>;
   }>;
 
@@ -79,7 +87,7 @@ export type ConversationRun = Readonly<{
   turns: readonly TurnRun[];
   grades: readonly GraderResult[];
   /** Why it ended before its planned messages, if it did. */
-  ended: "planned" | "athlete_done" | "budget" | "athlete_failed" | "harness_error";
+  ended: "planned" | "athlete_done" | "budget" | "credits" | "athlete_failed" | "harness_error";
   /** An exception in the simulator itself, or the athlete model failing. */
   error?: string;
   costUsd: number;
@@ -111,16 +119,22 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
   const judgeOutputTokens: number[] = [];
   let coachErrorTurns = 0;
   let coachAnswers = 0;
+  // The router account ran out of credit: nothing more can be asked of it.
+  let creditsOut = false;
   const overBudget = () => {
     if (spentUsd(spend) >= options.maxUsd) stoppedForBudget = true;
-    return stoppedForBudget;
+    return stoppedForBudget || creditsOut;
+  };
+  const logError = (error: ProviderError) => {
+    if (isCreditsError(error)) creditsOut = true;
+    errors.push(error);
   };
   const turnsFor = (conversation: Conversation) =>
     Math.min(conversation.scenario.turns, options.maxTurns, maxTurnsLimit);
 
   const logJudgeError = (error: WireError | undefined, conversation: string, turn: number) => {
     if (error && options.judgeModel) {
-      errors.push({ ...error, source: "judge", model: options.judgeModel, conversation, turn });
+      logError({ ...error, source: "judge", model: options.judgeModel, conversation, turn });
     }
   };
 
@@ -153,19 +167,21 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
     const base = persona.athlete();
     const search = wordSearch(persona.region);
     const runner = createLookupRunner(recordsRpc(persona.records, persona.extras), "sim-athlete");
-    const digest = dataDigest(persona);
+    const proposalState = proposalStateOf(persona.records, stateFixture(), persona.profile);
     let turnTokens: TokenCounts[] = [];
+    let turnAnswers: string[] = [];
     let current = 0;
     const generate = options.coach(
       (tokens) => turnTokens.push(tokens),
       (error) =>
-        errors.push({
+        logError({
           ...error,
           source: "coach",
           model: options.coachModel,
           conversation: conversation.id,
           turn: current,
         }),
+      (text) => turnAnswers.push(text),
     );
     const planned = turnsFor(conversation);
     const thread: Turn[] = [];
@@ -176,6 +192,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
       let athleteDone = false;
       let question = openingFor(scenario, persona.id);
       if (number > 1) {
+        if (creditsOut) return { ended: "credits" };
         if (overBudget()) return { ended: "budget" };
         const next = await nextAthleteMessage(
           options.chat,
@@ -189,7 +206,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
         athleteCost = next.costUsd;
         spend.athlete += next.costUsd;
         if (next.error) {
-          errors.push({
+          logError({
             ...next.error,
             source: "athlete",
             model: options.athleteModel,
@@ -197,12 +214,14 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
             turn: number,
           });
         }
+        if (creditsOut) return { ended: "credits" };
         if (!next.message) {
           return { ended: "athlete_failed", error: `athlete model: ${next.failure}` };
         }
         question = next.message.message;
         athleteDone = next.message.done;
       }
+      if (creditsOut) return { ended: "credits" };
       if (overBudget()) return { ended: "budget" };
 
       const context = { ...base.context, recent_messages: thread.slice(-threadWindow) };
@@ -227,6 +246,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
         return round;
       };
       turnTokens = [];
+      turnAnswers = [];
       current = number;
       const answered = await answerTurn({
         question,
@@ -256,8 +276,14 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
         lookedUp: rounds.map((round) => round.text).join("\n\n"),
         grounds: rounds.flatMap((round) => round.grounds),
         history: [...thread],
+        proposalState,
       };
       const grades = gradeTurn(record, turns);
+      const rejected = inspectAnswers(
+        turnAnswers,
+        coachReplyCheckFor(context, question, contributions, record.grounds),
+        new Set(Object.keys(contributions.shown)),
+      );
       if (record.reply.outcome === "model") coachAnswers++;
       else if (
         record.reply.failureCode !== undefined && providerErrorCodes.has(record.reply.failureCode)
@@ -272,7 +298,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
         (number - 1) % (options.judgeEvery ?? 1) === 0 && !overBudget()
       ) {
         const judged = await judgeExpert(options.chat, options.judgeModel, {
-          digest,
+          athleteData: athleteDataText(record),
           coachBrief: scenario.coachBrief,
           earlier: seen,
           question,
@@ -311,6 +337,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
         ...(expert ? { expert } : {}),
         ...(claims ? { claims } : {}),
         judgeFailures,
+        rejected,
         costs: { coach: coachCost, athlete: athleteCost, judges: judgeCost },
       });
 

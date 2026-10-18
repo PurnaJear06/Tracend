@@ -51,6 +51,8 @@ export type PreflightInput = Readonly<{
   fetcher?: typeof fetch;
   /** Modes to try in order (default: JSON mode first, then the others). */
   modes?: readonly ChatMode[];
+  /** The answer schema, for a Coach probe in structured mode. */
+  schema?: Record<string, unknown>;
   /** Waits before the retries of a call the router failed in passing (default 5 s, then 15 s). */
   retryDelaysMs?: readonly number[];
 }>;
@@ -81,11 +83,13 @@ export async function preflightCoach(
         mode,
         retryDelaysMs: input.retryDelaysMs ?? [5_000, 15_000],
         secrets: [input.apiKey],
+        ...(input.schema ? { schema: input.schema } : {}),
         onError: (error) => {
           seen.error ??= error;
         },
       };
       const send = routerModelFetch(model, fetcher, undefined, options);
+      const started = performance.now();
       let text: string | null = null;
       try {
         const response = await send(url, {
@@ -124,7 +128,9 @@ export async function preflightCoach(
         ok,
         status: seen.error?.status ?? (text === null ? null : 200),
         detail: ok
-          ? `reply ${excerpt(text!, [input.apiKey])}`
+          ? `reply ${excerpt(text!, [input.apiKey])} in ${
+            ((performance.now() - started) / 1000).toFixed(1)
+          } s`
           : seen.error
           ? `${seen.error.kind}: ${seen.error.body}`
           : `no JSON object in the reply: ${excerpt(text ?? "", [input.apiKey])}`,

@@ -131,7 +131,7 @@ accepted as a permanent retry.
   test the Coach the way an athlete would, so the owner does not have to test on the phone: four
   personas with months of synthetic records (a 6-year lifter cutting with a bench plateau and an
   Indian diet with eggs and chicken, a vegetarian 3-year lifter, a woman in her 40s with two
-  years of training, a lifter back from six months off) talk to Coach for 6-10 messages in eight
+  years of training, a lifter back from six months off) talk to Coach for 2-3 messages (default 3, lowered to fit the spending cap so every conversation runs) in eight
   scenarios (a bench plateau and an 8-week programme change, a cut that keeps strength, a travel
   week, "what did I do last Tuesday", a knee that feels off, a supplement and its research, a
   follow-up that refers back, pushback). An athlete model writes the messages; the Coach answers
@@ -142,7 +142,7 @@ accepted as a permanent retry.
   per conversation (the proposal, lookup, citation or phrase the scenario needs), an expert-coach
   judge (five items, 1-5, and what a 20-year coach would say) and a claim-support judge (each
   cited research sentence: supported, partial or unsupported against the excerpt shown; RAG audit
-  P1-3), both on a model other than the Coach's. The report (transcripts, scorecard, problems
+  P1-3), both on a model other than the Coach's (no judge when none fits the cap). The report (transcripts, scorecard, problems
   ranked with the exact turn) is a workflow artifact; it gates nothing and fails only on a
   harness error. Its loop, graders and judge parsing are tested in the Deno job with a stubbed
   router;

@@ -8,7 +8,14 @@ import { argumentsOf, normalizedModelId, priceTokens, textOf, tokensOf } from ".
 import { type CallSource, excerpt, headerNote, htmlText, type WireError } from "./diagnostics.ts";
 import { type ChatMode, defaultChatMode } from "./wire.ts";
 
-export { type ChatMode, chatModes, defaultChatMode, describeMode, jsonObjectIn } from "./wire.ts";
+export {
+  type ChatMode,
+  chatModes,
+  defaultChatMode,
+  describeMode,
+  jsonObjectIn,
+  structuredMode,
+} from "./wire.ts";
 
 export type ChatRequest = Readonly<{
   model: string;
@@ -137,7 +144,11 @@ export function routerChat(
     const finishReason = String(choice.finish_reason);
     // An answer that ran into max_tokens is cut off, whatever text came back: a verdict read from
     // it would be a guess, so it is a failure of its own (and the output tokens were billed).
-    if (finishReason === "length" || finishReason === "max_tokens") {
+    // A reasoning model that spends the whole limit thinking can report "stop" with no text.
+    if (
+      finishReason === "length" || finishReason === "max_tokens" ||
+      (request.maxTokens > 0 && tokens.outputTokens >= request.maxTokens)
+    ) {
       return fail(
         "truncated",
         response.status,
@@ -220,8 +231,10 @@ export function pickModel(
 }
 
 /**
- * Judges, strongest first, never the Coach's own. The run takes the first that fits its cap (a
- * dear Coach such as Sonnet leaves no room for an Opus judge, so the cheaper ones come after).
+ * Judges, strongest first, never the Coach's own. The run takes the first that fits its cap; when
+ * none does (a Sonnet Coach leaves no room for an Opus judge) there is no judge. Small and
+ * reasoning models are left out on purpose: qwen3.8 spent all 3,000 output tokens thinking and
+ * returned no text in 11 of 15 judge calls (run 39109179887), and a weak judge's scores are noise.
  */
 export const judgePreferences: readonly string[] = [
   "claude-sonnet-5-5",
@@ -230,9 +243,6 @@ export const judgePreferences: readonly string[] = [
   "gemini-3.5-pro",
   "gemini-3-pro",
   "deepseek-v4-pro",
-  "gemini-3.5-flash",
-  "qwen3.8",
-  "deepseek-v4-flash",
 ];
 
 /** The athlete: a cheap model that writes natural messages, preferably not the Coach's. */

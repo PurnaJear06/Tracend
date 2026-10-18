@@ -1270,9 +1270,74 @@ ignore the athlete's data, a Coach that cannot change the plan). Nothing in prod
   router operator (or another route) before the production-model simulation can run; meanwhile
   Run workflow takes `sim_coach_model` (any router id) to play the Coach on another model.
 
+- **Second round (2026-10-18, rebased on #155, run 39109179887).** The simulator drives the
+  current production path: `routerGatewayFromEnv` builds the route and `generateCoachChatViaGateway`
+  sends the flattened `coachChatGatewaySchema()` and reads `proposal_intent` through
+  `intentFromModel`; nothing in `coach_sim/` carried its own schema or intent code. Only the test
+  stubs spoke the old shape, and they now answer in the flat one. The run played Sonnet 5.5
+  (`claude-haiku-5.5` is listed but answered 502 in every mode again, 404 for the other spellings;
+  the run falls back to Sonnet by itself and says so on its first line). The router wallet ran out
+  of credit part-way (HTTP 402 and 429 "Insufficient credits", balance 221 against about 406 for
+  one request), so 4 conversations stopped after one message: 28 Coach turns, 22 model answers,
+  6 data summaries (2 of them the credit). Harness bugs fixed: judges now get 3,000 output tokens
+  (Opus ran out at 700 and 900 before writing a word; the largest use is in the report) and a
+  call that stops at the limit, even with `finish_reason: stop`, is a `truncated` harness error,
+  as is a judge that fails more than one call in ten; judges are Claude, `gpt-5` or
+  `gemini-3.5-pro` only (qwen3.8, picked by the budget fallback, spent all 3,000 tokens thinking in
+  11 of 15 calls); the judge reads everything the Coach was given (it had a short digest and called
+  real watch data invented); the Claude-over-router transport (`<invoke name="x">` placeholders,
+  prose around the JSON, an answer in plain prose, once `finish_reason: tool_calls`) is cleaned,
+  read from tool-call arguments when that is where it sits, reported with its shape, and the Coach
+  is first asked with the schema enforced (`response_format: json_schema`, as production asks
+  Claude) when the router accepts it; a cut-off athlete reply is asked again instead of becoming
+  the question; running out of credit stops the run with its own error; the run is sized to the
+  cap (default 3 messages, fewer messages or judged replies when the estimate is over 85% of the
+  cap, no judge when none fits) so every conversation runs; each rejected attempt is read back
+  with the reply check, so the report names the figures. Persona realism: plan exercises are
+  catalog exercises (the proposal rules read names from `exerciseCatalogV1`; 7 of Arjun's 18 were
+  not in it), the nutrition state holds 7 days as the RPC does (it held 14 under a "last 7 days"
+  line), the returning lifter's March bench matches what he says (115 x 5). Graders: proposals
+  are built against the persona's plan; no lookup is expected where the answer is in the prompt;
+  small labelled scores (pain at 2, RPE 9.9) count as data; restating a figure the athlete quotes
+  or the sets of a proposal is not a repeat.
+- **Findings for the Coach (not fixed here; Sonnet played, so length and style need a Haiku run).**
+  1. `weight_below_healthy_floor` fires on lift loads: `training/goal_phase/guard.ts:25-28` reads
+     any two- or three-digit "kg" as a body weight and `:56-59` calls any sentence with "will",
+     "could", "reach" or "hit" forward-looking, so "overhead press is 55 kg x 6, and you will hit
+     it" breaks the rule for an athlete whose floor is 58.6 kg (reproduced). Seen in
+     primary/cut-keep-strength turn 1 (data summary). Fix: count a figure as body weight only with a
+     body-weight cue beside it (weigh, scale, body weight) and never one followed by "x reps" or
+     preceded by an exercise name.
+  2. A plan the athlete asks for falls to the data summary: primary/travel-week turns 1 and 2,
+     returning/bench-plateau turn 2 (rules `numbers_not_grounded` twice, plus `json_syntax`). The
+     prompt asks for a compact session list (`coach_chat_provider.ts:316`) while the numbers check
+     needs every kg and minute in the context (`numbers_check.ts:19-22`, only sets, reps and rest
+     are exempt), and the repair does not get it out. Fix: a second `numbers_not_grounded` failure
+     removes the ungrounded sentences or asks for the answer without figures instead of ending in
+     the summary. The report now names the figures, so the next run shows which.
+  3. Named studies without a citation: primary/supplement-research turns 1 and 2 name Maughan 2018,
+     the NIH fact sheet and Kreider 2017 with `evidence` empty (`cites []`), so the app shows no
+     source. The prompt asks for the citation (`coach_chat_provider.ts:1447`); the guard only
+     refuses ids that were not shown (`reply_guard.ts:388`). Fix: a rule that refuses a reply
+     naming a shown source ("Author et al. year", its label) with no matching library evidence.
+  4. The same ending and the same caution again: 22 of 22 model replies end in a question;
+     vegetarian/supplement-research turns 1 and 2 close with the same protein-gap question; the
+     creatine answers add the protein gap unasked; woman_40s/knee-off repeats "when to get it
+     looked at" in both turns. Rule 3 (`coach_chat_provider.ts:315`) is only advice. Fix: compare a
+     reply with the assistant turns in `recent_messages` in the reply check (same closing question
+     or a sentence above a similarity threshold) and repair once.
+  5. Length: 15 of 22 replies are over the bank's limit (150 words, 220 for a session), up to 246,
+     against "about 120 words" (`coach_chat_provider.ts:316`); nothing enforces it. Fix: a length
+     rule in the reply check. Re-measure on Haiku.
+  6. The data summary the athlete sees is not in the thread (`prepare_coach_chat`, migration
+     `20261017170019_coach_chat_local_date_no_plan.sql:281`), so primary/cut-keep-strength turn 2
+     says "I can't find a 0.07 kg/day figure in what I have" about the number the app showed, and
+     the summary gives the trend per day (`coach_chat_fallback.ts:148`) where the Coach speaks per
+     week. Fix: keep the summary in the thread marked as such, and show kg/week.
+
 - **Run it**: `Coach Eval`, Run workflow, `simulate` ticked (`sim_filter`, `sim_max_turns`);
-  never on a pull request. It prints the estimate first, stops new turns at `EVAL_SIM_MAX_USD`
-  (default 3), uploads `coach-simulation-report` (`simulation.md`, `simulation.json`) and writes
+  never on a pull request. It prints the estimate and the size it fitted first, stops new turns at
+  `EVAL_SIM_MAX_USD` (default 3), uploads `coach-simulation-report` (`simulation.md`, `simulation.json`) and writes
   the scorecard and ranked problems to the job summary. Exit 1 only on a harness error or when no
   Coach turn ran.
 - **Not measured here:** the vector search, the prompt cache, production latency and the Claude

@@ -5,24 +5,20 @@
 import { confirmedFact } from "../coach_bank/athletes.ts";
 import type { Athlete } from "../coach_bank/types.ts";
 import {
-  addDays,
   athleteFile,
   buildRecords,
   dataIndexPayload,
-  e1rm,
   type Food,
   goalPhasePayload,
   type LiftSpec,
   type MealType,
   nutritionStatePayload,
-  planOn,
   planStatePayload,
   type ProfileFacts,
   type Records,
   type RecordsExtras,
   type RecordsSpec,
   type SessionSpec,
-  targetOn,
 } from "./records.ts";
 import type { CoachFact } from "../../_shared/coach_memory/facts.ts";
 
@@ -126,7 +122,7 @@ const arjunWeek: readonly SessionSpec[] = [
     minutes: 70,
     lifts: [
       lift("Barbell back squat", "barbell-back-squat", 4, [4, 6], 132.5, 0.5),
-      lift("Romanian deadlift", "romanian-deadlift", 3, [6, 8], 100, 0.5),
+      lift("Barbell Romanian deadlift", "barbell-romanian-deadlift", 3, [6, 8], 100, 0.5),
       lift("Leg press", "leg-press", 3, [10, 12], 180, 1),
       lift("Standing calf raise", "standing-calf-raise", 3, [10, 15], 60, 0.4),
     ],
@@ -142,7 +138,7 @@ const arjunWeek: readonly SessionSpec[] = [
         kg: 100,
       }),
       lift("Barbell row", "barbell-row", 4, [6, 8], 82.5, 0.4),
-      lift("Weighted pull-up", "weighted-pull-up", 3, [5, 8], 10, 0.25),
+      lift("Pull-up", "pull-up", 3, [5, 8], 10, 0.25),
       lift("Incline dumbbell press", "incline-dumbbell-press", 3, [8, 10], 30, 0.15),
       lift("Cable triceps pressdown", "cable-triceps-pressdown", 3, [10, 12], 35, 0.2),
     ],
@@ -153,10 +149,10 @@ const arjunWeek: readonly SessionSpec[] = [
     weekday: 4,
     minutes: 65,
     lifts: [
-      lift("Conventional deadlift", "conventional-deadlift", 3, [3, 5], 167.5, 0.5),
-      lift("Bulgarian split squat", "bulgarian-split-squat", 3, [8, 10], 22, 0.15),
+      lift("Barbell deadlift", "barbell-deadlift", 3, [3, 5], 167.5, 0.5),
+      lift("Split squat", "split-squat", 3, [8, 10], 22, 0.15),
       lift("Lying leg curl", "lying-leg-curl", 3, [10, 12], 40, 0.25),
-      lift("Hanging leg raise", "hanging-leg-raise", 3, [10, 15], null, 0),
+      lift("Hanging knee raise", "hanging-knee-raise", 3, [10, 15], null, 0),
     ],
   },
   {
@@ -166,13 +162,13 @@ const arjunWeek: readonly SessionSpec[] = [
     minutes: 65,
     lifts: [
       lift("Barbell overhead press", "barbell-overhead-press", 4, [5, 7], 55, 0.25),
-      lift("Close-grip bench press", "close-grip-bench-press", 3, [6, 8], 77.5, 0.3, {
+      lift("Dumbbell bench press", "dumbbell-bench-press", 3, [6, 8], 30, 0.2, {
         from: "2026-09-03",
-        kg: 85,
+        kg: 36,
       }),
       lift("Chest-supported dumbbell row", "chest-supported-dumbbell-row", 3, [8, 10], 30, 0.15),
       lift("Dumbbell lateral raise", "dumbbell-lateral-raise", 3, [12, 15], 10, 0.05),
-      lift("EZ-bar curl", "ez-bar-curl", 3, [8, 12], 32.5, 0.15),
+      lift("Barbell curl", "barbell-curl", 3, [8, 12], 32.5, 0.15),
     ],
   },
 ];
@@ -317,7 +313,7 @@ const arjun = persona(
           pain_severity: 2,
           note: "Left knee feels a bit off at the bottom of split squats.",
         },
-        session: { pain: ["bulgarian-split-squat"] },
+        session: { pain: ["split-squat"] },
       },
       { date: "2026-10-16", sleepMinutes: 410, checkIn: { pain_severity: 1, energy: 3 } },
     ],
@@ -378,14 +374,14 @@ const rohanWeek: readonly SessionSpec[] = [
     lifts: [
       lift("Barbell bench press", "barbell-bench-press", 3, [6, 8], 62.5, 0.4),
       lift(
-        "Seated dumbbell shoulder press",
-        "seated-dumbbell-shoulder-press",
+        "Dumbbell shoulder press",
+        "dumbbell-shoulder-press",
         3,
         [8, 10],
         18,
         0.15,
       ),
-      lift("Cable fly", "cable-fly", 3, [12, 15], 12.5, 0.1),
+      lift("Cable chest fly", "cable-chest-fly", 3, [12, 15], 12.5, 0.1),
     ],
   },
   {
@@ -406,7 +402,7 @@ const rohanWeek: readonly SessionSpec[] = [
     minutes: 65,
     lifts: [
       lift("Barbell back squat", "barbell-back-squat", 3, [6, 8], 80, 0.6),
-      lift("Romanian deadlift", "romanian-deadlift", 3, [8, 10], 70, 0.5),
+      lift("Barbell Romanian deadlift", "barbell-romanian-deadlift", 3, [8, 10], 70, 0.5),
       lift("Leg extension", "leg-extension", 3, [12, 15], 40, 0.3),
     ],
   },
@@ -416,7 +412,7 @@ const rohanWeek: readonly SessionSpec[] = [
     weekday: 5,
     minutes: 60,
     lifts: [
-      lift("Incline barbell press", "incline-barbell-press", 3, [6, 8], 50, 0.3),
+      lift("Incline dumbbell press", "incline-dumbbell-press", 3, [6, 8], 24, 0.2),
       lift("Pull-up", "pull-up", 3, [6, 10], null, 0),
       lift("Dumbbell lateral raise", "dumbbell-lateral-raise", 3, [12, 15], 8, 0.05),
     ],
@@ -427,8 +423,8 @@ const rohanWeek: readonly SessionSpec[] = [
     weekday: 6,
     minutes: 60,
     lifts: [
-      lift("Trap-bar deadlift", "trap-bar-deadlift", 3, [5, 7], 110, 0.6),
-      lift("Walking lunge", "walking-lunge", 3, [10, 12], 14, 0.1),
+      lift("Barbell deadlift", "barbell-deadlift", 3, [5, 7], 110, 0.6),
+      lift("Dumbbell reverse lunge", "dumbbell-reverse-lunge", 3, [10, 12], 14, 0.1),
       lift("Seated calf raise", "seated-calf-raise", 3, [12, 15], 40, 0.3),
     ],
   },
@@ -554,7 +550,7 @@ const meeraWeek: readonly SessionSpec[] = [
       lift("Barbell back squat", "barbell-back-squat", 3, [6, 8], 40, 0.35),
       lift("Dumbbell bench press", "dumbbell-bench-press", 3, [8, 10], 12, 0.1),
       lift("Lat pulldown", "lat-pulldown", 3, [8, 10], 32.5, 0.2),
-      lift("Plank", "plank", 3, [30, 45], null, 0),
+      lift("Dead bug", "dead-bug", 3, [8, 12], null, 0),
     ],
   },
   {
@@ -563,8 +559,8 @@ const meeraWeek: readonly SessionSpec[] = [
     weekday: 3,
     minutes: 55,
     lifts: [
-      lift("Romanian deadlift", "romanian-deadlift", 3, [8, 10], 40, 0.35),
-      lift("Seated dumbbell shoulder press", "seated-dumbbell-shoulder-press", 3, [8, 10], 8, 0.08),
+      lift("Dumbbell Romanian deadlift", "dumbbell-romanian-deadlift", 3, [8, 10], 40, 0.35),
+      lift("Dumbbell shoulder press", "dumbbell-shoulder-press", 3, [8, 10], 8, 0.08),
       lift("Seated cable row", "seated-cable-row", 3, [10, 12], 30, 0.2),
       lift("Barbell hip thrust", "barbell-hip-thrust", 3, [8, 12], 60, 0.5),
     ],
@@ -578,7 +574,7 @@ const meeraWeek: readonly SessionSpec[] = [
       lift("Goblet squat", "goblet-squat", 3, [10, 12], 16, 0.12),
       lift("Incline dumbbell press", "incline-dumbbell-press", 3, [8, 10], 10, 0.08),
       lift("Assisted pull-up", "assisted-pull-up", 3, [6, 8], null, 0),
-      lift("Step-up", "step-up", 3, [10, 12], 8, 0.08),
+      lift("Dumbbell step-up", "dumbbell-step-up", 3, [10, 12], 8, 0.08),
     ],
   },
 ];
@@ -707,7 +703,7 @@ const kabirBefore: readonly SessionSpec[] = [
     weekday: 1,
     minutes: 75,
     lifts: [
-      lift("Barbell bench press", "barbell-bench-press", 4, [5, 7], 105, 0.3),
+      lift("Barbell bench press", "barbell-bench-press", 4, [5, 7], 110, 0.3),
       lift("Barbell row", "barbell-row", 4, [6, 8], 90, 0.3),
     ],
   },
@@ -717,8 +713,8 @@ const kabirBefore: readonly SessionSpec[] = [
     weekday: 2,
     minutes: 75,
     lifts: [
-      lift("Barbell back squat", "barbell-back-squat", 4, [5, 7], 150, 0.4),
-      lift("Conventional deadlift", "conventional-deadlift", 3, [3, 5], 190, 0.4),
+      lift("Barbell back squat", "barbell-back-squat", 4, [5, 7], 155, 0.4),
+      lift("Barbell deadlift", "barbell-deadlift", 3, [3, 5], 195, 0.4),
     ],
   },
   {
@@ -728,7 +724,7 @@ const kabirBefore: readonly SessionSpec[] = [
     minutes: 70,
     lifts: [
       lift("Barbell overhead press", "barbell-overhead-press", 4, [5, 7], 65, 0.2),
-      lift("Weighted pull-up", "weighted-pull-up", 3, [5, 8], 20, 0.2),
+      lift("Pull-up", "pull-up", 3, [5, 8], 20, 0.2),
     ],
   },
   {
@@ -737,8 +733,8 @@ const kabirBefore: readonly SessionSpec[] = [
     weekday: 5,
     minutes: 70,
     lifts: [
-      lift("Front squat", "front-squat", 3, [5, 7], 110, 0.3),
-      lift("Romanian deadlift", "romanian-deadlift", 3, [6, 8], 130, 0.3),
+      lift("Barbell front squat", "barbell-front-squat", 3, [5, 7], 110, 0.3),
+      lift("Barbell Romanian deadlift", "barbell-romanian-deadlift", 3, [6, 8], 130, 0.3),
     ],
   },
 ];
@@ -761,7 +757,7 @@ const kabirReturn: readonly SessionSpec[] = [
     weekday: 3,
     minutes: 60,
     lifts: [
-      lift("Conventional deadlift", "conventional-deadlift", 3, [4, 6], 110, 5),
+      lift("Barbell deadlift", "barbell-deadlift", 3, [4, 6], 110, 5),
       lift("Barbell overhead press", "barbell-overhead-press", 3, [6, 8], 42.5, 1.25),
       lift("Lat pulldown", "lat-pulldown", 3, [8, 10], 55, 1.25),
     ],
@@ -772,7 +768,7 @@ const kabirReturn: readonly SessionSpec[] = [
     weekday: 5,
     minutes: 60,
     lifts: [
-      lift("Front squat", "front-squat", 3, [6, 8], 55, 2.5),
+      lift("Barbell front squat", "barbell-front-squat", 3, [6, 8], 55, 2.5),
       lift("Incline dumbbell press", "incline-dumbbell-press", 3, [8, 10], 24, 1),
       lift("Seated cable row", "seated-cable-row", 3, [10, 12], 55, 1.25),
     ],
@@ -895,63 +891,4 @@ export const personas: readonly Persona[] = [arjun, rohan, meera, kabir];
 
 export function personaById(id: PersonaId): Persona {
   return personas.find((p) => p.id === id)!;
-}
-
-/**
- * What the persona's records show, in a few lines, for the judges: the main lifts' recent top sets,
- * body weight, nutrition and sleep. Computed from the records, so a judge can tell a reply that
- * used the athlete's data from one that did not.
- */
-export function dataDigest(p: Persona): string {
-  const { records } = p;
-  const today = records.spec.today;
-  const plan = planOn(records.spec, today);
-  const lines: string[] = [
-    `Profile: ${p.summary}`,
-    `Plan: ${plan.title}, ${plan.week.map((s) => s.name).join(", ")}.`,
-  ];
-  for (const slug of plan.week.map((s) => s.lifts[0].slug)) {
-    const done = records.sessions.flatMap((s) =>
-      s.exercises.filter((e) => e.slug === slug && e.sets.length > 0).map((e) => ({
-        date: s.local_date,
-        top: e.sets[0],
-        name: e.name,
-      }))
-    ).slice(-6);
-    if (done.length === 0) continue;
-    lines.push(
-      `${done[0].name}, last ${done.length} sessions: ${
-        done.map((d) =>
-          `${d.date} ${d.top.load_kg ?? "bodyweight"} x ${d.top.reps}${
-            d.top.load_kg ? ` (e1RM ${e1rm(d.top.load_kg, d.top.reps)})` : ""
-          }`
-        ).join("; ")
-      }.`,
-    );
-  }
-  const weights = records.weights;
-  const monthAgo = weights.filter((w) => w.date <= addDays(today, -28)).at(-1);
-  lines.push(
-    `Body weight: ${weights[0].kg} kg on ${weights[0].date}, ${
-      monthAgo ? `${monthAgo.kg} kg on ${monthAgo.date}, ` : ""
-    }${weights.at(-1)!.kg} kg on ${weights.at(-1)!.date}.`,
-  );
-  const target = targetOn(records.spec, today);
-  const recent = records.mealDays.filter((d) => d.local_date >= addDays(today, -14));
-  const complete = recent.filter((d) => d.complete);
-  const avg = (values: number[]) =>
-    values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : null;
-  lines.push(
-    `Nutrition (last 14 days): target ${target.calories} kcal and ${target.protein} g protein; ${complete.length} complete days averaging ${
-      avg(complete.map((d) => d.calories))
-    } kcal and ${avg(complete.map((d) => d.protein_g))} g protein; ${
-      recent.length - complete.length
-    } partial days; ${14 - recent.length} days not logged.`,
-  );
-  const sleep = records.recovery.filter((d) => d.local_date > addDays(today, -7))
-    .map((d) => d.sleep_minutes).filter((m): m is number => m !== null);
-  lines.push(`Sleep (last 7 nights with the watch): average ${avg(sleep)} minutes.`);
-  const notes = records.checkIns.filter((c) => c.note && c.local_date >= addDays(today, -14));
-  for (const note of notes) lines.push(`Check-in ${note.local_date}: "${note.note}"`);
-  return lines.join("\n");
 }

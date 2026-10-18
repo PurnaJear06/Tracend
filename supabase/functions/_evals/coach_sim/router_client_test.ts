@@ -33,7 +33,7 @@ Deno.test("a chat call sends the router's request and prices the answer at list 
     model: "anthropic/claude-sonnet-5.5",
     system: "s",
     user: "u",
-    maxTokens: 100,
+    maxTokens: 1000,
     json: true,
     source: "judge",
   });
@@ -46,7 +46,7 @@ Deno.test("a chat call sends the router's request and prices the answer at list 
     model: "deepseek-v4-flash",
     system: "s",
     user: "u",
-    maxTokens: 100,
+    maxTokens: 1000,
     json: false,
     source: "athlete",
   });
@@ -67,7 +67,7 @@ Deno.test("a failed call is retried once; a second failure is reported with both
     model: "m",
     system: "s",
     user: "u",
-    maxTokens: 10,
+    maxTokens: 1000,
     json: false,
     source: "athlete",
   });
@@ -81,7 +81,7 @@ Deno.test("a failed call is retried once; a second failure is reported with both
     model: "m",
     system: "s",
     user: "u",
-    maxTokens: 10,
+    maxTokens: 1000,
     json: false,
     source: "athlete",
   });
@@ -178,7 +178,7 @@ Deno.test("a JSON answer handed over as a tool call is read from its arguments",
     model: "m",
     system: "s",
     user: "u",
-    maxTokens: 100,
+    maxTokens: 1000,
     json: true,
     source: "athlete",
   });
@@ -187,12 +187,44 @@ Deno.test("a JSON answer handed over as a tool call is read from its arguments",
 });
 
 Deno.test("pickModels lists every listed preference in order, without the excluded model", () => {
-  const listed = ["claude-opus-5.5", "claude-sonnet-5.5", "deepseek-v4-flash", "gemini-3.5-flash"];
+  const listed = [
+    "claude-opus-5.5",
+    "claude-sonnet-5.5",
+    "gpt-5",
+    "deepseek-v4-flash",
+    "qwen3.8-27b",
+  ];
   assertEquals(pickModels(listed, judgePreferences, ["claude-sonnet-5-5"]), [
     "claude-opus-5.5",
-    "gemini-3.5-flash",
-    "deepseek-v4-flash",
+    "gpt-5",
   ]);
   assertEquals(pickModels(listed, judgePreferences, ["claude-opus-5-5"])[0], "claude-sonnet-5.5");
+  assertEquals(pickModels(["qwen3.8-27b"], judgePreferences, []), [], "no small judge");
   assertEquals(pickModels([], ["a", "b"], ["a"]), ["b"]);
+});
+
+Deno.test("an answer that spent its whole limit thinking is a truncation even with finish_reason stop", async () => {
+  const chat = routerChat("https://router.example/v1", "k", {
+    fetcher: () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "" }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 100, completion_tokens: 3_000 },
+          }),
+          { status: 200 },
+        ),
+      ),
+    retryDelayMs: 0,
+  });
+  const result = await chat({
+    model: "qwen3.8-27b",
+    system: "s",
+    user: "u",
+    maxTokens: 3_000,
+    json: true,
+    source: "judge",
+  });
+  assert(!result.ok);
+  assertEquals(result.kind, "truncated");
 });

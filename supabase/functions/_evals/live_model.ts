@@ -19,6 +19,7 @@
 // JSON mode, not the Claude Messages API production uses, so a run measures the model and the
 // production prompt, guards and loop, not the vendor's own request.
 import { costUsd, type ModelPrice, models, type TokenCounts } from "../_shared/ai/models.ts";
+import { anthropicSchema } from "../_shared/ai/adapters/anthropic.ts";
 import { type Env, route } from "../_shared/ai/routes.ts";
 import type { AiCallDeps, AiRoute } from "../_shared/ai/types.ts";
 import { type ChatMode, defaultChatMode, jsonObjectIn } from "./coach_sim/wire.ts";
@@ -228,6 +229,8 @@ export type RouterFetchOptions = Readonly<{
    * that does not (the gateway itself only says `invalid_output`); the reply is not changed.
    */
   schema?: Record<string, unknown>;
+  /** Sees the text of every answer, after cleaning, before the gateway reads it. */
+  onAnswer?: (text: string) => void;
   /**
    * Waits before each retry of a call the router failed in passing (502, 503, 504, or no answer
    * at all). The router is a hop of its own and has answered "temporarily unavailable" for minutes
@@ -279,7 +282,17 @@ export function routerModelFetch(
         delete payload.thinking;
         if (isClaude(model)) delete payload.temperature;
       }
-      if (!mode.responseFormat) delete payload.response_format;
+      if (mode.structured && options.schema) {
+        // Structured output with the schema as production sends it to Claude.
+        payload.response_format = {
+          type: "json_schema",
+          json_schema: {
+            name: "coach_chat_answer",
+            strict: true,
+            schema: anthropicSchema(options.schema) ?? options.schema,
+          },
+        };
+      } else if (!mode.responseFormat) delete payload.response_format;
       if (mode.maxTokensField === "max_completion_tokens" && payload.max_tokens !== undefined) {
         payload.max_completion_tokens = payload.max_tokens;
         delete payload.max_tokens;
@@ -409,6 +422,7 @@ export function routerModelFetch(
         if (problem) report("schema", response.status, problem);
       }
     }
+    if (text.trim() !== "") options.onAnswer?.(text);
     if (changed) {
       message.content = text;
       return new Response(JSON.stringify(payload), {
@@ -479,6 +493,7 @@ export function priceTokens(model: string, tokens: TokenCounts): { usd: number; 
 export type CoachGenerateFactory = (
   onUsage: (tokens: TokenCounts) => void,
   onError?: (error: WireError) => void,
+  onAnswer?: (text: string) => void,
 ) => Generate;
 
 export type RouterGateway =
@@ -543,7 +558,7 @@ export async function routerGatewayFromEnv(
     : `the router does not list the production model ${productionCoachModel}; using ${fallback}`;
   const generateFor =
     (played: Readonly<{ model: string; mode: ChatMode }>): CoachGenerateFactory =>
-    (onUsage, onError) =>
+    (onUsage, onError, onAnswer) =>
       gatewayGenerate(
         coachRoute,
         () => null,
@@ -553,6 +568,7 @@ export async function routerGatewayFromEnv(
             secrets: [apiKey],
             schema: coachChatGatewaySchema(),
             ...(onError ? { onError } : {}),
+            ...(onAnswer ? { onAnswer } : {}),
           }),
         },
         routerTiming,

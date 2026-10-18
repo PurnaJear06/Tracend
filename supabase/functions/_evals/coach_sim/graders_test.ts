@@ -14,7 +14,9 @@ import {
   sameOpening,
   type TurnRecord,
 } from "./graders.ts";
+import { stateFixture } from "../../_shared/coach_proposals/fixtures.ts";
 import { personaById } from "./personas.ts";
+import { proposalStateOf } from "./records.ts";
 import { scenarios } from "./scenarios.ts";
 
 const primary = personaById("primary");
@@ -184,4 +186,65 @@ Deno.test("scenario checks: a proposal, a lookup, a phrase said and one never sa
   const travel = scenarios.find((s) => s.id === "travel-week")!;
   const none = gradeConversation(travel, [turn(1, "Travelling next week.", "Do push-ups.")]);
   assertEquals(none.find((g) => g.grader === "expect:proposal")!.pass, false);
+});
+
+Deno.test("a proposal is built against the persona's own plan, so a swap of its lifts is accepted", () => {
+  const fixture = stateFixture();
+  const state = proposalStateOf(primary.records, fixture, primary.profile);
+  const inFixture = new Set(fixture.plan!.workouts.flatMap((w) => w.exercises.map((e) => e.slug)));
+  const own = state.plan!.workouts.flatMap((w) => w.exercises).find((e) =>
+    !inFixture.has(e.slug) && e.slug !== null
+  )!;
+  const intent = { kind: "exercise_swap", reason: "plateau", from_exercise: own.name };
+  const mine = checkProposal(intent, "swap that lift", "2026-10-17", state);
+  assert(mine.ok && mine.built, JSON.stringify(mine));
+  // The fixture athlete does not do that lift: the same intent is refused for him.
+  const theirs = checkProposal(intent, "swap that lift", "2026-10-17");
+  assert(theirs.ok && !theirs.built, JSON.stringify(theirs));
+});
+
+Deno.test("a small labelled score from the records counts as the athlete's data", () => {
+  const known = "Check-in 2026-10-15: pain 2, energy 3. Upper A 2026-10-13: RPE 9.9.";
+  assertEquals(
+    athleteFiguresIn(
+      "Your check-in logged pain at 2 and the session was RPE 9.9.",
+      "How am I?",
+      known,
+    ),
+    ["pain at 2", "RPE 9.9"],
+  );
+  assertEquals(
+    athleteFiguresIn("Try pain at 2 on a scale.", "I have pain at 2.", known),
+    [],
+    "a figure the athlete said themselves is not from the records",
+  );
+});
+
+Deno.test("restating a figure the athlete asked about, or the sets of a proposal, is not a repeat", () => {
+  const first = turn(
+    1,
+    "What is my protein?",
+    "**Protein:** the **101 g** is the average of your complete days against your **140 g** target.",
+  );
+  const asked = {
+    ...turn(
+      2,
+      "Is the 101 g really from my logs?",
+      "**Protein:** the **101 g** is the average of your complete days against your **140 g** target.",
+    ),
+    history: [
+      { role: "user" as const, content: first.question },
+      { role: "assistant" as const, content: first.reply.answer },
+    ],
+  };
+  assert(gradeTurn(asked, [first]).find((g) => g.grader === "no_repeat")!.pass);
+  const unprompted = {
+    ...turn(
+      2,
+      "And my sleep?",
+      "**Protein:** the **101 g** is the average of your complete days against your **140 g** target.",
+    ),
+    history: asked.history,
+  };
+  assertEquals(gradeTurn(unprompted, [first]).find((g) => g.grader === "no_repeat")!.pass, false);
 });

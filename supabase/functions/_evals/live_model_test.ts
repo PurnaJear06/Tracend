@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { claudeMessage, fakeFetch, jsonResponse, routeFor } from "../_shared/ai/fakes.ts";
+import { anthropicSchema } from "../_shared/ai/adapters/anthropic.ts";
 import { coachChatGatewaySchema } from "../_shared/providers/coach_chat_provider_gateway.ts";
 import type { WireError } from "./coach_sim/diagnostics.ts";
 import {
@@ -287,4 +288,39 @@ Deno.test("JSON wrapped in a fence is cleaned and reported; a reply off the sche
   }, (e) => errors.push(e));
   assertEquals(JSON.parse(shape.message.content).proposal_intent, { kind: "x" });
   assertEquals(errors.map((e) => e.body), ["$.proposal_intent does not match (object)"]);
+});
+
+Deno.test("structured mode sends the answer schema as production gives it to Claude", async () => {
+  const sent: Record<string, unknown>[] = [];
+  const send = routerModelFetch(
+    "claude-sonnet-5.5",
+    (_input, init) => {
+      sent.push(JSON.parse(String(init?.body)));
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            choices: [{ finish_reason: "stop", message: { content: JSON.stringify(goodAnswer) } }],
+          }),
+          { status: 200 },
+        ),
+      );
+    },
+    undefined,
+    {
+      mode: { responseFormat: true, maxTokensField: "max_tokens", structured: true },
+      schema: coachChatGatewaySchema(),
+    },
+  );
+  await send("https://router.example/v1/chat/completions", {
+    method: "POST",
+    body: JSON.stringify({ model: "x", messages: [], response_format: { type: "json_object" } }),
+  });
+  const format = sent[0].response_format as {
+    type: string;
+    json_schema: { name: string; strict: boolean; schema: Record<string, unknown> };
+  };
+  assertEquals(format.type, "json_schema");
+  assertEquals(format.json_schema.strict, true);
+  assertEquals(format.json_schema.schema, anthropicSchema(coachChatGatewaySchema()));
+  assertEquals(format.json_schema.schema.additionalProperties, false);
 });

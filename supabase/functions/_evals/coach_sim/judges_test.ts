@@ -33,7 +33,7 @@ Deno.test("an expert verdict is read from plain or fenced JSON; a missing or out
 
 Deno.test("the expert prompt carries the data, the brief, the thread and the looked-up rows", () => {
   const prompt = expertPrompt({
-    digest: "Bench 100 x 3 on 2026-10-13.",
+    athleteData: "Bench 100 x 3 on 2026-10-13.",
     coachBrief: "Explain from the rows.",
     earlier: [{ role: "user", content: "Hi" }, { role: "assistant", content: "Hello" }],
     question: "Why was Tuesday bad?",
@@ -103,7 +103,7 @@ Deno.test("a judge call reports its cost and a failure in place of a verdict", a
       finishReason: "stop",
     });
   const verdict = await judgeExpert(answering, "judge", {
-    digest: "",
+    athleteData: "",
     coachBrief: "",
     earlier: [],
     question: "q",

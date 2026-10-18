@@ -101,6 +101,9 @@ export function rankProblems(runs: readonly ConversationRun[]): Problem[] {
       });
     }
     for (const turn of run.turns) {
+      const why = turn.rejected.map((r) =>
+        `${r.rules.join("+")}${r.detail ? ` (figures: ${r.detail})` : ""}`
+      ).join("; ");
       for (const grade of turn.grades.filter((g) => !g.pass)) {
         const kind = kindOf(grade.grader);
         problems.push({
@@ -108,7 +111,11 @@ export function rankProblems(runs: readonly ConversationRun[]): Problem[] {
           kind: grade.grader,
           conversation: run.id,
           turn: turn.number,
-          detail: grade.detail ?? "failed",
+          detail: `${grade.detail ?? "failed"}${
+            why && (kind === "answered" || kind === "first_attempt_valid")
+              ? `; guard read: ${why}`
+              : ""
+          }`,
         });
       }
       if (turn.expert) {
@@ -222,6 +229,13 @@ function transcript(run: ConversationRun): string[] {
         `Claim (${claim.source}): ${claim.verdict}: "${oneLine(claim.sentence)}"${
           claim.reason ? `; ${oneLine(claim.reason)}` : ""
         }`,
+      );
+    }
+    for (const rejection of turn.rejected) {
+      lines.push(
+        `Guard refused an attempt (${rejection.rules.join(", ")}${
+          rejection.detail ? `; figures: ${rejection.detail}` : ""
+        }): ${oneLine(rejection.answer)}`,
       );
     }
     if (turn.judgeFailures.length) {

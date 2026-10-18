@@ -6,6 +6,7 @@
 // (migration 20261018100020's shapes), which the production lookup runner renders. Nothing here
 // is a real athlete.
 import type { LookupRpc } from "../../_shared/coach_lookups/runner.ts";
+import type { AthleteState, StatePlan } from "../../_shared/coach_proposals/types.ts";
 
 // ---- dates ----------------------------------------------------------------------------------
 
@@ -815,12 +816,15 @@ export function planStatePayload(
   };
 }
 
-/** get_coach_nutrition_state_v1: the last 14 days of meals with partial days kept apart. */
+/**
+ * get_coach_nutrition_state_v1: the last 7 days with complete-day flags and partial days kept
+ * apart (`nutrition_day_totals(today - 6, today)`), and the 14 days of meals the sources count.
+ */
 export function nutritionStatePayload(records: Records): Record<string, unknown> {
   const { spec } = records;
   const target = targetOn(spec, spec.today);
   const from = addDays(spec.today, -13);
-  const days = newestFirst(within(records.mealDays, from, spec.today));
+  const days = newestFirst(within(records.mealDays, addDays(spec.today, -6), spec.today));
   const meals = within(records.meals, from, spec.today);
   return {
     schema_version: "1.0",
@@ -1097,5 +1101,61 @@ export function athleteFile(records: Records, profile: ProfileFacts): Record<str
     recent_other_conversations: [],
     session_journal: [],
     omitted_sections: [],
+  };
+}
+
+/**
+ * The active plan as the proposal builder reads it (`AthleteState.plan`), from the same weeks and
+ * loads the plan-state payload shows the Coach. Grading a proposal against the persona's own plan
+ * (and not the fixture athlete's) is what the service does with the athlete's.
+ */
+export function statePlanOf(records: Records): StatePlan {
+  const { spec } = records;
+  const plan = planOn(spec, spec.today);
+  return {
+    versionId: "11111111-1111-4111-8111-111111111111",
+    planId: "22222222-2222-4222-8222-222222222222",
+    versionNumber: spec.plans.indexOf(plan) + 1,
+    title: plan.title,
+    blockWeeks: plan.blockWeeks,
+    workouts: plan.week.map((session) => ({
+      name: session.name,
+      objective: "",
+      weekday: session.weekday,
+      estimatedMinutes: session.minutes,
+      warmUp: "",
+      coolDown: "",
+      exercises: session.lifts.map((lift) => ({
+        slug: lift.slug,
+        name: lift.name,
+        sets: lift.sets,
+        repMin: lift.repMin,
+        repMax: lift.repMax,
+        targetRpe: lift.targetRpe,
+        restSeconds: lift.restSeconds,
+        notes: "",
+        targetLoadKg: loadOn(lift, plan.progressFrom ?? spec.start, spec.today).kg,
+      })),
+    })),
+    blockEndsOn: null,
+    blockKind: null,
+  };
+}
+
+/** The proposal fixture athlete with this persona's plan, weekdays and session length. */
+export function proposalStateOf(
+  records: Records,
+  base: AthleteState,
+  profile: Readonly<{ sessionMinutes: number }>,
+): AthleteState {
+  const plan = statePlanOf(records);
+  return {
+    ...base,
+    plan,
+    profile: {
+      ...base.profile,
+      trainingWeekdays: plan.workouts.flatMap((w) => w.weekday === null ? [] : [w.weekday]),
+      sessionMinutes: profile.sessionMinutes,
+    },
   };
 }

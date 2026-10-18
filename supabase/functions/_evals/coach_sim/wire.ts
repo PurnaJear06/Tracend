@@ -6,11 +6,23 @@ export type ChatMode = Readonly<{
   /** Send response_format json_object when the request asks for JSON. */
   responseFormat: boolean;
   maxTokensField: "max_tokens" | "max_completion_tokens";
+  /**
+   * Send the answer schema as `response_format: {type: "json_schema"}` (structured output, as
+   * production asks Claude) instead of a bare JSON object. Only the Coach has a schema.
+   */
+  structured?: boolean;
 }>;
 
 export const defaultChatMode: ChatMode = Object.freeze({
   responseFormat: true,
   maxTokensField: "max_tokens",
+});
+
+/** The Coach's first choice: the answer schema enforced by the router, as production does. */
+export const structuredMode: ChatMode = Object.freeze({
+  responseFormat: true,
+  maxTokensField: "max_tokens",
+  structured: true,
 });
 
 /** The modes tried in order when a call fails: the run's own mode first. */
@@ -23,7 +35,11 @@ export const chatModes: readonly ChatMode[] = [
 
 export const describeMode = (mode: ChatMode) =>
   `${
-    mode.responseFormat ? "JSON mode (response_format)" : "plain text, JSON asked in the prompt"
+    mode.structured
+      ? "structured output (response_format json_schema)"
+      : mode.responseFormat
+      ? "JSON mode (response_format)"
+      : "plain text, JSON asked in the prompt"
   }, ${mode.maxTokensField}`;
 
 /**

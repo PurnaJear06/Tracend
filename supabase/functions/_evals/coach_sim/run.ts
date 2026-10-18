@@ -15,7 +15,10 @@
 // 3), EVAL_CONCURRENCY (default 3), EVAL_COACH_MODEL, EVAL_ATHLETE_MODEL, EVAL_JUDGE_MODEL (any
 // router model id; the judge must differ from the Coach) and EVAL_REPORT_DIR.
 import type { TokenCounts } from "../../_shared/ai/models.ts";
-import { buildCoachChatGatewayPrompt } from "../../_shared/providers/coach_chat_provider_gateway.ts";
+import {
+  buildCoachChatGatewayPrompt,
+  coachChatGatewaySchema,
+} from "../../_shared/providers/coach_chat_provider_gateway.ts";
 import { classifyQuestion } from "../../_shared/providers/coach_chat_provider.ts";
 import { renderTurn } from "../coach_bank/harness.ts";
 import {
@@ -40,11 +43,13 @@ import { renderReport, renderSummary } from "./report.ts";
 import {
   athletePreferences,
   type ChatMode,
+  chatModes,
   defaultChatMode,
   judgePreferences,
   pickModel,
   pickModels,
   routerChat,
+  structuredMode,
 } from "./router_client.ts";
 import { type Conversation, openingFor, selectConversations } from "./scenarios.ts";
 import { maxTurnsLimit, simulate, spentUsd } from "./simulate.ts";
@@ -76,7 +81,7 @@ const tokens = (input: number, output: number): TokenCounts => ({
 /**
  * What a run should cost at list prices, before it starts. Per Coach turn: 1.6 calls (lookup
  * rounds and repairs) of the persona's prompt plus 1,000 tokens of looked-up rows, and 900 output
- * tokens; per athlete message 1,500 in and 150 out; per judged turn 4,000 in and 2,000 out (a
+ * tokens; per athlete message 1,500 in and 150 out; per judged turn 8,500 in (the athlete data the Coach saw) and 2,000 out (a
  * Claude judge's thinking counts as output), and a claim check on a third of the judged turns
  * (3,000 in, 1,500 out). No prompt cache is assumed.
  */
@@ -92,7 +97,7 @@ export function estimateRun(input: EstimateInput): { usd: number; turns: number 
     usd += (count - 1) * priceTokens(input.athleteModel, tokens(1_500, 150)).usd;
     if (input.judgeModel) {
       const judged = Math.ceil(count / every);
-      usd += judged * priceTokens(input.judgeModel, tokens(4_000, 2_000)).usd;
+      usd += judged * priceTokens(input.judgeModel, tokens(8_500, 2_000)).usd;
       usd += (judged / 3) * priceTokens(input.judgeModel, tokens(3_000, 1_500)).usd;
     }
   }
@@ -188,6 +193,8 @@ const integer = (raw: string | undefined, fallback: number, min: number, max: nu
   return Number.isInteger(value) && value >= min && value <= max ? value : fallback;
 };
 
+const coachModes: readonly ChatMode[] = [structuredMode, ...chatModes];
+
 /** Coach models tried, in order, when the production model has no working request at the router. */
 const coachFallbacks: readonly string[] = ["claude-sonnet-5-5"];
 
@@ -212,8 +219,11 @@ async function main(): Promise<void> {
   // One tiny request per model, in the mode the run will use; the other modes and spellings are
   // tried when it fails. A model with no working request stops the run before it spends anything.
   const route = { baseUrl: routed.baseUrl, apiKey: routed.apiKey };
+  // The Coach is asked with the answer schema enforced (structured output) first, as production
+  // asks Claude, and in the plainer modes when the router does not take that.
+  const coachProbe = { ...route, schema: coachChatGatewaySchema(), modes: coachModes };
   let coachCheck = await preflightCoach({
-    ...route,
+    ...coachProbe,
     candidates: idCandidates(routed.available, routed.coachModel),
   });
   const wanted = coachCheck.wanted;
@@ -226,14 +236,17 @@ async function main(): Promise<void> {
     const fallback = pickModel(routed.available, coachFallbacks, [routed.coachModel]);
     if (fallback) {
       const second = await preflightCoach({
-        ...route,
+        ...coachProbe,
         candidates: idCandidates(routed.available, fallback),
       });
       if (second.working) {
-        const last = coachCheck.attempts.at(-1);
-        coachChoice = `${routed.choice}, but it had no working request at the router (${
-          last ? `${last.status === null ? "no response" : `HTTP ${last.status}`}` : "no attempt"
-        } in every mode and spelling), so ${second.working.model} played`;
+        const first = coachCheck.attempts[0];
+        coachChoice =
+          `${routed.choice}, but it had no working request at the router (the listed id answered ${
+            first ? (first.status === null ? "nothing" : `HTTP ${first.status}`) : "nothing"
+          } in every mode; the other spellings HTTP ${
+            coachCheck.attempts.at(-1)?.status ?? "none"
+          }), so ${second.working.model} played`;
         production = false;
         coachCheck = { ...second, attempts: [...coachCheck.attempts, ...second.attempts] };
       }
@@ -405,7 +418,9 @@ async function main(): Promise<void> {
         providerErrors: result.errors,
         conversations: result.conversations.map((run) => ({
           ...run,
-          turns: run.turns.map(({ context: _context, contributions, ...turn }) => ({
+          turns: run.turns.map((
+            { context: _context, contributions, proposalState: _plan, ...turn },
+          ) => ({
             ...turn,
             libraryShown: Object.keys(contributions.shown),
           })),

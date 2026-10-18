@@ -122,7 +122,7 @@ Deno.test("a network failure and an empty answer are recorded too", async () => 
         new Response(
           JSON.stringify({
             choices: [{ message: { content: "" }, finish_reason: "stop" }],
-            usage: { completion_tokens: 300 },
+            usage: { completion_tokens: 20 },
           }),
           { status: 200 },
         ),
@@ -140,7 +140,7 @@ Deno.test("a network failure and an empty answer are recorded too", async () => 
   assert(!blank.ok);
   assertEquals(blank.kind, "empty");
   assertStringIncludes(blank.body, "finish_reason=stop");
-  assertStringIncludes(blank.body, "completion_tokens=300");
+  assertStringIncludes(blank.body, "completion_tokens=20");
 });
 
 Deno.test("the Coach's wire errors reach the observer with the status and a redacted body", async () => {

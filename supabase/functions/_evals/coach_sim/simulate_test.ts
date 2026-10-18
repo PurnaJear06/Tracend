@@ -9,6 +9,7 @@ import { renderReport } from "./report.ts";
 import { type RouterChat, routerChat } from "./router_client.ts";
 import { selectConversations } from "./scenarios.ts";
 import { brokenRouteTurns, simulate, type SimulationOptions } from "./simulate.ts";
+import { harnessFailures } from "./verdict.ts";
 import type { WireError } from "./diagnostics.ts";
 
 const routerModels = [
@@ -373,4 +374,34 @@ Deno.test("a Coach route that only fails is logged with its status and stops the
     [result.errors[0].source, result.errors[0].status, result.errors[0].turn],
     ["coach", 400, 1],
   );
+});
+
+Deno.test("a router out of credit stops every conversation at once and the run says so", async () => {
+  const noCredit = {
+    status: 402,
+    kind: "http" as const,
+    body:
+      '{"error":{"type":"payment_required","message":"Insufficient credits: your balance is 221"}}',
+  };
+  let coachCalls = 0;
+  const options = stubOptions(() => Promise.resolve(generation("never read")), {
+    conversations: selectConversations("pushback"),
+    maxTurns: 3,
+  });
+  const result = await simulate({
+    ...options,
+    coach: (_usage, onError) => () => {
+      coachCalls++;
+      onError(noCredit);
+      return Promise.reject(new CoachChatUnavailableError("router", "stub", "provider_http_error"));
+    },
+  });
+  assert(result.conversations.length >= 3);
+  // Each conversation makes its first Coach call at most; none goes on to a second turn.
+  assert(coachCalls <= result.conversations.length, `${coachCalls} Coach calls`);
+  assert(result.conversations.every((run) => run.turns.length <= 1));
+  assert(result.conversations.some((run) => run.ended === "credits"));
+  const reasons = harnessFailures(result.conversations, false, result.errors);
+  assertStringIncludes(reasons.join("\n"), "ran out of credit");
+  assertStringIncludes(reasons.join("\n"), "Top up the router balance");
 });

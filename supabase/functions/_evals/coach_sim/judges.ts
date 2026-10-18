@@ -67,7 +67,8 @@ const clip = (text: string, max: number) =>
   text.length <= max ? text : `${text.slice(0, max)} [cut]`;
 
 export type ExpertInput = Readonly<{
-  digest: string;
+  /** Everything the Coach was shown about the athlete this turn (the file, the contributors, the rows looked up). */
+  athleteData: string;
   coachBrief: string;
   /** The conversation before this turn. */
   earlier: readonly Turn[];
@@ -92,7 +93,9 @@ export function expertPrompt(input: ExpertInput): { system: string; user: string
   return {
     system: expertSystem,
     user: [
-      `What the athlete's records show:\n<data>\n${input.digest}\n</data>`,
+      `Everything the coach was given about this athlete (the app's file, its calculations and the rows it looked up):\n<data>\n${
+        clip(input.athleteData, 18_000)
+      }\n</data>`,
       `What an experienced coach would do in this conversation: ${input.coachBrief}`,
       `The conversation before this turn:\n<conversation>\n${thread || "(none)"}\n</conversation>`,
       input.lookedUp

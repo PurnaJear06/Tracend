@@ -2,7 +2,7 @@
 // and never gates on it, but a run whose models did not answer measures nothing: the job fails when
 // the Coach route errors on too many turns, the judges give no verdicts, or the athlete model cannot
 // write. Pure functions over the finished run, so they are tested without a network.
-import type { ProviderError } from "./diagnostics.ts";
+import { isCreditsError, type ProviderError } from "./diagnostics.ts";
 import type { ConversationRun } from "./simulate.ts";
 
 /** The share of Coach turns that may end in a provider error before the run is a failure. */
@@ -64,6 +64,16 @@ export function harnessFailures(
 ): string[] {
   const stats = harnessStats(runs);
   const reasons: string[] = [];
+  const noCredit = errors.filter(isCreditsError);
+  if (noCredit.length > 0) {
+    reasons.push(
+      `The router account ran out of credit (${noCredit.length} calls answered "${
+        noCredit[0].body.slice(0, 120)
+      }"): ${
+        runs.filter((r) => r.ended === "credits").length
+      } conversations stopped early and the results are partial. Top up the router balance and run again.`,
+    );
+  }
   for (const run of runs.filter((r) => r.ended === "harness_error")) {
     reasons.push(`Harness error in ${run.id}: ${run.error}`);
   }

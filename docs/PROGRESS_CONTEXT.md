@@ -27,6 +27,8 @@ runbook. One line per stream; the lead updates these lines when a chunk merges.
   Coach in eight scenarios on the production gateway path over the eval router, graded by code,
   an expert-coach judge and a claim-support judge (RAG audit P1-3); `Coach Eval` with `simulate`,
   report only. The answer bank now runs on the same router gateway route, library cases included.
+  First sized run (2026-10-18, Sonnet played because the router answers 502 for Haiku 5.5): six
+  Coach findings in the handoff, none fixed in that PR; a second run waits for router credit.
   Handoff: [`ai-gateway.md`](./handoff/ai-gateway.md).
 - training-engine: B0 live (#105). B1 merged (#118: catalog v2 and coaching-standard data with
   sources; nothing reads it until B2). Phase 3 round 1 merged (2026-10-17): B2 templates and

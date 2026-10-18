@@ -29,6 +29,7 @@ import {
   wordCount,
 } from "../coach_bank/graders.ts";
 import type { GraderResult, Reply, Severity, Turn } from "../coach_bank/types.ts";
+import type { AthleteState } from "../../_shared/coach_proposals/types.ts";
 import type { Scenario } from "./scenarios.ts";
 
 /** One Coach turn as the simulator recorded it. */
@@ -50,6 +51,8 @@ export type TurnRecord = Readonly<{
   grounds: readonly string[];
   /** The conversation before this turn, as recent_messages held it. */
   history: readonly Turn[];
+  /** The state a proposal is built against: the persona's plan on the proposal fixture. */
+  proposalState?: AthleteState;
 }>;
 
 const result = (
@@ -170,6 +173,11 @@ const strongUnits = new Set([
   "%",
 ]);
 
+// A small number is a record when a label that names the record is beside it: "pain at 2", "RPE
+// 9.9", "energy 3", "sleep quality 72/100".
+const labelledScore =
+  /\b(?:pain|energy|soreness|stress|mood|rpe|rir|effort|sleep quality|recovery)\b(?: score| level)?(?: was| is| of| at| to|:)?\s*(\d+(?:\.\d+)?)(?:\s*\/\s*(?:5|10|100))?/gi;
+
 const numbersIn = (text: string) =>
   new Set([...text.matchAll(/\d+(?:\.\d+)?/g)].map((match) => String(Number(match[0]))));
 
@@ -201,6 +209,10 @@ export function athleteFiguresIn(
     if (!strongUnits.has(unit) && Number(value) <= 12) continue;
     if (known.has(value) && !asked.has(value)) found.push(match[0].trim());
   }
+  for (const match of reply.matchAll(labelledScore)) {
+    const value = String(Number(match[1]));
+    if (known.has(value) && !asked.has(value)) found.push(match[0].trim());
+  }
   const dates = datesMentioned(reply);
   const recordDates = new Set(dataText.match(/\b\d{4}-\d{2}-\d{2}\b/g) ?? []);
   for (const date of recordDates) {
@@ -224,16 +236,23 @@ export type ProposalCheck =
   | Readonly<{ ok: false; problem: string }>;
 
 /**
- * A proposal intent run through the proposal rules for the standard athlete (the proposal
- * fixture, with the athlete's message), as the bank does: an intent the rules can read, accepted
- * or refused with a reason the athlete is shown.
+ * A proposal intent run through the proposal rules for the athlete (the persona's own plan on the
+ * proposal fixture, with the athlete's message; the fixture alone for the bank): an intent the
+ * rules can read, accepted or refused with a reason the athlete is shown.
  */
-export function checkProposal(intent: unknown, question: string, today: string): ProposalCheck {
+export function checkProposal(
+  intent: unknown,
+  question: string,
+  today: string,
+  athlete?: AthleteState,
+): ProposalCheck {
   const parsed = parseCoachProposalIntent(intent);
   if (!parsed.ok) return { ok: false, problem: `invalid intent: ${parsed.problem}` };
   const built = buildCoachProposal(
     parsed.intent,
-    stateFixture({ athleteMessage: question, today }),
+    athlete
+      ? { ...athlete, athleteMessage: question, today }
+      : stateFixture({ athleteMessage: question, today }),
   );
   return built.ok
     ? { ok: true, kind: parsed.intent.kind, built: true }
@@ -328,14 +347,20 @@ export function gradeTurn(turn: TurnRecord, earlier: readonly TurnRecord[]): Gra
       opening === null,
       opening === null ? undefined : `opens like turn ${opening}: "${sentencesOf(text)[0]}"`,
     ));
-    const repeats = repeatedAdvice(text, turn.history, turn.history.length);
+    // Saying again what the athlete's own message asks about (a figure they quote; the sets of a
+    // plan the reply puts forward as a proposal) answers them; it is not the Coach repeating itself.
+    const asked = numbersIn(question);
+    const repeats = repeatedAdvice(text, turn.history, turn.history.length).filter((sentence) =>
+      (reply.proposalIntent === undefined || prescriptionCount(sentence) === 0) &&
+      ![...numbersIn(sentence)].some((value) => asked.has(value))
+    );
     out.push(result("no_repeat", "quality", repeats.length === 0, repeats[0]));
-    const asked = repeatedQuestion(text, earlier);
+    const again = repeatedQuestion(text, earlier);
     out.push(result(
       "repeated_question",
       "quality",
-      asked === null,
-      asked ? `asked in turn ${asked.turn} too: "${asked.question}"` : undefined,
+      again === null,
+      again ? `asked in turn ${again.turn} too: "${again.question}"` : undefined,
     ));
     const caveats = recurringCaveats(turn, earlier);
     out.push(result(
@@ -363,7 +388,7 @@ export function gradeTurn(turn: TurnRecord, earlier: readonly TurnRecord[]): Gra
   if (asksForPlanChange(question)) {
     const check = reply.proposalIntent === undefined
       ? null
-      : checkProposal(reply.proposalIntent, question, today);
+      : checkProposal(reply.proposalIntent, question, today, turn.proposalState);
     out.push(result(
       "plan_change_proposed",
       "quality",
@@ -375,7 +400,7 @@ export function gradeTurn(turn: TurnRecord, earlier: readonly TurnRecord[]): Gra
         : check.problem,
     ));
   } else if (reply.proposalIntent !== undefined) {
-    const check = checkProposal(reply.proposalIntent, question, today);
+    const check = checkProposal(reply.proposalIntent, question, today, turn.proposalState);
     out.push(result(
       "proposal_valid",
       "quality",
@@ -406,6 +431,7 @@ export function gradeConversation(
         turn.reply.proposalIntent,
         turn.question,
         String(turn.context.coaching_date),
+        turn.proposalState,
       );
       return check.ok && check.built && kinds.includes(check.kind as typeof kinds[number])
         ? [`turn ${turn.number}: ${check.kind}`]

@@ -198,3 +198,13 @@ export function schemaProblem(value: unknown, schema: JsonSchema, path = "$"): s
   const shown = typeof value === "string" ? JSON.stringify(value.slice(0, 40)) : typeof value;
   return `${path} does not match (${shown})`;
 }
+
+/**
+ * Whether a failed call says the router account has no credit left (HTTP 402, or the router's
+ * "Insufficient credits" in a 429): every later call would fail the same way and spend nothing, so
+ * the run stops and says so instead of ending conversations one by one as athlete or Coach errors.
+ */
+export function isCreditsError(error: Pick<WireError, "status" | "body">): boolean {
+  return error.status === 402 ||
+    /insufficient credits|payment[_ ]required|top up/i.test(error.body);
+}

@@ -11,6 +11,7 @@ import {
   renderNutritionState,
 } from "../../_shared/coach_context/contributors/nutrition_state.ts";
 import { renderDataIndex } from "../../_shared/coach_context/contributors/data_index.ts";
+import { exerciseCatalogV1 } from "../../_shared/onboarding/catalog.ts";
 import { buildCoachChatGatewayPrompt } from "../../_shared/providers/coach_chat_provider_gateway.ts";
 import { renderTurn } from "../coach_bank/harness.ts";
 import { wordSearch } from "./library_search.ts";
@@ -164,4 +165,25 @@ Deno.test("the cost estimate grows with turns and counts the judges", () => {
   assert(long.usd > short.usd && judged.usd > long.usd);
   // Six Haiku turns: 6 x (20,200 in x 0.10 + 900 out x 0.50) per million, plus five athlete calls.
   assertEquals(long.usd, Math.round((6 * 0.002470 + 5 * 0.00063) * 10_000) / 10_000);
+});
+
+Deno.test("every exercise in a persona's plan and logs is one the product's catalog has, by name and slug", () => {
+  const catalog = new Map(exerciseCatalogV1.map((exercise) => [exercise.slug, exercise.name]));
+  for (const persona of personas) {
+    const seen = new Map<string, string>();
+    const walk = (value: unknown): void => {
+      if (!value || typeof value !== "object") return;
+      const item = value as { name?: unknown; slug?: unknown };
+      if (typeof item.name === "string" && typeof item.slug === "string") {
+        seen.set(item.slug, item.name);
+      }
+      Object.values(value).forEach(walk);
+    };
+    walk(persona.records);
+    walk(persona.extras);
+    assert(seen.size >= 10, persona.id);
+    for (const [slug, name] of seen) {
+      assertEquals(catalog.get(slug), name, `${persona.id}: ${slug} is not a catalog exercise`);
+    }
+  }
 });

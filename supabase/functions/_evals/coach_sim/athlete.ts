@@ -51,6 +51,8 @@ export function athletePrompt(
  */
 export function parseAthleteMessage(text: string, name = "athlete"): AthleteMessage | null {
   const json = jsonObjectIn(text);
+  // Text that opens like a JSON object but does not parse is a cut-off reply, not a message.
+  if (!json && /^\s*[{`]/.test(text)) return null;
   const raw = json ? json.message : text;
   if (typeof raw !== "string") return null;
   const label = new RegExp(`^\\s*(?:${name}|athlete)\\s*:\\s*`, "i");
