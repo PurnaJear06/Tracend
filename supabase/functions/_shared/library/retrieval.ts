@@ -50,10 +50,12 @@ export type RelevanceFloor = Readonly<{
 // Calibrated 2026-10-18 on the calibration set (189 answerable and 30 no-answer questions, 351
 // chunks of 106 sources): the nearest chunk of an expected source sits at 0.074 to 0.187 (median
 // 0.106); the nearest chunk of a no-answer question at 0.147 to 0.245 (median 0.177). The values
-// below are the highest-recall floor that still leaves at least 80% of the no-answer questions
-// with nothing shown (the gate is 70%).
+// below are the highest-recall floor that left at least 90% of the no-answer questions with
+// nothing shown in both calibration runs (the gate is 70%; 0.155 gave 77% to 80% for 0.014 more
+// recall). The nearest chunk among the eight returned moves a little between runs: chunk ids,
+// which break ties in the fused ranking, are new at every database reset.
 export const libraryRelevanceFloor: RelevanceFloor = Object.freeze({
-  maxTopDistance: 0.155,
+  maxTopDistance: 0.15,
   maxVectorDistance: 0.19,
 });
 

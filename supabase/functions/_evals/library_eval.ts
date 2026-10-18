@@ -174,23 +174,24 @@ for (const [index, question] of questions.entries()) {
   }
 }
 
-const unfloored = {
-  maxTopDistance: Number.POSITIVE_INFINITY,
-  maxVectorDistance: Number.POSITIVE_INFINITY,
-};
-const scored = (rows: readonly ScoredHit[][], floor = unfloored): QuestionScore[] =>
-  questions.map((question, index) => scoreQuestion(question, keysPassing(rows[index], floor)));
+// Unfiltered: every row the search returned, as search_library_v2 showed them.
+const unfiltered = (rows: readonly ScoredHit[][]): QuestionScore[] =>
+  questions.map((question, index) =>
+    scoreQuestion(question, rows[index].map((hit) => hit.sourceKey))
+  );
 const modes = {
-  hybrid: scored(hits.hybrid),
-  hybrid_floor: scored(hits.hybrid, libraryRelevanceFloor),
-  text_only: scored(hits.text),
+  hybrid: unfiltered(hits.hybrid),
+  hybrid_floor: questions.map((question, index) =>
+    scoreQuestion(question, keysPassing(hits.hybrid[index], libraryRelevanceFloor))
+  ),
+  text_only: unfiltered(hits.text),
   text_floor: questions.map((question, index) =>
     scoreQuestion(
       question,
       keywordKeysPassing(hits.text[index], queries[index], libraryKeywordFloor),
     )
   ),
-  vector_only: scored(hits.vector),
+  vector_only: unfiltered(hits.vector),
 };
 
 const floor = libraryRelevanceFloor;
