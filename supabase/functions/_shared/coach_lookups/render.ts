@@ -3,6 +3,17 @@
 // Text the athlete wrote (check-in notes) is quoted, flattened to one line and labelled.
 import { describeTarget, parseProgressionSummary } from "../training/progression/targets.ts";
 import { clipToBudget } from "../coach_context/host.ts";
+import type { DayExercise } from "../training/schedule/muscles.ts";
+import {
+  consecutiveOverlaps,
+  dayOf,
+  renderOverlapFact,
+  type ScheduleDay,
+  scheduleDay,
+  type SessionKind,
+  stamp,
+  unknownNote,
+} from "../training/schedule/week_ahead.ts";
 import { type DataRequest, lookupSpec } from "./catalogue.ts";
 
 /** Most characters of one lookup's text. */
@@ -27,6 +38,8 @@ type Parts = Readonly<{
   trailer: string[];
   /** Units run oldest to newest, so the newest are the last ones. */
   newestLast?: boolean;
+  /** Units run in date order and the earliest are the ones to keep (a schedule from today). */
+  keepFirst?: boolean;
 }>;
 
 type Json = Record<string, unknown>;
@@ -189,7 +202,111 @@ function recovery(body: Json): Parts {
   return singles(lines);
 }
 
+/** Most overlaps one schedule result lists; the rest are counted, never dropped silently. */
+const maxListedOverlaps = 8;
+
+/** The plan laid over a range of dates: one line per day with a session, and the overlaps. */
+function planSchedule(body: Json): Parts {
+  const plan = rec(body.plan);
+  // Planned workouts are keyed by id: names are not unique.
+  const sessions = new Map(
+    list(body.sessions).map((session) => [
+      String(session.id),
+      list(session.exercises).map((exercise): DayExercise => ({
+        slug: typeof exercise.slug === "string" ? exercise.slug : null,
+        sets: Number(exercise.sets) || 0,
+      })),
+    ]),
+  );
+  const idsByVersion = new Map<string, Set<string>>();
+  for (const session of list(body.sessions)) {
+    const version = String(session.version_id);
+    idsByVersion.set(version, (idsByVersion.get(version) ?? new Set()).add(String(session.id)));
+  }
+  const to = String(body.to ?? "");
+  const today = String(has(body.today) ? body.today : to);
+  const scheduleDays: ScheduleDay[] = [];
+  const lines: string[] = [];
+  for (const row of list(body.days)) {
+    const date = String(row.date);
+    const weekday = Number(row.weekday);
+    const offset = dayOf(date) - dayOf(today);
+    const done = list(row.done).map((item) => ({
+      kind: "done" as SessionKind,
+      id: String(item.planned_workout_id),
+      name: String(item.name),
+      exercises: list(item.exercises).map((exercise): DayExercise => ({
+        slug: typeof exercise.slug === "string" ? exercise.slug : null,
+        sets: Number(exercise.sets) || 0,
+      })),
+    }));
+    const doneNames = done.map((item) => item.name);
+    // A finished session answers the planned one with its id. One whose id is not a workout of
+    // that day's own plan version (it was finished under another version, for instance logged this
+    // morning before a change took effect today) is matched by its name.
+    const dayWorkouts = idsByVersion.get(String(row.version_id)) ?? new Set<string>();
+    const isDone = (id: string, name: string) =>
+      done.some((item) => item.id === id || (!dayWorkouts.has(item.id) && item.name === name));
+    const planned = list(row.planned).map((item) => ({
+      id: String(item.id),
+      name: String(item.name),
+    })).filter((item) => !isDone(item.id, item.name));
+    // A planned session that was not logged on a day before today did not happen.
+    const upcoming = offset >= 0 ? planned : [];
+    const day = scheduleDay(date, weekday, offset, [
+      ...done,
+      ...upcoming.map((item) => ({
+        kind: "planned" as SessionKind,
+        name: item.name,
+        exercises: sessions.get(item.id) ?? [],
+      })),
+    ]);
+    scheduleDays.push(day);
+    const parts = [
+      done.length ? `done ${doneNames.join(" + ")}` : null,
+      upcoming.length ? `planned ${upcoming.map((item) => item.name).join(" + ")}` : null,
+      offset < 0 && planned.length
+        ? `planned ${planned.map((item) => item.name).join(" + ")}, not logged`
+        : null,
+    ].filter(Boolean).join("; ");
+    const muscles = day.muscles.length ? ` (${day.muscles.join(", ")})` : "";
+    const block = row.block === true;
+    // Version numbers repeat across plans (a block is a new plan at version 1), so versions are
+    // compared by id and the number is only shown.
+    const version = has(row.version) && (block || row.version_id !== plan.id)
+      ? ` [version ${row.version}${block ? ", temporary block" : ""}]`
+      : "";
+    lines.push(
+      `- ${stamp(day)}${offset === 0 ? " (today)" : ""}: ${parts}${muscles}${
+        unknownNote(day)
+      }${version}`,
+    );
+  }
+  const found = consecutiveOverlaps(scheduleDays);
+  const overlaps = renderOverlapFact(found.slice(0, maxListedOverlaps));
+  const omitted = found.length - maxListedOverlaps;
+  return {
+    preface: [
+      has(plan.version)
+        ? `The plan is version ${plan.version} now. Each date uses the plan version in force on it ` +
+          "(a version that differs from the current one, and a temporary block, is marked), and " +
+          "the plan repeats every week; a date before the first plan shows only what was " +
+          "logged. Days not listed have no session planned or logged."
+        : "There is no active training plan: only logged sessions are shown.",
+    ],
+    units: lines.map((line) => [line]),
+    trailer: [
+      ...(overlaps === null ? [] : [overlaps]),
+      ...(omitted > 0
+        ? [`${omitted} more overlaps in this range are not listed; ask for a narrower range.`]
+        : []),
+    ],
+    keepFirst: true,
+  };
+}
+
 function planHistory(body: Json): Parts {
+  if (body.filter === "schedule") return planSchedule(body);
   const training = list(body.training);
   const nutrition = list(body.nutrition);
   const units = [
@@ -307,11 +424,19 @@ const renderers: Readonly<Record<string, (body: Json) => Parts>> = {
 };
 
 /** The heading of a result: what was asked, the period, how many rows are shown and why not all. */
-function heading(request: DataRequest, shown: number, total: number, sqlCut: boolean) {
+function heading(
+  request: DataRequest,
+  shown: number,
+  total: number,
+  sqlCut: boolean,
+  keepFirst = false,
+) {
   const range = `${request.from} to ${request.to}`;
   const filter = request.filter ? `, filter "${request.filter.replace(/"/g, "")}"` : "";
   const count = shown < total
-    ? `showing the newest ${shown} of ${total} rows (the rest were cut for size)`
+    ? `showing the ${
+      keepFirst ? "first" : "newest"
+    } ${shown} of ${total} rows (the rest were cut for size)`
     : `${total} ${total === 1 ? "row" : "rows"}`;
   const more = sqlCut
     ? "; more rows exist than the lookup returns (the newest are shown): ask for a narrower range for the rest"
@@ -339,7 +464,7 @@ export function renderLookup(request: DataRequest, payload: unknown): RenderedLo
   const fixed = [...parts.preface, ...parts.trailer].join("\n").length;
   // Room for the widest heading, then rows: newest first (the last ones when the rows run
   // oldest to newest).
-  let used = fixed + heading(request, total, total + 1, sqlCut).length + 40;
+  let used = fixed + heading(request, total, total + 1, sqlCut, parts.keepFirst).length + 40;
   const kept: string[][] = [];
   const order = parts.newestLast ? [...parts.units].reverse() : parts.units;
   for (const unit of order) {
@@ -349,10 +474,11 @@ export function renderLookup(request: DataRequest, payload: unknown): RenderedLo
     used += size;
   }
   const shown = parts.newestLast ? kept.reverse() : kept;
+  const headed = heading(request, shown.length, total, sqlCut, parts.keepFirst);
   const lines = [...parts.preface, ...shown.flat(), ...parts.trailer];
   const empty = total === 0 ? ["No records in this range."] : [];
   return {
-    text: [heading(request, shown.length, total, sqlCut), ...empty, ...lines].join("\n"),
+    text: [headed, ...empty, ...lines].join("\n"),
     rows: shown.length,
     grounds: [
       `Period looked at: ${request.from} to ${request.to}. Rows shown: ${shown.length} of ${total}.`,

@@ -13,6 +13,11 @@ import type { LibrarySource } from "./types.ts";
 // Every block starts with a comment holding the source key and a digest of what it loads.
 // library_content_test.ts compares the newest migration that loads a source with the content
 // files, so editing a file without a migration fails the test.
+//
+// A source removed from supabase/library/index.ts is retired the same way: the migration holds a
+// retire block for it (build_migration.ts --retire key), which calls
+// private.library_retire_source and deletes the source with its chunks. The same test fails while
+// a migration still loads a source that index.ts no longer lists and no later block retires it.
 
 const quoteTag = "$lib$";
 
@@ -71,4 +76,12 @@ export async function sourceBlocks(sources: readonly LibrarySource[]): Promise<s
   const blocks: string[] = [];
   for (const source of sources) blocks.push(await sourceBlock(source));
   return blocks.join("\n");
+}
+
+/** The marker a retire block starts with. */
+export const retireMarker = (key: string) => `-- library-retire: ${key}`;
+
+export function retireBlock(key: string): string {
+  if (!/^[a-z0-9][a-z0-9_.-]{0,119}$/.test(key)) throw new Error(`not a manifest key: ${key}`);
+  return [retireMarker(key), `select private.library_retire_source('${key}');`, ""].join("\n");
 }

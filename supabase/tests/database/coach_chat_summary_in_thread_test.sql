@@ -1,7 +1,7 @@
 begin;
 select plan(14);
 
--- The app's data summary stays in the conversation the Coach reads (migration 20261018190031).
+-- The app's data summary stays in the conversation the Coach reads (migration 20261018210031).
 -- prepare_coach_chat_v10 wraps v9 and rebuilds recent_messages with the summaries in, marked.
 
 insert into auth.users(id, role) values

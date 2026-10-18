@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.14";
+import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.14";
 import { renderCoachContext } from "../coach_context/host.ts";
 import { embeddingDimensions } from "./embedding.ts";
 import { createQueryEmbedder, libraryEmbedPath } from "./query_embedder.ts";
@@ -40,6 +40,30 @@ Deno.test("the question goes to library-embed with the worker secret, and only t
   );
   assertEquals(JSON.parse(String(calls[0].init.body)), { query: "How much protein?" });
   assertEquals(secretReads(), 1, "the secret is read once");
+});
+
+Deno.test("a refused secret is read again and the call retried once", async () => {
+  let reads = 0;
+  const bearers: string[] = [];
+  const statuses = [401, 200];
+  const embed = createQueryEmbedder({
+    baseUrl: () => "https://abcdefghijklmnopqrst.supabase.co",
+    secret: () => Promise.resolve(`secret-${++reads}`),
+    timeoutMs: 1_000,
+    fetch: ((_url: string, init: RequestInit) => {
+      bearers.push((init.headers as Record<string, string>).Authorization);
+      const status = statuses.shift() ?? 200;
+      return status === 200 ? ok() : Promise.resolve(new Response("{}", { status }));
+    }) as unknown as typeof fetch,
+  });
+  assertEquals(await embed("q"), vector);
+  assertEquals(bearers, ["Bearer secret-1", "Bearer secret-2"]);
+  assertEquals(await embed("q"), vector);
+  assertEquals(reads, 2, "the new secret is kept");
+  // Refused twice in a row: one retry only, then the error.
+  statuses.push(401, 401);
+  await assertRejects(() => embed("q"), Error, "library_embed_401");
+  assertEquals(reads, 3);
 });
 
 Deno.test("a non-200, a bad body or an unreadable secret is an error", async () => {
@@ -91,7 +115,6 @@ Deno.test("a 500 or a timeout from library-embed means word search, not a lost b
   ) {
     const { embed } = embedderWith(respond, 20);
     const requests: LibrarySearchRequest[] = [];
-    const degraded: string[] = [];
     const contributor = createLibraryContributor({
       embed: () => embed,
       embedDeadlineMs: 30,
@@ -99,7 +122,6 @@ Deno.test("a 500 or a timeout from library-embed means word search, not a lost b
         requests.push(request);
         return Promise.resolve(rows);
       },
-      degraded: (code) => degraded.push(code),
     });
     const result = await renderCoachContext([contributor], {
       userId: "u",
@@ -108,7 +130,7 @@ Deno.test("a 500 or a timeout from library-embed means word search, not a lost b
     }, 2_000);
     assertEquals(result.outcomes.map((item) => item.outcome), ["rendered"]);
     assertEquals(requests.map((request) => request.embedding), [null]);
-    assertEquals(degraded.length, 1);
+    assert(result.traces?.library.degraded !== "none");
   }
 });
 

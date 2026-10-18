@@ -19,7 +19,29 @@ export type CoachContextInput = Readonly<{
    * a contributor that does not need them ignores it.
    */
   previousQuestions?: readonly string[];
+  /**
+   * The question's library embedding, started when the request began so that it runs alongside
+   * the context preparation (Contract 7 v1.2). The library uses it when its query is this text and
+   * embeds the query itself otherwise. Optional: other contributors ignore it.
+   */
+  queryEmbedding?: PrefetchedQueryEmbedding;
 }>;
+
+/** A query embedding already on its way: the text embedded, when it started, and the result. */
+export type PrefetchedQueryEmbedding = Readonly<{
+  text: string;
+  /** performance.now() when the embedding started; the library's deadline counts from it. */
+  startedAt: number;
+  embedding: Promise<number[]>;
+}>;
+
+/**
+ * Names and numbers a contributor reports about its own turn, for the request log: never message
+ * text, a health value or a figure from the athlete's records.
+ */
+export type ContributorTrace = Readonly<
+  Record<string, string | number | boolean | null | readonly string[]>
+>;
 
 /** A library source Coach was shown this turn: what a reply's evidence may cite, and how it reads. */
 export type ShownSource = Readonly<{
@@ -34,6 +56,8 @@ export type RenderedBlock = Readonly<{
   text: string;
   /** Library sources shown in the text, by source id (E3). */
   shown: Readonly<Record<string, ShownSource>>;
+  /** What the contributor reports about this turn for the log. */
+  trace?: ContributorTrace;
 }>;
 
 export type CoachContextContributor = Readonly<{
@@ -66,6 +90,8 @@ export type CoachContributions = Readonly<{
   texts: Readonly<Record<string, string>>;
   /** The library sources shown this turn, by source id; none when no contributor showed any. */
   shown: Readonly<Record<string, ShownSource>>;
+  /** The traces contributors reported, by contributor id; absent in hand-built contributions. */
+  traces?: Readonly<Record<string, ContributorTrace>>;
 }>;
 
 export const noCoachContributions: CoachContributions = Object.freeze({
@@ -74,6 +100,7 @@ export const noCoachContributions: CoachContributions = Object.freeze({
   outcomes: Object.freeze([]),
   texts: Object.freeze({}),
   shown: Object.freeze({}),
+  traces: Object.freeze({}),
 });
 
 /** How long one contributor may take before the turn goes on without it. */
@@ -126,6 +153,28 @@ export function clipToBudget(text: string, budgetChars: number): string {
   return `${text.slice(0, end)}…`;
 }
 
+/** Ends a block that lost its trailing lines, so the reader knows the lists stop early. */
+export const cutNote = "[The rest of this block was cut for size.]";
+
+/**
+ * Text clipped to budget characters by whole lines: trailing lines are dropped and `cutNote` closes
+ * the block, so a line is never cut in half. Text with no line break that fits is clipped by
+ * characters as `clipToBudget` does.
+ */
+export function clipLinesToBudget(text: string, budgetChars: number): string {
+  if (text.length <= budgetChars) return text;
+  const room = budgetChars - cutNote.length - 1;
+  const kept: string[] = [];
+  let used = 0;
+  for (const line of text.split("\n")) {
+    const next = used + line.length + (kept.length > 0 ? 1 : 0);
+    if (next > room) break;
+    kept.push(line);
+    used = next;
+  }
+  return kept.length === 0 ? clipToBudget(text, budgetChars) : `${kept.join("\n")}\n${cutNote}`;
+}
+
 const closingTag = /<\/reference_data/gi;
 
 function label(id: string, text: string): string {
@@ -139,6 +188,7 @@ type Rendered = Readonly<{
   block: string | null;
   text?: string;
   shown?: RenderedBlock["shown"];
+  trace?: ContributorTrace;
 }>;
 
 async function renderOne(
@@ -160,7 +210,7 @@ async function renderOne(
     }
     // A contributor's text cannot close its own label and pose as instructions after it.
     const safe = text.trim().replace(closingTag, "<\\/reference_data");
-    const clipped = clipToBudget(safe, contributor.budgetChars);
+    const clipped = clipLinesToBudget(safe, contributor.budgetChars);
     return {
       outcome: {
         ...base,
@@ -173,6 +223,9 @@ async function renderOne(
       // Sources stay citable only if the block was not cut.
       ...(typeof rendered === "object" && rendered !== null && clipped.length === safe.length
         ? { shown: rendered.shown }
+        : {}),
+      ...(typeof rendered === "object" && rendered !== null && rendered.trace
+        ? { trace: rendered.trace }
         : {}),
     };
   } catch {
@@ -207,5 +260,8 @@ export async function renderCoachContext(
       rendered.flatMap((item) => item.text === undefined ? [] : [[item.outcome.id, item.text]]),
     ),
     shown: Object.assign({}, ...rendered.map((item) => item.shown ?? {})),
+    traces: Object.fromEntries(
+      rendered.flatMap((item) => item.trace === undefined ? [] : [[item.outcome.id, item.trace]]),
+    ),
   };
 }

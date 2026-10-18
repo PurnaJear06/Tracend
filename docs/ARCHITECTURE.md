@@ -649,11 +649,16 @@ never stored, and every source records its licence.
   hold no user data, so they are outside export and account deletion.
 - Embeddings are Supabase's built-in `gte-small` (384 dimensions, mean-pooled and normalised), run
   inside Edge Functions (D4). No new processor receives any text.
-- `public.search_library_v2` (service role only, Contract 6 v2) fuses the top 30 Postgres
-  full-text matches (the terms of the question ORed) and the top 30 nearest embeddings (cosine
-  distance; HNSW index without filters, exact ranking over the matching sources with a region or
-  topics filter) by reciprocal rank fusion (k = 50) and returns at most 10 chunks, at most 3 per
-  source, limited to the athlete's regions (global plus their country).
+- `public.search_library_v3` (service role only, Contract 6 v3; v2 stays for the deployed build)
+  fuses the top 30 Postgres full-text matches (the terms of the question ORed) and the top 30
+  nearest embeddings from the question's model (cosine distance; HNSW index without filters, exact
+  ranking over the matching sources with a region or topics filter) by reciprocal rank fusion
+  (k = 50) and returns at most 10 chunks, at most 3 per source, limited to the athlete's regions
+  (global plus their country), each with its cosine distance, text rank, evidence level, kind and
+  the library version.
+- Every source carries a content digest kept by triggers, and `private.library_version()` digests
+  them all; a Coach answer records the version it was shown. A source removed from the content files
+  is retired by a content migration (`private.library_retire_source`).
 - Retrieved text is reference data. It never overrides Tracend rules, the athlete's data or the
   safety policy, and rules still decide every number.
 
@@ -666,8 +671,12 @@ coaching-principles digest of the sources sits in the Coach's stable prompt pref
 
 The library shapes every Coach reply on the gateway route (E3): the `library` contributor builds the
 query from the question (a follow-up borrows the topic of the last real question, deterministically),
-embeds it with `gte-small` by calling the `library-embed` function (the only place the model loads), searches for the athlete's region and renders up to
-8 chunks, each tagged with its stable source id, as a volatile block after the athlete data. Coach
+embeds it with `gte-small` by calling the `library-embed` function (the only place the model loads;
+coach-chat starts that call once the replay check and the budget reservation have passed, alongside the context preparation),
+searches for the athlete's region and renders up to 8 chunks that pass a calibrated relevance floor
+(the nearest chunk within cosine distance 0.15, then chunks within 0.19), each tagged with its stable
+source id, its kind, year and evidence level, as a volatile block after the athlete data. When no
+chunk passes, the block says so and Coach cites nothing. Coach
 cites the sources it uses as `library` evidence, and a citation of an id that was not shown is a
 reply-guard failure (AI_SAFETY_SPEC §11.2). If retrieval is slow or fails, Coach answers without it
 (the Contract 7 host's 4-second limit). Retrieval was chosen over putting the whole library in the

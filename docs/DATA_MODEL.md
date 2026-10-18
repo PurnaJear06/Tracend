@@ -755,21 +755,36 @@ for example `rule:numbers_not_grounded:2`, `outcome:repair_timeout`, and
 only, never message content; a check limits each to 12 entries of `[a-z0-9_:]`. Row-level security
 limits both to the message's owner.
 
+E3's production pass (migration `20261018200044_library_search_v3`) adds `library_version text`
+(16 lower-case hex characters, checked): the research library version the turn searched
+(`private.library_version()`, returned on every `search_library_v3` row), written by coach-chat with
+the turn trace on a model answer whose library search returned rows. It says which library content
+the answer was shown; it holds no content.
+
 #### Coach data lookups and baseline reads (A10, migration code 20)
 
 Read-only `SECURITY DEFINER` functions, granted to `service_role` only, each returning
-`schema_version` `1.0` (the user id comes from the authenticated Edge Function call; dates of
+`schema_version` (`1.0`; `1.1` for the three changed by migration `20261018190042`; the user id comes from the authenticated Edge Function call; dates of
 records such as plan versions and goals are the athlete's local days, `private.local_day`):
 
 - Baseline, `(p_user_id, p_local_date)`: `get_coach_plan_state_v1` (the active plan's sessions with
-  exercises, the sessions finished this ISO week, equipment and movements to avoid, and the next
-  targets from `get_progression_summary_v1`), `get_coach_nutrition_state_v1` (the week's days with
+  exercises, the sessions finished this ISO week, the sessions finished yesterday and today with
+  their exercises and the sets actually logged (`recent_completed`, whatever the week), when the
+  active version is a temporary block the sessions it hands back to after `ends_on`
+  (`after_block`), equipment and movements to
+  avoid, and the next targets from `get_progression_summary_v1`), `get_coach_nutrition_state_v1` (the week's days with
   complete flags, the target, the schedule with what is logged, what was eaten today, where meals
-  came from), `get_coach_data_index_v1` (first and last date and count per kind of record).
+  came from), `get_coach_data_index_v1` (first and last date and count per kind of record, and `schedule`: the
+  active plan's weekdays and the date it took effect).
 - Lookups (ten), `(p_user_id, p_from, p_to, p_filter)`, range cut to 400 days, rows capped:
   `coach_lookup_workouts_v1`, `_exercise_history_v1`, `_meals_v1`, `_body_v1`, `_check_ins_v1`,
   `_recovery_v1`, `_plan_history_v1`, `_goals_v1`, `_weekly_reviews_v1`,
-  `_health_history_v1`. Check-in notes are cut to 300 characters; a goal returns its target keys only
+  `_health_history_v1`. `_plan_history_v1` with the filter `schedule` lays the active plan over the
+  range, past or ahead (`private.coach_plan_schedule`): per date the planned sessions of the plan
+  version in force that day (the latest non-draft version whose `effective_date` is on or before the
+  date; after a temporary block's `ends_on` the version it restores), marked with its version number
+  and whether it is a block, the finished sessions with their logged sets, and the athlete's `today`; the range is the one lookup that may end
+  after the coaching date (the Edge Function allows 90 days). Check-in notes are cut to 300 characters; a goal returns its target keys only
   (never the free-form details).
 - `private.nutrition_day_totals` and `private.nutrition_complete_day_rules` define a complete
   logging day (ALGORITHMS.md section 6); `evaluate_change_eligibility` averages complete days only.
@@ -843,7 +858,7 @@ narrative sections from the athlete's stored `coach_context_snapshots` (with the
 `coach_threads.remember` (default true) marks a conversation the athlete asked Coach not to remember
 (`create_coach_thread_v2`): no notes, no suggested facts, excluded from `coach_lookup_past_messages_v1`
 and `search_coach_messages`, and left out of every other conversation's context by
-`prepare_coach_chat_v9`. `prepare_coach_chat_v10` (migration `20261018190031`, context
+`prepare_coach_chat_v9`. `prepare_coach_chat_v10` (migration `20261018210031`, context
 `schema_version` 8.1) wraps v9 and rebuilds `recent_messages` with the app's labelled data summaries
 in, each carrying `answer_source: "data_summary"` beside `role` and `content`; every other message
 keeps its shape, except that a superseded user question (`safety_state` 'unavailable') carries that state. It rewrites the stored snapshot to match, as v9 does.
@@ -1216,6 +1231,7 @@ lives in the `extensions` schema. The tables are empty until ingestion.
 | topics         | text[]      | Topic tags used by search filters                                   |
 | evidence_level | text        | Nullable, free text set by ingestion                                |
 | kind           | text        | `paper`, `guideline`, `position_stand`, `summary`                   |
+| content_sha256 | text        | SHA-256 (hex) of what the loader stored for the source (`private.library_source_digest`); kept current by triggers, nullable (migration `20261018200044`) |
 | created_at     | timestamptz |                                                                     |
 
 #### `private.library_chunks`
@@ -1258,6 +1274,21 @@ and replaces its chunks only when their text changed, so loading a block again k
 embeddings. A later content update is a new migration holding the blocks printed by
 `_shared/library/build_migration.ts` for the changed sources; `library_content_test.ts` fails when a
 content file differs from the newest migration that loads it.
+
+**Retiring, digests and the library version (migration `20261018200044_library_search_v3`).** A
+source removed from `supabase/library/index.ts` is retired by a content migration holding its retire
+block (`build_migration.ts --retire <key>` prints `select private.library_retire_source('<key>');`),
+which deletes the source and, by the foreign key, its chunks; it returns whether a source was
+removed, so the block can run twice. `library_content_test.ts` fails while a migration still loads a
+source that `index.ts` no longer lists and no later block retires it, and when a source is retired
+after its newest load. Triggers on both tables keep `library_sources.content_sha256` equal to
+`private.library_source_digest(id)`: the digest of the source's loader fields and its chunks'
+ordinal, section, header, body and token count (embeddings, attempts and timestamps are left out, so
+embedding a chunk does not change it). `private.library_version()` is the first 16 hex characters of a
+SHA-256 over every source's `manifest_key:content_sha256`, in key order: it changes exactly when a
+source is added, changed or retired, and two databases with the same content report the same
+version. None of the three is executable by an API role. A migration that adds a content column to
+the loader adds it to `library_source_digest` too.
 
 Embeddings are filled server-side. Service-role functions (all security definer, empty
 `search_path`, no grant to `anon` or `authenticated`):
@@ -1322,6 +1353,29 @@ word, so a whole question matched almost nothing. Returns up to `match_count` ro
 - Coach does not filter by topic: the tags are free text, and a hard topic filter would drop the
   second source of a question that spans topics. The `topics` filter stays for callers that know
   what they want.
+
+#### `public.search_library_v3(query_text, query_embedding, query_embedding_model, match_count, filters, target_user_id)`
+
+Contract 6 v3 (E3 production pass, migration `20261018200044_library_search_v3`; additive, v2 stays
+for the deployed Coach chat until a cleanup migration). The same search as v2, with:
+
+- `query_embedding_model` (text): the model that embedded `query_embedding` (`gte-small`). Required
+  when an embedding is passed (`22023` otherwise); vector search compares only chunks whose
+  `embedding_model` equals it, so a re-embedding with another model never mixes two models' vectors.
+  The unfiltered path keeps the HNSW index (every chunk shares one model, so the filter drops
+  nothing).
+- Rows `{schema_version: 3, chunk_id, source_id, source_key, title, year, url, section, body, header,
+  evidence_level, kind, score, vector_distance, text_rank, library_version}`. `vector_distance` is
+  the cosine distance (`<=>`) between the chunk and the question for every row whose chunk carries an
+  embedding from that model, null without a query embedding. `text_rank` is `ts_rank` (normalisation
+  1) for the ORed terms, 0 when the chunk holds none of them, null when the question has no
+  searchable term. `library_version` is `private.library_version()`, the same on every row.
+- Coach chat applies the relevance floor to these rows (`_shared/library/retrieval.ts`,
+  `relevantRows`): excerpts are shown only when the nearest chunk is within the top limit, then every
+  chunk within the row limit; a question searched by words alone (no embedding) uses
+  `keywordRelevantRows` on `text_rank` and the share of its topic words the best chunk holds. The
+  calibration is in
+  `docs/handoff/research-library.md`.
 
 #### Dump-safe function signatures (all schemas we own)
 

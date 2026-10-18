@@ -1,0 +1,469 @@
+{
+  "description": "The hold-out retrieval questions: about a fifth of the whole set, written blind from each source's title and topic, in a different phrasing from the calibration questions. Same format as library_questions.json. Used only for the final confirmation run (EVAL_QUESTION_SET=holdout), never for choosing the relevance floor or any threshold.",
+  "questions": [
+    {
+      "id": "h_periodised_squat_max",
+      "text": "Is switching up my training phases worth it for a bigger squat max?",
+      "expected": [
+        "williams_2017_periodised_strength"
+      ]
+    },
+    {
+      "id": "h_rpe_instead_percent",
+      "text": "Can I pick my weights by RPE instead of fixed percentages?",
+      "expected": [
+        "helms_2018_rpe_vs_percentage",
+        "hickmott_2022_autoregulation"
+      ]
+    },
+    {
+      "id": "h_reps_left_guess",
+      "text": "How accurate is guessing how many reps are left in the tank?",
+      "expected": [
+        "halperin_2022_rir_prediction_accuracy",
+        "zourdos_2016_rir_scale"
+      ]
+    },
+    {
+      "id": "h_week_off_shrink",
+      "text": "Is one week off the heavy stuff going to shrink my muscles?",
+      "expected": [
+        "coleman_2024_deload_trial",
+        "bell_2023_deloading"
+      ]
+    },
+    {
+      "id": "h_smith_cables_barbell",
+      "text": "Smith machine and cable stack, or barbells for hypertrophy?",
+      "expected": [
+        "haugen_2023_free_weights_machines"
+      ]
+    },
+    {
+      "id": "h_lockouts_partials",
+      "text": "Do lockouts and partial reps grow muscle as well as the full stroke?",
+      "expected": [
+        "wolf_2023_partial_full_rom",
+        "schoenfeld_2020_range_of_motion"
+      ]
+    },
+    {
+      "id": "h_new_exercises_every_workout",
+      "text": "Should every workout use different exercises to keep progressing?",
+      "expected": [
+        "kassiano_2022_exercise_variation"
+      ]
+    },
+    {
+      "id": "h_overuse_injury_strength",
+      "text": "How much strength training cuts the chance of overuse injuries?",
+      "expected": [
+        "lauersen_2018_strength_dose_injury",
+        "lauersen_2014_injury_prevention"
+      ]
+    },
+    {
+      "id": "h_hundred_gram_dinner",
+      "text": "Can the body keep building muscle from a 100 gram protein dinner?",
+      "expected": [
+        "trommelen_2023_protein_dose",
+        "schoenfeld_2018_protein_per_meal"
+      ]
+    },
+    {
+      "id": "h_maintenance_calories_gain",
+      "text": "Can I gain muscle while eating at maintenance?",
+      "expected": [
+        "slater_2019_energy_surplus",
+        "barakat_2020_recomposition"
+      ]
+    },
+    {
+      "id": "h_cut_weaker_or_smaller",
+      "text": "Does cutting calories make me weaker or just smaller?",
+      "expected": [
+        "murphy_2022_energy_deficiency_lean_mass"
+      ]
+    },
+    {
+      "id": "h_soy_vs_milk_protein",
+      "text": "Is soy protein worse than milk protein for muscle?",
+      "expected": [
+        "pinckaers_2021_plant_protein"
+      ]
+    },
+    {
+      "id": "h_creatine_kidneys",
+      "text": "Is creatine bad for my kidneys?",
+      "expected": [
+        "antonio_2021_creatine_questions",
+        "kreider_2017_creatine"
+      ]
+    },
+    {
+      "id": "h_beta_alanine_tingle",
+      "text": "What is beta alanine good for and why does it tingle?",
+      "expected": [
+        "trexler_2015_beta_alanine"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "h_bcaa_marketing",
+      "text": "do BCAA drinks build muscle or is it all marketing?",
+      "expected": [
+        "wolfe_2017_bcaa"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "h_intervals_vs_jogging",
+      "text": "Interval cardio or jogging, which burns more body fat?",
+      "expected": [
+        "wewege_2017_hiit_body_composition"
+      ]
+    },
+    {
+      "id": "h_fit_die_later",
+      "text": "Is being aerobically fit linked to dying later?",
+      "expected": [
+        "mandsager_2018_cardiorespiratory_fitness_mortality"
+      ]
+    },
+    {
+      "id": "h_four_hours_sleep",
+      "text": "Will sleeping 4 hours ruin tomorrow's workout?",
+      "expected": [
+        "craven_2022_sleep_loss_performance"
+      ]
+    },
+    {
+      "id": "h_seniors_load_frequency",
+      "text": "What load and frequency should seniors use to get stronger?",
+      "expected": [
+        "borde_2015_older_adults_dose_response",
+        "izquierdo_2021_icfsr_older_adults"
+      ]
+    },
+    {
+      "id": "h_seniors_protein_meal",
+      "text": "Do seniors need extra protein at each meal?",
+      "expected": [
+        "bauer_2013_prot_age_protein"
+      ]
+    },
+    {
+      "id": "h_men_better_gains",
+      "text": "Are men better than women at gaining strength from lifting?",
+      "expected": [
+        "roberts_2020_sex_differences_resistance_training"
+      ]
+    },
+    {
+      "id": "h_birth_control_performance",
+      "text": "Does birth control hurt athletic performance?",
+      "expected": [
+        "elliott_sale_2020_oral_contraceptives_performance"
+      ]
+    },
+    {
+      "id": "h_pushups_replace_bench",
+      "text": "Are push ups a replacement for bench press for size?",
+      "expected": [
+        "kikuchi_2017_push_up_bench_press"
+      ]
+    },
+    {
+      "id": "h_busy_month_fitness",
+      "text": "How little training can keep my fitness during a hectic month?",
+      "expected": [
+        "spiering_2021_minimal_dose_maintenance"
+      ]
+    },
+    {
+      "id": "h_eight_time_zones",
+      "text": "I fly across 8 time zones next week, how do I adjust?",
+      "expected": [
+        "janse_van_rensburg_2021_travel_jet_lag"
+      ]
+    },
+    {
+      "id": "h_uk_weekly_minutes",
+      "text": "How many minutes of exercise does the UK recommend each week?",
+      "expected": [
+        "uk_cmo_2026_activity_guidelines"
+      ],
+      "region": [
+        "global",
+        "GB"
+      ]
+    },
+    {
+      "id": "h_rajma_soya_protein",
+      "text": "how much protein in 100 g of rajma and soya chunks?",
+      "expected": [
+        "longvah_2017_ifct"
+      ],
+      "region": [
+        "global",
+        "IN"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "h_sedentary_indians",
+      "text": "what percent of Indians are sedentary?",
+      "expected": [
+        "anjana_2014_indiab_activity"
+      ],
+      "region": [
+        "global",
+        "IN"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "h_bmi_24_obese",
+      "text": "Does an Indian with BMI of 24 count as obese now?",
+      "expected": [
+        "misra_2025_obesity_asian_indians",
+        "who_2004_asian_bmi"
+      ],
+      "region": [
+        "global",
+        "IN"
+      ]
+    },
+    {
+      "id": "h_us_older_weekly",
+      "text": "What exercise do older Americans need per week by the federal guidelines?",
+      "expected": [
+        "hhs_2018_physical_activity_guidelines"
+      ],
+      "region": [
+        "global",
+        "US"
+      ]
+    },
+    {
+      "id": "h_us_protein_adults",
+      "text": "What do the 2025 federal dietary guidelines say about protein for adults?",
+      "expected": [
+        "usda_hhs_2026_dietary_guidelines"
+      ],
+      "region": [
+        "global",
+        "US"
+      ]
+    },
+    {
+      "id": "h_workload_ratio_doubt",
+      "text": "Why do researchers doubt workload ratios for predicting injury?",
+      "expected": [
+        "impellizzeri_2020_acwr_pitfalls"
+      ]
+    },
+    {
+      "id": "h_nih_safe_supplements",
+      "text": "Which exercise supplements does the NIH say are safe?",
+      "expected": [
+        "nih_ods_2024_exercise_supplements"
+      ]
+    },
+    {
+      "id": "h_peak_one_rep_max",
+      "text": "peaking for a 1RM at a lifting meet, whats the last two weeks plan?",
+      "expected": [
+        "travis_2020_powerlifting_taper"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "h_m_legs_and_run",
+      "text": "Is it okay to hit legs hard and run 10k in the same week, and how many sets should the legs get?",
+      "kind": "multi_source",
+      "expected": [
+        "schumann_2022_concurrent_training",
+        "schoenfeld_2017_weekly_volume"
+      ]
+    },
+    {
+      "id": "h_m_seventy_eat_train",
+      "text": "At 70, how should I eat and train to keep my muscle?",
+      "kind": "multi_source",
+      "expected": [
+        "bauer_2013_prot_age_protein",
+        "izquierdo_2021_icfsr_older_adults"
+      ]
+    },
+    {
+      "id": "h_m_deload_sleep",
+      "text": "Do deload weeks and extra sleep both help me recover from a hard block of training?",
+      "kind": "multi_source",
+      "expected": [
+        "bell_2023_deloading",
+        "walsh_2021_sleep_athlete"
+      ]
+    },
+    {
+      "id": "h_m_alcohol_us",
+      "text": "What do the guidelines say about alcohol, and how bad is drinking for gym recovery?",
+      "kind": "multi_source",
+      "expected": [
+        "vella_2010_alcohol_recovery",
+        "usda_hhs_2026_dietary_guidelines"
+      ],
+      "region": [
+        "global",
+        "US"
+      ]
+    },
+    {
+      "id": "h_m_vegan_creatine",
+      "text": "Is plant protein plus creatine enough for a vegan lifter to grow?",
+      "kind": "multi_source",
+      "expected": [
+        "hevia_larrain_2021_vegan_protein",
+        "kaviani_2020_creatine_vegetarians"
+      ]
+    },
+    {
+      "id": "h_m_taper_rir",
+      "text": "How should I taper before a meet and how close to failure are the last heavy singles?",
+      "kind": "multi_source",
+      "expected": [
+        "travis_2020_powerlifting_taper",
+        "zourdos_2016_rir_scale"
+      ]
+    },
+    {
+      "id": "h_m_rest_failure",
+      "text": "Do longer rests between sets and training closer to failure both give better growth?",
+      "kind": "multi_source",
+      "expected": [
+        "singer_2024_rest_intervals",
+        "refalo_2023_failure_hypertrophy"
+      ]
+    },
+    {
+      "id": "h_m_india_bmi_targets",
+      "text": "What BMI and weekly exercise targets apply to me as an Indian adult?",
+      "kind": "multi_source",
+      "expected": [
+        "who_2004_asian_bmi",
+        "misra_2025_obesity_asian_indians",
+        "icmr_nin_2024_dietary_guidelines"
+      ],
+      "region": [
+        "global",
+        "IN"
+      ]
+    },
+    {
+      "id": "h_fu_beetroot_when",
+      "text": "And when should I take it?",
+      "kind": "follow_up",
+      "previous": [
+        "Is beetroot juice worth it before a race?"
+      ],
+      "expected": [
+        "senefeld_2020_nitrate"
+      ]
+    },
+    {
+      "id": "h_fu_cold_cardio",
+      "text": "Does that apply to cardio too?",
+      "kind": "follow_up",
+      "previous": [
+        "Do cold showers help recovery from lifting?"
+      ],
+      "expected": [
+        "malta_2021_cold_water_training_adaptations",
+        "roberts_2015_cold_water_strength_adaptation"
+      ]
+    },
+    {
+      "id": "h_fu_surplus_needed",
+      "text": "And is it needed at all?",
+      "kind": "follow_up",
+      "previous": [
+        "What is a good calorie surplus for lean bulking?"
+      ],
+      "expected": [
+        "slater_2019_energy_surplus",
+        "helms_2023_energy_surplus"
+      ]
+    },
+    {
+      "id": "h_fu_sleep_athletes",
+      "text": "What about athletes?",
+      "kind": "follow_up",
+      "previous": [
+        "How much sleep does an adult need?"
+      ],
+      "expected": [
+        "walsh_2021_sleep_athlete",
+        "watson_2015_sleep_duration"
+      ]
+    },
+    {
+      "id": "h_fu_pill",
+      "text": "And on the pill?",
+      "kind": "follow_up",
+      "previous": [
+        "Can women train the same in every phase of the menstrual cycle?"
+      ],
+      "expected": [
+        "elliott_sale_2020_oral_contraceptives_performance"
+      ]
+    },
+    {
+      "id": "h_na_diclofenac",
+      "text": "What should I take for delayed soreness, diclofenac or paracetamol?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "h_na_hamstring_tear",
+      "text": "How do I rehab a hamstring tear step by step?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "h_na_swim_shoulder",
+      "text": "What swim stroke technique avoids shoulder pain?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "h_na_first_trimester",
+      "text": "Can I lift weights in the first trimester?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "h_na_gout_diet",
+      "text": "What should I eat with gout so I can keep training?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "h_na_pullup_video",
+      "text": "Can you check my pull-up form from a video and fix it?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "h_na_kids_strength_age",
+      "text": "At what age should kids start strength sessions with a coach?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "h_na_prediabetes",
+      "text": "How do I lower my blood sugar naturally with prediabetes?",
+      "kind": "no_answer",
+      "expected": []
+    }
+  ]
+}

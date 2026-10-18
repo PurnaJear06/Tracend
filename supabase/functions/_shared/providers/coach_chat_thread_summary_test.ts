@@ -1,4 +1,4 @@
-// The app's data summary stays in the conversation (migration 20261018190031): the Coach reads it
+// The app's data summary stays in the conversation (migration 20261018210031): the Coach reads it
 // as the app's own reply, its figures are the athlete's data on the next turn, and it is never
 // taken for something the Coach said (so it is not a "previous reply" to repeat).
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";

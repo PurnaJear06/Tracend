@@ -14,7 +14,7 @@ A hybrid (full-text plus gte-small vector) research library behind Coach answers
 
 E1 (Phase 1); E2, E3 (Phase 3); E4, E5 (Phase 4)
 
-E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged. E2.2 (57 more sources and machine-readable licences, 106 in all) is in review. E3 (the library in every Coach reply) is in review. See the sections below.
+E2 (Phase 3, round 2) merged (#135); E2.1, its follow-up with 14 more sources, is merged; E2.2 (57 more sources and machine-readable licences, 106 in all) is merged (#152). E3 (the library in every Coach reply) is merged (#150). E3.1, the engine's production pass (relevance floor, latency, telemetry, versioning), is in review. See the sections below.
 
 ## State
 
@@ -591,8 +591,8 @@ not cite the new sources yet.
 - Region `GB` is new (UK CMOs). The account-region function already derives `GB` from an `en-GB`
   locale, so no SQL change was needed.
 - Not done here (other owners): retrieval does not yet read `supersededBy`, `verbatimAllowed` or
-  `lastReviewed` (they are not in the database), and `library_questions.json` has no questions for
-  the new sources, so recall on them is unmeasured.
+  `lastReviewed` (they are not in the database). Recall on the new sources is measured since E3.1
+  (below).
 
 ### Fact-check corrections (after review)
 
@@ -802,14 +802,297 @@ model changes.
   `select * from public.search_library_v2('protein per day', null, 3, null)` as `service_role` shows
   rows, and `coach_context_contributors` in the function log shows `library` rendered.
 
+## E3.1: the engine's production pass (in review)
+
+Branch `claude/rag-engine`, migration `20261018200044_library_search_v3.sql` (code 44, additive).
+The engine fixes from the 2026-10-18 RAG audit (P1-2, P2-1, P2-2, P2-3, P2-5, P2-6 and the P3 items).
+New sources, the licence field, new questions and the claim-support judge are other branches.
+
+### What shipped
+
+- **`search_library_v3`** (Contract 6 v3) beside v2, which stays for the Coach chat build deployed
+  now (drop it in a cleanup migration once this is live). Rows add `vector_distance` (cosine distance
+  to the question), `text_rank` (`ts_rank`, 0 when no term matched), `evidence_level`, `kind` and
+  `library_version`, with `schema_version` 3. Vector search compares only chunks whose
+  `embedding_model` equals the new `query_embedding_model` argument (required with an embedding).
+  Every TypeScript caller (`live.ts`, `library_eval.ts`, `library_head_to_head.ts`) uses v3 and
+  parses rows with one function, `libraryRowsOf`.
+- **Relevance floor** (`relevantRows` in `_shared/library/retrieval.ts`, calibrated below). Two
+  limits on the cosine distance: the turn shows excerpts only when its nearest chunk is within 0.15;
+  then every chunk within 0.19 is shown. One per-row limit could not separate the two sets: the
+  second or third source of a multi-topic question sits farther from it than the first, so a row
+  limit tight enough to drop the no-answer questions' chunks cost multi-source recall, while the
+  gate on the nearest chunk costs far less. A full-text rank is no part of this floor: on the
+  106-source library a strong word match (`ts_rank` at least 0.006, as first calibrated on 49
+  sources) let through as many out-of-library questions as it rescued answerable ones, so the first
+  version's text rule was removed.
+- **Word-search fallback floor** (`keywordRelevantRows`, `libraryKeywordFloor`). With no embedding
+  there is no distance, and a word match is a weak sign: the strongest chunk of an answerable
+  question and of an out-of-library one overlap in `ts_rank`. The fallback therefore shows rows
+  only when the best chunk has a rank of at least 0.0055 **and** holds at least 35% of the
+  question's distinct topic words (`termCoverage`: `topicTerms` of the query, matched on the first
+  five letters of each word, so "sleeping" meets "sleep"); then every chunk ranked at least 0.002.
+  No new SQL: the coverage is measured in TypeScript on the returned header and body.
+- **Exact vector scan** (review fix). v3 never uses the HNSW index: an index scan returns the nearest
+  vectors of every model and filters by `embedding_model`, region and topic afterwards, so vectors of
+  an older model kept during a re-embedding could fill the candidate list and leave too few, or not
+  the nearest, rows. Production calls always carried a region, which already took the exact path;
+  the no-filter branch is gone, so all calls do. Chosen over a partial HNSW index per model (a new
+  index and a changed query for every model, and it still needs the region and topic filters) and
+  over pgvector's iterative scan (needs 0.8 and still approximates). At 351 chunks of 384
+  dimensions the scan is about 135,000 multiply-adds, well under a millisecond; it is the right
+  call into the low thousands of chunks, and the index would be worth revisiting beyond that.
+  `library_search_v3_test.sql` forces index scans on and puts 40 nearer old-model chunks in the
+  library: the current model's nearest rows still come back.
+- **Loader and digest agree** (review fix). The digest includes each chunk's `token_count`, but the
+  loader compared only ordinal, section, header and body, so a re-load that changed only a token
+  count wrote nothing. Migration 44 redefines `private.library_replace_source` (same signature and
+  grants): a text change re-writes the chunks as before; a token-count-only change updates them in
+  place and keeps their embeddings. pgTAP covers it (the row, the digest, the version, the kept
+  embedding).
+- **Prefetch order** (review fix). Coach chat starts the question's embedding after the replay check
+  and the budget reservation, just before `prepare_coach_chat_v9` is awaited, so a replay or a
+  request at the usage limit never calls `library-embed` and the embedding still overlaps the context
+  preparation (the saving over starting it in the contributor is the context step, not the two
+  cheap reads before it). `handler_test.ts` checks the order and that a replay and a 429 start none.
+- **Nothing passes: an explicit line.** The block then says no excerpt matched, that Coach must cite
+  no library source and should say the evidence is not in Tracend's library rather than answering
+  from memory (`libraryNoMatchText`). When the search ran on words alone it says the library could
+  only be searched by keyword, and Coach must not claim the library lacks the topic
+  (`libraryWordsOnlyText`). The answer bank's `library-found-nothing` case now gets the same block
+  production gives.
+- **Marker line** (P2-2, P2-3): `[source: <id>] <Kind>, <year>. Evidence: <evidence level>.` before
+  the header. A "Practical reading" section, or any section whose title names Tracend's reading (for example "How it fits with other entries (Tracend's reading)"), is marked "Tracend's reading of this source (our
+  interpretation and its limits), not a finding the source reports."; a chunk elsewhere that points
+  to another entry ("see the ... entry", "in this library") is marked as holding Tracend's remark. 49
+  of the 169 chunks are Practical reading sections and 1 more carries a cross-reference. Done in
+  rendering, so nothing is re-embedded. The system prompt tells Coach to present a marked excerpt as
+  our reading.
+- **Latency** (P2-1). Coach chat starts the question's embedding after the replay check and the budget
+  reservation (`prefetchLibraryEmbedding` in `live.ts`), so it runs while `prepare_coach_chat_v10` runs; the contributor reuses it when its query is that text (every
+  question that is not a follow-up; a follow-up's query needs the prepared context, so it is
+  embedded then). The 1.5-second deadline counts from the start of the embedding, and the word
+  search fallback is unchanged (Contract 7 v1.2: `queryEmbedding` on the contributor input).
+  `library-embed` keeps its service client for the isolate and remembers the last accepted worker
+  secret by its SHA-256 for 5 minutes (`embed_service.ts`); a refused bearer always goes to the
+  database and never evicts the accepted one. Safe because the secret changes only when Vault loses
+  it (a restore), and the worst case is that a replaced secret works for 5 more minutes in a warm
+  isolate.
+- **Telemetry** (P2-1). One `library_retrieval` log line per turn, with the request's correlation
+  id: `embed_ms`, `degraded` (`none`, `embedding_unavailable`, `embedding_timeout`), `prefetched`,
+  `follow_up`, `candidates`, `shown` (source keys), `top_distance` and `library_version`. No question
+  text, chunk text or health value. It replaces `library_retrieval_degraded` (Contract 7 v1.2: a
+  contributor may return `trace`, which the host passes on as `traces[id]`).
+- **Versioning** (P2-5). `private.library_sources.content_sha256`, kept current by triggers on both
+  library tables (whatever writes the rows: the loader, a retire, the SQL editor) and back-filled by
+  the migration; `private.library_version()` digests every source's key and digest into 16 hex
+  characters; coach-chat stores it on the answer as `coach_messages.library_version` with the turn
+  trace (`recordTurnTrace`). The version does not count embedding state, so it is the same before
+  and after the worker embeds a chunk.
+- **Retiring a source** (P2-5). Deploys load content only through migrations (`supabase db push`
+  runs the generated `library_replace_source` blocks; no deploy step calls it), so retiring follows
+  the same path: `build_migration.ts --retire <key>` prints a block that calls
+  `private.library_retire_source(key)` (deletes the source and its chunks; false when no source has
+  the key). `library_content_test.ts` fails while a migration still loads a source that `index.ts`
+  no longer lists and no later retire block removes it, and when a retire follows a source's newest
+  load.
+- **P3 fixes.** A question with no ASCII word (Hindi in Devanagari, emoji) is never a follow-up, so
+  it is not searched with an earlier question's words. On a 401 from `library-embed`, the query
+  embedder reads the worker secret again and retries once. The search filters by `embedding_model`.
+  `library-embed`'s catch-all logs every failure (`library_embed_failed` with its code) and sends at
+  most one Sentry event per 30 minutes per isolate. The digest is shown to Coach without its source
+  ids (`withoutSourceIds`; the authored file keeps them, and the test still checks every id exists):
+  only retrieved excerpts are citable, so an id copied from the digest was a refused citation. That
+  was simpler than making the digest's 46 ids citable, which would have meant shown text and labels
+  for sources that were not retrieved. Digest version 3, 5,661 characters as shown.
+- **Deploy check** (P3). `deploy.yml` gains a read-only **Library Check** job after the functions
+  deploy (tag-release waits for it): through `supabase db query --linked` with the existing
+  `SUPABASE_ACCESS_TOKEN`, it waits up to 20 minutes for `library_status_v1()` to reach
+  embedded = chunks, then checks that a sample word search (`search_library_v3('protein per day',
+  null, null, 3, null)`) returns rows.
+- **The retrieval gate runs on library pull requests** (P2-6). `coach-eval.yml`'s
+  `library-retrieval` job also runs on a pull request (opened, pushed, reopened) that changes
+  `supabase/library/**`, `supabase/functions/_shared/library/**`, `library-embed/**`, the library
+  evaluation and question files (`_evals/library_*`), the few shared modules the evaluation imports,
+  `supabase/config.toml`, this workflow, or a migration that mentions the library (a small
+  `library-changes` job decides). It is not a required check. The model jobs keep
+  the label and manual runs; their concurrency group moved to the job.
+
+### Relevance floor: calibration
+
+Re-measured 2026-10-18 on the merged library, after the first calibration (49 sources, 92
+questions) turned out too small: **106 sources, 351 chunks, all embedded, real `gte-small`**, in CI
+(Coach Eval, `retrieval_only`; the pull request's own runs 39108987328, 39109648904 and 39110180961,
+and a manual hold-out run 39110194476). `library_eval.ts` prints the distances, the sweeps and the
+tables.
+
+**Questions.** `library_questions.json` (the calibration set, which chooses every threshold) holds
+219 questions: the 92 older ones (written against the first 49 sources) and 127 written blind for the
+rest, from each source's title and topic and a lifter's point of view, never from its chunk text.
+189 are answerable (147 single-source, 28 multi-source, 14 follow-ups; 28 are colloquial: gym slang,
+typos, Indian English such as "how much protein for gaining in veg diet") and 30 are no-answer
+questions near the library but outside it (medication, injury rehabilitation, specific diseases,
+sport technique, pregnancy and postpartum, minors, eating disorders, medical reports). Every one of
+the 106 sources is the expected answer of at least one calibration question.
+`library_questions_holdout.json` holds 55 more (34 single, 8 multi-source, 5 follow-ups, 8
+no-answer; 5 colloquial), written separately and phrased differently: 20% of the 274. It is run
+once, with `EVAL_QUESTION_SET=holdout` (workflow input `question_set: holdout`), which prints the
+tables and gates but none of the tuning output. It chose nothing.
+
+**Calibration set** (hybrid search with the chosen floor is what Coach chat shows):
+
+| | recall@8 | MRR | no-answer shown nothing | colloquial recall |
+|---|---|---|---|---|
+| Hybrid, no floor (v2 behaviour) | 0.890 | 0.801 to 0.802 | 0 of 30 | 0.810 |
+| Hybrid, the first calibration's floor (0.16 / 0.19 / text 0.006) | 0.879 | 0.802 | 16 of 30 (53%) | 0.756 |
+| **Hybrid, floor 0.15 / 0.19** | **0.855** | **0.774** | **27 of 30 (90%)** | 0.667 |
+| Word search alone, no floor (old fallback) | 0.795 | 0.683 | 1 of 30 (3%) | 0.625 |
+| Word search alone, the first calibration's floor (rank 0.006 per row) | 0.521 | 0.519 | 20 of 30 (67%) | 0.125 |
+| **Word search alone, new floor (rank 0.0055, 35% of topic words)** | **0.611** | **0.549** | **22 of 30 (73%)** | 0.304 |
+
+By kind with the chosen hybrid floor: single 0.859 (0.904 without), multi-source 0.780 (unchanged),
+follow-up 0.964 (unchanged). Eight answerable questions are shown nothing. The three no-answer
+questions still shown excerpts are metformin (nearest chunk 0.1475), ACL rehabilitation (0.1468) and
+steroid cycles (0.1468): they sit as close to training and recovery chunks as covered questions do,
+so no distance separates them; the prompt's precedence and medical-boundary rules still apply.
+**The floor costs colloquial questions most** (0.810 to 0.667): typos and slang sit farther from the
+chunks. 0.155 / 0.19 would give 0.756 for them and 0.869 overall, at 77% to 80% of the no-answer
+questions (one question moved between runs); it is a one-line change if the owner prefers recall.
+
+Distances: the nearest chunk of an expected source is at 0.074 to 0.187 (p50 0.106, p90 0.140); the
+nearest chunk among the rows returned for a no-answer question is at 0.147 to 0.245 (p50 0.177,
+p10 0.1475). The two groups overlap: three no-answer questions sit at 0.147 to 0.150, while
+answerable questions reach 0.187. The nearest distance among the eight returned rows moves a little
+between runs, because chunk ids (which break ties in the fused ranking) are new at every database
+reset; recall and MRR moved by 0.001 to 0.01.
+
+Hybrid sweep (calibration set, run 39110180961): nearest-chunk limit by row limit. The no-answer
+share and the number of answerable questions shown nothing depend only on the nearest-chunk limit.
+No text rule is part of it (see above).
+
+| nearest-chunk limit | no-answer shown nothing | answerable shown nothing | row 0.150 | row 0.160 | row 0.170 | row 0.180 | row 0.190 | row 0.200 | row 0.210 |
+|---|---|---|---|---|---|---|---|---|---|
+| 0.130 | 100% | 31 | 0.743 | 0.757 | 0.765 | 0.771 | 0.771 | 0.771 | 0.771 |
+| 0.135 | 100% | 25 | 0.755 | 0.770 | 0.778 | 0.785 | 0.785 | 0.785 | 0.785 |
+| 0.140 | 100% | 18 | 0.772 | 0.790 | 0.803 | 0.810 | 0.810 | 0.810 | 0.810 |
+| 0.145 | 100% | 12 | 0.795 | 0.817 | 0.832 | 0.840 | 0.840 | 0.842 | 0.842 |
+| **0.150** | 90% | 8 | 0.802 | 0.832 | 0.848 | 0.855 | **0.855** | 0.858 | 0.858 |
+| 0.155 | 77% | 5 | | 0.835 | 0.859 | 0.869 | 0.869 | 0.871 | 0.871 |
+| 0.160 | 63% | 3 | | 0.843 | 0.869 | 0.879 | 0.879 | 0.882 | 0.882 |
+| 0.165 | 63% | 3 | | | 0.869 | 0.879 | 0.879 | 0.882 | 0.882 |
+| 0.170 | 63% | 3 | | | | 0.879 | 0.879 | 0.882 | 0.882 |
+| 0.175 | 60% | 3 | | | | 0.879 | 0.879 | 0.882 | 0.882 |
+| 0.180 | 43% | 3 | | | | 0.879 | 0.879 | 0.882 | 0.882 |
+
+Why 0.15 / 0.19: the highest recall that left at least 90% of the no-answer questions with nothing
+in both calibration runs (0.155 gave 77% in two of three runs, 80% in one). Row limits 0.18 to 0.21
+give the same recall within 0.003; 0.19 keeps a margin for the second source of multi-topic
+questions. The strong-text-rank rule removed from the floor, measured at 0.16 / 0.19: with it at
+0.006 the no-answer share fell from 67% to 53% for no recall gain (0.879 either way); at 0.004 it
+fell to 30%.
+
+Word-search sweep (calibration set): recall / no-answer shown nothing, by the best chunk's `ts_rank`
+(rows) and the share of the question's topic words it must hold (columns), row rank 0.002.
+
+| best chunk's rank | coverage 0 | 0.20 | 0.25 | 0.30 | **0.35** | 0.40 | 0.45 | 0.50 |
+|---|---|---|---|---|---|---|---|---|
+| 0.0030 | 0.779 / 10% | 0.754 / 20% | 0.739 / 33% | 0.712 / 43% | 0.669 / 60% | 0.654 / 60% | 0.590 / 70% | 0.590 / 70% |
+| 0.0035 | 0.776 / 13% | 0.751 / 20% | 0.736 / 33% | 0.709 / 43% | 0.667 / 60% | 0.652 / 60% | 0.590 / 70% | 0.590 / 70% |
+| 0.0040 | 0.771 / 23% | 0.751 / 30% | 0.736 / 37% | 0.709 / 43% | 0.667 / 60% | 0.652 / 60% | 0.590 / 70% | 0.590 / 70% |
+| 0.0045 | 0.729 / 37% | 0.713 / 40% | 0.701 / 43% | 0.686 / 50% | 0.654 / 63% | 0.650 / 63% | 0.590 / 73% | 0.590 / 73% |
+| 0.0050 | 0.694 / 57% | 0.683 / 57% | 0.671 / 57% | 0.656 / 60% | 0.635 / 70% | 0.632 / 70% | 0.576 / 77% | 0.576 / 77% |
+| **0.0055** | 0.645 / 63% | 0.639 / 63% | 0.634 / 63% | 0.622 / 67% | **0.611 / 73%** | 0.611 / 73% | 0.571 / 80% | 0.571 / 80% |
+| 0.0060 | 0.597 / 67% | 0.592 / 67% | 0.586 / 67% | 0.581 / 70% | 0.571 / 77% | 0.571 / 77% | 0.547 / 80% | 0.547 / 80% |
+| 0.0065 | 0.544 / 77% | 0.539 / 77% | 0.534 / 77% | 0.528 / 77% | 0.523 / 80% | 0.523 / 80% | 0.504 / 83% | 0.504 / 83% |
+| 0.0070 | 0.484 / 80% | 0.479 / 80% | 0.474 / 80% | 0.468 / 80% | 0.463 / 80% | 0.463 / 80% | 0.455 / 83% | 0.455 / 83% |
+| 0.0075 | 0.429 / 93% | 0.423 / 93% | 0.418 / 93% | 0.413 / 93% | 0.407 / 93% | 0.407 / 93% | 0.399 / 93% | 0.399 / 93% |
+| 0.0080 | 0.331 / 93% | 0.331 / 93% | 0.331 / 93% | 0.325 / 93% | 0.320 / 93% | 0.320 / 93% | 0.320 / 93% | 0.320 / 93% |
+
+The row rank (at 0.0055 and 0.35) changes little: 0 gives 0.611, 0.002 0.611, 0.003 0.608, 0.004
+0.601, 0.005 0.571, all at 73%. **The word-search fallback cannot be brought back to its unfloored
+recall (0.795) while most out-of-library questions show nothing.** The ts_rank of an answerable
+question's best chunk (p10 0.004) overlaps the no-answer questions' (p50 0.005, p90 0.007), and
+topic-word coverage separates them only partly. Coverage buys about 0.09 recall at a similar
+no-answer share (0.635 at 70% against 0.544 at 77% by rank alone), and the two-part form (best
+chunk, then rows) adds about 0.08 over the first calibration's per-row rank at the same 67%
+(0.597), but the fallback stays far below the main path.
+That is accepted because the fallback runs only when the embedding is unavailable, and its
+block then says Coach must not claim the library lacks the topic. Rank 0.005 with the same coverage
+gives 0.635 at exactly 70%; 0.0055 was chosen for margin over the gate.
+
+**Hold-out set** (run 39110194476, 55 questions, chosen floors, run once, no retuning):
+
+| | recall@8 | MRR | no-answer shown nothing |
+|---|---|---|---|
+| Hybrid, no floor | 0.897 | 0.822 | 0 of 8 |
+| **Hybrid, floor 0.15 / 0.19** | **0.897** | **0.822** | **7 of 8 (88%)** |
+| Word search alone, no floor | 0.805 | 0.673 | 0 of 8 |
+| **Word search alone, new floor** | **0.613** | **0.542** | **5 of 8 (63%)** |
+
+By kind with the hybrid floor: single 0.941, multi-source 0.646 (8 questions; 0.646 without a floor
+too), follow-up 1.000, colloquial 1.000 (5 questions). The one no-answer question shown excerpts
+asks at what age children should start strength sessions (nearest 0.149). **Two gates are not met on
+the hold-out set**, and the run failed on them: multi-source recall 0.646 against 0.7, and
+word-search no-answer precision 0.625 against 0.7 (5 of 8; the calibration set gave 73%, 22 of 30).
+The floor did not cause the first (it equals the unfloored hybrid); the second is the fallback's
+limit described above, on only 8 questions. Neither gate was moved. Eight multi-source questions
+and eight no-answer questions are small samples, and the set was not tuned on; the calibration set
+passes every gate (recall 0.855, multi-source 0.780, MRR 0.774, no-answer 0.900, word-search recall
+0.611, word-search no-answer 0.733).
+
+`library_eval.ts` gates, all measured with the floors: recall 0.8, multi-source recall 0.7, MRR 0.5,
+no-answer precision 0.7 (`EVAL_MIN_NO_ANSWER_PRECISION`), and for the word-search fallback recall 0.55
+(`EVAL_MIN_KEYWORD_RECALL`) and no-answer precision 0.7 (`EVAL_MIN_KEYWORD_NO_ANSWER_PRECISION`).
+The workflow step now runs with `pipefail`, so a gate failure fails the job (it used to be hidden by
+`tee`). Thirty no-answer questions are still few: one question is 3.3 points. Re-run the sweep when
+the library or the question set grows, on the calibration set only, and keep the hold-out set for
+confirming the result once.
+
+### Not done, and why
+
+- **Follow-ups anchored on the Coach's previous reply** (P3, "if cheap and measurable"). Not
+  measurable here: no retrieval question carries a previous Coach reply, and the question file
+  belongs to another branch. A reply is model text that often spans several topics, so adding it to
+  the query could pull the search off the athlete's question; measure it with follow-up questions
+  that carry a reply before building it.
+- **The answer bank's fixed rows carry no scores, kind or evidence level**
+  (`_evals/coach_bank/harness.ts`, another branch's file). They are shown as given (unscored rows
+  pass the floor) and their marker line shows only the year; the bank's chunks therefore do not get
+  the Tracend's-reading mark from the section. `LibraryRow` takes `section`, `kind` and
+  `evidenceLevel` when the harness passes them.
+- **The digest's sources stay uncitable** rather than made citable (above).
+
+### Gates
+
+`./scripts/deno.sh fmt --check supabase/functions`, `lint` and `test --allow-env --allow-net
+--allow-read=supabase/migrations,site/src/config.ts supabase/functions` pass. pgTAP
+`library_search_v3_test.sql` (38 assertions: grants, the v3 keys and schema version, cosine
+distances, the model filter, text ranks, the embedding-model requirement, evidence level and kind,
+regions, the content digest and when it changes, the version, loading and retiring, and the
+library version on a Coach answer) runs in CI. The legacy DeepSeek request digests
+(`coach_chat_parity_test.ts`) were recorded again because the digest's persona line changed (the
+only prompt edits are the persona's digest line and two library-rule bullets; the structured-output
+schema is untouched, and `coach_chat_schema_test.ts` still passes: 0 optional keys, 0 unions, under
+3,100 bytes). The branch was rebased onto `main` after #151, #152 and #155; migration 44 still sorts
+after every migration there (`check-migration-order.sh origin/main`).
+
+### After the deploy
+
+- Run Coach Eval with `retrieval_only` on `main`.
+- In the function logs, `library_retrieval` lines should show `prefetched: true` on most turns and a
+  low `embed_ms`; `degraded` other than `none` points at `library-embed` (cold load or errors).
+- `select library_version, count(*) from public.coach_messages where library_version is not null
+  group by 1;` in the SQL editor shows which library content answers were given from.
+- Once no deployed code calls `search_library_v2`, drop it in a cleanup migration.
+
 ## Next agent starts here
 
 E4 (regional modules) adds sources the same way as E2 (files plus a migration) and should store a
 country on the profile so `private.library_regions_for_account` stops guessing from the locale and
-time zone. E5 (plan explanations citing sources) can reuse `libraryRetrievalQuery`, the contributor
-and the `library` evidence source. Run `retrieval_only` after any library or search change.
-
-After E2.2: add retrieval questions for the 57 new sources and measure recall once production has
-embedded them; decide whether retrieval should skip or down-rank `supersededBy` sources (the field
-lives in the content files only); the full-library render is near the 60,000-token line, so the
-next expansion needs a size decision first.
+time zone. A source removed from `index.ts` needs a retire block in the same migration
+(`build_migration.ts --retire`). E5 (plan explanations citing sources) can reuse
+`libraryRetrievalQuery`, the contributor, `relevantRows` and the `library` evidence source. The
+retrieval gate now runs by itself on library pull requests; re-run the floor sweep in its output
+when the question set or the library grows. Decide whether retrieval should skip or down-rank
+`supersededBy` sources (the field lives in the content files only); the full-library render is near
+the 60,000-token line, so the next expansion needs a size decision first.

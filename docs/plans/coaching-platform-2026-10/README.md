@@ -339,6 +339,16 @@ reciprocal rank fusion with k = 50; rows add `source_key` (the manifest key Coac
 locale, and `IN` for an Indian time zone) when `filters` names no region. Details: DATA_MODEL.md
 section 12.
 
+**Version 3 (E3 production pass, migration code 44, for the lead's approval).**
+`search_library_v3(query_text, query_embedding, query_embedding_model, match_count, filters,
+target_user_id uuid default null)` is added beside v2, which stays for the deployed Coach chat until
+a cleanup migration. Same search, plus: vector search compares only chunks embedded with
+`query_embedding_model` (required with an embedding); rows add `evidence_level`, `kind`,
+`vector_distance` (cosine distance to the question), `text_rank` (`ts_rank`, 0 when no term
+matched) and `library_version` (`private.library_version()`), and carry `schema_version` 3. Coach
+chat applies the relevance floor to these rows (`_shared/library/retrieval.ts`). Details:
+DATA_MODEL.md section 12.
+
 ### Contract 7: Coach context contributor (A6 defines the host, E3/C3/B3 add contributors)
 
 ```ts
@@ -358,6 +368,12 @@ budget, labelled as reference data that never overrides Tracend rules or the ath
 newest first, current question excluded. The library uses it to give a follow-up a topic; a
 contributor that does not need it ignores it. Coach chat's evidence also gains the source `library`
 (an evidence item whose `code` is a library source id shown in the turn; `coach_chat_v1.ts`).
+
+**Version 1.2 (E3 production pass, for the lead's approval).** Two optional additions. `render`'s
+input gains `queryEmbedding?: { text, startedAt, embedding }`: the question's library embedding,
+started at the beginning of the request (the library reuses it when its query is that text). A
+contributor may return `trace` (names and numbers only, never content) beside `text` and `shown`;
+the host passes it on as `traces[id]`, and Coach chat logs the library's as `library_retrieval`.
 
 ### Contract 8: Screening outcome (B6 produces, B2 reads)
 

@@ -112,6 +112,31 @@ Deno.test("the trace is written on the assistant message for that athlete only",
   }]);
 });
 
+Deno.test("the library version the turn searched is stored with the answer", async () => {
+  const { traceClient, writes } = client({ error: null });
+  assertEquals(
+    await recordTurnTrace(traceClient, "user-1", "message-1", {
+      guardFaults: [],
+      lookups: [],
+      libraryVersion: "0123456789abcdef",
+    }),
+    true,
+  );
+  assertEquals(
+    await recordTurnTrace(traceClient, "user-1", "message-2", {
+      guardFaults: [],
+      lookups: [],
+      libraryVersion: "not a version",
+    }),
+    true,
+  );
+  assertEquals(writes, [{
+    values: { library_version: "0123456789abcdef" },
+    id: "message-1",
+    userId: "user-1",
+  }]);
+});
+
 Deno.test("a clean turn or a missing message writes nothing; a failed write never throws", async () => {
   const { traceClient, writes } = client({ error: { code: "x" } });
   assertEquals(

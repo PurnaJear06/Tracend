@@ -400,6 +400,51 @@ jobs:
           # from the deploy matrix fails here too.
           scripts/verify-live-function.sh --all
 
+  # The research library is usable: every chunk has its embedding (new or changed chunks are
+  # embedded by the library-embed cron job, about a dozen a minute, so this waits for them) and a
+  # sample search returns rows. Read-only: two SELECTs through the Management API.
+  library-check:
+    name: Library Check
+    needs: deploy-functions
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
+        with:
+          version: "2.101.0"
+
+      - name: Every chunk is embedded and the search returns rows
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase link --project-ref qsfzzsjenopqqqhvpyaw
+          # Each query returns one tagged value, read the same way whatever the output format.
+          value() { supabase db query --linked "$1" | grep -oE "$2" | head -n 1; }
+          for attempt in $(seq 1 40); do
+            status=$(value "select 'status:' || (s ->> 'chunks') || ':' || (s ->> 'embedded_chunks') from public.library_status_v1() s" 'status:[0-9]+:[0-9]+' || true)
+            chunks=$(printf '%s' "$status" | cut -d: -f2)
+            embedded=$(printf '%s' "$status" | cut -d: -f3)
+            echo "Attempt $attempt: ${embedded:-?} of ${chunks:-?} chunks embedded"
+            if [ -n "$chunks" ] && [ "$chunks" -gt 0 ] && [ "$chunks" = "$embedded" ]; then
+              rows=$(value "select 'rows:' || count(*) from public.search_library_v3('protein per day', null, null, 3, null)" 'rows:[0-9]+' | cut -d: -f2)
+              if [ "${rows:-0}" -gt 0 ]; then
+                echo "A sample search returned $rows rows."
+                exit 0
+              fi
+              echo "::error::Every chunk is embedded but a sample search returned no rows."
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "::error::Library chunks are still not all embedded after 20 minutes. Check library-embed's logs and private.library_ingest_runs."
+          exit 1
+
   smoke-test:
     name: Smoke Test
     needs: deploy-functions
@@ -430,7 +475,7 @@ jobs:
 
   tag-release:
     name: Tag Release
-    needs: [smoke-test, verify-functions, website]
+    needs: [smoke-test, verify-functions, website, library-check]
     runs-on: ubuntu-latest
     permissions:
       contents: write

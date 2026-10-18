@@ -1,5 +1,5 @@
-// Weekly volume and frequency per muscle. Rule data only; nothing reads it yet
-// (B2 counts fractional volume with it).
+// Weekly volume and frequency per muscle. Rule data. B2 counts fractional volume with it, and the
+// Coach's week-ahead schedule (_shared/training/schedule) reads the recovery gap below.
 import { sourced } from "./sources.ts";
 
 /** Hard working sets per muscle per week. */
@@ -61,4 +61,18 @@ export const strengthSetsPerExercise = sourced(
   ["acsm_2026", "tracend_in_house"],
   "ACSM 2026 lists 2-3 sets a session among the prescriptions that enhanced voluntary " +
     "strength (multiple sets beat single sets). Applying it per exercise is Tracend's reading.",
+);
+
+/**
+ * Whole days between two sessions that train the same muscle. Sessions carry a date, not a time,
+ * so the gap is counted in calendar days: 1 means the muscle is not trained on two days in a row.
+ */
+export const minimumDaysBetweenSessionsPerMuscle = sourced(
+  1,
+  ["acsm_2011", "tracend_in_house"],
+  "ACSM 2011 recommends training each major muscle group on 2-3 days a week, which only works " +
+    "with rest days in between, and the research library's guideline summary (ICFSR 2021) " +
+    "advises at least a day between sessions for the same muscles. Reading that as one calendar " +
+    "day is Tracend's choice (no open source gives an hour count that dates alone could apply), " +
+    "so the rule flags only a muscle trained on consecutive days.",
 );

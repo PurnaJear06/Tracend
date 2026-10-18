@@ -46,7 +46,18 @@ type Setup = Readonly<{
   persistFails?: boolean;
   /** The first read of the saved question fails (as a database error does). */
   savedReadFailsOnce?: boolean;
+  /** Route the turn through the AI gateway (as production does), recording library prefetches. */
+  gateway?: boolean;
 }>;
+
+const gatewaySettings: Record<string, string> = {
+  AI_COACH_CHAT_PROVIDER: "anthropic",
+  AI_COACH_CHAT_MODEL: "claude-haiku-5-5",
+  AI_COACH_CHAT_MAX_OUTPUT_TOKENS: "4096",
+  AI_COACH_CHAT_TIMEOUT_MS: "30000",
+  AI_COACH_CHAT_EVALUATED: "true",
+  ANTHROPIC_API_KEY: "synthetic-test-key",
+};
 
 type StoredRow = {
   id: string;
@@ -65,12 +76,21 @@ async function run(question: string, setup: Setup) {
   const updates: Record<string, unknown>[] = [];
   const markedIds: string[] = [];
   let savedReads = 0;
+  // Every RPC and every library prefetch, in the order the handler made them.
+  const events: string[] = [];
   const rpc = (name: string, args: Record<string, unknown>) => {
     calls.push([name, args]);
+    events.push(name);
     switch (name) {
       case "has_ai_coaching_consent":
         return Promise.resolve({ data: setup.consent ?? true, error: null });
+      case "get_ai_consent_v2":
+        return Promise.resolve({
+          data: { granted: true, provider: "anthropic", notice_version: "v1" },
+          error: null,
+        });
       case "reserve_ai_budget":
+      case "reserve_ai_budget_v2":
         return Promise.resolve(
           setup.refuse
             ? { data: null, error: { message: setup.refuse } }
@@ -178,6 +198,18 @@ async function run(question: string, setup: Setup) {
       userClient: { from: (name: string) => table(name, [{ id: "m1" }]) },
     })) as unknown as typeof requireAuth;
   const held: { current?: CoachChatBudgetLedger } = {};
+  const prefetched: string[] = [];
+  const prefetch = (text: string) => {
+    prefetched.push(text);
+    events.push("library_prefetch");
+    return null;
+  };
+  const previousEnv = new Map(
+    Object.keys(gatewaySettings).map((name) => [name, Deno.env.get(name)]),
+  );
+  if (setup.gateway) {
+    for (const [name, value] of Object.entries(gatewaySettings)) Deno.env.set(name, value);
+  }
   const logged = await captureLogs(async () => {
     try {
       return await handleCoachChat(
@@ -194,15 +226,22 @@ async function run(question: string, setup: Setup) {
         }),
         held,
         authenticate,
+        prefetch,
       );
     } finally {
       await held.current?.release();
+      for (const [name, value] of previousEnv) {
+        if (value === undefined) Deno.env.delete(name);
+        else Deno.env.set(name, value);
+      }
     }
   });
   const response = logged.result;
   return {
     status: response.status,
     body: await response.json() as Body,
+    prefetched,
+    events,
     calls: calls.map(([name]) => name),
     lines: logged.lines,
     updates,
@@ -574,4 +613,45 @@ Deno.test("a replayed answer shows its card: the stored reply's proposal id ride
   assertEquals(result.status, 200);
   assertEquals(result.body.replayed, true);
   assertEquals(result.body.message!.proposal_id, "55555555-5555-4555-8555-555555555555");
+});
+
+Deno.test("the library embedding starts only after the replay check and the budget, beside context preparation", async () => {
+  const fresh = await run("How did my week go?", {
+    prepared: { replayed: false, context: {} },
+    prepareFails: "approved plan required",
+    gateway: true,
+  });
+  assertEquals(fresh.prefetched, ["How did my week go?"]);
+  const at = (event: string) => fresh.events.indexOf(event);
+  assert(at("reserve_ai_budget_v2") >= 0, fresh.events.join());
+  assert(at("library_prefetch") > at("reserve_ai_budget_v2"), fresh.events.join());
+  assert(
+    at("library_prefetch") < at("prepare_coach_chat_v10"),
+    "it starts before the context is prepared, so the two overlap",
+  );
+});
+
+Deno.test("a replay never starts the library embedding, even at the monthly limit", async () => {
+  const result = await run("How did my week go?", {
+    prepared: { replayed: false, context: {} },
+    savedQuestionAt: new Date().toISOString(),
+    turns: { [key]: answeredTurn },
+    refuse: "monthly cost limit reached",
+    gateway: true,
+  });
+  assertEquals(result.status, 200);
+  assertEquals(result.body.replayed, true);
+  assertEquals(result.prefetched, []);
+});
+
+Deno.test("a request refused at the usage limit never starts the library embedding", async () => {
+  const result = await run("How did my week go?", {
+    prepared: { replayed: false, context: {} },
+    refuse: "daily rate limit reached",
+    gateway: true,
+  });
+  assertEquals(result.status, 429);
+  assertEquals(result.body.error, "ai_usage_limit");
+  assert(result.calls.includes("reserve_ai_budget_v2"), result.calls.join());
+  assertEquals(result.prefetched, []);
 });

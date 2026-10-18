@@ -43,9 +43,13 @@ export function topicTerms(text: string): string[] {
 
 /**
  * Whether the question depends on an earlier one: it has no topic word at all, or only a few and
- * points back ("that", "it", "what about", "and ...").
+ * points back ("that", "it", "what about", "and ..."). A question written without any ASCII word
+ * (another script, or emoji alone) is never a follow-up: the topic words are ASCII, so having none
+ * says nothing about whether it has a topic, and borrowing an earlier question would search for
+ * something else.
  */
 export function isFollowUp(question: string): boolean {
+  if (!/[a-z0-9]/i.test(question)) return false;
   const terms = topicTerms(question);
   return terms.length === 0 ||
     (terms.length <= 4 && pointsBackStrongly.test(question)) ||

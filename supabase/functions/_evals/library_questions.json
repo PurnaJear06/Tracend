@@ -1,5 +1,5 @@
 {
-  "description": "Realistic athlete questions with the library sources a good answer needs. No athlete data. follow_up questions carry the athlete's earlier questions (newest first) in `previous`: Coach searches a follow-up with the topic of the last real question. A question with `region` is asked by an athlete in that region; the others by one outside India. Questions without a kind need one topic's sources; multi_source questions need sources from two or three topics; no_answer questions are outside the library (medication, rehabilitation, pregnancy, minors, medical diets, eating disorders, medical reports, drugs) and have no expected sources: a good answer says so.",
+  "description": "Realistic athlete questions with the library sources a good answer needs: the calibration set, which chooses the relevance floor and every other threshold. No athlete data. follow_up questions carry the athlete's earlier questions (newest first) in `previous`: Coach searches a follow-up with the topic of the last real question. A question with `region` is asked by an athlete in that region; the others by one outside India. Questions without a kind need one topic's sources; multi_source questions need sources from two or three topics; no_answer questions are near the library but outside it (medication, rehabilitation, specific diseases, sport technique, pregnancy, minors, medical diets, eating disorders, medical reports, drugs) and have no expected sources: a good answer says so. `style: colloquial` marks gym slang, typos and Indian-English phrasing. The first 92 questions were written against the first 49 sources; the rest were written blind from each later source's title and topic, never from its chunk text. library_questions_holdout.json holds the hold-out set.",
   "questions": [
     {
       "id": "sets_per_week",
@@ -727,6 +727,1076 @@
       "expected": [
         "singer_2024_rest_intervals"
       ]
+    },
+    {
+      "id": "us_pa_guidelines",
+      "text": "What do the US physical activity guidelines say adults should do each week?",
+      "expected": [
+        "piercy_2018_us_guidelines",
+        "hhs_2018_physical_activity_guidelines"
+      ],
+      "region": [
+        "global",
+        "US"
+      ]
+    },
+    {
+      "id": "us_pa_balance_older",
+      "text": "Do the American activity guidelines ask older adults to work on balance?",
+      "expected": [
+        "hhs_2018_physical_activity_guidelines"
+      ],
+      "region": [
+        "global",
+        "US"
+      ]
+    },
+    {
+      "id": "periodised_vs_plain_strength",
+      "text": "Does periodised training build more strength than doing the same thing every week?",
+      "expected": [
+        "williams_2017_periodised_strength"
+      ]
+    },
+    {
+      "id": "periodisation_equal_volume",
+      "text": "If my total volume is the same, does changing rep ranges from week to week matter for growth?",
+      "expected": [
+        "moesgaard_2022_periodisation_volume_equated",
+        "grgic_2017_linear_undulating_hypertrophy"
+      ]
+    },
+    {
+      "id": "undulating_vs_linear",
+      "text": "Is daily undulating periodisation better than linear for getting bigger?",
+      "expected": [
+        "grgic_2017_linear_undulating_hypertrophy",
+        "moesgaard_2022_periodisation_volume_equated"
+      ]
+    },
+    {
+      "id": "percent_1rm_vs_feel",
+      "text": "Should I base my lifts on a percentage of my one rep max or go by how hard they feel?",
+      "expected": [
+        "helms_2018_rpe_vs_percentage",
+        "hickmott_2022_autoregulation"
+      ]
+    },
+    {
+      "id": "autoregulate_load",
+      "text": "Does adjusting my weight or sets on the day beat following a fixed plan?",
+      "expected": [
+        "hickmott_2022_autoregulation",
+        "helms_2018_rpe_vs_percentage"
+      ]
+    },
+    {
+      "id": "rir_guess_accuracy",
+      "text": "How good are lifters at guessing how many reps they have left?",
+      "expected": [
+        "halperin_2022_rir_prediction_accuracy",
+        "zourdos_2016_rir_scale"
+      ]
+    },
+    {
+      "id": "failure_for_biceps",
+      "text": "Do I have to train to failure to grow my biceps?",
+      "expected": [
+        "refalo_2023_failure_hypertrophy",
+        "robinson_2024_proximity_to_failure"
+      ]
+    },
+    {
+      "id": "deload_cost_muscle",
+      "text": "Does a full week of lighter training cost me muscle?",
+      "expected": [
+        "coleman_2024_deload_trial",
+        "bell_2023_deloading"
+      ]
+    },
+    {
+      "id": "powerlifting_taper",
+      "text": "How should I taper before a powerlifting meet?",
+      "expected": [
+        "travis_2020_powerlifting_taper"
+      ]
+    },
+    {
+      "id": "taper_endurance_event",
+      "text": "How many days should I cut my training down before a race to peak?",
+      "expected": [
+        "bosquet_2007_tapering"
+      ]
+    },
+    {
+      "id": "machines_vs_free_weights",
+      "text": "Are machines as good as free weights for building muscle?",
+      "expected": [
+        "haugen_2023_free_weights_machines"
+      ]
+    },
+    {
+      "id": "partial_reps_depth",
+      "text": "Is it okay to do half reps, or should I always go to full depth?",
+      "expected": [
+        "wolf_2023_partial_full_rom",
+        "schoenfeld_2020_range_of_motion"
+      ]
+    },
+    {
+      "id": "swap_exercises",
+      "text": "Do I need to keep swapping exercises to keep growing?",
+      "expected": [
+        "kassiano_2022_exercise_variation"
+      ]
+    },
+    {
+      "id": "injuries_by_sport",
+      "text": "Which lifting sports have the most injuries?",
+      "expected": [
+        "keogh_2017_weight_training_injuries"
+      ]
+    },
+    {
+      "id": "strength_protects_injury",
+      "text": "Does strength training actually protect me from injuries?",
+      "expected": [
+        "lauersen_2018_strength_dose_injury",
+        "lauersen_2014_injury_prevention"
+      ]
+    },
+    {
+      "id": "acwr_reliable",
+      "text": "Can I trust the acute to chronic workload ratio in my watch app to avoid injury?",
+      "expected": [
+        "impellizzeri_2020_acwr_pitfalls"
+      ]
+    },
+    {
+      "id": "protein_ceiling_post_workout",
+      "text": "Is there a limit to how much protein my body can use after a workout?",
+      "expected": [
+        "trommelen_2023_protein_dose",
+        "schoenfeld_2018_protein_per_meal"
+      ]
+    },
+    {
+      "id": "bulking_what_to_eat",
+      "text": "What should I eat during an off-season bulk: calories, macros and supplements?",
+      "expected": [
+        "iraki_2019_offseason_bodybuilding"
+      ]
+    },
+    {
+      "id": "surplus_needed",
+      "text": "Do I really need to eat in a calorie surplus to build muscle?",
+      "expected": [
+        "slater_2019_energy_surplus",
+        "helms_2023_energy_surplus"
+      ]
+    },
+    {
+      "id": "big_vs_small_surplus",
+      "text": "Does a bigger calorie surplus give me more muscle than a small one?",
+      "expected": [
+        "helms_2023_energy_surplus",
+        "slater_2019_energy_surplus"
+      ]
+    },
+    {
+      "id": "deficit_muscle_loss",
+      "text": "Do I lose my muscle gains when I am in a calorie deficit?",
+      "expected": [
+        "murphy_2022_energy_deficiency_lean_mass"
+      ]
+    },
+    {
+      "id": "slow_vs_fast_loss",
+      "text": "Is a slower rate of weight loss better for keeping muscle?",
+      "expected": [
+        "garthe_2011_weight_loss_rate"
+      ]
+    },
+    {
+      "id": "recomp_possible",
+      "text": "Can I build muscle and lose fat at the same time?",
+      "expected": [
+        "barakat_2020_recomposition",
+        "murphy_2022_energy_deficiency_lean_mass"
+      ]
+    },
+    {
+      "id": "plant_vs_whey",
+      "text": "Is plant protein as good as whey for building muscle?",
+      "expected": [
+        "pinckaers_2021_plant_protein",
+        "hevia_larrain_2021_vegan_protein"
+      ]
+    },
+    {
+      "id": "vegan_vs_meat_muscle",
+      "text": "Can a vegan build as much muscle as someone who eats meat?",
+      "expected": [
+        "hevia_larrain_2021_vegan_protein",
+        "pinckaers_2021_plant_protein"
+      ]
+    },
+    {
+      "id": "supplements_with_evidence",
+      "text": "Which supplements actually have good evidence for athletes?",
+      "expected": [
+        "maughan_2018_ioc_supplements",
+        "nih_ods_2024_exercise_supplements"
+      ]
+    },
+    {
+      "id": "creatine_hair_kidney",
+      "text": "Does creatine cause hair loss or kidney damage?",
+      "expected": [
+        "antonio_2021_creatine_questions",
+        "kreider_2017_creatine"
+      ]
+    },
+    {
+      "id": "creatine_vegetarians",
+      "text": "Do vegetarians get more out of creatine than meat eaters?",
+      "expected": [
+        "kaviani_2020_creatine_vegetarians"
+      ]
+    },
+    {
+      "id": "beta_alanine_tingle",
+      "text": "What does beta alanine do, and is the tingling harmful?",
+      "expected": [
+        "trexler_2015_beta_alanine"
+      ]
+    },
+    {
+      "id": "beetroot_juice",
+      "text": "Does beetroot juice improve performance?",
+      "expected": [
+        "senefeld_2020_nitrate"
+      ]
+    },
+    {
+      "id": "bcaa_worth_it",
+      "text": "Are BCAAs worth buying if I already eat enough protein?",
+      "expected": [
+        "wolfe_2017_bcaa"
+      ]
+    },
+    {
+      "id": "preworkout_safety",
+      "text": "What do health authorities say about the safety of pre-workout supplements?",
+      "expected": [
+        "nih_ods_2024_exercise_supplements",
+        "maughan_2018_ioc_supplements"
+      ]
+    },
+    {
+      "id": "hiit_belly_fat",
+      "text": "Is HIIT better than steady cardio for losing belly fat?",
+      "expected": [
+        "wewege_2017_hiit_body_composition"
+      ]
+    },
+    {
+      "id": "vo2max_intervals_vs_easy",
+      "text": "What raises VO2 max faster, intervals or long easy runs?",
+      "expected": [
+        "milanovic_2015_hiit_vo2max"
+      ]
+    },
+    {
+      "id": "fitness_and_longevity",
+      "text": "Does a high cardio fitness level really help me live longer?",
+      "expected": [
+        "mandsager_2018_cardiorespiratory_fitness_mortality"
+      ]
+    },
+    {
+      "id": "ice_bath_gains",
+      "text": "Will ice baths after lifting kill my muscle growth?",
+      "expected": [
+        "roberts_2015_cold_water_strength_adaptation",
+        "malta_2021_cold_water_training_adaptations"
+      ]
+    },
+    {
+      "id": "cold_plunge_adaptation",
+      "text": "Does regular cold plunging hurt my strength or endurance training adaptations?",
+      "expected": [
+        "malta_2021_cold_water_training_adaptations",
+        "roberts_2015_cold_water_strength_adaptation"
+      ]
+    },
+    {
+      "id": "one_bad_night_lifting",
+      "text": "How much does one bad night of sleep hurt my lifting?",
+      "expected": [
+        "craven_2022_sleep_loss_performance"
+      ]
+    },
+    {
+      "id": "no_sleep_muscle_building",
+      "text": "Does a night without sleep slow down muscle building?",
+      "expected": [
+        "lamon_2021_sleep_deprivation_muscle_protein"
+      ]
+    },
+    {
+      "id": "older_lifter_dose",
+      "text": "How hard and how often should a 65 year old lift to get stronger?",
+      "expected": [
+        "borde_2015_older_adults_dose_response",
+        "izquierdo_2021_icfsr_older_adults",
+        "fragala_2019_older_adults"
+      ]
+    },
+    {
+      "id": "older_adult_recommendations",
+      "text": "What do international exercise recommendations say for older adults?",
+      "expected": [
+        "izquierdo_2021_icfsr_older_adults"
+      ]
+    },
+    {
+      "id": "older_adult_protein",
+      "text": "How much protein do older people need?",
+      "expected": [
+        "bauer_2013_prot_age_protein"
+      ]
+    },
+    {
+      "id": "women_vs_men_gains",
+      "text": "Do women gain muscle slower than men from lifting?",
+      "expected": [
+        "roberts_2020_sex_differences_resistance_training"
+      ]
+    },
+    {
+      "id": "cycle_phase_lifting",
+      "text": "Should I change my lifting depending on where I am in my cycle?",
+      "expected": [
+        "colenso_semple_2023_menstrual_cycle_resistance",
+        "mcnulty_2020_menstrual_cycle"
+      ]
+    },
+    {
+      "id": "pill_gym_performance",
+      "text": "Does the contraceptive pill affect my gym performance?",
+      "expected": [
+        "elliott_sale_2020_oral_contraceptives_performance"
+      ]
+    },
+    {
+      "id": "pushups_vs_bench",
+      "text": "Can push-ups build as much chest as the bench press?",
+      "expected": [
+        "kikuchi_2017_push_up_bench_press"
+      ]
+    },
+    {
+      "id": "older_adults_equipment",
+      "text": "Which kind of equipment works best for older adults: machines, free weights or bands?",
+      "expected": [
+        "wiedenmann_2025_older_adults_training_modalities",
+        "lopes_2019_elastic_resistance"
+      ]
+    },
+    {
+      "id": "minimum_to_maintain",
+      "text": "What is the least training I need to keep my strength during a busy period?",
+      "expected": [
+        "spiering_2021_minimal_dose_maintenance",
+        "bosquet_2013_training_cessation"
+      ]
+    },
+    {
+      "id": "jet_lag_competition",
+      "text": "How do I deal with jet lag when I travel for a competition?",
+      "expected": [
+        "janse_van_rensburg_2021_travel_jet_lag"
+      ]
+    },
+    {
+      "id": "us_diet_protein_alcohol",
+      "text": "What do the American dietary guidelines say about protein and alcohol?",
+      "expected": [
+        "usda_hhs_2026_dietary_guidelines"
+      ],
+      "region": [
+        "global",
+        "US"
+      ]
+    },
+    {
+      "id": "uk_activity_chiefs",
+      "text": "What do the UK health chiefs say about how much activity I should do?",
+      "expected": [
+        "uk_cmo_2026_activity_guidelines"
+      ],
+      "region": [
+        "global",
+        "GB"
+      ]
+    },
+    {
+      "id": "india_protein_rda",
+      "text": "What is the recommended daily protein allowance for an Indian man?",
+      "expected": [
+        "icmr_nin_2020_nutrient_requirements",
+        "icmr_nin_2024_dietary_guidelines"
+      ],
+      "region": [
+        "global",
+        "IN"
+      ]
+    },
+    {
+      "id": "india_dal_paneer_protein",
+      "text": "How much protein is in a katori of dal or paneer?",
+      "expected": [
+        "longvah_2017_ifct"
+      ],
+      "region": [
+        "global",
+        "IN"
+      ]
+    },
+    {
+      "id": "asian_bmi_cutoff",
+      "text": "Why do Asians have a lower BMI cutoff for being overweight?",
+      "expected": [
+        "who_2004_asian_bmi",
+        "misra_2025_obesity_asian_indians"
+      ],
+      "region": [
+        "global",
+        "IN"
+      ]
+    },
+    {
+      "id": "india_new_obesity_definition",
+      "text": "What is the new definition of obesity for Indians?",
+      "expected": [
+        "misra_2025_obesity_asian_indians",
+        "who_2004_asian_bmi"
+      ],
+      "region": [
+        "global",
+        "IN"
+      ]
+    },
+    {
+      "id": "india_inactivity",
+      "text": "How active are people in India, and what share are inactive?",
+      "expected": [
+        "anjana_2014_indiab_activity"
+      ],
+      "region": [
+        "global",
+        "IN"
+      ]
+    },
+    {
+      "id": "c_sets_chest",
+      "text": "bro how many sets per week for bigger chest?",
+      "expected": [
+        "schoenfeld_2017_weekly_volume",
+        "pelland_2026_volume_frequency"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_biceps_five_sets",
+      "text": "is 5 sets a week enuf for biceps?",
+      "expected": [
+        "schoenfeld_2017_weekly_volume",
+        "pelland_2026_volume_frequency"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_veg_protein_gain",
+      "text": "how much protien for gaining in veg diet?",
+      "expected": [
+        "jager_2017_protein",
+        "pinckaers_2021_plant_protein",
+        "hevia_larrain_2021_vegan_protein"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_caffeine_prework",
+      "text": "bhai how much caffeine before workout is fine?",
+      "expected": [
+        "guest_2021_caffeine",
+        "maughan_2018_ioc_supplements"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_one_hour_four_days",
+      "text": "can i do 1 hour gym 4 days a week only and still grow?",
+      "expected": [
+        "iversen_2021_time_efficient",
+        "pelland_2026_volume_frequency"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_deload_needed",
+      "text": "whats the deal with deload weeks, do i rly need them?",
+      "expected": [
+        "bell_2023_deloading",
+        "coleman_2024_deload_trial"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_creatine_loading",
+      "text": "creatine loading nescessary or just 5g daily??",
+      "expected": [
+        "kreider_2017_creatine"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_ice_bath_sir",
+      "text": "sir, ice bath after gym is good or bad?",
+      "expected": [
+        "roberts_2015_cold_water_strength_adaptation",
+        "malta_2021_cold_water_training_adaptations"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_cardio_leg_day",
+      "text": "is it fine to do cardio on leg day or will i lose gains?",
+      "expected": [
+        "schumann_2022_concurrent_training"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_rest_bench",
+      "text": "how long b/w sets for bench, 2 min or 5?",
+      "expected": [
+        "singer_2024_rest_intervals"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_cutting_strength_drop",
+      "text": "cutting but my strenth keeps dropping, normal?",
+      "expected": [
+        "murphy_2022_energy_deficiency_lean_mass",
+        "aragon_2017_diets_body_composition"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_ten_k_steps",
+      "text": "how many steps daily is enough for health, is 10k a myth?",
+      "expected": [
+        "paluch_2022_daily_steps"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_home_dumbbells_bands",
+      "text": "can i build muscle at home with just dumbells and bands?",
+      "expected": [
+        "lopes_2019_elastic_resistance",
+        "kikuchi_2017_push_up_bench_press"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_doctor_first_45",
+      "text": "i am 45 and new to gym, do i need a doctors ok first?",
+      "expected": [
+        "riebe_2015_screening",
+        "bredin_2013_parq_plus"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_dal_rice_enough",
+      "text": "can i get enough protein from dal rice and paneer without supplements?",
+      "expected": [
+        "icmr_nin_2024_dietary_guidelines",
+        "longvah_2017_ifct",
+        "icmr_nin_2020_nutrient_requirements"
+      ],
+      "region": [
+        "global",
+        "IN"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_coffee_late_sleep",
+      "text": "how late can i have coffee without messing my sleep?",
+      "expected": [
+        "guest_2021_caffeine"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_weekend_drinking",
+      "text": "does drinking on weekends kill my gains?",
+      "expected": [
+        "vella_2010_alcohol_recovery"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_habit_days",
+      "text": "how many days till gym becomes a habbit?",
+      "expected": [
+        "lally_2010_habit_formation"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_missed_two_weeks",
+      "text": "missed 2 weeks of gym, did i lose all my gains?",
+      "expected": [
+        "mujika_2001_muscular_detraining",
+        "bosquet_2013_training_cessation"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_min_to_maintain",
+      "text": "no time at all, whats the min i need to maintain muscle?",
+      "expected": [
+        "spiering_2021_minimal_dose_maintenance",
+        "iversen_2021_time_efficient"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_when_add_weight",
+      "text": "how do i know when to add weight, rir 2 or what?",
+      "expected": [
+        "zourdos_2016_rir_scale",
+        "helms_2018_rpe_vs_percentage"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_water_glasses",
+      "text": "how many glasses of water a day do i need, is 8 a myth?",
+      "expected": [
+        "sawka_2007_fluid_replacement"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_bmi_23_indian",
+      "text": "is bmi 23 ok for an indian guy?",
+      "expected": [
+        "who_2004_asian_bmi",
+        "misra_2025_obesity_asian_indians"
+      ],
+      "region": [
+        "global",
+        "IN"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_casein_bedtime",
+      "text": "whey vs casein before bed, worth it?",
+      "expected": [
+        "kerksick_2017_nutrient_timing",
+        "jager_2017_protein"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_anabolic_window",
+      "text": "should i eat protein within 30 min post workout, anabolic window real or no?",
+      "expected": [
+        "kerksick_2017_nutrient_timing",
+        "schoenfeld_2018_protein_per_meal"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_six_hours_sleep",
+      "text": "how much sleep for gym guys, 6 hrs ok?",
+      "expected": [
+        "walsh_2021_sleep_athlete",
+        "watson_2015_sleep_duration",
+        "craven_2022_sleep_loss_performance"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_girls_bulky",
+      "text": "do girls get bulky from lifting heavy?",
+      "expected": [
+        "roberts_2020_sex_differences_resistance_training"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "c_hiit_vs_jog",
+      "text": "benifits of HIIT vs jog for fat loss?",
+      "expected": [
+        "wewege_2017_hiit_body_composition"
+      ],
+      "style": "colloquial"
+    },
+    {
+      "id": "m_veg_cut_protein",
+      "text": "I am vegetarian and cutting: how much protein do I need and how fast can I lose weight without losing muscle?",
+      "kind": "multi_source",
+      "expected": [
+        "jager_2017_protein",
+        "garthe_2011_weight_loss_rate",
+        "pinckaers_2021_plant_protein"
+      ]
+    },
+    {
+      "id": "m_over60_protein_lifting",
+      "text": "Over 60, do I need more protein and how heavy should I lift?",
+      "kind": "multi_source",
+      "expected": [
+        "bauer_2013_prot_age_protein",
+        "borde_2015_older_adults_dose_response",
+        "fragala_2019_older_adults"
+      ]
+    },
+    {
+      "id": "m_travel_comp",
+      "text": "I travel for a competition next week: how do I handle jet lag, sleep and my last days of training?",
+      "kind": "multi_source",
+      "expected": [
+        "janse_van_rensburg_2021_travel_jet_lag",
+        "bosquet_2007_tapering",
+        "walsh_2021_sleep_athlete"
+      ]
+    },
+    {
+      "id": "m_creatine_caffeine_stack",
+      "text": "Should I take creatine and caffeine, and which other supplements are worth it?",
+      "kind": "multi_source",
+      "expected": [
+        "kreider_2017_creatine",
+        "guest_2021_caffeine",
+        "maughan_2018_ioc_supplements"
+      ]
+    },
+    {
+      "id": "m_recovery_ice_sleep",
+      "text": "What matters more for recovering from hard training, ice baths or a good night of sleep?",
+      "kind": "multi_source",
+      "expected": [
+        "malta_2021_cold_water_training_adaptations",
+        "craven_2022_sleep_loss_performance"
+      ]
+    },
+    {
+      "id": "m_pill_cycle_lifting",
+      "text": "I am a woman on the pill: do my cycle and my contraceptive change how I should lift?",
+      "kind": "multi_source",
+      "expected": [
+        "elliott_sale_2020_oral_contraceptives_performance",
+        "colenso_semple_2023_menstrual_cycle_resistance",
+        "mcnulty_2020_menstrual_cycle"
+      ]
+    },
+    {
+      "id": "m_cut_for_show",
+      "text": "Cutting for a bodybuilding show: how fast should I lose weight, what deficit and do I need diet breaks?",
+      "kind": "multi_source",
+      "expected": [
+        "garthe_2011_weight_loss_rate",
+        "helms_2014_contest_prep",
+        "byrne_2018_matador"
+      ]
+    },
+    {
+      "id": "m_bulk_surplus_protein",
+      "text": "Bulking: do I need a surplus, how big should it be and how much protein?",
+      "kind": "multi_source",
+      "expected": [
+        "slater_2019_energy_surplus",
+        "helms_2023_energy_surplus",
+        "jager_2017_protein"
+      ]
+    },
+    {
+      "id": "m_frequency_periodisation",
+      "text": "How often should I train each muscle, and does varying the programme with periodisation matter?",
+      "kind": "multi_source",
+      "expected": [
+        "schoenfeld_2016_frequency_hypertrophy",
+        "moesgaard_2022_periodisation_volume_equated"
+      ]
+    },
+    {
+      "id": "m_home_bodyweight_bands",
+      "text": "Home workouts with only bodyweight and bands: can I still build muscle and keep my gains?",
+      "kind": "multi_source",
+      "expected": [
+        "kikuchi_2017_push_up_bench_press",
+        "lopes_2019_elastic_resistance"
+      ]
+    },
+    {
+      "id": "m_weekly_activity_mix",
+      "text": "How do I get enough weekly activity: steps, cardio minutes and strength days?",
+      "kind": "multi_source",
+      "expected": [
+        "paluch_2022_daily_steps",
+        "who_2020_activity_guidelines",
+        "acsm_2011_exercise_quantity"
+      ]
+    },
+    {
+      "id": "m_hiit_with_lifting",
+      "text": "Does HIIT hurt my muscle gains when I also lift, and is it better for fat loss than steady cardio?",
+      "kind": "multi_source",
+      "expected": [
+        "schumann_2022_concurrent_training",
+        "wewege_2017_hiit_body_composition"
+      ]
+    },
+    {
+      "id": "m_india_veg_bulk",
+      "text": "As a vegetarian Indian trying to bulk, how much protein do I need, which foods have it and is a surplus needed?",
+      "kind": "multi_source",
+      "expected": [
+        "icmr_nin_2020_nutrient_requirements",
+        "longvah_2017_ifct",
+        "slater_2019_energy_surplus"
+      ],
+      "region": [
+        "global",
+        "IN"
+      ]
+    },
+    {
+      "id": "fu_ice_why",
+      "text": "Why is that?",
+      "kind": "follow_up",
+      "previous": [
+        "Do ice baths after lifting hurt muscle growth?"
+      ],
+      "expected": [
+        "roberts_2015_cold_water_strength_adaptation",
+        "malta_2021_cold_water_training_adaptations"
+      ]
+    },
+    {
+      "id": "fu_plant_vegans",
+      "text": "And for vegans?",
+      "kind": "follow_up",
+      "previous": [
+        "Is plant protein as good as whey for muscle?"
+      ],
+      "expected": [
+        "pinckaers_2021_plant_protein",
+        "hevia_larrain_2021_vegan_protein"
+      ]
+    },
+    {
+      "id": "fu_taper_days",
+      "text": "And how many days?",
+      "kind": "follow_up",
+      "previous": [
+        "How should I taper before a powerlifting meet?"
+      ],
+      "expected": [
+        "travis_2020_powerlifting_taper",
+        "bosquet_2007_tapering"
+      ]
+    },
+    {
+      "id": "fu_sleep_two_nights",
+      "text": "What about two nights in a row?",
+      "kind": "follow_up",
+      "previous": [
+        "Does one bad night of sleep hurt my lifting?"
+      ],
+      "expected": [
+        "craven_2022_sleep_loss_performance",
+        "lamon_2021_sleep_deprivation_muscle_protein"
+      ]
+    },
+    {
+      "id": "fu_failure_squats",
+      "text": "Is that true for squats too?",
+      "kind": "follow_up",
+      "previous": [
+        "Do I need to go to failure to build muscle?"
+      ],
+      "expected": [
+        "refalo_2023_failure_hypertrophy",
+        "robinson_2024_proximity_to_failure"
+      ]
+    },
+    {
+      "id": "fu_older_protein_women",
+      "text": "And is it different for women?",
+      "kind": "follow_up",
+      "previous": [
+        "How much protein do older adults need?"
+      ],
+      "expected": [
+        "bauer_2013_prot_age_protein"
+      ]
+    },
+    {
+      "id": "fu_home_bands_chain",
+      "text": "What about with bands?",
+      "kind": "follow_up",
+      "previous": [
+        "Is that okay?",
+        "Can I build muscle with just push-ups at home?"
+      ],
+      "expected": [
+        "kikuchi_2017_push_up_bench_press",
+        "lopes_2019_elastic_resistance"
+      ]
+    },
+    {
+      "id": "fu_days_volume",
+      "text": "And how much total volume?",
+      "kind": "follow_up",
+      "previous": [
+        "How many days a week should I lift to get stronger?"
+      ],
+      "expected": [
+        "grgic_2018_frequency_strength",
+        "pelland_2026_volume_frequency"
+      ]
+    },
+    {
+      "id": "na_herniated_disc",
+      "text": "Can I train with a herniated disc, and which exercises will fix it?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_bp_medication",
+      "text": "Which medication should I take for high blood pressure so that I can keep lifting?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_golf_swing",
+      "text": "How do I increase my golf swing speed with gym work?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_freestyle_technique",
+      "text": "How do I fix my freestyle swimming technique for a triathlon?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_postpartum_return",
+      "text": "How soon after giving birth can I start lifting again?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_plantar_fasciitis",
+      "text": "What do I do about plantar fasciitis in my heel?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_thyroid_medication",
+      "text": "How should I time my thyroid medication around workouts?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_tennis_elbow",
+      "text": "What is the best way to treat tennis elbow?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_marathon_plan",
+      "text": "How should I train for a marathon in twelve weeks?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_pcos_diet",
+      "text": "What diet should I follow with PCOS to lose weight?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_trt_dose",
+      "text": "What dose of testosterone replacement should I ask my doctor for?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_kid_lifting",
+      "text": "How can I teach my ten year old to lift weights safely?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_vertical_jump",
+      "text": "Which drills will raise my vertical jump for basketball?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_antidepressant_weight",
+      "text": "Which antidepressant is least likely to make me gain weight?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_shin_splints",
+      "text": "How do I treat shin splints from running?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_cholesterol_heart_attack",
+      "text": "What should I eat to manage my cholesterol after a heart attack?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_chronic_back_pain",
+      "text": "What can I do for chronic lower back pain, and which stretches fix it?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_dexa_report",
+      "text": "Can you read my DEXA scan report and tell me what my body fat means?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_anorexia_recovery",
+      "text": "How do I recover from anorexia and start eating normally again?",
+      "kind": "no_answer",
+      "expected": []
+    },
+    {
+      "id": "na_type1_insulin",
+      "text": "I have type 1 diabetes: how should I time my insulin around lifting?",
+      "kind": "no_answer",
+      "expected": []
     }
   ]
 }

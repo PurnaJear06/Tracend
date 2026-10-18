@@ -8,6 +8,7 @@ import {
   maxLookupRangeDays,
   maxLookupRounds,
   maxRequestsPerRound,
+  maxScheduleAheadDays,
   validateDataRequests,
 } from "./catalogue.ts";
 
@@ -172,4 +173,42 @@ Deno.test("the data_requests schema: every field required, no union, every looku
   assertEquals(item.properties.lookup.enum, [...coachLookupNames]);
   assertEquals(item.properties.filter, { type: "string" });
   assertEquals(JSON.stringify(dataRequestsJsonSchema).includes("anyOf"), false);
+});
+
+Deno.test("only the plan's schedule may look ahead: up to 90 days, with the filter schedule", () => {
+  const ahead = (filter: string, to = "2026-11-30", from = "2026-10-18") =>
+    validateDataRequests([{ lookup: "plan_history", from, to, filter }], today);
+  assertEquals(maxScheduleAheadDays, 90);
+  const checked = ahead("schedule");
+  if (!checked.ok) throw new Error(checked.reason);
+  assertEquals(checked.requests[0], {
+    lookup: "plan_history",
+    from: "2026-10-18",
+    to: "2026-11-30",
+    filter: "schedule",
+  });
+  // The upper bound: today + 90 days, then cut.
+  const far = ahead("Schedule", "2027-03-01");
+  if (!far.ok) throw new Error(far.reason);
+  assertEquals(far.requests[0].to, "2027-01-15");
+  // A range wholly past that horizon, without the filter, or for any other lookup, is refused.
+  assertEquals(ahead("schedule", "2027-03-01", "2027-02-01").ok, false);
+  assertEquals(ahead("", "2026-11-30").ok, false);
+  assertEquals(
+    validateDataRequests(
+      [{ lookup: "body", from: "2026-10-18", to: "2026-11-30", filter: "" }],
+      today,
+    )
+      .ok,
+    false,
+  );
+  // A past week, with or without the filter, still works.
+  assertEquals(ahead("schedule", "2026-10-11", "2026-10-05").ok, true);
+  assertEquals(ahead("", "2026-10-11", "2026-10-05").ok, true);
+});
+
+Deno.test("the catalogue tells the model the schedule filter and the horizon", () => {
+  const text = describeLookupCatalogue();
+  assertStringIncludes(text, "with the filter schedule");
+  assertStringIncludes(text, "up to 90 days ahead");
 });

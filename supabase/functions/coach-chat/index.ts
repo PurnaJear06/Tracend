@@ -40,6 +40,8 @@ import {
   trainingQuestion,
 } from "../_shared/coach_safety/red_flags.ts";
 import { previousQuestionsOf } from "../_shared/library/query.ts";
+import { prefetchLibraryEmbedding } from "../_shared/library/live.ts";
+import { libraryContributorId } from "../_shared/library/retrieval.ts";
 import { loadMemoryContext, recordMemoryAfterTurn } from "../_shared/coach_memory/store.ts";
 import {
   noSuggestions,
@@ -456,6 +458,7 @@ export async function handleCoachChat(
   request: Request,
   held: { current?: CoachChatBudgetLedger },
   authenticate: typeof requireAuth = requireAuth,
+  prefetchLibrary: typeof prefetchLibraryEmbedding = prefetchLibraryEmbedding,
 ): Promise<Response> {
   const correlationId = extractCorrelationId(request);
   const log = createLogger(correlationId);
@@ -617,6 +620,11 @@ export async function handleCoachChat(
     );
   }
 
+  // The library (gateway route only) embeds the question now: after the replay is resolved and the
+  // budget is reserved, so a replay or a request at a limit never costs a library-embed call, and
+  // while the context is prepared; the contributor waits for it within its own deadline. A
+  // follow-up is embedded later, with the earlier question the prepared context supplies.
+  const libraryEmbedding = coachRoute && !redFlag ? prefetchLibrary(input.question) : null;
   const { data: prepared, error: prepareError } = await auth.serviceClient.rpc(
     "prepare_coach_chat_v10",
     {
@@ -736,11 +744,15 @@ export async function handleCoachChat(
           question: input.question,
           localDate: coachingDate,
           previousQuestions: previousQuestionsOf(context, input.question),
+          ...(libraryEmbedding ? { queryEmbedding: libraryEmbedding } : {}),
         },
       );
     if (contributions.outcomes.length) {
       log.info("coach_context_contributors", { contributors: contributions.outcomes });
     }
+    // Source ids, counts, timings and the nearest distance: never the question or a chunk.
+    const libraryTrace = contributions.traces?.[libraryContributorId];
+    if (libraryTrace) log.info("library_retrieval", { ...libraryTrace });
     const generation = redFlag
       ? deterministicSafetyGeneration(redFlag)
       : coachRoute
@@ -870,6 +882,9 @@ export async function handleCoachChat(
       {
         guardFaults: guardFaultsOf(generation.attempts, undefined, generation.cuts),
         lookups: lookupTrace(generation.lookups),
+        libraryVersion: typeof libraryTrace?.library_version === "string"
+          ? libraryTrace.library_version
+          : null,
       },
     );
     if (!traced) log.warn("coach_chat_trace_not_stored");
