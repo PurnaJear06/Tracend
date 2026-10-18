@@ -80,26 +80,33 @@ Deno.test("a sentence said again is a repeat only when it is long and nearly wor
 });
 
 Deno.test("safety wording is never a repeat", () => {
+  const referral =
+    "Talk to your doctor before you change your supplements or your usual routine this week.";
   const earlier = {
-    previousReply:
-      "If the pain gets worse, see a doctor or physio before you train that area again. Want me to plan around it?",
+    previousReply: `${referral} Want me to plan around it?`,
     referralNeeded: true,
   };
+  // A referral line stands when the turn needs one, and is an ordinary repeat when it does not.
+  assertEquals(repeatsOf(referral, earlier).sentences, []);
+  assertEquals(repeatsOf(referral, { ...earlier, referralNeeded: false }).sentences, [referral]);
+  // A stop rule for pain or another symptom always stands, on any turn.
+  const stopRule = "If the knee pinches or swells, stop the set and rest it for the day.";
+  const pain = { previousReply: `${stopRule} Want me to plan around it?`, referralNeeded: false };
+  assertEquals(repeatsOf(stopRule, pain).sentences, []);
   assertEquals(
-    repeatsOf(
-      "If the pain gets worse, see a doctor or physio before you train that area again.",
-      earlier,
-    ).sentences,
+    repeatsOf("Sharp pain on any rep means stop, rest and see a physio before you train again.", {
+      previousReply:
+        "Sharp pain on any rep means stop, rest and see a physio before you train again.",
+      referralNeeded: false,
+    }).sentences,
     [],
   );
-  // Without a need for it, the same line is an ordinary repeat.
-  assertEquals(
-    repeatsOf(
-      "If the pain gets worse, see a doctor or physio before you train that area again.",
-      { ...earlier, referralNeeded: false },
-    ).sentences.length,
-    1,
-  );
+  // Any caution or limit stands when the turn needs referral wording.
+  const limit = "Never push through the last rep if your form breaks down on the way up.";
+  assertEquals(repeatsOf(limit, { previousReply: limit, referralNeeded: true }).sentences, []);
+  assertEquals(repeatsOf(limit, { previousReply: limit, referralNeeded: false }).sentences, [
+    limit,
+  ]);
   // Urgent wording always stands.
   assertEquals(isSafetyWording("If it gets worse call your local emergency number.", false), true);
   assertEquals(isSafetyWording("Want me to suggest a doctor-approved snack plan?", false), false);

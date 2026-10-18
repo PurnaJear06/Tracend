@@ -26,8 +26,8 @@ Deno.test("studies are found by author and year, or by an institution's document
   ]);
   assertEquals(studyMentions("Jäger et al. 2017"), [{ authors: ["jager"], year: 2017 }]);
   assertEquals(studyMentions("the NIH fact sheet and ACSM position stand"), [
-    { authors: ["nih"], year: null },
-    { authors: ["acsm"], year: null },
+    { authors: ["nih"], year: null, initials: true },
+    { authors: ["acsm"], year: null, initials: true },
   ]);
 });
 
@@ -63,10 +63,40 @@ Deno.test("a study that no shown source matches is unshown, and a wrong year doe
     { authors: ["maughan"], year: 2021 },
   ]);
   assertEquals(unshownStudies("The WHO guidelines say so.", shown), [
-    { authors: ["who"], year: null },
+    { authors: ["who"], year: null, initials: true },
   ]);
   assertEquals(unshownStudies("Maughan 2018 says so.", shown), []);
   assertEquals(unshownStudies("Maughan 2018 says so.", {}), [
     { authors: ["maughan"], year: 2018 },
   ]);
+});
+
+Deno.test("an institution's initials never match a word in an excerpt", () => {
+  const athletes = {
+    maughan_2018_ioc_supplements: {
+      label: "Dietary supplements and the high-performance athlete (2018)",
+      text: "Athletes who train hard.",
+    },
+  };
+  assertEquals(namedShownSources("The WHO guidelines say", athletes), []);
+  assertEquals(
+    namedShownSources(
+      "The WHO guidelines say",
+      {
+        maughan_2018_ioc_supplements: { text: "Athletes who train hard." },
+      } as unknown as typeof athletes,
+    ),
+    [],
+  );
+  assertEquals(unshownStudies("The WHO guidelines say", athletes), [
+    { authors: ["who"], year: null, initials: true },
+  ]);
+  // The initials still match an id, a title's acronym or an all-capitals word in the title.
+  assertEquals(
+    namedShownSources("The IOC consensus statement", {
+      maughan_2018_ioc_supplements: { label: "IOC consensus statement (2018)", text: "" },
+    }),
+    ["maughan_2018_ioc_supplements"],
+  );
+  assertEquals(namedShownSources("The who guidelines", athletes), []);
 });

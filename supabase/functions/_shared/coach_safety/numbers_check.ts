@@ -227,9 +227,20 @@ const activityBeforeMinutes = new RegExp(
 // a week") is guidance with a figure, not one session item.
 const aRate =
   /\b(?:a|per|each|every)\s+(?:other\s+)?(?:day|week|month|morning|afternoon|evening|night|session|workout|training day)\b|\b(?:daily|weekly|monthly|nightly)\b|\bmost days\b|\b(?:times|x)\s+(?:a|per)\s+week\b|\b(?:once|twice)\b/;
-// A duration said of the athlete's own past or records is a claim, however round it is.
-const aboutTheAthlete =
-  /\b(?:did|was|were|had|has|have|been|logged|averag\w*|completed|last|yesterday|previous|recorded|lasted|took|usual|typical|so far)\b/;
+// A duration said of the athlete's own past, records, habits or plan is a claim about them, however
+// round it is. Only advice is exempt: an imperative ("walk 30 min"), or "you" with a modal
+// ("you can", "you should", "try"). So "your plan is a 45-minute walk", "you normally walk 45
+// minutes" and "you walk 45 minutes after dinner" must be in the athlete's data.
+const aboutTheAthleteWords =
+  /\b(?:did|was|were|had|has|have|been|logged|averag\w*|completed|last|yesterday|previous|recorded|lasted|took|usual\w*|typical\w*|normal\w*|often|currently|already|always|generally|regularly|sometimes|tend|tends|so far|your)\b/;
+const youWithAdvice =
+  /^\s*(?:'ll\s+)?(?:can|could|should|might|may|need to|needs to|ought to|must|have to|want to|try|aim to|aim for|let's)\b/;
+function describesTheAthlete(before: string): boolean {
+  if (aboutTheAthleteWords.test(before)) return true;
+  const you = [...before.matchAll(/\byou\b/g)].at(-1);
+  if (!you) return false;
+  return !youWithAdvice.test(before.slice(you.index + 3));
+}
 const prescriptionUnit = /^\s*(?:sets?\b|reps?\b|repetitions?\b|rounds?\b|seconds?\b|secs?\b|s\b)/;
 const measuredBefore = /\b(?:bmi|rhr|hrv)\s*(?:of|is|was|at|about|around|~|:)?\s*$/;
 const scaleBefore = /\b(?:rpe|rir)\s*(?:of|is|was|at|about|around|~|:)?\s*$/;
@@ -242,7 +253,7 @@ function isSessionItemLength(token: Token, after: string): boolean {
   if (token.decimals !== 0 || token.value < 10 || token.value > 90 || token.value % 5 !== 0) {
     return false;
   }
-  if (aboutTheAthlete.test(token.before) || aRate.test(after.slice(0, 40))) return false;
+  if (describesTheAthlete(token.before) || aRate.test(after.slice(0, 40))) return false;
   return activityAfterMinutes.test(after) || activityBeforeMinutes.test(token.before);
 }
 

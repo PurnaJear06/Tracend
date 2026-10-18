@@ -15,7 +15,12 @@ export type ShownSources = Readonly<
 >;
 
 /** A study the text names: the words that name its authors and the year, when it gives one. */
-export type StudyMention = Readonly<{ authors: readonly string[]; year: number | null }>;
+export type StudyMention = Readonly<{
+  authors: readonly string[];
+  year: number | null;
+  /** Initials of an institution ("NIH"), which name a source only by its id or title, never its excerpt. */
+  initials?: true;
+}>;
 
 // Capitalised words that sit beside a year without naming an author ("Since 2018", "Spring 2026").
 const notAnAuthor = new Set([
@@ -124,7 +129,9 @@ export function studyMentions(text: string): StudyMention[] {
   }
   for (const match of text.matchAll(institution)) {
     const initials = match[1].toLowerCase();
-    if (!notAnInstitution.has(initials)) found.push({ authors: [initials], year: null });
+    if (!notAnInstitution.has(initials)) {
+      found.push({ authors: [initials], year: null, initials: true });
+    }
   }
   return found;
 }
@@ -132,6 +139,8 @@ export function studyMentions(text: string): StudyMention[] {
 type Identity = Readonly<{
   authors: ReadonlySet<string>;
   titleWords: ReadonlySet<string>;
+  /** Initials of the title's capitalised runs and its all-capitals words ("ISSN", "IOC"). */
+  acronyms: ReadonlySet<string>;
   year: number | null;
   text: string;
 }>;
@@ -151,14 +160,17 @@ function acronymsOf(title: string): string[] {
 }
 
 function identityOf(id: string, source: ShownSources[string]): Identity {
+  const label = source.label ?? "";
   const parts = words(id.replaceAll("_", " "));
   const at = parts.findIndex((part) => yearSegment.test(part));
-  const labelYear = /\b((?:19|20)\d{2})\b/.exec(source.label)?.[1];
+  const labelYear = /\b((?:19|20)\d{2})\b/.exec(label)?.[1];
   return {
     authors: new Set(at === -1 ? parts.slice(0, 1) : parts.slice(0, at)),
-    titleWords: new Set([
-      ...words(source.label).filter((word) => word.length >= 3),
-      ...acronymsOf(source.label),
+    titleWords: new Set(words(label).filter((word) => word.length >= 3)),
+    // Case matters here: "WHO" is an acronym in a title, "who" is a word in an excerpt.
+    acronyms: new Set([
+      ...acronymsOf(label),
+      ...(label.match(/\b\p{Lu}{2,6}\b/gu) ?? []).map((word) => word.toLowerCase()),
     ]),
     year: at !== -1 ? Number(parts[at]) : labelYear ? Number(labelYear) : null,
     text: ` ${words(source.text ?? "").join(" ")} `,
@@ -167,6 +179,13 @@ function identityOf(id: string, source: ShownSources[string]): Identity {
 
 function names(mention: StudyMention, source: Identity): boolean {
   if (mention.year !== null && source.year !== null && mention.year !== source.year) return false;
+  // An institution's initials name a source by its id or its title's acronyms, never by a word in
+  // the excerpt ("The WHO guidelines" is not a source whose excerpt says "athletes who train").
+  if (mention.initials) {
+    return mention.authors.some((initials) =>
+      source.authors.has(initials) || source.acronyms.has(initials)
+    );
+  }
   return mention.authors.some((author) =>
     source.authors.has(author) || source.titleWords.has(author) ||
     // The author's name in the excerpt itself, with the year, or an institution's initials in it.

@@ -490,15 +490,27 @@ const noticeFor = {
 const unitBreak = /(\n+|(?<=[.!?])(?<!(?:^|\n)[ \t]*\d{1,2}[.)])[ \t]+)/;
 const unitMarker = /^\s*(?:[-*•]|\d+[.)])\s+/;
 
-/** Removes the units a test flags, with the break after each; returns the rest. */
+type Removed = Readonly<{ unit: string; reasons: readonly CutName[] }>;
+
+/**
+ * Removes the units a test flags, with the break after each; returns the rest and what went. A
+ * unit that introduces a list (it ends in ":" or list items follow it) takes its whole list with
+ * it when it is cut: a lead-in cut alone would leave a bare list whose meaning it set ("skip all of
+ * these:" and then the exercises).
+ */
 function cutUnits(
   text: string,
-  flagged: (unit: string) => boolean,
-): Readonly<{ text: string; units: number; kept: number }> {
+  flagged: (unit: string) => readonly CutName[],
+): Readonly<{ text: string; units: number; removed: readonly Removed[] }> {
   const parts = text.split(unitBreak);
   const out: string[] = [];
+  const removed: Removed[] = [];
+  const isItem = (index: number) => unitMarker.test(parts[index] ?? "");
+  const nextUnit = (index: number) => {
+    for (let j = index + 2; j < parts.length; j += 2) if (parts[j].trim() !== "") return j;
+    return -1;
+  };
   let units = 0;
-  let kept = 0;
   for (let i = 0; i < parts.length; i += 2) {
     const unit = parts[i];
     if (unit.trim() === "") {
@@ -506,11 +518,46 @@ function cutUnits(
       continue;
     }
     units += 1;
-    if (flagged(unit.replace(unitMarker, "").trim())) continue;
-    kept += 1;
-    out.push(unit, parts[i + 1] ?? "");
+    const reasons = flagged(unit.replace(unitMarker, "").trim());
+    if (reasons.length === 0) {
+      out.push(unit, parts[i + 1] ?? "");
+      continue;
+    }
+    removed.push({ unit, reasons });
+    const next = nextUnit(i);
+    if (!isItem(i) && (/:\s*$/.test(unit.trim()) || (next !== -1 && isItem(next)))) {
+      // Its list goes too: every item up to the first line that is not one.
+      for (let j = next; j !== -1 && isItem(j); j = nextUnit(j)) {
+        units += 1;
+        removed.push({ unit: parts[j], reasons });
+        parts[j] = "";
+        parts[j + 1] = "";
+      }
+    }
   }
-  return { text: out.join("").replace(/\n{3,}/g, "\n\n").trim(), units, kept };
+  return { text: out.join("").replace(/\n{3,}/g, "\n\n").trim(), units, removed };
+}
+
+// What makes a sentence more than a fact: a prohibition, a limit, a symptom or a stop rule, and the
+// words that put a condition on, or a caveat after, a recommendation. Cutting such a sentence can
+// turn "skip these", "only if it doesn't hurt" or "stop at 17 days" into a plain recommendation, so
+// a cut that would remove one gives up and the turn ends in the data summary.
+const cautionWord = new RegExp(
+  `${prohibitionWord.source}|\\b(?:stop\\w*|avoid\\w*|skip\\w*|limit\\w*|careful\\w*|caution\\w*|pain\\w*|hurt\\w*|pinch\\w*|sharp|swell\\w*|dizz\\w*|numb\\w*|injur\\w*|sore\\w*|off the table|steer clear)\\b`,
+  "i",
+);
+const conditionWord =
+  /\b(?:until|unless|except|only|provided|as long as|if|but|however|although|though|at most|no more than|no less than|up to|max\w*|instead|otherwise)\b/i;
+
+/** Whether removing a unit could change what is left from advice into something else. */
+function changesMeaning(removed: Removed): boolean {
+  // A repeated closing question asks something; it sets no rule for what comes before it.
+  if (removed.reasons.includes("closing_question_stripped")) return false;
+  if (cautionWord.test(removed.unit)) return true;
+  // A repeated sentence is only a repeat; a figure or a source is a fault in a claim, which a
+  // condition or a caveat may be attached to.
+  return removed.reasons.some((reason) => reason !== "repeat_stripped") &&
+    conditionWord.test(removed.unit);
 }
 
 /** A line left alone before a list that was cut away ("Here is the plan:"). */
@@ -585,9 +632,14 @@ export function cutReply(
     for (const reason of reasons) cuts.add(reason);
     return reasons.length > 0;
   };
-  const main = cutUnits(original, (unit) => mark(unit, true));
+  const main = cutUnits(original, (unit) => {
+    const reasons = flaggedBy(unit, true);
+    for (const reason of reasons) cuts.add(reason);
+    return reasons;
+  });
+  if (main.removed.some((removed) => changesMeaning(removed))) return null;
   const answerText = withoutDanglingLead(main.text);
-  const keptUnits = answerText === "" ? 0 : cutUnits(answerText, () => false).units;
+  const keptUnits = answerText === "" ? 0 : cutUnits(answerText, () => []).units;
   if (answerText.length < 40 || keptUnits * 2 < main.units) return null;
 
   const strings = (value: unknown) =>

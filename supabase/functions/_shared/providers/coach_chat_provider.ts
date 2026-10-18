@@ -1370,7 +1370,8 @@ export function replyCheckInputsFor(
           // Referral wording is the turn's own when the health check is not cleared, today's
           // pain is high, or the question may be about a health risk.
           referralNeeded: screening !== "cleared" || ranges.painEscalated ||
-            mayConcernHealthRisk(question),
+            mayConcernHealthRisk(question) ||
+            mayConcernHealthRisk(`${previous.question ?? ""} ${previous.reply}`),
         },
       }
       : {}),
@@ -1574,7 +1575,7 @@ function repairRuleHint(rule: CoachChatValidationRule, detail?: string): string 
     case "citation_not_retrieved":
       return 'Remove every citation of a library source that was not shown in the library reference data of this request. That includes a study, guideline or fact sheet named in the text by its authors and year or by the institution that published it: name only the sources shown there. Use only the source ids in square brackets there: an evidence item with source "library" and that id as its code. Never write source ids in the answer text. If no excerpt supports a sentence, soften or remove it; do not fill the gap from memory.\n';
     case "repeats_previous_turn":
-      return "Your reply repeats your previous reply in this conversation (see This Conversation): its closing question, or a sentence you already said, or both. Remove each repeat. End with a different question that moves the conversation on, or with no question. Say each caution once; do not say it again.\n";
+      return "Your reply repeats your previous reply in this conversation (see This Conversation): its closing question, or a sentence you already said, or both. Remove each repeat that is not a safety caution. End with a different question that moves the conversation on, or with no question. Keep every safety caution the athlete still needs (stop if pain, swelling or dizziness, a limit, see a doctor or physio); say it again if it applies, and do not remove one to avoid a repeat.\n";
     case "numbers_not_grounded":
       return `These figures are not in the athlete file, the calculated sections, the Safe Ranges, the reference data or the athlete's message${
         detail ? `: ${detail}` : ""

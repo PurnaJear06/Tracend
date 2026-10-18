@@ -420,7 +420,7 @@ Deno.test("the principles digest grounds general guidance but not a sentence abo
 
 const kreiderLibrary = {
   maughan_2018_ioc_supplements:
-    "[source: maughan_2018_ioc_supplements] Creatine at 3 to 5 g a day is well studied.",
+    "[source: maughan_2018_ioc_supplements] Creatine at 3 to 5 g a day is well studied. Athletes who train hard may use it.",
 };
 
 function inputsFor(extra: Partial<Parameters<typeof coachReplyCheck>[0]> = {}) {
@@ -548,4 +548,82 @@ Deno.test("a cut keeps the missing-data notes within the contract and rebuilds l
     evidence: [{ code: "maughan_2018_ioc_supplements", label: "Kreider 2017", source: "library" }],
   }, ["citation_not_retrieved"])!;
   assertEquals(onlyLabel.cuts, ["label_rebuilt"]);
+});
+
+Deno.test("a cut never turns a rule, a limit or a caveat into a plain recommendation", () => {
+  const base = {
+    evidence: [],
+    missing_data: [],
+    safety_state: "allowed",
+    suggested_follow_ups: [],
+    reasoning_chain: [],
+  };
+  const cut = (answer: string) =>
+    cutReply(inputsFor(), { ...base, answer }, ["numbers_not_grounded"]);
+  const tail = " That keeps the week simple and realistic for your recovery.";
+  // The reviewer's cases: a "skip these" list whose lead-in holds the ungrounded figure.
+  assertEquals(
+    cut(
+      "Your knee needs a rest this week, so keep it easy.\nFor the next 13 days, skip all of these:\n- Heavy back squats\n- Jumping lunges and box jumps\n- Downhill running",
+    ),
+    null,
+  );
+  assertEquals(
+    cut(
+      "Your knee needs a rest this week, so keep it easy.\nStop these until 17 days pass with no pain:\n- Heavy back squats\n- Jumping lunges\n- Downhill running",
+    ),
+    null,
+  );
+  // Prohibitions, limits, conditions and caveats on a figure that is not in the data.
+  for (
+    const faulty of [
+      "Do not squat for 13 days.",
+      "Don't run on that knee for 13 days.",
+      "Never load the knee in the next 13 days.",
+      "Avoid jumping for 13 days.",
+      "Keep squats light until 13 days have passed.",
+      "Add weight only if the knee feels fine after 13 days.",
+      "But stop at once if the knee hurts in the next 13 days.",
+      "Unless the knee swells, you can add 13 min of cycling.",
+      "However, wait 13 days before you test the knee.",
+      "Limit squats to 13 reps a day.",
+      "Skip jumps for the next 13 days.",
+    ]
+  ) {
+    assertEquals(
+      cut(`Do 3 sets of leg presses today, and keep the weight comfortable. ${faulty}${tail}`),
+      null,
+      faulty,
+    );
+  }
+  // A lead-in with no rule of its own takes its whole list with it.
+  const listed = cut(
+    "Your knee is doing well so far this week and the plan can stay simple.\nSleep and protein are on track.\nWarm up for a few minutes first.\nHere are the exercises for the next 13 days:\n- Leg press\n- Hamstring curls\nThat keeps the week simple and realistic for your recovery.",
+  )!;
+  assertEquals(
+    listed.answer.answer,
+    "Your knee is doing well so far this week and the plan can stay simple.\nSleep and protein are on track.\nWarm up for a few minutes first.\nThat keeps the week simple and realistic for your recovery.",
+  );
+  // A repeated closing question may carry a caution word; it sets no rule, so it is still cut.
+  const repetition = {
+    previousReply: "Sleep was fine. Want me to adjust the plan if the knee still hurts again?",
+    referralNeeded: false,
+  };
+  const repeated = cutReply(
+    inputsFor({ repetition }),
+    {
+      ...base,
+      answer:
+        "Your sleep looks steady this week and your recovery is in range, so keep the same routine. Should I adjust the plan if the knee still hurts again?",
+    },
+    ["repeats_previous_turn"],
+  );
+  assertEquals(repeated?.cuts, ["closing_question_stripped"]);
+});
+
+Deno.test("repeats_previous_turn: a pain stop rule is never a repeat, on any turn", () => {
+  const rule = "If the knee pinches or swells, stop the set and rest it for the day.";
+  const repetition = { previousReply: `${rule} Want me to plan around it?`, referralNeeded: false };
+  const reply = `Your sleep looks steady this week. ${rule}`;
+  assertEquals(coachReplyCheck(inputsFor({ repetition }))(reply, [], reply), null);
 });

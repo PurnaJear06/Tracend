@@ -9,7 +9,7 @@
 import { calculateCoachNumbers } from "../../coach_calculations.ts";
 import { hasGoalTarget, healthyFloorWeightKg } from "./bmi.ts";
 import { type GoalTarget, noGoalTarget } from "./types.ts";
-import { weightFiguresIn } from "./weight_figures.ts";
+import { namesLift, weightFiguresIn } from "./weight_figures.ts";
 
 export type WeightClaimRule = "weight_below_healthy_floor" | "projection_without_target";
 
@@ -64,14 +64,29 @@ const limitBefore =
  * A figure counts only when its surroundings say it is a body weight (weight_figures.ts): a load
  * on the bar ("overhead press is 55 kg x 6") is not one.
  */
-function bodyWeightsIn(sentence: string): number[] {
+function bodyWeightsIn(sentence: string, carriedLoad: boolean): number[] {
   const found: number[] = [];
-  for (const figure of weightFiguresIn(sentence)) {
+  for (const figure of weightFiguresIn(sentence, carriedLoad)) {
     if (!figure.bodyWeight) continue;
     if (limitBefore.test(figure.before)) continue;
     for (const kg of figure.kgs) if (kg >= 30 && kg <= 300) found.push(kg);
   }
   return found;
+}
+
+/**
+ * The answer's sentences, each with whether an earlier sentence of its paragraph (or list) names a
+ * lift: a figure there is read as that lift's load unless wording about the person's weight is
+ * as near as two words away ("Your bench is moving well. Next week you'll try 40 kg.").
+ */
+function* sentencesWithLift(answer: string): Generator<readonly [string, boolean]> {
+  for (const paragraph of answer.split(/\n\s*\n/)) {
+    let carried = false;
+    for (const sentence of paragraph.split(/(?<=[.!?])\s+|\n+/)) {
+      yield [sentence, carried];
+      carried ||= namesLift(sentence);
+    }
+  }
 }
 
 /** The first rule the answer text breaks, or null. */
@@ -83,11 +98,11 @@ export function weightClaimViolation(
   // Every figure the athlete wrote is theirs, whatever it measures.
   const own = weightFiguresIn(question).flatMap((figure) => [...figure.kgs]);
   const theirs = (kg: number) => own.some((value) => Math.abs(value - kg) < 0.5);
-  for (const sentence of answer.split(/(?<=[.!?])\s+|\n+/)) {
+  for (const [sentence, carriedLoad] of sentencesWithLift(answer)) {
     const asksOrProposes = sentence.trim().endsWith("?") ||
       (targetProposal.test(sentence) && !paceCue.test(sentence));
     const forwardLooking = lookAhead.test(sentence) || targetProposal.test(sentence);
-    for (const kg of bodyWeightsIn(sentence)) {
+    for (const kg of bodyWeightsIn(sentence, carriedLoad)) {
       if (theirs(kg)) continue;
       if (forwardLooking && context.floorKg !== null && kg < context.floorKg - 0.05) {
         return "weight_below_healthy_floor";

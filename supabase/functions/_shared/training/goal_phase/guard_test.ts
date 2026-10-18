@@ -276,3 +276,42 @@ Deno.test("projection and pace wording is a body-weight claim, and an unclear fi
     null,
   );
 });
+
+Deno.test("normal lift progression passes, and real body projection is still caught beside it", () => {
+  const ask = "How should I progress my bench?";
+  const floor = { currentKg: 74.8, floorKg: 59.9, hasTarget: false, direction: -1 } as const;
+  for (
+    const answer of [
+      "Your bench is moving well. Next week you'll try 40 kg.",
+      "Your bench is moving well. You'll move up to 45 kg next week.",
+      "Your bench is moving well. Then you could go to 50 kg.",
+      "Your bench is moving well. If you keep this up you will hit 52.5 kg soon.",
+      "Your bench is moving well. Next week you'll try 40 kg. You'll move up to 45 kg after that. Then you could go to 50 kg. If you keep this up you will hit 52.5 kg soon.",
+      "Bench plan:\n- Week 1: 40 kg x 8\n- Week 2: you could add 2.5 kg and attempt 42.5 kg\n- Week 3: work up to 45 kg",
+      "Your squat is strong.\n- Next: try 50 kg",
+      "You'll move up to 45 kg next week.",
+      "Then you could go to 50 kg.",
+      "Next week you'll try 40 kg.",
+    ]
+  ) {
+    assertEquals(weightClaimViolation(answer, ask, floor), null, answer);
+    assertEquals(weightClaimViolation(answer, ask, { ...floor, hasTarget: true }), null, answer);
+  }
+  for (
+    const answer of [
+      "Your bench is moving well. At this pace you'll be at 45 kg.",
+      "Your bench is moving well. I would put you at 45 kg.",
+      "Your bench is moving well. You will weigh 50 kg in 12 weeks.",
+      "Your bench is moving well. Your body weight will drop to 52 kg.",
+      "Your bench is moving well.\n\nIf you keep this up you will hit 52.5 kg soon.",
+      "Your bench is moving well. You'd land at 50 kg.",
+      "Your bench is moving well. You could get down to 52 kg by March.",
+    ]
+  ) {
+    assertEquals(
+      weightClaimViolation(answer, ask, { ...floor, hasTarget: true }),
+      "weight_below_healthy_floor",
+      answer,
+    );
+  }
+});

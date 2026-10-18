@@ -1236,6 +1236,18 @@ Check after deploy: `model_runs`/`coach_messages.guard_faults` for `salvage:` en
 `rule:repeats_previous_turn` and `rule:citation_not_retrieved` counts; a rising `salvage:` share means a
 rule is too strict, a rising `fallback:` share means the cut is not reached.
 
+**Second review round (same PR).** (1) The cut gives up (data summary) when it would remove a sentence that
+sets a rule, a limit or a condition (prohibition, stop, symptom, until, unless, only, if, but, however, up
+to, instead), and a cut lead-in takes its whole list with it; a repeated closing question stays cuttable.
+(2) Pain stop rules are never repeats; on a turn that needs referral wording (also when the previous
+exchange was about a health risk) every caution stands; the repair hint never asks to drop a caution.
+(3) Institution initials with no year match only a source's id or title acronyms (case-sensitive), never
+its excerpt. (4) Lift progression: progression verbs are load cues, and a lift named earlier in the
+paragraph or list carries to a sentence with no cue of its own unless weight-of-the-person wording is
+within two words; weaker projection wording does not override it. (5) A session duration is exempt only as
+advice (an imperative, or "you" with a modal): "you normally walk 45 minutes" and "your plan is a 45-minute
+walk" must be in the data.
+
 ## Next agent starts here
 
 Phase 2: A3, A5 and A6 start first, A4 next, A7 after A3–A6 merge. Briefs and file owners are in

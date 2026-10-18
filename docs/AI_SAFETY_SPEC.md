@@ -937,7 +937,13 @@ routes stay available by settings alone for two weeks after the cutover.
   target, goal), a movement of the person ("get down to", "drop to"), projection or pace wording
   ("at this pace", "would put you at", "on track for", "heading to", "you'd land at") or "you" as
   the subject of a verb that lands on a weight ("you'll be at", "you will hit", "you could reach")
-  makes it a body weight when it is nearer than any load cue; a tie goes to the load. A figure
+  makes it a body weight when it is nearer than any load cue; a tie goes to the load. Load-progression verbs
+  ("try", "add", "attempt", "pull", "move up to", "work up to", "go to") are load cues, and where an
+  earlier sentence of the same paragraph or list names a lift, a figure with no load cue of its own
+  is read as that lift's load ("Your bench is moving well. Next week you'll try 40 kg.") unless
+  wording about the person's weight (weigh, scale, body weight, "at this pace", "put you at",
+  "land at", "get down to") is within two words of it. Weaker projection wording ("heading to",
+  "if you keep this up", "you will hit") does not override a carried lift. A figure
   with no load cue near it is a body weight even with no body cue: this is a safety check and an
   unclear figure fails closed. Look-ahead wording for the floor rule includes "heading", "would
   put you", "land", "expect" and "ends at" beside the older cues. Both rules read only body
@@ -1010,13 +1016,14 @@ routes stay available by settings alone for two weeks after the cutover.
   length of a session item in a plan: a whole number of minutes from 10 to 90 in steps of five
   that says how long to do a named activity, such as "30 min easy walk", "walk for 20-30
   minutes", "walk 20 min after dinner" or "a 45-minute session"; the named activity is what makes
-  it advice, so a duration the wording gives to the athlete's past or records ("your walk was 30
-  min", "you did a 30 minute walk yesterday", "your average walk is 30 min": was, did, last,
-  logged, average, usual and similar words), a duration with no activity beside it ("you slept 450
+  it advice, so a duration the wording gives to the athlete's past, records, habits or plan ("your
+  walk was 30 min", "you did a 30 minute walk yesterday", "your average walk is 30 min", "you
+  normally walk 45 minutes", "your plan is a 45-minute walk": was, did, last, logged, average,
+  usual, normally, currently, any "your", or "you" with no modal) is a claim about them and must be
+  in the data; only advice is exempt (an imperative, "you can/should/could ...", "try ..."), a duration with no activity beside it ("you slept 450
   minutes"), a dose or recurring period ("walk 45 minutes a day", "every morning", "each
   evening", "per session", "nightly", "three times a week", "every other day"), a figure that is
-  not a round number of minutes, and anything over 90 minutes are still checked; "Your plan is a
-  30-minute walk after dinner" is advice). Loads in kg, calories,
+  not a round number of minutes, and anything over 90 minutes are still checked). Loads in kg, calories,
   body weights, percentages and every other measurement are never exempt: a load Coach did not get
   from the athlete's logged or planned loads in the context is a figure it invented. One repair
   names the unsupported figures (in the repair instruction only: they are athlete content and
@@ -1185,7 +1192,8 @@ and shows Coach the chunks it found. The library never decides a number; it grou
   "WHO guidelines"; `library/mentions.ts`). A mention matches a source shown this turn by the words
   of the source's id (author, year, topic), its title and the initials of its title ("International
   Society of Sports Nutrition" is ISSN), and, for a mention with a year, the author's name in the
-  excerpt shown. When it matches, the server adds the source's evidence item to the reply (code the
+  excerpt shown. An institution's initials with no year match only the id or the title's acronyms
+  (case matters: "WHO" is an acronym, "who" a word in an excerpt), never the excerpt. When it matches, the server adds the source's evidence item to the reply (code the
   source id, label the retrieved title and year, source `library`) when the evidence has room, and
   the reply is read as citing it, so a figure only that source holds is grounded. When it matches
   no shown source (or the year differs), the reply breaks `citation_not_retrieved` and the repair
@@ -1243,7 +1251,13 @@ server writes it anyway; a figure in the model's wording of it cannot make the c
 citation stays; entry `salvage:label_rebuilt`), and a lead-in line left with nothing under it ("Here is the
 plan:") goes too. The cut reply must pass the whole check again (`parseCoachChatAnswer`), keep at
 least half of the answer's sentences and at least 40 characters, or the turn ends in the data
-summary as before. A cut never applies when any other rule failed (calorie floor, loss ceiling,
+summary as before. A sentence that introduces a list takes its whole list with it when it is cut. A cut also gives
+up, and the turn ends in the data summary, when it would remove a sentence that sets a rule or
+a limit or puts a condition on advice (a prohibition or stop word, a symptom, "until", "unless",
+"only", "if", "but", "however", "up to", "instead"), because without it "for the next 13 days,
+skip all of these:" would leave a bare list of what to avoid; only a repeated closing question,
+which sets no rule, and a repeated plain sentence are cut without that test. A cut never applies
+when any other rule failed (calorie floor, loss ceiling,
 effort cap, pain day, a claimed action, a projected or below-floor body weight), so it can never
 let an invented body weight, calorie or medical figure through. The proposal and fact suggestions
 the model sent with the reply are read as for any answer. The turn trace records what was cut
@@ -1263,7 +1277,10 @@ other sentence repeats when it has at least six content words and a Dice coeffic
 red-flag wording (emergency number, chest pain, fainting, stroke, self-harm, crisis lines) always
 stands, and referral wording (doctor, physio, professional, clearance, "get it checked") stands
 when the turn needs it: the health check is not cleared, today's pain is 7 or more, or the
-question may be about a health risk (`mayConcernHealthRisk`). Otherwise the same "when to get it
+question or the previous exchange may be about a health risk (`mayConcernHealthRisk`); on such a
+turn every caution or limit stands too. A stop rule for pain or another symptom ("stop if it
+hurts", "if the knee pinches or swells, stop and rest") always stands, whatever the turn. The
+repair instruction never asks Coach to drop a safety caution. Otherwise the same "when to get it
 looked at" line is an ordinary repeat. An athlete asking the same thing again (their question
 and their previous one at least 0.7 similar) gets the same answer again. A repeat gets the one
 repair with the instruction to drop it; if it repeats again, or no repair can be sent, the

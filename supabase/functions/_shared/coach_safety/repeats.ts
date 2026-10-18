@@ -8,8 +8,10 @@
 // the words in both sets), after dropping function words and figures and trimming word endings.
 // Safety wording is never a repeat: an emergency or red-flag line always bears repeating, and a
 // referral line (see a doctor, get it checked, get clearance) bears repeating when the turn needs
-// one (the health check is not cleared, today's pain is high, or the question may be about a
-// health risk). The athlete asking the same thing again also gets the same answer again.
+// one (the health check is not cleared, today's pain is high, or the question or the previous
+// exchange may be about a health risk), and then every caution or limit stands too. A stop rule
+// for pain or another symptom always stands. The athlete asking the same thing again also gets
+// the same answer again.
 
 /** Closing questions are short; this many content words each, and at least this similar. */
 export const closingQuestionSimilarity = 0.7;
@@ -64,10 +66,23 @@ const urgentWording =
   /\b(?:emergency|urgent(?:ly)?|ambulance|911|999|112|988|chest (?:pain|tightness|pressure)|faint\w*|stroke|suicid\w*|self[- ]?harm|crisis)\b/i;
 const referralWording =
   /\b(?:doctor|physician|physio(?:therapist)?|clinician|gp|dietitian|nutritionist|medical|professional|looked (?:at|over)|checked (?:out|over)|seen|cleared?|clearance|screening|health check)\b/i;
+// A stop rule for pain or another symptom ("stop if it hurts", "skip it when the knee pinches",
+// "sharp pain means rest and see a physio"): always safety wording, whatever the turn.
+const symptom = String
+  .raw`(?:pain\w*|hurt\w*|pinch\w*|sharp|swell\w*|swollen|dizz\w*|light-?headed|numb\w*|tingl\w*|injur\w*|sore\w*)`;
+const stopWord = String.raw`(?:stop|skip|avoid|rest|back off|don'?t|do not|never|doctor|physio\w*)`;
+const symptomStopRule = new RegExp(
+  String.raw`\b${stopWord}\b[^.!?]*\b${symptom}\b|\b${symptom}\b[^.!?]*\b${stopWord}\b`,
+  "i",
+);
+// Any caution or limit; protected when the turn needs referral wording.
+const cautionWording =
+  /\b(?:stop|avoid\w*|skip\w*|don'?t|do not|never|limit\w*|careful|caution|pain\w*|hurt\w*|sharp|swell\w*|dizz\w*|numb\w*|injur\w*)\b/i;
 
 /** Whether a sentence is safety wording that must stay (see the file header). */
 export function isSafetyWording(sentence: string, referralNeeded: boolean): boolean {
-  return urgentWording.test(sentence) || (referralNeeded && referralWording.test(sentence));
+  return urgentWording.test(sentence) || symptomStopRule.test(sentence) ||
+    (referralNeeded && (referralWording.test(sentence) || cautionWording.test(sentence)));
 }
 
 export type RepeatInputs = Readonly<{

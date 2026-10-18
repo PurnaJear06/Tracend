@@ -180,6 +180,48 @@ const setQualifier = new Set([
   "third",
 ]);
 
+// Verbs that put a load on the bar: "you'll try 40 kg", "move up to 45 kg", "then go to 50 kg".
+const progressionWords = new Set([
+  "add",
+  "adds",
+  "adding",
+  "try",
+  "tries",
+  "trying",
+  "attempt",
+  "attempts",
+  "attempting",
+  "pull",
+  "pulls",
+]);
+const progressionPhrases: readonly (readonly RegExp[])[] = [
+  [/^(?:move|moves|moving|work|works|working)$/, /^up$/, /^to$/],
+  [/^(?:go|goes|going)$/, /^to$/],
+];
+
+/** Whether the sentence names a lift or lifting (an exercise, a bar, reps, a load). */
+export function namesLift(sentence: string): boolean {
+  const words = wordsOf(sentence);
+  return words.some((_, index) => isLoadWord(words, index));
+}
+
+function loadCuesIn(words: readonly Word[]): Cue[] {
+  const cues: Cue[] = [];
+  for (let i = 0; i < words.length; i++) {
+    if (isLoadWord(words, i) || progressionWords.has(words[i].text)) {
+      cues.push({ from: i, to: i });
+    }
+    for (const phrase of progressionPhrases) {
+      if (
+        phrase.every((pattern, offset) => words[i + offset] && pattern.test(words[i + offset].text))
+      ) {
+        cues.push({ from: i, to: i + phrase.length - 1 });
+      }
+    }
+  }
+  return cues;
+}
+
 function isLoadWord(words: readonly Word[], index: number): boolean {
   const word = words[index].text;
   if (loadWords.has(word) || oneRepMax.test(word)) return true;
@@ -202,7 +244,8 @@ function hasRepNotation(sentence: string, index: number, length: number): boolea
 
 // ---- body cues ---------------------------------------------------------------------------
 
-type Cue = Readonly<{ from: number; to: number }>;
+/** A cue's place in the sentence; a strong body cue is a word or phrase that is about the person's weight. */
+type Cue = Readonly<{ from: number; to: number; strong?: true }>;
 
 // A weight that is not the body's: "the weight on the bar", "add weight", "the same weight".
 const notBodyBefore = new Set([
@@ -228,12 +271,15 @@ const notBodyBefore = new Set([
   "bar",
 ]);
 
-// Single words about the person or what they aim for.
-const bodyWord =
-  /^(?:weigh|weighs|weighed|weighing|weighin|weighins|scales?|bmi|height|bodyweight|target|targets|aim|aims|aiming|goal|goals)$/;
+// Single words about the person's weight (strong) or what they aim for (weak: a lift has targets).
+const strongBodyWord =
+  /^(?:weigh|weighs|weighed|weighing|weighin|weighins|scales?|bmi|height|bodyweight)$/;
+const weakBodyWord = /^(?:target|targets|aim|aims|aiming|goal|goals)$/;
 
-// "get down to", "drop to": a movement of the person toward a weight.
-const movementPhrases: readonly (readonly RegExp[])[] = [
+// "get down to", "drop to", "at this pace", "put you at", "land at": wording that is about the
+// person's weight. These (and the words above) win over a load cue carried from an earlier
+// sentence when they are as near as it.
+const strongPhrases: readonly (readonly RegExp[])[] = [
   [
     /^(?:get|getting|go|going|come|coming|slim|slimming|cut|cutting|bring|bringing)$/,
     /^down$/,
@@ -241,15 +287,19 @@ const movementPhrases: readonly (readonly RegExp[])[] = [
   ],
   [/^(?:drop|dropping|dip|dipping|fall|falling|sink|sinking)$/, /^to$/],
   [/^(?:drop|dropping|dip|dipping|fall|falling|sink|sinking)$/, /^down$/, /^to$/],
-  // Projection and pace wording.
   [/^at$/, /^(?:this|that|the|your|current|same)$/, /^(?:pace|rate)$/],
   [/^(?:put|putting|puts|leave|leaves|leaving|take|takes|taking|bring|brings)$/, /^(?:you|your)$/],
   [/^(?:on|off)$/, /^(?:track|course|pace)$/],
-  [/^(?:heading|headed|trending|tracking|moving|going|aiming)$/, /^(?:to|toward|towards)$/],
   [
     /^(?:land|lands|landing|end|ends|ending|finish|finishes|finishing|settle|settles|settling)$/,
     /^(?:at|on|around)$/,
   ],
+];
+
+// Weaker projection wording, which a lift's progression can share ("if you keep this up you will
+// hit 52.5 kg"): it counts unless a load cue is as near, or one is carried from the sentence before.
+const weakPhrases: readonly (readonly RegExp[])[] = [
+  [/^(?:heading|headed|trending|tracking|moving|going|aiming)$/, /^(?:to|toward|towards)$/],
   [/^(?:project|projects|projected|projecting|projection|extrapolate|extrapolated)$/],
   [/^(?:if|when)$/, /^you$/, /^(?:keep|continue|carry|stay|maintain)$/],
 ];
@@ -263,16 +313,20 @@ function bodyCuesIn(words: readonly Word[]): Cue[] {
   const cues: Cue[] = [];
   for (let i = 0; i < words.length; i++) {
     const word = words[i].text;
-    if (bodyWord.test(word)) cues.push({ from: i, to: i });
+    if (strongBodyWord.test(word)) cues.push({ from: i, to: i, strong: true });
+    if (weakBodyWord.test(word)) cues.push({ from: i, to: i });
     if (word === "weight" || word === "weights") {
-      if (i === 0 || !notBodyBefore.has(words[i - 1].text)) cues.push({ from: i, to: i });
-    }
-    for (const phrase of movementPhrases) {
-      if (
-        phrase.every((pattern, offset) => words[i + offset] && pattern.test(words[i + offset].text))
-      ) {
-        cues.push({ from: i, to: i + phrase.length - 1 });
+      if (i === 0 || !notBodyBefore.has(words[i - 1].text)) {
+        cues.push({ from: i, to: i, strong: true });
       }
+    }
+    const matches = (phrase: readonly RegExp[]) =>
+      phrase.every((pattern, offset) => words[i + offset] && pattern.test(words[i + offset].text));
+    for (const phrase of strongPhrases) {
+      if (matches(phrase)) cues.push({ from: i, to: i + phrase.length - 1, strong: true });
+    }
+    for (const phrase of weakPhrases) {
+      if (matches(phrase)) cues.push({ from: i, to: i + phrase.length - 1 });
     }
     if (youSubject.test(word)) {
       // "you", then up to three words (will, could, just ...), then the verb.
@@ -318,6 +372,9 @@ const skipWord = new Set([
   "only",
 ]);
 
+/** A load carried from the sentence before counts as a load cue this many words away. */
+const carriedDistance = 2;
+
 /** Cues farther than this many words from the figure do not govern it. */
 const reach = 5;
 
@@ -337,9 +394,10 @@ function nearest(distances: readonly (number | null)[]): number | null {
  * Every weight figure in the sentence, in kg, each marked as the athlete's body weight or not.
  * `bodyWeight` is true when a body cue is closer to the figure than any load cue.
  */
-export function weightFiguresIn(sentence: string): WeightFigure[] {
+export function weightFiguresIn(sentence: string, carriedLoad = false): WeightFigure[] {
   const words = wordsOf(sentence);
   const bodyCues = bodyCuesIn(words);
+  const loadCues = loadCuesIn(words);
   const found: WeightFigure[] = [];
   for (const match of sentence.matchAll(weightPattern)) {
     const kgs = [match[1], match[2]].filter((raw): raw is string => raw !== undefined)
@@ -356,17 +414,20 @@ export function weightFiguresIn(sentence: string): WeightFigure[] {
         ? distance(words, firstAfter, cue.from - 1)
         : null;
     const body = nearest(bodyCues.map(cueDistance));
-    const load = hasRepNotation(sentence, start, match[0].length) ? 0 : nearest(
-      words.flatMap((_, index) =>
-        isLoadWord(words, index) ? [cueDistance({ from: index, to: index })] : []
-      ),
-    );
+    const strongBody = nearest(bodyCues.filter((cue) => cue.strong).map(cueDistance));
+    const load = hasRepNotation(sentence, start, match[0].length)
+      ? 0
+      : nearest(loadCues.map(cueDistance));
     found.push({
       kgs,
       index: start,
       before: sentence.slice(0, start),
       // A figure fails closed: it is a body weight unless a load cue is as near as any body cue.
-      bodyWeight: load === null || (body !== null && body < load),
+      // Where the sentence before names a lift and this one has no load cue of its own, the lift
+      // carries over: only wording about the person's weight, as near as two words away, overrides it.
+      bodyWeight: carriedLoad && load === null
+        ? strongBody !== null && strongBody <= carriedDistance
+        : load === null || (body !== null && body < load),
     });
   }
   return found;
