@@ -1246,6 +1246,12 @@ when an overlap exists; the data index grows by about 250 when a plan exists.
   finished sessions report the sets actually logged (`private.coach_session_exercises`), falling
   back to the planned sets.
 - The schedule lookup shows the unknown-exercise caveat; duplicate date helper removed.
+- Third review: the schedule lookup resolves the plan version per date (a plan change shows from its
+  effective date and earlier dates keep the version superseded then; a temporary block's days are
+  marked and the days after its `ends_on` use `restores_version_id`'s sessions), and the plan state
+  hands the 7-day contributor the same restored sessions (`after_block`). The overlap line says
+  "consecutive days, with no rest day between": the data are dates, not times, so no wording
+  claims an hour or a part of a day.
 - Second review: a substituted exercise (`performance_kind` substituted or extra) has no catalog
   slug by design (`private.exercise_performance_slug`), so `private.coach_session_exercises`
   reports its slug as null and the "muscles unknown" caveat shows; it never borrows the planned

@@ -8,8 +8,10 @@
 -- Every change adds fields and bumps schema_version from 1.0 to 1.1; no field is removed.
 --
 -- 0. private.coach_session_exercises  the sets a finished session logged, per exercise
--- 1. get_coach_plan_state_v1     + recent_completed: yesterday's and today's finished sessions
--- 2. get_coach_data_index_v1     + schedule: the active plan's weekdays and the date it started
+--    private.coach_plan_sessions      the sessions of one plan version (shared by the plan state)
+-- 1. get_coach_plan_state_v1     + recent_completed: yesterday's and today's finished sessions,
+--                                  + after_block: the sessions a temporary block hands back to
+-- 2. get_coach_data_index_v1     + schedule: the active plan's weekdays and the first date a plan covers
 -- 3. coach_lookup_plan_history_v1  filter "schedule": the plan laid over any range of dates,
 --                                  past or ahead (private.coach_plan_schedule)
 
@@ -46,12 +48,35 @@ returns jsonb language sql stable set search_path = '' as $$
 $$;
 revoke all on function private.coach_session_exercises(uuid, uuid) from public, anon, authenticated;
 
+-- 0b ---------------------------------------------------------------------------------------------
+
+-- The sessions of one plan version with their exercises, as get_coach_plan_state_v1 has always
+-- listed them. Not SECURITY DEFINER, like the other private helpers.
+create function private.coach_plan_sessions(p_user_id uuid, p_version_id uuid)
+returns jsonb language sql stable set search_path = '' as $$
+  select coalesce((select jsonb_agg(jsonb_build_object(
+        'planned_workout_id', w.id, 'order', w.workout_order, 'name', w.name,
+        'weekday', w.preferred_weekday, 'minutes', w.estimated_minutes,
+        'exercises', (select coalesce(jsonb_agg(jsonb_build_object(
+            'planned_exercise_id', e.id, 'order', e.exercise_order,
+            'name', e.display_name_snapshot, 'slug', e.exercise_slug, 'sets', e.set_count,
+            'rep_min', e.rep_min, 'rep_max', e.rep_max, 'rest_seconds', e.rest_seconds,
+            'target_rpe', e.target_rpe, 'load_kg', e.target_load_kg
+          ) order by e.exercise_order), '[]'::jsonb)
+          from public.planned_exercises e
+          where e.planned_workout_id = w.id and e.user_id = w.user_id)
+      ) order by w.workout_order)
+      from public.planned_workouts w where w.plan_version_id = p_version_id and w.user_id = p_user_id), '[]'::jsonb);
+$$;
+revoke all on function private.coach_plan_sessions(uuid, uuid) from public, anon, authenticated;
+
 -- 1 ----------------------------------------------------------------------------------------------
 
 create or replace function public.get_coach_plan_state_v1(p_user_id uuid, p_local_date date)
 returns jsonb language sql stable security definer set search_path = '' as $$
   with active as (
-    select v.id as version_id, v.version_number, v.sessions_per_week, p.title
+    select v.id as version_id, v.version_number, v.sessions_per_week, p.title, v.ends_on,
+      v.restores_version_id
     from public.training_plan_versions v
     join public.training_plans p on p.id = v.plan_id and p.user_id = v.user_id
     where v.user_id = p_user_id and v.status = 'active' limit 1
@@ -67,20 +92,15 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       from public.user_profiles pr where pr.user_id = p_user_id),
     'plan', (select jsonb_build_object('title', a.title, 'version_number', a.version_number,
       'sessions_per_week', a.sessions_per_week) from active a),
-    'sessions', coalesce((select jsonb_agg(jsonb_build_object(
-        'planned_workout_id', w.id, 'order', w.workout_order, 'name', w.name,
-        'weekday', w.preferred_weekday, 'minutes', w.estimated_minutes,
-        'exercises', (select coalesce(jsonb_agg(jsonb_build_object(
-            'planned_exercise_id', e.id, 'order', e.exercise_order,
-            'name', e.display_name_snapshot, 'slug', e.exercise_slug, 'sets', e.set_count,
-            'rep_min', e.rep_min, 'rep_max', e.rep_max, 'rest_seconds', e.rest_seconds,
-            'target_rpe', e.target_rpe, 'load_kg', e.target_load_kg
-          ) order by e.exercise_order), '[]'::jsonb)
-          from public.planned_exercises e
-          where e.planned_workout_id = w.id and e.user_id = w.user_id)
-      ) order by w.workout_order)
-      from public.planned_workouts w join active a on a.version_id = w.plan_version_id
-      where w.user_id = p_user_id), '[]'::jsonb),
+    'sessions', private.coach_plan_sessions(p_user_id, (select a.version_id from active a)),
+    -- When the active version is a temporary block, the sessions the athlete returns to after its
+    -- last day: the schedule after `ends_on` is these, not the block's.
+    'after_block', (select jsonb_build_object('ends_on', a.ends_on,
+        'version_number', r.version_number,
+        'sessions', private.coach_plan_sessions(p_user_id, r.id))
+      from active a join public.training_plan_versions r
+        on r.id = a.restores_version_id and r.user_id = p_user_id
+      where a.ends_on is not null),
     -- A session finished under an earlier plan version still counts this week: it carries the
     -- workout's name, day and order so it can be matched to the active plan's workouts.
     'completed_this_week', coalesce((select jsonb_agg(jsonb_build_object(
@@ -157,7 +177,9 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     -- knows the schedule covers any date from then on, past or ahead (plan_history lookup with the
     -- filter "schedule").
     'schedule', (select jsonb_build_object('version', v.version_number,
-        'starts_on', coalesce(v.effective_date, private.local_day(p_user_id, v.created_at)),
+        'starts_on', (select min(coalesce(x.effective_date, private.local_day(p_user_id, x.created_at)))
+          from public.training_plan_versions x
+          where x.user_id = p_user_id and x.status in ('active', 'superseded')),
         'weekdays', (select coalesce(jsonb_agg(distinct w.preferred_weekday
             order by w.preferred_weekday), '[]'::jsonb)
           from public.planned_workouts w
@@ -169,13 +191,17 @@ $$;
 
 -- 3 ----------------------------------------------------------------------------------------------
 
--- The training plan laid over a range of dates, past or ahead. The active plan repeats weekly on
--- each session's weekday from the day it took effect; a date before that shows only what was
--- logged. Every finished session in the range is listed with the sets it logged per exercise, so
--- the muscles can be worked out from sets. Days with neither a planned nor a finished session
--- are left out. `today` is the athlete's own date, which tells a missed session from an upcoming
--- one. Planned sessions name a workout in `sessions`; the range is cut to 400 days and to
--- 90 days after the athlete's today.
+-- The training plan laid over a range of dates, past or ahead. Each date uses the plan version in
+-- force on it: the latest non-draft version that took effect on or before the date (a plan change
+-- shows from its effective date; earlier dates keep the version superseded then). When that
+-- version is a temporary block (ends_on set), the dates after its last day use the version it
+-- restores, which is what the athlete returns to. A date before the first version shows only what
+-- was logged. Every day names its version and says if it is a block. The plan repeats weekly on
+-- each session's weekday. Every finished session in the range is listed with the sets it logged
+-- per exercise, so the muscles can be worked out from sets. Days with neither a planned nor a
+-- finished session are left out. `today` is the athlete's own date, which tells a missed session
+-- from an upcoming one. Planned sessions name a workout in `sessions`; the range is cut to 400 days
+-- and to 90 days after the athlete's today.
 create function private.coach_plan_schedule(p_user_id uuid, p_from date, p_to date)
 returns jsonb language sql stable set search_path = '' as $$
   with active as (
@@ -188,10 +214,29 @@ returns jsonb language sql stable set search_path = '' as $$
     -- (maxScheduleAheadDays in coach_lookups/catalogue.ts, which validates the same bound).
     select greatest(p_from, least(p_to, private.local_date_for(p_user_id) + 90) - 399) as first_day,
       least(p_to, private.local_date_for(p_user_id) + 90) as last_day
+  ), versions as (
+    select v.id, v.version_number, v.block_kind, v.ends_on, v.restores_version_id, v.created_at,
+      coalesce(v.effective_date, private.local_day(p_user_id, v.created_at)) as starts_on
+    from public.training_plan_versions v
+    where v.user_id = p_user_id and v.status in ('active', 'superseded')
+  ), span as (
+    select (b.first_day + g)::date as day
+    from bounds b, generate_series(0, b.last_day - b.first_day) g
+  ), resolved as (
+    select sp.day,
+      case when pick.ends_on is not null and sp.day > pick.ends_on then pick.restores_version_id
+        else pick.id end as version_id,
+      coalesce(pick.ends_on is not null and sp.day <= pick.ends_on, false) as in_block
+    from span sp
+    left join lateral (
+      select x.* from versions x where x.starts_on <= sp.day
+      order by x.starts_on desc, x.created_at desc limit 1) pick on true
   ), planned as (
-    select w.id, w.name, w.preferred_weekday as weekday, w.workout_order, w.estimated_minutes
-    from public.planned_workouts w join active a on a.id = w.plan_version_id
+    select w.id, w.plan_version_id, w.name, w.preferred_weekday as weekday, w.workout_order,
+      w.estimated_minutes
+    from public.planned_workouts w
     where w.user_id = p_user_id and w.preferred_weekday is not null
+      and w.plan_version_id in (select r.version_id from resolved r where r.version_id is not null)
   ), done as (
     select s.local_date, cw.id as workout_id, cw.name,
       private.coach_session_exercises(p_user_id, s.id) as exercises
@@ -200,19 +245,18 @@ returns jsonb language sql stable set search_path = '' as $$
     cross join bounds b
     where s.user_id = p_user_id and s.state = 'completed'
       and s.local_date between b.first_day and b.last_day
-  ), span as (
-    select (b.first_day + g)::date as day
-    from bounds b, generate_series(0, b.last_day - b.first_day) g
   ), days as (
-    select sp.day, extract(isodow from sp.day)::integer as weekday,
+    select r.day, extract(isodow from r.day)::integer as weekday, rv.version_number, r.in_block,
       (select jsonb_agg(jsonb_build_object('id', pl.id, 'name', pl.name,
           'minutes', pl.estimated_minutes) order by pl.workout_order)
-        from planned pl cross join active a
-        where pl.weekday = extract(isodow from sp.day)::integer and sp.day >= a.starts_on) as planned,
+        from planned pl
+        where pl.plan_version_id = r.version_id
+          and pl.weekday = extract(isodow from r.day)::integer) as planned,
       (select jsonb_agg(jsonb_build_object('planned_workout_id', dn.workout_id, 'name', dn.name,
           'exercises', dn.exercises) order by dn.name, dn.workout_id)
-        from done dn where dn.local_date = sp.day) as done
-    from span sp
+        from done dn where dn.local_date = r.day) as done
+    from resolved r
+    left join public.training_plan_versions rv on rv.id = r.version_id and rv.user_id = p_user_id
   )
   select jsonb_build_object(
     'schema_version', '1.1', 'lookup', 'plan_history', 'filter', 'schedule',
@@ -226,8 +270,9 @@ returns jsonb language sql stable set search_path = '' as $$
             'slug', e.exercise_slug, 'sets', e.set_count) order by e.exercise_order), '[]'::jsonb)
           from public.planned_exercises e
           where e.planned_workout_id = pl.id and e.user_id = p_user_id))
-        order by pl.workout_order) from planned pl), '[]'::jsonb),
+        order by pl.plan_version_id, pl.workout_order) from planned pl), '[]'::jsonb),
     'days', coalesce((select jsonb_agg(jsonb_build_object('date', d.day, 'weekday', d.weekday,
+        'version', d.version_number, 'block', d.in_block,
         'planned', coalesce(d.planned, '[]'::jsonb), 'done', coalesce(d.done, '[]'::jsonb))
         order by d.day) from days d where d.planned is not null or d.done is not null), '[]'::jsonb));
 $$;

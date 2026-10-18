@@ -77,6 +77,11 @@ export type PlanState = Readonly<{
   version: number | null;
   sessionsPerWeek: number | null;
   sessions: readonly PlanSession[];
+  /**
+   * When the active version is a temporary block: its last day and the sessions the athlete
+   * returns to after it. Null for an ordinary plan.
+   */
+  afterBlock: Readonly<{ endsOn: string; sessions: readonly PlanSession[] }> | null;
   /** Sessions finished this ISO week: planned workout id and date. */
   completed: readonly Readonly<{
     id: string;
@@ -99,15 +104,9 @@ export type PlanState = Readonly<{
   targets: readonly ProgressionTarget[];
 }>;
 
-/** The plan state in a get_coach_plan_state_v1 payload, or null without an active plan. */
-export function parsePlanState(payload: unknown): PlanState | null {
-  const body = rec(payload);
-  if (!str(body.schema_version).startsWith("1.")) return null;
-  const plan = rec(body.plan);
-  if (Object.keys(plan).length === 0) return null;
-  const weekday = num(body.weekday);
-  if (weekday === null || typeof body.local_date !== "string") return null;
-  const sessions = list(body.sessions).map((session): PlanSession => ({
+/** The sessions in a plan state's `sessions` or `after_block.sessions` list. */
+function parseSessions(value: unknown): PlanSession[] {
+  return list(value).map((session): PlanSession => ({
     id: str(session.planned_workout_id),
     order: num(session.order),
     name: str(session.name),
@@ -125,6 +124,18 @@ export function parsePlanState(payload: unknown): PlanState | null {
       loadKg: num(exercise.load_kg),
     })),
   }));
+}
+
+/** The plan state in a get_coach_plan_state_v1 payload, or null without an active plan. */
+export function parsePlanState(payload: unknown): PlanState | null {
+  const body = rec(payload);
+  if (!str(body.schema_version).startsWith("1.")) return null;
+  const plan = rec(body.plan);
+  if (Object.keys(plan).length === 0) return null;
+  const weekday = num(body.weekday);
+  if (weekday === null || typeof body.local_date !== "string") return null;
+  const sessions = parseSessions(body.sessions);
+  const afterBlock = rec(body.after_block);
   const avoid = Array.isArray(body.avoid_patterns)
     ? body.avoid_patterns.filter((item): item is AvoidablePattern =>
       avoidablePatterns.includes(item as AvoidablePattern)
@@ -141,6 +152,9 @@ export function parsePlanState(payload: unknown): PlanState | null {
     version: num(plan.version_number),
     sessionsPerWeek: num(plan.sessions_per_week),
     sessions,
+    afterBlock: typeof afterBlock.ends_on === "string"
+      ? { endsOn: afterBlock.ends_on, sessions: parseSessions(afterBlock.sessions) }
+      : null,
     completed: list(body.completed_this_week).map((row) => ({
       id: str(row.planned_workout_id),
       localDate: str(row.local_date),
@@ -204,14 +218,20 @@ const exercisesOf = (session: PlanSession): DayExercise[] =>
 /**
  * The plan's sessions on the day `offset` days after today (1 to 6), resolved against the athlete's
  * ISO week. Inside the current week a session already finished is not planned again: its slot
- * reads done (`doneEarly`). From the next ISO week on, every session is planned again.
+ * reads done (`doneEarly`). From the next ISO week on, every session is planned again. Days after a
+ * temporary block's last day take the sessions of the plan it hands back to.
  */
 export function sessionsOn(state: PlanState, offset: number): Readonly<{
   planned: readonly PlanSession[];
   doneEarly: readonly Readonly<{ session: PlanSession; doneOn: string }>[];
 }> {
   const weekday = ((state.weekday - 1 + offset) % 7) + 1;
-  const onDay = state.sessions.filter((session) => session.weekday === weekday);
+  // After a temporary block's last day the athlete is back on the plan it replaced.
+  const pool =
+    state.afterBlock !== null && addDays(state.localDate, offset) > state.afterBlock.endsOn
+      ? state.afterBlock.sessions
+      : state.sessions;
+  const onDay = pool.filter((session) => session.weekday === weekday);
   if (offset > 7 - state.weekday) return { planned: onDay, doneEarly: [] };
   return {
     planned: onDay.filter((session) => finishedOn(state, session) === null),
@@ -389,7 +409,7 @@ export function resolveSchedule(
       date: state.localDate,
       text: `${focus.deferred.session.name} is not set for today: it would train ${
         focus.deferred.shared.join(", ")
-      } again the day before tomorrow's session`,
+      } on consecutive days with tomorrow's session`,
     });
   }
   for (let offset = 1; offset < weekAheadDays; offset += 1) {

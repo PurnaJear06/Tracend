@@ -374,6 +374,6 @@ Deno.test("the Sunday chest case shows Coach tomorrow's session and why Thursday
   assertStringIncludes(run.firstRound.volatile, "- Mon 2026-10-19 (tomorrow): Chest priority");
   assertStringIncludes(
     run.firstRound.volatile,
-    "Chest volume and delts is not set for today: it would train chest, triceps, front and side delts again the day before tomorrow's session",
+    "Chest volume and delts is not set for today: it would train chest, triceps, front and side delts on consecutive days with tomorrow's session",
   );
 });

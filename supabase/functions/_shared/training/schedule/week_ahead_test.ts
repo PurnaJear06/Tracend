@@ -200,3 +200,13 @@ Deno.test("a day with a note and no session reads as the note, not as a session"
     "(tomorrow): no session; Legs A was already done this week, on 2026-10-13",
   );
 });
+
+Deno.test("the overlap line speaks in dates, not hours: no claim finer than a day", () => {
+  const schedule = buildWeekAhead(sunday, 7, [
+    at(sunday, "Chest volume", chest),
+    at("2026-10-19", "Chest priority", chest),
+  ]);
+  const text = renderWeekAhead(schedule).join("\n");
+  assertStringIncludes(text, "Same muscles on consecutive days, with no rest day between");
+  assert(!/hour|under a day|48/i.test(text));
+});

@@ -263,8 +263,14 @@ function planSchedule(body: Json): Parts {
         : null,
     ].filter(Boolean).join("; ");
     const muscles = day.muscles.length ? ` (${day.muscles.join(", ")})` : "";
+    const block = row.block === true;
+    const version = has(row.version) && (block || row.version !== plan.version)
+      ? ` [version ${row.version}${block ? ", temporary block" : ""}]`
+      : "";
     lines.push(
-      `- ${stamp(day)}${offset === 0 ? " (today)" : ""}: ${parts}${muscles}${unknownNote(day)}`,
+      `- ${stamp(day)}${offset === 0 ? " (today)" : ""}: ${parts}${muscles}${
+        unknownNote(day)
+      }${version}`,
     );
   }
   const found = consecutiveOverlaps(scheduleDays);
@@ -273,9 +279,10 @@ function planSchedule(body: Json): Parts {
   return {
     preface: [
       has(plan.version)
-        ? `The plan (version ${plan.version}) repeats every week from ${val(plan.starts_on)}; ` +
-          "before that date only what was logged is shown. Days not listed have no session " +
-          "planned or logged."
+        ? `The plan is version ${plan.version} now. Each date uses the plan version in force on it ` +
+          "(a version that differs from the current one, and a temporary block, is marked), and " +
+          "the plan repeats every week; a date before the first plan shows only what was " +
+          "logged. Days not listed have no session planned or logged."
         : "There is no active training plan: only logged sessions are shown.",
     ],
     units: lines.map((line) => [line]),

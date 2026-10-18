@@ -763,7 +763,9 @@ records such as plan versions and goals are the athlete's local days, `private.l
 
 - Baseline, `(p_user_id, p_local_date)`: `get_coach_plan_state_v1` (the active plan's sessions with
   exercises, the sessions finished this ISO week, the sessions finished yesterday and today with
-  their exercises and sets (`recent_completed`, whatever the week), equipment and movements to
+  their exercises and the sets actually logged (`recent_completed`, whatever the week), when the
+  active version is a temporary block the sessions it hands back to after `ends_on`
+  (`after_block`), equipment and movements to
   avoid, and the next targets from `get_progression_summary_v1`), `get_coach_nutrition_state_v1` (the week's days with
   complete flags, the target, the schedule with what is logged, what was eaten today, where meals
   came from), `get_coach_data_index_v1` (first and last date and count per kind of record, and `schedule`: the
@@ -772,8 +774,10 @@ records such as plan versions and goals are the athlete's local days, `private.l
   `coach_lookup_workouts_v1`, `_exercise_history_v1`, `_meals_v1`, `_body_v1`, `_check_ins_v1`,
   `_recovery_v1`, `_plan_history_v1`, `_goals_v1`, `_weekly_reviews_v1`,
   `_health_history_v1`. `_plan_history_v1` with the filter `schedule` lays the active plan over the
-  range, past or ahead (`private.coach_plan_schedule`): per date the planned sessions, the finished
-  ones with their exercises, and the athlete's `today`; the range is the one lookup that may end
+  range, past or ahead (`private.coach_plan_schedule`): per date the planned sessions of the plan
+  version in force that day (the latest non-draft version whose `effective_date` is on or before the
+  date; after a temporary block's `ends_on` the version it restores), marked with its version number
+  and whether it is a block, the finished sessions with their logged sets, and the athlete's `today`; the range is the one lookup that may end
   after the coaching date (the Edge Function allows 90 days). Check-in notes are cut to 300 characters; a goal returns its target keys only
   (never the free-form details).
 - `private.nutrition_day_totals` and `private.nutrition_complete_day_rules` define a complete

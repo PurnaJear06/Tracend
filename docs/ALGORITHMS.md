@@ -942,7 +942,8 @@ resolution in `coach_context/contributors/training_plan.ts`; rule value
 explains the result and may offer a change as a proposal the athlete approves; it never decides it.
 
 - **Schedule.** The seven days from the athlete's coaching date (their own local date, not the
-  calendar week), one line each with the session and its muscles. The plan repeats weekly. Inside the
+  calendar week), one line each with the session and its muscles. The plan repeats weekly; after a
+  temporary block's last day the sessions are those of the plan the block replaced. Inside the
   athlete's ISO week a session already finished (even early, as a swap) is not planned again: its
   slot says when it was done. From next week on every session is planned again. Overlaps are
   computed from the same resolved schedule.

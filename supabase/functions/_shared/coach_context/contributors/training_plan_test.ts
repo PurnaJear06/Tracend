@@ -216,7 +216,7 @@ Deno.test("Sunday: Monday is tomorrow, and the undone chest session is not set f
   );
   assertStringIncludes(
     today,
-    "Chest volume and delts is not set for today: it would train chest, triceps, front and side delts again the day before tomorrow's session",
+    "Chest volume and delts is not set for today: it would train chest, triceps, front and side delts on consecutive days with tomorrow's session",
   );
   assertStringIncludes(
     lineOf(text, "- Mon 2026-10-19 (tomorrow)"),
@@ -509,4 +509,37 @@ Deno.test("two sessions with one name are told apart by id: finishing one does n
   const text = renderTrainingPlan(state)!;
   assertStringIncludes(lineOf(text, "- Thu 2026-10-15"), "Upper (");
   assert(!lineOf(text, "- Thu 2026-10-15").includes("already done"));
+});
+
+Deno.test("a temporary block ending this week: the days after it show the plan it hands back to", () => {
+  // Wednesday 2026-10-14; the block's sessions are bodyweight push-ups on every weekday and the
+  // block ends on Friday. Saturday and Sunday are the restored plan's: Shoulder width on Saturday.
+  const payload = splitPlanPayload(3, ["w-chest-a", "w-legs-a"]);
+  const restored = (payload.sessions as Record<string, unknown>[]).map((session) => ({
+    ...session,
+  }));
+  const base = (payload.sessions as Record<string, unknown>[])[0];
+  payload.sessions = [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({
+    ...base,
+    planned_workout_id: `w-block-${weekday}`,
+    name: "Home block",
+    weekday,
+    order: weekday,
+    exercises: [{
+      planned_exercise_id: `e-block-${weekday}`,
+      order: 1,
+      name: "Push-up",
+      slug: "push-up",
+      sets: 3,
+      rep_min: 8,
+      rep_max: 12,
+    }],
+  }));
+  payload.after_block = { ends_on: "2026-10-16", version_number: 2, sessions: restored };
+  const text = renderTrainingPlan(parsePlanState(payload))!;
+  assertStringIncludes(lineOf(text, "- Thu 2026-10-15"), "Home block");
+  assertStringIncludes(lineOf(text, "- Fri 2026-10-16"), "Home block");
+  assertStringIncludes(lineOf(text, "- Sat 2026-10-17"), "Shoulder width");
+  assertStringIncludes(lineOf(text, "- Mon 2026-10-19"), "Chest priority and side delts");
+  assert(!lineOf(text, "- Sun 2026-10-18").includes("Home block"));
 });

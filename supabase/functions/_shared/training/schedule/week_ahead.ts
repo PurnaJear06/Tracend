@@ -174,7 +174,7 @@ function describeDay(day: ScheduleDay): string {
  */
 export function renderOverlapFact(overlaps: readonly MuscleOverlap[]): string | null {
   if (overlaps.length === 0) return null;
-  return "Same muscles on consecutive days (Tracend calculated; under a day between sessions): " +
+  return "Same muscles on consecutive days, with no rest day between (Tracend calculated from the dates): " +
     overlaps.map((overlap) =>
       `${stamp(overlap.from)} then ${stamp(overlap.to)}: ${overlap.muscles.join(", ")}`
     ).join("; ") +

@@ -303,7 +303,10 @@ Deno.test("plan schedule: dated rows past and ahead, a missed session says not l
     text,
     '### plan_history 2026-10-15 to 2026-10-21, filter "schedule": 4 rows',
   );
-  assertStringIncludes(text, "repeats every week from 2026-09-28");
+  assertStringIncludes(
+    text,
+    "The plan is version 3 now. Each date uses the plan version in force on it",
+  );
   assertStringIncludes(text, "- Thu 2026-10-15: planned Chest volume, not logged");
   assertStringIncludes(text, "- Sun 2026-10-18 (today): done Chest volume (");
   assertStringIncludes(text, "- Mon 2026-10-19: planned Chest priority (");
@@ -487,4 +490,52 @@ Deno.test("plan schedule: overlaps past the listed limit are counted, never drop
     { ...scheduleLookupPayload, to: "2026-10-21", today: "2026-10-18", days: days.slice(0, 3) },
   ).text;
   assert(!few.includes("more overlaps"));
+});
+
+Deno.test("plan schedule: a day from another plan version or a temporary block is marked", () => {
+  const { text } = renderLookup(
+    request("plan_history", "2026-10-05", "2026-10-26", "schedule"),
+    {
+      ...scheduleLookupPayload,
+      from: "2026-10-05",
+      to: "2026-10-26",
+      today: "2026-10-18",
+      days: [
+        {
+          date: "2026-10-05",
+          weekday: 1,
+          version: 2,
+          block: false,
+          planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
+          done: [],
+        },
+        {
+          date: "2026-10-19",
+          weekday: 1,
+          version: 4,
+          block: true,
+          planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
+          done: [],
+        },
+        {
+          date: "2026-10-26",
+          weekday: 1,
+          version: 3,
+          block: false,
+          planned: [{ id: "w-chest-a", name: "Chest priority", minutes: 90 }],
+          done: [],
+        },
+      ],
+    },
+  );
+  assert(
+    text.split("\n").some((l) => l.startsWith("- Mon 2026-10-05") && l.endsWith("[version 2]")),
+  );
+  assert(
+    text.split("\n").some((l) =>
+      l.startsWith("- Mon 2026-10-19") && l.endsWith("[version 4, temporary block]")
+    ),
+  );
+  // The current version, outside a block, carries no mark.
+  assert(text.split("\n").some((l) => l.startsWith("- Mon 2026-10-26") && l.endsWith(")")));
 });
