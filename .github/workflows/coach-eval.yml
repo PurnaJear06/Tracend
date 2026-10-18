@@ -78,6 +78,10 @@ on:
         description: Comma-separated parts of conversation ids, personas or scenarios (empty runs all)
         required: false
         default: ""
+      sim_coach_model:
+        description: Router model id that plays the Coach in the simulator (empty uses the production model, else the EVAL_SIM_COACH_MODEL variable)
+        required: false
+        default: ""
       sim_max_turns:
         description: Athlete messages per simulated conversation at most (1-10)
         required: false
@@ -250,7 +254,7 @@ jobs:
           EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
           EVAL_BASE_URL: ${{ vars.EVAL_BASE_URL }}
           EVAL_MODEL: ${{ vars.EVAL_MODEL }}
-          EVAL_COACH_MODEL: ${{ vars.EVAL_SIM_COACH_MODEL }}
+          EVAL_COACH_MODEL: ${{ inputs.sim_coach_model || vars.EVAL_SIM_COACH_MODEL }}
           EVAL_ATHLETE_MODEL: ${{ vars.EVAL_SIM_ATHLETE_MODEL }}
           EVAL_JUDGE_MODEL: ${{ vars.EVAL_SIM_JUDGE_MODEL }}
           EVAL_MAX_USD: ${{ vars.EVAL_SIM_MAX_USD || '3' }}

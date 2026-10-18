@@ -22,7 +22,7 @@ import { costUsd, type ModelPrice, models, type TokenCounts } from "../_shared/a
 import { type Env, route } from "../_shared/ai/routes.ts";
 import type { AiCallDeps, AiRoute } from "../_shared/ai/types.ts";
 import { type ChatMode, defaultChatMode, jsonObjectIn } from "./coach_sim/wire.ts";
-import { excerpt, headerNote, type WireError } from "./coach_sim/diagnostics.ts";
+import { excerpt, headerNote, htmlText, type WireError } from "./coach_sim/diagnostics.ts";
 import type { CoachContributions } from "../_shared/coach_context/host.ts";
 import type { CoachLookupRunner } from "../_shared/coach_lookups/runner.ts";
 import {
@@ -302,7 +302,7 @@ export function routerModelFetch(
       report(
         "http",
         response.status,
-        `${headerNote(response.headers)}${await response.clone().text().catch(() => "")}`,
+        `${headerNote(response.headers)}${htmlText(await response.clone().text().catch(() => ""))}`,
       );
       return response;
     }

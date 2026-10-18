@@ -5,7 +5,7 @@
 // assumed Sonnet-class price, so the estimate never undercounts.
 import type { TokenCounts } from "../../_shared/ai/models.ts";
 import { normalizedModelId, priceTokens, tokensOf } from "../live_model.ts";
-import { type CallSource, excerpt, headerNote, type WireError } from "./diagnostics.ts";
+import { type CallSource, excerpt, headerNote, htmlText, type WireError } from "./diagnostics.ts";
 import { type ChatMode, defaultChatMode } from "./wire.ts";
 
 export { type ChatMode, chatModes, defaultChatMode, describeMode, jsonObjectIn } from "./wire.ts";
@@ -106,7 +106,7 @@ export function routerChat(
       return fail(
         "http",
         response.status,
-        `${headerNote(response.headers)}${text}`,
+        `${headerNote(response.headers)}${htmlText(text)}`,
         `http ${response.status}`,
       );
     }

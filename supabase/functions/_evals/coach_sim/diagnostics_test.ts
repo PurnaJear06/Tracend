@@ -296,6 +296,7 @@ Deno.test("an HTML error page from a CDN is reduced to its words, with who answe
   assertStringIncludes(result.body, "server=cloudflare cf-ray=abc123-SIN");
   assertStringIncludes(result.body, "502: Bad gateway");
   assert(!result.body.includes("set-cookie"), "only the named headers are recorded");
+  assert(!result.body.includes("<"), result.body);
 });
 
 Deno.test("a router that is briefly down is asked again; the error is recorded once, when it stays down", async () => {

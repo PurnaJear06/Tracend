@@ -1258,6 +1258,17 @@ ignore the athlete's data, a Coach that cannot change the plan). Nothing in prod
   run early. Quality findings stay report-only. An empty athlete answer is asked for once more with
   a bigger budget, then the conversation ends with the reason; athlete DeepSeek calls send
   `reasoning_effort: none` so thinking does not eat the 400-token budget.
+- **First findings (2026-10-18, runs 39102096036, 39102232187, 39102367388, one conversation,
+  two messages).** The router (`router.bynara.id`) is the cause, not the request shape. Judge
+  `claude-sonnet-5.5` and athlete `deepseek-v4-flash` pass the preflight in JSON mode with
+  `response_format` and `max_tokens`, so the wire format is fine for Claude. `claude-haiku-5.5`
+  (the production Coach model) fails every mode with HTTP 502, a Cloudflare HTML error page with
+  `retry-after=60`, about a minute per attempt; the other spellings (`claude-haiku-5-5`,
+  `anthropic/claude-haiku-5.5`) are 404 "model does not exist". In one window (05:55 UTC) every
+  model answered 503 "The model service is temporarily unavailable", so the router also has outages
+  of minutes; calls it fails in passing (502, 503, 504, no answer) are now retried twice. Needs the
+  router operator (or another route) before the production-model simulation can run; meanwhile
+  Run workflow takes `sim_coach_model` (any router id) to play the Coach on another model.
 
 - **Run it**: `Coach Eval`, Run workflow, `simulate` ticked (`sim_filter`, `sim_max_turns`);
   never on a pull request. It prints the estimate first, stops new turns at `EVAL_SIM_MAX_USD`
