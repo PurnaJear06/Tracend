@@ -1,7 +1,7 @@
 begin;
 select plan(137);
 
--- A10 part 2: Coach memory with athlete controls (migration 20261018130020).
+-- A10 part 2: Coach memory with athlete controls (migration 20261018150020).
 -- Confirmed facts (versioned, athlete-written), Coach notes (server-written, capped), conversations
 -- that are not remembered, raw message search, and prepare_coach_chat_v9.
 

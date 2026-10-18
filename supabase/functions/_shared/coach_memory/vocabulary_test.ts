@@ -15,7 +15,7 @@ import {
 } from "./vocabulary.ts";
 
 const migration = Deno.readTextFileSync(
-  new URL("../../../migrations/20261018130020_coach_memory.sql", import.meta.url),
+  new URL("../../../migrations/20261018150020_coach_memory.sql", import.meta.url),
 );
 
 const listAfter = (marker: string): string[] => {

@@ -78,7 +78,7 @@ void main() {
 
     test('every kind and source the app names is one the database accepts', () {
       final sql = File(
-        'supabase/migrations/20261018130020_coach_memory.sql',
+        'supabase/migrations/20261018150020_coach_memory.sql',
       ).readAsStringSync();
       final kinds = RegExp(
         r"kind in \(\s*([^)]*)\)",
