@@ -90,7 +90,7 @@ Deno.test("a failed call is retried once; a second failure is reported with both
     costUsd: 0,
     kind: "http",
     status: 500,
-    body: "down",
+    body: "[content-type=text/plain;charset=UTF-8] down",
   });
 });
 

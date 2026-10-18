@@ -23,6 +23,7 @@ import {
   priceTokens,
   productionCoachModel,
   routerGatewayFromEnv,
+  routerModelEntry,
 } from "../live_model.ts";
 import { summariseErrors } from "./diagnostics.ts";
 import { assertDistinctJudge } from "./judges.ts";
@@ -176,7 +177,14 @@ async function main(): Promise<void> {
     ? { ...athleteCheck, role: "judge" }
     : await preflightChat({ ...route, role: "judge", model: judgeModel });
   const checks = [coachCheck, athleteCheck, ...(judgeCheck ? [judgeCheck] : [])];
-  const preflight = renderPreflight(checks);
+  const preflight = [
+    `The router's listing for \`${coachCheck.wanted}\`: ${await routerModelEntry(
+      routed.baseUrl,
+      routed.apiKey,
+      coachCheck.wanted,
+    )}`,
+    ...renderPreflight(checks),
+  ];
   console.log(["Preflight:", ...preflight].join("\n"));
   const decision = decidePreflight(checks);
   if (!decision.proceed) {

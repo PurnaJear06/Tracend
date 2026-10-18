@@ -64,8 +64,16 @@ export async function preflightCoach(
   const fetcher = input.fetcher ?? fetch;
   const attempts: PreflightAttempt[] = [];
   const url = `${input.baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  for (const model of input.candidates) {
-    for (const mode of input.modes ?? chatModes) {
+  const modes = input.modes ?? chatModes;
+  for (const [index, model] of input.candidates.entries()) {
+    let tried = 0;
+    for (const mode of modes) {
+      // Another spelling is only a guess at the id: one that the router does not know or forbids is
+      // not asked again, and one that errors on the server is asked in two modes only.
+      const last = attempts.at(-1);
+      if (index > 0 && tried > 0 && [401, 403, 404].includes(last?.status ?? 0)) break;
+      if (index > 0 && tried >= 2 && (last?.status ?? 0) >= 500) break;
+      tried++;
       const seen: { error?: WireError } = {};
       const options: RouterFetchOptions = {
         mode,
@@ -170,11 +178,18 @@ export async function preflightChat(
   return { role: input.role, wanted: input.model, working: null, attempts };
 }
 
-/** The router's ids for a model: its own first, then every other listed spelling of it. */
+/**
+ * The ids to try for a model: the router's own first, the other listed spellings of it, then the
+ * usual spellings the listing does not show (dotted, hyphenated, vendor-prefixed).
+ */
 export function idCandidates(available: readonly string[], model: string): string[] {
   const target = normalizedModelId(model);
   const spellings = available.filter((id) => normalizedModelId(id) === target);
-  return [...new Set([model, ...spellings])];
+  const dotted = target.replace(/-(\d+)-(\d+)$/, "-$1.$2");
+  const vendor = target.startsWith("claude") ? "anthropic/" : "";
+  const variants = [target, dotted, `${vendor}${target}`, `${vendor}${dotted}`]
+    .filter((id) => id !== model);
+  return [...new Set([model, ...spellings, ...variants])];
 }
 
 export type PreflightDecision =

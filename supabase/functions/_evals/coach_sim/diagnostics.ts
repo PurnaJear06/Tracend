@@ -65,9 +65,34 @@ export function redact(text: string, secrets: readonly string[] = []): string {
   );
 }
 
+/** An HTML error page (a CDN's 502) reduced to its words, so the first 300 characters say something. */
+export function htmlText(body: string): string {
+  if (!/^\s*(?:<!doctype html|<html)/i.test(body)) return body;
+  const title = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "";
+  const text = body.replace(/<!--[\s\S]*?-->/g, " ").replace(
+    /<(?:script|style)[\s\S]*?<\/(?:script|style)>/gi,
+    " ",
+  )
+    .replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&");
+  return `[html page] ${title.trim()} | ${text}`;
+}
+
 /** The first 300 characters of a body, after redaction (so a key cut by the limit cannot leak). */
 export function excerpt(text: string, secrets: readonly string[] = []): string {
-  return redact(text, secrets).replace(/\s+/g, " ").trim().slice(0, bodyExcerptChars);
+  return redact(htmlText(text), secrets).replace(/\s+/g, " ").trim().slice(0, bodyExcerptChars);
+}
+
+/**
+ * Who answered, from the response headers that name no one's secrets: the server, a CDN ray id,
+ * the content type and a request id. Prepended to an error body.
+ */
+export function headerNote(headers: Headers): string {
+  const names = ["server", "cf-ray", "content-type", "x-request-id", "retry-after"];
+  const found = names.flatMap((name) => {
+    const value = headers.get(name);
+    return value ? [`${name}=${value.slice(0, 60)}`] : [];
+  });
+  return found.length ? `[${found.join(" ")}] ` : "";
 }
 
 /** One line per distinct error: where it came from, the status, the body start and how often. */

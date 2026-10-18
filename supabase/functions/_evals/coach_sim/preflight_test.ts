@@ -85,7 +85,13 @@ Deno.test("another spelling of the model id and max_completion_tokens are tried"
     ["gpt-5", "anthropic/claude-haiku-5.5", "claude-haiku-5-5"],
     "claude-haiku-5.5",
   );
-  assertEquals(candidates, ["claude-haiku-5.5", "anthropic/claude-haiku-5.5", "claude-haiku-5-5"]);
+  // The listed spellings come first, then the usual ones the listing does not show.
+  assertEquals(candidates.slice(0, 3), [
+    "claude-haiku-5.5",
+    "anthropic/claude-haiku-5.5",
+    "claude-haiku-5-5",
+  ]);
+  assertEquals(new Set(candidates).size, candidates.length);
   const result = await preflightCoach({ ...route, fetcher, candidates });
   assertEquals(result.working, {
     model: "anthropic/claude-haiku-5.5",

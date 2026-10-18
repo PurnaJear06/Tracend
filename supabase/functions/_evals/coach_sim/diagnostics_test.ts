@@ -265,3 +265,35 @@ Deno.test("an empty athlete answer is asked for once more with a bigger budget, 
   assertEquals(tries, 1);
   assertStringIncludes(refused.failure!, "http 403");
 });
+
+Deno.test("an HTML error page from a CDN is reduced to its words, with who answered", async () => {
+  const page = '<!DOCTYPE html>\n<!--[if lt IE 7]> <html class="no-js ie6"> <![endif]-->\n' +
+    "<html><head><title>router.example | 502: Bad gateway</title><style>body{}</style></head>" +
+    "<body><h1>Bad gateway</h1><p>Error code 502</p></body></html>";
+  const out = excerpt(page);
+  assertStringIncludes(out, "502: Bad gateway");
+  assert(!out.includes("<"), out);
+  const chat = routerChat("https://router.example/v1", "k", {
+    fetcher: () =>
+      Promise.resolve(
+        new Response(page, {
+          status: 502,
+          headers: { server: "cloudflare", "cf-ray": "abc123-SIN", "set-cookie": "s=1" },
+        }),
+      ),
+    retryDelayMs: 0,
+  });
+  const result = await chat({
+    model: "claude-haiku-5.5",
+    system: "s",
+    user: "u",
+    maxTokens: 10,
+    json: true,
+    source: "judge",
+  });
+  assert(!result.ok);
+  assertEquals(result.status, 502);
+  assertStringIncludes(result.body, "server=cloudflare cf-ray=abc123-SIN");
+  assertStringIncludes(result.body, "502: Bad gateway");
+  assert(!result.body.includes("set-cookie"), "only the named headers are recorded");
+});

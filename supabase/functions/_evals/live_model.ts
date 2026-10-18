@@ -22,7 +22,7 @@ import { costUsd, type ModelPrice, models, type TokenCounts } from "../_shared/a
 import { type Env, route } from "../_shared/ai/routes.ts";
 import type { AiCallDeps, AiRoute } from "../_shared/ai/types.ts";
 import { type ChatMode, defaultChatMode, jsonObjectIn } from "./coach_sim/wire.ts";
-import { excerpt, type WireError } from "./coach_sim/diagnostics.ts";
+import { excerpt, headerNote, type WireError } from "./coach_sim/diagnostics.ts";
 import type { CoachContributions } from "../_shared/coach_context/host.ts";
 import type { CoachLookupRunner } from "../_shared/coach_lookups/runner.ts";
 import {
@@ -157,6 +157,30 @@ export function knownPrice(model: string): ModelPrice | null {
   return key ? models[key].price : null;
 }
 
+/**
+ * What the router says about one model in its listing (GET /models): the entry as JSON, cut to 300
+ * characters, or a short reason. Public metadata only; the key is never part of it.
+ */
+export async function routerModelEntry(
+  baseUrl: string,
+  apiKey: string,
+  id: string,
+  fetcher: typeof fetch = fetch,
+): Promise<string> {
+  try {
+    const response = await fetcher(`${baseUrl.replace(/\/+$/, "")}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) return `the listing answered HTTP ${response.status}`;
+    const body = await response.json() as { data?: { id?: unknown }[] };
+    const entry = body.data?.find((item) => item.id === id);
+    return entry ? excerpt(JSON.stringify(entry), [apiKey]) : "not in the listing";
+  } catch {
+    return "the listing could not be read";
+  }
+}
+
 /** The model ids an OpenAI-compatible router lists (GET /models), or null when it cannot say. */
 export async function routerModels(
   baseUrl: string,
@@ -252,7 +276,11 @@ export function routerModelFetch(
       throw error;
     }
     if (!response.ok) {
-      report("http", response.status, await response.clone().text().catch(() => ""));
+      report(
+        "http",
+        response.status,
+        `${headerNote(response.headers)}${await response.clone().text().catch(() => "")}`,
+      );
       return response;
     }
     let raw = "";
