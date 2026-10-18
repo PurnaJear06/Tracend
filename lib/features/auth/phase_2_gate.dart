@@ -185,12 +185,7 @@ class _Phase2GateState extends State<Phase2Gate> {
   Future<void> _signOut() async {
     unawaited(widget.liveActivity.end());
     unawaited(widget.homeWidgets.clear());
-    try {
-      await _client.auth.signOut();
-    } catch (e) {
-      debugPrint('Non-critical error: $e');
-      await _client.auth.signOut(scope: SignOutScope.local);
-    }
+    await signOutAthlete(_client, _localData, _userId);
     await _refresh();
   }
 
@@ -253,11 +248,14 @@ class _Phase2GateState extends State<Phase2Gate> {
       );
     }
     return AppShell(
+      // One shell per athlete: its widget publisher follows their choice.
+      key: ValueKey(_userId),
       environment: widget.environment,
       onSignOut: _signOut,
       aiConsent: aiConsent,
       health: health,
       homeWidgets: widget.homeWidgets,
+      userId: _userId,
     );
   }
 }

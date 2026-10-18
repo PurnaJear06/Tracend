@@ -77,11 +77,13 @@ struct TodayWidgetSnapshot: Codable, Equatable {
   }
 
   /// Whether the widgets must ask the athlete to open the app instead of
-  /// showing it: the snapshot is older than its `staleAfterSeconds`, it is
+  /// showing it: the snapshot is `staleAfterSeconds` old or older, it is
   /// from another day than `now`'s, or it claims to come from the future.
+  /// Stale from `staleDate()` on, that moment included: the timeline's last
+  /// entry is drawn at exactly that moment and nothing redraws it after.
   func isStale(at now: Date, calendar: Calendar = .current) -> Bool {
     let age = now.timeIntervalSince(generatedAt)
-    if age > TimeInterval(staleAfterSeconds) || age < -300 { return true }
+    if age >= TimeInterval(staleAfterSeconds) || age < -300 { return true }
     return localDate != Self.localDateText(now, calendar: calendar)
   }
 

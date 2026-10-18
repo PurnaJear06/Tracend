@@ -11,28 +11,39 @@ import 'package:tracend/shared/home_widgets/today_widget_snapshot.dart';
 /// whenever Today loads or changes, and owns the athlete's choice to show
 /// health numbers on the Lock Screen.
 ///
-/// The choice is a setting of this device and starts off: the Lock Screen
-/// shows a placeholder until the athlete turns numbers on in Account
-/// (SECURITY_PRIVACY.md §10). Turning it off removes the numbers from the
-/// shared snapshot at once. The widgets are a convenience, so nothing here
-/// throws.
+/// The choice is kept on this device for the signed-in athlete only and
+/// starts off: the Lock Screen shows a placeholder until the athlete turns
+/// numbers on in Account (SECURITY_PRIVACY.md §10). Another athlete signing
+/// in on the same phone starts off again, and sign-out forgets the choice
+/// (`LocalAccountData.forgetWidgetChoice`). Turning it off removes the
+/// numbers from the shared snapshot at once. The widgets are a convenience,
+/// so nothing here throws.
 class TodayWidgetPublisher {
   TodayWidgetPublisher({
     required HomeWidgetBridge bridge,
+    String? userId,
     SharedPreferencesAsync? preferences,
     DateTime Function() clock = DateTime.now,
   }) : _bridge = bridge,
+       _key = lockScreenNumbersKeyFor(userId),
        _preferences = preferences,
        _clock = clock;
 
-  /// The preference key for the Lock Screen choice.
+  /// The key an earlier build kept one choice under for the whole phone. It
+  /// is never read for a signed-in athlete; sign-out removes it.
   static const lockScreenNumbersKey = 'home_widgets_lock_screen_numbers';
+
+  /// The preference key for [userId]'s Lock Screen choice. Without a
+  /// backend there is no athlete, and the build's one choice is kept.
+  static String lockScreenNumbersKeyFor(String? userId) =>
+      userId == null ? lockScreenNumbersKey : '$lockScreenNumbersKey.$userId';
 
   /// A snapshot whose content did not change is written again only after
   /// this long, so its time stamp stays fresh without a write per load.
   static const refreshAfter = Duration(minutes: 5);
 
   final HomeWidgetBridge _bridge;
+  final String _key;
   final SharedPreferencesAsync? _preferences;
   final DateTime Function() _clock;
 
@@ -49,9 +60,7 @@ class TodayWidgetPublisher {
     var stored = false;
     try {
       stored =
-          await (_preferences ?? SharedPreferencesAsync()).getBool(
-            lockScreenNumbersKey,
-          ) ??
+          await (_preferences ?? SharedPreferencesAsync()).getBool(_key) ??
           false;
     } catch (e) {
       debugPrint('Non-critical error: widget setting not read: $e');
@@ -65,10 +74,7 @@ class TodayWidgetPublisher {
   Future<void> setLockScreenNumbers(bool shown) async {
     _lockScreenNumbers = shown;
     try {
-      await (_preferences ?? SharedPreferencesAsync()).setBool(
-        lockScreenNumbersKey,
-        shown,
-      );
+      await (_preferences ?? SharedPreferencesAsync()).setBool(_key, shown);
     } catch (e) {
       debugPrint('Non-critical error: widget setting not saved: $e');
     }

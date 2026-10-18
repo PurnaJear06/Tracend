@@ -25,6 +25,7 @@ import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
+import 'home_widgets/fake_home_widget_bridge.dart';
 import 'live_activity/fake_workout_activity_bridge.dart';
 
 const _url = 'https://tracend-test.supabase.co';
@@ -133,7 +134,17 @@ void main() {
       '2026-10-01T00:00:00Z',
     );
     await preferences.setString('tracend_theme_mode', 'dark');
+    // An earlier build's one choice for the phone, this athlete's and
+    // another athlete's.
     await preferences.setBool(TodayWidgetPublisher.lockScreenNumbersKey, true);
+    await preferences.setBool(
+      TodayWidgetPublisher.lockScreenNumbersKeyFor(_userId),
+      true,
+    );
+    await preferences.setBool(
+      TodayWidgetPublisher.lockScreenNumbersKeyFor(_otherUserId),
+      true,
+    );
     await preferences.setString(
       '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1',
       '{}',
@@ -153,6 +164,27 @@ void main() {
     });
   });
 
+  /// The athlete's Lock Screen choice and the phone-wide one are gone;
+  /// another athlete's stays theirs.
+  Future<void> expectWidgetChoiceForgotten() async {
+    expect(
+      await preferences.getBool(TodayWidgetPublisher.lockScreenNumbersKey),
+      isNull,
+    );
+    expect(
+      await preferences.getBool(
+        TodayWidgetPublisher.lockScreenNumbersKeyFor(_userId),
+      ),
+      isNull,
+    );
+    expect(
+      await preferences.getBool(
+        TodayWidgetPublisher.lockScreenNumbersKeyFor(_otherUserId),
+      ),
+      isTrue,
+    );
+  }
+
   Future<void> expectAthleteDataCleared() async {
     expect(
       await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
@@ -171,10 +203,7 @@ void main() {
     );
     expect(await preferences.getString('tracend_theme_mode'), 'dark');
     // The Lock Screen widget choice goes with the account.
-    expect(
-      await preferences.getBool(TodayWidgetPublisher.lockScreenNumbersKey),
-      isNull,
-    );
+    await expectWidgetChoiceForgotten();
     expect(
       await preferences.getString(
         '${WorkoutLocalKeys.draftPrefix(_userId)}workout-1',
@@ -204,12 +233,9 @@ void main() {
   }
 
   /// A refused session may belong to an account that still exists: only the
-  /// open Coach thread is forgotten.
+  /// open Coach thread and the Lock Screen choice are forgotten.
   Future<void> expectAthleteDataKept() async {
-    expect(
-      await preferences.getBool(TodayWidgetPublisher.lockScreenNumbersKey),
-      isTrue,
-    );
+    await expectWidgetChoiceForgotten();
     expect(
       await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
       isNotNull,
@@ -272,6 +298,57 @@ void main() {
     );
     expect(isRejectedSession(AuthRetryableFetchException()), isFalse);
     expect(isRejectedSession(const PostgrestException(message: 'x')), isFalse);
+  });
+
+  group('signing out', () {
+    test(
+      'forgets the Lock Screen choice, so the next athlete starts off',
+      () async {
+        final server = _Server()..answer('POST /auth/v1/logout', 204, {});
+        await _storeSession(
+          server.client,
+          DateTime.now().add(const Duration(minutes: 50)),
+        );
+
+        await signOutAthlete(server.client, LocalAccountData(), _userId);
+
+        expect(server.requests, contains('POST /auth/v1/logout'));
+        expect(server.client.auth.currentSession, isNull);
+        await expectWidgetChoiceForgotten();
+        // Nothing else of the athlete's goes.
+        expect(
+          await preferences.getString(HealthPreferenceKeys(_userId).lastSync),
+          isNotNull,
+        );
+        final next = TodayWidgetPublisher(
+          bridge: FakeHomeWidgetBridge(),
+          userId: _otherUserId,
+          preferences: preferences,
+        );
+        expect(await next.lockScreenNumbers(), isTrue);
+        final another = TodayWidgetPublisher(
+          bridge: FakeHomeWidgetBridge(),
+          userId: '33333333-3333-4333-8333-333333333333',
+          preferences: preferences,
+        );
+        expect(await another.lockScreenNumbers(), isFalse);
+      },
+    );
+
+    test('without Auth the session still ends on this device', () async {
+      final server = _Server();
+      server.routes['POST /auth/v1/logout'] = () =>
+          Future.error(http.ClientException('offline'));
+      await _storeSession(
+        server.client,
+        DateTime.now().add(const Duration(minutes: 50)),
+      );
+
+      await signOutAthlete(server.client, LocalAccountData(), _userId);
+
+      expect(server.client.auth.currentSession, isNull);
+      await expectWidgetChoiceForgotten();
+    });
   });
 
   group('restoring a stored session', () {

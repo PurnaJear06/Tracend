@@ -8,6 +8,9 @@ import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
 import 'fake_home_widget_bridge.dart';
 
+const _athlete = '11111111-1111-4111-8111-111111111111';
+const _anotherAthlete = '22222222-2222-4222-8222-222222222222';
+
 const _targets = NutritionTargets(
   calories: 2400,
   protein: 160,
@@ -147,6 +150,39 @@ void main() {
     expect(await next.lockScreenNumbers(), isTrue);
     await next.publish(brief: _brief(), targets: _targets, checkedIn: false);
     expect(bridge.stored!['lock'], isNotNull);
+  });
+
+  test('the choice belongs to one athlete on this phone', () async {
+    final athlete = TodayWidgetPublisher(
+      bridge: bridge,
+      userId: _athlete,
+      preferences: SharedPreferencesAsync(),
+      clock: () => now,
+    );
+    await athlete.setLockScreenNumbers(true);
+    // An earlier build's phone-wide choice is never read for an athlete.
+    await SharedPreferencesAsync().setBool(
+      TodayWidgetPublisher.lockScreenNumbersKey,
+      true,
+    );
+
+    final another = TodayWidgetPublisher(
+      bridge: bridge,
+      userId: _anotherAthlete,
+      preferences: SharedPreferencesAsync(),
+      clock: () => now,
+    );
+    expect(await another.lockScreenNumbers(), isFalse);
+    await another.publish(brief: _brief(), targets: _targets, checkedIn: true);
+    expect(bridge.stored!['lock'], isNull);
+
+    final again = TodayWidgetPublisher(
+      bridge: bridge,
+      userId: _athlete,
+      preferences: SharedPreferencesAsync(),
+      clock: () => now,
+    );
+    expect(await again.lockScreenNumbers(), isTrue);
   });
 
   test('leaving the app clears the snapshot and stops publishing', () async {

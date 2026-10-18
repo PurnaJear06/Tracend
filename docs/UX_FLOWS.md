@@ -448,13 +448,16 @@ a compact snapshot to the app group; the widgets only read it and never call the
   kg"), calories and protein against the plan's targets, and "Checked in" or "Check-in due".
 - **Lock Screen:** circular, the recovery score on a ring; rectangular, the session, recovery and
   protein against its target; inline, the session and recovery.
-- **Age.** Home Screen widgets show how old the snapshot is. A snapshot older than 12 hours, or from
-  another day, shows no numbers and reads **Open Tracend to refresh**; so does a widget before Today
+- **Age.** Home Screen widgets show how old the snapshot is. A snapshot 12 hours old or older, or
+  from another day, shows no numbers and reads **Open Tracend to refresh** (from the 12-hour moment
+  or midnight itself, whichever comes first); so does a widget before Today
   has ever loaded, and after sign-out. The widgets reflect the last time Today loaded, not a live
-  feed: a meal logged in Nutrition shows once Today next loads (pull to refresh).
+  feed: a meal logged in Nutrition shows once Today next loads (pull to refresh). A saved check-in
+  is the exception: the widgets read "Checked in" at once, even when it was queued offline and the
+  brief cannot reload.
 - **Taps.** Every widget opens Today (`tracend://today`), except a planned or started session, which
   opens Train: the medium widget's exercise list and the Lock Screen rectangular widget
-  (`tracend://train`). The app switches to that tab on launch or return; the request expires after
+  (`tracend://train`). The circular and inline Lock Screen widgets always open Today. The app switches to that tab on launch or return; the request expires after
   a minute.
 - **Lock Screen numbers are off until chosen** (**Account › Widgets**, §13). Off, the Lock Screen
   widgets show only "Tracend" and "Lock Screen numbers are off" (a lock glyph in the circular one).
@@ -1174,6 +1177,8 @@ Account is one iOS inset-grouped settings page:
 - **Widgets:** one switch row, **Health numbers on the Lock Screen**, off until chosen ("Off · Lock
   Screen widgets show Tracend and nothing else"; on: "recovery, today's session and protein show
   while the phone is locked"). Turning it off removes the numbers from what the widgets read at once.
+  The choice is kept for the signed-in athlete on this phone and forgotten on sign-out, so another
+  athlete signing in starts with it off.
   The footnote says anyone holding the locked phone can read Lock Screen widgets, and that Home
   Screen widgets show the day once the phone is unlocked.
 - **AI coach:** **AI coaching** (on, or "Off · plans and logging still work"), **AI usage this

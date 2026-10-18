@@ -542,6 +542,10 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
       final day = _lastBrief?.localDate ?? _dateKey(DateTime.now());
       setState(() => _checkedInOn = day);
       _updateGate();
+      // The widgets say the check-in is done at once: the brief reloaded
+      // below can fail in the outage that queued the check-in.
+      final brief = _lastBrief;
+      if (brief != null) unawaited(_publishWidgets(brief));
       await _rememberDay(_checkedInKey, day);
     }
     if (mounted) {

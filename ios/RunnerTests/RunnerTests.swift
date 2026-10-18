@@ -207,7 +207,28 @@ final class TodayWidgetSnapshotTests: XCTestCase {
     let made = snapshot.generatedAt
 
     XCTAssertFalse(snapshot.isStale(at: made.addingTimeInterval(11 * 3600), calendar: utc()))
+    XCTAssertFalse(snapshot.isStale(at: made.addingTimeInterval(12 * 3600 - 1), calendar: utc()))
+    // Exactly twelve hours is stale: the timeline's last entry is drawn then.
+    XCTAssertTrue(snapshot.isStale(at: made.addingTimeInterval(12 * 3600), calendar: utc()))
     XCTAssertTrue(snapshot.isStale(at: made.addingTimeInterval(12 * 3600 + 1), calendar: utc()))
+  }
+
+  func testTheStaleMomentItselfIsStale() throws {
+    let snapshot = try XCTUnwrap(TodayWidgetSnapshot.decode(fixture()))
+    var json = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: fixture()) as? [String: Any]
+    )
+    json["generated_at_millis"] = 1_792_308_600_000 + 13 * 3600 * 1000
+    let evening = try XCTUnwrap(
+      TodayWidgetSnapshot.decode(JSONSerialization.data(withJSONObject: json))
+    )
+
+    // By age (07:30 + 12 h) and by midnight (made at 20:30).
+    for made in [snapshot, evening] {
+      let moment = made.staleDate(calendar: utc())
+      XCTAssertFalse(made.isStale(at: moment.addingTimeInterval(-1), calendar: utc()))
+      XCTAssertTrue(made.isStale(at: moment, calendar: utc()))
+    }
   }
 
   func testStaleOnAnotherDay() throws {

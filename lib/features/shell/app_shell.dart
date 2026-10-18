@@ -40,6 +40,7 @@ class AppShell extends StatefulWidget {
     this.health,
     this.repositories,
     this.homeWidgets = const MethodChannelHomeWidgetBridge(),
+    this.userId,
     super.key,
   });
 
@@ -62,6 +63,10 @@ class AppShell extends StatefulWidget {
   /// The Home Screen and Lock Screen widgets: Today writes their snapshot
   /// here, and a tap on a widget asks this shell for a tab.
   final HomeWidgetBridge homeWidgets;
+
+  /// The signed-in athlete, whose Lock Screen widget choice the widgets
+  /// follow; null without a backend.
+  final String? userId;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -130,6 +135,7 @@ class _AppShellState extends State<AppShell> {
   /// Writes Today's snapshot for the widgets and keeps the Lock Screen choice.
   late final TodayWidgetPublisher _widgetPublisher = TodayWidgetPublisher(
     bridge: widget.homeWidgets,
+    userId: widget.userId,
   );
 
   /// Counts the taps on widgets that brought the app forward; Today reloads

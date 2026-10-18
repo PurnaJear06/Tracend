@@ -48,9 +48,11 @@ private struct LockScreenWidgetView: View {
     return .numbers(lock)
   }
 
-  /// A session still to do opens Train; everything else opens Today.
+  /// The rectangular widget showing a session still to do opens Train;
+  /// the circular and inline widgets, and every other state, open Today.
   private var link: TracendLink {
-    if case .numbers(let lock) = content,
+    if family == .accessoryRectangular,
+      case .numbers(let lock) = content,
       lock.sessionState == "planned" || lock.sessionState == "in_progress"
     {
       return .train

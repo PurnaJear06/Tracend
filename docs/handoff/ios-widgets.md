@@ -193,10 +193,15 @@ Island check passed on 2026-10-15. What exists:
   Lock Screen numbers are off.
 - **Publisher** `today_widget_publisher.dart`: `TodayWidgetPublisher` writes on each brief load
   (`TodayScreen._loadBrief` hands the brief over; the newest publish wins), skips an unchanged
-  snapshot for five minutes, owns the Lock Screen choice (`home_widgets_lock_screen_numbers` in
-  `SharedPreferencesAsync`, default off) and clears the snapshot on `dispose` (AppShell going away).
-  `Phase2Gate` also clears it on sign-out, account deletion and a refused session; deleting the
-  account also removes the Lock Screen choice (`LocalAccountData.clear`). `TodayScreen` reloads its
+  snapshot for five minutes, owns the Lock Screen choice (`home_widgets_lock_screen_numbers.<user id>`
+  in `SharedPreferencesAsync`, default off; `Phase2Gate` hands `AppShell` the user id, and the
+  shell is keyed by it) and clears the snapshot on `dispose` (AppShell going away).
+  `Phase2Gate` also clears it on sign-out, account deletion and a refused session. Sign-out
+  (`signOutAthlete`) and a refused session (`LocalAccountData.forgetSession`) forget the athlete's
+  Lock Screen choice and the phone-wide key an earlier D2 build used; deleting the account removes
+  both with the rest (`LocalAccountData.clear`). A saved check-in republishes the last brief at
+  once (`TodayScreen._openCheckIn`), so an offline check-in shows "Checked in" even when the
+  reload fails. `TodayScreen` reloads its
   brief, targets and meals when the app resumes (or a widget tap brings it forward) if the last load
   is over 30 minutes old or from another local day, and that load is what gets published.
   `TodaySessionProgress` (`lib/features/today/`) is the one reading of the session's state and sets,
@@ -204,7 +209,9 @@ Island check passed on 2026-10-15. What exists:
 - **Bridge** `home_widget_bridge.dart` + `ios/Runner/Native/HomeWidgetBridge.swift`, channel
   `tracend/home_widgets`: `write` (answers `no_app_group` when the group's container does not exist, refuses anything but v1
   with `invalid_snapshot`, stores it as the file `today_widget_snapshot.json` in the container, excluded
-  from backups and protected until first unlock, answers `write_failed` if that fails, then
+  from backups and protected until first unlock (written to a temporary file in the container,
+  excluded there, then `rename`d into place and checked; a snapshot that is not excluded is
+  removed), answers `write_failed` if that fails, then
   `WidgetCenter.reloadAllTimelines()`),
   `clear`, `takePendingTab`; iOS calls `tabRequested` when a widget is tapped.
 - **Deep links.** None existed. `Info.plist` now registers the `tracend` URL scheme and sets
@@ -213,14 +220,17 @@ Island check passed on 2026-10-15. What exists:
   `HomeWidgetBridge.open`, which accepts `tracend://today` and `tracend://train` only, keeps the tab
   for a minute and nudges Dart; `AppShell` calls `takePendingTab` on start and on each nudge.
 - **Swift shared files** (both targets): `ios/Shared/TodayWidgetSnapshot.swift` (Codable model,
-  `decode`, `isStale`, `staleDate`) and `ios/Shared/TodayWidgetStore.swift` (group storage and
+  `decode`, `isStale`, `staleDate`; stale from `staleDate` on, that moment included, because the
+  timeline's last entry is drawn at exactly it) and `ios/Shared/TodayWidgetStore.swift` (group storage and
   `TracendLink`). **Extension:** `TodayTimeline.swift` (provider, entry; timeline = now plus the
   stale moment, policy `.never`: the app asks for reloads), `TodayWidgets.swift` (small and
-  medium), `LockScreenWidgets.swift` (circular, rectangular, inline). Visuals: DESIGN_SYSTEM §3.7.
+  medium), `LockScreenWidgets.swift` (circular, rectangular, inline; only the rectangular one opens
+  Train). Visuals: DESIGN_SYSTEM §3.7.
 - **Account.** `lib/features/account/widgets/widget_settings.dart`: **Widgets › Health numbers on the
   Lock Screen**, off by default. SECURITY_PRIVACY §10 documents it as a second lock-screen
   exception, marked "owner to confirm".
-- **Tests:** `test/home_widgets/` (snapshot, publisher, flow), `test/contract/today_widget_snapshot_contract_test.dart`
+- **Tests:** `test/home_widgets/` (snapshot, publisher, flow, offline check-in), the sign-out and
+  per-athlete choice cases in `test/account_session_test.dart`, `test/contract/today_widget_snapshot_contract_test.dart`
   with `fixtures/today_widget_snapshot_v1.json`, and `TodayWidgetSnapshotTests` in `RunnerTests.swift`
   reading the same fixture (not run in CI). The extension, the bridge and the XCTest logic were
   type-checked with `swiftc -typecheck` and the staleness logic exercised in a host script; the
@@ -249,15 +259,20 @@ registers the App Group on first signing):
    the numbers go from the Lock Screen at once.
 5. Tap each widget: small and medium open Today; the medium exercise list and the rectangular
    Lock Screen widget open Train when a session is planned or started (Today on a rest day or a
-   finished session). Test with the app in the background and with it force-quit.
+   finished session); the circular and inline Lock Screen widgets always open Today. Test with the
+   app in the background and with it force-quit.
 6. Staleness: turn on Airplane mode, leave the phone 12+ hours (or change the date forward a day):
    every widget reads "Open Tracend to refresh" and shows no number. Open the app: they return.
-7. Sign out: all widgets read "Open Tracend to refresh" within a moment. Sign back in and open Today.
-8. Rest-timer Live Activity still works (start a workout, tick a set): the App Group changed
+7. Sign out: all widgets read "Open Tracend to refresh" within a moment. Sign back in and open Today:
+   Account › Widgets › Health numbers on the Lock Screen is off again, and the Lock Screen widgets
+   read "Lock Screen numbers are off".
+8. Offline check-in: with Airplane mode on and the check-in not done, save the check-in. The medium
+   widget reads "Checked in" without Today reloading.
+9. Rest-timer Live Activity still works (start a workout, tick a set): the App Group changed
    Runner's entitlements.
-9. Dark and light mode, and a large Dynamic Type size: the Home Screen widgets stay graphite with
-   lime, and no text overlaps.
-10. StandBy (iPhone on its side, charging): the Home Screen widget numbers hide or show as iOS
+10. Dark and light mode, and a large Dynamic Type size: the Home Screen widgets stay graphite with
+    lime, and no text overlaps.
+11. StandBy (iPhone on its side, charging): the Home Screen widget numbers hide or show as iOS
     decides for sensitive content.
 
 **For D1.** C1's Contract 3 events (`RestStarted`, `RestAdjusted`) are emitted next to the

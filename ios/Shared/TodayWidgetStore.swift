@@ -30,19 +30,38 @@ enum TodayWidgetStore {
   }
 
   /// Stores a snapshot's JSON, replacing the one before, and keeps the file
-  /// out of backups. False when the app group is unavailable or the file
-  /// could not be written.
+  /// out of backups. The JSON is written to a temporary file beside the
+  /// snapshot, excluded from backups there, and only then renamed into
+  /// place, so the snapshot's path never holds a file a backup would copy.
+  /// False when the app group is unavailable or any step failed; nothing is
+  /// left behind then.
   static func write(json: Data) -> Bool {
-    guard var url = fileURL else { return false }
+    guard let url = fileURL else { return false }
+    var temporary = url.deletingLastPathComponent()
+      .appendingPathComponent(".\(fileName).\(UUID().uuidString).tmp")
     do {
-      try json.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+      try json.write(to: temporary, options: [.completeFileProtectionUntilFirstUserAuthentication])
       var values = URLResourceValues()
       values.isExcludedFromBackup = true
-      try url.setResourceValues(values)
-      return true
+      try temporary.setResourceValues(values)
+      // rename(2) replaces the old snapshot in one step and keeps the
+      // temporary file's backup exclusion and protection.
+      guard rename(temporary.path, url.path) == 0 else {
+        throw CocoaError(.fileWriteUnknown)
+      }
     } catch {
+      try? FileManager.default.removeItem(at: temporary)
       return false
     }
+    // A snapshot that is not excluded from backups is not kept.
+    let stored = URL(fileURLWithPath: url.path)
+    guard (try? stored.resourceValues(forKeys: [.isExcludedFromBackupKey]))?
+      .isExcludedFromBackup == true
+    else {
+      clear()
+      return false
+    }
+    return true
   }
 
   static func clear() {

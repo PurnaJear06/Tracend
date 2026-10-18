@@ -471,7 +471,9 @@ off-by-default choice. The
 `TracendWidgets` extension draws Home Screen and Lock Screen widgets from a snapshot the app writes
 to the app group `group.com.tracend.app` as one file (`today_widget_snapshot.json` in the group's
 container) each time Today loads. The app group is how the widget process reads it. The file is
-excluded from iCloud and Finder backups (`isExcludedFromBackup`) and protected until first unlock
+excluded from iCloud and Finder backups (`isExcludedFromBackup`: set on a temporary file that is then
+renamed into place, so the snapshot's path never holds a file without it; a write that cannot be
+excluded is removed and reported as failed) and protected until first unlock
 (the Lock Screen widgets read it while the phone is locked), so the snapshot never leaves the
 phone; the widgets never call the network and hold no token.
 
@@ -482,7 +484,9 @@ phone; the widgets never call the network and hold no token.
   photos, measurements, heart-rate, sleep or weight values. The plan's own names are shown as the
   plan has them.
 - **Lock Screen numbers are the athlete's choice and start off** (**Account › Widgets › Health
-  numbers on the Lock Screen**, a device-only setting in app preferences; the server stores no copy).
+  numbers on the Lock Screen**, a device-only setting in app preferences, kept per athlete; the server
+  stores no copy). Sign-out, account deletion and a session Auth refused forget it, and another
+  athlete on the same phone never reads it, so each starts with numbers off.
   While off, the snapshot has no `lock` section at all, so the Lock Screen widgets read nothing but
   show "Tracend" and "Lock Screen numbers are off". On adds the recovery score, the session name
   and protein, which anyone holding the locked phone can read; the row and its footnote say so.
