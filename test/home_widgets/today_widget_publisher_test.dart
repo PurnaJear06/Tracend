@@ -126,6 +126,42 @@ void main() {
     expect(bridge.stored!['lock'], isNull);
   });
 
+  test('numbers off removes the snapshot when the rewrite fails', () async {
+    await publish();
+    await publisher.setLockScreenNumbers(true);
+    expect(bridge.stored!['lock'], isNotNull);
+
+    bridge.failWrites = true;
+    await publisher.setLockScreenNumbers(false);
+
+    // The old lock section must not stay readable.
+    expect(bridge.stored, isNull);
+  });
+
+  test('numbers off tries the removal twice when the first fails', () async {
+    await publish();
+    await publisher.setLockScreenNumbers(true);
+
+    bridge
+      ..failWrites = true
+      ..failClears = 1;
+    await publisher.setLockScreenNumbers(false);
+
+    expect(bridge.stored, isNull);
+    expect(bridge.calls.where((call) => call == 'clear'), hasLength(2));
+  });
+
+  test('a failed write is tried again by the next load', () async {
+    bridge.failWrites = true;
+    await publish();
+    expect(bridge.stored, isNull);
+
+    bridge.failWrites = false;
+    await publish();
+
+    expect(bridge.stored, isNotNull);
+  });
+
   test(
     'turning numbers off with no Today loaded removes the snapshot',
     () async {

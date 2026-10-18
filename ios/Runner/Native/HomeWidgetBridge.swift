@@ -7,7 +7,9 @@ import WidgetKit
 ///
 /// `write` stores Today's snapshot as a file in the app group's container,
 /// excluded from backups (`ios/Shared/TodayWidgetStore.swift`), and asks iOS
-/// to redraw the widgets; `clear` removes it. The widgets only read it and never call the network.
+/// to redraw the widgets; `clear` removes it (or empties the file when it
+/// cannot be removed) and answers `clear_failed` if old data may remain.
+/// The widgets only read it and never call the network.
 /// A tap on a widget arrives as `tracend://today` or `tracend://train`
 /// (`open`); the tab is kept for a minute for `takePendingTab`, and a running
 /// app is told with `tabRequested`.
@@ -46,8 +48,12 @@ enum HomeWidgetBridge {
         WidgetCenter.shared.reloadAllTimelines()
         result(true)
       case "clear":
-        TodayWidgetStore.clear()
+        let cleared = TodayWidgetStore.clear()
         WidgetCenter.shared.reloadAllTimelines()
+        guard cleared else {
+          result(FlutterError(code: "clear_failed", message: nil, details: nil))
+          return
+        }
         result(true)
       case "takePendingTab":
         result(MainActor.assumeIsolated { takePending() })

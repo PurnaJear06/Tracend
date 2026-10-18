@@ -64,9 +64,21 @@ enum TodayWidgetStore {
     return true
   }
 
-  static func clear() {
-    guard let url = fileURL else { return }
-    try? FileManager.default.removeItem(at: url)
+  /// Removes the stored snapshot. When it cannot be removed, the file is
+  /// overwritten with nothing, which no widget can read as a snapshot. False
+  /// only when the old data may still be readable; true also when nothing
+  /// was stored or shared.
+  @discardableResult
+  static func clear() -> Bool {
+    guard let url = fileURL, FileManager.default.fileExists(atPath: url.path) else {
+      return true
+    }
+    do {
+      try FileManager.default.removeItem(at: url)
+      return true
+    } catch {
+      return (try? Data().write(to: url)) != nil
+    }
   }
 }
 

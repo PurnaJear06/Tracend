@@ -30,17 +30,22 @@ enum HomeWidgetTab {
 /// The Today and Lock Screen widgets, which read a snapshot of Today from the
 /// app group's shared storage and never call the network. The widgets are a
 /// convenience: the app works without them, so failures are logged and never
-/// thrown.
+/// thrown. `write` and `clear` answer whether the stored snapshot is now what
+/// was asked for, because an opt-out or a sign-out must know when old data
+/// could still be readable.
 ///
 /// The snapshot is `TodayWidgetSnapshot`'s JSON (SECURITY_PRIVACY.md §10): no
 /// free text, and no Lock Screen numbers unless the athlete chose them.
 abstract interface class HomeWidgetBridge {
   /// Stores [snapshotJson] for the widgets and asks iOS to redraw them.
-  Future<void> write(String snapshotJson);
+  /// False when it could not be stored: the snapshot before it is still
+  /// there.
+  Future<bool> write(String snapshotJson);
 
   /// Removes the stored snapshot and redraws the widgets (sign-out, account
-  /// deletion, the app going away).
-  Future<void> clear();
+  /// deletion, the app going away). False when old data may still be
+  /// readable.
+  Future<bool> clear();
 
   /// The tab a widget tap asked for, once: it is cleared as it is read. Null
   /// when nothing was asked or the request is older than a minute.
@@ -59,11 +64,11 @@ class MethodChannelHomeWidgetBridge implements HomeWidgetBridge {
   const MethodChannelHomeWidgetBridge();
 
   @override
-  Future<void> write(String snapshotJson) =>
-      _invoke<bool>('write', {'snapshot': snapshotJson});
+  Future<bool> write(String snapshotJson) async =>
+      await _invoke<bool>('write', {'snapshot': snapshotJson}) ?? false;
 
   @override
-  Future<void> clear() => _invoke<bool>('clear', null);
+  Future<bool> clear() async => await _invoke<bool>('clear', null) ?? false;
 
   @override
   Future<HomeWidgetTab?> takePendingTab() async =>
@@ -94,7 +99,7 @@ class MethodChannelHomeWidgetBridge implements HomeWidgetBridge {
 
   /// Calls the native side and leaves a breadcrumb with the method only,
   /// never the snapshot. A native error carries a fixed code only
-  /// (`invalid_snapshot`, `no_app_group`, `write_failed`), and only the code is logged.
+  /// (`invalid_snapshot`, `no_app_group`, `write_failed`, `clear_failed`), and only the code is logged.
   Future<T?> _invoke<T>(String method, Map<String, Object>? arguments) async {
     T? result;
     try {

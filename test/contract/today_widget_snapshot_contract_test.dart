@@ -154,15 +154,24 @@ void main() {
           });
       const bridge = MethodChannelHomeWidgetBridge();
 
-      await bridge.write('{}');
+      // A refused write or clear is reported, so an opt-out can fail closed.
+      expect(await bridge.write('{}'), isFalse);
+      expect(await bridge.clear(), isFalse);
       expect(await bridge.takePendingTab(), isNull);
+    });
+
+    test('write and clear answer true once the native side did it', () async {
+      const bridge = MethodChannelHomeWidgetBridge();
+
+      expect(await bridge.write('{}'), isTrue);
+      expect(await bridge.clear(), isTrue);
     });
 
     test('a missing native side is swallowed too', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(homeWidgetChannel, null);
 
-      await const MethodChannelHomeWidgetBridge().clear();
+      expect(await const MethodChannelHomeWidgetBridge().clear(), isFalse);
     });
 
     test('iOS tells a listener that a widget was tapped', () async {

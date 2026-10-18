@@ -68,9 +68,9 @@ class TodayWidgetPublisher {
     return _lockScreenNumbers ??= stored;
   }
 
-  /// Saves the choice and redraws the widgets with it. Without a loaded
-  /// Today to rebuild from, turning numbers off removes the stored snapshot,
-  /// so none stays readable.
+  /// Saves the choice and redraws the widgets with it. Turning numbers off
+  /// never leaves them readable: without a loaded Today to rebuild from, or
+  /// when the rewrite fails, the stored snapshot is removed instead.
   Future<void> setLockScreenNumbers(bool shown) async {
     _lockScreenNumbers = shown;
     try {
@@ -79,12 +79,15 @@ class TodayWidgetPublisher {
       debugPrint('Non-critical error: widget setting not saved: $e');
     }
     final latest = _latest;
-    if (latest != null) {
-      await _write(latest, force: true);
-    } else if (!shown) {
-      _forget();
-      await _bridge.clear();
-    }
+    final written = latest != null && await _write(latest, force: true);
+    if (!shown && !written) await _remove();
+  }
+
+  /// Removes the stored snapshot, trying once more when that fails. The next
+  /// Today load writes a fresh one that follows the choice.
+  Future<void> _remove() async {
+    _forget();
+    if (!await _bridge.clear()) await _bridge.clear();
   }
 
   /// Writes the snapshot of the Today that just loaded.
@@ -98,12 +101,13 @@ class TodayWidgetPublisher {
     return _write(latest);
   }
 
-  Future<void> _write(
+  /// Whether the stored snapshot now matches [latest] and the choice.
+  Future<bool> _write(
     ({DailyBrief brief, NutritionTargets? targets, bool checkedIn}) latest, {
     bool force = false,
   }) async {
     final shown = await lockScreenNumbers();
-    if (_disposed) return;
+    if (_disposed) return true;
     final now = _clock();
     final snapshot = TodayWidgetSnapshot.build(
       brief: latest.brief,
@@ -117,11 +121,17 @@ class TodayWidgetPublisher {
         snapshot.contentKey == _writtenKey &&
         writtenAt != null &&
         now.difference(writtenAt) < refreshAfter) {
-      return;
+      return true;
     }
     _writtenKey = snapshot.contentKey;
     _writtenAt = now;
-    await _bridge.write(jsonEncode(snapshot.toJson()));
+    final stored = await _bridge.write(jsonEncode(snapshot.toJson()));
+    if (!stored) {
+      // Whatever is stored is not this snapshot, so the next load writes.
+      _writtenKey = null;
+      _writtenAt = null;
+    }
+    return stored;
   }
 
   void _forget() {

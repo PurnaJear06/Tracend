@@ -65,6 +65,10 @@ class _Phase2GateState extends State<Phase2Gate> {
   /// Auth has already removed the session.
   String? _userId;
 
+  /// Counts the sessions that ended. A refresh that began before one ended
+  /// belongs to a session that is gone and commits nothing.
+  int _sessionsEnded = 0;
+
   SupabaseClient get _client => widget.client ?? Supabase.instance.client;
   late final LocalAccountData _localData =
       widget.localData ?? LocalAccountData();
@@ -98,6 +102,8 @@ class _Phase2GateState extends State<Phase2Gate> {
   }
 
   Future<void> _refresh() async {
+    final sessionsEnded = _sessionsEnded;
+    bool ended() => !mounted || sessionsEnded != _sessionsEnded;
     setState(() {
       _loading = true;
       _error = null;
@@ -106,6 +112,8 @@ class _Phase2GateState extends State<Phase2Gate> {
       final client = _client;
       final session = client.auth.currentSession;
       if (session == null) {
+        // A widget snapshot a failed clear left behind goes now.
+        unawaited(_emptyWidgets());
         setState(() {
           _authenticated = false;
           _onboardingComplete = false;
@@ -126,17 +134,21 @@ class _Phase2GateState extends State<Phase2Gate> {
           );
           return;
         }
-        _userId = userId;
+        if (ended()) return;
         // Local dates on the server follow the device's time zone.
         await AccountTimeZone.supabase(client).sync();
+        if (ended()) return;
         final repository = SupabaseOnboardingRepository(client);
         final complete = await repository.isOnboardingComplete();
+        if (ended()) return;
         final aiConsent = _aiConsent ??= AiCoachingConsentController(
           SupabaseAiCoachingConsentRepository(client),
         );
         // A notice that cannot be loaded turns AI coaching off here and
         // leaves the app open; the screens that ask retry it themselves.
         await aiConsent.load();
+        if (ended()) return;
+        _userId = userId;
         // The usual months a later plan review compares with; never blocks.
         if (complete) unawaited(_baselineSource().refreshIfDue());
         setState(() {
@@ -146,31 +158,42 @@ class _Phase2GateState extends State<Phase2Gate> {
       }
     } catch (e) {
       debugPrint('Non-critical error: $e');
+      if (ended()) return;
       setState(() {
         _error =
             'The account state could not be loaded. Check the connection and retry.';
       });
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (!ended()) setState(() => _loading = false);
     }
   }
 
-  /// Leaves the signed-in app for sign-in. Does nothing when the athlete
-  /// is not in the app, so repeated events change nothing.
+  /// Leaves the app for sign-in: a refresh still running is dropped, and
+  /// the gate's transient state (loading, a connection error) goes with the
+  /// session, so nothing hides sign-in. Repeated events change nothing more.
   void _showSignedOut() {
-    if (!mounted || !_authenticated) return;
+    if (!mounted) return;
+    _sessionsEnded++;
     setState(() {
       _authenticated = false;
       _onboardingComplete = false;
       _userId = null;
+      _error = null;
+      _loading = false;
     });
   }
 
   /// Ends the rest's Live Activity and empties the widgets. Runs on every
-  /// signed-out transition and is the only place that does.
+  /// signed-out transition and is the only place that does (a launch with no
+  /// session retries the widgets' part).
   void _clearSessionOutputs() {
     unawaited(widget.liveActivity.end());
-    unawaited(widget.homeWidgets.clear());
+    unawaited(_emptyWidgets());
+  }
+
+  /// Empties the widgets, once more if the first try could not.
+  Future<void> _emptyWidgets() async {
+    if (!await widget.homeWidgets.clear()) await widget.homeWidgets.clear();
   }
 
   /// Ends the session Auth refused, with no network needed; a deleted

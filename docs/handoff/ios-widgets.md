@@ -200,7 +200,10 @@ Island check passed on 2026-10-15. What exists:
   `Phase2Gate`'s auth listener clears it, and ends the rest activity, on every signed-out
   transition: sign-out, a refused session, and a deletion that settles after its sheet was closed
   (Account then never calls the gate's sign-out). The same listener swaps the gate to sign-in
-  (`_showSignedOut`, idempotent); `_signOut` and `_endRejectedSession` no longer swap screens.
+  (`_showSignedOut`, idempotent) and drops any refresh still running (a refresh commits only if no
+  session ended since it began); `_signOut` and `_endRejectedSession` no longer swap screens. `write`
+  and `clear` answer a bool through Dart: a failed rewrite on opt-out removes the snapshot, a
+  failed clear is tried twice and again on a launch with no session.
   Nothing else clears it. Sign-out
   (`signOutAthlete`) and a refused session (`LocalAccountData.forgetSession`) forget the athlete's
   Lock Screen choice and the phone-wide key an earlier D2 build used; deleting the account removes
@@ -218,7 +221,8 @@ Island check passed on 2026-10-15. What exists:
   excluded there, then `rename`d into place and checked; a snapshot that is not excluded is
   removed), answers `write_failed` if that fails, then
   `WidgetCenter.reloadAllTimelines()`),
-  `clear`, `takePendingTab`; iOS calls `tabRequested` when a widget is tapped.
+  `clear` (removes the file, or empties it when removal fails; answers `clear_failed` only if the
+  old data may remain), `takePendingTab`; iOS calls `tabRequested` when a widget is tapped.
 - **Deep links.** None existed. `Info.plist` now registers the `tracend` URL scheme and sets
   `FlutterDeepLinkingEnabled` = NO (Flutter would otherwise try to route the URL as a Navigator route).
   `SceneDelegate` passes `connectionOptions.urlContexts` and `scene(_:openURLContexts:)` to

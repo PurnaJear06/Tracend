@@ -490,8 +490,9 @@ phone; the widgets never call the network and hold no token.
   While off, the snapshot has no `lock` section at all, so the Lock Screen widgets read nothing but
   show "Tracend" and "Lock Screen numbers are off". On adds the recovery score, the session name
   and protein, which anyone holding the locked phone can read; the row and its footnote say so.
-  Turning it off rewrites the snapshot at once; with no Today loaded to rebuild from, it removes the
-  snapshot.
+  Turning it off rewrites the snapshot at once; with no Today loaded to rebuild from, or when the
+  rewrite fails, it removes the snapshot instead (twice if the first removal fails), so the
+  opt-out never leaves Lock Screen numbers readable.
 - **Home Screen widgets** show the full snapshot (session, recovery, exercises, calories, protein,
   check-in) once the phone is unlocked, and are marked `privacySensitive` so iOS redacts them where
   it hides sensitive content on a locked phone (StandBy). Removing the widget removes the exposure.
@@ -501,7 +502,9 @@ phone; the widgets never call the network and hold no token.
   account also removes the Lock Screen choice from the phone. Coming back to the app after half an
   hour, or on a new local day, reloads Today and writes a new snapshot; an old one is never
   written again. It is also treated as
-  stale after 12 hours or on another day: no number is drawn from it.
+  stale after 12 hours or on another day: no number is drawn from it. A removal the system refuses
+  empties the file instead (an empty file is no snapshot), is tried twice, and is tried again at
+  the next launch without a session.
 - **Deep links.** `tracend://today` and `tracend://train` only switch tab; the native side accepts
   nothing else, and Flutter's own deep-link routing is off (`FlutterDeepLinkingEnabled` = NO). A
   request waits a minute for the app and then expires.

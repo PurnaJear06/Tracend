@@ -12,21 +12,34 @@ class FakeHomeWidgetBridge implements HomeWidgetBridge {
   /// The snapshot the widgets would read, or null.
   Map<String, dynamic>? stored;
 
+  /// When set, every `write` fails and leaves the stored snapshot as it was.
+  bool failWrites = false;
+
+  /// How many of the next `clear` calls fail and leave the snapshot.
+  int failClears = 0;
+
   HomeWidgetTab? pending;
   VoidCallback? _listener;
 
   int get writes => calls.where((call) => call != 'clear').length;
 
   @override
-  Future<void> write(String snapshotJson) async {
+  Future<bool> write(String snapshotJson) async {
     calls.add(snapshotJson);
+    if (failWrites) return false;
     stored = jsonDecode(snapshotJson) as Map<String, dynamic>;
+    return true;
   }
 
   @override
-  Future<void> clear() async {
+  Future<bool> clear() async {
     calls.add('clear');
+    if (failClears > 0) {
+      failClears--;
+      return false;
+    }
     stored = null;
+    return true;
   }
 
   @override

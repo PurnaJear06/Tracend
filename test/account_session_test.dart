@@ -23,6 +23,7 @@ import 'package:tracend/features/health/health_baseline.dart';
 import 'package:tracend/features/health/health_repository.dart';
 import 'package:tracend/features/today/check_in_queue.dart';
 import 'package:tracend/features/train/workout_repository.dart';
+import 'package:tracend/shared/brand/tracend_loader.dart';
 import 'package:tracend/shared/home_widgets/today_widget_publisher.dart';
 
 import 'home_widgets/fake_home_widget_bridge.dart';
@@ -619,6 +620,69 @@ void main() {
       expect(homeWidgets.calls, contains('clear'));
       expect(liveActivity.methods, contains('end'));
       await expectAthleteDataCleared();
+    });
+
+    testWidgets('a sign-out during a refresh is not undone by that refresh', (
+      tester,
+    ) async {
+      final answer = Completer<http.Response>();
+      server.routes['GET /rest/v1/user_accounts'] = () => answer.future;
+      await pumpGate(tester, server);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      // The refresh waits on the onboarding state when the session ends.
+      await tester.runAsync(
+        () => server.client.auth.signOut(scope: SignOutScope.local),
+      );
+      await settle(tester);
+
+      answer.complete(_json(200, {'onboarding_state': 'in_progress'}));
+      await settle(tester);
+      for (var second = 0; second < 6; second++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+      expect(find.byType(OnboardingFlow), findsNothing);
+      expect(find.byType(TracendLoader), findsNothing);
+    });
+
+    testWidgets('a sign-out is not hidden behind Connection needed', (
+      tester,
+    ) async {
+      server.routes['GET /auth/v1/user'] = () =>
+          Future.error(http.ClientException('offline'));
+      await pumpGate(tester, server);
+      await settle(tester);
+      expect(find.text('Connection needed'), findsOneWidget);
+
+      await tester.runAsync(
+        () => server.client.auth.signOut(scope: SignOutScope.local),
+      );
+      await settle(tester);
+
+      expect(find.text('Connection needed'), findsNothing);
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+    });
+
+    testWidgets('a clear that failed is tried again at once', (tester) async {
+      await openSignedIn(tester);
+      homeWidgets.failClears = 1;
+
+      await tester.tap(find.text('Sign out'));
+      await settle(tester);
+
+      expect(homeWidgets.calls, ['clear', 'clear']);
+      expect(homeWidgets.stored, isNull);
+    });
+
+    testWidgets('a launch with no session empties the widgets', (tester) async {
+      await pumpGate(tester, _Server());
+
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
+      expect(homeWidgets.calls, ['clear']);
     });
 
     testWidgets('a session Auth refuses while the app is open empties them', (
