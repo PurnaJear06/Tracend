@@ -153,7 +153,7 @@ In the muscle samples, markers of satellite cells (the stem cells that help musc
       {
         title: "Practical reading and limits",
         body:
-          `For someone whose goal is strength or muscle, plunging after every lifting session may cost some of the gains, so it is better kept for times when feeling fresh soon matters more than adaptation. The trial was small, only young men took part, the water was about 10 °C up to the waist, and training was mainly lower body. Later work found the strength cost is small and may be limited to immersing only the trained limbs (Fyfe 2019; Grgic 2022 meta-analysis). It does not say cold water is harmful in general: the Dupuy 2018 entry shows it can ease soreness for a day or two, and the Malta 2021 entry pools the training studies.`,
+          `For someone whose goal is strength or muscle, plunging after every lifting session may cost some of the gains, so it is better kept for times when feeling fresh soon matters more than adaptation. The trial was small, only young men took part, the water was about 10 °C up to the waist, and training was mainly lower body. Later work found the strength cost is small, though fibre growth may still be blunted, and the cost may be limited to immersing only the trained limbs (Fyfe 2019; Grgic 2022 meta-analysis). It does not say cold water is harmful in general: the Dupuy 2018 entry shows it can ease soreness for a day or two, and the Malta 2021 entry pools the training studies.`,
       },
     ],
   },

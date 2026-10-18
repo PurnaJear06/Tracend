@@ -264,7 +264,7 @@ For set length, stopping at 25 percent bar-speed loss or less gave slightly more
       {
         title: "Practical reading and limits",
         body:
-          `The authors propose that the benefit flattens out: getting reasonably close to failure matters, but going all the way adds little and brings more fatigue. They suggest stopping most sets close to failure and keeping true failure mainly for simpler, safer exercises such as machines and single-joint lifts, the last set of an exercise, and lighter loads. They also name muscles trained with few sets or only once or twice a week, and trained lifters, as cases where going to failure may make more sense. This fits the Robinson 2024 entry, which found more growth as sets end nearer failure but an uncertain shape; both say close is good and the best distance is not settled. Studies were few and small, and how close the non-failure sets really got was often unclear.`,
+          `The authors propose that the benefit flattens out: getting reasonably close to failure matters, but going all the way adds little and brings more fatigue. They suggest stopping most sets close to failure and keeping true failure mainly for simpler, safer exercises such as machines and single-joint lifts, the last set of an exercise, and lighter loads. They also name muscles trained with fewer than 5 sets a session or only once or twice a week, and trained lifters, as cases where going to failure may make more sense. This fits the Robinson 2024 entry, which found more growth as sets end nearer failure but an uncertain shape; both say close is good and the best distance is not settled. Studies were few and small, and how close the non-failure sets really got was often unclear.`,
       },
     ],
   },

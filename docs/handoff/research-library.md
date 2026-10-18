@@ -610,9 +610,10 @@ their hashes match the sources). No source was added.
   people; weight-loss rate wording; collective author added); Haugen 2023 (participants "mostly
   men", the counts did not add up).
 - **BMI boundary (Misra 2025).** The entry said a normal BMI is up to just under 23 but staged
-  obesity from "above 23", leaving exactly 23.0 unclassified. It now says "23 or more" throughout,
-  and Stage 1 also requires no obesity-related disease. This follows the entry's own "normal is
-  18.5 to just under 23"; check the exact boundary against the paper if clinical wording matters.
+  obesity from "above 23", which looked like it left exactly 23.0 unclassified. The fact-check
+  against the paper settled it: the paper uses "more than 23" for the obesity stages and grades
+  23 to 24.9 as overweight Grade I, so the entry keeps "above 23" and now says a normal BMI is
+  18.5 to 22.99 with that grading note. Stage 1 also requires no obesity-related disease.
 - **Closer than allowed to a proprietary abstract.** Reworded: Impellizzeri 2020, Wiedenmann 2025,
   WHO 2004 and Roberts 2020; Impellizzeri 2021 named as the follow-up.
 - **Smaller fixes.** UK CMO history (2011, 2019, evidence updated July 2026); US dietary guidelines

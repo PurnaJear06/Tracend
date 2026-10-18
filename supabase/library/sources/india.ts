@@ -76,7 +76,7 @@ export const indiaSources: readonly LibrarySource[] = [
         body:
           `Values are per 100 g as analysed (raw, except the egg, which is boiled), for the edible portion. Energy is calculated with standard Atwater factors and reported in kilojoules. The authors warn that vitamins vary with processing and cooking, and that the tables are not a complete list of foods eaten in India: many regional and community dishes are missing.
 
-A few single values show the scale. Per 100 g raw, red gram (toor) dal has about 22 g of protein, lentil (masoor) dal about 24 g and whole Bengal gram (chana) about 19 g; paneer has about 19 g, and a whole boiled egg about 13 g.`,
+A few single values show the scale. Per 100 g as analysed, red gram (toor) dal has about 22 g of protein, lentil (masoor) dal about 24 g and whole Bengal gram (chana) about 19 g; paneer has about 19 g, and a whole boiled egg about 13 g.`,
       },
       {
         title: "Practical reading and limits",
@@ -147,7 +147,7 @@ A few single values show the scale. Per 100 g raw, red gram (toor) dal has about
       {
         title: "The new definition",
         body:
-          `Stage 1 obesity is a BMI of 23 or more with no effect on organ function or daily activities and no obesity-related disease. Stage 2 obesity needs a BMI of 23 or more plus excess waist size or waist-to-height ratio, together with limits in daily activities or an obesity-related disease. Body fat is named the gold standard where it can be measured (above 25.5 percent in men and 38 percent in women). The waist cut-offs remain 90 cm for men and 80 cm for women, a waist-to-height ratio above 0.5 counts as excess, and a normal BMI is 18.5 to just under 23.`,
+          `Stage 1 obesity is a BMI above 23 with no effect on organ function or daily activities and no obesity-related disease. Stage 2 obesity needs a BMI above 23 plus excess waist size or waist-to-height ratio, together with limits in daily activities or an obesity-related disease. Body fat is named the gold standard where it can be measured (above 25.5 percent in men and 38 percent in women). The waist cut-offs remain 90 cm for men and 80 cm for women, a waist-to-height ratio above 0.5 counts as excess, and a normal BMI is 18.5 to 22.99 (its BMI grades place 23 to 24.9 in the first overweight grade).`,
       },
       {
         title: "Diet and activity advice",
@@ -157,7 +157,7 @@ A few single values show the scale. Per 100 g raw, red gram (toor) dal has about
       {
         title: "Practical reading and limits",
         body:
-          `This is a clinical definition for diagnosis by doctors; Coach never stages or diagnoses obesity. Its lower cut-offs fit the WHO 2004 entry. The paper calls measured body fat the gold standard but treats it as optional, and its rules let body fat override BMI only when BMI is below 23; it makes no exception for muscular people. A lifter can reach a BMI of 23 or more with little fat, so for people who train, a BMI of 23 or more alone is not evidence of excess fat. Its rate of loss in kilograms is a general figure; for people who train, the library's fat-loss sources prefer about 0.5 to 1 percent of body weight a week. The drug and surgery sections are outside Tracend's scope and are not summarised.`,
+          `This is a clinical definition for diagnosis by doctors; Coach never stages or diagnoses obesity. Its lower cut-offs fit the WHO 2004 entry. The paper calls measured body fat the gold standard but treats it as optional, and its rules let body fat override BMI only when BMI is below 23; it makes no exception for muscular people. A lifter can exceed a BMI of 23 with little fat, so for people who train, a BMI above 23 alone is not evidence of excess fat. Its rate of loss in kilograms is a general figure; for people who train, the library's fat-loss sources prefer about 0.5 to 1 percent of body weight a week. The drug and surgery sections are outside Tracend's scope and are not summarised.`,
       },
     ],
   },
