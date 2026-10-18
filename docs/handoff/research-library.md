@@ -890,15 +890,17 @@ New sources, the licence field, new questions and the claim-support judge are ot
 ### Relevance floor: calibration
 
 Measured with the real `gte-small` model in CI (Coach Eval, `retrieval_only`, runs 39099613784 and
-39100025122, 2026-10-18), 49 sources, 169 chunks, all embedded, the 92 existing questions (61
-single, 15 multi-source, 6 follow-up, 10 no-answer). `library_eval.ts` prints the distances, the
+39100025122, then the pull request's own run 39100579666 with the chosen floor, 2026-10-18), 49
+sources, 169 chunks, all embedded, the 92 existing questions (61 single, 15 multi-source, 6
+follow-up, 10 no-answer). Recall and the no-answer counts were identical in every run; MRR moved by
+about 0.01 between runs (ties in the fused ranking), so it is given as a range. `library_eval.ts` prints the distances, the
 sweep and the before and after tables; "before" is the unfiltered v3 hybrid, which ranks exactly as
 v2 did.
 
 | | recall@8 | MRR | no-answer questions shown nothing |
 |---|---|---|---|
-| Hybrid, no floor (v2 behaviour) | 0.917 | 0.880 | 0 of 10 (0%) |
-| Hybrid with the floor (what Coach chat shows) | **0.911** | **0.868** | **8 of 10 (80%)** |
+| Hybrid, no floor (v2 behaviour) | 0.917 | 0.868 to 0.880 | 0 of 10 (0%) |
+| Hybrid with the floor (what Coach chat shows) | **0.911** | **0.855 to 0.868** | **8 of 10 (80%)** |
 | Word search alone, no floor (old fallback) | 0.860 | 0.773 | 0 of 10 |
 | Word search alone with the floor (new fallback) | 0.614 | 0.605 | 8 of 10 |
 
