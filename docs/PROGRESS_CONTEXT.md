@@ -57,6 +57,14 @@ schema's shape, and a turn deadline counted from the request's start so the data
 returns inside the app's 45 s. Nothing changes for the app. Details: "Coach answer schema: one stable grammar" in
 [`ai-gateway.md`](./handoff/ai-gateway.md).
 
+**Coach week-ahead fix (2026-10-18, `claude/coach-week-ahead`, in review).** On a Sunday Coach
+named only the week's undone session and never said that Monday trains the same muscles. Coach
+now sees the next 7 days from the athlete's own date with each session's muscles, a deterministic
+line when two sessions share a muscle on consecutive days, and can look up the plan for any past or
+future dates (`plan_history`, filter `schedule`, up to 90 days ahead). Migration
+`20261018190042_coach_schedule.sql` (RPCs 1.0 to 1.1, fields added); the answer schema is unchanged.
+Details: "Coach sees the next 7 days" in [`ai-gateway.md`](./handoff/ai-gateway.md).
+
 **Authority docs rewritten (2026-10-15):** the 13 authority docs were checked against `main` after
 Iteration 1. The addenda were folded in and the contradictions and stale facts were removed. Planned
 work is marked "Planned" and points at the program plan. No rule was changed. Rules that the code or

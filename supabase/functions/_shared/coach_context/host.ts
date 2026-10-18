@@ -126,6 +126,28 @@ export function clipToBudget(text: string, budgetChars: number): string {
   return `${text.slice(0, end)}…`;
 }
 
+/** Ends a block that lost its trailing lines, so the reader knows the lists stop early. */
+export const cutNote = "[The rest of this block was cut for size.]";
+
+/**
+ * Text clipped to budget characters by whole lines: trailing lines are dropped and `cutNote` closes
+ * the block, so a line is never cut in half. Text with no line break that fits is clipped by
+ * characters as `clipToBudget` does.
+ */
+export function clipLinesToBudget(text: string, budgetChars: number): string {
+  if (text.length <= budgetChars) return text;
+  const room = budgetChars - cutNote.length - 1;
+  const kept: string[] = [];
+  let used = 0;
+  for (const line of text.split("\n")) {
+    const next = used + line.length + (kept.length > 0 ? 1 : 0);
+    if (next > room) break;
+    kept.push(line);
+    used = next;
+  }
+  return kept.length === 0 ? clipToBudget(text, budgetChars) : `${kept.join("\n")}\n${cutNote}`;
+}
+
 const closingTag = /<\/reference_data/gi;
 
 function label(id: string, text: string): string {
@@ -160,7 +182,7 @@ async function renderOne(
     }
     // A contributor's text cannot close its own label and pose as instructions after it.
     const safe = text.trim().replace(closingTag, "<\\/reference_data");
-    const clipped = clipToBudget(safe, contributor.budgetChars);
+    const clipped = clipLinesToBudget(safe, contributor.budgetChars);
     return {
       outcome: {
         ...base,
