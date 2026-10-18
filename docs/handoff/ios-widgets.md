@@ -199,7 +199,9 @@ Island check passed on 2026-10-15. What exists:
   shell is keyed by it) and clears the snapshot on `dispose` (AppShell going away).
   `Phase2Gate`'s auth listener clears it, and ends the rest activity, on every signed-out
   transition: sign-out, a refused session, and a deletion that settles after its sheet was closed
-  (Account then never calls the gate's sign-out). Nothing else clears it. Sign-out
+  (Account then never calls the gate's sign-out). The same listener swaps the gate to sign-in
+  (`_showSignedOut`, idempotent); `_signOut` and `_endRejectedSession` no longer swap screens.
+  Nothing else clears it. Sign-out
   (`signOutAthlete`) and a refused session (`LocalAccountData.forgetSession`) forget the athlete's
   Lock Screen choice and the phone-wide key an earlier D2 build used; deleting the account removes
   both with the rest (`LocalAccountData.clear`). A saved check-in republishes the last brief at

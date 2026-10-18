@@ -76,15 +76,19 @@ class _Phase2GateState extends State<Phase2Gate> {
       _authEvents = _client.auth.onAuthStateChange.listen((state) {
         if (state.event != AuthChangeEvent.signedOut) return;
         // Every way a session ends passes here, whichever screen asked for
-        // it (or none did: a deletion settling after its sheet was closed),
-        // so no rest activity or widget keeps the athlete's day.
+        // it (or none did: a deletion settling after its sheet was closed):
+        // no rest activity or widget keeps the athlete's day, and the
+        // athlete lands on sign-in.
         _clearSessionOutputs();
+        final userId = _userId;
+        final refused =
+            state.signOutReason != SignOutReason.userInitiated &&
+            _authenticated;
+        _showSignedOut();
         // A refresh token Auth refuses while the app is open (the account
-        // was deleted elsewhere) removes the session; the athlete lands on
-        // sign-in.
-        if (state.signOutReason != SignOutReason.userInitiated &&
-            _authenticated) {
-          unawaited(_endRejectedSession(_userId, accountDeleted: false));
+        // was deleted elsewhere) removes the session.
+        if (refused) {
+          unawaited(_endRejectedSession(userId, accountDeleted: false));
         }
       }, onError: (Object _) {});
       _refresh();
@@ -151,6 +155,17 @@ class _Phase2GateState extends State<Phase2Gate> {
     }
   }
 
+  /// Leaves the signed-in app for sign-in. Does nothing when the athlete
+  /// is not in the app, so repeated events change nothing.
+  void _showSignedOut() {
+    if (!mounted || !_authenticated) return;
+    setState(() {
+      _authenticated = false;
+      _onboardingComplete = false;
+      _userId = null;
+    });
+  }
+
   /// Ends the rest's Live Activity and empties the widgets. Runs on every
   /// signed-out transition and is the only place that does.
   void _clearSessionOutputs() {
@@ -158,8 +173,8 @@ class _Phase2GateState extends State<Phase2Gate> {
     unawaited(widget.homeWidgets.clear());
   }
 
-  /// Ends the session Auth refused and shows sign-in, with no network
-  /// needed; a deleted account's local data goes too.
+  /// Ends the session Auth refused, with no network needed; a deleted
+  /// account's local data goes too. The auth listener shows sign-in.
   Future<void> _endRejectedSession(
     String? userId, {
     required bool accountDeleted,
@@ -170,14 +185,6 @@ class _Phase2GateState extends State<Phase2Gate> {
       userId,
       accountDeleted: accountDeleted,
     );
-    _userId = null;
-    if (!mounted) return;
-    setState(() {
-      _authenticated = false;
-      _onboardingComplete = false;
-      _error = null;
-      _loading = false;
-    });
   }
 
   HealthBaselineSource _baselineSource() => _baseline ??=
@@ -191,10 +198,9 @@ class _Phase2GateState extends State<Phase2Gate> {
   }
 
   /// Signing out, and the end of an account deletion (Account calls this
-  /// once the deletion settles).
+  /// once the deletion settles). The auth listener shows sign-in.
   Future<void> _signOut() async {
     await signOutAthlete(_client, _localData, _userId);
-    await _refresh();
   }
 
   @override

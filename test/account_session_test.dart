@@ -612,6 +612,9 @@ void main() {
 
       expect(outcome, AccountDeletionOutcome.deleted);
       expect(server.client.auth.currentSession, isNull);
+      // Account never signed out, yet the gate left the signed-in app.
+      expect(find.byType(OnboardingFlow), findsNothing);
+      expect(find.byType(OwnerAuthScreen), findsOneWidget);
       expect(homeWidgets.stored, isNull);
       expect(homeWidgets.calls, contains('clear'));
       expect(liveActivity.methods, contains('end'));
