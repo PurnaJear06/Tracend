@@ -5,9 +5,8 @@
 //
 // The schedule runs from the athlete's own date (the coaching date), not from the calendar week:
 // on a Sunday, Monday is tomorrow and is shown as such.
-import type { Muscle } from "../../onboarding/catalog.ts";
 import { minimumDaysBetweenSessionsPerMuscle } from "../standard/volume.ts";
-import { type DayExercise, sessionMuscles } from "./muscles.ts";
+import { type DayExercise, sessionMuscles, type TrainedMuscle } from "./muscles.ts";
 
 /** Days listed from today, today included. */
 export const weekAheadDays = 7;
@@ -33,13 +32,18 @@ export type ScheduleDay = Readonly<{
   offset: number;
   sessions: readonly Readonly<{ kind: SessionKind; name: string }>[];
   /** Muscles trained, most sets first. */
-  muscles: readonly Muscle[];
+  muscles: readonly TrainedMuscle[];
   /** Exercises whose muscles the catalog does not know (no slug, or a custom exercise). */
   unknownExercises: number;
+  /** Facts about the day that are not a session: a session done early, one left undone. */
+  notes: readonly string[];
 }>;
 
+/** A fact about one date, shown with its day and never counted as a session. */
+export type ScheduleNote = Readonly<{ date: string; text: string }>;
+
 export type MuscleOverlap = Readonly<
-  { from: ScheduleDay; to: ScheduleDay; muscles: readonly Muscle[] }
+  { from: ScheduleDay; to: ScheduleDay; muscles: readonly TrainedMuscle[] }
 >;
 
 export type WeekAhead = Readonly<{
@@ -62,6 +66,7 @@ export function scheduleDay(
   weekday: number,
   offset: number,
   here: readonly Pick<SchedulePoint, "kind" | "name" | "exercises">[],
+  notes: readonly string[] = [],
 ): ScheduleDay {
   const { muscles, unknown } = sessionMuscles(here.flatMap((point) => point.exercises));
   return {
@@ -71,6 +76,7 @@ export function scheduleDay(
     sessions: here.map(({ kind, name }) => ({ kind, name })),
     muscles,
     unknownExercises: unknown,
+    notes,
   };
 }
 
@@ -108,13 +114,22 @@ export function buildWeekAhead(
   today: string,
   todayWeekday: number,
   points: readonly SchedulePoint[],
+  notes: readonly ScheduleNote[] = [],
 ): WeekAhead {
   const days: ScheduleDay[] = [];
   for (let offset = -1; offset < weekAheadDays; offset += 1) {
     const date = addDays(today, offset);
     const here = points.filter((point) => point.date === date);
     if (offset < 0 && here.length === 0) continue;
-    days.push(scheduleDay(date, ((todayWeekday - 1 + offset + 7) % 7) + 1, offset, here));
+    days.push(
+      scheduleDay(
+        date,
+        ((todayWeekday - 1 + offset + 7) % 7) + 1,
+        offset,
+        here,
+        notes.filter((note) => note.date === date).map((note) => note.text),
+      ),
+    );
   }
   return {
     days,
@@ -129,21 +144,27 @@ const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export const stamp = (day: Pick<ScheduleDay, "weekday" | "date">) =>
   `${dayNames[day.weekday - 1]} ${day.date}`;
 
+/** The caveat for a day whose sessions hold exercises the catalog has no muscles for. */
+export const unknownNote = (day: Pick<ScheduleDay, "unknownExercises">): string =>
+  day.unknownExercises > 0 ? ` [muscles of ${day.unknownExercises} exercises unknown]` : "";
+
 function describeDay(day: ScheduleDay): string {
   const when = day.offset === 0 ? " (today)" : day.offset === 1 ? " (tomorrow)" : "";
-  if (day.sessions.length === 0) return `- ${stamp(day)}${when}: no session`;
   const what = day.sessions.map((session) =>
     session.kind === "make_up"
-      ? `no session is planned today; make up the undone ${session.name}`
+      ? `no session is planned today; undone earlier this week: ${session.name}`
       : session.kind === "done"
       ? `done: ${session.name}`
       : session.name
-  ).join(" + ");
+  );
   const muscles = day.muscles.length ? ` (${day.muscles.join(", ")})` : "";
-  const unknown = day.unknownExercises > 0
-    ? ` [muscles of ${day.unknownExercises} exercises unknown]`
-    : "";
-  return `- ${stamp(day)}${when}: ${what}${muscles}${unknown}`;
+  const facts = [
+    ...(what.length ? [`${what.join(" + ")}${muscles}${unknownNote(day)}`] : [
+      "no session",
+    ]),
+    ...day.notes,
+  ];
+  return `- ${stamp(day)}${when}: ${facts.join("; ")}`;
 }
 
 /**
@@ -167,8 +188,8 @@ export function renderOverlapFact(overlaps: readonly MuscleOverlap[]): string | 
  */
 export function renderWeekAhead(schedule: WeekAhead): string[] {
   const lines = [
-    "Next 7 days from today, by the athlete's own dates (muscles from the sets in each session; " +
-    "Tracend calculated them):",
+    "Next 7 days from today, by the athlete's own dates (muscles from the sets of each session: " +
+    "logged sets for a finished one, planned sets for the rest; Tracend calculated them):",
     ...schedule.days.map(describeDay),
   ];
   const fact = renderOverlapFact(schedule.overlaps);

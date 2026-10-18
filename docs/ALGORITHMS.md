@@ -936,23 +936,31 @@ TDEE = BMR × daily-activity factor + training energy
 
 ### Week ahead and back-to-back muscles (2026-10-18)
 
-Code: `supabase/functions/_shared/training/schedule/` (`muscles.ts`, `week_ahead.ts`); rule value
+Code: `supabase/functions/_shared/training/schedule/` (`muscles.ts`, `week_ahead.ts`), the schedule
+resolution in `coach_context/contributors/training_plan.ts`; rule value
 `minimumDaysBetweenSessionsPerMuscle` in `training/standard/volume.ts`. Deterministic: the model
 explains the result and may offer a change as a proposal the athlete approves; it never decides it.
 
 - **Schedule.** The seven days from the athlete's coaching date (their own local date, not the
-  calendar week), one line each with the session and its muscles. The plan repeats weekly, so a
-  later day takes the session of its weekday whatever was done earlier this week. If today has no
-  unfinished session of its own and one from earlier this week is undone, that session is today's
-  make-up (it is what Coach prescribes today).
-- **Muscles of a session.** The catalog's primary muscles of each exercise, summed over its sets; a
-  muscle counts at 2 direct sets, the standard's weekly minimum (4) over its minimum sessions a week
-  (2). Exercises without catalog muscles are counted as unknown and said so.
+  calendar week), one line each with the session and its muscles. The plan repeats weekly. Inside the
+  athlete's ISO week a session already finished (even early, as a swap) is not planned again: its
+  slot says when it was done. From next week on every session is planned again. Overlaps are
+  computed from the same resolved schedule.
+- **Undone sessions.** Sessions of earlier days this week that are still undone are stated as a
+  fact. One is made up today only when it is not tomorrow's own session (tomorrow covers that one)
+  and does not train a muscle tomorrow's session trains: the first undone session that is not
+  tomorrow's is the candidate; if it repeats tomorrow's muscles nothing is made up and the day says
+  so, with the muscles.
+- **Muscles of a session.** The catalog's primary muscles of each exercise, summed over its sets
+  (logged sets for a finished session, planned sets for the rest); a muscle counts at 2 direct sets,
+  the standard's weekly minimum (4) over its minimum sessions a week (2). The catalog's `shoulders`
+  group is split by the exercise's movement pattern: `rear_delts` work (face pulls, rear-delt flies)
+  is "rear delts", every other exercise listing shoulders is "front and side delts". Exercises
+  without catalog muscles are counted as unknown and said so.
 - **Overlap.** Two sessions, done or planned, on consecutive calendar dates (fewer days between
   them than the standard's 1) that train a common muscle, where the later session is today or within
   the next 2 days. A rest day between them ends the pair. Yesterday's finished session counts. The
-  data are dates, not times, so no hour count is used. The one `shoulders` group in the catalog means
-  side-delt and rear-delt work share. No overlap, no line.
+  data are dates, not times, so no hour count is used. No overlap, no line.
 
 ### Templates and fractional volume (B2, 2026-10)
 

@@ -346,3 +346,22 @@ Deno.test("plan history without the filter is unchanged", () => {
   });
   assertStringIncludes(text, "### plan_history 2026-08-01 to 2026-10-17: 0 rows");
 });
+
+Deno.test("plan schedule: a session with exercises the catalog has no muscles for says so", () => {
+  const { text } = renderLookup(
+    request("plan_history", "2026-10-15", "2026-10-21", "schedule"),
+    {
+      ...scheduleLookupPayload,
+      days: [{
+        date: "2026-10-18",
+        weekday: 7,
+        planned: [],
+        done: [{
+          name: "Custom day",
+          exercises: [{ slug: null, sets: 4 }, { slug: "barbell-bench-press", sets: 4 }],
+        }],
+      }],
+    },
+  );
+  assertStringIncludes(text, "[muscles of 1 exercises unknown]");
+});

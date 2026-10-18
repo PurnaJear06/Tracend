@@ -452,6 +452,40 @@ select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000
 select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000002',
     current_date, current_date + 6, 'schedule')->'days', '[]'::jsonb,
   'an athlete without a plan has no days');
+-- The schedule lookup stops 90 days after the athlete's own today, whatever range was asked.
+select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date, current_date + 400, 'schedule')->>'to',
+  (private.local_date_for('a1000000-0000-4000-8000-000000000001') + 90)::text,
+  'the range ends 90 days after today');
+select is((select count(*) from jsonb_array_elements(public.coach_lookup_plan_history_v1(
+    'a1000000-0000-4000-8000-000000000001', current_date, current_date + 400, 'schedule')->'days') d
+    where (d->>'date')::date > private.local_date_for('a1000000-0000-4000-8000-000000000001') + 90),
+  0::bigint, 'and no day lies beyond it');
+select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date + 200, current_date + 300, 'schedule')->'days', '[]'::jsonb,
+  'a range wholly past the horizon lists nothing');
+
+-- A finished session reports the sets the athlete logged, not the sets it was planned with (the
+-- plan says 3 sets of bench press; 2 were logged).
+select pg_temp.log_session(current_date - 3,
+  '[{"order":1,"planned":"a1400000-0000-4000-8000-000000000001","slug":"barbell-bench-press","sets":[[8,75,3],[8,75,3]]}]');
+select is(public.get_coach_plan_state_v1('a1000000-0000-4000-8000-000000000001', current_date - 2)
+    ->'recent_completed'->0->'exercises'->0, '{"slug":"barbell-bench-press","sets":2}'::jsonb,
+  'the logged sets are reported');
+select is(public.coach_lookup_plan_history_v1('a1000000-0000-4000-8000-000000000001',
+    current_date - 3, current_date - 3, 'schedule')->'days'->0->'done'->0->'exercises'->0,
+  '{"slug":"barbell-bench-press","sets":2}'::jsonb, 'and so does the schedule lookup');
+
+-- The private helpers are not callable by the app's roles.
+select is(has_function_privilege('anon', 'private.coach_plan_schedule(uuid,date,date)', 'execute'),
+  false, 'anon cannot run the schedule helper');
+select is(has_function_privilege('authenticated', 'private.coach_plan_schedule(uuid,date,date)',
+  'execute'), false, 'nor can an authenticated user');
+select is(has_function_privilege('anon', 'private.coach_session_exercises(uuid,uuid)', 'execute'),
+  false, 'anon cannot read a session''s exercises through the helper');
+select is(has_function_privilege('authenticated', 'private.coach_session_exercises(uuid,uuid)',
+  'execute'), false, 'nor can an authenticated user');
+
 -- Dates of records are the athlete's local days, not UTC days: 20:00 UTC on 1 October is already
 -- 2 October at UTC+14, so a range of just that local day finds it.
 update public.user_accounts set timezone = 'Pacific/Kiritimati'

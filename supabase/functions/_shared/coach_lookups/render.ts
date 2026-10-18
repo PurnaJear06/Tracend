@@ -6,11 +6,13 @@ import { clipToBudget } from "../coach_context/host.ts";
 import type { DayExercise } from "../training/schedule/muscles.ts";
 import {
   consecutiveOverlaps,
+  dayOf,
   renderOverlapFact,
   type ScheduleDay,
   scheduleDay,
   type SessionKind,
   stamp,
+  unknownNote,
 } from "../training/schedule/week_ahead.ts";
 import { type DataRequest, lookupSpec } from "./catalogue.ts";
 
@@ -200,8 +202,6 @@ function recovery(body: Json): Parts {
   return singles(lines);
 }
 
-const dayNumberOf = (date: string) => Date.parse(`${date}T00:00:00Z`);
-
 /** The plan laid over a range of dates: one line per day with a session, and the overlaps. */
 function planSchedule(body: Json): Parts {
   const plan = rec(body.plan);
@@ -221,7 +221,7 @@ function planSchedule(body: Json): Parts {
   for (const row of list(body.days)) {
     const date = String(row.date);
     const weekday = Number(row.weekday);
-    const offset = (dayNumberOf(date) - dayNumberOf(today)) / 86_400_000;
+    const offset = dayOf(date) - dayOf(today);
     const done = list(row.done).map((item) => ({
       kind: "done" as SessionKind,
       name: String(item.name),
@@ -250,7 +250,9 @@ function planSchedule(body: Json): Parts {
       offset < 0 && planned.length ? `planned ${planned.join(" + ")}, not logged` : null,
     ].filter(Boolean).join("; ");
     const muscles = day.muscles.length ? ` (${day.muscles.join(", ")})` : "";
-    lines.push(`- ${stamp(day)}${offset === 0 ? " (today)" : ""}: ${parts}${muscles}`);
+    lines.push(
+      `- ${stamp(day)}${offset === 0 ? " (today)" : ""}: ${parts}${muscles}${unknownNote(day)}`,
+    );
   }
   const overlaps = renderOverlapFact(consecutiveOverlaps(scheduleDays).slice(0, 8));
   return {

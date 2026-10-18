@@ -7,10 +7,42 @@
 -- out in TypeScript (_shared/training/schedule); this migration only adds the data they need.
 -- Every change adds fields and bumps schema_version from 1.0 to 1.1; no field is removed.
 --
+-- 0. private.coach_session_exercises  the sets a finished session logged, per exercise
 -- 1. get_coach_plan_state_v1     + recent_completed: yesterday's and today's finished sessions
 -- 2. get_coach_data_index_v1     + schedule: the active plan's weekdays and the date it started
 -- 3. coach_lookup_plan_history_v1  filter "schedule": the plan laid over any range of dates,
 --                                  past or ahead (private.coach_plan_schedule)
+
+-- 0 ----------------------------------------------------------------------------------------------
+
+-- The exercises of a finished session as {slug, sets}: the sets the athlete logged as completed
+-- for each exercise performed (the exercise actually done), else, when nothing was logged (a
+-- session completed without sets), the sets it was planned with. Like the other private helpers it
+-- is not SECURITY DEFINER: the public functions that call it are.
+create function private.coach_session_exercises(p_user_id uuid, p_session_id uuid)
+returns jsonb language sql stable set search_path = '' as $$
+  select case when jsonb_array_length(logged.items) > 0 then logged.items else planned.items end
+  from (
+    select coalesce(jsonb_agg(jsonb_build_object(
+        'slug', coalesce(p.exercise_slug, e.exercise_slug), 'sets', n.sets)
+        order by p.exercise_order), '[]'::jsonb) as items
+    from public.exercise_performances p
+    left join public.planned_exercises e on e.id = p.planned_exercise_id and e.user_id = p.user_id
+    cross join lateral (select count(*)::integer as sets from public.exercise_sets es
+      where es.exercise_performance_id = p.id and es.user_id = p.user_id and es.completed) n
+    where p.workout_session_id = p_session_id and p.user_id = p_user_id
+      and p.status = 'performed' and n.sets > 0
+  ) logged,
+  (
+    select coalesce(jsonb_agg(jsonb_build_object('slug', e.exercise_slug, 'sets', e.set_count)
+        order by e.exercise_order), '[]'::jsonb) as items
+    from public.workout_sessions s
+    join public.planned_exercises e on e.planned_workout_id = s.planned_workout_id
+      and e.user_id = s.user_id
+    where s.id = p_session_id and s.user_id = p_user_id
+  ) planned;
+$$;
+revoke all on function private.coach_session_exercises(uuid, uuid) from public, anon, authenticated;
 
 -- 1 ----------------------------------------------------------------------------------------------
 
@@ -58,15 +90,12 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       where s.user_id = p_user_id and s.state = 'completed'
         and s.local_date between p_local_date - (extract(isodow from p_local_date)::integer - 1)
           and p_local_date), '[]'::jsonb),
-    -- Yesterday's and today's finished sessions whatever the calendar week, each with the
-    -- exercises it was planned with: the week-ahead schedule needs yesterday on a Monday, and
+    -- Yesterday's and today's finished sessions whatever the calendar week, each with the sets
+    -- it logged per exercise: the week-ahead schedule needs yesterday on a Monday, and
     -- completed_this_week stops at Monday.
     'recent_completed', coalesce((select jsonb_agg(jsonb_build_object(
         'planned_workout_id', s.planned_workout_id, 'local_date', s.local_date, 'name', cw.name,
-        'exercises', (select coalesce(jsonb_agg(jsonb_build_object('slug', e.exercise_slug,
-            'sets', e.set_count) order by e.exercise_order), '[]'::jsonb)
-          from public.planned_exercises e
-          where e.planned_workout_id = cw.id and e.user_id = cw.user_id))
+        'exercises', private.coach_session_exercises(p_user_id, s.id))
         order by s.local_date)
       from public.workout_sessions s
       join public.planned_workouts cw on cw.id = s.planned_workout_id and cw.user_id = s.user_id
@@ -140,37 +169,37 @@ $$;
 
 -- The training plan laid over a range of dates, past or ahead. The active plan repeats weekly on
 -- each session's weekday from the day it took effect; a date before that shows only what was
--- logged. Every finished session in the range is listed with the exercises it was planned with,
--- so the muscles can be worked out from sets. Days with neither a planned nor a finished session
+-- logged. Every finished session in the range is listed with the sets it logged per exercise, so
+-- the muscles can be worked out from sets. Days with neither a planned nor a finished session
 -- are left out. `today` is the athlete's own date, which tells a missed session from an upcoming
--- one. Planned sessions name a workout in `sessions`; the range is cut to 400 days ending on p_to.
+-- one. Planned sessions name a workout in `sessions`; the range is cut to 400 days and to
+-- 90 days after the athlete's today.
 create function private.coach_plan_schedule(p_user_id uuid, p_from date, p_to date)
-returns jsonb language sql stable security definer set search_path = '' as $$
+returns jsonb language sql stable set search_path = '' as $$
   with active as (
     select v.id, v.version_number, v.sessions_per_week,
       coalesce(v.effective_date, private.local_day(p_user_id, v.created_at)) as starts_on
     from public.training_plan_versions v
     where v.user_id = p_user_id and v.status = 'active' limit 1
   ), bounds as (
-    select greatest(p_from, p_to - 399) as first_day
+    -- At most 400 days, ending no later than 90 days after the athlete's own today
+    -- (maxScheduleAheadDays in coach_lookups/catalogue.ts, which validates the same bound).
+    select greatest(p_from, least(p_to, private.local_date_for(p_user_id) + 90) - 399) as first_day,
+      least(p_to, private.local_date_for(p_user_id) + 90) as last_day
   ), planned as (
     select w.id, w.name, w.preferred_weekday as weekday, w.workout_order, w.estimated_minutes
     from public.planned_workouts w join active a on a.id = w.plan_version_id
     where w.user_id = p_user_id and w.preferred_weekday is not null
   ), done as (
-    select s.local_date, cw.name,
-      (select coalesce(jsonb_agg(jsonb_build_object('slug', e.exercise_slug, 'sets', e.set_count)
-          order by e.exercise_order), '[]'::jsonb)
-        from public.planned_exercises e
-        where e.planned_workout_id = cw.id and e.user_id = cw.user_id) as exercises
+    select s.local_date, cw.name, private.coach_session_exercises(p_user_id, s.id) as exercises
     from public.workout_sessions s
     join public.planned_workouts cw on cw.id = s.planned_workout_id and cw.user_id = s.user_id
     cross join bounds b
     where s.user_id = p_user_id and s.state = 'completed'
-      and s.local_date between b.first_day and p_to
+      and s.local_date between b.first_day and b.last_day
   ), span as (
     select (b.first_day + g)::date as day
-    from bounds b, generate_series(0, p_to - b.first_day) g
+    from bounds b, generate_series(0, b.last_day - b.first_day) g
   ), days as (
     select sp.day, extract(isodow from sp.day)::integer as weekday,
       (select jsonb_agg(jsonb_build_object('name', pl.name, 'minutes', pl.estimated_minutes)
@@ -184,7 +213,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
   )
   select jsonb_build_object(
     'schema_version', '1.1', 'lookup', 'plan_history', 'filter', 'schedule',
-    'from', (select first_day from bounds), 'to', p_to,
+    'from', (select first_day from bounds), 'to', (select last_day from bounds),
     'today', private.local_date_for(p_user_id),
     'truncated', false,
     'plan', (select jsonb_build_object('version', a.version_number, 'starts_on', a.starts_on,

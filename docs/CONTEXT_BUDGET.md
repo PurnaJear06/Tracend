@@ -34,7 +34,7 @@ The athlete file and memory share the same budget as today (96,000 characters, 1
 change; wrappers and question reserved first) and the same whole-section dropping.
 `renderCoachContextParts` splits the one rendering; `formatContextAsMarkdown` joins it for the
 legacy path. Contributors render after the athlete file in the registry's fixed order, each
-clipped to its `budgetChars` (at most 12,000) and labelled as reference data; a contributor that
+clipped to its `budgetChars` (at most 12,000, by whole lines from the end, with a closing note that the rest was cut) and labelled as reference data; a contributor that
 fails, returns nothing or takes over 4 seconds is left out. Their budgets are on top of the
 athlete file's and count toward the turn's budget reservation.
 
@@ -61,7 +61,7 @@ rest of the athlete's records come from lookups the model asks for (AI_SAFETY_SP
 
 | Piece | Where | Size | Notes |
 | --- | --- | --- | --- |
-| `training_plan` contributor | Volatile contributor, after the goal phase | up to 8,000 characters (budget 8,000; about 3,500 for a four-session plan, about 4,000 for a six-session plan of four exercises each) | Today's or the next session with each exercise's sets, reps, rest, load, next target and last logged set; the next 7 days from the athlete's date with each session's muscles (about 1,000 characters) and, only when two sessions share a muscle on consecutive days, one line naming it (about 300); the other sessions compactly; sets a week by muscle; equipment; catalog home alternatives. Replaces the unregistered `progression` contributor and the athlete file's "Training Week Structure". |
+| `training_plan` contributor | Volatile contributor, after the goal phase | up to 12,000 characters (budget 12,000, the host's ceiling). About 3,500 for a four-session plan, about 4,000 for six sessions of four exercises, about 9,900 for seven sessions of nine exercises with long names (tested) | Fixed parts first: the rules for naming exercises (home options), the plan's sets a week by muscle, the equipment, and the next 7 days from the athlete's date with each session's muscles (about 1,000 characters; one more line of about 300 only when two sessions share a muscle on consecutive days). Then the lists that grow with the plan: today's or the next session with each exercise's sets, reps, rest, load, next target and last logged set, and the other sessions compactly. The host cuts a block by whole lines from the end and ends it with a note, so a cut can only shorten those lists, never remove a rule or the week. Replaces the unregistered `progression` contributor and the athlete file's "Training Week Structure". |
 | `nutrition_state` contributor | Volatile | up to 3,200 characters | The week's complete days (k of n), complete-day averages, partial days, today's schedule and meals, meal sources. Replaces the athlete file's per-logged-day nutrition lines, "Logged Nutrition", "7-Day Nutrition Compliance", "Nutrition Adherence", today's meals and the schedule line. |
 | `data_index` contributor | Volatile, gateway route only | up to 1,900 characters (budget 1,900) | First and last date and count per kind of record, and the weekdays and start date of the active plan's schedule with how far ahead it can be asked for. Left out on today's DeepSeek path, which has no lookups. |
 | Looked-up rows | After the question, one labelled block per round | up to 5,000 characters per lookup, 4 lookups a round, 2 rounds (at most 40,000 characters in one turn). Whole rows only, newest first; the heading says "showing the newest N of M rows" when some were cut | Not part of the cached prefix. Each lookup call is a separate model call with its own reservation. |
@@ -87,9 +87,12 @@ fits one reservation (`coach_chat_provider_route_test.ts`).
 | Library evidence in the schema | Output schema | none: evidence is one object (`code` a plain string, `source` one of four) | `source: "library"` with any `code`; the ids shown change every turn, so they are checked after the answer (`citation_not_retrieved`), not listed in the schema. The whole output schema is one fixed 2,818-byte shape with no optional key and no union, so Claude compiles it once and caches it; it no longer lists the day's evidence codes (they are in the prompt). |
 | Empty-value rules | System prompt, gateway route only | about 520 characters | "The shape of your JSON": every key is always present, `[]` and `""` for nothing, no null. Inside the 16,000-character instructions reserve. |
 
-The two contributors add 9,900 characters to the worst case: the contributors' total is now 36,274
-characters (25,825 before E3), so a Sonnet 5.5 reservation is about USD 0.34 (0.32 before), still under
-the USD 0.50 cap (`coach_chat_provider_route_test.ts`). Opus 5.5 was already over the cap and takes
+The two contributors add 9,900 characters to the worst case. Recomputed 2026-10-18 from the registry
+(`coachContextMaxChars`; budgets: principles 7,200, screening 900, confirmed facts 4,200, goal phase
+2,200, training plan 12,000, nutrition 3,200, proposals 1,800, heart rate 900, notes 3,600, data
+index 1,900, library 9,000): the contributors' total is 49,924 characters (44,624 before the
+week-ahead fix raised the training plan from 7,000 and the data index from 1,600), so a Sonnet 5.5
+reservation is about USD 0.36 (0.35 before), still under the USD 0.50 cap (`coach_chat_provider_route_test.ts`). Opus 5.5 was already over the cap and takes
 today's path.
 
 The coaching principles digest (E2) stays in the cached prefix as before. The whole library

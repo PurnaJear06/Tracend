@@ -11,11 +11,16 @@ import type { AvoidablePattern } from "../../onboarding/catalog.ts";
 import { avoidablePatterns } from "../../onboarding/catalog.ts";
 import { catalogV2BySlug } from "../../onboarding/catalog_v2.ts";
 import { homeAlternativesFor, minimalHomeKit } from "../../training/home_alternatives.ts";
-import { type DayExercise } from "../../training/schedule/muscles.ts";
+import {
+  type DayExercise,
+  sessionMuscles,
+  type TrainedMuscle,
+} from "../../training/schedule/muscles.ts";
 import {
   addDays,
   buildWeekAhead,
   renderWeekAhead,
+  type ScheduleNote,
   type SchedulePoint,
   weekAheadDays,
 } from "../../training/schedule/week_ahead.ts";
@@ -29,7 +34,9 @@ import type { CoachContextContributor } from "../host.ts";
 import { coachServiceRpc, type StateSource, stateSourceFromRpc } from "../service_source.ts";
 
 export const trainingPlanContributorId = "training_plan";
-export const trainingPlanContributorBudgetChars = 8_000;
+// Sized for the largest plan the app allows: 7 sessions of 9 exercises with long names is about
+// 9,900 characters (training_plan_test.ts), and the host's own ceiling is 12,000.
+export const trainingPlanContributorBudgetChars = 12_000;
 
 type Json = Record<string, unknown>;
 const rec = (value: unknown): Json =>
@@ -178,12 +185,42 @@ export function finishedOn(state: PlanState, session: PlanSession): string | nul
   return row?.localDate ?? null;
 }
 
+const exercisesOf = (session: PlanSession): DayExercise[] =>
+  session.exercises.map((exercise) => ({ slug: exercise.slug, sets: exercise.sets }));
+
 /**
- * What the athlete does next: today's session unless it was already done this week (today or
- * earlier), else the next unfinished one later in the week, else one from earlier this week that is
- * still undone, else next week's first. A workout finished this week is never prescribed again.
+ * The plan's sessions on the day `offset` days after today (1 to 6), resolved against the athlete's
+ * ISO week. Inside the current week a session already finished is not planned again: its slot
+ * reads done (`doneEarly`). From the next ISO week on, every session is planned again.
  */
-export function pickFocusSession(state: PlanState): Readonly<{
+export function sessionsOn(state: PlanState, offset: number): Readonly<{
+  planned: readonly PlanSession[];
+  doneEarly: readonly Readonly<{ session: PlanSession; doneOn: string }>[];
+}> {
+  const weekday = ((state.weekday - 1 + offset) % 7) + 1;
+  const onDay = state.sessions.filter((session) => session.weekday === weekday);
+  if (offset > 7 - state.weekday) return { planned: onDay, doneEarly: [] };
+  return {
+    planned: onDay.filter((session) => finishedOn(state, session) === null),
+    doneEarly: onDay.flatMap((session) => {
+      const doneOn = finishedOn(state, session);
+      return doneOn === null ? [] : [{ session, doneOn }];
+    }),
+  };
+}
+
+/** The muscles two groups of sessions both train. */
+function sharedMuscles(
+  first: readonly PlanSession[],
+  second: readonly PlanSession[],
+): TrainedMuscle[] {
+  const later = sessionMuscles(second.flatMap(exercisesOf)).muscles;
+  return sessionMuscles(first.flatMap(exercisesOf)).muscles.filter((muscle) =>
+    later.includes(muscle)
+  );
+}
+
+export type FocusSession = Readonly<{
   session: PlanSession | null;
   isToday: boolean;
   /** Today's slot holds a session that is already done this week; `doneOn` is its date. */
@@ -191,20 +228,54 @@ export function pickFocusSession(state: PlanState): Readonly<{
   doneOn: string | null;
   missed: boolean;
   nextWeek: boolean;
-}> {
+  /** Sessions of earlier days this week that are still undone, in weekday order. */
+  undone: readonly PlanSession[];
+  /** An undone session Tracend does not set for today because it repeats tomorrow's muscles. */
+  deferred: Readonly<{ session: PlanSession; shared: readonly TrainedMuscle[] }> | null;
+}>;
+
+/**
+ * What the athlete does next: today's session unless it was already done this week (today or
+ * earlier), else the next unfinished one later in the week, else a session from earlier this week
+ * that is still undone, else next week's first. A workout finished this week is never prescribed
+ * again. An undone session is made up today only if it is not tomorrow's session (tomorrow covers
+ * that one) and does not train the muscles tomorrow's session trains: the first undone session that
+ * is not tomorrow's is the candidate, and when it repeats tomorrow's muscles nothing is made up.
+ */
+export function pickFocusSession(state: PlanState): FocusSession {
   const byDay = (a: PlanSession, b: PlanSession) => a.weekday! - b.weekday!;
   const dated = state.sessions.filter((session) => session.weekday !== null).sort(byDay);
   const todays = dated.find((session) => session.weekday === state.weekday) ?? null;
   const slotDone = todays && finishedOn(state, todays) !== null ? todays : null;
-  const base = { doneToday: slotDone, doneOn: slotDone ? finishedOn(state, slotDone) : null };
+  const unfinished = (session: PlanSession) => finishedOn(state, session) === null;
+  const undone = dated.filter((session) => session.weekday! < state.weekday && unfinished(session));
+  const base = {
+    doneToday: slotDone,
+    doneOn: slotDone ? finishedOn(state, slotDone) : null,
+    undone,
+    deferred: null,
+  };
   if (todays && !slotDone) {
     return { ...base, session: todays, isToday: true, missed: false, nextWeek: false };
   }
-  const unfinished = (session: PlanSession) => finishedOn(state, session) === null;
   const later = dated.find((session) => session.weekday! > state.weekday && unfinished(session));
   if (later) return { ...base, session: later, isToday: false, missed: false, nextWeek: false };
-  const missed = dated.find((session) => session.weekday! < state.weekday && unfinished(session));
-  if (missed) return { ...base, session: missed, isToday: false, missed: true, nextWeek: false };
+  const tomorrow = sessionsOn(state, 1).planned;
+  const candidate = undone.find((session) => !tomorrow.some((item) => item.id === session.id));
+  if (candidate) {
+    const shared = sharedMuscles([candidate], tomorrow);
+    if (shared.length === 0) {
+      return { ...base, session: candidate, isToday: false, missed: true, nextWeek: false };
+    }
+    return {
+      ...base,
+      deferred: { session: candidate, shared },
+      session: dated[0] ?? null,
+      isToday: false,
+      missed: false,
+      nextWeek: true,
+    };
+  }
   return { ...base, session: dated[0] ?? null, isToday: false, missed: false, nextWeek: true };
 }
 
@@ -252,22 +323,20 @@ function compactSession(session: PlanSession, state: PlanState, doneOn: string |
   }`;
 }
 
-const exercisesOf = (session: PlanSession): DayExercise[] =>
-  session.exercises.map((exercise) => ({ slug: exercise.slug, sets: exercise.sets }));
-
 /**
- * The sessions of the next seven days from the athlete's date, plus yesterday's and today's
- * finished ones. The plan repeats weekly, so a day after today takes the session whose weekday it
- * is whatever was done earlier this week (a Monday session finished this Monday is still
- * tomorrow's when tomorrow is Monday). When today has no unfinished session of its own and one
- * from earlier this week is undone, that session is today's make-up, which is what Coach
- * prescribes today.
+ * The schedule Coach reads: the sessions of the next seven days from the athlete's date plus
+ * yesterday's and today's finished ones, and the facts about the days that are not sessions. One
+ * resolved schedule feeds both the lines and the overlap check. The plan repeats weekly: inside the
+ * athlete's ISO week a session already finished is not shown as planned again (its slot says when
+ * it was done), from next week on every session is planned. Today shows what Coach prescribes:
+ * today's planned session, or an undone earlier session when `pickFocusSession` makes it up today.
  */
-export function schedulePoints(
+export function resolveSchedule(
   state: PlanState,
-  focus: ReturnType<typeof pickFocusSession>,
-): SchedulePoint[] {
+  focus: FocusSession,
+): Readonly<{ points: SchedulePoint[]; notes: ScheduleNote[] }> {
   const points: SchedulePoint[] = [];
+  const notes: ScheduleNote[] = [];
   const yesterday = addDays(state.localDate, -1);
   for (const row of state.recent) {
     if (row.localDate !== yesterday && row.localDate !== state.localDate) continue;
@@ -281,36 +350,48 @@ export function schedulePoints(
       exercises: row.exercises.length > 0 ? row.exercises : planned ? exercisesOf(planned) : [],
     });
   }
-  const loggedToday = points.some((point) => point.date === state.localDate);
-  if (!loggedToday && focus.session) {
-    if (focus.isToday) {
-      points.push({
-        date: state.localDate,
-        kind: "planned",
-        name: focus.session.name,
-        exercises: exercisesOf(focus.session),
-      });
-    } else if (focus.missed) {
-      points.push({
-        date: state.localDate,
-        kind: "make_up",
-        name: `${dayName(focus.session.weekday)} session ${focus.session.name}`,
-        exercises: exercisesOf(focus.session),
-      });
-    }
+  if (focus.session && focus.isToday) {
+    points.push({
+      date: state.localDate,
+      kind: "planned",
+      name: focus.session.name,
+      exercises: exercisesOf(focus.session),
+    });
+  } else if (focus.session && focus.missed) {
+    points.push({
+      date: state.localDate,
+      kind: "make_up",
+      name: `${dayName(focus.session.weekday)} session ${focus.session.name}`,
+      exercises: exercisesOf(focus.session),
+    });
+  }
+  if (!focus.missed && focus.undone.length > 0) {
+    notes.push({
+      date: state.localDate,
+      text: `undone earlier this week: ${
+        focus.undone.map((session) => `${session.name} (${dayName(session.weekday)})`).join(", ")
+      }`,
+    });
+  }
+  if (focus.deferred) {
+    notes.push({
+      date: state.localDate,
+      text: `${focus.deferred.session.name} is not set for today: it would train ${
+        focus.deferred.shared.join(", ")
+      } again the day before tomorrow's session`,
+    });
   }
   for (let offset = 1; offset < weekAheadDays; offset += 1) {
-    const weekday = ((state.weekday - 1 + offset) % 7) + 1;
-    for (const session of state.sessions.filter((item) => item.weekday === weekday)) {
-      points.push({
-        date: addDays(state.localDate, offset),
-        kind: "planned",
-        name: session.name,
-        exercises: exercisesOf(session),
-      });
+    const date = addDays(state.localDate, offset);
+    const { planned, doneEarly } = sessionsOn(state, offset);
+    for (const session of planned) {
+      points.push({ date, kind: "planned", name: session.name, exercises: exercisesOf(session) });
+    }
+    for (const { session, doneOn } of doneEarly) {
+      notes.push({ date, text: `${session.name} was already done this week, on ${doneOn}` });
     }
   }
-  return points;
+  return { points, notes };
 }
 
 /** Sets a week of the plan gives each target muscle, from the catalog's first-listed muscle. */
@@ -328,7 +409,12 @@ function weeklySets(state: PlanState): string {
     .join(", ");
 }
 
-/** The text for one plan state, or null without an active plan. Exposed for tests. */
+/**
+ * The text for one plan state, or null without an active plan. Exposed for tests. The short, fixed
+ * parts come first (the rules for naming exercises, the week's sets, the equipment, the 7-day
+ * schedule); the lists whose length follows the plan come last, so a cut for size (the host drops
+ * whole trailing lines) can only shorten the lists, never remove a rule.
+ */
 export function renderTrainingPlan(state: PlanState | null): string | null {
   if (state === null || state.sessions.length === 0) return null;
   const focus = pickFocusSession(state);
@@ -355,17 +441,28 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
     );
   }
   lines.push(
-    ...renderWeekAhead(
-      buildWeekAhead(state.localDate, state.weekday, schedulePoints(state, focus)),
-    ),
+    "Home options are catalog exercises that need no equipment (bodyweight) or only " +
+      `${minimalHomeKit.join(", ").replaceAll("_", " ")}. To plan days away from the gym, build ` +
+      "the routine from these options and the plan's sets a week for each muscle; name only " +
+      "exercises listed here, and ask what kit the athlete has at home when it changes the choice.",
   );
+  lines.push(`Sets a week by main muscle in the plan: ${weeklySets(state)}.`);
+  lines.push(
+    state.equipment === null
+      ? "Equipment profile: not on file."
+      : `Equipment profile (from onboarding): ${
+        state.equipment.length ? state.equipment.join(", ").replaceAll("_", " ") : "bodyweight only"
+      }.`,
+  );
+  const { points, notes } = resolveSchedule(state, focus);
+  lines.push(...renderWeekAhead(buildWeekAhead(state.localDate, state.weekday, points, notes)));
   if (focus.session) {
     const label = focus.isToday
       ? "Today's planned session"
       : focus.missed
       ? "A session from earlier this week is still undone"
       : focus.nextWeek
-      ? "No session is left this week; the next one is next week's first"
+      ? "No session is set for the rest of this week; the next one is next week's first"
       : "Today has no planned session. The next planned session";
     lines.push(
       `${label}: ${focus.session.name} (${dayName(focus.session.weekday)}${
@@ -387,20 +484,6 @@ export function renderTrainingPlan(state: PlanState | null): string | null {
       ...rest.map((session) => compactSession(session, state, finishedOn(state, session))),
     );
   }
-  lines.push(`Sets a week by main muscle in the plan: ${weeklySets(state)}.`);
-  lines.push(
-    state.equipment === null
-      ? "Equipment profile: not on file."
-      : `Equipment profile (from onboarding): ${
-        state.equipment.length ? state.equipment.join(", ").replaceAll("_", " ") : "bodyweight only"
-      }.`,
-  );
-  lines.push(
-    "Home options are catalog exercises that need no equipment (bodyweight) or only " +
-      `${minimalHomeKit.join(", ").replaceAll("_", " ")}. To plan days away from the gym, build ` +
-      "the routine from these options and the plan's sets a week for each muscle; name only " +
-      "exercises listed here, and ask what kit the athlete has at home when it changes the choice.",
-  );
   return lines.join("\n");
 }
 

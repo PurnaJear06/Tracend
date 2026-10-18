@@ -40,11 +40,11 @@ Deno.test("a Sunday with Monday tomorrow: Monday is listed and the shared muscle
   assertEquals(schedule.overlaps.length, 1);
   assertEquals(schedule.overlaps[0].from.date, sunday);
   assertEquals(schedule.overlaps[0].to.date, "2026-10-19");
-  assertEquals(schedule.overlaps[0].muscles, ["chest", "triceps", "shoulders"]);
+  assertEquals(schedule.overlaps[0].muscles, ["chest", "triceps", "front and side delts"]);
   const text = renderWeekAhead(schedule).join("\n");
   assertStringIncludes(text, "- Mon 2026-10-19 (tomorrow): Chest priority");
   assertStringIncludes(text, "Sun 2026-10-18 then Mon 2026-10-19: ");
-  assertStringIncludes(text, "make up the undone Chest volume");
+  assertStringIncludes(text, "undone earlier this week: Chest volume");
 });
 
 Deno.test("mid-week: a heavy day after a rest day is not an overlap, and a pair ahead is found", () => {
@@ -153,4 +153,50 @@ Deno.test("the overlap fact is a structured value with its own one-line renderin
   const line = renderOverlapFact(overlaps)!;
   assert(!line.includes("\n"));
   assertStringIncludes(line, "Same muscles on consecutive days");
+});
+
+Deno.test("face pulls the day before a press day are not a back-to-back shoulder day", () => {
+  const pullWithFacePulls = [
+    { slug: "lat-pulldown", sets: 4 },
+    { slug: "face-pull", sets: 3 },
+  ];
+  const press = [{ slug: "barbell-overhead-press", sets: 3 }, {
+    slug: "cable-lateral-raise",
+    sets: 3,
+  }];
+  const apart = buildWeekAhead(sunday, 7, [
+    at(sunday, "Pull", pullWithFacePulls),
+    at("2026-10-19", "Press", press),
+  ]);
+  assertEquals(apart.overlaps, []);
+});
+
+Deno.test("side and front delts on consecutive days, and rear delts on consecutive days, are flagged", () => {
+  const press = [{ slug: "dumbbell-shoulder-press", sets: 3 }, {
+    slug: "cable-lateral-raise",
+    sets: 3,
+  }];
+  const raises = [{ slug: "dumbbell-lateral-raise", sets: 4 }];
+  const sideAndFront = buildWeekAhead(sunday, 7, [
+    at(sunday, "Raises", raises),
+    at("2026-10-19", "Press", press),
+  ]);
+  assertEquals(sideAndFront.overlaps.map((o) => o.muscles), [["front and side delts"]]);
+  const rear = buildWeekAhead(sunday, 7, [
+    at(sunday, "Pull A", [{ slug: "face-pull", sets: 3 }]),
+    at("2026-10-19", "Pull B", [{ slug: "dumbbell-rear-delt-fly", sets: 3 }]),
+  ]);
+  assertEquals(rear.overlaps.map((o) => o.muscles), [["rear delts"]]);
+});
+
+Deno.test("a day with a note and no session reads as the note, not as a session", () => {
+  const schedule = buildWeekAhead(sunday, 7, [], [{
+    date: "2026-10-19",
+    text: "Legs A was already done this week, on 2026-10-13",
+  }]);
+  assertEquals(schedule.days[1].sessions, []);
+  assertStringIncludes(
+    renderWeekAhead(schedule)[2],
+    "(tomorrow): no session; Legs A was already done this week, on 2026-10-13",
+  );
 });

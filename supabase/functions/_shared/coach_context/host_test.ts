@@ -1,8 +1,10 @@
 import { assert, assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert@1.0.14";
 import {
+  clipLinesToBudget,
   clipToBudget,
   type CoachContextContributor,
   coachContextMaxChars,
+  cutNote,
   renderCoachContext,
   validateCoachContextContributors,
 } from "./host.ts";
@@ -171,4 +173,21 @@ Deno.test("the data index and the library, which need the gateway's answer field
   assertEquals(legacy.includes("training_plan"), true);
   assertEquals(legacy.includes("heart_rate_profile"), true);
   validateCoachContextContributors(coachContextContributorsFor(false));
+});
+
+Deno.test("a long block loses whole trailing lines and says so", async () => {
+  const text = Array.from({ length: 40 }, (_, index) => `line ${index} ${"y".repeat(20)}`).join(
+    "\n",
+  );
+  const result = await renderCoachContext([
+    contributor("plan", "volatile", () => Promise.resolve(text), 300),
+  ], input);
+  const body = result.texts.plan;
+  assert(body.length <= 300, `${body.length}`);
+  assert(body.endsWith(cutNote));
+  assert(body.startsWith("line 0 "));
+  // Every kept line is a whole line of the original.
+  for (const line of body.split("\n").slice(0, -1)) assert(text.split("\n").includes(line), line);
+  assertEquals(result.outcomes[0].clipped, true);
+  assertEquals(clipLinesToBudget("short", 10), "short");
 });

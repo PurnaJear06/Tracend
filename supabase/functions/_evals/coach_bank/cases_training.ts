@@ -85,7 +85,7 @@ export const trainingCases: readonly BankCase[] = [
     id: "sunday-chest-twice-back-to-back",
     category: "training_today",
     description:
-      "A Sunday check of the training: making up Thursday's chest session today puts chest, delts and triceps on Sunday and again on Monday. Coach must see Monday and say so, and offer a change as something the athlete approves.",
+      "A Sunday check of the training: Thursday's chest session is undone and Monday's session trains the same muscles. Coach must see Monday and say that making Thursday's up today would put them on back-to-back days, and offer a change as something the athlete approves.",
     athlete: sundayChestTwice,
     question: "Can you check my training? What's left this week?",
     expect: { screen: "none", mentions: [tomorrowIsMonday, flagsBackToBack, namesChest] },

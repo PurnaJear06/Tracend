@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.14";
-import { renderCoachContext } from "../host.ts";
+import { cutNote, renderCoachContext } from "../host.ts";
 import {
   createTrainingPlanContributor,
   parsePlanState,
@@ -203,32 +203,89 @@ Deno.test("the text fits its budget and the host labels it as reference data", a
 const sundayWithThursdayUndone = () =>
   splitPlanPayload(7, ["w-chest-a", "w-legs-a", "w-pull", "w-shoulders"]);
 
-Deno.test("Sunday: Monday is tomorrow, and the undone chest session made up today overlaps it", () => {
+const lineOf = (text: string, start: string) => text.split("\n").find((l) => l.startsWith(start))!;
+
+Deno.test("Sunday: Monday is tomorrow, and the undone chest session is not set for today because it repeats Monday's muscles", () => {
   const text = renderTrainingPlan(parsePlanState(sundayWithThursdayUndone()))!;
   assertStringIncludes(text, "Next 7 days from today");
+  const today = lineOf(text, "- Sun 2026-10-18 (today)");
+  assertStringIncludes(
+    today,
+    "undone earlier this week: Chest volume and delts (Thursday), Legs B (Friday)",
+  );
+  assertStringIncludes(
+    today,
+    "Chest volume and delts is not set for today: it would train chest, triceps, front and side delts again the day before tomorrow's session",
+  );
+  assertStringIncludes(
+    lineOf(text, "- Mon 2026-10-19 (tomorrow)"),
+    "Chest priority and side delts (chest, front and side delts, triceps)",
+  );
+  assertStringIncludes(text, "- Sat 2026-10-24: Shoulder width (");
   assertStringIncludes(
     text,
-    "- Sun 2026-10-18 (today): no session is planned today; make up the undone Thursday session Chest volume and delts (",
+    "No session is set for the rest of this week; the next one is next week's first: Chest priority and side delts (Monday",
   );
-  assertStringIncludes(text, "- Mon 2026-10-19 (tomorrow): Chest priority and side delts (");
-  assertStringIncludes(text, "- Sat 2026-10-24: Shoulder width (");
-  const fact = text.split("\n").find((line) =>
-    line.startsWith("Same muscles on consecutive days")
-  )!;
-  assertStringIncludes(fact, "Sat 2026-10-17 then Sun 2026-10-18: triceps, shoulders");
-  assertStringIncludes(fact, "Sun 2026-10-18 then Mon 2026-10-19: chest, shoulders, triceps");
-  // Monday's session was logged on the 12th; that is last week's Monday, not tomorrow's.
-  assertStringIncludes(text, "Chest priority and side delts: ");
-  assert(text.includes("[done 2026-10-12]"));
+  // Monday's session was logged on the 12th; that is last week's Monday, not tomorrow's, so it is
+  // not tagged done.
   assert(!text.includes("done this week]"));
+});
+
+Deno.test("a make-up is set for today when it shares nothing with tomorrow, and states the fact, not an order", () => {
+  // Only Friday's legs are undone: Sunday could make them up, and Monday trains chest.
+  const text = renderTrainingPlan(
+    parsePlanState(
+      splitPlanPayload(7, ["w-chest-a", "w-legs-a", "w-pull", "w-chest-b", "w-shoulders"]),
+    ),
+  )!;
+  const today = lineOf(text, "- Sun 2026-10-18 (today)");
+  assertStringIncludes(
+    today,
+    "no session is planned today; undone earlier this week: Friday session Legs B",
+  );
+  assert(!today.includes("make up"));
+  assertStringIncludes(text, "A session from earlier this week is still undone: Legs B");
+});
+
+Deno.test("an undone session that is tomorrow's own is not made up today; tomorrow covers it", () => {
+  // Sunday, and Monday's session (the week's first) was missed: tomorrow's Monday is that session.
+  const monday = renderTrainingPlan(
+    parsePlanState(
+      splitPlanPayload(7, ["w-legs-a", "w-pull", "w-chest-b", "w-legs-b", "w-shoulders"]),
+    ),
+  )!;
+  const today = lineOf(monday, "- Sun 2026-10-18 (today)");
+  assert(!today.includes("no session is planned today"));
+  assertStringIncludes(today, "undone earlier this week: Chest priority and side delts (Monday)");
+  assertStringIncludes(
+    lineOf(monday, "- Mon 2026-10-19 (tomorrow)"),
+    "Chest priority and side delts",
+  );
+  assert(!monday.includes("A session from earlier this week is still undone"));
+  // Monday and Friday undone: Monday is tomorrow's, so Friday is the candidate and it shares
+  // nothing with Monday's chest day, so it is made up today.
+  const both = renderTrainingPlan(
+    parsePlanState(splitPlanPayload(7, ["w-legs-a", "w-pull", "w-chest-b", "w-shoulders"])),
+  )!;
+  assertStringIncludes(both, "A session from earlier this week is still undone: Legs B");
+  // Monday and Thursday undone: the candidate is Thursday, which repeats Monday's muscles, so
+  // nothing is made up and the choice is not pushed on to Friday.
+  const repeats = renderTrainingPlan(
+    parsePlanState(splitPlanPayload(7, ["w-legs-a", "w-pull", "w-legs-b", "w-shoulders"])),
+  )!;
+  assertStringIncludes(
+    lineOf(repeats, "- Sun 2026-10-18 (today)"),
+    "Chest volume and delts is not set for today",
+  );
+  assert(!repeats.includes("A session from earlier this week is still undone"));
 });
 
 Deno.test("the schedule block and its overlap fact stay compact", () => {
   const text = renderTrainingPlan(parsePlanState(sundayWithThursdayUndone()))!;
   const start = text.indexOf("Next 7 days from today");
-  const end = text.indexOf("\nA session from earlier this week", start);
+  const end = text.indexOf("\nNo session is set for the rest of this week", start);
   const block = text.slice(start, end);
-  assert(block.length < 1_500, `${block.length} characters`);
+  assert(block.length < 1_800, `${block.length} characters`);
   assert(text.length <= trainingPlanContributorBudgetChars, `${text.length} characters`);
 });
 
@@ -246,15 +303,82 @@ Deno.test("mid-week: a leg day after chest and before shoulders shares nothing, 
 
 Deno.test("mid-week: back-to-back sessions that share muscles are named", () => {
   const payload = splitPlanPayload(3, ["w-chest-a", "w-legs-a"]);
-  // The athlete moved Pull day's slot onto Thursday's session: two chest days in a row ahead.
+  // Thursday and Friday both train chest, triceps and front and side delts.
   const sessions = payload.sessions as { weekday: number; name: string }[];
-  sessions[2].weekday = 3;
   sessions[5].weekday = 5;
   sessions[5].name = "Chest again";
   (sessions[5] as Record<string, unknown>).exercises = (sessions[3] as Record<string, unknown>)
     .exercises;
+  sessions[4].weekday = 6;
   const text = renderTrainingPlan(parsePlanState(payload))!;
-  assertStringIncludes(text, "Thu 2026-10-15 then Fri 2026-10-16: chest, triceps, shoulders");
+  assertStringIncludes(
+    text,
+    "Thu 2026-10-15 then Fri 2026-10-16: chest, triceps, front and side delts",
+  );
+});
+
+// Wednesday, with Thursday's slot filled by a second pull session that the athlete did early, on
+// Tuesday (a swap). Without the early finish, Wednesday's pull and Thursday's would be back to back.
+const wednesdayWithThursdayDoneOnTuesday = () => {
+  const payload = splitPlanPayload(3, ["w-chest-a", "w-legs-a"]);
+  const sessions = payload.sessions as Record<string, unknown>[];
+  sessions[3].exercises = sessions[2].exercises;
+  (payload.completed_this_week as unknown[]).push({
+    planned_workout_id: "w-chest-b",
+    local_date: "2026-10-13",
+    name: "Chest volume and delts",
+    weekday: 4,
+    order: 4,
+  });
+  return payload;
+};
+
+Deno.test("a session already done this week is not planned again, and no overlap comes from it", () => {
+  const text = renderTrainingPlan(parsePlanState(wednesdayWithThursdayDoneOnTuesday()))!;
+  const thursday = lineOf(text, "- Thu 2026-10-15");
+  assertStringIncludes(thursday, "no session");
+  assertStringIncludes(
+    thursday,
+    "Chest volume and delts was already done this week, on 2026-10-13",
+  );
+  assert(!text.includes("Same muscles on consecutive days"));
+  // The same plan with Thursday's session not done does overlap Wednesday's.
+  const open = wednesdayWithThursdayDoneOnTuesday();
+  open.completed_this_week = (open.completed_this_week as { planned_workout_id: string }[]).filter(
+    (row) => row.planned_workout_id !== "w-chest-b",
+  );
+  assertStringIncludes(
+    renderTrainingPlan(parsePlanState(open))!,
+    "Wed 2026-10-14 then Thu 2026-10-15: biceps, back, rear delts",
+  );
+});
+
+Deno.test("from the next ISO week on, every session is planned again", () => {
+  // Wednesday: Monday's session is done this week, and next Monday it is planned again.
+  const text = renderTrainingPlan(
+    parsePlanState(splitPlanPayload(3, ["w-chest-a", "w-legs-a"])),
+  )!;
+  assertStringIncludes(text, "- Mon 2026-10-19: Chest priority and side delts (");
+  assertStringIncludes(text, "- Tue 2026-10-20: Legs A (");
+  assert(!text.includes("was already done this week, on 2026-10-19"));
+});
+
+Deno.test("a session logged today and another still planned today are both on today's line", () => {
+  // Friday's slot is still planned, and Thursday's session was done today instead of yesterday.
+  const payload = splitPlanPayload(5, ["w-chest-a", "w-legs-a", "w-pull"], {
+    recent_completed: [{
+      planned_workout_id: "w-chest-b",
+      local_date: "2026-10-16",
+      name: "Chest volume and delts",
+      exercises: [{ slug: "dumbbell-bench-press", sets: 4 }],
+    }],
+  });
+  const text = renderTrainingPlan(parsePlanState(payload))!;
+  assertStringIncludes(text, "Today's planned session: Legs B");
+  assertStringIncludes(
+    lineOf(text, "- Fri 2026-10-16 (today)"),
+    "done: Chest volume and delts + Legs B",
+  );
 });
 
 Deno.test("a rest day on Sunday with the week finished: Monday is tomorrow, nothing overlaps", () => {
@@ -275,7 +399,7 @@ Deno.test("a rest day on Sunday with the week finished: Monday is tomorrow, noth
   assert(!text.includes("Same muscles on consecutive days"));
 });
 
-Deno.test("Monday after a Sunday make-up: yesterday's session, outside the calendar week, counts", () => {
+Deno.test("Monday after a Sunday session: yesterday's session, outside the calendar week, counts", () => {
   const payload = splitPlanPayload(1, [], {
     recent_completed: [{
       planned_workout_id: "w-chest-b",
@@ -306,7 +430,61 @@ Deno.test("an older payload without recent_completed still renders the schedule"
   delete payload.recent_completed;
   const text = renderTrainingPlan(parsePlanState(payload))!;
   assertStringIncludes(text, "- Mon 2026-10-19 (tomorrow)");
-  assertStringIncludes(text, "Sun 2026-10-18 then Mon 2026-10-19: chest, shoulders, triceps");
-  // Without yesterday's session the Saturday pair is not known; nothing is invented.
   assert(!text.includes("Sat 2026-10-17 then"));
+});
+
+// A plan at the largest size the app allows: seven sessions of nine exercises with long names.
+const bigPlan = () => {
+  const payload = splitPlanPayload(3, ["w-chest-a"]);
+  const base = (payload.sessions as Record<string, unknown>[])[0];
+  const pool = [
+    "barbell-bench-press",
+    "incline-dumbbell-press",
+    "cable-lateral-raise",
+    "cable-triceps-pressdown",
+    "dumbbell-bench-press",
+    "pec-deck",
+    "dumbbell-lateral-raise",
+    "dumbbell-overhead-triceps-extension",
+    "dumbbell-shoulder-press",
+  ];
+  payload.sessions = Array.from({ length: 7 }, (_, day) => ({
+    ...base,
+    planned_workout_id: `w-big-${day}`,
+    order: day + 1,
+    name: `Session ${day + 1} with a rather long descriptive name for the day`,
+    weekday: day + 1,
+    exercises: pool.map((slug, index) => ({
+      ...(base.exercises as Record<string, unknown>[])[0],
+      planned_exercise_id: `e-big-${day}-${index}`,
+      order: index + 1,
+      name: `Long exercise name number ${index + 1} with extra words for the day`,
+      slug,
+      sets: 3,
+    })),
+  }));
+  payload.completed_this_week = [];
+  payload.recent_completed = [];
+  return payload;
+};
+
+Deno.test("a plan of 9 exercises in 7 sessions with long names fits the budget whole", () => {
+  const text = renderTrainingPlan(parsePlanState(bigPlan()))!;
+  assert(text.length <= trainingPlanContributorBudgetChars, `${text.length} characters`);
+});
+
+Deno.test("when a block is cut for size the rules and the week stay: only the trailing lists shrink", async () => {
+  const contributor = createTrainingPlanContributor(() => Promise.resolve(bigPlan()));
+  const full = renderTrainingPlan(parsePlanState(bigPlan()))!;
+  // A budget that cannot hold the whole text: the host drops whole trailing lines.
+  const squeezed = await renderCoachContext([{
+    ...contributor,
+    budgetChars: Math.floor(full.length * 0.7),
+  }], { userId: "user-1", question: "q", localDate: "2026-10-14" });
+  const body = squeezed.texts.training_plan;
+  assertStringIncludes(body, "name only exercises listed here");
+  assertStringIncludes(body, "Next 7 days from today");
+  assertStringIncludes(body, "Sets a week by main muscle in the plan");
+  assert(body.endsWith(cutNote));
+  assertEquals(squeezed.outcomes[0].clipped, true);
 });

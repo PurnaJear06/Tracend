@@ -1207,7 +1207,7 @@ lookup validator also refused any range after the coaching date.
   session of its own and one from earlier this week is undone, it is today's make-up and is
   scheduled on today, which is what Coach prescribes. Days after today take the session of their
   weekday whatever was done earlier this week. The "Other sessions" tag now reads `[done <date>]`.
-  Budget 7,000 to 8,000 characters.
+  Budget 7,000 to 12,000 characters.
 - Migration `20261018190042_coach_schedule.sql` (forward-only, fields added, `schema_version` 1.0
   to 1.1): `get_coach_plan_state_v1` adds `recent_completed` (yesterday's and today's finished
   sessions with slugs and planned sets); `get_coach_data_index_v1` adds `schedule` (the active plan's
@@ -1227,10 +1227,28 @@ lookup validator also refused any range after the coaching date.
 **Cost.** The schedule block is about 1,000 characters (about 250 tokens) per turn, and 300 more
 when an overlap exists; the data index grows by about 250 when a plan exists.
 
-**Open.** The catalog has one `shoulders` group, so rear-delt work then side-delt work counts as
-shared (the owner counted delts too). A pgTAP run in CI covers the SQL; it was not run locally.
-After the deploy, ask Coach on a Sunday what is coming up and check `model_runs` and the `lookups`
-column for `plan_history`.
+**Review fixes (same PR).**
+- The schedule is resolved once (`resolveSchedule`) and feeds both the lines and the overlap check.
+  Inside the athlete's ISO week a session already finished is not planned again (its slot reads
+  "already done this week, on <date>"); from next week on every session is planned. A session logged
+  today no longer hides today's planned session from the schedule.
+- `shoulders` is split by the catalog's movement pattern into "front and side delts" and "rear
+  delts" in `muscles.ts`, so a pull day with face pulls before a press day is not flagged.
+- An undone session is made up today only if it is not tomorrow's own session and shares no muscle
+  with tomorrow's; otherwise the day states what is undone and why nothing is set. The day line says
+  "undone earlier this week", a fact, not an order.
+- Budget: `training_plan` is 12,000 characters (seven sessions of nine exercises with long names is
+  about 9,900), the fixed parts (rules, sets a week, equipment, the 7-day schedule) come before the
+  lists, and the host now cuts a block by whole lines from the end and says so (`clipLinesToBudget`).
+  Total of all contributors 49,924 characters, a Sonnet 5.5 reservation about USD 0.36.
+- SQL: `private.coach_plan_schedule` is capped at 90 days after the athlete's today in SQL as well,
+  is no longer SECURITY DEFINER, and a pgTAP assertion shows anon and authenticated cannot run it;
+  finished sessions report the sets actually logged (`private.coach_session_exercises`), falling
+  back to the planned sets.
+- The schedule lookup shows the unknown-exercise caveat; duplicate date helper removed.
+
+**Open.** A pgTAP run in CI covers the SQL; it was not run locally. After the deploy, ask Coach on a
+Sunday what is coming up and check `model_runs` and the `lookups` column for `plan_history`.
 
 ## Next agent starts here
 

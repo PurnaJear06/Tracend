@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.14";
 import { exerciseCatalogV1 } from "../../onboarding/catalog.ts";
-import { sessionMuscles, setsThatTrainAMuscle } from "./muscles.ts";
+import { frontSideDelts, rearDelts, sessionMuscles, setsThatTrainAMuscle } from "./muscles.ts";
 
 Deno.test("a muscle needs the standard's weekly minimum over its minimum sessions: 2 direct sets", () => {
   assertEquals(setsThatTrainAMuscle, 2);
@@ -12,8 +12,8 @@ Deno.test("direct sets count for every primary muscle of the exercise, most sets
     { slug: "cable-lateral-raise", sets: 3 },
     { slug: "cable-triceps-pressdown", sets: 3 },
   ]);
-  // Chest 4, triceps 4 + 3, shoulders 3.
-  assertEquals(muscles, ["triceps", "chest", "shoulders"]);
+  // Chest 4, triceps 4 + 3, front and side delts 3.
+  assertEquals(muscles, ["triceps", "chest", "front and side delts"]);
   assertEquals(unknown, 0);
 });
 
@@ -43,4 +43,24 @@ Deno.test("every catalog exercise maps to at least one muscle", () => {
       item.slug,
     );
   }
+});
+
+Deno.test("rear-delt work (the catalog's rear_delts pattern) is a different group from pressing and raises", () => {
+  assertEquals(
+    sessionMuscles([{ slug: "face-pull", sets: 3 }, { slug: "dumbbell-rear-delt-fly", sets: 3 }])
+      .muscles,
+    [rearDelts],
+  );
+  assertEquals(
+    sessionMuscles([
+      { slug: "barbell-overhead-press", sets: 3 },
+      { slug: "cable-lateral-raise", sets: 3 },
+    ]).muscles,
+    [frontSideDelts, "triceps"],
+  );
+  // An incline press lists shoulders as a primary muscle: that is front-delt work.
+  assertEquals(
+    sessionMuscles([{ slug: "incline-dumbbell-press", sets: 3 }]).muscles,
+    ["chest", frontSideDelts],
+  );
 });

@@ -369,11 +369,11 @@ Deno.test("a case for a chat that is not remembered turns fact suggestions off",
   assertEquals(off?.remember, false);
 });
 
-Deno.test("the Sunday chest case shows Coach tomorrow's session and the back-to-back muscles", () => {
+Deno.test("the Sunday chest case shows Coach tomorrow's session and why Thursday's is not set for today", () => {
   const run = prepared.get("sunday-chest-twice-back-to-back")!;
   assertStringIncludes(run.firstRound.volatile, "- Mon 2026-10-19 (tomorrow): Chest priority");
   assertStringIncludes(
     run.firstRound.volatile,
-    "Sun 2026-10-18 then Mon 2026-10-19: chest, shoulders, triceps",
+    "Chest volume and delts is not set for today: it would train chest, triceps, front and side delts again the day before tomorrow's session",
   );
 });
