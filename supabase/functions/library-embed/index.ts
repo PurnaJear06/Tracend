@@ -1,15 +1,25 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.8";
-import { createGteSmallEmbedder } from "../_shared/library/embedder.ts";
+import { createGteSmallEmbedder, type Embedder } from "../_shared/library/embedder.ts";
 import { type EmbeddedChunk, embedPendingChunks } from "../_shared/library/embed_worker.ts";
-import { embedTexts, EmbedTextsError, parseEmbedTexts } from "../_shared/library/embed_texts.ts";
+import {
+  embedTexts,
+  EmbedTextsError,
+  parseEmbedQuery,
+  parseEmbedTexts,
+} from "../_shared/library/embed_texts.ts";
 import { captureException } from "../_shared/sentry.ts";
 
 // Fills missing library embeddings with the built-in gte-small model. A database cron job
 // (private.library_embed_kick) calls it every minute while any chunk lacks an embedding; each call
 // embeds what fits in the CPU limit of one request. A body of {"texts": [...]} embeds those few
-// texts instead (the retrieval evaluation).
+// texts instead (the retrieval evaluation). A body of {"query": "..."} embeds one question and
+// returns its vector: Coach chat's call, so that gte-small never loads inside coach-chat. The
+// question is not logged. The same secret gates every mode.
 // It never accepts a user session: the caller must present the worker secret that the
 // database generated in Vault, checked through library_worker_authorized_v1.
+
+// Loaded on the first question and kept for the life of the isolate.
+let queryEmbedder: Embedder | undefined;
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
@@ -45,6 +55,16 @@ Deno.serve(async (request) => {
       return response(200, {
         schema_version: "1.0",
         embeddings: await embedTexts(createGteSmallEmbedder(), texts),
+      });
+    }
+
+    // One question from Coach chat.
+    const query = parseEmbedQuery(body);
+    if (query !== null) {
+      queryEmbedder ??= createGteSmallEmbedder();
+      return response(200, {
+        schema_version: "1.0",
+        embedding: (await embedTexts(queryEmbedder, [query]))[0],
       });
     }
 

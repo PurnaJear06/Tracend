@@ -98,6 +98,7 @@ Deno.test("the contributor renders from its source and stays inside its budget",
   );
   assertEquals(contributor.id, "coach_proposals");
   assertEquals(contributor.slot, "volatile");
-  const text = (await contributor.render({ userId: "u", question: "q", localDate: "2026-10-20" }))!;
+  const text =
+    (await contributor.render({ userId: "u", question: "q", localDate: "2026-10-20" })) as string;
   assertEquals(text.length < proposalsContributorBudgetChars, true);
 });

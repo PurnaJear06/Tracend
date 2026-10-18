@@ -52,12 +52,16 @@ purpose limitation, retention control, and audit coverage.
   stands and in-house summaries in our own words, with their embeddings. Paid course material is
   never stored. The library holds no user data, so it is outside export and account deletion. It
   still sits in the `private` schema with forced RLS and no API grants, and only the service-role
-  `search_library_v1` reads it.
+  `search_library_v2` reads it.
 
 Classification is inherited by derived data. A summary of health data remains restricted. A Coach
-question used as a library search query (or its `gte-small` embedding, computed inside the Edge
-Function) keeps the question's classification: it is used for that request only and is never
-written to the library or logged.
+question used as a library search query (or its `gte-small` embedding, computed by the
+`library-embed` Edge Function, which Coach chat calls with the worker secret and the question only) keeps the question's classification: it is used for that request only and is never
+written to the library or logged. Coach chat searches with it on every turn (E3); the query may
+carry the athlete's previous question's topic, built in the function and not stored. The search
+reads the athlete's account locale and time zone to pick regional sources (inside the security
+definer function; nothing leaves the database), and the chunks it returns go to the AI provider
+the athlete's notice names, like the rest of the Coach context.
 
 ## 3. Consent and Transparency
 

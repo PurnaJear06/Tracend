@@ -12,7 +12,7 @@ Every AI call goes through one provider-neutral gateway (Contract 1). Claude Hai
 
 ## Chunks
 
-A1, A2 (Phase 1); A3–A7 (Phase 2); A9 server half and A11 (Phase 3, round 3)
+A1, A2 (Phase 1); A3–A7 (Phase 2); A9 server half, A11 and E3's Coach half (Phase 3, round 3)
 
 ## State
 
@@ -977,6 +977,47 @@ in `supabase/functions/_evals/`.
   not; a bare "today" or "now" after a denial ("no chest pain or dizziness today") is a denial,
   while "until", "till" or "before" a time still makes it a report. The over-caution case that
   measured that last one moved to red_flag_clear; four over-caution cases became three.
+
+### E3: the library in every Coach reply (`claude/e3-library-in-coach`, migration code 43)
+
+Coach chat on the gateway route searches the research library on every turn that reaches a model and
+cites what it uses. Details and the measured recall are in `docs/handoff/research-library.md`; the
+rules are AI_SAFETY_SPEC §11.2; the prompt budget is CONTEXT_BUDGET.md.
+
+- **Prompt layout.** The `library` contributor renders in the volatile part, after the athlete data and
+  before the question, so it never touches the cached prefix (the digest stays in it). The system
+  prompt gains "Using the research library" (about 1,700 characters). The `heart_rate_profile`
+  contributor (C3) is registered with it (volatile, 900 characters).
+- **Answer contract.** Evidence items may carry `source: "library"` with a source id as the `code`
+  (`coachChatEvidenceSources` gained `library`; `coachChatDataEvidenceSources` is the old three, which
+  the legacy provider schema keeps). The gateway schema's evidence `items` is an `anyOf`: data
+  evidence with the day's code enum, or a library item with any code. The shown ids change every
+  turn, so they are checked by `parseCoachChatAnswer` (a fourth argument, the set of ids the turn
+  showed), not listed in the schema.
+- **New rule `citation_not_retrieved`** (`coachChatValidationRules`): a library citation whose id the
+  turn did not show (evidence, thrown by `parseCoachChatAnswer`), or a library source id printed in
+  the text that was not shown (reply guard). Repair hint in `repairRuleHint`; it follows the usual
+  path: one repair, then the labelled data summary. It is a rule name in the existing telemetry
+  (`coach_messages.guard_faults`), so there is no migration for it. A turn with no retrieved chunk
+  accepts no library citation.
+- **Numbers.** The block is a contributor block: `coachReplyCheckFor` already grounds the numbers
+  check on `stable + volatile`, so excerpt figures pass and unsupported ones do not.
+- **Where it runs.** `coach-chat/index.ts` passes `previousQuestions` (from `context.recent_messages`)
+  to `renderCoachContext` and skips every contributor for a red-flag turn or a turn `screenTurn` would
+  refer. The legacy (DeepSeek) route filters the library out like the data index
+  (`coachContextContributorsFor`).
+- **The model stays out of coach-chat.** The question is embedded by `library-embed` (a `{"query"}`
+  mode, worker-secret bearer read once via `library_worker_secret_v1`, 1.5-second deadline); on a
+  timeout, an error or a non-200 the search uses the words alone. coach-chat's import graph holds no
+  `Supabase.ai` code. `library-embed` and coach-chat deploy in the same run: until the new
+  `library-embed` is live the query call gets a non-200 and falls back, which is safe.
+- **Reservation.** The contributors' worst case grows by 9,900 characters (36,274 in all), so a Sonnet
+  5.5 reservation is about USD 0.34 (0.32 before); Opus 5.5 was already over the cap.
+- **Eval.** `library_eval.ts` runs the real `search_library_v2` with the query Coach builds, follow-ups
+  and regional isolation. The bank has a `library` category (6 cases, fixed chunks, graders
+  `citations_shown` and `cites_sources`, gateway route only: `run.ts` skips them on the DeepSeek or
+  router route). `library_head_to_head.ts` compares retrieval with the whole library in the prefix
+  (not run: it needs an Anthropic key and the database).
 
 ## Next agent starts here
 

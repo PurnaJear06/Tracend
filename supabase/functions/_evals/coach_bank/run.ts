@@ -142,7 +142,16 @@ async function main(): Promise<void> {
     Deno.exit(2);
   }
   const judgeRoute = distinctJudgeRoute(live.models);
-  const cases = selectCases(Deno.env.get("EVAL_CASES"));
+  const selected = selectCases(Deno.env.get("EVAL_CASES"));
+  // The library cases need the gateway route: only it carries the library citation fields.
+  const cases = live.coachRoute ? selected : selected.filter((bank) => bank.category !== "library");
+  if (cases.length < selected.length) {
+    console.log(
+      `Skipped ${
+        selected.length - cases.length
+      } library cases: they need a gateway route (AI_COACH_CHAT_*).`,
+    );
+  }
   if (cases.length === 0) {
     console.error("EVAL_CASES matched no case.");
     Deno.exit(2);

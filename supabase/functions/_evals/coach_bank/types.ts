@@ -23,6 +23,7 @@ export const bankCategories = [
   "topics",
   "lookups",
   "proposals",
+  "library",
 ] as const;
 export type BankCategory = typeof bankCategories[number];
 
@@ -51,6 +52,12 @@ export type Contributors = Readonly<{
   nutritionState?: unknown;
   /** Rows a data lookup returns, by lookup name (see lookups.ts); empty without lookups. */
   lookupRows?: Readonly<Record<string, readonly LookupRow[]>>;
+  /**
+   * The library sources (manifest keys, best first) whose chunks retrieval returned for the
+   * question, rendered from the real library content as the library contributor renders them. An
+   * empty list is a search that found nothing. Absent: the turn has no library block.
+   */
+  library?: readonly string[];
 }>;
 
 export type Athlete = Readonly<{
@@ -128,6 +135,11 @@ export type Expect = Readonly<{
   lookup?: LookupExpectation;
   /** The proposal the reply must (or must not) carry. Without it, a reply must carry none. */
   proposal?: ProposalExpectation;
+  /**
+   * The library sources the reply's evidence must cite: at least one of `anyOf`, or "none" for a
+   * reply that cites nothing (the library found nothing relevant). Library cases only.
+   */
+  cites?: Readonly<{ anyOf: readonly string[] }> | "none";
 }>;
 
 export type ExampleReply = Readonly<{
@@ -138,6 +150,8 @@ export type ExampleReply = Readonly<{
   requests?: readonly DataRequest[];
   /** The `proposal_intent` the example's answer carried. */
   intent?: unknown;
+  /** The library source ids the example's evidence cited; the case's `goodCitations` if absent. */
+  citations?: readonly string[];
 }>;
 
 export type BankCase = Readonly<{
@@ -153,6 +167,8 @@ export type BankCase = Readonly<{
   goodRequests?: readonly DataRequest[];
   /** The `proposal_intent` the good replies carried (proposal cases). */
   goodIntent?: unknown;
+  /** The library source ids the good replies cited (library cases). */
+  goodCitations?: readonly string[];
   bad?: readonly ExampleReply[];
 }>;
 
@@ -183,6 +199,8 @@ export type Reply = Readonly<{
   dataRequests: readonly DataRequest[];
   /** The model's `proposal_intent`, as written; undefined when it proposed nothing. */
   proposalIntent?: unknown;
+  /** The library source ids the reply's evidence cites (source `library`); none when absent. */
+  citations?: readonly string[];
   costUsd: number;
   latencyMs: number;
   failureCode?: string;

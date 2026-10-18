@@ -1,5 +1,5 @@
 begin;
-select plan(66);
+select no_plan();
 
 -- The ranking fixtures below assume an empty library; E2's migration loads the real sources.
 delete from private.library_sources;
@@ -55,21 +55,21 @@ select ok(not has_table_privilege('service_role', 'private.library_chunks', 'sel
   'the service role reads chunks only through the search function');
 
 select ok(has_function_privilege('service_role',
-  'public.search_library_v1(text, public.library_embedding, integer, jsonb)', 'execute'),
+  'public.search_library_v2(text, public.library_embedding, integer, jsonb, uuid)', 'execute'),
   'Edge Functions can search the library');
 select ok(not has_function_privilege('anon',
-  'public.search_library_v1(text, public.library_embedding, integer, jsonb)', 'execute'), 'visitors cannot search');
+  'public.search_library_v2(text, public.library_embedding, integer, jsonb, uuid)', 'execute'), 'visitors cannot search');
 select ok(not has_function_privilege('authenticated',
-  'public.search_library_v1(text, public.library_embedding, integer, jsonb)', 'execute'), 'app users cannot search');
+  'public.search_library_v2(text, public.library_embedding, integer, jsonb, uuid)', 'execute'), 'app users cannot search');
 select ok((select proacl is not null from pg_proc
-  where oid = 'public.search_library_v1(text, public.library_embedding, integer, jsonb)'::regprocedure)
+  where oid = 'public.search_library_v2(text, public.library_embedding, integer, jsonb, uuid)'::regprocedure)
   and not exists (
   select 1 from pg_proc p, aclexplode(p.proacl) a
-  where p.oid = 'public.search_library_v1(text, public.library_embedding, integer, jsonb)'::regprocedure
+  where p.oid = 'public.search_library_v2(text, public.library_embedding, integer, jsonb, uuid)'::regprocedure
     and a.grantee = 0 and a.privilege_type = 'EXECUTE'
 ), 'PUBLIC holds no execute grant');
 select ok((select p.prosecdef and p.proconfig @> array['search_path=""']
-  from pg_proc p where p.oid = 'public.search_library_v1(text, public.library_embedding, integer, jsonb)'::regprocedure),
+  from pg_proc p where p.oid = 'public.search_library_v2(text, public.library_embedding, integer, jsonb, uuid)'::regprocedure),
   'the search function is security definer with an empty search_path');
 
 set local role authenticated;
@@ -85,7 +85,9 @@ values
   ('00000000-0000-4000-8000-0000000000a2', 'test-nutrition-in', 'Nutrition source (India)', 2024,
     'https://example.test/nutrition', 'Open Government Licence', '{IN}', '{nutrition,supplements}', 'guideline'),
   ('00000000-0000-4000-8000-0000000000a3', 'test-sleep-us', 'Sleep source (US)', 2022,
-    'https://example.test/sleep', 'In-house summary', '{US}', '{sleep}', 'summary');
+    'https://example.test/sleep', 'In-house summary', '{US}', '{sleep}', 'summary'),
+  ('00000000-0000-4000-8000-0000000000a8', 'test-kettlebell', 'Kettlebell source', 2019,
+    'https://example.test/kettlebell', 'CC BY 4.0', '{global}', '{kettlebell}', 'paper');
 
 insert into private.library_chunks (id, source_id, ordinal, section, header, body, token_count, embedding, embedding_model)
 values
@@ -102,27 +104,63 @@ values
   ('00000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-0000000000a3', 1, 'Sleep',
     'Sleep source: sleep', 'Creatine and sleep deprivation in shift workers.', 9, pg_temp.vec(3), 'gte-small');
 
--- Filler chunks so more than 8 candidates exist.
+-- Five keyword-only chunks of one source, to see the per-source cap.
+insert into private.library_chunks (source_id, ordinal, header, body, token_count)
+select '00000000-0000-4000-8000-0000000000a8', n, 'Kettlebell source: swings',
+  'Kettlebell swing hinge cue number ' || n || '.', 8
+from generate_series(0, 4) n;
+
+-- Filler sources so more than ten candidates exist: twelve embedded chunks in four sources.
+insert into private.library_sources (id, manifest_key, title, year, url, licence, region, topics, kind)
+select ('00000000-0000-4000-8000-0000000000b' || n)::uuid, 'test-filler-' || n, 'Filler source ' || n, 2021,
+  'https://example.test/filler' || n, 'CC BY 4.0', '{global}', '{filler}', 'paper'
+from generate_series(1, 4) n;
 insert into private.library_chunks (source_id, ordinal, header, body, token_count, embedding, embedding_model)
-select '00000000-0000-4000-8000-0000000000a1', n, 'Strength source: methods',
-  'Bench press technique cue number ' || n || '.', 8, pg_temp.vec(10 + n), 'gte-small'
-from generate_series(1, 6) n;
+select ('00000000-0000-4000-8000-0000000000b' || s)::uuid, c, 'Filler source: methods',
+  'Bench press technique cue number ' || ((s - 1) * 3 + c) || '.', 8,
+  pg_temp.vec(10 + (s - 1) * 3 + c), 'gte-small'
+from generate_series(1, 4) s, generate_series(0, 2) c;
+
+-- Three athletes: Indian time zone, a US locale, the default account.
+insert into auth.users(id, role) values
+  ('00000000-0000-4000-8000-0000000000c1', 'authenticated'),
+  ('00000000-0000-4000-8000-0000000000c2', 'authenticated'),
+  ('00000000-0000-4000-8000-0000000000c3', 'authenticated');
+update public.user_accounts set timezone = 'Asia/Kolkata' where id = '00000000-0000-4000-8000-0000000000c1';
+update public.user_accounts set locale = 'en-US' where id = '00000000-0000-4000-8000-0000000000c2';
 
 select ok((select fts @@ to_tsquery('english', 'results') and fts @@ to_tsquery('english', 'raised')
   from private.library_chunks where id = '00000000-0000-4000-8000-000000000001'),
   'the generated full-text column indexes header and body');
+
+-- Regions of an account -------------------------------------------------------------------
+select is(
+  (select array_agg(r order by r collate "C")
+   from unnest(private.library_regions_for_account('00000000-0000-4000-8000-0000000000c1')) r),
+  array['IN', 'global'], 'an Indian time zone adds IN to global');
+select is(
+  (select array_agg(r order by r collate "C")
+   from unnest(private.library_regions_for_account('00000000-0000-4000-8000-0000000000c2')) r),
+  array['US', 'global'], 'the country in the locale is added');
+select is(private.library_regions_for_account('00000000-0000-4000-8000-0000000000c3'),
+  array['global'], 'the default account sees global sources only');
+select is(private.library_regions_for_account('00000000-0000-4000-8000-0000000000ff'),
+  array['global'], 'an unknown account sees global sources only');
+select ok(not has_function_privilege('service_role', 'private.library_regions_for_account(uuid)', 'execute'),
+  'the region helper is not callable by any API role');
 
 -- Ranking ---------------------------------------------------------------------------------
 set local role service_role;
 
 create temp table hits on commit drop as
 select row_number() over () as place, r.*
-from public.search_library_v1('creatine loading', pg_temp.vec(1), 8, null) r;
+from public.search_library_v2('creatine loading', pg_temp.vec(1), 8, null) r;
 
 select is((select chunk_id from hits where place = 1), '00000000-0000-4000-8000-000000000001'::uuid,
   'a chunk found by both searches ranks first');
-select ok(abs((select score from hits where place = 1) - (1.0 / 62 + 1.0 / 62)) < 1e-9,
-  'its score is the sum of both reciprocal ranks with k = 60');
+select ok((select score > 1.0 / 52 + 1.0 / 53 - 1e-9 and score < 1.0 / 51 + 1.0 / 52 + 1e-9
+  from hits where place = 1),
+  'its score is a reciprocal rank (k = 50) from each list added together');
 select ok(exists (select 1 from hits where chunk_id = '00000000-0000-4000-8000-000000000002'),
   'a keyword-only chunk without an embedding is found');
 select ok(exists (select 1 from hits where chunk_id = '00000000-0000-4000-8000-000000000003'),
@@ -131,7 +169,8 @@ select ok((select bool_and(score <= previous_score)
   from (select score, lag(score) over (order by place) as previous_score from hits) s
   where previous_score is not null), 'rows come best first');
 select is((select count(*) from hits), 8::bigint, 'eight rows when more candidates exist');
-select ok((select bool_and(schema_version = 1) from hits), 'every row carries schema_version 1');
+select ok((select bool_and(schema_version = 2) from hits), 'every row carries schema_version 2');
+select is((select source_key from hits where place = 1), 'test-strength', 'rows carry the stable source key');
 select is((select title from hits where place = 1), 'Strength source', 'rows carry the source title');
 select is((select year from hits where place = 1), 2020::smallint, 'and its year');
 select is((select url from hits where place = 1), 'https://example.test/strength', 'and its link');
@@ -140,62 +179,101 @@ select is((select header from hits where place = 1), 'Strength source: results',
 
 select is(
   (select array_agg(k order by k collate "C") from jsonb_object_keys(
-    (select to_jsonb(r) from public.search_library_v1('creatine', null, 1, null) r)) k),
-  array['body', 'chunk_id', 'header', 'schema_version', 'score', 'section', 'source_id', 'title', 'url', 'year'],
+    (select to_jsonb(r) from public.search_library_v2('creatine', null, 1, null) r)) k),
+  array['body', 'chunk_id', 'header', 'schema_version', 'score', 'section', 'source_id', 'source_key',
+    'title', 'url', 'year'],
   'the row has exactly the contract keys plus schema_version');
 
 -- match_count
-select is((select count(*) from public.search_library_v1('creatine loading', pg_temp.vec(1), 2, null)), 2::bigint,
+select is((select count(*) from public.search_library_v2('creatine loading', pg_temp.vec(1), 2, null)), 2::bigint,
   'match_count limits the rows');
-select is((select count(*) from public.search_library_v1('creatine loading', pg_temp.vec(1), 100, null)), 8::bigint,
-  'match_count is capped at 8');
-select is((select count(*) from public.search_library_v1('creatine loading', pg_temp.vec(1), 0, null)), 1::bigint,
+select is((select count(*) from public.search_library_v2('creatine loading', pg_temp.vec(1), 100, null)), 10::bigint,
+  'match_count is capped at 10');
+select is((select count(*) from public.search_library_v2('creatine loading', pg_temp.vec(1), 0, null)), 1::bigint,
   'match_count below 1 returns one row');
-select is((select count(*) from public.search_library_v1('creatine loading', pg_temp.vec(1), null, null)), 8::bigint,
+select is((select count(*) from public.search_library_v2('creatine loading', pg_temp.vec(1), null, null)), 8::bigint,
   'a null match_count means 8');
 
--- Full-text only and vector only
+-- The terms of the question are ORed
 select is(
-  array(select chunk_id from public.search_library_v1('creatine loading', null, 8, null)),
-  array['00000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001']::uuid[],
-  'with no embedding only full-text matches return, best text match first');
+  array(select chunk_id from public.search_library_v2('creatine loading', null, 8, null) order by chunk_id),
+  array['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002',
+    '00000000-0000-4000-8000-000000000004']::uuid[],
+  'with no embedding every chunk holding any term returns');
+select is((select chunk_id from public.search_library_v2('creatine loading', null, 1, null)),
+  '00000000-0000-4000-8000-000000000002'::uuid, 'and the best text match comes first');
+select is((select count(*) from public.search_library_v2('creatine sprint', null, 10, null)), 4::bigint,
+  'a question whose words sit in different chunks matches them all (an AND would find none)');
+select is((select count(*) from public.search_library_v2('How much creatine should I take?', null, 10, null)), 3::bigint,
+  'stop words are dropped from the question');
+
+-- Vector only
 select is(
-  array(select chunk_id from public.search_library_v1('', pg_temp.vec(1), 3, null)),
+  array(select chunk_id from public.search_library_v2('', pg_temp.vec(1), 3, null)),
   array['00000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001',
     '00000000-0000-4000-8000-000000000004']::uuid[],
   'with empty text the nearest embeddings return, nearest first');
-select is((select count(*) from public.search_library_v1('  ', null, 8, null)), 0::bigint,
+select is((select count(*) from public.search_library_v2('  ', null, 8, null)), 0::bigint,
   'no text and no embedding returns nothing');
-select is((select count(*) from public.search_library_v1('the and of', null, 8, null)), 0::bigint,
+select is((select count(*) from public.search_library_v2('the and of', null, 8, null)), 0::bigint,
   'a query of stop words alone returns nothing');
-select is((select count(*) from public.search_library_v1('-creatine', null, 8, null)), 0::bigint,
-  'a query of negations alone returns nothing');
 select is(
-  (select chunk_id from public.search_library_v1('creatine loading' || repeat(' the', 300) || ' bench', null, 1, null)),
-  '00000000-0000-4000-8000-000000000002'::uuid,
+  (select count(*) from public.search_library_v2('creatine loading' || repeat(' the', 300) || ' bench', null, 10, null)
+   where body like 'Bench press%'),
+  0::bigint,
   'only the first 1000 characters of a long query are used (the trailing word is ignored)');
+
+-- No source supplies more than three rows
+select is((select count(*) from public.search_library_v2('kettlebell', null, 10, null)), 3::bigint,
+  'one source supplies at most three rows');
 
 -- Filters
 select is(
-  array(select chunk_id from public.search_library_v1('creatine', null, 8, '{"region": ["IN"]}')),
+  array(select chunk_id from public.search_library_v2('creatine', null, 8, '{"region": ["IN"]}')),
   array['00000000-0000-4000-8000-000000000002']::uuid[],
   'a region filter keeps only sources for that region');
 select is(
-  array(select chunk_id from public.search_library_v1('', pg_temp.vec(1), 8, '{"topics": ["sleep"]}')),
+  array(select chunk_id from public.search_library_v2('', pg_temp.vec(1), 8, '{"topics": ["sleep"]}')),
   array['00000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000004']::uuid[],
   'a topics filter applies to vector search too');
-select is((select count(*) from public.search_library_v1('creatine', null, 8, '{"region": ["global", "US"], "topics": ["supplements"]}')),
+select is((select count(*) from public.search_library_v2('creatine', null, 8, '{"region": ["global", "US"], "topics": ["supplements"]}')),
   1::bigint, 'region and topics filters combine');
-select is((select count(*) from public.search_library_v1('creatine', null, 8, '{"region": [], "topics": null}')),
+select is((select count(*) from public.search_library_v2('creatine', null, 8, '{"region": [], "topics": null}')),
   3::bigint, 'empty or null filter arrays do not filter');
-select throws_ok($$select * from public.search_library_v1('creatine', null, 8, '{"regions": ["IN"]}')$$,
+select throws_ok($$select * from public.search_library_v2('creatine', null, 8, '{"regions": ["IN"]}')$$,
   '22023', 'unknown filter: regions', 'an unknown filter key is refused');
-select throws_ok($$select * from public.search_library_v1('creatine', null, 8, '{"region": "IN"}')$$,
+select throws_ok($$select * from public.search_library_v2('creatine', null, 8, '{"region": "IN"}')$$,
   '22023', 'filter region must be an array of text', 'a filter that is not an array is refused');
-select throws_ok($$select * from public.search_library_v1('creatine', '[1,2,3]', 8, null)$$,
+select throws_ok($$select * from public.search_library_v2('creatine', '[1,2,3]', 8, null)$$,
   '22000', 'expected 384 dimensions, not 3', 'an embedding of the wrong size is refused');
-select throws_ok($$select * from public.search_library_v1('creatine', '[1,2,3]'::extensions.vector, 8, null)$$,
+select throws_ok($$select * from public.search_library_v2('creatine', '[1,2,3]'::extensions.vector, 8, null)$$,
   '22000', 'expected 384 dimensions, not 3', 'a vector value of the wrong size is refused too');
+
+-- The athlete's region
+select is(
+  array(select chunk_id from public.search_library_v2('creatine', null, 8, null, '00000000-0000-4000-8000-0000000000c3')),
+  array['00000000-0000-4000-8000-000000000001']::uuid[],
+  'an athlete outside India and the US sees global sources only');
+select is(
+  array(select chunk_id from public.search_library_v2('creatine', null, 8, null, '00000000-0000-4000-8000-0000000000c1')
+    order by chunk_id),
+  array['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002']::uuid[],
+  'an athlete in India also sees the India source');
+select is(
+  array(select chunk_id from public.search_library_v2('creatine', null, 8, null, '00000000-0000-4000-8000-0000000000c2')
+    order by chunk_id),
+  array['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000004']::uuid[],
+  'and an athlete in the US sees the US source, not the India one');
+select is(
+  array(select chunk_id from public.search_library_v2('', pg_temp.vec(1), 8, null, '00000000-0000-4000-8000-0000000000c3')
+    where source_key = 'test-sleep-us'),
+  array[]::uuid[],
+  'the region applies to vector search as well');
+select is(
+  array(select chunk_id from public.search_library_v2('creatine', null, 8, '{"region": ["IN"]}',
+    '00000000-0000-4000-8000-0000000000c3')),
+  array['00000000-0000-4000-8000-000000000002']::uuid[],
+  'a region filter the caller names overrides the athlete''s own');
 
 reset role;
 

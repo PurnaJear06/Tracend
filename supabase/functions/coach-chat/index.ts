@@ -36,8 +36,10 @@ import {
   type RedFlagHit,
   screenCheckInRow,
   screenMessage,
+  screenTurn,
   trainingQuestion,
 } from "../_shared/coach_safety/red_flags.ts";
+import { previousQuestionsOf } from "../_shared/library/query.ts";
 import {
   chooseCoachChatRoute,
   coachChatReservationUsd,
@@ -804,14 +806,19 @@ export async function handleCoachChat(
   try {
     // Both paths render the contributors (the goal phase review is not tied to the gateway). A
     // referral shows the model nothing, so it renders none.
-    const contributions = redFlag ? noCoachContributions : await renderCoachContext(
-      coachContextContributorsFor(coachRoute !== null),
-      {
-        userId: auth.userId,
-        question: input.question,
-        localDate: coachingDate,
-      },
-    );
+    // The library is searched for every turn that reaches a model: a red-flag turn (a symptom, or
+    // a training question on a pain day) is answered by the fixed referral and retrieves nothing.
+    const contributions = redFlag || screenTurn(input.question, context)
+      ? noCoachContributions
+      : await renderCoachContext(
+        coachContextContributorsFor(coachRoute !== null),
+        {
+          userId: auth.userId,
+          question: input.question,
+          localDate: coachingDate,
+          previousQuestions: previousQuestionsOf(context, input.question),
+        },
+      );
     if (contributions.outcomes.length) {
       log.info("coach_context_contributors", { contributors: contributions.outcomes });
     }

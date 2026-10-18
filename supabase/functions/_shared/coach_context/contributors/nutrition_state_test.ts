@@ -116,5 +116,5 @@ Deno.test("the contributor reads the state for the coaching date and fits its bu
   });
   const text = await contributor.render({ userId: "u1", question: "q", localDate: "2026-10-17" });
   assertEquals(seen, ["u1|2026-10-17"]);
-  assertEquals(text!.length <= nutritionStateContributorBudgetChars, true);
+  assertEquals((text as string).length <= nutritionStateContributorBudgetChars, true);
 });

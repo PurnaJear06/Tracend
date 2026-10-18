@@ -622,10 +622,11 @@ never stored, and every source records its licence.
   hold no user data, so they are outside export and account deletion.
 - Embeddings are Supabase's built-in `gte-small` (384 dimensions, mean-pooled and normalised), run
   inside Edge Functions (D4). No new processor receives any text.
-- `public.search_library_v1` (service role only, Contract 6 v1.1) fuses the top 30 Postgres
-  full-text matches and the top 30 nearest embeddings (cosine distance; HNSW index without
-  filters, exact ranking over the matching sources with a region or topics filter) by reciprocal
-  rank fusion (k = 60) and returns at most 8 chunks.
+- `public.search_library_v2` (service role only, Contract 6 v2) fuses the top 30 Postgres
+  full-text matches (the terms of the question ORed) and the top 30 nearest embeddings (cosine
+  distance; HNSW index without filters, exact ranking over the matching sources with a region or
+  topics filter) by reciprocal rank fusion (k = 50) and returns at most 10 chunks, at most 3 per
+  source, limited to the athlete's regions (global plus their country).
 - Retrieved text is reference data. It never overrides Tracend rules, the athlete's data or the
   safety policy, and rules still decide every number.
 
@@ -633,10 +634,19 @@ The tables, search and ingestion are built (E2). The first 35 sources are files 
 `supabase/library/`, loaded by a migration with null embeddings; the `library-embed` Edge Function
 fills them with `gte-small`, triggered by a cron job that stays inert until the deploy workflow sets
 the function's URL in Vault (see DATA_MODEL.md section 12). A short
-coaching-principles digest of the sources is exported for the Coach's stable prompt prefix
-(`_shared/library/principles.ts`); it is not registered yet.
+coaching-principles digest of the sources sits in the Coach's stable prompt prefix
+(`_shared/library/principles.ts`).
 
-> **Planned (coaching platform):** the library inside Coach chat (Phase 3 / E3), regional modules chosen by the athlete's region (Phase 4 / E4,
+The library shapes every Coach reply on the gateway route (E3): the `library` contributor builds the
+query from the question (a follow-up borrows the topic of the last real question, deterministically),
+embeds it with `gte-small` by calling the `library-embed` function (the only place the model loads), searches for the athlete's region and renders up to
+8 chunks, each tagged with its stable source id, as a volatile block after the athlete data. Coach
+cites the sources it uses as `library` evidence, and a citation of an id that was not shown is a
+reply-guard failure (AI_SAFETY_SPEC §11.2). If retrieval is slow or fails, Coach answers without it
+(the Contract 7 host's 4-second limit). Retrieval was chosen over putting the whole library in the
+cached prefix after a head-to-head (`docs/handoff/research-library.md`).
+
+> **Planned (coaching platform):** regional modules chosen by the athlete's region (Phase 4 / E4,
 > D5), and plan explanations citing sources (Phase 4 / E5).
 
 ### Bounded Coach data lookups (A10)

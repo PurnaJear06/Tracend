@@ -5,16 +5,20 @@ import { trainingPlanContributor } from "./contributors/training_plan.ts";
 import { nutritionStateContributor } from "./contributors/nutrition_state.ts";
 import { proposalsContributor } from "./contributors/proposals.ts";
 import { dataIndexContributor, dataIndexContributorId } from "./contributors/data_index.ts";
+import { heartRateContributor } from "./contributors/heart_rate.ts";
 import { coachingPrinciplesContributor } from "../library/principles.ts";
+import { libraryContributor } from "../library/live.ts";
+import { libraryContributorId } from "../library/retrieval.ts";
 
 // The contributors Coach chat renders, in their fixed order (Contract 7). The coaching principles
 // digest (E2), the screening (A9), the goal phase (B7), the plan (A10: today's or the next session
 // with targets and home alternatives), the week's nutrition (A10), the proposals and phases (A8) and the index of what Coach can
-// look up (A10) are registered; E3 (retrieval) and C3 (heart-rate profile) add theirs. Everything
-// else the athlete's records hold comes from lookups on demand (coach_lookups/). Order is part of
-// the prompt: a stable contributor placed before another keeps the cached prefix of the ones
-// before it, so the fixed digest comes first, then the screening, which changes only when the
-// athlete answers the health check again.
+// look up (A10) are registered, with the heart-rate profile (C3) and the library (E3: the chunks
+// found for this turn's question). Everything else the athlete's records hold comes from lookups
+// on demand (coach_lookups/). Order is part of the prompt: a stable contributor placed before
+// another keeps the cached prefix of the ones before it, so the fixed digest comes first, then the
+// screening, which changes only when the athlete answers the health check again. The library is
+// last: what changes every turn comes after what is steadier, just before the question.
 export const coachContextContributors: readonly CoachContextContributor[] = Object.freeze([
   coachingPrinciplesContributor,
   screeningContributor,
@@ -22,18 +26,21 @@ export const coachContextContributors: readonly CoachContextContributor[] = Obje
   trainingPlanContributor,
   nutritionStateContributor,
   proposalsContributor,
+  heartRateContributor,
   dataIndexContributor,
+  libraryContributor,
 ]);
 
-/**
- * The contributors for a turn. The data index invites the model to ask for lookups, which exist
- * only on the gateway route; today's DeepSeek path has no `data_requests`, so it renders without
- * the index.
- */
+// Contributors that exist only on the gateway route. The data index invites the model to ask for
+// lookups and the library asks it to cite sources; today's DeepSeek path has neither
+// `data_requests` nor library evidence, so it renders without them.
+const gatewayOnly: readonly string[] = [dataIndexContributorId, libraryContributorId];
+
+/** The contributors for a turn: all of them on the gateway route, the rest on the legacy path. */
 export function coachContextContributorsFor(
   gatewayRoute: boolean,
 ): readonly CoachContextContributor[] {
   return gatewayRoute
     ? coachContextContributors
-    : coachContextContributors.filter((contributor) => contributor.id !== dataIndexContributorId);
+    : coachContextContributors.filter((contributor) => !gatewayOnly.includes(contributor.id));
 }

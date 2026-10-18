@@ -356,6 +356,8 @@ Deno.test("a host report of a failed screening contributor restricts the guard e
   const contributions = {
     stable: "",
     volatile: "",
+    texts: {},
+    shown: {},
     outcomes: [
       {
         id: "screening",

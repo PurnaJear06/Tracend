@@ -16,7 +16,7 @@ import {
   coachChatAnswerLimits,
   type CoachChatAnswerV2,
   CoachChatAnswerValidationError,
-  coachChatEvidenceSources,
+  coachChatDataEvidenceSources,
   coachChatSafetyStates,
   parseCoachChatAnswer,
 } from "../contracts/coach_chat_v1.ts";
@@ -96,17 +96,34 @@ export function coachChatGatewaySchema(
       ...(withLookups ? { data_requests: dataRequests } : {}),
       ...(withProposals ? { proposal_intent: proposalIntentJsonSchema } : {}),
       answer: { type: "string" },
+      // Evidence about the athlete's data cites a permitted code. A library citation cites a
+      // source id shown this turn: the ids change every turn, so the schema (which keeps the
+      // prompt cache valid) cannot list them; parseCoachChatAnswer checks them instead.
       evidence: {
         type: "array",
         items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            code: { type: "string", enum: codeEnum },
-            label: { type: "string" },
-            source: { type: "string", enum: [...coachChatEvidenceSources] },
-          },
-          required: ["code", "label", "source"],
+          anyOf: [
+            {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                code: { type: "string", enum: codeEnum },
+                label: { type: "string" },
+                source: { type: "string", enum: [...coachChatDataEvidenceSources] },
+              },
+              required: ["code", "label", "source"],
+            },
+            {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                code: { type: "string" },
+                label: { type: "string" },
+                source: { type: "string", enum: ["library"] },
+              },
+              required: ["code", "label", "source"],
+            },
+          ],
         },
       },
       missing_data: strings,
@@ -376,6 +393,8 @@ export async function generateCoachChatViaGateway(
 
   const permitted = permittedEvidenceOf(context);
   const contributions = input.contributions ?? noCoachContributions;
+  // The library sources Coach is shown this turn: the only ones its evidence may cite.
+  const shown = contributions.shown;
   const coachingDate = typeof context.coaching_date === "string" ? context.coaching_date : "";
   // The rows looked up so far ground the numbers check: a figure in them is the athlete's own.
   // Only lines the server produced from the records count, never the model's own request text.
@@ -550,7 +569,7 @@ export async function generateCoachChatViaGateway(
         json = asked.rest;
       }
       try {
-        const answer = parseCoachChatAnswer(json, permitted, answerCheck);
+        const answer = parseCoachChatAnswer(json, permitted, answerCheck, shown);
         return {
           telemetry: telemetry("valid"),
           usage,
@@ -658,7 +677,7 @@ export async function generateCoachChatViaGateway(
   const interimAnswer = (): CoachChatAnswerV2 | null => {
     if (!pending) return null;
     try {
-      const interim = parseCoachChatAnswer(pending.json, permitted, pending.check);
+      const interim = parseCoachChatAnswer(pending.json, permitted, pending.check, shown);
       const unchecked = `Could not check: ${
         pending.requests.map((request) => `${request.lookup} ${request.from} to ${request.to}`)
           .join("; ")

@@ -11,6 +11,9 @@ import { createGoalPhaseContributor } from "../../_shared/coach_context/contribu
 import { createNutritionStateContributor } from "../../_shared/coach_context/contributors/nutrition_state.ts";
 import { createScreeningContributor } from "../../_shared/coach_context/contributors/screening.ts";
 import { coachingPrinciplesContributor } from "../../_shared/library/principles.ts";
+import { chunkSource } from "../../_shared/library/chunk.ts";
+import { createLibraryContributor, type LibraryRow } from "../../_shared/library/retrieval.ts";
+import { librarySources } from "../../../library/index.ts";
 import { buildCoachChatDataSummary } from "../../_shared/coach_chat_fallback.ts";
 import {
   classifyQuestion,
@@ -27,6 +30,21 @@ import type { BankCase, DataRequest, Reply, Turn } from "./types.ts";
 export type PreparedRun = Prepared & Readonly<{ firstRound: CoachContributions }>;
 
 const evalUserId = "eval-athlete";
+
+/** The chunks of the given sources, as the search would return them, in the order given. */
+export function libraryRowsOf(keys: readonly string[]): LibraryRow[] {
+  return keys.flatMap((key) => {
+    const source = librarySources.find((item) => item.slug === key);
+    if (!source) throw new Error(`unknown library source ${key}`);
+    return chunkSource(source).map((chunk) => ({
+      sourceId: source.slug,
+      title: source.title,
+      year: source.year,
+      header: chunk.header,
+      body: chunk.body,
+    }));
+  });
+}
 
 function contributorsOf(bank: BankCase): CoachContextContributor[] {
   const { contributors } = bank.athlete();
@@ -48,12 +66,22 @@ function contributorsOf(bank: BankCase): CoachContextContributor[] {
   if (contributors.goalPhase) {
     list.push(createGoalPhaseContributor(() => Promise.resolve(contributors.goalPhase)));
   }
+  if (contributors.library) {
+    // The real contributor over fixed search results: the bank tests how Coach uses the excerpts,
+    // not the search (library_eval.ts measures that against the database).
+    const rows = libraryRowsOf(contributors.library);
+    list.push(createLibraryContributor({
+      embed: () => () => Promise.resolve([0]),
+      search: () => Promise.resolve(rows),
+    }));
+  }
   return list;
 }
 
 const withVolatile = (base: CoachContributions, block: string): CoachContributions => ({
   ...base,
   volatile: [base.volatile, block].filter(Boolean).join("\n\n"),
+  texts: { ...base.texts, data_lookup: block },
 });
 
 const lookupBlock = (text: string) =>
@@ -96,6 +124,9 @@ function replyFrom(
     ...(generation.proposalIntent === undefined
       ? {}
       : { proposalIntent: generation.proposalIntent }),
+    citations: generation.answer.evidence.filter((item) => item.source === "library").map((item) =>
+      item.code
+    ),
     costUsd,
     latencyMs: Math.round(performance.now() - started),
   };

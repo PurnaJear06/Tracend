@@ -61,6 +61,7 @@ const _evidenceSourceLabels = <String, String>{
   'feature_snapshot': 'Calculated from your health data',
   'policy_evaluation': 'Tracend safety rules',
   'coach_context': 'Your coaching context',
+  'library': 'Research library',
 };
 
 /// "Calculated from your health data" for `feature_snapshot`.

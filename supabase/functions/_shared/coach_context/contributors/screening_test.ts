@@ -90,6 +90,8 @@ Deno.test("the state follows the host's report when the block never arrived", ()
   const outcome = (kind: "failed" | "timeout" | "empty" | "rendered") => ({
     stable: "",
     volatile: "",
+    texts: {},
+    shown: {},
     outcomes: [{
       id: "screening",
       slot: "stable" as const,

@@ -9,7 +9,12 @@
 //   loss_rate_above_ceiling     advises losing weight faster than the weekly ceiling
 //   effort_above_screening_cap  advises vigorous or maximal effort when the health check caps it
 //   claimed_action              says Coach changed, saved, scheduled or will do something
-//   numbers_not_grounded        states a figure that is not in the athlete's data or message
+//   numbers_not_grounded        states a figure that is not in the athlete's data or message, or
+//                               a library figure without citing its source, or as the athlete's
+//                               own target
+//   citation_not_retrieved      names a library source that Coach was not shown this turn (here:
+//                               a source id written in the text; an evidence item that cites one is
+//                               refused by parseCoachChatAnswer)
 //
 // The design rule for every exemption (a warning, a decline, a prohibition, a description of the
 // athlete's past): it applies only when it provably governs the matched figure or prescription.
@@ -23,7 +28,13 @@ import type {
   CoachChatValidationRule,
 } from "../contracts/coach_chat_v1.ts";
 import type { ScreeningState } from "../coach_context/contributors/screening.ts";
-import { type NumberGround, ungroundedNumbers } from "./numbers_check.ts";
+import { unshownKeysIn } from "../library/retrieval.ts";
+import {
+  mergeGrounds,
+  type NumberGround,
+  numberGroundOf,
+  ungroundedNumbers,
+} from "./numbers_check.ts";
 import type { SafeRanges } from "./safe_ranges.ts";
 
 const sentencesOf = (answer: string) =>
@@ -289,11 +300,43 @@ function claimsAnAction(sentence: string): boolean {
 export type ReplyCheckInputs = Readonly<{
   ranges: SafeRanges;
   screening: ScreeningState;
-  /** What Coach was given: the numbers a reply may state. */
+  /**
+   * What Coach was given: the numbers a reply may state. It holds the athlete's records and
+   * calculations, the other contributors and the coaching principles digest, but not the library.
+   */
   ground: NumberGround;
+  /**
+   * The numbers a sentence that states the athlete's own target or prescription may use: the
+   * athlete's data and Tracend's calculations only, never the digest or the library. Default:
+   * `ground`.
+   */
+  athleteGround?: NumberGround;
+  /**
+   * The text shown for each library source this turn, by source id. A figure only a source holds is
+   * accepted when the reply cites that source in its evidence, and never in a sentence about the
+   * athlete's own target.
+   */
+  librarySources?: Readonly<Record<string, string>>;
   /** The goal phase check (training/goal_phase/guard.ts): runs first and keeps its own rules. */
   weightClaim: (answer: string) => CoachChatValidationRule | null;
 }>;
+
+// ---- the athlete's own target ------------------------------------------------------------
+
+// A sentence that tells the athlete their own number or what to do: "your protein target is ...",
+// "you should eat ...", "aim for ...", "cut 300 kcal a day". The numbers in it are Tracend's to
+// give, from the athlete's data; a guideline figure from the library or the digest is general
+// guidance and belongs in a sentence that says whose guidance it is.
+const ownTargetPatterns: readonly RegExp[] = [
+  /\byour (?:\w+ ){0,2}(?:target|goal|number|allowance|intake|requirement|needs?)\b/i,
+  /\byou (?:should|need to|must|ought to|have to|'ll need to|will need to) (?:eat|aim|take|have|get|consume|drink|cut|lose|gain|do|train|lift|sleep|add|reduce|hit|reach)\b/i,
+  /\b(?:aim for|aim to|aiming for|target of|go for|shoot for|stay (?:at|under|around))\b/i,
+  /\b(?:cut|reduce|drop|eat|add|take|consume|drink)\b(?:[^.!?\n]|\.(?=\d)){0,40}\b(?:a|per|each|every) (?:day|week|meal)\b/i,
+];
+
+function statesOwnTarget(sentence: string): boolean {
+  return ownTargetPatterns.some((pattern) => pattern.test(sentence));
+}
 
 function listIn(figures: readonly string[]): string {
   return figures.slice(0, 6).join(", ");
@@ -305,7 +348,14 @@ function listIn(figures: readonly string[]): string {
  * and every other one, so a single repair can fix them together.
  */
 export function coachReplyCheck(inputs: ReplyCheckInputs): CoachChatAnswerCheck {
-  return (answer): CoachChatAnswerBreak | null => {
+  const libraryGrounds = new Map<string, NumberGround>();
+  const libraryGround = (id: string): NumberGround[] => {
+    const text = inputs.librarySources?.[id];
+    if (text === undefined) return [];
+    if (!libraryGrounds.has(id)) libraryGrounds.set(id, numberGroundOf([text]));
+    return [libraryGrounds.get(id)!];
+  };
+  return (answer, citedLibrarySources = []): CoachChatAnswerBreak | null => {
     const broken: CoachChatValidationRule[] = [];
     const weight = inputs.weightClaim(answer);
     if (weight) broken.push(weight);
@@ -322,8 +372,21 @@ export function coachReplyCheck(inputs: ReplyCheckInputs): CoachChatAnswerCheck 
       broken.push("training_advice_on_pain_day");
     }
     if (has(claimsAnAction)) broken.push("claimed_action");
-    const ungrounded = ungroundedNumbers(answer, inputs.ground);
+    // A sentence about the athlete's own target or prescription takes its numbers from the
+    // athlete's data alone; any other sentence may also use the digest and a library source the
+    // reply cites.
+    const own = sentences.filter(statesOwnTarget);
+    const other = sentences.filter((sentence) => !statesOwnTarget(sentence));
+    const ungrounded = [
+      ...ungroundedNumbers(
+        other.join("\n"),
+        mergeGrounds(inputs.ground, ...citedLibrarySources.flatMap(libraryGround)),
+      ),
+      ...ungroundedNumbers(own.join("\n"), inputs.athleteGround ?? inputs.ground),
+    ];
     if (ungrounded.length > 0) broken.push("numbers_not_grounded");
+    const unshown = unshownKeysIn(answer, new Set(Object.keys(inputs.librarySources ?? {})));
+    if (unshown.length > 0) broken.push("citation_not_retrieved");
     if (broken.length === 0) return null;
     return {
       rule: broken[0],

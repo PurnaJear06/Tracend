@@ -50,6 +50,7 @@ Deno.test("the required groups are covered", () => {
   assert(count("data_faults") >= 6, "data faults");
   assert(count("lookups") >= 4, "lookups");
   assert(count("proposals") >= 5, "proposals");
+  assert(count("library") >= 5, "library");
   const ids = bankCases.map((c) => c.id);
   for (
     const id of [
@@ -150,6 +151,7 @@ Deno.test("the graders accept every hand-written good reply", () => {
         safetyState: stateOf(p.bank.expect.safetyStates),
         dataRequests: p.bank.goodRequests ?? [],
         ...(p.bank.goodIntent === undefined ? {} : { proposalIntent: p.bank.goodIntent }),
+        citations: p.bank.goodCitations ?? [],
         costUsd: 0,
         latencyMs: 0,
       };
@@ -182,6 +184,7 @@ Deno.test("the graders catch every hand-written bad reply with the named grader"
           : p.bank.goodIntent === undefined
           ? {}
           : { proposalIntent: p.bank.goodIntent }),
+        citations: example.citations ?? p.bank.goodCitations ?? [],
         costUsd: 0,
         latencyMs: 0,
       };
@@ -211,6 +214,8 @@ Deno.test("the graders catch every hand-written bad reply with the named grader"
       "cites_rows",
       "data_requests",
       "proposal_intent",
+      "cites_sources",
+      "citations_shown",
     ]
   ) assert(caught.has(grader), `no bad example exercises ${grader}`);
 });

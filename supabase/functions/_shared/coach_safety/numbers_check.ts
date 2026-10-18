@@ -190,6 +190,19 @@ export function numberGroundOf(texts: readonly string[]): NumberGround {
   return { values: [...values.values()], dates, monthDays };
 }
 
+/** The ground that holds everything the given grounds hold. */
+export function mergeGrounds(...grounds: readonly NumberGround[]): NumberGround {
+  const values = new Map<string, GivenNumber>();
+  for (const ground of grounds) {
+    for (const given of ground.values) values.set(`${given.value}|${given.unit}`, given);
+  }
+  return {
+    values: [...values.values()],
+    dates: new Set(grounds.flatMap((ground) => [...ground.dates])),
+    monthDays: new Set(grounds.flatMap((ground) => [...ground.monthDays])),
+  };
+}
+
 const measurementUnit =
   /^\s*(?:%|percent\b|per ?cent\b|kgs?\b|kilos?\b|kilograms?\b|lbs?\b|pounds?\b|kcals?\b|calories?\b|cals?\b|gr?\b|grams?\b|bpm\b|ms\b|milliseconds?\b|cm\b|mm\b|litres?\b|liters?\b|ml\b|mg\b|oz\b|km\b|miles?\b|mmhg\b)/;
 const timeUnit = /^\s*(?:hours?\b|hrs?\b|h\b|minutes?\b|mins?\b)/;
