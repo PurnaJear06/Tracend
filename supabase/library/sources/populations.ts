@@ -146,9 +146,9 @@ It found the evidence not yet strong enough for specific advice on protein quali
       {
         title: "Findings",
         body:
-          `Muscle growth did not differ between men and women (12 outcomes from 10 studies, effect size about 0.07, with no variation between studies).
+          `For muscle growth, men and women came out the same (12 outcomes from 10 studies, effect size about 0.07, with no variation between studies).
 
-Lower-body strength gains did not differ significantly either (23 studies). Upper-body strength gains, measured relative to starting strength, were larger in women, a moderate effect (17 studies). The authors suggest untrained women may have a greater capacity to improve upper-body strength, and say it is not yet clear whether this reflects nerves, muscle, learning the movement, or simply the short length of the studies.`,
+Lower-body strength showed no significant sex difference either (23 studies). Relative to where they started, women improved upper-body strength more, by a moderate amount (17 studies). The authors float the idea that untrained women have more room to improve there, while admitting the cause is unclear: it could be the nervous system, the muscle, picking up the movement skill, or just the short studies.`,
       },
       {
         title: "Practical reading and limits",
@@ -184,7 +184,7 @@ Lower-body strength gains did not differ significantly either (23 studies). Uppe
       {
         title: "Findings",
         body:
-          `The reviews disagreed, and the better ones found trivial or no effects of cycle phase on strength, including the McNulty 2020 network analysis in this library. The two reviews suggesting phase effects relied on few, very mixed studies, and one combined women on and off the pill. The two training trials behind 'train harder in the first half of the cycle' had design problems: they assumed regular 28-day cycles and did not confirm ovulation with a reliable test.
+          `The reviews disagreed. Three of the five, including the McNulty 2020 network analysis in this library, found trivial or no effects of cycle phase on strength. The two reviews suggesting phase effects relied on few, very mixed studies, and one combined women on and off the pill. The two training trials behind 'train harder in the first half of the cycle' had design problems: their schedules assumed every woman ovulated mid-cycle with equal-length halves (one was built only for a 28-day cycle), and neither confirmed ovulation with a reliable test.
 
 The authors stress that cycle length and the timing of ovulation vary widely between women, and between cycles in the same woman, so counting days is a poor guide to hormone levels.`,
       },
@@ -222,7 +222,7 @@ The authors stress that cycle length and the timing of ovulation vary widely bet
       {
         title: "Findings",
         body:
-          `On average, women taking the pill may perform slightly worse than naturally menstruating women, but the difference was most likely trivial and varied a lot between studies. There was effectively no chance that pill users performed better.
+          `On average, women taking the pill may perform slightly worse than naturally menstruating women, but the difference was most likely trivial and varied a lot between studies. There was effectively no chance that pill users performed even slightly better (by a small effect or more).
 
 Within pill users, performance was steady across the pill cycle: taking the pill or being on the pill-free days made almost no difference. Restricting the analysis to better-quality studies did not change these conclusions.`,
       },
@@ -246,7 +246,7 @@ Within pill users, performance was steady across the pill cycle: taking the pill
     lastReviewed: "2026-10-18",
     region: ["global"],
     topics: ["bodyweight", "home-training", "minimal-equipment", "hypertrophy", "strength"],
-    evidenceLevel: "randomised controlled trial (18 young men)",
+    evidenceLevel: "randomised trial comparing two training groups (18 young men)",
     kind: "paper",
     chosenBecause:
       "A direct test of whether push-ups can build the chest and arms like bench pressing, the core question for anyone training at home without weights. Summarised from the full text.",
@@ -254,7 +254,7 @@ Within pill users, performance was steady across the pill cycle: taking the pill
       {
         title: "What the study did",
         body:
-          `Eighteen male university students with at least a year of recreational resistance training were randomly split into two groups for 8 weeks. One did bench press at 40 percent of their one-repetition maximum; the other did push-ups with the body position adjusted (for example on the knees) so the load matched that same 40 percent. Both did 3 sets to failure with 2 minutes' rest, twice a week, with supervision. Muscle thickness was measured by ultrasound at the chest, triceps and biceps.`,
+          `Eighteen male university students with at least a year of recreational resistance training (the paper also calls them untrained) were randomly split into two groups for 8 weeks. One did bench press at 40 percent of their one-repetition maximum; the other did push-ups with the body position adjusted (for example on the knees) so the load roughly matched that same 40 percent, based on published estimates. Both did 3 sets to failure with 2 minutes' rest, twice a week, with supervision. Muscle thickness was measured by ultrasound at the chest, triceps and biceps.`,
       },
       {
         title: "Findings",
@@ -295,9 +295,9 @@ Within pill users, performance was steady across the pill cycle: taking the pill
       {
         title: "Findings",
         body:
-          `Every type of resistance training produced moderate to large strength gains compared with no training. Machine training had the largest effect (standardised difference about 1.3) and the most consistent results, followed by free weights (about 1.2, with a wide range of uncertainty), elastic bands (about 0.9), mixed programmes (about 0.9) and bodyweight training (about 0.7, also with a wide range).
+          `Compared with not training, all five approaches raised strength by a moderate to large amount. Machine training had the largest effect (standardised difference about 1.3) and the most consistent results, followed by free weights (about 1.2, with a wide range of uncertainty), elastic bands (about 0.9), mixed programmes (about 0.9) and bodyweight training (about 0.7, also with a wide range).
 
-The authors conclude that many types of training can bring large strength gains in older adults, and that once intensity, volume and programme length are adequate, the choice can rest on preference, enjoyment and practicality.`,
+The authors suggest that, provided the training is hard enough, frequent enough and long enough, which type to use may come down to what the person likes and can actually do.`,
       },
       {
         title: "Practical reading and limits",

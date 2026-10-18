@@ -164,7 +164,7 @@ export const bodyCompositionSources: readonly LibrarySource[] = [
       {
         title: "Findings",
         body:
-          `Thigh and triceps muscle thickness and squat strength changed similarly in all groups. The 15 percent group gained more bench press strength in the group comparison, but bench gains were not linked to how much weight people gained. The clearest result was that weight gain strongly predicted gains in skinfold thickness (a measure of fat). Only the biceps, the most heavily trained muscle in the programme, showed a weak link between more weight gain and more growth. The 5 and 15 percent groups ended up eating similar surpluses in practice, which suggests a very small surplus is hard to hold.`,
+          `Thigh and triceps muscle thickness and squat strength changed similarly in all groups. The 15 percent group gained more bench press strength in the group comparison, but bench gains were not linked to how much weight people gained. The clearest result was that weight gain strongly predicted gains in skinfold thickness (a measure of fat). Only the biceps, the most heavily trained muscle in the programme, showed a weak link between more weight gain and more growth. The 5 and 15 percent groups gained about the same weight (about 3.3 kg each over 8 weeks), and the authors note that not everyone kept to their assigned surplus, so a precise small surplus can be hard to hit.`,
       },
       {
         title: "Practical reading and limits",
@@ -272,7 +272,7 @@ export const bodyCompositionSources: readonly LibrarySource[] = [
       {
         title: "Sleep and measurement",
         body:
-          `Short sleep is linked with losing more lean mass during weight loss and with worse training, and one small trial in untrained people found that sleep coaching helped fat loss. The review warns that body composition methods have errors of a size similar to many of the reported changes (DEXA has a typical error of about 1.6 percent body fat against MRI), so small recomposition results should be read with caution.`,
+          `Short sleep is linked with losing more lean mass during weight loss (that evidence comes from overweight adults who were not lifting) and with worse training, and one small trial in untrained people found that sleep coaching helped fat loss. The review warns that body composition methods have errors of a size similar to many of the reported changes (DEXA has a typical error of about 1.6 percent body fat against MRI), so small recomposition results should be read with caution.`,
       },
       {
         title: "Practical reading and limits",

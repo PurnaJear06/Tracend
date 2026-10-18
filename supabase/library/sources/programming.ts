@@ -33,7 +33,7 @@ export const programmingSources: readonly LibrarySource[] = [
       {
         title: "Findings",
         body:
-          `Periodised programmes raised one-repetition maximum more than non-periodised ones, by a moderate standardised effect of 0.43 (95 percent confidence interval 0.27 to 0.58). Four factors were linked to the size of that advantage: undulating models (where load and repetition targets change often) did better than other models, and the effect was larger in untrained participants, in longer studies and with more frequent training. The authors concluded that variation in the training stimulus looks important for building maximal strength.`,
+          `Periodised programmes raised one-repetition maximum more than non-periodised ones, by a moderate standardised effect of 0.43 (95 percent confidence interval 0.27 to 0.58). Four factors were linked to the size of that advantage: undulating models (where load and repetition targets change often) did better than other models, and the effect was larger in untrained participants, in longer studies and with more frequent training. The authors concluded that changing loads and repetitions over time seems to be a key part of getting stronger.`,
       },
       {
         title: "Practical reading and limits",
@@ -259,12 +259,12 @@ For set length, stopping at 25 percent bar-speed loss or less gave slightly more
       {
         title: "Findings",
         body:
-          `Pooling every definition of failure gave a statistically significant but trivial advantage for failure (effect size 0.19, 95 percent confidence interval 0.00 to 0.37), not changed by whether volume load was matched or by the load used. The authors warn this result is fragile: it lost significance under slightly different statistical assumptions. Comparing only true momentary failure with stopping short showed no clear difference (0.12), and larger bar-speed losses did not reliably beat moderate ones (0.08). Within-group growth was similar whether sets went to failure, near failure or to moderate or large speed loss. The advantage for failure looked somewhat larger with light loads.`,
+          `Pooling every definition of failure gave a statistically significant but trivial advantage for failure (effect size 0.19, 95 percent confidence interval 0.00 to 0.37), not changed by whether volume load was matched or by the load used. The authors warn this result is fragile: it lost significance under slightly different statistical assumptions. Comparing only true momentary failure with stopping short showed no clear difference (0.12), and larger bar-speed losses did not reliably beat moderate ones (0.08). Within-group growth was similar whether sets went to failure, near failure or to moderate or large speed loss. The advantage for failure looked somewhat larger with light loads (0.28 against 0.15), though the difference was not statistically significant.`,
       },
       {
         title: "Practical reading and limits",
         body:
-          `The authors propose that the benefit flattens out: getting reasonably close to failure matters, but going all the way adds little and brings more fatigue. They suggest stopping most sets close to failure and keeping true failure mainly for simpler, safer exercises such as machines and single-joint lifts, the last set of an exercise, and lighter loads. This fits the Robinson 2024 entry, which found more growth as sets end nearer failure but an uncertain shape; both say close is good and the best distance is not settled. Studies were few and small, and how close the non-failure sets really got was often unclear.`,
+          `The authors propose that the benefit flattens out: getting reasonably close to failure matters, but going all the way adds little and brings more fatigue. They suggest stopping most sets close to failure and keeping true failure mainly for simpler, safer exercises such as machines and single-joint lifts, the last set of an exercise, and lighter loads. They also name muscles trained with few sets or only once or twice a week, and trained lifters, as cases where going to failure may make more sense. This fits the Robinson 2024 entry, which found more growth as sets end nearer failure but an uncertain shape; both say close is good and the best distance is not settled. Studies were few and small, and how close the non-failure sets really got was often unclear.`,
       },
     ],
   },

@@ -449,7 +449,7 @@ additive: it only calls `private.library_replace_source`). Written from the 2026
 Every source was checked on 2026-10-18 against its Crossref record (title, authors, year, journal,
 licence URLs) and Europe PMC (identifiers, licence, abstract), and the open full text was read
 where it is lawful to read (Europe PMC, PMC, the publisher or the issuing body). Numbers come only
-from what was read. 36 were summarised from the full text or full document, 20 from the abstract
+from what was read. 37 were summarised from the full text or full document, 19 from the abstract
 only, and one (ICMR-NIN 2020) from NIN's official brief note because the full book is sold in
 print. Abstract-only entries say so in their "Practical reading and limits" section.
 
@@ -492,7 +492,7 @@ print. Abstract-only entries say so in their "Practical reading and limits" sect
 | wewege_2017_hiit_body_composition | Cardio, recovery and sleep | Wewege et al. 2017 | doi:10.1111/obr.12532 | proprietary | no | global | abstract only |
 | milanovic_2015_hiit_vo2max | Cardio, recovery and sleep | Milanović et al. 2015 | doi:10.1007/s40279-015-0365-0 | proprietary | no | global | abstract only |
 | mandsager_2018_cardiorespiratory_fitness_mortality | Cardio, recovery and sleep | Mandsager et al. 2018 | doi:10.1001/jamanetworkopen.2018.3605 | CC-BY-4.0 | yes | global | full text |
-| roberts_2015_cold_water_strength_adaptation | Cardio, recovery and sleep | Roberts et al. 2015 | doi:10.1113/JP270570 | proprietary | no | global | abstract only |
+| roberts_2015_cold_water_strength_adaptation | Cardio, recovery and sleep | Roberts et al. 2015 | doi:10.1113/JP270570 | proprietary | no | global | full text |
 | malta_2021_cold_water_training_adaptations | Cardio, recovery and sleep | Malta et al. 2021 | doi:10.1007/s40279-020-01362-0 | proprietary | no | global | abstract only |
 | craven_2022_sleep_loss_performance | Cardio, recovery and sleep | Craven et al. 2022 | doi:10.1007/s40279-022-01706-y | CC-BY-4.0 | yes | global | full text |
 | lamon_2021_sleep_deprivation_muscle_protein | Cardio, recovery and sleep | Lamon et al. 2021 | doi:10.14814/phy2.14660 | CC-BY-4.0 | yes | global | full text |
@@ -506,7 +506,7 @@ print. Abstract-only entries say so in their "Practical reading and limits" sect
 | wiedenmann_2025_older_adults_training_modalities | Older lifters, women, home and travel | Wiedenmann et al. 2025 | doi:10.1159/000546346 | proprietary | no | global | abstract only |
 | spiering_2021_minimal_dose_maintenance | Older lifters, women, home and travel | Spiering et al. 2021 | doi:10.1519/JSC.0000000000003964 | proprietary | no | global | abstract only |
 | janse_van_rensburg_2021_travel_jet_lag | Older lifters, women, home and travel | Janse van Rensburg et al. 2021 | doi:10.1007/s40279-021-01502-0 | proprietary | no | global | full text |
-| hhs_2018_physical_activity_guidelines | National guidelines | HHS 2018 (Physical Activity Guidelines for Americans) | https://health.gov/sites/default/files/2019-09/Physical_Activity_Guidelines_2nd_edition.pdf | public-domain-us-gov | yes | US | full document |
+| hhs_2018_physical_activity_guidelines | National guidelines | HHS 2018 (Physical Activity Guidelines for Americans) | https://odphp.health.gov/sites/default/files/2019-09/Physical_Activity_Guidelines_2nd_edition.pdf | public-domain-us-gov | yes | US | full document |
 | usda_hhs_2026_dietary_guidelines | National guidelines | USDA and HHS 2026 (Dietary Guidelines for Americans) | https://cdn.realfood.gov/DGA.pdf | public-domain-us-gov | yes | US | full document |
 | uk_cmo_2026_activity_guidelines | National guidelines | UK CMOs 2026 | https://www.gov.uk/government/publications/physical-activity-guidelines-uk-chief-medical-officers-report/uk-chief-medical-officers-physical-activity-guidelines | OGL-UK-3.0 | yes | GB | full document |
 | icmr_nin_2020_nutrient_requirements | India | ICMR-NIN 2020 (RDA and EAR) | https://www.nin.res.in/rdabook/brief_note.pdf | proprietary | no | IN | official summary |
@@ -535,7 +535,7 @@ print. Abstract-only entries say so in their "Practical reading and limits" sect
 | Older lifters | borde_2015_older_adults_dose_response, izquierdo_2021_icfsr_older_adults, bauer_2013_prot_age_protein, wiedenmann_2025_older_adults_training_modalities |
 | Women | roberts_2020_sex_differences_resistance_training, colenso_semple_2023_menstrual_cycle_resistance, elliott_sale_2020_oral_contraceptives_performance (no pregnancy content) |
 | Home, bodyweight, travel, minimal dose | kikuchi_2017_push_up_bench_press, wiedenmann_2025_older_adults_training_modalities, spiering_2021_minimal_dose_maintenance, janse_van_rensburg_2021_travel_jet_lag |
-| Verbatim-OK guidelines | hhs_2018_physical_activity_guidelines (US), usda_hhs_2026_dietary_guidelines (US, the 2025-2030 edition released January 2026), uk_cmo_2026_activity_guidelines (GB; first issued 2019, updated July 2026) |
+| Verbatim-OK guidelines | hhs_2018_physical_activity_guidelines (US), usda_hhs_2026_dietary_guidelines (US, the 2025-2030 edition released January 2026), uk_cmo_2026_activity_guidelines (GB; first issued 2011, revised 2019, evidence updated July 2026 without changing the guidance) |
 | India | icmr_nin_2020_nutrient_requirements, longvah_2017_ifct, who_2004_asian_bmi, misra_2025_obesity_asian_indians, anjana_2014_indiab_activity |
 
 ### Sources dropped or replaced
@@ -593,6 +593,37 @@ not cite the new sources yet.
 - Not done here (other owners): retrieval does not yet read `supersededBy`, `verbatimAllowed` or
   `lastReviewed` (they are not in the database), and `library_questions.json` has no questions for
   the new sources, so recall on them is unmeasured.
+
+### Fact-check corrections (after review)
+
+An independent fact-check compared the summaries with the original papers; Codex added one item.
+All corrections are in the content files and the migration was regenerated (the 106 blocks and
+their hashes match the sources). No source was added.
+
+- **Wrong or unsupported claims.** Helms 2023 (the two surplus groups gained the same weight; the
+  logged surpluses did differ, and not everyone kept to theirs); Roberts 2015 (now read from the
+  full text: lower-body training, water about 10 °C waist-deep, experienced men; later work by Fyfe
+  2019 and Grgic 2022 shows a smaller cost, limited to immersing the trained limbs); Malta 2021
+  (Grgic 2022 cited as a caveat); Anjana 2014 (the 46 and 14 minute figures are averages among
+  those with active work or active travel, and the survey is "large, representative" rather than
+  "the largest"); Misra 2025 (body fat overrides BMI only below 23, no exception for muscular
+  people; weight-loss rate wording; collective author added); Haugen 2023 (participants "mostly
+  men", the counts did not add up).
+- **BMI boundary (Misra 2025).** The entry said a normal BMI is up to just under 23 but staged
+  obesity from "above 23", leaving exactly 23.0 unclassified. It now says "23 or more" throughout,
+  and Stage 1 also requires no obesity-related disease. This follows the entry's own "normal is
+  18.5 to just under 23"; check the exact boundary against the paper if clinical wording matters.
+- **Closer than allowed to a proprietary abstract.** Reworded: Impellizzeri 2020, Wiedenmann 2025,
+  WHO 2004 and Roberts 2020; Impellizzeri 2021 named as the follow-up.
+- **Smaller fixes.** UK CMO history (2011, 2019, evidence updated July 2026); US dietary guidelines
+  (full-fat dairy with no added sugars; the PDF's Shutterstock images are not covered by the
+  public-domain text); ICMR-NIN (protein figure is the same for sedentary, moderate and heavy
+  work; the 5 percent basal-rate cut adds to 2010's); IFCT (as-analysed wording, six-region mean
+  for most foods); Colenso-Semple 2023 (three of five reviews, ovulation assumptions);
+  Elliott-Sale 2020; Kikuchi 2017 (load roughly matched, men called untrained, evidence level);
+  Williams 2017; the IOC statement (Maughan); Refalo 2023 (subgroup figures, authors' extra
+  cases); Barakat 2020 (sleep evidence is from non-lifting overweight adults); the HHS link now
+  uses odphp.health.gov.
 
 ### Gates
 

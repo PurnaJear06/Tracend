@@ -14,7 +14,7 @@ export const guidelineSources: readonly LibrarySource[] = [
     year: 2018,
     doi: null,
     url:
-      "https://health.gov/sites/default/files/2019-09/Physical_Activity_Guidelines_2nd_edition.pdf",
+      "https://odphp.health.gov/sites/default/files/2019-09/Physical_Activity_Guidelines_2nd_edition.pdf",
     licence: "public-domain-us-gov",
     verbatimAllowed: true,
     lastReviewed: "2026-10-18",
@@ -92,7 +92,7 @@ The guideline's phrase for beginners is "start low and go slow". An inactive per
         body:
           `The 10th edition, from the US Departments of Agriculture and of Health and Human Services, is a short document built around eating whole, nutrient-dense food and sharply cutting highly processed food, added sugars and refined carbohydrate. The two secretaries describe it as a major reset of federal nutrition advice.
 
-Calorie needs depend on age, sex, height, weight and activity, and portion size deserves attention. Protein foods, animal and plant, should come first at every meal, with a goal of 1.2 to 1.6 g of protein per kg of body weight a day, adjusted to calorie needs. For a 2,000-calorie pattern it suggests 3 servings of dairy (full-fat is acceptable without added sugar), 3 of vegetables, 2 of fruit and 2 to 4 of whole grains.`,
+Calorie needs depend on age, sex, height, weight and activity, and portion size deserves attention. Protein foods, animal and plant, should come first at every meal, with a goal of 1.2 to 1.6 g of protein per kg of body weight a day, adjusted to calorie needs. For a 2,000-calorie pattern it suggests 3 servings of dairy (including full-fat dairy with no added sugars), 3 of vegetables, 2 of fruit and 2 to 4 of whole grains.`,
       },
       {
         title: "Limits, drinks and salt",
@@ -107,7 +107,7 @@ Calorie needs depend on age, sex, height, weight and activity, and portion size 
       {
         title: "Practical reading and limits",
         body:
-          `The protein goal sits close to the sports-nutrition range in the Jäger 2017 entry and well above India's allowance of 0.83 g per kg (the ICMR-NIN 2020 entry). They answer different questions: an allowance is the least that covers nearly every healthy person, while these goals aim higher. The plan's rules set the athlete's number. This summary covers the guideline document only, not the evidence review behind it; it is a US federal work in the public domain, so short quotation with attribution is allowed.`,
+          `The protein goal sits close to the sports-nutrition range in the Jäger 2017 entry and well above India's allowance of 0.83 g per kg (the ICMR-NIN 2020 entry). They answer different questions: an allowance is the least that covers nearly every healthy person, while these goals aim higher. The plan's rules set the athlete's number. This summary covers the guideline document only, not the evidence review behind it; it is a US federal work in the public domain, so short quotation with attribution is allowed. That covers the text only: the PDF also contains Shutterstock images, which that public-domain status does not cover.`,
       },
     ],
   },
@@ -133,10 +133,10 @@ Calorie needs depend on age, sex, height, weight and activity, and portion size 
       "sedentary",
       "minimal-dose",
     ],
-    evidenceLevel: "national public health guideline (2019 expert review, evidence updated 2026)",
+    evidenceLevel: "national public health guideline (first issued 2011, revised 2019, evidence updated 2026)",
     kind: "guideline",
     chosenBecause:
-      "The UK's official activity guidance, first issued in 2019 and updated in July 2026; it states plainly how little strength work already pays off and that weekly minutes can come in one or two sessions. Summarised from the full document.",
+      "The UK's official activity guidance, first issued in 2011, revised in 2019, with the evidence updated in July 2026 without changing the guidance; it states plainly how little strength work already pays off and that weekly minutes can come in one or two sessions. Summarised from the full document.",
     sections: [
       {
         title: "What adults are advised to do",

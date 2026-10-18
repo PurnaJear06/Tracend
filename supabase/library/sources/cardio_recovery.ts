@@ -136,24 +136,24 @@ Compared head to head, interval training came out slightly ahead, by about 1.2 m
       "randomised controlled trial (21 men) plus a mechanistic crossover study (9 men)",
     kind: "paper",
     chosenBecause:
-      "The best-known trial showing that routine ice baths after lifting can reduce strength and muscle gains, which Coach needs when someone asks whether to plunge after every session. Summarised from the abstract only.",
+      "The best-known trial showing that routine ice baths after lifting can reduce strength and muscle gains, which Coach needs when someone asks whether to plunge after every session. Summarised from the full text.",
     sections: [
       {
         title: "What the study did",
         body:
-          `The paper reports two studies. In the training study, 21 physically active men lifted twice a week for 12 weeks and spent 10 minutes after every session either in cold water or doing active recovery. In the mechanistic study, nine active men did single-leg strength exercise on separate days followed by either cold water or active recovery, with muscle samples taken before and 2, 24 and 48 hours after.`,
+          `The paper reports two studies. In the training study, 21 physically active men with at least a year of strength-training experience did mainly lower-body lifting twice a week for 12 weeks and spent 10 minutes after every session either sitting waist-deep in water at about 10 °C or cycling easily. In the mechanistic study, nine active men did single-leg strength exercise on separate days followed by either cold water or active recovery, with muscle samples taken before and 2, 24 and 48 hours after.`,
       },
       {
         title: "Findings",
         body:
           `Strength and muscle mass rose more with active recovery than with cold water. In the active recovery group, isokinetic work rose by about 19 percent, the size of fast-twitch (type II) fibres by about 17 percent and the number of nuclei per fibre by about 26 percent; none of these rose significantly with cold water.
 
-In the muscle samples, markers of satellite cells (the stem cells that help muscle grow and repair) and of a key growth signalling enzyme rose less after cold water than after active recovery. The authors suggest that regular cold water after lifting may blunt the processes behind long-term gains and should be reconsidered as a routine habit.`,
+In the muscle samples, markers of satellite cells (the stem cells that help muscle grow and repair) and of a key growth signalling enzyme rose less after cold water than after active recovery. The authors suggest that regular cold water after lifting may blunt the processes behind long-term gains, so it may be worth dropping as an after-every-session habit.`,
       },
       {
         title: "Practical reading and limits",
         body:
-          `For someone whose goal is strength or muscle, plunging after every lifting session may cost some of the gains, so it is better kept for times when feeling fresh soon matters more than adaptation. The trial was small, only men took part, and this summary is from the abstract, which does not give the water temperature. It does not say cold water is harmful in general: the Dupuy 2018 entry shows it can ease soreness for a day or two, and the Malta 2021 entry pools the training studies.`,
+          `For someone whose goal is strength or muscle, plunging after every lifting session may cost some of the gains, so it is better kept for times when feeling fresh soon matters more than adaptation. The trial was small, only young men took part, the water was about 10 °C up to the waist, and training was mainly lower body. Later work found the strength cost is small and may be limited to immersing only the trained limbs (Fyfe 2019; Grgic 2022 meta-analysis). It does not say cold water is harmful in general: the Dupuy 2018 entry shows it can ease soreness for a day or two, and the Malta 2021 entry pools the training studies.`,
       },
     ],
   },
@@ -186,12 +186,12 @@ In the muscle samples, markers of satellite cells (the stem cells that help musc
         body:
           `With resistance training, regular cold-water immersion reduced gains in one-repetition maximum, maximal isometric strength and strength endurance (pooled standardised difference about minus 0.6, a moderate effect), and also in ballistic, explosive efforts by a similar amount.
 
-With endurance training, it made no clear difference to maximal aerobic power in a graded test or to time-trial performance. The authors conclude that routine cold water harms resistance training adaptations but does not appear to affect aerobic performance.`,
+With endurance training, it made no clear difference to maximal aerobic power in a graded test or to time-trial performance. In short, regular cold water after lifting cost some strength gains, while endurance results were unchanged.`,
       },
       {
         title: "Practical reading and limits",
         body:
-          `This sits alongside the Dupuy 2018 entry, which found cold and other methods ease soreness for a day or two: both can be true. Cold water may help someone feel better between closely spaced sessions or events, but used after most lifting sessions it can cost strength. For endurance work it looks roughly neutral. Only eight studies were pooled, the summary is from the abstract only, and it does not test occasional use or brief cold showers. Coach should present cold water as optional and timed to the goal, not as a recovery requirement.`,
+          `This sits alongside the Dupuy 2018 entry, which found cold and other methods ease soreness for a day or two: both can be true. Cold water may help someone feel better between closely spaced sessions or events, but used after most lifting sessions it can cost strength. For endurance work it looks roughly neutral. Only eight studies were pooled. A later meta-analysis of ten studies (Grgic 2022) found a smaller cost to strength, and no clear cost when the whole body rather than only the trained limbs was immersed, so the size of the effect is uncertain. The summary is from the abstract only, and the paper does not test occasional use or brief cold showers. Coach should present cold water as optional and timed to the goal, not as a recovery requirement.`,
       },
     ],
   },

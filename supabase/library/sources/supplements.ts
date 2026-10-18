@@ -36,12 +36,12 @@ export const supplementSources: readonly LibrarySource[] = [
       {
         title: "Where supplements fit",
         body:
-          `An International Olympic Committee expert panel sees supplements as at most a small addition to a sound diet. They can correct a deficiency (iron, calcium and vitamin D are the usual ones, and vitamin B12 for vegans), provide energy and nutrients conveniently (sports drinks, gels, bars, protein), or claim to improve performance directly or indirectly. The panel advises a full nutrition assessment before deciding, ideally with a sports nutrition professional.`,
+          `An International Olympic Committee expert panel sees supplements as at most a small addition to a sound diet. They can correct a deficiency (iron, calcium and vitamin D are the usual ones, and vitamin B12 for vegans), provide energy and nutrients conveniently (sports drinks, gels, bars, protein), or claim to improve performance directly or indirectly. The panel says to check diet, history and, where useful, blood markers first, ideally with a sports nutrition professional, before choosing any supplement.`,
       },
       {
         title: "What has good evidence",
         body:
-          `Only a few performance supplements have enough support to suggest marginal gains: caffeine, creatine monohydrate, nitrate, sodium bicarbonate and possibly beta-alanine. Responses vary widely between people, so anything used for competition should be tried in training first. Caffeine usually gives its full benefit at 3 to 6 mg per kg, and side effects become more common at 9 mg per kg or more. Protein helps lean mass gain alongside resistance training. For most products sold as fat burners there is no evidence at all, and high doses of single antioxidants such as vitamins C and E may blunt training adaptations.`,
+          `Only a handful of performance supplements are backed well enough to be worth considering, and even then the gains are small: caffeine, creatine monohydrate, nitrate, sodium bicarbonate and possibly beta-alanine. Responses vary widely between people, so anything used for competition should be tried in training first. Caffeine usually gives its full benefit at 3 to 6 mg per kg, and side effects become more common at 9 mg per kg or more. Protein helps lean mass gain alongside resistance training. For most products sold as fat burners there is no evidence at all, and high doses of single antioxidants such as vitamins C and E may blunt training adaptations.`,
       },
       {
         title: "Risks and contamination",

@@ -37,7 +37,7 @@ export const exerciseSelectionSources: readonly LibrarySource[] = [
       {
         title: "What the review did",
         body:
-          `The authors pooled 13 studies that directly compared free-weight training (barbell squat, bench press and similar) with machine training (leg press, chest press, Smith machine and similar) for at least six weeks in adults aged 18 to 60. There were 1,016 participants (789 men and 219 women); six studies used trained and seven untrained people, and none used competitive athletes. Studies lasted about nine weeks on average, with two to four sessions a week. Twelve studies measured maximal strength, five jump height and five muscle size.`,
+          `The authors pooled 13 studies that directly compared free-weight training (barbell squat, bench press and similar) with machine training (leg press, chest press, Smith machine and similar) for at least six weeks in adults aged 18 to 60. There were 1,016 participants, mostly men; six studies used trained and seven untrained people, and none used competitive athletes. Studies lasted about nine weeks on average, with two to four sessions a week. Twelve studies measured maximal strength, five jump height and five muscle size.`,
       },
       {
         title: "Findings",
@@ -222,17 +222,17 @@ export const exerciseSelectionSources: readonly LibrarySource[] = [
       {
         title: "What the paper argues",
         body:
-          `The acute-to-chronic workload ratio compares a recent week of training load with the average of several recent weeks, and it became the most popular load-based injury warning sign in sport. These authors point out that advising people to change their ratio in order to change their injury risk assumes the ratio causes injuries, and that no study had even tried to estimate that cause and effect properly. In their view, managing the ratio to prevent injuries is therefore a conjecture that reads too much into the available data.`,
+          `The acute-to-chronic workload ratio compares a recent week of training load with the average of several recent weeks, and it became the most popular load-based injury warning sign in sport. These authors point out that advising people to change their ratio in order to change their injury risk assumes the ratio causes injuries, yet no study had used methods able to test that. In their view, adjusting the ratio to prevent injury is an untested idea that goes beyond what the data show.`,
       },
       {
         title: "The specific problems",
         body:
-          `They give several reasons. A causal link with injury has not been shown. Ratios like this behave poorly as statistics, so the measure is inaccurate even in the version where the recent week is left out of the longer average. There is little theory explaining why the ratio itself should matter, the measure is ambiguous, and its relationship with injury is neither consistent nor one-directional. They conclude that no evidence supports using the ratio in load-management systems or in training advice meant to reduce injuries, and that it adds noise and can create statistical artefacts.`,
+          `Their reasons are mixed. The measure is ambiguous, and there is little theory for why the ratio itself should matter. Its link with injury is neither consistent nor one-directional, and no study has shown that it causes injury. They conclude the ratio should not be used to manage load or guide injury-prevention advice, because dividing one load by another distorts the numbers and can produce apparent links with injury that are artefacts of the maths.`,
       },
       {
         title: "Practical reading and limits",
         body:
-          `This directly challenges one part of the Gabbett 2016 entry in this library, which proposed the ratio as a useful way to spot spikes in load. Coach should present both sides: Gabbett's wider point, that well-prepared hard training is protective and large sudden jumps are a plausible risk, remains a sensible coaching habit, but the ratio's numbers should not be quoted as safe zones or used to forecast injury. A 2021 follow-up led by the same author reanalysed published data and recommended dropping the ratio altogether. The research behind the ratio comes mostly from team sport, and this summary was written from the abstract only.`,
+          `This directly challenges one part of the Gabbett 2016 entry in this library, which proposed the ratio as a useful way to spot spikes in load. Coach should present both sides: Gabbett's wider point, that well-prepared hard training is protective and large sudden jumps are a plausible risk, remains a sensible coaching habit, but the ratio's numbers should not be quoted as safe zones or used to forecast injury. A 2021 follow-up led by the same author (Impellizzeri et al., Sports Medicine 2021, doi 10.1007/s40279-020-01378-6) reanalysed published data and recommended dropping the ratio altogether. The research behind the ratio comes mostly from team sport, and this summary was written from the abstract only.`,
       },
     ],
   },
