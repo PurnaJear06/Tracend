@@ -8,7 +8,8 @@ import { routerGatewayFromEnv } from "../live_model.ts";
 import { renderReport } from "./report.ts";
 import { type RouterChat, routerChat } from "./router_client.ts";
 import { selectConversations } from "./scenarios.ts";
-import { simulate, type SimulationOptions } from "./simulate.ts";
+import { brokenRouteTurns, simulate, type SimulationOptions } from "./simulate.ts";
+import type { WireError } from "./diagnostics.ts";
 
 const routerModels = [
   "anthropic/claude-haiku-5.5",
@@ -223,6 +224,9 @@ Deno.test("the report names the models, ranks the problems and holds every trans
     maxTurns: 3,
     estimateUsd: 0.1,
     assumedPrices: [],
+    preflight: [],
+    errors: [],
+    harnessFailures: [],
   });
   assertStringIncludes(text, "Coach played by `anthropic/claude-haiku-5.5`");
   assertStringIncludes(text, "used the production model");
@@ -314,8 +318,48 @@ Deno.test("the budget cap stops new turns; a thrown error is a harness error", a
 
 Deno.test("the athlete model failing ends the conversation and says why", async () => {
   const coach: Generate = () => Promise.resolve(generation("Deload next week."));
-  const failing: RouterChat = () => Promise.resolve({ ok: false, reason: "http 503", costUsd: 0 });
+  const failing: RouterChat = () =>
+    Promise.resolve({
+      ok: false,
+      reason: "http 503",
+      costUsd: 0,
+      kind: "http",
+      status: 503,
+      body: "upstream down",
+    });
   const [run] = (await simulate(stubOptions(coach, { chat: failing }))).conversations;
   assertEquals(run.ended, "athlete_failed");
   assertStringIncludes(run.error!, "http 503");
+});
+
+Deno.test("a Coach route that only fails is logged with its status and stops the run instead of spending it", async () => {
+  const options = stubOptions(
+    () => Promise.reject(new CoachChatUnavailableError("router", "stub", "provider_http_error")),
+    {
+      conversations: selectConversations("primary/pushback"),
+      maxTurns: 10,
+    },
+  );
+  const failing = {
+    ...options,
+    coach: (_usage: unknown, onError: (e: WireError) => void) => {
+      const generate: Generate = () => {
+        onError({ status: 400, kind: "http", body: '{"error":{"type":"validation_error"}}' });
+        return Promise.reject(
+          new CoachChatUnavailableError("router", "stub", "provider_http_error"),
+        );
+      };
+      return generate;
+    },
+  };
+  const result = await simulate(failing);
+  const [run] = result.conversations;
+  assertEquals(run.ended, "harness_error");
+  assertEquals(run.turns.length, brokenRouteTurns);
+  assertStringIncludes(run.error!, "HTTP 400");
+  assertEquals(result.errors.length, brokenRouteTurns);
+  assertEquals(
+    [result.errors[0].source, result.errors[0].status, result.errors[0].turn],
+    ["coach", 400, 1],
+  );
 });

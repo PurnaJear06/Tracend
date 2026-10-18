@@ -10,7 +10,8 @@
 import { sentencesOf } from "../coach_bank/graders.ts";
 import type { Turn } from "../coach_bank/types.ts";
 import { normalizedModelId } from "../live_model.ts";
-import { jsonObjectIn, type RouterChat } from "./router_client.ts";
+import { excerpt, type WireError } from "./diagnostics.ts";
+import { type ChatResult, jsonObjectIn, type RouterChat } from "./router_client.ts";
 
 export const expertRubric = [
   [
@@ -124,19 +125,41 @@ export function parseExpertVerdict(text: string): ExpertVerdict | null {
   };
 }
 
-export type JudgeCall<T> = Readonly<{ verdict: T | null; costUsd: number; failure?: string }>;
+export type JudgeCall<T> = Readonly<{
+  verdict: T | null;
+  costUsd: number;
+  failure?: string;
+  /** The wire error of a failed call, for the error log. */
+  error?: WireError;
+}>;
+
+const failedCall = (result: Extract<ChatResult, { ok: false }>): JudgeCall<never> => ({
+  verdict: null,
+  costUsd: result.costUsd,
+  failure: `${result.reason}${result.body ? `: ${result.body}` : ""}`,
+  error: result,
+});
 
 export async function judgeExpert(
   chat: RouterChat,
   model: string,
   input: ExpertInput,
 ): Promise<JudgeCall<ExpertVerdict>> {
-  const result = await chat({ model, ...expertPrompt(input), maxTokens: 700, json: true });
-  if (!result.ok) return { verdict: null, costUsd: result.costUsd, failure: result.reason };
+  const result = await chat({
+    model,
+    ...expertPrompt(input),
+    maxTokens: 700,
+    json: true,
+    source: "judge",
+  });
+  if (!result.ok) return failedCall(result);
   const verdict = parseExpertVerdict(result.text);
-  return verdict
-    ? { verdict, costUsd: result.costUsd }
-    : { verdict: null, costUsd: result.costUsd, failure: "unreadable verdict" };
+  return verdict ? { verdict, costUsd: result.costUsd } : {
+    verdict: null,
+    costUsd: result.costUsd,
+    failure: "unreadable verdict",
+    error: { status: 200, kind: "unreadable", body: excerpt(result.text) },
+  };
 }
 
 // ---- claim support (P1-3) -------------------------------------------------------------------
@@ -208,10 +231,19 @@ export async function judgeClaims(
   model: string,
   input: ClaimInput,
 ): Promise<JudgeCall<Claim[]>> {
-  const result = await chat({ model, ...claimPrompt(input), maxTokens: 900, json: true });
-  if (!result.ok) return { verdict: null, costUsd: result.costUsd, failure: result.reason };
+  const result = await chat({
+    model,
+    ...claimPrompt(input),
+    maxTokens: 900,
+    json: true,
+    source: "judge",
+  });
+  if (!result.ok) return failedCall(result);
   const claims = parseClaims(result.text, input);
-  return claims
-    ? { verdict: claims, costUsd: result.costUsd }
-    : { verdict: null, costUsd: result.costUsd, failure: "unreadable verdict" };
+  return claims ? { verdict: claims, costUsd: result.costUsd } : {
+    verdict: null,
+    costUsd: result.costUsd,
+    failure: "unreadable verdict",
+    error: { status: 200, kind: "unreadable", body: excerpt(result.text) },
+  };
 }

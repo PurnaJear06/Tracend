@@ -111,10 +111,18 @@ Deno.test("a judge call reports its cost and a failure in place of a verdict", a
   });
   assertEquals(verdict.costUsd, 0.01);
   assert(verdict.verdict);
-  const failing: RouterChat = () => Promise.resolve({ ok: false, reason: "http 429", costUsd: 0 });
+  const failing: RouterChat = () =>
+    Promise.resolve({
+      ok: false,
+      reason: "http 429",
+      costUsd: 0,
+      kind: "http",
+      status: 429,
+      body: "slow down",
+    });
   const failed = await judgeClaims(failing, "judge", input);
   assertEquals(failed.verdict, null);
-  assertEquals(failed.failure, "http 429");
+  assertEquals(failed.failure, "http 429: slow down");
 });
 
 Deno.test("a judge must not be the Coach's own model, however the router spells it", () => {

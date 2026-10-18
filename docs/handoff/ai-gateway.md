@@ -1240,6 +1240,25 @@ ignore the athlete's data, a Coach that cannot change the plan). Nothing in prod
   source is unsupported). Both run on a model other than the Coach's (`assertDistinctJudge`;
   default Sonnet 5.5 when the router lists it, `EVAL_SIM_JUDGE_MODEL` otherwise) and are reported,
   never gated.
+- **Harness failures** (first live run, 39101005761, workflow dispatch `simulate=true`): all 82 Coach
+  turns ended in `provider_http_error` and both judges gave nothing, yet the job was green and the
+  report held no status or body. Now: every failed call (Coach, athlete, judge) records its HTTP
+  status and the first 300 characters of its body, after `diagnostics.ts` removes keys and tokens
+  (the router key, bearer values, `sk-` and similar prefixes, key-named fields, long mixed runs);
+  `simulation.json` lists them (`providerErrors`, `errorSummary`) and the report has a "Provider
+  errors" section. `preflight.ts` sends one tiny request per model before the run, in the run's own
+  mode (JSON mode with `response_format`, `max_tokens`), and on a failure tries the plain-text mode
+  (no `response_format`; the production prompt already asks for the JSON, and `routerModelFetch`
+  cleans a fenced reply to the bare object the gateway parses), `max_completion_tokens` and the
+  other router spellings of the Coach model id; it prints each attempt's status and body, runs
+  with the first that works and the report names it. With none, the job fails before any spend.
+  `verdict.ts` fails the job when more than 20% of Coach turns end in a provider error, a judge
+  gives no verdicts while judges are on, the athlete model cannot continue more than 20% of
+  conversations, or the simulator throws; six Coach provider errors with no model answer stop the
+  run early. Quality findings stay report-only. An empty athlete answer is asked for once more with
+  a bigger budget, then the conversation ends with the reason; athlete DeepSeek calls send
+  `reasoning_effort: none` so thinking does not eat the 400-token budget.
+
 - **Run it**: `Coach Eval`, Run workflow, `simulate` ticked (`sim_filter`, `sim_max_turns`);
   never on a pull request. It prints the estimate first, stops new turns at `EVAL_SIM_MAX_USD`
   (default 3), uploads `coach-simulation-report` (`simulation.md`, `simulation.json`) and writes

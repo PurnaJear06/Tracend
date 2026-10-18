@@ -1,8 +1,13 @@
 // The simulated-athlete run: athletes with months of synthetic records talk to the Coach for six to
 // ten messages per scenario, through the production gateway path over the eval router, and every
 // turn is graded by code, an expert-coach judge and (for cited research) a claim-support judge.
-// Report only: it exits 0 whatever the quality, 1 on a harness error (an exception in the
-// simulator, or no Coach turn at all), and 2 when it cannot start.
+// Report only: it exits 0 whatever the quality, 1 on a harness error and 2 when it cannot start. A
+// harness error is a failed preflight (one tiny request to the Coach, the athlete and the judge, in
+// the mode the run uses, with the other modes and model spellings tried first), an exception in the
+// simulator, more than 20% of Coach turns ending in a provider error, a judge that gives no
+// verdicts, or an athlete model that cannot continue: a run that did not reach its models measures
+// nothing, so it must not look green. Every failed call records its HTTP status and the first 300
+// characters of the redacted body in simulation.json.
 //
 // Only in GitHub Actions (coach-eval.yml, Run workflow with `simulate`): it needs EVAL_BASE_URL and
 // EVAL_API_KEY, the eval router. Optional: EVAL_SIM_FILTER (comma-separated parts of conversation
@@ -19,12 +24,29 @@ import {
   productionCoachModel,
   routerGatewayFromEnv,
 } from "../live_model.ts";
+import { summariseErrors } from "./diagnostics.ts";
 import { assertDistinctJudge } from "./judges.ts";
+import {
+  decidePreflight,
+  idCandidates,
+  preflightChat,
+  preflightCoach,
+  type PreflightResult,
+  renderPreflight,
+} from "./preflight.ts";
 import { personaById, type PersonaId } from "./personas.ts";
 import { renderReport, renderSummary } from "./report.ts";
-import { athletePreferences, judgePreferences, pickModel, routerChat } from "./router_client.ts";
+import {
+  athletePreferences,
+  type ChatMode,
+  defaultChatMode,
+  judgePreferences,
+  pickModel,
+  routerChat,
+} from "./router_client.ts";
 import { type Conversation, openingFor, selectConversations } from "./scenarios.ts";
 import { maxTurnsLimit, simulate, spentUsd } from "./simulate.ts";
+import { harnessFailures } from "./verdict.ts";
 import { wordSearch } from "./library_search.ts";
 
 /** Characters per token assumed for the estimate (the bank measured about 1.8 on athlete files). */
@@ -121,7 +143,7 @@ async function main(): Promise<void> {
   }
   const maxTurns = integer(env("EVAL_SIM_MAX_TURNS"), 6, 1, maxTurnsLimit);
   const maxUsd = Number(env("EVAL_MAX_USD") ?? "3");
-  const coachModel = routed.coachModel;
+  let coachModel = routed.coachModel;
   // When the router cannot list its models, the athlete is the Coach's model, which it serves.
   const athleteModel = env("EVAL_ATHLETE_MODEL") ??
     (routed.available.length
@@ -136,6 +158,54 @@ async function main(): Promise<void> {
     Deno.exit(2);
   }
   const judgeNote = judgeModel ? "" : "the router lists no model other than the Coach's";
+
+  const reportDir = env("EVAL_REPORT_DIR") ??
+    `.tooling/coach-evals/simulation-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  await Deno.mkdir(reportDir, { recursive: true });
+
+  // One tiny request per model, in the mode the run will use; the other modes and spellings are
+  // tried when it fails. A model with no working request stops the run before it spends anything.
+  const route = { baseUrl: routed.baseUrl, apiKey: routed.apiKey };
+  const [coachCheck, athleteCheck] = await Promise.all([
+    preflightCoach({ ...route, candidates: idCandidates(routed.available, coachModel) }),
+    preflightChat({ ...route, role: "athlete", model: athleteModel }),
+  ]);
+  const judgeCheck: PreflightResult | null = judgeModel === null
+    ? null
+    : judgeModel === athleteModel
+    ? { ...athleteCheck, role: "judge" }
+    : await preflightChat({ ...route, role: "judge", model: judgeModel });
+  const checks = [coachCheck, athleteCheck, ...(judgeCheck ? [judgeCheck] : [])];
+  const preflight = renderPreflight(checks);
+  console.log(["Preflight:", ...preflight].join("\n"));
+  const decision = decidePreflight(checks);
+  if (!decision.proceed) {
+    await Deno.writeTextFile(
+      `${reportDir}/preflight.json`,
+      JSON.stringify({ message: decision.message, checks }, null, 2),
+    );
+    await Deno.writeTextFile(
+      `${reportDir}/simulation.md`,
+      ["# Coach simulation: preflight failed", "", decision.message, "", ...preflight].join("\n"),
+    );
+    const stepSummary = Deno.env.get("GITHUB_STEP_SUMMARY");
+    if (stepSummary) {
+      await Deno.writeTextFile(
+        stepSummary,
+        ["## Coach simulation: preflight failed", "", decision.message, "", ...preflight, ""]
+          .join("\n"),
+        { append: true },
+      );
+    }
+    console.error(`::error::${decision.message}`);
+    Deno.exit(1);
+  }
+  const played = coachCheck.working!;
+  coachModel = played.model;
+  const modes = new Map<string, ChatMode>();
+  for (const check of [athleteCheck, ...(judgeCheck ? [judgeCheck] : [])]) {
+    modes.set(check.working!.model, check.working!.mode);
+  }
 
   const sizes = await promptTokensByPersona(conversations);
   const estimate = estimateRun({
@@ -163,16 +233,19 @@ async function main(): Promise<void> {
   );
 
   const result = await simulate({
-    coach: routed.generateWith,
+    coach: routed.generateFor(played),
     coachModel,
     athleteModel,
     judgeModel,
-    chat: routerChat(routed.baseUrl, routed.apiKey),
+    chat: routerChat(routed.baseUrl, routed.apiKey, {
+      modeFor: (model) => modes.get(model) ?? defaultChatMode,
+    }),
     conversations,
     maxTurns,
     maxUsd,
     concurrency: integer(env("EVAL_CONCURRENCY"), 3, 1, 8),
   });
+  const failures = harnessFailures(result.conversations, judgeModel !== null);
   const text = renderReport(result.conversations, result.spend, result.stoppedForBudget, {
     coachModel,
     coachChoice: routed.choice,
@@ -186,10 +259,10 @@ async function main(): Promise<void> {
     maxTurns,
     estimateUsd: estimate.usd,
     assumedPrices,
+    preflight,
+    errors: result.errors,
+    harnessFailures: failures,
   });
-  const reportDir = env("EVAL_REPORT_DIR") ??
-    `.tooling/coach-evals/simulation-${new Date().toISOString().replace(/[:.]/g, "-")}`;
-  await Deno.mkdir(reportDir, { recursive: true });
   await Deno.writeTextFile(`${reportDir}/simulation.md`, text);
   await Deno.writeTextFile(
     `${reportDir}/simulation.json`,
@@ -200,6 +273,10 @@ async function main(): Promise<void> {
         judgeModel,
         spend: result.spend,
         stoppedForBudget: result.stoppedForBudget,
+        preflight: checks,
+        harnessFailures: failures,
+        errorSummary: summariseErrors(result.errors),
+        providerErrors: result.errors,
         conversations: result.conversations.map((run) => ({
           ...run,
           turns: run.turns.map(({ context: _context, contributions, ...turn }) => ({
@@ -218,11 +295,8 @@ async function main(): Promise<void> {
   console.log(
     `Spent USD ${spentUsd(result.spend).toFixed(4)}. Full report: ${reportDir}/simulation.md`,
   );
-  const harnessErrors = result.conversations.filter((run) => run.ended === "harness_error");
-  const turns = result.conversations.reduce((sum, run) => sum + run.turns.length, 0);
-  if (harnessErrors.length > 0 || turns === 0) {
-    for (const run of harnessErrors) console.error(`Harness error in ${run.id}: ${run.error}`);
-    if (turns === 0) console.error("No Coach turn ran.");
+  if (failures.length > 0) {
+    for (const reason of failures) console.error(`::error::${reason.replace(/\s+/g, " ")}`);
     Deno.exit(1);
   }
 }

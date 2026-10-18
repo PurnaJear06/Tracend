@@ -25,7 +25,12 @@ name: Coach Eval
 #     Tuesday", a knee that feels off, a supplement and its research, a follow-up, pushback). Each
 #     turn is graded by code, an expert-coach judge and, for cited research, a claim-support
 #     judge, on a model other than the Coach's. Report only: the job fails on a harness error,
-#     never on quality. It never runs on a pull request. `sim_filter` picks conversations
+#     never on quality. A harness error is a failed preflight (one tiny request to each model in
+#     the mode the run uses; JSON mode without response_format and the other model spellings are
+#     tried first), more than 20% of Coach turns ending in a provider error, a judge with no
+#     verdicts, or an athlete model that cannot continue. Every failed call records its HTTP status
+#     and the first 300 characters of its body, redacted, in simulation.json. It never runs on a
+#     pull request. `sim_filter` picks conversations
 #     ("primary", "knee-off", "primary/bench-plateau"); `sim_max_turns` caps the messages; the
 #     run stops at `EVAL_SIM_MAX_USD` (repository variable, default 3) and prints its estimate
 #     first. Optional variables: `EVAL_SIM_COACH_MODEL`, `EVAL_SIM_ATHLETE_MODEL`,

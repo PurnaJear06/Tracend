@@ -1,6 +1,7 @@
 // The simulation report: who played whom, a scorecard, the problems ranked by weight with the exact
 // turn, and every transcript with its grades. Report only: nothing in it gates a merge.
 import { graderKind } from "../coach_bank/report.ts";
+import { type ProviderError, renderErrorSummary } from "./diagnostics.ts";
 import { expertRubric } from "./judges.ts";
 import { personaById } from "./personas.ts";
 import { type ConversationRun, type Spend, spentUsd, type TurnRun } from "./simulate.ts";
@@ -22,6 +23,12 @@ export type ReportHeader = Readonly<{
   estimateUsd: number;
   /** Models whose price was assumed (not in the price table). */
   assumedPrices: readonly string[];
+  /** What the preflight found, as lines (see renderPreflight). */
+  preflight: readonly string[];
+  /** Every failed model call of the run. */
+  errors: readonly ProviderError[];
+  /** Why the run is a harness failure, empty when it is sound. */
+  harnessFailures: readonly string[];
 }>;
 
 /** How much a failed check matters, highest first; the ranking sorts by it. */
@@ -312,6 +319,24 @@ export function renderReport(
     } model answers, ${outcome("boundary")} referrals, ${outcome("data_summary")} data summaries, ${
       outcome("dead_end")
     } dead ends. Harness errors: ${harnessErrors.length}.`,
+    "",
+    ...(header.harnessFailures.length
+      ? [
+        "## HARNESS FAILURE",
+        "",
+        "This run measured the harness, not the Coach. It is a failure of the job.",
+        "",
+        ...header.harnessFailures.map((reason) => `- ${reason}`),
+        "",
+      ]
+      : []),
+    "## Preflight",
+    "",
+    ...header.preflight,
+    "",
+    "## Provider errors",
+    "",
+    ...renderErrorSummary(header.errors),
     "",
     "## Scorecard",
     "",

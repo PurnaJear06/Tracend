@@ -2,6 +2,7 @@
 // the scenario's goal and the beat for this message. Its words are the only thing it decides; the
 // records, the Coach and the grading are fixed code.
 import type { Turn } from "../coach_bank/types.ts";
+import { excerpt, type WireError } from "./diagnostics.ts";
 import { jsonObjectIn, type RouterChat } from "./router_client.ts";
 import type { Persona } from "./personas.ts";
 import type { Scenario } from "./scenarios.ts";
@@ -65,9 +66,19 @@ export type AthleteTurnResult = Readonly<{
   message: AthleteMessage | null;
   costUsd: number;
   failure?: string;
+  /** The wire error of the last failed call, for the error log. */
+  error?: WireError;
 }>;
 
-/** The athlete's next message through the router. */
+/** Output tokens of the first ask and of the one retry after an empty answer. */
+export const athleteMaxTokens = 400;
+export const athleteRetryMaxTokens = 1_200;
+
+/**
+ * The athlete's next message through the router. An empty answer (a reasoning model that spent
+ * its output on thinking, or a blank reply) is asked for once more with a larger budget; a second
+ * one ends the conversation with the reason.
+ */
 export async function nextAthleteMessage(
   chat: RouterChat,
   model: string,
@@ -78,10 +89,35 @@ export async function nextAthleteMessage(
   totalMessages: number,
 ): Promise<AthleteTurnResult> {
   const prompt = athletePrompt(persona, scenario, transcript, messageNumber, totalMessages);
-  const result = await chat({ model, ...prompt, maxTokens: 300, json: true });
-  if (!result.ok) return { message: null, costUsd: result.costUsd, failure: result.reason };
-  const message = parseAthleteMessage(result.text, persona.name);
-  return message
-    ? { message, costUsd: result.costUsd }
-    : { message: null, costUsd: result.costUsd, failure: "no message in the answer" };
+  let costUsd = 0;
+  let last: AthleteTurnResult = { message: null, costUsd: 0 };
+  for (const maxTokens of [athleteMaxTokens, athleteRetryMaxTokens]) {
+    const result = await chat({ model, ...prompt, maxTokens, json: true, source: "athlete" });
+    costUsd += result.costUsd;
+    if (!result.ok) {
+      const empty = result.kind === "empty" || result.kind === "no_choices";
+      last = {
+        message: null,
+        costUsd,
+        failure: empty
+          ? `empty answer (${result.body})`
+          : `${result.reason}${result.body ? `: ${result.body}` : ""}`,
+        error: result,
+      };
+      if (empty) continue;
+      return last;
+    }
+    const message = parseAthleteMessage(result.text, persona.name);
+    if (message) return { message, costUsd };
+    last = {
+      message: null,
+      costUsd,
+      failure: "empty answer (no message in the reply)",
+      error: { status: 200, kind: "empty", body: excerpt(result.text) },
+    };
+  }
+  return {
+    ...last,
+    failure: `${last.failure}; asked twice, so the conversation ends here`,
+  };
 }

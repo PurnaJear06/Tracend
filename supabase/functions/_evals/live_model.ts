@@ -21,6 +21,8 @@
 import { costUsd, type ModelPrice, models, type TokenCounts } from "../_shared/ai/models.ts";
 import { type Env, route } from "../_shared/ai/routes.ts";
 import type { AiCallDeps, AiRoute } from "../_shared/ai/types.ts";
+import { type ChatMode, defaultChatMode, jsonObjectIn } from "./coach_sim/wire.ts";
+import { excerpt, type WireError } from "./coach_sim/diagnostics.ts";
 import type { CoachContributions } from "../_shared/coach_context/host.ts";
 import type { CoachLookupRunner } from "../_shared/coach_lookups/runner.ts";
 import {
@@ -181,18 +183,42 @@ export async function routerModels(
 const isClaude = (model: string) => model.toLowerCase().includes("claude");
 const isDeepSeek = (model: string) => model.toLowerCase().includes("deepseek");
 
+export type RouterFetchOptions = Readonly<{
+  /** How the model is asked (default: JSON mode, max_tokens, as the gateway builds the request). */
+  mode?: ChatMode;
+  /** Sees every failed call: the status and the redacted start of the body. */
+  onError?: (error: WireError) => void;
+  /** Strings that must never appear in a recorded body (the router key). */
+  secrets?: readonly string[];
+}>;
+
+const anthropicFinish: Readonly<Record<string, string>> = {
+  end_turn: "stop",
+  stop_sequence: "stop",
+  max_tokens: "length",
+};
+
+const abortNames = new Set(["AbortError", "TimeoutError"]);
+
 /**
  * Sends the gateway's router request with `model` in place of the carrier, and the request fields
  * that model takes: a DeepSeek model keeps thinking off and says so in the router's terms; any
  * other model drops DeepSeek's thinking field, and a Claude model also the temperature (Claude 5
  * takes only default sampling, and production's request sends none). `onUsage` sees the tokens of
- * every answer.
+ * every answer. The mode can drop `response_format` (the production prompt already asks for the
+ * JSON; a reply that wraps it in a fence or prose is cleaned to the bare object, which is all the
+ * gateway's strict parse needs) and rename `max_tokens`; `onError` sees every failed call.
  */
 export function routerModelFetch(
   model: string,
   fetcher: typeof fetch = fetch,
   onUsage: (tokens: TokenCounts) => void = () => {},
+  options: RouterFetchOptions = {},
 ): typeof fetch {
+  const mode = options.mode ?? defaultChatMode;
+  const secrets = options.secrets ?? [];
+  const report = (kind: WireError["kind"], status: number | null, body: string) =>
+    options.onError?.({ kind, status, body: excerpt(body, secrets) });
   return async (input, init) => {
     let body = init?.body;
     if (typeof body === "string") {
@@ -206,16 +232,76 @@ export function routerModelFetch(
         delete payload.thinking;
         if (isClaude(model)) delete payload.temperature;
       }
+      if (!mode.responseFormat) delete payload.response_format;
+      if (mode.maxTokensField === "max_completion_tokens" && payload.max_tokens !== undefined) {
+        payload.max_completion_tokens = payload.max_tokens;
+        delete payload.max_tokens;
+      }
       body = JSON.stringify(payload);
     }
-    const response = await fetcher(input, { ...init, body });
-    if (response.ok) {
+    let response: Response;
+    try {
+      response = await fetcher(input, { ...init, body });
+    } catch (error) {
+      const name = error instanceof Error ? error.name : "";
+      report(
+        abortNames.has(name) ? "timeout" : "network",
+        null,
+        error instanceof Error ? `${name}: ${error.message}` : "network",
+      );
+      throw error;
+    }
+    if (!response.ok) {
+      report("http", response.status, await response.clone().text().catch(() => ""));
+      return response;
+    }
+    let raw = "";
+    let payload: Record<string, unknown>;
+    try {
+      raw = await response.clone().text();
+      payload = JSON.parse(raw);
+    } catch {
+      // The gateway reads the body itself and reports an unreadable answer.
+      report("unreadable", response.status, raw);
+      return response;
+    }
+    const usage = payload.usage;
+    if (usage && typeof usage === "object") onUsage(tokensOf(usage as Record<string, unknown>));
+    const choice = Array.isArray(payload.choices)
+      ? payload.choices[0] as Record<string, unknown> | undefined
+      : undefined;
+    const message = choice?.message as Record<string, unknown> | undefined;
+    if (!choice || !message) {
+      report("no_choices", response.status, raw);
+      return response;
+    }
+    // The gateway reads only OpenAI's finish reasons; a router that passes Claude's own through
+    // (end_turn, max_tokens) is translated, anything else is reported and left as it is.
+    const finish = anthropicFinish[String(choice.finish_reason)];
+    if (finish) choice.finish_reason = finish;
+    else if (!["stop", "length", "content_filter"].includes(String(choice.finish_reason))) {
+      report("finish", response.status, `finish_reason=${String(choice.finish_reason)}`);
+    }
+    let changed = Boolean(finish);
+    if (!mode.responseFormat && typeof message.content === "string") {
+      let parses = true;
       try {
-        const usage = (await response.clone().json())?.usage;
-        if (usage && typeof usage === "object") onUsage(tokensOf(usage));
+        JSON.parse(message.content);
       } catch {
-        // The gateway reads the body itself and reports an unreadable answer.
+        parses = false;
       }
+      const object = parses ? null : jsonObjectIn(message.content);
+      if (object) {
+        message.content = JSON.stringify(object);
+        changed = true;
+      }
+    }
+    if (changed) {
+      return new Response(JSON.stringify(payload), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: { "content-type": "application/json" },
+      });
     }
     return response;
   };
@@ -253,6 +339,11 @@ export function priceTokens(model: string, tokens: TokenCounts): { usd: number; 
   return { usd: costUsd(price ?? assumedPrice, tokens), assumed: price === null };
 }
 
+export type CoachGenerateFactory = (
+  onUsage: (tokens: TokenCounts) => void,
+  onError?: (error: WireError) => void,
+) => Generate;
+
 export type RouterGateway =
   & LiveModel
   & Readonly<{
@@ -267,8 +358,13 @@ export type RouterGateway =
     available: readonly string[];
     baseUrl: string;
     apiKey: string;
-    /** The gateway path with the Coach model, telling `onUsage` the tokens of every call. */
-    generateWith: (onUsage: (tokens: TokenCounts) => void) => Generate;
+    /**
+     * The gateway path with the Coach model, telling `onUsage` the tokens of every call and
+     * `onError` every failed one.
+     */
+    generateWith: CoachGenerateFactory;
+    /** The same for another model id or request mode (what the preflight found working). */
+    generateFor: (route: Readonly<{ model: string; mode: ChatMode }>) => CoachGenerateFactory;
   }>;
 
 /**
@@ -308,16 +404,26 @@ export async function routerGatewayFromEnv(
     : available.length === 0
     ? `the router did not list its models, so the production model ${productionCoachModel} could not be found; using ${fallback}`
     : `the router does not list the production model ${productionCoachModel}; using ${fallback}`;
-  const generateWith = (onUsage: (tokens: TokenCounts) => void) =>
-    gatewayGenerate(
-      coachRoute,
-      () => null,
-      { fetch: routerModelFetch(coachModel, fetcher, onUsage) },
-      routerTiming,
-    );
+  const generateFor =
+    (played: Readonly<{ model: string; mode: ChatMode }>): CoachGenerateFactory =>
+    (onUsage, onError) =>
+      gatewayGenerate(
+        coachRoute,
+        () => null,
+        {
+          fetch: routerModelFetch(played.model, fetcher, onUsage, {
+            mode: played.mode,
+            secrets: [apiKey],
+            ...(onError ? { onError } : {}),
+          }),
+        },
+        routerTiming,
+      );
+  const generateWith = generateFor({ model: coachModel, mode: defaultChatMode });
   return {
     generate: generateWith(() => {}),
     generateWith,
+    generateFor,
     endpoint: `${new URL(baseUrl).host} gateway route`,
     model: `${coachModel} (priced as ${routerCarrierModel})`,
     models: [coachModel],

@@ -14,6 +14,13 @@ import { previousQuestionsOf } from "../../_shared/library/query.ts";
 import { answerTurn, renderTurn } from "../coach_bank/harness.ts";
 import type { DataRequest, GraderResult, Turn } from "../coach_bank/types.ts";
 import { type Generate, priceTokens, runPool } from "../live_model.ts";
+import {
+  describeStatus,
+  type ProviderError,
+  summariseErrors,
+  type WireError,
+} from "./diagnostics.ts";
+import { providerErrorCodes } from "./verdict.ts";
 import { nextAthleteMessage } from "./athlete.ts";
 import { gradeConversation, gradeTurn, type TurnRecord } from "./graders.ts";
 import { type Claim, type ExpertVerdict, judgeClaims, judgeExpert } from "./judges.ts";
@@ -33,8 +40,14 @@ export type Spend = { coach: number; athlete: number; judges: number };
 export const spentUsd = (spend: Spend) => spend.coach + spend.athlete + spend.judges;
 
 export type SimulationOptions = Readonly<{
-  /** The gateway path with the Coach model; `onUsage` sees the tokens of every Coach call. */
-  coach: (onUsage: (tokens: TokenCounts) => void) => Generate;
+  /**
+   * The gateway path with the Coach model; `onUsage` sees the tokens of every Coach call and
+   * `onError` every failed one (its status and redacted body).
+   */
+  coach: (
+    onUsage: (tokens: TokenCounts) => void,
+    onError: (error: WireError) => void,
+  ) => Generate;
   coachModel: string;
   athleteModel: string;
   /** The judges' model, never the Coach's; null runs no judge. */
@@ -76,7 +89,12 @@ export type SimulationResult = Readonly<{
   conversations: readonly ConversationRun[];
   spend: Spend;
   stoppedForBudget: boolean;
+  /** Every failed model call (Coach, athlete, judges) with where it happened. */
+  errors: readonly ProviderError[];
 }>;
+
+/** This many Coach turns ending in a provider error, with no model answer yet, stop the run. */
+export const brokenRouteTurns = 6;
 
 /** The text an athlete sees for a reply: the answer, or what the app shows instead. */
 const shownToAthlete = (turn: TurnRecord) =>
@@ -85,12 +103,21 @@ const shownToAthlete = (turn: TurnRecord) =>
 export async function simulate(options: SimulationOptions): Promise<SimulationResult> {
   const spend: Spend = { coach: 0, athlete: 0, judges: 0 };
   let stoppedForBudget = false;
+  const errors: ProviderError[] = [];
+  let coachErrorTurns = 0;
+  let coachAnswers = 0;
   const overBudget = () => {
     if (spentUsd(spend) >= options.maxUsd) stoppedForBudget = true;
     return stoppedForBudget;
   };
   const turnsFor = (conversation: Conversation) =>
     Math.min(conversation.scenario.turns, options.maxTurns, maxTurnsLimit);
+
+  const logJudgeError = (error: WireError | undefined, conversation: string, turn: number) => {
+    if (error && options.judgeModel) {
+      errors.push({ ...error, source: "judge", model: options.judgeModel, conversation, turn });
+    }
+  };
 
   const runOne = async (conversation: Conversation): Promise<ConversationRun> => {
     const turns: TurnRun[] = [];
@@ -123,7 +150,18 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
     const runner = createLookupRunner(recordsRpc(persona.records, persona.extras), "sim-athlete");
     const digest = dataDigest(persona);
     let turnTokens: TokenCounts[] = [];
-    const generate = options.coach((tokens) => turnTokens.push(tokens));
+    let current = 0;
+    const generate = options.coach(
+      (tokens) => turnTokens.push(tokens),
+      (error) =>
+        errors.push({
+          ...error,
+          source: "coach",
+          model: options.coachModel,
+          conversation: conversation.id,
+          turn: current,
+        }),
+    );
     const planned = turnsFor(conversation);
     const thread: Turn[] = [];
     const seen: Turn[] = [];
@@ -145,6 +183,15 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
         );
         athleteCost = next.costUsd;
         spend.athlete += next.costUsd;
+        if (next.error) {
+          errors.push({
+            ...next.error,
+            source: "athlete",
+            model: options.athleteModel,
+            conversation: conversation.id,
+            turn: number,
+          });
+        }
         if (!next.message) {
           return { ended: "athlete_failed", error: `athlete model: ${next.failure}` };
         }
@@ -175,6 +222,7 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
         return round;
       };
       turnTokens = [];
+      current = number;
       const answered = await answerTurn({
         question,
         context,
@@ -205,6 +253,10 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
         history: [...thread],
       };
       const grades = gradeTurn(record, turns);
+      if (record.reply.outcome === "model") coachAnswers++;
+      else if (
+        record.reply.failureCode !== undefined && providerErrorCodes.has(record.reply.failureCode)
+      ) coachErrorTurns++;
 
       let judgeCost = 0;
       const judgeFailures: string[] = [];
@@ -221,7 +273,10 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
         });
         judgeCost += judged.costUsd;
         if (judged.verdict) expert = judged.verdict;
-        else judgeFailures.push(`expert: ${judged.failure}`);
+        else {
+          judgeFailures.push(`expert: ${judged.failure}`);
+          logJudgeError(judged.error, conversation.id, number);
+        }
         const cited = (record.reply.citations ?? []).filter((key) =>
           Object.hasOwn(contributions.shown, key)
         );
@@ -232,7 +287,10 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
           });
           judgeCost += checked.costUsd;
           if (checked.verdict) claims = checked.verdict;
-          else judgeFailures.push(`claims: ${checked.failure}`);
+          else {
+            judgeFailures.push(`claims: ${checked.failure}`);
+            logJudgeError(checked.error, conversation.id, number);
+          }
         }
         spend.judges += judgeCost;
       }
@@ -258,6 +316,17 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
       });
       // The athlete may close the conversation once it has had a fair run.
       if (athleteDone && number >= 4) return { ended: "athlete_done" };
+      // A route that has only failed so far is broken: stop instead of spending the whole run on it.
+      if (coachAnswers === 0 && coachErrorTurns >= brokenRouteTurns) {
+        return {
+          ended: "harness_error",
+          error: `the Coach route failed ${coachErrorTurns} turns and answered none: ${
+            summariseErrors(errors.filter((e) => e.source === "coach")).slice(0, 2).map((g) =>
+              `${describeStatus(g.status, g.kind)} ${g.body}`
+            ).join(" | ") || "no error was captured"
+          }`,
+        };
+      }
     }
     return { ended: "planned" };
   };
@@ -271,5 +340,6 @@ export async function simulate(options: SimulationOptions): Promise<SimulationRe
     conversations: [...runs].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)),
     spend,
     stoppedForBudget,
+    errors: errors.slice(0, 500),
   };
 }

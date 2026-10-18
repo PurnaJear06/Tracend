@@ -1,0 +1,119 @@
+// What went wrong when a model call failed, kept safe to print: the HTTP status and the first 300
+// characters of the response body with anything that looks like a key or a token removed. Request
+// headers and the key itself are never recorded. Used by the Coach, athlete and judge calls and by
+// the preflight, and summarised in the report.
+
+/** The most characters of a response body kept. */
+export const bodyExcerptChars = 300;
+
+export type CallSource = "coach" | "athlete" | "judge";
+
+/** What a failed call looked like on the wire. */
+export type WireError = Readonly<{
+  /** The HTTP status, null when no response arrived. */
+  status: number | null;
+  /** http: a non-2xx answer; network / timeout: no answer; unreadable, no_choices, empty: a 2xx answer without a reply. */
+  kind: "http" | "network" | "timeout" | "unreadable" | "no_choices" | "empty" | "finish";
+  /** The redacted start of the body, or a short description. */
+  body: string;
+}>;
+
+export type ProviderError =
+  & WireError
+  & Readonly<{
+    source: CallSource;
+    model: string;
+    conversation?: string;
+    turn?: number;
+  }>;
+
+const redacted = "[redacted]";
+
+// Most specific first, so a key inside a `"api_key": "..."` pair is cut once.
+const secretPatterns: readonly [
+  RegExp,
+  string | ((match: string, ...groups: string[]) => string),
+][] = [
+  [
+    /("?(?:api[_-]?key|x-api-key|authorization|auth[_-]?token|access[_-]?token|token|secret|password|passwd)"?\s*[:=]\s*)("?)(?:Bearer\s+)?[^\s",}\]]+/gi,
+    (_match, name, quote) => `${name}${quote}${redacted}`,
+  ],
+  [/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, `Bearer ${redacted}`],
+  [/\b(?:sk|pk|rk)-[A-Za-z0-9_-]{6,}/g, redacted],
+  [/\bAIza[0-9A-Za-z_-]{20,}/g, redacted],
+  [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, redacted],
+  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, redacted],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*/g, redacted],
+];
+
+/**
+ * The text with keys and tokens removed: the exact secrets given, a bearer credential, a value next
+ * to a key-like name (api_key, token, authorization...), well-known key prefixes (sk-, AIza, ghp_,
+ * a JWT) and any long mixed letters-and-digits run that could be one.
+ */
+export function redact(text: string, secrets: readonly string[] = []): string {
+  let out = text;
+  for (const secret of secrets) {
+    if (secret.trim().length >= 6) out = out.split(secret.trim()).join(redacted);
+  }
+  for (const [pattern, replacement] of secretPatterns) {
+    out = out.replace(pattern, replacement as string);
+  }
+  return out.replace(
+    /[A-Za-z0-9_+/=-]{32,}/g,
+    (run) => /[0-9]/.test(run) && /[A-Za-z]/.test(run) ? redacted : run,
+  );
+}
+
+/** The first 300 characters of a body, after redaction (so a key cut by the limit cannot leak). */
+export function excerpt(text: string, secrets: readonly string[] = []): string {
+  return redact(text, secrets).replace(/\s+/g, " ").trim().slice(0, bodyExcerptChars);
+}
+
+/** One line per distinct error: where it came from, the status, the body start and how often. */
+export type ErrorGroup = Readonly<{
+  source: CallSource;
+  model: string;
+  status: number | null;
+  kind: WireError["kind"];
+  body: string;
+  count: number;
+}>;
+
+export function summariseErrors(errors: readonly ProviderError[]): ErrorGroup[] {
+  const groups = new Map<string, { group: ErrorGroup; count: number }>();
+  for (const error of errors) {
+    const key = [error.source, error.model, error.status, error.kind, error.body].join("\u0000");
+    const entry = groups.get(key);
+    if (entry) entry.count++;
+    else {
+      groups.set(key, {
+        group: {
+          source: error.source,
+          model: error.model,
+          status: error.status,
+          kind: error.kind,
+          body: error.body,
+          count: 0,
+        },
+        count: 1,
+      });
+    }
+  }
+  return [...groups.values()].map(({ group, count }) => ({ ...group, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+export const describeStatus = (status: number | null, kind: WireError["kind"]) =>
+  status === null ? kind : `HTTP ${status}`;
+
+/** The distinct errors as report lines. */
+export function renderErrorSummary(errors: readonly ProviderError[]): string[] {
+  const groups = summariseErrors(errors);
+  if (groups.length === 0) return ["No provider errors."];
+  return groups.slice(0, 20).map((g) =>
+    `- ${g.count}x ${g.source} \`${g.model}\`: ${describeStatus(g.status, g.kind)}${
+      g.body ? `: ${g.body.replaceAll("|", "\\|")}` : ""
+    }`
+  );
+}
